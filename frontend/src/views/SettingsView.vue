@@ -761,6 +761,7 @@ async function handleTestLDAP() {
           :ldap-testing="ldapTesting"
           :ldap-error="ldapError"
           :ldap-success="ldapSuccess"
+          :credentials="credentials"
           @test="handleTestLDAP"
           @save="handleSaveLDAP"
         />

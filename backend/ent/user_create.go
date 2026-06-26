@@ -97,6 +97,20 @@ func (uc *UserCreate) SetNillableRole(u *user.Role) *UserCreate {
 	return uc
 }
 
+// SetTokenValidAfter sets the "token_valid_after" field.
+func (uc *UserCreate) SetTokenValidAfter(t time.Time) *UserCreate {
+	uc.mutation.SetTokenValidAfter(t)
+	return uc
+}
+
+// SetNillableTokenValidAfter sets the "token_valid_after" field if the given value is not nil.
+func (uc *UserCreate) SetNillableTokenValidAfter(t *time.Time) *UserCreate {
+	if t != nil {
+		uc.SetTokenValidAfter(*t)
+	}
+	return uc
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (uc *UserCreate) SetCreatedAt(t time.Time) *UserCreate {
 	uc.mutation.SetCreatedAt(t)
@@ -312,6 +326,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.Role(); ok {
 		_spec.SetField(user.FieldRole, field.TypeEnum, value)
 		_node.Role = value
+	}
+	if value, ok := uc.mutation.TokenValidAfter(); ok {
+		_spec.SetField(user.FieldTokenValidAfter, field.TypeTime, value)
+		_node.TokenValidAfter = &value
 	}
 	if value, ok := uc.mutation.CreatedAt(); ok {
 		_spec.SetField(user.FieldCreatedAt, field.TypeTime, value)

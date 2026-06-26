@@ -20,6 +20,16 @@ type Tx struct {
 	CommitRewrite *CommitRewriteClient
 	// Credential is the client for interacting with the Credential builders.
 	Credential *CredentialClient
+	// DirectoryDepartment is the client for interacting with the DirectoryDepartment builders.
+	DirectoryDepartment *DirectoryDepartmentClient
+	// DirectoryMember is the client for interacting with the DirectoryMember builders.
+	DirectoryMember *DirectoryMemberClient
+	// DirectoryOffboardingAction is the client for interacting with the DirectoryOffboardingAction builders.
+	DirectoryOffboardingAction *DirectoryOffboardingActionClient
+	// DirectorySource is the client for interacting with the DirectorySource builders.
+	DirectorySource *DirectorySourceClient
+	// DirectorySyncRun is the client for interacting with the DirectorySyncRun builders.
+	DirectorySyncRun *DirectorySyncRunClient
 	// PRCommitUsageSnapshot is the client for interacting with the PRCommitUsageSnapshot builders.
 	PRCommitUsageSnapshot *PRCommitUsageSnapshotClient
 	// PRSyncJob is the client for interacting with the PRSyncJob builders.
@@ -177,6 +187,11 @@ func (tx *Tx) init() {
 	tx.CommitCheckpoint = NewCommitCheckpointClient(tx.config)
 	tx.CommitRewrite = NewCommitRewriteClient(tx.config)
 	tx.Credential = NewCredentialClient(tx.config)
+	tx.DirectoryDepartment = NewDirectoryDepartmentClient(tx.config)
+	tx.DirectoryMember = NewDirectoryMemberClient(tx.config)
+	tx.DirectoryOffboardingAction = NewDirectoryOffboardingActionClient(tx.config)
+	tx.DirectorySource = NewDirectorySourceClient(tx.config)
+	tx.DirectorySyncRun = NewDirectorySyncRunClient(tx.config)
 	tx.PRCommitUsageSnapshot = NewPRCommitUsageSnapshotClient(tx.config)
 	tx.PRSyncJob = NewPRSyncJobClient(tx.config)
 	tx.PrAttributionRun = NewPrAttributionRunClient(tx.config)

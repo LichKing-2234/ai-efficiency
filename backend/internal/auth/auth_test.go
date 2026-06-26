@@ -43,7 +43,7 @@ func TestGenerateAndValidateAccessToken(t *testing.T) {
 	}
 
 	// Validate access token
-	claims, err := svc.ValidateAccessToken(pair.AccessToken)
+	claims, err := svc.ValidateAccessToken(context.Background(), pair.AccessToken)
 	if err != nil {
 		t.Fatalf("ValidateAccessToken() error = %v", err)
 	}
@@ -66,7 +66,7 @@ func TestValidateAccessTokenRejectsRefreshToken(t *testing.T) {
 	pair, _ := svc.generateTokenPair(info)
 
 	// Access token validation should reject a refresh token
-	_, err := svc.ValidateAccessToken(pair.RefreshToken)
+	_, err := svc.ValidateAccessToken(context.Background(), pair.RefreshToken)
 	if err == nil {
 		t.Error("ValidateAccessToken should reject refresh token")
 	}
@@ -82,7 +82,7 @@ func TestValidateTokenExpired(t *testing.T) {
 	info := &UserInfo{ID: 1, Username: "testuser", Role: "user"}
 	pair, _ := svc.generateTokenPair(info)
 
-	_, err := svc.ValidateAccessToken(pair.AccessToken)
+	_, err := svc.ValidateAccessToken(context.Background(), pair.AccessToken)
 	if err == nil {
 		t.Error("should reject expired token")
 	}
@@ -98,7 +98,7 @@ func TestValidateTokenWrongSecret(t *testing.T) {
 		jwtSecret: []byte("different-secret-key-32-bytes!!!"),
 	}
 
-	_, err := svc2.ValidateAccessToken(pair.AccessToken)
+	_, err := svc2.ValidateAccessToken(context.Background(), pair.AccessToken)
 	if err == nil {
 		t.Error("should reject token signed with different secret")
 	}
@@ -107,12 +107,12 @@ func TestValidateTokenWrongSecret(t *testing.T) {
 func TestValidateTokenInvalid(t *testing.T) {
 	svc := newTestService()
 
-	_, err := svc.ValidateAccessToken("not-a-valid-token")
+	_, err := svc.ValidateAccessToken(context.Background(), "not-a-valid-token")
 	if err == nil {
 		t.Error("should reject invalid token string")
 	}
 
-	_, err = svc.ValidateAccessToken("")
+	_, err = svc.ValidateAccessToken(context.Background(), "")
 	if err == nil {
 		t.Error("should reject empty token")
 	}

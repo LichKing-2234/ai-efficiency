@@ -18,6 +18,21 @@ type CommitRewrite func(*sql.Selector)
 // Credential is the predicate function for credential builders.
 type Credential func(*sql.Selector)
 
+// DirectoryDepartment is the predicate function for directorydepartment builders.
+type DirectoryDepartment func(*sql.Selector)
+
+// DirectoryMember is the predicate function for directorymember builders.
+type DirectoryMember func(*sql.Selector)
+
+// DirectoryOffboardingAction is the predicate function for directoryoffboardingaction builders.
+type DirectoryOffboardingAction func(*sql.Selector)
+
+// DirectorySource is the predicate function for directorysource builders.
+type DirectorySource func(*sql.Selector)
+
+// DirectorySyncRun is the predicate function for directorysyncrun builders.
+type DirectorySyncRun func(*sql.Selector)
+
 // PRCommitUsageSnapshot is the predicate function for prcommitusagesnapshot builders.
 type PRCommitUsageSnapshot func(*sql.Selector)
 

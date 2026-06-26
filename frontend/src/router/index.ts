@@ -63,6 +63,12 @@ const router = createRouter({
       meta: { requireAdmin: true },
     },
     {
+      path: '/admin/directory/offboarding',
+      name: 'DirectoryOffboarding',
+      component: () => import('@/views/admin/DirectoryOffboardingView.vue'),
+      meta: { requireAdmin: true },
+    },
+    {
       path: '/repos/:id',
       name: 'RepoDetail',
       component: () => import('@/views/repos/RepoDetailView.vue'),

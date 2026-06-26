@@ -9,8 +9,9 @@ import { setLocale } from '@/i18n'
 vi.mock('@/api/adminUsers', () => ({
   assignAdminUserSubscription: vi.fn(),
   getAdminUserSubscriptionJob: vi.fn(),
-  getLatestAdminUserSubscriptionJob: vi.fn(),
-  listAdminUsers: vi.fn(),
+	  getLatestAdminUserSubscriptionJob: vi.fn(),
+	  listAdminUserDepartments: vi.fn(),
+	  listAdminUsers: vi.fn(),
   listAdminUserSubscriptionOptions: vi.fn(),
   manageAdminUserSubscriptions: vi.fn(),
   revealAdminUserRelayPassword: vi.fn(),
@@ -43,7 +44,7 @@ async function mountAdminUsersView(
     page_size?: number
   },
 ) {
-  const { getLatestAdminUserSubscriptionJob, listAdminUsers, listAdminUserSubscriptionOptions } = await import('@/api/adminUsers')
+	  const { getLatestAdminUserSubscriptionJob, listAdminUserDepartments, listAdminUsers, listAdminUserSubscriptionOptions } = await import('@/api/adminUsers')
   ;(listAdminUsers as any).mockImplementation((params: any) => Promise.resolve({
     data: {
       data: userListFactory?.(params) ?? {
@@ -55,8 +56,14 @@ async function mountAdminUsersView(
             role: 'user',
             auth_source: 'ldap',
             relay_user_id: 42,
-            relay_auth_password: 'encrypted-relay-password-ciphertext',
-            created_at: '2026-05-26T00:00:00Z',
+	            relay_auth_password: 'encrypted-relay-password-ciphertext',
+		            department: {
+		              external_id: 'dept-alpha',
+		              name: 'Department Alpha',
+		              path: '1.781448',
+		              display_path: 'Department Alpha',
+		            },
+	            created_at: '2026-05-26T00:00:00Z',
             updated_at: '2026-05-26T01:00:00Z',
           },
           {
@@ -75,8 +82,68 @@ async function mountAdminUsersView(
         page: params?.page ?? 1,
         page_size: params?.page_size ?? 20,
       },
-    },
-  }))
+	    },
+	  }))
+	  ;(listAdminUserDepartments as any).mockResolvedValue({
+	    data: {
+	      data: {
+	        items: [
+		          {
+			            external_id: 'dept-alpha',
+			            name: 'Department Alpha',
+			            path: '1.781448',
+			            display_path: 'Department Alpha',
+			            depth: 0,
+		            child_count: 1,
+		            member_count: 1,
+		            matched_user_count: 1,
+		            subtree_member_count: 2,
+		            subtree_matched_user_count: 2,
+		          },
+		          {
+		            external_id: 'dept-alpha-team-one',
+			            parent_external_id: 'dept-alpha',
+			            name: 'Team One',
+			            path: '1.781448.1683962',
+			            display_path: 'Department Alpha / Team One',
+		            depth: 1,
+		            child_count: 0,
+		            member_count: 1,
+		            matched_user_count: 1,
+		            subtree_member_count: 1,
+		            subtree_matched_user_count: 1,
+		            representative_count: 2,
+		            matched_representative_count: 1,
+		          },
+			          {
+			            external_id: 'dept-beta',
+			            name: 'Department Beta',
+			            path: '1.1178135',
+			            display_path: 'Department Beta',
+			            depth: 0,
+			            child_count: 0,
+			            member_count: 2,
+			            matched_user_count: 1,
+			            subtree_member_count: 2,
+			            subtree_matched_user_count: 1,
+			          },
+			          {
+			            external_id: 'dept-gamma',
+			            parent_external_id: 'dept-missing',
+			            name: 'Department Gamma',
+			            path: '1.999999',
+			            display_path: 'Department Gamma',
+			            depth: 0,
+			            child_count: 0,
+			            member_count: 1,
+			            matched_user_count: 1,
+			            subtree_member_count: 1,
+			            subtree_matched_user_count: 1,
+			          },
+			        ],
+	      },
+	    },
+	  })
   ;(listAdminUserSubscriptionOptions as any).mockResolvedValue({
     data: {
       data: {
@@ -123,8 +190,8 @@ async function mountAdminUsersView(
     },
   })
   await flushPromises()
-  return { wrapper, router, listAdminUsers }
-}
+	  return { wrapper, router, listAdminUserDepartments, listAdminUsers }
+	}
 
 function subscriptionJob(overrides: Record<string, any> = {}) {
   return {
@@ -161,8 +228,10 @@ describe('AdminUsersView', () => {
     expect(listAdminUsers).toHaveBeenCalledWith({ q: '', page: 1, page_size: 20 })
     expect(wrapper.text()).toContain('Users & Access')
     expect(wrapper.text()).toContain('Relay mapping')
-    expect(wrapper.text()).toContain('Access status')
-    expect(wrapper.text()).toContain('alice')
+	    expect(wrapper.text()).toContain('Access status')
+	    expect(wrapper.text()).toContain('Department')
+	    expect(wrapper.text()).toContain('Department Alpha')
+	    expect(wrapper.text()).toContain('alice')
     expect(wrapper.text()).toContain('alice@example.com')
     expect(wrapper.text()).toContain('ldap')
     expect(wrapper.text()).toContain('42')
@@ -170,9 +239,94 @@ describe('AdminUsersView', () => {
     expect(wrapper.text()).not.toContain('encrypted-relay-password-ciphertext')
     expect(wrapper.text()).toContain('120 total')
     expect(wrapper.text()).toContain('Page 1 / 6')
-  })
+	  })
 
-  it('renders the primary admin users workflow in Chinese', async () => {
+	  it('filters users by department and keeps the filter in the URL', async () => {
+	    const { wrapper, router, listAdminUsers } = await mountAdminUsersView()
+
+	    await wrapper.get('[data-testid="admin-users-department-filter"]').setValue('dept-alpha')
+	    await flushPromises()
+
+	    expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({
+	      q: '',
+	      department_id: 'dept-alpha',
+	      page: 1,
+	      page_size: 20,
+	    })
+	    expect(router.currentRoute.value.query.department_id).toBe('dept-alpha')
+	  })
+
+		  it('renders the department view inside admin users and drills into a department filter', async () => {
+	    const { wrapper, router, listAdminUserDepartments, listAdminUsers } = await mountAdminUsersView()
+
+	    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+	    await flushPromises()
+
+	    expect(listAdminUserDepartments).toHaveBeenCalled()
+	    expect(wrapper.text()).toContain('Departments')
+	    expect(wrapper.text()).toContain('Department Alpha')
+	    expect(wrapper.text()).toContain('1 member')
+	    expect(wrapper.text()).toContain('1 matched user')
+
+	    await wrapper.get('[data-testid="admin-users-department-open-dept-alpha"]').trigger('click')
+	    await flushPromises()
+
+	    expect(router.currentRoute.value.query.view).toBeUndefined()
+	    expect(router.currentRoute.value.query.department_id).toBe('dept-alpha')
+		    expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({
+		      q: '',
+		      department_id: 'dept-alpha',
+		      page: 1,
+		      page_size: 20,
+		    })
+		  })
+
+		  it('renders departments as a hierarchy with subtree counts', async () => {
+		    const { wrapper } = await mountAdminUsersView()
+
+		    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+		    await flushPromises()
+
+		    const alpha = wrapper.get('[data-testid="admin-users-department-open-dept-alpha"]')
+		    const child = wrapper.get('[data-testid="admin-users-department-open-dept-alpha-team-one"]')
+		    const beta = wrapper.get('[data-testid="admin-users-department-open-dept-beta"]')
+		    expect(alpha.attributes('aria-level')).toBe('1')
+		    expect(child.attributes('aria-level')).toBe('2')
+		    expect(beta.attributes('aria-level')).toBe('1')
+		    expect(child.attributes('style')).toContain('padding-left: 1.25rem')
+		    expect(alpha.text()).toContain('2 total members')
+		    expect(alpha.text()).toContain('2 total matched')
+		    expect(child.text()).toContain('1 total member')
+		    expect(child.text()).toContain('1 / 2 representatives matched')
+		  })
+
+		  it('collapses department descendants and hides raw source paths from labels', async () => {
+		    const { wrapper } = await mountAdminUsersView()
+
+		    expect(wrapper.html()).toContain('Department Alpha')
+		    expect(wrapper.html()).not.toContain('1.781448')
+
+		    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+		    await flushPromises()
+
+		    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(true)
+		    expect(wrapper.find('[data-testid="admin-users-department-open-dept-gamma"]').exists()).toBe(true)
+		    expect(wrapper.html()).toContain('Department Alpha / Team One')
+		    expect(wrapper.html()).toContain('Department Gamma')
+		    expect(wrapper.html()).not.toContain('1.781448.1683962')
+
+		    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
+		    await flushPromises()
+
+		    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(false)
+
+		    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
+		    await flushPromises()
+
+		    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(true)
+		  })
+
+	  it('renders the primary admin users workflow in Chinese', async () => {
     setLocale('zh-CN')
 
     const { wrapper } = await mountAdminUsersView()
@@ -279,24 +433,49 @@ describe('AdminUsersView', () => {
     await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
     await flushPromises()
 
-    expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
-      scope: 'selected',
-      user_ids: [7],
-      operation: 'add',
-      provider_id: 3,
-      group_id: '42',
-      validity_days: 60,
-    })
-    expect(manageAdminUserSubscriptions).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('Processing: 0 / 1')
+	    expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
+	      scope: 'selected',
+	      user_ids: [7],
+	      operation: 'add',
+	      provider_id: 3,
+	      group_id: '42',
+	      validity_days: 60,
+	    })
+	    expect(manageAdminUserSubscriptions).not.toHaveBeenCalled()
+	    expect(wrapper.text()).toContain('Processing: 0 / 1')
 
     await vi.advanceTimersByTimeAsync(1500)
     await flushPromises()
 
     expect(getAdminUserSubscriptionJob).toHaveBeenCalledWith(12)
-    expect(wrapper.text()).toContain('Completed: 1 succeeded, 0 skipped, 0 failed')
-    expect(wrapper.text()).toContain('alice')
-  })
+	    expect(wrapper.text()).toContain('Completed: 1 succeeded, 0 skipped, 0 failed')
+	    expect(wrapper.text()).toContain('alice')
+	  })
+
+	  it('passes department filters to current-filter subscription jobs', async () => {
+	    const { startAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+	    ;(startAdminUserSubscriptionJob as any).mockResolvedValue({
+	      data: { data: subscriptionJob({ status: 'completed', phase: 'completed', scope: 'current_filter', total_count: 1, processed_count: 1, success_count: 1 }) },
+	    })
+
+	    const { wrapper } = await mountAdminUsersView()
+	    await wrapper.get('[data-testid="admin-users-department-filter"]').setValue('dept-alpha')
+	    await flushPromises()
+	    await wrapper.get('[data-testid="subscription-scope"]').setValue('current_filter')
+	    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
+	    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+	    await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
+	    await flushPromises()
+
+	    expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
+	      scope: 'current_filter',
+	      filters: { q: '', department_id: 'dept-alpha' },
+	      operation: 'add',
+	      provider_id: 3,
+	      group_id: '42',
+	      validity_days: 30,
+	    })
+	  })
 
   it('shows a real indeterminate select-all checkbox for partial visible selection', async () => {
     const { wrapper } = await mountAdminUsersView()
