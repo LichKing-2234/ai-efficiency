@@ -127,6 +127,19 @@ function handleNavigate() {
         </RouterLink>
 
         <RouterLink
+          to="/admin/directory/offboarding"
+          class="mt-1 flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+          active-class="bg-gray-800"
+          @click="handleNavigate"
+        >
+          <svg class="mr-3 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9zM13.73 21a2 2 0 01-3.46 0M9 11h6" />
+          </svg>
+          {{ t('nav.directoryOffboarding') }}
+        </RouterLink>
+
+        <RouterLink
           to="/settings"
           class="mt-1 flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
           active-class="bg-gray-800"

@@ -17,6 +17,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminsubscription"
+	"github.com/ai-efficiency/backend/internal/adminuseraccess"
 	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/directorytree"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -68,6 +69,9 @@ type adminUserRow struct {
 	AuthSource        string                  `json:"auth_source"`
 	RelayUserID       *int                    `json:"relay_user_id,omitempty"`
 	RelayAuthPassword string                  `json:"relay_auth_password"`
+	AccessStatus      string                  `json:"access_status"`
+	TokenValidAfter   *time.Time              `json:"token_valid_after,omitempty"`
+	OffboardingStatus string                  `json:"offboarding_status,omitempty"`
 	Department        *adminUserDepartmentRow `json:"department,omitempty"`
 	CreatedAt         time.Time               `json:"created_at"`
 	UpdatedAt         time.Time               `json:"updated_at"`
@@ -76,6 +80,7 @@ type adminUserRow struct {
 type adminUsersListRequest struct {
 	Q            string
 	DepartmentID string
+	AccessStatus string
 	Page         int
 	PageSize     int
 }
@@ -137,6 +142,7 @@ type adminManageSubscriptionsRequest struct {
 type adminManageSubscriptionsFilter struct {
 	Q            string `json:"q"`
 	DepartmentID string `json:"department_id"`
+	AccessStatus string `json:"access_status"`
 }
 
 type adminManageSubscriptionsResponse struct {
@@ -220,6 +226,14 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 			return
 		}
 	}
+	if req.AccessStatus != "" {
+		var err error
+		query, err = adminuseraccess.ApplyFilter(query, req.AccessStatus)
+		if err != nil {
+			pkg.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 
 	total, err := query.Clone().Count(c.Request.Context())
 	if err != nil {
@@ -242,6 +256,11 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	offboardingFactsByUserID, err := adminuseraccess.OffboardingFactsForUsers(c.Request.Context(), h.entClient, adminUserIDs(users))
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	items := make([]adminUserRow, 0, len(users))
 	for _, u := range users {
@@ -249,6 +268,7 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 		if u.RelayAuthPassword != nil {
 			relayPassword = strings.TrimSpace(*u.RelayAuthPassword)
 		}
+		offboardingFact := offboardingFactsByUserID[u.ID]
 		items = append(items, adminUserRow{
 			ID:                u.ID,
 			Username:          u.Username,
@@ -257,6 +277,9 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 			AuthSource:        string(u.AuthSource),
 			RelayUserID:       u.RelayUserID,
 			RelayAuthPassword: relayPassword,
+			AccessStatus:      adminuseraccess.Derive(u, relayPassword, offboardingFact.Succeeded),
+			TokenValidAfter:   u.TokenValidAfter,
+			OffboardingStatus: offboardingFact.LatestStatus,
 			Department:        departmentsByUserID[u.ID],
 			CreatedAt:         u.CreatedAt,
 			UpdatedAt:         u.UpdatedAt,
@@ -530,6 +553,7 @@ func (h *AdminUsersHandler) StartSubscriptionJob(c *gin.Context) {
 		UserIDs:      req.UserIDs,
 		FilterQuery:  req.Filters.Q,
 		DepartmentID: req.Filters.DepartmentID,
+		AccessStatus: req.Filters.AccessStatus,
 		Operation:    req.Operation,
 		ProviderID:   req.ProviderID,
 		GroupID:      strconv.FormatInt(groupID, 10),
@@ -978,6 +1002,15 @@ func (h *AdminUsersHandler) subscriptionTargetsForScope(c *gin.Context, req admi
 				return nil, false
 			}
 		}
+		accessStatus := strings.TrimSpace(req.Filters.AccessStatus)
+		if accessStatus != "" {
+			var err error
+			query, err = adminuseraccess.ApplyFilter(query, accessStatus)
+			if err != nil {
+				pkg.Error(c, http.StatusBadRequest, err.Error())
+				return nil, false
+			}
+		}
 	case "all_mapped":
 		query = query.Where(entuser.RelayUserIDNotNil(), entuser.RelayUserIDGT(0))
 	default:
@@ -1071,6 +1104,14 @@ func adminUsersSearchPredicate(q string) predicate.User {
 		predicates = append(predicates, entuser.IDEQ(n), entuser.RelayUserIDEQ(n))
 	}
 	return entuser.Or(predicates...)
+}
+
+func adminUserIDs(users []*ent.User) []int {
+	ids := make([]int, 0, len(users))
+	for _, u := range users {
+		ids = append(ids, u.ID)
+	}
+	return ids
 }
 
 func (h *AdminUsersHandler) applyDepartmentFilter(ctx context.Context, query *ent.UserQuery, departmentID string) (*ent.UserQuery, error) {
@@ -1251,6 +1292,7 @@ func parseAdminUsersListRequest(c *gin.Context) adminUsersListRequest {
 	return adminUsersListRequest{
 		Q:            strings.TrimSpace(c.Query("q")),
 		DepartmentID: strings.TrimSpace(c.Query("department_id")),
+		AccessStatus: strings.TrimSpace(c.Query("access_status")),
 		Page:         page,
 		PageSize:     pageSize,
 	}

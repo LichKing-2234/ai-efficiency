@@ -21,6 +21,7 @@ import type {
   AdminSubscriptionManageOperation,
   AdminSubscriptionManageScope,
   AdminUser,
+  AdminUserAccessStatus,
 } from '@/types'
 
 const { t, locale } = useI18n()
@@ -70,6 +71,7 @@ const filters = reactive({
   view: queryString('view') === 'departments' ? 'departments' : 'users',
   q: queryString('q'),
   department_id: queryString('department_id'),
+  access_status: queryString('access_status'),
   page: queryNumber('page', 1),
   page_size: queryNumber('page_size', 20),
 })
@@ -115,6 +117,7 @@ async function loadUsers() {
     const params = {
       q: filters.q,
       ...(filters.department_id ? { department_id: filters.department_id } : {}),
+      ...(filters.access_status ? { access_status: filters.access_status } : {}),
       page: filters.page,
       page_size: filters.page_size,
     }
@@ -184,6 +187,7 @@ function replaceAdminUsersQuery() {
   if (filters.view === 'departments') query.view = 'departments'
   if (filters.q.trim()) query.q = filters.q.trim()
   if (filters.department_id.trim()) query.department_id = filters.department_id.trim()
+  if (filters.access_status.trim()) query.access_status = filters.access_status.trim()
   if (filters.page > 1) query.page = String(filters.page)
   if (filters.page_size !== 20) query.page_size = String(filters.page_size)
   void router.replace({ query })
@@ -203,6 +207,12 @@ async function applySearch() {
 }
 
 async function changeDepartmentFilter() {
+  filters.page = 1
+  clearSubscriptionFeedback()
+  await loadUsers()
+}
+
+async function changeAccessStatusFilter() {
   filters.page = 1
   clearSubscriptionFeedback()
   await loadUsers()
@@ -252,7 +262,31 @@ function relayMappingLabel(user: AdminUser) {
 }
 
 function accessStatusLabel(user: AdminUser) {
-  return user.relay_auth_password ? t('adminUsers.configured') : t('adminUsers.missingRelayCredential')
+  return accessStatusText(adminUserAccessStatus(user))
+}
+
+function adminUserAccessStatus(user: AdminUser): AdminUserAccessStatus {
+  if (user.access_status === 'disabled' || user.token_valid_after || user.offboarding_status === 'succeeded') {
+    return 'disabled'
+  }
+  if (user.access_status === 'configured' || user.relay_auth_password) {
+    return 'configured'
+  }
+  return 'missing_credential'
+}
+
+function accessStatusText(status: AdminUserAccessStatus | '') {
+  if (status === 'disabled') return t('adminUsers.disabled')
+  if (status === 'configured') return t('adminUsers.configured')
+  if (status === 'missing_credential') return t('adminUsers.missingRelayCredential')
+  return t('adminUsers.allAccessStatuses')
+}
+
+function accessStatusClass(user: AdminUser) {
+  const status = adminUserAccessStatus(user)
+  if (status === 'disabled') return 'bg-red-100 text-red-800'
+  if (status === 'configured') return 'bg-emerald-100 text-emerald-800'
+  return 'bg-amber-100 text-amber-800'
 }
 
 function departmentLabel(user: AdminUser) {
@@ -488,6 +522,9 @@ function scopeSummaryLabel() {
   if (subscriptionForm.scope === 'current_filter') {
     if (filters.q.trim()) return t('adminUsers.currentFilterScopeWithQuery', { query: filters.q.trim() })
     if (filters.department_id.trim()) return t('adminUsers.currentFilterScopeWithDepartment')
+    if (filters.access_status.trim()) return t('adminUsers.currentFilterScopeWithStatus', {
+      status: accessStatusText(filters.access_status as AdminUserAccessStatus),
+    })
     return t('adminUsers.currentFilterScope')
   }
   return t('adminUsers.allMappedScope')
@@ -508,7 +545,11 @@ async function submitSubscriptionManagement() {
   if (subscriptionForm.scope === 'selected') {
     payload.user_ids = selectedUserIdList.value
   } else if (subscriptionForm.scope === 'current_filter') {
-    payload.filters = { q: filters.q.trim(), department_id: filters.department_id.trim() }
+    payload.filters = {
+      q: filters.q.trim(),
+      department_id: filters.department_id.trim(),
+      access_status: filters.access_status.trim(),
+    }
   }
   if (subscriptionForm.operation === 'add') {
     payload.validity_days = subscriptionForm.days
@@ -633,7 +674,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="filters.view === 'users'" class="rounded-lg bg-white p-4 shadow">
-        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_120px_auto]">
+        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_180px_120px_auto]">
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.search') }}
             <input
@@ -656,6 +697,20 @@ onBeforeUnmount(() => {
 	              <option v-for="department in departments" :key="department.external_id" :value="department.external_id">
 	                {{ departmentDisplayLabel(department) }}
 	              </option>
+            </select>
+          </label>
+          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
+            {{ t('adminUsers.accessStatus') }}
+            <select
+              v-model="filters.access_status"
+              data-testid="admin-users-access-status-filter"
+              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
+              @change="changeAccessStatusFilter"
+            >
+              <option value="">{{ t('adminUsers.allAccessStatuses') }}</option>
+              <option value="configured">{{ t('adminUsers.configured') }}</option>
+              <option value="disabled">{{ t('adminUsers.disabled') }}</option>
+              <option value="missing_credential">{{ t('adminUsers.missingRelayCredential') }}</option>
             </select>
           </label>
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
@@ -916,7 +971,7 @@ onBeforeUnmount(() => {
               </label>
               <span
                 class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="row.relay_auth_password ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+                :class="accessStatusClass(row)"
               >
                 {{ accessStatusLabel(row) }}
               </span>
@@ -1023,7 +1078,7 @@ onBeforeUnmount(() => {
                 <td class="px-3 py-2">
                   <span
                     class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium"
-                    :class="row.relay_auth_password ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+                    :class="accessStatusClass(row)"
                   >
                     {{ accessStatusLabel(row) }}
                   </span>

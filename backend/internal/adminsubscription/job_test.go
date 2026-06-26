@@ -10,6 +10,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
+	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
@@ -164,6 +165,60 @@ func TestStartJobCurrentFilterUsesDepartmentFilter(t *testing.T) {
 	snapshots := TargetSnapshotsFromJob(job)
 	if len(snapshots) != 1 || snapshots[0].UserID != alice.ID {
 		t.Fatalf("target snapshots = %+v, want alice only", snapshots)
+	}
+}
+
+func TestStartJobCurrentFilterUsesAccessStatusFilter(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	disabledUser := createAdminSubscriptionUser(t, ctx, client, "alice", 801)
+	activeUser := createAdminSubscriptionUser(t, ctx, client, "bob", 802)
+	offboardedUser := createAdminSubscriptionUser(t, ctx, client, "carol", 803)
+	if _, err := client.User.UpdateOneID(disabledUser.ID).
+		SetTokenValidAfter(time.Date(2026, 6, 26, 9, 0, 0, 0, time.UTC)).
+		Save(ctx); err != nil {
+		t.Fatalf("revoke disabled user tokens: %v", err)
+	}
+	sourceID := seedAdminSubscriptionSingleMemberDirectorySnapshot(t, ctx, client, "Example Directory", "dept-alpha", "Department Alpha", offboardedUser, time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC))
+	source, err := client.DirectorySource.Get(ctx, sourceID)
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if source.LastSuccessfulRunID == nil {
+		t.Fatal("source missing successful run")
+	}
+	if _, err := client.DirectoryOffboardingAction.Create().
+		SetSourceID(sourceID).
+		SetUserID(offboardedUser.ID).
+		SetRelayUserID(803).
+		SetDirectoryRunID(*source.LastSuccessfulRunID).
+		SetAction(directoryoffboardingaction.ActionDisableRelayUser).
+		SetStatus(directoryoffboardingaction.StatusSucceeded).
+		SetReason("missing_from_latest_full_company_directory").
+		SetPerformedByUserID(disabledUser.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create offboarding action: %v", err)
+	}
+	svc := NewService(client)
+
+	job, err := svc.StartJob(ctx, StartJobRequest{
+		Scope:        "current_filter",
+		AccessStatus: "disabled",
+		Operation:    "add",
+		ProviderID:   7,
+		GroupID:      "42",
+		ValidityDays: 30,
+	})
+	if err != nil {
+		t.Fatalf("StartJob error: %v", err)
+	}
+	if got := job.TargetUserIds; len(got) != 2 || got[0] != disabledUser.ID || got[1] != offboardedUser.ID {
+		t.Fatalf("target_user_ids = %v, want [%d %d], excluding active user %d", got, disabledUser.ID, offboardedUser.ID, activeUser.ID)
+	}
+	snapshots := TargetSnapshotsFromJob(job)
+	if len(snapshots) != 2 || snapshots[0].UserID != disabledUser.ID || snapshots[1].UserID != offboardedUser.ID {
+		t.Fatalf("target snapshots = %+v, want disabled and offboarded users only", snapshots)
 	}
 }
 

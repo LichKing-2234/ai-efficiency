@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
 )
@@ -355,6 +356,165 @@ func TestAdminUsersListNumericSearchMatchesIDs(t *testing.T) {
 	data = parseFullResponse(t, w)["data"].(map[string]interface{})
 	if got := int(data["total"].(float64)); got != 1 {
 		t.Fatalf("local id search total = %d, want 1", got)
+	}
+}
+
+func TestAdminUsersListAccessStatusAndFilter(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	ctx := context.Background()
+
+	if _, err := env.client.User.UpdateOneID(fixture.aliceID).
+		SetTokenValidAfter(time.Date(2026, 6, 26, 9, 0, 0, 0, time.UTC)).
+		Save(ctx); err != nil {
+		t.Fatalf("revoke alice tokens: %v", err)
+	}
+	if _, err := env.client.User.Create().
+		SetUsername("dana").
+		SetEmail("dana@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(77).
+		SetRelayAuthPassword(fixture.ciphertext).
+		Save(ctx); err != nil {
+		t.Fatalf("create dana: %v", err)
+	}
+	if _, err := env.client.User.Create().
+		SetUsername("erin").
+		SetEmail("erin@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(88).
+		SetRelayAuthPassword("   ").
+		Save(ctx); err != nil {
+		t.Fatalf("create erin: %v", err)
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?access_status=disabled&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("disabled status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if got := int(data["total"].(float64)); got != 1 {
+		t.Fatalf("disabled total = %d, want 1", got)
+	}
+	row := items[0].(map[string]interface{})
+	if row["username"] != "alice" || row["access_status"] != "disabled" {
+		t.Fatalf("disabled row = %+v, want alice disabled", row)
+	}
+	if row["token_valid_after"] == nil {
+		t.Fatalf("disabled row missing token_valid_after: %+v", row)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users?access_status=configured&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("configured status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	items = data["items"].([]interface{})
+	if got := int(data["total"].(float64)); got != 1 {
+		t.Fatalf("configured total = %d, want 1", got)
+	}
+	row = items[0].(map[string]interface{})
+	if row["username"] != "dana" || row["access_status"] != "configured" {
+		t.Fatalf("configured row = %+v, want dana configured", row)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users?access_status=missing_credential&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("missing credential status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 4 {
+		t.Fatalf("missing credential total = %d, want 4", got)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users?access_status=unknown&page=1&page_size=20", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status = %d, want 400, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminUsersListMarksSucceededOffboardingActionDisabled(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	ctx := context.Background()
+	sourceID := seedAdminUsersSingleMemberDirectorySnapshot(
+		t,
+		env,
+		"Example Directory",
+		"dept-alpha",
+		"Department Alpha",
+		fixture.aliceID,
+		"alice@example.com",
+		time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC),
+	)
+	source, err := env.client.DirectorySource.Get(ctx, sourceID)
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if source.LastSuccessfulRunID == nil {
+		t.Fatal("source missing successful run")
+	}
+	if _, err := env.client.DirectoryOffboardingAction.Create().
+		SetSourceID(sourceID).
+		SetUserID(fixture.aliceID).
+		SetRelayUserID(42).
+		SetDirectoryRunID(*source.LastSuccessfulRunID).
+		SetAction(directoryoffboardingaction.ActionDisableRelayUser).
+		SetStatus(directoryoffboardingaction.StatusSucceeded).
+		SetReason("missing_from_latest_full_company_directory").
+		SetPerformedByUserID(fixture.carolID).
+		Save(ctx); err != nil {
+		t.Fatalf("create offboarding action: %v", err)
+	}
+	newSourceID := seedAdminUsersSingleMemberDirectorySnapshot(
+		t,
+		env,
+		"New Example Directory",
+		"dept-beta",
+		"Department Beta",
+		fixture.aliceID,
+		"alice@example.com",
+		time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC),
+	)
+	newSource, err := env.client.DirectorySource.Get(ctx, newSourceID)
+	if err != nil {
+		t.Fatalf("get new source: %v", err)
+	}
+	if newSource.LastSuccessfulRunID == nil {
+		t.Fatal("new source missing successful run")
+	}
+	if _, err := env.client.DirectoryOffboardingAction.Create().
+		SetSourceID(newSourceID).
+		SetUserID(fixture.aliceID).
+		SetRelayUserID(42).
+		SetDirectoryRunID(*newSource.LastSuccessfulRunID).
+		SetAction(directoryoffboardingaction.ActionDisableRelayUser).
+		SetStatus(directoryoffboardingaction.StatusFailed).
+		SetReason("missing_from_latest_full_company_directory").
+		SetPerformedByUserID(fixture.carolID).
+		Save(ctx); err != nil {
+		t.Fatalf("create later failed offboarding action: %v", err)
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=alice&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	row := items[0].(map[string]interface{})
+	if row["access_status"] != "disabled" || row["offboarding_status"] != "failed" {
+		t.Fatalf("row = %+v, want disabled access with latest failed offboarding audit status", row)
 	}
 }
 

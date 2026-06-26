@@ -262,6 +262,11 @@ var (
 				Columns: []*schema.Column{DirectoryOffboardingActionsColumns[1], DirectoryOffboardingActionsColumns[6]},
 			},
 			{
+				Name:    "directoryoffboardingaction_action_status_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryOffboardingActionsColumns[5], DirectoryOffboardingActionsColumns[6], DirectoryOffboardingActionsColumns[2]},
+			},
+			{
 				Name:    "directoryoffboardingaction_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectoryOffboardingActionsColumns[2]},

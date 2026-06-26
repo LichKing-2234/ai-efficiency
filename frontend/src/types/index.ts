@@ -470,10 +470,15 @@ export interface AdminUser {
   auth_source: string
   relay_user_id?: number | null
   relay_auth_password: string
+  access_status?: AdminUserAccessStatus
+  token_valid_after?: string | null
+  offboarding_status?: string
   department?: AdminUserDepartment | null
   created_at: string
   updated_at: string
 }
+
+export type AdminUserAccessStatus = 'configured' | 'disabled' | 'missing_credential'
 
 export interface AdminUserDepartment {
   external_id: string
@@ -656,6 +661,7 @@ export interface AdminManageSubscriptionsRequest {
   filters?: {
     q?: string
     department_id?: string
+    access_status?: string
   }
   operation: AdminSubscriptionManageOperation
   provider_id: number

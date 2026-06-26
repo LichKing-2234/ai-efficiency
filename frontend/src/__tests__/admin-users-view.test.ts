@@ -256,6 +256,50 @@ describe('AdminUsersView', () => {
 	    expect(router.currentRoute.value.query.department_id).toBe('dept-alpha')
 	  })
 
+  it('filters users by access status and keeps the filter in the URL', async () => {
+    const { wrapper, router, listAdminUsers } = await mountAdminUsersView()
+
+    await wrapper.get('[data-testid="admin-users-access-status-filter"]').setValue('disabled')
+    await flushPromises()
+
+    expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({
+      q: '',
+      access_status: 'disabled',
+      page: 1,
+      page_size: 20,
+    })
+    expect(router.currentRoute.value.query.access_status).toBe('disabled')
+  })
+
+  it('renders disabled access status in Chinese', async () => {
+    setLocale('zh-CN')
+
+    const { wrapper } = await mountAdminUsersView('/admin/users', (params) => ({
+      items: [
+        {
+          id: 9,
+          username: 'carol',
+          email: 'carol@example.net',
+          role: 'user',
+          auth_source: 'ldap',
+          relay_user_id: 77,
+          relay_auth_password: 'encrypted-disabled-password-ciphertext',
+          access_status: 'disabled',
+          token_valid_after: '2026-06-26T09:00:00Z',
+          offboarding_status: 'succeeded',
+          created_at: '2026-05-26T00:00:00Z',
+          updated_at: '2026-06-26T09:00:00Z',
+        },
+      ],
+      total: 1,
+      page: params?.page ?? 1,
+      page_size: params?.page_size ?? 20,
+    }))
+
+    expect(wrapper.text()).toContain('已禁用')
+    expect(wrapper.text()).not.toContain('encrypted-disabled-password-ciphertext')
+  })
+
 		  it('renders the department view inside admin users and drills into a department filter', async () => {
 	    const { wrapper, router, listAdminUserDepartments, listAdminUsers } = await mountAdminUsersView()
 
@@ -469,7 +513,7 @@ describe('AdminUsersView', () => {
 
 	    expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
 	      scope: 'current_filter',
-	      filters: { q: '', department_id: 'dept-alpha' },
+	      filters: { q: '', department_id: 'dept-alpha', access_status: '' },
 	      operation: 'add',
 	      provider_id: 3,
 	      group_id: '42',

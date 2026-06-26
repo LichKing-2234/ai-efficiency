@@ -21,6 +21,7 @@ function createTestRouter(initialPath = '/') {
       { path: '/user', component: { template: '<div>User</div>' } },
       { path: '/sessions', component: { template: '<div>Sessions</div>' } },
       { path: '/admin/users', component: { template: '<div>Admin Users</div>' } },
+      { path: '/admin/directory/offboarding', component: { template: '<div>Offboarding</div>' } },
       { path: '/settings', component: { template: '<div>Settings</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
     ],
@@ -131,6 +132,27 @@ describe('AppSidebar', () => {
     expect(linkTexts).toContain('Users & Access')
   })
 
+  it('renders Offboarding Review link for admin users', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'relay_sso' }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    const links = wrapper.findAll('a')
+    const offboardingLink = links.find((l) => l.text() === 'Offboarding Review')
+    expect(offboardingLink?.attributes('href')).toBe('/admin/directory/offboarding')
+  })
+
   it('hides Users & Access link for regular users', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -149,6 +171,7 @@ describe('AppSidebar', () => {
 
     const linkTexts = wrapper.findAll('a').map((l) => l.text())
     expect(linkTexts).not.toContain('Users & Access')
+    expect(linkTexts).not.toContain('Offboarding Review')
   })
 
   it('applies active class to current route link', async () => {
