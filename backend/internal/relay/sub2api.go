@@ -687,7 +687,7 @@ func (s *sub2apiRelay) UpdateUser(ctx context.Context, userID int64, req UpdateU
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("relay: update user: unexpected status %d", resp.StatusCode)
+		return nil, fmt.Errorf("relay: update user: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
 	}
 
 	var result struct {
@@ -707,6 +707,16 @@ func (s *sub2apiRelay) UpdateUser(ctx context.Context, userID int64, req UpdateU
 func (s *sub2apiRelay) DisableUser(ctx context.Context, userID int64) error {
 	if userID <= 0 {
 		return fmt.Errorf("relay: disable user: user id is required")
+	}
+	user, err := s.GetUser(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("relay: disable user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("relay: disable user: user not found")
+	}
+	if strings.EqualFold(strings.TrimSpace(user.Role), "admin") {
+		return fmt.Errorf("relay: disable user: cannot disable admin relay user")
 	}
 	if _, err := s.UpdateUser(ctx, userID, UpdateUserRequest{Status: "disabled"}); err != nil {
 		return fmt.Errorf("relay: disable user: %w", err)
