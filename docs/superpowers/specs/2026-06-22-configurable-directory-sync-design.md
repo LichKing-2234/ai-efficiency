@@ -16,7 +16,7 @@
 - LDAP remains an authentication source. Directory Sync is an organization-facts source used for reporting, filtering, and admin offboarding review.
 - AI access assignment and subscription add/extend/remove operations continue to use the existing admin users subscription workflow. Directory Sync must not automatically assign or remove relay/sub2api subscriptions.
 - Offboarding review uses Directory Sync facts to identify local users whose email is missing from the latest full-company directory snapshot. Admins must explicitly confirm any action.
-- This spec introduces a reusable local auth-token revocation capability so confirmed offboarding can invalidate existing AI Efficiency access and refresh tokens. The first UI surface for that capability is the offboarding review page, not the general `/admin/users` table.
+- This spec introduces a reusable local auth-token revocation capability so confirmed offboarding can invalidate existing AI Efficiency access and refresh tokens. The offboarding review page owns the disable action, while the general `/admin/users` table may surface the resulting derived access status for review and filtering.
 - Implementation must update `docs/architecture.md` after the module lands because this changes project-level runtime relationships and admin surfaces.
 
 ## Data Hygiene
@@ -483,10 +483,10 @@ Users with no matching current directory member are still listed in the default
 user view and show an unmatched organization state. They are excluded when a
 specific department filter is active.
 
-Current-filter subscription jobs must use the same department filter as the
-visible `/admin/users` list. A department-filtered list and a current-filter
-bulk action must therefore target the same user set, subject to the existing
-relay-mapped and target-count rules.
+Current-filter subscription jobs must use the same department and access-status
+filters as the visible `/admin/users` list. A department-filtered or
+status-filtered list and a current-filter bulk action must therefore target the
+same user set, subject to the existing relay-mapped and target-count rules.
 
 `GET /api/v1/admin/users/departments` returns departments from the current
 single directory snapshot in tree preorder. Each row includes `external_id`,
@@ -673,8 +673,13 @@ Action:
 `/admin/users` remains the single admin surface for local users and AI access
 support. It adds an internal view switch:
 
-1. User view: the existing user/access table plus a department column and
-   department filter.
+1. User view: the existing user/access table plus a department column,
+   department filter, derived access-status column, and access-status filter.
+   The access-status column is derived from local user state: `disabled` takes
+   precedence when `users.token_valid_after` is set or a successful
+   `directory_offboarding_actions` disable action exists; otherwise users with a
+   stored relay credential are `configured`, and users without one are
+   `missing_credential`.
 2. Department view: a directory-backed collapsible tree list inside the same
    route, showing department name/display path, hierarchy indentation, direct
    member count, direct matched local-user count, subtree total member count,

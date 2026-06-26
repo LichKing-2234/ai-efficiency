@@ -15,6 +15,7 @@ import type {
 export interface AdminUsersListParams {
   q?: string
   department_id?: string
+  access_status?: string
   page?: number
   page_size?: number
 }

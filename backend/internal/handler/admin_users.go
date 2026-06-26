@@ -13,6 +13,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
@@ -60,6 +61,12 @@ const (
 	directoryMemberLeaderDepartmentIDsKey   = "leader_department_ids"
 )
 
+const (
+	adminUserAccessStatusConfigured        = "configured"
+	adminUserAccessStatusDisabled          = "disabled"
+	adminUserAccessStatusMissingCredential = "missing_credential"
+)
+
 type adminUserRow struct {
 	ID                int                     `json:"id"`
 	Username          string                  `json:"username"`
@@ -68,6 +75,9 @@ type adminUserRow struct {
 	AuthSource        string                  `json:"auth_source"`
 	RelayUserID       *int                    `json:"relay_user_id,omitempty"`
 	RelayAuthPassword string                  `json:"relay_auth_password"`
+	AccessStatus      string                  `json:"access_status"`
+	TokenValidAfter   *time.Time              `json:"token_valid_after,omitempty"`
+	OffboardingStatus string                  `json:"offboarding_status,omitempty"`
 	Department        *adminUserDepartmentRow `json:"department,omitempty"`
 	CreatedAt         time.Time               `json:"created_at"`
 	UpdatedAt         time.Time               `json:"updated_at"`
@@ -76,6 +86,7 @@ type adminUserRow struct {
 type adminUsersListRequest struct {
 	Q            string
 	DepartmentID string
+	AccessStatus string
 	Page         int
 	PageSize     int
 }
@@ -137,6 +148,7 @@ type adminManageSubscriptionsRequest struct {
 type adminManageSubscriptionsFilter struct {
 	Q            string `json:"q"`
 	DepartmentID string `json:"department_id"`
+	AccessStatus string `json:"access_status"`
 }
 
 type adminManageSubscriptionsResponse struct {
@@ -220,6 +232,19 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 			return
 		}
 	}
+	offboardedUserIDs, err := h.succeededOffboardingUserIDs(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if req.AccessStatus != "" {
+		var err error
+		query, err = applyAdminUserAccessStatusFilter(query, req.AccessStatus, offboardedUserIDs)
+		if err != nil {
+			pkg.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 
 	total, err := query.Clone().Count(c.Request.Context())
 	if err != nil {
@@ -242,6 +267,11 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	offboardingStatusesByUserID, err := h.latestOffboardingStatusesForUsers(c.Request.Context(), adminUserIDs(users))
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	items := make([]adminUserRow, 0, len(users))
 	for _, u := range users {
@@ -249,6 +279,7 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 		if u.RelayAuthPassword != nil {
 			relayPassword = strings.TrimSpace(*u.RelayAuthPassword)
 		}
+		offboardingStatus := offboardingStatusesByUserID[u.ID]
 		items = append(items, adminUserRow{
 			ID:                u.ID,
 			Username:          u.Username,
@@ -257,6 +288,9 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 			AuthSource:        string(u.AuthSource),
 			RelayUserID:       u.RelayUserID,
 			RelayAuthPassword: relayPassword,
+			AccessStatus:      adminUserAccessStatus(u, relayPassword, offboardingStatus),
+			TokenValidAfter:   u.TokenValidAfter,
+			OffboardingStatus: offboardingStatus,
 			Department:        departmentsByUserID[u.ID],
 			CreatedAt:         u.CreatedAt,
 			UpdatedAt:         u.UpdatedAt,
@@ -978,6 +1012,19 @@ func (h *AdminUsersHandler) subscriptionTargetsForScope(c *gin.Context, req admi
 				return nil, false
 			}
 		}
+		accessStatus := strings.TrimSpace(req.Filters.AccessStatus)
+		if accessStatus != "" {
+			offboardedUserIDs, err := h.succeededOffboardingUserIDs(c.Request.Context())
+			if err != nil {
+				pkg.Error(c, http.StatusInternalServerError, err.Error())
+				return nil, false
+			}
+			query, err = applyAdminUserAccessStatusFilter(query, accessStatus, offboardedUserIDs)
+			if err != nil {
+				pkg.Error(c, http.StatusBadRequest, err.Error())
+				return nil, false
+			}
+		}
 	case "all_mapped":
 		query = query.Where(entuser.RelayUserIDNotNil(), entuser.RelayUserIDGT(0))
 	default:
@@ -1071,6 +1118,102 @@ func adminUsersSearchPredicate(q string) predicate.User {
 		predicates = append(predicates, entuser.IDEQ(n), entuser.RelayUserIDEQ(n))
 	}
 	return entuser.Or(predicates...)
+}
+
+func adminUserAccessStatus(u *ent.User, relayPassword, offboardingStatus string) string {
+	if u.TokenValidAfter != nil || offboardingStatus == string(directoryoffboardingaction.StatusSucceeded) {
+		return adminUserAccessStatusDisabled
+	}
+	if strings.TrimSpace(relayPassword) != "" {
+		return adminUserAccessStatusConfigured
+	}
+	return adminUserAccessStatusMissingCredential
+}
+
+func adminUserIDs(users []*ent.User) []int {
+	ids := make([]int, 0, len(users))
+	for _, u := range users {
+		ids = append(ids, u.ID)
+	}
+	return ids
+}
+
+func applyAdminUserAccessStatusFilter(query *ent.UserQuery, status string, offboardedUserIDs []int) (*ent.UserQuery, error) {
+	switch status {
+	case adminUserAccessStatusDisabled:
+		predicates := []predicate.User{entuser.TokenValidAfterNotNil()}
+		if len(offboardedUserIDs) > 0 {
+			predicates = append(predicates, entuser.IDIn(offboardedUserIDs...))
+		}
+		return query.Where(entuser.Or(predicates...)), nil
+	case adminUserAccessStatusConfigured:
+		predicates := []predicate.User{
+			entuser.TokenValidAfterIsNil(),
+			entuser.RelayAuthPasswordNotNil(),
+			entuser.RelayAuthPasswordNEQ(""),
+		}
+		if len(offboardedUserIDs) > 0 {
+			predicates = append(predicates, entuser.IDNotIn(offboardedUserIDs...))
+		}
+		return query.Where(predicates...), nil
+	case adminUserAccessStatusMissingCredential:
+		predicates := []predicate.User{
+			entuser.TokenValidAfterIsNil(),
+			entuser.Or(entuser.RelayAuthPasswordIsNil(), entuser.RelayAuthPasswordEQ("")),
+		}
+		if len(offboardedUserIDs) > 0 {
+			predicates = append(predicates, entuser.IDNotIn(offboardedUserIDs...))
+		}
+		return query.Where(predicates...), nil
+	default:
+		return nil, fmt.Errorf("access_status must be configured, disabled, or missing_credential")
+	}
+}
+
+func (h *AdminUsersHandler) succeededOffboardingUserIDs(ctx context.Context) ([]int, error) {
+	actions, err := h.entClient.DirectoryOffboardingAction.Query().
+		Where(
+			directoryoffboardingaction.ActionEQ(directoryoffboardingaction.ActionDisableRelayUser),
+			directoryoffboardingaction.StatusEQ(directoryoffboardingaction.StatusSucceeded),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list succeeded offboarding actions: %w", err)
+	}
+	seen := make(map[int]struct{}, len(actions))
+	ids := make([]int, 0, len(actions))
+	for _, action := range actions {
+		if _, ok := seen[action.UserID]; ok {
+			continue
+		}
+		seen[action.UserID] = struct{}{}
+		ids = append(ids, action.UserID)
+	}
+	return ids, nil
+}
+
+func (h *AdminUsersHandler) latestOffboardingStatusesForUsers(ctx context.Context, userIDs []int) (map[int]string, error) {
+	if len(userIDs) == 0 {
+		return map[int]string{}, nil
+	}
+	actions, err := h.entClient.DirectoryOffboardingAction.Query().
+		Where(
+			directoryoffboardingaction.UserIDIn(userIDs...),
+			directoryoffboardingaction.ActionEQ(directoryoffboardingaction.ActionDisableRelayUser),
+		).
+		Order(ent.Desc(directoryoffboardingaction.FieldUpdatedAt), ent.Desc(directoryoffboardingaction.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list offboarding actions for users: %w", err)
+	}
+	statuses := make(map[int]string, len(actions))
+	for _, action := range actions {
+		if _, ok := statuses[action.UserID]; ok {
+			continue
+		}
+		statuses[action.UserID] = string(action.Status)
+	}
+	return statuses, nil
 }
 
 func (h *AdminUsersHandler) applyDepartmentFilter(ctx context.Context, query *ent.UserQuery, departmentID string) (*ent.UserQuery, error) {
@@ -1251,6 +1394,7 @@ func parseAdminUsersListRequest(c *gin.Context) adminUsersListRequest {
 	return adminUsersListRequest{
 		Q:            strings.TrimSpace(c.Query("q")),
 		DepartmentID: strings.TrimSpace(c.Query("department_id")),
+		AccessStatus: strings.TrimSpace(c.Query("access_status")),
 		Page:         page,
 		PageSize:     pageSize,
 	}
