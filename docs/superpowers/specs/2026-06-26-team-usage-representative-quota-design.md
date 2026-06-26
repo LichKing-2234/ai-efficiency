@@ -98,8 +98,9 @@ The practical hard-enforcement lever available today is sub2api's user-specific 
 | Provider scope | Primary provider only |
 | Usage detail | Aggregated summaries only, no raw request log |
 | Quota control | User-specific group rate multiplier |
+| Quota display | `Used / Quota` displayed in multiplier-normalized dollars |
 | Quota preview | Client-side draft preview in selected-member Quotas before confirm |
-| Self multiplier edit | Forbidden; only another in-scope upper-level representative can adjust a representative |
+| Self multiplier edit | Forbidden; only another in-scope ancestor representative can adjust a representative |
 | Subscription mutation | Existing subscriptions only, no assign/remove |
 | Audit | Required locally in AE |
 
@@ -195,6 +196,17 @@ effective_monthly_allowance = group_monthly_limit_usd / effective_multiplier
 
 The "effective allowance" means the approximate pre-multiplier standard-cost amount the member can consume before the subscription window reaches the group limit. The actual enforced sub2api limit remains the group daily/weekly/monthly `ActualCost` limit.
 
+Selected-member Quotas must display `Used / Quota` in the same multiplier-normalized dollar basis:
+
+```text
+display_quota = raw_group_period_limit_usd / effective_multiplier
+display_used = raw_period_usage_usd / effective_multiplier
+```
+
+Example: if the group monthly quota is `$500`, the member's effective multiplier is `2x`, and sub2api reports `$80` raw `ActualCost` usage for the period, the selected-member Quotas row displays `$40 / $250`.
+
+If a sub2api endpoint already returns multiplier-normalized usage or quota values, the relay adapter must mark that basis explicitly and AE must not divide those values a second time. The provider contract must distinguish raw `ActualCost` values from normalized display values before the frontend receives the row.
+
 Display rules:
 
 1. Missing group limit means that period is unlimited.
@@ -210,12 +222,13 @@ Draft preview calculations:
 ```text
 preview_multiplier = draft_rate_multiplier for mode=set
 preview_multiplier = group_default_multiplier for mode=reset
-preview_effective_allowance = group_period_limit_usd / preview_multiplier
-preview_remaining = max(preview_effective_allowance - period_usage_usd, 0)
-preview_usage_percent = period_usage_usd / preview_effective_allowance
+preview_display_quota = raw_group_period_limit_usd / preview_multiplier
+preview_display_used = raw_period_usage_usd / preview_multiplier
+preview_remaining = max(preview_display_quota - preview_display_used, 0)
+preview_usage_percent = preview_display_used / preview_display_quota
 ```
 
-If `group_period_limit_usd` is missing, that period remains unlimited in preview. If `preview_multiplier` is invalid or outside delegated policy, the UI may show the draft as invalid but must not submit it.
+If `raw_group_period_limit_usd` is missing, that period remains unlimited in preview. If `preview_multiplier` is invalid or outside delegated policy, the UI may show the draft as invalid but must not submit it.
 
 ## Delegated Multiplier Policy
 
@@ -316,7 +329,7 @@ Security requirements:
 2. `target_user_id` must be validated against the resolved allowed local user ids.
 3. `group_id` must be validated against the target relay user's active existing subscriptions.
 4. The current representative cannot manage themself through delegated multiplier controls, even if they appear in a represented subtree. A representative may still view `My Usage`, but self quota controls are hidden or disabled.
-5. An upper-level representative may manage another representative only when the target representative is inside the actor's resolved department subtree and `actor_user_id != target_user_id`.
+5. An upper-level representative may manage another representative only when the target representative is inside a strict descendant department subtree of one of the actor's represented departments and `actor_user_id != target_user_id`. A peer representative in the same represented department is not considered upper-level for quota control.
 6. Admin role alone is not used to broaden these `/user/team-usage/*` endpoints. Admin-wide views remain separate admin routes.
 
 ## Backend API
@@ -475,13 +488,22 @@ Subscription group row:
   "daily_effective_allowance_usd": 5.0,
   "weekly_effective_allowance_usd": 25.0,
   "monthly_effective_allowance_usd": 100.0,
+  "daily_display_used_usd": 1.2,
+  "weekly_display_used_usd": 5.1,
+  "monthly_display_used_usd": 21.25,
   "daily_usage_usd": 2.4,
   "weekly_usage_usd": 10.2,
   "monthly_usage_usd": 42.5,
+  "usage_value_basis": "raw_actual_cost",
+  "quota_window_basis": "sub2api_enforcement_window",
   "editable": true,
   "editable_reason": null
 }
 ```
+
+The existing `daily_usage_usd`, `weekly_usage_usd`, and `monthly_usage_usd` fields remain raw relay usage values when the relay returns raw `ActualCost`. The UI must render `*_display_used_usd` and `*_effective_allowance_usd` for `Used / Quota`, not the raw usage fields. If the relay returns pre-normalized values, `usage_value_basis` should be `normalized_display_cost`, and the adapter must set raw and display fields consistently without applying another division.
+
+`quota_window_basis` must identify that daily, weekly, and monthly values are aligned to sub2api's enforcement windows. AE must not reinterpret these windows using the frontend's selected chart timezone.
 
 `editable` must be `false` when the row belongs to the current actor. In that case `editable_reason` should be `self_edit_forbidden`. Other possible non-editable reasons include `no_relay_mapping`, `inactive_subscription`, `unsupported_provider`, and `policy_read_only`.
 
@@ -530,11 +552,12 @@ Validation failures:
 
 1. `403` if the current user is not a representative for the target user.
 2. `403` if `actor_user_id == target_user_id`, regardless of representative metadata.
-3. `404` if the target user does not exist in the representative scope.
-4. `409` if the target user has no relay user mapping.
-5. `409` if the target user does not have an active subscription for the group.
-6. `422` if the multiplier violates delegated policy.
-7. `503` if the primary relay provider does not support the required rate-multiplier APIs.
+3. `403` if the target user is a representative but is not in a strict descendant department subtree of the actor's represented departments.
+4. `404` if the target user does not exist in the representative scope.
+5. `409` if the target user has no relay user mapping.
+6. `409` if the target user does not have an active subscription for the group.
+7. `422` if the multiplier violates delegated policy.
+8. `503` if the primary relay provider does not support the required rate-multiplier APIs.
 
 ### Team Overview
 
@@ -580,6 +603,8 @@ First-version response:
   "top_member_trend": {
     "unit_label": "USD",
     "rank_basis": "last_30d_actual_cost",
+    "unavailable": false,
+    "unavailable_reason": null,
     "series": [
       {
         "user_id": 101,
@@ -606,7 +631,7 @@ First-version response:
       "relay_user_id": 1001,
       "today_actual_cost": 1.23,
       "last_30d_actual_cost": 12.3,
-      "subscription_count": 2,
+      "subscription_count": null,
       "selectable": true
     }
   ]
@@ -622,6 +647,9 @@ Top-12 trend rules:
 3. Each trend point uses actual cost in the requested range and granularity. Token totals are optional and may be `null` when the relay cannot provide them without raw log scans.
 4. The trend series must be scoped before rendering. AE must not pass through a global sub2api user trend result that includes users outside the representative's department subtree.
 5. If one top member's trend fetch fails, the response may include that member with `points: []` and an unavailable flag rather than failing the entire Team Overview page. Authorization failures still fail closed.
+6. Top 12 must be computed from the complete scoped relay-user set. If the subtree is too large for the configured full-scope usage scan, AE must return empty `top_members`, `top_member_trend.unavailable=true`, and `top_member_trend.unavailable_reason=scope_too_large`; it must not compute top 12 from a truncated subset.
+
+`subscription_count` in the member usage table is optional in the first version. It should be `null` unless the relay provider can return it without per-member subscription fan-out.
 
 If the current user has no representative scope, return `is_representative: false` with empty rows. This lets the frontend hide or empty the Team Overview page without turning ordinary users into error states.
 
@@ -640,6 +668,8 @@ GET /api/v1/admin/team-usage/audit?page=1&page_size=50&actor_user_id=100&target_
 ```
 
 Admins can see all delegated multiplier audit records. The admin response should include actor, target, provider, group, action, status, before/after multipliers, before/after effective limits, reason, redacted error message, and timestamps.
+
+Rejected multiplier write attempts must be audited locally when the request reached the write endpoint and the actor was authenticated. For out-of-scope targets, the audit record must avoid storing target details that the actor is not allowed to know; it may store the requested target id as redacted request metadata for admin-only investigation.
 
 ## Relay Provider Extensions
 
@@ -697,32 +727,33 @@ The write flow must preserve other users' multipliers as much as the current sub
 
 ```text
 1. Authenticate current AE user.
-2. Resolve representative scope.
-3. Reject the request if `actor_user_id == target_user_id`.
-4. Verify target AE user is in scope.
-5. Verify target user has relay_user_id.
-6. Resolve primary provider.
-7. Verify target relay user has active existing subscription for group_id.
-8. Fetch group metadata and current rate multipliers.
-9. Compute old effective multiplier and old effective allowances.
-10. Validate requested set/reset against delegated policy.
-11. Insert AE audit row with status=running.
-12. Acquire AE-side provider/group write lock.
-13. Re-fetch current group rate multipliers.
-14. Build merged rate list:
+2. Insert AE audit row with status=running and request metadata that is safe for the actor's current authorization state.
+3. Resolve representative scope.
+4. Reject and mark audit status=rejected if `actor_user_id == target_user_id`.
+5. Verify target AE user is in scope; reject and mark audit status=rejected with redacted target evidence if not.
+6. If target is also a representative, verify the actor is an upper-level ancestor representative; reject and mark audit status=rejected otherwise.
+7. Verify target user has relay_user_id.
+8. Resolve primary provider.
+9. Verify target relay user has active existing subscription for group_id.
+10. Fetch group metadata and current rate multipliers.
+11. Compute old effective multiplier and old effective allowances.
+12. Validate requested set/reset against delegated policy; reject and mark audit status=rejected on policy denial.
+13. Acquire AE-side provider/group write lock.
+14. Re-fetch current group rate multipliers.
+15. Build merged rate list:
     - include every non-target entry with non-null rate_multiplier
     - for mode=set, include target entry with requested multiplier
     - for mode=reset, omit target entry
-15. PUT merged entries to sub2api.
-16. Re-read group rate multipliers.
-17. Verify target entry matches requested state.
-18. Update audit row to succeeded with before/after values.
-19. Return updated state.
+16. PUT merged entries to sub2api.
+17. Re-read group rate multipliers.
+18. Verify target entry matches requested state.
+19. Update audit row to succeeded with before/after values.
+20. Return updated state.
 ```
 
 The AE-side write lock should use a database-backed advisory lock or equivalent process-safe mechanism keyed by `(provider_id, group_id)`. This serializes AE-originated representative writes. It cannot prevent direct concurrent writes from sub2api admin UI. If direct sub2api concurrent writes become a real operational issue, sub2api needs a versioned patch endpoint; AE must not pretend the current whole-group PUT API provides compare-and-swap semantics.
 
-If the relay write fails after audit insert, update audit status to `failed` with a redacted error. If the relay write succeeds but readback verification fails, update audit status to `partial_failed` and return `502` with a generic message.
+If validation fails after audit insert, update audit status to `rejected` with a safe `rejection_reason`. If the relay write fails, update audit status to `failed` with a redacted error. If the relay write succeeds but readback verification fails, update audit status to `partial_failed` and return `502` with a generic message.
 
 ## Audit Data Model
 
@@ -738,7 +769,7 @@ Fields:
 - `group_id`
 - `group_name`
 - `action`: enum `set_rate_multiplier`, `reset_rate_multiplier`
-- `status`: enum `running`, `succeeded`, `failed`, `partial_failed`
+- `status`: enum `running`, `succeeded`, `failed`, `partial_failed`, `rejected`
 - `old_multiplier`
 - `old_multiplier_source`: enum `user`, `group`, `system`, `unknown`
 - `new_multiplier`
@@ -746,6 +777,7 @@ Fields:
 - `old_effective_limits`: JSON object with daily/weekly/monthly values
 - `new_effective_limits`: JSON object with daily/weekly/monthly values
 - `scope_evidence`: JSON object containing represented department ids and target member department id
+- `rejection_reason`: enum `not_representative`, `self_edit_forbidden`, `not_upper_level_representative`, `out_of_scope`, `no_relay_mapping`, `inactive_subscription`, `policy_denied`, `provider_unsupported`
 - `reason`
 - `error_message`
 - `created_at`
@@ -821,7 +853,7 @@ Team Overview first screen:
    - department
    - today actual cost
    - rolling 30-day actual cost
-   - subscription count
+   - subscription count when available without per-member fan-out
    - status
    - action to open that member in AI Usage Center
 
@@ -843,8 +875,8 @@ Rate multiplier modal:
 Selected-member Quotas preview:
 
 1. Opening the multiplier editor creates a client-side draft keyed by `(subject_user_id, group_id)`.
-2. Changing the draft multiplier immediately updates that group's displayed effective daily, weekly, and monthly allowance in the selected-member Quotas area.
-3. Remaining allowance and usage percentage are recomputed from the same draft effective allowance and the persisted usage values returned by the dashboard endpoint.
+2. Changing the draft multiplier immediately updates that group's displayed daily, weekly, and monthly `Used / Quota` values in the selected-member Quotas area.
+3. Displayed used, quota, remaining allowance, and usage percentage are recomputed from the draft multiplier and raw usage/quota values when the provider basis is `raw_actual_cost`.
 4. Preview rows must be visually marked as draft or preview so the representative can distinguish unconfirmed values from persisted sub2api state.
 5. Confirm submits the write endpoint, clears the draft, refreshes selected-member usage, and refreshes audit history.
 6. Cancel or closing the editor clears the draft and restores persisted values.
@@ -862,9 +894,10 @@ Empty states:
 2. Directory Sync missing current source returns no representative scope.
 3. Relay provider missing or unsupported returns `configured=false` or `unavailable` state instead of exposing internal details.
 4. Target user mismatches return generic scoped errors to avoid leaking whether an out-of-scope user exists.
-5. Rate write failures create or update audit records.
+5. Rate write failures and rejected write attempts create or update audit records.
 6. UI refreshes member detail after a successful write to avoid stale effective allowances.
-7. Self multiplier write attempts return `403` and must not create a sub2api write attempt. AE may log the rejected attempt locally if audit coverage for denied requests is desired, but it must not call the relay provider.
+7. Self multiplier write attempts return `403`, create a local audit row with `status=rejected` and `rejection_reason=self_edit_forbidden`, and must not call the relay provider.
+8. Quota period windows and reset boundaries must follow sub2api enforcement semantics. AE may display the user's selected timezone for chart ranges, but daily/weekly/monthly subscription quota windows must not be recalculated from frontend timezone if sub2api uses a different reset window.
 
 ## Performance and Limits
 
@@ -873,7 +906,8 @@ Empty states:
 3. Batch usage lookup should cap one request to `100` relay user ids. Larger scopes page through members.
 4. The dashboard summary must compute totals for the full representative scope, not only the current member page. The backend may chunk relay calls by `100` relay user ids and should cap one full-scope summary at `500` relay users. If the scope is larger, return a summary-unavailable state while still allowing paginated member browsing.
 5. Team Overview trend fan-out is capped to the already-ranked top 12 members. Do not fetch trend data for every scoped member.
-6. Team Overview trend defaults to the last 30 days and should cap the requested range to the same maximum as the existing personal AI Usage trend unless a later implementation plan explicitly raises that limit.
+6. Team Overview top-12 ranking and trend must be based on a complete full-scope usage scan. If the scoped relay-user count exceeds the configured full-scope cap, return unavailable state for top members and top-member trend instead of ranking a truncated subset.
+7. Team Overview trend defaults to the last 30 days and should cap the requested range to the same maximum as the existing personal AI Usage trend unless a later implementation plan explicitly raises that limit.
 
 ## Backend Implementation Notes
 
@@ -937,16 +971,21 @@ Backend unit tests:
    - Team Overview returns top-12 member trend chart data
    - Team Overview top-member trend contains only scoped users
    - Team Overview top-member trend series order matches ranking order
+   - Team Overview returns top-member trend unavailable when full-scope ranking would require truncation
    - Team Overview response never includes `group_quotas`
    - out-of-scope target update is rejected
    - self target update is rejected with `403`
-   - upper-level representative can update another representative when that target is in scope
+   - peer representative cannot update another representative in the same represented department
+   - ancestor representative can update another representative when that target is in a strict descendant represented subtree
    - target without relay mapping is rejected
    - target without active subscription is rejected
    - unsupported provider returns unavailable state
 3. Effective allowance:
    - inherited multiplier
    - explicit user multiplier
+   - raw `ActualCost` usage is divided by effective multiplier for displayed `Used / Quota`
+   - pre-normalized relay values are not divided a second time
+   - quota windows follow sub2api enforcement windows
    - missing period quota
    - multiplier policy bounds
    - reset clears explicit multiplier
@@ -960,6 +999,8 @@ Backend unit tests:
    - running row created before relay write
    - success row stores before/after values
    - failure row stores redacted error
+   - rejected self-edit stores `status=rejected` and `rejection_reason=self_edit_forbidden`
+   - rejected out-of-scope update does not leak unauthorized target details to the acting representative
 
 Frontend tests:
 
@@ -974,10 +1015,11 @@ Frontend tests:
 9. Non-representative users do not see member subjects or Team Overview entry points.
 10. Member table open action switches to that member in AI Usage Center.
 11. Selected-member Quotas preview updates effective allowance, remaining allowance, and usage percentage immediately when draft multiplier changes.
-12. Invalid multiplier disables submit.
-13. Reset mode displays inherited group default result.
-14. Successful write refreshes selected-member usage and audit list.
-15. Self rows do not show multiplier edit controls.
+12. Selected-member Quotas preview displays multiplier-normalized `Used / Quota` and does not double-normalize provider values.
+13. Invalid multiplier disables submit.
+14. Reset mode displays inherited group default result.
+15. Successful write refreshes selected-member usage and audit list.
+16. Self rows do not show multiplier edit controls.
 
 Manual verification:
 
@@ -986,10 +1028,12 @@ Manual verification:
 3. Confirm Team Overview shows top-12 member trend chart and member table, with no quota UI.
 4. Confirm representative cannot access an out-of-scope user by URL.
 5. Confirm editing a multiplier changes the selected member's Quotas preview before confirmation and reverts on cancel.
-6. Confirm the representative cannot adjust their own multiplier.
-7. Confirm an upper-level representative can adjust a lower-level representative's multiplier when the target is inside scope.
-8. Confirm changing multiplier in AE is visible in sub2api group rate multiplier admin view.
-9. Confirm sub2api subscription usage consumption changes according to `ActualCost` after multiplier change.
+6. Confirm a `2x` multiplier displays both Used and Quota divided by `2` when the provider returns raw `ActualCost`.
+7. Confirm the representative cannot adjust their own multiplier.
+8. Confirm a peer representative cannot adjust another representative in the same represented department.
+9. Confirm an ancestor representative can adjust a lower-level representative's multiplier when the target is inside a strict descendant subtree.
+10. Confirm changing multiplier in AE is visible in sub2api group rate multiplier admin view.
+11. Confirm sub2api subscription usage consumption changes according to `ActualCost` after multiplier change.
 
 ## Rollout
 
