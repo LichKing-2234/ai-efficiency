@@ -59,11 +59,11 @@ The practical hard-enforcement lever available today is sub2api's user-specific 
 3. Keep representatives as normal users with delegated scope, not admins.
 4. Scope the first version to the primary relay provider only.
 5. Add a separate Team Overview page for the represented department subtree.
-6. In Team Overview, replace the personal Token Trend chart slot with a top-12 member usage ranking.
+6. In Team Overview, replace the personal Token Trend chart slot with a top-12 member usage trend chart.
 7. In Team Overview, replace the personal Model Distribution chart with a member usage table.
 8. Keep quotas and multiplier controls out of Team Overview.
 9. Let representatives adjust a selected member's user-specific group rate multiplier for existing subscription groups from the selected-member AI Usage context.
-10. Show how the selected multiplier changes effective daily, weekly, and monthly allowance amounts.
+10. Preview how a draft multiplier changes effective daily, weekly, and monthly allowance amounts in the selected member's Quotas view before the representative confirms the write.
 11. Persist a local audit trail for every delegated multiplier write attempt and expose it to both the acting representative and admins.
 12. Keep sub2api integration behind `backend/internal/relay.Provider` and optional provider extension interfaces.
 
@@ -91,13 +91,15 @@ The practical hard-enforcement lever available today is sub2api's user-specific 
 | Product placement | AI Usage Center subject selector plus separate Team Overview page |
 | AI Usage Center IA | `My Usage` / scoped member selector |
 | Team Overview IA | Independent team page |
-| Team Overview Token Trend replacement | Top-12 member usage ranking |
+| Team Overview Token Trend replacement | Top-12 member usage trend chart |
 | Team Overview Model Distribution replacement | Member usage table |
 | Team Overview quotas | Hidden; no quota cards or quota controls |
 | Aggregation | Personal usage by selected subject; team overview by member |
 | Provider scope | Primary provider only |
 | Usage detail | Aggregated summaries only, no raw request log |
 | Quota control | User-specific group rate multiplier |
+| Quota preview | Client-side draft preview in selected-member Quotas before confirm |
+| Self multiplier edit | Forbidden; only another in-scope upper-level representative can adjust a representative |
 | Subscription mutation | Existing subscriptions only, no assign/remove |
 | Audit | Required locally in AE |
 
@@ -162,6 +164,7 @@ AE will provide a delegated management facade:
 3. Display selected-subject usage with the same high-level AI Usage Center shape where upstream APIs support it.
 4. Write user-specific group rate multipliers through sub2api admin APIs via relay provider extension methods.
 5. Persist an AE audit record for every attempted change.
+6. Treat self multiplier changes as forbidden, even when the current user is also a representative. A higher-level representative can change that user's multiplier only from the higher-level representative's own session.
 
 ## sub2api Contract Facts
 
@@ -199,6 +202,20 @@ Display rules:
 3. If a member has no user-specific multiplier, display `Inherited`.
 4. Reset means clear the user-specific multiplier so the member inherits the group default. It does not write the group default value as an explicit user multiplier.
 5. Show before and after values for every configured period before submitting.
+6. While a representative edits a selected member's multiplier, the Quotas view must be draft-aware. The displayed effective allowance, remaining amount, and usage percent update immediately from the draft multiplier. The backend is not called and no audit row is created until the representative confirms.
+7. Canceling the edit discards the draft and restores the last persisted multiplier state.
+
+Draft preview calculations:
+
+```text
+preview_multiplier = draft_rate_multiplier for mode=set
+preview_multiplier = group_default_multiplier for mode=reset
+preview_effective_allowance = group_period_limit_usd / preview_multiplier
+preview_remaining = max(preview_effective_allowance - period_usage_usd, 0)
+preview_usage_percent = period_usage_usd / preview_effective_allowance
+```
+
+If `group_period_limit_usd` is missing, that period remains unlimited in preview. If `preview_multiplier` is invalid or outside delegated policy, the UI may show the draft as invalid but must not submit it.
 
 ## Delegated Multiplier Policy
 
@@ -249,7 +266,7 @@ Team Overview page
       v
   primary relay provider
     - selected-subject usage summary/trend/models
-    - team member ranking and table
+    - team member top-12 trend, ranking, and table
     - selected-subject subscriptions
     - group rate multipliers
     - merged rate-multiplier write
@@ -298,8 +315,9 @@ Security requirements:
 1. Every representative usage endpoint must recompute or load the current representative scope server-side.
 2. `target_user_id` must be validated against the resolved allowed local user ids.
 3. `group_id` must be validated against the target relay user's active existing subscriptions.
-4. The current representative cannot manage themself through delegated member controls unless they are also in the represented subtree; even then the same policy applies.
-5. Admin role alone is not used to broaden these `/user/team-usage/*` endpoints. Admin-wide views remain separate admin routes.
+4. The current representative cannot manage themself through delegated multiplier controls, even if they appear in a represented subtree. A representative may still view `My Usage`, but self quota controls are hidden or disabled.
+5. An upper-level representative may manage another representative only when the target representative is inside the actor's resolved department subtree and `actor_user_id != target_user_id`.
+6. Admin role alone is not used to broaden these `/user/team-usage/*` endpoints. Admin-wide views remain separate admin routes.
 
 ## Backend API
 
@@ -380,6 +398,8 @@ Example:
 
 Rows without a relay user mapping may be returned with `selectable: false` if the UI needs to explain why a member cannot be viewed.
 
+If the current user appears inside their own represented subtree, the subject list must de-duplicate that person into the synthetic `My Usage` subject. The UI must not render a second editable member row for the current user.
+
 ### Selected Subject Usage Dashboard
 
 ```text
@@ -428,6 +448,7 @@ Implementation notes:
    - `GET /api/v1/admin/dashboard/trend`
    - `GET /api/v1/admin/dashboard/models`
 4. Selected member quota cards use the target user's active subscription groups and user-specific rate multiplier state. This is a selected-member personal usage view, not the Team Overview page.
+5. If `subject.user_id` equals the current actor, quota controls must be read-only even if the same user is a representative. Self multiplier writes are rejected by the update endpoint as well.
 
 ### Selected Subject Subscription Rows
 
@@ -457,9 +478,12 @@ Subscription group row:
   "daily_usage_usd": 2.4,
   "weekly_usage_usd": 10.2,
   "monthly_usage_usd": 42.5,
-  "editable": true
+  "editable": true,
+  "editable_reason": null
 }
 ```
+
+`editable` must be `false` when the row belongs to the current actor. In that case `editable_reason` should be `self_edit_forbidden`. Other possible non-editable reasons include `no_relay_mapping`, `inactive_subscription`, `unsupported_provider`, and `policy_read_only`.
 
 ### Update Member Group Multiplier
 
@@ -505,22 +529,20 @@ Response:
 Validation failures:
 
 1. `403` if the current user is not a representative for the target user.
-2. `404` if the target user does not exist in the representative scope.
-3. `409` if the target user has no relay user mapping.
-4. `409` if the target user does not have an active subscription for the group.
-5. `422` if the multiplier violates delegated policy.
-6. `503` if the primary relay provider does not support the required rate-multiplier APIs.
+2. `403` if `actor_user_id == target_user_id`, regardless of representative metadata.
+3. `404` if the target user does not exist in the representative scope.
+4. `409` if the target user has no relay user mapping.
+5. `409` if the target user does not have an active subscription for the group.
+6. `422` if the multiplier violates delegated policy.
+7. `503` if the primary relay provider does not support the required rate-multiplier APIs.
 
 ### Team Overview
 
 ```text
-GET /api/v1/user/team-usage/overview?timezone=...
+GET /api/v1/user/team-usage/overview?start_date=...&end_date=...&granularity=day&timezone=...
 ```
 
-Returns the independent team page data for the representative scope. The first
-version exposes today and rolling 30-day usage because the current sub2api batch
-user usage endpoint returns those windows. It does not expose arbitrary team
-date ranges.
+Returns the independent team page data for the representative scope. The first version always exposes today and rolling 30-day summary values because the current sub2api batch user usage endpoint returns those windows. The Team Overview trend chart uses the requested date range, defaulting to the last 30 days.
 
 First-version response:
 
@@ -529,6 +551,9 @@ First-version response:
   "configured": true,
   "is_representative": true,
   "window": {
+    "start_date": "2026-05-28",
+    "end_date": "2026-06-26",
+    "granularity": "day",
     "today": "2026-06-26",
     "rolling_days": 30,
     "timezone": "Asia/Shanghai"
@@ -552,6 +577,26 @@ First-version response:
       "total_tokens": null
     }
   ],
+  "top_member_trend": {
+    "unit_label": "USD",
+    "rank_basis": "last_30d_actual_cost",
+    "series": [
+      {
+        "user_id": 101,
+        "display_name": "Alice",
+        "rank": 1,
+        "unavailable": false,
+        "unavailable_reason": null,
+        "points": [
+          {
+            "date": "2026-06-26",
+            "actual_cost": 1.23,
+            "total_tokens": null
+          }
+        ]
+      }
+    ]
+  },
   "members": [
     {
       "user_id": 101,
@@ -569,6 +614,14 @@ First-version response:
 ```
 
 Team Overview must not include `group_quotas`, subscription quota rows, or multiplier edit actions.
+
+Top-12 trend rules:
+
+1. `top_members` is ranked by rolling 30-day actual cost from scoped relay users.
+2. `top_member_trend.series` contains the same top members, in the same rank order, and renders as the Team Overview replacement for the personal Token Trend chart.
+3. Each trend point uses actual cost in the requested range and granularity. Token totals are optional and may be `null` when the relay cannot provide them without raw log scans.
+4. The trend series must be scoped before rendering. AE must not pass through a global sub2api user trend result that includes users outside the representative's department subtree.
+5. If one top member's trend fetch fails, the response may include that member with `points: []` and an unavailable flag rather than failing the entire Team Overview page. Authorization failures still fail closed.
 
 If the current user has no representative scope, return `is_representative: false` with empty rows. This lets the frontend hide or empty the Team Overview page without turning ordinary users into error states.
 
@@ -601,6 +654,10 @@ type TeamUsageSummaryProvider interface {
     GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params TeamUsageSummaryParams) (map[int64]TeamUserUsageStats, error)
 }
 
+type TeamMemberTrendProvider interface {
+    GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error)
+}
+
 type UserSubscriptionLister interface {
     ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]UserSubscription, error)
 }
@@ -627,11 +684,12 @@ The current code already uses a local optional `ListUserSubscriptions` shape in 
 2. `GET /api/v1/admin/dashboard/trend?user_id=...` for selected-member token trend.
 3. `GET /api/v1/admin/dashboard/models?user_id=...` for selected-member model distribution.
 4. `POST /api/v1/admin/dashboard/users-usage` for Team Overview today and rolling 30-day member summary.
-5. `GET /api/v1/admin/users/:id/subscriptions` for selected-member subscription groups.
-6. `GET /api/v1/admin/groups/:id/rate-multipliers` for current user-specific group multipliers.
-7. `PUT /api/v1/admin/groups/:id/rate-multipliers` for merged whole-group writes.
+5. `GET /api/v1/admin/dashboard/trend?user_id=...` fan-out for Team Overview top-12 member trend series, capped at 12 relay users.
+6. `GET /api/v1/admin/users/:id/subscriptions` for selected-member subscription groups.
+7. `GET /api/v1/admin/groups/:id/rate-multipliers` for current user-specific group multipliers.
+8. `PUT /api/v1/admin/groups/:id/rate-multipliers` for merged whole-group writes.
 
-Team Overview intentionally does not use team aggregate trend or team model distribution in the first version. The personal Token Trend slot is replaced by a top-12 member ranking, and the personal Model Distribution slot is replaced by a member usage table. A future version can add sub2api multi-user aggregate endpoints if true team-level charts become required.
+Team Overview intentionally does not use a global unscoped sub2api user-trend response in the first version. AE first computes the scoped top 12 members from the representative's allowed relay users, then fetches trend points only for those users. The personal Token Trend slot is replaced by this top-12 member trend chart, and the personal Model Distribution slot is replaced by a member usage table. A future version can add a scoped multi-user upstream endpoint to remove the bounded fan-out.
 
 ## Rate Multiplier Write Flow
 
@@ -640,25 +698,26 @@ The write flow must preserve other users' multipliers as much as the current sub
 ```text
 1. Authenticate current AE user.
 2. Resolve representative scope.
-3. Verify target AE user is in scope.
-4. Verify target user has relay_user_id.
-5. Resolve primary provider.
-6. Verify target relay user has active existing subscription for group_id.
-7. Fetch group metadata and current rate multipliers.
-8. Compute old effective multiplier and old effective allowances.
-9. Validate requested set/reset against delegated policy.
-10. Insert AE audit row with status=running.
-11. Acquire AE-side provider/group write lock.
-12. Re-fetch current group rate multipliers.
-13. Build merged rate list:
+3. Reject the request if `actor_user_id == target_user_id`.
+4. Verify target AE user is in scope.
+5. Verify target user has relay_user_id.
+6. Resolve primary provider.
+7. Verify target relay user has active existing subscription for group_id.
+8. Fetch group metadata and current rate multipliers.
+9. Compute old effective multiplier and old effective allowances.
+10. Validate requested set/reset against delegated policy.
+11. Insert AE audit row with status=running.
+12. Acquire AE-side provider/group write lock.
+13. Re-fetch current group rate multipliers.
+14. Build merged rate list:
     - include every non-target entry with non-null rate_multiplier
     - for mode=set, include target entry with requested multiplier
     - for mode=reset, omit target entry
-14. PUT merged entries to sub2api.
-15. Re-read group rate multipliers.
-16. Verify target entry matches requested state.
-17. Update audit row to succeeded with before/after values.
-18. Return updated state.
+15. PUT merged entries to sub2api.
+16. Re-read group rate multipliers.
+17. Verify target entry matches requested state.
+18. Update audit row to succeeded with before/after values.
+19. Return updated state.
 ```
 
 The AE-side write lock should use a database-backed advisory lock or equivalent process-safe mechanism keyed by `(provider_id, group_id)`. This serializes AE-originated representative writes. It cannot prevent direct concurrent writes from sub2api admin UI. If direct sub2api concurrent writes become a real operational issue, sub2api needs a versioned patch endpoint; AE must not pretend the current whole-group PUT API provides compare-and-swap semantics.
@@ -720,7 +779,7 @@ AI Usage Center
 
 Team Overview
   Summary cards
-  Top 12 member usage ranking
+  Top 12 member usage trend chart
   Member usage table
   Link/action to open member in AI Usage Center
 
@@ -739,6 +798,7 @@ AI Usage Center subject selector:
    - Model Distribution
    - subscription quota cards or rows
 5. Rate multiplier controls appear only in selected-member subscription quota context.
+6. For `My Usage`, quota cards remain read-only. If the current user is also a representative, the UI still must not show self multiplier edit controls.
 
 Team Overview first screen:
 
@@ -747,11 +807,13 @@ Team Overview first screen:
    - relay-enabled members
    - today actual cost
    - rolling 30-day actual cost
-2. Top 12 member usage ranking:
+2. Top 12 member usage trend chart:
    - replaces the personal Token Trend slot
-   - ranks scoped members by rolling 30-day actual cost
-   - shows today actual cost as secondary context
-   - shows token totals when the relay can provide them without per-member log scans
+   - selects the top 12 scoped members by rolling 30-day actual cost
+   - renders one trend series per selected member over the chosen date range
+   - keeps legend/order in rank order
+   - shows today actual cost and rolling 30-day actual cost as hover or side-list context
+   - shows token totals when the relay can provide them without raw log scans
 3. Member usage table:
    - replaces the personal Model Distribution slot
    - name
@@ -778,6 +840,15 @@ Rate multiplier modal:
 4. Rejects values outside delegated policy before submit.
 5. Requires an optional short reason field. Empty reason is allowed but still audited.
 
+Selected-member Quotas preview:
+
+1. Opening the multiplier editor creates a client-side draft keyed by `(subject_user_id, group_id)`.
+2. Changing the draft multiplier immediately updates that group's displayed effective daily, weekly, and monthly allowance in the selected-member Quotas area.
+3. Remaining allowance and usage percentage are recomputed from the same draft effective allowance and the persisted usage values returned by the dashboard endpoint.
+4. Preview rows must be visually marked as draft or preview so the representative can distinguish unconfirmed values from persisted sub2api state.
+5. Confirm submits the write endpoint, clears the draft, refreshes selected-member usage, and refreshes audit history.
+6. Cancel or closing the editor clears the draft and restores persisted values.
+
 Empty states:
 
 1. No representative scope: hide member subjects and Team Overview, or show a compact "No delegated team scope" state.
@@ -793,6 +864,7 @@ Empty states:
 4. Target user mismatches return generic scoped errors to avoid leaking whether an out-of-scope user exists.
 5. Rate write failures create or update audit records.
 6. UI refreshes member detail after a successful write to avoid stale effective allowances.
+7. Self multiplier write attempts return `403` and must not create a sub2api write attempt. AE may log the rejected attempt locally if audit coverage for denied requests is desired, but it must not call the relay provider.
 
 ## Performance and Limits
 
@@ -800,7 +872,8 @@ Empty states:
 2. Representative scope resolution may cache department subtree ids per request, not globally.
 3. Batch usage lookup should cap one request to `100` relay user ids. Larger scopes page through members.
 4. The dashboard summary must compute totals for the full representative scope, not only the current member page. The backend may chunk relay calls by `100` relay user ids and should cap one full-scope summary at `500` relay users. If the scope is larger, return a summary-unavailable state while still allowing paginated member browsing.
-5. Avoid per-member trend requests on Team Overview. Member trend is fetched only after a representative selects a specific member in AI Usage Center.
+5. Team Overview trend fan-out is capped to the already-ranked top 12 members. Do not fetch trend data for every scoped member.
+6. Team Overview trend defaults to the last 30 days and should cap the requested range to the same maximum as the existing personal AI Usage trend unless a later implementation plan explicitly raises that limit.
 
 ## Backend Implementation Notes
 
@@ -829,16 +902,18 @@ Suggested components:
 2. `UserUsageSubjectSelector.vue`
    - Lists `My Usage` and scoped members.
 3. `TeamOverviewPage.vue`
-   - Owns independent team summary, top-12 ranking, and member usage table.
-4. `TeamOverviewMemberTable.vue`
+   - Owns independent team summary, top-12 member trend chart, and member usage table.
+4. `TeamOverviewMemberTrendChart.vue`
+   - Renders top-12 member trend series in rank order and handles empty or partially unavailable series.
+5. `TeamOverviewMemberTable.vue`
    - Owns sorting, pagination, and open-member action.
-5. `SelectedSubjectSubscriptionRows.vue`
-   - Render selected member group rows and effective allowance cells in AI Usage Center.
-6. `TeamRateMultiplierModal.vue`
-   - Own set/reset workflow and before/after calculation preview.
-7. `TeamUsageAuditList.vue`
+6. `SelectedSubjectSubscriptionRows.vue`
+   - Render selected member group rows, effective allowance cells, and draft-aware Quotas preview in AI Usage Center.
+7. `TeamRateMultiplierModal.vue`
+   - Own set/reset workflow, local draft state, and confirm/cancel behavior.
+8. `TeamUsageAuditList.vue`
    - Shows representative's own actions.
-8. Admin audit table
+9. Admin audit table
    - Shows all delegated multiplier actions for admins, either as a focused admin route or as a tab in the existing admin users area.
 
 Team Overview is an independent page. It may be linked from AI Usage Center for representatives, but it must not replace the personal usage dashboard.
@@ -859,9 +934,13 @@ Backend unit tests:
    - subject list includes `My Usage`
    - selected-member dashboard rejects out-of-scope users
    - selected-member dashboard uses relay admin aggregate APIs, not target member credentials
-   - Team Overview returns top-12 member ranking
+   - Team Overview returns top-12 member trend chart data
+   - Team Overview top-member trend contains only scoped users
+   - Team Overview top-member trend series order matches ranking order
    - Team Overview response never includes `group_quotas`
    - out-of-scope target update is rejected
+   - self target update is rejected with `403`
+   - upper-level representative can update another representative when that target is in scope
    - target without relay mapping is rejected
    - target without active subscription is rejected
    - unsupported provider returns unavailable state
@@ -873,6 +952,7 @@ Backend unit tests:
    - reset clears explicit multiplier
 4. sub2api relay adapter:
    - list group rate multipliers decodes nullable fields
+   - top-12 trend fan-out is capped and maps returned trend points to requested relay users
    - merged write preserves non-target rate entries
    - reset omits target rate entry
    - PUT errors are surfaced without logging secrets
@@ -887,32 +967,36 @@ Frontend tests:
 2. Representative subject selector includes scoped members.
 3. Selecting a member reloads the AI Usage Center snapshot for that member.
 4. Team Overview is reachable as an independent page for representatives.
-5. Team Overview renders top-12 member usage ranking instead of personal Token Trend.
+5. Team Overview renders top-12 member usage trend chart instead of personal Token Trend.
 6. Team Overview renders member usage table instead of personal Model Distribution.
 7. Team Overview does not render quota cards or multiplier controls.
 8. Selected-member AI Usage renders subscription controls when the member has active subscriptions.
 9. Non-representative users do not see member subjects or Team Overview entry points.
 10. Member table open action switches to that member in AI Usage Center.
-11. Effective allowance preview updates immediately when multiplier changes.
+11. Selected-member Quotas preview updates effective allowance, remaining allowance, and usage percentage immediately when draft multiplier changes.
 12. Invalid multiplier disables submit.
 13. Reset mode displays inherited group default result.
 14. Successful write refreshes selected-member usage and audit list.
+15. Self rows do not show multiplier edit controls.
 
 Manual verification:
 
 1. Confirm personal My Usage remains unchanged.
 2. Confirm representative can switch to a scoped member and see stats, trend, and model distribution.
-3. Confirm Team Overview shows ranking and member table, with no quota UI.
+3. Confirm Team Overview shows top-12 member trend chart and member table, with no quota UI.
 4. Confirm representative cannot access an out-of-scope user by URL.
-5. Confirm changing multiplier in AE is visible in sub2api group rate multiplier admin view.
-6. Confirm sub2api subscription usage consumption changes according to `ActualCost` after multiplier change.
+5. Confirm editing a multiplier changes the selected member's Quotas preview before confirmation and reverts on cancel.
+6. Confirm the representative cannot adjust their own multiplier.
+7. Confirm an upper-level representative can adjust a lower-level representative's multiplier when the target is inside scope.
+8. Confirm changing multiplier in AE is visible in sub2api group rate multiplier admin view.
+9. Confirm sub2api subscription usage consumption changes according to `ActualCost` after multiplier change.
 
 ## Rollout
 
 1. Land backend schema migration and handler contracts behind the existing authenticated user route group.
 2. Add relay optional interfaces and sub2api implementation.
 3. Add AI Usage Center subject selector and selected-member read-only usage.
-4. Add independent Team Overview page with ranking and member table.
+4. Add independent Team Overview page with top-12 member trend chart and member table.
 5. Add multiplier edit workflow and audit list in selected-member usage context.
 6. Update `docs/architecture.md`.
 7. Validate in staging with synthetic directory members and groups.
@@ -924,6 +1008,6 @@ The feature should fail closed if Directory Sync has no current source or if the
 1. sub2api versioned patch API for single user group rate multiplier updates.
 2. True per-user subscription quota overrides in sub2api.
 3. Multi-provider representative usage and Team Overview.
-4. True team-wide trend and model distribution backed by multi-user aggregate upstream APIs.
+4. Optimized scoped multi-user trend and team model distribution backed by upstream aggregate APIs.
 5. Admin-configurable delegated multiplier policies in UI.
 6. Batch edits with approval workflow.
