@@ -177,9 +177,9 @@ The design relies on these current sub2api behaviors:
 4. Usage logs and subscription consumption use `ActualCost`, so a higher multiplier consumes subscription quota faster and a lower multiplier consumes it slower.
 5. `GET /api/v1/admin/groups/:id/rate-multipliers` returns user-specific group rate entries.
 6. `PUT /api/v1/admin/groups/:id/rate-multipliers` replaces the rate-multiplier part for the whole group.
-7. Entries omitted from the PUT payload have `rate_multiplier` cleared. Existing `rpm_override` values are not part of this feature and must not be edited by AE.
+7. Entries omitted from the PUT payload have `rate_multiplier` cleared. Existing `rpm_override` values are not part of this feature and must not be changed by AE.
 
-Important implication: AE must never PUT only the target member's entry. AE must read current entries, merge the target change, preserve all other users' non-null `rate_multiplier` entries, then PUT the full merged rate list.
+Important implication: AE must never PUT only the target member's entry. AE must read current entries, merge the target change, preserve every non-target entry that has a non-null `rate_multiplier` or `rpm_override`, preserve the target's existing `rpm_override` when changing only `rate_multiplier`, then PUT the full merged rate list.
 
 ## Multiplier Semantics
 
@@ -188,7 +188,7 @@ Selected-member AI Usage must describe the control as `Rate multiplier`, with qu
 For a subscription group:
 
 ```text
-effective_multiplier = user_specific_multiplier if present else group_default_multiplier
+effective_multiplier = user_specific_multiplier if present else group_default_multiplier if present else system_default_multiplier
 effective_daily_allowance = group_daily_limit_usd / effective_multiplier
 effective_weekly_allowance = group_weekly_limit_usd / effective_multiplier
 effective_monthly_allowance = group_monthly_limit_usd / effective_multiplier
@@ -211,8 +211,8 @@ Display rules:
 
 1. Missing group limit means that period is unlimited.
 2. Effective multiplier `0` means consumption does not advance by cost for that group and period calculations are infinite. Representatives must not be allowed to set `0` in the first version.
-3. If a member has no user-specific multiplier, display `Inherited`.
-4. Reset means clear the user-specific multiplier so the member inherits the group default. It does not write the group default value as an explicit user multiplier.
+3. If a member has no user-specific multiplier, display `Inherited` and show whether the inherited value comes from group default or system default.
+4. Reset means clear the user-specific multiplier so the member inherits the group or system default. It does not write the inherited value as an explicit user multiplier.
 5. Show before and after values for every configured period before submitting.
 6. While a representative edits a selected member's multiplier, the Quotas view must be draft-aware. The displayed effective allowance, remaining amount, and usage percent update immediately from the draft multiplier. The backend is not called and no audit row is created until the representative confirms.
 7. Canceling the edit discards the draft and restores the last persisted multiplier state.
@@ -221,7 +221,7 @@ Draft preview calculations:
 
 ```text
 preview_multiplier = draft_rate_multiplier for mode=set
-preview_multiplier = group_default_multiplier for mode=reset
+preview_multiplier = inherited_default_multiplier for mode=reset
 preview_display_quota = raw_group_period_limit_usd / preview_multiplier
 preview_display_used = raw_period_usage_usd / preview_multiplier
 preview_remaining = max(preview_display_quota - preview_display_used, 0)
@@ -236,16 +236,19 @@ Delegated multiplier edits need a policy boundary because lowering a multiplier 
 
 First-version default policy:
 
-1. Representatives may reset a member to inherit the group default.
-2. Representatives may set an explicit multiplier greater than or equal to the group default multiplier.
-3. Representatives may not set a multiplier below the group default multiplier.
+1. Representatives may reset a member to inherit the default multiplier.
+2. Representatives may set an explicit multiplier greater than or equal to the inherited default multiplier.
+3. Representatives may not set a multiplier below the inherited default multiplier.
 4. Representatives may not set multiplier `0`.
 5. Representatives may not set a negative multiplier.
 6. Representatives may not set a multiplier above an AE server-side maximum, default `10`.
+7. Representatives may not submit `NaN`, infinite values, or values with more than four decimal places.
 
 This default lets representatives restrict usage while preventing them from granting extra quota beyond the group's default economics. If the product later needs representatives to grant extra allowance, that must be a separate admin-configured policy extension.
 
-If an existing user-specific multiplier was set by an admin below the group default, selected-member AI Usage may display it but must not let the representative create or reapply that value unless a future policy explicitly allows it.
+If an existing user-specific multiplier was set by an admin below the inherited default, selected-member AI Usage may display it but must not let the representative create or reapply that value unless a future policy explicitly allows it.
+
+The backend should normalize accepted multiplier values to a stable decimal representation before comparison, audit, and relay write. Do not compare unrounded floating-point values directly when deciding whether a request is a no-op or policy violation.
 
 ## Architecture
 
@@ -329,8 +332,10 @@ Security requirements:
 2. `target_user_id` must be validated against the resolved allowed local user ids.
 3. `group_id` must be validated against the target relay user's active existing subscriptions.
 4. The current representative cannot manage themself through delegated multiplier controls, even if they appear in a represented subtree. A representative may still view `My Usage`, but self quota controls are hidden or disabled.
-5. An upper-level representative may manage another representative only when the target representative is inside a strict descendant department subtree of one of the actor's represented departments and `actor_user_id != target_user_id`. A peer representative in the same represented department is not considered upper-level for quota control.
+5. An upper-level representative may manage another representative only when `actor_user_id != target_user_id` and every department represented by the target representative is inside a strict descendant subtree of at least one department represented by the actor. A peer representative in the same represented department is not considered upper-level for quota control.
 6. Admin role alone is not used to broaden these `/user/team-usage/*` endpoints. Admin-wide views remain separate admin routes.
+
+For requirement 5, determine the target's represented departments using the same resolver inputs as the actor: `department.metadata.representative_external_ids` and `member.metadata.leader_department_ids`. If the target has no represented departments, ordinary subtree membership is enough. If the target has represented departments and any of those roots are equal to or outside the actor's represented roots, the actor is not upper-level for quota control.
 
 ## Backend API
 
@@ -463,6 +468,8 @@ Implementation notes:
 4. Selected member quota cards use the target user's active subscription groups and user-specific rate multiplier state. This is a selected-member personal usage view, not the Team Overview page.
 5. If `subject.user_id` equals the current actor, quota controls must be read-only even if the same user is a representative. Self multiplier writes are rejected by the update endpoint as well.
 
+For selected-member dashboards, `subject_subscription_groups` is the authoritative quota/control payload. `group_quotas` is a compatibility projection for existing quota-card components and must be derived from the same normalized display values. The frontend must not infer editability, multiplier state, or draft state from `group_quotas`.
+
 ### Selected Subject Subscription Rows
 
 These rows are returned in the selected subject dashboard as
@@ -479,6 +486,8 @@ Subscription group row:
   "platform": "openai",
   "subscription_status": "active",
   "group_default_multiplier": 1.0,
+  "system_default_multiplier": 1.0,
+  "inherited_default_multiplier": 1.0,
   "user_multiplier": 2.0,
   "effective_multiplier": 2.0,
   "multiplier_source": "user",
@@ -507,6 +516,8 @@ The existing `daily_usage_usd`, `weekly_usage_usd`, and `monthly_usage_usd` fiel
 
 `editable` must be `false` when the row belongs to the current actor. In that case `editable_reason` should be `self_edit_forbidden`. Other possible non-editable reasons include `no_relay_mapping`, `inactive_subscription`, `unsupported_provider`, and `policy_read_only`.
 
+When `subject_subscription_groups` and `group_quotas` are both present, each `group_quotas.groups[*]` item for a subscription group must use the matching row's normalized display used/quota values for the selected period. This keeps existing quota cards visually consistent with the editable Quotas rows.
+
 ### Update Member Group Multiplier
 
 ```text
@@ -523,14 +534,21 @@ Set explicit multiplier:
 }
 ```
 
-Reset to inherit group default:
+Reset to inherit default:
 
 ```json
 {
   "mode": "reset",
-  "reason": "Return to group default"
+  "reason": "Return to inherited default"
 }
 ```
+
+Request validation:
+
+1. `mode` must be `set` or `reset`.
+2. `rate_multiplier` is required for `set` and must be omitted or ignored for `reset`.
+3. `reason` is optional, trimmed, and capped at `500` characters. It must be treated as plain text in audit UIs.
+4. `rate_multiplier` must pass delegated policy after decimal normalization.
 
 Response:
 
@@ -540,13 +558,16 @@ Response:
   "audit_id": 9001,
   "group_id": "42",
   "old_multiplier": 1.0,
-  "old_multiplier_source": "inherited",
+  "old_multiplier_source": "group",
   "new_multiplier": 2.0,
   "new_multiplier_source": "user",
+  "changed": true,
   "old_effective_monthly_allowance_usd": 200.0,
   "new_effective_monthly_allowance_usd": 100.0
 }
 ```
+
+If the requested normalized state already matches the current state, AE must not call sub2api. Return `changed=false`, keep the audit status `succeeded`, and include the current before/after values.
 
 Validation failures:
 
@@ -582,6 +603,8 @@ First-version response:
     "timezone": "Asia/Shanghai"
   },
   "summary": {
+    "unavailable": false,
+    "unavailable_reason": null,
     "member_count": 10,
     "relay_member_count": 8,
     "today_actual_cost": 12.34,
@@ -651,6 +674,8 @@ Top-12 trend rules:
 
 `subscription_count` in the member usage table is optional in the first version. It should be `null` unless the relay provider can return it without per-member subscription fan-out.
 
+If the representative scope exceeds the configured full-scope summary cap, `summary.unavailable` must be `true`, `summary.unavailable_reason` must be `scope_too_large`, aggregate numeric totals should be `null`, and paginated `members` may still be returned. Do not return partial aggregate totals without an unavailable marker.
+
 If the current user has no representative scope, return `is_representative: false` with empty rows. This lets the frontend hide or empty the Team Overview page without turning ordinary users into error states.
 
 ### Audit
@@ -669,7 +694,7 @@ GET /api/v1/admin/team-usage/audit?page=1&page_size=50&actor_user_id=100&target_
 
 Admins can see all delegated multiplier audit records. The admin response should include actor, target, provider, group, action, status, before/after multipliers, before/after effective limits, reason, redacted error message, and timestamps.
 
-Rejected multiplier write attempts must be audited locally when the request reached the write endpoint and the actor was authenticated. For out-of-scope targets, the audit record must avoid storing target details that the actor is not allowed to know; it may store the requested target id as redacted request metadata for admin-only investigation.
+Rejected multiplier write attempts must be audited locally when the request reached the write endpoint and the actor was authenticated. For out-of-scope targets, the actor-facing audit response must not include target details that the actor is not allowed to know; the admin-facing audit response may include redacted request metadata for investigation.
 
 ## Relay Provider Extensions
 
@@ -708,6 +733,8 @@ The current code already uses a local optional `ListUserSubscriptions` shape in 
 4. `monthly_limit_usd`
 5. `subscription_type`
 
+`relay.UserGroupRateEntry` and `relay.GroupRateMultiplierInput` must model both `rate_multiplier` and `rpm_override` as nullable values. AE only changes `rate_multiplier`, but the relay adapter must preserve `rpm_override` values during whole-group replacement writes.
+
 `sub2apiRelay` implementation should use:
 
 1. `GET /api/v1/admin/usage/stats?user_id=...` for selected-member stats.
@@ -738,17 +765,19 @@ The write flow must preserve other users' multipliers as much as the current sub
 10. Fetch group metadata and current rate multipliers.
 11. Compute old effective multiplier and old effective allowances.
 12. Validate requested set/reset against delegated policy; reject and mark audit status=rejected on policy denial.
-13. Acquire AE-side provider/group write lock.
-14. Re-fetch current group rate multipliers.
-15. Build merged rate list:
-    - include every non-target entry with non-null rate_multiplier
-    - for mode=set, include target entry with requested multiplier
-    - for mode=reset, omit target entry
-16. PUT merged entries to sub2api.
-17. Re-read group rate multipliers.
-18. Verify target entry matches requested state.
-19. Update audit row to succeeded with before/after values.
-20. Return updated state.
+13. If the requested normalized state equals the current state, update audit status=succeeded with `changed=false` and return without calling sub2api.
+14. Acquire AE-side provider/group write lock.
+15. Re-fetch current group rate multipliers.
+16. Re-check no-op and policy against the freshly fetched multiplier state.
+17. Build merged rate list:
+    - include every non-target entry with non-null rate_multiplier or non-null rpm_override
+    - for mode=set, include target entry with requested multiplier and existing rpm_override if any
+    - for mode=reset, omit target entry only if it has no rpm_override; otherwise include target entry with rate_multiplier cleared and rpm_override preserved
+18. PUT merged entries to sub2api.
+19. Re-read group rate multipliers.
+20. Verify target entry matches requested state.
+21. Update audit row to succeeded with before/after values and `changed=true`.
+22. Return updated state.
 ```
 
 The AE-side write lock should use a database-backed advisory lock or equivalent process-safe mechanism keyed by `(provider_id, group_id)`. This serializes AE-originated representative writes. It cannot prevent direct concurrent writes from sub2api admin UI. If direct sub2api concurrent writes become a real operational issue, sub2api needs a versioned patch endpoint; AE must not pretend the current whole-group PUT API provides compare-and-swap semantics.
@@ -763,7 +792,7 @@ Fields:
 
 - `id`
 - `actor_user_id`
-- `target_user_id`
+- `target_user_id`: nullable for rejected requests where storing actor-visible target details would leak scope information
 - `provider_id`
 - `relay_user_id`
 - `group_id`
@@ -774,16 +803,20 @@ Fields:
 - `old_multiplier_source`: enum `user`, `group`, `system`, `unknown`
 - `new_multiplier`
 - `new_multiplier_source`: enum `user`, `group`, `system`, `unknown`
+- `changed`
 - `old_effective_limits`: JSON object with daily/weekly/monthly values
 - `new_effective_limits`: JSON object with daily/weekly/monthly values
 - `scope_evidence`: JSON object containing represented department ids and target member department id
 - `rejection_reason`: enum `not_representative`, `self_edit_forbidden`, `not_upper_level_representative`, `out_of_scope`, `no_relay_mapping`, `inactive_subscription`, `policy_denied`, `provider_unsupported`
+- `request_metadata`: JSON object for admin-only diagnostics, with redacted requested target/group ids when the actor is not allowed to see the target
 - `reason`
 - `error_message`
 - `created_at`
 - `updated_at`
 
 Audit records must not store API keys, relay auth passwords, bearer tokens, raw request logs, or full directory member metadata.
+
+Representative-facing audit responses must redact `request_metadata`, `target_user_id`, target display name, and target email for `rejection_reason=out_of_scope`. Admin audit responses may include those fields when needed for investigation.
 
 Indexes:
 
@@ -866,7 +899,7 @@ Team Overview must not render:
 
 Rate multiplier modal:
 
-1. Shows current state and group default.
+1. Shows current state and inherited default, including whether the inherited source is group or system.
 2. Offers `Set explicit multiplier` and `Reset to inherited default`.
 3. Shows before/after effective daily, weekly, monthly allowance.
 4. Rejects values outside delegated policy before submit.
@@ -968,6 +1001,7 @@ Backend unit tests:
    - subject list includes `My Usage`
    - selected-member dashboard rejects out-of-scope users
    - selected-member dashboard uses relay admin aggregate APIs, not target member credentials
+   - selected-member `group_quotas` projection uses the same normalized values as `subject_subscription_groups`
    - Team Overview returns top-12 member trend chart data
    - Team Overview top-member trend contains only scoped users
    - Team Overview top-member trend series order matches ranking order
@@ -976,28 +1010,33 @@ Backend unit tests:
    - out-of-scope target update is rejected
    - self target update is rejected with `403`
    - peer representative cannot update another representative in the same represented department
-   - ancestor representative can update another representative when that target is in a strict descendant represented subtree
+   - ancestor representative can update another representative when all target represented departments are in strict descendant subtrees
+   - ancestor representative cannot update a target representative whose represented departments are only partially under the actor
    - target without relay mapping is rejected
    - target without active subscription is rejected
    - unsupported provider returns unavailable state
 3. Effective allowance:
    - inherited multiplier
+   - inheritance falls back from user-specific to group default to system default
    - explicit user multiplier
    - raw `ActualCost` usage is divided by effective multiplier for displayed `Used / Quota`
    - pre-normalized relay values are not divided a second time
    - quota windows follow sub2api enforcement windows
    - missing period quota
    - multiplier policy bounds
+   - multiplier decimal precision and non-finite values are rejected
    - reset clears explicit multiplier
 4. sub2api relay adapter:
    - list group rate multipliers decodes nullable fields
    - top-12 trend fan-out is capped and maps returned trend points to requested relay users
-   - merged write preserves non-target rate entries
-   - reset omits target rate entry
+   - merged write preserves non-target rate and RPM entries
+   - set preserves target RPM override while changing only target rate multiplier
+   - reset omits target rate entry only when the target has no RPM override
    - PUT errors are surfaced without logging secrets
 5. Audit:
    - running row created before relay write
    - success row stores before/after values
+   - no-op writes store `changed=false` and do not call sub2api
    - failure row stores redacted error
    - rejected self-edit stores `status=rejected` and `rejection_reason=self_edit_forbidden`
    - rejected out-of-scope update does not leak unauthorized target details to the acting representative
@@ -1017,7 +1056,7 @@ Frontend tests:
 11. Selected-member Quotas preview updates effective allowance, remaining allowance, and usage percentage immediately when draft multiplier changes.
 12. Selected-member Quotas preview displays multiplier-normalized `Used / Quota` and does not double-normalize provider values.
 13. Invalid multiplier disables submit.
-14. Reset mode displays inherited group default result.
+14. Reset mode displays inherited default result and source.
 15. Successful write refreshes selected-member usage and audit list.
 16. Self rows do not show multiplier edit controls.
 
