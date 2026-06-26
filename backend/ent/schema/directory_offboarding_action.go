@@ -33,6 +33,7 @@ func (DirectoryOffboardingAction) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("source_id", "user_id", "action").Unique(),
 		index.Fields("source_id", "status"),
+		index.Fields("action", "status", "user_id"),
 		index.Fields("user_id"),
 	}
 }

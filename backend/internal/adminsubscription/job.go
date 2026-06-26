@@ -14,6 +14,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/adminuseraccess"
 	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/directorytree"
 )
@@ -56,6 +57,7 @@ type StartJobRequest struct {
 	UserIDs      []int
 	FilterQuery  string
 	DepartmentID string
+	AccessStatus string
 	Operation    string
 	ProviderID   int
 	GroupID      string
@@ -114,6 +116,7 @@ func (s *Service) StartJob(ctx context.Context, req StartJobRequest) (*ent.Admin
 	req.GroupID = strings.TrimSpace(req.GroupID)
 	req.FilterQuery = strings.TrimSpace(req.FilterQuery)
 	req.DepartmentID = strings.TrimSpace(req.DepartmentID)
+	req.AccessStatus = strings.TrimSpace(req.AccessStatus)
 	if req.ProviderID <= 0 {
 		return nil, NewValidationError("provider_id is required")
 	}
@@ -322,6 +325,13 @@ func (s *Service) resolveTargets(ctx context.Context, scope adminsubscriptionjob
 		if req.DepartmentID != "" {
 			var err error
 			query, err = s.applyDepartmentFilter(ctx, query, req.DepartmentID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+		}
+		if req.AccessStatus != "" {
+			var err error
+			query, err = adminuseraccess.ApplyFilter(query, req.AccessStatus)
 			if err != nil {
 				return nil, nil, nil, err
 			}

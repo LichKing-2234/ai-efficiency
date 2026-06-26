@@ -381,6 +381,16 @@ func TestAdminUsersListAccessStatusAndFilter(t *testing.T) {
 		Save(ctx); err != nil {
 		t.Fatalf("create dana: %v", err)
 	}
+	if _, err := env.client.User.Create().
+		SetUsername("erin").
+		SetEmail("erin@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(88).
+		SetRelayAuthPassword("   ").
+		Save(ctx); err != nil {
+		t.Fatalf("create erin: %v", err)
+	}
 
 	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?access_status=disabled&page=1&page_size=20", nil)
 	if w.Code != http.StatusOK {
@@ -418,8 +428,8 @@ func TestAdminUsersListAccessStatusAndFilter(t *testing.T) {
 		t.Fatalf("missing credential status = %d, want 200, body=%s", w.Code, w.Body.String())
 	}
 	data = parseFullResponse(t, w)["data"].(map[string]interface{})
-	if got := int(data["total"].(float64)); got != 3 {
-		t.Fatalf("missing credential total = %d, want 3", got)
+	if got := int(data["total"].(float64)); got != 4 {
+		t.Fatalf("missing credential total = %d, want 4", got)
 	}
 
 	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users?access_status=unknown&page=1&page_size=20", nil)
@@ -463,6 +473,35 @@ func TestAdminUsersListMarksSucceededOffboardingActionDisabled(t *testing.T) {
 		Save(ctx); err != nil {
 		t.Fatalf("create offboarding action: %v", err)
 	}
+	newSourceID := seedAdminUsersSingleMemberDirectorySnapshot(
+		t,
+		env,
+		"New Example Directory",
+		"dept-beta",
+		"Department Beta",
+		fixture.aliceID,
+		"alice@example.com",
+		time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC),
+	)
+	newSource, err := env.client.DirectorySource.Get(ctx, newSourceID)
+	if err != nil {
+		t.Fatalf("get new source: %v", err)
+	}
+	if newSource.LastSuccessfulRunID == nil {
+		t.Fatal("new source missing successful run")
+	}
+	if _, err := env.client.DirectoryOffboardingAction.Create().
+		SetSourceID(newSourceID).
+		SetUserID(fixture.aliceID).
+		SetRelayUserID(42).
+		SetDirectoryRunID(*newSource.LastSuccessfulRunID).
+		SetAction(directoryoffboardingaction.ActionDisableRelayUser).
+		SetStatus(directoryoffboardingaction.StatusFailed).
+		SetReason("missing_from_latest_full_company_directory").
+		SetPerformedByUserID(fixture.carolID).
+		Save(ctx); err != nil {
+		t.Fatalf("create later failed offboarding action: %v", err)
+	}
 
 	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=alice&page=1&page_size=20", nil)
 	if w.Code != http.StatusOK {
@@ -474,8 +513,8 @@ func TestAdminUsersListMarksSucceededOffboardingActionDisabled(t *testing.T) {
 		t.Fatalf("items = %d, want 1", len(items))
 	}
 	row := items[0].(map[string]interface{})
-	if row["access_status"] != "disabled" || row["offboarding_status"] != "succeeded" {
-		t.Fatalf("row = %+v, want disabled succeeded offboarding", row)
+	if row["access_status"] != "disabled" || row["offboarding_status"] != "failed" {
+		t.Fatalf("row = %+v, want disabled access with latest failed offboarding audit status", row)
 	}
 }
 

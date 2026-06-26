@@ -28,8 +28,12 @@ type sub2apiRelay struct {
 }
 
 type envelopeStatus struct {
-	Success *bool `json:"success"`
-	Code    *int  `json:"code"`
+	Success *bool  `json:"success"`
+	Code    *int   `json:"code"`
+	Message string `json:"message"`
+	Error   struct {
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
 func (s envelopeStatus) ok() bool {
@@ -40,6 +44,24 @@ func (s envelopeStatus) ok() bool {
 		return *s.Code == 0
 	}
 	return false
+}
+
+func (s envelopeStatus) messageSuffix() string {
+	messages := make([]string, 0, 2)
+	for _, message := range []string{s.Message, s.Error.Message} {
+		message = strings.TrimSpace(message)
+		if message == "" {
+			continue
+		}
+		if len(messages) > 0 && messages[len(messages)-1] == message {
+			continue
+		}
+		messages = append(messages, message)
+	}
+	if len(messages) == 0 {
+		return ""
+	}
+	return ": " + strings.Join(messages, ": ")
 }
 
 // NewSub2apiProvider creates a new relay provider backed by a sub2api instance.
@@ -698,7 +720,7 @@ func (s *sub2apiRelay) UpdateUser(ctx context.Context, userID int64, req UpdateU
 		return nil, fmt.Errorf("relay: update user: decode: %w", err)
 	}
 	if !result.ok() {
-		return nil, fmt.Errorf("relay: update user: request failed")
+		return nil, fmt.Errorf("relay: update user: request failed%s", result.envelopeStatus.messageSuffix())
 	}
 
 	return &result.Data, nil

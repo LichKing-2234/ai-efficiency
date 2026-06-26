@@ -1271,6 +1271,73 @@ func TestUpdateUser(t *testing.T) {
 	}
 }
 
+func TestUpdateUserIncludesEnvelopeErrorMessage(t *testing.T) {
+	tests := []struct {
+		name      string
+		envelope  map[string]any
+		wantError string
+	}{
+		{
+			name: "top-level message",
+			envelope: map[string]any{
+				"code":    500,
+				"message": "cannot disable admin user",
+			},
+			wantError: "relay: update user: request failed: cannot disable admin user",
+		},
+		{
+			name: "nested error message",
+			envelope: map[string]any{
+				"code": 500,
+				"error": map[string]any{
+					"message": "relay account is locked",
+				},
+			},
+			wantError: "relay: update user: request failed: relay account is locked",
+		},
+		{
+			name: "top-level and nested error messages",
+			envelope: map[string]any{
+				"code":    500,
+				"message": "cannot update relay user",
+				"error": map[string]any{
+					"message": "relay account is locked",
+				},
+			},
+			wantError: "relay: update user: request failed: cannot update relay user: relay account is locked",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/users/7", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPut {
+					t.Errorf("expected PUT, got %s", r.Method)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(tt.envelope)
+			})
+
+			p := newTestProvider(t, mux)
+			updater, ok := p.(interface {
+				UpdateUser(context.Context, int64, relay.UpdateUserRequest) (*relay.User, error)
+			})
+			if !ok {
+				t.Fatal("provider does not support UpdateUser")
+			}
+
+			_, err := updater.UpdateUser(context.Background(), 7, relay.UpdateUserRequest{Status: "disabled"})
+			if err == nil {
+				t.Fatal("UpdateUser() error = nil, want envelope error")
+			}
+			if got := err.Error(); got != tt.wantError {
+				t.Fatalf("UpdateUser() error = %q, want %q", got, tt.wantError)
+			}
+		})
+	}
+}
+
 func TestDisableUser(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/users/7", func(w http.ResponseWriter, r *http.Request) {

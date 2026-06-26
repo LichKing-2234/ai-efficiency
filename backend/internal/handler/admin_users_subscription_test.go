@@ -158,6 +158,70 @@ func TestAdminUsersStartSubscriptionJobReturnsQueuedWithoutWaitingForRelayMutati
 	}
 }
 
+func TestAdminUsersStartSubscriptionJobUsesCurrentAccessStatusFilter(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	defer client.Close()
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+	disabledUser := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(42).
+		SetTokenValidAfter(time.Date(2026, 6, 26, 9, 0, 0, 0, time.UTC)).
+		SaveX(ctx)
+	client.User.Create().
+		SetUsername("bob").
+		SetEmail("bob@example.org").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(99).
+		SaveX(ctx)
+
+	fakeRelay := &adminUsersRelayFake{
+		groups: []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"}},
+	}
+	handler := NewAdminUsersHandler(client, adminUsersTestEncryptionKey, adminUsersProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			return nil, errors.New("unexpected provider")
+		}
+		return fakeRelay, nil
+	}))
+
+	router := gin.New()
+	router.POST("/admin/users/subscription-jobs", handler.StartSubscriptionJob)
+	w := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"scope":"current_filter","filters":{"access_status":"disabled"},"operation":"add","provider_id":%d,"group_id":"42","validity_days":60}`, provider.ID)
+	req := httptest.NewRequest(http.MethodPost, "/admin/users/subscription-jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			TotalCount    int   `json:"total_count"`
+			TargetUserIDs []int `json:"target_user_ids"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v, body=%s", err, w.Body.String())
+	}
+	if resp.Data.TotalCount != 1 || len(resp.Data.TargetUserIDs) != 1 || resp.Data.TargetUserIDs[0] != disabledUser.ID {
+		t.Fatalf("job targets = %+v, want only disabled user %d", resp.Data, disabledUser.ID)
+	}
+}
+
 func TestAdminSubscriptionJobErrorStatusClassifiesValidationAndInternalErrors(t *testing.T) {
 	if got := adminSubscriptionJobErrorStatus(adminsubscription.NewValidationError("scope is required")); got != http.StatusBadRequest {
 		t.Fatalf("validation status = %d, want 400", got)
