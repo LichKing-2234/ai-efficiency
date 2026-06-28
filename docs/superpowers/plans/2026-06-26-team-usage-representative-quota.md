@@ -2572,6 +2572,7 @@ git commit -m "docs(architecture): document representative team usage"
   - After starting `pnpm dev -- --host 127.0.0.1 --port 5173`, `cd frontend && pnpm run test:e2e:role` passed with 14/14 checks.
   - `git diff --check` passed.
   - After final review found the backend `page_size` clamp gap, `cd frontend && pnpm test -- dashboard-view team-overview-view team-usage-api selected-subject-subscription-rows` passed with the paged deep-link lookup regression.
+  - After committing the paged deep-link fix, `cd backend && go test ./...`, `cd frontend && pnpm test`, `git diff --check`, and `cd frontend && pnpm run test:e2e:role` with Vite on `127.0.0.1:5173` all passed again.
 
 - Keep commits task-sized. Do not combine backend schema, relay, handlers, and frontend in one commit.
 - Maintain this plan as a live execution ledger. Check a box only after running the exact step.
