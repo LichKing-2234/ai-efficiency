@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"database/sql"
+
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/oauth"
@@ -26,6 +28,7 @@ func SetPRUsageService(service prUsageRefresher) {
 // SetupRouter creates and configures the Gin router with all route groups.
 func SetupRouter(
 	entClient *ent.Client,
+	sqlDB *sql.DB,
 	authService *auth.Service,
 	repoService *repo.Service,
 	webhookHandler *webhook.Handler,
@@ -179,9 +182,17 @@ func SetupRouter(
 		eventsGroup.GET("/:id", eventsHandler.Get)
 	}
 
+	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler))
+
 	userGroup := protected.Group("/user")
 	{
 		userGroup.GET("/providers", userSetupHandler.ListProviders)
+		userGroup.GET("/team-usage/scope", teamUsageHandler.Scope)
+		userGroup.GET("/team-usage/subjects", teamUsageHandler.Subjects)
+		userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamUsageHandler.SubjectDashboard)
+		userGroup.PUT("/team-usage/subjects/:user_id/groups/:group_id/rate-multiplier", teamUsageHandler.UpdateMultiplier)
+		userGroup.GET("/team-usage/overview", teamUsageHandler.Overview)
+		userGroup.GET("/team-usage/audit", teamUsageHandler.Audit)
 		if providerHandler != nil {
 			userGroup.GET("/providers/:id/groups/:group_id/models", providerHandler.Models)
 			userGroup.POST("/providers/:id/test", providerHandler.Test)
@@ -228,6 +239,12 @@ func SetupRouter(
 		adminUsersGroup.POST("/subscriptions/batch", adminUsersHandler.ManageSubscriptions)
 		adminUsersGroup.POST("/:id/relay-password/reveal", adminUsersHandler.RevealRelayPassword)
 		adminUsersGroup.POST("/:id/subscriptions", adminUsersHandler.AssignSubscription)
+	}
+
+	adminTeamUsageGroup := protected.Group("/admin/team-usage")
+	adminTeamUsageGroup.Use(auth.RequireAdmin())
+	{
+		adminTeamUsageGroup.GET("/audit", teamUsageHandler.AdminAudit)
 	}
 
 	adminCredentialGroup := protected.Group("/admin/credentials")

@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Tasks 1-4 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
+**Status:** Tasks 1-5 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
 
 ## Source Spec
 
@@ -1631,7 +1631,7 @@ git commit -m "feat(backend): add team usage domain service"
 - Modify: `backend/internal/handler/router.go`
 - Modify: `backend/cmd/server/main.go`
 
-- [ ] **Step 1: Write failing handler tests**
+- [x] **Step 1: Write failing handler tests**
 
 Create `backend/internal/handler/team_usage_test.go`. Add a `fakeTeamUsageService` struct with function fields for every method in `teamUsageService`, a `newTeamUsageTestRouter(t, service)` helper that creates an authenticated user with `auth.NewService`, and these tests:
 
@@ -1760,13 +1760,13 @@ userGroup.GET("/team-usage/overview", teamHandler.Overview)
 userGroup.GET("/team-usage/audit", teamHandler.Audit)
 ```
 
-- [ ] **Step 2: Run handler tests and verify failure**
+- [x] **Step 2: Run handler tests and verify failure**
 
 Run: `cd backend && go test ./internal/handler -run 'TeamUsage'`
 
 Expected: FAIL because handler does not exist.
 
-- [ ] **Step 3: Implement handler**
+- [x] **Step 3: Implement handler**
 
 Create `backend/internal/handler/team_usage.go`:
 
@@ -1807,7 +1807,7 @@ func writeTeamUsageError(c *gin.Context, err error) {
 }
 ```
 
-- [ ] **Step 4: Register routes in `router.go` and pass the database lock dependency**
+- [x] **Step 4: Register routes in `router.go` and pass the database lock dependency**
 
 Modify `backend/internal/handler/router.go` so `SetupRouter` accepts `sqlDB *sql.DB` after `entClient *ent.Client`:
 
@@ -1864,13 +1864,13 @@ r := handler.SetupRouter(
 
 Update existing handler tests that call `SetupRouter` by passing `nil` for `sqlDB` when the test does not exercise advisory locking. `teamusage.NewPostgresAdvisoryLocker(nil)` must fall back to running the callback without a database transaction so existing unit tests remain lightweight.
 
-- [ ] **Step 5: Run handler tests**
+- [x] **Step 5: Run handler tests**
 
 Run: `cd backend && go test ./internal/handler -run 'TeamUsage|UserUsageDashboard'`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit handlers**
+- [x] **Step 6: Commit handlers**
 
 ```bash
 git add backend/internal/handler backend/cmd/server/main.go
