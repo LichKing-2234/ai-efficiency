@@ -57,6 +57,7 @@ type Group struct {
 	Platform         string   `json:"platform"`
 	IsExclusive      bool     `json:"is_exclusive,omitempty"`
 	SubscriptionType string   `json:"subscription_type,omitempty"`
+	RateMultiplier   *float64 `json:"rate_multiplier,omitempty"`
 	DailyLimitUSD    *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd,omitempty"`
 	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd,omitempty"`
@@ -294,4 +295,40 @@ type UserUsageGroupQuotaGroupItem struct {
 	QuotaAmount *float64 `json:"quota_amount,omitempty"`
 	IsUnlimited bool     `json:"is_unlimited"`
 	QuotaSource string   `json:"quota_source,omitempty"`
+}
+
+type TeamUserUsageStats struct {
+	UserID            int64   `json:"user_id"`
+	TodayActualCost   float64 `json:"today_actual_cost"`
+	Last30dActualCost float64 `json:"last_30d_actual_cost"`
+	TotalTokens       *int64  `json:"total_tokens,omitempty"`
+}
+
+type TeamUsageSummaryParams struct {
+	Timezone string `json:"timezone"`
+}
+
+type TeamMemberTrendParams struct {
+	StartDate   string `json:"start_date"`
+	EndDate     string `json:"end_date"`
+	Granularity string `json:"granularity"`
+	Timezone    string `json:"timezone"`
+}
+
+type UsageTrendPoint struct {
+	Date        string  `json:"date"`
+	ActualCost  float64 `json:"actual_cost"`
+	TotalTokens *int64  `json:"total_tokens,omitempty"`
+}
+
+type UserGroupRateEntry struct {
+	UserID         int64    `json:"user_id"`
+	RateMultiplier *float64 `json:"rate_multiplier,omitempty"`
+	RPMOverride    *int     `json:"rpm_override,omitempty"`
+}
+
+type GroupRateMultiplierInput struct {
+	UserID         int64    `json:"user_id"`
+	RateMultiplier *float64 `json:"rate_multiplier,omitempty"`
+	RPMOverride    *int     `json:"rpm_override,omitempty"`
 }

@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Tasks 1-2 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
+**Status:** Tasks 1-3 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
 
 ## Source Spec
 
@@ -572,7 +572,7 @@ git commit -m "feat(backend): add team usage multiplier audit schema"
 - Modify: `backend/internal/relay/sub2api.go`
 - Modify: `backend/internal/relay/sub2api_test.go`
 
-- [ ] **Step 1: Add failing relay tests**
+- [x] **Step 1: Add failing relay tests**
 
 Add tests in `backend/internal/relay/sub2api_test.go` using the existing `newTestProvider` helper:
 
@@ -684,13 +684,13 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run relay tests and verify failure**
+- [x] **Step 2: Run relay tests and verify failure**
 
-Run: `cd backend && go test ./internal/relay -run 'TeamUsage|RateMultiplier|BatchUserUsage'`
+Run: `cd backend && go test ./internal/relay -run 'TeamUsage|RateMultiplier|BatchUserUsage|UsageDashboardForUser|ListUserSubscriptions'`
 
 Expected: FAIL because extension types and methods are missing.
 
-- [ ] **Step 3: Add relay types**
+- [x] **Step 3: Add relay types**
 
 Modify `backend/internal/relay/types.go` so `Group` includes rate multiplier facts:
 
@@ -748,7 +748,7 @@ type GroupRateMultiplierInput struct {
 }
 ```
 
-- [ ] **Step 4: Add optional provider interfaces**
+- [x] **Step 4: Add optional provider interfaces**
 
 Append to `backend/internal/relay/provider.go`:
 
@@ -775,7 +775,7 @@ type GroupRateMultiplierManager interface {
 }
 ```
 
-- [ ] **Step 5: Implement sub2api admin calls**
+- [x] **Step 5: Implement sub2api admin calls**
 
 In `backend/internal/relay/sub2api.go`, add methods:
 
@@ -913,13 +913,13 @@ func (s *sub2apiRelay) ReplaceGroupRateMultipliers(ctx context.Context, groupID 
 
 For `ReplaceGroupRateMultipliers`, do not filter out `RPMOverride` in `entries`; the merge helper in `teamusage` is responsible for preserving non-target and target `rpm_override` values before this method serializes the payload.
 
-- [ ] **Step 6: Run relay tests**
+- [x] **Step 6: Run relay tests**
 
-Run: `cd backend && go test ./internal/relay -run 'TeamUsage|RateMultiplier|BatchUserUsage|ListUserSubscriptions'`
+Run: `cd backend && go test ./internal/relay -run 'TeamUsage|RateMultiplier|BatchUserUsage|UsageDashboardForUser|ListUserSubscriptions'`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit relay work**
+- [x] **Step 7: Commit relay work**
 
 ```bash
 git add backend/internal/relay

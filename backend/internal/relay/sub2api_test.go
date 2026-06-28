@@ -2894,3 +2894,203 @@ func TestGetUserUsageDashboardFailsFastOnSub2APIError(t *testing.T) {
 		t.Fatalf("error = %v, want stats context", err)
 	}
 }
+
+func TestSub2APITeamUsageTrendForUsersFansOutByUserID(t *testing.T) {
+	var requested []map[string]string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		requested = append(requested, map[string]string{
+			"user_id":     r.URL.Query().Get("user_id"),
+			"start_date":  r.URL.Query().Get("start_date"),
+			"end_date":    r.URL.Query().Get("end_date"),
+			"granularity": r.URL.Query().Get("granularity"),
+			"timezone":    r.URL.Query().Get("timezone"),
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data":    []map[string]any{{"date": "2026-06-26", "actual_cost": 1.25}},
+		})
+	})
+	p := newTestProvider(t, mux)
+	trender := p.(relay.TeamMemberTrendProvider)
+	got, err := trender.GetUsageTrendForUsers(context.Background(), []int64{1001, 1002}, relay.TeamMemberTrendParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-26",
+		Granularity: "day",
+		Timezone:    "Asia/Shanghai",
+	})
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
+	}
+	if diff := cmp.Diff([]map[string]string{
+		{
+			"user_id":     "1001",
+			"start_date":  "2026-06-01",
+			"end_date":    "2026-06-26",
+			"granularity": "day",
+			"timezone":    "Asia/Shanghai",
+		},
+		{
+			"user_id":     "1002",
+			"start_date":  "2026-06-01",
+			"end_date":    "2026-06-26",
+			"granularity": "day",
+			"timezone":    "Asia/Shanghai",
+		},
+	}, requested); diff != "" {
+		t.Fatalf("requested query mismatch (-want +got):\n%s", diff)
+	}
+	if len(got[1001]) != 1 || got[1001][0].ActualCost != 1.25 {
+		t.Fatalf("trend[1001] = %#v, want one actual_cost point", got[1001])
+	}
+}
+
+func TestSub2APIListGroupRateMultipliersDecodesRateAndRPM(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/42/rate-multipliers", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{{"user_id": 1001, "rate_multiplier": 2.0, "rpm_override": 120}},
+		})
+	})
+	p := newTestProvider(t, mux)
+	manager := p.(relay.GroupRateMultiplierManager)
+	got, err := manager.ListGroupRateMultipliers(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("ListGroupRateMultipliers() error = %v", err)
+	}
+	if got[0].RateMultiplier == nil || *got[0].RateMultiplier != 2.0 {
+		t.Fatalf("rate multiplier = %#v, want 2.0", got[0].RateMultiplier)
+	}
+	if got[0].RPMOverride == nil || *got[0].RPMOverride != 120 {
+		t.Fatalf("rpm override = %#v, want 120", got[0].RPMOverride)
+	}
+}
+
+func TestSub2APIReplaceGroupRateMultipliersPreservesRPMPayloadShape(t *testing.T) {
+	var body map[string][]relay.GroupRateMultiplierInput
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/42/rate-multipliers", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+	})
+	p := newTestProvider(t, mux)
+	manager := p.(relay.GroupRateMultiplierManager)
+	rpm := 120
+	multiplier := 2.0
+	if err := manager.ReplaceGroupRateMultipliers(context.Background(), 42, []relay.GroupRateMultiplierInput{{
+		UserID:         1001,
+		RateMultiplier: &multiplier,
+		RPMOverride:    &rpm,
+	}}); err != nil {
+		t.Fatalf("ReplaceGroupRateMultipliers() error = %v", err)
+	}
+	if body["rate_multipliers"][0].RPMOverride == nil || *body["rate_multipliers"][0].RPMOverride != 120 {
+		t.Fatalf("request body = %#v, want rpm_override preserved", body)
+	}
+}
+
+func TestSub2APIGetUsageDashboardForUserUsesAdminFilteredEndpoints(t *testing.T) {
+	seen := map[string]map[string]string{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/usage/stats", func(w http.ResponseWriter, r *http.Request) {
+		seen["stats"] = map[string]string{
+			"user_id":     r.URL.Query().Get("user_id"),
+			"start_date":  r.URL.Query().Get("start_date"),
+			"end_date":    r.URL.Query().Get("end_date"),
+			"granularity": r.URL.Query().Get("granularity"),
+			"timezone":    r.URL.Query().Get("timezone"),
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{"total_tokens": 12}})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		seen["trend"] = map[string]string{
+			"user_id":     r.URL.Query().Get("user_id"),
+			"start_date":  r.URL.Query().Get("start_date"),
+			"end_date":    r.URL.Query().Get("end_date"),
+			"granularity": r.URL.Query().Get("granularity"),
+			"timezone":    r.URL.Query().Get("timezone"),
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []any{}})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/models", func(w http.ResponseWriter, r *http.Request) {
+		seen["models"] = map[string]string{
+			"user_id":     r.URL.Query().Get("user_id"),
+			"start_date":  r.URL.Query().Get("start_date"),
+			"end_date":    r.URL.Query().Get("end_date"),
+			"granularity": r.URL.Query().Get("granularity"),
+			"timezone":    r.URL.Query().Get("timezone"),
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []any{}})
+	})
+	p := newTestProvider(t, mux)
+	dashboard := p.(relay.SubjectUsageDashboardProvider)
+	if _, err := dashboard.GetUsageDashboardForUser(context.Background(), 1001, relay.UserUsageDashboardParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-26",
+		Granularity: "day",
+		Timezone:    "Asia/Shanghai",
+	}); err != nil {
+		t.Fatalf("GetUsageDashboardForUser() error = %v", err)
+	}
+	if diff := cmp.Diff(map[string]map[string]string{
+		"stats": {
+			"user_id":     "1001",
+			"start_date":  "",
+			"end_date":    "",
+			"granularity": "",
+			"timezone":    "",
+		},
+		"trend": {
+			"user_id":     "1001",
+			"start_date":  "2026-06-01",
+			"end_date":    "2026-06-26",
+			"granularity": "day",
+			"timezone":    "Asia/Shanghai",
+		},
+		"models": {
+			"user_id":     "1001",
+			"start_date":  "2026-06-01",
+			"end_date":    "2026-06-26",
+			"granularity": "",
+			"timezone":    "Asia/Shanghai",
+		},
+	}, seen); diff != "" {
+		t.Fatalf("admin filtered endpoints mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
+	var body map[string]any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": []map[string]any{{
+				"user_id":              1001,
+				"today_actual_cost":    1.0,
+				"last_30d_actual_cost": 10.0,
+			}},
+		})
+	})
+	p := newTestProvider(t, mux)
+	summary := p.(relay.TeamUsageSummaryProvider)
+	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{Timezone: "Asia/Shanghai"})
+	if err != nil {
+		t.Fatalf("GetBatchUserUsageStats() error = %v", err)
+	}
+	if diff := cmp.Diff([]any{float64(1001)}, body["user_ids"]); diff != "" {
+		t.Fatalf("user_ids mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff("Asia/Shanghai", body["timezone"]); diff != "" {
+		t.Fatalf("timezone mismatch (-want +got):\n%s", diff)
+	}
+	if got[1001].Last30dActualCost != 10.0 {
+		t.Fatalf("batch stats = %#v, want user 1001 last_30d_actual_cost 10.0", got)
+	}
+}

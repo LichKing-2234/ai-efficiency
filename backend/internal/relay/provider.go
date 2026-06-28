@@ -81,3 +81,24 @@ type PlatformModelLister interface {
 type UserDisabler interface {
 	DisableUser(ctx context.Context, userID int64) error
 }
+
+type SubjectUsageDashboardProvider interface {
+	GetUsageDashboardForUser(ctx context.Context, relayUserID int64, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error)
+}
+
+type TeamUsageSummaryProvider interface {
+	GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params TeamUsageSummaryParams) (map[int64]TeamUserUsageStats, error)
+}
+
+type TeamMemberTrendProvider interface {
+	GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error)
+}
+
+type UserSubscriptionLister interface {
+	ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]UserSubscription, error)
+}
+
+type GroupRateMultiplierManager interface {
+	ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
+	ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error
+}
