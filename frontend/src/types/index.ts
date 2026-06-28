@@ -806,3 +806,195 @@ export interface UserUsageDashboardSnapshot {
   models: UserUsageModelStat[]
   group_quotas?: UserUsageGroupQuotaState
 }
+
+export interface TeamUsageDepartment {
+  external_id: string
+  name: string
+  display_path: string
+  subtree_member_count: number
+  matched_user_count: number
+}
+
+export interface TeamUsageSubject {
+  subject_type: 'self' | 'member' | string
+  user_id: number
+  display_name: string
+  email: string
+  department_display_path?: string
+  relay_user_id?: number | null
+  selectable: boolean
+}
+
+export interface SubjectSubscriptionGroup {
+  group_id: string
+  group_name: string
+  platform: string
+  subscription_status: string
+  group_default_multiplier?: number | null
+  system_default_multiplier: number
+  inherited_default_multiplier: number
+  user_multiplier?: number | null
+  effective_multiplier: number
+  multiplier_source: 'user' | 'group' | 'system' | 'unknown'
+  daily_limit_usd?: number | null
+  weekly_limit_usd?: number | null
+  monthly_limit_usd?: number | null
+  daily_effective_allowance_usd?: number | null
+  weekly_effective_allowance_usd?: number | null
+  monthly_effective_allowance_usd?: number | null
+  daily_display_used_usd: number
+  weekly_display_used_usd: number
+  monthly_display_used_usd: number
+  daily_usage_usd: number
+  weekly_usage_usd: number
+  monthly_usage_usd: number
+  usage_value_basis: 'raw_actual_cost' | 'normalized_display_cost' | string
+  quota_window_basis: string
+  editable: boolean
+  editable_reason?: string | null
+}
+
+export interface SelectedSubjectUsageSnapshot extends UserUsageDashboardSnapshot {
+  subject: TeamUsageSubject
+  subject_subscription_groups: SubjectSubscriptionGroup[]
+}
+
+export interface TeamOverviewWindow {
+  start_date: string
+  end_date: string
+  granularity: string
+  today: string
+  rolling_days: number
+  timezone: string
+}
+
+export interface TeamOverviewSummary {
+  unavailable: boolean
+  unavailable_reason?: string | null
+  member_count: number
+  relay_member_count: number
+  today_actual_cost?: number | null
+  last_30d_actual_cost?: number | null
+  unit_label: string
+}
+
+export interface TeamOverviewMember {
+  rank?: number
+  user_id: number
+  display_name: string
+  email: string
+  department_display_path: string
+  relay_user_id?: number | null
+  today_actual_cost: number
+  last_30d_actual_cost: number
+  total_tokens?: number | null
+  subscription_count?: number | null
+  selectable: boolean
+}
+
+export interface TeamUsageTrendPoint {
+  date: string
+  actual_cost: number
+  total_tokens?: number | null
+}
+
+export interface TeamMemberTrendSeries {
+  user_id: number
+  display_name: string
+  rank: number
+  unavailable: boolean
+  unavailable_reason?: string | null
+  points: TeamUsageTrendPoint[]
+}
+
+export interface TeamMemberTrendState {
+  unit_label: string
+  rank_basis: string
+  unavailable: boolean
+  unavailable_reason?: string | null
+  series: TeamMemberTrendSeries[]
+}
+
+export interface TeamOverviewResponse {
+  configured: boolean
+  is_representative: boolean
+  window: TeamOverviewWindow
+  summary: TeamOverviewSummary
+  top_members: TeamOverviewMember[]
+  top_member_trend: TeamMemberTrendState
+  members: TeamOverviewMember[]
+}
+
+export interface TeamUsageScopeResponse {
+  is_representative: boolean
+  departments: TeamUsageDepartment[]
+}
+
+export interface ListTeamUsageSubjectsResponse {
+  page: number
+  page_size: number
+  total: number
+  subjects: TeamUsageSubject[]
+}
+
+export interface TeamUsageOverviewParams {
+  start_date?: string
+  end_date?: string
+  granularity?: 'day' | 'hour'
+  timezone?: string
+  page?: number
+  page_size?: number
+}
+
+export interface TeamUsageAuditParams {
+  page?: number
+  page_size?: number
+  target_user_id?: number
+}
+
+export interface TeamUsageAuditRecord {
+  id: number
+  actor_user_id: number
+  target_user_id?: number | null
+  target_display_name?: string
+  target_email?: string
+  group_id: string
+  group_name: string
+  action: string
+  status: string
+  old_multiplier?: number | null
+  new_multiplier?: number | null
+  changed: boolean
+  rejection_reason?: string | null
+  reason: string
+  error_message?: string
+  request_metadata?: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface GetTeamUsageAuditResponse {
+  items: TeamUsageAuditRecord[]
+  page: number
+  page_size: number
+  total: number
+}
+
+export interface UpdateTeamUsageRateMultiplierRequest {
+  mode: 'set' | 'reset'
+  rate_multiplier?: number
+  reason?: string
+}
+
+export interface UpdateTeamUsageRateMultiplierResponse {
+  status: string
+  audit_id: number
+  group_id: string
+  old_multiplier?: number | null
+  old_multiplier_source: string
+  new_multiplier?: number | null
+  new_multiplier_source: string
+  changed: boolean
+  old_effective_monthly_allowance_usd?: number | null
+  new_effective_monthly_allowance_usd?: number | null
+}

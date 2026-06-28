@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Tasks 1-5 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
+**Status:** Tasks 1-6 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
 
 ## Source Spec
 
@@ -1884,7 +1884,7 @@ git commit -m "feat(backend): add representative team usage routes"
 - Create: `frontend/src/api/teamUsage.ts`
 - Create: `frontend/src/__tests__/team-usage-api.test.ts`
 
-- [ ] **Step 1: Write failing API tests**
+- [x] **Step 1: Write failing API tests**
 
 Create `frontend/src/__tests__/team-usage-api.test.ts`:
 
@@ -1902,13 +1902,13 @@ it('updates member group multiplier', async () => {
 })
 ```
 
-- [ ] **Step 2: Run API tests and verify failure**
+- [x] **Step 2: Run API tests and verify failure**
 
 Run: `cd frontend && pnpm test -- team-usage-api user-usage-api`
 
 Expected: FAIL because `teamUsage.ts` does not exist.
 
-- [ ] **Step 3: Add TypeScript types**
+- [x] **Step 3: Add TypeScript types**
 
 Append interfaces to `frontend/src/types/index.ts`:
 
@@ -2063,7 +2063,7 @@ export interface UpdateTeamUsageRateMultiplierResponse {
 }
 ```
 
-- [ ] **Step 4: Implement API wrapper**
+- [x] **Step 4: Implement API wrapper**
 
 Create `frontend/src/api/teamUsage.ts`:
 
@@ -2104,13 +2104,13 @@ export function getTeamUsageAudit(params?: Record<string, string | number>) {
 }
 ```
 
-- [ ] **Step 5: Run frontend API tests**
+- [x] **Step 5: Run frontend API tests**
 
 Run: `cd frontend && pnpm test -- team-usage-api user-usage-api`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit frontend API**
+- [x] **Step 6: Commit frontend API**
 
 ```bash
 git add frontend/src/types/index.ts frontend/src/api/teamUsage.ts frontend/src/__tests__/team-usage-api.test.ts
