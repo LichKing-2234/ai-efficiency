@@ -22,33 +22,39 @@ type SubscriptionInput struct {
 func BuildSubscriptionRow(input SubscriptionInput) SubscriptionRow {
 	effective, source := effectiveMultiplier(input.UserMultiplier, input.GroupDefaultMultiplier, input.SystemDefaultMultiplier)
 	inherited, _ := effectiveMultiplier(nil, input.GroupDefaultMultiplier, input.SystemDefaultMultiplier)
+	dailyAllowance, dailyUnlimited := displayQuota(input.DailyLimitUSD, effective, input.UsageValueBasis)
+	weeklyAllowance, weeklyUnlimited := displayQuota(input.WeeklyLimitUSD, effective, input.UsageValueBasis)
+	monthlyAllowance, monthlyUnlimited := displayQuota(input.MonthlyLimitUSD, effective, input.UsageValueBasis)
 	return SubscriptionRow{
-		GroupID:                      input.GroupID,
-		GroupName:                    input.GroupName,
-		Platform:                     input.Platform,
-		SubscriptionStatus:           input.SubscriptionStatus,
-		GroupDefaultMultiplier:       input.GroupDefaultMultiplier,
-		SystemDefaultMultiplier:      input.SystemDefaultMultiplier,
-		InheritedDefaultMultiplier:   inherited,
-		UserMultiplier:               input.UserMultiplier,
-		EffectiveMultiplier:          effective,
-		MultiplierSource:             source,
-		DailyLimitUSD:                input.DailyLimitUSD,
-		WeeklyLimitUSD:               input.WeeklyLimitUSD,
-		MonthlyLimitUSD:              input.MonthlyLimitUSD,
-		DailyEffectiveAllowanceUSD:   displayQuota(input.DailyLimitUSD, effective, input.UsageValueBasis),
-		WeeklyEffectiveAllowanceUSD:  displayQuota(input.WeeklyLimitUSD, effective, input.UsageValueBasis),
-		MonthlyEffectiveAllowanceUSD: displayQuota(input.MonthlyLimitUSD, effective, input.UsageValueBasis),
-		DailyDisplayUsedUSD:          displayUsage(input.DailyUsageUSD, effective, input.UsageValueBasis),
-		WeeklyDisplayUsedUSD:         displayUsage(input.WeeklyUsageUSD, effective, input.UsageValueBasis),
-		MonthlyDisplayUsedUSD:        displayUsage(input.MonthlyUsageUSD, effective, input.UsageValueBasis),
-		DailyUsageUSD:                input.DailyUsageUSD,
-		WeeklyUsageUSD:               input.WeeklyUsageUSD,
-		MonthlyUsageUSD:              input.MonthlyUsageUSD,
-		UsageValueBasis:              input.UsageValueBasis,
-		QuotaWindowBasis:             "sub2api_enforcement_window",
-		Editable:                     input.Editable,
-		EditableReason:               input.EditableReason,
+		GroupID:                            input.GroupID,
+		GroupName:                          input.GroupName,
+		Platform:                           input.Platform,
+		SubscriptionStatus:                 input.SubscriptionStatus,
+		GroupDefaultMultiplier:             input.GroupDefaultMultiplier,
+		SystemDefaultMultiplier:            input.SystemDefaultMultiplier,
+		InheritedDefaultMultiplier:         inherited,
+		UserMultiplier:                     input.UserMultiplier,
+		EffectiveMultiplier:                effective,
+		MultiplierSource:                   source,
+		DailyLimitUSD:                      input.DailyLimitUSD,
+		WeeklyLimitUSD:                     input.WeeklyLimitUSD,
+		MonthlyLimitUSD:                    input.MonthlyLimitUSD,
+		DailyEffectiveAllowanceUSD:         dailyAllowance,
+		WeeklyEffectiveAllowanceUSD:        weeklyAllowance,
+		MonthlyEffectiveAllowanceUSD:       monthlyAllowance,
+		DailyEffectiveAllowanceUnlimited:   dailyUnlimited,
+		WeeklyEffectiveAllowanceUnlimited:  weeklyUnlimited,
+		MonthlyEffectiveAllowanceUnlimited: monthlyUnlimited,
+		DailyDisplayUsedUSD:                displayUsage(input.DailyUsageUSD, effective, input.UsageValueBasis),
+		WeeklyDisplayUsedUSD:               displayUsage(input.WeeklyUsageUSD, effective, input.UsageValueBasis),
+		MonthlyDisplayUsedUSD:              displayUsage(input.MonthlyUsageUSD, effective, input.UsageValueBasis),
+		DailyUsageUSD:                      input.DailyUsageUSD,
+		WeeklyUsageUSD:                     input.WeeklyUsageUSD,
+		MonthlyUsageUSD:                    input.MonthlyUsageUSD,
+		UsageValueBasis:                    input.UsageValueBasis,
+		QuotaWindowBasis:                   "sub2api_enforcement_window",
+		Editable:                           input.Editable,
+		EditableReason:                     input.EditableReason,
 	}
 }
 
@@ -72,17 +78,16 @@ func displayUsage(rawUsage, multiplier float64, basis string) float64 {
 	return rawUsage / multiplier
 }
 
-func displayQuota(rawQuota *float64, multiplier float64, basis string) *float64 {
+func displayQuota(rawQuota *float64, multiplier float64, basis string) (*float64, bool) {
 	if rawQuota == nil {
-		return nil
+		return nil, true
 	}
 	if basis == "normalized_display_cost" {
-		return rawQuota
+		return rawQuota, false
 	}
 	if multiplier == 0 {
-		value := 0.0
-		return &value
+		return nil, true
 	}
 	value := *rawQuota / multiplier
-	return &value
+	return &value, false
 }

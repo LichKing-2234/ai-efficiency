@@ -466,6 +466,74 @@ describe('DashboardView', () => {
     expect(getTeamUsageSubjectDashboard).toHaveBeenCalledWith(101, expect.objectContaining({ granularity: 'day' }))
   })
 
+  it('consumes subject_user_id query after subjects load and opens member usage in scope', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { listTeamUsageSubjects, getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [
+            {
+              id: 1,
+              name: 'prod',
+              display_name: 'Production',
+              base_url: 'https://relay.example.com',
+              default_model: 'gpt-5.4',
+              is_primary: true,
+              groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'existing_hidden' } }],
+            },
+          ],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(listTeamUsageSubjects as any).mockResolvedValue({
+      data: {
+        data: {
+          page: 1,
+          page_size: 50,
+          total: 1,
+          subjects: [
+            {
+              subject_type: 'member',
+              user_id: 101,
+              display_name: 'Alice',
+              email: 'alice@example.com',
+              department_display_path: 'Department Alpha',
+              selectable: true,
+            },
+          ],
+        },
+      },
+    })
+    ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
+      data: {
+        data: {
+          ...usageSnapshot,
+          subject: {
+            subject_type: 'member',
+            user_id: 101,
+            display_name: 'Alice',
+            email: 'alice@example.com',
+            selectable: true,
+          },
+          subject_subscription_groups: [],
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push({ path: '/', query: { subject_user_id: '101' } })
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(getTeamUsageSubjectDashboard).toHaveBeenCalledWith(101, expect.objectContaining({ granularity: 'day' }))
+    expect(getUserUsageDashboard).toHaveBeenCalledTimes(1)
+    expect((wrapper.get('[data-testid="usage-subject-selector"]').element as HTMLSelectElement).value).toBe('member:101')
+  })
+
   it('ignores stale audit responses after switching selected members', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')

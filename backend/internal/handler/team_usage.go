@@ -275,6 +275,8 @@ func writeTeamUsageError(c *gin.Context, err error) {
 		pkg.Error(c, http.StatusNotFound, "target is not available")
 	case errors.Is(err, teamusage.ErrNoRelayMapping), errors.Is(err, teamusage.ErrInactiveSubscription):
 		pkg.Error(c, http.StatusConflict, err.Error())
+	case errors.Is(err, teamusage.ErrPartialFailed):
+		pkg.Error(c, http.StatusConflict, err.Error())
 	case errors.Is(err, teamusage.ErrPolicyDenied), errors.Is(err, teamusage.ErrInvalidMultiplier), errors.Is(err, teamusage.ErrInvalidMultiplierPrecision), errors.Is(err, teamusage.ErrMultiplierBelowInherited), errors.Is(err, teamusage.ErrMultiplierAboveMaximum):
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, teamusage.ErrProviderUnsupported):

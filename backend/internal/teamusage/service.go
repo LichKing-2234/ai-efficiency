@@ -177,7 +177,7 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 
 	trendState := TopMemberTrendState{
 		UnitLabel: "USD",
-		RankBasis: "last_30d_actual_cost",
+		RankBasis: "total_actual_cost",
 		Series:    make([]TopMemberTrendSeries, 0, len(topMembers)),
 	}
 	trendProvider, ok := provider.(relay.TeamMemberTrendProvider)
@@ -218,17 +218,17 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		trendState.Series = append(trendState.Series, series)
 	}
 
-	todayCost, last30dCost := sumOverviewStats(statsByRelayUserID)
+	todayCost, totalCost := sumOverviewStats(statsByRelayUserID)
 	return &OverviewResponse{
 		Configured:       true,
 		IsRepresentative: true,
 		Window:           buildOverviewWindow(params),
 		Summary: OverviewSummary{
-			MemberCount:       len(scope.Subjects),
-			RelayMemberCount:  len(relayUserIDs),
-			TodayActualCost:   todayCost,
-			Last30dActualCost: last30dCost,
-			UnitLabel:         "USD",
+			MemberCount:      len(scope.Subjects),
+			RelayMemberCount: len(relayUserIDs),
+			TodayActualCost:  todayCost,
+			TotalActualCost:  totalCost,
+			UnitLabel:        "USD",
 		},
 		TopMembers:     topMembers,
 		TopMemberTrend: trendState,
@@ -374,6 +374,13 @@ func (s *Service) UpdateMultiplier(ctx context.Context, actorUserID, targetUserI
 		if err != nil {
 			return nil, fmt.Errorf("reload updated team usage audit: %w", err)
 		}
+	}
+	if updatedAudit.Status == teamusageratemultiplieraudit.StatusPartialFailed {
+		message := strings.TrimSpace(updatedAudit.ErrorMessage)
+		if message == "" {
+			message = ErrPartialFailed.Error()
+		}
+		return nil, fmt.Errorf("%w: %s", ErrPartialFailed, message)
 	}
 	return buildUpdateMultiplierResponse(updatedAudit), nil
 }
@@ -751,12 +758,21 @@ func quotaDisplayForRow(row SubscriptionRow, window string) (*float64, *float64,
 	switch window {
 	case "daily":
 		used := row.DailyDisplayUsedUSD
+		if row.DailyEffectiveAllowanceUnlimited {
+			return &used, nil, "group_daily_subscription"
+		}
 		return &used, row.DailyEffectiveAllowanceUSD, "group_daily_subscription"
 	case "weekly":
 		used := row.WeeklyDisplayUsedUSD
+		if row.WeeklyEffectiveAllowanceUnlimited {
+			return &used, nil, "group_weekly_subscription"
+		}
 		return &used, row.WeeklyEffectiveAllowanceUSD, "group_weekly_subscription"
 	default:
 		used := row.MonthlyDisplayUsedUSD
+		if row.MonthlyEffectiveAllowanceUnlimited {
+			return &used, nil, source
+		}
 		return &used, row.MonthlyEffectiveAllowanceUSD, source
 	}
 }
@@ -805,12 +821,12 @@ func buildOverviewWindow(params OverviewParams) OverviewWindow {
 
 func sumOverviewStats(statsByRelayUserID map[int64]relay.TeamUserUsageStats) (*float64, *float64) {
 	today := 0.0
-	last30d := 0.0
+	total := 0.0
 	for _, stat := range statsByRelayUserID {
 		today += stat.TodayActualCost
-		last30d += stat.Last30dActualCost
+		total += stat.TotalActualCost
 	}
-	return &today, &last30d
+	return &today, &total
 }
 
 func filterSubjects(subjects []representativescope.Subject, q string) []representativescope.Subject {

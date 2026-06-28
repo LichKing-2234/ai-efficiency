@@ -10,7 +10,15 @@
 
 ---
 
-**Status:** Tasks 1-9 complete. Implementation and verification steps are checked below.
+**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete and verified for the scoped backend/frontend suites listed below.
+
+## Final Review Follow-up
+
+- [x] Align team usage summary decoding and Team Overview naming with the real sub2api batch `data.stats` contract (`total_actual_cost`, no rolling 30-day field).
+- [x] Return a failure for `partial_failed` multiplier writes so the selected-subject modal stays open on backend mismatch.
+- [x] Consume `subject_user_id` route query after subject scope loads and deep-link Team Overview Open actions into selected-member usage.
+- [x] Treat zero effective multiplier as unlimited allowance in delegated quota rows and preview rendering.
+- [x] Render unknown `subscription_count` as `-` instead of `0`.
 
 ## Source Spec
 

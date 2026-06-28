@@ -298,10 +298,10 @@ type UserUsageGroupQuotaGroupItem struct {
 }
 
 type TeamUserUsageStats struct {
-	UserID            int64   `json:"user_id"`
-	TodayActualCost   float64 `json:"today_actual_cost"`
-	Last30dActualCost float64 `json:"last_30d_actual_cost"`
-	TotalTokens       *int64  `json:"total_tokens,omitempty"`
+	UserID          int64   `json:"user_id"`
+	TodayActualCost float64 `json:"today_actual_cost"`
+	TotalActualCost float64 `json:"total_actual_cost"`
+	TotalTokens     *int64  `json:"total_tokens,omitempty"`
 }
 
 type TeamUsageSummaryParams struct {

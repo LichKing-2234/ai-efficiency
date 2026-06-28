@@ -128,8 +128,8 @@ func TestOverviewReturnsHardErrorForTrendAuthorizationFailure(t *testing.T) {
 	}
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, Last30dActualCost: 12, TodayActualCost: 2},
-			1003: {UserID: 1003, Last30dActualCost: 20, TodayActualCost: 5},
+			1002: {UserID: 1002, TotalActualCost: 12, TodayActualCost: 2},
+			1003: {UserID: 1003, TotalActualCost: 20, TodayActualCost: 5},
 		},
 		trendErr: relay.ErrInvalidCredentials,
 	}
@@ -454,6 +454,59 @@ func TestUpdateMultiplierNoOpSkipsRelayReplacementAndSucceeds(t *testing.T) {
 	row := client.TeamUsageRateMultiplierAudit.GetX(ctx, resp.AuditID)
 	if row.Status != teamusageratemultiplieraudit.StatusSucceeded || row.Changed {
 		t.Fatalf("audit row status/changed = %s/%v, want succeeded/false", row.Status, row.Changed)
+	}
+}
+
+func TestUpdateMultiplierReturnsErrorWhenAuditEndsPartialFailed(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	target := createTeamUsageUser(t, client, "partial-target", "partial-target@example.com", intPtr(3402))
+
+	scope := &representativescope.Scope{
+		ActorUserID:      999,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: target.ID, DisplayName: "Partial Target", Email: target.Email, RelayUserID: intPtr(3402), Selectable: true},
+		},
+	}
+	provider := &fakeRelayProvider{
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			3402: {
+				{
+					GroupID: 42,
+					Status:  "active",
+					Group: &relay.Group{
+						ID:              42,
+						Name:            "Group Alpha",
+						Platform:        "openai",
+						RateMultiplier:  floatPtr(1.0),
+						MonthlyLimitUSD: floatPtr(200),
+					},
+					MonthlyUsageUSD: 80,
+				},
+			},
+		},
+		rateEntriesByGroup: map[int64][]relay.UserGroupRateEntry{
+			42: {{UserID: 3402, RateMultiplier: floatPtr(1.0)}},
+		},
+	}
+	provider.replaceFn = func(_ context.Context, _ int64, _ []relay.GroupRateMultiplierInput) error {
+		return nil
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
+
+	_, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
+		Mode:           "set",
+		RateMultiplier: floatPtr(2.0),
+	})
+	if err == nil {
+		t.Fatal("UpdateMultiplier() error = nil, want partial_failed error")
+	}
+
+	row := client.TeamUsageRateMultiplierAudit.Query().OnlyX(ctx)
+	if row.Status != teamusageratemultiplieraudit.StatusPartialFailed {
+		t.Fatalf("audit status = %s, want partial_failed", row.Status)
 	}
 }
 

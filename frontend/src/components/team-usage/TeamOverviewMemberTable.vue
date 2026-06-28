@@ -35,7 +35,7 @@ function formatCost(value: number) {
             <th class="whitespace-nowrap px-4 py-2 text-left">Email</th>
             <th class="whitespace-nowrap px-4 py-2 text-left">Department</th>
             <th class="whitespace-nowrap px-4 py-2 text-right">Today actual cost</th>
-            <th class="whitespace-nowrap px-4 py-2 text-right">Rolling 30-day actual cost</th>
+            <th class="whitespace-nowrap px-4 py-2 text-right">Total actual cost</th>
             <th class="whitespace-nowrap px-4 py-2 text-right">Subscriptions</th>
             <th class="whitespace-nowrap px-4 py-2 text-right">Action</th>
           </tr>
@@ -53,10 +53,10 @@ function formatCost(value: number) {
               {{ formatCost(member.today_actual_cost) }}
             </td>
             <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">
-              {{ formatCost(member.last_30d_actual_cost) }}
+              {{ formatCost(member.total_actual_cost) }}
             </td>
             <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-600">
-              {{ member.subscription_count ?? 0 }}
+              {{ member.subscription_count == null ? '-' : member.subscription_count }}
             </td>
             <td class="whitespace-nowrap px-4 py-2 text-right">
               <button

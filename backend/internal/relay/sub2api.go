@@ -2107,7 +2107,9 @@ func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int
 
 	var result struct {
 		envelopeStatus
-		Data []TeamUserUsageStats `json:"data"`
+		Data struct {
+			Stats map[string]TeamUserUsageStats `json:"stats"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("relay: batch user usage stats: decode: %w", err)
@@ -2116,8 +2118,15 @@ func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int
 		return nil, fmt.Errorf("relay: batch user usage stats: request failed%s", result.envelopeStatus.messageSuffix())
 	}
 
-	out := make(map[int64]TeamUserUsageStats, len(result.Data))
-	for _, item := range result.Data {
+	out := make(map[int64]TeamUserUsageStats, len(result.Data.Stats))
+	for rawUserID, item := range result.Data.Stats {
+		if item.UserID == 0 {
+			parsedUserID, err := strconv.ParseInt(strings.TrimSpace(rawUserID), 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("relay: batch user usage stats: parse user id %q: %w", rawUserID, err)
+			}
+			item.UserID = parsedUserID
+		}
 		out[item.UserID] = item
 	}
 	return out, nil

@@ -20,20 +20,32 @@ const errorMessage = ref('')
 
 const sortedRows = computed(() => [...props.rows].sort((a, b) => a.group_name.localeCompare(b.group_name)))
 
-function formatCurrency(amount: number | null | undefined) {
+function formatCurrency(amount: number | null | undefined, unlimited = false) {
+  if (unlimited) return '∞'
   if (amount == null) return '-'
   return `$${amount.toFixed(2)}`
 }
 
 function displayUsed(row: SubjectSubscriptionGroup, draft?: number) {
-  if (!draft || row.usage_value_basis === 'normalized_display_cost') return row.monthly_display_used_usd
+  if (draft == null || row.usage_value_basis === 'normalized_display_cost') {
+    if (row.usage_value_basis !== 'normalized_display_cost' && row.effective_multiplier === 0) return 0
+    return row.monthly_display_used_usd
+  }
+  if (draft === 0) return 0
   return row.monthly_usage_usd / draft
 }
 
 function displayQuota(row: SubjectSubscriptionGroup, draft?: number) {
-  if (!draft || row.usage_value_basis === 'normalized_display_cost') return row.monthly_effective_allowance_usd
+  if (draft == null || row.usage_value_basis === 'normalized_display_cost') return row.monthly_effective_allowance_usd
+  if (draft === 0) return null
   if (row.monthly_effective_allowance_usd == null) return null
   return row.monthly_effective_allowance_usd * row.effective_multiplier / draft
+}
+
+function quotaIsUnlimited(row: SubjectSubscriptionGroup, draft?: number) {
+  if (row.usage_value_basis === 'normalized_display_cost') return !!row.monthly_effective_allowance_unlimited
+  if (draft == null) return !!row.monthly_effective_allowance_unlimited
+  return draft === 0
 }
 
 function rowDraft(row: SubjectSubscriptionGroup) {
@@ -101,7 +113,7 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
             <td class="px-4 py-3 text-slate-700">{{ row.effective_multiplier }}x</td>
             <td class="px-4 py-3 font-medium text-slate-950">
               {{ formatCurrency(displayUsed(row, rowDraft(row))) }} /
-              {{ formatCurrency(displayQuota(row, rowDraft(row))) }}
+              {{ formatCurrency(displayQuota(row, rowDraft(row)), quotaIsUnlimited(row, rowDraft(row))) }}
             </td>
             <td class="px-4 py-3 text-right">
               <button

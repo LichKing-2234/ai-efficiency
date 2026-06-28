@@ -586,7 +586,7 @@ Validation failures:
 GET /api/v1/user/team-usage/overview?start_date=...&end_date=...&granularity=day&timezone=...
 ```
 
-Returns the independent team page data for the representative scope. The first version always exposes today and rolling 30-day summary values because the current sub2api batch user usage endpoint returns those windows. The Team Overview trend chart uses the requested date range, defaulting to the last 30 days.
+Returns the independent team page data for the representative scope. The current sub2api batch user usage endpoint exposes `today_actual_cost` and `total_actual_cost` in a `data.stats` map keyed by user id; it does not expose rolling 30-day summary values. Team Overview trend still uses the requested date range, defaulting to the last 30 days.
 
 First-version response:
 
@@ -608,7 +608,7 @@ First-version response:
     "member_count": 10,
     "relay_member_count": 8,
     "today_actual_cost": 12.34,
-    "last_30d_actual_cost": 123.45,
+    "total_actual_cost": 123.45,
     "unit_label": "USD"
   },
   "top_members": [
@@ -619,13 +619,13 @@ First-version response:
       "email": "alice@example.com",
       "department_display_path": "Department Alpha",
       "today_actual_cost": 1.23,
-      "last_30d_actual_cost": 12.3,
+      "total_actual_cost": 12.3,
       "total_tokens": null
     }
   ],
   "top_member_trend": {
     "unit_label": "USD",
-    "rank_basis": "last_30d_actual_cost",
+    "rank_basis": "total_actual_cost",
     "unavailable": false,
     "unavailable_reason": null,
     "series": [
@@ -653,7 +653,7 @@ First-version response:
       "department_display_path": "Department Alpha",
       "relay_user_id": 1001,
       "today_actual_cost": 1.23,
-      "last_30d_actual_cost": 12.3,
+      "total_actual_cost": 12.3,
       "subscription_count": null,
       "selectable": true
     }
@@ -665,7 +665,7 @@ Team Overview must not include `group_quotas`, subscription quota rows, or multi
 
 Top-12 trend rules:
 
-1. `top_members` is ranked by rolling 30-day actual cost from scoped relay users.
+1. `top_members` is ranked by total actual cost from scoped relay users because that is the summary value the current batch endpoint returns.
 2. `top_member_trend.series` contains the same top members, in the same rank order, and renders as the Team Overview replacement for the personal Token Trend chart.
 3. Each trend point uses actual cost in the requested range and granularity. Token totals are optional and may be `null` when the relay cannot provide them without raw log scans.
 4. The trend series must be scoped before rendering. AE must not pass through a global sub2api user trend result that includes users outside the representative's department subtree.
@@ -740,7 +740,7 @@ The current code already uses a local optional `ListUserSubscriptions` shape in 
 1. `GET /api/v1/admin/usage/stats?user_id=...` for selected-member stats.
 2. `GET /api/v1/admin/dashboard/trend?user_id=...` for selected-member token trend.
 3. `GET /api/v1/admin/dashboard/models?user_id=...` for selected-member model distribution.
-4. `POST /api/v1/admin/dashboard/users-usage` for Team Overview today and rolling 30-day member summary.
+4. `POST /api/v1/admin/dashboard/users-usage` for Team Overview today and total member summary (`data.stats` map keyed by user id).
 5. `GET /api/v1/admin/dashboard/trend?user_id=...` fan-out for Team Overview top-12 member trend series, capped at 12 relay users.
 6. `GET /api/v1/admin/users/:id/subscriptions` for selected-member subscription groups.
 7. `GET /api/v1/admin/groups/:id/rate-multipliers` for current user-specific group multipliers.
@@ -871,13 +871,13 @@ Team Overview first screen:
    - scoped members
    - relay-enabled members
    - today actual cost
-   - rolling 30-day actual cost
+   - total actual cost
 2. Top 12 member usage trend chart:
    - replaces the personal Token Trend slot
-   - selects the top 12 scoped members by rolling 30-day actual cost
+   - selects the top 12 scoped members by total actual cost
    - renders one trend series per selected member over the chosen date range
    - keeps legend/order in rank order
-   - shows today actual cost and rolling 30-day actual cost as hover or side-list context
+   - shows today actual cost and total actual cost as hover or side-list context
    - shows token totals when the relay can provide them without raw log scans
 3. Member usage table:
    - replaces the personal Model Distribution slot
@@ -885,7 +885,7 @@ Team Overview first screen:
    - email
    - department
    - today actual cost
-   - rolling 30-day actual cost
+   - total actual cost
    - subscription count when available without per-member fan-out
    - status
    - action to open that member in AI Usage Center

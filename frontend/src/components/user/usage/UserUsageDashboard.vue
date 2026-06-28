@@ -91,6 +91,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { getUserUsageDashboard } from '@/api/userUsage'
 import {
   getTeamUsageAudit,
@@ -140,6 +141,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const credentialError = ref(false)
 const { t } = useI18n()
+const route = useRoute()
 let dashboardRequestSeq = 0
 
 const currentSnapshot = computed(() => snapshot.value ?? props.initialSnapshot)
@@ -230,6 +232,18 @@ async function loadSubjects() {
   }
 }
 
+function applySubjectQuerySelection() {
+  const raw = Array.isArray(route.query.subject_user_id) ? route.query.subject_user_id[0] : route.query.subject_user_id
+  const subjectUserID = Number(raw)
+  if (!Number.isInteger(subjectUserID)) return false
+  const subject = subjects.value.find((item) => item.subject_type === 'member' && item.user_id === subjectUserID && item.selectable)
+  if (!subject) return false
+  const next = subjectValue(subject)
+  if (selectedSubjectValue.value === next) return false
+  selectedSubjectValue.value = next
+  return true
+}
+
 async function loadAuditForSubject(targetUserID: number, requestSeq: number) {
   try {
     const res = await getTeamUsageAudit({ target_user_id: targetUserID, page_size: 20 })
@@ -297,9 +311,10 @@ async function handleMultiplierConfirm(event: { subjectUserId: number; groupID: 
   await loadDashboard()
 }
 
-onMounted(() => {
-  loadSubjects()
-  if (props.initialSnapshot) {
+onMounted(async () => {
+  await loadSubjects()
+  const consumedSubjectQuery = applySubjectQuerySelection()
+  if (props.initialSnapshot && !consumedSubjectQuery) {
     snapshotRange.value = selectedRange.value
     return
   }

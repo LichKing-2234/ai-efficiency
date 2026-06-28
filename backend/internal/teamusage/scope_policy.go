@@ -22,7 +22,7 @@ func BuildOverviewUnavailableForLargeScope(subjects []representativescope.Subjec
 		TopMembers: []OverviewMember{},
 		TopMemberTrend: TopMemberTrendState{
 			UnitLabel:         "USD",
-			RankBasis:         "last_30d_actual_cost",
+			RankBasis:         "total_actual_cost",
 			Unavailable:       true,
 			UnavailableReason: &reason,
 			Series:            []TopMemberTrendSeries{},
@@ -46,16 +46,16 @@ func RankTopMembers(subjects []representativescope.Subject, stats map[int64]rela
 			DepartmentDisplayPath: subject.DepartmentDisplayPath,
 			RelayUserID:           subject.RelayUserID,
 			TodayActualCost:       stat.TodayActualCost,
-			Last30dActualCost:     stat.Last30dActualCost,
+			TotalActualCost:       stat.TotalActualCost,
 			TotalTokens:           stat.TotalTokens,
 			Selectable:            subject.Selectable,
 		})
 	}
 	sort.SliceStable(members, func(i, j int) bool {
-		if members[i].Last30dActualCost == members[j].Last30dActualCost {
+		if members[i].TotalActualCost == members[j].TotalActualCost {
 			return members[i].UserID < members[j].UserID
 		}
-		return members[i].Last30dActualCost > members[j].Last30dActualCost
+		return members[i].TotalActualCost > members[j].TotalActualCost
 	})
 	if limit > 0 && len(members) > limit {
 		members = members[:limit]

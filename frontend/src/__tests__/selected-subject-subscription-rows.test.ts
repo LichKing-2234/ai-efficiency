@@ -24,6 +24,18 @@ const editableRow = {
   editable: true,
 }
 
+const zeroMultiplierRow = {
+  ...editableRow,
+  group_id: '43',
+  group_name: 'Group Zero',
+  inherited_default_multiplier: 0,
+  system_default_multiplier: 0,
+  user_multiplier: 0,
+  effective_multiplier: 0,
+  monthly_effective_allowance_usd: null,
+  monthly_effective_allowance_unlimited: true,
+}
+
 describe('SelectedSubjectSubscriptionRows', () => {
   it('previews normalized Used / Quota when draft multiplier changes', async () => {
     const wrapper = mount(SelectedSubjectSubscriptionRows, {
@@ -59,5 +71,16 @@ describe('SelectedSubjectSubscriptionRows', () => {
     expect(updateMultiplier).toHaveBeenCalled()
     expect(wrapper.find('[data-testid="multiplier-input"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Unable to update rate multiplier')
+  })
+
+  it('renders infinity for unlimited quota when effective multiplier is zero', async () => {
+    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+      props: {
+        subjectUserId: 101,
+        rows: [zeroMultiplierRow],
+      },
+    })
+
+    expect(wrapper.text()).toContain('$0.00 / ∞')
   })
 })

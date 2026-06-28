@@ -842,6 +842,9 @@ export interface SubjectSubscriptionGroup {
   daily_effective_allowance_usd?: number | null
   weekly_effective_allowance_usd?: number | null
   monthly_effective_allowance_usd?: number | null
+  daily_effective_allowance_unlimited?: boolean
+  weekly_effective_allowance_unlimited?: boolean
+  monthly_effective_allowance_unlimited?: boolean
   daily_display_used_usd: number
   weekly_display_used_usd: number
   monthly_display_used_usd: number
@@ -874,7 +877,7 @@ export interface TeamOverviewSummary {
   member_count: number
   relay_member_count: number
   today_actual_cost?: number | null
-  last_30d_actual_cost?: number | null
+  total_actual_cost?: number | null
   unit_label: string
 }
 
@@ -886,7 +889,7 @@ export interface TeamOverviewMember {
   department_display_path: string
   relay_user_id?: number | null
   today_actual_cost: number
-  last_30d_actual_cost: number
+  total_actual_cost: number
   total_tokens?: number | null
   subscription_count?: number | null
   selectable: boolean

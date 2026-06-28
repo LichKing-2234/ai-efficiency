@@ -17,6 +17,7 @@ var (
 	ErrInactiveSubscription        = errors.New("inactive_subscription")
 	ErrPolicyDenied                = errors.New("policy_denied")
 	ErrProviderUnsupported         = errors.New("provider_unsupported")
+	ErrPartialFailed               = errors.New("partial_failed")
 )
 
 type ForbiddenError struct {
@@ -54,32 +55,35 @@ type SubjectDashboardResponse struct {
 }
 
 type SubscriptionRow struct {
-	GroupID                      string   `json:"group_id"`
-	GroupName                    string   `json:"group_name"`
-	Platform                     string   `json:"platform"`
-	SubscriptionStatus           string   `json:"subscription_status"`
-	GroupDefaultMultiplier       *float64 `json:"group_default_multiplier,omitempty"`
-	SystemDefaultMultiplier      float64  `json:"system_default_multiplier"`
-	InheritedDefaultMultiplier   float64  `json:"inherited_default_multiplier"`
-	UserMultiplier               *float64 `json:"user_multiplier,omitempty"`
-	EffectiveMultiplier          float64  `json:"effective_multiplier"`
-	MultiplierSource             string   `json:"multiplier_source"`
-	DailyLimitUSD                *float64 `json:"daily_limit_usd,omitempty"`
-	WeeklyLimitUSD               *float64 `json:"weekly_limit_usd,omitempty"`
-	MonthlyLimitUSD              *float64 `json:"monthly_limit_usd,omitempty"`
-	DailyEffectiveAllowanceUSD   *float64 `json:"daily_effective_allowance_usd,omitempty"`
-	WeeklyEffectiveAllowanceUSD  *float64 `json:"weekly_effective_allowance_usd,omitempty"`
-	MonthlyEffectiveAllowanceUSD *float64 `json:"monthly_effective_allowance_usd,omitempty"`
-	DailyDisplayUsedUSD          float64  `json:"daily_display_used_usd"`
-	WeeklyDisplayUsedUSD         float64  `json:"weekly_display_used_usd"`
-	MonthlyDisplayUsedUSD        float64  `json:"monthly_display_used_usd"`
-	DailyUsageUSD                float64  `json:"daily_usage_usd"`
-	WeeklyUsageUSD               float64  `json:"weekly_usage_usd"`
-	MonthlyUsageUSD              float64  `json:"monthly_usage_usd"`
-	UsageValueBasis              string   `json:"usage_value_basis"`
-	QuotaWindowBasis             string   `json:"quota_window_basis"`
-	Editable                     bool     `json:"editable"`
-	EditableReason               *string  `json:"editable_reason,omitempty"`
+	GroupID                            string   `json:"group_id"`
+	GroupName                          string   `json:"group_name"`
+	Platform                           string   `json:"platform"`
+	SubscriptionStatus                 string   `json:"subscription_status"`
+	GroupDefaultMultiplier             *float64 `json:"group_default_multiplier,omitempty"`
+	SystemDefaultMultiplier            float64  `json:"system_default_multiplier"`
+	InheritedDefaultMultiplier         float64  `json:"inherited_default_multiplier"`
+	UserMultiplier                     *float64 `json:"user_multiplier,omitempty"`
+	EffectiveMultiplier                float64  `json:"effective_multiplier"`
+	MultiplierSource                   string   `json:"multiplier_source"`
+	DailyLimitUSD                      *float64 `json:"daily_limit_usd,omitempty"`
+	WeeklyLimitUSD                     *float64 `json:"weekly_limit_usd,omitempty"`
+	MonthlyLimitUSD                    *float64 `json:"monthly_limit_usd,omitempty"`
+	DailyEffectiveAllowanceUSD         *float64 `json:"daily_effective_allowance_usd,omitempty"`
+	WeeklyEffectiveAllowanceUSD        *float64 `json:"weekly_effective_allowance_usd,omitempty"`
+	MonthlyEffectiveAllowanceUSD       *float64 `json:"monthly_effective_allowance_usd,omitempty"`
+	DailyEffectiveAllowanceUnlimited   bool     `json:"daily_effective_allowance_unlimited,omitempty"`
+	WeeklyEffectiveAllowanceUnlimited  bool     `json:"weekly_effective_allowance_unlimited,omitempty"`
+	MonthlyEffectiveAllowanceUnlimited bool     `json:"monthly_effective_allowance_unlimited,omitempty"`
+	DailyDisplayUsedUSD                float64  `json:"daily_display_used_usd"`
+	WeeklyDisplayUsedUSD               float64  `json:"weekly_display_used_usd"`
+	MonthlyDisplayUsedUSD              float64  `json:"monthly_display_used_usd"`
+	DailyUsageUSD                      float64  `json:"daily_usage_usd"`
+	WeeklyUsageUSD                     float64  `json:"weekly_usage_usd"`
+	MonthlyUsageUSD                    float64  `json:"monthly_usage_usd"`
+	UsageValueBasis                    string   `json:"usage_value_basis"`
+	QuotaWindowBasis                   string   `json:"quota_window_basis"`
+	Editable                           bool     `json:"editable"`
+	EditableReason                     *string  `json:"editable_reason,omitempty"`
 }
 
 type OverviewParams struct {
@@ -116,7 +120,7 @@ type OverviewSummary struct {
 	MemberCount       int      `json:"member_count"`
 	RelayMemberCount  int      `json:"relay_member_count"`
 	TodayActualCost   *float64 `json:"today_actual_cost"`
-	Last30dActualCost *float64 `json:"last_30d_actual_cost"`
+	TotalActualCost   *float64 `json:"total_actual_cost"`
 	UnitLabel         string   `json:"unit_label"`
 }
 
@@ -128,7 +132,7 @@ type OverviewMember struct {
 	DepartmentDisplayPath string  `json:"department_display_path"`
 	RelayUserID           *int    `json:"relay_user_id,omitempty"`
 	TodayActualCost       float64 `json:"today_actual_cost"`
-	Last30dActualCost     float64 `json:"last_30d_actual_cost"`
+	TotalActualCost       float64 `json:"total_actual_cost"`
 	TotalTokens           *int64  `json:"total_tokens,omitempty"`
 	SubscriptionCount     *int    `json:"subscription_count"`
 	Selectable            bool    `json:"selectable"`

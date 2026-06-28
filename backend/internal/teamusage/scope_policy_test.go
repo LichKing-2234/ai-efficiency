@@ -26,6 +26,9 @@ func TestOverviewScopeTooLargeDoesNotRankTruncatedTop12(t *testing.T) {
 	if !state.TopMemberTrend.Unavailable || len(state.TopMembers) != 0 {
 		t.Fatalf("top member trend = %#v top_members=%#v, want unavailable with no ranking", state.TopMemberTrend, state.TopMembers)
 	}
+	if state.TopMemberTrend.RankBasis != "total_actual_cost" {
+		t.Fatalf("rank basis = %q, want total_actual_cost", state.TopMemberTrend.RankBasis)
+	}
 }
 
 func TestRankTopMembersUsesCompleteScopedStats(t *testing.T) {
@@ -34,11 +37,14 @@ func TestRankTopMembersUsesCompleteScopedStats(t *testing.T) {
 		{SubjectType: "member", UserID: 2, DisplayName: "Bob", RelayUserID: intPtr(1002), Selectable: true},
 	}
 	stats := map[int64]relay.TeamUserUsageStats{
-		1001: {UserID: 1001, Last30dActualCost: 20},
-		1002: {UserID: 1002, Last30dActualCost: 40},
+		1001: {UserID: 1001, TotalActualCost: 20},
+		1002: {UserID: 1002, TotalActualCost: 40},
 	}
 	top := RankTopMembers(subjects, stats, 12)
 	if got := []int{top[0].UserID, top[1].UserID}; !reflect.DeepEqual(got, []int{2, 1}) {
 		t.Fatalf("ranked user ids = %#v, want Bob then Alice", got)
+	}
+	if top[0].TotalActualCost != 40 || top[1].TotalActualCost != 20 {
+		t.Fatalf("ranked costs = %#v, want 40 then 20", []float64{top[0].TotalActualCost, top[1].TotalActualCost})
 	}
 }

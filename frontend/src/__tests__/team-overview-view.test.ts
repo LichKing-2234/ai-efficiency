@@ -30,7 +30,7 @@ const overviewFixture: TeamOverviewResponse = {
     member_count: 2,
     relay_member_count: 1,
     today_actual_cost: 1.25,
-    last_30d_actual_cost: 24.5,
+    total_actual_cost: 24.5,
     unit_label: 'USD',
   },
   top_members: [
@@ -42,7 +42,7 @@ const overviewFixture: TeamOverviewResponse = {
       department_display_path: 'Department Alpha',
       relay_user_id: 1001,
       today_actual_cost: 1.25,
-      last_30d_actual_cost: 24.5,
+      total_actual_cost: 24.5,
       total_tokens: 12000,
       subscription_count: 2,
       selectable: true,
@@ -50,7 +50,7 @@ const overviewFixture: TeamOverviewResponse = {
   ],
   top_member_trend: {
     unit_label: 'USD',
-    rank_basis: 'last_30d_actual_cost',
+    rank_basis: 'total_actual_cost',
     unavailable: false,
     unavailable_reason: null,
     series: [
@@ -76,7 +76,7 @@ const overviewFixture: TeamOverviewResponse = {
       department_display_path: 'Department Alpha',
       relay_user_id: 1001,
       today_actual_cost: 1.25,
-      last_30d_actual_cost: 24.5,
+      total_actual_cost: 24.5,
       total_tokens: 12000,
       subscription_count: 2,
       selectable: true,
@@ -89,9 +89,9 @@ const overviewFixture: TeamOverviewResponse = {
       department_display_path: 'Department Alpha / Department Beta',
       relay_user_id: null,
       today_actual_cost: 0,
-      last_30d_actual_cost: 3.5,
+      total_actual_cost: 3.5,
       total_tokens: 900,
-      subscription_count: 0,
+      subscription_count: null,
       selectable: true,
     },
   ],
@@ -131,8 +131,25 @@ describe('TeamOverviewView', () => {
     expect(mockGetTeamUsageOverview).toHaveBeenCalledWith({ granularity: 'day' })
     expect(wrapper.text()).toContain('Top 12 member usage')
     expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.text()).toContain('Total actual cost')
     expect(wrapper.text()).not.toContain('Used / Quota')
     expect(wrapper.text()).not.toContain('Rate multiplier')
+  })
+
+  it('renders dash when subscription count is unknown', async () => {
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/team-usage')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const bobRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('Bob'))
+    expect(bobRow).toBeTruthy()
+    expect(bobRow.findAll('td')[5].text()).toBe('-')
   })
 
   it('renders scope-too-large warning when trend reason is scope too large', async () => {
@@ -225,7 +242,7 @@ describe('TeamOverviewMemberTrendChart', () => {
       props: {
         state: {
           unit_label: 'USD',
-          rank_basis: 'last_30d_actual_cost',
+          rank_basis: 'total_actual_cost',
           unavailable: false,
           unavailable_reason: null,
           series: [

@@ -3071,11 +3071,16 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
-			"data": []map[string]any{{
-				"user_id":              1001,
-				"today_actual_cost":    1.0,
-				"last_30d_actual_cost": 10.0,
-			}},
+			"data": map[string]any{
+				"stats": map[string]any{
+					"1001": map[string]any{
+						"user_id":           1001,
+						"today_actual_cost": 1.0,
+						"total_actual_cost": 10.0,
+						"total_tokens":      1234,
+					},
+				},
+			},
 		})
 	})
 	p := newTestProvider(t, mux)
@@ -3090,7 +3095,7 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 	if diff := cmp.Diff("Asia/Shanghai", body["timezone"]); diff != "" {
 		t.Fatalf("timezone mismatch (-want +got):\n%s", diff)
 	}
-	if got[1001].Last30dActualCost != 10.0 {
-		t.Fatalf("batch stats = %#v, want user 1001 last_30d_actual_cost 10.0", got)
+	if got[1001].TotalActualCost != 10.0 || got[1001].TotalTokens == nil || *got[1001].TotalTokens != 1234 {
+		t.Fatalf("batch stats = %#v, want user 1001 total_actual_cost 10.0 total_tokens 1234", got)
 	}
 }

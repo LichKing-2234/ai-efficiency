@@ -96,9 +96,9 @@ onMounted(loadOverview)
             </div>
           </div>
           <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.last30dActualCost') }}</div>
+            <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.totalActualCost') }}</div>
             <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">
-              {{ formatSummaryCost(overview.summary.last_30d_actual_cost, overview.summary.unit_label) }}
+              {{ formatSummaryCost(overview.summary.total_actual_cost, overview.summary.unit_label) }}
             </div>
           </div>
         </section>
