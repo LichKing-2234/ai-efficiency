@@ -178,7 +178,7 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     const bobRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('Bob'))
-    expect(bobRow).toBeTruthy()
+    if (!bobRow) throw new Error('expected Bob row to be rendered')
     expect(bobRow.findAll('td')[5].text()).toBe('-')
   })
 
