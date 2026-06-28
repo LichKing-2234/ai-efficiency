@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Ready for execution. No implementation checkbox has been completed.
+**Status:** Task 1 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
 
 ## Source Spec
 
@@ -124,7 +124,7 @@ Docs:
 - Create: `backend/internal/representativescope/service.go`
 - Create: `backend/internal/representativescope/service_test.go`
 
-- [ ] **Step 1: Write failing resolver tests**
+- [x] **Step 1: Write failing resolver tests**
 
 Add `backend/internal/representativescope/service_test.go`. Use `testdb.Open(t)` and helper builders in the same file:
 
@@ -241,13 +241,13 @@ func TestResolveRepresentativeScopeFailsClosedWithoutCurrentSource(t *testing.T)
 }
 ```
 
-- [ ] **Step 2: Run resolver tests and verify they fail**
+- [x] **Step 2: Run resolver tests and verify they fail**
 
 Run: `cd backend && go test ./internal/representativescope`
 
 Expected: FAIL with `package github.com/ai-efficiency/backend/internal/representativescope is not in std` or missing symbols.
 
-- [ ] **Step 3: Implement resolver types and constants**
+- [x] **Step 3: Implement resolver types and constants**
 
 Create `backend/internal/representativescope/service.go` with:
 
@@ -322,7 +322,7 @@ func New(client *ent.Client) *Service {
 }
 ```
 
-- [ ] **Step 4: Implement current-source and metadata helpers**
+- [x] **Step 4: Implement current-source and metadata helpers**
 
 Add these helpers in `backend/internal/representativescope/service.go`:
 
@@ -365,21 +365,18 @@ func compactStrings(values []string) []string {
 }
 ```
 
-- [ ] **Step 5: Implement `Resolve`**
+- [x] **Step 5: Implement `Resolve`**
 
 Add the query flow:
 
 ```go
 func (s *Service) Resolve(ctx context.Context, actorUserID int) (*Scope, error) {
-	source, err := s.client.DirectorySource.Query().
-		Where(directorysource.LastSuccessfulRunIDNotNil()).
-		Order(ent.Desc(directorysource.FieldUpdatedAt)).
-		First(ctx)
-	if ent.IsNotFound(err) {
-		return &Scope{ActorUserID: actorUserID}, nil
-	}
+	sourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve current directory source: %w", err)
+	}
+	if !ok {
+		return &Scope{ActorUserID: actorUserID}, nil
 	}
 
 	actor, err := s.client.User.Get(ctx, actorUserID)
@@ -387,19 +384,23 @@ func (s *Service) Resolve(ctx context.Context, actorUserID int) (*Scope, error) 
 		return nil, err
 	}
 	members, err := s.client.DirectoryMember.Query().
-		Where(directorymember.SourceIDEQ(source.ID)).
+		Where(directorymember.SourceIDEQ(sourceID)).
 		All(ctx)
 	if err != nil {
 		return nil, err
 	}
 	departments, err := s.client.DirectoryDepartment.Query().
-		Where(directorydepartment.SourceIDEQ(source.ID)).
+		Where(directorydepartment.SourceIDEQ(sourceID)).
 		All(ctx)
 	if err != nil {
 		return nil, err
 	}
+	users, err := s.client.User.Query().All(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-	return buildScope(actor, members, departments), nil
+	return buildScope(actor, users, members, departments), nil
 }
 ```
 
@@ -413,7 +414,7 @@ Implement `buildScope` so it:
 - excludes the actor from member subjects so the UI only has synthetic `My Usage`
 - computes `TargetRepresentedRoots` for all matched users that are also representatives
 
-- [ ] **Step 6: Implement management policy helper**
+- [x] **Step 6: Implement management policy helper**
 
 Add:
 
@@ -422,14 +423,7 @@ func (s Scope) CanManageTarget(targetUserID int) (bool, string) {
 	if targetUserID == s.ActorUserID {
 		return false, "self_edit_forbidden"
 	}
-	allowed := false
-	for _, id := range s.AllowedUserIDs() {
-		if id == targetUserID {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
+	if !s.hasMemberSubject(targetUserID) {
 		return false, "out_of_scope"
 	}
 	targetRoots := s.TargetRepresentedRoots[targetUserID]
@@ -442,6 +436,19 @@ func (s Scope) CanManageTarget(targetUserID int) (bool, string) {
 		}
 	}
 	return true, ""
+}
+```
+
+Add the in-scope membership helper used by `CanManageTarget`:
+
+```go
+func (s Scope) hasMemberSubject(targetUserID int) bool {
+	for _, subject := range s.Subjects {
+		if subject.SubjectType == "member" && subject.UserID == targetUserID {
+			return true
+		}
+	}
+	return false
 }
 ```
 
@@ -465,13 +472,13 @@ func (s Scope) strictlyOwnsDepartment(targetRoot string) bool {
 }
 ```
 
-- [ ] **Step 7: Run resolver tests**
+- [x] **Step 7: Run resolver tests**
 
 Run: `cd backend && go test ./internal/representativescope`
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit resolver**
+- [x] **Step 8: Commit resolver**
 
 ```bash
 git add backend/internal/representativescope
