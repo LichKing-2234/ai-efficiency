@@ -19,6 +19,10 @@
 - [x] Consume `subject_user_id` route query after subject scope loads and deep-link Team Overview Open actions into selected-member usage.
 - [x] Treat zero effective multiplier as unlimited allowance in delegated quota rows and preview rendering.
 - [x] Render unknown `subscription_count` as `-` instead of `0`.
+- [x] Request Team Overview with an explicit 30-day default window instead of inheriting the shared 7-day parser default.
+- [x] Expand subject loading for `subject_user_id` deep links so members beyond the default first page can be selected.
+- [x] Map `partial_failed` multiplier verification mismatches to a generic 502 response without exposing readback details.
+- [x] Remove stale plan snippets that referenced the superseded rolling `last_30d_actual_cost` team summary contract.
 
 ## Source Spec
 
@@ -678,7 +682,7 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []map[string]any{{"user_id": 1001, "today_actual_cost": 1.0, "last_30d_actual_cost": 10.0}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{"stats": map[string]any{"1001": map[string]any{"user_id": 1001, "today_actual_cost": 1.0, "total_actual_cost": 10.0, "total_tokens": 1234}}}})
 	})
 	p := newTestProvider(t, mux)
 	summary := p.(relay.TeamUsageSummaryProvider)
@@ -686,8 +690,8 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBatchUserUsageStats() error = %v", err)
 	}
-	if got[1001].Last30dActualCost != 10.0 {
-		t.Fatalf("batch stats = %#v, want user 1001 last_30d_actual_cost 10.0", got)
+	if got[1001].TotalActualCost != 10.0 || got[1001].TotalTokens == nil || *got[1001].TotalTokens != 1234 {
+		t.Fatalf("batch stats = %#v, want user 1001 total_actual_cost 10.0 total_tokens 1234", got)
 	}
 }
 ```
@@ -720,10 +724,10 @@ Append the team usage extension types:
 
 ```go
 type TeamUserUsageStats struct {
-	UserID            int64   `json:"user_id"`
-	TodayActualCost   float64 `json:"today_actual_cost"`
-	Last30dActualCost float64 `json:"last_30d_actual_cost"`
-	TotalTokens       *int64  `json:"total_tokens,omitempty"`
+	UserID          int64   `json:"user_id"`
+	TodayActualCost float64 `json:"today_actual_cost"`
+	TotalActualCost float64 `json:"total_actual_cost"`
+	TotalTokens     *int64  `json:"total_tokens,omitempty"`
 }
 
 type TeamUsageSummaryParams struct {
@@ -1065,8 +1069,8 @@ func TestRankTopMembersUsesCompleteScopedStats(t *testing.T) {
 		{SubjectType: "member", UserID: 2, DisplayName: "Bob", RelayUserID: intPtr(1002), Selectable: true},
 	}
 	stats := map[int64]relay.TeamUserUsageStats{
-		1001: {UserID: 1001, Last30dActualCost: 20},
-		1002: {UserID: 1002, Last30dActualCost: 40},
+		1001: {UserID: 1001, TotalActualCost: 20},
+		1002: {UserID: 1002, TotalActualCost: 40},
 	}
 	top := RankTopMembers(subjects, stats, 12)
 	if got := []int{top[0].UserID, top[1].UserID}; !reflect.DeepEqual(got, []int{2, 1}) {
@@ -1193,7 +1197,7 @@ type OverviewSummary struct {
 	MemberCount          int      `json:"member_count"`
 	RelayMemberCount     int      `json:"relay_member_count"`
 	TodayActualCost      *float64 `json:"today_actual_cost"`
-	Last30dActualCost     *float64 `json:"last_30d_actual_cost"`
+	TotalActualCost      *float64 `json:"total_actual_cost"`
 	UnitLabel            string   `json:"unit_label"`
 }
 
@@ -1205,7 +1209,7 @@ type OverviewMember struct {
 	DepartmentDisplayPath string   `json:"department_display_path"`
 	RelayUserID           *int     `json:"relay_user_id,omitempty"`
 	TodayActualCost       float64  `json:"today_actual_cost"`
-	Last30dActualCost      float64  `json:"last_30d_actual_cost"`
+	TotalActualCost       float64  `json:"total_actual_cost"`
 	TotalTokens           *int64   `json:"total_tokens,omitempty"`
 	SubscriptionCount     *int     `json:"subscription_count"`
 	Selectable            bool     `json:"selectable"`
@@ -1307,7 +1311,7 @@ func BuildOverviewUnavailableForLargeScope(subjects []representativescope.Subjec
 		TopMembers: []OverviewMember{},
 		TopMemberTrend: TopMemberTrendState{
 			UnitLabel:         "USD",
-			RankBasis:         "last_30d_actual_cost",
+			RankBasis:         "total_actual_cost",
 			Unavailable:       true,
 			UnavailableReason: &reason,
 			Series:            []TopMemberTrendSeries{},
@@ -1331,13 +1335,13 @@ func RankTopMembers(subjects []representativescope.Subject, stats map[int64]rela
 			DepartmentDisplayPath: subject.DepartmentDisplayPath,
 			RelayUserID:           subject.RelayUserID,
 			TodayActualCost:       stat.TodayActualCost,
-			Last30dActualCost:     stat.Last30dActualCost,
+			TotalActualCost:       stat.TotalActualCost,
 			TotalTokens:           stat.TotalTokens,
 			Selectable:            subject.Selectable,
 		})
 	}
 	sort.SliceStable(members, func(i, j int) bool {
-		return members[i].Last30dActualCost > members[j].Last30dActualCost
+		return members[i].TotalActualCost > members[j].TotalActualCost
 	})
 	if limit > 0 && len(members) > limit {
 		members = members[:limit]
@@ -1988,7 +1992,7 @@ export interface TeamOverviewSummary {
   member_count: number
   relay_member_count: number
   today_actual_cost?: number | null
-  last_30d_actual_cost?: number | null
+  total_actual_cost?: number | null
   unit_label: string
 }
 
@@ -2000,7 +2004,7 @@ export interface TeamOverviewMember {
   department_display_path: string
   relay_user_id?: number | null
   today_actual_cost: number
-  last_30d_actual_cost: number
+  total_actual_cost: number
   total_tokens?: number | null
   subscription_count?: number | null
   selectable: boolean
@@ -2435,7 +2439,7 @@ onMounted(loadOverview)
         </div>
         <div class="rounded-md border border-slate-200 bg-white p-4">
           <div class="text-xs text-slate-500">{{ $t('teamUsage.last30dActualCost') }}</div>
-          <div class="mt-1 text-lg font-semibold">{{ overview.summary.last_30d_actual_cost ?? '-' }}</div>
+          <div class="mt-1 text-lg font-semibold">{{ overview.summary.total_actual_cost ?? '-' }}</div>
         </div>
       </section>
 
@@ -2557,6 +2561,16 @@ git commit -m "docs(architecture): document representative team usage"
   - `cd frontend && pnpm test` passed.
   - First `cd frontend && pnpm run test:e2e:role` failed with `Page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:5173/login` because the script expects an already-running local frontend.
   - After starting `pnpm dev -- --host 127.0.0.1 --port 5173`, `cd frontend && pnpm run test:e2e:role` passed.
+
+- Final review follow-up verification notes:
+  - `cd backend && go test ./internal/handler -run 'TestUpdateMultiplierReturnsFailureForPartialFailedAudit'` passed.
+  - `cd frontend && pnpm test -- team-overview-view dashboard-view` passed.
+  - `cd backend && go test ./internal/handler` passed.
+  - `cd frontend && pnpm test -- selected-subject-subscription-rows dashboard-view team-overview-view team-usage-api` passed.
+  - `cd backend && go test ./...` passed.
+  - `cd frontend && pnpm test` passed with 30 files and 350 tests.
+  - After starting `pnpm dev -- --host 127.0.0.1 --port 5173`, `cd frontend && pnpm run test:e2e:role` passed with 14/14 checks.
+  - `git diff --check` passed.
 
 - Keep commits task-sized. Do not combine backend schema, relay, handlers, and frontend in one commit.
 - Maintain this plan as a live execution ledger. Check a box only after running the exact step.

@@ -219,9 +219,17 @@ function makeSelfSubject(): TeamUsageSubject {
   }
 }
 
-async function loadSubjects() {
+function subjectUserIDQuery() {
+  const raw = Array.isArray(route.query.subject_user_id) ? route.query.subject_user_id[0] : route.query.subject_user_id
+  const subjectUserID = Number(raw)
+  if (!Number.isInteger(subjectUserID)) return null
+  return subjectUserID
+}
+
+async function loadSubjects(options?: { expandForSubjectQuery?: boolean }) {
   try {
-    const res = await listTeamUsageSubjects()
+    const params = options?.expandForSubjectQuery ? { page_size: 500 } : undefined
+    const res = await listTeamUsageSubjects(params)
     memberSubjects.value = (res.data.data?.subjects ?? []).filter((subject) => subject.subject_type === 'member')
     if (!subjects.value.some((subject) => subjectValue(subject) === selectedSubjectValue.value)) {
       selectedSubjectValue.value = subjectValue(makeSelfSubject())
@@ -233,9 +241,8 @@ async function loadSubjects() {
 }
 
 function applySubjectQuerySelection() {
-  const raw = Array.isArray(route.query.subject_user_id) ? route.query.subject_user_id[0] : route.query.subject_user_id
-  const subjectUserID = Number(raw)
-  if (!Number.isInteger(subjectUserID)) return false
+  const subjectUserID = subjectUserIDQuery()
+  if (subjectUserID == null) return false
   const subject = subjects.value.find((item) => item.subject_type === 'member' && item.user_id === subjectUserID && item.selectable)
   if (!subject) return false
   const next = subjectValue(subject)
@@ -312,7 +319,7 @@ async function handleMultiplierConfirm(event: { subjectUserId: number; groupID: 
 }
 
 onMounted(async () => {
-  await loadSubjects()
+  await loadSubjects({ expandForSubjectQuery: subjectUserIDQuery() != null })
   const consumedSubjectQuery = applySubjectQuerySelection()
   if (props.initialSnapshot && !consumedSubjectQuery) {
     snapshotRange.value = selectedRange.value

@@ -413,7 +413,7 @@ func TestUpdateMultiplierReturnsFailureForPartialFailedAudit(t *testing.T) {
 			return nil, nil
 		},
 		updateMultiplierFn: func(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error) {
-			return nil, teamusage.ErrPartialFailed
+			return nil, fmt.Errorf("%w: readback multiplier mismatch for subscription 42", teamusage.ErrPartialFailed)
 		},
 		listAuditFn: func(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error) {
 			return nil, nil
@@ -424,8 +424,15 @@ func TestUpdateMultiplierReturnsFailureForPartialFailedAudit(t *testing.T) {
 	})
 
 	rec := performTeamUsageRequest(env.router, http.MethodPut, "/api/v1/user/team-usage/subjects/101/groups/42/rate-multiplier", env.token, `{"mode":"set","rate_multiplier":2}`)
-	if rec.Code == http.StatusOK {
-		t.Fatalf("status = %d, want non-2xx for partial_failed audit", rec.Code)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 for partial_failed audit: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "rate multiplier update could not be verified") {
+		t.Fatalf("body = %s, want generic verification failure", body)
+	}
+	if strings.Contains(body, "readback") || strings.Contains(body, "mismatch") || strings.Contains(body, "subscription 42") {
+		t.Fatalf("body = %s, want internal readback details hidden", body)
 	}
 }
 

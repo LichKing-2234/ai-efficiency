@@ -128,12 +128,42 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    expect(mockGetTeamUsageOverview).toHaveBeenCalledWith({ granularity: 'day' })
+    expect(mockGetTeamUsageOverview).toHaveBeenCalledWith(expect.objectContaining({ granularity: 'day' }))
     expect(wrapper.text()).toContain('Top 12 member usage')
     expect(wrapper.text()).toContain('Alice')
     expect(wrapper.text()).toContain('Total actual cost')
     expect(wrapper.text()).not.toContain('Used / Quota')
     expect(wrapper.text()).not.toContain('Rate multiplier')
+  })
+
+  it('requests an explicit 30-day overview window on first load', async () => {
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/team-usage')
+    await router.isReady()
+
+    mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const params = mockGetTeamUsageOverview.mock.calls[0][0] as {
+      start_date?: string
+      end_date?: string
+      granularity?: string
+      timezone?: string
+    }
+    expect(params).toEqual(expect.objectContaining({
+      granularity: 'day',
+      start_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      end_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      timezone: expect.any(String),
+    }))
+
+    const start = new Date(`${params.start_date}T00:00:00Z`)
+    const end = new Date(`${params.end_date}T00:00:00Z`)
+    const days = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1
+    expect(days).toBe(30)
   })
 
   it('renders dash when subscription count is unknown', async () => {

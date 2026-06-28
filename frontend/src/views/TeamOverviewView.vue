@@ -6,7 +6,7 @@ import TeamOverviewMemberTrendChart from '@/components/team-usage/TeamOverviewMe
 import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberTable.vue'
 import { getTeamUsageOverview } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
-import type { TeamOverviewResponse } from '@/types'
+import type { TeamOverviewResponse, TeamUsageOverviewParams } from '@/types'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -23,7 +23,7 @@ async function loadOverview() {
   loading.value = true
   loadError.value = null
   try {
-    overview.value = (await getTeamUsageOverview({ granularity: 'day' })).data.data ?? null
+    overview.value = (await getTeamUsageOverview(buildDefaultOverviewParams())).data.data ?? null
   } catch (error) {
     overview.value = null
     loadError.value = isForbidden(error) ? 'no_scope' : 'unavailable'
@@ -36,6 +36,25 @@ function isForbidden(error: unknown) {
   if (typeof error !== 'object' || error == null) return false
   const response = (error as { response?: { status?: number } }).response
   return response?.status === 403
+}
+
+function formatDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function buildDefaultOverviewParams(): TeamUsageOverviewParams {
+  const end = new Date()
+  const start = new Date(end)
+  start.setDate(end.getDate() - 29)
+  return {
+    start_date: formatDate(start),
+    end_date: formatDate(end),
+    granularity: 'day',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  }
 }
 
 function formatSummaryCost(value: number | null | undefined, unitLabel: string) {
