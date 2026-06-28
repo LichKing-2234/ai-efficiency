@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Tasks 1-3 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
+**Status:** Tasks 1-4 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
 
 ## Source Spec
 
@@ -940,7 +940,7 @@ git commit -m "feat(relay): add team usage and rate multiplier APIs"
 - Create: `backend/internal/teamusage/lock_test.go`
 - Create: `backend/internal/teamusage/write_test.go`
 
-- [ ] **Step 1: Write failing quota math tests**
+- [x] **Step 1: Write failing quota math tests**
 
 Create `backend/internal/teamusage/quota_test.go` with:
 
@@ -978,7 +978,7 @@ func TestDoesNotDoubleNormalizeDisplayCost(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Write failing write-policy tests**
+- [x] **Step 2: Write failing write-policy tests**
 
 Create `backend/internal/teamusage/write_test.go` with:
 
@@ -1031,7 +1031,7 @@ func TestNoOpWriteSkipsRelayReplacement(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Write failing overview scope policy tests**
+- [x] **Step 3: Write failing overview scope policy tests**
 
 Create `backend/internal/teamusage/scope_policy_test.go`:
 
@@ -1067,13 +1067,13 @@ func TestRankTopMembersUsesCompleteScopedStats(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Run teamusage tests and verify failure**
+- [x] **Step 4: Run teamusage tests and verify failure**
 
 Run: `cd backend && go test ./internal/teamusage`
 
 Expected: FAIL because package and functions do not exist.
 
-- [ ] **Step 5: Add domain types**
+- [x] **Step 5: Add domain types**
 
 Create `backend/internal/teamusage/types.go` with:
 
@@ -1279,7 +1279,7 @@ type AuditListResponse struct {
 }
 ```
 
-- [ ] **Step 6: Implement overview scope policy helpers**
+- [x] **Step 6: Implement overview scope policy helpers**
 
 Create `backend/internal/teamusage/scope_policy.go`:
 
@@ -1341,7 +1341,7 @@ func RankTopMembers(subjects []representativescope.Subject, stats map[int64]rela
 }
 ```
 
-- [ ] **Step 7: Implement quota math**
+- [x] **Step 7: Implement quota math**
 
 Create `backend/internal/teamusage/quota.go` with:
 
@@ -1427,7 +1427,7 @@ func displayQuota(rawQuota *float64, multiplier float64, basis string) *float64 
 }
 ```
 
-- [ ] **Step 8: Implement policy and merge helpers**
+- [x] **Step 8: Implement policy and merge helpers**
 
 Create `backend/internal/teamusage/write.go` with:
 
@@ -1504,7 +1504,7 @@ func MergeRateEntries(current []relay.UserGroupRateEntry, targetUserID int64, re
 }
 ```
 
-- [ ] **Step 9: Add provider/group advisory lock**
+- [x] **Step 9: Add provider/group advisory lock**
 
 Create `backend/internal/teamusage/lock.go`:
 
@@ -1552,7 +1552,7 @@ func (l *PostgresAdvisoryLocker) WithProviderGroupLock(ctx context.Context, prov
 
 Add `backend/internal/teamusage/lock_test.go` with a fake `AdvisoryLocker` for unit tests and an environment-gated PostgreSQL test named `TestPostgresAdvisoryLockerSerializesSameProviderGroup` that skips unless `AE_TEST_DATABASE_URL` is set.
 
-- [ ] **Step 10: Implement service orchestration**
+- [x] **Step 10: Implement service orchestration**
 
 Create `backend/internal/teamusage/service.go` that accepts Ent client, representative scope service, provider resolver, primary provider resolver, and `AdvisoryLocker`:
 
@@ -1610,13 +1610,13 @@ Implement `UpdateMultiplier` in this order:
 12. Inside the lock, re-fetch current group rate entries, re-check no-op, build merged entries with `MergeRateEntries`, call `ReplaceGroupRateMultipliers`, read back entries, and verify the target state.
 13. Mark `succeeded` with `changed=true` on verified success, `failed` on relay write failure, or `partial_failed` if readback does not match requested state.
 
-- [ ] **Step 11: Run teamusage tests**
+- [x] **Step 11: Run teamusage tests**
 
 Run: `cd backend && go test ./internal/teamusage`
 
 Expected: PASS.
 
-- [ ] **Step 12: Commit domain service**
+- [x] **Step 12: Commit domain service**
 
 ```bash
 git add backend/internal/teamusage
