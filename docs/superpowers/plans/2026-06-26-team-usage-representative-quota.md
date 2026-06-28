@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Task 1 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
+**Status:** Tasks 1-2 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
 
 ## Source Spec
 
@@ -491,7 +491,7 @@ git commit -m "feat(backend): add representative scope resolver"
 - Create: `backend/ent/schema/team_usage_rate_multiplier_audit.go`
 - Generated: `backend/ent/teamusageratemultiplieraudit*`, `backend/ent/client.go`, `backend/ent/mutation.go`, `backend/ent/ent.go`, `backend/ent/predicate/predicate.go`, `backend/ent/runtime/runtime.go`, `backend/ent/tx.go`
 
-- [ ] **Step 1: Add Ent audit schema**
+- [x] **Step 1: Add Ent audit schema**
 
 Create `backend/ent/schema/team_usage_rate_multiplier_audit.go`:
 
@@ -545,19 +545,19 @@ func (TeamUsageRateMultiplierAudit) Indexes() []ent.Index {
 }
 ```
 
-- [ ] **Step 2: Generate Ent code**
+- [x] **Step 2: Generate Ent code**
 
 Run: `cd backend && go generate ./ent`
 
 Expected: new generated `teamusageratemultiplieraudit` package appears and command exits 0.
 
-- [ ] **Step 3: Run Ent compile check**
+- [x] **Step 3: Run Ent compile check**
 
 Run: `cd backend && go test ./ent/...`
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit schema**
+- [x] **Step 4: Commit schema**
 
 ```bash
 git add backend/ent

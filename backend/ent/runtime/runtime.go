@@ -23,6 +23,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/schema"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/teamusageratemultiplieraudit"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
@@ -564,6 +565,38 @@ func init() {
 	systemsetting.DefaultUpdatedAt = systemsettingDescUpdatedAt.Default.(func() time.Time)
 	// systemsetting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	systemsetting.UpdateDefaultUpdatedAt = systemsettingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	teamusageratemultiplierauditFields := schema.TeamUsageRateMultiplierAudit{}.Fields()
+	_ = teamusageratemultiplierauditFields
+	// teamusageratemultiplierauditDescGroupID is the schema descriptor for group_id field.
+	teamusageratemultiplierauditDescGroupID := teamusageratemultiplierauditFields[4].Descriptor()
+	// teamusageratemultiplieraudit.DefaultGroupID holds the default value on creation for the group_id field.
+	teamusageratemultiplieraudit.DefaultGroupID = teamusageratemultiplierauditDescGroupID.Default.(string)
+	// teamusageratemultiplierauditDescGroupName is the schema descriptor for group_name field.
+	teamusageratemultiplierauditDescGroupName := teamusageratemultiplierauditFields[5].Descriptor()
+	// teamusageratemultiplieraudit.DefaultGroupName holds the default value on creation for the group_name field.
+	teamusageratemultiplieraudit.DefaultGroupName = teamusageratemultiplierauditDescGroupName.Default.(string)
+	// teamusageratemultiplierauditDescChanged is the schema descriptor for changed field.
+	teamusageratemultiplierauditDescChanged := teamusageratemultiplierauditFields[12].Descriptor()
+	// teamusageratemultiplieraudit.DefaultChanged holds the default value on creation for the changed field.
+	teamusageratemultiplieraudit.DefaultChanged = teamusageratemultiplierauditDescChanged.Default.(bool)
+	// teamusageratemultiplierauditDescReason is the schema descriptor for reason field.
+	teamusageratemultiplierauditDescReason := teamusageratemultiplierauditFields[18].Descriptor()
+	// teamusageratemultiplieraudit.DefaultReason holds the default value on creation for the reason field.
+	teamusageratemultiplieraudit.DefaultReason = teamusageratemultiplierauditDescReason.Default.(string)
+	// teamusageratemultiplierauditDescErrorMessage is the schema descriptor for error_message field.
+	teamusageratemultiplierauditDescErrorMessage := teamusageratemultiplierauditFields[19].Descriptor()
+	// teamusageratemultiplieraudit.DefaultErrorMessage holds the default value on creation for the error_message field.
+	teamusageratemultiplieraudit.DefaultErrorMessage = teamusageratemultiplierauditDescErrorMessage.Default.(string)
+	// teamusageratemultiplierauditDescCreatedAt is the schema descriptor for created_at field.
+	teamusageratemultiplierauditDescCreatedAt := teamusageratemultiplierauditFields[20].Descriptor()
+	// teamusageratemultiplieraudit.DefaultCreatedAt holds the default value on creation for the created_at field.
+	teamusageratemultiplieraudit.DefaultCreatedAt = teamusageratemultiplierauditDescCreatedAt.Default.(func() time.Time)
+	// teamusageratemultiplierauditDescUpdatedAt is the schema descriptor for updated_at field.
+	teamusageratemultiplierauditDescUpdatedAt := teamusageratemultiplierauditFields[21].Descriptor()
+	// teamusageratemultiplieraudit.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	teamusageratemultiplieraudit.DefaultUpdatedAt = teamusageratemultiplierauditDescUpdatedAt.Default.(func() time.Time)
+	// teamusageratemultiplieraudit.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	teamusageratemultiplieraudit.UpdateDefaultUpdatedAt = teamusageratemultiplierauditDescUpdatedAt.UpdateDefault.(func() time.Time)
 	toolusageeventFields := schema.ToolUsageEvent{}.Fields()
 	_ = toolusageeventFields
 	// toolusageeventDescTool is the schema descriptor for tool field.
