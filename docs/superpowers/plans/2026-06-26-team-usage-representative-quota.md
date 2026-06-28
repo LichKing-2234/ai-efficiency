@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Tasks 1-6 complete. Implementation remains in progress; remaining tasks are not completed and stay unchecked.
+**Status:** Tasks 1-7 complete. Remaining tasks are not completed and stay unchecked.
 
 ## Source Spec
 
@@ -2128,8 +2128,9 @@ git commit -m "feat(frontend): add team usage API contracts"
 - Modify: `frontend/src/__tests__/dashboard-view.test.ts`
 - Create: `frontend/src/__tests__/user-usage-subject-selector.test.ts`
 - Create: `frontend/src/__tests__/selected-subject-subscription-rows.test.ts`
+- Create: `frontend/src/__tests__/team-usage-audit-list.test.ts`
 
-- [ ] **Step 1: Write failing subject selector test**
+- [x] **Step 1: Write failing subject selector test**
 
 Create `frontend/src/__tests__/user-usage-subject-selector.test.ts`:
 
@@ -2149,7 +2150,7 @@ it('renders My Usage and member subjects', () => {
 })
 ```
 
-- [ ] **Step 2: Write failing quota preview test**
+- [x] **Step 2: Write failing quota preview test**
 
 Create `frontend/src/__tests__/selected-subject-subscription-rows.test.ts`:
 
@@ -2183,7 +2184,7 @@ it('previews normalized Used / Quota when draft multiplier changes', async () =>
 })
 ```
 
-- [ ] **Step 3: Write failing audit list test**
+- [x] **Step 3: Write failing audit list test**
 
 Create `frontend/src/__tests__/team-usage-audit-list.test.ts`:
 
@@ -2202,13 +2203,13 @@ it('renders representative audit rows without redacted target details', () => {
 })
 ```
 
-- [ ] **Step 4: Run focused component tests and verify failure**
+- [x] **Step 4: Run focused component tests and verify failure**
 
 Run: `cd frontend && pnpm test -- user-usage-subject-selector selected-subject-subscription-rows team-usage-audit-list`
 
 Expected: FAIL because components do not exist.
 
-- [ ] **Step 5: Create subject selector component**
+- [x] **Step 5: Create subject selector component**
 
 Create `frontend/src/components/user/usage/UserUsageSubjectSelector.vue`:
 
@@ -2256,7 +2257,7 @@ function onChange(event: Event) {
 </template>
 ```
 
-- [ ] **Step 6: Create subscription rows, modal, and audit list**
+- [x] **Step 6: Create subscription rows, modal, and audit list**
 
 Create `SelectedSubjectSubscriptionRows.vue` with:
 
@@ -2289,7 +2290,7 @@ const validationMessage = computed(() => {
 
 Create `TeamUsageAuditList.vue` with prop `{ items: TeamUsageAuditRecord[] }`; render created time, group name, action, status, changed flag, before/after multiplier, rejection reason, and plain-text reason. Do not render missing or redacted target fields.
 
-- [ ] **Step 7: Wire dashboard subject loading**
+- [x] **Step 7: Wire dashboard subject loading**
 
 Modify `UserUsageDashboard.vue`:
 
@@ -2324,13 +2325,13 @@ async function handleMultiplierUpdated() {
 
 Render `<UserUsageSubjectSelector>` above the existing stats area when `subjects.some((subject) => subject.subject_type === 'member')`. Keep the current `getUserUsageDashboard` path for `My Usage`. Render `<SelectedSubjectSubscriptionRows>` below `UsageGroupQuotaSection` only for selected member snapshots.
 
-- [ ] **Step 8: Run component tests**
+- [x] **Step 8: Run component tests**
 
 Run: `cd frontend && pnpm test -- dashboard-view user-usage-subject-selector selected-subject-subscription-rows team-usage-audit-list`
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit subject-aware dashboard**
+- [x] **Step 9: Commit subject-aware dashboard**
 
 ```bash
 git add frontend/src/components/user/usage frontend/src/__tests__/dashboard-view.test.ts frontend/src/__tests__/user-usage-subject-selector.test.ts frontend/src/__tests__/selected-subject-subscription-rows.test.ts frontend/src/__tests__/team-usage-audit-list.test.ts

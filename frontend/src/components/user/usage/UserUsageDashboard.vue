@@ -52,10 +52,27 @@
     </div>
 
     <div v-else class="space-y-6">
+      <div v-if="hasMemberSubjects" class="flex justify-end">
+        <UserUsageSubjectSelector
+          v-model="selectedSubjectValue"
+          :subjects="subjects"
+          @select="selectSubject"
+        />
+      </div>
       <UsageGroupQuotaSection
         :quotas="currentSnapshot?.group_quotas ?? null"
         :loading="loading && !!currentSnapshot"
         :range-label="selectedRangeLabel"
+      />
+      <SelectedSubjectSubscriptionRows
+        v-if="selectedMemberSubject && selectedSubjectSubscriptions.length > 0"
+        :subject-user-id="selectedMemberSubject.user_id"
+        :rows="selectedSubjectSubscriptions"
+        :update-multiplier="handleMultiplierConfirm"
+      />
+      <TeamUsageAuditList
+        v-if="selectedMemberSubject && auditItems.length > 0"
+        :items="auditItems"
       />
       <UsageStatsCards
         :stats="currentSnapshot?.stats ?? null"
@@ -75,12 +92,29 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getUserUsageDashboard } from '@/api/userUsage'
+import {
+  getTeamUsageAudit,
+  getTeamUsageSubjectDashboard,
+  listTeamUsageSubjects,
+  updateTeamUsageRateMultiplier,
+} from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
-import type { UserUsageDashboardParams, UserUsageDashboardSnapshot } from '@/types'
+import type {
+  SubjectSubscriptionGroup,
+  TeamUsageAuditRecord,
+  TeamUsageSubject,
+  UpdateTeamUsageRateMultiplierRequest,
+  UserUsageDashboardParams,
+  UserUsageDashboardSnapshot,
+} from '@/types'
+import { useAuthStore } from '@/stores/auth'
 import UsageStatsCards from '@/components/user/usage/UsageStatsCards.vue'
 import UsageTrendChart from '@/components/user/usage/UsageTrendChart.vue'
 import UsageModelChart from '@/components/user/usage/UsageModelChart.vue'
 import UsageGroupQuotaSection from '@/components/user/usage/UsageGroupQuotaSection.vue'
+import UserUsageSubjectSelector from '@/components/user/usage/UserUsageSubjectSelector.vue'
+import SelectedSubjectSubscriptionRows from '@/components/user/usage/SelectedSubjectSubscriptionRows.vue'
+import TeamUsageAuditList from '@/components/user/usage/TeamUsageAuditList.vue'
 
 type RangeOption = 'today' | '7d' | '30d'
 
@@ -97,6 +131,11 @@ const props = withDefaults(defineProps<{
 const selectedRange = ref<RangeOption>('30d')
 const snapshotRange = ref<RangeOption>('30d')
 const snapshot = ref<UserUsageDashboardSnapshot | null>(null)
+const memberSubjects = ref<TeamUsageSubject[]>([])
+const auth = useAuthStore()
+const selectedSubjectValue = ref(subjectValue(makeSelfSubject()))
+const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
+const auditItems = ref<TeamUsageAuditRecord[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const credentialError = ref(false)
@@ -107,6 +146,24 @@ const currentSnapshot = computed(() => snapshot.value ?? props.initialSnapshot)
 const setupRequired = computed(() => currentSnapshot.value?.configured === false)
 const selectedRangeLabel = computed(() => rangeLabel(selectedRange.value))
 const snapshotRangeLabel = computed(() => rangeLabel(snapshotRange.value))
+const subjects = computed<TeamUsageSubject[]>(() => {
+  const self = makeSelfSubject()
+  return [
+    self,
+    ...memberSubjects.value.filter((subject) =>
+      subject.subject_type === 'member' && subjectValue(subject) !== subjectValue(self),
+    ),
+  ]
+})
+const hasMemberSubjects = computed(() => subjects.value.some((subject) => subject.subject_type === 'member'))
+const selectedSubject = computed(() => {
+  return subjects.value.find((subject) => subjectValue(subject) === selectedSubjectValue.value)
+})
+const selectedMemberSubject = computed(() => {
+  const subject = selectedSubject.value
+  if (!subject || subject.subject_type !== 'member') return null
+  return subject
+})
 
 function rangeLabel(range: RangeOption) {
   if (range === 'today') return t('usageDashboard.today')
@@ -146,20 +203,75 @@ function buildParams(range: RangeOption): UserUsageDashboardParams {
   return { start_date: formatDate(start), end_date: formatDate(end), granularity: 'day', timezone }
 }
 
+function subjectValue(subject: TeamUsageSubject) {
+  return `${subject.subject_type}:${subject.user_id}`
+}
+
+function makeSelfSubject(): TeamUsageSubject {
+  return {
+    subject_type: 'self',
+    user_id: auth.user?.id ?? 0,
+    display_name: auth.user?.username || auth.user?.email || 'Me',
+    email: auth.user?.email || '',
+    selectable: true,
+  }
+}
+
+async function loadSubjects() {
+  try {
+    const res = await listTeamUsageSubjects()
+    memberSubjects.value = (res.data.data?.subjects ?? []).filter((subject) => subject.subject_type === 'member')
+    if (!subjects.value.some((subject) => subjectValue(subject) === selectedSubjectValue.value)) {
+      selectedSubjectValue.value = subjectValue(makeSelfSubject())
+    }
+  } catch {
+    memberSubjects.value = []
+    selectedSubjectValue.value = subjectValue(makeSelfSubject())
+  }
+}
+
+async function loadAuditForSubject(targetUserID: number, requestSeq: number) {
+  try {
+    const res = await getTeamUsageAudit({ target_user_id: targetUserID, page_size: 20 })
+    if (requestSeq !== dashboardRequestSeq || selectedMemberSubject.value?.user_id !== targetUserID) return
+    auditItems.value = res.data.data?.items ?? []
+  } catch {
+    if (requestSeq !== dashboardRequestSeq || selectedMemberSubject.value?.user_id !== targetUserID) return
+    auditItems.value = []
+  }
+}
+
 async function loadDashboard() {
   const requestedRange = selectedRange.value
   const requestSeq = ++dashboardRequestSeq
   loading.value = true
   errorMessage.value = ''
   credentialError.value = false
+  selectedSubjectSubscriptions.value = []
+  auditItems.value = []
   try {
-    const res = await getUserUsageDashboard(buildParams(requestedRange))
+    const subject = selectedSubject.value
+    const params = buildParams(requestedRange)
+    const res = subject?.subject_type === 'member'
+      ? await getTeamUsageSubjectDashboard(subject.user_id, params)
+      : await getUserUsageDashboard(params)
     if (requestSeq !== dashboardRequestSeq) return
     snapshot.value = res.data.data ?? null
+    selectedSubjectSubscriptions.value = subject?.subject_type === 'member'
+      ? (res.data.data as any)?.subject_subscription_groups ?? []
+      : []
     snapshotRange.value = requestedRange
+    if (subject?.subject_type === 'member') {
+      auditItems.value = []
+      await loadAuditForSubject(subject.user_id, requestSeq)
+    } else {
+      auditItems.value = []
+    }
   } catch (err: any) {
     if (requestSeq !== dashboardRequestSeq) return
     snapshot.value = null
+    selectedSubjectSubscriptions.value = []
+    auditItems.value = []
     credentialError.value = err?.response?.status === 409
     errorMessage.value = credentialError.value ? t('usageDashboard.credentialError') : t('usageDashboard.unavailable')
   } finally {
@@ -174,7 +286,19 @@ function selectRange(range: RangeOption) {
   loadDashboard()
 }
 
+function selectSubject(subject: TeamUsageSubject) {
+  if (!subject.selectable) return
+  selectedSubjectValue.value = subjectValue(subject)
+  loadDashboard()
+}
+
+async function handleMultiplierConfirm(event: { subjectUserId: number; groupID: string; payload: UpdateTeamUsageRateMultiplierRequest }) {
+  await updateTeamUsageRateMultiplier(event.subjectUserId, event.groupID, event.payload)
+  await loadDashboard()
+}
+
 onMounted(() => {
+  loadSubjects()
   if (props.initialSnapshot) {
     snapshotRange.value = selectedRange.value
     return

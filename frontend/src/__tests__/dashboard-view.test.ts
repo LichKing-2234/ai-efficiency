@@ -23,6 +23,26 @@ vi.mock('@/api/userUsage', () => ({
   })),
 }))
 
+vi.mock('@/api/teamUsage', () => ({
+  listTeamUsageSubjects: vi.fn(() => Promise.resolve({
+    data: {
+      data: {
+        page: 1,
+        page_size: 50,
+        total: 1,
+        subjects: [
+          { subject_type: 'self', user_id: 100, display_name: 'Me', email: 'alice@example.com', selectable: true },
+        ],
+      },
+    },
+  })),
+  getTeamUsageSubjectDashboard: vi.fn(),
+  getTeamUsageAudit: vi.fn(() => Promise.resolve({
+    data: { data: { items: [], page: 1, page_size: 20, total: 0 } },
+  })),
+  updateTeamUsageRateMultiplier: vi.fn(),
+}))
+
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
@@ -368,6 +388,369 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('example-model')
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(true)
+  })
+
+  it('keeps My Usage selected when representative subjects omit self', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { listTeamUsageSubjects, getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [
+            {
+              id: 1,
+              name: 'prod',
+              display_name: 'Production',
+              base_url: 'https://relay.example.com',
+              default_model: 'gpt-5.4',
+              is_primary: true,
+              groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'existing_hidden' } }],
+            },
+          ],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(listTeamUsageSubjects as any).mockResolvedValue({
+      data: {
+        data: {
+          page: 1,
+          page_size: 50,
+          total: 1,
+          subjects: [
+            {
+              subject_type: 'member',
+              user_id: 101,
+              display_name: 'Alice',
+              email: 'alice@example.com',
+              department_display_path: 'Department Alpha',
+              selectable: true,
+            },
+          ],
+        },
+      },
+    })
+    ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
+      data: {
+        data: {
+          ...usageSnapshot,
+          subject: {
+            subject_type: 'member',
+            user_id: 101,
+            display_name: 'Alice',
+            email: 'alice@example.com',
+            selectable: true,
+          },
+          subject_subscription_groups: [],
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const selector = wrapper.get('[data-testid="usage-subject-selector"]')
+    expect(selector.text()).toContain('My Usage')
+    expect(selector.text()).toContain('Alice')
+    expect((selector.element as HTMLSelectElement).value).toBe('self:0')
+    expect(getUserUsageDashboard).toHaveBeenCalledTimes(1)
+    expect(getTeamUsageSubjectDashboard).not.toHaveBeenCalled()
+
+    await selector.setValue('member:101')
+    await flushPromises()
+
+    expect(getTeamUsageSubjectDashboard).toHaveBeenCalledWith(101, expect.objectContaining({ granularity: 'day' }))
+  })
+
+  it('ignores stale audit responses after switching selected members', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { listTeamUsageSubjects, getTeamUsageSubjectDashboard, getTeamUsageAudit } = await import('@/api/teamUsage')
+    const auditAlice = deferred<any>()
+    const auditBob = deferred<any>()
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [
+            {
+              id: 1,
+              name: 'prod',
+              display_name: 'Production',
+              base_url: 'https://relay.example.com',
+              default_model: 'gpt-5.4',
+              is_primary: true,
+              groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'existing_hidden' } }],
+            },
+          ],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(listTeamUsageSubjects as any).mockResolvedValue({
+      data: {
+        data: {
+          page: 1,
+          page_size: 50,
+          total: 2,
+          subjects: [
+            { subject_type: 'member', user_id: 101, display_name: 'Alice', email: 'alice@example.com', selectable: true },
+            { subject_type: 'member', user_id: 102, display_name: 'Bob', email: 'bob@example.org', selectable: true },
+          ],
+        },
+      },
+    })
+    ;(getTeamUsageSubjectDashboard as any).mockImplementation((userID: number) => Promise.resolve({
+      data: {
+        data: {
+          ...usageSnapshot,
+          subject: {
+            subject_type: 'member',
+            user_id: userID,
+            display_name: userID === 101 ? 'Alice' : 'Bob',
+            email: userID === 101 ? 'alice@example.com' : 'bob@example.org',
+            selectable: true,
+          },
+          subject_subscription_groups: [],
+        },
+      },
+    }))
+    ;(getTeamUsageAudit as any).mockImplementation((params: { target_user_id: number }) => {
+      return params.target_user_id === 101 ? auditAlice.promise : auditBob.promise
+    })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const selector = wrapper.get('[data-testid="usage-subject-selector"]')
+    await selector.setValue('member:101')
+    await flushPromises()
+    expect(getTeamUsageAudit).toHaveBeenLastCalledWith(expect.objectContaining({ target_user_id: 101 }))
+
+    await wrapper.get('[data-testid="usage-subject-selector"]').setValue('member:102')
+    await flushPromises()
+    expect(getTeamUsageAudit).toHaveBeenLastCalledWith(expect.objectContaining({ target_user_id: 102 }))
+
+    auditBob.resolve({
+      data: {
+        data: {
+          items: [
+            {
+              id: 2,
+              actor_user_id: 100,
+              group_id: '43',
+              group_name: 'Group Beta',
+              action: 'set_rate_multiplier',
+              status: 'succeeded',
+              changed: true,
+              old_multiplier: 1,
+              new_multiplier: 2,
+              reason: 'Bob adjustment',
+              created_at: '2026-06-26T00:01:00Z',
+              updated_at: '2026-06-26T00:01:00Z',
+            },
+          ],
+          page: 1,
+          page_size: 20,
+          total: 1,
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Group Beta')
+
+    auditAlice.resolve({
+      data: {
+        data: {
+          items: [
+            {
+              id: 1,
+              actor_user_id: 100,
+              group_id: '42',
+              group_name: 'Group Alpha',
+              action: 'set_rate_multiplier',
+              status: 'succeeded',
+              changed: true,
+              old_multiplier: 1,
+              new_multiplier: 3,
+              reason: 'Alice adjustment',
+              created_at: '2026-06-26T00:00:00Z',
+              updated_at: '2026-06-26T00:00:00Z',
+            },
+          ],
+          page: 1,
+          page_size: 20,
+          total: 1,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Group Beta')
+    expect(wrapper.text()).not.toContain('Alice adjustment')
+  })
+
+  it('clears member-scoped rows and audit immediately when switching members', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { listTeamUsageSubjects, getTeamUsageSubjectDashboard, getTeamUsageAudit } = await import('@/api/teamUsage')
+    const bobDashboard = deferred<any>()
+    const bobAudit = deferred<any>()
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [
+            {
+              id: 1,
+              name: 'prod',
+              display_name: 'Production',
+              base_url: 'https://relay.example.com',
+              default_model: 'gpt-5.4',
+              is_primary: true,
+              groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'existing_hidden' } }],
+            },
+          ],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(listTeamUsageSubjects as any).mockResolvedValue({
+      data: {
+        data: {
+          page: 1,
+          page_size: 50,
+          total: 2,
+          subjects: [
+            { subject_type: 'member', user_id: 101, display_name: 'Alice', email: 'alice@example.com', selectable: true },
+            { subject_type: 'member', user_id: 102, display_name: 'Bob', email: 'bob@example.org', selectable: true },
+          ],
+        },
+      },
+    })
+    ;(getTeamUsageSubjectDashboard as any).mockImplementation((userID: number) => {
+      if (userID === 102) return bobDashboard.promise
+      return Promise.resolve({
+        data: {
+          data: {
+            ...usageSnapshot,
+            subject: { subject_type: 'member', user_id: 101, display_name: 'Alice', email: 'alice@example.com', selectable: true },
+            subject_subscription_groups: [
+              {
+                group_id: '42',
+                group_name: 'Group Alpha',
+                platform: 'openai',
+                subscription_status: 'active',
+                inherited_default_multiplier: 1,
+                system_default_multiplier: 1,
+                user_multiplier: null,
+                effective_multiplier: 1,
+                multiplier_source: 'group',
+                daily_display_used_usd: 0,
+                weekly_display_used_usd: 0,
+                monthly_display_used_usd: 80,
+                daily_usage_usd: 0,
+                weekly_usage_usd: 0,
+                monthly_usage_usd: 80,
+                monthly_effective_allowance_usd: 500,
+                usage_value_basis: 'raw_actual_cost',
+                quota_window_basis: 'sub2api_enforcement_window',
+                editable: true,
+              },
+            ],
+          },
+        },
+      })
+    })
+    ;(getTeamUsageAudit as any).mockImplementation((params: { target_user_id: number }) => {
+      if (params.target_user_id === 102) return bobAudit.promise
+      return Promise.resolve({
+        data: {
+          data: {
+            items: [
+              {
+                id: 1,
+                actor_user_id: 100,
+                group_id: '42',
+                group_name: 'Group Alpha',
+                action: 'set_rate_multiplier',
+                status: 'succeeded',
+                changed: true,
+                old_multiplier: 1,
+                new_multiplier: 2,
+                reason: 'Alice adjustment',
+                created_at: '2026-06-26T00:00:00Z',
+                updated_at: '2026-06-26T00:00:00Z',
+              },
+            ],
+            page: 1,
+            page_size: 20,
+            total: 1,
+          },
+        },
+      })
+    })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="usage-subject-selector"]').setValue('member:101')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Subscription groups')
+    expect(wrapper.text()).toContain('Alice adjustment')
+    expect(wrapper.find('[data-testid="edit-multiplier-42"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="usage-subject-selector"]').setValue('member:102')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Subscription groups')
+    expect(wrapper.text()).not.toContain('Alice adjustment')
+    expect(wrapper.find('[data-testid="edit-multiplier-42"]').exists()).toBe(false)
+
+    bobDashboard.resolve({
+      data: {
+        data: {
+          ...usageSnapshot,
+          subject: { subject_type: 'member', user_id: 102, display_name: 'Bob', email: 'bob@example.org', selectable: true },
+          subject_subscription_groups: [
+            {
+              group_id: '43',
+              group_name: 'Group Beta',
+              platform: 'openai',
+              subscription_status: 'active',
+              inherited_default_multiplier: 1,
+              system_default_multiplier: 1,
+              user_multiplier: null,
+              effective_multiplier: 1,
+              multiplier_source: 'group',
+              daily_display_used_usd: 0,
+              weekly_display_used_usd: 0,
+              monthly_display_used_usd: 20,
+              daily_usage_usd: 0,
+              weekly_usage_usd: 0,
+              monthly_usage_usd: 20,
+              monthly_effective_allowance_usd: 100,
+              usage_value_basis: 'raw_actual_cost',
+              quota_window_basis: 'sub2api_enforcement_window',
+              editable: true,
+            },
+          ],
+        },
+      },
+    })
+    bobAudit.resolve({ data: { data: { items: [], page: 1, page_size: 20, total: 0 } } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Group Beta')
+    expect(wrapper.find('[data-testid="edit-multiplier-43"]').exists()).toBe(true)
   })
 
   it('renders homepage group quota cards above the usage stats', async () => {
