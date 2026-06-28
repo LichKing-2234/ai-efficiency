@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Tasks 1-8 complete. Remaining tasks are not completed and stay unchecked.
+**Status:** Tasks 1-9 complete. Implementation and verification steps are checked below.
 
 ## Source Spec
 
@@ -2508,7 +2508,7 @@ git commit -m "feat(frontend): add team usage overview page"
 **Files:**
 - Modify: `docs/architecture.md`
 
-- [ ] **Step 1: Update architecture docs**
+- [x] **Step 1: Update architecture docs**
 
 In `docs/architecture.md`, add the current spec to Source-of-Truth Order and update the frontend task-zone section to mention:
 
@@ -2517,32 +2517,38 @@ In `docs/architecture.md`, add the current spec to Source-of-Truth Order and upd
 - Delegated multiplier control via sub2api rate multipliers.
 - Local `team_usage_rate_multiplier_audits`.
 
-- [ ] **Step 2: Run backend tests**
+- [x] **Step 2: Run backend tests**
 
 Run: `cd backend && go test ./...`
 
 Expected: PASS.
 
-- [ ] **Step 3: Run frontend tests**
+- [x] **Step 3: Run frontend tests**
 
 Run: `cd frontend && pnpm test`
 
 Expected: PASS.
 
-- [ ] **Step 4: Run role E2E if environment supports it**
+- [x] **Step 4: Run role E2E if environment supports it**
 
 Run: `cd frontend && pnpm run test:e2e:role`
 
 Expected when local browser dependencies are available: PASS. If environment dependencies are missing, record exact error in the final implementation notes and keep this checkbox unchecked.
 
-- [ ] **Step 5: Commit docs and verification notes**
+- [x] **Step 5: Commit docs and verification notes**
 
 ```bash
-git add docs/architecture.md
+git add docs/architecture.md docs/superpowers/plans/2026-06-26-team-usage-representative-quota.md
 git commit -m "docs(architecture): document representative team usage"
 ```
 
 ## Execution Notes
+
+- Task 9 verification notes:
+  - `cd backend && go test ./...` passed.
+  - `cd frontend && pnpm test` passed.
+  - First `cd frontend && pnpm run test:e2e:role` failed with `Page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:5173/login` because the script expects an already-running local frontend.
+  - After starting `pnpm dev -- --host 127.0.0.1 --port 5173`, `cd frontend && pnpm run test:e2e:role` passed.
 
 - Keep commits task-sized. Do not combine backend schema, relay, handlers, and frontend in one commit.
 - Maintain this plan as a live execution ledger. Check a box only after running the exact step.
