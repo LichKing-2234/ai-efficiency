@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Tasks 1-7 complete. Remaining tasks are not completed and stay unchecked.
+**Status:** Tasks 1-8 complete. Remaining tasks are not completed and stay unchecked.
 
 ## Source Spec
 
@@ -2351,7 +2351,7 @@ git commit -m "feat(frontend): add representative subject usage controls"
 - Modify: `frontend/src/__tests__/router.test.ts`
 - Modify: `frontend/src/__tests__/app-sidebar.test.ts`
 
-- [ ] **Step 1: Write failing Team Overview tests**
+- [x] **Step 1: Write failing Team Overview tests**
 
 Create `frontend/src/__tests__/team-overview-view.test.ts`:
 
@@ -2367,13 +2367,13 @@ it('renders top member trend and member table without quota controls', async () 
 })
 ```
 
-- [ ] **Step 2: Run Team Overview tests and verify failure**
+- [x] **Step 2: Run Team Overview tests and verify failure**
 
 Run: `cd frontend && pnpm test -- team-overview-view router app-sidebar`
 
 Expected: FAIL because route and view do not exist.
 
-- [ ] **Step 3: Build Team Overview view**
+- [x] **Step 3: Build Team Overview view**
 
 Create `frontend/src/views/TeamOverviewView.vue`:
 
@@ -2444,7 +2444,7 @@ onMounted(loadOverview)
 
 Create `TeamOverviewMemberTrendChart.vue` with prop `{ state: TeamMemberTrendState }`, title `$t('teamUsage.topMembers')`, and no `Used / Quota` or multiplier text. Create `TeamOverviewMemberTable.vue` with prop `{ members: TeamOverviewMember[] }`, columns name, email, department, today actual cost, rolling 30-day actual cost, subscription count, and an emit `open-member` carrying `user_id`.
 
-- [ ] **Step 4: Add route and sidebar entry**
+- [x] **Step 4: Add route and sidebar entry**
 
 Add route:
 
@@ -2458,7 +2458,7 @@ Add route:
 
 Add sidebar link under My Work with key `nav.teamUsage`.
 
-- [ ] **Step 5: Add i18n keys in English and Chinese**
+- [x] **Step 5: Add i18n keys in English and Chinese**
 
 Add keys:
 
@@ -2490,13 +2490,13 @@ Chinese:
 'teamUsage.last30dActualCost': '近 30 日实际成本',
 ```
 
-- [ ] **Step 6: Run Team Overview tests**
+- [x] **Step 6: Run Team Overview tests**
 
 Run: `cd frontend && pnpm test -- team-overview-view router app-sidebar`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Team Overview**
+- [x] **Step 7: Commit Team Overview**
 
 ```bash
 git add frontend/src/views/TeamOverviewView.vue frontend/src/components/team-usage frontend/src/router/index.ts frontend/src/components/AppSidebar.vue frontend/src/i18n.ts frontend/src/__tests__/team-overview-view.test.ts frontend/src/__tests__/router.test.ts frontend/src/__tests__/app-sidebar.test.ts

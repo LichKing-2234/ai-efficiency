@@ -19,6 +19,7 @@ function createTestRouter(initialPath = '/') {
       { path: '/repos', component: { template: '<div>Repos</div>' } },
       { path: '/events', component: { template: '<div>Events</div>' } },
       { path: '/user', component: { template: '<div>User</div>' } },
+      { path: '/team-usage', component: { template: '<div>Team Usage</div>' } },
       { path: '/sessions', component: { template: '<div>Sessions</div>' } },
       { path: '/admin/users', component: { template: '<div>Admin Users</div>' } },
       { path: '/admin/directory/offboarding', component: { template: '<div>Offboarding</div>' } },
@@ -79,10 +80,12 @@ describe('AppSidebar', () => {
 
     expect(linkTexts).toContain('AI Usage Center')
     expect(linkTexts).toContain('Usage Records')
+    expect(linkTexts).toContain('Team Usage')
     expect(linkTexts).toContain('Code Repositories')
     expect(linkTexts).toContain('AI Setup & Configuration')
     expect(linkTexts).not.toContain('My Usage')
     expect(links.map((l) => l.attributes('href'))).not.toContain('/user/usage')
+    expect(links.map((l) => l.attributes('href'))).toContain('/team-usage')
     expect(wrapper.text()).toContain('My Work')
     expect(wrapper.text()).toContain('Code & PR')
     expect(wrapper.text()).not.toContain('Administration')
@@ -375,6 +378,7 @@ describe('AppSidebar', () => {
     expect(linkTexts).toContain('AI 接入与配置')
     expect(linkTexts).not.toContain('我的用量')
     expect(linkTexts).toContain('使用记录')
+    expect(linkTexts).toContain('团队用量')
     expect(linkTexts).toContain('代码仓库')
   })
 })

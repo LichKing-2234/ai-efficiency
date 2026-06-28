@@ -90,6 +90,19 @@ function handleNavigate() {
         {{ t('nav.usageRecords') }}
       </RouterLink>
 
+      <RouterLink
+        to="/team-usage"
+        class="flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
+        active-class="bg-gray-800"
+        @click="handleNavigate"
+      >
+        <svg class="mr-3 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M17 20h5v-2a4 4 0 00-4-4h-1M9 20H4v-2a4 4 0 014-4h1m8-4a4 4 0 11-8 0 4 4 0 018 0zm-10 0a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        {{ t('nav.teamUsage') }}
+      </RouterLink>
+
       <div class="mt-5 border-t border-gray-800 pt-4">
         <div class="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
           {{ t('nav.codeSection') }}

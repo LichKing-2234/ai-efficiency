@@ -127,6 +127,11 @@ describe('Router Guards', () => {
     expect(userRoute?.path).toBe('/user')
   })
 
+  it('includes team usage route in the router', () => {
+    const teamUsageRoute = router.getRoutes().find((r) => r.name === 'TeamUsage')
+    expect(teamUsageRoute?.path).toBe('/team-usage')
+  })
+
   it('does not expose user usage as a separate page route', () => {
     const userUsageRoute = router.getRoutes().find((r) => r.name === 'UserUsage' || r.path === '/user/usage')
     expect(userUsageRoute).toBeUndefined()

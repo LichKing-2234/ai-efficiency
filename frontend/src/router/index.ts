@@ -57,6 +57,11 @@ const router = createRouter({
       component: () => import('@/views/UserView.vue'),
     },
     {
+      path: '/team-usage',
+      name: 'TeamUsage',
+      component: () => import('@/views/TeamOverviewView.vue'),
+    },
+    {
       path: '/admin/users',
       name: 'AdminUsers',
       component: () => import('@/views/admin/AdminUsersView.vue'),
