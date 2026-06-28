@@ -20,7 +20,7 @@
 - [x] Treat zero effective multiplier as unlimited allowance in delegated quota rows and preview rendering.
 - [x] Render unknown `subscription_count` as `-` instead of `0`.
 - [x] Request Team Overview with an explicit 30-day default window instead of inheriting the shared 7-day parser default.
-- [x] Expand subject loading for `subject_user_id` deep links so members beyond the default first page can be selected.
+- [x] Page through subject loading for `subject_user_id` deep links so members beyond the backend page cap can be selected.
 - [x] Map `partial_failed` multiplier verification mismatches to a generic 502 response without exposing readback details.
 - [x] Remove stale plan snippets that referenced the superseded rolling `last_30d_actual_cost` team summary contract.
 
@@ -2571,6 +2571,7 @@ git commit -m "docs(architecture): document representative team usage"
   - `cd frontend && pnpm test` passed with 30 files and 350 tests.
   - After starting `pnpm dev -- --host 127.0.0.1 --port 5173`, `cd frontend && pnpm run test:e2e:role` passed with 14/14 checks.
   - `git diff --check` passed.
+  - After final review found the backend `page_size` clamp gap, `cd frontend && pnpm test -- dashboard-view team-overview-view team-usage-api selected-subject-subscription-rows` passed with the paged deep-link lookup regression.
 
 - Keep commits task-sized. Do not combine backend schema, relay, handlers, and frontend in one commit.
 - Maintain this plan as a live execution ledger. Check a box only after running the exact step.

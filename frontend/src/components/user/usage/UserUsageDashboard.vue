@@ -143,6 +143,7 @@ const credentialError = ref(false)
 const { t } = useI18n()
 const route = useRoute()
 let dashboardRequestSeq = 0
+const deepLinkSubjectPageSize = 200
 
 const currentSnapshot = computed(() => snapshot.value ?? props.initialSnapshot)
 const setupRequired = computed(() => currentSnapshot.value?.configured === false)
@@ -228,9 +229,9 @@ function subjectUserIDQuery() {
 
 async function loadSubjects(options?: { expandForSubjectQuery?: boolean }) {
   try {
-    const params = options?.expandForSubjectQuery ? { page_size: 500 } : undefined
-    const res = await listTeamUsageSubjects(params)
-    memberSubjects.value = (res.data.data?.subjects ?? []).filter((subject) => subject.subject_type === 'member')
+    memberSubjects.value = options?.expandForSubjectQuery
+      ? await loadSubjectsForQueryTarget(subjectUserIDQuery())
+      : await loadDefaultSubjects()
     if (!subjects.value.some((subject) => subjectValue(subject) === selectedSubjectValue.value)) {
       selectedSubjectValue.value = subjectValue(makeSelfSubject())
     }
@@ -238,6 +239,30 @@ async function loadSubjects(options?: { expandForSubjectQuery?: boolean }) {
     memberSubjects.value = []
     selectedSubjectValue.value = subjectValue(makeSelfSubject())
   }
+}
+
+async function loadDefaultSubjects() {
+  const res = await listTeamUsageSubjects()
+  return (res.data.data?.subjects ?? []).filter((subject) => subject.subject_type === 'member')
+}
+
+async function loadSubjectsForQueryTarget(targetUserID: number | null) {
+  if (targetUserID == null) {
+    return loadDefaultSubjects()
+  }
+  const loaded: TeamUsageSubject[] = []
+  let page = 1
+  while (true) {
+    const res = await listTeamUsageSubjects({ page, page_size: deepLinkSubjectPageSize })
+    const data = res.data.data
+    const pageSubjects = (data?.subjects ?? []).filter((subject) => subject.subject_type === 'member')
+    loaded.push(...pageSubjects)
+    if (pageSubjects.some((subject) => subject.user_id === targetUserID)) break
+    const pageSize = data?.page_size || deepLinkSubjectPageSize
+    if (!data || page * pageSize >= data.total || pageSubjects.length === 0) break
+    page += 1
+  }
+  return loaded
 }
 
 function applySubjectQuerySelection() {

@@ -534,7 +534,7 @@ describe('DashboardView', () => {
     expect((wrapper.get('[data-testid="usage-subject-selector"]').element as HTMLSelectElement).value).toBe('member:101')
   })
 
-  it('loads enough representative subjects for subject_user_id deep links beyond the first default page', async () => {
+  it('pages representative subjects until subject_user_id deep link target is found', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     const { listTeamUsageSubjects, getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
@@ -556,32 +556,47 @@ describe('DashboardView', () => {
       },
     })
     ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
-    ;(listTeamUsageSubjects as any).mockResolvedValue({
+    const firstPageSubjects = Array.from({ length: 200 }, (_, index) => ({
+      subject_type: 'member',
+      user_id: index + 1,
+      display_name: `Member ${index + 1}`,
+      email: `member-${index + 1}@example.com`,
+      department_display_path: 'Department Alpha',
+      selectable: true,
+    }))
+    ;(listTeamUsageSubjects as any).mockImplementation((params?: { page?: number; page_size?: number }) => Promise.resolve({
       data: {
-        data: {
-          page: 1,
-          page_size: 500,
-          total: 125,
-          subjects: [
-            {
-              subject_type: 'member',
-              user_id: 125,
-              display_name: 'Pat',
-              email: 'pat@example.com',
-              department_display_path: 'Department Alpha',
-              selectable: true,
+        data: params?.page === 2
+          ? {
+              page: 2,
+              page_size: 200,
+              total: 250,
+              subjects: [
+                {
+                  subject_type: 'member',
+                  user_id: 225,
+                  display_name: 'Pat',
+                  email: 'pat@example.com',
+                  department_display_path: 'Department Alpha',
+                  selectable: true,
+                },
+              ],
+            }
+          : {
+              page: 1,
+              page_size: 200,
+              total: 250,
+              subjects: firstPageSubjects,
             },
-          ],
-        },
       },
-    })
+    }))
     ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
       data: {
         data: {
           ...usageSnapshot,
           subject: {
             subject_type: 'member',
-            user_id: 125,
+            user_id: 225,
             display_name: 'Pat',
             email: 'pat@example.com',
             selectable: true,
@@ -592,14 +607,15 @@ describe('DashboardView', () => {
     })
 
     const router = createTestRouter()
-    await router.push({ path: '/', query: { subject_user_id: '125' } })
+    await router.push({ path: '/', query: { subject_user_id: '225' } })
     await router.isReady()
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    expect(listTeamUsageSubjects).toHaveBeenCalledWith({ page_size: 500 })
-    expect(getTeamUsageSubjectDashboard).toHaveBeenCalledWith(125, expect.objectContaining({ granularity: 'day' }))
-    expect((wrapper.get('[data-testid="usage-subject-selector"]').element as HTMLSelectElement).value).toBe('member:125')
+    expect(listTeamUsageSubjects).toHaveBeenNthCalledWith(1, { page: 1, page_size: 200 })
+    expect(listTeamUsageSubjects).toHaveBeenNthCalledWith(2, { page: 2, page_size: 200 })
+    expect(getTeamUsageSubjectDashboard).toHaveBeenCalledWith(225, expect.objectContaining({ granularity: 'day' }))
+    expect((wrapper.get('[data-testid="usage-subject-selector"]').element as HTMLSelectElement).value).toBe('member:225')
   })
 
   it('ignores stale audit responses after switching selected members', async () => {
