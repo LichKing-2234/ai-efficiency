@@ -2,25 +2,57 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add representative-scoped AI Usage subject switching, a separate Team Overview page, and delegated sub2api rate-multiplier quota control with local audit.
+**Goal:** Add representative-scoped AI Usage subject switching, Team Overview inside AI Usage Center, and delegated sub2api rate-multiplier quota control with local audit.
 
-**Architecture:** Keep representative authorization inside `ai-efficiency` using Directory Sync facts, and keep hard quota enforcement inside sub2api through relay HTTP APIs. Add small backend packages for representative scope and team usage orchestration, optional relay provider capabilities for admin usage/multiplier APIs, thin Gin handlers, and Vue components that reuse the current AI Usage Center layout for selected subjects while rendering Team Overview as a separate page.
+**Architecture:** Keep representative authorization inside `ai-efficiency` using Directory Sync facts, and keep hard quota enforcement inside sub2api through relay HTTP APIs. Add small backend packages for representative scope and team usage orchestration, optional relay provider capabilities for admin usage/multiplier APIs, thin Gin handlers, and Vue components that reuse the current AI Usage Center layout for selected subjects while rendering Team Overview under the `/usage/team` AI Usage Center route.
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL, sub2api HTTP admin APIs, Vue 3, TypeScript, TailwindCSS, Pinia, Vitest, Vue Test Utils, Markdown docs.
 
 ---
 
-**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete and verified for the scoped backend/frontend suites listed below.
+**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete. Post-login QA follow-up fixes for Team Overview rendering, representative metadata parsing, new representative UI i18n, sub2api multiplier update contract alignment, stale relay user binding reconciliation, removal of representative audit UI, `/usage` canonical IA, independent selected-member route behavior, selected-member detail IA cleanup, billed-usage terminology, Team Overview Today / 7 Days / 30 Days selected-window semantics, Team Overview range-switch loading feedback, selected-member header de-duplication, Team Overview full directory roster counts, email-based sub2api usage resolution, and simplified Team members / Connected members copy are complete in code and scoped frontend/backend/browser checks.
+
+## Post-login QA Follow-up
+
+- [x] Parse numeric `member.metadata.leader_department_ids` as integer department IDs instead of scientific-notation strings.
+- [x] Render Team Overview Top 12 as a line chart with one series per ranked member instead of a date-expanded table.
+- [x] Keep each Top 12 member visible once in the chart side list to avoid repeated member rows.
+- [x] Fetch Top 12 trend data with one batched provider call while preserving rank order.
+- [x] Verify scoped backend suites, focused frontend Team Overview tests, `npm run build`, and whitespace checks.
+- [x] Rebuild the local dev compose stack and verify the team usage backend API on `localhost:18081`.
+- [x] Localize representative UI labels for Team Overview, selected-member selector, subscription quota controls, and multiplier modal.
+- [x] Send delegated multiplier writes to sub2api with the current `entries` payload field instead of the obsolete `rate_multipliers` field.
+- [x] Verify delegated multiplier set/reset through the rebuilt local Docker stack and confirm audit rows succeed.
+- [x] Reconcile stale local `users.relay_user_id` against the current primary relay provider by email before selected-subject usage dashboard reads, Team Overview batch usage/trend reads, and delegated multiplier writes.
+- [x] Rebuild the local dev compose stack and verify selected-subject usage for stale relay bindings on `localhost:18081`.
+- [x] Remove audit history from representative AI Usage UI while keeping backend audit writes and admin audit API for a future dedicated administrator surface.
+- [x] Show the Team Overview Top 12 chart unit, granularity, date window, and timezone next to the chart title.
+- [x] Move Team Overview from a standalone sidebar entry to the AI Usage Center route group: `/usage`, `/usage/members/:user_id`, and `/usage/team`.
+- [x] Remove `/?subject_user_id=...` member deep links; Team Overview member actions now open `/usage/members/:user_id`.
+- [x] Make `/usage/members/:user_id` an independent selected-member detail page without the `My Usage` / `Team Overview` tabs or the member subject selector.
+- [x] Load `/usage/members/:user_id` directly from the target dashboard endpoint and cover out-of-scope targets with a service-layer no-relay-call regression test.
+- [x] Replace the selected-member detail page's ambiguous Team Overview range-control link with an explicit `Back to Team Overview` action and no breadcrumb.
+- [x] Align selected-member header with personal usage: one `Member Usage` title, no repeated eyebrow, and member email/department in the subtitle.
+- [x] Keep selected-member Used / Quota in sub2api enforcement units when editing multipliers, and add multiplier help copy explaining that the multiplier controls future consumption speed, not quota limit.
+- [x] Render selected-member subscription groups above selected-member quota cards.
+- [x] Label multiplier-adjusted `actual_cost` values as billed usage / 计费用量 in user-facing copy instead of actual cost / 实际成本.
+- [x] Make Team Overview match personal usage range selection with Today / 7 Days / 30 Days, selected-window summary/table/ranking, and no duplicate page title.
+- [x] Show Team Overview range-switch loading feedback while preserving previous data and disabling range buttons during refresh.
+- [x] Return all scoped directory members in Team Overview member details, including members without local users or relay usage, and disable their open action.
+- [x] Count the full represented directory roster in Team Overview, including the representative themself, while keeping representative self-management disabled.
+- [x] Resolve Team Overview directory-only rows to sub2api users by exact email for read-only usage aggregation, without enabling selected-member quota controls for directory-only rows.
+- [x] Rename Team Overview summary cards to Team members / Connected members and hide the member table subscription-count column until reliable batched counts exist.
+- [x] Browser-verify `/usage/team` after Playwright Chromium launch is available locally.
 
 ## Final Review Follow-up
 
 - [x] Align team usage summary decoding and Team Overview naming with the real sub2api batch `data.stats` contract (`total_actual_cost`, no rolling 30-day field).
 - [x] Return a failure for `partial_failed` multiplier writes so the selected-subject modal stays open on backend mismatch.
-- [x] Consume `subject_user_id` route query after subject scope loads and deep-link Team Overview Open actions into selected-member usage.
+- [x] Consume member route params after subject scope loads and deep-link Team Overview Open actions into selected-member usage.
 - [x] Treat zero effective multiplier as unlimited allowance in delegated quota rows and preview rendering.
-- [x] Render unknown `subscription_count` as `-` instead of `0`.
+- [x] Remove the Team Overview `subscription_count` column from the UI because the API still returns it as optional metadata rather than a reliable batched count.
 - [x] Request Team Overview with an explicit 30-day default window instead of inheriting the shared 7-day parser default.
-- [x] Page through subject loading for `subject_user_id` deep links so members beyond the backend page cap can be selected.
+- [x] Page through subject loading for `/usage/members/:user_id` deep links so members beyond the backend page cap can be selected.
 - [x] Map `partial_failed` multiplier verification mismatches to a generic 502 response without exposing readback details.
 - [x] Remove stale plan snippets that referenced the superseded rolling `last_30d_actual_cost` team summary contract.
 
@@ -37,11 +69,11 @@ Included:
 - Resolve representative scope from `department.metadata.representative_external_ids` and `member.metadata.leader_department_ids`.
 - Add normal-user `/api/v1/user/team-usage/*` endpoints and admin `/api/v1/admin/team-usage/audit`.
 - Add selected-subject AI Usage dashboard with `subject_subscription_groups`.
-- Add Team Overview with scoped Top 12 member trend and member usage table.
+- Add Team Overview inside AI Usage Center with scoped Top 12 member trend and member usage table.
 - Add delegated `rate_multiplier` set/reset for existing subscriptions only.
 - Preserve `rpm_override` values during sub2api whole-group rate-multiplier writes.
 - Add local audit rows for running, succeeded, failed, partial failed, and rejected attempts.
-- Add frontend subject selector, Team Overview page, quota preview/edit controls, and audit list.
+- Add frontend subject selector, Team Overview tab/route, and quota preview/edit controls. Do not render audit history in representative UI; a dedicated administrator audit UI is a follow-up.
 - Update `docs/architecture.md`.
 
 Excluded:
@@ -105,7 +137,6 @@ Frontend components/views:
 - Create: `frontend/src/components/user/usage/UserUsageSubjectSelector.vue`
 - Create: `frontend/src/components/user/usage/SelectedSubjectSubscriptionRows.vue`
 - Create: `frontend/src/components/user/usage/TeamRateMultiplierModal.vue`
-- Create: `frontend/src/components/user/usage/TeamUsageAuditList.vue`
 - Create: `frontend/src/views/TeamOverviewView.vue`
 - Create: `frontend/src/components/team-usage/TeamOverviewMemberTrendChart.vue`
 - Create: `frontend/src/components/team-usage/TeamOverviewMemberTable.vue`
@@ -121,7 +152,6 @@ Frontend tests:
 - Create: `frontend/src/__tests__/team-usage-api.test.ts`
 - Create: `frontend/src/__tests__/user-usage-subject-selector.test.ts`
 - Create: `frontend/src/__tests__/selected-subject-subscription-rows.test.ts`
-- Create: `frontend/src/__tests__/team-usage-audit-list.test.ts`
 - Create: `frontend/src/__tests__/team-overview-view.test.ts`
 
 Docs:
@@ -968,8 +998,8 @@ func TestNormalizeRawActualCostByMultiplier(t *testing.T) {
 		MonthlyUsageUSD: 80.0,
 		UsageValueBasis: "raw_actual_cost",
 	})
-	if row.MonthlyDisplayUsedUSD != 40 || row.MonthlyEffectiveAllowanceUSD != 250 {
-		t.Fatalf("display used/quota = %.2f / %.2f, want 40 / 250", row.MonthlyDisplayUsedUSD, row.MonthlyEffectiveAllowanceUSD)
+	if row.MonthlyDisplayUsedUSD != 80 || row.MonthlyEffectiveAllowanceUSD != 500 {
+		t.Fatalf("display used/quota = %.2f / %.2f, want 80 / 500", row.MonthlyDisplayUsedUSD, row.MonthlyEffectiveAllowanceUSD)
 	}
 }
 
@@ -995,10 +1025,13 @@ func TestDoesNotDoubleNormalizeDisplayCost(t *testing.T) {
 Create `backend/internal/teamusage/write_test.go` with:
 
 ```go
-func TestValidateMultiplierRejectsBelowInheritedDefault(t *testing.T) {
-	_, err := ValidateSetMultiplier(0.5, 1.0, 10)
-	if !errors.Is(err, ErrMultiplierBelowInherited) {
-		t.Fatalf("ValidateSetMultiplier() error = %v, want ErrMultiplierBelowInherited", err)
+func TestValidateMultiplierAllowsBelowInheritedDefault(t *testing.T) {
+	got, err := ValidateSetMultiplier(0.5, 1.0, 10)
+	if err != nil {
+		t.Fatalf("ValidateSetMultiplier() error = %v, want nil", err)
+	}
+	if got != 0.5 {
+		t.Fatalf("ValidateSetMultiplier() = %v, want 0.5", got)
 	}
 }
 
@@ -1006,7 +1039,7 @@ func TestValidateMultiplierRejectsNonFiniteAndOverPrecision(t *testing.T) {
 	if _, err := ValidateSetMultiplier(math.Inf(1), 1.0, 10); !errors.Is(err, ErrInvalidMultiplier) {
 		t.Fatalf("infinite multiplier error = %v, want ErrInvalidMultiplier", err)
 	}
-	if _, err := ValidateSetMultiplier(1.12345, 1.0, 10); !errors.Is(err, ErrInvalidMultiplierPrecision) {
+	if _, err := ValidateSetMultiplier(1.123, 1.0, 10); !errors.Is(err, ErrInvalidMultiplierPrecision) {
 		t.Fatalf("precision error = %v, want ErrInvalidMultiplierPrecision", err)
 	}
 }
@@ -1196,6 +1229,7 @@ type OverviewSummary struct {
 	UnavailableReason    *string  `json:"unavailable_reason"`
 	MemberCount          int      `json:"member_count"`
 	RelayMemberCount     int      `json:"relay_member_count"`
+	RangeActualCost      *float64 `json:"range_actual_cost"`
 	TodayActualCost      *float64 `json:"today_actual_cost"`
 	TotalActualCost      *float64 `json:"total_actual_cost"`
 	UnitLabel            string   `json:"unit_label"`
@@ -1208,6 +1242,7 @@ type OverviewMember struct {
 	Email                 string   `json:"email"`
 	DepartmentDisplayPath string   `json:"department_display_path"`
 	RelayUserID           *int     `json:"relay_user_id,omitempty"`
+	RangeActualCost       float64  `json:"range_actual_cost"`
 	TodayActualCost       float64  `json:"today_actual_cost"`
 	TotalActualCost       float64  `json:"total_actual_cost"`
 	TotalTokens           *int64   `json:"total_tokens,omitempty"`
@@ -1311,7 +1346,7 @@ func BuildOverviewUnavailableForLargeScope(subjects []representativescope.Subjec
 		TopMembers: []OverviewMember{},
 		TopMemberTrend: TopMemberTrendState{
 			UnitLabel:         "USD",
-			RankBasis:         "total_actual_cost",
+			RankBasis:         "range_actual_cost",
 			Unavailable:       true,
 			UnavailableReason: &reason,
 			Series:            []TopMemberTrendSeries{},
@@ -1394,12 +1429,12 @@ func BuildSubscriptionRow(input SubscriptionInput) SubscriptionRow {
 		DailyLimitUSD:                input.DailyLimitUSD,
 		WeeklyLimitUSD:               input.WeeklyLimitUSD,
 		MonthlyLimitUSD:              input.MonthlyLimitUSD,
-		DailyEffectiveAllowanceUSD:   displayQuota(input.DailyLimitUSD, effective, input.UsageValueBasis),
-		WeeklyEffectiveAllowanceUSD:  displayQuota(input.WeeklyLimitUSD, effective, input.UsageValueBasis),
-		MonthlyEffectiveAllowanceUSD: displayQuota(input.MonthlyLimitUSD, effective, input.UsageValueBasis),
-		DailyDisplayUsedUSD:          displayUsage(input.DailyUsageUSD, effective, input.UsageValueBasis),
-		WeeklyDisplayUsedUSD:         displayUsage(input.WeeklyUsageUSD, effective, input.UsageValueBasis),
-		MonthlyDisplayUsedUSD:        displayUsage(input.MonthlyUsageUSD, effective, input.UsageValueBasis),
+		DailyEffectiveAllowanceUSD:   input.DailyLimitUSD,
+		WeeklyEffectiveAllowanceUSD:  input.WeeklyLimitUSD,
+		MonthlyEffectiveAllowanceUSD: input.MonthlyLimitUSD,
+		DailyDisplayUsedUSD:          input.DailyUsageUSD,
+		WeeklyDisplayUsedUSD:         input.WeeklyUsageUSD,
+		MonthlyDisplayUsedUSD:        input.MonthlyUsageUSD,
 		DailyUsageUSD:                input.DailyUsageUSD,
 		WeeklyUsageUSD:               input.WeeklyUsageUSD,
 		MonthlyUsageUSD:              input.MonthlyUsageUSD,
@@ -1420,22 +1455,15 @@ func effectiveMultiplier(userMultiplier *float64, groupDefault *float64, systemD
 	return systemDefault, "system"
 }
 
-func displayUsage(rawUsage, multiplier float64, basis string) float64 {
-	if basis == "normalized_display_cost" {
-		return rawUsage
-	}
-	return rawUsage / multiplier
+func displayUsage(rawUsage float64) float64 {
+	return rawUsage
 }
 
-func displayQuota(rawQuota *float64, multiplier float64, basis string) *float64 {
+func displayQuota(rawQuota *float64) *float64 {
 	if rawQuota == nil {
 		return nil
 	}
-	if basis == "normalized_display_cost" {
-		return rawQuota
-	}
-	value := *rawQuota / multiplier
-	return &value
+	return rawQuota
 }
 ```
 
@@ -1447,7 +1475,6 @@ Create `backend/internal/teamusage/write.go` with:
 var (
 	ErrInvalidMultiplier          = errors.New("invalid_multiplier")
 	ErrInvalidMultiplierPrecision = errors.New("invalid_multiplier_precision")
-	ErrMultiplierBelowInherited   = errors.New("multiplier_below_inherited_default")
 	ErrMultiplierAboveMaximum     = errors.New("multiplier_above_maximum")
 )
 
@@ -1457,7 +1484,7 @@ func NormalizeMultiplier(value float64) (float64, error) {
 	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return 0, ErrInvalidMultiplier
 	}
-	rounded := math.Round(value*10000) / 10000
+	rounded := math.Round(value*100) / 100
 	if math.Abs(value-rounded) > 0.000000001 {
 		return 0, ErrInvalidMultiplierPrecision
 	}
@@ -1471,9 +1498,6 @@ func ValidateSetMultiplier(value, inheritedDefault float64, maxMultiplier float6
 	}
 	if normalized <= 0 {
 		return 0, ErrInvalidMultiplier
-	}
-	if normalized < inheritedDefault {
-		return 0, ErrMultiplierBelowInherited
 	}
 	if maxMultiplier <= 0 {
 		maxMultiplier = defaultMaxMultiplier
@@ -1600,9 +1624,9 @@ func (s *Service) ListAdminAudit(ctx context.Context, params AdminAuditListParam
 func (s *Service) replaceMultiplierInsideLock(ctx context.Context, provider relay.GroupRateMultiplierManager, providerID int, relayUserID int64, groupID int64, requested *float64, auditID int) error
 ```
 
-In `SubjectDashboard`, build `SubjectSubscriptionGroups` from active `relay.UserSubscription` rows and current group rate entries. Set `Editable=false` and `EditableReason=self_edit_forbidden` when `actorUserID == targetUserID`; set `Editable=false` with `inactive_subscription`, `no_relay_mapping`, or `provider_unsupported` when those conditions apply. Derive `GroupQuotas.Groups` from the same `SubscriptionRow` display used/quota values, not from raw relay usage fields.
+In `SubjectDashboard`, build `SubjectSubscriptionGroups` from active `relay.UserSubscription` rows and current group rate entries. Set `Editable=false` and `EditableReason=self_edit_forbidden` when `actorUserID == targetUserID`; set `Editable=false` with `inactive_subscription`, `no_relay_mapping`, or `provider_unsupported` when those conditions apply. Derive `GroupQuotas.Groups` from the same `SubscriptionRow` display used/quota values. These values remain in sub2api enforcement units and are not divided by rate multiplier.
 
-In `Overview`, resolve the complete scoped relay-user set before ranking. If the relay-user count is greater than `fullScopeCap`, return `BuildOverviewUnavailableForLargeScope(subjects, s.fullScopeCap)`. Otherwise call `GetBatchUserUsageStats` in chunks of 100 relay users, rank with `RankTopMembers(subjects, statsByRelayUserID, 12)`, then call `GetUsageTrendForUsers` only for the ranked top members. If a single top member trend fails, keep that series with `Unavailable=true`, `UnavailableReason=provider_error`, and `Points=[]`; authorization or scope errors still fail closed.
+In `Overview`, resolve the complete scoped relay-user set before ranking. If the relay-user count is greater than `fullScopeCap`, return `BuildOverviewUnavailableForLargeScope(subjects, s.fullScopeCap)`. Otherwise call `GetBatchUserUsageStats` in chunks of 100 relay users, compute selected-window totals from the batched trend response, rank Top 12 from relay-backed members, and build the member details table from the complete scoped directory member roster. Members without local AE users or relay usage stay in `members` with `user_id=0` when no local user exists, zero usage, and `selectable=false`; they are not sent to sub2api batch usage or trend APIs. If a trend fetch fails with a soft provider error, mark the trend unavailable; authorization or scope errors still fail closed.
 
 In `ListAudit`, query only rows where `actor_user_id == actorUserID`. For rows with `rejection_reason == out_of_scope`, omit `target_user_id`, target display name, target email, and `request_metadata` from the representative response. `ListAdminAudit` can include target ids and request metadata because it is only exposed behind `auth.RequireAdmin()`.
 
@@ -1809,7 +1833,7 @@ func writeTeamUsageError(c *gin.Context, err error) {
 		pkg.Error(c, http.StatusNotFound, "target is not available")
 	case errors.Is(err, teamusage.ErrNoRelayMapping), errors.Is(err, teamusage.ErrInactiveSubscription):
 		pkg.Error(c, http.StatusConflict, err.Error())
-	case errors.Is(err, teamusage.ErrPolicyDenied), errors.Is(err, teamusage.ErrInvalidMultiplier), errors.Is(err, teamusage.ErrInvalidMultiplierPrecision), errors.Is(err, teamusage.ErrMultiplierBelowInherited), errors.Is(err, teamusage.ErrMultiplierAboveMaximum):
+	case errors.Is(err, teamusage.ErrPolicyDenied), errors.Is(err, teamusage.ErrInvalidMultiplier), errors.Is(err, teamusage.ErrInvalidMultiplierPrecision), errors.Is(err, teamusage.ErrMultiplierAboveMaximum):
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, teamusage.ErrProviderUnsupported):
 		pkg.Error(c, http.StatusServiceUnavailable, err.Error())
@@ -1991,6 +2015,7 @@ export interface TeamOverviewSummary {
   unavailable_reason?: string | null
   member_count: number
   relay_member_count: number
+  range_actual_cost?: number | null
   today_actual_cost?: number | null
   total_actual_cost?: number | null
   unit_label: string
@@ -2003,6 +2028,7 @@ export interface TeamOverviewMember {
   email: string
   department_display_path: string
   relay_user_id?: number | null
+  range_actual_cost: number
   today_actual_cost: number
   total_actual_cost: number
   total_tokens?: number | null
@@ -2131,16 +2157,16 @@ git commit -m "feat(frontend): add team usage API contracts"
 
 ### Task 7: Subject-Aware AI Usage Center
 
+**Current Status:** The original representative audit list work in this task was superseded by the Post-login QA follow-up above. Current representative AI Usage renders the subject selector, selected-member quota rows, and multiplier modal only; it does not render `TeamUsageAuditList.vue` or call the user audit API. Backend audit writes and admin audit API remain for a future dedicated administrator UI.
+
 **Files:**
 - Modify: `frontend/src/components/user/usage/UserUsageDashboard.vue`
 - Create: `frontend/src/components/user/usage/UserUsageSubjectSelector.vue`
 - Create: `frontend/src/components/user/usage/SelectedSubjectSubscriptionRows.vue`
 - Create: `frontend/src/components/user/usage/TeamRateMultiplierModal.vue`
-- Create: `frontend/src/components/user/usage/TeamUsageAuditList.vue`
 - Modify: `frontend/src/__tests__/dashboard-view.test.ts`
 - Create: `frontend/src/__tests__/user-usage-subject-selector.test.ts`
 - Create: `frontend/src/__tests__/selected-subject-subscription-rows.test.ts`
-- Create: `frontend/src/__tests__/team-usage-audit-list.test.ts`
 
 - [x] **Step 1: Write failing subject selector test**
 
@@ -2162,12 +2188,12 @@ it('renders My Usage and member subjects', () => {
 })
 ```
 
-- [x] **Step 2: Write failing quota preview test**
+- [x] **Step 2: Write failing quota stability test**
 
 Create `frontend/src/__tests__/selected-subject-subscription-rows.test.ts`:
 
 ```ts
-it('previews normalized Used / Quota when draft multiplier changes', async () => {
+it('keeps Used / Quota in enforcement units when draft multiplier changes', async () => {
   const wrapper = mount(SelectedSubjectSubscriptionRows, {
     props: {
       subjectUserId: 101,
@@ -2196,7 +2222,9 @@ it('previews normalized Used / Quota when draft multiplier changes', async () =>
 })
 ```
 
-- [x] **Step 3: Write failing audit list test**
+- [x] **Step 3: Write failing audit list test (superseded)**
+
+Superseded by Post-login QA follow-up: do not create or run this representative audit-list component test in the current implementation.
 
 Create `frontend/src/__tests__/team-usage-audit-list.test.ts`:
 
@@ -2216,6 +2244,8 @@ it('renders representative audit rows without redacted target details', () => {
 ```
 
 - [x] **Step 4: Run focused component tests and verify failure**
+
+Superseded by Post-login QA follow-up: omit `team-usage-audit-list` from current frontend test commands.
 
 Run: `cd frontend && pnpm test -- user-usage-subject-selector selected-subject-subscription-rows team-usage-audit-list`
 
@@ -2269,21 +2299,13 @@ function onChange(event: Event) {
 </template>
 ```
 
-- [x] **Step 6: Create subscription rows, modal, and audit list**
+The test must assert that changing the draft multiplier keeps the visible row at `$80.00 / $500.00` and shows explanatory copy that the multiplier changes future quota consumption speed, not this member's quota limit.
+
+- [x] **Step 6: Create subscription rows and modal; original audit list step superseded**
 
 Create `SelectedSubjectSubscriptionRows.vue` with:
 
-```ts
-function displayUsed(row: SubjectSubscriptionGroup, draftMultiplier?: number) {
-  if (!draftMultiplier || row.usage_value_basis === 'normalized_display_cost') return row.monthly_display_used_usd
-  return row.monthly_usage_usd / draftMultiplier
-}
-
-function displayQuota(row: SubjectSubscriptionGroup, draftMultiplier?: number) {
-  if (!draftMultiplier || row.usage_value_basis === 'normalized_display_cost') return row.monthly_effective_allowance_usd
-  return (row.monthly_effective_allowance_usd ?? 0) * row.effective_multiplier / draftMultiplier
-}
-```
+Render `row.monthly_display_used_usd / row.monthly_effective_allowance_usd` directly. Draft multiplier edits must not recalculate Used / Quota; the modal explanation covers the future consumption-speed effect before confirmation.
 
 Create `TeamRateMultiplierModal.vue` with props `{ row: SubjectSubscriptionGroup; open: boolean }`, emits `close` and `confirm`, a segmented set/reset control, numeric input `data-testid="multiplier-input"`, reason input, and this validation:
 
@@ -2293,14 +2315,13 @@ const isSetMode = computed(() => mode.value === 'set')
 const validationMessage = computed(() => {
   if (!isSetMode.value) return ''
   if (!Number.isFinite(normalized.value) || normalized.value <= 0) return 'Invalid multiplier'
-  if (!/^\d+(\.\d{1,4})?$/.test(String(multiplier.value))) return 'Too many decimals'
-  if (normalized.value < props.row.inherited_default_multiplier) return 'Below inherited default'
+  if (!/^\d+(\.\d{1,2})?$/.test(String(multiplier.value))) return 'Too many decimals'
   if (normalized.value > 10) return 'Above maximum'
   return ''
 })
 ```
 
-Create `TeamUsageAuditList.vue` with prop `{ items: TeamUsageAuditRecord[] }`; render created time, group name, action, status, changed flag, before/after multiplier, rejection reason, and plain-text reason. Do not render missing or redacted target fields.
+The original `TeamUsageAuditList.vue` representative UI was removed in the Post-login QA follow-up. Do not recreate it in representative AI Usage; the future administrator audit UI should consume the admin audit API instead.
 
 - [x] **Step 7: Wire dashboard subject loading**
 
@@ -2339,14 +2360,14 @@ Render `<UserUsageSubjectSelector>` above the existing stats area when `subjects
 
 - [x] **Step 8: Run component tests**
 
-Run: `cd frontend && pnpm test -- dashboard-view user-usage-subject-selector selected-subject-subscription-rows team-usage-audit-list`
+Run: `cd frontend && pnpm test -- dashboard-view user-usage-subject-selector selected-subject-subscription-rows`
 
 Expected: PASS.
 
 - [x] **Step 9: Commit subject-aware dashboard**
 
 ```bash
-git add frontend/src/components/user/usage frontend/src/__tests__/dashboard-view.test.ts frontend/src/__tests__/user-usage-subject-selector.test.ts frontend/src/__tests__/selected-subject-subscription-rows.test.ts frontend/src/__tests__/team-usage-audit-list.test.ts
+git add frontend/src/components/user/usage frontend/src/__tests__/dashboard-view.test.ts frontend/src/__tests__/user-usage-subject-selector.test.ts frontend/src/__tests__/selected-subject-subscription-rows.test.ts
 git commit -m "feat(frontend): add representative subject usage controls"
 ```
 
@@ -2372,7 +2393,7 @@ it('renders top member trend and member table without quota controls', async () 
   mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } })
   const wrapper = mount(TeamOverviewView, { global: { plugins: [router] } })
   await flushPromises()
-  expect(wrapper.text()).toContain('Top 12 member usage')
+  expect(wrapper.text()).toContain('Top 12 billing trend')
   expect(wrapper.text()).toContain('Alice')
   expect(wrapper.text()).not.toContain('Used / Quota')
   expect(wrapper.text()).not.toContain('Rate multiplier')
@@ -2434,12 +2455,8 @@ onMounted(loadOverview)
           <div class="mt-1 text-lg font-semibold">{{ overview.summary.relay_member_count }}</div>
         </div>
         <div class="rounded-md border border-slate-200 bg-white p-4">
-          <div class="text-xs text-slate-500">{{ $t('teamUsage.todayActualCost') }}</div>
-          <div class="mt-1 text-lg font-semibold">{{ overview.summary.today_actual_cost ?? '-' }}</div>
-        </div>
-        <div class="rounded-md border border-slate-200 bg-white p-4">
-          <div class="text-xs text-slate-500">{{ $t('teamUsage.last30dActualCost') }}</div>
-          <div class="mt-1 text-lg font-semibold">{{ overview.summary.total_actual_cost ?? '-' }}</div>
+          <div class="text-xs text-slate-500">{{ $t('teamUsage.rangeActualCost') }}</div>
+          <div class="mt-1 text-lg font-semibold">{{ overview.summary.range_actual_cost ?? '-' }}</div>
         </div>
       </section>
 
@@ -2454,9 +2471,11 @@ onMounted(loadOverview)
 </template>
 ```
 
-Create `TeamOverviewMemberTrendChart.vue` with prop `{ state: TeamMemberTrendState }`, title `$t('teamUsage.topMembers')`, and no `Used / Quota` or multiplier text. Create `TeamOverviewMemberTable.vue` with prop `{ members: TeamOverviewMember[] }`, columns name, email, department, today actual cost, rolling 30-day actual cost, subscription count, and an emit `open-member` carrying `user_id`.
+Create `TeamOverviewMemberTrendChart.vue` with prop `{ state: TeamMemberTrendState }`, title `$t('teamUsage.topMembers')`, and no `Used / Quota` or multiplier text. Create `TeamOverviewMemberTable.vue` with prop `{ members: TeamOverviewMember[] }`, columns name, email, department, selected-window billed usage with unit, and an emit `open-member` carrying `user_id`. Do not render subscription count in Team Overview until the API has reliable batched counts.
 
-- [x] **Step 4: Add route and sidebar entry**
+- [x] **Step 4: Add route and sidebar entry (superseded by `/usage` IA follow-up)**
+
+Superseded by Post-login QA follow-up: the current implementation does not expose a standalone `/team-usage` route in the sidebar. Team Overview lives at `/usage/team`, selected-member usage lives at `/usage/members/:user_id`, and `/` redirects to `/usage`.
 
 Add route:
 
@@ -2468,38 +2487,42 @@ Add route:
 }
 ```
 
-Add sidebar link under My Work with key `nav.teamUsage`.
+The original sidebar link under My Work with key `nav.teamUsage` is no longer rendered.
 
 - [x] **Step 5: Add i18n keys in English and Chinese**
 
 Add keys:
 
 ```ts
-'nav.teamUsage': 'Team Usage',
 'teamUsage.title': 'Team Usage',
-'teamUsage.topMembers': 'Top 12 member usage',
-'teamUsage.memberTable': 'Member usage',
+'teamUsage.topMembers': 'Top 12 billing trend',
+'teamUsage.memberTable': 'Member details',
 'teamUsage.scopeTooLarge': 'Team usage is unavailable for this scope size.',
+'teamUsage.updating': 'Updating team usage...',
 'teamUsage.noScope': 'No delegated team scope',
-'teamUsage.scopedMembers': 'Scoped members',
-'teamUsage.relayMembers': 'Relay-enabled members',
-'teamUsage.todayActualCost': 'Today actual cost',
-'teamUsage.last30dActualCost': 'Rolling 30-day actual cost',
+'teamUsage.scopedMembers': 'Team members',
+'teamUsage.relayMembers': 'Connected members',
+'teamUsage.rangeActualCost': 'Billed usage in range',
+'teamUsage.todayActualCost': 'Today billed usage',
+'teamUsage.totalActualCost': 'All-time billed usage',
 ```
+
+Do not add `nav.teamUsage`; the current IA keeps Team Overview inside AI Usage Center rather than as a sidebar entry.
 
 Chinese:
 
 ```ts
-'nav.teamUsage': '团队用量',
 'teamUsage.title': '团队用量',
-'teamUsage.topMembers': '组员用量 Top 12',
-'teamUsage.memberTable': '组员用量',
+'teamUsage.topMembers': 'Top 12 计费用量趋势',
+'teamUsage.memberTable': '成员明细',
 'teamUsage.scopeTooLarge': '当前部门范围过大，暂时无法计算团队用量。',
+'teamUsage.updating': '正在更新团队用量...',
 'teamUsage.noScope': '暂无委托团队范围',
-'teamUsage.scopedMembers': '范围内组员',
-'teamUsage.relayMembers': '已绑定 Relay 的组员',
-'teamUsage.todayActualCost': '今日实际成本',
-'teamUsage.last30dActualCost': '近 30 日实际成本',
+'teamUsage.scopedMembers': '团队人数',
+'teamUsage.relayMembers': '已接入人数',
+'teamUsage.rangeActualCost': '当前范围计费用量',
+'teamUsage.todayActualCost': '今日计费用量',
+'teamUsage.totalActualCost': '历史计费用量',
 ```
 
 - [x] **Step 6: Run Team Overview tests**
@@ -2525,7 +2548,8 @@ git commit -m "feat(frontend): add team usage overview page"
 In `docs/architecture.md`, add the current spec to Source-of-Truth Order and update the frontend task-zone section to mention:
 
 - AI Usage Center subject selector for representatives.
-- Separate `/team-usage` page.
+- Team Overview under `/usage/team`, linked from AI Usage Center for representatives.
+- Selected-member usage deep links under `/usage/members/:user_id`.
 - Delegated multiplier control via sub2api rate multipliers.
 - Local `team_usage_rate_multiplier_audits`.
 
