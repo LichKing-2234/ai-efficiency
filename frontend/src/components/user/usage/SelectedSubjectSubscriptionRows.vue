@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { SubjectSubscriptionGroup, UpdateTeamUsageRateMultiplierRequest } from '@/types'
 import TeamRateMultiplierModal from '@/components/user/usage/TeamRateMultiplierModal.vue'
+import { useI18n } from '@/i18n'
 
 const props = defineProps<{
   subjectUserId: number
@@ -14,9 +15,9 @@ const emit = defineEmits<{
 }>()
 
 const activeRow = ref<SubjectSubscriptionGroup | null>(null)
-const draftMultiplier = ref<number | undefined>()
 const submitting = ref(false)
 const errorMessage = ref('')
+const { t } = useI18n()
 
 const sortedRows = computed(() => [...props.rows].sort((a, b) => a.group_name.localeCompare(b.group_name)))
 
@@ -26,44 +27,28 @@ function formatCurrency(amount: number | null | undefined, unlimited = false) {
   return `$${amount.toFixed(2)}`
 }
 
-function displayUsed(row: SubjectSubscriptionGroup, draft?: number) {
-  if (draft == null || row.usage_value_basis === 'normalized_display_cost') {
-    if (row.usage_value_basis !== 'normalized_display_cost' && row.effective_multiplier === 0) return 0
-    return row.monthly_display_used_usd
-  }
-  if (draft === 0) return 0
-  return row.monthly_usage_usd / draft
-}
-
-function displayQuota(row: SubjectSubscriptionGroup, draft?: number) {
-  if (draft == null || row.usage_value_basis === 'normalized_display_cost') return row.monthly_effective_allowance_usd
-  if (draft === 0) return null
-  if (row.monthly_effective_allowance_usd == null) return null
-  return row.monthly_effective_allowance_usd * row.effective_multiplier / draft
-}
-
-function quotaIsUnlimited(row: SubjectSubscriptionGroup, draft?: number) {
-  if (row.usage_value_basis === 'normalized_display_cost') return !!row.monthly_effective_allowance_unlimited
-  if (draft == null) return !!row.monthly_effective_allowance_unlimited
-  return draft === 0
-}
-
-function rowDraft(row: SubjectSubscriptionGroup) {
-  if (activeRow.value?.group_id !== row.group_id) return undefined
-  return draftMultiplier.value
-}
-
 function openModal(row: SubjectSubscriptionGroup) {
   activeRow.value = row
-  draftMultiplier.value = undefined
   errorMessage.value = ''
 }
 
 function closeModal() {
   if (submitting.value) return
   activeRow.value = null
-  draftMultiplier.value = undefined
   errorMessage.value = ''
+}
+
+function subscriptionStatusLabel(status: string) {
+  switch (status) {
+    case 'active':
+      return t('teamUsage.subscriptionStatusActive')
+    case 'inactive':
+      return t('teamUsage.subscriptionStatusInactive')
+    case 'expired':
+      return t('teamUsage.subscriptionStatusExpired')
+    default:
+      return status
+  }
 }
 
 async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
@@ -78,9 +63,8 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
       emit('confirm', event)
     }
     activeRow.value = null
-    draftMultiplier.value = undefined
   } catch {
-    errorMessage.value = 'Unable to update rate multiplier'
+    errorMessage.value = t('teamUsage.updateMultiplierFailed')
   } finally {
     submitting.value = false
   }
@@ -90,17 +74,17 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
 <template>
   <section v-if="props.rows.length > 0" class="rounded-lg border border-slate-200 bg-white shadow-sm">
     <div class="border-b border-slate-200 px-4 py-3">
-      <h2 class="text-base font-semibold text-slate-950">Subscription groups</h2>
+      <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.subscriptionGroups') }}</h2>
     </div>
     <div class="overflow-x-auto">
       <table class="min-w-full divide-y divide-slate-200 text-sm">
         <thead class="bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
           <tr>
-            <th class="px-4 py-3">Group</th>
-            <th class="px-4 py-3">Status</th>
-            <th class="px-4 py-3">Multiplier</th>
-            <th class="px-4 py-3">Used / Quota</th>
-            <th class="px-4 py-3 text-right">Action</th>
+            <th class="px-4 py-3">{{ t('teamUsage.subscriptionGroup') }}</th>
+            <th class="px-4 py-3">{{ t('teamUsage.subscriptionStatus') }}</th>
+            <th class="px-4 py-3">{{ t('teamUsage.multiplier') }}</th>
+            <th class="px-4 py-3">{{ t('teamUsage.usedOverQuota') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('teamUsage.memberAction') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -109,11 +93,11 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
               <div class="font-medium text-slate-950">{{ row.group_name }}</div>
               <div class="text-xs text-slate-500">{{ row.platform }}</div>
             </td>
-            <td class="px-4 py-3 text-slate-700">{{ row.subscription_status }}</td>
+            <td class="px-4 py-3 text-slate-700">{{ subscriptionStatusLabel(row.subscription_status) }}</td>
             <td class="px-4 py-3 text-slate-700">{{ row.effective_multiplier }}x</td>
             <td class="px-4 py-3 font-medium text-slate-950">
-              {{ formatCurrency(displayUsed(row, rowDraft(row))) }} /
-              {{ formatCurrency(displayQuota(row, rowDraft(row)), quotaIsUnlimited(row, rowDraft(row))) }}
+              {{ formatCurrency(row.monthly_display_used_usd) }} /
+              {{ formatCurrency(row.monthly_effective_allowance_usd, row.monthly_effective_allowance_unlimited) }}
             </td>
             <td class="px-4 py-3 text-right">
               <button
@@ -123,7 +107,7 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
                 :disabled="!row.editable"
                 @click="openModal(row)"
               >
-                Edit
+                {{ t('teamUsage.editMultiplier') }}
               </button>
             </td>
           </tr>
@@ -138,7 +122,6 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
       :error-message="errorMessage"
       @close="closeModal"
       @confirm="confirm"
-      @draft-change="draftMultiplier = $event"
     />
   </section>
 </template>

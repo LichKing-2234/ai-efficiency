@@ -13,7 +13,20 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 function formatCost(value: number) {
-  return value.toFixed(2)
+  return `${value.toFixed(2)} USD`
+}
+
+function memberKey(member: TeamOverviewMember) {
+  return member.user_id > 0 ? `user:${member.user_id}` : `directory:${member.directory_member_external_id || member.email}`
+}
+
+function canOpen(member: TeamOverviewMember) {
+  return member.selectable && member.user_id > 0
+}
+
+function openMember(member: TeamOverviewMember) {
+  if (!canOpen(member)) return
+  emit('open-member', member.user_id)
 }
 </script>
 
@@ -31,40 +44,33 @@ function formatCost(value: number) {
       <table class="min-w-full divide-y divide-slate-100 text-sm">
         <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
           <tr>
-            <th class="whitespace-nowrap px-4 py-2 text-left">Name</th>
-            <th class="whitespace-nowrap px-4 py-2 text-left">Email</th>
-            <th class="whitespace-nowrap px-4 py-2 text-left">Department</th>
-            <th class="whitespace-nowrap px-4 py-2 text-right">Today actual cost</th>
-            <th class="whitespace-nowrap px-4 py-2 text-right">Total actual cost</th>
-            <th class="whitespace-nowrap px-4 py-2 text-right">Subscriptions</th>
-            <th class="whitespace-nowrap px-4 py-2 text-right">Action</th>
+            <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberName') }}</th>
+            <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberEmail') }}</th>
+            <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberDepartment') }}</th>
+            <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.rangeActualCost') }}</th>
+            <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.memberAction') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
           <tr
             v-for="member in props.members"
-            :key="member.user_id"
+            :key="memberKey(member)"
             class="hover:bg-slate-50"
           >
             <td class="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{{ member.display_name }}</td>
             <td class="whitespace-nowrap px-4 py-2 text-slate-600">{{ member.email }}</td>
             <td class="min-w-56 px-4 py-2 text-slate-600">{{ member.department_display_path || '-' }}</td>
             <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">
-              {{ formatCost(member.today_actual_cost) }}
-            </td>
-            <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">
-              {{ formatCost(member.total_actual_cost) }}
-            </td>
-            <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-600">
-              {{ member.subscription_count == null ? '-' : member.subscription_count }}
+              {{ formatCost(member.range_actual_cost) }}
             </td>
             <td class="whitespace-nowrap px-4 py-2 text-right">
               <button
                 type="button"
-                class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                @click="emit('open-member', member.user_id)"
+                class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="!canOpen(member)"
+                @click="openMember(member)"
               >
-                Open
+                {{ t('teamUsage.openMember') }}
               </button>
             </td>
           </tr>

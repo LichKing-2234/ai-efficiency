@@ -1,14 +1,25 @@
 <template>
   <div :class="props.embedded ? 'space-y-6' : 'mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8'">
+    <div v-if="props.memberRoute" class="mb-4">
+      <RouterLink
+        to="/usage/team"
+        data-testid="member-usage-back"
+        class="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+      >
+        <span aria-hidden="true" class="mr-1">←</span>
+        {{ t('usageDashboard.backToTeamOverview') }}
+      </RouterLink>
+    </div>
+
     <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
       <div>
         <component
           :is="props.embedded ? 'h2' : 'h1'"
           :class="props.embedded ? 'text-base font-semibold text-slate-950' : 'text-2xl font-semibold text-gray-900'"
         >
-          {{ props.embedded ? t('usageDashboard.embeddedTitle') : t('usageDashboard.title') }}
+          {{ dashboardTitle }}
         </component>
-        <p class="mt-1 text-sm text-gray-500">{{ t('usageDashboard.subtitle') }}</p>
+        <p class="mt-1 text-sm text-gray-500">{{ dashboardSubtitle }}</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button data-test="range-today" type="button" :class="rangeButtonClass(selectedRange === 'today')" @click="selectRange('today')">
@@ -52,27 +63,23 @@
     </div>
 
     <div v-else class="space-y-6">
-      <div v-if="hasMemberSubjects" class="flex justify-end">
+      <div v-if="!props.memberRoute && hasMemberSubjects" class="flex justify-end">
         <UserUsageSubjectSelector
           v-model="selectedSubjectValue"
           :subjects="subjects"
           @select="selectSubject"
         />
       </div>
-      <UsageGroupQuotaSection
-        :quotas="currentSnapshot?.group_quotas ?? null"
-        :loading="loading && !!currentSnapshot"
-        :range-label="selectedRangeLabel"
-      />
       <SelectedSubjectSubscriptionRows
         v-if="selectedMemberSubject && selectedSubjectSubscriptions.length > 0"
         :subject-user-id="selectedMemberSubject.user_id"
         :rows="selectedSubjectSubscriptions"
         :update-multiplier="handleMultiplierConfirm"
       />
-      <TeamUsageAuditList
-        v-if="selectedMemberSubject && auditItems.length > 0"
-        :items="auditItems"
+      <UsageGroupQuotaSection
+        :quotas="currentSnapshot?.group_quotas ?? null"
+        :loading="loading && !!currentSnapshot"
+        :range-label="selectedRangeLabel"
       />
       <UsageStatsCards
         :stats="currentSnapshot?.stats ?? null"
@@ -94,7 +101,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { getUserUsageDashboard } from '@/api/userUsage'
 import {
-  getTeamUsageAudit,
   getTeamUsageSubjectDashboard,
   listTeamUsageSubjects,
   updateTeamUsageRateMultiplier,
@@ -102,7 +108,6 @@ import {
 import { useI18n } from '@/i18n'
 import type {
   SubjectSubscriptionGroup,
-  TeamUsageAuditRecord,
   TeamUsageSubject,
   UpdateTeamUsageRateMultiplierRequest,
   UserUsageDashboardParams,
@@ -115,17 +120,18 @@ import UsageModelChart from '@/components/user/usage/UsageModelChart.vue'
 import UsageGroupQuotaSection from '@/components/user/usage/UsageGroupQuotaSection.vue'
 import UserUsageSubjectSelector from '@/components/user/usage/UserUsageSubjectSelector.vue'
 import SelectedSubjectSubscriptionRows from '@/components/user/usage/SelectedSubjectSubscriptionRows.vue'
-import TeamUsageAuditList from '@/components/user/usage/TeamUsageAuditList.vue'
 
 type RangeOption = 'today' | '7d' | '30d'
 
 const props = withDefaults(defineProps<{
   embedded?: boolean
   homeMode?: boolean
+  memberRoute?: boolean
   initialSnapshot?: UserUsageDashboardSnapshot | null
 }>(), {
   embedded: false,
   homeMode: false,
+  memberRoute: false,
   initialSnapshot: null,
 })
 
@@ -133,10 +139,10 @@ const selectedRange = ref<RangeOption>('30d')
 const snapshotRange = ref<RangeOption>('30d')
 const snapshot = ref<UserUsageDashboardSnapshot | null>(null)
 const memberSubjects = ref<TeamUsageSubject[]>([])
+const memberRouteSubject = ref<TeamUsageSubject | null>(null)
 const auth = useAuthStore()
 const selectedSubjectValue = ref(subjectValue(makeSelfSubject()))
 const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
-const auditItems = ref<TeamUsageAuditRecord[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const credentialError = ref(false)
@@ -149,6 +155,16 @@ const currentSnapshot = computed(() => snapshot.value ?? props.initialSnapshot)
 const setupRequired = computed(() => currentSnapshot.value?.configured === false)
 const selectedRangeLabel = computed(() => rangeLabel(selectedRange.value))
 const snapshotRangeLabel = computed(() => rangeLabel(snapshotRange.value))
+const dashboardTitle = computed(() => {
+  if (props.memberRoute) return t('usageDashboard.memberTitle')
+  return props.embedded ? t('usageDashboard.embeddedTitle') : t('usageDashboard.title')
+})
+const dashboardSubtitle = computed(() => {
+  if (!props.memberRoute) return t('usageDashboard.subtitle')
+  const subject = memberRouteSubject.value
+  if (!subject) return t('usageDashboard.memberSubtitle')
+  return [subject.email, subject.department_display_path].filter(Boolean).join(' · ') || t('usageDashboard.memberSubtitle')
+})
 const subjects = computed<TeamUsageSubject[]>(() => {
   const self = makeSelfSubject()
   return [
@@ -163,6 +179,7 @@ const selectedSubject = computed(() => {
   return subjects.value.find((subject) => subjectValue(subject) === selectedSubjectValue.value)
 })
 const selectedMemberSubject = computed(() => {
+  if (props.memberRoute) return memberRouteSubject.value
   const subject = selectedSubject.value
   if (!subject || subject.subject_type !== 'member') return null
   return subject
@@ -207,7 +224,9 @@ function buildParams(range: RangeOption): UserUsageDashboardParams {
 }
 
 function subjectValue(subject: TeamUsageSubject) {
-  return `${subject.subject_type}:${subject.user_id}`
+  if (subject.subject_type === 'self') return `self:${subject.user_id}`
+  const id = subject.user_id > 0 ? String(subject.user_id) : `directory:${subject.directory_member_external_id || subject.email}`
+  return `${subject.subject_type}:${id}`
 }
 
 function makeSelfSubject(): TeamUsageSubject {
@@ -220,17 +239,17 @@ function makeSelfSubject(): TeamUsageSubject {
   }
 }
 
-function subjectUserIDQuery() {
-  const raw = Array.isArray(route.query.subject_user_id) ? route.query.subject_user_id[0] : route.query.subject_user_id
+function routeSubjectUserID() {
+  const raw = Array.isArray(route.params.user_id) ? route.params.user_id[0] : route.params.user_id
   const subjectUserID = Number(raw)
-  if (!Number.isInteger(subjectUserID)) return null
+  if (!Number.isInteger(subjectUserID) || subjectUserID <= 0) return null
   return subjectUserID
 }
 
-async function loadSubjects(options?: { expandForSubjectQuery?: boolean }) {
+async function loadSubjects(options?: { expandForRouteSubject?: boolean }) {
   try {
-    memberSubjects.value = options?.expandForSubjectQuery
-      ? await loadSubjectsForQueryTarget(subjectUserIDQuery())
+    memberSubjects.value = options?.expandForRouteSubject
+      ? await loadSubjectsForRouteTarget(routeSubjectUserID())
       : await loadDefaultSubjects()
     if (!subjects.value.some((subject) => subjectValue(subject) === selectedSubjectValue.value)) {
       selectedSubjectValue.value = subjectValue(makeSelfSubject())
@@ -246,7 +265,7 @@ async function loadDefaultSubjects() {
   return (res.data.data?.subjects ?? []).filter((subject) => subject.subject_type === 'member')
 }
 
-async function loadSubjectsForQueryTarget(targetUserID: number | null) {
+async function loadSubjectsForRouteTarget(targetUserID: number | null) {
   if (targetUserID == null) {
     return loadDefaultSubjects()
   }
@@ -265,8 +284,8 @@ async function loadSubjectsForQueryTarget(targetUserID: number | null) {
   return loaded
 }
 
-function applySubjectQuerySelection() {
-  const subjectUserID = subjectUserIDQuery()
+function applyRouteSubjectSelection() {
+  const subjectUserID = routeSubjectUserID()
   if (subjectUserID == null) return false
   const subject = subjects.value.find((item) => item.subject_type === 'member' && item.user_id === subjectUserID && item.selectable)
   if (!subject) return false
@@ -276,17 +295,6 @@ function applySubjectQuerySelection() {
   return true
 }
 
-async function loadAuditForSubject(targetUserID: number, requestSeq: number) {
-  try {
-    const res = await getTeamUsageAudit({ target_user_id: targetUserID, page_size: 20 })
-    if (requestSeq !== dashboardRequestSeq || selectedMemberSubject.value?.user_id !== targetUserID) return
-    auditItems.value = res.data.data?.items ?? []
-  } catch {
-    if (requestSeq !== dashboardRequestSeq || selectedMemberSubject.value?.user_id !== targetUserID) return
-    auditItems.value = []
-  }
-}
-
 async function loadDashboard() {
   const requestedRange = selectedRange.value
   const requestSeq = ++dashboardRequestSeq
@@ -294,30 +302,36 @@ async function loadDashboard() {
   errorMessage.value = ''
   credentialError.value = false
   selectedSubjectSubscriptions.value = []
-  auditItems.value = []
   try {
-    const subject = selectedSubject.value
     const params = buildParams(requestedRange)
-    const res = subject?.subject_type === 'member'
-      ? await getTeamUsageSubjectDashboard(subject.user_id, params)
-      : await getUserUsageDashboard(params)
+    const routeUserID = props.memberRoute ? routeSubjectUserID() : null
+    if (props.memberRoute && routeUserID == null) {
+      throw new Error('invalid member route')
+    }
+    const subject = selectedSubject.value
+    const res = props.memberRoute && routeUserID != null
+      ? await getTeamUsageSubjectDashboard(routeUserID, params)
+      : subject?.subject_type === 'member'
+        ? await getTeamUsageSubjectDashboard(subject.user_id, params)
+        : await getUserUsageDashboard(params)
     if (requestSeq !== dashboardRequestSeq) return
     snapshot.value = res.data.data ?? null
-    selectedSubjectSubscriptions.value = subject?.subject_type === 'member'
-      ? (res.data.data as any)?.subject_subscription_groups ?? []
-      : []
-    snapshotRange.value = requestedRange
-    if (subject?.subject_type === 'member') {
-      auditItems.value = []
-      await loadAuditForSubject(subject.user_id, requestSeq)
+    if (props.memberRoute) {
+      memberRouteSubject.value = (res.data.data as any)?.subject ?? null
+      selectedSubjectSubscriptions.value = (res.data.data as any)?.subject_subscription_groups ?? []
     } else {
-      auditItems.value = []
+      selectedSubjectSubscriptions.value = subject?.subject_type === 'member'
+        ? (res.data.data as any)?.subject_subscription_groups ?? []
+        : []
     }
+    snapshotRange.value = requestedRange
   } catch (err: any) {
     if (requestSeq !== dashboardRequestSeq) return
     snapshot.value = null
+    if (props.memberRoute) {
+      memberRouteSubject.value = null
+    }
     selectedSubjectSubscriptions.value = []
-    auditItems.value = []
     credentialError.value = err?.response?.status === 409
     errorMessage.value = credentialError.value ? t('usageDashboard.credentialError') : t('usageDashboard.unavailable')
   } finally {
@@ -344,9 +358,13 @@ async function handleMultiplierConfirm(event: { subjectUserId: number; groupID: 
 }
 
 onMounted(async () => {
-  await loadSubjects({ expandForSubjectQuery: subjectUserIDQuery() != null })
-  const consumedSubjectQuery = applySubjectQuerySelection()
-  if (props.initialSnapshot && !consumedSubjectQuery) {
+  if (props.memberRoute) {
+    loadDashboard()
+    return
+  }
+  await loadSubjects({ expandForRouteSubject: routeSubjectUserID() != null })
+  const consumedRouteSubject = applyRouteSubjectSelection()
+  if (props.initialSnapshot && !consumedRouteSubject) {
     snapshotRange.value = selectedRange.value
     return
   }

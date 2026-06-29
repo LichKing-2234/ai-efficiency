@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import UserUsageDashboard from '@/components/user/usage/UserUsageDashboard.vue'
+import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
 import { getUserProviders } from '@/api/user'
 import { getUserUsageDashboard } from '@/api/userUsage'
+import { getTeamUsageScope } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import type { UserProviderSummary, UserUsageDashboardSnapshot } from '@/types'
 
@@ -13,6 +16,9 @@ const usageSnapshot = ref<UserUsageDashboardSnapshot | null>(null)
 const loading = ref(true)
 const providersLoadFailed = ref(false)
 const usageLoadFailed = ref(false)
+const hasTeamUsageScope = ref(false)
+const route = useRoute()
+const isMemberUsageRoute = computed(() => route.name === 'UsageMember')
 
 type HomeLifecycleState =
   | 'needs_setup'
@@ -21,13 +27,18 @@ type HomeLifecycleState =
   | 'degraded_error'
 
 onMounted(async () => {
+  if (isMemberUsageRoute.value) {
+    loading.value = false
+    return
+  }
+
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const end = new Date()
   const start = new Date(end)
   start.setDate(end.getDate() - 29)
   const formatDate = (date: Date) => date.toISOString().slice(0, 10)
 
-  const [providersResult, usageResult] = await Promise.allSettled([
+  const [providersResult, usageResult, scopeResult] = await Promise.allSettled([
     getUserProviders(),
     getUserUsageDashboard({
       start_date: formatDate(start),
@@ -35,6 +46,7 @@ onMounted(async () => {
       granularity: 'day',
       timezone,
     }),
+    getTeamUsageScope(),
   ])
 
   if (providersResult.status === 'fulfilled') {
@@ -49,6 +61,12 @@ onMounted(async () => {
   } else {
     usageLoadFailed.value = true
     usageSnapshot.value = null
+  }
+
+  if (scopeResult.status === 'fulfilled') {
+    hasTeamUsageScope.value = scopeResult.value.data.data?.is_representative === true
+  } else {
+    hasTeamUsageScope.value = false
   }
 
   loading.value = false
@@ -106,55 +124,61 @@ function toggleGuideExpanded() {
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <div v-if="loading" class="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-        {{ t('home.loading') }}
-      </div>
+      <UserUsageDashboard v-if="isMemberUsageRoute" embedded member-route />
 
       <template v-else>
-        <section class="space-y-4">
-          <div
-            class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-            :data-testid="`home-guide-${homeLifecycleState}`"
-          >
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p class="text-sm font-semibold text-cyan-700">{{ t('home.title') }}</p>
-                <h1 class="mt-2 text-2xl font-semibold text-slate-950">{{ guideTitle }}</h1>
-                <p class="mt-2 max-w-3xl text-sm text-slate-600">{{ guideHelp }}</p>
-              </div>
-              <RouterLink
-                v-if="homeLifecycleState !== 'established_user'"
-                to="/user"
-                class="inline-flex rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-800"
-              >
-                {{ guidePrimaryAction }}
-              </RouterLink>
-              <button
-                v-else
-                type="button"
-                class="inline-flex rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                @click="toggleGuideExpanded"
-              >
-                {{ guidePrimaryAction }}
-              </button>
-            </div>
+        <UsageCenterTabs active="personal" :show-team="hasTeamUsageScope" />
 
-            <div v-if="shouldShowGuideSignals" class="mt-4 grid gap-3 sm:grid-cols-2">
-              <div class="rounded-lg bg-slate-50 p-4 text-sm">
-                <div class="font-medium text-slate-950">{{ t('home.guideSignalAiAccess') }}</div>
-                <div class="mt-2 text-slate-600">{{ aiAccessReady ? t('home.guideDone') : t('home.guideTodo') }}</div>
+        <div v-if="loading" class="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+          {{ t('home.loading') }}
+        </div>
+
+        <template v-else>
+          <section class="space-y-4">
+            <div
+              class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+              :data-testid="`home-guide-${homeLifecycleState}`"
+            >
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p class="text-sm font-semibold text-cyan-700">{{ t('home.title') }}</p>
+                  <h1 class="mt-2 text-2xl font-semibold text-slate-950">{{ guideTitle }}</h1>
+                  <p class="mt-2 max-w-3xl text-sm text-slate-600">{{ guideHelp }}</p>
+                </div>
+                <RouterLink
+                  v-if="homeLifecycleState !== 'established_user'"
+                  to="/user"
+                  class="inline-flex rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-800"
+                >
+                  {{ guidePrimaryAction }}
+                </RouterLink>
+                <button
+                  v-else
+                  type="button"
+                  class="inline-flex rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  @click="toggleGuideExpanded"
+                >
+                  {{ guidePrimaryAction }}
+                </button>
               </div>
-              <div class="rounded-lg bg-slate-50 p-4 text-sm">
-                <div class="font-medium text-slate-950">{{ t('home.guideSignalUsage') }}</div>
-                <div class="mt-2 text-slate-600">
-                  {{ usageLoadFailed ? t('home.statusUnknown') : usageDataReady ? t('home.guideDone') : t('home.guideWaiting') }}
+
+              <div v-if="shouldShowGuideSignals" class="mt-4 grid gap-3 sm:grid-cols-2">
+                <div class="rounded-lg bg-slate-50 p-4 text-sm">
+                  <div class="font-medium text-slate-950">{{ t('home.guideSignalAiAccess') }}</div>
+                  <div class="mt-2 text-slate-600">{{ aiAccessReady ? t('home.guideDone') : t('home.guideTodo') }}</div>
+                </div>
+                <div class="rounded-lg bg-slate-50 p-4 text-sm">
+                  <div class="font-medium text-slate-950">{{ t('home.guideSignalUsage') }}</div>
+                  <div class="mt-2 text-slate-600">
+                    {{ usageLoadFailed ? t('home.statusUnknown') : usageDataReady ? t('home.guideDone') : t('home.guideWaiting') }}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <UserUsageDashboard embedded home-mode :initial-snapshot="usageSnapshot" />
+          <UserUsageDashboard embedded home-mode :initial-snapshot="usageSnapshot" />
+        </template>
       </template>
     </div>
   </AppLayout>

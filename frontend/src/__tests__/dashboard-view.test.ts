@@ -24,6 +24,14 @@ vi.mock('@/api/userUsage', () => ({
 }))
 
 vi.mock('@/api/teamUsage', () => ({
+  getTeamUsageScope: vi.fn(() => Promise.resolve({
+    data: {
+      data: {
+        is_representative: true,
+        departments: [{ external_id: 'department-alpha', name: 'Department Alpha', display_path: 'Department Alpha', subtree_member_count: 2, matched_user_count: 2 }],
+      },
+    },
+  })),
   listTeamUsageSubjects: vi.fn(() => Promise.resolve({
     data: {
       data: {
@@ -111,6 +119,9 @@ function createTestRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: DashboardView },
+      { path: '/usage', name: 'Usage', component: DashboardView },
+      { path: '/usage/members/:user_id', name: 'UsageMember', component: DashboardView },
+      { path: '/usage/team', name: 'UsageTeam', component: { template: '<div>Team Usage</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
       { path: '/repos', component: { template: '<div>Repos</div>' } },
       { path: '/events', component: { template: '<div>Events</div>' } },
@@ -466,7 +477,7 @@ describe('DashboardView', () => {
     expect(getTeamUsageSubjectDashboard).toHaveBeenCalledWith(101, expect.objectContaining({ granularity: 'day' }))
   })
 
-  it('consumes subject_user_id query after subjects load and opens member usage in scope', async () => {
+  it('opens member usage from the canonical member route after subjects load', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     const { listTeamUsageSubjects, getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
@@ -524,17 +535,18 @@ describe('DashboardView', () => {
     })
 
     const router = createTestRouter()
-    await router.push({ path: '/', query: { subject_user_id: '101' } })
+    await router.push('/usage/members/101')
     await router.isReady()
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
     expect(getTeamUsageSubjectDashboard).toHaveBeenCalledWith(101, expect.objectContaining({ granularity: 'day' }))
-    expect(getUserUsageDashboard).toHaveBeenCalledTimes(1)
-    expect((wrapper.get('[data-testid="usage-subject-selector"]').element as HTMLSelectElement).value).toBe('member:101')
+    expect(getUserUsageDashboard).not.toHaveBeenCalled()
+    expect(listTeamUsageSubjects).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="usage-subject-selector"]').exists()).toBe(false)
   })
 
-  it('pages representative subjects until subject_user_id deep link target is found', async () => {
+  it('renders canonical member route as an independent member page without usage center tabs or subject selector', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     const { listTeamUsageSubjects, getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
@@ -556,40 +568,215 @@ describe('DashboardView', () => {
       },
     })
     ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
-    const firstPageSubjects = Array.from({ length: 200 }, (_, index) => ({
-      subject_type: 'member',
-      user_id: index + 1,
-      display_name: `Member ${index + 1}`,
-      email: `member-${index + 1}@example.com`,
-      department_display_path: 'Department Alpha',
-      selectable: true,
-    }))
-    ;(listTeamUsageSubjects as any).mockImplementation((params?: { page?: number; page_size?: number }) => Promise.resolve({
+    ;(listTeamUsageSubjects as any).mockResolvedValue({
       data: {
-        data: params?.page === 2
-          ? {
-              page: 2,
-              page_size: 200,
-              total: 250,
-              subjects: [
-                {
-                  subject_type: 'member',
-                  user_id: 225,
-                  display_name: 'Pat',
-                  email: 'pat@example.com',
-                  department_display_path: 'Department Alpha',
-                  selectable: true,
-                },
-              ],
-            }
-          : {
-              page: 1,
-              page_size: 200,
-              total: 250,
-              subjects: firstPageSubjects,
+        data: {
+          page: 1,
+          page_size: 50,
+          total: 1,
+          subjects: [
+            {
+              subject_type: 'member',
+              user_id: 101,
+              display_name: 'Alice',
+              email: 'alice@example.com',
+              department_display_path: 'Department Alpha',
+              selectable: true,
             },
+          ],
+        },
       },
-    }))
+    })
+    ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
+      data: {
+        data: {
+          ...usageSnapshot,
+          subject: {
+            subject_type: 'member',
+            user_id: 101,
+            display_name: 'Alice',
+            email: 'alice@example.com',
+            department_display_path: 'Department Alpha',
+            selectable: true,
+          },
+          subject_subscription_groups: [],
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/usage/members/101')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.get('h2').text()).toBe('Member Usage')
+    expect(wrapper.text()).toContain('Member Usage')
+    expect(wrapper.text()).toContain('alice@example.com')
+    expect(wrapper.text()).toContain('Team Overview')
+    expect(wrapper.text().match(/Member Usage/g) ?? []).toHaveLength(1)
+    expect(wrapper.find('[data-testid="usage-center-tabs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="usage-subject-selector"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('AI setup completed')
+    expect(wrapper.text()).not.toContain('My Usage')
+  })
+
+  it('shows an explicit team overview return link on canonical member route', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { listTeamUsageSubjects, getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
+    ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(listTeamUsageSubjects as any).mockResolvedValue({ data: { data: { page: 1, page_size: 20, total: 0, subjects: [] } } })
+    ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
+      data: {
+        data: {
+          ...usageSnapshot,
+          subject: {
+            subject_type: 'member',
+            user_id: 101,
+            display_name: 'Alice',
+            email: 'alice@example.com',
+            department_display_path: 'Department Alpha',
+            selectable: true,
+          },
+          subject_subscription_groups: [],
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/usage/members/101')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const backLink = wrapper.get('[data-testid="member-usage-back"]')
+    expect(backLink.text()).toContain('Back to Team Overview')
+    expect(backLink.attributes('href')).toBe('/usage/team')
+    const returnAreaText = backLink.element.parentElement?.textContent ?? ''
+    expect(returnAreaText).not.toContain('AI Usage Center')
+    expect(wrapper.text()).toContain('Team Overview')
+    expect(wrapper.text().match(/Member Usage/g) ?? []).toHaveLength(1)
+  })
+
+  it('keeps member email in subtitle without duplicating it when the display name is the email', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { listTeamUsageSubjects, getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
+    ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(listTeamUsageSubjects as any).mockResolvedValue({ data: { data: { page: 1, page_size: 20, total: 0, subjects: [] } } })
+    ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
+      data: {
+        data: {
+          ...usageSnapshot,
+          subject: {
+            subject_type: 'member',
+            user_id: 101,
+            display_name: 'alice@example.com',
+            email: 'alice@example.com',
+            department_display_path: 'Department Alpha',
+            selectable: true,
+          },
+          subject_subscription_groups: [],
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/usage/members/101')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text().match(/alice@example\.com/g) ?? []).toHaveLength(1)
+    expect(wrapper.text()).toContain('Department Alpha')
+    expect(wrapper.text().match(/Member Usage/g) ?? []).toHaveLength(1)
+  })
+
+  it('renders selected member subscription groups before quotas', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { listTeamUsageSubjects, getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
+    ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(listTeamUsageSubjects as any).mockResolvedValue({ data: { data: { page: 1, page_size: 20, total: 0, subjects: [] } } })
+    ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
+      data: {
+        data: {
+          ...usageSnapshotWithQuotas,
+          subject: {
+            subject_type: 'member',
+            user_id: 101,
+            display_name: 'Alice',
+            email: 'alice@example.com',
+            department_display_path: 'Department Alpha',
+            selectable: true,
+          },
+          subject_subscription_groups: [
+            {
+              group_id: '42',
+              group_name: 'Group Alpha',
+              platform: 'openai',
+              subscription_status: 'active',
+              inherited_default_multiplier: 1,
+              system_default_multiplier: 1,
+              user_multiplier: null,
+              effective_multiplier: 1,
+              multiplier_source: 'group',
+              daily_display_used_usd: 0,
+              weekly_display_used_usd: 0,
+              monthly_display_used_usd: 32.4,
+              daily_usage_usd: 0,
+              weekly_usage_usd: 0,
+              monthly_usage_usd: 32.4,
+              monthly_effective_allowance_usd: 100,
+              usage_value_basis: 'raw_actual_cost',
+              quota_window_basis: 'sub2api_enforcement_window',
+              editable: true,
+            },
+          ],
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/usage/members/101')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const subscriptionIndex = wrapper.text().indexOf('Subscription groups')
+    const quotaIndex = wrapper.text().indexOf('Monthly Quotas')
+    expect(subscriptionIndex).toBeGreaterThanOrEqual(0)
+    expect(quotaIndex).toBeGreaterThanOrEqual(0)
+    expect(subscriptionIndex).toBeLessThan(quotaIndex)
+  })
+
+  it('loads canonical member route directly without paging representative subjects', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { listTeamUsageSubjects, getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [
+            {
+              id: 1,
+              name: 'prod',
+              display_name: 'Production',
+              base_url: 'https://relay.example.com',
+              default_model: 'gpt-5.4',
+              is_primary: true,
+              groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'existing_hidden' } }],
+            },
+          ],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(listTeamUsageSubjects as any).mockRejectedValue(new Error('subjects should not be loaded for direct member route'))
     ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
       data: {
         data: {
@@ -607,23 +794,23 @@ describe('DashboardView', () => {
     })
 
     const router = createTestRouter()
-    await router.push({ path: '/', query: { subject_user_id: '225' } })
+    await router.push('/usage/members/225')
     await router.isReady()
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    expect(listTeamUsageSubjects).toHaveBeenNthCalledWith(1, { page: 1, page_size: 200 })
-    expect(listTeamUsageSubjects).toHaveBeenNthCalledWith(2, { page: 2, page_size: 200 })
+    expect(listTeamUsageSubjects).not.toHaveBeenCalled()
+    expect(getUserUsageDashboard).not.toHaveBeenCalled()
     expect(getTeamUsageSubjectDashboard).toHaveBeenCalledWith(225, expect.objectContaining({ granularity: 'day' }))
-    expect((wrapper.get('[data-testid="usage-subject-selector"]').element as HTMLSelectElement).value).toBe('member:225')
+    expect(wrapper.find('[data-testid="usage-subject-selector"]').exists()).toBe(false)
+    expect(wrapper.get('h2').text()).toBe('Member Usage')
+    expect(wrapper.text()).toContain('pat@example.com')
   })
 
-  it('ignores stale audit responses after switching selected members', async () => {
+  it('does not request or render audit entries in selected member usage', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     const { listTeamUsageSubjects, getTeamUsageSubjectDashboard, getTeamUsageAudit } = await import('@/api/teamUsage')
-    const auditAlice = deferred<any>()
-    const auditBob = deferred<any>()
     ;(getUserProviders as any).mockResolvedValue({
       data: {
         data: {
@@ -670,26 +857,7 @@ describe('DashboardView', () => {
         },
       },
     }))
-    ;(getTeamUsageAudit as any).mockImplementation((params: { target_user_id: number }) => {
-      return params.target_user_id === 101 ? auditAlice.promise : auditBob.promise
-    })
-
-    const router = createTestRouter()
-    await router.push('/')
-    await router.isReady()
-    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
-    await flushPromises()
-
-    const selector = wrapper.get('[data-testid="usage-subject-selector"]')
-    await selector.setValue('member:101')
-    await flushPromises()
-    expect(getTeamUsageAudit).toHaveBeenLastCalledWith(expect.objectContaining({ target_user_id: 101 }))
-
-    await wrapper.get('[data-testid="usage-subject-selector"]').setValue('member:102')
-    await flushPromises()
-    expect(getTeamUsageAudit).toHaveBeenLastCalledWith(expect.objectContaining({ target_user_id: 102 }))
-
-    auditBob.resolve({
+    ;(getTeamUsageAudit as any).mockResolvedValue({
       data: {
         data: {
           items: [
@@ -703,7 +871,7 @@ describe('DashboardView', () => {
               changed: true,
               old_multiplier: 1,
               new_multiplier: 2,
-              reason: 'Bob adjustment',
+              reason: 'Hidden audit reason',
               created_at: '2026-06-26T00:01:00Z',
               updated_at: '2026-06-26T00:01:00Z',
             },
@@ -714,46 +882,30 @@ describe('DashboardView', () => {
         },
       },
     })
-    await flushPromises()
-    expect(wrapper.text()).toContain('Group Beta')
 
-    auditAlice.resolve({
-      data: {
-        data: {
-          items: [
-            {
-              id: 1,
-              actor_user_id: 100,
-              group_id: '42',
-              group_name: 'Group Alpha',
-              action: 'set_rate_multiplier',
-              status: 'succeeded',
-              changed: true,
-              old_multiplier: 1,
-              new_multiplier: 3,
-              reason: 'Alice adjustment',
-              created_at: '2026-06-26T00:00:00Z',
-              updated_at: '2026-06-26T00:00:00Z',
-            },
-          ],
-          page: 1,
-          page_size: 20,
-          total: 1,
-        },
-      },
-    })
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Group Beta')
-    expect(wrapper.text()).not.toContain('Alice adjustment')
+    const selector = wrapper.get('[data-testid="usage-subject-selector"]')
+    await selector.setValue('member:101')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="usage-subject-selector"]').setValue('member:102')
+    await flushPromises()
+
+    expect(getTeamUsageAudit).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('Audit')
+    expect(wrapper.text()).not.toContain('Hidden audit reason')
   })
 
-  it('clears member-scoped rows and audit immediately when switching members', async () => {
+  it('clears member-scoped rows immediately when switching members', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     const { listTeamUsageSubjects, getTeamUsageSubjectDashboard, getTeamUsageAudit } = await import('@/api/teamUsage')
     const bobDashboard = deferred<any>()
-    const bobAudit = deferred<any>()
     ;(getUserProviders as any).mockResolvedValue({
       data: {
         data: {
@@ -819,33 +971,8 @@ describe('DashboardView', () => {
         },
       })
     })
-    ;(getTeamUsageAudit as any).mockImplementation((params: { target_user_id: number }) => {
-      if (params.target_user_id === 102) return bobAudit.promise
-      return Promise.resolve({
-        data: {
-          data: {
-            items: [
-              {
-                id: 1,
-                actor_user_id: 100,
-                group_id: '42',
-                group_name: 'Group Alpha',
-                action: 'set_rate_multiplier',
-                status: 'succeeded',
-                changed: true,
-                old_multiplier: 1,
-                new_multiplier: 2,
-                reason: 'Alice adjustment',
-                created_at: '2026-06-26T00:00:00Z',
-                updated_at: '2026-06-26T00:00:00Z',
-              },
-            ],
-            page: 1,
-            page_size: 20,
-            total: 1,
-          },
-        },
-      })
+    ;(getTeamUsageAudit as any).mockResolvedValue({
+      data: { data: { items: [], page: 1, page_size: 20, total: 0 } },
     })
 
     const router = createTestRouter()
@@ -857,15 +984,14 @@ describe('DashboardView', () => {
     await wrapper.get('[data-testid="usage-subject-selector"]').setValue('member:101')
     await flushPromises()
     expect(wrapper.text()).toContain('Subscription groups')
-    expect(wrapper.text()).toContain('Alice adjustment')
     expect(wrapper.find('[data-testid="edit-multiplier-42"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="usage-subject-selector"]').setValue('member:102')
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('Subscription groups')
-    expect(wrapper.text()).not.toContain('Alice adjustment')
     expect(wrapper.find('[data-testid="edit-multiplier-42"]').exists()).toBe(false)
+    expect(getTeamUsageAudit).not.toHaveBeenCalled()
 
     bobDashboard.resolve({
       data: {
@@ -898,7 +1024,6 @@ describe('DashboardView', () => {
         },
       },
     })
-    bobAudit.resolve({ data: { data: { items: [], page: 1, page_size: 20, total: 0 } } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('Group Beta')

@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SelectedSubjectSubscriptionRows from '@/components/user/usage/SelectedSubjectSubscriptionRows.vue'
+import { setLocale } from '@/i18n'
 
 const editableRow = {
   group_id: '42',
@@ -37,7 +38,11 @@ const zeroMultiplierRow = {
 }
 
 describe('SelectedSubjectSubscriptionRows', () => {
-  it('previews normalized Used / Quota when draft multiplier changes', async () => {
+  beforeEach(() => {
+    setLocale('en-US')
+  })
+
+  it('keeps Used / Quota in enforcement units when draft multiplier changes', async () => {
     const wrapper = mount(SelectedSubjectSubscriptionRows, {
       props: {
         subjectUserId: 101,
@@ -48,7 +53,9 @@ describe('SelectedSubjectSubscriptionRows', () => {
     await wrapper.get('[data-testid="edit-multiplier-42"]').trigger('click')
     await wrapper.get('[data-testid="multiplier-input"]').setValue('2')
 
-    expect(wrapper.text()).toContain('$40.00 / $250.00')
+    expect(wrapper.text()).toContain('$80.00 / $500.00')
+    expect(wrapper.text()).toContain('Future requests will consume this quota at 2x speed.')
+    expect(wrapper.text()).toContain("It does not change this member's quota limit or recalculate existing Used / Quota values.")
   })
 
   it('keeps the multiplier modal open and shows an error when update fails', async () => {
@@ -73,7 +80,50 @@ describe('SelectedSubjectSubscriptionRows', () => {
     expect(wrapper.text()).toContain('Unable to update rate multiplier')
   })
 
-  it('renders infinity for unlimited quota when effective multiplier is zero', async () => {
+  it('allows setting a multiplier below the inherited default', async () => {
+    const updateMultiplier = vi.fn().mockResolvedValue(undefined)
+    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+      props: {
+        subjectUserId: 101,
+        rows: [editableRow],
+        updateMultiplier,
+      },
+    })
+
+    await wrapper.get('[data-testid="edit-multiplier-42"]').trigger('click')
+    await wrapper.get('[data-testid="multiplier-input"]').setValue('0.5')
+    const confirmButton = wrapper.findAll('button').find((button) => button.text() === 'Confirm')
+    expect(confirmButton).toBeTruthy()
+    expect(confirmButton!.attributes('disabled')).toBeUndefined()
+    await confirmButton!.trigger('click')
+    await flushPromises()
+
+    expect(updateMultiplier).toHaveBeenCalledWith({
+      subjectUserId: 101,
+      groupID: '42',
+      payload: { mode: 'set', rate_multiplier: 0.5 },
+    })
+  })
+
+  it('rejects multiplier values with more than two decimal places', async () => {
+    const updateMultiplier = vi.fn()
+    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+      props: {
+        subjectUserId: 101,
+        rows: [editableRow],
+        updateMultiplier,
+      },
+    })
+
+    await wrapper.get('[data-testid="edit-multiplier-42"]').trigger('click')
+    await wrapper.get('[data-testid="multiplier-input"]').setValue('0.123')
+
+    expect(wrapper.text()).toContain('Too many decimals')
+    expect(wrapper.findAll('button').find((button) => button.text() === 'Confirm')?.attributes('disabled')).toBeDefined()
+    expect(updateMultiplier).not.toHaveBeenCalled()
+  })
+
+  it('renders infinity for unlimited quota while keeping historical used amount', async () => {
     const wrapper = mount(SelectedSubjectSubscriptionRows, {
       props: {
         subjectUserId: 101,
@@ -81,6 +131,45 @@ describe('SelectedSubjectSubscriptionRows', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('$0.00 / ∞')
+    expect(wrapper.text()).toContain('$80.00 / ∞')
+  })
+
+  it('localizes subscription rows and multiplier modal in Chinese', async () => {
+    setLocale('zh-CN')
+    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+      props: {
+        subjectUserId: 101,
+        rows: [editableRow],
+      },
+    })
+
+    expect(wrapper.text()).toContain('订阅组')
+    const headers = wrapper.findAll('th').map((header) => header.text())
+    expect(headers).toEqual(['组', '状态', '倍率', '已使用 / 配额', '操作'])
+    expect(wrapper.findAll('button').map((button) => button.text())).toContain('编辑')
+    expect(wrapper.text()).not.toContain('Subscription groups')
+    expect(headers).not.toContain('Group')
+    expect(headers).not.toContain('Status')
+    expect(headers).not.toContain('Multiplier')
+    expect(headers).not.toContain('Action')
+    expect(wrapper.text()).not.toContain('Edit')
+
+    await wrapper.get('[data-testid="edit-multiplier-42"]').trigger('click')
+
+    expect(wrapper.text()).toContain('倍率')
+    expect(wrapper.text()).toContain('后续请求会按这个倍率消耗配额')
+    expect(wrapper.text()).toContain('不会修改该组员的配额上限')
+    expect(wrapper.text()).toContain('设置')
+    expect(wrapper.text()).toContain('重置')
+    expect(wrapper.text()).toContain('原因')
+    expect(wrapper.text()).toContain('取消')
+    expect(wrapper.text()).toContain('确认')
+    expect(wrapper.text()).not.toContain('Rate multiplier')
+    expect(wrapper.text()).not.toContain('Close')
+    expect(wrapper.text()).not.toContain('Set')
+    expect(wrapper.text()).not.toContain('Reset')
+    expect(wrapper.text()).not.toContain('Reason')
+    expect(wrapper.text()).not.toContain('Cancel')
+    expect(wrapper.text()).not.toContain('Confirm')
   })
 })

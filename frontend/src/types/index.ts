@@ -818,6 +818,7 @@ export interface TeamUsageDepartment {
 export interface TeamUsageSubject {
   subject_type: 'self' | 'member' | string
   user_id: number
+  directory_member_external_id?: string
   display_name: string
   email: string
   department_display_path?: string
@@ -876,6 +877,7 @@ export interface TeamOverviewSummary {
   unavailable_reason?: string | null
   member_count: number
   relay_member_count: number
+  range_actual_cost?: number | null
   today_actual_cost?: number | null
   total_actual_cost?: number | null
   unit_label: string
@@ -884,10 +886,12 @@ export interface TeamOverviewSummary {
 export interface TeamOverviewMember {
   rank?: number
   user_id: number
+  directory_member_external_id?: string
   display_name: string
   email: string
   department_display_path: string
   relay_user_id?: number | null
+  range_actual_cost: number
   today_actual_cost: number
   total_actual_cost: number
   total_tokens?: number | null
@@ -903,6 +907,7 @@ export interface TeamUsageTrendPoint {
 
 export interface TeamMemberTrendSeries {
   user_id: number
+  directory_member_external_id?: string
   display_name: string
   rank: number
   unavailable: boolean

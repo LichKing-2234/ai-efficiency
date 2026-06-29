@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from '@/i18n'
 import type { TeamUsageSubject } from '@/types'
 
 const props = defineProps<{
@@ -11,12 +12,16 @@ const emit = defineEmits<{
   select: [subject: TeamUsageSubject]
 }>()
 
+const { t } = useI18n()
+
 function subjectValue(subject: TeamUsageSubject) {
-  return `${subject.subject_type}:${subject.user_id}`
+  if (subject.subject_type === 'self') return `self:${subject.user_id}`
+  const id = subject.user_id > 0 ? String(subject.user_id) : `directory:${subject.directory_member_external_id || subject.email}`
+  return `${subject.subject_type}:${id}`
 }
 
 function subjectLabel(subject: TeamUsageSubject) {
-  return subject.subject_type === 'self' ? 'My Usage' : subject.display_name
+  return subject.subject_type === 'self' ? t('teamUsage.myUsage') : subject.display_name
 }
 
 function onChange(event: Event) {

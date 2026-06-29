@@ -38,8 +38,22 @@ const router = createRouter({
     },
     {
       path: '/',
-      name: 'Dashboard',
+      redirect: '/usage',
+    },
+    {
+      path: '/usage',
+      name: 'Usage',
       component: () => import('@/views/DashboardView.vue'),
+    },
+    {
+      path: '/usage/members/:user_id',
+      name: 'UsageMember',
+      component: () => import('@/views/DashboardView.vue'),
+    },
+    {
+      path: '/usage/team',
+      name: 'UsageTeam',
+      component: () => import('@/views/TeamOverviewView.vue'),
     },
     {
       path: '/repos',
@@ -55,11 +69,6 @@ const router = createRouter({
       path: '/user',
       name: 'User',
       component: () => import('@/views/UserView.vue'),
-    },
-    {
-      path: '/team-usage',
-      name: 'TeamUsage',
-      component: () => import('@/views/TeamOverviewView.vue'),
     },
     {
       path: '/admin/users',
