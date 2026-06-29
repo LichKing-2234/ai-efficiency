@@ -102,11 +102,18 @@ func (s *Service) SubjectDashboard(ctx context.Context, actorUserID, targetUserI
 	if err != nil {
 		return nil, fmt.Errorf("resolve primary relay provider: %w", err)
 	}
+	relayUserID, resolvedSubject, err := s.resolveSubjectRelayUserID(ctx, provider, *subject)
+	if err != nil {
+		if errors.Is(err, ErrNoRelayMapping) {
+			return nil, &ForbiddenError{Reason: ErrNoRelayMapping.Error()}
+		}
+		return nil, err
+	}
 	dashboardProvider, ok := provider.(relay.SubjectUsageDashboardProvider)
 	if !ok {
 		return nil, ErrProviderUnsupported
 	}
-	snapshot, err := dashboardProvider.GetUsageDashboardForUser(ctx, int64(*subject.RelayUserID), params)
+	snapshot, err := dashboardProvider.GetUsageDashboardForUser(ctx, relayUserID, params)
 	if err != nil {
 		return nil, fmt.Errorf("get subject usage dashboard: %w", err)
 	}
@@ -114,12 +121,12 @@ func (s *Service) SubjectDashboard(ctx context.Context, actorUserID, targetUserI
 		return nil, errors.New("get subject usage dashboard: empty response")
 	}
 
-	rows, quotaState, err := s.buildSubjectSubscriptionRows(ctx, provider, *subject.RelayUserID, params, canManageTarget, manageReason)
+	rows, quotaState, err := s.buildSubjectSubscriptionRows(ctx, provider, int(relayUserID), params, canManageTarget, manageReason)
 	if err != nil {
 		return nil, err
 	}
 	return &SubjectDashboardResponse{
-		Subject:                   *subject,
+		Subject:                   resolvedSubject,
 		Configured:                snapshot.Configured,
 		Range:                     snapshot.Range,
 		Stats:                     snapshot.Stats,
@@ -136,19 +143,13 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		return nil, err
 	}
 
-	subjects := make([]representativescope.Subject, 0, len(scope.Subjects))
-	relayUserIDs := make([]int64, 0, len(scope.Subjects))
-	for _, subject := range scope.Subjects {
-		if subject.RelayUserID == nil || !subject.Selectable {
-			continue
-		}
-		subjects = append(subjects, subject)
-		relayUserIDs = append(relayUserIDs, int64(*subject.RelayUserID))
+	overviewSubjects := scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = scope.Subjects
 	}
-	if len(relayUserIDs) > s.fullScopeCap {
-		response := BuildOverviewUnavailableForLargeScope(subjects, s.fullScopeCap)
+	if len(overviewSubjects) > s.fullScopeCap {
+		response := BuildOverviewUnavailableForLargeScope(overviewSubjects, s.fullScopeCap)
 		response.Window = buildOverviewWindow(params)
-		response.Summary.RelayMemberCount = len(relayUserIDs)
 		return &response, nil
 	}
 
@@ -159,6 +160,25 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 	summaryProvider, ok := provider.(relay.TeamUsageSummaryProvider)
 	if !ok {
 		return nil, ErrProviderUnsupported
+	}
+	trendProvider, ok := provider.(relay.TeamMemberTrendProvider)
+	if !ok {
+		return nil, ErrProviderUnsupported
+	}
+
+	subjects := make([]representativescope.Subject, 0, len(overviewSubjects))
+	relayUserIDs := make([]int64, 0, len(overviewSubjects))
+	for _, subject := range overviewSubjects {
+		relayUserID, resolvedSubject, err := s.resolveOverviewSubjectRelayUserID(ctx, provider, subject)
+		if err != nil {
+			if errors.Is(err, ErrNoRelayMapping) {
+				subjects = append(subjects, subject)
+				continue
+			}
+			return nil, err
+		}
+		subjects = append(subjects, resolvedSubject)
+		relayUserIDs = append(relayUserIDs, relayUserID)
 	}
 
 	statsByRelayUserID := make(map[int64]relay.TeamUserUsageStats, len(relayUserIDs))
@@ -172,24 +192,41 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		}
 	}
 
-	members := RankTopMembers(subjects, statsByRelayUserID, 0)
-	topMembers := RankTopMembers(subjects, statsByRelayUserID, 12)
-
 	trendState := TopMemberTrendState{
 		UnitLabel: "USD",
-		RankBasis: "total_actual_cost",
-		Series:    make([]TopMemberTrendSeries, 0, len(topMembers)),
+		RankBasis: "range_actual_cost",
+		Series:    []TopMemberTrendSeries{},
 	}
-	trendProvider, ok := provider.(relay.TeamMemberTrendProvider)
-	if !ok {
-		return nil, ErrProviderUnsupported
+	pointsByUser := map[int64][]relay.UsageTrendPoint{}
+	if len(relayUserIDs) > 0 {
+		var err error
+		pointsByUser, err = trendProvider.GetUsageTrendForUsers(ctx, relayUserIDs, relay.TeamMemberTrendParams{
+			StartDate:   strings.TrimSpace(params.StartDate),
+			EndDate:     strings.TrimSpace(params.EndDate),
+			Granularity: strings.TrimSpace(params.Granularity),
+			Timezone:    strings.TrimSpace(params.Timezone),
+		})
+		if err != nil {
+			if isHardOverviewTrendError(err) {
+				return nil, fmt.Errorf("get usage trend for top members: %w", err)
+			}
+			reason := "provider_error"
+			trendState.Unavailable = true
+			trendState.UnavailableReason = &reason
+		}
 	}
+
+	windowTotals := buildOverviewWindowTotals(pointsByUser)
+	members := BuildOverviewMemberDetails(subjects, statsByRelayUserID, windowTotals)
+	topMembers := RankTopMembers(subjects, statsByRelayUserID, windowTotals, 12)
+
 	for _, member := range topMembers {
 		series := TopMemberTrendSeries{
-			UserID:      member.UserID,
-			DisplayName: member.DisplayName,
-			Rank:        member.Rank,
-			Points:      []relay.UsageTrendPoint{},
+			UserID:                    member.UserID,
+			DirectoryMemberExternalID: member.DirectoryMemberExternalID,
+			DisplayName:               member.DisplayName,
+			Rank:                      member.Rank,
+			Points:                    []relay.UsageTrendPoint{},
 		}
 		if member.RelayUserID == nil {
 			reason := "provider_error"
@@ -198,16 +235,7 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 			trendState.Series = append(trendState.Series, series)
 			continue
 		}
-		pointsByUser, err := trendProvider.GetUsageTrendForUsers(ctx, []int64{int64(*member.RelayUserID)}, relay.TeamMemberTrendParams{
-			StartDate:   strings.TrimSpace(params.StartDate),
-			EndDate:     strings.TrimSpace(params.EndDate),
-			Granularity: strings.TrimSpace(params.Granularity),
-			Timezone:    strings.TrimSpace(params.Timezone),
-		})
-		if err != nil {
-			if isHardOverviewTrendError(err) {
-				return nil, fmt.Errorf("get usage trend for relay user %d: %w", *member.RelayUserID, err)
-			}
+		if trendState.Unavailable {
 			reason := "provider_error"
 			series.Unavailable = true
 			series.UnavailableReason = &reason
@@ -218,16 +246,17 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		trendState.Series = append(trendState.Series, series)
 	}
 
-	todayCost, totalCost := sumOverviewStats(statsByRelayUserID)
+	rangeCost := sumOverviewWindowCosts(windowTotals)
 	return &OverviewResponse{
 		Configured:       true,
 		IsRepresentative: true,
 		Window:           buildOverviewWindow(params),
 		Summary: OverviewSummary{
-			MemberCount:      len(scope.Subjects),
+			MemberCount:      len(overviewSubjects),
 			RelayMemberCount: len(relayUserIDs),
-			TodayActualCost:  todayCost,
-			TotalActualCost:  totalCost,
+			RangeActualCost:  rangeCost,
+			TodayActualCost:  nil,
+			TotalActualCost:  nil,
 			UnitLabel:        "USD",
 		},
 		TopMembers:     topMembers,
@@ -282,7 +311,6 @@ func (s *Service) UpdateMultiplier(ctx context.Context, actorUserID, targetUserI
 		baseErr := &ForbiddenError{Reason: ErrNoRelayMapping.Error()}
 		return nil, s.rejectAudit(ctx, audit.ID, teamusageratemultiplieraudit.RejectionReasonNoRelayMapping, ErrNoRelayMapping, targetUserIDPtr(targetUserID), baseErr)
 	}
-	relayUserID := int64(*targetUser.RelayUserID)
 
 	providerID, provider, err := s.resolvePrimaryProvider(ctx)
 	if err != nil {
@@ -298,6 +326,15 @@ func (s *Service) UpdateMultiplier(ctx context.Context, actorUserID, targetUserI
 	manager, ok := provider.(relay.GroupRateMultiplierManager)
 	if !ok {
 		return nil, s.rejectAudit(ctx, audit.ID, teamusageratemultiplieraudit.RejectionReasonProviderUnsupported, ErrProviderUnsupported, targetUserIDPtr(targetUserID), ErrProviderUnsupported)
+	}
+
+	relayUserID, err := s.resolveEntUserRelayUserID(ctx, provider, targetUser)
+	if err != nil {
+		if errors.Is(err, ErrNoRelayMapping) {
+			baseErr := &ForbiddenError{Reason: ErrNoRelayMapping.Error()}
+			return nil, s.rejectAudit(ctx, audit.ID, teamusageratemultiplieraudit.RejectionReasonNoRelayMapping, ErrNoRelayMapping, targetUserIDPtr(targetUserID), baseErr)
+		}
+		return nil, s.failAudit(ctx, audit.ID, fmt.Errorf("resolve relay user: %w", err))
 	}
 
 	subscriptions, err := subscriptionLister.ListUserSubscriptions(ctx, relayUserID)
@@ -562,6 +599,83 @@ func (s *Service) resolvePrimaryProvider(ctx context.Context) (int, relay.Provid
 	return providerID, provider, err
 }
 
+func (s *Service) resolveSubjectRelayUserID(ctx context.Context, provider relay.Provider, subject representativescope.Subject) (int64, representativescope.Subject, error) {
+	if subject.RelayUserID == nil {
+		return 0, subject, ErrNoRelayMapping
+	}
+	relayUserID, err := s.resolveRelayUserID(ctx, provider, subject.UserID, subject.Email, *subject.RelayUserID)
+	if err != nil {
+		return 0, subject, err
+	}
+	resolved := subject
+	resolvedID := int(relayUserID)
+	resolved.RelayUserID = &resolvedID
+	return relayUserID, resolved, nil
+}
+
+func (s *Service) resolveOverviewSubjectRelayUserID(ctx context.Context, provider relay.Provider, subject representativescope.Subject) (int64, representativescope.Subject, error) {
+	if subject.RelayUserID != nil {
+		return s.resolveSubjectRelayUserID(ctx, provider, subject)
+	}
+	email := strings.TrimSpace(subject.Email)
+	if email == "" {
+		return 0, subject, ErrNoRelayMapping
+	}
+	relayUser, err := provider.FindUserByEmail(ctx, email)
+	if err != nil {
+		return 0, subject, fmt.Errorf("find overview relay user by email: %w", err)
+	}
+	if relayUser == nil || relayUser.ID <= 0 || !strings.EqualFold(strings.TrimSpace(relayUser.Email), email) {
+		return 0, subject, ErrNoRelayMapping
+	}
+	resolved := subject
+	relayUserID := int(relayUser.ID)
+	resolved.RelayUserID = &relayUserID
+	return relayUser.ID, resolved, nil
+}
+
+func (s *Service) resolveEntUserRelayUserID(ctx context.Context, provider relay.Provider, user *ent.User) (int64, error) {
+	if user == nil || user.RelayUserID == nil {
+		return 0, ErrNoRelayMapping
+	}
+	return s.resolveRelayUserID(ctx, provider, user.ID, user.Email, *user.RelayUserID)
+}
+
+func (s *Service) resolveRelayUserID(ctx context.Context, provider relay.Provider, localUserID int, email string, cachedRelayUserID int) (int64, error) {
+	if cachedRelayUserID <= 0 {
+		return 0, ErrNoRelayMapping
+	}
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return int64(cachedRelayUserID), nil
+	}
+
+	if current, err := provider.GetUser(ctx, int64(cachedRelayUserID)); err != nil {
+		return 0, fmt.Errorf("get cached relay user: %w", err)
+	} else if current != nil && strings.EqualFold(strings.TrimSpace(current.Email), email) {
+		return int64(cachedRelayUserID), nil
+	}
+
+	relayUser, err := provider.FindUserByEmail(ctx, email)
+	if err != nil {
+		return 0, fmt.Errorf("find relay user by email: %w", err)
+	}
+	if relayUser == nil || relayUser.ID <= 0 {
+		return int64(cachedRelayUserID), nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(relayUser.Email), email) {
+		return int64(cachedRelayUserID), nil
+	}
+
+	resolvedRelayUserID := int(relayUser.ID)
+	if resolvedRelayUserID != cachedRelayUserID && s.client != nil && localUserID > 0 {
+		if err := s.client.User.UpdateOneID(localUserID).SetRelayUserID(resolvedRelayUserID).Exec(ctx); err != nil {
+			return 0, fmt.Errorf("persist relay user binding: %w", err)
+		}
+	}
+	return relayUser.ID, nil
+}
+
 func (s *Service) listAudit(ctx context.Context, actorFilter *int, params *AdminAuditListParams, redactOutOfScope bool) (*AuditListResponse, error) {
 	page, pageSize := normalizePage(params.Page, params.PageSize)
 	query := s.client.TeamUsageRateMultiplierAudit.Query()
@@ -819,14 +933,39 @@ func buildOverviewWindow(params OverviewParams) OverviewWindow {
 	}
 }
 
-func sumOverviewStats(statsByRelayUserID map[int64]relay.TeamUserUsageStats) (*float64, *float64) {
-	today := 0.0
-	total := 0.0
-	for _, stat := range statsByRelayUserID {
-		today += stat.TodayActualCost
-		total += stat.TotalActualCost
+type overviewWindowTotal struct {
+	ActualCost  float64
+	TotalTokens *int64
+}
+
+func buildOverviewWindowTotals(pointsByUser map[int64][]relay.UsageTrendPoint) map[int64]overviewWindowTotal {
+	totals := make(map[int64]overviewWindowTotal, len(pointsByUser))
+	for relayUserID, points := range pointsByUser {
+		var total overviewWindowTotal
+		var tokenTotal int64
+		hasTokens := false
+		for _, point := range points {
+			total.ActualCost += point.ActualCost
+			if point.TotalTokens == nil {
+				continue
+			}
+			tokenTotal += *point.TotalTokens
+			hasTokens = true
+		}
+		if hasTokens {
+			total.TotalTokens = &tokenTotal
+		}
+		totals[relayUserID] = total
 	}
-	return &today, &total
+	return totals
+}
+
+func sumOverviewWindowCosts(totals map[int64]overviewWindowTotal) *float64 {
+	total := 0.0
+	for _, item := range totals {
+		total += item.ActualCost
+	}
+	return &total
 }
 
 func filterSubjects(subjects []representativescope.Subject, q string) []representativescope.Subject {

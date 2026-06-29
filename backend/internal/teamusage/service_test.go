@@ -3,6 +3,7 @@ package teamusage
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -94,6 +95,41 @@ func TestSubjectDashboardMarksPeerRepresentativeAsNonEditable(t *testing.T) {
 	}
 }
 
+func TestSubjectDashboardRejectsOutOfScopeTargetBeforeRelayLookup(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := &representativescope.Scope{
+		ActorUserID:      1,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{
+				SubjectType: "member",
+				UserID:      2,
+				DisplayName: "Alice",
+				Email:       "alice@example.com",
+				RelayUserID: intPtr(2002),
+				Selectable:  true,
+			},
+		},
+	}
+	provider := &fakeRelayProvider{}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+
+	_, err := svc.SubjectDashboard(ctx, 1, 999, relay.UserUsageDashboardParams{})
+	if err == nil {
+		t.Fatal("SubjectDashboard() error = nil, want out_of_scope")
+	}
+	var forbidden *ForbiddenError
+	if !errors.As(err, &forbidden) || forbidden.Reason != ErrOutOfScope.Error() {
+		t.Fatalf("SubjectDashboard() error = %v, want ForbiddenError(%q)", err, ErrOutOfScope)
+	}
+	if len(provider.dashboardRequestUserIDs) != 0 || len(provider.subscriptionRequestUserIDs) != 0 {
+		t.Fatalf("relay calls = dashboard %#v subscription %#v, want none for out-of-scope target", provider.dashboardRequestUserIDs, provider.subscriptionRequestUserIDs)
+	}
+}
+
 func TestUpdateMultiplierClosesAuditOnScopeResolutionFailure(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -143,6 +179,485 @@ func TestOverviewReturnsHardErrorForTrendAuthorizationFailure(t *testing.T) {
 	})
 	if !errors.Is(err, relay.ErrInvalidCredentials) {
 		t.Fatalf("Overview() error = %v, want relay.ErrInvalidCredentials", err)
+	}
+}
+
+func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := &representativescope.Scope{
+		ActorUserID:      1,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 3, DisplayName: "Bob", Email: "bob@example.org", RelayUserID: intPtr(1003), Selectable: true},
+		},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {UserID: 1002, TotalActualCost: 12, TodayActualCost: 2},
+			1003: {UserID: 1003, TotalActualCost: 20, TodayActualCost: 5},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			1002: {{Date: "2026-06-28", ActualCost: 2}},
+			1003: {{Date: "2026-06-28", ActualCost: 5}},
+		},
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+
+	resp, err := svc.Overview(ctx, 1, OverviewParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-30",
+		Granularity: "day",
+		Timezone:    "UTC",
+	})
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+	if provider.trendCalls != 1 {
+		t.Fatalf("trend calls = %d, want 1 batched call", provider.trendCalls)
+	}
+	if got, want := provider.trendRequestUserIDs, []int64{1002, 1003}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trend request user ids = %#v, want %#v", got, want)
+	}
+	if got := []int{resp.TopMemberTrend.Series[0].UserID, resp.TopMemberTrend.Series[1].UserID}; !reflect.DeepEqual(got, []int{3, 2}) {
+		t.Fatalf("trend series user ids = %#v, want ranked Bob then Alice", got)
+	}
+}
+
+func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	token1002 := int64(3000)
+	token1003a := int64(700)
+	token1003b := int64(800)
+	scope := &representativescope.Scope{
+		ActorUserID:      1,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 3, DisplayName: "Bob", Email: "bob@example.org", RelayUserID: intPtr(1003), Selectable: true},
+		},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {UserID: 1002, TodayActualCost: 1, TotalActualCost: 10},
+			1003: {UserID: 1003, TodayActualCost: 2, TotalActualCost: 99},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			1002: {{Date: "2026-06-24", ActualCost: 30, TotalTokens: &token1002}},
+			1003: {
+				{Date: "2026-06-23", ActualCost: 7, TotalTokens: &token1003a},
+				{Date: "2026-06-24", ActualCost: 8, TotalTokens: &token1003b},
+			},
+		},
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+
+	resp, err := svc.Overview(ctx, 1, OverviewParams{
+		StartDate:   "2026-06-18",
+		EndDate:     "2026-06-24",
+		Granularity: "day",
+		Timezone:    "UTC",
+	})
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+
+	if resp.Summary.RangeActualCost == nil || *resp.Summary.RangeActualCost != 45 {
+		t.Fatalf("summary range_actual_cost = %#v, want 45", resp.Summary.RangeActualCost)
+	}
+	if resp.Summary.TotalActualCost != nil {
+		t.Fatalf("summary total_actual_cost = %#v, want nil for selected-window Team Overview", resp.Summary.TotalActualCost)
+	}
+	if got, want := resp.TopMemberTrend.RankBasis, "range_actual_cost"; got != want {
+		t.Fatalf("rank basis = %q, want %q", got, want)
+	}
+	if got := []int{resp.Members[0].UserID, resp.Members[1].UserID}; !reflect.DeepEqual(got, []int{2, 3}) {
+		t.Fatalf("members order = %#v, want Alice ranked before Bob by selected-window trend", got)
+	}
+	if resp.Members[0].RangeActualCost != 30 || resp.Members[1].RangeActualCost != 15 {
+		t.Fatalf("member range costs = %.2f / %.2f, want 30 / 15", resp.Members[0].RangeActualCost, resp.Members[1].RangeActualCost)
+	}
+	if resp.Members[0].TotalTokens == nil || *resp.Members[0].TotalTokens != 3000 {
+		t.Fatalf("Alice total tokens = %#v, want 3000 from selected-window trend", resp.Members[0].TotalTokens)
+	}
+	if resp.Members[1].TotalTokens == nil || *resp.Members[1].TotalTokens != 1500 {
+		t.Fatalf("Bob total tokens = %#v, want 1500 from selected-window trend", resp.Members[1].TotalTokens)
+	}
+	if got := []int{resp.TopMemberTrend.Series[0].UserID, resp.TopMemberTrend.Series[1].UserID}; !reflect.DeepEqual(got, []int{2, 3}) {
+		t.Fatalf("trend series user ids = %#v, want selected-window ranking Alice then Bob", got)
+	}
+	if got, want := provider.trendRequestUserIDs, []int64{1002, 1003}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trend request user ids = %#v, want %#v", got, want)
+	}
+}
+
+func TestOverviewMemberDetailsIncludesScopedMembersWithoutRelayUsage(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := &representativescope.Scope{
+		ActorUserID:      1,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-bob", DisplayName: "Bob", Email: "bob@example.org", Selectable: false},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-carol", DisplayName: "Carol", Email: "carol@example.net", Selectable: false},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-dana", DisplayName: "Dana", Email: "dana@example.net", Selectable: false},
+		},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			1002: {{Date: "2026-06-28", ActualCost: 8}},
+		},
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+
+	resp, err := svc.Overview(ctx, 1, OverviewParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-30",
+		Granularity: "day",
+		Timezone:    "UTC",
+	})
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+
+	if resp.Summary.MemberCount != 4 {
+		t.Fatalf("summary member_count = %d, want 4", resp.Summary.MemberCount)
+	}
+	if resp.Summary.RelayMemberCount != 1 {
+		t.Fatalf("summary relay_member_count = %d, want 1", resp.Summary.RelayMemberCount)
+	}
+	if got := len(resp.Members); got != 4 {
+		t.Fatalf("members length = %d, want all 4 scoped members: %#v", got, resp.Members)
+	}
+	if got := []string{resp.Members[0].Email, resp.Members[1].Email, resp.Members[2].Email, resp.Members[3].Email}; !reflect.DeepEqual(got, []string{"alice@example.com", "bob@example.org", "carol@example.net", "dana@example.net"}) {
+		t.Fatalf("member emails = %#v, want used member first then zero-usage scoped members", got)
+	}
+	if resp.Members[1].RelayUserID != nil || resp.Members[1].RangeActualCost != 0 || resp.Members[1].TotalTokens != nil {
+		t.Fatalf("member without relay = %#v, want no relay id and zero usage", resp.Members[1])
+	}
+	if resp.Members[1].DirectoryMemberExternalID != "member-bob" || resp.Members[1].UserID != 0 || resp.Members[1].Selectable {
+		t.Fatalf("directory-only member = %#v, want directory id, user_id 0, and selectable false", resp.Members[1])
+	}
+	if got, want := provider.summaryRequestUserIDs, []int64{1002}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary user ids = %#v, want only relay-backed members %#v", got, want)
+	}
+	if got, want := provider.trendRequestUserIDs, []int64{1002}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trend user ids = %#v, want only relay-backed members %#v", got, want)
+	}
+}
+
+func TestOverviewResolvesDirectoryOnlyMembersByEmailForUsage(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := &representativescope.Scope{
+		ActorUserID:      1,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-bob", DisplayName: "Bob", Email: "bob@example.org", Selectable: false},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-carol", DisplayName: "Carol", Email: "carol@example.net", Selectable: false},
+		},
+	}
+	provider := &fakeRelayProvider{
+		usersByID: map[int64]*relay.User{
+			1002: {ID: 1002, Email: "alice@example.com", Username: "alice"},
+		},
+		usersByEmail: map[string]*relay.User{
+			"bob@example.org": {ID: 2002, Email: "bob@example.org", Username: "bob"},
+		},
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
+			2002: {UserID: 2002, TodayActualCost: 3, TotalActualCost: 30},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			1002: {{Date: "2026-06-28", ActualCost: 8, TotalTokens: int64Ptr(800)}},
+			2002: {{Date: "2026-06-28", ActualCost: 12, TotalTokens: int64Ptr(1200)}},
+		},
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+
+	resp, err := svc.Overview(ctx, 1, OverviewParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-30",
+		Granularity: "day",
+		Timezone:    "UTC",
+	})
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+
+	if resp.Summary.MemberCount != 3 {
+		t.Fatalf("summary member_count = %d, want full directory roster count 3", resp.Summary.MemberCount)
+	}
+	if resp.Summary.RelayMemberCount != 2 {
+		t.Fatalf("summary relay_member_count = %d, want two email-resolved relay users", resp.Summary.RelayMemberCount)
+	}
+	if got, want := provider.summaryRequestUserIDs, []int64{1002, 2002}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary user ids = %#v, want local and email-resolved members %#v", got, want)
+	}
+	if got, want := provider.trendRequestUserIDs, []int64{1002, 2002}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trend user ids = %#v, want local and email-resolved members %#v", got, want)
+	}
+
+	bob := findOverviewMemberByEmail(resp.Members, "bob@example.org")
+	if bob == nil {
+		t.Fatalf("members = %#v, want bob@example.org", resp.Members)
+	}
+	if bob.RelayUserID == nil || *bob.RelayUserID != 2002 {
+		t.Fatalf("bob relay_user_id = %#v, want email-resolved relay user 2002", bob.RelayUserID)
+	}
+	if bob.RangeActualCost != 12 || bob.TodayActualCost != 3 || bob.TotalActualCost != 30 {
+		t.Fatalf("bob usage = range %.2f today %.2f total %.2f, want email-resolved usage", bob.RangeActualCost, bob.TodayActualCost, bob.TotalActualCost)
+	}
+	if bob.UserID != 0 || bob.Selectable {
+		t.Fatalf("bob identity = user_id %d selectable %v, want directory-only row not openable", bob.UserID, bob.Selectable)
+	}
+}
+
+func TestSubjectDashboardReconcilesStaleRelayUserIDFromPrimaryProviderEmail(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	target := createTeamUsageUser(t, client, "stale-target", "stale-target@example.com", intPtr(29))
+
+	scope := &representativescope.Scope{
+		ActorUserID:      999,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{
+				SubjectType: "member",
+				UserID:      target.ID,
+				DisplayName: "Stale Target",
+				Email:       target.Email,
+				RelayUserID: intPtr(29),
+				Selectable:  true,
+			},
+		},
+	}
+	provider := &fakeRelayProvider{
+		usersByID: map[int64]*relay.User{
+			29: {ID: 29, Email: "other-user@example.com", Username: "other-user"},
+		},
+		usersByEmail: map[string]*relay.User{
+			"stale-target@example.com": {ID: 2, Email: "stale-target@example.com", Username: "stale-target"},
+		},
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			2: {
+				{
+					GroupID: 42,
+					Status:  "active",
+					Group: &relay.Group{
+						ID:              42,
+						Name:            "Group Alpha",
+						Platform:        "openai",
+						RateMultiplier:  floatPtr(1.0),
+						WeeklyLimitUSD:  floatPtr(2000),
+						MonthlyLimitUSD: floatPtr(10000),
+					},
+					WeeklyUsageUSD:  203.30303185,
+					MonthlyUsageUSD: 113.6844942,
+				},
+			},
+			29: {
+				{
+					GroupID: 42,
+					Status:  "active",
+					Group: &relay.Group{
+						ID:              42,
+						Name:            "Group Alpha",
+						Platform:        "openai",
+						RateMultiplier:  floatPtr(1.0),
+						WeeklyLimitUSD:  floatPtr(2000),
+						MonthlyLimitUSD: floatPtr(10000),
+					},
+					WeeklyUsageUSD:  44.393931,
+					MonthlyUsageUSD: 301.386244,
+				},
+			},
+		},
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+
+	resp, err := svc.SubjectDashboard(ctx, 999, target.ID, relay.UserUsageDashboardParams{})
+	if err != nil {
+		t.Fatalf("SubjectDashboard() error = %v", err)
+	}
+	if len(resp.SubjectSubscriptionGroups) != 1 {
+		t.Fatalf("subscription rows = %#v, want 1 row", resp.SubjectSubscriptionGroups)
+	}
+	row := resp.SubjectSubscriptionGroups[0]
+	if row.WeeklyUsageUSD != 203.30303185 || row.MonthlyUsageUSD != 113.6844942 {
+		t.Fatalf("usage = weekly %.8f monthly %.8f, want reconciled relay user 2 usage", row.WeeklyUsageUSD, row.MonthlyUsageUSD)
+	}
+	updated := client.User.GetX(ctx, target.ID)
+	if updated.RelayUserID == nil || *updated.RelayUserID != 2 {
+		t.Fatalf("persisted relay_user_id = %#v, want 2", updated.RelayUserID)
+	}
+	if got, want := provider.dashboardRequestUserIDs, []int64{2}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("dashboard user ids = %#v, want %#v", got, want)
+	}
+	if got, want := provider.subscriptionRequestUserIDs, []int64{2}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("subscription user ids = %#v, want %#v", got, want)
+	}
+}
+
+func TestOverviewReconcilesStaleRelayUserIDBeforeBatchUsageAndTrend(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	target := createTeamUsageUser(t, client, "overview-target", "overview-target@example.com", intPtr(29))
+
+	scope := &representativescope.Scope{
+		ActorUserID:      999,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{
+				SubjectType: "member",
+				UserID:      target.ID,
+				DisplayName: "Overview Target",
+				Email:       target.Email,
+				RelayUserID: intPtr(29),
+				Selectable:  true,
+			},
+		},
+	}
+	provider := &fakeRelayProvider{
+		usersByID: map[int64]*relay.User{
+			29: {ID: 29, Email: "other-user@example.com", Username: "other-user"},
+		},
+		usersByEmail: map[string]*relay.User{
+			"overview-target@example.com": {ID: 2, Email: "overview-target@example.com", Username: "overview-target"},
+		},
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			2: {UserID: 2, TotalActualCost: 113.6844942, TodayActualCost: 2.8071306},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			2: {{Date: "2026-06-28", ActualCost: 2.8071306}},
+		},
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+
+	resp, err := svc.Overview(ctx, 999, OverviewParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-28",
+		Granularity: "day",
+		Timezone:    "Asia/Shanghai",
+	})
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+	if len(resp.Members) != 1 {
+		t.Fatalf("members = %#v, want 1", resp.Members)
+	}
+	member := resp.Members[0]
+	if member.RelayUserID == nil || *member.RelayUserID != 2 {
+		t.Fatalf("member relay_user_id = %#v, want 2", member.RelayUserID)
+	}
+	if member.TotalActualCost != 113.6844942 {
+		t.Fatalf("member total_actual_cost = %.8f, want reconciled relay user 2 cost", member.TotalActualCost)
+	}
+	if got, want := provider.summaryRequestUserIDs, []int64{2}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary user ids = %#v, want %#v", got, want)
+	}
+	if got, want := provider.trendRequestUserIDs, []int64{2}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trend user ids = %#v, want %#v", got, want)
+	}
+	updated := client.User.GetX(ctx, target.ID)
+	if updated.RelayUserID == nil || *updated.RelayUserID != 2 {
+		t.Fatalf("persisted relay_user_id = %#v, want 2", updated.RelayUserID)
+	}
+}
+
+func TestUpdateMultiplierReconcilesStaleRelayUserIDBeforeWrite(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	target := createTeamUsageUser(t, client, "write-target", "write-target@example.com", intPtr(29))
+
+	scope := &representativescope.Scope{
+		ActorUserID:      999,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: target.ID, DisplayName: "Write Target", Email: target.Email, RelayUserID: intPtr(29), Selectable: true},
+		},
+	}
+	provider := &fakeRelayProvider{
+		usersByID: map[int64]*relay.User{
+			29: {ID: 29, Email: "other-user@example.com", Username: "other-user"},
+		},
+		usersByEmail: map[string]*relay.User{
+			"write-target@example.com": {ID: 2, Email: "write-target@example.com", Username: "write-target"},
+		},
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			2: {
+				{
+					GroupID: 42,
+					Status:  "active",
+					Group: &relay.Group{
+						ID:              42,
+						Name:            "Group Alpha",
+						Platform:        "openai",
+						RateMultiplier:  floatPtr(1.0),
+						MonthlyLimitUSD: floatPtr(10000),
+					},
+					MonthlyUsageUSD: 113.6844942,
+				},
+			},
+		},
+		rateEntriesByGroup: map[int64][]relay.UserGroupRateEntry{
+			42: {{UserID: 2, RateMultiplier: floatPtr(1.0)}},
+		},
+	}
+	provider.replaceFn = func(_ context.Context, _ int64, inputs []relay.GroupRateMultiplierInput) error {
+		provider.rateEntriesByGroup[42] = make([]relay.UserGroupRateEntry, 0, len(inputs))
+		for _, input := range inputs {
+			provider.rateEntriesByGroup[42] = append(provider.rateEntriesByGroup[42], relay.UserGroupRateEntry{
+				UserID:         input.UserID,
+				RateMultiplier: input.RateMultiplier,
+				RPMOverride:    input.RPMOverride,
+			})
+		}
+		return nil
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
+
+	resp, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
+		Mode:           "set",
+		RateMultiplier: floatPtr(2.0),
+	})
+	if err != nil {
+		t.Fatalf("UpdateMultiplier() error = %v", err)
+	}
+	if resp.Status != teamusageratemultiplieraudit.StatusSucceeded.String() {
+		t.Fatalf("status = %q, want succeeded", resp.Status)
+	}
+	if provider.replaceCalls != 1 {
+		t.Fatalf("replace calls = %d, want 1", provider.replaceCalls)
+	}
+	if got, want := provider.replaceUserIDs, []int64{2}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("replace user ids = %#v, want %#v", got, want)
+	}
+	row := client.TeamUsageRateMultiplierAudit.GetX(ctx, resp.AuditID)
+	if row.RelayUserID == nil || *row.RelayUserID != 2 {
+		t.Fatalf("audit relay_user_id = %#v, want 2", row.RelayUserID)
+	}
+	updated := client.User.GetX(ctx, target.ID)
+	if updated.RelayUserID == nil || *updated.RelayUserID != 2 {
+		t.Fatalf("persisted relay_user_id = %#v, want 2", updated.RelayUserID)
 	}
 }
 
@@ -544,19 +1059,27 @@ func (f *fakeLocker) WithProviderGroupLock(ctx context.Context, providerID int, 
 }
 
 type fakeRelayProvider struct {
-	dashboardResponse   *relay.UserUsageDashboardResponse
-	dashboardErr        error
-	subscriptionsByUser map[int64][]relay.UserSubscription
-	subscriptionErr     error
-	rateEntriesByGroup  map[int64][]relay.UserGroupRateEntry
-	listRatesErr        error
-	replaceFn           func(context.Context, int64, []relay.GroupRateMultiplierInput) error
-	replaceErr          error
-	replaceCalls        int
-	summaryStats        map[int64]relay.TeamUserUsageStats
-	summaryErr          error
-	trendPoints         map[int64][]relay.UsageTrendPoint
-	trendErr            error
+	dashboardResponse          *relay.UserUsageDashboardResponse
+	dashboardErr               error
+	usersByID                  map[int64]*relay.User
+	usersByEmail               map[string]*relay.User
+	subscriptionsByUser        map[int64][]relay.UserSubscription
+	subscriptionErr            error
+	subscriptionRequestUserIDs []int64
+	rateEntriesByGroup         map[int64][]relay.UserGroupRateEntry
+	listRatesErr               error
+	replaceFn                  func(context.Context, int64, []relay.GroupRateMultiplierInput) error
+	replaceErr                 error
+	replaceCalls               int
+	replaceUserIDs             []int64
+	summaryStats               map[int64]relay.TeamUserUsageStats
+	summaryErr                 error
+	summaryRequestUserIDs      []int64
+	trendPoints                map[int64][]relay.UsageTrendPoint
+	trendErr                   error
+	trendCalls                 int
+	trendRequestUserIDs        []int64
+	dashboardRequestUserIDs    []int64
 }
 
 func (f *fakeRelayProvider) Ping(context.Context) error { return nil }
@@ -566,16 +1089,32 @@ func (f *fakeRelayProvider) Authenticate(context.Context, string, string) (*rela
 	return nil, nil
 }
 
-func (f *fakeRelayProvider) GetUser(context.Context, int64) (*relay.User, error) {
-	return nil, nil
+func (f *fakeRelayProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
+	if f.usersByID == nil {
+		return nil, nil
+	}
+	user := f.usersByID[userID]
+	if user == nil {
+		return nil, nil
+	}
+	copy := *user
+	return &copy, nil
 }
 
 func (f *fakeRelayProvider) ListAllowedGroupsForUser(context.Context, int64) ([]relay.Group, error) {
 	return nil, nil
 }
 
-func (f *fakeRelayProvider) FindUserByEmail(context.Context, string) (*relay.User, error) {
-	return nil, nil
+func (f *fakeRelayProvider) FindUserByEmail(_ context.Context, email string) (*relay.User, error) {
+	if f.usersByEmail == nil {
+		return nil, nil
+	}
+	user := f.usersByEmail[strings.ToLower(strings.TrimSpace(email))]
+	if user == nil {
+		return nil, nil
+	}
+	copy := *user
+	return &copy, nil
 }
 
 func (f *fakeRelayProvider) FindUserByUsername(context.Context, string) (*relay.User, error) {
@@ -626,10 +1165,11 @@ func (f *fakeRelayProvider) GetUserUsageDashboard(context.Context, string, strin
 	return nil, nil
 }
 
-func (f *fakeRelayProvider) GetUsageDashboardForUser(context.Context, int64, relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
+func (f *fakeRelayProvider) GetUsageDashboardForUser(_ context.Context, relayUserID int64, _ relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
 	if f.dashboardErr != nil {
 		return nil, f.dashboardErr
 	}
+	f.dashboardRequestUserIDs = append(f.dashboardRequestUserIDs, relayUserID)
 	if f.dashboardResponse == nil {
 		return &relay.UserUsageDashboardResponse{
 			Configured:  true,
@@ -639,17 +1179,20 @@ func (f *fakeRelayProvider) GetUsageDashboardForUser(context.Context, int64, rel
 	return f.dashboardResponse, nil
 }
 
-func (f *fakeRelayProvider) GetBatchUserUsageStats(context.Context, []int64, relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+func (f *fakeRelayProvider) GetBatchUserUsageStats(_ context.Context, relayUserIDs []int64, _ relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
 	if f.summaryErr != nil {
 		return nil, f.summaryErr
 	}
+	f.summaryRequestUserIDs = append(f.summaryRequestUserIDs, relayUserIDs...)
 	return f.summaryStats, nil
 }
 
-func (f *fakeRelayProvider) GetUsageTrendForUsers(context.Context, []int64, relay.TeamMemberTrendParams) (map[int64][]relay.UsageTrendPoint, error) {
+func (f *fakeRelayProvider) GetUsageTrendForUsers(_ context.Context, relayUserIDs []int64, _ relay.TeamMemberTrendParams) (map[int64][]relay.UsageTrendPoint, error) {
 	if f.trendErr != nil {
 		return nil, f.trendErr
 	}
+	f.trendCalls++
+	f.trendRequestUserIDs = append([]int64(nil), relayUserIDs...)
 	return f.trendPoints, nil
 }
 
@@ -657,6 +1200,7 @@ func (f *fakeRelayProvider) ListUserSubscriptions(_ context.Context, relayUserID
 	if f.subscriptionErr != nil {
 		return nil, f.subscriptionErr
 	}
+	f.subscriptionRequestUserIDs = append(f.subscriptionRequestUserIDs, relayUserID)
 	return append([]relay.UserSubscription(nil), f.subscriptionsByUser[relayUserID]...), nil
 }
 
@@ -669,6 +1213,10 @@ func (f *fakeRelayProvider) ListGroupRateMultipliers(_ context.Context, groupID 
 
 func (f *fakeRelayProvider) ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, inputs []relay.GroupRateMultiplierInput) error {
 	f.replaceCalls++
+	f.replaceUserIDs = f.replaceUserIDs[:0]
+	for _, input := range inputs {
+		f.replaceUserIDs = append(f.replaceUserIDs, input.UserID)
+	}
 	if f.replaceFn != nil {
 		return f.replaceFn(ctx, groupID, inputs)
 	}
@@ -700,4 +1248,17 @@ func createTeamUsageUser(t *testing.T, client *ent.Client, username, email strin
 		create.SetRelayUserID(*relayUserID)
 	}
 	return create.SaveX(context.Background())
+}
+
+func findOverviewMemberByEmail(members []OverviewMember, email string) *OverviewMember {
+	for i := range members {
+		if strings.EqualFold(members[i].Email, email) {
+			return &members[i]
+		}
+	}
+	return nil
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
 }

@@ -10,7 +10,6 @@ import (
 var (
 	ErrInvalidMultiplier          = errors.New("invalid_multiplier")
 	ErrInvalidMultiplierPrecision = errors.New("invalid_multiplier_precision")
-	ErrMultiplierBelowInherited   = errors.New("multiplier_below_inherited_default")
 	ErrMultiplierAboveMaximum     = errors.New("multiplier_above_maximum")
 )
 
@@ -20,7 +19,7 @@ func NormalizeMultiplier(value float64) (float64, error) {
 	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return 0, ErrInvalidMultiplier
 	}
-	rounded := math.Round(value*10000) / 10000
+	rounded := math.Round(value*100) / 100
 	if math.Abs(value-rounded) > 0.000000001 {
 		return 0, ErrInvalidMultiplierPrecision
 	}
@@ -34,9 +33,6 @@ func ValidateSetMultiplier(value, inheritedDefault float64, maxMultiplier float6
 	}
 	if normalized <= 0 {
 		return 0, ErrInvalidMultiplier
-	}
-	if normalized < inheritedDefault {
-		return 0, ErrMultiplierBelowInherited
 	}
 	if maxMultiplier <= 0 {
 		maxMultiplier = defaultMaxMultiplier

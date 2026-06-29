@@ -3,6 +3,7 @@ package representativescope
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -19,13 +20,14 @@ const (
 )
 
 type Subject struct {
-	SubjectType           string `json:"subject_type"`
-	UserID                int    `json:"user_id"`
-	DisplayName           string `json:"display_name"`
-	Email                 string `json:"email"`
-	DepartmentDisplayPath string `json:"department_display_path"`
-	RelayUserID           *int   `json:"relay_user_id,omitempty"`
-	Selectable            bool   `json:"selectable"`
+	SubjectType               string `json:"subject_type"`
+	UserID                    int    `json:"user_id"`
+	DirectoryMemberExternalID string `json:"directory_member_external_id,omitempty"`
+	DisplayName               string `json:"display_name"`
+	Email                     string `json:"email"`
+	DepartmentDisplayPath     string `json:"department_display_path"`
+	RelayUserID               *int   `json:"relay_user_id,omitempty"`
+	Selectable                bool   `json:"selectable"`
 }
 
 type DepartmentScope struct {
@@ -44,6 +46,7 @@ type Scope struct {
 	RepresentedSubtreeIDs    map[string]map[string]struct{}
 	Departments              []DepartmentScope
 	Subjects                 []Subject
+	OverviewSubjects         []Subject
 	TargetRepresentedRoots   map[int][]string
 }
 
@@ -187,7 +190,8 @@ func buildScope(actor *ent.User, users []*ent.User, members []*ent.DirectoryMemb
 		return scope.Departments[i].DisplayPath < scope.Departments[j].DisplayPath
 	})
 
-	scope.Subjects = buildSubjects(actor.ID, members, usersByID, usersByEmail, allowedDepartments, tree)
+	scope.Subjects = buildSubjects(actor.ID, members, usersByID, usersByEmail, allowedDepartments, tree, false)
+	scope.OverviewSubjects = buildSubjects(actor.ID, members, usersByID, usersByEmail, allowedDepartments, tree, true)
 	scope.TargetRepresentedRoots = buildTargetRepresentedRoots(members, usersByID, usersByEmail, memberRepresentedRoots)
 	return scope
 }
@@ -300,8 +304,8 @@ func departmentName(root string, tree *directorytree.Tree) string {
 	return name
 }
 
-func buildSubjects(actorUserID int, members []*ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User, allowedDepartments map[string]struct{}, tree *directorytree.Tree) []Subject {
-	subjectByUserID := map[int]Subject{}
+func buildSubjects(actorUserID int, members []*ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User, allowedDepartments map[string]struct{}, tree *directorytree.Tree, includeActor bool) []Subject {
+	subjectsByKey := map[string]Subject{}
 	for _, member := range members {
 		if member == nil {
 			continue
@@ -310,26 +314,39 @@ func buildSubjects(actorUserID int, members []*ent.DirectoryMember, usersByID ma
 			continue
 		}
 		localUser := resolveMemberUser(member, usersByID, usersByEmail)
-		if localUser == nil || localUser.ID == actorUserID {
+		isActor := localUser != nil && localUser.ID == actorUserID
+		if isActor && !includeActor {
 			continue
 		}
-		subjectByUserID[localUser.ID] = Subject{
-			SubjectType:           "member",
-			UserID:                localUser.ID,
-			DisplayName:           subjectDisplayName(localUser, member),
-			Email:                 localUser.Email,
-			DepartmentDisplayPath: tree.DisplayPath(member.DepartmentExternalID),
-			RelayUserID:           localUser.RelayUserID,
-			Selectable:            localUser.RelayUserID != nil,
+		subject := Subject{
+			SubjectType:               "member",
+			DirectoryMemberExternalID: strings.TrimSpace(member.ExternalID),
+			DisplayName:               subjectDisplayName(localUser, member),
+			Email:                     subjectEmail(localUser, member),
+			DepartmentDisplayPath:     tree.DisplayPath(member.DepartmentExternalID),
 		}
+		key := "directory:" + strings.TrimSpace(member.ExternalID)
+		if localUser != nil {
+			subject.UserID = localUser.ID
+			subject.RelayUserID = localUser.RelayUserID
+			subject.Selectable = !isActor && localUser.RelayUserID != nil
+			key = fmt.Sprintf("user:%d", localUser.ID)
+		}
+		subjectsByKey[key] = subject
 	}
-	subjects := make([]Subject, 0, len(subjectByUserID))
-	for _, subject := range subjectByUserID {
+	subjects := make([]Subject, 0, len(subjectsByKey))
+	for _, subject := range subjectsByKey {
 		subjects = append(subjects, subject)
 	}
 	sort.Slice(subjects, func(i, j int) bool {
 		if subjects[i].DisplayName != subjects[j].DisplayName {
 			return subjects[i].DisplayName < subjects[j].DisplayName
+		}
+		if subjects[i].UserID != subjects[j].UserID {
+			return subjects[i].UserID < subjects[j].UserID
+		}
+		if subjects[i].DirectoryMemberExternalID != subjects[j].DirectoryMemberExternalID {
+			return subjects[i].DirectoryMemberExternalID < subjects[j].DirectoryMemberExternalID
 		}
 		return subjects[i].UserID < subjects[j].UserID
 	})
@@ -368,6 +385,11 @@ func resolveMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User,
 }
 
 func subjectDisplayName(localUser *ent.User, member *ent.DirectoryMember) string {
+	if member != nil {
+		if name := strings.TrimSpace(member.DisplayName); name != "" {
+			return name
+		}
+	}
 	if localUser != nil {
 		if username := strings.TrimSpace(localUser.Username); username != "" {
 			return username
@@ -377,12 +399,21 @@ func subjectDisplayName(localUser *ent.User, member *ent.DirectoryMember) string
 		}
 	}
 	if member != nil {
-		if name := strings.TrimSpace(member.DisplayName); name != "" {
-			return name
-		}
 		if email := strings.TrimSpace(member.EmailNormalized); email != "" {
 			return email
 		}
+	}
+	return ""
+}
+
+func subjectEmail(localUser *ent.User, member *ent.DirectoryMember) string {
+	if localUser != nil {
+		if email := strings.TrimSpace(localUser.Email); email != "" {
+			return email
+		}
+	}
+	if member != nil {
+		return strings.TrimSpace(member.EmailNormalized)
 	}
 	return ""
 }
@@ -412,13 +443,33 @@ func metadataStringValues(value any) []string {
 	case []any:
 		out := make([]string, 0, len(typed))
 		for _, item := range typed {
-			out = append(out, strings.TrimSpace(fmt.Sprint(item)))
+			out = append(out, metadataScalarString(item))
 		}
 		return compactStrings(out)
 	case string:
 		return compactStrings(strings.Split(typed, ","))
 	default:
-		return compactStrings([]string{fmt.Sprint(typed)})
+		return compactStrings([]string{metadataScalarString(typed)})
+	}
+}
+
+func metadataScalarString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case float64:
+		if math.Trunc(typed) == typed {
+			return fmt.Sprintf("%.0f", typed)
+		}
+		return strings.TrimSpace(fmt.Sprint(typed))
+	case float32:
+		value := float64(typed)
+		if math.Trunc(value) == value {
+			return fmt.Sprintf("%.0f", value)
+		}
+		return strings.TrimSpace(fmt.Sprint(typed))
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
 	}
 }
 

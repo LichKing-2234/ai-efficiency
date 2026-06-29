@@ -119,23 +119,26 @@ type OverviewSummary struct {
 	UnavailableReason *string  `json:"unavailable_reason"`
 	MemberCount       int      `json:"member_count"`
 	RelayMemberCount  int      `json:"relay_member_count"`
+	RangeActualCost   *float64 `json:"range_actual_cost"`
 	TodayActualCost   *float64 `json:"today_actual_cost"`
 	TotalActualCost   *float64 `json:"total_actual_cost"`
 	UnitLabel         string   `json:"unit_label"`
 }
 
 type OverviewMember struct {
-	Rank                  int     `json:"rank,omitempty"`
-	UserID                int     `json:"user_id"`
-	DisplayName           string  `json:"display_name"`
-	Email                 string  `json:"email"`
-	DepartmentDisplayPath string  `json:"department_display_path"`
-	RelayUserID           *int    `json:"relay_user_id,omitempty"`
-	TodayActualCost       float64 `json:"today_actual_cost"`
-	TotalActualCost       float64 `json:"total_actual_cost"`
-	TotalTokens           *int64  `json:"total_tokens,omitempty"`
-	SubscriptionCount     *int    `json:"subscription_count"`
-	Selectable            bool    `json:"selectable"`
+	Rank                      int     `json:"rank,omitempty"`
+	UserID                    int     `json:"user_id"`
+	DirectoryMemberExternalID string  `json:"directory_member_external_id,omitempty"`
+	DisplayName               string  `json:"display_name"`
+	Email                     string  `json:"email"`
+	DepartmentDisplayPath     string  `json:"department_display_path"`
+	RelayUserID               *int    `json:"relay_user_id,omitempty"`
+	RangeActualCost           float64 `json:"range_actual_cost"`
+	TodayActualCost           float64 `json:"today_actual_cost"`
+	TotalActualCost           float64 `json:"total_actual_cost"`
+	TotalTokens               *int64  `json:"total_tokens,omitempty"`
+	SubscriptionCount         *int    `json:"subscription_count"`
+	Selectable                bool    `json:"selectable"`
 }
 
 type TopMemberTrendState struct {
@@ -147,12 +150,13 @@ type TopMemberTrendState struct {
 }
 
 type TopMemberTrendSeries struct {
-	UserID            int                     `json:"user_id"`
-	DisplayName       string                  `json:"display_name"`
-	Rank              int                     `json:"rank"`
-	Unavailable       bool                    `json:"unavailable"`
-	UnavailableReason *string                 `json:"unavailable_reason"`
-	Points            []relay.UsageTrendPoint `json:"points"`
+	UserID                    int                     `json:"user_id"`
+	DirectoryMemberExternalID string                  `json:"directory_member_external_id,omitempty"`
+	DisplayName               string                  `json:"display_name"`
+	Rank                      int                     `json:"rank"`
+	Unavailable               bool                    `json:"unavailable"`
+	UnavailableReason         *string                 `json:"unavailable_reason"`
+	Points                    []relay.UsageTrendPoint `json:"points"`
 }
 
 type UpdateMultiplierRequest struct {

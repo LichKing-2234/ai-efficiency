@@ -57,6 +57,32 @@ func TestResolveRepresentativeScopeFromMemberLeaderDepartmentIDs(t *testing.T) {
 	}
 }
 
+func TestResolveRepresentativeScopeParsesNumericLeaderDepartmentIDs(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := createScopeSource(t, client, true)
+	actor := createScopeUser(t, client, "actor", "actor@example.com", nil)
+	targetRelayID := 1007
+	target := createScopeUser(t, client, "bob", "bob@example.org", &targetRelayID)
+	createScopeDepartment(t, client, source.ID, "1684078", "Department Numeric", nil, map[string]any{"representative_external_ids": []any{"member-actor"}})
+	createScopeMember(t, client, source.ID, "member-actor", actor.Email, "1684078", &actor.ID, map[string]any{"leader_department_ids": []any{float64(1684078)}})
+	createScopeMember(t, client, source.ID, "member-bob", target.Email, "1684078", &target.ID, nil)
+
+	scope, err := New(client).Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got, want := scope.RepresentedDepartmentIDs, []string{"1684078"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("represented departments = %#v, want %#v", got, want)
+	}
+	if len(scope.Departments) != 1 || scope.Departments[0].ExternalID != "1684078" || scope.Departments[0].Name != "Department Numeric" {
+		t.Fatalf("departments = %#v, want single numeric department", scope.Departments)
+	}
+	if got, want := scope.AllowedUserIDs(), []int{target.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("allowed users = %#v, want %#v", got, want)
+	}
+}
+
 func TestResolveRepresentativeScopeUsesLatestSuccessfulApplyRunNotSourceUpdatedAt(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -170,6 +196,65 @@ func TestResolveRepresentativeScopeIncludesNoRelaySubjectAsUnavailable(t *testin
 	}
 }
 
+func TestResolveRepresentativeScopeIncludesDirectoryMembersWithoutLocalUsers(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := createScopeSource(t, client, true)
+	actorRelayID := 1008
+	targetRelayID := 1009
+	actor := createScopeUser(t, client, "actor", "actor@example.com", &actorRelayID)
+	target := createScopeUser(t, client, "alice", "alice@example.com", &targetRelayID)
+	createScopeDepartment(t, client, source.ID, "department-team", "Department Team", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	createScopeMember(t, client, source.ID, "member-actor", actor.Email, "department-team", &actor.ID, nil)
+	createScopeMember(t, client, source.ID, "member-alice", target.Email, "department-team", &target.ID, nil)
+	createScopeMember(t, client, source.ID, "member-bob", "bob@example.org", "department-team", nil, nil)
+	createScopeMember(t, client, source.ID, "member-carol", "carol@example.net", "department-team", nil, nil)
+
+	scope, err := New(client).Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if len(scope.Subjects) != 3 {
+		t.Fatalf("subjects = %#v, want three manageable team members excluding actor", scope.Subjects)
+	}
+	if len(scope.OverviewSubjects) != 4 {
+		t.Fatalf("overview subjects = %#v, want full directory roster including actor", scope.OverviewSubjects)
+	}
+	actorOverview := findSubjectByEmail(scope.OverviewSubjects, "actor@example.com")
+	if actorOverview == nil {
+		t.Fatalf("overview subjects = %#v, want actor row", scope.OverviewSubjects)
+	}
+	if actorOverview.Selectable {
+		t.Fatalf("actor overview selectable = true, want false")
+	}
+	if got, want := scope.Departments[0].SubtreeMemberCount, 4; got != want {
+		t.Fatalf("subtree member count = %d, want %d", got, want)
+	}
+	if got, want := scope.Departments[0].MatchedUserCount, 2; got != want {
+		t.Fatalf("matched user count = %d, want %d", got, want)
+	}
+	if got, want := scope.AllowedUserIDs(), []int{target.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("allowed users = %#v, want only selectable local target %#v", got, want)
+	}
+	bob := findSubjectByEmail(scope.Subjects, "bob@example.org")
+	if bob == nil {
+		t.Fatalf("subjects = %#v, want bob@example.org directory-only subject", scope.Subjects)
+	}
+	if bob.UserID != 0 {
+		t.Fatalf("bob user id = %d, want 0 for directory-only subject", bob.UserID)
+	}
+	if bob.DirectoryMemberExternalID != "member-bob" {
+		t.Fatalf("bob directory external id = %q, want member-bob", bob.DirectoryMemberExternalID)
+	}
+	if bob.Selectable {
+		t.Fatalf("bob selectable = true, want false for directory-only subject")
+	}
+	ok, reason := scope.CanManageTarget(0)
+	if ok || reason != "out_of_scope" {
+		t.Fatalf("CanManageTarget(0) = %v, %q; want false, out_of_scope", ok, reason)
+	}
+}
+
 func TestResolveRepresentativeScopeFailsClosedWhenSuccessfulRunLacksCompletedAt(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -188,6 +273,15 @@ func TestResolveRepresentativeScopeFailsClosedWhenSuccessfulRunLacksCompletedAt(
 	if scope.IsRepresentative || len(scope.Subjects) != 0 {
 		t.Fatalf("scope = %#v, want non-representative empty scope for source without completed_at", scope)
 	}
+}
+
+func findSubjectByEmail(subjects []Subject, email string) *Subject {
+	for i := range subjects {
+		if subjects[i].Email == email {
+			return &subjects[i]
+		}
+	}
+	return nil
 }
 
 func TestResolveRepresentativeScopeFailsClosedWithoutCurrentSource(t *testing.T) {

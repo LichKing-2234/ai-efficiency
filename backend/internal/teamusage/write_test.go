@@ -8,10 +8,13 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
-func TestValidateMultiplierRejectsBelowInheritedDefault(t *testing.T) {
-	_, err := ValidateSetMultiplier(0.5, 1.0, 10)
-	if !errors.Is(err, ErrMultiplierBelowInherited) {
-		t.Fatalf("ValidateSetMultiplier() error = %v, want ErrMultiplierBelowInherited", err)
+func TestValidateMultiplierAllowsBelowInheritedDefault(t *testing.T) {
+	got, err := ValidateSetMultiplier(0.5, 1.0, 10)
+	if err != nil {
+		t.Fatalf("ValidateSetMultiplier() error = %v, want nil", err)
+	}
+	if got != 0.5 {
+		t.Fatalf("ValidateSetMultiplier() = %v, want 0.5", got)
 	}
 }
 
@@ -19,7 +22,7 @@ func TestValidateMultiplierRejectsNonFiniteAndOverPrecision(t *testing.T) {
 	if _, err := ValidateSetMultiplier(math.Inf(1), 1.0, 10); !errors.Is(err, ErrInvalidMultiplier) {
 		t.Fatalf("infinite multiplier error = %v, want ErrInvalidMultiplier", err)
 	}
-	if _, err := ValidateSetMultiplier(1.12345, 1.0, 10); !errors.Is(err, ErrInvalidMultiplierPrecision) {
+	if _, err := ValidateSetMultiplier(1.123, 1.0, 10); !errors.Is(err, ErrInvalidMultiplierPrecision) {
 		t.Fatalf("precision error = %v, want ErrInvalidMultiplierPrecision", err)
 	}
 }

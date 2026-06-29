@@ -2968,11 +2968,18 @@ func TestSub2APIListGroupRateMultipliersDecodesRateAndRPM(t *testing.T) {
 }
 
 func TestSub2APIReplaceGroupRateMultipliersPreservesRPMPayloadShape(t *testing.T) {
-	var body map[string][]relay.GroupRateMultiplierInput
+	var body struct {
+		Entries []relay.GroupRateMultiplierInput `json:"entries"`
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/groups/42/rate-multipliers", func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request body: %v", err)
+		}
+		if len(body.Entries) == 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "entries are required"})
+			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 	})
@@ -2987,7 +2994,7 @@ func TestSub2APIReplaceGroupRateMultipliersPreservesRPMPayloadShape(t *testing.T
 	}}); err != nil {
 		t.Fatalf("ReplaceGroupRateMultipliers() error = %v", err)
 	}
-	if body["rate_multipliers"][0].RPMOverride == nil || *body["rate_multipliers"][0].RPMOverride != 120 {
+	if body.Entries[0].RPMOverride == nil || *body.Entries[0].RPMOverride != 120 {
 		t.Fatalf("request body = %#v, want rpm_override preserved", body)
 	}
 }

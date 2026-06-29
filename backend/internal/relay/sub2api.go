@@ -2153,7 +2153,7 @@ func (s *sub2apiRelay) ListGroupRateMultipliers(ctx context.Context, groupID int
 }
 
 func (s *sub2apiRelay) ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error {
-	payload, err := json.Marshal(map[string]any{"rate_multipliers": entries})
+	payload, err := json.Marshal(map[string]any{"entries": entries})
 	if err != nil {
 		return fmt.Errorf("relay: replace group rate multipliers: marshal: %w", err)
 	}

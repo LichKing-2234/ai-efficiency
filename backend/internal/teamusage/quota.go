@@ -22,9 +22,9 @@ type SubscriptionInput struct {
 func BuildSubscriptionRow(input SubscriptionInput) SubscriptionRow {
 	effective, source := effectiveMultiplier(input.UserMultiplier, input.GroupDefaultMultiplier, input.SystemDefaultMultiplier)
 	inherited, _ := effectiveMultiplier(nil, input.GroupDefaultMultiplier, input.SystemDefaultMultiplier)
-	dailyAllowance, dailyUnlimited := displayQuota(input.DailyLimitUSD, effective, input.UsageValueBasis)
-	weeklyAllowance, weeklyUnlimited := displayQuota(input.WeeklyLimitUSD, effective, input.UsageValueBasis)
-	monthlyAllowance, monthlyUnlimited := displayQuota(input.MonthlyLimitUSD, effective, input.UsageValueBasis)
+	dailyAllowance, dailyUnlimited := displayQuota(input.DailyLimitUSD)
+	weeklyAllowance, weeklyUnlimited := displayQuota(input.WeeklyLimitUSD)
+	monthlyAllowance, monthlyUnlimited := displayQuota(input.MonthlyLimitUSD)
 	return SubscriptionRow{
 		GroupID:                            input.GroupID,
 		GroupName:                          input.GroupName,
@@ -45,9 +45,9 @@ func BuildSubscriptionRow(input SubscriptionInput) SubscriptionRow {
 		DailyEffectiveAllowanceUnlimited:   dailyUnlimited,
 		WeeklyEffectiveAllowanceUnlimited:  weeklyUnlimited,
 		MonthlyEffectiveAllowanceUnlimited: monthlyUnlimited,
-		DailyDisplayUsedUSD:                displayUsage(input.DailyUsageUSD, effective, input.UsageValueBasis),
-		WeeklyDisplayUsedUSD:               displayUsage(input.WeeklyUsageUSD, effective, input.UsageValueBasis),
-		MonthlyDisplayUsedUSD:              displayUsage(input.MonthlyUsageUSD, effective, input.UsageValueBasis),
+		DailyDisplayUsedUSD:                displayUsage(input.DailyUsageUSD),
+		WeeklyDisplayUsedUSD:               displayUsage(input.WeeklyUsageUSD),
+		MonthlyDisplayUsedUSD:              displayUsage(input.MonthlyUsageUSD),
 		DailyUsageUSD:                      input.DailyUsageUSD,
 		WeeklyUsageUSD:                     input.WeeklyUsageUSD,
 		MonthlyUsageUSD:                    input.MonthlyUsageUSD,
@@ -68,26 +68,13 @@ func effectiveMultiplier(userMultiplier *float64, groupDefault *float64, systemD
 	return systemDefault, "system"
 }
 
-func displayUsage(rawUsage, multiplier float64, basis string) float64 {
-	if basis == "normalized_display_cost" {
-		return rawUsage
-	}
-	if multiplier == 0 {
-		return 0
-	}
-	return rawUsage / multiplier
+func displayUsage(rawUsage float64) float64 {
+	return rawUsage
 }
 
-func displayQuota(rawQuota *float64, multiplier float64, basis string) (*float64, bool) {
+func displayQuota(rawQuota *float64) (*float64, bool) {
 	if rawQuota == nil {
 		return nil, true
 	}
-	if basis == "normalized_display_cost" {
-		return rawQuota, false
-	}
-	if multiplier == 0 {
-		return nil, true
-	}
-	value := *rawQuota / multiplier
-	return &value, false
+	return rawQuota, false
 }

@@ -277,7 +277,7 @@ func writeTeamUsageError(c *gin.Context, err error) {
 		pkg.Error(c, http.StatusConflict, err.Error())
 	case errors.Is(err, teamusage.ErrPartialFailed):
 		pkg.Error(c, http.StatusBadGateway, "rate multiplier update could not be verified")
-	case errors.Is(err, teamusage.ErrPolicyDenied), errors.Is(err, teamusage.ErrInvalidMultiplier), errors.Is(err, teamusage.ErrInvalidMultiplierPrecision), errors.Is(err, teamusage.ErrMultiplierBelowInherited), errors.Is(err, teamusage.ErrMultiplierAboveMaximum):
+	case errors.Is(err, teamusage.ErrPolicyDenied), errors.Is(err, teamusage.ErrInvalidMultiplier), errors.Is(err, teamusage.ErrInvalidMultiplierPrecision), errors.Is(err, teamusage.ErrMultiplierAboveMaximum):
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, teamusage.ErrProviderUnsupported):
 		pkg.Error(c, http.StatusServiceUnavailable, err.Error())
@@ -299,7 +299,7 @@ func teamUsageForbiddenErrorStatus(err error) (int, string, bool) {
 		return http.StatusNotFound, "target is not available", true
 	case teamusage.ErrNoRelayMapping.Error(), teamusage.ErrInactiveSubscription.Error():
 		return http.StatusConflict, forbidden.Error(), true
-	case teamusage.ErrPolicyDenied.Error(), teamusage.ErrInvalidMultiplier.Error(), teamusage.ErrInvalidMultiplierPrecision.Error(), teamusage.ErrMultiplierBelowInherited.Error(), teamusage.ErrMultiplierAboveMaximum.Error():
+	case teamusage.ErrPolicyDenied.Error(), teamusage.ErrInvalidMultiplier.Error(), teamusage.ErrInvalidMultiplierPrecision.Error(), teamusage.ErrMultiplierAboveMaximum.Error():
 		return http.StatusUnprocessableEntity, forbidden.Error(), true
 	case teamusage.ErrProviderUnsupported.Error():
 		return http.StatusServiceUnavailable, forbidden.Error(), true
