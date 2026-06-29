@@ -31,9 +31,10 @@ const overviewFixture: TeamOverviewResponse = {
   summary: {
     unavailable: false,
     unavailable_reason: null,
-    member_count: 2,
-    relay_member_count: 1,
-    range_actual_cost: 24.5,
+    member_count: 3,
+    relay_member_count: 2,
+    range_actual_cost: 28,
+    range_total_tokens: 12900,
     today_actual_cost: 1.25,
     total_actual_cost: 24.5,
     unit_label: 'USD',
@@ -44,6 +45,7 @@ const overviewFixture: TeamOverviewResponse = {
       user_id: 101,
       display_name: 'Alice',
       email: 'alice@example.com',
+      department_external_id: 'department-alpha',
       department_display_path: 'Department Alpha',
       relay_user_id: 1001,
       range_actual_cost: 24.5,
@@ -79,6 +81,7 @@ const overviewFixture: TeamOverviewResponse = {
       user_id: 101,
       display_name: 'Alice',
       email: 'alice@example.com',
+      department_external_id: 'department-alpha',
       department_display_path: 'Department Alpha',
       relay_user_id: 1001,
       range_actual_cost: 24.5,
@@ -94,8 +97,9 @@ const overviewFixture: TeamOverviewResponse = {
       directory_member_external_id: 'member-bob',
       display_name: 'Bob',
       email: 'bob@example.org',
-      department_display_path: 'Department Alpha / Department Beta',
-      relay_user_id: null,
+      department_external_id: 'department-alpha-team-one',
+      department_display_path: 'Department Alpha / Team One',
+      relay_user_id: 1002,
       range_actual_cost: 3.5,
       today_actual_cost: 0,
       total_actual_cost: 3.5,
@@ -109,7 +113,8 @@ const overviewFixture: TeamOverviewResponse = {
       directory_member_external_id: 'member-carol',
       display_name: 'Carol',
       email: 'carol@example.net',
-      department_display_path: 'Department Alpha / Department Beta',
+      department_external_id: 'department-alpha-team-one',
+      department_display_path: 'Department Alpha / Team One',
       relay_user_id: null,
       range_actual_cost: 0,
       today_actual_cost: 0,
@@ -117,6 +122,85 @@ const overviewFixture: TeamOverviewResponse = {
       total_tokens: null,
       subscription_count: null,
       selectable: false,
+    },
+  ],
+  member_tree: [
+    {
+      department_external_id: 'department-alpha',
+      name: 'Department Alpha',
+      display_path: 'Department Alpha',
+      depth: 0,
+      child_count: 1,
+      member_count: 3,
+      connected_member_count: 2,
+      range_actual_cost: 28,
+      range_total_tokens: 12900,
+      members: [
+        {
+          rank: 1,
+          user_id: 101,
+          display_name: 'Alice',
+          email: 'alice@example.com',
+          department_external_id: 'department-alpha',
+          department_display_path: 'Department Alpha',
+          relay_user_id: 1001,
+          range_actual_cost: 24.5,
+          today_actual_cost: 1.25,
+          total_actual_cost: 24.5,
+          total_tokens: 12000,
+          subscription_count: 2,
+          selectable: true,
+        },
+      ],
+      children: [
+        {
+          department_external_id: 'department-alpha-team-one',
+          parent_external_id: 'department-alpha',
+          name: 'Team One',
+          display_path: 'Department Alpha / Team One',
+          depth: 1,
+          child_count: 0,
+          member_count: 2,
+          connected_member_count: 1,
+          range_actual_cost: 3.5,
+          range_total_tokens: 900,
+          members: [
+            {
+              rank: 2,
+              user_id: 0,
+              directory_member_external_id: 'member-bob',
+              display_name: 'Bob',
+              email: 'bob@example.org',
+              department_external_id: 'department-alpha-team-one',
+              department_display_path: 'Department Alpha / Team One',
+              relay_user_id: 1002,
+              range_actual_cost: 3.5,
+              today_actual_cost: 0,
+              total_actual_cost: 3.5,
+              total_tokens: 900,
+              subscription_count: null,
+              selectable: false,
+            },
+            {
+              rank: 3,
+              user_id: 0,
+              directory_member_external_id: 'member-carol',
+              display_name: 'Carol',
+              email: 'carol@example.net',
+              department_external_id: 'department-alpha-team-one',
+              department_display_path: 'Department Alpha / Team One',
+              relay_user_id: null,
+              range_actual_cost: 0,
+              today_actual_cost: 0,
+              total_actual_cost: 0,
+              total_tokens: null,
+              subscription_count: null,
+              selectable: false,
+            },
+          ],
+          children: [],
+        },
+      ],
     },
   ],
 }
@@ -214,20 +298,17 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('header h1').exists()).toBe(false)
     expect(wrapper.text()).toContain('姓名')
     expect(wrapper.text()).toContain('邮箱')
-    expect(wrapper.text()).toContain('部门')
+    expect(wrapper.text()).toContain('当前范围 Token 用量')
     expect(wrapper.text()).toContain('打开')
     expect(wrapper.text()).toContain('Token')
     expect(wrapper.text()).toContain('团队人数')
     expect(wrapper.text()).toContain('已接入人数')
     expect(wrapper.text()).toContain('24.50 USD')
-    const tableHeaders = wrapper.findAll('th').map((header) => header.text())
-    expect(tableHeaders).toEqual(['姓名', '邮箱', '部门', '当前范围计费用量', '操作'])
-    expect(tableHeaders).not.toContain('Name')
-    expect(tableHeaders).not.toContain('Email')
-    expect(tableHeaders).not.toContain('Department')
-    expect(tableHeaders).not.toContain('订阅数')
-    expect(tableHeaders).not.toContain('Subscriptions')
-    expect(tableHeaders).not.toContain('Action')
+    expect(wrapper.text()).not.toContain('Name')
+    expect(wrapper.text()).not.toContain('Email')
+    expect(wrapper.text()).not.toContain('订阅数')
+    expect(wrapper.text()).not.toContain('Subscriptions')
+    expect(wrapper.text()).not.toContain('Action')
     expect(wrapper.findAll('button').map((button) => button.text())).not.toContain('Open')
     const trend = wrapper.get('[data-testid="team-member-trend-chart"]')
     expect(trend.text()).toContain('USD')
@@ -340,9 +421,8 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.findAll('th').map((header) => header.text())).not.toContain('Subscriptions')
-    const bobRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('Bob'))
-    if (!bobRow) throw new Error('expected Bob row to be rendered')
+    expect(wrapper.text()).not.toContain('Subscriptions')
+    const bobRow = wrapper.get('[data-testid="team-overview-member-directory-member-bob"]')
     expect(bobRow.text()).toContain('3.50 USD')
   })
 
@@ -358,11 +438,9 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Carol')
-    const rows = wrapper.findAll('tbody tr')
-    const aliceRow = rows.find((row) => row.text().includes('Alice'))
-    const bobRow = rows.find((row) => row.text().includes('Bob'))
-    const carolRow = rows.find((row) => row.text().includes('Carol'))
-    if (!aliceRow || !bobRow || !carolRow) throw new Error('expected Alice, Bob, and Carol rows to be rendered')
+    const aliceRow = wrapper.get('[data-testid="team-overview-member-user-101"]')
+    const bobRow = wrapper.get('[data-testid="team-overview-member-directory-member-bob"]')
+    const carolRow = wrapper.get('[data-testid="team-overview-member-directory-member-carol"]')
     expect(aliceRow.find('button').attributes('disabled')).toBeUndefined()
     expect(bobRow.find('button').attributes('disabled')).toBeDefined()
     expect(carolRow.find('button').attributes('disabled')).toBeDefined()
@@ -425,6 +503,83 @@ describe('TeamOverviewView', () => {
 
     expect(wrapper.text()).toContain('Team usage is temporarily unavailable.')
     expect(wrapper.text()).not.toContain('network unavailable')
+  })
+
+  it('shows selected-window token usage in summary and member details', async () => {
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Token usage in range')
+    expect(wrapper.text()).toContain('12,900')
+    const aliceRow = wrapper.get('[data-testid="team-overview-member-user-101"]')
+    expect(aliceRow.text()).toContain('12,000')
+    const bobRow = wrapper.get('[data-testid="team-overview-member-directory-member-bob"]')
+    expect(bobRow.text()).toContain('900')
+    const carolRow = wrapper.get('[data-testid="team-overview-member-directory-member-carol"]')
+    expect(carolRow.text()).toContain('-')
+  })
+
+  it('renders member details as an expandable organization tree', async () => {
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const alpha = wrapper.get('[data-testid="team-overview-department-department-alpha"]')
+    expect(alpha.attributes('role')).toBe('treeitem')
+    expect(alpha.attributes('aria-level')).toBe('1')
+    expect(alpha.text()).toContain('Department Alpha')
+    expect(alpha.text()).toContain('3 members')
+    expect(alpha.text()).toContain('2 connected')
+    expect(alpha.text()).toContain('28.00 USD')
+    expect(alpha.text()).toContain('12,900 tokens')
+    expect(wrapper.get('[data-testid="team-overview-department-department-alpha-team-one"]').attributes('aria-level')).toBe('2')
+    expect(wrapper.text()).toContain('Team One')
+    expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.text()).toContain('Bob')
+
+    await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
+    expect(wrapper.find('[data-testid="team-overview-department-department-alpha-team-one"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
+    expect(wrapper.find('[data-testid="team-overview-department-department-alpha-team-one"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(true)
+  })
+
+  it('marks unconnected members in red with localized status', async () => {
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const carolRow = wrapper.get('[data-testid="team-overview-member-directory-member-carol"]')
+    expect(carolRow.text()).toContain('Not connected')
+    expect(carolRow.classes().join(' ')).toContain('bg-red-50')
+
+    setLocale('zh-CN')
+    const zhWrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+    expect(zhWrapper.get('[data-testid="team-overview-member-directory-member-carol"]').text()).toContain('未接入')
   })
 
   it('routes Open action to AI Usage Center with selected subject query', async () => {

@@ -95,6 +95,11 @@ function formatSummaryCost(value: number | null | undefined, unitLabel: string) 
   return `${value.toFixed(2)} ${unitLabel}`
 }
 
+function formatSummaryTokens(value: number | null | undefined) {
+  if (value == null) return '-'
+  return value.toLocaleString()
+}
+
 function openMember(userID: number) {
   void router.push({ name: 'UsageMember', params: { user_id: String(userID) } })
 }
@@ -152,7 +157,7 @@ onMounted(loadOverview)
             {{ t('teamUsage.updating') }}
           </div>
 
-          <section class="grid gap-3 md:grid-cols-3">
+          <section class="grid gap-3 md:grid-cols-4">
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.scopedMembers') }}</div>
               <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">
@@ -171,6 +176,12 @@ onMounted(loadOverview)
                 {{ formatSummaryCost(overview.summary.range_actual_cost, overview.summary.unit_label) }}
               </div>
             </div>
+            <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.rangeTotalTokens') }}</div>
+              <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">
+                {{ formatSummaryTokens(overview.summary.range_total_tokens) }}
+              </div>
+            </div>
           </section>
 
           <section
@@ -181,7 +192,7 @@ onMounted(loadOverview)
           </section>
 
           <TeamOverviewMemberTrendChart :state="overview.top_member_trend" :window="overview.window" />
-          <TeamOverviewMemberTable :members="overview.members" @open-member="openMember" />
+          <TeamOverviewMemberTable :members="overview.members" :member-tree="overview.member_tree" @open-member="openMember" />
         </div>
       </template>
     </div>

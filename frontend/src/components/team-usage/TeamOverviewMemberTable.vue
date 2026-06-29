@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { useI18n } from '@/i18n'
-import type { TeamOverviewMember } from '@/types'
+import TeamOverviewDepartmentNode from '@/components/team-usage/TeamOverviewDepartmentNode.vue'
+import type { TeamOverviewMember, TeamOverviewMemberNode } from '@/types'
 
 const props = defineProps<{
   members: TeamOverviewMember[]
+  memberTree?: TeamOverviewMemberNode[]
 }>()
 
 const emit = defineEmits<{
@@ -16,17 +19,96 @@ function formatCost(value: number) {
   return `${value.toFixed(2)} USD`
 }
 
+function formatTokens(value: number | null | undefined) {
+  if (value == null) return '-'
+  return value.toLocaleString()
+}
+
 function memberKey(member: TeamOverviewMember) {
   return member.user_id > 0 ? `user:${member.user_id}` : `directory:${member.directory_member_external_id || member.email}`
+}
+
+function memberTestID(member: TeamOverviewMember) {
+  return `team-overview-member-${member.user_id > 0 ? `user-${member.user_id}` : `directory-${member.directory_member_external_id || member.email}`}`
 }
 
 function canOpen(member: TeamOverviewMember) {
   return member.selectable && member.user_id > 0
 }
 
+function isConnected(member: TeamOverviewMember) {
+  return member.relay_user_id != null
+}
+
 function openMember(member: TeamOverviewMember) {
   if (!canOpen(member)) return
   emit('open-member', member.user_id)
+}
+
+function formatDepartmentTokenSummary(node: TeamOverviewMemberNode) {
+  if (node.range_total_tokens == null) return '-'
+  return `${node.range_total_tokens.toLocaleString()} ${t('teamUsage.tokens')}`
+}
+
+function departmentMemberCountLabel(count: number) {
+  return t(count === 1 ? 'teamUsage.memberCountSingular' : 'teamUsage.memberCountPlural', { count })
+}
+
+function connectedMemberCountLabel(count: number) {
+  return t(count === 1 ? 'teamUsage.connectedCountSingular' : 'teamUsage.connectedCountPlural', { count })
+}
+
+function departmentDepth(node: TeamOverviewMemberNode) {
+  const depth = Number(node.depth ?? 0)
+  return Number.isFinite(depth) && depth > 0 ? Math.min(depth, 8) : 0
+}
+
+function departmentIndentStyle(node: TeamOverviewMemberNode) {
+  const depth = departmentDepth(node)
+  return { paddingLeft: depth === 0 ? '1rem' : `${depth * 1.25}rem` }
+}
+
+function departmentAriaLevel(node: TeamOverviewMemberNode) {
+  return String(departmentDepth(node) + 1)
+}
+
+const treeRoots = computed(() => props.memberTree ?? [])
+const hasTree = computed(() => treeRoots.value.length > 0)
+const expandedDepartmentIds = ref<Set<string>>(new Set())
+
+const allExpandableDepartmentIds = computed(() => {
+  const ids: string[] = []
+  function visit(node: TeamOverviewMemberNode) {
+    if ((node.children?.length ?? 0) > 0) ids.push(node.department_external_id)
+    for (const child of node.children ?? []) visit(child)
+  }
+  for (const root of treeRoots.value) visit(root)
+  return ids
+})
+
+const initializedTreeKey = ref('')
+const treeKey = computed(() => allExpandableDepartmentIds.value.join('|'))
+const treeReady = computed(() => {
+  if (initializedTreeKey.value === treeKey.value) return true
+  expandedDepartmentIds.value = new Set(allExpandableDepartmentIds.value)
+  initializedTreeKey.value = treeKey.value
+  return true
+})
+
+function departmentExpanded(node: TeamOverviewMemberNode) {
+  void treeReady.value
+  return expandedDepartmentIds.value.has(node.department_external_id)
+}
+
+function toggleDepartment(node: TeamOverviewMemberNode) {
+  if ((node.children?.length ?? 0) <= 0) return
+  const next = new Set(expandedDepartmentIds.value)
+  if (next.has(node.department_external_id)) {
+    next.delete(node.department_external_id)
+  } else {
+    next.add(node.department_external_id)
+  }
+  expandedDepartmentIds.value = next
 }
 </script>
 
@@ -40,6 +122,37 @@ function openMember(member: TeamOverviewMember) {
       -
     </div>
 
+    <div v-else-if="hasTree">
+      <div class="hidden border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase text-slate-500 sm:grid sm:grid-cols-[minmax(9rem,1.1fr)_minmax(12rem,1.4fr)_8rem_9rem_9rem]">
+        <div>{{ t('teamUsage.memberName') }}</div>
+        <div>{{ t('teamUsage.memberEmail') }}</div>
+        <div class="text-right">{{ t('teamUsage.rangeActualCost') }}</div>
+        <div class="text-right">{{ t('teamUsage.rangeTotalTokens') }}</div>
+        <div class="text-right">{{ t('teamUsage.memberAction') }}</div>
+      </div>
+      <div class="divide-y divide-slate-100" role="tree">
+        <template v-for="department in treeRoots" :key="department.department_external_id">
+          <TeamOverviewDepartmentNode
+            :node="department"
+            :expanded="departmentExpanded"
+            :toggle="toggleDepartment"
+            :open-member="openMember"
+            :can-open="canOpen"
+            :is-connected="isConnected"
+            :member-key="memberKey"
+            :member-test-id="memberTestID"
+            :format-cost="formatCost"
+            :format-tokens="formatTokens"
+            :format-department-token-summary="formatDepartmentTokenSummary"
+            :department-member-count-label="departmentMemberCountLabel"
+            :connected-member-count-label="connectedMemberCountLabel"
+            :department-indent-style="departmentIndentStyle"
+            :department-aria-level="departmentAriaLevel"
+          />
+        </template>
+      </div>
+    </div>
+
     <div v-else class="overflow-x-auto">
       <table class="min-w-full divide-y divide-slate-100 text-sm">
         <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
@@ -48,6 +161,7 @@ function openMember(member: TeamOverviewMember) {
             <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberEmail') }}</th>
             <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberDepartment') }}</th>
             <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.rangeActualCost') }}</th>
+            <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.rangeTotalTokens') }}</th>
             <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.memberAction') }}</th>
           </tr>
         </thead>
@@ -55,7 +169,8 @@ function openMember(member: TeamOverviewMember) {
           <tr
             v-for="member in props.members"
             :key="memberKey(member)"
-            class="hover:bg-slate-50"
+            :data-testid="memberTestID(member)"
+            :class="[isConnected(member) ? 'hover:bg-slate-50' : 'bg-red-50 text-red-950 hover:bg-red-50']"
           >
             <td class="whitespace-nowrap px-4 py-2 font-medium text-slate-900">{{ member.display_name }}</td>
             <td class="whitespace-nowrap px-4 py-2 text-slate-600">{{ member.email }}</td>
@@ -63,7 +178,16 @@ function openMember(member: TeamOverviewMember) {
             <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">
               {{ formatCost(member.range_actual_cost) }}
             </td>
+            <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">
+              {{ formatTokens(member.total_tokens) }}
+            </td>
             <td class="whitespace-nowrap px-4 py-2 text-right">
+              <span
+                v-if="!isConnected(member)"
+                class="mr-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
+              >
+                {{ t('teamUsage.notConnected') }}
+              </span>
               <button
                 type="button"
                 class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"

@@ -878,6 +878,7 @@ export interface TeamOverviewSummary {
   member_count: number
   relay_member_count: number
   range_actual_cost?: number | null
+  range_total_tokens?: number | null
   today_actual_cost?: number | null
   total_actual_cost?: number | null
   unit_label: string
@@ -889,6 +890,7 @@ export interface TeamOverviewMember {
   directory_member_external_id?: string
   display_name: string
   email: string
+  department_external_id?: string
   department_display_path: string
   relay_user_id?: number | null
   range_actual_cost: number
@@ -897,6 +899,21 @@ export interface TeamOverviewMember {
   total_tokens?: number | null
   subscription_count?: number | null
   selectable: boolean
+}
+
+export interface TeamOverviewMemberNode {
+  department_external_id: string
+  parent_external_id?: string | null
+  name: string
+  display_path: string
+  depth: number
+  child_count: number
+  member_count: number
+  connected_member_count: number
+  range_actual_cost: number
+  range_total_tokens?: number | null
+  members: TeamOverviewMember[]
+  children: TeamOverviewMemberNode[]
 }
 
 export interface TeamUsageTrendPoint {
@@ -931,6 +948,7 @@ export interface TeamOverviewResponse {
   top_members: TeamOverviewMember[]
   top_member_trend: TeamMemberTrendState
   members: TeamOverviewMember[]
+  member_tree?: TeamOverviewMemberNode[]
 }
 
 export interface TeamUsageScopeResponse {
