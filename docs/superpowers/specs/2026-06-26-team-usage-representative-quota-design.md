@@ -585,7 +585,7 @@ Validation failures:
 GET /api/v1/user/team-usage/overview?start_date=...&end_date=...&granularity=day&timezone=...
 ```
 
-Returns the independent team page data for the representative scope. Team Overview uses the same range model as the personal AI Usage view: Today, 7 Days, and 30 Days, defaulting to 30 Days. Summary cards, top-12 ranking, trend series, and the member table all follow the selected range. AE computes `range_actual_cost` and token totals from scoped member trend points for the selected window; it must not display sub2api historical `total_actual_cost` as if it were the selected-window value. The `members` table is the scoped directory member roster, not only the relay-backed usage roster: members without a matched AE user or resolvable relay user remain visible with zero selected-window billed usage, nullable usage-only fields, and `selectable=false`.
+Returns the independent team page data for the representative scope. Team Overview uses the same range model as the personal AI Usage view: Today, 7 Days, and 30 Days, defaulting to 30 Days. Summary cards, top-12 ranking, trend series, and the member table all follow the selected range. AE computes `range_actual_cost` and `range_total_tokens` from scoped member trend points for the selected window; it must not display sub2api historical `total_actual_cost` as if it were the selected-window value. The `members` table is the scoped directory member roster, not only the relay-backed usage roster: members without a matched AE user or resolvable relay user remain visible with zero selected-window billed usage, nullable usage-only fields, and `selectable=false`.
 
 Some relay-adapter field names remain aligned with sub2api (`actual_cost`, `today_actual_cost`, `total_actual_cost`), but user-facing Team Overview labels use billed usage / 计费用量. Do not label these values as actual cost / 实际成本 in user interfaces because the value is multiplier-adjusted subscription consumption, not a direct finance cost.
 
@@ -609,6 +609,7 @@ First-version response:
 	    "member_count": 10,
 	    "relay_member_count": 8,
 	    "range_actual_cost": 123.45,
+	    "range_total_tokens": 456789,
 	    "today_actual_cost": null,
 	    "total_actual_cost": null,
 	    "unit_label": "USD"
@@ -619,7 +620,8 @@ First-version response:
       "user_id": 101,
       "display_name": "Alice",
 	      "email": "alice@example.com",
-	      "department_display_path": "Department Alpha",
+		      "department_external_id": "department-alpha",
+		      "department_display_path": "Department Alpha",
 	      "range_actual_cost": 12.3,
 	      "today_actual_cost": 1.23,
 	      "total_actual_cost": 12.3,
@@ -653,7 +655,8 @@ First-version response:
       "user_id": 101,
       "display_name": "Alice",
 	      "email": "alice@example.com",
-	      "department_display_path": "Department Alpha",
+		      "department_external_id": "department-alpha",
+		      "department_display_path": "Department Alpha",
 	      "relay_user_id": 1001,
 	      "range_actual_cost": 12.3,
 	      "today_actual_cost": 1.23,
@@ -666,16 +669,34 @@ First-version response:
       "directory_member_external_id": "member-bob",
       "display_name": "Bob",
       "email": "bob@example.org",
-      "department_display_path": "Department Alpha",
-      "relay_user_id": 1002,
-      "range_actual_cost": 7.8,
-      "today_actual_cost": 0.5,
-      "total_actual_cost": 30.2,
-      "subscription_count": null,
-      "selectable": false
-    }
-  ]
-}
+	      "department_external_id": "department-alpha",
+	      "department_display_path": "Department Alpha",
+	      "relay_user_id": 1002,
+	      "range_actual_cost": 7.8,
+	      "today_actual_cost": 0.5,
+	      "total_actual_cost": 30.2,
+	      "total_tokens": 12345,
+	      "subscription_count": null,
+	      "selectable": false
+	    }
+	  ],
+	  "member_tree": [
+	    {
+	      "department_external_id": "department-alpha",
+	      "parent_external_id": null,
+	      "name": "Department Alpha",
+	      "display_path": "Department Alpha",
+	      "depth": 0,
+	      "child_count": 1,
+	      "member_count": 10,
+	      "connected_member_count": 8,
+	      "range_actual_cost": 123.45,
+	      "range_total_tokens": 456789,
+	      "members": [],
+	      "children": []
+	    }
+	  ]
+	}
 ```
 
 Team Overview must not include `group_quotas`, subscription quota rows, or multiplier edit actions.
@@ -688,6 +709,8 @@ Top-12 trend rules:
 4. The trend series must be scoped before rendering. AE must not pass through a global sub2api user trend result that includes users outside the representative's department subtree.
 5. If one top member's trend fetch fails, the response may include that member with `points: []` and an unavailable flag rather than failing the entire Team Overview page. Authorization failures still fail closed.
 6. Top 12 must be computed from the complete scoped relay-user set. If the subtree is too large for the configured full-scope usage scan, AE must return empty `top_members`, `top_member_trend.unavailable=true`, and `top_member_trend.unavailable_reason=scope_too_large`; it must not compute top 12 from a truncated subset.
+
+`member_tree` follows the current Directory Sync hierarchy. When a representative has multiple represented roots, the backend returns the largest non-overlapping roots first: if one represented root contains another represented root, only the ancestor appears as a top-level tree root and the child appears nested under it. Each department node aggregates direct members plus descendants for member count, connected member count, selected-window billed usage, and selected-window tokens. `members` remains as a compatibility flat list.
 
 `subscription_count` is optional in the API and should be `null` unless the relay provider can return it without per-member subscription fan-out. The representative Team Overview table should not render a subscription-count column until the backend returns reliable batched subscription counts.
 
@@ -917,6 +940,7 @@ Team Overview first screen:
    - scoped members
    - relay-enabled members
    - billed usage in the currently selected range
+   - token usage in the currently selected range
 2. Range selector:
    - Today
    - 7 Days
@@ -932,12 +956,15 @@ Team Overview first screen:
    - shows token totals when the relay can provide them without raw log scans
 4. Member details table:
    - replaces the personal Model Distribution slot
+   - renders as a collapsible organization tree using the same current Directory Sync hierarchy pattern as the admin users department view
+   - supports multiple represented teams by showing the largest non-overlapping represented department roots and nesting child teams underneath them
    - includes every scoped directory member returned by representative scope, even when that member has no local AE user, no relay binding, or no selected-window usage
+   - department rows show department name/display path, subtree member count, connected member count, selected-window billed usage, and selected-window token usage
    - name
    - email
-   - department
    - selected-window billed usage
-   - subscription count when available without per-member fan-out
+   - selected-window token usage
+   - red not-connected status for members without a resolved relay user
    - action to open `/usage/members/:user_id` only when `selectable=true` and `user_id > 0`; otherwise the action is disabled
 
 Team Overview must not render:
@@ -1059,6 +1086,8 @@ Backend unit tests:
    - Team Overview top-member trend series order matches selected-window ranking order
    - Team Overview summary cards, member table, and top-12 ranking follow Today / 7 Days / 30 Days range selection
    - Team Overview member table includes scoped directory members without local user or relay usage and disables their open action
+   - Team Overview summary and member tree include selected-window token totals
+   - Team Overview member tree returns largest non-overlapping represented roots and nested departments
    - Team Overview returns top-member trend unavailable when full-scope ranking would require truncation
    - Team Overview response never includes `group_quotas`
    - out-of-scope target update is rejected
@@ -1107,19 +1136,22 @@ Frontend tests:
 7. Team Overview does not render quota cards or multiplier controls.
 8. Team Overview Today / 7 Days / 30 Days selection updates summary, ranking, chart, and table using the selected window.
 9. Team Overview range switching shows a visible updating state while preserving previous data until the new response arrives.
-10. Selected-member AI Usage renders subscription controls when the member has active subscriptions.
-11. Non-representative users do not see member subjects or Team Overview entry points.
-12. Member table open action switches to `/usage/members/:user_id`.
-13. Selected-member Quotas keep `Used / Quota` stable when draft multiplier changes.
-14. Selected-member multiplier modal explains that the multiplier affects future quota consumption speed; it is not changing the member's quota limit and does not recalculate existing Used / Quota values.
-15. Invalid multiplier disables submit.
-16. Reset mode displays inherited default result and source.
-17. Successful write refreshes selected-member usage. Audit history is written locally but not rendered in the representative UI.
-18. Self rows do not show multiplier edit controls.
-19. `/usage/members/:user_id` renders independently without top-level AI Usage Center tabs or the member subject selector.
-20. `/usage/members/:user_id` calls the selected-member dashboard endpoint directly and does not fall back to personal usage when the target cannot be loaded.
-21. `/usage/members/:user_id` renders an explicit `Back to Team Overview` link outside the range-control group.
-22. Selected-member subscription groups render before selected-member quota cards.
+10. Team Overview summary shows selected-window token usage.
+11. Team Overview member details render as an expandable organization tree with department aggregate counts, billed usage, and token usage.
+12. Team Overview marks members without a resolved relay user as not connected in red, with localized English and Chinese copy.
+13. Selected-member AI Usage renders subscription controls when the member has active subscriptions.
+14. Non-representative users do not see member subjects or Team Overview entry points.
+15. Member table open action switches to `/usage/members/:user_id`.
+16. Selected-member Quotas keep `Used / Quota` stable when draft multiplier changes.
+17. Selected-member multiplier modal explains that the multiplier affects future quota consumption speed; it is not changing the member's quota limit and does not recalculate existing Used / Quota values.
+18. Invalid multiplier disables submit.
+19. Reset mode displays inherited default result and source.
+20. Successful write refreshes selected-member usage. Audit history is written locally but not rendered in the representative UI.
+21. Self rows do not show multiplier edit controls.
+22. `/usage/members/:user_id` renders independently without top-level AI Usage Center tabs or the member subject selector.
+23. `/usage/members/:user_id` calls the selected-member dashboard endpoint directly and does not fall back to personal usage when the target cannot be loaded.
+24. `/usage/members/:user_id` renders an explicit `Back to Team Overview` link outside the range-control group.
+25. Selected-member subscription groups render before selected-member quota cards.
 
 Manual verification:
 

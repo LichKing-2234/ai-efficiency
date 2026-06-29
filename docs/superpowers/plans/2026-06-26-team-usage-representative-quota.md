@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete. Post-login QA follow-up fixes for Team Overview rendering, representative metadata parsing, new representative UI i18n, sub2api multiplier update contract alignment, stale relay user binding reconciliation, removal of representative audit UI, `/usage` canonical IA, independent selected-member route behavior, selected-member detail IA cleanup, billed-usage terminology, Team Overview Today / 7 Days / 30 Days selected-window semantics, Team Overview range-switch loading feedback, selected-member header de-duplication, Team Overview full directory roster counts, email-based sub2api usage resolution, and simplified Team members / Connected members copy are complete in code and scoped frontend/backend/browser checks.
+**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete. Post-login QA follow-up fixes for Team Overview rendering, representative metadata parsing, new representative UI i18n, sub2api multiplier update contract alignment, stale relay user binding reconciliation, removal of representative audit UI, `/usage` canonical IA, independent selected-member route behavior, selected-member detail IA cleanup, billed-usage terminology, Team Overview Today / 7 Days / 30 Days selected-window semantics, Team Overview range-switch loading feedback, selected-member header de-duplication, Team Overview full directory roster counts, email-based sub2api usage resolution, simplified Team members / Connected members copy, selected-window token totals, not-connected member highlighting, and organization-tree member details are complete in code and scoped frontend/backend checks.
 
 ## Post-login QA Follow-up
 
@@ -42,7 +42,12 @@
 - [x] Count the full represented directory roster in Team Overview, including the representative themself, while keeping representative self-management disabled.
 - [x] Resolve Team Overview directory-only rows to sub2api users by exact email for read-only usage aggregation, without enabling selected-member quota controls for directory-only rows.
 - [x] Rename Team Overview summary cards to Team members / Connected members and hide the member table subscription-count column until reliable batched counts exist.
-- [x] Browser-verify `/usage/team` after Playwright Chromium launch is available locally.
+- [x] Add selected-window token usage to Team Overview summary and member details.
+- [x] Render Team Overview member details as an expandable organization tree based on Directory Sync hierarchy.
+- [x] Deduplicate represented department roots so ancestor departments contain represented child departments instead of rendering duplicate top-level teams.
+- [x] Mark members without resolved relay access as not connected with localized red status.
+- [x] Verify scoped backend suites, focused frontend Team Overview tests, and frontend build after the organization-tree update.
+- [x] Verify `/usage/team` route availability with Playwright; unauthenticated local browser redirects to `/login?redirect=/usage/team`, so logged-in visual QA remains environment/session dependent.
 
 ## Final Review Follow-up
 
