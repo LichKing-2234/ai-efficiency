@@ -255,6 +255,44 @@ func TestResolveRepresentativeScopeIncludesDirectoryMembersWithoutLocalUsers(t *
 	}
 }
 
+func TestResolveRepresentativeScopeBuildsLargestDepartmentTree(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := createScopeSource(t, client, true)
+	actor := createScopeUser(t, client, "actor", "actor@example.com", nil)
+	alpha := createScopeDepartment(t, client, source.ID, "department-alpha", "Department Alpha", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	alphaChild := createScopeDepartment(t, client, source.ID, "department-alpha-team-one", "Team One", &alpha.ExternalID, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	beta := createScopeDepartment(t, client, source.ID, "department-beta", "Department Beta", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	createScopeDepartment(t, client, source.ID, "department-gamma", "Department Gamma", nil, nil)
+	createScopeMember(t, client, source.ID, "member-actor", actor.Email, alpha.ExternalID, &actor.ID, map[string]any{"leader_department_ids": []string{alpha.ExternalID, alphaChild.ExternalID, beta.ExternalID}})
+	createScopeMember(t, client, source.ID, "member-alice", "alice@example.com", alpha.ExternalID, nil, nil)
+	createScopeMember(t, client, source.ID, "member-bob", "bob@example.org", alphaChild.ExternalID, nil, nil)
+	createScopeMember(t, client, source.ID, "member-carol", "carol@example.net", beta.ExternalID, nil, nil)
+	createScopeMember(t, client, source.ID, "member-dana", "dana@example.net", "department-gamma", nil, nil)
+
+	scope, err := New(client).Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+
+	if got, want := scope.RepresentedDepartmentIDs, []string{alpha.ExternalID, alphaChild.ExternalID, beta.ExternalID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("represented departments = %#v, want raw representative roots %#v", got, want)
+	}
+	if got, want := scope.MemberTreeRootIDs, []string{alpha.ExternalID, beta.ExternalID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("member tree roots = %#v, want largest non-overlapping roots %#v", got, want)
+	}
+	if got := departmentIDs(scope.MemberTreeDepartments); !reflect.DeepEqual(got, []string{alpha.ExternalID, alphaChild.ExternalID, beta.ExternalID}) {
+		t.Fatalf("member tree departments = %#v, want alpha, alpha child, beta", got)
+	}
+	childNode := findDepartmentNode(scope.MemberTreeDepartments, alphaChild.ExternalID)
+	if childNode == nil || childNode.ParentExternalID == nil || *childNode.ParentExternalID != alpha.ExternalID || childNode.Depth != 1 {
+		t.Fatalf("child node = %#v, want parent alpha and depth 1", childNode)
+	}
+	if got := departmentIDs(scope.Departments); !reflect.DeepEqual(got, []string{alpha.ExternalID, beta.ExternalID}) {
+		t.Fatalf("scope departments = %#v, want only largest visible root summaries", got)
+	}
+}
+
 func TestResolveRepresentativeScopeFailsClosedWhenSuccessfulRunLacksCompletedAt(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -273,6 +311,23 @@ func TestResolveRepresentativeScopeFailsClosedWhenSuccessfulRunLacksCompletedAt(
 	if scope.IsRepresentative || len(scope.Subjects) != 0 {
 		t.Fatalf("scope = %#v, want non-representative empty scope for source without completed_at", scope)
 	}
+}
+
+func departmentIDs(departments []DepartmentScope) []string {
+	ids := make([]string, 0, len(departments))
+	for _, department := range departments {
+		ids = append(ids, department.ExternalID)
+	}
+	return ids
+}
+
+func findDepartmentNode(departments []DepartmentScope, externalID string) *DepartmentScope {
+	for i := range departments {
+		if departments[i].ExternalID == externalID {
+			return &departments[i]
+		}
+	}
+	return nil
 }
 
 func findSubjectByEmail(subjects []Subject, email string) *Subject {

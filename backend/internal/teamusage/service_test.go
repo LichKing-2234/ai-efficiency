@@ -271,6 +271,9 @@ func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
 	if resp.Summary.RangeActualCost == nil || *resp.Summary.RangeActualCost != 45 {
 		t.Fatalf("summary range_actual_cost = %#v, want 45", resp.Summary.RangeActualCost)
 	}
+	if resp.Summary.RangeTotalTokens == nil || *resp.Summary.RangeTotalTokens != 4500 {
+		t.Fatalf("summary range_total_tokens = %#v, want 4500", resp.Summary.RangeTotalTokens)
+	}
 	if resp.Summary.TotalActualCost != nil {
 		t.Fatalf("summary total_actual_cost = %#v, want nil for selected-window Team Overview", resp.Summary.TotalActualCost)
 	}
@@ -294,6 +297,79 @@ func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{1002, 1003}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("trend request user ids = %#v, want %#v", got, want)
+	}
+}
+
+func TestOverviewBuildsMemberTreeFromRepresentativeDepartments(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	tokenAlice := int64(1200)
+	tokenBob := int64(3000)
+
+	scope := &representativescope.Scope{
+		ActorUserID:      1,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DirectoryMemberExternalID: "member-alice", DisplayName: "Alice", Email: "alice@example.com", DepartmentExternalID: "department-alpha-team-one", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 3, DirectoryMemberExternalID: "member-bob", DisplayName: "Bob", Email: "bob@example.org", DepartmentExternalID: "department-beta", RelayUserID: intPtr(1003), Selectable: true},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-carol", DisplayName: "Carol", Email: "carol@example.net", DepartmentExternalID: "department-alpha-team-one", Selectable: false},
+		},
+		OverviewSubjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DirectoryMemberExternalID: "member-alice", DisplayName: "Alice", Email: "alice@example.com", DepartmentExternalID: "department-alpha-team-one", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 3, DirectoryMemberExternalID: "member-bob", DisplayName: "Bob", Email: "bob@example.org", DepartmentExternalID: "department-beta", RelayUserID: intPtr(1003), Selectable: true},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-carol", DisplayName: "Carol", Email: "carol@example.net", DepartmentExternalID: "department-alpha-team-one", Selectable: false},
+		},
+		MemberTreeRootIDs: []string{"department-alpha", "department-beta"},
+		MemberTreeDepartments: []representativescope.DepartmentScope{
+			{ExternalID: "department-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha", Depth: 0, ChildCount: 1},
+			{ExternalID: "department-alpha-team-one", ParentExternalID: stringPtr("department-alpha"), Name: "Team One", DisplayPath: "Department Alpha / Team One", Depth: 1, ChildCount: 0},
+			{ExternalID: "department-beta", Name: "Department Beta", DisplayPath: "Department Beta", Depth: 0, ChildCount: 0},
+		},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
+			1003: {UserID: 1003, TodayActualCost: 3, TotalActualCost: 30},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			1002: {{Date: "2026-06-28", ActualCost: 12, TotalTokens: &tokenAlice}},
+			1003: {{Date: "2026-06-28", ActualCost: 30, TotalTokens: &tokenBob}},
+		},
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+
+	resp, err := svc.Overview(ctx, 1, OverviewParams{StartDate: "2026-06-01", EndDate: "2026-06-30", Granularity: "day", Timezone: "UTC"})
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+
+	if len(resp.MemberTree) != 2 {
+		t.Fatalf("member tree = %#v, want two top-level departments", resp.MemberTree)
+	}
+	alpha := resp.MemberTree[0]
+	if alpha.DepartmentExternalID != "department-alpha" || alpha.Depth != 0 || len(alpha.Children) != 1 || len(alpha.Members) != 0 {
+		t.Fatalf("alpha node = %#v, want root with one child and no direct members", alpha)
+	}
+	if alpha.MemberCount != 2 || alpha.ConnectedMemberCount != 1 || alpha.RangeActualCost != 12 {
+		t.Fatalf("alpha summary = members %d connected %d cost %.2f, want 2 / 1 / 12", alpha.MemberCount, alpha.ConnectedMemberCount, alpha.RangeActualCost)
+	}
+	if alpha.RangeTotalTokens == nil || *alpha.RangeTotalTokens != 1200 {
+		t.Fatalf("alpha range tokens = %#v, want 1200", alpha.RangeTotalTokens)
+	}
+	teamOne := alpha.Children[0]
+	if teamOne.DepartmentExternalID != "department-alpha-team-one" || len(teamOne.Members) != 2 {
+		t.Fatalf("team one = %#v, want two direct members", teamOne)
+	}
+	if teamOne.Members[1].Email != "carol@example.net" || teamOne.Members[1].RelayUserID != nil {
+		t.Fatalf("unconnected member = %#v, want Carol without relay", teamOne.Members[1])
+	}
+	beta := resp.MemberTree[1]
+	if beta.DepartmentExternalID != "department-beta" || len(beta.Members) != 1 {
+		t.Fatalf("beta node = %#v, want beta with one direct member", beta)
+	}
+	if beta.RangeTotalTokens == nil || *beta.RangeTotalTokens != 3000 {
+		t.Fatalf("beta range tokens = %#v, want 3000", beta.RangeTotalTokens)
 	}
 }
 

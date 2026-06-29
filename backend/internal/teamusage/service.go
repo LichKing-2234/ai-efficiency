@@ -218,6 +218,7 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 
 	windowTotals := buildOverviewWindowTotals(pointsByUser)
 	members := BuildOverviewMemberDetails(subjects, statsByRelayUserID, windowTotals)
+	memberTree := BuildOverviewMemberTree(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, members)
 	topMembers := RankTopMembers(subjects, statsByRelayUserID, windowTotals, 12)
 
 	for _, member := range topMembers {
@@ -247,6 +248,7 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 	}
 
 	rangeCost := sumOverviewWindowCosts(windowTotals)
+	rangeTokens := sumOverviewWindowTokens(windowTotals)
 	return &OverviewResponse{
 		Configured:       true,
 		IsRepresentative: true,
@@ -255,6 +257,7 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 			MemberCount:      len(overviewSubjects),
 			RelayMemberCount: len(relayUserIDs),
 			RangeActualCost:  rangeCost,
+			RangeTotalTokens: rangeTokens,
 			TodayActualCost:  nil,
 			TotalActualCost:  nil,
 			UnitLabel:        "USD",
@@ -262,6 +265,7 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		TopMembers:     topMembers,
 		TopMemberTrend: trendState,
 		Members:        members,
+		MemberTree:     memberTree,
 	}, nil
 }
 
@@ -964,6 +968,22 @@ func sumOverviewWindowCosts(totals map[int64]overviewWindowTotal) *float64 {
 	total := 0.0
 	for _, item := range totals {
 		total += item.ActualCost
+	}
+	return &total
+}
+
+func sumOverviewWindowTokens(totals map[int64]overviewWindowTotal) *int64 {
+	var total int64
+	hasTokens := false
+	for _, item := range totals {
+		if item.TotalTokens == nil {
+			continue
+		}
+		total += *item.TotalTokens
+		hasTokens = true
+	}
+	if !hasTokens {
+		return nil
 	}
 	return &total
 }

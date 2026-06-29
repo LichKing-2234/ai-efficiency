@@ -25,17 +25,21 @@ type Subject struct {
 	DirectoryMemberExternalID string `json:"directory_member_external_id,omitempty"`
 	DisplayName               string `json:"display_name"`
 	Email                     string `json:"email"`
+	DepartmentExternalID      string `json:"department_external_id,omitempty"`
 	DepartmentDisplayPath     string `json:"department_display_path"`
 	RelayUserID               *int   `json:"relay_user_id,omitempty"`
 	Selectable                bool   `json:"selectable"`
 }
 
 type DepartmentScope struct {
-	ExternalID         string `json:"external_id"`
-	Name               string `json:"name"`
-	DisplayPath        string `json:"display_path"`
-	SubtreeMemberCount int    `json:"subtree_member_count"`
-	MatchedUserCount   int    `json:"matched_user_count"`
+	ExternalID         string  `json:"external_id"`
+	ParentExternalID   *string `json:"parent_external_id,omitempty"`
+	Name               string  `json:"name"`
+	DisplayPath        string  `json:"display_path"`
+	Depth              int     `json:"depth"`
+	ChildCount         int     `json:"child_count"`
+	SubtreeMemberCount int     `json:"subtree_member_count"`
+	MatchedUserCount   int     `json:"matched_user_count"`
 }
 
 type Scope struct {
@@ -45,6 +49,8 @@ type Scope struct {
 	RepresentedDepartmentIDs []string
 	RepresentedSubtreeIDs    map[string]map[string]struct{}
 	Departments              []DepartmentScope
+	MemberTreeRootIDs        []string
+	MemberTreeDepartments    []DepartmentScope
 	Subjects                 []Subject
 	OverviewSubjects         []Subject
 	TargetRepresentedRoots   map[int][]string
@@ -177,8 +183,9 @@ func buildScope(actor *ent.User, users []*ent.User, members []*ent.DirectoryMemb
 
 	scope.IsRepresentative = true
 	scope.RepresentedDepartmentIDs = actorRoots
+	scope.MemberTreeRootIDs = largestRepresentedRoots(actorRoots, tree)
 	allowedDepartments := map[string]struct{}{}
-	for _, root := range actorRoots {
+	for _, root := range scope.MemberTreeRootIDs {
 		subtreeIDs := tree.SubtreeIDs(root)
 		scope.RepresentedSubtreeIDs[root] = stringSet(subtreeIDs)
 		for _, departmentID := range subtreeIDs {
@@ -186,6 +193,7 @@ func buildScope(actor *ent.User, users []*ent.User, members []*ent.DirectoryMemb
 		}
 		scope.Departments = append(scope.Departments, departmentScope(root, tree, members, usersByID, usersByEmail))
 	}
+	scope.MemberTreeDepartments = memberTreeDepartments(scope.MemberTreeRootIDs, tree, members, usersByID, usersByEmail)
 	sort.Slice(scope.Departments, func(i, j int) bool {
 		return scope.Departments[i].DisplayPath < scope.Departments[j].DisplayPath
 	})
@@ -194,6 +202,56 @@ func buildScope(actor *ent.User, users []*ent.User, members []*ent.DirectoryMemb
 	scope.OverviewSubjects = buildSubjects(actor.ID, members, usersByID, usersByEmail, allowedDepartments, tree, true)
 	scope.TargetRepresentedRoots = buildTargetRepresentedRoots(members, usersByID, usersByEmail, memberRepresentedRoots)
 	return scope
+}
+
+func largestRepresentedRoots(roots []string, tree *directorytree.Tree) []string {
+	rootSet := stringSet(roots)
+	largest := make([]string, 0, len(roots))
+	for _, root := range roots {
+		root = strings.TrimSpace(root)
+		if root == "" {
+			continue
+		}
+		containedByAnotherRoot := false
+		for otherRoot := range rootSet {
+			if otherRoot == root {
+				continue
+			}
+			for _, subtreeID := range tree.SubtreeIDs(otherRoot) {
+				if subtreeID == root {
+					containedByAnotherRoot = true
+					break
+				}
+			}
+			if containedByAnotherRoot {
+				break
+			}
+		}
+		if !containedByAnotherRoot {
+			largest = append(largest, root)
+		}
+	}
+	return compactStrings(largest)
+}
+
+func memberTreeDepartments(roots []string, tree *directorytree.Tree, members []*ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) []DepartmentScope {
+	allowed := map[string]struct{}{}
+	for _, root := range roots {
+		for _, departmentID := range tree.SubtreeIDs(root) {
+			allowed[departmentID] = struct{}{}
+		}
+	}
+	out := make([]DepartmentScope, 0, len(allowed))
+	for _, department := range tree.Ordered() {
+		if department == nil {
+			continue
+		}
+		if _, ok := allowed[department.ExternalID]; !ok {
+			continue
+		}
+		out = append(out, departmentScope(department.ExternalID, tree, members, usersByID, usersByEmail))
+	}
+	return out
 }
 
 func indexUsers(users []*ent.User) (map[int]*ent.User, map[string]*ent.User) {
@@ -284,11 +342,31 @@ func departmentScope(root string, tree *directorytree.Tree, members []*ent.Direc
 	}
 	return DepartmentScope{
 		ExternalID:         root,
+		ParentExternalID:   departmentParentExternalID(root, tree),
 		Name:               departmentName(root, tree),
 		DisplayPath:        tree.DisplayPath(root),
+		Depth:              tree.Depth(root),
+		ChildCount:         tree.ChildCount(root),
 		SubtreeMemberCount: memberCount,
 		MatchedUserCount:   len(matchedUserIDs),
 	}
+}
+
+func departmentParentExternalID(root string, tree *directorytree.Tree) *string {
+	if tree == nil {
+		return nil
+	}
+	for _, department := range tree.Ordered() {
+		if department == nil || department.ExternalID != root {
+			continue
+		}
+		parent := directorytree.ParentExternalID(department)
+		if parent == "" {
+			return nil
+		}
+		return &parent
+	}
+	return nil
 }
 
 func departmentName(root string, tree *directorytree.Tree) string {
@@ -323,6 +401,7 @@ func buildSubjects(actorUserID int, members []*ent.DirectoryMember, usersByID ma
 			DirectoryMemberExternalID: strings.TrimSpace(member.ExternalID),
 			DisplayName:               subjectDisplayName(localUser, member),
 			Email:                     subjectEmail(localUser, member),
+			DepartmentExternalID:      strings.TrimSpace(member.DepartmentExternalID),
 			DepartmentDisplayPath:     tree.DisplayPath(member.DepartmentExternalID),
 		}
 		key := "directory:" + strings.TrimSpace(member.ExternalID)

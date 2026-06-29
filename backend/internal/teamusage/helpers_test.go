@@ -7,3 +7,7 @@ func floatPtr(value float64) *float64 {
 func intPtr(value int) *int {
 	return &value
 }
+
+func stringPtr(value string) *string {
+	return &value
+}
