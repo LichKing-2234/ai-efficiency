@@ -118,15 +118,8 @@ function toggleDepartment(node: TeamOverviewMemberNode) {
       -
     </div>
 
-    <div v-else-if="hasTree">
-      <div class="hidden border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase text-slate-500 sm:grid sm:grid-cols-[minmax(9rem,1.1fr)_minmax(12rem,1.4fr)_8rem_9rem_9rem]">
-        <div>{{ t('teamUsage.memberName') }}</div>
-        <div>{{ t('teamUsage.memberEmail') }}</div>
-        <div class="text-right">{{ t('teamUsage.rangeActualCost') }}</div>
-        <div class="text-right">{{ t('teamUsage.rangeTotalTokens') }}</div>
-        <div class="text-right">{{ t('teamUsage.memberAction') }}</div>
-      </div>
-      <div class="divide-y divide-slate-100" role="tree">
+    <div v-else-if="hasTree" class="p-4">
+      <div class="overflow-hidden rounded-md border border-gray-200" role="tree">
         <template v-for="department in treeRoots" :key="department.department_external_id">
           <TeamOverviewDepartmentNode
             :node="department"
