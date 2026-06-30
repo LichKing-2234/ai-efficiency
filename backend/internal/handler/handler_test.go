@@ -58,6 +58,7 @@ func setupTestEnvWithOAuth(t *testing.T, oauthHandler *oauth.Handler) *testEnv {
 
 	router := SetupRouter(
 		client,
+		nil,
 		authSvc,
 		repoSvc,
 		webhookHandler,
@@ -699,6 +700,7 @@ func setupTestEnvWithProvider(t *testing.T) *testEnv {
 
 	router := SetupRouter(
 		client,
+		nil,
 		authSvc,
 		repoSvc,
 		webhookHandler,

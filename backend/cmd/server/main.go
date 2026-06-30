@@ -328,6 +328,7 @@ func main() {
 
 	r := handler.SetupRouter(
 		entClient,
+		sqlDB,
 		authService,
 		repoService,
 		webhookHandler,

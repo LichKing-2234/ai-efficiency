@@ -13,6 +13,7 @@ import {
 import { Line } from 'vue-chartjs'
 import type { UserUsageTrendPoint } from '@/types'
 import { useI18n } from '@/i18n'
+import { formatTokenCount } from '@/utils/formatters'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
 
@@ -22,12 +23,6 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
-  return n.toLocaleString()
-}
 
 const chartData = computed(() => ({
   labels: props.data.map((point) => point.date),
@@ -47,7 +42,7 @@ const chartOptions = computed(() => ({
     legend: { position: 'top' as const },
     tooltip: {
       callbacks: {
-        label: (context: any) => `${context.dataset.label}: ${formatTokens(Number(context.raw ?? 0))}`,
+        label: (context: any) => `${context.dataset.label}: ${formatTokenCount(Number(context.raw ?? 0))}`,
         footer: (items: any[]) => {
           const index = items[0]?.dataIndex
           const point = props.data[index]
@@ -59,7 +54,7 @@ const chartOptions = computed(() => ({
   scales: {
     y: {
       ticks: {
-        callback: (value: string | number) => formatTokens(Number(value)),
+        callback: (value: string | number) => formatTokenCount(Number(value)),
       },
     },
   },

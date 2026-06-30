@@ -127,6 +127,15 @@ describe('Router Guards', () => {
     expect(userRoute?.path).toBe('/user')
   })
 
+  it('includes canonical AI Usage Center routes in the router', () => {
+    const usageRoute = router.getRoutes().find((r) => r.name === 'Usage')
+    const memberUsageRoute = router.getRoutes().find((r) => r.name === 'UsageMember')
+    const teamUsageRoute = router.getRoutes().find((r) => r.name === 'UsageTeam')
+    expect(usageRoute?.path).toBe('/usage')
+    expect(memberUsageRoute?.path).toBe('/usage/members/:user_id')
+    expect(teamUsageRoute?.path).toBe('/usage/team')
+  })
+
   it('does not expose user usage as a separate page route', () => {
     const userUsageRoute = router.getRoutes().find((r) => r.name === 'UserUsage' || r.path === '/user/usage')
     expect(userUsageRoute).toBeUndefined()
@@ -183,7 +192,7 @@ describe('Router Guards', () => {
 
     await router.push('/admin/users?case=non-admin')
 
-    expect(router.currentRoute.value.path).toBe('/')
+    expect(router.currentRoute.value.path).toBe('/usage')
   })
 })
 

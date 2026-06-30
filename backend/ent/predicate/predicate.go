@@ -57,6 +57,9 @@ type ScmProvider func(*sql.Selector)
 // SystemSetting is the predicate function for systemsetting builders.
 type SystemSetting func(*sql.Selector)
 
+// TeamUsageRateMultiplierAudit is the predicate function for teamusageratemultiplieraudit builders.
+type TeamUsageRateMultiplierAudit func(*sql.Selector)
+
 // ToolUsageEvent is the predicate function for toolusageevent builders.
 type ToolUsageEvent func(*sql.Selector)
 

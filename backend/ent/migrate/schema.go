@@ -666,6 +666,60 @@ var (
 		Columns:    SystemSettingsColumns,
 		PrimaryKey: []*schema.Column{SystemSettingsColumns[0]},
 	}
+	// TeamUsageRateMultiplierAuditsColumns holds the columns for the "team_usage_rate_multiplier_audits" table.
+	TeamUsageRateMultiplierAuditsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "actor_user_id", Type: field.TypeInt},
+		{Name: "target_user_id", Type: field.TypeInt, Nullable: true},
+		{Name: "provider_id", Type: field.TypeInt, Nullable: true},
+		{Name: "relay_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "group_id", Type: field.TypeString, Default: ""},
+		{Name: "group_name", Type: field.TypeString, Default: ""},
+		{Name: "action", Type: field.TypeEnum, Enums: []string{"set_rate_multiplier", "reset_rate_multiplier"}},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"running", "succeeded", "failed", "partial_failed", "rejected"}},
+		{Name: "old_multiplier", Type: field.TypeFloat64, Nullable: true},
+		{Name: "old_multiplier_source", Type: field.TypeEnum, Enums: []string{"user", "group", "system", "unknown"}, Default: "unknown"},
+		{Name: "new_multiplier", Type: field.TypeFloat64, Nullable: true},
+		{Name: "new_multiplier_source", Type: field.TypeEnum, Enums: []string{"user", "group", "system", "unknown"}, Default: "unknown"},
+		{Name: "changed", Type: field.TypeBool, Default: false},
+		{Name: "old_effective_limits", Type: field.TypeJSON, Nullable: true},
+		{Name: "new_effective_limits", Type: field.TypeJSON, Nullable: true},
+		{Name: "scope_evidence", Type: field.TypeJSON, Nullable: true},
+		{Name: "rejection_reason", Type: field.TypeEnum, Nullable: true, Enums: []string{"not_representative", "self_edit_forbidden", "not_upper_level_representative", "out_of_scope", "no_relay_mapping", "inactive_subscription", "policy_denied", "provider_unsupported"}},
+		{Name: "request_metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "reason", Type: field.TypeString, Default: ""},
+		{Name: "error_message", Type: field.TypeString, Default: ""},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// TeamUsageRateMultiplierAuditsTable holds the schema information for the "team_usage_rate_multiplier_audits" table.
+	TeamUsageRateMultiplierAuditsTable = &schema.Table{
+		Name:       "team_usage_rate_multiplier_audits",
+		Columns:    TeamUsageRateMultiplierAuditsColumns,
+		PrimaryKey: []*schema.Column{TeamUsageRateMultiplierAuditsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "teamusageratemultiplieraudit_actor_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TeamUsageRateMultiplierAuditsColumns[1], TeamUsageRateMultiplierAuditsColumns[21]},
+			},
+			{
+				Name:    "teamusageratemultiplieraudit_target_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TeamUsageRateMultiplierAuditsColumns[2], TeamUsageRateMultiplierAuditsColumns[21]},
+			},
+			{
+				Name:    "teamusageratemultiplieraudit_provider_id_group_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TeamUsageRateMultiplierAuditsColumns[3], TeamUsageRateMultiplierAuditsColumns[5], TeamUsageRateMultiplierAuditsColumns[21]},
+			},
+			{
+				Name:    "teamusageratemultiplieraudit_status_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{TeamUsageRateMultiplierAuditsColumns[8], TeamUsageRateMultiplierAuditsColumns[21]},
+			},
+		},
+	}
 	// ToolUsageEventsColumns holds the columns for the "tool_usage_events" table.
 	ToolUsageEventsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -809,6 +863,7 @@ var (
 		RepoConfigsTable,
 		ScmProvidersTable,
 		SystemSettingsTable,
+		TeamUsageRateMultiplierAuditsTable,
 		ToolUsageEventsTable,
 		UsersTable,
 		WebhookDeadLettersTable,

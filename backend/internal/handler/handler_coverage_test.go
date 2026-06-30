@@ -48,6 +48,7 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 
 	router := SetupRouter(
 		client,
+		nil,
 		authSvc,
 		repoSvc,
 		webhookHandler,
@@ -333,6 +334,7 @@ func TestAuthOptionsExposeLDAPAndDevLoginWhenAvailable(t *testing.T) {
 
 	router := SetupRouter(
 		client,
+		nil,
 		authSvc,
 		repoSvc,
 		webhookHandler,

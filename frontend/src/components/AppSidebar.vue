@@ -17,6 +17,10 @@ const router = useRouter()
 const { languageToggleLabel, t, toggleLocale } = useI18n()
 const displayUsername = computed(() => auth.user?.username ?? 'User')
 const displayRole = computed(() => auth.user?.role ?? '')
+const usageLinkClass = computed(() => [
+  'flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800',
+  router.currentRoute.value.path.startsWith('/usage') ? 'bg-gray-800' : '',
+])
 
 function handleLogout() {
   auth.logout()
@@ -52,9 +56,8 @@ function handleNavigate() {
         {{ t('nav.myWorkSection') }}
       </div>
       <RouterLink
-        to="/"
-        class="flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800"
-        active-class="bg-gray-800"
+        to="/usage"
+        :class="usageLinkClass"
         @click="handleNavigate"
       >
         <svg class="mr-3 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

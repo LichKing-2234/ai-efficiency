@@ -213,6 +213,18 @@ func (f SystemSettingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Valu
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SystemSettingMutation", m)
 }
 
+// The TeamUsageRateMultiplierAuditFunc type is an adapter to allow the use of ordinary
+// function as TeamUsageRateMultiplierAudit mutator.
+type TeamUsageRateMultiplierAuditFunc func(context.Context, *ent.TeamUsageRateMultiplierAuditMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TeamUsageRateMultiplierAuditFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TeamUsageRateMultiplierAuditMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TeamUsageRateMultiplierAuditMutation", m)
+}
+
 // The ToolUsageEventFunc type is an adapter to allow the use of ordinary
 // function as ToolUsageEvent mutator.
 type ToolUsageEventFunc func(context.Context, *ent.ToolUsageEventMutation) (ent.Value, error)

@@ -29,6 +29,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/teamusageratemultiplieraudit"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
@@ -43,26 +44,27 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeAdminSubscriptionJob       = "AdminSubscriptionJob"
-	TypeCommitCheckpoint           = "CommitCheckpoint"
-	TypeCommitRewrite              = "CommitRewrite"
-	TypeCredential                 = "Credential"
-	TypeDirectoryDepartment        = "DirectoryDepartment"
-	TypeDirectoryMember            = "DirectoryMember"
-	TypeDirectoryOffboardingAction = "DirectoryOffboardingAction"
-	TypeDirectorySource            = "DirectorySource"
-	TypeDirectorySyncRun           = "DirectorySyncRun"
-	TypePRCommitUsageSnapshot      = "PRCommitUsageSnapshot"
-	TypePRSyncJob                  = "PRSyncJob"
-	TypePrAttributionRun           = "PrAttributionRun"
-	TypePrRecord                   = "PrRecord"
-	TypeRelayProvider              = "RelayProvider"
-	TypeRepoConfig                 = "RepoConfig"
-	TypeScmProvider                = "ScmProvider"
-	TypeSystemSetting              = "SystemSetting"
-	TypeToolUsageEvent             = "ToolUsageEvent"
-	TypeUser                       = "User"
-	TypeWebhookDeadLetter          = "WebhookDeadLetter"
+	TypeAdminSubscriptionJob         = "AdminSubscriptionJob"
+	TypeCommitCheckpoint             = "CommitCheckpoint"
+	TypeCommitRewrite                = "CommitRewrite"
+	TypeCredential                   = "Credential"
+	TypeDirectoryDepartment          = "DirectoryDepartment"
+	TypeDirectoryMember              = "DirectoryMember"
+	TypeDirectoryOffboardingAction   = "DirectoryOffboardingAction"
+	TypeDirectorySource              = "DirectorySource"
+	TypeDirectorySyncRun             = "DirectorySyncRun"
+	TypePRCommitUsageSnapshot        = "PRCommitUsageSnapshot"
+	TypePRSyncJob                    = "PRSyncJob"
+	TypePrAttributionRun             = "PrAttributionRun"
+	TypePrRecord                     = "PrRecord"
+	TypeRelayProvider                = "RelayProvider"
+	TypeRepoConfig                   = "RepoConfig"
+	TypeScmProvider                  = "ScmProvider"
+	TypeSystemSetting                = "SystemSetting"
+	TypeTeamUsageRateMultiplierAudit = "TeamUsageRateMultiplierAudit"
+	TypeToolUsageEvent               = "ToolUsageEvent"
+	TypeUser                         = "User"
+	TypeWebhookDeadLetter            = "WebhookDeadLetter"
 )
 
 // AdminSubscriptionJobMutation represents an operation that mutates the AdminSubscriptionJob nodes in the graph.
@@ -22655,6 +22657,1865 @@ func (m *SystemSettingMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *SystemSettingMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown SystemSetting edge %s", name)
+}
+
+// TeamUsageRateMultiplierAuditMutation represents an operation that mutates the TeamUsageRateMultiplierAudit nodes in the graph.
+type TeamUsageRateMultiplierAuditMutation struct {
+	config
+	op                    Op
+	typ                   string
+	id                    *int
+	actor_user_id         *int
+	addactor_user_id      *int
+	target_user_id        *int
+	addtarget_user_id     *int
+	provider_id           *int
+	addprovider_id        *int
+	relay_user_id         *int64
+	addrelay_user_id      *int64
+	group_id              *string
+	group_name            *string
+	action                *teamusageratemultiplieraudit.Action
+	status                *teamusageratemultiplieraudit.Status
+	old_multiplier        *float64
+	addold_multiplier     *float64
+	old_multiplier_source *teamusageratemultiplieraudit.OldMultiplierSource
+	new_multiplier        *float64
+	addnew_multiplier     *float64
+	new_multiplier_source *teamusageratemultiplieraudit.NewMultiplierSource
+	changed               *bool
+	old_effective_limits  *map[string]interface{}
+	new_effective_limits  *map[string]interface{}
+	scope_evidence        *map[string]interface{}
+	rejection_reason      *teamusageratemultiplieraudit.RejectionReason
+	request_metadata      *map[string]interface{}
+	reason                *string
+	error_message         *string
+	created_at            *time.Time
+	updated_at            *time.Time
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*TeamUsageRateMultiplierAudit, error)
+	predicates            []predicate.TeamUsageRateMultiplierAudit
+}
+
+var _ ent.Mutation = (*TeamUsageRateMultiplierAuditMutation)(nil)
+
+// teamusageratemultiplierauditOption allows management of the mutation configuration using functional options.
+type teamusageratemultiplierauditOption func(*TeamUsageRateMultiplierAuditMutation)
+
+// newTeamUsageRateMultiplierAuditMutation creates new mutation for the TeamUsageRateMultiplierAudit entity.
+func newTeamUsageRateMultiplierAuditMutation(c config, op Op, opts ...teamusageratemultiplierauditOption) *TeamUsageRateMultiplierAuditMutation {
+	m := &TeamUsageRateMultiplierAuditMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeTeamUsageRateMultiplierAudit,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withTeamUsageRateMultiplierAuditID sets the ID field of the mutation.
+func withTeamUsageRateMultiplierAuditID(id int) teamusageratemultiplierauditOption {
+	return func(m *TeamUsageRateMultiplierAuditMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *TeamUsageRateMultiplierAudit
+		)
+		m.oldValue = func(ctx context.Context) (*TeamUsageRateMultiplierAudit, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().TeamUsageRateMultiplierAudit.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withTeamUsageRateMultiplierAudit sets the old TeamUsageRateMultiplierAudit of the mutation.
+func withTeamUsageRateMultiplierAudit(node *TeamUsageRateMultiplierAudit) teamusageratemultiplierauditOption {
+	return func(m *TeamUsageRateMultiplierAuditMutation) {
+		m.oldValue = func(context.Context) (*TeamUsageRateMultiplierAudit, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m TeamUsageRateMultiplierAuditMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m TeamUsageRateMultiplierAuditMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *TeamUsageRateMultiplierAuditMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().TeamUsageRateMultiplierAudit.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetActorUserID(i int) {
+	m.actor_user_id = &i
+	m.addactor_user_id = nil
+}
+
+// ActorUserID returns the value of the "actor_user_id" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) ActorUserID() (r int, exists bool) {
+	v := m.actor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActorUserID returns the old "actor_user_id" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldActorUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActorUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActorUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActorUserID: %w", err)
+	}
+	return oldValue.ActorUserID, nil
+}
+
+// AddActorUserID adds i to the "actor_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) AddActorUserID(i int) {
+	if m.addactor_user_id != nil {
+		*m.addactor_user_id += i
+	} else {
+		m.addactor_user_id = &i
+	}
+}
+
+// AddedActorUserID returns the value that was added to the "actor_user_id" field in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) AddedActorUserID() (r int, exists bool) {
+	v := m.addactor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetActorUserID resets all changes to the "actor_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetActorUserID() {
+	m.actor_user_id = nil
+	m.addactor_user_id = nil
+}
+
+// SetTargetUserID sets the "target_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetTargetUserID(i int) {
+	m.target_user_id = &i
+	m.addtarget_user_id = nil
+}
+
+// TargetUserID returns the value of the "target_user_id" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) TargetUserID() (r int, exists bool) {
+	v := m.target_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetUserID returns the old "target_user_id" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldTargetUserID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetUserID: %w", err)
+	}
+	return oldValue.TargetUserID, nil
+}
+
+// AddTargetUserID adds i to the "target_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) AddTargetUserID(i int) {
+	if m.addtarget_user_id != nil {
+		*m.addtarget_user_id += i
+	} else {
+		m.addtarget_user_id = &i
+	}
+}
+
+// AddedTargetUserID returns the value that was added to the "target_user_id" field in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) AddedTargetUserID() (r int, exists bool) {
+	v := m.addtarget_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearTargetUserID clears the value of the "target_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearTargetUserID() {
+	m.target_user_id = nil
+	m.addtarget_user_id = nil
+	m.clearedFields[teamusageratemultiplieraudit.FieldTargetUserID] = struct{}{}
+}
+
+// TargetUserIDCleared returns if the "target_user_id" field was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) TargetUserIDCleared() bool {
+	_, ok := m.clearedFields[teamusageratemultiplieraudit.FieldTargetUserID]
+	return ok
+}
+
+// ResetTargetUserID resets all changes to the "target_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetTargetUserID() {
+	m.target_user_id = nil
+	m.addtarget_user_id = nil
+	delete(m.clearedFields, teamusageratemultiplieraudit.FieldTargetUserID)
+}
+
+// SetProviderID sets the "provider_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetProviderID(i int) {
+	m.provider_id = &i
+	m.addprovider_id = nil
+}
+
+// ProviderID returns the value of the "provider_id" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) ProviderID() (r int, exists bool) {
+	v := m.provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderID returns the old "provider_id" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldProviderID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderID: %w", err)
+	}
+	return oldValue.ProviderID, nil
+}
+
+// AddProviderID adds i to the "provider_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) AddProviderID(i int) {
+	if m.addprovider_id != nil {
+		*m.addprovider_id += i
+	} else {
+		m.addprovider_id = &i
+	}
+}
+
+// AddedProviderID returns the value that was added to the "provider_id" field in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) AddedProviderID() (r int, exists bool) {
+	v := m.addprovider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearProviderID clears the value of the "provider_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearProviderID() {
+	m.provider_id = nil
+	m.addprovider_id = nil
+	m.clearedFields[teamusageratemultiplieraudit.FieldProviderID] = struct{}{}
+}
+
+// ProviderIDCleared returns if the "provider_id" field was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) ProviderIDCleared() bool {
+	_, ok := m.clearedFields[teamusageratemultiplieraudit.FieldProviderID]
+	return ok
+}
+
+// ResetProviderID resets all changes to the "provider_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetProviderID() {
+	m.provider_id = nil
+	m.addprovider_id = nil
+	delete(m.clearedFields, teamusageratemultiplieraudit.FieldProviderID)
+}
+
+// SetRelayUserID sets the "relay_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetRelayUserID(i int64) {
+	m.relay_user_id = &i
+	m.addrelay_user_id = nil
+}
+
+// RelayUserID returns the value of the "relay_user_id" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) RelayUserID() (r int64, exists bool) {
+	v := m.relay_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelayUserID returns the old "relay_user_id" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldRelayUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelayUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelayUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelayUserID: %w", err)
+	}
+	return oldValue.RelayUserID, nil
+}
+
+// AddRelayUserID adds i to the "relay_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) AddRelayUserID(i int64) {
+	if m.addrelay_user_id != nil {
+		*m.addrelay_user_id += i
+	} else {
+		m.addrelay_user_id = &i
+	}
+}
+
+// AddedRelayUserID returns the value that was added to the "relay_user_id" field in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) AddedRelayUserID() (r int64, exists bool) {
+	v := m.addrelay_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRelayUserID clears the value of the "relay_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearRelayUserID() {
+	m.relay_user_id = nil
+	m.addrelay_user_id = nil
+	m.clearedFields[teamusageratemultiplieraudit.FieldRelayUserID] = struct{}{}
+}
+
+// RelayUserIDCleared returns if the "relay_user_id" field was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) RelayUserIDCleared() bool {
+	_, ok := m.clearedFields[teamusageratemultiplieraudit.FieldRelayUserID]
+	return ok
+}
+
+// ResetRelayUserID resets all changes to the "relay_user_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetRelayUserID() {
+	m.relay_user_id = nil
+	m.addrelay_user_id = nil
+	delete(m.clearedFields, teamusageratemultiplieraudit.FieldRelayUserID)
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetGroupID(s string) {
+	m.group_id = &s
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) GroupID() (r string, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldGroupID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetGroupID() {
+	m.group_id = nil
+}
+
+// SetGroupName sets the "group_name" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetGroupName(s string) {
+	m.group_name = &s
+}
+
+// GroupName returns the value of the "group_name" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) GroupName() (r string, exists bool) {
+	v := m.group_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupName returns the old "group_name" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldGroupName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupName: %w", err)
+	}
+	return oldValue.GroupName, nil
+}
+
+// ResetGroupName resets all changes to the "group_name" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetGroupName() {
+	m.group_name = nil
+}
+
+// SetAction sets the "action" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetAction(t teamusageratemultiplieraudit.Action) {
+	m.action = &t
+}
+
+// Action returns the value of the "action" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) Action() (r teamusageratemultiplieraudit.Action, exists bool) {
+	v := m.action
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAction returns the old "action" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldAction(ctx context.Context) (v teamusageratemultiplieraudit.Action, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAction is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAction requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAction: %w", err)
+	}
+	return oldValue.Action, nil
+}
+
+// ResetAction resets all changes to the "action" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetAction() {
+	m.action = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetStatus(t teamusageratemultiplieraudit.Status) {
+	m.status = &t
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) Status() (r teamusageratemultiplieraudit.Status, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldStatus(ctx context.Context) (v teamusageratemultiplieraudit.Status, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetOldMultiplier sets the "old_multiplier" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetOldMultiplier(f float64) {
+	m.old_multiplier = &f
+	m.addold_multiplier = nil
+}
+
+// OldMultiplier returns the value of the "old_multiplier" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) OldMultiplier() (r float64, exists bool) {
+	v := m.old_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOldMultiplier returns the old "old_multiplier" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldOldMultiplier(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOldMultiplier is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOldMultiplier requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOldMultiplier: %w", err)
+	}
+	return oldValue.OldMultiplier, nil
+}
+
+// AddOldMultiplier adds f to the "old_multiplier" field.
+func (m *TeamUsageRateMultiplierAuditMutation) AddOldMultiplier(f float64) {
+	if m.addold_multiplier != nil {
+		*m.addold_multiplier += f
+	} else {
+		m.addold_multiplier = &f
+	}
+}
+
+// AddedOldMultiplier returns the value that was added to the "old_multiplier" field in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) AddedOldMultiplier() (r float64, exists bool) {
+	v := m.addold_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearOldMultiplier clears the value of the "old_multiplier" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearOldMultiplier() {
+	m.old_multiplier = nil
+	m.addold_multiplier = nil
+	m.clearedFields[teamusageratemultiplieraudit.FieldOldMultiplier] = struct{}{}
+}
+
+// OldMultiplierCleared returns if the "old_multiplier" field was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) OldMultiplierCleared() bool {
+	_, ok := m.clearedFields[teamusageratemultiplieraudit.FieldOldMultiplier]
+	return ok
+}
+
+// ResetOldMultiplier resets all changes to the "old_multiplier" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetOldMultiplier() {
+	m.old_multiplier = nil
+	m.addold_multiplier = nil
+	delete(m.clearedFields, teamusageratemultiplieraudit.FieldOldMultiplier)
+}
+
+// SetOldMultiplierSource sets the "old_multiplier_source" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetOldMultiplierSource(tms teamusageratemultiplieraudit.OldMultiplierSource) {
+	m.old_multiplier_source = &tms
+}
+
+// OldMultiplierSource returns the value of the "old_multiplier_source" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) OldMultiplierSource() (r teamusageratemultiplieraudit.OldMultiplierSource, exists bool) {
+	v := m.old_multiplier_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOldMultiplierSource returns the old "old_multiplier_source" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldOldMultiplierSource(ctx context.Context) (v teamusageratemultiplieraudit.OldMultiplierSource, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOldMultiplierSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOldMultiplierSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOldMultiplierSource: %w", err)
+	}
+	return oldValue.OldMultiplierSource, nil
+}
+
+// ResetOldMultiplierSource resets all changes to the "old_multiplier_source" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetOldMultiplierSource() {
+	m.old_multiplier_source = nil
+}
+
+// SetNewMultiplier sets the "new_multiplier" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetNewMultiplier(f float64) {
+	m.new_multiplier = &f
+	m.addnew_multiplier = nil
+}
+
+// NewMultiplier returns the value of the "new_multiplier" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) NewMultiplier() (r float64, exists bool) {
+	v := m.new_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNewMultiplier returns the old "new_multiplier" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldNewMultiplier(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNewMultiplier is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNewMultiplier requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNewMultiplier: %w", err)
+	}
+	return oldValue.NewMultiplier, nil
+}
+
+// AddNewMultiplier adds f to the "new_multiplier" field.
+func (m *TeamUsageRateMultiplierAuditMutation) AddNewMultiplier(f float64) {
+	if m.addnew_multiplier != nil {
+		*m.addnew_multiplier += f
+	} else {
+		m.addnew_multiplier = &f
+	}
+}
+
+// AddedNewMultiplier returns the value that was added to the "new_multiplier" field in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) AddedNewMultiplier() (r float64, exists bool) {
+	v := m.addnew_multiplier
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearNewMultiplier clears the value of the "new_multiplier" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearNewMultiplier() {
+	m.new_multiplier = nil
+	m.addnew_multiplier = nil
+	m.clearedFields[teamusageratemultiplieraudit.FieldNewMultiplier] = struct{}{}
+}
+
+// NewMultiplierCleared returns if the "new_multiplier" field was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) NewMultiplierCleared() bool {
+	_, ok := m.clearedFields[teamusageratemultiplieraudit.FieldNewMultiplier]
+	return ok
+}
+
+// ResetNewMultiplier resets all changes to the "new_multiplier" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetNewMultiplier() {
+	m.new_multiplier = nil
+	m.addnew_multiplier = nil
+	delete(m.clearedFields, teamusageratemultiplieraudit.FieldNewMultiplier)
+}
+
+// SetNewMultiplierSource sets the "new_multiplier_source" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetNewMultiplierSource(tms teamusageratemultiplieraudit.NewMultiplierSource) {
+	m.new_multiplier_source = &tms
+}
+
+// NewMultiplierSource returns the value of the "new_multiplier_source" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) NewMultiplierSource() (r teamusageratemultiplieraudit.NewMultiplierSource, exists bool) {
+	v := m.new_multiplier_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNewMultiplierSource returns the old "new_multiplier_source" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldNewMultiplierSource(ctx context.Context) (v teamusageratemultiplieraudit.NewMultiplierSource, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNewMultiplierSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNewMultiplierSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNewMultiplierSource: %w", err)
+	}
+	return oldValue.NewMultiplierSource, nil
+}
+
+// ResetNewMultiplierSource resets all changes to the "new_multiplier_source" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetNewMultiplierSource() {
+	m.new_multiplier_source = nil
+}
+
+// SetChanged sets the "changed" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetChanged(b bool) {
+	m.changed = &b
+}
+
+// Changed returns the value of the "changed" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) Changed() (r bool, exists bool) {
+	v := m.changed
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChanged returns the old "changed" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldChanged(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChanged is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChanged requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChanged: %w", err)
+	}
+	return oldValue.Changed, nil
+}
+
+// ResetChanged resets all changes to the "changed" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetChanged() {
+	m.changed = nil
+}
+
+// SetOldEffectiveLimits sets the "old_effective_limits" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetOldEffectiveLimits(value map[string]interface{}) {
+	m.old_effective_limits = &value
+}
+
+// OldEffectiveLimits returns the value of the "old_effective_limits" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) OldEffectiveLimits() (r map[string]interface{}, exists bool) {
+	v := m.old_effective_limits
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOldEffectiveLimits returns the old "old_effective_limits" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldOldEffectiveLimits(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOldEffectiveLimits is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOldEffectiveLimits requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOldEffectiveLimits: %w", err)
+	}
+	return oldValue.OldEffectiveLimits, nil
+}
+
+// ClearOldEffectiveLimits clears the value of the "old_effective_limits" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearOldEffectiveLimits() {
+	m.old_effective_limits = nil
+	m.clearedFields[teamusageratemultiplieraudit.FieldOldEffectiveLimits] = struct{}{}
+}
+
+// OldEffectiveLimitsCleared returns if the "old_effective_limits" field was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) OldEffectiveLimitsCleared() bool {
+	_, ok := m.clearedFields[teamusageratemultiplieraudit.FieldOldEffectiveLimits]
+	return ok
+}
+
+// ResetOldEffectiveLimits resets all changes to the "old_effective_limits" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetOldEffectiveLimits() {
+	m.old_effective_limits = nil
+	delete(m.clearedFields, teamusageratemultiplieraudit.FieldOldEffectiveLimits)
+}
+
+// SetNewEffectiveLimits sets the "new_effective_limits" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetNewEffectiveLimits(value map[string]interface{}) {
+	m.new_effective_limits = &value
+}
+
+// NewEffectiveLimits returns the value of the "new_effective_limits" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) NewEffectiveLimits() (r map[string]interface{}, exists bool) {
+	v := m.new_effective_limits
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNewEffectiveLimits returns the old "new_effective_limits" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldNewEffectiveLimits(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNewEffectiveLimits is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNewEffectiveLimits requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNewEffectiveLimits: %w", err)
+	}
+	return oldValue.NewEffectiveLimits, nil
+}
+
+// ClearNewEffectiveLimits clears the value of the "new_effective_limits" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearNewEffectiveLimits() {
+	m.new_effective_limits = nil
+	m.clearedFields[teamusageratemultiplieraudit.FieldNewEffectiveLimits] = struct{}{}
+}
+
+// NewEffectiveLimitsCleared returns if the "new_effective_limits" field was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) NewEffectiveLimitsCleared() bool {
+	_, ok := m.clearedFields[teamusageratemultiplieraudit.FieldNewEffectiveLimits]
+	return ok
+}
+
+// ResetNewEffectiveLimits resets all changes to the "new_effective_limits" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetNewEffectiveLimits() {
+	m.new_effective_limits = nil
+	delete(m.clearedFields, teamusageratemultiplieraudit.FieldNewEffectiveLimits)
+}
+
+// SetScopeEvidence sets the "scope_evidence" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetScopeEvidence(value map[string]interface{}) {
+	m.scope_evidence = &value
+}
+
+// ScopeEvidence returns the value of the "scope_evidence" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) ScopeEvidence() (r map[string]interface{}, exists bool) {
+	v := m.scope_evidence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScopeEvidence returns the old "scope_evidence" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldScopeEvidence(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScopeEvidence is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScopeEvidence requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScopeEvidence: %w", err)
+	}
+	return oldValue.ScopeEvidence, nil
+}
+
+// ClearScopeEvidence clears the value of the "scope_evidence" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearScopeEvidence() {
+	m.scope_evidence = nil
+	m.clearedFields[teamusageratemultiplieraudit.FieldScopeEvidence] = struct{}{}
+}
+
+// ScopeEvidenceCleared returns if the "scope_evidence" field was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) ScopeEvidenceCleared() bool {
+	_, ok := m.clearedFields[teamusageratemultiplieraudit.FieldScopeEvidence]
+	return ok
+}
+
+// ResetScopeEvidence resets all changes to the "scope_evidence" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetScopeEvidence() {
+	m.scope_evidence = nil
+	delete(m.clearedFields, teamusageratemultiplieraudit.FieldScopeEvidence)
+}
+
+// SetRejectionReason sets the "rejection_reason" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetRejectionReason(tr teamusageratemultiplieraudit.RejectionReason) {
+	m.rejection_reason = &tr
+}
+
+// RejectionReason returns the value of the "rejection_reason" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) RejectionReason() (r teamusageratemultiplieraudit.RejectionReason, exists bool) {
+	v := m.rejection_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRejectionReason returns the old "rejection_reason" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldRejectionReason(ctx context.Context) (v *teamusageratemultiplieraudit.RejectionReason, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRejectionReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRejectionReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRejectionReason: %w", err)
+	}
+	return oldValue.RejectionReason, nil
+}
+
+// ClearRejectionReason clears the value of the "rejection_reason" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearRejectionReason() {
+	m.rejection_reason = nil
+	m.clearedFields[teamusageratemultiplieraudit.FieldRejectionReason] = struct{}{}
+}
+
+// RejectionReasonCleared returns if the "rejection_reason" field was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) RejectionReasonCleared() bool {
+	_, ok := m.clearedFields[teamusageratemultiplieraudit.FieldRejectionReason]
+	return ok
+}
+
+// ResetRejectionReason resets all changes to the "rejection_reason" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetRejectionReason() {
+	m.rejection_reason = nil
+	delete(m.clearedFields, teamusageratemultiplieraudit.FieldRejectionReason)
+}
+
+// SetRequestMetadata sets the "request_metadata" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetRequestMetadata(value map[string]interface{}) {
+	m.request_metadata = &value
+}
+
+// RequestMetadata returns the value of the "request_metadata" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) RequestMetadata() (r map[string]interface{}, exists bool) {
+	v := m.request_metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestMetadata returns the old "request_metadata" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldRequestMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestMetadata: %w", err)
+	}
+	return oldValue.RequestMetadata, nil
+}
+
+// ClearRequestMetadata clears the value of the "request_metadata" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearRequestMetadata() {
+	m.request_metadata = nil
+	m.clearedFields[teamusageratemultiplieraudit.FieldRequestMetadata] = struct{}{}
+}
+
+// RequestMetadataCleared returns if the "request_metadata" field was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) RequestMetadataCleared() bool {
+	_, ok := m.clearedFields[teamusageratemultiplieraudit.FieldRequestMetadata]
+	return ok
+}
+
+// ResetRequestMetadata resets all changes to the "request_metadata" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetRequestMetadata() {
+	m.request_metadata = nil
+	delete(m.clearedFields, teamusageratemultiplieraudit.FieldRequestMetadata)
+}
+
+// SetReason sets the "reason" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetReason(s string) {
+	m.reason = &s
+}
+
+// Reason returns the value of the "reason" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) Reason() (r string, exists bool) {
+	v := m.reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReason returns the old "reason" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReason: %w", err)
+	}
+	return oldValue.Reason, nil
+}
+
+// ResetReason resets all changes to the "reason" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetReason() {
+	m.reason = nil
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldErrorMessage(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetErrorMessage() {
+	m.error_message = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *TeamUsageRateMultiplierAuditMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the TeamUsageRateMultiplierAudit entity.
+// If the TeamUsageRateMultiplierAudit object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TeamUsageRateMultiplierAuditMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the TeamUsageRateMultiplierAuditMutation builder.
+func (m *TeamUsageRateMultiplierAuditMutation) Where(ps ...predicate.TeamUsageRateMultiplierAudit) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the TeamUsageRateMultiplierAuditMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *TeamUsageRateMultiplierAuditMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.TeamUsageRateMultiplierAudit, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *TeamUsageRateMultiplierAuditMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *TeamUsageRateMultiplierAuditMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (TeamUsageRateMultiplierAudit).
+func (m *TeamUsageRateMultiplierAuditMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *TeamUsageRateMultiplierAuditMutation) Fields() []string {
+	fields := make([]string, 0, 22)
+	if m.actor_user_id != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldActorUserID)
+	}
+	if m.target_user_id != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldTargetUserID)
+	}
+	if m.provider_id != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldProviderID)
+	}
+	if m.relay_user_id != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldRelayUserID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldGroupID)
+	}
+	if m.group_name != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldGroupName)
+	}
+	if m.action != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldAction)
+	}
+	if m.status != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldStatus)
+	}
+	if m.old_multiplier != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldOldMultiplier)
+	}
+	if m.old_multiplier_source != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldOldMultiplierSource)
+	}
+	if m.new_multiplier != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldNewMultiplier)
+	}
+	if m.new_multiplier_source != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldNewMultiplierSource)
+	}
+	if m.changed != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldChanged)
+	}
+	if m.old_effective_limits != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldOldEffectiveLimits)
+	}
+	if m.new_effective_limits != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldNewEffectiveLimits)
+	}
+	if m.scope_evidence != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldScopeEvidence)
+	}
+	if m.rejection_reason != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldRejectionReason)
+	}
+	if m.request_metadata != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldRequestMetadata)
+	}
+	if m.reason != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldReason)
+	}
+	if m.error_message != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldErrorMessage)
+	}
+	if m.created_at != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *TeamUsageRateMultiplierAuditMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case teamusageratemultiplieraudit.FieldActorUserID:
+		return m.ActorUserID()
+	case teamusageratemultiplieraudit.FieldTargetUserID:
+		return m.TargetUserID()
+	case teamusageratemultiplieraudit.FieldProviderID:
+		return m.ProviderID()
+	case teamusageratemultiplieraudit.FieldRelayUserID:
+		return m.RelayUserID()
+	case teamusageratemultiplieraudit.FieldGroupID:
+		return m.GroupID()
+	case teamusageratemultiplieraudit.FieldGroupName:
+		return m.GroupName()
+	case teamusageratemultiplieraudit.FieldAction:
+		return m.Action()
+	case teamusageratemultiplieraudit.FieldStatus:
+		return m.Status()
+	case teamusageratemultiplieraudit.FieldOldMultiplier:
+		return m.OldMultiplier()
+	case teamusageratemultiplieraudit.FieldOldMultiplierSource:
+		return m.OldMultiplierSource()
+	case teamusageratemultiplieraudit.FieldNewMultiplier:
+		return m.NewMultiplier()
+	case teamusageratemultiplieraudit.FieldNewMultiplierSource:
+		return m.NewMultiplierSource()
+	case teamusageratemultiplieraudit.FieldChanged:
+		return m.Changed()
+	case teamusageratemultiplieraudit.FieldOldEffectiveLimits:
+		return m.OldEffectiveLimits()
+	case teamusageratemultiplieraudit.FieldNewEffectiveLimits:
+		return m.NewEffectiveLimits()
+	case teamusageratemultiplieraudit.FieldScopeEvidence:
+		return m.ScopeEvidence()
+	case teamusageratemultiplieraudit.FieldRejectionReason:
+		return m.RejectionReason()
+	case teamusageratemultiplieraudit.FieldRequestMetadata:
+		return m.RequestMetadata()
+	case teamusageratemultiplieraudit.FieldReason:
+		return m.Reason()
+	case teamusageratemultiplieraudit.FieldErrorMessage:
+		return m.ErrorMessage()
+	case teamusageratemultiplieraudit.FieldCreatedAt:
+		return m.CreatedAt()
+	case teamusageratemultiplieraudit.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *TeamUsageRateMultiplierAuditMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case teamusageratemultiplieraudit.FieldActorUserID:
+		return m.OldActorUserID(ctx)
+	case teamusageratemultiplieraudit.FieldTargetUserID:
+		return m.OldTargetUserID(ctx)
+	case teamusageratemultiplieraudit.FieldProviderID:
+		return m.OldProviderID(ctx)
+	case teamusageratemultiplieraudit.FieldRelayUserID:
+		return m.OldRelayUserID(ctx)
+	case teamusageratemultiplieraudit.FieldGroupID:
+		return m.OldGroupID(ctx)
+	case teamusageratemultiplieraudit.FieldGroupName:
+		return m.OldGroupName(ctx)
+	case teamusageratemultiplieraudit.FieldAction:
+		return m.OldAction(ctx)
+	case teamusageratemultiplieraudit.FieldStatus:
+		return m.OldStatus(ctx)
+	case teamusageratemultiplieraudit.FieldOldMultiplier:
+		return m.OldOldMultiplier(ctx)
+	case teamusageratemultiplieraudit.FieldOldMultiplierSource:
+		return m.OldOldMultiplierSource(ctx)
+	case teamusageratemultiplieraudit.FieldNewMultiplier:
+		return m.OldNewMultiplier(ctx)
+	case teamusageratemultiplieraudit.FieldNewMultiplierSource:
+		return m.OldNewMultiplierSource(ctx)
+	case teamusageratemultiplieraudit.FieldChanged:
+		return m.OldChanged(ctx)
+	case teamusageratemultiplieraudit.FieldOldEffectiveLimits:
+		return m.OldOldEffectiveLimits(ctx)
+	case teamusageratemultiplieraudit.FieldNewEffectiveLimits:
+		return m.OldNewEffectiveLimits(ctx)
+	case teamusageratemultiplieraudit.FieldScopeEvidence:
+		return m.OldScopeEvidence(ctx)
+	case teamusageratemultiplieraudit.FieldRejectionReason:
+		return m.OldRejectionReason(ctx)
+	case teamusageratemultiplieraudit.FieldRequestMetadata:
+		return m.OldRequestMetadata(ctx)
+	case teamusageratemultiplieraudit.FieldReason:
+		return m.OldReason(ctx)
+	case teamusageratemultiplieraudit.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
+	case teamusageratemultiplieraudit.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case teamusageratemultiplieraudit.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown TeamUsageRateMultiplierAudit field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TeamUsageRateMultiplierAuditMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case teamusageratemultiplieraudit.FieldActorUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActorUserID(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldTargetUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetUserID(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderID(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldRelayUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelayUserID(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldGroupID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldGroupName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupName(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldAction:
+		v, ok := value.(teamusageratemultiplieraudit.Action)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAction(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldStatus:
+		v, ok := value.(teamusageratemultiplieraudit.Status)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldOldMultiplier:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOldMultiplier(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldOldMultiplierSource:
+		v, ok := value.(teamusageratemultiplieraudit.OldMultiplierSource)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOldMultiplierSource(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldNewMultiplier:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNewMultiplier(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldNewMultiplierSource:
+		v, ok := value.(teamusageratemultiplieraudit.NewMultiplierSource)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNewMultiplierSource(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldChanged:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChanged(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldOldEffectiveLimits:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOldEffectiveLimits(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldNewEffectiveLimits:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNewEffectiveLimits(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldScopeEvidence:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScopeEvidence(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldRejectionReason:
+		v, ok := value.(teamusageratemultiplieraudit.RejectionReason)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRejectionReason(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldRequestMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestMetadata(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReason(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TeamUsageRateMultiplierAudit field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) AddedFields() []string {
+	var fields []string
+	if m.addactor_user_id != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldActorUserID)
+	}
+	if m.addtarget_user_id != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldTargetUserID)
+	}
+	if m.addprovider_id != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldProviderID)
+	}
+	if m.addrelay_user_id != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldRelayUserID)
+	}
+	if m.addold_multiplier != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldOldMultiplier)
+	}
+	if m.addnew_multiplier != nil {
+		fields = append(fields, teamusageratemultiplieraudit.FieldNewMultiplier)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *TeamUsageRateMultiplierAuditMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case teamusageratemultiplieraudit.FieldActorUserID:
+		return m.AddedActorUserID()
+	case teamusageratemultiplieraudit.FieldTargetUserID:
+		return m.AddedTargetUserID()
+	case teamusageratemultiplieraudit.FieldProviderID:
+		return m.AddedProviderID()
+	case teamusageratemultiplieraudit.FieldRelayUserID:
+		return m.AddedRelayUserID()
+	case teamusageratemultiplieraudit.FieldOldMultiplier:
+		return m.AddedOldMultiplier()
+	case teamusageratemultiplieraudit.FieldNewMultiplier:
+		return m.AddedNewMultiplier()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TeamUsageRateMultiplierAuditMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case teamusageratemultiplieraudit.FieldActorUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddActorUserID(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldTargetUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTargetUserID(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderID(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldRelayUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRelayUserID(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldOldMultiplier:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOldMultiplier(v)
+		return nil
+	case teamusageratemultiplieraudit.FieldNewMultiplier:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddNewMultiplier(v)
+		return nil
+	}
+	return fmt.Errorf("unknown TeamUsageRateMultiplierAudit numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(teamusageratemultiplieraudit.FieldTargetUserID) {
+		fields = append(fields, teamusageratemultiplieraudit.FieldTargetUserID)
+	}
+	if m.FieldCleared(teamusageratemultiplieraudit.FieldProviderID) {
+		fields = append(fields, teamusageratemultiplieraudit.FieldProviderID)
+	}
+	if m.FieldCleared(teamusageratemultiplieraudit.FieldRelayUserID) {
+		fields = append(fields, teamusageratemultiplieraudit.FieldRelayUserID)
+	}
+	if m.FieldCleared(teamusageratemultiplieraudit.FieldOldMultiplier) {
+		fields = append(fields, teamusageratemultiplieraudit.FieldOldMultiplier)
+	}
+	if m.FieldCleared(teamusageratemultiplieraudit.FieldNewMultiplier) {
+		fields = append(fields, teamusageratemultiplieraudit.FieldNewMultiplier)
+	}
+	if m.FieldCleared(teamusageratemultiplieraudit.FieldOldEffectiveLimits) {
+		fields = append(fields, teamusageratemultiplieraudit.FieldOldEffectiveLimits)
+	}
+	if m.FieldCleared(teamusageratemultiplieraudit.FieldNewEffectiveLimits) {
+		fields = append(fields, teamusageratemultiplieraudit.FieldNewEffectiveLimits)
+	}
+	if m.FieldCleared(teamusageratemultiplieraudit.FieldScopeEvidence) {
+		fields = append(fields, teamusageratemultiplieraudit.FieldScopeEvidence)
+	}
+	if m.FieldCleared(teamusageratemultiplieraudit.FieldRejectionReason) {
+		fields = append(fields, teamusageratemultiplieraudit.FieldRejectionReason)
+	}
+	if m.FieldCleared(teamusageratemultiplieraudit.FieldRequestMetadata) {
+		fields = append(fields, teamusageratemultiplieraudit.FieldRequestMetadata)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearField(name string) error {
+	switch name {
+	case teamusageratemultiplieraudit.FieldTargetUserID:
+		m.ClearTargetUserID()
+		return nil
+	case teamusageratemultiplieraudit.FieldProviderID:
+		m.ClearProviderID()
+		return nil
+	case teamusageratemultiplieraudit.FieldRelayUserID:
+		m.ClearRelayUserID()
+		return nil
+	case teamusageratemultiplieraudit.FieldOldMultiplier:
+		m.ClearOldMultiplier()
+		return nil
+	case teamusageratemultiplieraudit.FieldNewMultiplier:
+		m.ClearNewMultiplier()
+		return nil
+	case teamusageratemultiplieraudit.FieldOldEffectiveLimits:
+		m.ClearOldEffectiveLimits()
+		return nil
+	case teamusageratemultiplieraudit.FieldNewEffectiveLimits:
+		m.ClearNewEffectiveLimits()
+		return nil
+	case teamusageratemultiplieraudit.FieldScopeEvidence:
+		m.ClearScopeEvidence()
+		return nil
+	case teamusageratemultiplieraudit.FieldRejectionReason:
+		m.ClearRejectionReason()
+		return nil
+	case teamusageratemultiplieraudit.FieldRequestMetadata:
+		m.ClearRequestMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown TeamUsageRateMultiplierAudit nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetField(name string) error {
+	switch name {
+	case teamusageratemultiplieraudit.FieldActorUserID:
+		m.ResetActorUserID()
+		return nil
+	case teamusageratemultiplieraudit.FieldTargetUserID:
+		m.ResetTargetUserID()
+		return nil
+	case teamusageratemultiplieraudit.FieldProviderID:
+		m.ResetProviderID()
+		return nil
+	case teamusageratemultiplieraudit.FieldRelayUserID:
+		m.ResetRelayUserID()
+		return nil
+	case teamusageratemultiplieraudit.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	case teamusageratemultiplieraudit.FieldGroupName:
+		m.ResetGroupName()
+		return nil
+	case teamusageratemultiplieraudit.FieldAction:
+		m.ResetAction()
+		return nil
+	case teamusageratemultiplieraudit.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case teamusageratemultiplieraudit.FieldOldMultiplier:
+		m.ResetOldMultiplier()
+		return nil
+	case teamusageratemultiplieraudit.FieldOldMultiplierSource:
+		m.ResetOldMultiplierSource()
+		return nil
+	case teamusageratemultiplieraudit.FieldNewMultiplier:
+		m.ResetNewMultiplier()
+		return nil
+	case teamusageratemultiplieraudit.FieldNewMultiplierSource:
+		m.ResetNewMultiplierSource()
+		return nil
+	case teamusageratemultiplieraudit.FieldChanged:
+		m.ResetChanged()
+		return nil
+	case teamusageratemultiplieraudit.FieldOldEffectiveLimits:
+		m.ResetOldEffectiveLimits()
+		return nil
+	case teamusageratemultiplieraudit.FieldNewEffectiveLimits:
+		m.ResetNewEffectiveLimits()
+		return nil
+	case teamusageratemultiplieraudit.FieldScopeEvidence:
+		m.ResetScopeEvidence()
+		return nil
+	case teamusageratemultiplieraudit.FieldRejectionReason:
+		m.ResetRejectionReason()
+		return nil
+	case teamusageratemultiplieraudit.FieldRequestMetadata:
+		m.ResetRequestMetadata()
+		return nil
+	case teamusageratemultiplieraudit.FieldReason:
+		m.ResetReason()
+		return nil
+	case teamusageratemultiplieraudit.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
+	case teamusageratemultiplieraudit.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case teamusageratemultiplieraudit.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown TeamUsageRateMultiplierAudit field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *TeamUsageRateMultiplierAuditMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *TeamUsageRateMultiplierAuditMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown TeamUsageRateMultiplierAudit unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *TeamUsageRateMultiplierAuditMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown TeamUsageRateMultiplierAudit edge %s", name)
 }
 
 // ToolUsageEventMutation represents an operation that mutates the ToolUsageEvent nodes in the graph.

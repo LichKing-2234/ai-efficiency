@@ -2055,6 +2055,132 @@ type userUsageModelsEnvelope struct {
 	EndDate   string               `json:"end_date"`
 }
 
+func (s *sub2apiRelay) GetUsageDashboardForUser(ctx context.Context, relayUserID int64, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error) {
+	stats, err := s.getAdminUsageStatsForUser(ctx, relayUserID)
+	if err != nil {
+		return nil, err
+	}
+	trend, err := s.getAdminUsageTrendForUser(ctx, relayUserID, params)
+	if err != nil {
+		return nil, err
+	}
+	models, err := s.getAdminUsageModelsForUser(ctx, relayUserID, params)
+	if err != nil {
+		return nil, err
+	}
+
+	return &UserUsageDashboardResponse{
+		Configured: true,
+		Range: UserUsageDashboardRange{
+			StartDate:   firstNonEmpty(trend.StartDate, params.StartDate),
+			EndDate:     firstNonEmpty(trend.EndDate, params.EndDate),
+			Granularity: firstNonEmpty(trend.Granularity, params.Granularity, "day"),
+			Timezone:    strings.TrimSpace(params.Timezone),
+		},
+		Stats:  stats,
+		Trend:  trend.Trend,
+		Models: models.Models,
+	}, nil
+}
+
+func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params TeamUsageSummaryParams) (map[int64]TeamUserUsageStats, error) {
+	payload, err := json.Marshal(map[string]any{
+		"user_ids": userIDs,
+		"timezone": strings.TrimSpace(params.Timezone),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("relay: batch user usage stats: marshal: %w", err)
+	}
+
+	resp, err := s.doAdminRequest(ctx, http.MethodPost, "/api/v1/admin/dashboard/users-usage", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("relay: batch user usage stats: %w", err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return nil, fmt.Errorf("relay: batch user usage stats: read: %w", readErr)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("relay: batch user usage stats: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffixFromData(body))
+	}
+
+	var result struct {
+		envelopeStatus
+		Data struct {
+			Stats map[string]TeamUserUsageStats `json:"stats"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("relay: batch user usage stats: decode: %w", err)
+	}
+	if !result.ok() {
+		return nil, fmt.Errorf("relay: batch user usage stats: request failed%s", result.envelopeStatus.messageSuffix())
+	}
+
+	out := make(map[int64]TeamUserUsageStats, len(result.Data.Stats))
+	for rawUserID, item := range result.Data.Stats {
+		if item.UserID == 0 {
+			parsedUserID, err := strconv.ParseInt(strings.TrimSpace(rawUserID), 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("relay: batch user usage stats: parse user id %q: %w", rawUserID, err)
+			}
+			item.UserID = parsedUserID
+		}
+		out[item.UserID] = item
+	}
+	return out, nil
+}
+
+func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error) {
+	out := make(map[int64][]UsageTrendPoint, len(relayUserIDs))
+	for _, relayUserID := range relayUserIDs {
+		trend, err := s.getTeamMemberTrend(ctx, relayUserID, params)
+		if err != nil {
+			return nil, err
+		}
+		out[relayUserID] = trend
+	}
+	return out, nil
+}
+
+func (s *sub2apiRelay) ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error) {
+	var entries []UserGroupRateEntry
+	if err := s.getAdminEnvelopeJSON(ctx, fmt.Sprintf("/api/v1/admin/groups/%d/rate-multipliers", groupID), nil, &entries); err != nil {
+		return nil, fmt.Errorf("relay: list group rate multipliers: %w", err)
+	}
+	return entries, nil
+}
+
+func (s *sub2apiRelay) ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error {
+	payload, err := json.Marshal(map[string]any{"entries": entries})
+	if err != nil {
+		return fmt.Errorf("relay: replace group rate multipliers: marshal: %w", err)
+	}
+
+	resp, err := s.doAdminRequest(ctx, http.MethodPut, fmt.Sprintf("/api/v1/admin/groups/%d/rate-multipliers", groupID), bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("relay: replace group rate multipliers: %w", err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return fmt.Errorf("relay: replace group rate multipliers: read: %w", readErr)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("relay: replace group rate multipliers: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffixFromData(body))
+	}
+
+	var result envelopeStatus
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("relay: replace group rate multipliers: decode: %w", err)
+	}
+	if !result.ok() {
+		return fmt.Errorf("relay: replace group rate multipliers: request failed%s", result.messageSuffix())
+	}
+	return nil
+}
+
 func (s *sub2apiRelay) GetUserUsageDashboard(ctx context.Context, login, password string, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error) {
 	token, _, err := s.loginSessionToken(ctx, login, password)
 	if err != nil {
@@ -2116,6 +2242,89 @@ func (s *sub2apiRelay) getUserUsageDashboardModels(ctx context.Context, token st
 	return &models, nil
 }
 
+func (s *sub2apiRelay) getAdminUsageStatsForUser(ctx context.Context, relayUserID int64) (*UserUsageDashboardStats, error) {
+	query := url.Values{}
+	query.Set("user_id", strconv.FormatInt(relayUserID, 10))
+	var stats UserUsageDashboardStats
+	if err := s.getAdminEnvelopeJSON(ctx, "/api/v1/admin/usage/stats", query, &stats); err != nil {
+		return nil, fmt.Errorf("relay: subject usage dashboard stats: %w", err)
+	}
+	return &stats, nil
+}
+
+func (s *sub2apiRelay) getAdminUsageTrendForUser(ctx context.Context, relayUserID int64, params UserUsageDashboardParams) (*userUsageTrendEnvelope, error) {
+	query := url.Values{}
+	addUserUsageDashboardQuery(query, params, true)
+	query.Set("user_id", strconv.FormatInt(relayUserID, 10))
+	var raw json.RawMessage
+	if err := s.getAdminEnvelopeJSON(ctx, "/api/v1/admin/dashboard/trend", query, &raw); err != nil {
+		return nil, fmt.Errorf("relay: subject usage dashboard trend: %w", err)
+	}
+	trend, err := decodeUserUsageTrendEnvelope(raw)
+	if err != nil {
+		return nil, fmt.Errorf("relay: subject usage dashboard trend: decode: %w", err)
+	}
+	return trend, nil
+}
+
+func (s *sub2apiRelay) getAdminUsageModelsForUser(ctx context.Context, relayUserID int64, params UserUsageDashboardParams) (*userUsageModelsEnvelope, error) {
+	query := url.Values{}
+	addUserUsageDashboardQuery(query, params, false)
+	query.Set("user_id", strconv.FormatInt(relayUserID, 10))
+	var raw json.RawMessage
+	if err := s.getAdminEnvelopeJSON(ctx, "/api/v1/admin/dashboard/models", query, &raw); err != nil {
+		return nil, fmt.Errorf("relay: subject usage dashboard models: %w", err)
+	}
+	models, err := decodeUserUsageModelsEnvelope(raw)
+	if err != nil {
+		return nil, fmt.Errorf("relay: subject usage dashboard models: decode: %w", err)
+	}
+	return models, nil
+}
+
+func (s *sub2apiRelay) getTeamMemberTrend(ctx context.Context, relayUserID int64, params TeamMemberTrendParams) ([]UsageTrendPoint, error) {
+	query := url.Values{}
+	if v := strings.TrimSpace(params.StartDate); v != "" {
+		query.Set("start_date", v)
+	}
+	if v := strings.TrimSpace(params.EndDate); v != "" {
+		query.Set("end_date", v)
+	}
+	if v := strings.TrimSpace(params.Granularity); v != "" {
+		query.Set("granularity", v)
+	}
+	if v := strings.TrimSpace(params.Timezone); v != "" {
+		query.Set("timezone", v)
+	}
+	query.Set("user_id", strconv.FormatInt(relayUserID, 10))
+
+	var raw json.RawMessage
+	if err := s.getAdminEnvelopeJSON(ctx, "/api/v1/admin/dashboard/trend", query, &raw); err != nil {
+		return nil, fmt.Errorf("relay: team member trend: %w", err)
+	}
+
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil, nil
+	}
+
+	var points []UsageTrendPoint
+	if len(raw) > 0 && raw[0] == '[' {
+		if err := json.Unmarshal(raw, &points); err != nil {
+			return nil, fmt.Errorf("relay: team member trend: decode points: %w", err)
+		}
+		return points, nil
+	}
+
+	var envelope struct {
+		Trend []UsageTrendPoint `json:"trend"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, fmt.Errorf("relay: team member trend: decode envelope: %w", err)
+	}
+	return envelope.Trend, nil
+}
+
 func (s *sub2apiRelay) getUserDashboardJSON(ctx context.Context, token, path string, query url.Values, dst any) error {
 	u, err := url.Parse(s.adminURL + path)
 	if err != nil {
@@ -2161,6 +2370,81 @@ func (s *sub2apiRelay) getUserDashboardJSON(ctx context.Context, token, path str
 		return fmt.Errorf("decode data: %w", err)
 	}
 	return nil
+}
+
+func (s *sub2apiRelay) getAdminEnvelopeJSON(ctx context.Context, path string, query url.Values, dst any) error {
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+
+	resp, err := s.doAdminRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return fmt.Errorf("fetch: %w", err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return fmt.Errorf("read body: %w", readErr)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffixFromData(body))
+	}
+
+	var result struct {
+		envelopeStatus
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("decode envelope: %w", err)
+	}
+	if !result.ok() {
+		return fmt.Errorf("request failed%s", result.envelopeStatus.messageSuffix())
+	}
+	if dst == nil {
+		return nil
+	}
+	if err := json.Unmarshal(result.Data, dst); err != nil {
+		return fmt.Errorf("decode data: %w", err)
+	}
+	return nil
+}
+
+func decodeUserUsageTrendEnvelope(raw json.RawMessage) (*userUsageTrendEnvelope, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return &userUsageTrendEnvelope{}, nil
+	}
+	if raw[0] == '[' {
+		var points []UserUsageTrendPoint
+		if err := json.Unmarshal(raw, &points); err != nil {
+			return nil, err
+		}
+		return &userUsageTrendEnvelope{Trend: points}, nil
+	}
+	var trend userUsageTrendEnvelope
+	if err := json.Unmarshal(raw, &trend); err != nil {
+		return nil, err
+	}
+	return &trend, nil
+}
+
+func decodeUserUsageModelsEnvelope(raw json.RawMessage) (*userUsageModelsEnvelope, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return &userUsageModelsEnvelope{}, nil
+	}
+	if raw[0] == '[' {
+		var models []UserUsageModelStat
+		if err := json.Unmarshal(raw, &models); err != nil {
+			return nil, err
+		}
+		return &userUsageModelsEnvelope{Models: models}, nil
+	}
+	var models userUsageModelsEnvelope
+	if err := json.Unmarshal(raw, &models); err != nil {
+		return nil, err
+	}
+	return &models, nil
 }
 
 func addUserUsageDashboardQuery(query url.Values, params UserUsageDashboardParams, includeGranularity bool) {

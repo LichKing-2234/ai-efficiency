@@ -46,6 +46,8 @@ type Tx struct {
 	ScmProvider *ScmProviderClient
 	// SystemSetting is the client for interacting with the SystemSetting builders.
 	SystemSetting *SystemSettingClient
+	// TeamUsageRateMultiplierAudit is the client for interacting with the TeamUsageRateMultiplierAudit builders.
+	TeamUsageRateMultiplierAudit *TeamUsageRateMultiplierAuditClient
 	// ToolUsageEvent is the client for interacting with the ToolUsageEvent builders.
 	ToolUsageEvent *ToolUsageEventClient
 	// User is the client for interacting with the User builders.
@@ -200,6 +202,7 @@ func (tx *Tx) init() {
 	tx.RepoConfig = NewRepoConfigClient(tx.config)
 	tx.ScmProvider = NewScmProviderClient(tx.config)
 	tx.SystemSetting = NewSystemSettingClient(tx.config)
+	tx.TeamUsageRateMultiplierAudit = NewTeamUsageRateMultiplierAuditClient(tx.config)
 	tx.ToolUsageEvent = NewToolUsageEventClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.WebhookDeadLetter = NewWebhookDeadLetterClient(tx.config)

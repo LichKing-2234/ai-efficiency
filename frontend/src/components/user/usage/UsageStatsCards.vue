@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { UserUsageDashboardStats, UserUsageTrendPoint } from '@/types'
 import { useI18n } from '@/i18n'
+import { formatTokenCount } from '@/utils/formatters'
 
 const props = withDefaults(defineProps<{
   stats: UserUsageDashboardStats | null
@@ -40,12 +41,6 @@ const rangeTotals = computed(() => props.trend.reduce(
 ))
 
 function formatNumber(n: number): string {
-  return n.toLocaleString()
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return n.toLocaleString()
 }
 
@@ -94,11 +89,11 @@ function formatDuration(ms: number): string {
     <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
       <p class="text-xs font-medium uppercase text-gray-500">{{ t('usageDashboard.rangeTokens', { range: rangeLabel }) }}</p>
       <p class="mt-2 text-2xl font-semibold text-gray-900">
-        {{ formatTokens(rangeTotals.totalTokens) }}
+        {{ formatTokenCount(rangeTotals.totalTokens) }}
       </p>
       <p class="mt-1 text-xs text-gray-500">
-        {{ t('usageDashboard.inputShort') }} {{ formatTokens(rangeTotals.inputTokens) }} · {{ t('usageDashboard.outputShort') }} {{ formatTokens(rangeTotals.outputTokens) }} ·
-        {{ t('usageDashboard.cache') }} {{ formatTokens(rangeTotals.cacheCreationTokens + rangeTotals.cacheReadTokens) }}
+        {{ t('usageDashboard.inputShort') }} {{ formatTokenCount(rangeTotals.inputTokens) }} · {{ t('usageDashboard.outputShort') }} {{ formatTokenCount(rangeTotals.outputTokens) }} ·
+        {{ t('usageDashboard.cache') }} {{ formatTokenCount(rangeTotals.cacheCreationTokens + rangeTotals.cacheReadTokens) }}
       </p>
     </section>
 
@@ -108,7 +103,7 @@ function formatDuration(ms: number): string {
         {{ formatDuration(stats?.average_duration_ms ?? 0) }}
       </p>
       <p class="mt-1 text-xs text-gray-500">
-        {{ t('usageDashboard.rpm') }} {{ formatTokens(stats?.rpm ?? 0) }} · {{ t('usageDashboard.tpm') }} {{ formatTokens(stats?.tpm ?? 0) }}
+        {{ t('usageDashboard.rpm') }} {{ formatTokenCount(stats?.rpm ?? 0) }} · {{ t('usageDashboard.tpm') }} {{ formatTokenCount(stats?.tpm ?? 0) }}
       </p>
     </section>
     </template>
