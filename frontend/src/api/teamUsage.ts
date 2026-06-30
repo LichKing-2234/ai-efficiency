@@ -26,7 +26,10 @@ export function getTeamUsageSubjectDashboard(userID: number, params: UserUsageDa
 }
 
 export function getTeamUsageOverview(params?: TeamUsageOverviewParams) {
-  return client.get<ApiResponse<TeamOverviewResponse>>('/user/team-usage/overview', { params })
+  return client.get<ApiResponse<TeamOverviewResponse>>('/user/team-usage/overview', {
+    params,
+    timeout: 45000,
+  })
 }
 
 export function updateTeamUsageRateMultiplier(

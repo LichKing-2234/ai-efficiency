@@ -322,9 +322,9 @@ func TestOverviewBuildsMemberTreeFromRepresentativeDepartments(t *testing.T) {
 		},
 		MemberTreeRootIDs: []string{"department-alpha", "department-beta"},
 		MemberTreeDepartments: []representativescope.DepartmentScope{
-			{ExternalID: "department-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha", Depth: 0, ChildCount: 1},
-			{ExternalID: "department-alpha-team-one", ParentExternalID: stringPtr("department-alpha"), Name: "Team One", DisplayPath: "Department Alpha / Team One", Depth: 1, ChildCount: 0},
-			{ExternalID: "department-beta", Name: "Department Beta", DisplayPath: "Department Beta", Depth: 0, ChildCount: 0},
+			{ExternalID: "department-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha", Depth: 5, ChildCount: 1},
+			{ExternalID: "department-alpha-team-one", ParentExternalID: stringPtr("department-alpha"), Name: "Team One", DisplayPath: "Department Alpha / Team One", Depth: 6, ChildCount: 0},
+			{ExternalID: "department-beta", Name: "Department Beta", DisplayPath: "Department Beta", Depth: 5, ChildCount: 0},
 		},
 	}
 	provider := &fakeRelayProvider{
@@ -358,15 +358,15 @@ func TestOverviewBuildsMemberTreeFromRepresentativeDepartments(t *testing.T) {
 		t.Fatalf("alpha range tokens = %#v, want 1200", alpha.RangeTotalTokens)
 	}
 	teamOne := alpha.Children[0]
-	if teamOne.DepartmentExternalID != "department-alpha-team-one" || len(teamOne.Members) != 2 {
-		t.Fatalf("team one = %#v, want two direct members", teamOne)
+	if teamOne.DepartmentExternalID != "department-alpha-team-one" || teamOne.Depth != 1 || len(teamOne.Members) != 2 {
+		t.Fatalf("team one = %#v, want relative child depth 1 with two direct members", teamOne)
 	}
 	if teamOne.Members[1].Email != "carol@example.net" || teamOne.Members[1].RelayUserID != nil {
 		t.Fatalf("unconnected member = %#v, want Carol without relay", teamOne.Members[1])
 	}
 	beta := resp.MemberTree[1]
-	if beta.DepartmentExternalID != "department-beta" || len(beta.Members) != 1 {
-		t.Fatalf("beta node = %#v, want beta with one direct member", beta)
+	if beta.DepartmentExternalID != "department-beta" || beta.Depth != 0 || len(beta.Members) != 1 {
+		t.Fatalf("beta node = %#v, want relative root depth 0 with one direct member", beta)
 	}
 	if beta.RangeTotalTokens == nil || *beta.RangeTotalTokens != 3000 {
 		t.Fatalf("beta range tokens = %#v, want 3000", beta.RangeTotalTokens)

@@ -175,17 +175,21 @@ func BuildOverviewMemberTree(departments []representativescope.DepartmentScope, 
 		childIDsByParent[*node.ParentExternalID] = append(childIDsByParent[*node.ParentExternalID], departmentID)
 	}
 
-	var buildNode func(id string) OverviewMemberNode
-	buildNode = func(id string) OverviewMemberNode {
+	var buildNode func(id string, rootDepth int) OverviewMemberNode
+	buildNode = func(id string, rootDepth int) OverviewMemberNode {
 		source := nodeByID[id]
 		if source == nil {
 			return OverviewMemberNode{}
 		}
 		node := *source
+		node.Depth = node.Depth - rootDepth
+		if node.Depth < 0 {
+			node.Depth = 0
+		}
 		node.Members = append([]OverviewMember(nil), source.Members...)
 		node.Children = make([]OverviewMemberNode, 0, len(childIDsByParent[id]))
 		for _, childID := range childIDsByParent[id] {
-			node.Children = append(node.Children, buildNode(childID))
+			node.Children = append(node.Children, buildNode(childID, rootDepth))
 		}
 		return node
 	}
@@ -204,7 +208,11 @@ func BuildOverviewMemberTree(departments []representativescope.DepartmentScope, 
 		if _, ok := rootSet[departmentID]; !ok {
 			continue
 		}
-		roots = append(roots, buildNode(departmentID))
+		rootDepth := 0
+		if node := nodeByID[departmentID]; node != nil {
+			rootDepth = node.Depth
+		}
+		roots = append(roots, buildNode(departmentID, rootDepth))
 	}
 	return roots
 }

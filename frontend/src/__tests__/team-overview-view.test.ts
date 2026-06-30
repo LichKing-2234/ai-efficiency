@@ -546,6 +546,9 @@ describe('TeamOverviewView', () => {
 
     expect(wrapper.text()).toContain('12.29B')
     expect(wrapper.text()).toContain('6.05B tokens')
+    const ranking = wrapper.get('[data-testid="team-overview-ranking-table"]')
+    expect(ranking.text()).toContain('805.03M')
+    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
     const alpha = wrapper.get('[data-testid="team-overview-department-department-alpha"]')
     expect(alpha.text()).toContain('12.29B tokens')
     const aliceRow = wrapper.get('[data-testid="team-overview-member-user-101"]')
@@ -554,7 +557,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).not.toContain('805,033,680')
   })
 
-  it('renders member details as an expandable organization tree', async () => {
+  it('defaults member details to ranking view and switches to an admin-style organization tree', async () => {
     mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
@@ -564,6 +567,13 @@ describe('TeamOverviewView', () => {
       global: { plugins: [createPinia(), router] },
     })
     await flushPromises()
+
+    expect(wrapper.get('[data-testid="team-overview-ranking-view"]').classes()).toContain('bg-gray-900')
+    expect(wrapper.get('[data-testid="team-overview-organization-view"]').classes()).not.toContain('bg-gray-900')
+    expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Alice')
+    expect(wrapper.find('[data-testid="team-overview-department-department-alpha"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
 
     const alpha = wrapper.get('[data-testid="team-overview-department-department-alpha"]')
     expect(alpha.attributes('role')).toBe('treeitem')
@@ -580,11 +590,13 @@ describe('TeamOverviewView', () => {
     expect(child.attributes('aria-level')).toBe('2')
     expect(child.attributes('style')).toContain('padding-left: 1.25rem')
     expect(wrapper.text()).toContain('Team One')
-    const aliceCard = wrapper.get('[data-testid="team-overview-member-user-101"]')
-    expect(aliceCard.classes().join(' ')).toContain('rounded-md')
-    expect(aliceCard.text()).toContain('Alice')
-    expect(aliceCard.text()).toContain('24.50 USD')
-    expect(aliceCard.text()).toContain('12K')
+    const aliceRow = wrapper.get('[data-testid="team-overview-member-user-101"]')
+    expect(aliceRow.attributes('role')).toBe('treeitem')
+    expect(aliceRow.attributes('aria-level')).toBe('2')
+    expect(aliceRow.classes().join(' ')).not.toContain('rounded-md')
+    expect(aliceRow.text()).toContain('Alice')
+    expect(aliceRow.text()).toContain('24.50 USD')
+    expect(aliceRow.text()).toContain('12K')
     expect(wrapper.text()).toContain('Bob')
 
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')

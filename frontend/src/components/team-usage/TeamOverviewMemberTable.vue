@@ -15,6 +15,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+type DetailView = 'ranking' | 'organization'
+const detailView = ref<DetailView>('ranking')
 
 function formatCost(value: number) {
   return `${value.toFixed(2)} USD`
@@ -64,8 +66,16 @@ function departmentIndentStyle(node: TeamOverviewMemberNode) {
   return { paddingLeft: depth === 0 ? '1rem' : `${depth * 1.25}rem` }
 }
 
+function memberIndentStyle(node: TeamOverviewMemberNode) {
+  return { paddingLeft: `${(departmentDepth(node) + 1) * 1.25}rem` }
+}
+
 function departmentAriaLevel(node: TeamOverviewMemberNode) {
   return String(departmentDepth(node) + 1)
+}
+
+function memberAriaLevel(node: TeamOverviewMemberNode) {
+  return String(departmentDepth(node) + 2)
 }
 
 const treeRoots = computed(() => props.memberTree ?? [])
@@ -106,19 +116,46 @@ function toggleDepartment(node: TeamOverviewMemberNode) {
   }
   expandedDepartmentIds.value = next
 }
+
+function viewButtonClass(view: DetailView) {
+  return [
+    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+    detailView.value === view
+      ? 'bg-gray-900 text-white'
+      : 'text-gray-600 hover:bg-gray-50',
+  ]
+}
 </script>
 
 <template>
   <section class="rounded-lg border border-slate-200 bg-white shadow-sm">
-    <div class="border-b border-slate-200 px-4 py-3">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
       <h2 class="text-base font-semibold text-slate-950">{{ t('teamUsage.memberTable') }}</h2>
+      <div v-if="hasTree" class="inline-flex rounded-lg border border-gray-200 bg-white p-1" aria-label="Member detail view">
+        <button
+          data-testid="team-overview-ranking-view"
+          type="button"
+          :class="viewButtonClass('ranking')"
+          @click="detailView = 'ranking'"
+        >
+          {{ t('teamUsage.rankingView') }}
+        </button>
+        <button
+          data-testid="team-overview-organization-view"
+          type="button"
+          :class="viewButtonClass('organization')"
+          @click="detailView = 'organization'"
+        >
+          {{ t('teamUsage.organizationView') }}
+        </button>
+      </div>
     </div>
 
     <div v-if="props.members.length === 0" class="px-4 py-4 text-sm text-slate-500">
       -
     </div>
 
-    <div v-else-if="hasTree" class="p-4">
+    <div v-else-if="hasTree && detailView === 'organization'" class="p-4">
       <div class="overflow-hidden rounded-md border border-gray-200" role="tree">
         <template v-for="department in treeRoots" :key="department.department_external_id">
           <TeamOverviewDepartmentNode
@@ -136,13 +173,15 @@ function toggleDepartment(node: TeamOverviewMemberNode) {
             :department-member-count-label="departmentMemberCountLabel"
             :connected-member-count-label="connectedMemberCountLabel"
             :department-indent-style="departmentIndentStyle"
+            :member-indent-style="memberIndentStyle"
             :department-aria-level="departmentAriaLevel"
+            :member-aria-level="memberAriaLevel"
           />
         </template>
       </div>
     </div>
 
-    <div v-else class="overflow-x-auto">
+    <div v-else class="overflow-x-auto" data-testid="team-overview-ranking-table">
       <table class="min-w-full divide-y divide-slate-100 text-sm">
         <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
           <tr>

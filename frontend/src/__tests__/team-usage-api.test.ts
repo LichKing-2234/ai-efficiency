@@ -106,6 +106,7 @@ describe('team usage API', () => {
         page: 1,
         page_size: 10,
       },
+      timeout: 45000,
     })
   })
 
