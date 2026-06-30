@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import { useI18n } from '@/i18n'
 import type { TeamOverviewMember, TeamOverviewMemberNode } from '@/types'
 
@@ -53,17 +54,15 @@ function toggleNode() {
   >
     <div class="min-w-0">
       <div class="flex items-center gap-2">
-        <button
+        <DepartmentTreeToggle
           v-if="hasNestedRows()"
           :data-testid="`team-overview-department-toggle-${props.node.department_external_id}`"
-          type="button"
-          class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-300 bg-white text-2xl font-semibold leading-none text-slate-900 shadow-sm transition-colors hover:border-gray-400 hover:bg-gray-50"
-          :aria-label="props.expanded(props.node) ? t('teamUsage.collapseDepartment') : t('teamUsage.expandDepartment')"
+          :expanded="props.expanded(props.node)"
+          :expanded-label="t('teamUsage.collapseDepartment')"
+          :collapsed-label="t('teamUsage.expandDepartment')"
           @click.stop="toggleNode"
-        >
-          {{ props.expanded(props.node) ? '-' : '+' }}
-        </button>
-        <span v-else class="inline-flex h-10 w-10" aria-hidden="true"></span>
+        />
+        <span v-else class="inline-flex h-7 w-7" aria-hidden="true"></span>
         <span class="truncate font-medium text-gray-900">{{ props.node.name }}</span>
       </div>
       <div class="mt-1 truncate text-xs text-gray-500">{{ props.node.display_path }}</div>

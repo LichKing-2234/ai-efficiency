@@ -342,6 +342,11 @@ describe('AdminUsersView', () => {
 		    expect(alpha.text()).toContain('2 total matched')
 		    expect(child.text()).toContain('1 total member')
 		    expect(child.text()).toContain('1 / 2 representatives matched')
+		    const alphaToggle = wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]')
+		    expect(alphaToggle.text()).toBe('-')
+		    expect(alphaToggle.classes()).toContain('h-7')
+		    expect(alphaToggle.classes()).toContain('w-7')
+		    expect(alphaToggle.classes()).toContain('rounded-md')
 		  })
 
 		  it('collapses department descendants and hides raw source paths from labels', async () => {
@@ -363,6 +368,7 @@ describe('AdminUsersView', () => {
 		    await flushPromises()
 
 		    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(false)
+		    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').text()).toBe('+')
 
 		    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('click')
 		    await flushPromises()

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
+import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import {
   getAdminUserSubscriptionJob,
   getLatestAdminUserSubscriptionJob,
@@ -895,17 +896,15 @@ onBeforeUnmount(() => {
 	          >
 	            <div class="min-w-0">
 	              <div class="flex items-center gap-2">
-	                <button
+	                <DepartmentTreeToggle
 	                  v-if="(department.child_count ?? 0) > 0"
 	                  :data-testid="`admin-users-department-toggle-${department.external_id}`"
-	                  type="button"
-	                  class="inline-flex h-5 w-5 items-center justify-center rounded text-xs text-gray-500 hover:bg-gray-100"
-	                  :aria-label="departmentExpanded(department) ? t('adminUsers.collapseDepartment') : t('adminUsers.expandDepartment')"
+	                  :expanded="departmentExpanded(department)"
+	                  :expanded-label="t('adminUsers.collapseDepartment')"
+	                  :collapsed-label="t('adminUsers.expandDepartment')"
 	                  @click.stop="toggleDepartment(department)"
-	                >
-	                  {{ departmentExpanded(department) ? '▾' : '▸' }}
-	                </button>
-	                <span v-else class="inline-flex h-5 w-5" aria-hidden="true"></span>
+	                />
+	                <span v-else class="inline-flex h-7 w-7" aria-hidden="true"></span>
 	                <span class="truncate font-medium text-gray-900">{{ department.name }}</span>
 	              </div>
 	              <div class="mt-1 truncate text-xs text-gray-500">{{ departmentDisplayLabel(department) }}</div>
