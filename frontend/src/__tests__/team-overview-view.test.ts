@@ -585,6 +585,11 @@ describe('TeamOverviewView', () => {
     expect(alpha.text()).toContain('2 connected')
     expect(alpha.text()).toContain('28.00 USD')
     expect(alpha.text()).toContain('12.9K tokens')
+    const alphaToggle = wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]')
+    expect(alphaToggle.text()).toBe('-')
+    expect(alphaToggle.classes()).toContain('h-10')
+    expect(alphaToggle.classes()).toContain('w-10')
+    expect(alphaToggle.classes()).toContain('rounded-xl')
     expect(wrapper.find('[data-testid="team-overview-member-tree-header"]').exists()).toBe(false)
     const child = wrapper.get('[data-testid="team-overview-department-department-alpha-team-one"]')
     expect(child.attributes('aria-level')).toBe('2')
@@ -602,10 +607,42 @@ describe('TeamOverviewView', () => {
     await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha-team-one"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').text()).toBe('+')
 
     await wrapper.get('[data-testid="team-overview-department-department-alpha"]').trigger('keydown', { key: 'Enter' })
     expect(wrapper.find('[data-testid="team-overview-department-department-alpha-team-one"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(true)
+  })
+
+  it('collapses organization departments that only contain direct members', async () => {
+    const directMembersFixture: TeamOverviewResponse = structuredClone(overviewFixture)
+    directMembersFixture.member_tree = [
+      {
+        ...directMembersFixture.member_tree![0],
+        child_count: 0,
+        members: directMembersFixture.members,
+        children: [],
+      },
+    ]
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: directMembersFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    const toggle = wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]')
+    expect(toggle.text()).toBe('-')
+    expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(true)
+
+    await toggle.trigger('click')
+
+    expect(wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').text()).toBe('+')
+    expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(false)
   })
 
   it('marks unconnected members in red with localized status', async () => {

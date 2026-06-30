@@ -85,7 +85,7 @@ const expandedDepartmentIds = ref<Set<string>>(new Set())
 const allExpandableDepartmentIds = computed(() => {
   const ids: string[] = []
   function visit(node: TeamOverviewMemberNode) {
-    if ((node.children?.length ?? 0) > 0) ids.push(node.department_external_id)
+    if ((node.children?.length ?? 0) > 0 || node.members.length > 0) ids.push(node.department_external_id)
     for (const child of node.children ?? []) visit(child)
   }
   for (const root of treeRoots.value) visit(root)
@@ -107,7 +107,7 @@ function departmentExpanded(node: TeamOverviewMemberNode) {
 }
 
 function toggleDepartment(node: TeamOverviewMemberNode) {
-  if ((node.children?.length ?? 0) <= 0) return
+  if ((node.children?.length ?? 0) <= 0 && node.members.length <= 0) return
   const next = new Set(expandedDepartmentIds.value)
   if (next.has(node.department_external_id)) {
     next.delete(node.department_external_id)

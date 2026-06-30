@@ -28,8 +28,12 @@ function hasChildren() {
   return (props.node.children?.length ?? 0) > 0
 }
 
+function hasNestedRows() {
+  return hasChildren() || props.node.members.length > 0
+}
+
 function toggleNode() {
-  if (!hasChildren()) return
+  if (!hasNestedRows()) return
   props.toggle(props.node)
 }
 </script>
@@ -39,7 +43,7 @@ function toggleNode() {
     :data-testid="`team-overview-department-${props.node.department_external_id}`"
     role="treeitem"
     :aria-level="props.departmentAriaLevel(props.node)"
-    :aria-expanded="hasChildren() ? props.expanded(props.node) : undefined"
+    :aria-expanded="hasNestedRows() ? props.expanded(props.node) : undefined"
     :style="props.departmentIndentStyle(props.node)"
     class="flex w-full cursor-pointer flex-col gap-2 border-b border-gray-100 bg-white py-3 pr-4 text-left last:border-b-0 hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between"
     tabindex="0"
@@ -50,16 +54,16 @@ function toggleNode() {
     <div class="min-w-0">
       <div class="flex items-center gap-2">
         <button
-          v-if="hasChildren()"
+          v-if="hasNestedRows()"
           :data-testid="`team-overview-department-toggle-${props.node.department_external_id}`"
           type="button"
-          class="inline-flex h-5 w-5 items-center justify-center rounded text-xs text-gray-500 hover:bg-gray-100"
+          class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-300 bg-white text-2xl font-semibold leading-none text-slate-900 shadow-sm transition-colors hover:border-gray-400 hover:bg-gray-50"
           :aria-label="props.expanded(props.node) ? t('teamUsage.collapseDepartment') : t('teamUsage.expandDepartment')"
           @click.stop="toggleNode"
         >
-          {{ props.expanded(props.node) ? '▾' : '▸' }}
+          {{ props.expanded(props.node) ? '-' : '+' }}
         </button>
-        <span v-else class="inline-flex h-5 w-5" aria-hidden="true"></span>
+        <span v-else class="inline-flex h-10 w-10" aria-hidden="true"></span>
         <span class="truncate font-medium text-gray-900">{{ props.node.name }}</span>
       </div>
       <div class="mt-1 truncate text-xs text-gray-500">{{ props.node.display_path }}</div>
@@ -72,7 +76,7 @@ function toggleNode() {
     </div>
   </div>
 
-  <template v-if="props.expanded(props.node) || !hasChildren()">
+  <template v-if="props.expanded(props.node)">
     <div
       v-for="member in props.node.members"
       :key="props.memberKey(member)"
