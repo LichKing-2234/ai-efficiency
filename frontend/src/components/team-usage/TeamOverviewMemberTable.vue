@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from '@/i18n'
 import TeamOverviewDepartmentNode from '@/components/team-usage/TeamOverviewDepartmentNode.vue'
+import { formatTokenCount } from '@/utils/formatters'
 import type { TeamOverviewMember, TeamOverviewMemberNode } from '@/types'
 
 const props = defineProps<{
@@ -17,11 +18,6 @@ const { t } = useI18n()
 
 function formatCost(value: number) {
   return `${value.toFixed(2)} USD`
-}
-
-function formatTokens(value: number | null | undefined) {
-  if (value == null) return '-'
-  return value.toLocaleString()
 }
 
 function memberKey(member: TeamOverviewMember) {
@@ -47,7 +43,7 @@ function openMember(member: TeamOverviewMember) {
 
 function formatDepartmentTokenSummary(node: TeamOverviewMemberNode) {
   if (node.range_total_tokens == null) return '-'
-  return `${node.range_total_tokens.toLocaleString()} ${t('teamUsage.tokens')}`
+  return `${formatTokenCount(node.range_total_tokens)} ${t('teamUsage.tokens')}`
 }
 
 function departmentMemberCountLabel(count: number) {
@@ -142,7 +138,7 @@ function toggleDepartment(node: TeamOverviewMemberNode) {
             :member-key="memberKey"
             :member-test-id="memberTestID"
             :format-cost="formatCost"
-            :format-tokens="formatTokens"
+            :format-tokens="formatTokenCount"
             :format-department-token-summary="formatDepartmentTokenSummary"
             :department-member-count-label="departmentMemberCountLabel"
             :connected-member-count-label="connectedMemberCountLabel"
@@ -179,7 +175,7 @@ function toggleDepartment(node: TeamOverviewMemberNode) {
               {{ formatCost(member.range_actual_cost) }}
             </td>
             <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">
-              {{ formatTokens(member.total_tokens) }}
+              {{ formatTokenCount(member.total_tokens) }}
             </td>
             <td class="whitespace-nowrap px-4 py-2 text-right">
               <span

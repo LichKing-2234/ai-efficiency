@@ -517,13 +517,43 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Token usage in range')
-    expect(wrapper.text()).toContain('12,900')
+    expect(wrapper.text()).toContain('12.9K')
     const aliceRow = wrapper.get('[data-testid="team-overview-member-user-101"]')
-    expect(aliceRow.text()).toContain('12,000')
+    expect(aliceRow.text()).toContain('12K')
     const bobRow = wrapper.get('[data-testid="team-overview-member-directory-member-bob"]')
     expect(bobRow.text()).toContain('900')
     const carolRow = wrapper.get('[data-testid="team-overview-member-directory-member-carol"]')
     expect(carolRow.text()).toContain('-')
+  })
+
+  it('abbreviates large token totals in summary trend legend and member details', async () => {
+    const largeTokenFixture: TeamOverviewResponse = structuredClone(overviewFixture)
+    largeTokenFixture.summary.range_total_tokens = 12_285_557_755
+    largeTokenFixture.top_member_trend.series[0].points = [
+      { date: '2026-06-27', actual_cost: 0.75, total_tokens: 3_000_000_000 },
+      { date: '2026-06-28', actual_cost: 1.25, total_tokens: 3_052_813_773 },
+    ]
+    largeTokenFixture.members[0].total_tokens = 805_033_680
+    largeTokenFixture.member_tree![0].range_total_tokens = 12_285_557_755
+    largeTokenFixture.member_tree![0].members[0].total_tokens = 805_033_680
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: largeTokenFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('12.29B')
+    expect(wrapper.text()).toContain('6.05B tokens')
+    const alpha = wrapper.get('[data-testid="team-overview-department-department-alpha"]')
+    expect(alpha.text()).toContain('12.29B tokens')
+    const aliceRow = wrapper.get('[data-testid="team-overview-member-user-101"]')
+    expect(aliceRow.text()).toContain('805.03M')
+    expect(wrapper.text()).not.toContain('12,285,557,755')
+    expect(wrapper.text()).not.toContain('805,033,680')
   })
 
   it('renders member details as an expandable organization tree', async () => {
@@ -544,7 +574,7 @@ describe('TeamOverviewView', () => {
     expect(alpha.text()).toContain('3 members')
     expect(alpha.text()).toContain('2 connected')
     expect(alpha.text()).toContain('28.00 USD')
-    expect(alpha.text()).toContain('12,900 tokens')
+    expect(alpha.text()).toContain('12.9K tokens')
     expect(wrapper.get('[data-testid="team-overview-department-department-alpha-team-one"]').attributes('aria-level')).toBe('2')
     expect(wrapper.text()).toContain('Team One')
     expect(wrapper.text()).toContain('Alice')

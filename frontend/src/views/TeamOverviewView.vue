@@ -7,6 +7,7 @@ import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberT
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
 import { getTeamUsageOverview } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
+import { formatTokenCount } from '@/utils/formatters'
 import type { TeamOverviewResponse, TeamUsageOverviewParams } from '@/types'
 
 const { t } = useI18n()
@@ -95,11 +96,6 @@ function formatSummaryCost(value: number | null | undefined, unitLabel: string) 
   return `${value.toFixed(2)} ${unitLabel}`
 }
 
-function formatSummaryTokens(value: number | null | undefined) {
-  if (value == null) return '-'
-  return value.toLocaleString()
-}
-
 function openMember(userID: number) {
   void router.push({ name: 'UsageMember', params: { user_id: String(userID) } })
 }
@@ -179,7 +175,7 @@ onMounted(loadOverview)
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.rangeTotalTokens') }}</div>
               <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">
-                {{ formatSummaryTokens(overview.summary.range_total_tokens) }}
+                {{ formatTokenCount(overview.summary.range_total_tokens) }}
               </div>
             </div>
           </section>

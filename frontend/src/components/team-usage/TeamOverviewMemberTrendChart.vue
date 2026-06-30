@@ -11,6 +11,7 @@ import {
 } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import { useI18n } from '@/i18n'
+import { formatTokenCount } from '@/utils/formatters'
 import type { TeamMemberTrendState, TeamOverviewWindow } from '@/types'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
@@ -122,11 +123,6 @@ function formatCost(value: number) {
   return value.toFixed(2)
 }
 
-function formatTokens(value: number | null | undefined) {
-  if (value == null) return '-'
-  return value.toLocaleString()
-}
-
 function reasonLabel(reason: string | null | undefined) {
   if (reason === 'scope_too_large') return t('teamUsage.scopeTooLarge')
   return t('teamUsage.unavailable')
@@ -199,7 +195,7 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
             </div>
             <div v-else class="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
               <span>{{ formatCost(seriesTotalCost(series)) }} {{ props.state.unit_label }}</span>
-              <span>{{ formatTokens(seriesTotalTokens(series)) }} {{ t('teamUsage.tokens') }}</span>
+              <span>{{ formatTokenCount(seriesTotalTokens(series)) }} {{ t('teamUsage.tokens') }}</span>
             </div>
           </div>
         </div>

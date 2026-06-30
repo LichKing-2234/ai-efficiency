@@ -4,6 +4,7 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
 import type { UserUsageModelStat } from '@/types'
 import { useI18n } from '@/i18n'
+import { formatTokenCount } from '@/utils/formatters'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -26,11 +27,6 @@ const chartData = computed(() => ({
 
 const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
 
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
-  return n.toLocaleString()
-}
 </script>
 
 <template>
@@ -63,7 +59,7 @@ function formatTokens(n: number): string {
                 {{ model.model }}
               </td>
               <td class="py-2 text-right text-gray-600">{{ model.requests.toLocaleString() }}</td>
-              <td class="py-2 text-right text-gray-600">{{ formatTokens(model.total_tokens) }}</td>
+              <td class="py-2 text-right text-gray-600">{{ formatTokenCount(model.total_tokens) }}</td>
               <td v-if="!props.hideCost" class="py-2 text-right text-green-600">${{ model.actual_cost.toFixed(4) }}</td>
               <td v-if="!props.hideCost" class="py-2 text-right text-gray-500">${{ model.cost.toFixed(4) }}</td>
             </tr>
