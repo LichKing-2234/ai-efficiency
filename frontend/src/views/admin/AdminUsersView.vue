@@ -902,7 +902,7 @@ onBeforeUnmount(() => {
 	                  :expanded="departmentExpanded(department)"
 	                  :expanded-label="t('adminUsers.collapseDepartment')"
 	                  :collapsed-label="t('adminUsers.expandDepartment')"
-	                  @click.stop="toggleDepartment(department)"
+	                  @toggle="toggleDepartment(department)"
 	                />
 	                <span v-else class="inline-flex h-7 w-7" aria-hidden="true"></span>
 	                <span class="truncate font-medium text-gray-900">{{ department.name }}</span>

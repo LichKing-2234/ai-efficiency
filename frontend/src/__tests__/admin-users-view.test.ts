@@ -376,6 +376,36 @@ describe('AdminUsersView', () => {
 		    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(true)
 		  })
 
+		  it('keeps keyboard activation on the department toggle scoped to expansion', async () => {
+		    const { wrapper, router, listAdminUsers } = await mountAdminUsersView()
+
+		    await wrapper.get('[data-testid="admin-users-view-departments"]').trigger('click')
+		    await flushPromises()
+
+		    const alphaToggle = wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]')
+		    expect(alphaToggle.attributes('aria-label')).toBe('Collapse department')
+		    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(true)
+
+		    await alphaToggle.trigger('keydown', { key: 'Enter' })
+		    await flushPromises()
+
+		    expect(router.currentRoute.value.query.department_id).toBeUndefined()
+		    expect((listAdminUsers as any).mock.calls.at(-1)[0]).toEqual({
+		      q: '',
+		      page: 1,
+		      page_size: 20,
+		    })
+		    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(false)
+		    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').attributes('aria-label')).toBe('Expand department')
+
+		    await wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').trigger('keydown', { key: ' ' })
+		    await flushPromises()
+
+		    expect(router.currentRoute.value.query.department_id).toBeUndefined()
+		    expect(wrapper.find('[data-testid="admin-users-department-open-dept-alpha-team-one"]').exists()).toBe(true)
+		    expect(wrapper.get('[data-testid="admin-users-department-toggle-dept-alpha"]').attributes('aria-label')).toBe('Collapse department')
+		  })
+
 	  it('renders the primary admin users workflow in Chinese', async () => {
     setLocale('zh-CN')
 

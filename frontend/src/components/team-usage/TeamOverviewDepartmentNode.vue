@@ -60,7 +60,7 @@ function toggleNode() {
           :expanded="props.expanded(props.node)"
           :expanded-label="t('teamUsage.collapseDepartment')"
           :collapsed-label="t('teamUsage.expandDepartment')"
-          @click.stop="toggleNode"
+          @toggle="toggleNode"
         />
         <span v-else class="inline-flex h-7 w-7" aria-hidden="true"></span>
         <span class="truncate font-medium text-gray-900">{{ props.node.name }}</span>
