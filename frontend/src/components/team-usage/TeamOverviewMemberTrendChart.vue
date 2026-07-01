@@ -59,8 +59,12 @@ const subteamTrendSeries = computed(() => {
   return departmentTrendSeries.value.filter((series) => series.series_type !== 'team_total')
 })
 
-const chartableDepartmentSeries = computed(() => {
-  return departmentTrendSeries.value.filter((series) => !series.unavailable && series.points.length > 0)
+const chartableTeamTotalSeries = computed(() => {
+  return teamTotalTrendSeries.value.filter((series) => !series.unavailable && series.points.length > 0)
+})
+
+const chartableSubteamSeries = computed(() => {
+  return subteamTrendSeries.value.filter((series) => !series.unavailable && series.points.length > 0)
 })
 
 const chartableMemberSeries = computed(() => {
@@ -69,21 +73,6 @@ const chartableMemberSeries = computed(() => {
 
 const hasAnyTrendSeries = computed(() => {
   return departmentTrendSeries.value.length > 0 || props.state.series.length > 0
-})
-
-const chartLabels = computed(() => {
-  const labels = new Set<string>()
-  for (const series of chartableDepartmentSeries.value) {
-    for (const point of series.points) {
-      labels.add(point.date)
-    }
-  }
-  for (const series of chartableMemberSeries.value) {
-    for (const point of series.points) {
-      labels.add(point.date)
-    }
-  }
-  return [...labels].sort()
 })
 
 const timeDimensionLabel = computed(() => {
@@ -105,36 +94,25 @@ const chartMetaItems = computed(() => {
   return items
 })
 
-const chartData = computed(() => ({
-  labels: chartLabels.value,
-  datasets: [
-    ...chartableDepartmentSeries.value.map((series, index) => {
-      const pointsByDate = new Map(series.points.map((point) => [point.date, point.total_tokens ?? null]))
-      const color = departmentSeriesColor(series, index)
-      return {
-        label: departmentSeriesLabel(series),
-        data: chartLabels.value.map((date) => pointsByDate.get(date) ?? null),
-        borderColor: color,
-        backgroundColor: `${color}22`,
-        borderWidth: series.series_type === 'team_total' ? 3 : 2,
-        tension: 0.25,
-        spanGaps: true,
-      }
-    }),
-    ...chartableMemberSeries.value.map((series, index) => {
-      const pointsByDate = new Map(series.points.map((point) => [point.date, point.total_tokens ?? null]))
-      const color = seriesColors[index % seriesColors.length]
-      return {
-        label: `#${series.rank} ${series.display_name}`,
-        data: chartLabels.value.map((date) => pointsByDate.get(date) ?? null),
-        borderColor: color,
-        backgroundColor: `${color}22`,
-        tension: 0.25,
-        spanGaps: true,
-      }
-    }),
-  ],
-}))
+type TrendChartPoint = { date: string; total_tokens?: number | null }
+type TrendChartSeries = {
+  label: string
+  points: TrendChartPoint[]
+  color: string
+  borderWidth?: number
+}
+
+const teamTotalChartData = computed(() => buildTrendChartData(
+  chartableTeamTotalSeries.value.map((series, index) => departmentChartSeries(series, index)),
+))
+
+const comparisonChartData = computed(() => buildTrendChartData(
+  chartableSubteamSeries.value.map((series, index) => departmentChartSeries(series, index)),
+))
+
+const memberChartData = computed(() => buildTrendChartData(
+  chartableMemberSeries.value.map((series, index) => memberChartSeries(series, index)),
+))
 
 const chartOptions = computed(() => ({
   responsive: true,
@@ -169,6 +147,53 @@ const chartOptions = computed(() => ({
     },
   },
 }))
+
+function buildTrendChartData(seriesItems: TrendChartSeries[]) {
+  const labels = trendChartLabels(seriesItems)
+  return {
+    labels,
+    datasets: seriesItems.map((series) => {
+      const pointsByDate = new Map(series.points.map((point) => [point.date, point.total_tokens ?? null]))
+      return {
+        label: series.label,
+        data: labels.map((date) => pointsByDate.get(date) ?? null),
+        borderColor: series.color,
+        backgroundColor: `${series.color}22`,
+        borderWidth: series.borderWidth,
+        tension: 0.25,
+        spanGaps: true,
+      }
+    }),
+  }
+}
+
+function trendChartLabels(seriesItems: TrendChartSeries[]) {
+  const labels = new Set<string>()
+  for (const series of seriesItems) {
+    for (const point of series.points) {
+      labels.add(point.date)
+    }
+  }
+  return [...labels].sort()
+}
+
+function departmentChartSeries(series: TeamDepartmentTrendState['series'][number], index: number): TrendChartSeries {
+  return {
+    label: departmentSeriesLabel(series),
+    points: series.points,
+    color: departmentSeriesColor(series, index),
+    borderWidth: series.series_type === 'team_total' ? 3 : 2,
+  }
+}
+
+function memberChartSeries(series: TeamMemberTrendState['series'][number], index: number): TrendChartSeries {
+  const color = seriesColors[index % seriesColors.length]
+  return {
+    label: `#${series.rank} ${series.display_name}`,
+    points: series.points,
+    color,
+  }
+}
 
 function formatCost(value: number) {
   return value.toFixed(2)
@@ -247,19 +272,23 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
       -
     </div>
 
-    <div v-else class="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-      <div v-if="chartLabels.length === 0" class="flex h-72 items-center justify-center text-sm text-slate-500">
-        -
-      </div>
-      <div v-else class="h-72 min-w-0">
-        <Line :data="chartData" :options="chartOptions" />
-      </div>
-
-      <div class="min-w-0 divide-y divide-slate-100 rounded-md border border-slate-200">
-        <div v-if="teamTotalTrendSeries.length > 0" class="divide-y divide-slate-100">
-          <div class="bg-slate-50 px-3 py-2 text-xs font-semibold uppercase text-slate-500">
-            {{ t('teamUsage.teamTotalTrend') }}
+    <div v-else class="space-y-5 p-4">
+      <div
+        v-if="teamTotalTrendSeries.length > 0"
+        data-testid="team-total-trend-chart"
+        class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]"
+      >
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.teamTotalTrend') }}</h3>
+          <div v-if="teamTotalChartData.labels.length === 0" class="mt-2 flex h-52 items-center justify-center text-sm text-slate-500">
+            -
           </div>
+          <div v-else class="mt-2 h-52 min-w-0">
+            <Line :data="teamTotalChartData" :options="chartOptions" />
+          </div>
+        </div>
+
+        <div class="min-w-0 divide-y divide-slate-100 rounded-md border border-slate-200">
           <div
             v-for="(series, index) in teamTotalTrendSeries"
             :key="departmentSeriesKey(series, index)"
@@ -283,11 +312,24 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
             </div>
           </div>
         </div>
+      </div>
 
-        <div v-if="subteamTrendSeries.length > 0" class="divide-y divide-slate-100">
-          <div class="bg-slate-50 px-3 py-2 text-xs font-semibold uppercase text-slate-500">
-            {{ t('teamUsage.subteamTrends') }}
+      <div
+        v-if="subteamTrendSeries.length > 0"
+        data-testid="team-comparison-trend-chart"
+        class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]"
+      >
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.subteamTrends') }}</h3>
+          <div v-if="comparisonChartData.labels.length === 0" class="mt-2 flex h-64 items-center justify-center text-sm text-slate-500">
+            -
           </div>
+          <div v-else class="mt-2 h-64 min-w-0">
+            <Line :data="comparisonChartData" :options="chartOptions" />
+          </div>
+        </div>
+
+        <div class="min-w-0 divide-y divide-slate-100 rounded-md border border-slate-200">
           <div
             v-for="(series, index) in subteamTrendSeries"
             :key="departmentSeriesKey(series, index)"
@@ -311,11 +353,24 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
             </div>
           </div>
         </div>
+      </div>
 
-        <div v-if="props.state.series.length > 0" class="divide-y divide-slate-100">
-          <div class="bg-slate-50 px-3 py-2 text-xs font-semibold uppercase text-slate-500">
-            {{ t('teamUsage.topMembersLegend') }}
+      <div
+        v-if="props.state.series.length > 0"
+        data-testid="top-member-trend-chart"
+        class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]"
+      >
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold text-slate-900">{{ t('teamUsage.topMembersLegend') }}</h3>
+          <div v-if="memberChartData.labels.length === 0" class="mt-2 flex h-64 items-center justify-center text-sm text-slate-500">
+            -
           </div>
+          <div v-else class="mt-2 h-64 min-w-0">
+            <Line :data="memberChartData" :options="chartOptions" />
+          </div>
+        </div>
+
+        <div class="min-w-0 divide-y divide-slate-100 rounded-md border border-slate-200">
           <div
             v-for="(series, index) in props.state.series"
             :key="seriesKey(series)"

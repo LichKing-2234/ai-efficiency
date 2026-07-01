@@ -749,8 +749,8 @@ Top-12 trend rules:
 Department trend rules:
 
 1. `department_trend` is computed from the same complete scoped selected-window trend scan as `top_member_trend`; AE must not call an unscoped relay trend endpoint or aggregate users outside the representative scope.
-2. `department_trend.series[0]` uses `series_type="team_total"` and aggregates all relay-resolved scoped members for the selected range. This is the team-wide Token usage trend shown together with the Top 12 chart, but the frontend must render it as its own legend group instead of mixing it into subteam comparisons.
-3. Additional `series_type="department"` rows aggregate each direct child department under the represented root. If a member belongs directly to the represented root, the root can be used as that member's bucket. For upper-level representatives with multiple represented groups, these rows are the visible subteam trend comparison lines.
+2. `department_trend.series[0]` uses `series_type="team_total"` and aggregates all relay-resolved scoped members for the selected range. This is the team-wide Token usage trend. The frontend must render it as an independent chart area and must not mix it into group-comparison or Top 12 member chart datasets.
+3. Additional `series_type="department"` rows are the group-comparison trend lines. If the representative has multiple largest non-overlapping represented root departments, these rows aggregate those root departments so the chart compares the first-level groups. If the representative has exactly one represented root department with child departments, these rows aggregate the direct child departments under that root so the chart compares second-level groups; members directly under the represented root may use the root as their bucket. If the representative has exactly one represented root department and no child department comparison exists, AE returns only the independent `team_total` series and omits department comparison rows.
 4. Department trend points use `total_tokens` as the primary chart value and keep `actual_cost` only as auxiliary legend/detail data.
 5. If the full selected-window scan is unavailable or the scope is too large, `department_trend.unavailable` follows the same reason as `top_member_trend`.
 
@@ -1098,7 +1098,7 @@ Suggested components:
 3. `TeamOverviewPage.vue`
    - Owns independent team summary, top-12 member trend chart, and member usage table.
 4. `TeamOverviewMemberTrendChart.vue`
-   - Renders team total, direct subteam, and top-12 member trend series in rank order and handles empty or partially unavailable series.
+   - Renders team total, group-comparison, and top-12 member trend series as separate chart areas and handles empty or partially unavailable series.
 5. `TeamOverviewMemberTable.vue`
    - Owns sorting, pagination, and open-member action.
 6. `SelectedSubjectSubscriptionRows.vue`

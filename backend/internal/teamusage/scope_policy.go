@@ -391,6 +391,9 @@ func overviewDepartmentTrendBucket(departmentID string, nodeByID map[string]*ove
 		if _, ok := rootSet[departmentID]; !ok {
 			continue
 		}
+		if len(rootSet) > 1 {
+			return departmentID
+		}
 		if i > 0 {
 			return path[i-1]
 		}
@@ -400,6 +403,9 @@ func overviewDepartmentTrendBucket(departmentID string, nodeByID map[string]*ove
 }
 
 func shouldSkipSingleRootDepartmentSeries(departmentID string, rootSet map[string]struct{}, bucketTotals map[string]*trendAccumulator) bool {
+	if len(rootSet) != 1 {
+		return false
+	}
 	if len(bucketTotals) != 1 {
 		return false
 	}

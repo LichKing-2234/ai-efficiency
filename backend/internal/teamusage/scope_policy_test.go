@@ -81,6 +81,92 @@ func TestMergeResolvedOverviewSubjectsKeepsUnresolvedScopedMembers(t *testing.T)
 	}
 }
 
+func TestBuildOverviewDepartmentTrendComparesMultipleRepresentedRoots(t *testing.T) {
+	alphaTokens := int64(100)
+	betaTokens := int64(300)
+	departments := []representativescope.DepartmentScope{
+		{ExternalID: "department-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha", ChildCount: 1},
+		{ExternalID: "department-alpha-team-one", ParentExternalID: stringPtr("department-alpha"), Name: "Team One", DisplayPath: "Department Alpha / Team One", Depth: 1},
+		{ExternalID: "department-beta", Name: "Department Beta", DisplayPath: "Department Beta", ChildCount: 1},
+		{ExternalID: "department-beta-team-one", ParentExternalID: stringPtr("department-beta"), Name: "Team One", DisplayPath: "Department Beta / Team One", Depth: 1},
+	}
+	subjects := []representativescope.Subject{
+		{SubjectType: "member", UserID: 1, DepartmentExternalID: "department-alpha-team-one", RelayUserID: intPtr(1001)},
+		{SubjectType: "member", UserID: 2, DepartmentExternalID: "department-beta-team-one", RelayUserID: intPtr(1002)},
+	}
+	pointsByUser := map[int64][]relay.UsageTrendPoint{
+		1001: {{Date: "2026-06-28", ActualCost: 1, TotalTokens: &alphaTokens}},
+		1002: {{Date: "2026-06-28", ActualCost: 3, TotalTokens: &betaTokens}},
+	}
+
+	trend := BuildOverviewDepartmentTrend(departments, []string{"department-alpha", "department-beta"}, subjects, pointsByUser)
+
+	if got := len(trend.Series); got != 3 {
+		t.Fatalf("department trend series = %d, want team total plus two root groups: %#v", got, trend.Series)
+	}
+	if trend.Series[0].SeriesType != "team_total" {
+		t.Fatalf("first series = %#v, want team_total", trend.Series[0])
+	}
+	if got := []string{trend.Series[1].DepartmentExternalID, trend.Series[2].DepartmentExternalID}; !reflect.DeepEqual(got, []string{"department-beta", "department-alpha"}) {
+		t.Fatalf("department series ids = %#v, want represented roots sorted by tokens", got)
+	}
+	if got := []string{trend.Series[1].DisplayName, trend.Series[2].DisplayName}; !reflect.DeepEqual(got, []string{"Department Beta", "Department Alpha"}) {
+		t.Fatalf("department series names = %#v, want root department names", got)
+	}
+}
+
+func TestBuildOverviewDepartmentTrendComparesSecondLevelForSingleRepresentedRoot(t *testing.T) {
+	teamOneTokens := int64(100)
+	teamTwoTokens := int64(300)
+	departments := []representativescope.DepartmentScope{
+		{ExternalID: "department-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha", ChildCount: 2},
+		{ExternalID: "department-alpha-team-one", ParentExternalID: stringPtr("department-alpha"), Name: "Team One", DisplayPath: "Department Alpha / Team One", Depth: 1},
+		{ExternalID: "department-alpha-team-two", ParentExternalID: stringPtr("department-alpha"), Name: "Team Two", DisplayPath: "Department Alpha / Team Two", Depth: 1},
+	}
+	subjects := []representativescope.Subject{
+		{SubjectType: "member", UserID: 1, DepartmentExternalID: "department-alpha-team-one", RelayUserID: intPtr(1001)},
+		{SubjectType: "member", UserID: 2, DepartmentExternalID: "department-alpha-team-two", RelayUserID: intPtr(1002)},
+	}
+	pointsByUser := map[int64][]relay.UsageTrendPoint{
+		1001: {{Date: "2026-06-28", ActualCost: 1, TotalTokens: &teamOneTokens}},
+		1002: {{Date: "2026-06-28", ActualCost: 3, TotalTokens: &teamTwoTokens}},
+	}
+
+	trend := BuildOverviewDepartmentTrend(departments, []string{"department-alpha"}, subjects, pointsByUser)
+
+	if got := len(trend.Series); got != 3 {
+		t.Fatalf("department trend series = %d, want team total plus two second-level groups: %#v", got, trend.Series)
+	}
+	if got := []string{trend.Series[1].DepartmentExternalID, trend.Series[2].DepartmentExternalID}; !reflect.DeepEqual(got, []string{"department-alpha-team-two", "department-alpha-team-one"}) {
+		t.Fatalf("department series ids = %#v, want child teams sorted by tokens", got)
+	}
+}
+
+func TestBuildOverviewDepartmentTrendKeepsSingleLeafRootIndependent(t *testing.T) {
+	aliceTokens := int64(100)
+	bobTokens := int64(300)
+	departments := []representativescope.DepartmentScope{
+		{ExternalID: "department-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha"},
+	}
+	subjects := []representativescope.Subject{
+		{SubjectType: "member", UserID: 1, DepartmentExternalID: "department-alpha", RelayUserID: intPtr(1001)},
+		{SubjectType: "member", UserID: 2, DepartmentExternalID: "department-alpha", RelayUserID: intPtr(1002)},
+	}
+	pointsByUser := map[int64][]relay.UsageTrendPoint{
+		1001: {{Date: "2026-06-28", ActualCost: 1, TotalTokens: &aliceTokens}},
+		1002: {{Date: "2026-06-28", ActualCost: 3, TotalTokens: &bobTokens}},
+	}
+
+	trend := BuildOverviewDepartmentTrend(departments, []string{"department-alpha"}, subjects, pointsByUser)
+
+	if got := len(trend.Series); got != 1 {
+		t.Fatalf("department trend series = %d, want only independent team total: %#v", got, trend.Series)
+	}
+	if trend.Series[0].SeriesType != "team_total" || trend.Series[0].Points[0].TotalTokens == nil || *trend.Series[0].Points[0].TotalTokens != 400 {
+		t.Fatalf("team total series = %#v, want independent total tokens 400", trend.Series[0])
+	}
+}
+
 func TestBuildOverviewMemberTreeKeepsEmptyMemberSlicesNonNil(t *testing.T) {
 	departments := []representativescope.DepartmentScope{
 		{ExternalID: "dept-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha", ChildCount: 1},
