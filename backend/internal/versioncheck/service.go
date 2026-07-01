@@ -20,6 +20,7 @@ type Status struct {
 	Version         buildinfo.VersionInfo `json:"version"`
 	CheckEnabled    bool                  `json:"check_enabled"`
 	Checked         bool                  `json:"checked,omitempty"`
+	CheckError      string                `json:"check_error,omitempty"`
 	UpdateAvailable bool                  `json:"update_available"`
 	LatestRelease   *ReleaseInfo          `json:"latest_release,omitempty"`
 }
@@ -66,20 +67,20 @@ func (s *Service) CheckForUpdate(ctx context.Context) (Status, error) {
 
 	status.Checked = true
 	status.LatestRelease = &latest
-	status.UpdateAvailable = isNewerRelease(latest.Version, s.version.Version)
+	status.UpdateAvailable, status.CheckError = compareVersions(latest.Version, s.version.Version)
 	return status, nil
 }
 
-func isNewerRelease(latestVersion, currentVersion string) bool {
+func compareVersions(latestVersion, currentVersion string) (bool, string) {
 	latest, ok := normalizeSemver(latestVersion)
 	if !ok {
-		return false
+		return false, "latest release version is not semver"
 	}
 	current, ok := normalizeSemver(currentVersion)
 	if !ok {
-		return false
+		return false, "current version is not semver"
 	}
-	return semver.Compare(latest, current) > 0
+	return semver.Compare(latest, current) > 0, ""
 }
 
 func normalizeSemver(version string) (string, bool) {

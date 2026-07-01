@@ -24,6 +24,8 @@ services:
       AE_AUTH_LDAP_TLS: "${AE_AUTH_LDAP_TLS:-false}"
       AE_ENCRYPTION_KEY: "${AE_ENCRYPTION_KEY}"
       AE_STATE_DIR: "${AE_STATE_DIR:-/var/lib/ai-efficiency}"
+      AE_VERSION_CHECK_ENABLED: "${AE_VERSION_CHECK_ENABLED:-true}"
+      AE_VERSION_CHECK_RELEASE_API_URL: "${AE_VERSION_CHECK_RELEASE_API_URL:-https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest}"
     ports:
       - "${AE_SERVER_PORT:-8081}:8081"
     volumes:

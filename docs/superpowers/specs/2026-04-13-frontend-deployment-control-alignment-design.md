@@ -14,7 +14,7 @@
 - `frontend/src/views/SettingsView.vue` 会展示当前 backend build version / commit / build time，并允许管理员手动触发 latest release check。
 - `frontend/src/api/deployment.ts` 已移除；前端不再封装或调用 `/settings/deployment*` 更新接口。
 - `frontend/src/api/system.ts` 只封装 `/api/v1/system/version` 与 `/api/v1/system/version/check`，用于只读版本展示和更新可用性检查。
-- `GET /api/v1/system/version` 返回当前版本和 `check_enabled`；`POST /api/v1/system/version/check` 只在 backend latest-release check 可用时返回 `checked/latest_release/update_available`，未配置检查源时返回 409 而不是伪装成“已是最新”。GitHub release 查询会跳过只有 `ae-cli_*` asset、没有 `ai-efficiency-backend_*` asset 的 CLI-only release。
+- `GET /api/v1/system/version` 返回当前版本和 `check_enabled`；`POST /api/v1/system/version/check` 只在 backend latest-release check 可用时返回 `checked/latest_release/update_available`，未配置检查源时返回 409 而不是伪装成“已是最新”。如果当前版本或 release tag 不是可比较的 semver，响应会带 `check_error`，前端展示该错误而不是显示 `Already current`。GitHub release 查询会跳过只有 `ae-cli_*` asset、没有 `ai-efficiency-backend_*` asset 的 CLI-only release。
 - 服务重启后的 `/health` 恢复探测已随前端 deployment 控制入口一起移除。
 - router 层仍保留动态 chunk 加载失败后的一次性 reload 保护，但该逻辑现在归属于通用前端 bundle 恢复，不再命名为 deployment recovery。
 - backend deployment/status/update API 与运行时自更新能力也已退役；`backend/internal/versioncheck` 只做当前版本返回和 GitHub latest release 查询，不下载、不替换 binary、不 rollback、不 restart。部署脚本仍作为外部运维入口保留，升级由操作员在应用进程外完成。

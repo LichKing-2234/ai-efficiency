@@ -161,6 +161,7 @@ export interface SystemVersionStatus {
   version: BuildVersion
   check_enabled: boolean
   checked?: boolean
+  check_error?: string
   update_available: boolean
   latest_release?: ReleaseInfo
 }

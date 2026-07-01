@@ -237,6 +237,36 @@ describe('SettingsView', () => {
     expect(checkSystemUpdate).not.toHaveBeenCalled()
   })
 
+  it('shows check errors instead of already current for non-comparable versions', async () => {
+    const { checkSystemUpdate } = await import('@/api/system')
+    ;(checkSystemUpdate as any).mockResolvedValue({
+      data: {
+        data: {
+          version: { version: 'dev', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+          check_enabled: true,
+          checked: true,
+          check_error: 'current version is not semver',
+          update_available: false,
+          latest_release: { version: 'v0.5.0', url: 'https://example.com/releases/v0.5.0' },
+        },
+      },
+    })
+    const wrapper = await mountSettings({
+      systemVersion: {
+        version: { version: 'dev', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        check_enabled: true,
+        update_available: false,
+      },
+    })
+
+    const checkBtn = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
+    await checkBtn!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('current version is not semver')
+    expect(wrapper.text()).not.toContain('Already current')
+  })
+
   it('creates a secret text credential', async () => {
     const { createCredential } = await import('@/api/credential')
     const wrapper = await mountSettings()

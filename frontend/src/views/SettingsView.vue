@@ -475,6 +475,9 @@ async function handleCheckSystemUpdate() {
     systemVersionMessageKind.value = 'success'
     if (systemVersion.value?.update_available) {
       systemVersionMessage.value = 'Update available'
+    } else if (systemVersion.value?.check_error) {
+      systemVersionMessageKind.value = 'error'
+      systemVersionMessage.value = systemVersion.value.check_error
     } else if (systemVersion.value?.checked) {
       systemVersionMessage.value = 'Already current'
     } else if (systemVersion.value?.check_enabled === false) {

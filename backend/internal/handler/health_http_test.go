@@ -134,6 +134,34 @@ func TestSystemVersionCheckRouteReturnsLatestRelease(t *testing.T) {
 	}
 }
 
+func TestSystemVersionCheckRouteReportsUncomparableCurrentVersion(t *testing.T) {
+	env := setupFullTestEnvWithHealth(t, NewHealthHandler(
+		health.NewService(nil, nil, nil, buildinfo.VersionInfo{Version: "dev"}),
+		versioncheck.NewService(buildinfo.VersionInfo{Version: "dev"}, versioncheck.ReleaseSourceFunc(func(context.Context) (versioncheck.ReleaseInfo, error) {
+			return versioncheck.ReleaseInfo{Version: "v0.5.0", URL: "https://example.com/releases/v0.5.0"}, nil
+		})),
+	))
+
+	w := doFullRequest(env, http.MethodPost, "/api/v1/system/version/check", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := parseFullResponse(t, w)
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data object, got %T", resp["data"])
+	}
+	if got, _ := data["checked"].(bool); !got {
+		t.Fatalf("checked = %v, want true", data["checked"])
+	}
+	if got, _ := data["update_available"].(bool); got {
+		t.Fatalf("update_available = true, want false")
+	}
+	if got, _ := data["check_error"].(string); got != "current version is not semver" {
+		t.Fatalf("check_error = %q, want current version is not semver", got)
+	}
+}
+
 func TestSystemVersionCheckRouteReturnsConflictWhenDisabled(t *testing.T) {
 	env := setupFullTestEnvWithHealth(t, NewHealthHandler(
 		health.NewService(nil, nil, nil, buildinfo.VersionInfo{Version: "v0.4.0"}),

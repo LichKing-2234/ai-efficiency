@@ -106,3 +106,27 @@ func TestServiceCheckForUpdateDoesNotReportOlderLatestAsAvailable(t *testing.T) 
 		t.Fatalf("update_available = true, want false when latest release is older than current")
 	}
 }
+
+func TestServiceCheckForUpdateReportsCheckErrorForNonSemverCurrentVersion(t *testing.T) {
+	svc := NewService(buildinfo.VersionInfo{Version: "dev"}, releaseSourceStub{
+		info: ReleaseInfo{Version: "v0.5.0", URL: "https://example.com/releases/v0.5.0"},
+	})
+
+	status, err := svc.CheckForUpdate(context.Background())
+	if err != nil {
+		t.Fatalf("CheckForUpdate returned error: %v", err)
+	}
+
+	if !status.Checked {
+		t.Fatalf("checked = false, want true after latest-release check")
+	}
+	if status.UpdateAvailable {
+		t.Fatalf("update_available = true, want false when current version is not semver")
+	}
+	if status.CheckError != "current version is not semver" {
+		t.Fatalf("check_error = %q, want current version is not semver", status.CheckError)
+	}
+	if status.LatestRelease == nil || status.LatestRelease.Version != "v0.5.0" {
+		t.Fatalf("latest release = %+v, want v0.5.0", status.LatestRelease)
+	}
+}
