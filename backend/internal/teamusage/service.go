@@ -206,6 +206,10 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		RankBasis: topMemberRankBasisTokens,
 		Series:    []TopMemberTrendSeries{},
 	}
+	departmentTrendState := DepartmentTrendState{
+		UnitLabel: teamOverviewCostUnitLabel,
+		Series:    []DepartmentTrendSeries{},
+	}
 	pointsByUser := map[int64][]relay.UsageTrendPoint{}
 	var trendUnavailableReason *string
 	if len(relayUserIDs) > 0 {
@@ -239,6 +243,12 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 	windowTotals := buildOverviewWindowTotals(pointsByUser)
 	members := BuildOverviewMemberDetails(subjects, statsByRelayUserID, windowTotals)
 	memberTree := BuildOverviewMemberTree(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, members)
+	if trendUnavailableReason == nil {
+		departmentTrendState = BuildOverviewDepartmentTrend(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, subjects, pointsByUser)
+	} else {
+		departmentTrendState.Unavailable = true
+		departmentTrendState.UnavailableReason = trendUnavailableReason
+	}
 	topMembers := []OverviewMember{}
 	if trendUnavailableReason == nil {
 		topMembers = RankTopMembers(subjects, statsByRelayUserID, windowTotals, 12)
@@ -291,10 +301,11 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 			TotalActualCost:   nil,
 			UnitLabel:         teamOverviewCostUnitLabel,
 		},
-		TopMembers:     topMembers,
-		TopMemberTrend: trendState,
-		Members:        members,
-		MemberTree:     memberTree,
+		TopMembers:      topMembers,
+		TopMemberTrend:  trendState,
+		DepartmentTrend: departmentTrendState,
+		Members:         members,
+		MemberTree:      memberTree,
 	}, nil
 }
 

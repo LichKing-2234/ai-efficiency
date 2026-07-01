@@ -78,6 +78,36 @@ const overviewFixture: TeamOverviewResponse = {
       },
     ],
   },
+  department_trend: {
+    unit_label: 'USD',
+    unavailable: false,
+    unavailable_reason: null,
+    series: [
+      {
+        series_type: 'team_total',
+        display_name: 'Team total',
+        rank: 0,
+        unavailable: false,
+        unavailable_reason: null,
+        points: [
+          { date: '2026-06-27', actual_cost: 3.75, total_tokens: 5900 },
+          { date: '2026-06-28', actual_cost: 4.25, total_tokens: 7000 },
+        ],
+      },
+      {
+        series_type: 'department',
+        department_external_id: 'department-alpha-team-one',
+        display_name: 'Team One',
+        rank: 1,
+        unavailable: false,
+        unavailable_reason: null,
+        points: [
+          { date: '2026-06-27', actual_cost: 3.0, total_tokens: 900 },
+          { date: '2026-06-28', actual_cost: 3.5, total_tokens: 1200 },
+        ],
+      },
+    ],
+  },
   members: [
     {
       rank: 1,
@@ -285,6 +315,37 @@ describe('TeamOverviewView', () => {
     expect(trend.text()).toContain('Asia/Shanghai')
   })
 
+  it('renders team total and subteam token trends together with Top 12 members', async () => {
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const trend = wrapper.get('[data-testid="team-member-trend-chart"]')
+    expect(trend.text()).toContain('Team trend')
+    expect(trend.text()).toContain('Team total')
+    expect(trend.text()).toContain('Team One')
+    expect(trend.text()).toContain('#1 Alice')
+    const chart = wrapper.get('[data-test="line-chart"]')
+    const chartData = JSON.parse(chart.attributes('data-chart') ?? '{}') as {
+      datasets: Array<{ label: string; data: Array<number | null> }>
+    }
+
+    expect(chartData.datasets.map((dataset) => dataset.label)).toEqual([
+      'Team total',
+      'Team One',
+      '#1 Alice',
+    ])
+    expect(chartData.datasets[0].data).toEqual([5900, 7000])
+    expect(chartData.datasets[1].data).toEqual([900, 1200])
+    expect(chartData.datasets[2].data).toEqual([5000, 7000])
+  })
+
   it('renders team overview chrome in Chinese without English table labels', async () => {
     setLocale('zh-CN')
     mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
@@ -300,7 +361,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).toContain('团队概览')
     expect(wrapper.find('header h1').exists()).toBe(false)
     expect(wrapper.text()).toContain('当前范围 Token 用量')
-    expect(wrapper.text()).toContain('打开')
+    expect(wrapper.text()).toContain('查看用量')
     expect(wrapper.text()).toContain('Token')
     expect(wrapper.text()).toContain('团队人数')
     expect(wrapper.text()).toContain('已接入人数')
@@ -724,7 +785,7 @@ describe('TeamOverviewView', () => {
     expect(zhWrapper.get('[data-testid="team-overview-member-directory-member-carol"]').text()).toContain('未接入')
   })
 
-  it('routes Open action to AI Usage Center with selected subject query', async () => {
+  it('routes View usage action to the selected member detail page', async () => {
     mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
@@ -735,7 +796,7 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    const openButton = wrapper.findAll('button').find((button) => button.text() === 'Open')
+    const openButton = wrapper.findAll('button').find((button) => button.text() === 'View usage')
     expect(openButton).toBeTruthy()
     await openButton!.trigger('click')
     await flushPromises()
@@ -781,6 +842,7 @@ describe('TeamOverviewMemberTrendChart', () => {
     const wrapper = mount(TeamOverviewMemberTrendChart, {
       props: {
         state: overviewFixture.top_member_trend,
+        departmentTrend: overviewFixture.department_trend,
         window: overviewFixture.window,
       },
     })
@@ -793,7 +855,8 @@ describe('TeamOverviewMemberTrendChart', () => {
       scales: { y: { title: { text: string } } }
     }
 
-    expect(chartData.datasets[0].data).toEqual([5000, 7000])
+    expect(chartData.datasets[0].data).toEqual([5900, 7000])
+    expect(chartData.datasets[2].data).toEqual([5000, 7000])
     expect(chartOptions.scales.y.title.text).toBe('tokens')
   })
 })

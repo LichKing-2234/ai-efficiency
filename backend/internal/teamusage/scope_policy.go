@@ -10,6 +10,9 @@ import (
 const (
 	teamOverviewCostUnitLabel = "USD"
 	topMemberRankBasisTokens  = "range_total_tokens"
+	departmentTrendTeamTotal  = "team_total"
+	departmentTrendDepartment = "department"
+	teamTotalDisplayName      = "Team total"
 )
 
 func BuildOverviewUnavailableForLargeScope(subjects []representativescope.Subject, limit int) OverviewResponse {
@@ -31,6 +34,12 @@ func BuildOverviewUnavailableForLargeScope(subjects []representativescope.Subjec
 			Unavailable:       true,
 			UnavailableReason: &reason,
 			Series:            []TopMemberTrendSeries{},
+		},
+		DepartmentTrend: DepartmentTrendState{
+			UnitLabel:         teamOverviewCostUnitLabel,
+			Unavailable:       true,
+			UnavailableReason: &reason,
+			Series:            []DepartmentTrendSeries{},
 		},
 		Members:    []OverviewMember{},
 		MemberTree: []OverviewMemberNode{},
@@ -222,6 +231,88 @@ func BuildOverviewMemberTree(departments []representativescope.DepartmentScope, 
 	return roots
 }
 
+func BuildOverviewDepartmentTrend(departments []representativescope.DepartmentScope, rootIDs []string, subjects []representativescope.Subject, pointsByUser map[int64][]relay.UsageTrendPoint) DepartmentTrendState {
+	state := DepartmentTrendState{
+		UnitLabel: teamOverviewCostUnitLabel,
+		Series:    []DepartmentTrendSeries{},
+	}
+	total := newTrendAccumulator()
+	nodeByID, departmentOrder := overviewDepartmentNodeIndex(departments)
+	rootSet := overviewDepartmentRootSet(nodeByID, departmentOrder, rootIDs)
+	bucketTotals := map[string]*trendAccumulator{}
+
+	for _, subject := range subjects {
+		if subject.SubjectType != "member" || subject.RelayUserID == nil {
+			continue
+		}
+		points := pointsByUser[int64(*subject.RelayUserID)]
+		if len(points) == 0 {
+			continue
+		}
+		total.AddPoints(points)
+		if bucketID := overviewDepartmentTrendBucket(subject.DepartmentExternalID, nodeByID, rootSet); bucketID != "" {
+			if bucketTotals[bucketID] == nil {
+				bucketTotals[bucketID] = newTrendAccumulator()
+			}
+			bucketTotals[bucketID].AddPoints(points)
+		}
+	}
+
+	if total.Len() == 0 {
+		return state
+	}
+	state.Series = append(state.Series, DepartmentTrendSeries{
+		SeriesType:  departmentTrendTeamTotal,
+		DisplayName: teamTotalDisplayName,
+		Points:      total.Points(),
+	})
+
+	departmentSeries := make([]DepartmentTrendSeries, 0, len(bucketTotals))
+	for _, departmentID := range departmentOrder {
+		accumulator := bucketTotals[departmentID]
+		if accumulator == nil || accumulator.Len() == 0 {
+			continue
+		}
+		if shouldSkipSingleRootDepartmentSeries(departmentID, rootSet, bucketTotals) {
+			continue
+		}
+		node := nodeByID[departmentID]
+		if node == nil {
+			continue
+		}
+		departmentSeries = append(departmentSeries, DepartmentTrendSeries{
+			SeriesType:           departmentTrendDepartment,
+			DepartmentExternalID: departmentID,
+			DisplayName:          node.Name,
+			Points:               accumulator.Points(),
+		})
+	}
+	sort.SliceStable(departmentSeries, func(i, j int) bool {
+		leftTokens, leftHasTokens := trendSeriesTokenTotal(departmentSeries[i].Points)
+		rightTokens, rightHasTokens := trendSeriesTokenTotal(departmentSeries[j].Points)
+		if leftHasTokens != rightHasTokens {
+			return leftHasTokens
+		}
+		if leftTokens != rightTokens {
+			return leftTokens > rightTokens
+		}
+		leftCost := trendSeriesActualCostTotal(departmentSeries[i].Points)
+		rightCost := trendSeriesActualCostTotal(departmentSeries[j].Points)
+		if leftCost != rightCost {
+			return leftCost > rightCost
+		}
+		if departmentSeries[i].DisplayName != departmentSeries[j].DisplayName {
+			return departmentSeries[i].DisplayName < departmentSeries[j].DisplayName
+		}
+		return departmentSeries[i].DepartmentExternalID < departmentSeries[j].DepartmentExternalID
+	})
+	for i := range departmentSeries {
+		departmentSeries[i].Rank = i + 1
+		state.Series = append(state.Series, departmentSeries[i])
+	}
+	return state
+}
+
 func addOptionalInt64(current *int64, next *int64) *int64 {
 	if next == nil {
 		return current
@@ -231,6 +322,178 @@ func addOptionalInt64(current *int64, next *int64) *int64 {
 		total += *current
 	}
 	return &total
+}
+
+type overviewDepartmentTrendNode struct {
+	ExternalID       string
+	ParentExternalID *string
+	Name             string
+}
+
+func overviewDepartmentNodeIndex(departments []representativescope.DepartmentScope) (map[string]*overviewDepartmentTrendNode, []string) {
+	nodeByID := make(map[string]*overviewDepartmentTrendNode, len(departments))
+	departmentOrder := make([]string, 0, len(departments))
+	for _, department := range departments {
+		if department.ExternalID == "" {
+			continue
+		}
+		nodeByID[department.ExternalID] = &overviewDepartmentTrendNode{
+			ExternalID:       department.ExternalID,
+			ParentExternalID: department.ParentExternalID,
+			Name:             department.Name,
+		}
+		departmentOrder = append(departmentOrder, department.ExternalID)
+	}
+	return nodeByID, departmentOrder
+}
+
+func overviewDepartmentRootSet(nodeByID map[string]*overviewDepartmentTrendNode, departmentOrder []string, rootIDs []string) map[string]struct{} {
+	rootSet := overviewStringSet(rootIDs)
+	if len(rootSet) > 0 {
+		return rootSet
+	}
+	for _, departmentID := range departmentOrder {
+		node := nodeByID[departmentID]
+		if node == nil || node.ParentExternalID == nil {
+			rootSet[departmentID] = struct{}{}
+			continue
+		}
+		if _, ok := nodeByID[*node.ParentExternalID]; !ok {
+			rootSet[departmentID] = struct{}{}
+		}
+	}
+	return rootSet
+}
+
+func overviewDepartmentTrendBucket(departmentID string, nodeByID map[string]*overviewDepartmentTrendNode, rootSet map[string]struct{}) string {
+	if departmentID == "" {
+		return ""
+	}
+	path := make([]string, 0, 4)
+	seen := map[string]struct{}{}
+	for currentID := departmentID; currentID != ""; {
+		if _, ok := seen[currentID]; ok {
+			return ""
+		}
+		seen[currentID] = struct{}{}
+		node := nodeByID[currentID]
+		if node == nil {
+			return ""
+		}
+		path = append(path, currentID)
+		if node.ParentExternalID == nil {
+			break
+		}
+		currentID = *node.ParentExternalID
+	}
+	for i := len(path) - 1; i >= 0; i-- {
+		departmentID := path[i]
+		if _, ok := rootSet[departmentID]; !ok {
+			continue
+		}
+		if i > 0 {
+			return path[i-1]
+		}
+		return departmentID
+	}
+	return ""
+}
+
+func shouldSkipSingleRootDepartmentSeries(departmentID string, rootSet map[string]struct{}, bucketTotals map[string]*trendAccumulator) bool {
+	if len(bucketTotals) != 1 {
+		return false
+	}
+	_, isRoot := rootSet[departmentID]
+	return isRoot
+}
+
+type trendAccumulator struct {
+	byDate map[string]*trendPointTotal
+}
+
+type trendPointTotal struct {
+	actualCost  float64
+	totalTokens int64
+	hasTokens   bool
+}
+
+func newTrendAccumulator() *trendAccumulator {
+	return &trendAccumulator{byDate: map[string]*trendPointTotal{}}
+}
+
+func (a *trendAccumulator) AddPoints(points []relay.UsageTrendPoint) {
+	if a == nil {
+		return
+	}
+	for _, point := range points {
+		if point.Date == "" {
+			continue
+		}
+		total := a.byDate[point.Date]
+		if total == nil {
+			total = &trendPointTotal{}
+			a.byDate[point.Date] = total
+		}
+		total.actualCost += point.ActualCost
+		if point.TotalTokens == nil {
+			continue
+		}
+		total.totalTokens += *point.TotalTokens
+		total.hasTokens = true
+	}
+}
+
+func (a *trendAccumulator) Len() int {
+	if a == nil {
+		return 0
+	}
+	return len(a.byDate)
+}
+
+func (a *trendAccumulator) Points() []relay.UsageTrendPoint {
+	if a == nil || len(a.byDate) == 0 {
+		return []relay.UsageTrendPoint{}
+	}
+	dates := make([]string, 0, len(a.byDate))
+	for date := range a.byDate {
+		dates = append(dates, date)
+	}
+	sort.Strings(dates)
+	points := make([]relay.UsageTrendPoint, 0, len(dates))
+	for _, date := range dates {
+		total := a.byDate[date]
+		point := relay.UsageTrendPoint{
+			Date:       date,
+			ActualCost: total.actualCost,
+		}
+		if total.hasTokens {
+			tokenTotal := total.totalTokens
+			point.TotalTokens = &tokenTotal
+		}
+		points = append(points, point)
+	}
+	return points
+}
+
+func trendSeriesTokenTotal(points []relay.UsageTrendPoint) (int64, bool) {
+	var total int64
+	hasTokens := false
+	for _, point := range points {
+		if point.TotalTokens == nil {
+			continue
+		}
+		total += *point.TotalTokens
+		hasTokens = true
+	}
+	return total, hasTokens
+}
+
+func trendSeriesActualCostTotal(points []relay.UsageTrendPoint) float64 {
+	total := 0.0
+	for _, point := range points {
+		total += point.ActualCost
+	}
+	return total
 }
 
 func overviewStringSet(values []string) map[string]struct{} {

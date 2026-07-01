@@ -376,6 +376,82 @@ func TestOverviewBuildsMemberTreeFromRepresentativeDepartments(t *testing.T) {
 	}
 }
 
+func TestOverviewBuildsTeamAndSubteamTokenTrendFromRepresentativeDepartments(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	aliceDayOneTokens := int64(100)
+	aliceDayTwoTokens := int64(200)
+	bobDayOneTokens := int64(50)
+	bobDayTwoTokens := int64(70)
+
+	scope := &representativescope.Scope{
+		ActorUserID:      1,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DirectoryMemberExternalID: "member-alice", DisplayName: "Alice", Email: "alice@example.com", DepartmentExternalID: "department-alpha-team-one", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 3, DirectoryMemberExternalID: "member-bob", DisplayName: "Bob", Email: "bob@example.org", DepartmentExternalID: "department-alpha-team-two", RelayUserID: intPtr(1003), Selectable: true},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-carol", DisplayName: "Carol", Email: "carol@example.net", DepartmentExternalID: "department-alpha-team-one", Selectable: false},
+		},
+		MemberTreeRootIDs: []string{"department-alpha"},
+		MemberTreeDepartments: []representativescope.DepartmentScope{
+			{ExternalID: "department-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha", Depth: 5, ChildCount: 2},
+			{ExternalID: "department-alpha-team-one", ParentExternalID: stringPtr("department-alpha"), Name: "Team One", DisplayPath: "Department Alpha / Team One", Depth: 6, ChildCount: 0},
+			{ExternalID: "department-alpha-team-two", ParentExternalID: stringPtr("department-alpha"), Name: "Team Two", DisplayPath: "Department Alpha / Team Two", Depth: 6, ChildCount: 0},
+		},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
+			1003: {UserID: 1003, TodayActualCost: 3, TotalActualCost: 30},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			1002: {
+				{Date: "2026-06-27", ActualCost: 1, TotalTokens: &aliceDayOneTokens},
+				{Date: "2026-06-28", ActualCost: 2, TotalTokens: &aliceDayTwoTokens},
+			},
+			1003: {
+				{Date: "2026-06-27", ActualCost: 3, TotalTokens: &bobDayOneTokens},
+				{Date: "2026-06-28", ActualCost: 4, TotalTokens: &bobDayTwoTokens},
+			},
+		},
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+
+	resp, err := svc.Overview(ctx, 1, OverviewParams{StartDate: "2026-06-01", EndDate: "2026-06-30", Granularity: "day", Timezone: "UTC"})
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+
+	if resp.DepartmentTrend.Unavailable {
+		t.Fatalf("department trend unavailable = true, reason = %#v", resp.DepartmentTrend.UnavailableReason)
+	}
+	if got := len(resp.DepartmentTrend.Series); got != 3 {
+		t.Fatalf("department trend series = %d, want team total plus two subteams: %#v", got, resp.DepartmentTrend.Series)
+	}
+	total := resp.DepartmentTrend.Series[0]
+	if total.SeriesType != "team_total" || total.DisplayName != "Team total" {
+		t.Fatalf("total series = %#v, want team_total Team total", total)
+	}
+	if got := []int64{*total.Points[0].TotalTokens, *total.Points[1].TotalTokens}; !reflect.DeepEqual(got, []int64{150, 270}) {
+		t.Fatalf("total trend tokens = %#v, want 150 / 270", got)
+	}
+	if got := []float64{total.Points[0].ActualCost, total.Points[1].ActualCost}; !reflect.DeepEqual(got, []float64{4, 6}) {
+		t.Fatalf("total trend costs = %#v, want 4 / 6", got)
+	}
+	teamOne := resp.DepartmentTrend.Series[1]
+	if teamOne.SeriesType != "department" || teamOne.DepartmentExternalID != "department-alpha-team-one" || teamOne.DisplayName != "Team One" {
+		t.Fatalf("first subteam series = %#v, want Team One department", teamOne)
+	}
+	if got := []int64{*teamOne.Points[0].TotalTokens, *teamOne.Points[1].TotalTokens}; !reflect.DeepEqual(got, []int64{100, 200}) {
+		t.Fatalf("team one trend tokens = %#v, want 100 / 200", got)
+	}
+	teamTwo := resp.DepartmentTrend.Series[2]
+	if teamTwo.SeriesType != "department" || teamTwo.DepartmentExternalID != "department-alpha-team-two" || teamTwo.DisplayName != "Team Two" {
+		t.Fatalf("second subteam series = %#v, want Team Two department", teamTwo)
+	}
+}
+
 func TestOverviewMemberDetailsIncludesScopedMembersWithoutRelayUsage(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

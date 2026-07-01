@@ -102,6 +102,7 @@ type OverviewResponse struct {
 	Summary          OverviewSummary      `json:"summary"`
 	TopMembers       []OverviewMember     `json:"top_members"`
 	TopMemberTrend   TopMemberTrendState  `json:"top_member_trend"`
+	DepartmentTrend  DepartmentTrendState `json:"department_trend"`
 	Members          []OverviewMember     `json:"members"`
 	MemberTree       []OverviewMemberNode `json:"member_tree"`
 }
@@ -175,6 +176,23 @@ type TopMemberTrendSeries struct {
 	Unavailable               bool                    `json:"unavailable"`
 	UnavailableReason         *string                 `json:"unavailable_reason"`
 	Points                    []relay.UsageTrendPoint `json:"points"`
+}
+
+type DepartmentTrendState struct {
+	UnitLabel         string                  `json:"unit_label"`
+	Unavailable       bool                    `json:"unavailable"`
+	UnavailableReason *string                 `json:"unavailable_reason"`
+	Series            []DepartmentTrendSeries `json:"series"`
+}
+
+type DepartmentTrendSeries struct {
+	SeriesType           string                  `json:"series_type"`
+	DepartmentExternalID string                  `json:"department_external_id,omitempty"`
+	DisplayName          string                  `json:"display_name"`
+	Rank                 int                     `json:"rank,omitempty"`
+	Unavailable          bool                    `json:"unavailable"`
+	UnavailableReason    *string                 `json:"unavailable_reason"`
+	Points               []relay.UsageTrendPoint `json:"points"`
 }
 
 type UpdateMultiplierRequest struct {

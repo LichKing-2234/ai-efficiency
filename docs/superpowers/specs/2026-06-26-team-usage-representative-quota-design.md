@@ -323,7 +323,7 @@ Allowed members are directory members whose `department_external_id` is in any r
 1. `directory_members.matched_user_id`, when present and positive.
 2. normalized email match against `users.email`, as fallback.
 
-Team Overview member details must include every directory member in the represented subtree, including the representative themself and members without a matched AE user. Rows without an AE user use `directory_member_external_id` as their stable row identity, return `user_id: 0`, `selectable: false`, and keep the Open action disabled. Team Overview may resolve such rows to sub2api relay users by exact email match for read-only usage aggregation. Selected-member usage and quota management routes remain local-user operations and require a positive scoped `user_id` plus a relay mapping.
+Team Overview member details must include every directory member in the represented subtree, including the representative themself and members without a matched AE user. Rows without an AE user use `directory_member_external_id` as their stable row identity, return `user_id: 0`, `selectable: false`, and keep the View usage action disabled. Team Overview may resolve such rows to sub2api relay users by exact email match for read-only usage aggregation. Selected-member usage and quota management routes remain local-user operations and require a positive scoped `user_id` plus a relay mapping.
 
 Security requirements:
 
@@ -628,10 +628,10 @@ First-version response:
 	      "total_tokens": 12345
     }
   ],
-	  "top_member_trend": {
-	    "unit_label": "USD",
-	    "rank_basis": "range_total_tokens",
-	    "unavailable": false,
+  "top_member_trend": {
+    "unit_label": "USD",
+    "rank_basis": "range_total_tokens",
+    "unavailable": false,
     "unavailable_reason": null,
     "series": [
       {
@@ -645,6 +645,41 @@ First-version response:
             "date": "2026-06-26",
             "actual_cost": 1.23,
             "total_tokens": 12345
+          }
+        ]
+      }
+    ]
+  },
+  "department_trend": {
+    "unit_label": "USD",
+    "unavailable": false,
+    "unavailable_reason": null,
+    "series": [
+      {
+        "series_type": "team_total",
+        "display_name": "Team total",
+        "unavailable": false,
+        "unavailable_reason": null,
+        "points": [
+          {
+            "date": "2026-06-26",
+            "actual_cost": 10.23,
+            "total_tokens": 123456
+          }
+        ]
+      },
+      {
+        "series_type": "department",
+        "department_external_id": "department-alpha-team-one",
+        "display_name": "Team One",
+        "rank": 1,
+        "unavailable": false,
+        "unavailable_reason": null,
+        "points": [
+          {
+            "date": "2026-06-26",
+            "actual_cost": 4.56,
+            "total_tokens": 45678
           }
         ]
       }
@@ -710,6 +745,14 @@ Top-12 trend rules:
 5. If one top member's trend fetch fails, the response may include that member with `points: []` and an unavailable flag rather than failing the entire Team Overview page. Authorization failures still fail closed.
 6. Top 12 must be computed from the complete scoped relay-user set. If the subtree is too large for the configured full-scope usage scan, AE must return empty `top_members`, `top_member_trend.unavailable=true`, and `top_member_trend.unavailable_reason=scope_too_large`; it must not compute top 12 from a truncated subset.
 7. If the complete selected-window trend scan exceeds AE's backend budget or the relay provider returns a non-authorization transient error, AE returns the page with partial data instead of waiting for the frontend timeout. In that state `summary.unavailable=true`, `summary.unavailable_reason=provider_error`, selected-window aggregate totals are `null`, `top_members=[]`, and `top_member_trend.unavailable=true`. Authorization and scope errors still fail closed.
+
+Department trend rules:
+
+1. `department_trend` is computed from the same complete scoped selected-window trend scan as `top_member_trend`; AE must not call an unscoped relay trend endpoint or aggregate users outside the representative scope.
+2. `department_trend.series[0]` uses `series_type="team_total"` and aggregates all relay-resolved scoped members for the selected range. This is the team-wide Token usage trend shown together with the Top 12 chart.
+3. Additional `series_type="department"` rows aggregate each direct child department under the represented root. If a member belongs directly to the represented root, the root can be used as that member's bucket. For upper-level representatives, these rows are the visible subteam trends.
+4. Department trend points use `total_tokens` as the primary chart value and keep `actual_cost` only as auxiliary legend/detail data.
+5. If the full selected-window scan is unavailable or the scope is too large, `department_trend.unavailable` follows the same reason as `top_member_trend`.
 
 `member_tree` follows the current Directory Sync hierarchy. When a representative has multiple represented roots, the backend returns the largest non-overlapping roots first: if one represented root contains another represented root, only the ancestor appears as a top-level tree root and the child appears nested under it. Each department node aggregates direct members plus descendants for member count, connected member count, selected-window billed usage, and selected-window tokens. `members` remains as a compatibility flat list.
 
@@ -910,9 +953,9 @@ Selected Member Usage Detail
 
 AI Usage Center / Team Overview
   Summary cards
-  Top 12 token usage trend chart
+  Team and Top 12 token usage trend chart
   Member details table
-  Link/action to open member in AI Usage Center
+  View usage action to open a member detail page
 ```
 
 AI Usage Center subject selector:
@@ -971,7 +1014,7 @@ Team Overview first screen:
    - selected-window billed usage
    - selected-window token usage
    - red not-connected status for members without a resolved relay user
-   - action to open `/usage/members/:user_id` only when `selectable=true` and `user_id > 0`; otherwise the action is disabled
+   - View usage action to open `/usage/members/:user_id` only when `selectable=true` and `user_id > 0`; otherwise the action is disabled
 
 Team Overview must not render:
 
@@ -1055,7 +1098,7 @@ Suggested components:
 3. `TeamOverviewPage.vue`
    - Owns independent team summary, top-12 member trend chart, and member usage table.
 4. `TeamOverviewMemberTrendChart.vue`
-   - Renders top-12 member trend series in rank order and handles empty or partially unavailable series.
+   - Renders team total, direct subteam, and top-12 member trend series in rank order and handles empty or partially unavailable series.
 5. `TeamOverviewMemberTable.vue`
    - Owns sorting, pagination, and open-member action.
 6. `SelectedSubjectSubscriptionRows.vue`
@@ -1091,7 +1134,7 @@ Backend unit tests:
    - Team Overview top-member trend contains only scoped users
    - Team Overview top-member trend series order matches selected-window ranking order
    - Team Overview summary cards, member table, and top-12 ranking follow Today / 7 Days / 30 Days range selection
-   - Team Overview member table includes scoped directory members without local user or relay usage and disables their open action
+   - Team Overview member table includes scoped directory members without local user or relay usage and disables their View usage action
    - Team Overview summary and member tree include selected-window token totals
    - Team Overview member tree returns largest non-overlapping represented roots and nested departments
    - Team Overview returns top-member trend unavailable when full-scope ranking would require truncation
@@ -1147,7 +1190,7 @@ Frontend tests:
 12. Team Overview marks members without a resolved relay user as not connected in red, with localized English and Chinese copy.
 13. Selected-member AI Usage renders subscription controls when the member has active subscriptions.
 14. Non-representative users do not see member subjects or Team Overview entry points.
-15. Member table open action switches to `/usage/members/:user_id`.
+15. Member table View usage action switches to `/usage/members/:user_id`.
 16. Selected-member Quotas keep `Used / Quota` stable when draft multiplier changes.
 17. Selected-member multiplier modal explains that the multiplier affects future quota consumption speed; it is not changing the member's quota limit and does not recalculate existing Used / Quota values.
 18. Invalid multiplier disables submit.

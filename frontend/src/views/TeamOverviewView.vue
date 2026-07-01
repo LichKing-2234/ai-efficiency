@@ -198,7 +198,11 @@ onMounted(loadOverview)
             {{ t('teamUsage.summaryUnavailable') }}
           </section>
 
-          <TeamOverviewMemberTrendChart :state="overview.top_member_trend" :window="overview.window" />
+          <TeamOverviewMemberTrendChart
+            :state="overview.top_member_trend"
+            :department-trend="overview.department_trend"
+            :window="overview.window"
+          />
           <TeamOverviewMemberTable :members="overview.members" :member-tree="overview.member_tree" @open-member="openMember" />
         </div>
       </template>

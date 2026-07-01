@@ -12,12 +12,13 @@ import {
 import { Line } from 'vue-chartjs'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
-import type { TeamMemberTrendState, TeamOverviewWindow } from '@/types'
+import type { TeamDepartmentTrendState, TeamMemberTrendState, TeamOverviewWindow } from '@/types'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
 const props = defineProps<{
   state: TeamMemberTrendState
+  departmentTrend?: TeamDepartmentTrendState | null
   window?: TeamOverviewWindow | null
 }>()
 
@@ -38,13 +39,38 @@ const seriesColors = [
   '#9333ea',
 ]
 
-const chartableSeries = computed(() => {
+const departmentSeriesColors = [
+  '#111827',
+  '#0f766e',
+  '#7c2d12',
+  '#1d4ed8',
+  '#a21caf',
+  '#0369a1',
+  '#4d7c0f',
+]
+
+const departmentTrendSeries = computed(() => props.departmentTrend?.series ?? [])
+
+const chartableDepartmentSeries = computed(() => {
+  return departmentTrendSeries.value.filter((series) => !series.unavailable && series.points.length > 0)
+})
+
+const chartableMemberSeries = computed(() => {
   return props.state.series.filter((series) => !series.unavailable && series.points.length > 0)
+})
+
+const hasAnyTrendSeries = computed(() => {
+  return departmentTrendSeries.value.length > 0 || props.state.series.length > 0
 })
 
 const chartLabels = computed(() => {
   const labels = new Set<string>()
-  for (const series of chartableSeries.value) {
+  for (const series of chartableDepartmentSeries.value) {
+    for (const point of series.points) {
+      labels.add(point.date)
+    }
+  }
+  for (const series of chartableMemberSeries.value) {
     for (const point of series.points) {
       labels.add(point.date)
     }
@@ -73,18 +99,33 @@ const chartMetaItems = computed(() => {
 
 const chartData = computed(() => ({
   labels: chartLabels.value,
-  datasets: chartableSeries.value.map((series, index) => {
-    const pointsByDate = new Map(series.points.map((point) => [point.date, point.total_tokens ?? null]))
-    const color = seriesColors[index % seriesColors.length]
-    return {
-      label: `#${series.rank} ${series.display_name}`,
-      data: chartLabels.value.map((date) => pointsByDate.get(date) ?? null),
-      borderColor: color,
-      backgroundColor: `${color}22`,
-      tension: 0.25,
-      spanGaps: true,
-    }
-  }),
+  datasets: [
+    ...chartableDepartmentSeries.value.map((series, index) => {
+      const pointsByDate = new Map(series.points.map((point) => [point.date, point.total_tokens ?? null]))
+      const color = departmentSeriesColor(series, index)
+      return {
+        label: departmentSeriesLabel(series),
+        data: chartLabels.value.map((date) => pointsByDate.get(date) ?? null),
+        borderColor: color,
+        backgroundColor: `${color}22`,
+        borderWidth: series.series_type === 'team_total' ? 3 : 2,
+        tension: 0.25,
+        spanGaps: true,
+      }
+    }),
+    ...chartableMemberSeries.value.map((series, index) => {
+      const pointsByDate = new Map(series.points.map((point) => [point.date, point.total_tokens ?? null]))
+      const color = seriesColors[index % seriesColors.length]
+      return {
+        label: `#${series.rank} ${series.display_name}`,
+        data: chartLabels.value.map((date) => pointsByDate.get(date) ?? null),
+        borderColor: color,
+        backgroundColor: `${color}22`,
+        tension: 0.25,
+        spanGaps: true,
+      }
+    }),
+  ],
 }))
 
 const chartOptions = computed(() => ({
@@ -137,11 +178,11 @@ function reasonLabel(reason: string | null | undefined) {
   return t('teamUsage.unavailable')
 }
 
-function seriesTotalCost(series: TeamMemberTrendState['series'][number]) {
+function seriesTotalCost(series: { points: Array<{ actual_cost: number }> }) {
   return series.points.reduce((total, point) => total + point.actual_cost, 0)
 }
 
-function seriesTotalTokens(series: TeamMemberTrendState['series'][number]) {
+function seriesTotalTokens(series: { points: Array<{ total_tokens?: number | null }> }) {
   let total = 0
   let hasValue = false
   for (const point of series.points) {
@@ -150,6 +191,21 @@ function seriesTotalTokens(series: TeamMemberTrendState['series'][number]) {
     hasValue = true
   }
   return hasValue ? total : null
+}
+
+function departmentSeriesColor(series: TeamDepartmentTrendState['series'][number], index: number) {
+  if (series.series_type === 'team_total') return departmentSeriesColors[0]
+  return departmentSeriesColors[(index % (departmentSeriesColors.length - 1)) + 1]
+}
+
+function departmentSeriesLabel(series: TeamDepartmentTrendState['series'][number]) {
+  if (series.series_type === 'team_total') return t('teamUsage.teamTotal')
+  return series.display_name
+}
+
+function departmentSeriesKey(series: TeamDepartmentTrendState['series'][number], index: number) {
+  if (series.series_type === 'team_total') return 'team-total'
+  return `department:${series.department_external_id || series.display_name || index}`
 }
 
 function seriesKey(series: TeamMemberTrendState['series'][number]) {
@@ -173,7 +229,7 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
       {{ reasonLabel(props.state.unavailable_reason) }}
     </div>
 
-    <div v-else-if="props.state.series.length === 0" class="px-4 py-4 text-sm text-slate-500">
+    <div v-else-if="!hasAnyTrendSeries" class="px-4 py-4 text-sm text-slate-500">
       -
     </div>
 
@@ -186,25 +242,58 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
       </div>
 
       <div class="min-w-0 divide-y divide-slate-100 rounded-md border border-slate-200">
-        <div
-          v-for="(series, index) in props.state.series"
-          :key="seriesKey(series)"
-          class="flex items-start gap-3 px-3 py-2"
-        >
-          <span
-            class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-            :style="{ backgroundColor: series.unavailable ? '#94a3b8' : seriesColors[index % seriesColors.length] }"
-          />
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-medium text-slate-900">
-              #{{ series.rank }} {{ series.display_name }}
+        <div v-if="departmentTrendSeries.length > 0" class="divide-y divide-slate-100">
+          <div class="bg-slate-50 px-3 py-2 text-xs font-semibold uppercase text-slate-500">
+            {{ t('teamUsage.teamTrend') }}
+          </div>
+          <div
+            v-for="(series, index) in departmentTrendSeries"
+            :key="departmentSeriesKey(series, index)"
+            class="flex items-start gap-3 px-3 py-2"
+          >
+            <span
+              class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+              :style="{ backgroundColor: series.unavailable ? '#94a3b8' : departmentSeriesColor(series, index) }"
+            />
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-sm font-medium text-slate-900">
+                {{ departmentSeriesLabel(series) }}
+              </div>
+              <div v-if="series.unavailable" class="mt-0.5 text-xs text-slate-500">
+                {{ reasonLabel(series.unavailable_reason) }}
+              </div>
+              <div v-else class="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                <span>{{ formatTokenCount(seriesTotalTokens(series)) }} {{ tokenUnitLabel }}</span>
+                <span>{{ formatCost(seriesTotalCost(series)) }} {{ props.departmentTrend?.unit_label ?? props.state.unit_label }}</span>
+              </div>
             </div>
-            <div v-if="series.unavailable" class="mt-0.5 text-xs text-slate-500">
-              {{ reasonLabel(series.unavailable_reason) }}
-            </div>
-            <div v-else class="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
-              <span>{{ formatTokenCount(seriesTotalTokens(series)) }} {{ tokenUnitLabel }}</span>
-              <span>{{ formatCost(seriesTotalCost(series)) }} {{ props.state.unit_label }}</span>
+          </div>
+        </div>
+
+        <div v-if="props.state.series.length > 0" class="divide-y divide-slate-100">
+          <div class="bg-slate-50 px-3 py-2 text-xs font-semibold uppercase text-slate-500">
+            {{ t('teamUsage.topMembersLegend') }}
+          </div>
+          <div
+            v-for="(series, index) in props.state.series"
+            :key="seriesKey(series)"
+            class="flex items-start gap-3 px-3 py-2"
+          >
+            <span
+              class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+              :style="{ backgroundColor: series.unavailable ? '#94a3b8' : seriesColors[index % seriesColors.length] }"
+            />
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-sm font-medium text-slate-900">
+                #{{ series.rank }} {{ series.display_name }}
+              </div>
+              <div v-if="series.unavailable" class="mt-0.5 text-xs text-slate-500">
+                {{ reasonLabel(series.unavailable_reason) }}
+              </div>
+              <div v-else class="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                <span>{{ formatTokenCount(seriesTotalTokens(series)) }} {{ tokenUnitLabel }}</span>
+                <span>{{ formatCost(seriesTotalCost(series)) }} {{ props.state.unit_label }}</span>
+              </div>
             </div>
           </div>
         </div>

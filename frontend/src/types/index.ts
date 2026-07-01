@@ -940,6 +940,23 @@ export interface TeamMemberTrendState {
   series: TeamMemberTrendSeries[]
 }
 
+export interface TeamDepartmentTrendSeries {
+  series_type: 'team_total' | 'department' | string
+  department_external_id?: string
+  display_name: string
+  rank?: number
+  unavailable: boolean
+  unavailable_reason?: string | null
+  points: TeamUsageTrendPoint[]
+}
+
+export interface TeamDepartmentTrendState {
+  unit_label: string
+  unavailable: boolean
+  unavailable_reason?: string | null
+  series: TeamDepartmentTrendSeries[]
+}
+
 export interface TeamOverviewResponse {
   configured: boolean
   is_representative: boolean
@@ -947,6 +964,7 @@ export interface TeamOverviewResponse {
   summary: TeamOverviewSummary
   top_members: TeamOverviewMember[]
   top_member_trend: TeamMemberTrendState
+  department_trend?: TeamDepartmentTrendState
   members: TeamOverviewMember[]
   member_tree?: TeamOverviewMemberNode[]
 }

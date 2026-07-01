@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete. Post-login QA follow-up fixes for Team Overview rendering, representative metadata parsing, new representative UI i18n, sub2api multiplier update contract alignment, stale relay user binding reconciliation, removal of representative audit UI, `/usage` canonical IA, independent selected-member route behavior, selected-member detail IA cleanup, billed-usage terminology, Team Overview Today / 7 Days / 30 Days selected-window semantics, Team Overview range-switch loading feedback, selected-member header de-duplication, Team Overview full directory roster counts, email-based sub2api usage resolution, simplified Team members / Connected members copy, selected-window token totals, token-based Top 12/member ranking, not-connected member highlighting, and organization-tree member details are complete in code and scoped frontend/backend checks.
+**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete. Post-login QA follow-up fixes for Team Overview rendering, representative metadata parsing, new representative UI i18n, sub2api multiplier update contract alignment, stale relay user binding reconciliation, removal of representative audit UI, `/usage` canonical IA, independent selected-member route behavior, selected-member detail IA cleanup, billed-usage terminology, Team Overview Today / 7 Days / 30 Days selected-window semantics, Team Overview range-switch loading feedback, selected-member header de-duplication, Team Overview full directory roster counts, email-based sub2api usage resolution, simplified Team members / Connected members copy, selected-window token totals, token-based Top 12/member ranking, not-connected member highlighting, organization-tree member details, team/subteam Token trend overlay, and clearer selected-member usage action copy are complete in code and scoped frontend/backend checks.
 
 ## Post-login QA Follow-up
 
@@ -38,7 +38,7 @@
 - [x] Label multiplier-adjusted `actual_cost` values as billed usage / 计费用量 in user-facing copy instead of actual cost / 实际成本.
 - [x] Make Team Overview match personal usage range selection with Today / 7 Days / 30 Days, selected-window summary/table/ranking, and no duplicate page title.
 - [x] Show Team Overview range-switch loading feedback while preserving previous data and disabling range buttons during refresh.
-- [x] Return all scoped directory members in Team Overview member details, including members without local users or relay usage, and disable their open action.
+- [x] Return all scoped directory members in Team Overview member details, including members without local users or relay usage, and disable their View usage action.
 - [x] Count the full represented directory roster in Team Overview, including the representative themself, while keeping representative self-management disabled.
 - [x] Resolve Team Overview directory-only rows to sub2api users by exact email for read-only usage aggregation, without enabling selected-member quota controls for directory-only rows.
 - [x] Rename Team Overview summary cards to Team members / Connected members and hide the member table subscription-count column until reliable batched counts exist.
@@ -47,6 +47,8 @@
 - [x] Render Team Overview member details as an expandable organization tree based on Directory Sync hierarchy.
 - [x] Deduplicate represented department roots so ancestor departments contain represented child departments instead of rendering duplicate top-level teams.
 - [x] Mark members without resolved relay access as not connected with localized red status.
+- [x] Add a team-wide Token usage trend and represented-subteam trend series to the same Team Overview chart area as Top 12 member trend.
+- [x] Rename the member details action from ambiguous Open / 打开 to View usage / 查看用量.
 - [x] Verify scoped backend suites, focused frontend Team Overview tests, and frontend build after the organization-tree update.
 - [x] Verify `/usage/team` route availability with Playwright; unauthenticated local browser redirects to `/login?redirect=/usage/team`, so logged-in visual QA remains environment/session dependent.
 
@@ -54,7 +56,7 @@
 
 - [x] Align team usage summary decoding and Team Overview naming with the real sub2api batch `data.stats` contract (`total_actual_cost`, no rolling 30-day field).
 - [x] Return a failure for `partial_failed` multiplier writes so the selected-subject modal stays open on backend mismatch.
-- [x] Consume member route params after subject scope loads and deep-link Team Overview Open actions into selected-member usage.
+- [x] Consume member route params after subject scope loads and deep-link Team Overview View usage actions into selected-member usage.
 - [x] Treat zero effective multiplier as unlimited allowance in delegated quota rows and preview rendering.
 - [x] Remove the Team Overview `subscription_count` column from the UI because the API still returns it as optional metadata rather than a reliable batched count.
 - [x] Request Team Overview with an explicit 30-day default window instead of inheriting the shared 7-day parser default.
