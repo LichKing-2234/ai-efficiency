@@ -472,6 +472,41 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).toContain('Team usage is unavailable for this scope size.')
   })
 
+  it('renders partial unavailable warning while keeping team content visible', async () => {
+    mockGetTeamUsageOverview.mockResolvedValue({
+      data: {
+        data: {
+          ...overviewFixture,
+          summary: {
+            ...overviewFixture.summary,
+            unavailable: true,
+            unavailable_reason: 'provider_error',
+            range_actual_cost: null,
+            range_total_tokens: null,
+          },
+          top_member_trend: {
+            ...overviewFixture.top_member_trend,
+            unavailable: true,
+            unavailable_reason: 'provider_error',
+            series: [],
+          },
+        },
+      },
+    } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Selected range totals are temporarily unavailable.')
+    expect(wrapper.text()).toContain('Team members')
+    expect(wrapper.text()).toContain('Alice')
+  })
+
   it('renders no-scope state when overview load is rejected with 403', async () => {
     mockGetTeamUsageOverview.mockRejectedValue({
       response: { status: 403, data: { code: 'not_representative' } },

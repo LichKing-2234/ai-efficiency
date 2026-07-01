@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2896,9 +2898,11 @@ func TestGetUserUsageDashboardFailsFastOnSub2APIError(t *testing.T) {
 }
 
 func TestSub2APITeamUsageTrendForUsersFansOutByUserID(t *testing.T) {
+	var mu sync.Mutex
 	var requested []map[string]string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		requested = append(requested, map[string]string{
 			"user_id":     r.URL.Query().Get("user_id"),
 			"start_date":  r.URL.Query().Get("start_date"),
@@ -2906,6 +2910,7 @@ func TestSub2APITeamUsageTrendForUsersFansOutByUserID(t *testing.T) {
 			"granularity": r.URL.Query().Get("granularity"),
 			"timezone":    r.URL.Query().Get("timezone"),
 		})
+		mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"data":    []map[string]any{{"date": "2026-06-26", "actual_cost": 1.25}},
@@ -2922,6 +2927,11 @@ func TestSub2APITeamUsageTrendForUsersFansOutByUserID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
 	}
+	mu.Lock()
+	defer mu.Unlock()
+	sort.Slice(requested, func(i, j int) bool {
+		return requested[i]["user_id"] < requested[j]["user_id"]
+	})
 	if diff := cmp.Diff([]map[string]string{
 		{
 			"user_id":     "1001",
@@ -2942,6 +2952,56 @@ func TestSub2APITeamUsageTrendForUsersFansOutByUserID(t *testing.T) {
 	}
 	if len(got[1001]) != 1 || got[1001][0].ActualCost != 1.25 {
 		t.Fatalf("trend[1001] = %#v, want one actual_cost point", got[1001])
+	}
+}
+
+func TestSub2APITeamUsageTrendForUsersFetchesConcurrently(t *testing.T) {
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	allArrived := make(chan struct{})
+	closed := false
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		userID := r.URL.Query().Get("user_id")
+		mu.Lock()
+		seen[userID] = true
+		if len(seen) == 2 && !closed {
+			close(allArrived)
+			closed = true
+		}
+		mu.Unlock()
+
+		select {
+		case <-allArrived:
+		case <-r.Context().Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+			http.Error(w, "requests were not concurrent", http.StatusGatewayTimeout)
+			return
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data":    []map[string]any{{"date": "2026-06-26", "actual_cost": 1.25}},
+		})
+	})
+	p := newTestProvider(t, mux)
+	trender := p.(relay.TeamMemberTrendProvider)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel()
+	got, err := trender.GetUsageTrendForUsers(ctx, []int64{1001, 1002}, relay.TeamMemberTrendParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-26",
+		Granularity: "day",
+		Timezone:    "Asia/Shanghai",
+	})
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("trend map size = %d, want 2", len(got))
 	}
 }
 

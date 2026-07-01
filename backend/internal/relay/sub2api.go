@@ -2133,13 +2133,69 @@ func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int
 }
 
 func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error) {
+	const maxConcurrentTrendRequests = 8
+
 	out := make(map[int64][]UsageTrendPoint, len(relayUserIDs))
-	for _, relayUserID := range relayUserIDs {
-		trend, err := s.getTeamMemberTrend(ctx, relayUserID, params)
-		if err != nil {
+	if len(relayUserIDs) == 0 {
+		return out, nil
+	}
+	trendCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	workers := maxConcurrentTrendRequests
+	if len(relayUserIDs) < workers {
+		workers = len(relayUserIDs)
+	}
+
+	type trendResult struct {
+		relayUserID int64
+		points      []UsageTrendPoint
+		err         error
+	}
+
+	jobs := make(chan int64)
+	results := make(chan trendResult, len(relayUserIDs))
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for relayUserID := range jobs {
+				trend, err := s.getTeamMemberTrend(trendCtx, relayUserID, params)
+				results <- trendResult{relayUserID: relayUserID, points: trend, err: err}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, relayUserID := range relayUserIDs {
+			select {
+			case jobs <- relayUserID:
+			case <-trendCtx.Done():
+				return
+			}
+		}
+	}()
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	completed := 0
+	for result := range results {
+		completed++
+		if result.err != nil {
+			cancel()
+			return nil, result.err
+		}
+		out[result.relayUserID] = result.points
+	}
+	if completed != len(relayUserIDs) {
+		if err := trendCtx.Err(); err != nil {
 			return nil, err
 		}
-		out[relayUserID] = trend
 	}
 	return out, nil
 }

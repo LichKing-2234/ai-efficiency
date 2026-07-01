@@ -17,7 +17,10 @@ import (
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
 
-const systemDefaultMultiplier = 1.0
+const (
+	systemDefaultMultiplier         = 1.0
+	defaultTeamOverviewTrendTimeout = 20 * time.Second
+)
 
 type ProviderResolver interface {
 	Resolve(ctx context.Context, providerID int) (relay.Provider, error)
@@ -28,12 +31,13 @@ type ScopeResolver interface {
 }
 
 type Service struct {
-	client           *ent.Client
-	scopeResolver    ScopeResolver
-	providerResolver ProviderResolver
-	locker           AdvisoryLocker
-	fullScopeCap     int
-	maxMultiplier    float64
+	client                   *ent.Client
+	scopeResolver            ScopeResolver
+	providerResolver         ProviderResolver
+	locker                   AdvisoryLocker
+	fullScopeCap             int
+	teamOverviewTrendTimeout time.Duration
+	maxMultiplier            float64
 }
 
 func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker) *Service {
@@ -41,12 +45,13 @@ func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolve
 		locker = &PostgresAdvisoryLocker{}
 	}
 	return &Service{
-		client:           client,
-		scopeResolver:    scopeResolver,
-		providerResolver: providerResolver,
-		locker:           locker,
-		fullScopeCap:     500,
-		maxMultiplier:    defaultMaxMultiplier,
+		client:                   client,
+		scopeResolver:            scopeResolver,
+		providerResolver:         providerResolver,
+		locker:                   locker,
+		fullScopeCap:             500,
+		teamOverviewTrendTimeout: defaultTeamOverviewTrendTimeout,
+		maxMultiplier:            defaultMaxMultiplier,
 	}
 }
 
@@ -198,9 +203,19 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		Series:    []TopMemberTrendSeries{},
 	}
 	pointsByUser := map[int64][]relay.UsageTrendPoint{}
+	var trendUnavailableReason *string
 	if len(relayUserIDs) > 0 {
+		trendCtx := ctx
+		var cancel context.CancelFunc
+		if s.teamOverviewTrendTimeout > 0 {
+			trendCtx, cancel = context.WithTimeout(ctx, s.teamOverviewTrendTimeout)
+		}
+		if cancel != nil {
+			defer cancel()
+		}
+
 		var err error
-		pointsByUser, err = trendProvider.GetUsageTrendForUsers(ctx, relayUserIDs, relay.TeamMemberTrendParams{
+		pointsByUser, err = trendProvider.GetUsageTrendForUsers(trendCtx, relayUserIDs, relay.TeamMemberTrendParams{
 			StartDate:   strings.TrimSpace(params.StartDate),
 			EndDate:     strings.TrimSpace(params.EndDate),
 			Granularity: strings.TrimSpace(params.Granularity),
@@ -213,13 +228,17 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 			reason := "provider_error"
 			trendState.Unavailable = true
 			trendState.UnavailableReason = &reason
+			trendUnavailableReason = &reason
 		}
 	}
 
 	windowTotals := buildOverviewWindowTotals(pointsByUser)
 	members := BuildOverviewMemberDetails(subjects, statsByRelayUserID, windowTotals)
 	memberTree := BuildOverviewMemberTree(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, members)
-	topMembers := RankTopMembers(subjects, statsByRelayUserID, windowTotals, 12)
+	topMembers := []OverviewMember{}
+	if trendUnavailableReason == nil {
+		topMembers = RankTopMembers(subjects, statsByRelayUserID, windowTotals, 12)
+	}
 
 	for _, member := range topMembers {
 		series := TopMemberTrendSeries{
@@ -247,20 +266,26 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		trendState.Series = append(trendState.Series, series)
 	}
 
-	rangeCost := sumOverviewWindowCosts(windowTotals)
-	rangeTokens := sumOverviewWindowTokens(windowTotals)
+	var rangeCost *float64
+	var rangeTokens *int64
+	if trendUnavailableReason == nil {
+		rangeCost = sumOverviewWindowCosts(windowTotals)
+		rangeTokens = sumOverviewWindowTokens(windowTotals)
+	}
 	return &OverviewResponse{
 		Configured:       true,
 		IsRepresentative: true,
 		Window:           buildOverviewWindow(params),
 		Summary: OverviewSummary{
-			MemberCount:      len(overviewSubjects),
-			RelayMemberCount: len(relayUserIDs),
-			RangeActualCost:  rangeCost,
-			RangeTotalTokens: rangeTokens,
-			TodayActualCost:  nil,
-			TotalActualCost:  nil,
-			UnitLabel:        "USD",
+			Unavailable:       trendUnavailableReason != nil,
+			UnavailableReason: trendUnavailableReason,
+			MemberCount:       len(overviewSubjects),
+			RelayMemberCount:  len(relayUserIDs),
+			RangeActualCost:   rangeCost,
+			RangeTotalTokens:  rangeTokens,
+			TodayActualCost:   nil,
+			TotalActualCost:   nil,
+			UnitLabel:         "USD",
 		},
 		TopMembers:     topMembers,
 		TopMemberTrend: trendState,

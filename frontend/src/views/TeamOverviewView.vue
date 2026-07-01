@@ -24,6 +24,11 @@ const scopeTooLarge = computed(() => {
     || overview.value?.top_member_trend.unavailable_reason === 'scope_too_large'
 })
 
+const summaryPartiallyUnavailable = computed(() => {
+  return overview.value?.summary.unavailable === true
+    && overview.value.summary.unavailable_reason !== 'scope_too_large'
+})
+
 async function loadOverview() {
   const requestSeq = ++overviewRequestSeq
   loading.value = true
@@ -185,6 +190,12 @@ onMounted(loadOverview)
             class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
           >
             {{ t('teamUsage.scopeTooLarge') }}
+          </section>
+          <section
+            v-else-if="summaryPartiallyUnavailable"
+            class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+          >
+            {{ t('teamUsage.summaryUnavailable') }}
           </section>
 
           <TeamOverviewMemberTrendChart :state="overview.top_member_trend" :window="overview.window" />

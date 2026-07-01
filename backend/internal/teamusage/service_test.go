@@ -658,6 +658,61 @@ func TestOverviewReconcilesStaleRelayUserIDBeforeBatchUsageAndTrend(t *testing.T
 	}
 }
 
+func TestOverviewReturnsUnavailableSummaryWhenTrendFetchTimesOut(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := &representativescope.Scope{
+		ActorUserID:      999,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{
+				SubjectType: "member",
+				UserID:      101,
+				DisplayName: "Alice",
+				Email:       "alice@example.com",
+				RelayUserID: intPtr(1001),
+				Selectable:  true,
+			},
+		},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1001: {UserID: 1001, TotalActualCost: 12.3, TodayActualCost: 1.2},
+		},
+		trendWait: 200 * time.Millisecond,
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc.teamOverviewTrendTimeout = 10 * time.Millisecond
+
+	start := time.Now()
+	resp, err := svc.Overview(ctx, 999, OverviewParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-30",
+		Granularity: "day",
+		Timezone:    "UTC",
+	})
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= 100*time.Millisecond {
+		t.Fatalf("Overview() elapsed = %s, want trend timeout to return quickly", elapsed)
+	}
+	if !resp.Summary.Unavailable || resp.Summary.UnavailableReason == nil || *resp.Summary.UnavailableReason != "provider_error" {
+		t.Fatalf("summary unavailable = %v reason = %#v, want provider_error", resp.Summary.Unavailable, resp.Summary.UnavailableReason)
+	}
+	if resp.Summary.RangeActualCost != nil || resp.Summary.RangeTotalTokens != nil {
+		t.Fatalf("summary range totals = %#v/%#v, want nil when trend totals are unavailable", resp.Summary.RangeActualCost, resp.Summary.RangeTotalTokens)
+	}
+	if !resp.TopMemberTrend.Unavailable || resp.TopMemberTrend.UnavailableReason == nil || *resp.TopMemberTrend.UnavailableReason != "provider_error" {
+		t.Fatalf("trend unavailable = %v reason = %#v, want provider_error", resp.TopMemberTrend.Unavailable, resp.TopMemberTrend.UnavailableReason)
+	}
+	if len(resp.TopMembers) != 0 || len(resp.TopMemberTrend.Series) != 0 {
+		t.Fatalf("top members = %d trend series = %d, want no unavailable selected-window ranking", len(resp.TopMembers), len(resp.TopMemberTrend.Series))
+	}
+}
+
 func TestUpdateMultiplierReconcilesStaleRelayUserIDBeforeWrite(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -1153,6 +1208,7 @@ type fakeRelayProvider struct {
 	summaryRequestUserIDs      []int64
 	trendPoints                map[int64][]relay.UsageTrendPoint
 	trendErr                   error
+	trendWait                  time.Duration
 	trendCalls                 int
 	trendRequestUserIDs        []int64
 	dashboardRequestUserIDs    []int64
@@ -1263,9 +1319,16 @@ func (f *fakeRelayProvider) GetBatchUserUsageStats(_ context.Context, relayUserI
 	return f.summaryStats, nil
 }
 
-func (f *fakeRelayProvider) GetUsageTrendForUsers(_ context.Context, relayUserIDs []int64, _ relay.TeamMemberTrendParams) (map[int64][]relay.UsageTrendPoint, error) {
+func (f *fakeRelayProvider) GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, _ relay.TeamMemberTrendParams) (map[int64][]relay.UsageTrendPoint, error) {
 	if f.trendErr != nil {
 		return nil, f.trendErr
+	}
+	if f.trendWait > 0 {
+		select {
+		case <-time.After(f.trendWait):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	f.trendCalls++
 	f.trendRequestUserIDs = append([]int64(nil), relayUserIDs...)
