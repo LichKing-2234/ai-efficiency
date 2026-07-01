@@ -508,6 +508,14 @@ func (s *sub2apiRelay) FindUserByUsername(ctx context.Context, username string) 
 	return user, nil
 }
 
+func (s *sub2apiRelay) ListUsers(ctx context.Context) ([]User, error) {
+	users, err := s.listUsersFromAdminList(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("relay: list users: %w", err)
+	}
+	return users, nil
+}
+
 func (s *sub2apiRelay) findUsersBySearch(ctx context.Context, search string) ([]User, bool, error) {
 	resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/users?search="+url.QueryEscape(search), nil)
 	if err != nil {
@@ -529,6 +537,50 @@ func (s *sub2apiRelay) findUsersBySearch(ctx context.Context, search string) ([]
 		return nil, false, fmt.Errorf("decode: %w", err)
 	}
 	return users, ok, nil
+}
+
+func (s *sub2apiRelay) listUsersFromAdminList(ctx context.Context) ([]User, error) {
+	var users []User
+	for page := 1; ; page++ {
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/users?page=%d&page_size=200", page), nil)
+		if err != nil {
+			return nil, err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
+		}
+
+		var result struct {
+			envelopeStatus
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, err
+		}
+		if !result.ok() {
+			return nil, fmt.Errorf("request failed")
+		}
+
+		items, pages, err := decodeUserListItems(result.Data)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			user, err := decodeUserWithFacts(item)
+			if err != nil {
+				return nil, err
+			}
+			users = append(users, user)
+		}
+		if pages <= 1 || page >= pages {
+			return users, nil
+		}
+	}
 }
 
 func (s *sub2apiRelay) findUserInAdminList(ctx context.Context, match func(User) bool) (*User, error) {

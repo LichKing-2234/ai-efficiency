@@ -94,6 +94,10 @@ type TeamMemberTrendProvider interface {
 	GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error)
 }
 
+type UserDirectoryProvider interface {
+	ListUsers(ctx context.Context) ([]User, error)
+}
+
 type UserSubscriptionLister interface {
 	ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]UserSubscription, error)
 }

@@ -754,6 +754,10 @@ type TeamMemberTrendProvider interface {
     GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error)
 }
 
+type UserDirectoryProvider interface {
+    ListUsers(ctx context.Context) ([]User, error)
+}
+
 type UserSubscriptionLister interface {
     ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]UserSubscription, error)
 }
@@ -782,12 +786,13 @@ The current code already uses a local optional `ListUserSubscriptions` shape in 
 2. `GET /api/v1/admin/dashboard/trend?user_id=...` for selected-member token trend.
 3. `GET /api/v1/admin/dashboard/models?user_id=...` for selected-member model distribution.
 4. `POST /api/v1/admin/dashboard/users-usage` for Team Overview today and total member summary (`data.stats` map keyed by user id).
-5. `GET /api/v1/admin/dashboard/trend?user_id=...` fan-out for Team Overview selected-window ranking and trend data, capped by the full-scope relay-user cap.
-6. `GET /api/v1/admin/users/:id/subscriptions` for selected-member subscription groups.
-7. `GET /api/v1/admin/groups/:id/rate-multipliers` for current user-specific group multipliers.
-8. `PUT /api/v1/admin/groups/:id/rate-multipliers` for merged whole-group writes.
+5. `GET /api/v1/admin/users?page=...&page_size=200` once per Team Overview request to build a relay user directory for cached `relay_user_id` validation and email-based directory-only member resolution. Team Overview must not validate cached relay bindings with a per-member `GET /api/v1/admin/users/:id` fan-out.
+6. `GET /api/v1/admin/dashboard/trend?user_id=...` bounded fan-out for Team Overview selected-window ranking and trend data, capped by the full-scope relay-user cap.
+7. `GET /api/v1/admin/users/:id/subscriptions` for selected-member subscription groups.
+8. `GET /api/v1/admin/groups/:id/rate-multipliers` for current user-specific group multipliers.
+9. `PUT /api/v1/admin/groups/:id/rate-multipliers` for merged whole-group writes.
 
-Team Overview intentionally does not use a global unscoped sub2api user-trend response in the first version. AE fetches selected-window trend points only for relay users inside the representative's allowed scope, then computes `range_actual_cost`, token totals, ranking, summary, and the top-12 series from that scoped set. The personal Token Trend slot is replaced by this top-12 billing trend chart, and the personal Model Distribution slot is replaced by a member details table. A future version can add a scoped multi-user upstream endpoint to remove the bounded fan-out.
+Team Overview intentionally does not use a global unscoped sub2api user-trend response in the first version. AE fetches selected-window trend points only for relay users inside the representative's allowed scope, then computes `range_actual_cost`, token totals, ranking, summary, and the top-12 series from that scoped set. Before usage aggregation, AE may fetch the relay user directory through `UserDirectoryProvider` to validate cached bindings and repair stale local `relay_user_id` values without an N+1 lookup. The personal Token Trend slot is replaced by this top-12 billing trend chart, and the personal Model Distribution slot is replaced by a member details table. A future version can add a scoped multi-user upstream endpoint to remove the bounded fan-out.
 
 ## Rate Multiplier Write Flow
 

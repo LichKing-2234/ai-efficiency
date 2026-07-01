@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -658,6 +659,84 @@ func TestOverviewReconcilesStaleRelayUserIDBeforeBatchUsageAndTrend(t *testing.T
 	}
 }
 
+func TestOverviewUsesRelayUserDirectoryForCachedRelayBindings(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	staleTarget := createTeamUsageUser(t, client, "overview-stale", "overview-stale@example.com", intPtr(29))
+
+	scope := &representativescope.Scope{
+		ActorUserID:      999,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{
+				SubjectType: "member",
+				UserID:      101,
+				DisplayName: "Alice",
+				Email:       "alice@example.com",
+				RelayUserID: intPtr(1001),
+				Selectable:  true,
+			},
+			{
+				SubjectType: "member",
+				UserID:      staleTarget.ID,
+				DisplayName: "Overview Stale",
+				Email:       staleTarget.Email,
+				RelayUserID: intPtr(29),
+				Selectable:  true,
+			},
+		},
+	}
+	provider := &fakeRelayProvider{
+		usersByID: map[int64]*relay.User{
+			29:   {ID: 29, Email: "other-user@example.com", Username: "other-user"},
+			1001: {ID: 1001, Email: "alice@example.com", Username: "alice"},
+		},
+		usersByEmail: map[string]*relay.User{
+			"overview-stale@example.com": {ID: 2002, Email: "overview-stale@example.com", Username: "overview-stale"},
+		},
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1001: {UserID: 1001, TotalActualCost: 12, TodayActualCost: 1},
+			2002: {UserID: 2002, TotalActualCost: 24, TodayActualCost: 2},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			1001: {{Date: "2026-06-28", ActualCost: 3}},
+			2002: {{Date: "2026-06-28", ActualCost: 6}},
+		},
+	}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+
+	resp, err := svc.Overview(ctx, 999, OverviewParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-28",
+		Granularity: "day",
+		Timezone:    "UTC",
+	})
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+	if provider.listUsersCalls != 1 {
+		t.Fatalf("list users calls = %d, want 1 batched directory lookup", provider.listUsersCalls)
+	}
+	if len(provider.getUserRequestUserIDs) != 0 {
+		t.Fatalf("GetUser calls = %#v, want none in Team Overview hot path", provider.getUserRequestUserIDs)
+	}
+	if got, want := provider.summaryRequestUserIDs, []int64{1001, 2002}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary user ids = %#v, want %#v", got, want)
+	}
+	if got, want := provider.trendRequestUserIDs, []int64{1001, 2002}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("trend user ids = %#v, want %#v", got, want)
+	}
+	member := findOverviewMemberByEmail(resp.Members, staleTarget.Email)
+	if member == nil || member.RelayUserID == nil || *member.RelayUserID != 2002 {
+		t.Fatalf("stale member = %#v, want relay_user_id 2002 from relay user directory", member)
+	}
+	updated := client.User.GetX(ctx, staleTarget.ID)
+	if updated.RelayUserID == nil || *updated.RelayUserID != 2002 {
+		t.Fatalf("persisted relay_user_id = %#v, want 2002", updated.RelayUserID)
+	}
+}
+
 func TestOverviewReturnsUnavailableSummaryWhenTrendFetchTimesOut(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -1212,6 +1291,8 @@ type fakeRelayProvider struct {
 	trendCalls                 int
 	trendRequestUserIDs        []int64
 	dashboardRequestUserIDs    []int64
+	listUsersCalls             int
+	getUserRequestUserIDs      []int64
 }
 
 func (f *fakeRelayProvider) Ping(context.Context) error { return nil }
@@ -1222,6 +1303,7 @@ func (f *fakeRelayProvider) Authenticate(context.Context, string, string) (*rela
 }
 
 func (f *fakeRelayProvider) GetUser(_ context.Context, userID int64) (*relay.User, error) {
+	f.getUserRequestUserIDs = append(f.getUserRequestUserIDs, userID)
 	if f.usersByID == nil {
 		return nil, nil
 	}
@@ -1231,6 +1313,31 @@ func (f *fakeRelayProvider) GetUser(_ context.Context, userID int64) (*relay.Use
 	}
 	copy := *user
 	return &copy, nil
+}
+
+func (f *fakeRelayProvider) ListUsers(context.Context) ([]relay.User, error) {
+	f.listUsersCalls++
+	usersByID := map[int64]relay.User{}
+	for _, user := range f.usersByID {
+		if user == nil {
+			continue
+		}
+		usersByID[user.ID] = *user
+	}
+	for _, user := range f.usersByEmail {
+		if user == nil {
+			continue
+		}
+		usersByID[user.ID] = *user
+	}
+	users := make([]relay.User, 0, len(usersByID))
+	for _, user := range usersByID {
+		users = append(users, user)
+	}
+	sort.Slice(users, func(i, j int) bool {
+		return users[i].ID < users[j].ID
+	})
+	return users, nil
 }
 
 func (f *fakeRelayProvider) ListAllowedGroupsForUser(context.Context, int64) ([]relay.Group, error) {

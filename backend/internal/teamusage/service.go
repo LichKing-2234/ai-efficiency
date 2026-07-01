@@ -170,11 +170,15 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 	if !ok {
 		return nil, ErrProviderUnsupported
 	}
+	overviewRelayResolver, err := s.newOverviewRelayUserResolver(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
 
 	subjects := make([]representativescope.Subject, 0, len(overviewSubjects))
 	relayUserIDs := make([]int64, 0, len(overviewSubjects))
 	for _, subject := range overviewSubjects {
-		relayUserID, resolvedSubject, err := s.resolveOverviewSubjectRelayUserID(ctx, provider, subject)
+		relayUserID, resolvedSubject, err := overviewRelayResolver.Resolve(ctx, subject)
 		if err != nil {
 			if errors.Is(err, ErrNoRelayMapping) {
 				subjects = append(subjects, subject)
@@ -292,6 +296,95 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		Members:        members,
 		MemberTree:     memberTree,
 	}, nil
+}
+
+type overviewRelayUserResolver struct {
+	service      *Service
+	provider     relay.Provider
+	useDirectory bool
+	usersByID    map[int64]relay.User
+	usersByEmail map[string]relay.User
+}
+
+func (s *Service) newOverviewRelayUserResolver(ctx context.Context, provider relay.Provider) (*overviewRelayUserResolver, error) {
+	resolver := &overviewRelayUserResolver{
+		service:  s,
+		provider: provider,
+	}
+	directoryProvider, ok := provider.(relay.UserDirectoryProvider)
+	if !ok {
+		return resolver, nil
+	}
+	users, err := directoryProvider.ListUsers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list relay users for team overview: %w", err)
+	}
+	resolver.useDirectory = true
+	resolver.usersByID = make(map[int64]relay.User, len(users))
+	resolver.usersByEmail = make(map[string]relay.User, len(users))
+	for _, user := range users {
+		if user.ID > 0 {
+			resolver.usersByID[user.ID] = user
+		}
+		if email := overviewEmailKey(user.Email); email != "" {
+			resolver.usersByEmail[email] = user
+		}
+	}
+	return resolver, nil
+}
+
+func (r *overviewRelayUserResolver) Resolve(ctx context.Context, subject representativescope.Subject) (int64, representativescope.Subject, error) {
+	if r == nil {
+		return 0, subject, ErrNoRelayMapping
+	}
+	if !r.useDirectory {
+		return r.service.resolveOverviewSubjectRelayUserID(ctx, r.provider, subject)
+	}
+	return r.resolveFromDirectory(ctx, subject)
+}
+
+func (r *overviewRelayUserResolver) resolveFromDirectory(ctx context.Context, subject representativescope.Subject) (int64, representativescope.Subject, error) {
+	email := strings.TrimSpace(subject.Email)
+	if subject.RelayUserID != nil && *subject.RelayUserID > 0 {
+		cachedRelayUserID := int64(*subject.RelayUserID)
+		if email == "" {
+			return cachedRelayUserID, subject, nil
+		}
+		if current, ok := r.usersByID[cachedRelayUserID]; ok && strings.EqualFold(strings.TrimSpace(current.Email), email) {
+			return cachedRelayUserID, subject, nil
+		}
+		if relayUser, ok := r.usersByEmail[overviewEmailKey(email)]; ok && relayUser.ID > 0 {
+			resolved, err := r.withResolvedRelayUserID(ctx, subject, relayUser.ID)
+			return relayUser.ID, resolved, err
+		}
+		return cachedRelayUserID, subject, nil
+	}
+
+	if email == "" {
+		return 0, subject, ErrNoRelayMapping
+	}
+	relayUser, ok := r.usersByEmail[overviewEmailKey(email)]
+	if !ok || relayUser.ID <= 0 || !strings.EqualFold(strings.TrimSpace(relayUser.Email), email) {
+		return 0, subject, ErrNoRelayMapping
+	}
+	resolved, err := r.withResolvedRelayUserID(ctx, subject, relayUser.ID)
+	return relayUser.ID, resolved, err
+}
+
+func (r *overviewRelayUserResolver) withResolvedRelayUserID(ctx context.Context, subject representativescope.Subject, relayUserID int64) (representativescope.Subject, error) {
+	resolved := subject
+	resolvedID := int(relayUserID)
+	resolved.RelayUserID = &resolvedID
+	if subject.UserID > 0 && subject.RelayUserID != nil && *subject.RelayUserID != resolvedID && r.service != nil && r.service.client != nil {
+		if err := r.service.client.User.UpdateOneID(subject.UserID).SetRelayUserID(resolvedID).Exec(ctx); err != nil {
+			return subject, fmt.Errorf("persist relay user binding: %w", err)
+		}
+	}
+	return resolved, nil
+}
+
+func overviewEmailKey(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 func (s *Service) UpdateMultiplier(ctx context.Context, actorUserID, targetUserID int, groupID int64, req UpdateMultiplierRequest) (*UpdateMultiplierResponse, error) {

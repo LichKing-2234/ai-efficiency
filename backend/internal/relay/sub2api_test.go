@@ -710,6 +710,68 @@ func TestFindUserByUsernameSuccessFalse(t *testing.T) {
 	}
 }
 
+func TestListUsersFetchesAllAdminPages(t *testing.T) {
+	mux := http.NewServeMux()
+	var pages []string
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page_size") != "200" {
+			t.Fatalf("page_size = %q, want 200", r.URL.Query().Get("page_size"))
+		}
+		page := r.URL.Query().Get("page")
+		pages = append(pages, page)
+		w.Header().Set("Content-Type", "application/json")
+		switch page {
+		case "1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{"id": 11, "email": "alice@example.com", "username": "alice", "role": "user"},
+					},
+					"page":      1,
+					"page_size": 200,
+					"pages":     2,
+					"total":     2,
+				},
+			})
+		case "2":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": true,
+				"data": map[string]any{
+					"items": []any{
+						map[string]any{"id": 12, "email": "bob@example.org", "username": "bob", "role": "admin"},
+					},
+					"page":      2,
+					"page_size": 200,
+					"pages":     2,
+					"total":     2,
+				},
+			})
+		default:
+			t.Fatalf("unexpected page %q", page)
+		}
+	})
+
+	p := newTestProvider(t, mux)
+	lister, ok := p.(relay.UserDirectoryProvider)
+	if !ok {
+		t.Fatal("provider does not implement UserDirectoryProvider")
+	}
+	users, err := lister.ListUsers(context.Background())
+	if err != nil {
+		t.Fatalf("ListUsers() unexpected error: %v", err)
+	}
+	if got, want := pages, []string{"1", "2"}; !cmp.Equal(got, want) {
+		t.Fatalf("pages = %#v, want %#v", got, want)
+	}
+	if got, want := []int64{users[0].ID, users[1].ID}, []int64{11, 12}; !cmp.Equal(got, want) {
+		t.Fatalf("user ids = %#v, want %#v", got, want)
+	}
+	if users[1].Role != "admin" {
+		t.Fatalf("second user role = %q, want admin", users[1].Role)
+	}
+}
+
 func TestCreateUser(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
