@@ -370,7 +370,10 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
           </div>
         </div>
 
-        <div class="min-w-0 divide-y divide-slate-100 rounded-md border border-slate-200">
+        <div
+          data-testid="top-member-trend-legend"
+          class="min-w-0 max-h-64 overflow-y-auto divide-y divide-slate-100 rounded-md border border-slate-200"
+        >
           <div
             v-for="(series, index) in props.state.series"
             :key="seriesKey(series)"

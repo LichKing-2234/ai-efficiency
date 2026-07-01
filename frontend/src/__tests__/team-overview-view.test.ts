@@ -926,4 +926,30 @@ describe('TeamOverviewMemberTrendChart', () => {
     expect(chartData.datasets.find((dataset) => dataset.label === 'Team total')).toBeUndefined()
     expect(chartOptions.scales.y.title.text).toBe('tokens')
   })
+
+  it('keeps the Top 12 legend scrollable instead of stretching the trend section', () => {
+    const state = structuredClone(overviewFixture.top_member_trend)
+    state.series = Array.from({ length: 12 }, (_, index) => ({
+      user_id: 100 + index,
+      display_name: `Member ${index + 1}`,
+      rank: index + 1,
+      unavailable: false,
+      unavailable_reason: null,
+      points: [
+        { date: '2026-06-28', actual_cost: index + 1, total_tokens: (index + 1) * 1000 },
+      ],
+    }))
+    const wrapper = mount(TeamOverviewMemberTrendChart, {
+      props: {
+        state,
+        departmentTrend: overviewFixture.department_trend,
+        window: overviewFixture.window,
+      },
+    })
+
+    const legend = wrapper.get('[data-testid="top-member-trend-legend"]')
+    expect(legend.classes()).toContain('max-h-64')
+    expect(legend.classes()).toContain('overflow-y-auto')
+    expect(legend.text()).toContain('#12 Member 12')
+  })
 })
