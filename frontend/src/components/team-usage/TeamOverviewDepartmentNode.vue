@@ -30,12 +30,20 @@ function hasChildren() {
 }
 
 function hasNestedRows() {
-  return hasChildren() || props.node.members.length > 0
+  return hasChildren() || nodeMembers(props.node).length > 0
 }
 
 function toggleNode() {
   if (!hasNestedRows()) return
   props.toggle(props.node)
+}
+
+function nodeMembers(node: TeamOverviewMemberNode) {
+  return node.members ?? []
+}
+
+function nodeChildren(node: TeamOverviewMemberNode) {
+  return node.children ?? []
 }
 </script>
 
@@ -77,7 +85,7 @@ function toggleNode() {
 
   <template v-if="props.expanded(props.node)">
     <div
-      v-for="member in props.node.members"
+      v-for="member in nodeMembers(props.node)"
       :key="props.memberKey(member)"
       :data-testid="props.memberTestId(member)"
       role="treeitem"
@@ -113,7 +121,7 @@ function toggleNode() {
     </div>
 
     <TeamOverviewDepartmentNode
-      v-for="child in props.node.children"
+      v-for="child in nodeChildren(props.node)"
       :key="child.department_external_id"
       :node="child"
       :expanded="props.expanded"

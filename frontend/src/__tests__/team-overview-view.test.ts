@@ -680,6 +680,25 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(false)
   })
 
+  it('renders organization departments when backend returns null empty member arrays', async () => {
+    const nullMembersFixture: TeamOverviewResponse = structuredClone(overviewFixture)
+    ;(nullMembersFixture.member_tree![0].children[0] as any).members = null
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: nullMembersFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="team-overview-department-department-alpha"]').text()).toContain('Department Alpha')
+    expect(wrapper.get('[data-testid="team-overview-department-department-alpha-team-one"]').text()).toContain('Team One')
+  })
+
   it('marks unconnected members in red with localized status', async () => {
     mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()

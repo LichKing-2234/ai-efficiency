@@ -79,3 +79,25 @@ func TestMergeResolvedOverviewSubjectsKeepsUnresolvedScopedMembers(t *testing.T)
 		t.Fatalf("merged second subject = %#v, want unresolved Bob", merged[1])
 	}
 }
+
+func TestBuildOverviewMemberTreeKeepsEmptyMemberSlicesNonNil(t *testing.T) {
+	departments := []representativescope.DepartmentScope{
+		{ExternalID: "dept-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha", ChildCount: 1},
+		{ExternalID: "dept-alpha-empty", ParentExternalID: stringPtr("dept-alpha"), Name: "Empty Team", DisplayPath: "Department Alpha / Empty Team", Depth: 1},
+	}
+	members := []OverviewMember{
+		{UserID: 1, DisplayName: "Alice", DepartmentExternalID: "dept-alpha"},
+	}
+
+	tree := BuildOverviewMemberTree(departments, []string{"dept-alpha"}, members)
+
+	if len(tree) != 1 || len(tree[0].Children) != 1 {
+		t.Fatalf("tree = %#v, want root with one child", tree)
+	}
+	if tree[0].Members == nil {
+		t.Fatalf("root members slice is nil, want empty or populated slice")
+	}
+	if tree[0].Children[0].Members == nil {
+		t.Fatalf("empty child members slice is nil, want non-nil empty slice")
+	}
+}

@@ -186,7 +186,7 @@ func BuildOverviewMemberTree(departments []representativescope.DepartmentScope, 
 		if node.Depth < 0 {
 			node.Depth = 0
 		}
-		node.Members = append([]OverviewMember(nil), source.Members...)
+		node.Members = append(make([]OverviewMember, 0, len(source.Members)), source.Members...)
 		node.Children = make([]OverviewMemberNode, 0, len(childIDsByParent[id]))
 		for _, childID := range childIDsByParent[id] {
 			node.Children = append(node.Children, buildNode(childID, rootDepth))

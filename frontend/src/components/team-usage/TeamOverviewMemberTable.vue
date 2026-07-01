@@ -85,8 +85,8 @@ const expandedDepartmentIds = ref<Set<string>>(new Set())
 const allExpandableDepartmentIds = computed(() => {
   const ids: string[] = []
   function visit(node: TeamOverviewMemberNode) {
-    if ((node.children?.length ?? 0) > 0 || node.members.length > 0) ids.push(node.department_external_id)
-    for (const child of node.children ?? []) visit(child)
+    if (nodeChildren(node).length > 0 || nodeMembers(node).length > 0) ids.push(node.department_external_id)
+    for (const child of nodeChildren(node)) visit(child)
   }
   for (const root of treeRoots.value) visit(root)
   return ids
@@ -107,7 +107,7 @@ function departmentExpanded(node: TeamOverviewMemberNode) {
 }
 
 function toggleDepartment(node: TeamOverviewMemberNode) {
-  if ((node.children?.length ?? 0) <= 0 && node.members.length <= 0) return
+  if (nodeChildren(node).length <= 0 && nodeMembers(node).length <= 0) return
   const next = new Set(expandedDepartmentIds.value)
   if (next.has(node.department_external_id)) {
     next.delete(node.department_external_id)
@@ -124,6 +124,14 @@ function viewButtonClass(view: DetailView) {
       ? 'bg-gray-900 text-white'
       : 'text-gray-600 hover:bg-gray-50',
   ]
+}
+
+function nodeMembers(node: TeamOverviewMemberNode) {
+  return node.members ?? []
+}
+
+function nodeChildren(node: TeamOverviewMemberNode) {
+  return node.children ?? []
 }
 </script>
 
