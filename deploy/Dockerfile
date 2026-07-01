@@ -1,5 +1,5 @@
 # Stage 1: Build frontend
-FROM node:20-alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install --registry=https://registry.npmmirror.com
@@ -7,9 +7,11 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Build backend
-FROM golang:1.24-alpine AS backend-builder
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS backend-builder
 RUN apk add --no-cache git
 WORKDIR /app/backend
+ARG TARGETOS
+ARG TARGETARCH
 ARG APP_VERSION=dev
 ARG APP_COMMIT=unknown
 ARG APP_BUILD_TIME=
@@ -19,9 +21,10 @@ RUN go mod download
 COPY backend/ ./
 # Embed frontend dist into the backend package tree before building.
 COPY --from=frontend-builder /app/frontend/dist ./internal/web/dist/
-RUN CGO_ENABLED=0 GOOS=linux go build \
-  -ldflags "-X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=${APP_VERSION} -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit=${APP_COMMIT} -X github.com/ai-efficiency/backend/internal/deployment.BuildTime=${APP_BUILD_TIME}" \
-  -o /app/server ./cmd/server/
+RUN export GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-$(go env GOARCH)}" && \
+  CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build \
+    -ldflags "-X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=${APP_VERSION} -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit=${APP_COMMIT} -X github.com/ai-efficiency/backend/internal/deployment.BuildTime=${APP_BUILD_TIME}" \
+    -o /app/server ./cmd/server/
 
 # Stage 3: Final image
 FROM alpine:3.20
