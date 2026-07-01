@@ -84,6 +84,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Validate release workflow contracts
+        run: bash test/release-workflow-contract-test.sh
       - name: Validate deploy shell script
         run: bash -n deploy/docker-deploy.sh
       - name: Validate compose configs

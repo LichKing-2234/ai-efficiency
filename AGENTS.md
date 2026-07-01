@@ -148,6 +148,15 @@ ai-efficiency/
 - 前端角色回归脚本：`cd frontend && pnpm run test:e2e:role`
 - 环境敏感测试（本地端口监听、TTY、tmux、浏览器/E2E）需与默认单元测试结果分开说明
 
+## Release Units
+
+- Platform releases use `v*` tags and cover backend, frontend, deploy assets, GHCR image publishing, and Helm rollout inputs.
+- CLI releases use `ae-cli/v*` tags and publish only `ae-cli` artifacts.
+- Do not create a platform `v*` tag for CLI-only changes.
+- Do not run Helm rollout for CLI-only `ae-cli/v*` releases.
+- Repository-level `/releases/latest` belongs to the platform release line; CLI installer and updater must discover the latest CLI release by filtering `ae-cli/v*` releases.
+- `v0.2.0-cli.1` is the only bridge exception for legacy CLI update migration. It must be published by the CLI bridge workflow only, must not build GHCR images or backend bundles, and must not be reused as a normal CLI version line.
+
 ## Commit Message Convention
 
 使用 Conventional Commits：

@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - '!v*-cli.*'
   workflow_dispatch:
     inputs:
       tag:
@@ -41,6 +42,10 @@ jobs:
           fi
 
           echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+          if echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-cli\.'; then
+            echo "Platform release workflow must not publish CLI bridge tag $TAG; use ae-cli Bridge Release instead" >&2
+            exit 1
+          fi
 
           VERSION="${TAG#v}"
           MAJOR="${VERSION%%.*}"
@@ -109,24 +114,6 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Test backend
         working-directory: backend
-        run: go test ./...
-
-  ae-cli-test:
-    name: verify / ae-cli
-    needs: prepare
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ needs.prepare.outputs.checkout_ref }}
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: ae-cli/go.mod
-          check-latest: false
-          cache-dependency-path: ae-cli/go.sum
-      - name: Test ae-cli
-        working-directory: ae-cli
         run: go test ./...
 
   frontend-test:
@@ -210,7 +197,6 @@ jobs:
   verify:
     needs:
       - backend-test
-      - ae-cli-test
       - frontend-test
       - release-frontend-embedding-test
       - deploy-validation

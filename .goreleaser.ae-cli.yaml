@@ -1,0 +1,49 @@
+version: 2
+
+project_name: ae-cli
+
+builds:
+  - id: ae-cli
+    dir: ae-cli
+    main: .
+    binary: ae-cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ai-efficiency/ae-cli/internal/buildinfo.Version={{ .Env.AE_CLI_VERSION }}
+
+archives:
+  - id: ae-cli
+    ids:
+      - ae-cli
+    name_template: "ae-cli_{{ .Env.AE_CLI_VERSION_NO_V }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  github:
+    owner: '{{ envOrDefault "GITHUB_REPO_OWNER" "ai-efficiency" }}'
+    name: '{{ envOrDefault "GITHUB_REPO_NAME" "ai-efficiency" }}'
+  draft: false
+  prerelease: auto
+  make_latest: false
+  name_template: "ae-cli {{ .Env.AE_CLI_VERSION }}"

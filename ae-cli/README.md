@@ -11,12 +11,13 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae
 Install a specific version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | bash -s -- v0.2.0
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | bash -s -- ae-cli/v0.2.0
 ```
 
 The installer:
 
 - downloads the matching GitHub Release archive
+- requires full CLI release tags such as `ae-cli/v0.2.0` for pinned installs; platform `v*` tags are rejected except for the one-time legacy bridge tag `v0.2.0-cli.1`
 - verifies `checksums.txt`
 - installs `ae-cli` to `~/.local/bin/ae-cli`
 - on first install, writes `~/.ae-cli/config.yaml` with the default backend URL
@@ -42,7 +43,7 @@ ae-cli version
 
 ## Update
 
-Check whether a newer GitHub Release is available:
+Check whether a newer `ae-cli/v*` GitHub Release is available:
 
 ```bash
 ae-cli update check
@@ -66,6 +67,8 @@ Update behavior:
 
 - `update check` only reads GitHub Release metadata and does not require config, login, or backend access
 - `update install` only upgrades the official managed path `~/.local/bin/ae-cli`
+- CLI updates ignore platform `v*` releases; the platform repository latest release is reserved for backend/frontend/deploy updates
+- `v0.2.0-cli.1` is a one-time bridge for older CLIs that still read repository `/releases/latest`; new installs and future updates should use `ae-cli/v*` releases
 - the install step reuses the tagged official installer, so checksum verification, config preservation, and managed hook refresh stay aligned with `ae-cli/install.sh`
 - if `ae-cli` is running from another path, the command fails with guidance to rerun the official installer instead of guessing how to overwrite that install
 

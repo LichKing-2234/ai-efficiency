@@ -214,8 +214,9 @@ Restarts do not shell out to `systemctl restart` by default. The backend acknowl
 After the first tagged GitHub release, the public repository will publish:
 
 - `ai-efficiency-backend_<version>_<os>_<arch>.tar.gz|zip`
-- `ae-cli_<version>_<os>_<arch>.tar.gz|zip`
 - `checksums.txt`
+
+`ae-cli` artifacts are published by independent `ae-cli/v*` releases; see [`../ae-cli/README.md`](../ae-cli/README.md) for CLI installation and updates.
 
 ## GHCR Images
 

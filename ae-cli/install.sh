@@ -2,6 +2,9 @@
 set -euo pipefail
 
 GITHUB_REPO="LichKing-2234/ai-efficiency"
+CLI_RELEASE_TAG_PREFIX="ae-cli/"
+CLI_RELEASE_TAG_REGEX='^ae-cli/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$'
+CLI_BRIDGE_RELEASE_TAG="v0.2.0-cli.1"
 
 if [[ -z "${HOME:-}" ]]; then
   echo "HOME must be set to determine the installation directory" >&2
@@ -12,7 +15,7 @@ INSTALL_DIR="${HOME}/.local/bin"
 TARGET_PATH="${INSTALL_DIR}/ae-cli"
 CONFIG_DIR="${HOME}/.ae-cli"
 CONFIG_PATH="${CONFIG_DIR}/config.yaml"
-RELEASE_API_URL="${AE_CLI_INSTALL_RELEASE_API_URL:-https://api.github.com/repos/${GITHUB_REPO}/releases/latest}"
+RELEASE_API_URL="${AE_CLI_INSTALL_RELEASE_API_URL:-https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=100}"
 RELEASE_DOWNLOAD_BASE="${AE_CLI_INSTALL_RELEASE_DOWNLOAD_BASE:-https://github.com/${GITHUB_REPO}/releases/download}"
 TMP_DIR=""
 TEMP_TARGET=""
@@ -114,27 +117,80 @@ detect_platform() {
   esac
 }
 
+release_version_from_tag() {
+  local tag="$1"
+  tag="${tag#${CLI_RELEASE_TAG_PREFIX}}"
+  tag="${tag#v}"
+  printf '%s' "$tag"
+}
+
+validate_cli_release_tag() {
+  local tag="$1"
+  if [[ "$tag" == "$CLI_BRIDGE_RELEASE_TAG" ]]; then
+    return 0
+  fi
+  if [[ ! "$tag" =~ $CLI_RELEASE_TAG_REGEX ]]; then
+    echo "release tag must match ae-cli/vX.Y.Z, ae-cli/vX.Y.Z-prerelease, or bridge tag ${CLI_BRIDGE_RELEASE_TAG}: ${tag}" >&2
+    exit 1
+  fi
+}
+
+next_page_url() {
+  local headers_file="$1"
+
+  awk '
+    BEGIN { RS = "," }
+    /rel="next"/ {
+      if (match($0, /<[^>]+>/)) {
+        print substr($0, RSTART + 1, RLENGTH - 2)
+        exit
+      }
+    }
+  ' "$headers_file"
+}
+
 latest_tag() {
   local tag=""
   local release_json=""
+  local next_url="$RELEASE_API_URL"
+  local headers_file=""
 
-  if ! release_json="$(curl -fsSL "$RELEASE_API_URL")"; then
-    github_release_proxy_help
-    exit 1
-  fi
+  while [[ -n "$next_url" ]]; do
+    headers_file="${TMP_DIR}/release-headers.$$"
+    if ! release_json="$(curl -fsSL -D "$headers_file" "$next_url")"; then
+      github_release_proxy_help
+      exit 1
+    fi
 
-  tag="$(printf '%s\n' "$release_json" | awk -F'"' '/"tag_name"/ { print $4; exit }')"
-  if [[ -z "$tag" ]]; then
-    echo "failed to resolve release tag" >&2
-    exit 1
-  fi
+    tag="$(printf '%s\n' "$release_json" | awk -F'"' '
+      /"tag_name"[[:space:]]*:/ {
+        for (i = 1; i <= NF; i++) {
+          if ($i == "tag_name") {
+            candidate = $(i + 2)
+            if (candidate ~ /^ae-cli\/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$/) {
+              print candidate
+              exit
+            }
+          }
+        }
+      }
+    ')"
+    if [[ -n "$tag" ]]; then
+      printf '%s\n' "$tag"
+      return 0
+    fi
 
-  printf '%s\n' "$tag"
+    next_url="$(next_page_url "$headers_file")"
+  done
+
+  echo "failed to resolve ae-cli release tag" >&2
+  exit 1
 }
 
 download_release() {
   local tag="$1"
-  local version="${tag#v}"
+  local version
+  version="$(release_version_from_tag "$tag")"
   local archive="ae-cli_${version}_${OS}_${ARCH}.tar.gz"
   local base="${RELEASE_DOWNLOAD_BASE%/}/${tag}"
   local expected=""
@@ -337,6 +393,7 @@ main() {
   TMP_DIR="$(mktemp -d)"
 
   local tag="${1:-$(latest_tag)}"
+  validate_cli_release_tag "$tag"
   echo "Installing ae-cli ${tag}..."
   download_release "$tag"
   install_binary
