@@ -75,6 +75,7 @@ type adminUserRow struct {
 	RelayAuthPassword string                  `json:"relay_auth_password"`
 	AccessStatus      string                  `json:"access_status"`
 	TokenValidAfter   *time.Time              `json:"token_valid_after,omitempty"`
+	RelayDisabledAt   *time.Time              `json:"relay_disabled_at,omitempty"`
 	OffboardingStatus string                  `json:"offboarding_status,omitempty"`
 	Department        *adminUserDepartmentRow `json:"department,omitempty"`
 	CreatedAt         time.Time               `json:"created_at"`
@@ -130,6 +131,10 @@ type adminAssignSubscriptionRequest struct {
 	ProviderID   int    `json:"provider_id"`
 	GroupID      string `json:"group_id"`
 	ValidityDays int    `json:"validity_days"`
+}
+
+type adminDisableAccessRequest struct {
+	ConfirmEmail string `json:"confirm_email"`
 }
 
 type adminManageSubscriptionsRequest struct {
@@ -283,6 +288,7 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 			RelayAuthPassword: relayPassword,
 			AccessStatus:      adminuseraccess.Derive(u, relayPassword, offboardingFact.Succeeded),
 			TokenValidAfter:   u.TokenValidAfter,
+			RelayDisabledAt:   u.RelayDisabledAt,
 			OffboardingStatus: offboardingFact.LatestStatus,
 			Department:        departmentsByUserID[u.ID],
 			CreatedAt:         u.CreatedAt,
@@ -788,6 +794,81 @@ func (h *AdminUsersHandler) AssignSubscription(c *gin.Context) {
 	})
 }
 
+func (h *AdminUsersHandler) DisableAccess(c *gin.Context) {
+	id, err := strconv.Atoi(strings.TrimSpace(c.Param("id")))
+	if err != nil || id <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	var req adminDisableAccessRequest
+	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	confirmEmail := strings.ToLower(strings.TrimSpace(req.ConfirmEmail))
+	if confirmEmail == "" {
+		pkg.Error(c, http.StatusBadRequest, "confirm_email is required")
+		return
+	}
+
+	u, err := h.entClient.User.Get(c.Request.Context(), id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "user not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "get user: "+err.Error())
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(u.Email)) != confirmEmail {
+		pkg.Error(c, http.StatusUnprocessableEntity, "confirm_email must match user email")
+		return
+	}
+	if u.RelayUserID == nil || *u.RelayUserID <= 0 {
+		pkg.Error(c, http.StatusUnprocessableEntity, "user is not linked to a relay user")
+		return
+	}
+	if h.resolver == nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider resolver is not configured")
+		return
+	}
+	providerID, err := h.primaryRelayProviderID(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "get relay provider: "+err.Error())
+		return
+	}
+	if providerID <= 0 {
+		pkg.Error(c, http.StatusUnprocessableEntity, "no enabled relay provider")
+		return
+	}
+	rp, err := h.resolver.Resolve(c.Request.Context(), providerID)
+	if err != nil {
+		pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("resolve relay provider %d: %v", providerID, err))
+		return
+	}
+	disabler, ok := rp.(relay.UserDisabler)
+	if !ok {
+		pkg.Error(c, http.StatusUnprocessableEntity, "relay provider does not support user disable")
+		return
+	}
+	if err := disabler.DisableUser(c.Request.Context(), int64(*u.RelayUserID)); err != nil {
+		pkg.Error(c, http.StatusBadGateway, "disable relay user: "+err.Error())
+		return
+	}
+	disabledAt := time.Now()
+	if _, err := h.entClient.User.UpdateOneID(u.ID).SetRelayDisabledAt(disabledAt).Save(c.Request.Context()); err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "mark relay user disabled: "+err.Error())
+		return
+	}
+
+	pkg.Success(c, gin.H{
+		"status":            "disabled",
+		"relay_user_id":     *u.RelayUserID,
+		"relay_disabled_at": disabledAt,
+	})
+}
+
 func (h *AdminUsersHandler) RevealRelayPassword(c *gin.Context) {
 	id, err := strconv.Atoi(strings.TrimSpace(c.Param("id")))
 	if err != nil || id <= 0 {
@@ -821,6 +902,30 @@ func (h *AdminUsersHandler) RevealRelayPassword(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{"password": password})
+}
+
+func (h *AdminUsersHandler) primaryRelayProviderID(ctx context.Context) (int, error) {
+	p, err := h.entClient.RelayProvider.Query().
+		Where(relayprovider.EnabledEQ(true), relayprovider.IsPrimaryEQ(true)).
+		Order(ent.Asc(relayprovider.FieldID)).
+		First(ctx)
+	if err == nil {
+		return p.ID, nil
+	}
+	if !ent.IsNotFound(err) {
+		return 0, err
+	}
+	p, err = h.entClient.RelayProvider.Query().
+		Where(relayprovider.EnabledEQ(true)).
+		Order(ent.Asc(relayprovider.FieldID)).
+		First(ctx)
+	if ent.IsNotFound(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return p.ID, nil
 }
 
 func (h *AdminUsersHandler) resolveAssignableSubscriptionRelay(c *gin.Context, providerID int, groupID int64) (relay.Provider, bool) {

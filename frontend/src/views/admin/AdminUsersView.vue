@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import {
+  disableAdminUserAccess,
   getAdminUserSubscriptionJob,
   getLatestAdminUserSubscriptionJob,
   listAdminUserDepartments,
@@ -41,6 +42,10 @@ const subscriptionOptionsLoading = ref(false)
 const subscriptionOptionsError = ref('')
 const copiedState = reactive<Record<number, string>>({})
 const plaintextConfirmUserId = ref<number | null>(null)
+const disableAccessConfirmUserId = ref<number | null>(null)
+const disableAccessConfirmEmail = ref('')
+const disableAccessMessages = reactive<Record<number, string>>({})
+const disablingAccessUserId = ref<number | null>(null)
 const selectedUserIds = ref<Set<number>>(new Set())
 const selectAllUsersCheckbox = ref<HTMLInputElement | null>(null)
 const subscriptionJob = ref<AdminSubscriptionJob | null>(null)
@@ -270,7 +275,7 @@ function accessStatusLabel(user: AdminUser) {
 }
 
 function adminUserAccessStatus(user: AdminUser): AdminUserAccessStatus {
-  if (user.access_status === 'disabled' || user.token_valid_after || user.offboarding_status === 'succeeded') {
+  if (user.access_status === 'disabled' || user.token_valid_after || user.relay_disabled_at || user.offboarding_status === 'succeeded') {
     return 'disabled'
   }
   if (user.access_status === 'configured' || user.relay_auth_password) {
@@ -291,6 +296,14 @@ function accessStatusClass(user: AdminUser) {
   if (status === 'disabled') return 'bg-red-100 text-red-800'
   if (status === 'configured') return 'bg-emerald-100 text-emerald-800'
   return 'bg-amber-100 text-amber-800'
+}
+
+function canDisableAccess(user: AdminUser) {
+  return adminUserAccessStatus(user) !== 'disabled' && user.relay_user_id != null
+}
+
+function disableAccessConfirmMatches(user: AdminUser) {
+  return disableAccessConfirmEmail.value.trim().toLowerCase() === user.email.trim().toLowerCase()
 }
 
 function departmentLabel(user: AdminUser) {
@@ -600,6 +613,12 @@ function requestPlaintextCopy(user: AdminUser) {
   plaintextConfirmUserId.value = user.id
 }
 
+function requestDisableAccess(user: AdminUser) {
+  disableAccessMessages[user.id] = ''
+  disableAccessConfirmUserId.value = user.id
+  disableAccessConfirmEmail.value = ''
+}
+
 async function confirmCopyPlaintext(user: AdminUser) {
   copiedState[user.id] = ''
   try {
@@ -614,6 +633,31 @@ async function confirmCopyPlaintext(user: AdminUser) {
     plaintextConfirmUserId.value = null
   } catch (err: any) {
     copiedState[user.id] = err.response?.data?.message || err.message || t('adminUsers.copyFailed')
+  }
+}
+
+async function confirmDisableAccess(user: AdminUser) {
+  if (!disableAccessConfirmMatches(user)) return
+  disableAccessMessages[user.id] = ''
+  disablingAccessUserId.value = user.id
+  try {
+    const res = await disableAdminUserAccess(user.id, { confirm_email: disableAccessConfirmEmail.value.trim() })
+    const disabledAt = res.data.data?.relay_disabled_at || new Date().toISOString()
+    const index = rows.value.findIndex((row) => row.id === user.id)
+    if (index >= 0) {
+      rows.value[index] = {
+        ...rows.value[index],
+        access_status: 'disabled',
+        relay_disabled_at: disabledAt,
+      }
+    }
+    disableAccessMessages[user.id] = t('adminUsers.disabledUser', { email: user.email })
+    disableAccessConfirmUserId.value = null
+    disableAccessConfirmEmail.value = ''
+  } catch (err: any) {
+    disableAccessMessages[user.id] = err.response?.data?.message || err.message || t('adminUsers.disableAccessFailed')
+  } finally {
+    disablingAccessUserId.value = null
   }
 }
 
@@ -1031,6 +1075,14 @@ onBeforeUnmount(() => {
               >
                 {{ t('adminUsers.copyPlaintext') }}
               </button>
+              <button
+                v-if="canDisableAccess(row)"
+                class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+                :disabled="disablingAccessUserId === row.id"
+                @click="requestDisableAccess(row)"
+              >
+                {{ t('adminUsers.disableUser') }}
+              </button>
             </div>
             <div v-if="plaintextConfirmUserId === row.id" class="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
               <p>{{ t('adminUsers.plaintextWarning') }}</p>
@@ -1041,7 +1093,23 @@ onBeforeUnmount(() => {
                 {{ t('adminUsers.confirmRevealAndCopy') }}
               </button>
             </div>
+            <div v-if="disableAccessConfirmUserId === row.id" class="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-900">
+              <p>{{ t('adminUsers.disableUserWarning') }}</p>
+              <input
+                v-model="disableAccessConfirmEmail"
+                class="mt-2 w-full rounded border border-red-200 px-2 py-1 text-xs text-red-900"
+                :placeholder="row.email"
+              />
+              <button
+                class="mt-2 rounded bg-red-700 px-2 py-1 font-medium text-white hover:bg-red-800 disabled:opacity-40"
+                :disabled="!disableAccessConfirmMatches(row) || disablingAccessUserId === row.id"
+                @click="confirmDisableAccess(row)"
+              >
+                {{ disablingAccessUserId === row.id ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
+              </button>
+            </div>
             <span v-if="copiedState[row.id]" class="mt-2 block text-xs text-gray-500" aria-live="polite">{{ copiedState[row.id] }}</span>
+            <span v-if="disableAccessMessages[row.id]" class="mt-2 block text-xs text-gray-500" aria-live="polite">{{ disableAccessMessages[row.id] }}</span>
           </div>
         </div>
 
@@ -1121,6 +1189,15 @@ onBeforeUnmount(() => {
                     >
                       {{ t('adminUsers.copyPlaintext') }}
                     </button>
+                    <button
+                      v-if="canDisableAccess(row)"
+                      :data-testid="`disable-access-${row.id}`"
+                      class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+                      :disabled="disablingAccessUserId === row.id"
+                      @click="requestDisableAccess(row)"
+                    >
+                      {{ t('adminUsers.disableUser') }}
+                    </button>
                     <div v-if="plaintextConfirmUserId === row.id" class="max-w-64 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
                       <p>{{ t('adminUsers.plaintextWarning') }}</p>
                       <button
@@ -1131,7 +1208,25 @@ onBeforeUnmount(() => {
                         {{ t('adminUsers.confirmRevealAndCopy') }}
                       </button>
                     </div>
+                    <div v-if="disableAccessConfirmUserId === row.id" class="max-w-64 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-900">
+                      <p>{{ t('adminUsers.disableUserWarning') }}</p>
+                      <input
+                        v-model="disableAccessConfirmEmail"
+                        :data-testid="`disable-access-confirm-email-${row.id}`"
+                        class="mt-2 w-full rounded border border-red-200 px-2 py-1 text-xs text-red-900"
+                        :placeholder="row.email"
+                      />
+                      <button
+                        :data-testid="`confirm-disable-access-${row.id}`"
+                        class="mt-2 rounded bg-red-700 px-2 py-1 font-medium text-white hover:bg-red-800 disabled:opacity-40"
+                        :disabled="!disableAccessConfirmMatches(row) || disablingAccessUserId === row.id"
+                        @click="confirmDisableAccess(row)"
+                      >
+                        {{ disablingAccessUserId === row.id ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
+                      </button>
+                    </div>
                     <span v-if="copiedState[row.id]" class="text-xs text-gray-500" aria-live="polite">{{ copiedState[row.id] }}</span>
+                    <span v-if="disableAccessMessages[row.id]" class="text-xs text-gray-500" aria-live="polite">{{ disableAccessMessages[row.id] }}</span>
                   </div>
                 </td>
               </tr>

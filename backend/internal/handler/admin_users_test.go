@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
+	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/gin-gonic/gin"
 )
 
@@ -822,5 +824,89 @@ func TestAdminUsersRevealMissingEncryptionKey(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("missing key status = %d, want 500, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminUsersDisableAccessDisablesRelayUserWithoutRevokingTokens(t *testing.T) {
+	ctx := context.Background()
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	provider := env.client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+	userToken, err := env.authSvc.GenerateTokenPairForUser(&auth.UserInfo{
+		ID:       fixture.aliceID,
+		Username: "alice",
+		Role:     "user",
+	})
+	if err != nil {
+		t.Fatalf("generate user token: %v", err)
+	}
+	fakeRelay := &adminUsersRelayFake{}
+	handler := NewAdminUsersHandler(env.client, adminUsersTestEncryptionKey, adminUsersProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			t.Fatalf("provider id = %d, want %d", providerID, provider.ID)
+		}
+		return fakeRelay, nil
+	}))
+	router := gin.New()
+	router.POST("/admin/users/:id/disable-access", handler.DisableAccess)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/admin/users/%d/disable-access", fixture.aliceID),
+		strings.NewReader(`{"confirm_email":"alice@example.com"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("disable access status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if fakeRelay.disabledUserID != 42 {
+		t.Fatalf("disabled relay user id = %d, want 42", fakeRelay.disabledUserID)
+	}
+	u := env.client.User.GetX(ctx, fixture.aliceID)
+	if u.RelayDisabledAt == nil {
+		t.Fatalf("relay_disabled_at was not set")
+	}
+	if _, err := env.authSvc.ValidateAccessToken(ctx, userToken.AccessToken); err != nil {
+		t.Fatalf("old access token should remain valid after user disable: %v", err)
+	}
+	resp := parseFullResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	if data["status"] != "disabled" || int(data["relay_user_id"].(float64)) != 42 {
+		t.Fatalf("disable response = %+v", data)
+	}
+	if data["relay_disabled_at"] == nil {
+		t.Fatalf("disable response missing relay_disabled_at: %+v", data)
+	}
+}
+
+func TestAdminUsersDisableAccessRequiresEmailConfirmation(t *testing.T) {
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	handler := NewAdminUsersHandler(env.client, adminUsersTestEncryptionKey)
+	router := gin.New()
+	router.POST("/admin/users/:id/disable-access", handler.DisableAccess)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/admin/users/%d/disable-access", fixture.aliceID),
+		strings.NewReader(`{"confirm_email":"bob@example.org"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("confirmation mismatch status = %d, want 422, body=%s", w.Code, w.Body.String())
 	}
 }

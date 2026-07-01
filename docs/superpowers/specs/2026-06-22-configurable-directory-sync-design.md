@@ -676,15 +676,23 @@ support. It adds an internal view switch:
 1. User view: the existing user/access table plus a department column,
    department filter, derived access-status column, and access-status filter.
    The access-status column is derived from local user state: `disabled` takes
-   precedence when `users.token_valid_after` is set or a successful
-   `directory_offboarding_actions` disable action exists; otherwise users with a
-   stored relay credential are `configured`, and users without one are
-   `missing_credential`.
+   precedence when `users.token_valid_after` or `users.relay_disabled_at` is set,
+   or when a successful `directory_offboarding_actions` disable action exists;
+   otherwise users with a stored relay credential are `configured`, and users
+   without one are `missing_credential`.
 2. Department view: a directory-backed collapsible tree list inside the same
    route, showing department name/display path, hierarchy indentation, direct
    member count, direct matched local-user count, subtree total member count,
    subtree total matched local-user count, and a drill-in action that switches
    back to user view with the selected department subtree filter.
+
+Post-implementation extension: `/admin/users` also supports direct relay-user
+disablement through `POST /api/v1/admin/users/:id/disable-access`. That action
+requires exact email confirmation, calls the same optional `relay.UserDisabler`
+capability, and records `users.relay_disabled_at`. Unlike confirmed directory
+offboarding, this direct user-management action intentionally does not set
+`users.token_valid_after` and does not revoke existing local AI Efficiency
+tokens.
 
 The route may preserve the selected view and department filter in query
 parameters, for example `view=departments` or `department_id=dept-alpha`, but it

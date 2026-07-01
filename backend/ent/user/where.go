@@ -85,6 +85,11 @@ func TokenValidAfter(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldTokenValidAfter, v))
 }
 
+// RelayDisabledAt applies equality check predicate on the "relay_disabled_at" field. It's identical to RelayDisabledAtEQ.
+func RelayDisabledAt(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRelayDisabledAt, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldCreatedAt, v))
@@ -513,6 +518,56 @@ func TokenValidAfterIsNil() predicate.User {
 // TokenValidAfterNotNil applies the NotNil predicate on the "token_valid_after" field.
 func TokenValidAfterNotNil() predicate.User {
 	return predicate.User(sql.FieldNotNull(FieldTokenValidAfter))
+}
+
+// RelayDisabledAtEQ applies the EQ predicate on the "relay_disabled_at" field.
+func RelayDisabledAtEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRelayDisabledAt, v))
+}
+
+// RelayDisabledAtNEQ applies the NEQ predicate on the "relay_disabled_at" field.
+func RelayDisabledAtNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldRelayDisabledAt, v))
+}
+
+// RelayDisabledAtIn applies the In predicate on the "relay_disabled_at" field.
+func RelayDisabledAtIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldRelayDisabledAt, vs...))
+}
+
+// RelayDisabledAtNotIn applies the NotIn predicate on the "relay_disabled_at" field.
+func RelayDisabledAtNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldRelayDisabledAt, vs...))
+}
+
+// RelayDisabledAtGT applies the GT predicate on the "relay_disabled_at" field.
+func RelayDisabledAtGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldRelayDisabledAt, v))
+}
+
+// RelayDisabledAtGTE applies the GTE predicate on the "relay_disabled_at" field.
+func RelayDisabledAtGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldRelayDisabledAt, v))
+}
+
+// RelayDisabledAtLT applies the LT predicate on the "relay_disabled_at" field.
+func RelayDisabledAtLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldRelayDisabledAt, v))
+}
+
+// RelayDisabledAtLTE applies the LTE predicate on the "relay_disabled_at" field.
+func RelayDisabledAtLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldRelayDisabledAt, v))
+}
+
+// RelayDisabledAtIsNil applies the IsNil predicate on the "relay_disabled_at" field.
+func RelayDisabledAtIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldRelayDisabledAt))
+}
+
+// RelayDisabledAtNotNil applies the NotNil predicate on the "relay_disabled_at" field.
+func RelayDisabledAtNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldRelayDisabledAt))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

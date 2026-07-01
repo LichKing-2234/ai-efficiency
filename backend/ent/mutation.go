@@ -26471,6 +26471,7 @@ type UserMutation struct {
 	ldap_dn                   *string
 	role                      *user.Role
 	token_valid_after         *time.Time
+	relay_disabled_at         *time.Time
 	created_at                *time.Time
 	updated_at                *time.Time
 	clearedFields             map[string]struct{}
@@ -26947,6 +26948,55 @@ func (m *UserMutation) ResetTokenValidAfter() {
 	delete(m.clearedFields, user.FieldTokenValidAfter)
 }
 
+// SetRelayDisabledAt sets the "relay_disabled_at" field.
+func (m *UserMutation) SetRelayDisabledAt(t time.Time) {
+	m.relay_disabled_at = &t
+}
+
+// RelayDisabledAt returns the value of the "relay_disabled_at" field in the mutation.
+func (m *UserMutation) RelayDisabledAt() (r time.Time, exists bool) {
+	v := m.relay_disabled_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelayDisabledAt returns the old "relay_disabled_at" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldRelayDisabledAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelayDisabledAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelayDisabledAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelayDisabledAt: %w", err)
+	}
+	return oldValue.RelayDisabledAt, nil
+}
+
+// ClearRelayDisabledAt clears the value of the "relay_disabled_at" field.
+func (m *UserMutation) ClearRelayDisabledAt() {
+	m.relay_disabled_at = nil
+	m.clearedFields[user.FieldRelayDisabledAt] = struct{}{}
+}
+
+// RelayDisabledAtCleared returns if the "relay_disabled_at" field was cleared in this mutation.
+func (m *UserMutation) RelayDisabledAtCleared() bool {
+	_, ok := m.clearedFields[user.FieldRelayDisabledAt]
+	return ok
+}
+
+// ResetRelayDisabledAt resets all changes to the "relay_disabled_at" field.
+func (m *UserMutation) ResetRelayDisabledAt() {
+	m.relay_disabled_at = nil
+	delete(m.clearedFields, user.FieldRelayDisabledAt)
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *UserMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -27215,7 +27265,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 11)
 	if m.username != nil {
 		fields = append(fields, user.FieldUsername)
 	}
@@ -27239,6 +27289,9 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.token_valid_after != nil {
 		fields = append(fields, user.FieldTokenValidAfter)
+	}
+	if m.relay_disabled_at != nil {
+		fields = append(fields, user.FieldRelayDisabledAt)
 	}
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
@@ -27270,6 +27323,8 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.Role()
 	case user.FieldTokenValidAfter:
 		return m.TokenValidAfter()
+	case user.FieldRelayDisabledAt:
+		return m.RelayDisabledAt()
 	case user.FieldCreatedAt:
 		return m.CreatedAt()
 	case user.FieldUpdatedAt:
@@ -27299,6 +27354,8 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldRole(ctx)
 	case user.FieldTokenValidAfter:
 		return m.OldTokenValidAfter(ctx)
+	case user.FieldRelayDisabledAt:
+		return m.OldRelayDisabledAt(ctx)
 	case user.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case user.FieldUpdatedAt:
@@ -27367,6 +27424,13 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTokenValidAfter(v)
+		return nil
+	case user.FieldRelayDisabledAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelayDisabledAt(v)
 		return nil
 	case user.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -27439,6 +27503,9 @@ func (m *UserMutation) ClearedFields() []string {
 	if m.FieldCleared(user.FieldTokenValidAfter) {
 		fields = append(fields, user.FieldTokenValidAfter)
 	}
+	if m.FieldCleared(user.FieldRelayDisabledAt) {
+		fields = append(fields, user.FieldRelayDisabledAt)
+	}
 	return fields
 }
 
@@ -27464,6 +27531,9 @@ func (m *UserMutation) ClearField(name string) error {
 		return nil
 	case user.FieldTokenValidAfter:
 		m.ClearTokenValidAfter()
+		return nil
+	case user.FieldRelayDisabledAt:
+		m.ClearRelayDisabledAt()
 		return nil
 	}
 	return fmt.Errorf("unknown User nullable field %s", name)
@@ -27496,6 +27566,9 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldTokenValidAfter:
 		m.ResetTokenValidAfter()
+		return nil
+	case user.FieldRelayDisabledAt:
+		m.ResetRelayDisabledAt()
 		return nil
 	case user.FieldCreatedAt:
 		m.ResetCreatedAt()

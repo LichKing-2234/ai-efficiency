@@ -31,6 +31,7 @@ type adminUsersRelayFake struct {
 	assignedUserID   int64
 	assignedGroupID  int64
 	assignedValidity int
+	disabledUserID   int64
 	calls            []adminUsersRelaySubscriptionCall
 	assignStarted    chan struct{}
 	unblockAssign    chan struct{}
@@ -94,6 +95,11 @@ func (f *adminUsersRelayFake) ResetSubscriptionQuotaForUser(ctx context.Context,
 		UserID:    userID,
 		GroupID:   groupID,
 	})
+	return nil
+}
+
+func (f *adminUsersRelayFake) DisableUser(ctx context.Context, userID int64) error {
+	f.disabledUserID = userID
 	return nil
 }
 

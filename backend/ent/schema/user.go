@@ -39,6 +39,9 @@ func (User) Fields() []ent.Field {
 		field.Time("token_valid_after").
 			Optional().
 			Nillable(),
+		field.Time("relay_disabled_at").
+			Optional().
+			Nillable(),
 		field.Time("created_at").
 			Immutable().
 			Default(timeNow),

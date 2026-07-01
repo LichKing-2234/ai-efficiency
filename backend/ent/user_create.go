@@ -111,6 +111,20 @@ func (uc *UserCreate) SetNillableTokenValidAfter(t *time.Time) *UserCreate {
 	return uc
 }
 
+// SetRelayDisabledAt sets the "relay_disabled_at" field.
+func (uc *UserCreate) SetRelayDisabledAt(t time.Time) *UserCreate {
+	uc.mutation.SetRelayDisabledAt(t)
+	return uc
+}
+
+// SetNillableRelayDisabledAt sets the "relay_disabled_at" field if the given value is not nil.
+func (uc *UserCreate) SetNillableRelayDisabledAt(t *time.Time) *UserCreate {
+	if t != nil {
+		uc.SetRelayDisabledAt(*t)
+	}
+	return uc
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (uc *UserCreate) SetCreatedAt(t time.Time) *UserCreate {
 	uc.mutation.SetCreatedAt(t)
@@ -330,6 +344,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.TokenValidAfter(); ok {
 		_spec.SetField(user.FieldTokenValidAfter, field.TypeTime, value)
 		_node.TokenValidAfter = &value
+	}
+	if value, ok := uc.mutation.RelayDisabledAt(); ok {
+		_spec.SetField(user.FieldRelayDisabledAt, field.TypeTime, value)
+		_node.RelayDisabledAt = &value
 	}
 	if value, ok := uc.mutation.CreatedAt(); ok {
 		_spec.SetField(user.FieldCreatedAt, field.TypeTime, value)

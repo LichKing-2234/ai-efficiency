@@ -8,6 +8,7 @@ import { setLocale } from '@/i18n'
 
 vi.mock('@/api/adminUsers', () => ({
   assignAdminUserSubscription: vi.fn(),
+  disableAdminUserAccess: vi.fn(),
   getAdminUserSubscriptionJob: vi.fn(),
 	  getLatestAdminUserSubscriptionJob: vi.fn(),
 	  listAdminUserDepartments: vi.fn(),
@@ -482,6 +483,59 @@ describe('AdminUsersView', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('test-password')
     expect(wrapper.text()).toContain('Copied plaintext')
     expect(wrapper.text()).not.toContain('test-password')
+  })
+
+  it('requires email confirmation before disabling user access', async () => {
+    const { disableAdminUserAccess } = await import('@/api/adminUsers')
+    ;(disableAdminUserAccess as any).mockResolvedValue({
+      data: {
+        data: {
+          status: 'disabled',
+          relay_user_id: 42,
+          relay_disabled_at: '2026-07-01T12:00:00Z',
+        },
+      },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+    await wrapper.get('[data-testid="disable-access-7"]').trigger('click')
+    await flushPromises()
+
+    expect(disableAdminUserAccess).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Disables relay user access')
+
+    await wrapper.get('[data-testid="disable-access-confirm-email-7"]').setValue('alice@example.com')
+    await wrapper.get('[data-testid="confirm-disable-access-7"]').trigger('click')
+    await flushPromises()
+
+    expect(disableAdminUserAccess).toHaveBeenCalledWith(7, { confirm_email: 'alice@example.com' })
+    expect(wrapper.text()).toContain('Disabled alice@example.com')
+  })
+
+  it('does not offer the disable action for already disabled users', async () => {
+    const { wrapper } = await mountAdminUsersView('/admin/users', (params) => ({
+      items: [
+        {
+          id: 7,
+          username: 'alice',
+          email: 'alice@example.com',
+          role: 'user',
+          auth_source: 'ldap',
+          relay_user_id: 42,
+          relay_auth_password: 'encrypted-relay-password-ciphertext',
+          access_status: 'disabled',
+          token_valid_after: '2026-07-01T12:00:00Z',
+          created_at: '2026-05-26T00:00:00Z',
+          updated_at: '2026-05-26T01:00:00Z',
+        },
+      ],
+      total: 1,
+      page: params?.page ?? 1,
+      page_size: params?.page_size ?? 20,
+    }))
+
+    expect(wrapper.find('[data-testid="disable-access-7"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Disabled')
   })
 
   it('adds a subscription for one selected local user through a polled job workflow', async () => {

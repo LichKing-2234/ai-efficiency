@@ -174,6 +174,26 @@ func (uu *UserUpdate) ClearTokenValidAfter() *UserUpdate {
 	return uu
 }
 
+// SetRelayDisabledAt sets the "relay_disabled_at" field.
+func (uu *UserUpdate) SetRelayDisabledAt(t time.Time) *UserUpdate {
+	uu.mutation.SetRelayDisabledAt(t)
+	return uu
+}
+
+// SetNillableRelayDisabledAt sets the "relay_disabled_at" field if the given value is not nil.
+func (uu *UserUpdate) SetNillableRelayDisabledAt(t *time.Time) *UserUpdate {
+	if t != nil {
+		uu.SetRelayDisabledAt(*t)
+	}
+	return uu
+}
+
+// ClearRelayDisabledAt clears the value of the "relay_disabled_at" field.
+func (uu *UserUpdate) ClearRelayDisabledAt() *UserUpdate {
+	uu.mutation.ClearRelayDisabledAt()
+	return uu
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (uu *UserUpdate) SetUpdatedAt(t time.Time) *UserUpdate {
 	uu.mutation.SetUpdatedAt(t)
@@ -404,6 +424,12 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if uu.mutation.TokenValidAfterCleared() {
 		_spec.ClearField(user.FieldTokenValidAfter, field.TypeTime)
+	}
+	if value, ok := uu.mutation.RelayDisabledAt(); ok {
+		_spec.SetField(user.FieldRelayDisabledAt, field.TypeTime, value)
+	}
+	if uu.mutation.RelayDisabledAtCleared() {
+		_spec.ClearField(user.FieldRelayDisabledAt, field.TypeTime)
 	}
 	if value, ok := uu.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)
@@ -706,6 +732,26 @@ func (uuo *UserUpdateOne) ClearTokenValidAfter() *UserUpdateOne {
 	return uuo
 }
 
+// SetRelayDisabledAt sets the "relay_disabled_at" field.
+func (uuo *UserUpdateOne) SetRelayDisabledAt(t time.Time) *UserUpdateOne {
+	uuo.mutation.SetRelayDisabledAt(t)
+	return uuo
+}
+
+// SetNillableRelayDisabledAt sets the "relay_disabled_at" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillableRelayDisabledAt(t *time.Time) *UserUpdateOne {
+	if t != nil {
+		uuo.SetRelayDisabledAt(*t)
+	}
+	return uuo
+}
+
+// ClearRelayDisabledAt clears the value of the "relay_disabled_at" field.
+func (uuo *UserUpdateOne) ClearRelayDisabledAt() *UserUpdateOne {
+	uuo.mutation.ClearRelayDisabledAt()
+	return uuo
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (uuo *UserUpdateOne) SetUpdatedAt(t time.Time) *UserUpdateOne {
 	uuo.mutation.SetUpdatedAt(t)
@@ -966,6 +1012,12 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if uuo.mutation.TokenValidAfterCleared() {
 		_spec.ClearField(user.FieldTokenValidAfter, field.TypeTime)
+	}
+	if value, ok := uuo.mutation.RelayDisabledAt(); ok {
+		_spec.SetField(user.FieldRelayDisabledAt, field.TypeTime, value)
+	}
+	if uuo.mutation.RelayDisabledAtCleared() {
+		_spec.ClearField(user.FieldRelayDisabledAt, field.TypeTime)
 	}
 	if value, ok := uuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(user.FieldUpdatedAt, field.TypeTime, value)

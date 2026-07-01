@@ -2,6 +2,8 @@ import client from './client'
 import type {
   AdminAssignSubscriptionRequest,
   AdminAssignSubscriptionResponse,
+  AdminDisableUserAccessRequest,
+  AdminDisableUserAccessResponse,
   AdminManageSubscriptionsRequest,
   AdminManageSubscriptionsResponse,
   AdminUserDepartmentsResponse,
@@ -34,6 +36,10 @@ export function listAdminUserSubscriptionOptions() {
 
 export function assignAdminUserSubscription(id: number, data: AdminAssignSubscriptionRequest) {
   return client.post<ApiResponse<AdminAssignSubscriptionResponse>>(`/admin/users/${id}/subscriptions`, data)
+}
+
+export function disableAdminUserAccess(id: number, data: AdminDisableUserAccessRequest) {
+  return client.post<ApiResponse<AdminDisableUserAccessResponse>>(`/admin/users/${id}/disable-access`, data)
 }
 
 export function manageAdminUserSubscriptions(data: AdminManageSubscriptionsRequest) {

@@ -463,6 +463,7 @@ export interface AdminUser {
   relay_auth_password: string
   access_status?: AdminUserAccessStatus
   token_valid_after?: string | null
+  relay_disabled_at?: string | null
   offboarding_status?: string
   department?: AdminUserDepartment | null
   created_at: string
@@ -507,6 +508,16 @@ export interface AdminUserDepartmentsResponse {
 
 export interface AdminRelayPasswordRevealResponse {
   password: string
+}
+
+export interface AdminDisableUserAccessRequest {
+  confirm_email: string
+}
+
+export interface AdminDisableUserAccessResponse {
+  status: 'disabled'
+  relay_user_id: number
+  relay_disabled_at: string
 }
 
 export interface AdminAssignableSubscriptionGroup {

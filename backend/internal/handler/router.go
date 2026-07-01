@@ -246,6 +246,7 @@ func SetupRouter(
 		adminUsersGroup.GET("/subscription-jobs/latest", adminUsersHandler.GetLatestSubscriptionJob)
 		adminUsersGroup.GET("/subscription-jobs/:id", adminUsersHandler.GetSubscriptionJob)
 		adminUsersGroup.POST("/subscriptions/batch", adminUsersHandler.ManageSubscriptions)
+		adminUsersGroup.POST("/:id/disable-access", adminUsersHandler.DisableAccess)
 		adminUsersGroup.POST("/:id/relay-password/reveal", adminUsersHandler.RevealRelayPassword)
 		adminUsersGroup.POST("/:id/subscriptions", adminUsersHandler.AssignSubscription)
 	}

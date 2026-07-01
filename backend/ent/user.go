@@ -33,6 +33,8 @@ type User struct {
 	Role user.Role `json:"role,omitempty"`
 	// TokenValidAfter holds the value of the "token_valid_after" field.
 	TokenValidAfter *time.Time `json:"token_valid_after,omitempty"`
+	// RelayDisabledAt holds the value of the "relay_disabled_at" field.
+	RelayDisabledAt *time.Time `json:"relay_disabled_at,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -92,7 +94,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullInt64)
 		case user.FieldUsername, user.FieldEmail, user.FieldAuthSource, user.FieldRelayAuthPassword, user.FieldLdapDn, user.FieldRole:
 			values[i] = new(sql.NullString)
-		case user.FieldTokenValidAfter, user.FieldCreatedAt, user.FieldUpdatedAt:
+		case user.FieldTokenValidAfter, user.FieldRelayDisabledAt, user.FieldCreatedAt, user.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -166,6 +168,13 @@ func (u *User) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				u.TokenValidAfter = new(time.Time)
 				*u.TokenValidAfter = value.Time
+			}
+		case user.FieldRelayDisabledAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field relay_disabled_at", values[i])
+			} else if value.Valid {
+				u.RelayDisabledAt = new(time.Time)
+				*u.RelayDisabledAt = value.Time
 			}
 		case user.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -256,6 +265,11 @@ func (u *User) String() string {
 	builder.WriteString(", ")
 	if v := u.TokenValidAfter; v != nil {
 		builder.WriteString("token_valid_after=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := u.RelayDisabledAt; v != nil {
+		builder.WriteString("relay_disabled_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")

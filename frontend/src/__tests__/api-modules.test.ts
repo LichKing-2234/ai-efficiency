@@ -20,6 +20,7 @@ import { getDashboard } from '@/api/efficiency'
 import { getSystemVersion, checkSystemUpdate } from '@/api/system'
 import { getUserProviders, createGroupCredential, regenerateGroupCredential, getUserProviderModels, testUserProvider } from '@/api/user'
 import {
+  disableAdminUserAccess,
   startAdminUserSubscriptionJob,
   getAdminUserSubscriptionJob,
   getLatestAdminUserSubscriptionJob,
@@ -264,6 +265,14 @@ describe('user API aggregate smoke', () => {
 })
 
 describe('admin users API', () => {
+  it('disables admin user access with explicit email confirmation', async () => {
+    mockClient.post.mockResolvedValue({ data: { data: { status: 'disabled', relay_user_id: 42 } } })
+
+    await disableAdminUserAccess(7, { confirm_email: 'alice@example.com' })
+
+    expect(mockClient.post).toHaveBeenCalledWith('/admin/users/7/disable-access', { confirm_email: 'alice@example.com' })
+  })
+
   it('starts admin user subscription jobs without a timeout override', async () => {
     const payload = {
       scope: 'selected' as const,

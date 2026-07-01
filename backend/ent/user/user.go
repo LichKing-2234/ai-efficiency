@@ -31,6 +31,8 @@ const (
 	FieldRole = "role"
 	// FieldTokenValidAfter holds the string denoting the token_valid_after field in the database.
 	FieldTokenValidAfter = "token_valid_after"
+	// FieldRelayDisabledAt holds the string denoting the relay_disabled_at field in the database.
+	FieldRelayDisabledAt = "relay_disabled_at"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -77,6 +79,7 @@ var Columns = []string{
 	FieldLdapDn,
 	FieldRole,
 	FieldTokenValidAfter,
+	FieldRelayDisabledAt,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -200,6 +203,11 @@ func ByRole(opts ...sql.OrderTermOption) OrderOption {
 // ByTokenValidAfter orders the results by the token_valid_after field.
 func ByTokenValidAfter(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTokenValidAfter, opts...).ToFunc()
+}
+
+// ByRelayDisabledAt orders the results by the relay_disabled_at field.
+func ByRelayDisabledAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRelayDisabledAt, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

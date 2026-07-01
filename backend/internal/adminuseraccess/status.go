@@ -25,7 +25,7 @@ type OffboardingFact struct {
 }
 
 func Derive(u *ent.User, relayPassword string, offboardingSucceeded bool) string {
-	if u.TokenValidAfter != nil || offboardingSucceeded {
+	if u.TokenValidAfter != nil || u.RelayDisabledAt != nil || offboardingSucceeded {
 		return StatusDisabled
 	}
 	if strings.TrimSpace(relayPassword) != "" {
@@ -37,16 +37,18 @@ func Derive(u *ent.User, relayPassword string, offboardingSucceeded bool) string
 func ApplyFilter(query *ent.UserQuery, status string) (*ent.UserQuery, error) {
 	switch status {
 	case StatusDisabled:
-		return query.Where(entuser.Or(entuser.TokenValidAfterNotNil(), succeededOffboardingActionExists())), nil
+		return query.Where(entuser.Or(entuser.TokenValidAfterNotNil(), entuser.RelayDisabledAtNotNil(), succeededOffboardingActionExists())), nil
 	case StatusConfigured:
 		return query.Where(
 			entuser.TokenValidAfterIsNil(),
+			entuser.RelayDisabledAtIsNil(),
 			relayPasswordHasNonBlankValue(),
 			succeededOffboardingActionNotExists(),
 		), nil
 	case StatusMissingCredential:
 		return query.Where(
 			entuser.TokenValidAfterIsNil(),
+			entuser.RelayDisabledAtIsNil(),
 			entuser.Or(entuser.RelayAuthPasswordIsNil(), relayPasswordIsBlank()),
 			succeededOffboardingActionNotExists(),
 		), nil

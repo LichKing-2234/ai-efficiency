@@ -800,6 +800,7 @@ var (
 		{Name: "ldap_dn", Type: field.TypeString, Nullable: true},
 		{Name: "role", Type: field.TypeEnum, Enums: []string{"admin", "user"}, Default: "user"},
 		{Name: "token_valid_after", Type: field.TypeTime, Nullable: true},
+		{Name: "relay_disabled_at", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
