@@ -585,7 +585,7 @@ Validation failures:
 GET /api/v1/user/team-usage/overview?start_date=...&end_date=...&granularity=day&timezone=...
 ```
 
-Returns the independent team page data for the representative scope. Team Overview uses the same range model as the personal AI Usage view: Today, 7 Days, and 30 Days, defaulting to 30 Days. Summary cards, top-12 ranking, trend series, and the member table all follow the selected range. AE computes `range_actual_cost` and `range_total_tokens` from scoped member trend points for the selected window; it must not display sub2api historical `total_actual_cost` as if it were the selected-window value. The `members` table is the scoped directory member roster, not only the relay-backed usage roster: members without a matched AE user or resolvable relay user remain visible with zero selected-window billed usage, nullable usage-only fields, and `selectable=false`.
+Returns the independent team page data for the representative scope. Team Overview uses the same range model as the personal AI Usage view: Today, 7 Days, and 30 Days, defaulting to 30 Days. Summary cards, top-12 ranking, trend series, and the member table all follow the selected range. Top/ranking surfaces use selected-window token usage as the ranking dimension; billed usage remains an auxiliary displayed metric. AE computes `range_actual_cost` and `range_total_tokens` from scoped member trend points for the selected window; it must not display sub2api historical `total_actual_cost` as if it were the selected-window value. The `members` table is the scoped directory member roster, not only the relay-backed usage roster: members without a matched AE user or resolvable relay user remain visible with zero selected-window billed usage, nullable usage-only fields, and `selectable=false`.
 
 Some relay-adapter field names remain aligned with sub2api (`actual_cost`, `today_actual_cost`, `total_actual_cost`), but user-facing Team Overview labels use billed usage / 计费用量. Do not label these values as actual cost / 实际成本 in user interfaces because the value is multiplier-adjusted subscription consumption, not a direct finance cost.
 
@@ -625,12 +625,12 @@ First-version response:
 	      "range_actual_cost": 12.3,
 	      "today_actual_cost": 1.23,
 	      "total_actual_cost": 12.3,
-	      "total_tokens": null
+	      "total_tokens": 12345
     }
   ],
 	  "top_member_trend": {
 	    "unit_label": "USD",
-	    "rank_basis": "range_actual_cost",
+	    "rank_basis": "range_total_tokens",
 	    "unavailable": false,
     "unavailable_reason": null,
     "series": [
@@ -644,7 +644,7 @@ First-version response:
           {
             "date": "2026-06-26",
             "actual_cost": 1.23,
-            "total_tokens": null
+            "total_tokens": 12345
           }
         ]
       }
@@ -703,9 +703,9 @@ Team Overview must not include `group_quotas`, subscription quota rows, or multi
 
 Top-12 trend rules:
 
-1. `top_members` is ranked by selected-window billed usage (`range_actual_cost`) from the complete scoped relay-user set, where relay users can come from local `users.relay_user_id` reconciliation or exact sub2api email lookup for directory-only rows.
+1. `top_members` is ranked by selected-window token usage (`range_total_tokens`, exposed per member as `total_tokens`) from the complete scoped relay-user set, where relay users can come from local `users.relay_user_id` reconciliation or exact sub2api email lookup for directory-only rows. If token totals tie or are absent, selected-window billed usage (`range_actual_cost`) is only a tie-breaker.
 2. `top_member_trend.series` contains the same top members, in the same rank order, and renders as the Team Overview replacement for the personal Token Trend chart.
-3. Each trend point uses billed usage in the requested range and granularity. Token totals are optional and may be `null` when the relay cannot provide them without raw log scans.
+3. Each trend point uses token totals in the requested range and granularity as the primary chart value. Billed usage is still returned as `actual_cost` for auxiliary legend/detail display. Token totals are optional and may be `null` when the relay cannot provide them without raw log scans.
 4. The trend series must be scoped before rendering. AE must not pass through a global sub2api user trend result that includes users outside the representative's department subtree.
 5. If one top member's trend fetch fails, the response may include that member with `points: []` and an unavailable flag rather than failing the entire Team Overview page. Authorization failures still fail closed.
 6. Top 12 must be computed from the complete scoped relay-user set. If the subtree is too large for the configured full-scope usage scan, AE must return empty `top_members`, `top_member_trend.unavailable=true`, and `top_member_trend.unavailable_reason=scope_too_large`; it must not compute top 12 from a truncated subset.
@@ -792,7 +792,7 @@ The current code already uses a local optional `ListUserSubscriptions` shape in 
 8. `GET /api/v1/admin/groups/:id/rate-multipliers` for current user-specific group multipliers.
 9. `PUT /api/v1/admin/groups/:id/rate-multipliers` for merged whole-group writes.
 
-Team Overview intentionally does not use a global unscoped sub2api user-trend response in the first version. AE fetches selected-window trend points only for relay users inside the representative's allowed scope, then computes `range_actual_cost`, token totals, ranking, summary, and the top-12 series from that scoped set. Before usage aggregation, AE may fetch the relay user directory through `UserDirectoryProvider` to validate cached bindings and repair stale local `relay_user_id` values without an N+1 lookup. The personal Token Trend slot is replaced by this top-12 billing trend chart, and the personal Model Distribution slot is replaced by a member details table. A future version can add a scoped multi-user upstream endpoint to remove the bounded fan-out.
+Team Overview intentionally does not use a global unscoped sub2api user-trend response in the first version. AE fetches selected-window trend points only for relay users inside the representative's allowed scope, then computes `range_actual_cost`, token totals, token-based ranking, summary, and the top-12 series from that scoped set. Before usage aggregation, AE may fetch the relay user directory through `UserDirectoryProvider` to validate cached bindings and repair stale local `relay_user_id` values without an N+1 lookup. The personal Token Trend slot is replaced by this top-12 token usage trend chart, and the personal Model Distribution slot is replaced by a member details table. A future version can add a scoped multi-user upstream endpoint to remove the bounded fan-out.
 
 ## Rate Multiplier Write Flow
 
@@ -910,7 +910,7 @@ Selected Member Usage Detail
 
 AI Usage Center / Team Overview
   Summary cards
-  Top 12 billing trend chart
+  Top 12 token usage trend chart
   Member details table
   Link/action to open member in AI Usage Center
 ```
@@ -953,13 +953,13 @@ Team Overview first screen:
    - 30 Days
    - the selector controls summary cards, top-12 ranking, trend points, and member table values
    - selecting a new range updates the selected button immediately, keeps the previous data visible, shows an updating indicator, disables range buttons during the request, and marks the content region busy
-3. Top 12 billing trend chart:
+3. Top 12 token usage trend chart:
    - replaces the personal Token Trend slot
-   - selects the top 12 scoped members by selected-window billed usage
+   - selects the top 12 scoped members by selected-window token usage
    - renders one trend series per selected member over the chosen date range
    - keeps legend/order in rank order
-   - shows selected-window billed usage as hover or side-list context
-   - shows token totals when the relay can provide them without raw log scans
+   - shows token totals as the chart value and primary side-list context
+   - shows selected-window billed usage as auxiliary side-list context
 4. Member details table:
    - replaces the personal Model Distribution slot
    - renders as a collapsible organization tree using the same current Directory Sync hierarchy pattern as the admin users department view
@@ -1137,7 +1137,7 @@ Frontend tests:
 2. Representative subject selector includes scoped members.
 3. Selecting a member reloads the AI Usage Center snapshot for that member.
 4. Team Overview is reachable at `/usage/team` for representatives.
-5. Team Overview renders top-12 billing trend chart instead of personal Token Trend.
+5. Team Overview renders top-12 token usage trend chart instead of personal Token Trend.
 6. Team Overview renders member details table instead of personal Model Distribution.
 7. Team Overview does not render quota cards or multiplier controls.
 8. Team Overview Today / 7 Days / 30 Days selection updates summary, ranking, chart, and table using the selected window.
@@ -1163,7 +1163,7 @@ Manual verification:
 
 1. Confirm personal My Usage remains unchanged.
 2. Confirm representative can switch to a scoped member and see stats, trend, and model distribution.
-3. Confirm Team Overview shows top-12 billing trend chart and member details table, with no quota UI.
+3. Confirm Team Overview shows top-12 token usage trend chart and member details table, with no quota UI.
 4. Confirm Team Overview Today / 7 Days / 30 Days updates summary, ranking, chart, and member table to the selected range.
 5. Confirm representative cannot access an out-of-scope user by URL.
 6. Confirm editing a multiplier leaves selected-member Used / Quota unchanged before confirmation and on cancel.

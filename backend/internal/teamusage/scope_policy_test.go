@@ -26,12 +26,12 @@ func TestOverviewScopeTooLargeDoesNotRankTruncatedTop12(t *testing.T) {
 	if !state.TopMemberTrend.Unavailable || len(state.TopMembers) != 0 {
 		t.Fatalf("top member trend = %#v top_members=%#v, want unavailable with no ranking", state.TopMemberTrend, state.TopMembers)
 	}
-	if state.TopMemberTrend.RankBasis != "range_actual_cost" {
-		t.Fatalf("rank basis = %q, want range_actual_cost", state.TopMemberTrend.RankBasis)
+	if state.TopMemberTrend.RankBasis != "range_total_tokens" {
+		t.Fatalf("rank basis = %q, want range_total_tokens", state.TopMemberTrend.RankBasis)
 	}
 }
 
-func TestRankTopMembersUsesSelectedWindowTotals(t *testing.T) {
+func TestRankTopMembersUsesSelectedWindowTokens(t *testing.T) {
 	subjects := []representativescope.Subject{
 		{SubjectType: "member", UserID: 1, DisplayName: "Alice", RelayUserID: intPtr(1001), Selectable: true},
 		{SubjectType: "member", UserID: 2, DisplayName: "Bob", RelayUserID: intPtr(1002), Selectable: true},
@@ -40,19 +40,20 @@ func TestRankTopMembersUsesSelectedWindowTotals(t *testing.T) {
 		1001: {UserID: 1001, TotalActualCost: 20},
 		1002: {UserID: 1002, TotalActualCost: 40},
 	}
-	tokens := int64(123)
+	aliceTokens := int64(123)
+	bobTokens := int64(456)
 	totals := map[int64]overviewWindowTotal{
-		1001: {ActualCost: 50, TotalTokens: &tokens},
-		1002: {ActualCost: 10},
+		1001: {ActualCost: 50, TotalTokens: &aliceTokens},
+		1002: {ActualCost: 10, TotalTokens: &bobTokens},
 	}
 	top := RankTopMembers(subjects, stats, totals, 12)
-	if got := []int{top[0].UserID, top[1].UserID}; !reflect.DeepEqual(got, []int{1, 2}) {
-		t.Fatalf("ranked user ids = %#v, want Alice then Bob by selected-window total", got)
+	if got := []int{top[0].UserID, top[1].UserID}; !reflect.DeepEqual(got, []int{2, 1}) {
+		t.Fatalf("ranked user ids = %#v, want Bob then Alice by selected-window tokens", got)
 	}
-	if top[0].RangeActualCost != 50 || top[1].RangeActualCost != 10 {
-		t.Fatalf("ranked range costs = %#v, want 50 then 10", []float64{top[0].RangeActualCost, top[1].RangeActualCost})
+	if top[0].RangeActualCost != 10 || top[1].RangeActualCost != 50 {
+		t.Fatalf("ranked range costs = %#v, want 10 then 50", []float64{top[0].RangeActualCost, top[1].RangeActualCost})
 	}
-	if top[0].TotalTokens == nil || *top[0].TotalTokens != 123 {
+	if top[0].TotalTokens == nil || *top[0].TotalTokens != 456 {
 		t.Fatalf("ranked total tokens = %#v, want selected-window token total", top[0].TotalTokens)
 	}
 }

@@ -57,13 +57,15 @@ const timeDimensionLabel = computed(() => {
   return t('teamUsage.daily')
 })
 
+const tokenUnitLabel = computed(() => t('teamUsage.tokens'))
+
 const windowRangeLabel = computed(() => {
   if (!props.window?.start_date || !props.window.end_date) return ''
   return `${props.window.start_date} - ${props.window.end_date}`
 })
 
 const chartMetaItems = computed(() => {
-  const items = [props.state.unit_label, timeDimensionLabel.value]
+  const items = [tokenUnitLabel.value, timeDimensionLabel.value]
   if (windowRangeLabel.value) items.push(windowRangeLabel.value)
   if (props.window?.timezone) items.push(props.window.timezone)
   return items
@@ -72,7 +74,7 @@ const chartMetaItems = computed(() => {
 const chartData = computed(() => ({
   labels: chartLabels.value,
   datasets: chartableSeries.value.map((series, index) => {
-    const pointsByDate = new Map(series.points.map((point) => [point.date, point.actual_cost]))
+    const pointsByDate = new Map(series.points.map((point) => [point.date, point.total_tokens ?? null]))
     const color = seriesColors[index % seriesColors.length]
     return {
       label: `#${series.rank} ${series.display_name}`,
@@ -93,7 +95,7 @@ const chartOptions = computed(() => ({
     legend: { display: false },
     tooltip: {
       callbacks: {
-        label: (context: any) => `${context.dataset.label}: ${formatCost(Number(context.raw ?? 0))} ${props.state.unit_label}`,
+        label: (context: any) => `${context.dataset.label}: ${formatTokenTooltipValue(context.raw)} ${tokenUnitLabel.value}`,
       },
     },
   },
@@ -102,11 +104,11 @@ const chartOptions = computed(() => ({
       beginAtZero: true,
       title: {
         display: true,
-        text: props.state.unit_label,
+        text: tokenUnitLabel.value,
         color: '#64748b',
       },
       ticks: {
-        callback: (value: string | number) => `${Number(value).toFixed(2)}`,
+        callback: (value: string | number) => formatTokenCount(Number(value)),
       },
     },
     x: {
@@ -121,6 +123,13 @@ const chartOptions = computed(() => ({
 
 function formatCost(value: number) {
   return value.toFixed(2)
+}
+
+function formatTokenTooltipValue(value: unknown) {
+  if (value == null) return '-'
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return '-'
+  return formatTokenCount(numericValue)
 }
 
 function reasonLabel(reason: string | null | undefined) {
@@ -194,8 +203,8 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
               {{ reasonLabel(series.unavailable_reason) }}
             </div>
             <div v-else class="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+              <span>{{ formatTokenCount(seriesTotalTokens(series)) }} {{ tokenUnitLabel }}</span>
               <span>{{ formatCost(seriesTotalCost(series)) }} {{ props.state.unit_label }}</span>
-              <span>{{ formatTokenCount(seriesTotalTokens(series)) }} {{ t('teamUsage.tokens') }}</span>
             </div>
           </div>
         </div>

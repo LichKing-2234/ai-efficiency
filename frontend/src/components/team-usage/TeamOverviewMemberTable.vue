@@ -196,8 +196,8 @@ function nodeChildren(node: TeamOverviewMemberNode) {
             <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberName') }}</th>
             <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberEmail') }}</th>
             <th class="whitespace-nowrap px-4 py-2 text-left">{{ t('teamUsage.memberDepartment') }}</th>
-            <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.rangeActualCost') }}</th>
             <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.rangeTotalTokens') }}</th>
+            <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.rangeActualCost') }}</th>
             <th class="whitespace-nowrap px-4 py-2 text-right">{{ t('teamUsage.memberAction') }}</th>
           </tr>
         </thead>
@@ -212,10 +212,10 @@ function nodeChildren(node: TeamOverviewMemberNode) {
             <td class="whitespace-nowrap px-4 py-2 text-slate-600">{{ member.email }}</td>
             <td class="min-w-56 px-4 py-2 text-slate-600">{{ member.department_display_path || '-' }}</td>
             <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">
-              {{ formatCost(member.range_actual_cost) }}
+              {{ formatTokenCount(member.total_tokens) }}
             </td>
             <td class="whitespace-nowrap px-4 py-2 text-right tabular-nums text-slate-900">
-              {{ formatTokenCount(member.total_tokens) }}
+              {{ formatCost(member.range_actual_cost) }}
             </td>
             <td class="whitespace-nowrap px-4 py-2 text-right">
               <span

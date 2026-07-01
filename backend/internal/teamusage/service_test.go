@@ -187,6 +187,8 @@ func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
+	tokenAlice := int64(9000)
+	tokenBob := int64(1000)
 
 	scope := &representativescope.Scope{
 		ActorUserID:      1,
@@ -202,8 +204,8 @@ func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
 			1003: {UserID: 1003, TotalActualCost: 20, TodayActualCost: 5},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
-			1002: {{Date: "2026-06-28", ActualCost: 2}},
-			1003: {{Date: "2026-06-28", ActualCost: 5}},
+			1002: {{Date: "2026-06-28", ActualCost: 2, TotalTokens: &tokenAlice}},
+			1003: {{Date: "2026-06-28", ActualCost: 5, TotalTokens: &tokenBob}},
 		},
 	}
 	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
@@ -223,8 +225,8 @@ func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
 	if got, want := provider.trendRequestUserIDs, []int64{1002, 1003}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("trend request user ids = %#v, want %#v", got, want)
 	}
-	if got := []int{resp.TopMemberTrend.Series[0].UserID, resp.TopMemberTrend.Series[1].UserID}; !reflect.DeepEqual(got, []int{3, 2}) {
-		t.Fatalf("trend series user ids = %#v, want ranked Bob then Alice", got)
+	if got := []int{resp.TopMemberTrend.Series[0].UserID, resp.TopMemberTrend.Series[1].UserID}; !reflect.DeepEqual(got, []int{2, 3}) {
+		t.Fatalf("trend series user ids = %#v, want ranked Alice then Bob by tokens", got)
 	}
 }
 
@@ -233,9 +235,9 @@ func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
 
-	token1002 := int64(3000)
-	token1003a := int64(700)
-	token1003b := int64(800)
+	token1002 := int64(1000)
+	token1003a := int64(1500)
+	token1003b := int64(2000)
 	scope := &representativescope.Scope{
 		ActorUserID:      1,
 		IsRepresentative: true,
@@ -278,23 +280,23 @@ func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
 	if resp.Summary.TotalActualCost != nil {
 		t.Fatalf("summary total_actual_cost = %#v, want nil for selected-window Team Overview", resp.Summary.TotalActualCost)
 	}
-	if got, want := resp.TopMemberTrend.RankBasis, "range_actual_cost"; got != want {
+	if got, want := resp.TopMemberTrend.RankBasis, "range_total_tokens"; got != want {
 		t.Fatalf("rank basis = %q, want %q", got, want)
 	}
-	if got := []int{resp.Members[0].UserID, resp.Members[1].UserID}; !reflect.DeepEqual(got, []int{2, 3}) {
-		t.Fatalf("members order = %#v, want Alice ranked before Bob by selected-window trend", got)
+	if got := []int{resp.Members[0].UserID, resp.Members[1].UserID}; !reflect.DeepEqual(got, []int{3, 2}) {
+		t.Fatalf("members order = %#v, want Bob ranked before Alice by selected-window tokens", got)
 	}
-	if resp.Members[0].RangeActualCost != 30 || resp.Members[1].RangeActualCost != 15 {
-		t.Fatalf("member range costs = %.2f / %.2f, want 30 / 15", resp.Members[0].RangeActualCost, resp.Members[1].RangeActualCost)
+	if resp.Members[0].RangeActualCost != 15 || resp.Members[1].RangeActualCost != 30 {
+		t.Fatalf("member range costs = %.2f / %.2f, want 15 / 30", resp.Members[0].RangeActualCost, resp.Members[1].RangeActualCost)
 	}
-	if resp.Members[0].TotalTokens == nil || *resp.Members[0].TotalTokens != 3000 {
-		t.Fatalf("Alice total tokens = %#v, want 3000 from selected-window trend", resp.Members[0].TotalTokens)
+	if resp.Members[0].TotalTokens == nil || *resp.Members[0].TotalTokens != 3500 {
+		t.Fatalf("Bob total tokens = %#v, want 3500 from selected-window trend", resp.Members[0].TotalTokens)
 	}
-	if resp.Members[1].TotalTokens == nil || *resp.Members[1].TotalTokens != 1500 {
-		t.Fatalf("Bob total tokens = %#v, want 1500 from selected-window trend", resp.Members[1].TotalTokens)
+	if resp.Members[1].TotalTokens == nil || *resp.Members[1].TotalTokens != 1000 {
+		t.Fatalf("Alice total tokens = %#v, want 1000 from selected-window trend", resp.Members[1].TotalTokens)
 	}
-	if got := []int{resp.TopMemberTrend.Series[0].UserID, resp.TopMemberTrend.Series[1].UserID}; !reflect.DeepEqual(got, []int{2, 3}) {
-		t.Fatalf("trend series user ids = %#v, want selected-window ranking Alice then Bob", got)
+	if got := []int{resp.TopMemberTrend.Series[0].UserID, resp.TopMemberTrend.Series[1].UserID}; !reflect.DeepEqual(got, []int{3, 2}) {
+		t.Fatalf("trend series user ids = %#v, want selected-window token ranking Bob then Alice", got)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{1002, 1003}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("trend request user ids = %#v, want %#v", got, want)

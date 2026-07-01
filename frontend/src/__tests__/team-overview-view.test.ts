@@ -12,7 +12,10 @@ vi.mock('@/api/teamUsage', () => ({
 }))
 
 vi.mock('vue-chartjs', () => ({
-  Line: { template: '<canvas data-test="line-chart" />' },
+  Line: {
+    props: ['data', 'options'],
+    template: '<div data-test="line-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
+  },
 }))
 
 const mockGetTeamUsageOverview = vi.mocked((await import('@/api/teamUsage')).getTeamUsageOverview)
@@ -58,7 +61,7 @@ const overviewFixture: TeamOverviewResponse = {
   ],
   top_member_trend: {
     unit_label: 'USD',
-    rank_basis: 'range_actual_cost',
+    rank_basis: 'range_total_tokens',
     unavailable: false,
     unavailable_reason: null,
     series: [
@@ -239,7 +242,7 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     expect(mockGetTeamUsageOverview).toHaveBeenCalledWith(expect.objectContaining({ granularity: 'day' }))
-    expect(wrapper.text()).toContain('Top 12 billing trend')
+    expect(wrapper.text()).toContain('Top 12 token usage trend')
     expect(wrapper.find('header h1').exists()).toBe(false)
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Alice')
@@ -276,7 +279,7 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     const trend = wrapper.get('[data-testid="team-member-trend-chart"]')
-    expect(trend.text()).toContain('USD')
+    expect(trend.text()).toContain('tokens')
     expect(trend.text()).toContain('Daily')
     expect(trend.text()).toContain('2026-06-01 - 2026-06-30')
     expect(trend.text()).toContain('Asia/Shanghai')
@@ -309,11 +312,10 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).not.toContain('Subscriptions')
     expect(wrapper.findAll('button').map((button) => button.text())).not.toContain('Open')
     const trend = wrapper.get('[data-testid="team-member-trend-chart"]')
-    expect(trend.text()).toContain('USD')
+    expect(trend.text()).toContain('Token')
     expect(trend.text()).toContain('按天')
     expect(trend.text()).toContain('2026-06-01 - 2026-06-30')
     expect(trend.text()).toContain('Asia/Shanghai')
-    expect(trend.text()).not.toContain('tokens')
   })
 
   it('requests an explicit 30-day overview window on first load', async () => {
@@ -753,7 +755,7 @@ describe('TeamOverviewMemberTrendChart', () => {
       props: {
         state: {
           unit_label: 'USD',
-          rank_basis: 'range_actual_cost',
+          rank_basis: 'range_total_tokens',
           unavailable: false,
           unavailable_reason: null,
           series: [
@@ -773,5 +775,25 @@ describe('TeamOverviewMemberTrendChart', () => {
     expect(wrapper.text()).toContain('Charlie')
     expect(wrapper.text()).toContain('Team usage is temporarily unavailable.')
     expect(wrapper.text()).not.toContain('provider_error')
+  })
+
+  it('uses selected-window token totals for the Top 12 trend chart data and axis', () => {
+    const wrapper = mount(TeamOverviewMemberTrendChart, {
+      props: {
+        state: overviewFixture.top_member_trend,
+        window: overviewFixture.window,
+      },
+    })
+
+    const chart = wrapper.get('[data-test="line-chart"]')
+    const chartData = JSON.parse(chart.attributes('data-chart') ?? '{}') as {
+      datasets: Array<{ data: Array<number | null> }>
+    }
+    const chartOptions = JSON.parse(chart.attributes('data-options') ?? '{}') as {
+      scales: { y: { title: { text: string } } }
+    }
+
+    expect(chartData.datasets[0].data).toEqual([5000, 7000])
+    expect(chartOptions.scales.y.title.text).toBe('tokens')
   })
 })

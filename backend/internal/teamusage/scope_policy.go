@@ -7,6 +7,11 @@ import (
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
 
+const (
+	teamOverviewCostUnitLabel = "USD"
+	topMemberRankBasisTokens  = "range_total_tokens"
+)
+
 func BuildOverviewUnavailableForLargeScope(subjects []representativescope.Subject, limit int) OverviewResponse {
 	_ = limit
 	reason := "scope_too_large"
@@ -17,12 +22,12 @@ func BuildOverviewUnavailableForLargeScope(subjects []representativescope.Subjec
 			Unavailable:       true,
 			UnavailableReason: &reason,
 			MemberCount:       len(subjects),
-			UnitLabel:         "USD",
+			UnitLabel:         teamOverviewCostUnitLabel,
 		},
 		TopMembers: []OverviewMember{},
 		TopMemberTrend: TopMemberTrendState{
-			UnitLabel:         "USD",
-			RankBasis:         "range_actual_cost",
+			UnitLabel:         teamOverviewCostUnitLabel,
+			RankBasis:         topMemberRankBasisTokens,
 			Unavailable:       true,
 			UnavailableReason: &reason,
 			Series:            []TopMemberTrendSeries{},
@@ -241,18 +246,30 @@ func overviewStringSet(values []string) map[string]struct{} {
 
 func sortOverviewMembers(members []OverviewMember) {
 	sort.SliceStable(members, func(i, j int) bool {
-		if members[i].RangeActualCost == members[j].RangeActualCost {
-			if members[i].DisplayName != members[j].DisplayName {
-				return members[i].DisplayName < members[j].DisplayName
-			}
-			if members[i].Email != members[j].Email {
-				return members[i].Email < members[j].Email
-			}
-			if members[i].DirectoryMemberExternalID != members[j].DirectoryMemberExternalID {
-				return members[i].DirectoryMemberExternalID < members[j].DirectoryMemberExternalID
-			}
-			return members[i].UserID < members[j].UserID
+		leftTokens := overviewMemberTokenTotal(members[i])
+		rightTokens := overviewMemberTokenTotal(members[j])
+		if leftTokens != rightTokens {
+			return leftTokens > rightTokens
 		}
-		return members[i].RangeActualCost > members[j].RangeActualCost
+		if members[i].RangeActualCost != members[j].RangeActualCost {
+			return members[i].RangeActualCost > members[j].RangeActualCost
+		}
+		if members[i].DisplayName != members[j].DisplayName {
+			return members[i].DisplayName < members[j].DisplayName
+		}
+		if members[i].Email != members[j].Email {
+			return members[i].Email < members[j].Email
+		}
+		if members[i].DirectoryMemberExternalID != members[j].DirectoryMemberExternalID {
+			return members[i].DirectoryMemberExternalID < members[j].DirectoryMemberExternalID
+		}
+		return members[i].UserID < members[j].UserID
 	})
+}
+
+func overviewMemberTokenTotal(member OverviewMember) int64 {
+	if member.TotalTokens == nil {
+		return 0
+	}
+	return *member.TotalTokens
 }

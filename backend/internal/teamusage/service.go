@@ -202,8 +202,8 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 	}
 
 	trendState := TopMemberTrendState{
-		UnitLabel: "USD",
-		RankBasis: "range_actual_cost",
+		UnitLabel: teamOverviewCostUnitLabel,
+		RankBasis: topMemberRankBasisTokens,
 		Series:    []TopMemberTrendSeries{},
 	}
 	pointsByUser := map[int64][]relay.UsageTrendPoint{}
@@ -289,7 +289,7 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 			RangeTotalTokens:  rangeTokens,
 			TodayActualCost:   nil,
 			TotalActualCost:   nil,
-			UnitLabel:         "USD",
+			UnitLabel:         teamOverviewCostUnitLabel,
 		},
 		TopMembers:     topMembers,
 		TopMemberTrend: trendState,

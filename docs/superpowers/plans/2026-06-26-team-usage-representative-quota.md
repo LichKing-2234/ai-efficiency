@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete. Post-login QA follow-up fixes for Team Overview rendering, representative metadata parsing, new representative UI i18n, sub2api multiplier update contract alignment, stale relay user binding reconciliation, removal of representative audit UI, `/usage` canonical IA, independent selected-member route behavior, selected-member detail IA cleanup, billed-usage terminology, Team Overview Today / 7 Days / 30 Days selected-window semantics, Team Overview range-switch loading feedback, selected-member header de-duplication, Team Overview full directory roster counts, email-based sub2api usage resolution, simplified Team members / Connected members copy, selected-window token totals, not-connected member highlighting, and organization-tree member details are complete in code and scoped frontend/backend checks.
+**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete. Post-login QA follow-up fixes for Team Overview rendering, representative metadata parsing, new representative UI i18n, sub2api multiplier update contract alignment, stale relay user binding reconciliation, removal of representative audit UI, `/usage` canonical IA, independent selected-member route behavior, selected-member detail IA cleanup, billed-usage terminology, Team Overview Today / 7 Days / 30 Days selected-window semantics, Team Overview range-switch loading feedback, selected-member header de-duplication, Team Overview full directory roster counts, email-based sub2api usage resolution, simplified Team members / Connected members copy, selected-window token totals, token-based Top 12/member ranking, not-connected member highlighting, and organization-tree member details are complete in code and scoped frontend/backend checks.
 
 ## Post-login QA Follow-up
 
@@ -43,6 +43,7 @@
 - [x] Resolve Team Overview directory-only rows to sub2api users by exact email for read-only usage aggregation, without enabling selected-member quota controls for directory-only rows.
 - [x] Rename Team Overview summary cards to Team members / Connected members and hide the member table subscription-count column until reliable batched counts exist.
 - [x] Add selected-window token usage to Team Overview summary and member details.
+- [x] Rank Team Overview Top 12, trend chart, and member ranking by selected-window token usage while keeping billed usage auxiliary.
 - [x] Render Team Overview member details as an expandable organization tree based on Directory Sync hierarchy.
 - [x] Deduplicate represented department roots so ancestor departments contain represented child departments instead of rendering duplicate top-level teams.
 - [x] Mark members without resolved relay access as not connected with localized red status.
@@ -2398,7 +2399,7 @@ it('renders top member trend and member table without quota controls', async () 
   mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } })
   const wrapper = mount(TeamOverviewView, { global: { plugins: [router] } })
   await flushPromises()
-  expect(wrapper.text()).toContain('Top 12 billing trend')
+  expect(wrapper.text()).toContain('Top 12 token usage trend')
   expect(wrapper.text()).toContain('Alice')
   expect(wrapper.text()).not.toContain('Used / Quota')
   expect(wrapper.text()).not.toContain('Rate multiplier')
@@ -2500,7 +2501,7 @@ Add keys:
 
 ```ts
 'teamUsage.title': 'Team Usage',
-'teamUsage.topMembers': 'Top 12 billing trend',
+'teamUsage.topMembers': 'Top 12 token usage trend',
 'teamUsage.memberTable': 'Member details',
 'teamUsage.scopeTooLarge': 'Team usage is unavailable for this scope size.',
 'teamUsage.updating': 'Updating team usage...',
@@ -2518,7 +2519,7 @@ Chinese:
 
 ```ts
 'teamUsage.title': '团队用量',
-'teamUsage.topMembers': 'Top 12 计费用量趋势',
+'teamUsage.topMembers': 'Top 12 Token 用量趋势',
 'teamUsage.memberTable': '成员明细',
 'teamUsage.scopeTooLarge': '当前部门范围过大，暂时无法计算团队用量。',
 'teamUsage.updating': '正在更新团队用量...',
