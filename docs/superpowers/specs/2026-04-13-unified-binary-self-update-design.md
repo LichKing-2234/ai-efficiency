@@ -4,6 +4,8 @@
 
 > Retirement note (2026-05-22): Current code no longer contains `backend/internal/deployment`, `backend/cmd/updater`, or `/api/v1/settings/deployment*`. Docker upgrades are image/service operations; systemd upgrades are operator-driven through install/release tooling. This document is preserved as historical design context only.
 
+> Update note (2026-07-01): Current code restores only read-only current/latest version visibility through `backend/internal/versioncheck` and `/api/v1/system/version*`. It does not restore backend-managed binary self-update, rollback, or restart behavior.
+
 ## Overview
 
 本 spec 定义 `ai-efficiency` 后续统一的更新模型：

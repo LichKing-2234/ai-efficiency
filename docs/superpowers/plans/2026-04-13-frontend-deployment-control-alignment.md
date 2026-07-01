@@ -10,11 +10,11 @@
 
 **Status:** Completed on 2026-04-15; superseded on 2026-05-22 by removal of the frontend Deployment control surface.
 
-**Replay Status:** Historical record only. Do not replay these tasks; the current frontend no longer includes settings-page deployment status, update, rollback, or restart controls.
+**Replay Status:** Historical record only. Do not replay these tasks; the current frontend no longer includes settings-page deployment status, binary update, rollback, or restart controls. A 2026-07-01 follow-up added read-only system version display and manual latest-release check outside the retired deployment control surface.
 
-**Retirement Note:** The backend deployment/update APIs were removed after this frontend surface was retired. Deploy tooling remains available for operator-driven upgrades outside the app process.
+**Retirement Note:** The backend deployment/update APIs were removed after this frontend surface was retired. Deploy tooling remains available for operator-driven upgrades outside the app process. `/api/v1/system/version*` endpoints are read-only and do not restore binary upgrade behavior.
 
-> **Updated:** 2026-05-22 — marked superseded after removing the frontend deployment control surface.
+> **Updated:** 2026-07-01 — recorded read-only system version/check-update follow-up while keeping the deployment apply/rollback/restart plan retired.
 
 ---
 

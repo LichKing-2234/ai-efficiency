@@ -110,6 +110,15 @@ func SetupRouter(
 	protected := api.Group("")
 	protected.Use(auth.RequireAuth(authService))
 
+	if healthHandler != nil {
+		systemGroup := protected.Group("/system")
+		systemGroup.Use(auth.RequireAdmin())
+		{
+			systemGroup.GET("/version", healthHandler.Version)
+			systemGroup.POST("/version/check", healthHandler.CheckVersion)
+		}
+	}
+
 	// SCM Providers — admin only
 	scmGroup := protected.Group("/scm-providers")
 	scmGroup.Use(auth.RequireAdmin())

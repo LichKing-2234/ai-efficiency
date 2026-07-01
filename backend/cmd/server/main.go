@@ -29,6 +29,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -268,7 +269,13 @@ func main() {
 		relayPinger,
 		versionInfo,
 	)
-	healthHandler := handler.NewHealthHandler(healthService)
+	versionHTTPClient := &http.Client{Timeout: 10 * time.Second}
+	var releaseSource versioncheck.ReleaseSource
+	if cfg.VersionCheck.Enabled && strings.TrimSpace(cfg.VersionCheck.ReleaseAPIURL) != "" {
+		releaseSource = versioncheck.NewGitHubReleaseSource(versionHTTPClient, cfg.VersionCheck.ReleaseAPIURL)
+	}
+	versionCheckService := versioncheck.NewService(versionInfo, releaseSource)
+	healthHandler := handler.NewHealthHandler(healthService, versionCheckService)
 
 	r := handler.SetupRouter(
 		entClient,

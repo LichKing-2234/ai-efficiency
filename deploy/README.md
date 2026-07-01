@@ -184,10 +184,12 @@ After startup:
 
 - public liveness: `GET /api/v1/health/live`
 - public readiness: `GET /api/v1/health/ready`
+- admin current version: `GET /api/v1/system/version`
+- admin latest-release check: `POST /api/v1/system/version/check`
 
 ## Upgrades
 
-The application no longer exposes in-app deployment status, online update, rollback, or restart controls. Upgrade Docker deployments by pulling a newer image and recreating the service. Upgrade systemd deployments by rerunning `deploy/install.sh` with the target version.
+The application no longer exposes in-app deployment status, online update, rollback, or restart controls. The admin UI can display the current version and check whether a newer backend GitHub release exists, but it cannot upgrade binaries. Upgrade Docker deployments by pulling a newer image and recreating the service. Upgrade systemd deployments by rerunning `deploy/install.sh` with the target version.
 
 ## GitHub Release Artifacts
 

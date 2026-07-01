@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
 import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider, testRelayProvider } from '@/api/relayProvider'
 import { listCredentials, createCredential, updateCredential, deleteCredential } from '@/api/credential'
 import { getUserProviders } from '@/api/user'
+import { getSystemVersion, checkSystemUpdate } from '@/api/system'
 import client from '@/api/client'
-import type { Credential, RelayProvider, SCMProvider, UserProviderSummary } from '@/types'
+import type { Credential, RelayProvider, SCMProvider, SystemVersionStatus, UserProviderSummary } from '@/types'
 
 const providers = ref<SCMProvider[]>([])
 const relayProviders = ref<RelayProvider[]>([])
@@ -79,8 +80,21 @@ const ldapTesting = ref(false)
 const ldapError = ref('')
 const ldapSuccess = ref('')
 
+// System version
+const systemVersion = ref<SystemVersionStatus | null>(null)
+const systemVersionLoading = ref(true)
+const systemVersionChecking = ref(false)
+const systemVersionMessage = ref('')
+const systemVersionMessageKind = ref<'success' | 'error' | ''>('')
+const systemVersionCheckDisabled = computed(() => (
+  systemVersionChecking.value ||
+  systemVersionLoading.value ||
+  !systemVersion.value ||
+  systemVersion.value.check_enabled === false
+))
+
 onMounted(async () => {
-  await Promise.all([fetchProviders(), fetchRelayProviders(), fetchUserProviders(), fetchCredentials(), fetchLDAPConfig()])
+  await Promise.all([fetchSystemVersion(), fetchProviders(), fetchRelayProviders(), fetchUserProviders(), fetchCredentials(), fetchLDAPConfig()])
 })
 
 async function fetchProviders() {
@@ -426,6 +440,57 @@ function formatDate(date: string) {
   return new Date(date).toLocaleDateString()
 }
 
+function formatBuildTime(date?: string) {
+  if (!date) return 'Unknown'
+  const parsed = new Date(date)
+  if (Number.isNaN(parsed.getTime())) return date
+  return parsed.toLocaleString()
+}
+
+async function fetchSystemVersion() {
+  systemVersionLoading.value = true
+  try {
+    const res = await getSystemVersion()
+    systemVersion.value = res.data.data ?? null
+  } catch {
+    systemVersion.value = null
+  } finally {
+    systemVersionLoading.value = false
+  }
+}
+
+async function handleCheckSystemUpdate() {
+  if (systemVersion.value?.check_enabled === false) {
+    systemVersionMessageKind.value = 'error'
+    systemVersionMessage.value = 'Version check unavailable'
+    return
+  }
+
+  systemVersionChecking.value = true
+  systemVersionMessage.value = ''
+  systemVersionMessageKind.value = ''
+  try {
+    const res = await checkSystemUpdate()
+    systemVersion.value = res.data.data ?? null
+    systemVersionMessageKind.value = 'success'
+    if (systemVersion.value?.update_available) {
+      systemVersionMessage.value = 'Update available'
+    } else if (systemVersion.value?.checked) {
+      systemVersionMessage.value = 'Already current'
+    } else if (systemVersion.value?.check_enabled === false) {
+      systemVersionMessageKind.value = 'error'
+      systemVersionMessage.value = 'Version check unavailable'
+    } else {
+      systemVersionMessage.value = ''
+    }
+  } catch (e: any) {
+    systemVersionMessageKind.value = 'error'
+    systemVersionMessage.value = e.response?.data?.message || 'Failed to check updates'
+  } finally {
+    systemVersionChecking.value = false
+  }
+}
+
 // LDAP config functions
 async function fetchLDAPConfig() {
   try {
@@ -490,6 +555,57 @@ async function handleTestLDAP() {
         >
           Add Provider
         </button>
+      </div>
+
+      <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="flex flex-col gap-4 px-6 py-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-gray-900">System Version</h2>
+            <div v-if="systemVersionLoading" class="mt-2 text-sm text-gray-500">Loading version...</div>
+            <div v-else-if="systemVersion" class="mt-3 grid gap-3 text-sm text-gray-600 sm:grid-cols-3">
+              <div>
+                <div class="text-xs font-medium uppercase tracking-wider text-gray-400">Current</div>
+                <div class="mt-1 font-mono text-gray-900">{{ systemVersion.version.version }}</div>
+              </div>
+              <div>
+                <div class="text-xs font-medium uppercase tracking-wider text-gray-400">Commit</div>
+                <div class="mt-1 font-mono text-gray-900">{{ systemVersion.version.commit }}</div>
+              </div>
+              <div>
+                <div class="text-xs font-medium uppercase tracking-wider text-gray-400">Built</div>
+                <div class="mt-1 text-gray-900">{{ formatBuildTime(systemVersion.version.build_time) }}</div>
+              </div>
+            </div>
+            <div v-else class="mt-2 text-sm text-gray-500">Version information unavailable.</div>
+
+            <div v-if="systemVersion?.latest_release" class="mt-4 text-sm text-gray-600">
+              Latest:
+              <a
+                :href="systemVersion.latest_release.url"
+                target="_blank"
+                rel="noreferrer"
+                class="font-mono text-indigo-600 hover:text-indigo-800"
+              >{{ systemVersion.latest_release.version }}</a>
+            </div>
+            <div v-if="systemVersion?.check_enabled === false" class="mt-4 rounded-md bg-yellow-50 px-3 py-2 text-sm text-yellow-700">
+              Version check unavailable
+            </div>
+            <div
+              v-if="systemVersionMessage"
+              class="mt-4 rounded-md px-3 py-2 text-sm"
+              :class="systemVersionMessageKind === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'"
+            >
+              {{ systemVersionMessage }}
+            </div>
+          </div>
+          <button
+            class="self-start rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 md:self-center"
+            :disabled="systemVersionCheckDisabled"
+            @click="handleCheckSystemUpdate"
+          >
+            {{ systemVersionChecking ? 'Checking...' : 'Check Updates' }}
+          </button>
+        </div>
       </div>
 
       <div v-if="loading" class="text-center text-gray-500 py-12">Loading...</div>

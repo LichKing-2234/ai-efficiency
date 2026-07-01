@@ -25,6 +25,10 @@ relay:
   model: "claude-sonnet-4-20250514"
   default_group_id: ""
 
+version_check:
+  enabled: true
+  release_api_url: "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest"
+
 auth:
   jwt_secret: "change-me-in-production-32-bytes!"
   access_token_ttl: 7200      # 2 hours

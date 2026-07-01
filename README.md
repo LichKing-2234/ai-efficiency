@@ -17,7 +17,7 @@ AI Efficiency Platform (`ai-efficiency`) is a standalone system for measuring an
 
 ## Current Runtime
 
-- The backend is the central orchestration point for auth, repo management, analysis, attribution, deployment control, and webhook handling.
+- The backend is the central orchestration point for auth, repo management, analysis, attribution, deployment health/version visibility, and webhook handling.
 - The frontend is built separately and embedded into the backend binary for deployment.
 - The formal CLI workflow is now sessionless: `ae-cli init`, `ae-cli sync`, and `ae-cli doctor`.
 - Legacy `ae-cli start/stop/run/...` session commands are no longer shipped in the current CLI binary, and the local-proxy runtime is retired.

@@ -83,6 +83,10 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"model":            cfg.Relay.Model,
 			"default_group_id": cfg.Relay.DefaultGroupID,
 		},
+		"version_check": map[string]any{
+			"enabled":         cfg.VersionCheck.Enabled,
+			"release_api_url": cfg.VersionCheck.ReleaseAPIURL,
+		},
 		"auth": map[string]any{
 			"jwt_secret":        cfg.Auth.JWTSecret,
 			"access_token_ttl":  cfg.Auth.AccessTokenTTL,

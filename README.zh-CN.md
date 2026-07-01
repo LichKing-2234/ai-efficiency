@@ -17,7 +17,7 @@ AI 效能平台（`ai-efficiency`）是一个独立系统，用于衡量和优�
 
 ## 当前运行形态
 
-- 后端是认证、仓库管理、分析、归因、部署控制和 webhook 处理的统一编排中心。
+- 后端是认证、仓库管理、分析、归因、部署健康与版本可见性、webhook 处理的统一编排中心。
 - 前端单独构建，并在部署时嵌入后端二进制。
 - `ae-cli` 的正式工作流已经切到 sessionless：`ae-cli init`、`ae-cli sync`、`ae-cli doctor`。
 - 旧的 `ae-cli start/stop/run/...` 命令已不再包含在当前 CLI 二进制中，本地 session proxy 运行时也已退役。

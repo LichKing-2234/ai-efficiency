@@ -18,6 +18,7 @@ import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRel
 import { listPRs, getPR, syncPRs, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
 import { getUserProviders, createGroupCredential, regenerateGroupCredential } from '@/api/user'
+import { getSystemVersion, checkSystemUpdate } from '@/api/system'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -151,6 +152,20 @@ describe('efficiency API', () => {
     mockClient.get.mockResolvedValue({ data: { data: { total_repos: 5 } } })
     await getDashboard()
     expect(mockClient.get).toHaveBeenCalledWith('/efficiency/dashboard')
+  })
+})
+
+describe('system API', () => {
+  it('getSystemVersion calls GET /system/version', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { version: { version: 'v0.4.0' } } } })
+    await getSystemVersion()
+    expect(mockClient.get).toHaveBeenCalledWith('/system/version')
+  })
+
+  it('checkSystemUpdate calls POST /system/version/check', async () => {
+    mockClient.post.mockResolvedValue({ data: { data: { update_available: true } } })
+    await checkSystemUpdate()
+    expect(mockClient.post).toHaveBeenCalledWith('/system/version/check')
   })
 })
 

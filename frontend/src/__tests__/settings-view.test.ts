@@ -19,6 +19,16 @@ const createDefaultRelayProvidersResponse = () => ({
   },
 })
 
+const createDefaultSystemVersionResponse = () => ({
+  data: {
+    data: {
+      version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+      check_enabled: true,
+      update_available: false,
+    },
+  },
+})
+
 vi.mock('@/api/scmProvider', () => ({
   listProviders: vi.fn(),
   createProvider: vi.fn(),
@@ -43,6 +53,11 @@ vi.mock('@/api/credential', () => ({
 
 vi.mock('@/api/user', () => ({
   getUserProviders: vi.fn(),
+}))
+
+vi.mock('@/api/system', () => ({
+  getSystemVersion: vi.fn(),
+  checkSystemUpdate: vi.fn(),
 }))
 
 vi.mock('@/api/auth', () => ({
@@ -95,6 +110,20 @@ async function resetApiMocks() {
     },
   })
 
+  const systemApi = await import('@/api/system') as any
+  systemApi.getSystemVersion.mockReset().mockResolvedValue(createDefaultSystemVersionResponse())
+  systemApi.checkSystemUpdate.mockReset().mockResolvedValue({
+    data: {
+      data: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        check_enabled: true,
+        checked: true,
+        update_available: true,
+        latest_release: { version: 'v0.5.0', url: 'https://example.com/releases/v0.5.0' },
+      },
+    },
+  })
+
   const authApi = await import('@/api/auth') as any
   authApi.login.mockReset().mockResolvedValue({ data: { data: null } })
   authApi.getMe.mockReset().mockResolvedValue({ data: { data: {} } })
@@ -114,11 +143,12 @@ function createTestRouter() {
   })
 }
 
-async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; userProviders?: any[]; credentials?: any[] }) {
+async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; userProviders?: any[]; credentials?: any[]; systemVersion?: any }) {
   const { listProviders } = await import('@/api/scmProvider')
   const { listRelayProviders } = await import('@/api/relayProvider')
   const { getUserProviders } = await import('@/api/user')
   const { listCredentials } = await import('@/api/credential')
+  const { getSystemVersion } = await import('@/api/system')
 
   if (overrides?.providers) {
     ;(listProviders as any).mockResolvedValue({
@@ -133,6 +163,9 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
   }
   if (overrides?.credentials) {
     ;(listCredentials as any).mockResolvedValue({ data: { data: overrides.credentials } })
+  }
+  if (overrides?.systemVersion) {
+    ;(getSystemVersion as any).mockResolvedValue({ data: { data: overrides.systemVersion } })
   }
 
   const router = createTestRouter()
@@ -158,9 +191,50 @@ describe('SettingsView', () => {
   it('renders SCM providers, relay providers, and credentials sections', async () => {
     const wrapper = await mountSettings()
     expect(wrapper.find('h1').text()).toBe('SCM Providers')
+    expect(wrapper.text()).toContain('System Version')
     expect(wrapper.text()).toContain('Credentials')
     expect(wrapper.text()).toContain('Relay Providers')
     expect(wrapper.text()).toContain('Add Relay Provider')
+  })
+
+  it('shows version and checks updates without binary upgrade controls', async () => {
+    const { checkSystemUpdate } = await import('@/api/system')
+    const wrapper = await mountSettings()
+
+    expect(wrapper.text()).toContain('v0.4.0')
+    expect(wrapper.text()).toContain('abc1234')
+    expect(wrapper.text()).toContain('Check Updates')
+    expect(wrapper.text()).not.toContain('Apply Update')
+    expect(wrapper.text()).not.toContain('Rollback')
+    expect(wrapper.text()).not.toContain('Restart Service')
+
+    const checkBtn = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
+    await checkBtn!.trigger('click')
+    await flushPromises()
+
+    expect(checkSystemUpdate).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('v0.5.0')
+    expect(wrapper.text()).toContain('Update available')
+  })
+
+  it('shows version check unavailable when latest-release checks are disabled', async () => {
+    const { checkSystemUpdate } = await import('@/api/system')
+    const wrapper = await mountSettings({
+      systemVersion: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        check_enabled: false,
+        update_available: false,
+      },
+    })
+
+    expect(wrapper.text()).toContain('Version check unavailable')
+    const checkBtn = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
+    expect(checkBtn!.attributes('disabled')).toBeDefined()
+
+    await checkBtn!.trigger('click')
+    await flushPromises()
+
+    expect(checkSystemUpdate).not.toHaveBeenCalled()
   })
 
   it('creates a secret text credential', async () => {

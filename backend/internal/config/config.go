@@ -7,12 +7,13 @@ import (
 )
 
 type Config struct {
-	Server     ServerConfig     `mapstructure:"server"`
-	DB         DBConfig         `mapstructure:"db"`
-	Redis      RedisConfig      `mapstructure:"redis"`
-	Auth       AuthConfig       `mapstructure:"auth"`
-	Encryption EncryptionConfig `mapstructure:"encryption"`
-	Relay      RelayConfig      `mapstructure:"relay"`
+	Server       ServerConfig       `mapstructure:"server"`
+	DB           DBConfig           `mapstructure:"db"`
+	Redis        RedisConfig        `mapstructure:"redis"`
+	Auth         AuthConfig         `mapstructure:"auth"`
+	Encryption   EncryptionConfig   `mapstructure:"encryption"`
+	Relay        RelayConfig        `mapstructure:"relay"`
+	VersionCheck VersionCheckConfig `mapstructure:"version_check"`
 }
 
 type ServerConfig struct {
@@ -64,6 +65,11 @@ type EncryptionConfig struct {
 	Key string `mapstructure:"key"` // 32-byte hex-encoded AES-256 key
 }
 
+type VersionCheckConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`
+	ReleaseAPIURL string `mapstructure:"release_api_url"`
+}
+
 func Load(path string) (*Config, error) {
 	v := viper.New()
 
@@ -82,6 +88,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("auth.access_token_ttl", 7200)
 	v.SetDefault("auth.refresh_token_ttl", 604800)
 	v.SetDefault("auth.ldap.user_filter", "(uid=%s)")
+	v.SetDefault("version_check.enabled", true)
+	v.SetDefault("version_check.release_api_url", "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest")
 	// Config file
 	if path != "" {
 		v.SetConfigFile(path)
@@ -123,6 +131,8 @@ func Load(path string) (*Config, error) {
 		"redis.addr",
 		"redis.password",
 		"redis.db",
+		"version_check.enabled",
+		"version_check.release_api_url",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, err

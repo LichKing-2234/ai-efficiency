@@ -146,6 +146,25 @@ export interface ApiResponse<T> {
   data?: T
 }
 
+export interface BuildVersion {
+  version: string
+  commit: string
+  build_time: string
+}
+
+export interface ReleaseInfo {
+  version: string
+  url: string
+}
+
+export interface SystemVersionStatus {
+  version: BuildVersion
+  check_enabled: boolean
+  checked?: boolean
+  update_available: boolean
+  latest_release?: ReleaseInfo
+}
+
 export interface ToolUsageEventSummary {
   total_events: number
   bound_events: number

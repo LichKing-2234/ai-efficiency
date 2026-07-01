@@ -21,31 +21,9 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
-      - -X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=v{{ .Version }}
-      - -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit={{ .Commit }}
-      - -X github.com/ai-efficiency/backend/internal/deployment.BuildTime={{ .Date }}
-
-  - id: backend-updater
-    dir: backend
-    main: ./cmd/updater
-    binary: ai-efficiency-updater
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
-    ldflags:
-      - -s -w
-      - -X github.com/ai-efficiency/backend/internal/deployment.BuildVersion=v{{ .Version }}
-      - -X github.com/ai-efficiency/backend/internal/deployment.BuildCommit={{ .Commit }}
-      - -X github.com/ai-efficiency/backend/internal/deployment.BuildTime={{ .Date }}
+      - -X github.com/ai-efficiency/backend/internal/buildinfo.BuildVersion=v{{ .Version }}
+      - -X github.com/ai-efficiency/backend/internal/buildinfo.BuildCommit={{ .Commit }}
+      - -X github.com/ai-efficiency/backend/internal/buildinfo.BuildTime={{ .Date }}
 
   - id: ae-cli
     dir: ae-cli
@@ -71,7 +49,6 @@ archives:
   - id: backend-bundle
     ids:
       - backend-server
-      - backend-updater
     name_template: "ai-efficiency-backend_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats:
       - tar.gz
