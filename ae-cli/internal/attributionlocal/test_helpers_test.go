@@ -287,10 +287,14 @@ type syncBackendClientStub struct {
 	uploads  []string
 	requests []client.ToolUsageEventRequest
 	failOn   string
+	failWith error
 }
 
 func (s *syncBackendClientStub) SendToolUsageEvent(_ context.Context, req client.ToolUsageEventRequest) error {
 	if s.failOn != "" && req.DedupeKey == s.failOn {
+		if s.failWith != nil {
+			return s.failWith
+		}
 		return fmt.Errorf("upload failed for %s", req.DedupeKey)
 	}
 	s.uploads = append(s.uploads, req.DedupeKey)
@@ -305,6 +309,28 @@ func (s *syncBackendClientStub) SawUpload(dedupeKey string) bool {
 		}
 	}
 	return false
+}
+
+type syncBatchBackendClientStub struct {
+	syncBackendClientStub
+	batches [][]string
+}
+
+func (s *syncBatchBackendClientStub) SendToolUsageEvents(_ context.Context, reqs []client.ToolUsageEventRequest) error {
+	batch := make([]string, 0, len(reqs))
+	for _, req := range reqs {
+		if s.failOn != "" && req.DedupeKey == s.failOn {
+			if s.failWith != nil {
+				return s.failWith
+			}
+			return fmt.Errorf("batch upload failed for %s", req.DedupeKey)
+		}
+		batch = append(batch, req.DedupeKey)
+		s.uploads = append(s.uploads, req.DedupeKey)
+		s.requests = append(s.requests, req)
+	}
+	s.batches = append(s.batches, batch)
+	return nil
 }
 
 func fixtureRepoRoot(t *testing.T) string {

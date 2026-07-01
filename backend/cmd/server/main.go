@@ -20,6 +20,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/credential"
+	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
 	"github.com/ai-efficiency/backend/internal/health"
@@ -129,6 +130,9 @@ func main() {
 	if err := entClient.Schema.Create(context.Background()); err != nil {
 		logger.Fatal("ent auto-migrate", zap.Error(err))
 	}
+	if err := dropLegacyRelayProviderAdminURL(context.Background(), db); err != nil {
+		logger.Fatal("drop legacy relay provider admin_url", zap.Error(err))
+	}
 	logger.Info("database schema migrated")
 	if err := ensurePrimaryRelayProviderFromConfig(context.Background(), entClient, cfg.Relay, cfg.Encryption.Key); err != nil {
 		logger.Fatal("bootstrap primary relay provider from config", zap.Error(err))
@@ -152,21 +156,13 @@ func main() {
 	// Init relay provider
 	var relayProvider relay.Provider
 	if cfg.Relay.URL != "" {
-		adminURL := strings.TrimSpace(cfg.Relay.AdminURL)
-		if adminURL == "" {
-			adminURL = cfg.Relay.URL
-		}
 		relayProvider = relay.NewSub2apiProvider(
 			http.DefaultClient,
 			cfg.Relay.URL,
-			adminURL,
-			cfg.Relay.APIKey,
+			cfg.Relay.AdminAPIKey,
 			cfg.Relay.Model,
 			logger,
 		)
-		if updater, ok := relayProvider.(interface{ SetAdminAPIKey(string) }); ok {
-			updater.SetAdminAPIKey(cfg.Relay.AdminAPIKey)
-		}
 		logger.Info("relay provider initialized",
 			zap.String("provider", cfg.Relay.Provider),
 			zap.String("url", cfg.Relay.URL),
@@ -209,7 +205,11 @@ func main() {
 	authService.RegisterProvider(auth.NewLDAPProvider(&ldapConfig, logger))
 
 	// Init repo service
-	repoService := repo.NewService(entClient, cfg.Encryption.Key, logger)
+	repoService := repo.NewService(entClient, cfg.Encryption.Key, logger, repo.ServiceOptions{
+		WebhookPublicURL: cfg.Server.PublicURL,
+		FrontendURL:      cfg.Server.FrontendURL,
+		ServerMode:       cfg.Server.Mode,
+	})
 
 	// Init PR labeler (with optional relay usage stats lookup)
 	labeler := efficiency.NewLabeler(entClient, relayProvider, logger)
@@ -238,6 +238,15 @@ func main() {
 
 	// Init provider handler
 	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger)
+	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
+		Executor:       directorysync.NewExecutor(directorysync.ExecutorOptions{}),
+		Credentials:    directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
+		RelayDisablers: directorysync.NewProviderRelayDisablerResolver(providerHandler),
+		TokenRevoker:   authService,
+	})
+	directorySchedulerCtx, stopDirectoryScheduler := context.WithCancel(context.Background())
+	defer stopDirectoryScheduler()
+	directoryService.StartScheduler(directorySchedulerCtx, time.Minute)
 
 	// Init admin settings handler
 	adminSettingsHandler := handler.NewAdminSettingsHandler(settingsConfigPath, &ldapConfig)
@@ -279,18 +288,20 @@ func main() {
 
 	r := handler.SetupRouter(
 		entClient,
+		sqlDB,
 		authService,
 		repoService,
 		webhookHandler,
 		syncService,
 		settingsHandler,
 		cfg.Encryption.Key,
-		middleware.CORS(nil),
+		middleware.CORS([]string{cfg.Server.FrontendURL}),
 		oauthHandler,
 		providerHandler,
 		adminSettingsHandler,
 		checkpointHandler,
 		healthHandler,
+		directoryService,
 	)
 
 	// Start server
@@ -312,6 +323,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	logger.Info("shutting down server...")
+	stopDirectoryScheduler()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -9,6 +9,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
@@ -86,6 +87,25 @@ func (s *Service) RegisterProvider(p AuthProvider) {
 	s.providers = append(s.providers, p)
 }
 
+func (s *Service) defaultLoginProviders() []AuthProvider {
+	if len(s.providers) < 2 {
+		return s.providers
+	}
+
+	ordered := make([]AuthProvider, 0, len(s.providers))
+	for _, p := range s.providers {
+		if strings.EqualFold(p.Name(), "ldap") {
+			ordered = append(ordered, p)
+		}
+	}
+	for _, p := range s.providers {
+		if !strings.EqualFold(p.Name(), "ldap") {
+			ordered = append(ordered, p)
+		}
+	}
+	return ordered
+}
+
 // Login authenticates a user and returns a token pair.
 func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, *UserInfo, error) {
 	var userInfo *UserInfo
@@ -105,8 +125,8 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*TokenPair, *Use
 			return nil, nil, fmt.Errorf("unknown auth source: %s", req.Source)
 		}
 	} else {
-		// Try all providers in order
-		for _, p := range s.providers {
+		// Default login prefers LDAP and falls back to the remaining providers.
+		for _, p := range s.defaultLoginProviders() {
 			userInfo, lastErr = p.Authenticate(ctx, req.Username, req.Password)
 			if userInfo != nil {
 				break
@@ -155,6 +175,9 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Token
 	if err != nil {
 		return nil, nil, fmt.Errorf("get user: %w", err)
 	}
+	if err := s.ensureTokenValidForUser(u, claims); err != nil {
+		return nil, nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
 
 	userInfo := &UserInfo{
 		ID:         u.ID,
@@ -173,8 +196,15 @@ func (s *Service) RefreshToken(ctx context.Context, refreshToken string) (*Token
 }
 
 // ValidateAccessToken validates an access token and returns claims.
-func (s *Service) ValidateAccessToken(tokenStr string) (jwt.MapClaims, error) {
-	return s.validateToken(tokenStr, "access")
+func (s *Service) ValidateAccessToken(ctx context.Context, tokenStr string) (jwt.MapClaims, error) {
+	claims, err := s.validateToken(tokenStr, "access")
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureTokenNotRevoked(ctx, claims); err != nil {
+		return nil, err
+	}
+	return claims, nil
 }
 
 // GenerateTokenPairForUser generates a token pair for the given user info.
@@ -183,7 +213,28 @@ func (s *Service) GenerateTokenPairForUser(info *UserInfo) (*TokenPair, error) {
 	return s.generateTokenPair(info)
 }
 
+func (s *Service) RevokeUserTokens(ctx context.Context, userID int, revokedAt time.Time) error {
+	if s == nil || s.entClient == nil {
+		return fmt.Errorf("auth service is not configured")
+	}
+	if userID <= 0 {
+		return fmt.Errorf("user id is required")
+	}
+	if revokedAt.IsZero() {
+		revokedAt = time.Now()
+	}
+	if _, err := s.entClient.User.UpdateOneID(userID).SetTokenValidAfter(revokedAt).Save(ctx); err != nil {
+		return fmt.Errorf("revoke user tokens: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.User, error) {
+	ldapLogin := strings.EqualFold(info.AuthSource, "ldap")
+	if ldapLogin {
+		info.RelayAuthPassword = ""
+	}
+
 	// Try to find existing user by username
 	u, err := s.entClient.User.Query().
 		Where(entuser.UsernameEQ(info.Username)).
@@ -208,7 +259,7 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 	}
 
 	if info.RelayUserID == nil && s.relayIdentityResolver != nil {
-		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionWithPassword(ctx, info.Username, info.Email, info.RelayAuthPassword)
+		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionForLDAP(ctx, info.Username, info.Email)
 		if err != nil {
 			return nil, fmt.Errorf("resolve relay identity: %w", err)
 		}
@@ -216,8 +267,17 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 		info.RelayUserID = &relayID
 		if strings.TrimSpace(relayPassword) != "" {
 			info.RelayAuthPassword = relayPassword
+		} else {
+			relayPassword, err := s.relayIdentityResolver.ResetGeneratedPasswordForLDAPProvisionedUser(ctx, relayUser)
+			if err != nil {
+				return nil, fmt.Errorf("reset relay auth password: %w", err)
+			}
+			if strings.TrimSpace(relayPassword) != "" {
+				info.RelayAuthPassword = relayPassword
+			}
 		}
 		info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
+		info.Role = roleFromRelayIdentity(info.Role, relayUser.Role)
 	}
 
 	// LDAP may not provide a `mail` attribute; avoid creating a local user with an empty
@@ -246,27 +306,37 @@ func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.Use
 }
 
 func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *UserInfo) (*ent.User, error) {
+	ldapLogin := strings.EqualFold(info.AuthSource, "ldap")
+	if ldapLogin {
+		info.RelayAuthPassword = ""
+	}
+	var resolvedRelayUser *relay.User
+
 	if info.RelayUserID == nil && u.RelayUserID != nil {
 		info.RelayUserID = u.RelayUserID
 	}
 
 	// LDAP path: always re-resolve the relay identity so we can repair historical
 	// misbindings caused by stale/ignored lookup filters on the relay side.
-	if strings.EqualFold(info.AuthSource, "ldap") && s.relayIdentityResolver != nil {
-		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionWithPassword(ctx, info.Username, info.Email, info.RelayAuthPassword)
+	if ldapLogin && s.relayIdentityResolver != nil {
+		relayUser, relayPassword, err := s.relayIdentityResolver.ResolveOrProvisionForLDAP(ctx, info.Username, info.Email)
 		if err != nil {
 			return nil, fmt.Errorf("resolve relay identity: %w", err)
 		}
 		relayID := int(relayUser.ID)
+		resolvedRelayUser = relayUser
 		info.RelayUserID = &relayID
 		if strings.TrimSpace(relayPassword) != "" {
 			info.RelayAuthPassword = relayPassword
 		}
 		info.Email = ensureNonEmptyEmail(info.Email, relayUser.Email, "")
+		info.Role = roleFromRelayIdentity(info.Role, relayUser.Role)
 	}
 
+	relayBindingMoved := false
 	if info.RelayUserID != nil && (u.RelayUserID == nil || *u.RelayUserID != *info.RelayUserID) {
 		if u.RelayUserID != nil {
+			relayBindingMoved = true
 			s.logger.Warn("repairing stored relay user binding",
 				zap.String("username", info.Username),
 				zap.Int("old_relay_user_id", *u.RelayUserID),
@@ -276,6 +346,25 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 		updated, err := u.Update().SetRelayUserID(*info.RelayUserID).Save(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("persist relay user id: %w", err)
+		}
+		u = updated
+	}
+	if ldapLogin && relayBindingMoved && strings.TrimSpace(info.RelayAuthPassword) == "" && s.relayIdentityResolver != nil {
+		relayPassword, err := s.relayIdentityResolver.ResetGeneratedPasswordForLDAPProvisionedUser(ctx, resolvedRelayUser)
+		if err != nil {
+			return nil, fmt.Errorf("reset relay auth password: %w", err)
+		}
+		if strings.TrimSpace(relayPassword) != "" {
+			info.RelayAuthPassword = relayPassword
+		}
+	}
+
+	if strings.TrimSpace(info.AuthSource) != "" && string(u.AuthSource) != info.AuthSource {
+		updated, err := u.Update().
+			SetAuthSource(entuser.AuthSource(info.AuthSource)).
+			Save(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("sync user auth source: %w", err)
 		}
 		u = updated
 	}
@@ -301,6 +390,16 @@ func (s *Service) syncExistingLocalUser(ctx context.Context, u *ent.User, info *
 		u = reloaded
 	}
 	return u, nil
+}
+
+func roleFromRelayIdentity(currentRole, relayRole string) string {
+	relayRole = strings.ToLower(strings.TrimSpace(relayRole))
+	switch relayRole {
+	case string(entuser.RoleAdmin), string(entuser.RoleUser):
+		return relayRole
+	default:
+		return currentRole
+	}
 }
 
 func (s *Service) encryptRelayAuthPassword(password string) (string, error) {
@@ -416,4 +515,68 @@ func (s *Service) validateToken(tokenStr, expectedType string) (jwt.MapClaims, e
 	}
 
 	return claims, nil
+}
+
+func (s *Service) ensureTokenNotRevoked(ctx context.Context, claims jwt.MapClaims) error {
+	if s == nil || s.entClient == nil {
+		return nil
+	}
+	userID, err := userIDFromClaims(claims)
+	if err != nil {
+		return err
+	}
+	u, err := s.entClient.User.Get(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+	return s.ensureTokenValidForUser(u, claims)
+}
+
+func (s *Service) ensureTokenValidForUser(u *ent.User, claims jwt.MapClaims) error {
+	if u == nil || u.TokenValidAfter == nil {
+		return nil
+	}
+	issuedAt, err := issuedAtFromClaims(claims)
+	if err != nil {
+		return err
+	}
+	if issuedAt.Before(*u.TokenValidAfter) {
+		return fmt.Errorf("token revoked")
+	}
+	return nil
+}
+
+func userIDFromClaims(claims jwt.MapClaims) (int, error) {
+	switch v := claims["user_id"].(type) {
+	case float64:
+		if v <= 0 {
+			return 0, fmt.Errorf("invalid token claims")
+		}
+		return int(v), nil
+	case int:
+		if v <= 0 {
+			return 0, fmt.Errorf("invalid token claims")
+		}
+		return v, nil
+	case int64:
+		if v <= 0 {
+			return 0, fmt.Errorf("invalid token claims")
+		}
+		return int(v), nil
+	default:
+		return 0, fmt.Errorf("invalid token claims")
+	}
+}
+
+func issuedAtFromClaims(claims jwt.MapClaims) (time.Time, error) {
+	switch v := claims["iat"].(type) {
+	case float64:
+		return time.Unix(int64(v), 0), nil
+	case int64:
+		return time.Unix(v, 0), nil
+	case int:
+		return time.Unix(int64(v), 0), nil
+	default:
+		return time.Time{}, fmt.Errorf("invalid token issued-at claim")
+	}
 }

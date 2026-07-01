@@ -14,6 +14,7 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 
 1. 当前代码
 2. 最新且最贴近问题域的 spec：
+   - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md`
    - `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md`
    - `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md`
    - `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md`
@@ -60,6 +61,7 @@ ai-efficiency/
 │       ├── attribution/     # PR / session 归因
 │       ├── auth/            # Relay SSO + LDAP
 │       ├── checkpoint/      # Commit checkpoint
+│       ├── directorysync/   # Configurable organization directory sync
 │       ├── efficiency/      # 效能指标聚合
 │       ├── oauth/           # OAuth 授权流
 │       ├── prsync/          # PR 同步
@@ -146,6 +148,15 @@ ai-efficiency/
 - 前端角色回归脚本：`cd frontend && pnpm run test:e2e:role`
 - 环境敏感测试（本地端口监听、TTY、tmux、浏览器/E2E）需与默认单元测试结果分开说明
 
+## Release Units
+
+- Platform releases use `v*` tags and cover backend, frontend, deploy assets, GHCR image publishing, and Helm rollout inputs.
+- CLI releases use `ae-cli/v*` tags and publish only `ae-cli` artifacts.
+- Do not create a platform `v*` tag for CLI-only changes.
+- Do not run Helm rollout for CLI-only `ae-cli/v*` releases.
+- Repository-level `/releases/latest` belongs to the platform release line; CLI installer and updater must discover the latest CLI release by filtering `ae-cli/v*` releases.
+- `v0.2.0-cli.1` is the only bridge exception for legacy CLI update migration. It must be published by the CLI bridge workflow only, must not build GHCR images or backend bundles, and must not be reused as a normal CLI version line.
+
 ## Commit Message Convention
 
 使用 Conventional Commits：
@@ -183,6 +194,7 @@ chore(deploy): update Docker Compose configuration
 ## Important Files
 
 - `docs/architecture.md` — 项目级架构总览与图示
+- `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md` — 当前可配置组织架构同步、部门视图、离职禁用与 token 失效主设计
 - `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md` — 当前 `ae-cli discover` / tool config 主设计
 - `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md` — 当前 legacy session cutover 主设计
 - `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md` — 当前 sessionless attribution 主设计

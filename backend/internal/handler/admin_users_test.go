@@ -1,0 +1,826 @@
+package handler
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
+	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/gin-gonic/gin"
+)
+
+const adminUsersTestEncryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
+
+type adminUsersFixture struct {
+	aliceID    int
+	bobID      int
+	carolID    int
+	ciphertext string
+}
+
+func seedAdminUsersFixture(t *testing.T, env *fullTestEnv) adminUsersFixture {
+	t.Helper()
+	ctx := context.Background()
+
+	ciphertext, err := pkg.Encrypt("test-password", adminUsersTestEncryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt relay password: %v", err)
+	}
+
+	alice, err := env.client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(42).
+		SetRelayAuthPassword(ciphertext).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create alice: %v", err)
+	}
+
+	bob, err := env.client.User.Create().
+		SetUsername("bob").
+		SetEmail("bob@example.org").
+		SetAuthSource("relay_sso").
+		SetRole("user").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create bob: %v", err)
+	}
+
+	carol, err := env.client.User.Create().
+		SetUsername("carol").
+		SetEmail("carol@example.net").
+		SetAuthSource("ldap").
+		SetRole("admin").
+		SetRelayUserID(99).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create carol: %v", err)
+	}
+
+	return adminUsersFixture{aliceID: alice.ID, bobID: bob.ID, carolID: carol.ID, ciphertext: ciphertext}
+}
+
+func seedAdminUsersDirectorySnapshot(t *testing.T, env *fullTestEnv, fixture adminUsersFixture) {
+	t.Helper()
+	ctx := context.Background()
+
+	source, err := env.client.DirectorySource.Create().
+		SetName("Example Directory").
+		SetDescription("Synthetic organization directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory source: %v", err)
+	}
+	run, err := env.client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetDepartmentCount(2).
+		SetMemberCount(2).
+		SetCompletedAt(time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory run: %v", err)
+	}
+	if _, err := env.client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("update directory source run pointers: %v", err)
+	}
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("dept-alpha").
+		SetName("Department Alpha").
+		SetPath("Department Alpha").
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create alpha department: %v", err)
+	}
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("dept-beta").
+		SetName("Department Beta").
+		SetPath("Department Beta").
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create beta department: %v", err)
+	}
+	if _, err := env.client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-alpha").
+		SetEmailNormalized("alice@example.com").
+		SetDisplayName("Alice Example").
+		SetDepartmentExternalID("dept-alpha").
+		SetMatchedUserID(fixture.aliceID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create alpha member: %v", err)
+	}
+	if _, err := env.client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-beta").
+		SetEmailNormalized("carol@example.net").
+		SetDisplayName("Carol Example").
+		SetDepartmentExternalID("dept-beta").
+		SetMatchedUserID(fixture.carolID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create beta member: %v", err)
+	}
+}
+
+func seedAdminUsersHierarchicalDirectorySnapshot(t *testing.T, env *fullTestEnv, fixture adminUsersFixture) {
+	t.Helper()
+	ctx := context.Background()
+
+	source, err := env.client.DirectorySource.Create().
+		SetName("Example Directory").
+		SetDescription("Synthetic organization directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory source: %v", err)
+	}
+	run, err := env.client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetDepartmentCount(3).
+		SetMemberCount(3).
+		SetCompletedAt(time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory run: %v", err)
+	}
+	if _, err := env.client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("update directory source run pointers: %v", err)
+	}
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("dept-alpha").
+		SetName("Department Alpha").
+		SetPath("1.781448").
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create alpha department: %v", err)
+	}
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("dept-alpha-team-one").
+		SetParentExternalID("dept-alpha").
+		SetName("Team One").
+		SetPath("1.781448.1683962").
+		SetMetadata(map[string]any{"representative_external_ids": []any{"member-alpha-child", "member-missing"}}).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create alpha child department: %v", err)
+	}
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("dept-beta").
+		SetName("Department Beta").
+		SetPath("1.1178135").
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create beta department: %v", err)
+	}
+	if _, err := env.client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-alpha").
+		SetEmailNormalized("alice@example.com").
+		SetDisplayName("Alice Example").
+		SetDepartmentExternalID("dept-alpha").
+		SetMatchedUserID(fixture.aliceID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create alpha member: %v", err)
+	}
+	if _, err := env.client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-alpha-child").
+		SetEmailNormalized("bob@example.org").
+		SetDisplayName("Bob Example").
+		SetDepartmentExternalID("dept-alpha-team-one").
+		SetMetadata(map[string]any{"leader_department_ids": []any{"dept-alpha-team-one"}}).
+		SetMatchedUserID(fixture.bobID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create alpha child member: %v", err)
+	}
+	if _, err := env.client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-beta").
+		SetEmailNormalized("carol@example.net").
+		SetDisplayName("Carol Example").
+		SetDepartmentExternalID("dept-beta").
+		SetMatchedUserID(fixture.carolID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create beta member: %v", err)
+	}
+}
+
+func seedAdminUsersSingleMemberDirectorySnapshot(t *testing.T, env *fullTestEnv, sourceName, departmentID, departmentName string, userID int, email string, completedAt time.Time) int {
+	t.Helper()
+	ctx := context.Background()
+	source, err := env.client.DirectorySource.Create().
+		SetName(sourceName).
+		SetDescription("Synthetic organization directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory source: %v", err)
+	}
+	run, err := env.client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetDepartmentCount(1).
+		SetMemberCount(1).
+		SetCompletedAt(completedAt).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory run: %v", err)
+	}
+	if _, err := env.client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("update directory source run pointers: %v", err)
+	}
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID(departmentID).
+		SetName(departmentName).
+		SetPath(departmentName).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create department: %v", err)
+	}
+	if _, err := env.client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-" + departmentID).
+		SetEmailNormalized(email).
+		SetDisplayName(email).
+		SetDepartmentExternalID(departmentID).
+		SetMatchedUserID(userID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	return source.ID
+}
+
+func TestAdminUsersListSearchPaginationAndCiphertext(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=alice&page=1&page_size=2", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "test-password") {
+		t.Fatalf("list response leaked plaintext: %s", w.Body.String())
+	}
+
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 1 {
+		t.Fatalf("total = %d, want 1", got)
+	}
+	if got := int(data["page"].(float64)); got != 1 {
+		t.Fatalf("page = %d, want 1", got)
+	}
+	if got := int(data["page_size"].(float64)); got != 2 {
+		t.Fatalf("page_size = %d, want 2", got)
+	}
+
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	row := items[0].(map[string]interface{})
+	if int(row["id"].(float64)) != fixture.aliceID {
+		t.Fatalf("id = %v, want %d", row["id"], fixture.aliceID)
+	}
+	if row["username"] != "alice" || row["email"] != "alice@example.com" {
+		t.Fatalf("unexpected identity row: %+v", row)
+	}
+	if row["relay_auth_password"] != fixture.ciphertext {
+		t.Fatalf("relay_auth_password = %v, want ciphertext", row["relay_auth_password"])
+	}
+	if int(row["relay_user_id"].(float64)) != 42 {
+		t.Fatalf("relay_user_id = %v, want 42", row["relay_user_id"])
+	}
+}
+
+func TestAdminUsersListNumericSearchMatchesIDs(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=42&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("relay id search status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 1 {
+		t.Fatalf("relay id search total = %d, want 1", got)
+	}
+
+	w = doFullRequest(env, http.MethodGet, fmt.Sprintf("/api/v1/admin/users?q=%d&page=1&page_size=20", fixture.aliceID), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("local id search status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 1 {
+		t.Fatalf("local id search total = %d, want 1", got)
+	}
+}
+
+func TestAdminUsersListAccessStatusAndFilter(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	ctx := context.Background()
+
+	if _, err := env.client.User.UpdateOneID(fixture.aliceID).
+		SetTokenValidAfter(time.Date(2026, 6, 26, 9, 0, 0, 0, time.UTC)).
+		Save(ctx); err != nil {
+		t.Fatalf("revoke alice tokens: %v", err)
+	}
+	if _, err := env.client.User.Create().
+		SetUsername("dana").
+		SetEmail("dana@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(77).
+		SetRelayAuthPassword(fixture.ciphertext).
+		Save(ctx); err != nil {
+		t.Fatalf("create dana: %v", err)
+	}
+	if _, err := env.client.User.Create().
+		SetUsername("erin").
+		SetEmail("erin@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(88).
+		SetRelayAuthPassword("   ").
+		Save(ctx); err != nil {
+		t.Fatalf("create erin: %v", err)
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?access_status=disabled&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("disabled status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if got := int(data["total"].(float64)); got != 1 {
+		t.Fatalf("disabled total = %d, want 1", got)
+	}
+	row := items[0].(map[string]interface{})
+	if row["username"] != "alice" || row["access_status"] != "disabled" {
+		t.Fatalf("disabled row = %+v, want alice disabled", row)
+	}
+	if row["token_valid_after"] == nil {
+		t.Fatalf("disabled row missing token_valid_after: %+v", row)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users?access_status=configured&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("configured status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	items = data["items"].([]interface{})
+	if got := int(data["total"].(float64)); got != 1 {
+		t.Fatalf("configured total = %d, want 1", got)
+	}
+	row = items[0].(map[string]interface{})
+	if row["username"] != "dana" || row["access_status"] != "configured" {
+		t.Fatalf("configured row = %+v, want dana configured", row)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users?access_status=missing_credential&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("missing credential status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 4 {
+		t.Fatalf("missing credential total = %d, want 4", got)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users?access_status=unknown&page=1&page_size=20", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status = %d, want 400, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminUsersListMarksSucceededOffboardingActionDisabled(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	ctx := context.Background()
+	sourceID := seedAdminUsersSingleMemberDirectorySnapshot(
+		t,
+		env,
+		"Example Directory",
+		"dept-alpha",
+		"Department Alpha",
+		fixture.aliceID,
+		"alice@example.com",
+		time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC),
+	)
+	source, err := env.client.DirectorySource.Get(ctx, sourceID)
+	if err != nil {
+		t.Fatalf("get source: %v", err)
+	}
+	if source.LastSuccessfulRunID == nil {
+		t.Fatal("source missing successful run")
+	}
+	if _, err := env.client.DirectoryOffboardingAction.Create().
+		SetSourceID(sourceID).
+		SetUserID(fixture.aliceID).
+		SetRelayUserID(42).
+		SetDirectoryRunID(*source.LastSuccessfulRunID).
+		SetAction(directoryoffboardingaction.ActionDisableRelayUser).
+		SetStatus(directoryoffboardingaction.StatusSucceeded).
+		SetReason("missing_from_latest_full_company_directory").
+		SetPerformedByUserID(fixture.carolID).
+		Save(ctx); err != nil {
+		t.Fatalf("create offboarding action: %v", err)
+	}
+	newSourceID := seedAdminUsersSingleMemberDirectorySnapshot(
+		t,
+		env,
+		"New Example Directory",
+		"dept-beta",
+		"Department Beta",
+		fixture.aliceID,
+		"alice@example.com",
+		time.Date(2026, 6, 23, 10, 0, 0, 0, time.UTC),
+	)
+	newSource, err := env.client.DirectorySource.Get(ctx, newSourceID)
+	if err != nil {
+		t.Fatalf("get new source: %v", err)
+	}
+	if newSource.LastSuccessfulRunID == nil {
+		t.Fatal("new source missing successful run")
+	}
+	if _, err := env.client.DirectoryOffboardingAction.Create().
+		SetSourceID(newSourceID).
+		SetUserID(fixture.aliceID).
+		SetRelayUserID(42).
+		SetDirectoryRunID(*newSource.LastSuccessfulRunID).
+		SetAction(directoryoffboardingaction.ActionDisableRelayUser).
+		SetStatus(directoryoffboardingaction.StatusFailed).
+		SetReason("missing_from_latest_full_company_directory").
+		SetPerformedByUserID(fixture.carolID).
+		Save(ctx); err != nil {
+		t.Fatalf("create later failed offboarding action: %v", err)
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=alice&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	row := items[0].(map[string]interface{})
+	if row["access_status"] != "disabled" || row["offboarding_status"] != "failed" {
+		t.Fatalf("row = %+v, want disabled access with latest failed offboarding audit status", row)
+	}
+}
+
+func TestAdminUsersListIncludesDirectoryDepartment(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersDirectorySnapshot(t, env, fixture)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=alice&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	row := items[0].(map[string]interface{})
+	department, ok := row["department"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("department missing from row: %+v", row)
+	}
+	if department["external_id"] != "dept-alpha" || department["name"] != "Department Alpha" || department["path"] != "Department Alpha" {
+		t.Fatalf("department = %+v, want alpha department", department)
+	}
+}
+
+func TestAdminUsersListUsesLatestSuccessfulApplyRunAfterOlderSourceEdit(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	oldSourceID := seedAdminUsersSingleMemberDirectorySnapshot(t, env, "Old Directory", "dept-old", "Department Old", fixture.aliceID, "alice@example.com", time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC))
+	seedAdminUsersSingleMemberDirectorySnapshot(t, env, "New Directory", "dept-new", "Department New", fixture.aliceID, "alice@example.com", time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC))
+	if _, err := env.client.DirectorySource.UpdateOneID(oldSourceID).SetDescription("Edited after latest sync").Save(context.Background()); err != nil {
+		t.Fatalf("update old source: %v", err)
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=alice&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	department := items[0].(map[string]interface{})["department"].(map[string]interface{})
+	if department["external_id"] != "dept-new" || department["name"] != "Department New" {
+		t.Fatalf("department = %+v, want latest successful apply source", department)
+	}
+}
+
+func TestAdminUsersListFiltersByDirectoryDepartment(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersDirectorySnapshot(t, env, fixture)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?department_id=dept-alpha&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 1 {
+		t.Fatalf("total = %d, want 1", got)
+	}
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	row := items[0].(map[string]interface{})
+	if row["username"] != "alice" {
+		t.Fatalf("username = %v, want alice", row["username"])
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users?department_id=dept-alpha&q=carol&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 0 {
+		t.Fatalf("total with mismatched q = %d, want 0", got)
+	}
+}
+
+func TestAdminUsersListFiltersByDepartmentSubtree(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersHierarchicalDirectorySnapshot(t, env, fixture)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?department_id=dept-alpha&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 2 {
+		t.Fatalf("total = %d, want 2", got)
+	}
+	items := data["items"].([]interface{})
+	gotNames := make([]string, 0, len(items))
+	for _, item := range items {
+		row := item.(map[string]interface{})
+		gotNames = append(gotNames, row["username"].(string))
+	}
+	if strings.Join(gotNames, ",") != "alice,bob" {
+		t.Fatalf("usernames = %v, want alice,bob", gotNames)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users?department_id=dept-alpha&q=carol&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 0 {
+		t.Fatalf("total with unrelated subtree search = %d, want 0", got)
+	}
+}
+
+func TestAdminUsersListUsesDepartmentDisplayPath(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersHierarchicalDirectorySnapshot(t, env, fixture)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=bob&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	row := items[0].(map[string]interface{})
+	department, ok := row["department"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("department missing from row: %+v", row)
+	}
+	if department["path"] != "1.781448.1683962" {
+		t.Fatalf("raw path = %v, want source path retained", department["path"])
+	}
+	if department["display_path"] != "Department Alpha / Team One" {
+		t.Fatalf("display_path = %v, want name-based path", department["display_path"])
+	}
+}
+
+func TestAdminUsersDepartmentSummaries(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersDirectorySnapshot(t, env, fixture)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/departments", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want 2", len(items))
+	}
+	alpha := items[0].(map[string]interface{})
+	if alpha["external_id"] != "dept-alpha" || alpha["name"] != "Department Alpha" {
+		t.Fatalf("first department = %+v, want alpha", alpha)
+	}
+	if int(alpha["member_count"].(float64)) != 1 || int(alpha["matched_user_count"].(float64)) != 1 {
+		t.Fatalf("alpha counts = %+v, want member_count=1 matched_user_count=1", alpha)
+	}
+}
+
+func TestAdminUsersDepartmentSummariesExposeHierarchyAndSubtreeCounts(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersHierarchicalDirectorySnapshot(t, env, fixture)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/departments", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 3 {
+		t.Fatalf("items = %d, want 3", len(items))
+	}
+
+	alpha := items[0].(map[string]interface{})
+	if alpha["external_id"] != "dept-alpha" {
+		t.Fatalf("first department = %+v, want alpha root", alpha)
+	}
+	if int(alpha["depth"].(float64)) != 0 || int(alpha["child_count"].(float64)) != 1 {
+		t.Fatalf("alpha hierarchy = %+v, want depth=0 child_count=1", alpha)
+	}
+	if int(alpha["member_count"].(float64)) != 1 || int(alpha["subtree_member_count"].(float64)) != 2 {
+		t.Fatalf("alpha counts = %+v, want direct=1 subtree=2", alpha)
+	}
+	if alpha["path"] != "1.781448" || alpha["display_path"] != "Department Alpha" {
+		t.Fatalf("alpha paths = %+v, want raw path plus name-based display path", alpha)
+	}
+	if int(alpha["matched_user_count"].(float64)) != 1 || int(alpha["subtree_matched_user_count"].(float64)) != 2 {
+		t.Fatalf("alpha matched counts = %+v, want direct=1 subtree=2", alpha)
+	}
+
+	child := items[1].(map[string]interface{})
+	if child["external_id"] != "dept-alpha-team-one" || child["parent_external_id"] != "dept-alpha" {
+		t.Fatalf("second department = %+v, want alpha child", child)
+	}
+	if int(child["depth"].(float64)) != 1 || int(child["child_count"].(float64)) != 0 {
+		t.Fatalf("child hierarchy = %+v, want depth=1 child_count=0", child)
+	}
+	if child["path"] != "1.781448.1683962" || child["display_path"] != "Department Alpha / Team One" {
+		t.Fatalf("child paths = %+v, want raw path plus name-based display path", child)
+	}
+	if int(child["representative_count"].(float64)) != 2 || int(child["matched_representative_count"].(float64)) != 1 {
+		t.Fatalf("child representatives = %+v, want representative_count=2 matched_representative_count=1", child)
+	}
+
+	beta := items[2].(map[string]interface{})
+	if beta["external_id"] != "dept-beta" || int(beta["depth"].(float64)) != 0 {
+		t.Fatalf("third department = %+v, want beta root", beta)
+	}
+}
+
+func TestAdminUsersListRejectsNonAdmin(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	nonAdminToken := createFullNonAdminToken(t, env)
+
+	w := doFullRequestWithToken(env, http.MethodGet, "/api/v1/admin/users", nil, nonAdminToken)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminUsersRevealRelayPassword(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+
+	w := doFullRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/admin/users/%d/relay-password/reveal", fixture.aliceID), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if data["password"] != "test-password" {
+		t.Fatalf("password = %v, want test-password", data["password"])
+	}
+}
+
+func TestAdminUsersRevealErrors(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	nonAdminToken := createFullNonAdminToken(t, env)
+
+	w := doFullRequestWithToken(env, http.MethodPost, fmt.Sprintf("/api/v1/admin/users/%d/relay-password/reveal", fixture.aliceID), nil, nonAdminToken)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("non-admin status = %d, want 403, body=%s", w.Code, w.Body.String())
+	}
+
+	w = doFullRequest(env, http.MethodPost, "/api/v1/admin/users/999999/relay-password/reveal", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("missing user status = %d, want 404, body=%s", w.Code, w.Body.String())
+	}
+
+	w = doFullRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/admin/users/%d/relay-password/reveal", fixture.bobID), nil)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("missing password status = %d, want 422, body=%s", w.Code, w.Body.String())
+	}
+
+	if _, err := env.client.User.UpdateOneID(fixture.aliceID).SetRelayAuthPassword("not-hex-ciphertext").Save(context.Background()); err != nil {
+		t.Fatalf("corrupt relay password: %v", err)
+	}
+	w = doFullRequest(env, http.MethodPost, fmt.Sprintf("/api/v1/admin/users/%d/relay-password/reveal", fixture.aliceID), nil)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("decrypt failure status = %d, want 500, body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminUsersRevealMissingEncryptionKey(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+
+	router := gin.New()
+	handler := NewAdminUsersHandler(env.client, "")
+	router.POST("/admin/users/:id/relay-password/reveal", handler.RevealRelayPassword)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/admin/users/%d/relay-password/reveal", fixture.aliceID), nil)
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("missing key status = %d, want 500, body=%s", w.Code, w.Body.String())
+	}
+}

@@ -5,17 +5,25 @@ package runtime
 import (
 	"time"
 
+	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
+	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
+	"github.com/ai-efficiency/backend/ent/directorysource"
+	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/schema"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/teamusageratemultiplieraudit"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
@@ -25,6 +33,38 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	adminsubscriptionjobFields := schema.AdminSubscriptionJob{}.Fields()
+	_ = adminsubscriptionjobFields
+	// adminsubscriptionjobDescTotalCount is the schema descriptor for total_count field.
+	adminsubscriptionjobDescTotalCount := adminsubscriptionjobFields[12].Descriptor()
+	// adminsubscriptionjob.DefaultTotalCount holds the default value on creation for the total_count field.
+	adminsubscriptionjob.DefaultTotalCount = adminsubscriptionjobDescTotalCount.Default.(int)
+	// adminsubscriptionjobDescProcessedCount is the schema descriptor for processed_count field.
+	adminsubscriptionjobDescProcessedCount := adminsubscriptionjobFields[13].Descriptor()
+	// adminsubscriptionjob.DefaultProcessedCount holds the default value on creation for the processed_count field.
+	adminsubscriptionjob.DefaultProcessedCount = adminsubscriptionjobDescProcessedCount.Default.(int)
+	// adminsubscriptionjobDescSuccessCount is the schema descriptor for success_count field.
+	adminsubscriptionjobDescSuccessCount := adminsubscriptionjobFields[14].Descriptor()
+	// adminsubscriptionjob.DefaultSuccessCount holds the default value on creation for the success_count field.
+	adminsubscriptionjob.DefaultSuccessCount = adminsubscriptionjobDescSuccessCount.Default.(int)
+	// adminsubscriptionjobDescSkippedCount is the schema descriptor for skipped_count field.
+	adminsubscriptionjobDescSkippedCount := adminsubscriptionjobFields[15].Descriptor()
+	// adminsubscriptionjob.DefaultSkippedCount holds the default value on creation for the skipped_count field.
+	adminsubscriptionjob.DefaultSkippedCount = adminsubscriptionjobDescSkippedCount.Default.(int)
+	// adminsubscriptionjobDescFailedCount is the schema descriptor for failed_count field.
+	adminsubscriptionjobDescFailedCount := adminsubscriptionjobFields[16].Descriptor()
+	// adminsubscriptionjob.DefaultFailedCount holds the default value on creation for the failed_count field.
+	adminsubscriptionjob.DefaultFailedCount = adminsubscriptionjobDescFailedCount.Default.(int)
+	// adminsubscriptionjobDescCreatedAt is the schema descriptor for created_at field.
+	adminsubscriptionjobDescCreatedAt := adminsubscriptionjobFields[21].Descriptor()
+	// adminsubscriptionjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	adminsubscriptionjob.DefaultCreatedAt = adminsubscriptionjobDescCreatedAt.Default.(func() time.Time)
+	// adminsubscriptionjobDescUpdatedAt is the schema descriptor for updated_at field.
+	adminsubscriptionjobDescUpdatedAt := adminsubscriptionjobFields[22].Descriptor()
+	// adminsubscriptionjob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	adminsubscriptionjob.DefaultUpdatedAt = adminsubscriptionjobDescUpdatedAt.Default.(func() time.Time)
+	// adminsubscriptionjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	adminsubscriptionjob.UpdateDefaultUpdatedAt = adminsubscriptionjobDescUpdatedAt.UpdateDefault.(func() time.Time)
 	commitcheckpointFields := schema.CommitCheckpoint{}.Fields()
 	_ = commitcheckpointFields
 	// commitcheckpointDescWorkspaceID is the schema descriptor for workspace_id field.
@@ -77,6 +117,142 @@ func init() {
 	credential.DefaultUpdatedAt = credentialDescUpdatedAt.Default.(func() time.Time)
 	// credential.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	credential.UpdateDefaultUpdatedAt = credentialDescUpdatedAt.UpdateDefault.(func() time.Time)
+	directorydepartmentFields := schema.DirectoryDepartment{}.Fields()
+	_ = directorydepartmentFields
+	// directorydepartmentDescExternalID is the schema descriptor for external_id field.
+	directorydepartmentDescExternalID := directorydepartmentFields[1].Descriptor()
+	// directorydepartment.ExternalIDValidator is a validator for the "external_id" field. It is called by the builders before save.
+	directorydepartment.ExternalIDValidator = directorydepartmentDescExternalID.Validators[0].(func(string) error)
+	// directorydepartmentDescName is the schema descriptor for name field.
+	directorydepartmentDescName := directorydepartmentFields[3].Descriptor()
+	// directorydepartment.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	directorydepartment.NameValidator = directorydepartmentDescName.Validators[0].(func(string) error)
+	// directorydepartmentDescPath is the schema descriptor for path field.
+	directorydepartmentDescPath := directorydepartmentFields[4].Descriptor()
+	// directorydepartment.DefaultPath holds the default value on creation for the path field.
+	directorydepartment.DefaultPath = directorydepartmentDescPath.Default.(string)
+	// directorydepartmentDescCreatedAt is the schema descriptor for created_at field.
+	directorydepartmentDescCreatedAt := directorydepartmentFields[7].Descriptor()
+	// directorydepartment.DefaultCreatedAt holds the default value on creation for the created_at field.
+	directorydepartment.DefaultCreatedAt = directorydepartmentDescCreatedAt.Default.(func() time.Time)
+	// directorydepartmentDescUpdatedAt is the schema descriptor for updated_at field.
+	directorydepartmentDescUpdatedAt := directorydepartmentFields[8].Descriptor()
+	// directorydepartment.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	directorydepartment.DefaultUpdatedAt = directorydepartmentDescUpdatedAt.Default.(func() time.Time)
+	// directorydepartment.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	directorydepartment.UpdateDefaultUpdatedAt = directorydepartmentDescUpdatedAt.UpdateDefault.(func() time.Time)
+	directorymemberFields := schema.DirectoryMember{}.Fields()
+	_ = directorymemberFields
+	// directorymemberDescExternalID is the schema descriptor for external_id field.
+	directorymemberDescExternalID := directorymemberFields[1].Descriptor()
+	// directorymember.DefaultExternalID holds the default value on creation for the external_id field.
+	directorymember.DefaultExternalID = directorymemberDescExternalID.Default.(string)
+	// directorymemberDescEmailNormalized is the schema descriptor for email_normalized field.
+	directorymemberDescEmailNormalized := directorymemberFields[2].Descriptor()
+	// directorymember.EmailNormalizedValidator is a validator for the "email_normalized" field. It is called by the builders before save.
+	directorymember.EmailNormalizedValidator = directorymemberDescEmailNormalized.Validators[0].(func(string) error)
+	// directorymemberDescDisplayName is the schema descriptor for display_name field.
+	directorymemberDescDisplayName := directorymemberFields[3].Descriptor()
+	// directorymember.DefaultDisplayName holds the default value on creation for the display_name field.
+	directorymember.DefaultDisplayName = directorymemberDescDisplayName.Default.(string)
+	// directorymemberDescDepartmentExternalID is the schema descriptor for department_external_id field.
+	directorymemberDescDepartmentExternalID := directorymemberFields[4].Descriptor()
+	// directorymember.DefaultDepartmentExternalID holds the default value on creation for the department_external_id field.
+	directorymember.DefaultDepartmentExternalID = directorymemberDescDepartmentExternalID.Default.(string)
+	// directorymemberDescStatus is the schema descriptor for status field.
+	directorymemberDescStatus := directorymemberFields[5].Descriptor()
+	// directorymember.DefaultStatus holds the default value on creation for the status field.
+	directorymember.DefaultStatus = directorymemberDescStatus.Default.(string)
+	// directorymemberDescCreatedAt is the schema descriptor for created_at field.
+	directorymemberDescCreatedAt := directorymemberFields[9].Descriptor()
+	// directorymember.DefaultCreatedAt holds the default value on creation for the created_at field.
+	directorymember.DefaultCreatedAt = directorymemberDescCreatedAt.Default.(func() time.Time)
+	// directorymemberDescUpdatedAt is the schema descriptor for updated_at field.
+	directorymemberDescUpdatedAt := directorymemberFields[10].Descriptor()
+	// directorymember.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	directorymember.DefaultUpdatedAt = directorymemberDescUpdatedAt.Default.(func() time.Time)
+	// directorymember.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	directorymember.UpdateDefaultUpdatedAt = directorymemberDescUpdatedAt.UpdateDefault.(func() time.Time)
+	directoryoffboardingactionFields := schema.DirectoryOffboardingAction{}.Fields()
+	_ = directoryoffboardingactionFields
+	// directoryoffboardingactionDescCreatedAt is the schema descriptor for created_at field.
+	directoryoffboardingactionDescCreatedAt := directoryoffboardingactionFields[9].Descriptor()
+	// directoryoffboardingaction.DefaultCreatedAt holds the default value on creation for the created_at field.
+	directoryoffboardingaction.DefaultCreatedAt = directoryoffboardingactionDescCreatedAt.Default.(func() time.Time)
+	// directoryoffboardingactionDescUpdatedAt is the schema descriptor for updated_at field.
+	directoryoffboardingactionDescUpdatedAt := directoryoffboardingactionFields[10].Descriptor()
+	// directoryoffboardingaction.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	directoryoffboardingaction.DefaultUpdatedAt = directoryoffboardingactionDescUpdatedAt.Default.(func() time.Time)
+	// directoryoffboardingaction.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	directoryoffboardingaction.UpdateDefaultUpdatedAt = directoryoffboardingactionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	directorysourceFields := schema.DirectorySource{}.Fields()
+	_ = directorysourceFields
+	// directorysourceDescName is the schema descriptor for name field.
+	directorysourceDescName := directorysourceFields[0].Descriptor()
+	// directorysource.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	directorysource.NameValidator = directorysourceDescName.Validators[0].(func(string) error)
+	// directorysourceDescDescription is the schema descriptor for description field.
+	directorysourceDescDescription := directorysourceFields[1].Descriptor()
+	// directorysource.DefaultDescription holds the default value on creation for the description field.
+	directorysource.DefaultDescription = directorysourceDescDescription.Default.(string)
+	// directorysourceDescEnabled is the schema descriptor for enabled field.
+	directorysourceDescEnabled := directorysourceFields[3].Descriptor()
+	// directorysource.DefaultEnabled holds the default value on creation for the enabled field.
+	directorysource.DefaultEnabled = directorysourceDescEnabled.Default.(bool)
+	// directorysourceDescDeleted is the schema descriptor for deleted field.
+	directorysourceDescDeleted := directorysourceFields[4].Descriptor()
+	// directorysource.DefaultDeleted holds the default value on creation for the deleted field.
+	directorysource.DefaultDeleted = directorysourceDescDeleted.Default.(bool)
+	// directorysourceDescScheduleEnabled is the schema descriptor for schedule_enabled field.
+	directorysourceDescScheduleEnabled := directorysourceFields[6].Descriptor()
+	// directorysource.DefaultScheduleEnabled holds the default value on creation for the schedule_enabled field.
+	directorysource.DefaultScheduleEnabled = directorysourceDescScheduleEnabled.Default.(bool)
+	// directorysourceDescScheduleTimezone is the schema descriptor for schedule_timezone field.
+	directorysourceDescScheduleTimezone := directorysourceFields[8].Descriptor()
+	// directorysource.DefaultScheduleTimezone holds the default value on creation for the schedule_timezone field.
+	directorysource.DefaultScheduleTimezone = directorysourceDescScheduleTimezone.Default.(string)
+	// directorysourceDescCreatedAt is the schema descriptor for created_at field.
+	directorysourceDescCreatedAt := directorysourceFields[12].Descriptor()
+	// directorysource.DefaultCreatedAt holds the default value on creation for the created_at field.
+	directorysource.DefaultCreatedAt = directorysourceDescCreatedAt.Default.(func() time.Time)
+	// directorysourceDescUpdatedAt is the schema descriptor for updated_at field.
+	directorysourceDescUpdatedAt := directorysourceFields[13].Descriptor()
+	// directorysource.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	directorysource.DefaultUpdatedAt = directorysourceDescUpdatedAt.Default.(func() time.Time)
+	// directorysource.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	directorysource.UpdateDefaultUpdatedAt = directorysourceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	directorysyncrunFields := schema.DirectorySyncRun{}.Fields()
+	_ = directorysyncrunFields
+	// directorysyncrunDescHTTPRequestCount is the schema descriptor for http_request_count field.
+	directorysyncrunDescHTTPRequestCount := directorysyncrunFields[7].Descriptor()
+	// directorysyncrun.DefaultHTTPRequestCount holds the default value on creation for the http_request_count field.
+	directorysyncrun.DefaultHTTPRequestCount = directorysyncrunDescHTTPRequestCount.Default.(int)
+	// directorysyncrunDescDepartmentCount is the schema descriptor for department_count field.
+	directorysyncrunDescDepartmentCount := directorysyncrunFields[8].Descriptor()
+	// directorysyncrun.DefaultDepartmentCount holds the default value on creation for the department_count field.
+	directorysyncrun.DefaultDepartmentCount = directorysyncrunDescDepartmentCount.Default.(int)
+	// directorysyncrunDescMemberCount is the schema descriptor for member_count field.
+	directorysyncrunDescMemberCount := directorysyncrunFields[9].Descriptor()
+	// directorysyncrun.DefaultMemberCount holds the default value on creation for the member_count field.
+	directorysyncrun.DefaultMemberCount = directorysyncrunDescMemberCount.Default.(int)
+	// directorysyncrunDescInvalidMemberCount is the schema descriptor for invalid_member_count field.
+	directorysyncrunDescInvalidMemberCount := directorysyncrunFields[10].Descriptor()
+	// directorysyncrun.DefaultInvalidMemberCount holds the default value on creation for the invalid_member_count field.
+	directorysyncrun.DefaultInvalidMemberCount = directorysyncrunDescInvalidMemberCount.Default.(int)
+	// directorysyncrunDescWarningCount is the schema descriptor for warning_count field.
+	directorysyncrunDescWarningCount := directorysyncrunFields[11].Descriptor()
+	// directorysyncrun.DefaultWarningCount holds the default value on creation for the warning_count field.
+	directorysyncrun.DefaultWarningCount = directorysyncrunDescWarningCount.Default.(int)
+	// directorysyncrunDescCreatedAt is the schema descriptor for created_at field.
+	directorysyncrunDescCreatedAt := directorysyncrunFields[16].Descriptor()
+	// directorysyncrun.DefaultCreatedAt holds the default value on creation for the created_at field.
+	directorysyncrun.DefaultCreatedAt = directorysyncrunDescCreatedAt.Default.(func() time.Time)
+	// directorysyncrunDescUpdatedAt is the schema descriptor for updated_at field.
+	directorysyncrunDescUpdatedAt := directorysyncrunFields[17].Descriptor()
+	// directorysyncrun.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	directorysyncrun.DefaultUpdatedAt = directorysyncrunDescUpdatedAt.Default.(func() time.Time)
+	// directorysyncrun.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	directorysyncrun.UpdateDefaultUpdatedAt = directorysyncrunDescUpdatedAt.UpdateDefault.(func() time.Time)
 	prcommitusagesnapshotFields := schema.PRCommitUsageSnapshot{}.Fields()
 	_ = prcommitusagesnapshotFields
 	// prcommitusagesnapshotDescCommitSha is the schema descriptor for commit_sha field.
@@ -121,6 +297,78 @@ func init() {
 	prcommitusagesnapshot.DefaultUpdatedAt = prcommitusagesnapshotDescUpdatedAt.Default.(func() time.Time)
 	// prcommitusagesnapshot.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	prcommitusagesnapshot.UpdateDefaultUpdatedAt = prcommitusagesnapshotDescUpdatedAt.UpdateDefault.(func() time.Time)
+	prsyncjobFields := schema.PRSyncJob{}.Fields()
+	_ = prsyncjobFields
+	// prsyncjobDescPageSize is the schema descriptor for page_size field.
+	prsyncjobDescPageSize := prsyncjobFields[3].Descriptor()
+	// prsyncjob.DefaultPageSize holds the default value on creation for the page_size field.
+	prsyncjob.DefaultPageSize = prsyncjobDescPageSize.Default.(int)
+	// prsyncjobDescCurrentPage is the schema descriptor for current_page field.
+	prsyncjobDescCurrentPage := prsyncjobFields[4].Descriptor()
+	// prsyncjob.DefaultCurrentPage holds the default value on creation for the current_page field.
+	prsyncjob.DefaultCurrentPage = prsyncjobDescCurrentPage.Default.(int)
+	// prsyncjobDescFetchedPrs is the schema descriptor for fetched_prs field.
+	prsyncjobDescFetchedPrs := prsyncjobFields[5].Descriptor()
+	// prsyncjob.DefaultFetchedPrs holds the default value on creation for the fetched_prs field.
+	prsyncjob.DefaultFetchedPrs = prsyncjobDescFetchedPrs.Default.(int)
+	// prsyncjobDescTotalPrs is the schema descriptor for total_prs field.
+	prsyncjobDescTotalPrs := prsyncjobFields[6].Descriptor()
+	// prsyncjob.DefaultTotalPrs holds the default value on creation for the total_prs field.
+	prsyncjob.DefaultTotalPrs = prsyncjobDescTotalPrs.Default.(int)
+	// prsyncjobDescProcessedPrs is the schema descriptor for processed_prs field.
+	prsyncjobDescProcessedPrs := prsyncjobFields[7].Descriptor()
+	// prsyncjob.DefaultProcessedPrs holds the default value on creation for the processed_prs field.
+	prsyncjob.DefaultProcessedPrs = prsyncjobDescProcessedPrs.Default.(int)
+	// prsyncjobDescCreatedPrs is the schema descriptor for created_prs field.
+	prsyncjobDescCreatedPrs := prsyncjobFields[8].Descriptor()
+	// prsyncjob.DefaultCreatedPrs holds the default value on creation for the created_prs field.
+	prsyncjob.DefaultCreatedPrs = prsyncjobDescCreatedPrs.Default.(int)
+	// prsyncjobDescChangedPrs is the schema descriptor for changed_prs field.
+	prsyncjobDescChangedPrs := prsyncjobFields[9].Descriptor()
+	// prsyncjob.DefaultChangedPrs holds the default value on creation for the changed_prs field.
+	prsyncjob.DefaultChangedPrs = prsyncjobDescChangedPrs.Default.(int)
+	// prsyncjobDescUnchangedPrs is the schema descriptor for unchanged_prs field.
+	prsyncjobDescUnchangedPrs := prsyncjobFields[10].Descriptor()
+	// prsyncjob.DefaultUnchangedPrs holds the default value on creation for the unchanged_prs field.
+	prsyncjob.DefaultUnchangedPrs = prsyncjobDescUnchangedPrs.Default.(int)
+	// prsyncjobDescUpsertFailedPrs is the schema descriptor for upsert_failed_prs field.
+	prsyncjobDescUpsertFailedPrs := prsyncjobFields[11].Descriptor()
+	// prsyncjob.DefaultUpsertFailedPrs holds the default value on creation for the upsert_failed_prs field.
+	prsyncjob.DefaultUpsertFailedPrs = prsyncjobDescUpsertFailedPrs.Default.(int)
+	// prsyncjobDescLabeledPrs is the schema descriptor for labeled_prs field.
+	prsyncjobDescLabeledPrs := prsyncjobFields[12].Descriptor()
+	// prsyncjob.DefaultLabeledPrs holds the default value on creation for the labeled_prs field.
+	prsyncjob.DefaultLabeledPrs = prsyncjobDescLabeledPrs.Default.(int)
+	// prsyncjobDescLabelFailedPrs is the schema descriptor for label_failed_prs field.
+	prsyncjobDescLabelFailedPrs := prsyncjobFields[13].Descriptor()
+	// prsyncjob.DefaultLabelFailedPrs holds the default value on creation for the label_failed_prs field.
+	prsyncjob.DefaultLabelFailedPrs = prsyncjobDescLabelFailedPrs.Default.(int)
+	// prsyncjobDescUsageTotalPrs is the schema descriptor for usage_total_prs field.
+	prsyncjobDescUsageTotalPrs := prsyncjobFields[14].Descriptor()
+	// prsyncjob.DefaultUsageTotalPrs holds the default value on creation for the usage_total_prs field.
+	prsyncjob.DefaultUsageTotalPrs = prsyncjobDescUsageTotalPrs.Default.(int)
+	// prsyncjobDescUsageRefreshedPrs is the schema descriptor for usage_refreshed_prs field.
+	prsyncjobDescUsageRefreshedPrs := prsyncjobFields[15].Descriptor()
+	// prsyncjob.DefaultUsageRefreshedPrs holds the default value on creation for the usage_refreshed_prs field.
+	prsyncjob.DefaultUsageRefreshedPrs = prsyncjobDescUsageRefreshedPrs.Default.(int)
+	// prsyncjobDescUsageSkippedPrs is the schema descriptor for usage_skipped_prs field.
+	prsyncjobDescUsageSkippedPrs := prsyncjobFields[16].Descriptor()
+	// prsyncjob.DefaultUsageSkippedPrs holds the default value on creation for the usage_skipped_prs field.
+	prsyncjob.DefaultUsageSkippedPrs = prsyncjobDescUsageSkippedPrs.Default.(int)
+	// prsyncjobDescUsageFailedPrs is the schema descriptor for usage_failed_prs field.
+	prsyncjobDescUsageFailedPrs := prsyncjobFields[17].Descriptor()
+	// prsyncjob.DefaultUsageFailedPrs holds the default value on creation for the usage_failed_prs field.
+	prsyncjob.DefaultUsageFailedPrs = prsyncjobDescUsageFailedPrs.Default.(int)
+	// prsyncjobDescCreatedAt is the schema descriptor for created_at field.
+	prsyncjobDescCreatedAt := prsyncjobFields[22].Descriptor()
+	// prsyncjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	prsyncjob.DefaultCreatedAt = prsyncjobDescCreatedAt.Default.(func() time.Time)
+	// prsyncjobDescUpdatedAt is the schema descriptor for updated_at field.
+	prsyncjobDescUpdatedAt := prsyncjobFields[23].Descriptor()
+	// prsyncjob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	prsyncjob.DefaultUpdatedAt = prsyncjobDescUpdatedAt.Default.(func() time.Time)
+	// prsyncjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	prsyncjob.UpdateDefaultUpdatedAt = prsyncjobDescUpdatedAt.UpdateDefault.(func() time.Time)
 	prattributionrunHooks := schema.PrAttributionRun{}.Hooks()
 	prattributionrun.Hooks[0] = prattributionrunHooks[0]
 	prattributionrunFields := schema.PrAttributionRun{}.Fields()
@@ -225,32 +473,28 @@ func init() {
 	relayproviderDescBaseURL := relayproviderFields[2].Descriptor()
 	// relayprovider.BaseURLValidator is a validator for the "base_url" field. It is called by the builders before save.
 	relayprovider.BaseURLValidator = relayproviderDescBaseURL.Validators[0].(func(string) error)
-	// relayproviderDescAdminURL is the schema descriptor for admin_url field.
-	relayproviderDescAdminURL := relayproviderFields[3].Descriptor()
-	// relayprovider.AdminURLValidator is a validator for the "admin_url" field. It is called by the builders before save.
-	relayprovider.AdminURLValidator = relayproviderDescAdminURL.Validators[0].(func(string) error)
 	// relayproviderDescRelayType is the schema descriptor for relay_type field.
-	relayproviderDescRelayType := relayproviderFields[4].Descriptor()
+	relayproviderDescRelayType := relayproviderFields[3].Descriptor()
 	// relayprovider.DefaultRelayType holds the default value on creation for the relay_type field.
 	relayprovider.DefaultRelayType = relayproviderDescRelayType.Default.(string)
 	// relayproviderDescDefaultModel is the schema descriptor for default_model field.
-	relayproviderDescDefaultModel := relayproviderFields[6].Descriptor()
+	relayproviderDescDefaultModel := relayproviderFields[5].Descriptor()
 	// relayprovider.DefaultDefaultModel holds the default value on creation for the default_model field.
 	relayprovider.DefaultDefaultModel = relayproviderDescDefaultModel.Default.(string)
 	// relayproviderDescIsPrimary is the schema descriptor for is_primary field.
-	relayproviderDescIsPrimary := relayproviderFields[7].Descriptor()
+	relayproviderDescIsPrimary := relayproviderFields[6].Descriptor()
 	// relayprovider.DefaultIsPrimary holds the default value on creation for the is_primary field.
 	relayprovider.DefaultIsPrimary = relayproviderDescIsPrimary.Default.(bool)
 	// relayproviderDescEnabled is the schema descriptor for enabled field.
-	relayproviderDescEnabled := relayproviderFields[8].Descriptor()
+	relayproviderDescEnabled := relayproviderFields[7].Descriptor()
 	// relayprovider.DefaultEnabled holds the default value on creation for the enabled field.
 	relayprovider.DefaultEnabled = relayproviderDescEnabled.Default.(bool)
 	// relayproviderDescCreatedAt is the schema descriptor for created_at field.
-	relayproviderDescCreatedAt := relayproviderFields[9].Descriptor()
+	relayproviderDescCreatedAt := relayproviderFields[8].Descriptor()
 	// relayprovider.DefaultCreatedAt holds the default value on creation for the created_at field.
 	relayprovider.DefaultCreatedAt = relayproviderDescCreatedAt.Default.(func() time.Time)
 	// relayproviderDescUpdatedAt is the schema descriptor for updated_at field.
-	relayproviderDescUpdatedAt := relayproviderFields[10].Descriptor()
+	relayproviderDescUpdatedAt := relayproviderFields[9].Descriptor()
 	// relayprovider.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	relayprovider.DefaultUpdatedAt = relayproviderDescUpdatedAt.Default.(func() time.Time)
 	// relayprovider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -296,11 +540,11 @@ func init() {
 	// scmprovider.BaseURLValidator is a validator for the "base_url" field. It is called by the builders before save.
 	scmprovider.BaseURLValidator = scmproviderDescBaseURL.Validators[0].(func(string) error)
 	// scmproviderDescCreatedAt is the schema descriptor for created_at field.
-	scmproviderDescCreatedAt := scmproviderFields[8].Descriptor()
+	scmproviderDescCreatedAt := scmproviderFields[9].Descriptor()
 	// scmprovider.DefaultCreatedAt holds the default value on creation for the created_at field.
 	scmprovider.DefaultCreatedAt = scmproviderDescCreatedAt.Default.(func() time.Time)
 	// scmproviderDescUpdatedAt is the schema descriptor for updated_at field.
-	scmproviderDescUpdatedAt := scmproviderFields[9].Descriptor()
+	scmproviderDescUpdatedAt := scmproviderFields[10].Descriptor()
 	// scmprovider.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	scmprovider.DefaultUpdatedAt = scmproviderDescUpdatedAt.Default.(func() time.Time)
 	// scmprovider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -321,6 +565,38 @@ func init() {
 	systemsetting.DefaultUpdatedAt = systemsettingDescUpdatedAt.Default.(func() time.Time)
 	// systemsetting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	systemsetting.UpdateDefaultUpdatedAt = systemsettingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	teamusageratemultiplierauditFields := schema.TeamUsageRateMultiplierAudit{}.Fields()
+	_ = teamusageratemultiplierauditFields
+	// teamusageratemultiplierauditDescGroupID is the schema descriptor for group_id field.
+	teamusageratemultiplierauditDescGroupID := teamusageratemultiplierauditFields[4].Descriptor()
+	// teamusageratemultiplieraudit.DefaultGroupID holds the default value on creation for the group_id field.
+	teamusageratemultiplieraudit.DefaultGroupID = teamusageratemultiplierauditDescGroupID.Default.(string)
+	// teamusageratemultiplierauditDescGroupName is the schema descriptor for group_name field.
+	teamusageratemultiplierauditDescGroupName := teamusageratemultiplierauditFields[5].Descriptor()
+	// teamusageratemultiplieraudit.DefaultGroupName holds the default value on creation for the group_name field.
+	teamusageratemultiplieraudit.DefaultGroupName = teamusageratemultiplierauditDescGroupName.Default.(string)
+	// teamusageratemultiplierauditDescChanged is the schema descriptor for changed field.
+	teamusageratemultiplierauditDescChanged := teamusageratemultiplierauditFields[12].Descriptor()
+	// teamusageratemultiplieraudit.DefaultChanged holds the default value on creation for the changed field.
+	teamusageratemultiplieraudit.DefaultChanged = teamusageratemultiplierauditDescChanged.Default.(bool)
+	// teamusageratemultiplierauditDescReason is the schema descriptor for reason field.
+	teamusageratemultiplierauditDescReason := teamusageratemultiplierauditFields[18].Descriptor()
+	// teamusageratemultiplieraudit.DefaultReason holds the default value on creation for the reason field.
+	teamusageratemultiplieraudit.DefaultReason = teamusageratemultiplierauditDescReason.Default.(string)
+	// teamusageratemultiplierauditDescErrorMessage is the schema descriptor for error_message field.
+	teamusageratemultiplierauditDescErrorMessage := teamusageratemultiplierauditFields[19].Descriptor()
+	// teamusageratemultiplieraudit.DefaultErrorMessage holds the default value on creation for the error_message field.
+	teamusageratemultiplieraudit.DefaultErrorMessage = teamusageratemultiplierauditDescErrorMessage.Default.(string)
+	// teamusageratemultiplierauditDescCreatedAt is the schema descriptor for created_at field.
+	teamusageratemultiplierauditDescCreatedAt := teamusageratemultiplierauditFields[20].Descriptor()
+	// teamusageratemultiplieraudit.DefaultCreatedAt holds the default value on creation for the created_at field.
+	teamusageratemultiplieraudit.DefaultCreatedAt = teamusageratemultiplierauditDescCreatedAt.Default.(func() time.Time)
+	// teamusageratemultiplierauditDescUpdatedAt is the schema descriptor for updated_at field.
+	teamusageratemultiplierauditDescUpdatedAt := teamusageratemultiplierauditFields[21].Descriptor()
+	// teamusageratemultiplieraudit.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	teamusageratemultiplieraudit.DefaultUpdatedAt = teamusageratemultiplierauditDescUpdatedAt.Default.(func() time.Time)
+	// teamusageratemultiplieraudit.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	teamusageratemultiplieraudit.UpdateDefaultUpdatedAt = teamusageratemultiplierauditDescUpdatedAt.UpdateDefault.(func() time.Time)
 	toolusageeventFields := schema.ToolUsageEvent{}.Fields()
 	_ = toolusageeventFields
 	// toolusageeventDescTool is the schema descriptor for tool field.
@@ -382,11 +658,11 @@ func init() {
 	// user.EmailValidator is a validator for the "email" field. It is called by the builders before save.
 	user.EmailValidator = userDescEmail.Validators[0].(func(string) error)
 	// userDescCreatedAt is the schema descriptor for created_at field.
-	userDescCreatedAt := userFields[7].Descriptor()
+	userDescCreatedAt := userFields[8].Descriptor()
 	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
 	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
 	// userDescUpdatedAt is the schema descriptor for updated_at field.
-	userDescUpdatedAt := userFields[8].Descriptor()
+	userDescUpdatedAt := userFields[9].Descriptor()
 	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
 	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

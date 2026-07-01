@@ -25,26 +25,6 @@ builds:
       - -X github.com/ai-efficiency/backend/internal/buildinfo.BuildCommit={{ .Commit }}
       - -X github.com/ai-efficiency/backend/internal/buildinfo.BuildTime={{ .Date }}
 
-  - id: ae-cli
-    dir: ae-cli
-    main: .
-    binary: ae-cli
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-      - windows
-    goarch:
-      - amd64
-      - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
-    ldflags:
-      - -s -w
-      - -X github.com/ai-efficiency/ae-cli/internal/buildinfo.Version=v{{ .Version }}
-
 archives:
   - id: backend-bundle
     ids:
@@ -66,17 +46,6 @@ archives:
       - deploy/docker-deploy.sh
       - deploy/install.sh
       - deploy/ai-efficiency.service
-
-  - id: ae-cli
-    ids:
-      - ae-cli
-    name_template: "ae-cli_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    formats:
-      - tar.gz
-    format_overrides:
-      - goos: windows
-        formats:
-          - zip
 
 checksum:
   name_template: checksums.txt

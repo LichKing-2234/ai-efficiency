@@ -1,66 +1,537 @@
-import type { VerifyReviewItem, VerifyReviewSummary } from '@/types'
+export type InstallPlatform = 'shell' | 'windows'
+export type CCSwitchApp = 'codex' | 'claude' | 'gemini' | 'hermes' | 'openclaw'
 
-export interface ReviewVerifyOutputInput {
-  selectedProviderName: string
-  versionOutput: string
-  discoverOutput: string
-  doctorOutput: string
+export type ManualConfigSnippetKey =
+  | 'codex-config'
+  | 'codex-auth'
+  | 'claude-settings'
+  | 'gemini-env'
+  | 'gemini-reload'
+  | 'gemini-model'
+  | 'hermes-agent'
+  | 'openclaw-agent'
+  | 'custom-agent-env'
+  | 'custom-agent-json'
+
+export type ManualConfigSnippet = {
+  key: ManualConfigSnippetKey
+  path: string
+  body: string
+  containsSecret: boolean
 }
 
-function makeItem(status: VerifyReviewItem['status'], message: string): VerifyReviewItem {
-  return { status, message }
+export type ManualConfigSnippetInput = {
+  providerName: string
+  baseUrl: string
+  platform: string
+  apiKey: string
+  groupName?: string | null
+  model?: string
 }
 
-function includesAny(haystack: string, needles: string[]) {
-  const normalized = haystack.toLowerCase()
-  return needles.some((needle) => normalized.includes(needle.toLowerCase()))
+export type CCSwitchProviderImportInput = {
+  app: CCSwitchApp
+  name: string
+  endpoint: string
+  apiKey: string
+  model?: string
+  enabled?: boolean
 }
 
-export function reviewVerifyOutput(input: ReviewVerifyOutputInput): VerifyReviewSummary {
-  const versionOutput = input.versionOutput.trim()
-  const discoverOutput = input.discoverOutput.trim()
-  const doctorOutput = input.doctorOutput.trim()
+const GITHUB_RELEASE_API_URL = 'https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest'
+const CODEX_MODEL = 'gpt-5.4'
+const GEMINI_MODEL = 'gemini-3.1-pro-preview'
 
-  const version = versionOutput
-    ? includesAny(versionOutput, ['ae-cli'])
-      ? makeItem('looks_good', 'The output includes ae-cli and looks like a valid version response.')
-      : makeItem('needs_attention', 'The version output does not look like an ae-cli version response.')
-    : makeItem('cannot_determine', 'Paste the ae-cli version output to review this step.')
+type AgentPlatform = 'openai' | 'anthropic' | 'gemini'
 
-  const discoverTargets = ['~/.codex/config.toml', '~/.ae-cli/env.sh', '~/.claude/settings.json']
-  const discoverHasProvider = discoverOutput.includes(input.selectedProviderName)
-  const discoverHasTarget = discoverTargets.some((target) => discoverOutput.includes(target))
-  const discover = discoverOutput
-    ? discoverHasProvider && discoverHasTarget
-      ? makeItem('looks_good', 'The dry-run output mentions the selected provider and at least one expected config target.')
-      : makeItem('needs_attention', 'The dry-run output is missing the selected provider or expected config targets.')
-    : makeItem('cannot_determine', 'Paste the discover --dry-run output to review this step.')
+type AgentPlatformProfile = {
+  platform: AgentPlatform
+  displayName: string
+  baseUrl: string
+  env: Record<string, string>
+  openClawApi: 'openai-completions'
+  hermesApiMode: 'chat_completions'
+}
 
-  const doctorFailureSignals = ['error', 'failed', 'unauthorized', 'forbidden']
-  const doctorSuccessSignals = ['ok', 'ready', 'healthy', 'success']
-  const doctor = doctorOutput
-    ? includesAny(doctorOutput, doctorFailureSignals)
-      ? makeItem('needs_attention', 'The doctor output contains failure keywords that need review.')
-      : includesAny(doctorOutput, doctorSuccessSignals)
-        ? makeItem('looks_good', 'The doctor output contains healthy status keywords.')
-        : makeItem('cannot_determine', 'The doctor output did not contain clear success or failure signals.')
-    : makeItem('cannot_determine', 'Paste the ae-cli doctor output to review this step.')
+type PlatformSource = {
+  platform?: string
+  userAgent?: string
+  userAgentData?: {
+    platform?: string
+  }
+}
 
-  return { version, discover, doctor }
+export function detectInstallPlatform(source: PlatformSource = navigator): InstallPlatform {
+  const platform = [
+    source.userAgentData?.platform,
+    source.platform,
+    source.userAgent,
+  ].filter(Boolean).join(' ')
+  return /windows|win32|win64/i.test(platform) ? 'windows' : 'shell'
 }
 
 export function buildInstallCommand(origin: string) {
-  return `AE_CLI_INSTALL_SERVER_URL=${origin} curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | bash`
+  return `curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | AE_CLI_INSTALL_SERVER_URL=${origin} bash`
+}
+
+function tomlString(value: string) {
+  return JSON.stringify(value)
+}
+
+function tomlTableKey(value: string) {
+  return /^[A-Za-z0-9_-]+$/.test(value) ? value : tomlString(value)
+}
+
+function shellString(value: string) {
+  return `"${value.replace(/(["\\$`])/g, '\\$1')}"`
+}
+
+export function isAgentAccessGroup(groupName: string | null | undefined) {
+  return Boolean(groupName?.startsWith('Agent'))
+}
+
+export function buildAgentProviderBaseUrl(baseUrl: string) {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  if (!trimmed) return '/v1'
+  if (/\/v\d+$/i.test(trimmed)) return trimmed
+  return `${trimmed}/v1`
+}
+
+function normalizeAgentPlatform(platform: string): AgentPlatform | null {
+  const normalized = platform.trim().toLowerCase()
+  if (normalized === 'openai') return 'openai'
+  if (normalized === 'anthropic') return 'anthropic'
+  if (normalized === 'gemini') return 'gemini'
+  return null
+}
+
+function resolveAgentPlatformProfile(platform: string, baseUrl: string, apiKey: string, model?: string): AgentPlatformProfile | null {
+  const normalized = normalizeAgentPlatform(platform)
+  const selectedModel = model?.trim()
+  if (!normalized) return null
+  const agentBaseUrl = buildAgentProviderBaseUrl(baseUrl)
+  return {
+    platform: normalized,
+    displayName: 'OpenAI-compatible Chat Completions',
+    baseUrl: agentBaseUrl,
+    env: {
+      OPENAI_API_KEY: apiKey,
+      OPENAI_BASE_URL: agentBaseUrl,
+      ...(selectedModel ? { OPENAI_MODEL: selectedModel } : {}),
+    },
+    openClawApi: 'openai-completions',
+    hermesApiMode: 'chat_completions',
+  }
+}
+
+function buildClaudeSettingsEnv(baseUrl: string, apiKey: string) {
+  return {
+    ANTHROPIC_BASE_URL: baseUrl,
+    ANTHROPIC_AUTH_TOKEN: apiKey,
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    CLAUDE_CODE_ATTRIBUTION_HEADER: '0',
+  }
+}
+
+function buildCodexCCSwitchConfig(name: string, baseUrl: string, apiKey: string, model?: string) {
+  const selectedModel = model?.trim() || CODEX_MODEL
+  const config = [
+    `model_provider = "custom"`,
+    `model = ${tomlString(selectedModel)}`,
+    `review_model = ${tomlString(selectedModel)}`,
+    `model_reasoning_effort = "xhigh"`,
+    `disable_response_storage = true`,
+    `network_access = "enabled"`,
+    `windows_wsl_setup_acknowledged = true`,
+    `model_context_window = 1000000`,
+    `model_auto_compact_token_limit = 900000`,
+    ``,
+    `[model_providers.custom]`,
+    `name = ${tomlString(name)}`,
+    `base_url = ${tomlString(baseUrl)}`,
+    `wire_api = "responses"`,
+    `requires_openai_auth = true`,
+  ].join('\n')
+
+  return {
+    auth: {
+      OPENAI_API_KEY: apiKey,
+    },
+    config,
+  }
+}
+
+function resolveClaudeDefaultModelEnv(model: string) {
+  const normalized = model.trim().toLowerCase()
+  if (normalized.includes('haiku')) return 'ANTHROPIC_DEFAULT_HAIKU_MODEL'
+  if (normalized.includes('sonnet')) return 'ANTHROPIC_DEFAULT_SONNET_MODEL'
+  if (normalized.includes('opus')) return 'ANTHROPIC_DEFAULT_OPUS_MODEL'
+  return null
+}
+
+function encodeBase64(value: string) {
+  const bytes = new TextEncoder().encode(value)
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+  }
+  return btoa(binary)
+}
+
+function buildClaudeCCSwitchConfig(baseUrl: string, apiKey: string, model?: string) {
+  const env: Record<string, string> = buildClaudeSettingsEnv(baseUrl, apiKey)
+  const selectedModel = model?.trim()
+  if (selectedModel) {
+    env.ANTHROPIC_MODEL = selectedModel
+    const defaultModelEnv = resolveClaudeDefaultModelEnv(selectedModel)
+    if (defaultModelEnv) {
+      env[defaultModelEnv] = selectedModel
+    }
+  }
+  return { env }
+}
+
+function buildGeminiCCSwitchConfig(baseUrl: string, apiKey: string, model?: string) {
+  const config: Record<string, string> = {
+    GEMINI_API_KEY: apiKey,
+    GOOGLE_GEMINI_BASE_URL: baseUrl,
+  }
+  const selectedModel = model?.trim()
+  if (selectedModel) {
+    config.GEMINI_MODEL = selectedModel
+  }
+  return config
+}
+
+export function buildCodexConfigSnippet(providerName: string, baseUrl: string) {
+  const provider = providerName.trim() || 'provider'
+  return [
+    `model_provider = ${tomlString(provider)}`,
+    `model = ${tomlString(CODEX_MODEL)}`,
+    `review_model = ${tomlString(CODEX_MODEL)}`,
+    `model_reasoning_effort = "xhigh"`,
+    `disable_response_storage = true`,
+    `network_access = "enabled"`,
+    `windows_wsl_setup_acknowledged = true`,
+    `model_context_window = 1000000`,
+    `model_auto_compact_token_limit = 900000`,
+    ``,
+    `[model_providers.${tomlTableKey(provider)}]`,
+    `name = ${tomlString(provider)}`,
+    `base_url = ${tomlString(baseUrl)}`,
+    `wire_api = "responses"`,
+    `requires_openai_auth = true`,
+  ].join('\n')
+}
+
+export function buildCodexAuthSnippet(apiKey: string) {
+  return JSON.stringify({ OPENAI_API_KEY: apiKey })
+}
+
+export function buildClaudeSettingsSnippet(baseUrl: string, apiKey: string) {
+  return JSON.stringify({
+    env: buildClaudeSettingsEnv(baseUrl, apiKey),
+  }, null, 2)
+}
+
+export function buildGeminiEnvSnippet(baseUrl: string, apiKey: string) {
+  return [
+    `export GEMINI_API_KEY=${shellString(apiKey)}`,
+    `export GOOGLE_GEMINI_BASE_URL=${shellString(baseUrl)}`,
+  ].join('\n')
+}
+
+export function buildGeminiReloadSnippet() {
+  return [
+    'case "${SHELL##*/}" in',
+    '  zsh) rc_file="$HOME/.zshrc" ;;',
+    '  bash) rc_file="$HOME/.bashrc" ;;',
+    '  *) rc_file="$HOME/.profile" ;;',
+    'esac',
+    '[ -f "$rc_file" ] && source "$rc_file"',
+  ].join('\n')
+}
+
+export function buildGeminiModelSnippet() {
+  return [
+    `export GEMINI_MODEL=${shellString(GEMINI_MODEL)}`,
+    '# Do not manually switch models inside Gemini after setting this value.',
+  ].join('\n')
+}
+
+function envExports(env: Record<string, string>) {
+  return Object.entries(env)
+    .map(([key, value]) => `export ${key}=${shellString(value)}`)
+    .join('\n')
+}
+
+function buildHermesAgentSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
+  const providerName = input.providerName.trim() || 'ae-agent'
+  const model = input.model?.trim() || '<model-id>'
+  return [
+    '# Merge this into ~/.hermes/config.yaml to make this Agent group the active main model.',
+    'model:',
+    `  provider: ${JSON.stringify(`custom:${providerName}`)}`,
+    `  default: ${JSON.stringify(model)}`,
+    `  base_url: ${JSON.stringify(profile.baseUrl)}`,
+    `  api_mode: ${JSON.stringify(profile.hermesApiMode)}`,
+    '',
+    'custom_providers:',
+    `  - name: ${JSON.stringify(providerName)}`,
+    `    base_url: ${JSON.stringify(profile.baseUrl)}`,
+    `    api_key: ${JSON.stringify(input.apiKey)}`,
+    `    api_mode: ${JSON.stringify(profile.hermesApiMode)}`,
+    '    models:',
+    `      ${JSON.stringify(model)}:`,
+    '        context_length: 200000',
+  ].join('\n')
+}
+
+function buildOpenClawAgentSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
+  const providerName = input.providerName.trim() || 'ae-agent'
+  const model = input.model?.trim() || '<model-id>'
+  return JSON.stringify({
+    models: {
+      mode: 'merge',
+      providers: {
+        [providerName]: {
+          baseUrl: profile.baseUrl,
+          apiKey: input.apiKey,
+          api: profile.openClawApi,
+          models: [{ id: model, name: model }],
+        },
+      },
+    },
+  }, null, 2)
+}
+
+function buildCustomAgentJSONSnippet(input: ManualConfigSnippetInput, profile: AgentPlatformProfile) {
+  return JSON.stringify({
+    platform: profile.platform,
+    protocol: profile.displayName,
+    base_url: profile.baseUrl,
+    api_key: input.apiKey,
+    ...(input.model?.trim() ? { model: input.model.trim() } : {}),
+  }, null, 2)
+}
+
+function buildAgentManualConfigSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
+  const profile = resolveAgentPlatformProfile(input.platform, input.baseUrl, input.apiKey, input.model)
+  if (!profile) {
+    return [
+      {
+        key: 'custom-agent-json',
+        path: 'Custom Agent provider values',
+        body: JSON.stringify({
+          platform: input.platform,
+          base_url: buildAgentProviderBaseUrl(input.baseUrl),
+          api_key: input.apiKey,
+          ...(input.model?.trim() ? { model: input.model.trim() } : {}),
+        }, null, 2),
+        containsSecret: true,
+      },
+    ]
+  }
+  return [
+    {
+      key: 'hermes-agent',
+      path: '~/.hermes/config.yaml',
+      body: buildHermesAgentSnippet(input, profile),
+      containsSecret: true,
+    },
+    {
+      key: 'openclaw-agent',
+      path: '~/.openclaw/openclaw.json',
+      body: buildOpenClawAgentSnippet(input, profile),
+      containsSecret: true,
+    },
+    {
+      key: 'custom-agent-env',
+      path: 'Custom Agent environment',
+      body: envExports(profile.env),
+      containsSecret: true,
+    },
+    {
+      key: 'custom-agent-json',
+      path: 'Custom Agent JSON',
+      body: buildCustomAgentJSONSnippet(input, profile),
+      containsSecret: true,
+    },
+  ]
+}
+
+export function buildManualConfigSnippets(input: ManualConfigSnippetInput): ManualConfigSnippet[] {
+  if (isAgentAccessGroup(input.groupName)) {
+    return buildAgentManualConfigSnippets(input)
+  }
+  const platform = input.platform.trim().toLowerCase()
+  if (platform === 'openai') {
+    return [
+      {
+        key: 'codex-config',
+        path: '~/.codex/config.toml',
+        body: buildCodexConfigSnippet(input.providerName, input.baseUrl),
+        containsSecret: false,
+      },
+      {
+        key: 'codex-auth',
+        path: '~/.codex/auth.json',
+        body: buildCodexAuthSnippet(input.apiKey),
+        containsSecret: true,
+      },
+    ]
+  }
+  if (platform === 'anthropic') {
+    return [
+      {
+        key: 'claude-settings',
+        path: '~/.claude/settings.json',
+        body: buildClaudeSettingsSnippet(input.baseUrl, input.apiKey),
+        containsSecret: true,
+      },
+    ]
+  }
+  if (platform === 'gemini') {
+    return [
+      {
+        key: 'gemini-env',
+        path: '~/.ae-cli/env.sh',
+        body: buildGeminiEnvSnippet(input.baseUrl, input.apiKey),
+        containsSecret: true,
+      },
+      {
+        key: 'gemini-reload',
+        path: 'Shell reload',
+        body: buildGeminiReloadSnippet(),
+        containsSecret: false,
+      },
+      {
+        key: 'gemini-model',
+        path: 'Current shell',
+        body: buildGeminiModelSnippet(),
+        containsSecret: false,
+      },
+    ]
+  }
+  return []
+}
+
+export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | null {
+  const normalized = platform.trim().toLowerCase()
+  if (normalized === 'openai') return 'codex'
+  if (normalized === 'anthropic') return 'claude'
+  if (normalized === 'gemini') return 'gemini'
+  return null
+}
+
+export function resolveCCSwitchAppsForGroup(platform: string, groupName?: string | null): CCSwitchApp[] {
+  if (isAgentAccessGroup(groupName)) {
+    return normalizeAgentPlatform(platform) ? ['hermes', 'openclaw'] : []
+  }
+  const app = resolveCCSwitchAppForPlatform(platform)
+  return app ? [app] : []
+}
+
+export function buildCCSwitchProviderImportLink(input: CCSwitchProviderImportInput) {
+  if (input.app === 'claude') {
+    const params = new URLSearchParams({
+      resource: 'provider',
+      app: input.app,
+      name: input.name,
+      enabled: String(input.enabled ?? true),
+      configFormat: 'json',
+      config: encodeBase64(JSON.stringify(buildClaudeCCSwitchConfig(input.endpoint, input.apiKey, input.model))),
+    })
+    return `ccswitch://v1/import?${params.toString()}`
+  }
+
+  if (input.app === 'codex') {
+    const params = new URLSearchParams({
+      resource: 'provider',
+      app: input.app,
+      name: input.name,
+      enabled: String(input.enabled ?? true),
+      configFormat: 'json',
+      config: encodeBase64(JSON.stringify(buildCodexCCSwitchConfig(input.name, input.endpoint, input.apiKey, input.model))),
+    })
+    return `ccswitch://v1/import?${params.toString()}`
+  }
+
+  if (input.app === 'gemini') {
+    const params = new URLSearchParams({
+      resource: 'provider',
+      app: input.app,
+      name: input.name,
+      enabled: String(input.enabled ?? true),
+      configFormat: 'json',
+      config: encodeBase64(JSON.stringify(buildGeminiCCSwitchConfig(input.endpoint, input.apiKey, input.model))),
+    })
+    return `ccswitch://v1/import?${params.toString()}`
+  }
+
+  const params = new URLSearchParams({
+    resource: 'provider',
+    app: input.app,
+    name: input.name,
+    endpoint: input.app === 'hermes' || input.app === 'openclaw' ? buildAgentProviderBaseUrl(input.endpoint) : input.endpoint,
+    apiKey: input.apiKey,
+    enabled: String(input.enabled ?? true),
+  })
+  if (input.model) {
+    params.set('model', input.model)
+  }
+  return `ccswitch://v1/import?${params.toString()}`
+}
+
+export function buildGithubConnectivityCommand() {
+  return `curl -fsSI --connect-timeout 5 ${GITHUB_RELEASE_API_URL}`
+}
+
+export function buildWindowsInstallCommand(origin: string) {
+  return `$env:AE_CLI_INSTALL_SERVER_URL = "${origin}"; iwr -UseB https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.ps1 | iex`
+}
+
+export function buildWindowsGithubConnectivityCommand() {
+  return `iwr -UseB -Method Head ${GITHUB_RELEASE_API_URL}`
+}
+
+export function buildPreferredInstallCommand(origin: string, platform: InstallPlatform = detectInstallPlatform()) {
+  return platform === 'windows' ? buildWindowsInstallCommand(origin) : buildInstallCommand(origin)
+}
+
+export function buildPreferredGithubConnectivityCommand(platform: InstallPlatform = detectInstallPlatform()) {
+  return platform === 'windows' ? buildWindowsGithubConnectivityCommand() : buildGithubConnectivityCommand()
 }
 
 export function buildLoginCommand(origin: string) {
-  return `ae-cli --server ${origin} login`
+  return 'ae-cli login'
 }
 
 export function buildDeviceLoginCommand(origin: string) {
-  return `ae-cli --server ${origin} login --device`
+  return 'ae-cli login --device'
 }
 
 export function buildDiscoverCommand(origin: string, providerName: string) {
-  return `ae-cli --server ${origin} discover --provider ${providerName}`
+  return `ae-cli discover --provider ${providerName}`
+}
+
+export function buildHooksGlobalCommand() {
+  return 'ae-cli hooks enable --global'
+}
+
+export function buildRepoInitCommand() {
+  return 'ae-cli init'
+}
+
+export function buildDoctorCommand() {
+  return 'ae-cli doctor'
+}
+
+export function buildSyncCommand() {
+  return 'ae-cli sync'
+}
+
+export function buildHooksStatusUploadsCommand() {
+  return 'ae-cli hooks status --uploads'
 }

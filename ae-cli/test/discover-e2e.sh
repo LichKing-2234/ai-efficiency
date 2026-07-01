@@ -37,13 +37,14 @@ PY
 )"
 fi
 
-for name in codex claude gemini; do
+for name in claude gemini; do
   cat > "${TMP_BIN}/${name}" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
   chmod +x "${TMP_BIN}/${name}"
 done
+mkdir -p "${TMP_HOME}/Applications/Codex.app"
 
 mkdir -p "${TMP_HOME}/.ae-cli"
 cat > "${TMP_HOME}/.ae-cli/token.json" <<EOF
@@ -55,6 +56,11 @@ cat > "${TMP_HOME}/.ae-cli/token.json" <<EOF
 }
 EOF
 
+mkdir -p "${TMP_HOME}/.codex"
+cat > "${TMP_HOME}/.codex/auth.json" <<'EOF'
+{"OPENAI_API_KEY":"old-openai","OTHER_TOKEN":"remove-me"}
+EOF
+
 python3 - <<'PY' "${PORT}" &
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
@@ -64,7 +70,7 @@ port = int(sys.argv[1])
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path != "/api/v1/providers":
+        if self.path != "/api/v1/user/providers":
             self.send_response(404)
             self.end_headers()
             return
@@ -73,13 +79,43 @@ class Handler(BaseHTTPRequestHandler):
             "data": {
                 "providers": [
                     {
-                        "name": "primary",
+                        "name": "relay.main",
                         "display_name": "Primary Relay",
                         "base_url": "https://relay.example.com/v1",
-                        "api_key": "sk-mock-123",
-                        "api_key_id": 123,
-                        "default_model": "gpt-5.3-codex",
+                        "default_model": "claude-sonnet-4-20250514",
                         "is_primary": True,
+                        "groups": [
+                            {
+                                "group_id": "42",
+                                "group_name": "Group Alpha",
+                                "platform": "openai",
+                                "credential": {
+                                    "api_key_id": 123,
+                                    "key": "sk-openai-123",
+                                    "status": "active",
+                                },
+                            },
+                            {
+                                "group_id": "43",
+                                "group_name": "Group Beta",
+                                "platform": "anthropic",
+                                "credential": {
+                                    "api_key_id": 124,
+                                    "key": "sk-anthropic-123",
+                                    "status": "active",
+                                },
+                            },
+                            {
+                                "group_id": "44",
+                                "group_name": "Group Gamma",
+                                "platform": "gemini",
+                                "credential": {
+                                    "api_key_id": 125,
+                                    "key": "sk-gemini-123",
+                                    "status": "active",
+                                },
+                            }
+                        ],
                     }
                 ]
             },
@@ -100,22 +136,61 @@ SERVER_PID=$!
 sleep 1
 
 OUTPUT_FILE="${TMP_HOME}/discover.out"
-HOME="${TMP_HOME}" PATH="${TMP_BIN}:${PATH}" SHELL=/bin/zsh "${BIN_PATH}" discover > "${OUTPUT_FILE}"
+HOME="${TMP_HOME}" PATH="${TMP_BIN}" SHELL=/bin/zsh "${BIN_PATH}" discover > "${OUTPUT_FILE}"
 
 test -f "${TMP_HOME}/.codex/config.toml"
+test -f "${TMP_HOME}/.codex/auth.json"
 test -f "${TMP_HOME}/.claude/settings.json"
 test -f "${TMP_HOME}/.ae-cli/env.sh"
 test -f "${TMP_HOME}/.zshrc"
 test ! -f "${TMP_HOME}/.gemini/settings.json"
 
-grep -F "Configured provider primary for 3 tool(s):" "${OUTPUT_FILE}" >/dev/null
+grep -F "Configured provider relay.main for 3 tool(s):" "${OUTPUT_FILE}" >/dev/null
 grep -F "  - codex" "${OUTPUT_FILE}" >/dev/null
 grep -F "  - claude" "${OUTPUT_FILE}" >/dev/null
 grep -F "  - gemini" "${OUTPUT_FILE}" >/dev/null
+grep -F 'source "$HOME/.zshrc"' "${OUTPUT_FILE}" >/dev/null
+grep -F 'Set GEMINI_MODEL so Gemini starts with the preview model directly.' "${OUTPUT_FILE}" >/dev/null
+grep -F 'export GEMINI_MODEL="gemini-3.1-pro-preview"' "${OUTPUT_FILE}" >/dev/null
+grep -F 'Do not switch models manually inside Gemini.' "${OUTPUT_FILE}" >/dev/null
 
-grep -F "openai_base_url = 'https://relay.example.com/v1'" "${TMP_HOME}/.codex/config.toml" >/dev/null
-grep -F '"ANTHROPIC_API_KEY": "sk-mock-123"' "${TMP_HOME}/.claude/settings.json" >/dev/null
-grep -F 'export OPENAI_API_KEY="sk-mock-123"' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null
-grep -F 'export GEMINI_API_KEY="sk-mock-123"' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null
+grep -F "model_provider = 'relay.main'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "model = 'gpt-5.4'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "review_model = 'gpt-5.4'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+if grep -F 'claude-sonnet-4-20250514' "${TMP_HOME}/.codex/config.toml" >/dev/null; then
+  echo "Codex config should not use provider default_model" >&2
+  exit 1
+fi
+grep -F "model_reasoning_effort = 'xhigh'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "disable_response_storage = true" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "network_access = 'enabled'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "windows_wsl_setup_acknowledged = true" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "model_context_window = 1000000" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "model_auto_compact_token_limit = 900000" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "[model_providers.'relay.main']" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "name = 'relay.main'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "base_url = 'https://relay.example.com/v1'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "wire_api = 'responses'" "${TMP_HOME}/.codex/config.toml" >/dev/null
+grep -F "requires_openai_auth = true" "${TMP_HOME}/.codex/config.toml" >/dev/null
+python3 - <<'PY' "${TMP_HOME}/.codex/auth.json"
+import json
+import sys
+with open(sys.argv[1]) as fh:
+    data = json.load(fh)
+assert data == {"OPENAI_API_KEY": "sk-openai-123"}, data
+PY
+grep -F '"ANTHROPIC_AUTH_TOKEN": "sk-anthropic-123"' "${TMP_HOME}/.claude/settings.json" >/dev/null
+grep -F '"ANTHROPIC_BASE_URL": "https://relay.example.com/v1"' "${TMP_HOME}/.claude/settings.json" >/dev/null
+grep -F '"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"' "${TMP_HOME}/.claude/settings.json" >/dev/null
+grep -F '"CLAUDE_CODE_ATTRIBUTION_HEADER": "0"' "${TMP_HOME}/.claude/settings.json" >/dev/null
+grep -F 'export GEMINI_API_KEY="sk-gemini-123"' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null
 grep -F 'export GOOGLE_GEMINI_BASE_URL="https://relay.example.com/v1"' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null
+if grep -F 'OPENAI_API_KEY' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null; then
+  echo "OPENAI_API_KEY should be stored in ~/.codex/auth.json, not env.sh" >&2
+  exit 1
+fi
+if grep -F 'GEMINI_MODEL' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null; then
+  echo "GEMINI_MODEL should be shown as shell guidance, not stored in env.sh" >&2
+  exit 1
+fi
 grep -F '[ -f "$HOME/.ae-cli/env.sh" ] && source "$HOME/.ae-cli/env.sh"' "${TMP_HOME}/.zshrc" >/dev/null

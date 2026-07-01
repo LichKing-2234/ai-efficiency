@@ -38,8 +38,22 @@ const router = createRouter({
     },
     {
       path: '/',
-      name: 'Dashboard',
+      redirect: '/usage',
+    },
+    {
+      path: '/usage',
+      name: 'Usage',
       component: () => import('@/views/DashboardView.vue'),
+    },
+    {
+      path: '/usage/members/:user_id',
+      name: 'UsageMember',
+      component: () => import('@/views/DashboardView.vue'),
+    },
+    {
+      path: '/usage/team',
+      name: 'UsageTeam',
+      component: () => import('@/views/TeamOverviewView.vue'),
     },
     {
       path: '/repos',
@@ -55,6 +69,18 @@ const router = createRouter({
       path: '/user',
       name: 'User',
       component: () => import('@/views/UserView.vue'),
+    },
+    {
+      path: '/admin/users',
+      name: 'AdminUsers',
+      component: () => import('@/views/admin/AdminUsersView.vue'),
+      meta: { requireAdmin: true },
+    },
+    {
+      path: '/admin/directory/offboarding',
+      name: 'DirectoryOffboarding',
+      component: () => import('@/views/admin/DirectoryOffboardingView.vue'),
+      meta: { requireAdmin: true },
     },
     {
       path: '/repos/:id',

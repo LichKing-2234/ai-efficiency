@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -41,12 +42,13 @@ func setupFullTestEnvWithHealth(t *testing.T, healthHandler *HealthHandler) *ful
 	// Settings handler with temp config file
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	os.WriteFile(configPath, []byte("relay:\n  url: http://localhost:19876\n  api_key: sk-test-key-12345678\n  model: gpt-4\n"), 0o644)
-	relayCfg := config.RelayConfig{URL: "http://localhost:19876", APIKey: "sk-test-key-12345678", Model: "gpt-4"}
+	os.WriteFile(configPath, []byte("relay:\n  url: http://localhost:19876\n  admin_api_key: admin-test-key-12345678\n  model: gpt-4\n"), 0o644)
+	relayCfg := config.RelayConfig{URL: "http://localhost:19876", AdminAPIKey: "admin-test-key-12345678", Model: "gpt-4"}
 	settingsHandler := NewSettingsHandler(configPath, relayCfg, logger)
 
 	router := SetupRouter(
 		client,
+		nil,
 		authSvc,
 		repoSvc,
 		webhookHandler,
@@ -292,5 +294,68 @@ func TestRefreshInvalidToken(t *testing.T) {
 	w := doFullRequestWithToken(env, "POST", "/api/v1/auth/refresh", body, "")
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAuthOptionsDefaultToSSOOnlyWithoutLDAPOrDevLogin(t *testing.T) {
+	t.Setenv("AE_DEV_LOGIN_ENABLED", "")
+	env := setupFullTestEnv(t)
+
+	w := doFullRequestWithToken(env, "GET", "/api/v1/auth/options", nil, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := parseFullResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	if data["ldap_enabled"] != false {
+		t.Fatalf("ldap_enabled = %v, want false", data["ldap_enabled"])
+	}
+	if data["dev_login_enabled"] != false {
+		t.Fatalf("dev_login_enabled = %v, want false", data["dev_login_enabled"])
+	}
+}
+
+func TestAuthOptionsExposeLDAPAndDevLoginWhenAvailable(t *testing.T) {
+	t.Setenv("AE_DEV_LOGIN_ENABLED", "true")
+	previousGinMode := gin.Mode()
+	gin.SetMode(gin.DebugMode)
+	t.Cleanup(func() {
+		gin.SetMode(previousGinMode)
+	})
+
+	client := testdb.Open(t)
+	logger := zap.NewNop()
+	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
+	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
+	webhookHandler := webhook.NewHandler(client, nil, logger)
+	var ldapConfig atomic.Pointer[config.LDAPConfig]
+	ldapConfig.Store(&config.LDAPConfig{URL: "ldap://ldap.example.com:389"})
+	adminSettingsHandler := NewAdminSettingsHandler(filepath.Join(t.TempDir(), "config.yaml"), &ldapConfig)
+
+	router := SetupRouter(
+		client,
+		nil,
+		authSvc,
+		repoSvc,
+		webhookHandler,
+		nil,
+		nil,
+		"0000000000000000000000000000000000000000000000000000000000000000",
+		middleware.CORS(nil),
+		nil, nil, adminSettingsHandler, nil, nil,
+	)
+	env := &fullTestEnv{client: client, router: router, authSvc: authSvc}
+
+	w := doFullRequestWithToken(env, "GET", "/api/v1/auth/options", nil, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	resp := parseFullResponse(t, w)
+	data := resp["data"].(map[string]interface{})
+	if data["ldap_enabled"] != true {
+		t.Fatalf("ldap_enabled = %v, want true", data["ldap_enabled"])
+	}
+	if data["dev_login_enabled"] != true {
+		t.Fatalf("dev_login_enabled = %v, want true", data["dev_login_enabled"])
 	}
 }

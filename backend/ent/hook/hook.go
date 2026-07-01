@@ -9,6 +9,18 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 )
 
+// The AdminSubscriptionJobFunc type is an adapter to allow the use of ordinary
+// function as AdminSubscriptionJob mutator.
+type AdminSubscriptionJobFunc func(context.Context, *ent.AdminSubscriptionJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AdminSubscriptionJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AdminSubscriptionJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AdminSubscriptionJobMutation", m)
+}
+
 // The CommitCheckpointFunc type is an adapter to allow the use of ordinary
 // function as CommitCheckpoint mutator.
 type CommitCheckpointFunc func(context.Context, *ent.CommitCheckpointMutation) (ent.Value, error)
@@ -45,6 +57,66 @@ func (f CredentialFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CredentialMutation", m)
 }
 
+// The DirectoryDepartmentFunc type is an adapter to allow the use of ordinary
+// function as DirectoryDepartment mutator.
+type DirectoryDepartmentFunc func(context.Context, *ent.DirectoryDepartmentMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DirectoryDepartmentFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DirectoryDepartmentMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DirectoryDepartmentMutation", m)
+}
+
+// The DirectoryMemberFunc type is an adapter to allow the use of ordinary
+// function as DirectoryMember mutator.
+type DirectoryMemberFunc func(context.Context, *ent.DirectoryMemberMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DirectoryMemberFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DirectoryMemberMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DirectoryMemberMutation", m)
+}
+
+// The DirectoryOffboardingActionFunc type is an adapter to allow the use of ordinary
+// function as DirectoryOffboardingAction mutator.
+type DirectoryOffboardingActionFunc func(context.Context, *ent.DirectoryOffboardingActionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DirectoryOffboardingActionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DirectoryOffboardingActionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DirectoryOffboardingActionMutation", m)
+}
+
+// The DirectorySourceFunc type is an adapter to allow the use of ordinary
+// function as DirectorySource mutator.
+type DirectorySourceFunc func(context.Context, *ent.DirectorySourceMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DirectorySourceFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DirectorySourceMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DirectorySourceMutation", m)
+}
+
+// The DirectorySyncRunFunc type is an adapter to allow the use of ordinary
+// function as DirectorySyncRun mutator.
+type DirectorySyncRunFunc func(context.Context, *ent.DirectorySyncRunMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DirectorySyncRunFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DirectorySyncRunMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DirectorySyncRunMutation", m)
+}
+
 // The PRCommitUsageSnapshotFunc type is an adapter to allow the use of ordinary
 // function as PRCommitUsageSnapshot mutator.
 type PRCommitUsageSnapshotFunc func(context.Context, *ent.PRCommitUsageSnapshotMutation) (ent.Value, error)
@@ -55,6 +127,18 @@ func (f PRCommitUsageSnapshotFunc) Mutate(ctx context.Context, m ent.Mutation) (
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PRCommitUsageSnapshotMutation", m)
+}
+
+// The PRSyncJobFunc type is an adapter to allow the use of ordinary
+// function as PRSyncJob mutator.
+type PRSyncJobFunc func(context.Context, *ent.PRSyncJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PRSyncJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PRSyncJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PRSyncJobMutation", m)
 }
 
 // The PrAttributionRunFunc type is an adapter to allow the use of ordinary
@@ -127,6 +211,18 @@ func (f SystemSettingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Valu
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SystemSettingMutation", m)
+}
+
+// The TeamUsageRateMultiplierAuditFunc type is an adapter to allow the use of ordinary
+// function as TeamUsageRateMultiplierAudit mutator.
+type TeamUsageRateMultiplierAuditFunc func(context.Context, *ent.TeamUsageRateMultiplierAuditMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TeamUsageRateMultiplierAuditFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TeamUsageRateMultiplierAuditMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TeamUsageRateMultiplierAuditMutation", m)
 }
 
 // The ToolUsageEventFunc type is an adapter to allow the use of ordinary

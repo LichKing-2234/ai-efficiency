@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import SettingsView from '@/views/SettingsView.vue'
+import { setLocale } from '@/i18n'
 
 const createDefaultProvidersResponse = () => ({
   data: {
@@ -24,6 +25,7 @@ const createDefaultSystemVersionResponse = () => ({
     data: {
       version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
       check_enabled: true,
+      latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
       update_available: false,
     },
   },
@@ -41,7 +43,6 @@ vi.mock('@/api/relayProvider', () => ({
   createRelayProvider: vi.fn(),
   updateRelayProvider: vi.fn(),
   deleteRelayProvider: vi.fn(),
-  testRelayProvider: vi.fn(),
 }))
 
 vi.mock('@/api/credential', () => ({
@@ -51,13 +52,18 @@ vi.mock('@/api/credential', () => ({
   deleteCredential: vi.fn(),
 }))
 
-vi.mock('@/api/user', () => ({
-  getUserProviders: vi.fn(),
-}))
-
 vi.mock('@/api/system', () => ({
   getSystemVersion: vi.fn(),
   checkSystemUpdate: vi.fn(),
+}))
+
+vi.mock('@/api/directory', () => ({
+  listDirectorySources: vi.fn(),
+  createDirectorySource: vi.fn(),
+  updateDirectorySource: vi.fn(),
+  validateDirectorySource: vi.fn(),
+  previewDirectorySource: vi.fn(),
+  startDirectoryRun: vi.fn(),
 }))
 
 vi.mock('@/api/auth', () => ({
@@ -78,7 +84,6 @@ async function resetApiMocks() {
   relayProvider.createRelayProvider.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   relayProvider.updateRelayProvider.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   relayProvider.deleteRelayProvider.mockReset().mockResolvedValue({ data: { data: null } })
-  relayProvider.testRelayProvider.mockReset().mockResolvedValue({ data: { data: { success: true, message: 'Connection successful', response: 'pong' } } })
 
   const credentialApi = await import('@/api/credential') as any
   credentialApi.listCredentials.mockReset().mockResolvedValue({
@@ -101,15 +106,6 @@ async function resetApiMocks() {
   credentialApi.updateCredential.mockReset().mockResolvedValue({ data: { data: { id: 11 } } })
   credentialApi.deleteCredential.mockReset().mockResolvedValue({ data: { data: null } })
 
-  const userApi = await import('@/api/user') as any
-  userApi.getUserProviders.mockReset().mockResolvedValue({
-    data: {
-      data: {
-        providers: [],
-      },
-    },
-  })
-
   const systemApi = await import('@/api/system') as any
   systemApi.getSystemVersion.mockReset().mockResolvedValue(createDefaultSystemVersionResponse())
   systemApi.checkSystemUpdate.mockReset().mockResolvedValue({
@@ -119,15 +115,24 @@ async function resetApiMocks() {
         check_enabled: true,
         checked: true,
         update_available: true,
-        latest_release: { version: 'v0.5.0', url: 'https://example.com/releases/v0.5.0' },
+        latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
       },
     },
   })
+
+  const directoryApi = await import('@/api/directory') as any
+  directoryApi.listDirectorySources.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
+  directoryApi.createDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
+  directoryApi.updateDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
+  directoryApi.validateDirectorySource.mockReset().mockResolvedValue({ data: { data: { valid: true, issues: [] } } })
+  directoryApi.previewDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1, status: 'completed' } } })
+  directoryApi.startDirectoryRun.mockReset().mockResolvedValue({ data: { data: { id: 2, status: 'completed' } } })
 
   const authApi = await import('@/api/auth') as any
   authApi.login.mockReset().mockResolvedValue({ data: { data: null } })
   authApi.getMe.mockReset().mockResolvedValue({ data: { data: {} } })
   authApi.devLogin.mockReset().mockResolvedValue({ data: { data: null } })
+
 }
 
 function createTestRouter() {
@@ -143,10 +148,9 @@ function createTestRouter() {
   })
 }
 
-async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; userProviders?: any[]; credentials?: any[]; systemVersion?: any }) {
+async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; credentials?: any[]; systemVersion?: any }, path = '/settings') {
   const { listProviders } = await import('@/api/scmProvider')
   const { listRelayProviders } = await import('@/api/relayProvider')
-  const { getUserProviders } = await import('@/api/user')
   const { listCredentials } = await import('@/api/credential')
   const { getSystemVersion } = await import('@/api/system')
 
@@ -158,9 +162,6 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
   if (overrides?.relayProviders) {
     ;(listRelayProviders as any).mockResolvedValue({ data: { data: overrides.relayProviders } })
   }
-  if (overrides?.userProviders) {
-    ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: overrides.userProviders } } })
-  }
   if (overrides?.credentials) {
     ;(listCredentials as any).mockResolvedValue({ data: { data: overrides.credentials } })
   }
@@ -169,7 +170,7 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
   }
 
   const router = createTestRouter()
-  await router.push('/settings')
+  await router.push(path)
   await router.isReady()
 
   const wrapper = mount(SettingsView, {
@@ -182,94 +183,84 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
   return wrapper
 }
 
+async function openSettingsSection(wrapper: any, section: string) {
+  await wrapper.get(`[data-testid="settings-tab-${section}"]`).trigger('click')
+  await flushPromises()
+}
+
 describe('SettingsView', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
+    setLocale('en-US')
     await resetApiMocks()
   })
 
-  it('renders SCM providers, relay providers, and credentials sections', async () => {
+  it('renders code platform, relay provider, and credential sections', async () => {
     const wrapper = await mountSettings()
-    expect(wrapper.find('h1').text()).toBe('SCM Providers')
-    expect(wrapper.text()).toContain('System Version')
-    expect(wrapper.text()).toContain('Credentials')
-    expect(wrapper.text()).toContain('Relay Providers')
+    expect(wrapper.find('h1').text()).toBe('Admin Console')
+    expect(wrapper.text()).toContain('AI Services')
+    expect(wrapper.text()).toContain('Code Platforms')
+    expect(wrapper.text()).toContain('Organization & Login')
+    expect(wrapper.text()).toContain('Deployment & Runtime')
+    expect(wrapper.text()).toContain('Advanced Credentials')
     expect(wrapper.text()).toContain('Add Relay Provider')
+
+    await openSettingsSection(wrapper, 'advanced-credentials')
+    expect(wrapper.text()).toContain('Credential store')
+    expect(wrapper.text()).toContain('Add Credential')
   })
 
-  it('shows version and checks updates without binary upgrade controls', async () => {
-    const { checkSystemUpdate } = await import('@/api/system')
+  it('renders directory sync inside organization login settings', async () => {
     const wrapper = await mountSettings()
 
-    expect(wrapper.text()).toContain('v0.4.0')
-    expect(wrapper.text()).toContain('abc1234')
-    expect(wrapper.text()).toContain('Check Updates')
-    expect(wrapper.text()).not.toContain('Apply Update')
-    expect(wrapper.text()).not.toContain('Rollback')
-    expect(wrapper.text()).not.toContain('Restart Service')
+    await openSettingsSection(wrapper, 'organization-login')
 
-    const checkBtn = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
-    await checkBtn!.trigger('click')
-    await flushPromises()
-
-    expect(checkSystemUpdate).toHaveBeenCalled()
-    expect(wrapper.text()).toContain('v0.5.0')
-    expect(wrapper.text()).toContain('Update available')
+    expect(wrapper.text()).toContain('Directory Sync')
+    expect(wrapper.text()).toContain('Departments then members')
+    expect(wrapper.text()).toContain('Copy AI Prompt')
   })
 
-  it('shows version check unavailable when latest-release checks are disabled', async () => {
-    const { checkSystemUpdate } = await import('@/api/system')
-    const wrapper = await mountSettings({
-      systemVersion: {
-        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
-        check_enabled: false,
-        update_available: false,
-      },
-    })
+  it('restores and persists active settings section in the URL query', async () => {
+    const wrapper = await mountSettings(undefined, '/settings?section=code-platforms')
 
-    expect(wrapper.text()).toContain('Version check unavailable')
-    const checkBtn = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
-    expect(checkBtn!.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Code Platforms')
+    expect(wrapper.find('[data-testid="settings-tab-code-platforms"]').attributes('aria-selected')).toBe('true')
 
-    await checkBtn!.trigger('click')
-    await flushPromises()
+    await openSettingsSection(wrapper, 'deployment-runtime')
 
-    expect(checkSystemUpdate).not.toHaveBeenCalled()
+    expect((wrapper.vm as any).$route.query.section).toBe('deployment-runtime')
   })
 
-  it('shows check errors instead of already current for non-comparable versions', async () => {
-    const { checkSystemUpdate } = await import('@/api/system')
-    ;(checkSystemUpdate as any).mockResolvedValue({
-      data: {
-        data: {
-          version: { version: 'dev', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
-          check_enabled: true,
-          checked: true,
-          check_error: 'current version is not semver',
-          update_available: false,
-          latest_release: { version: 'v0.5.0', url: 'https://example.com/releases/v0.5.0' },
-        },
-      },
-    })
-    const wrapper = await mountSettings({
-      systemVersion: {
-        version: { version: 'dev', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
-        check_enabled: true,
-        update_available: false,
-      },
-    })
+  it('switches admin console task zones to Chinese', async () => {
+    setLocale('zh-CN')
+    const wrapper = await mountSettings()
 
-    const checkBtn = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
-    await checkBtn!.trigger('click')
+    expect(wrapper.find('h1').text()).toBe('管理后台')
+    expect(wrapper.text()).toContain('AI 服务配置')
+    expect(wrapper.text()).toContain('代码平台配置')
+    expect(wrapper.text()).toContain('组织与登录')
+    expect(wrapper.text()).toContain('部署与运行')
+    expect(wrapper.text()).toContain('高级凭据')
+    expect(wrapper.text()).toContain('Relay 入口')
+    expect(wrapper.text()).toContain('新增 Relay Provider')
+
+    await openSettingsSection(wrapper, 'deployment-runtime')
+    expect(wrapper.text()).toContain('当前版本')
+    expect(wrapper.text()).toContain('检查更新')
+
+    await openSettingsSection(wrapper, 'ai-services')
+    const addRelayBtn = wrapper.findAll('button').find((b) => b.text() === '新增 Relay Provider')
+    await addRelayBtn!.trigger('click')
     await flushPromises()
-
-    expect(wrapper.text()).toContain('current version is not semver')
-    expect(wrapper.text()).not.toContain('Already current')
+    expect(wrapper.text()).toContain('显示名称')
+    expect(wrapper.text()).toContain('管理员 API Key')
+    expect(wrapper.text()).toContain('加密存储在数据库')
   })
 
   it('creates a secret text credential', async () => {
     const { createCredential } = await import('@/api/credential')
     const wrapper = await mountSettings()
+    await openSettingsSection(wrapper, 'advanced-credentials')
 
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Credential'))
     await addBtn!.trigger('click')
@@ -291,7 +282,7 @@ describe('SettingsView', () => {
     })
   })
 
-  it('sends credential ids when creating an SCM provider', async () => {
+  it('sends credential ids when creating a code platform', async () => {
     const { createProvider } = await import('@/api/scmProvider')
     const wrapper = await mountSettings({
       credentials: [
@@ -299,8 +290,9 @@ describe('SettingsView', () => {
         { id: 13, name: 'Bitbucket SSH', description: '', kind: 'ssh_username_with_private_key', usage_count: 0, summary: {}, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
       ],
     })
+    await openSettingsSection(wrapper, 'code-platforms')
 
-    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Provider')
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Platform')
     await addBtn!.trigger('click')
     await flushPromises()
 
@@ -317,10 +309,59 @@ describe('SettingsView', () => {
       name: 'GitHub Extensions',
       type: 'github',
       base_url: 'https://api.github.com',
+      ssh_host: 'github.com',
       api_credential_id: 12,
       clone_protocol: 'ssh',
       clone_credential_id: 13,
     })
+  })
+
+  it('defaults GitHub code platform ssh host to github.com', async () => {
+    const { createProvider } = await import('@/api/scmProvider')
+    const wrapper = await mountSettings()
+    await openSettingsSection(wrapper, 'code-platforms')
+
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Platform')
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    const sshHostInput = wrapper.find('input[name="provider-ssh-host"]')
+    expect((sshHostInput.element as HTMLInputElement).value).toBe('github.com')
+
+    await wrapper.find('input[name="provider-name"]').setValue('GitHub')
+    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create')
+    await saveBtn!.trigger('click')
+    await flushPromises()
+
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'github',
+      base_url: 'https://api.github.com',
+      ssh_host: 'github.com',
+    }))
+  })
+
+  it('sends ssh host when creating a code platform', async () => {
+    const { createProvider } = await import('@/api/scmProvider')
+    const wrapper = await mountSettings()
+    await openSettingsSection(wrapper, 'code-platforms')
+
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Platform')
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('input[name="provider-name"]').setValue('Bitbucket')
+    await wrapper.find('input[placeholder="https://api.github.com"]').setValue('https://bitbucket-api.example.com')
+    await wrapper.find('input[name="provider-ssh-host"]').setValue('git.example.com')
+
+    const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create')
+    await saveBtn!.trigger('click')
+    await flushPromises()
+
+    expect(createProvider).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Bitbucket',
+      base_url: 'https://bitbucket-api.example.com',
+      ssh_host: 'git.example.com',
+    }))
   })
 
   it('renders relay providers returned from the backend', async () => {
@@ -328,10 +369,9 @@ describe('SettingsView', () => {
       relayProviders: [
         {
           id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
-          base_url: 'https://sub2api.agoraio.cn',
-          admin_url: 'https://sub2api.agoraio.cn',
+          name: 'relay-main',
+          display_name: 'Relay Main',
+          base_url: 'https://relay.example.com',
           admin_api_key: '***',
           is_primary: true,
           enabled: true,
@@ -339,11 +379,30 @@ describe('SettingsView', () => {
       ],
     })
 
-    expect(wrapper.text()).toContain('Sub2API Main')
-    expect(wrapper.text()).toContain('sub2api-main')
-    expect(wrapper.text()).toContain('https://sub2api.agoraio.cn')
+    expect(wrapper.text()).toContain('Relay Main')
+    expect(wrapper.text()).toContain('relay-main')
+    expect(wrapper.text()).toContain('https://relay.example.com')
     expect(wrapper.text()).toContain('Primary')
     expect(wrapper.text()).toContain('Enabled')
+  })
+
+  it('does not expose relay provider testing from admin settings', async () => {
+    const wrapper = await mountSettings({
+      relayProviders: [
+        {
+          id: 1,
+          name: 'relay-main',
+          display_name: 'Relay Main',
+          base_url: 'https://sub2api.example.com',
+          admin_api_key: '***',
+          is_primary: true,
+          enabled: true,
+        },
+      ],
+    })
+
+    expect(wrapper.find('[data-testid="relay-provider-test-1"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Test Relay Provider')
   })
 
   it('shows relay provider empty state', async () => {
@@ -359,10 +418,9 @@ describe('SettingsView', () => {
     await addBtn!.trigger('click')
     await flushPromises()
 
-    await wrapper.find('input[name="relay-provider-name"]').setValue('sub2api-main')
-    await wrapper.find('input[name="relay-provider-display-name"]').setValue('Sub2API Main')
-    await wrapper.find('input[name="relay-provider-base-url"]').setValue('https://sub2api.agoraio.cn')
-    await wrapper.find('input[name="relay-provider-admin-url"]').setValue('https://sub2api.agoraio.cn')
+    await wrapper.find('input[name="relay-provider-name"]').setValue('relay-main')
+    await wrapper.find('input[name="relay-provider-display-name"]').setValue('Relay Main')
+    await wrapper.find('input[name="relay-provider-base-url"]').setValue('https://relay.example.com')
     await wrapper.find('input[name="relay-provider-admin-api-key"]').setValue('admin-test-key')
 
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Create Relay Provider')
@@ -370,14 +428,25 @@ describe('SettingsView', () => {
     await flushPromises()
 
     expect(createRelayProvider).toHaveBeenCalledWith({
-      name: 'sub2api-main',
-      display_name: 'Sub2API Main',
-      base_url: 'https://sub2api.agoraio.cn',
-      admin_url: 'https://sub2api.agoraio.cn',
+      name: 'relay-main',
+      display_name: 'Relay Main',
+      base_url: 'https://relay.example.com',
       admin_api_key: 'admin-test-key',
       is_primary: true,
       enabled: true,
     })
+  })
+
+  it('closes relay provider dialog with Escape', async () => {
+    const wrapper = await mountSettings()
+    const addBtn = wrapper.findAll('button').find((b) => b.text() === 'Add Relay Provider')
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('Create Relay Provider')
   })
 
   it('validates missing relay provider fields', async () => {
@@ -400,10 +469,9 @@ describe('SettingsView', () => {
       relayProviders: [
         {
           id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
-          base_url: 'https://sub2api.agoraio.cn',
-          admin_url: 'https://sub2api.agoraio.cn',
+          name: 'relay-main',
+          display_name: 'Relay Main',
+          base_url: 'https://relay.example.com',
           admin_api_key: '***',
           is_primary: true,
           enabled: true,
@@ -414,16 +482,15 @@ describe('SettingsView', () => {
     await wrapper.find('[data-testid="relay-provider-edit-1"]').trigger('click')
     await flushPromises()
 
-    await wrapper.find('input[name="relay-provider-display-name"]').setValue('Sub2API Secondary')
+    await wrapper.find('input[name="relay-provider-display-name"]').setValue('Relay Secondary')
 
     const saveBtn = wrapper.findAll('button').find((b) => b.text() === 'Update Relay Provider')
     await saveBtn!.trigger('click')
     await flushPromises()
 
     expect(updateRelayProvider).toHaveBeenCalledWith(1, {
-      display_name: 'Sub2API Secondary',
-      base_url: 'https://sub2api.agoraio.cn',
-      admin_url: 'https://sub2api.agoraio.cn',
+      display_name: 'Relay Secondary',
+      base_url: 'https://relay.example.com',
       admin_api_key: undefined,
       is_primary: true,
       enabled: true,
@@ -436,10 +503,9 @@ describe('SettingsView', () => {
       relayProviders: [
         {
           id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
-          base_url: 'https://sub2api.agoraio.cn',
-          admin_url: 'https://sub2api.agoraio.cn',
+          name: 'relay-main',
+          display_name: 'Relay Main',
+          base_url: 'https://relay.example.com',
           admin_api_key: '***',
           is_primary: true,
           enabled: true,
@@ -455,59 +521,79 @@ describe('SettingsView', () => {
     expect(deleteRelayProvider).toHaveBeenCalledWith(1)
   })
 
-  it('tests a relay provider with a custom prompt', async () => {
-    const { testRelayProvider } = await import('@/api/relayProvider')
-    const wrapper = await mountSettings({
-      relayProviders: [
-        {
-          id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
-          base_url: 'https://sub2api.agoraio.cn',
-          admin_url: 'https://sub2api.agoraio.cn',
-          admin_api_key: '***',
-          is_primary: true,
-          enabled: true,
-        },
-      ],
-      userProviders: [
-        {
-          id: 1,
-          name: 'sub2api-main',
-          display_name: 'Sub2API Main',
-          base_url: 'https://sub2api.agoraio.cn',
-          default_model: 'gpt-5.4',
-          is_primary: true,
-          groups: [
-            {
-              group_id: '42',
-              group_name: 'Group Alpha',
-              platform: 'openai',
-              credential: { state: 'existing_hidden', api_key_id: 1, name: 'alice', status: 'active' },
-            },
-          ],
-        },
-      ],
-    })
+  it('renders system version and update check without binary upgrade controls', async () => {
+    const { checkSystemUpdate } = await import('@/api/system')
+    const wrapper = await mountSettings()
+    await openSettingsSection(wrapper, 'deployment-runtime')
+    expect(wrapper.text()).toContain('Deployment & Runtime')
+    expect(wrapper.text()).toContain('v0.4.0')
+    expect(wrapper.text()).toContain('v0.5.0')
+    expect(wrapper.text()).toContain('Check Updates')
+    expect(wrapper.text()).not.toContain('Apply Update')
+    expect(wrapper.text()).not.toContain('Rollback')
+    expect(wrapper.text()).not.toContain('Restart Service')
 
-    await wrapper.find('[data-testid="relay-provider-test-1"]').trigger('click')
+    const checkButton = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
+    await checkButton!.trigger('click')
     await flushPromises()
 
-    const selects = wrapper.findAll('select')
-    await selects[selects.length - 1].setValue('openai')
-    await wrapper.find('input[placeholder="gpt-5.4"]').setValue('gpt-5.4')
-    await wrapper.find('input[placeholder="Hi"]').setValue('Say hello from relay provider test')
-
-    const runTestBtn = wrapper.findAll('button').find((b) => b.text() === 'Run Test')
-    await runTestBtn!.trigger('click')
-    await flushPromises()
-
-    expect(testRelayProvider).toHaveBeenCalledWith(1, { platform: 'openai', model: 'gpt-5.4', prompt: 'Say hello from relay provider test' })
-    expect(wrapper.text()).toContain('Connection successful')
-    expect(wrapper.text()).toContain('pong')
+    expect(checkSystemUpdate).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Update available')
   })
 
-  it('shows loading state when SCM providers are still loading', async () => {
+  it('shows version check unavailable when latest-release checks are disabled', async () => {
+    const { checkSystemUpdate } = await import('@/api/system')
+    const wrapper = await mountSettings({
+      systemVersion: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        check_enabled: false,
+        update_available: false,
+      },
+    })
+    await openSettingsSection(wrapper, 'deployment-runtime')
+
+    expect(wrapper.text()).toContain('Version check unavailable')
+    const checkButton = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
+    expect(checkButton!.attributes('disabled')).toBeDefined()
+
+    await checkButton!.trigger('click')
+    await flushPromises()
+
+    expect(checkSystemUpdate).not.toHaveBeenCalled()
+  })
+
+  it('shows check errors instead of already current for non-comparable versions', async () => {
+    const { checkSystemUpdate } = await import('@/api/system')
+    ;(checkSystemUpdate as any).mockResolvedValue({
+      data: {
+        data: {
+          version: { version: 'dev', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+          check_enabled: true,
+          checked: true,
+          check_error: 'current version is not semver',
+          update_available: false,
+          latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
+        },
+      },
+    })
+    const wrapper = await mountSettings({
+      systemVersion: {
+        version: { version: 'dev', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        check_enabled: true,
+        update_available: false,
+      },
+    })
+    await openSettingsSection(wrapper, 'deployment-runtime')
+
+    const checkButton = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
+    await checkButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('current version is not semver')
+    expect(wrapper.text()).not.toContain('Already current')
+  })
+
+  it('shows loading state when code platforms are still loading', async () => {
     const { listProviders } = await import('@/api/scmProvider')
     ;(listProviders as any).mockReturnValue(new Promise(() => {}))
 

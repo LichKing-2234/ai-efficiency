@@ -266,7 +266,7 @@ func TestDefaultPathsOrdersNewestDefaultFilesFirst(t *testing.T) {
 	t.Setenv("HOME", tmpHome)
 	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
 
-	codexDir := filepath.Join(tmpHome, ".codex")
+	codexDir := filepath.Join(tmpHome, ".codex", "sessions")
 	if err := os.MkdirAll(codexDir, 0o700); err != nil {
 		t.Fatalf("mkdir codex dir: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestDefaultPathsUsesGlobalCodexSessionsOnly(t *testing.T) {
 	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
 
 	workspaceRoot := t.TempDir()
-	globalCodexDir := filepath.Join(tmpHome, ".codex")
+	globalCodexDir := filepath.Join(tmpHome, ".codex", "sessions", "2026", "04", "15")
 	if err := os.MkdirAll(globalCodexDir, 0o700); err != nil {
 		t.Fatalf("mkdir global codex dir: %v", err)
 	}
@@ -307,6 +307,17 @@ func TestDefaultPathsUsesGlobalCodexSessionsOnly(t *testing.T) {
 	if err := os.WriteFile(globalCodex, []byte(`{"timestamp":"2026-04-15T09:00:00Z","type":"session_meta","payload":{"id":"codex-global","cwd":"`+workspaceRoot+`"}}
 {"timestamp":"2026-04-15T09:05:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":2,"reasoning_output_tokens":0,"total_tokens":3}}}}`), 0o600); err != nil {
 		t.Fatalf("write global codex file: %v", err)
+	}
+	for _, ignored := range []string{
+		filepath.Join(tmpHome, ".codex", "debug.jsonl"),
+		filepath.Join(tmpHome, ".codex", "archived_sessions", "old.jsonl"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(ignored), 0o700); err != nil {
+			t.Fatalf("mkdir ignored codex dir: %v", err)
+		}
+		if err := os.WriteFile(ignored, []byte("{}\n"), 0o600); err != nil {
+			t.Fatalf("write ignored codex file: %v", err)
+		}
 	}
 
 	paths := DefaultPaths(workspaceRoot)
@@ -333,7 +344,7 @@ func TestBuildSnapshotFindsOlderValidFileAfterNewerInvalidDefaults(t *testing.T)
 	t.Cleanup(func() { _ = os.Setenv("HOME", origHome) })
 
 	workspaceRoot := "/tmp/repo"
-	codexDir := filepath.Join(tmpHome, ".codex")
+	codexDir := filepath.Join(tmpHome, ".codex", "sessions")
 	if err := os.MkdirAll(codexDir, 0o700); err != nil {
 		t.Fatalf("mkdir codex dir: %v", err)
 	}

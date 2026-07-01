@@ -4,6 +4,9 @@ server:
   port: 8081
   mode: debug  # debug / release
   frontend_url: "http://localhost:8081"
+  # Public backend origin reachable by GitHub/Bitbucket webhooks.
+  # Production deployments should set this to the externally routed HTTPS origin.
+  public_url: "http://localhost:8081"
 
 # AI Efficiency platform database (read-write)
 db:
@@ -20,7 +23,6 @@ redis:
 relay:
   provider: "sub2api"
   url: "http://sub2api.example.com"
-  api_key: ""
   admin_api_key: ""
   model: "claude-sonnet-4-20250514"
   default_group_id: ""

@@ -20,6 +20,7 @@ func NewToolUsageHandler(service *toolusage.Service) *ToolUsageHandler {
 }
 
 type createToolUsageEventRequest struct {
+	RepoConfigID      int            `json:"repo_config_id"`
 	Tool              string         `json:"tool" binding:"required"`
 	WorkspaceID       string         `json:"workspace_id" binding:"required"`
 	ToolSessionID     string         `json:"tool_session_id" binding:"required"`
@@ -40,6 +41,12 @@ type createToolUsageEventRequest struct {
 	RawPayload        map[string]any `json:"raw_payload"`
 }
 
+type createToolUsageEventsBatchRequest struct {
+	Events []createToolUsageEventRequest `json:"events" binding:"required,min=1,dive"`
+}
+
+const maxToolUsageBatchSize = 100
+
 func (h *ToolUsageHandler) Create(c *gin.Context) {
 	uc := auth.GetUserContext(c)
 	if uc == nil {
@@ -54,6 +61,7 @@ func (h *ToolUsageHandler) Create(c *gin.Context) {
 	}
 
 	if err := h.service.CreateUsageEvent(c.Request.Context(), uc.UserID, toolusage.CreateUsageEventRequest{
+		RepoConfigID:      req.RepoConfigID,
 		Tool:              req.Tool,
 		WorkspaceID:       req.WorkspaceID,
 		ToolSessionID:     req.ToolSessionID,
@@ -82,4 +90,67 @@ func (h *ToolUsageHandler) Create(c *gin.Context) {
 	}
 
 	pkg.Created(c, gin.H{"dedupe_key": req.DedupeKey})
+}
+
+func (h *ToolUsageHandler) CreateBatch(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req createToolUsageEventsBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(req.Events) == 0 {
+		pkg.Error(c, http.StatusBadRequest, "events are required")
+		return
+	}
+	if len(req.Events) > maxToolUsageBatchSize {
+		pkg.Error(c, http.StatusBadRequest, "events exceeds max batch size")
+		return
+	}
+
+	items := make([]toolusage.CreateUsageEventRequest, 0, len(req.Events))
+	for _, item := range req.Events {
+		items = append(items, toolusage.CreateUsageEventRequest{
+			RepoConfigID:      item.RepoConfigID,
+			Tool:              item.Tool,
+			WorkspaceID:       item.WorkspaceID,
+			ToolSessionID:     item.ToolSessionID,
+			ToolEventID:       item.ToolEventID,
+			DedupeKey:         item.DedupeKey,
+			UsageUnit:         item.UsageUnit,
+			RequestCount:      item.RequestCount,
+			InputTokens:       item.InputTokens,
+			OutputTokens:      item.OutputTokens,
+			CachedInputTokens: item.CachedInputTokens,
+			ReasoningTokens:   item.ReasoningTokens,
+			CreditUsage:       item.CreditUsage,
+			ContextUsagePct:   item.ContextUsagePct,
+			ObservedStartAt:   item.ObservedStartAt,
+			ObservedEndAt:     item.ObservedEndAt,
+			RawSourcePath:     item.RawSourcePath,
+			RawSourceLocator:  item.RawSourceLocator,
+			RawPayload:        item.RawPayload,
+		})
+	}
+
+	result, err := h.service.CreateUsageEvents(c.Request.Context(), uc.UserID, items)
+	if err != nil {
+		if errors.Is(err, toolusage.ErrUsageEventForbidden) {
+			pkg.Error(c, http.StatusForbidden, err.Error())
+			return
+		}
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	pkg.Created(c, gin.H{
+		"accepted":   result.Accepted,
+		"created":    result.Created,
+		"duplicates": result.Duplicates,
+	})
 }

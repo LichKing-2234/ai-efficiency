@@ -184,14 +184,20 @@ func TestBinaryUpgradeRoutesRemainRemoved(t *testing.T) {
 		versioncheck.NewService(buildinfo.VersionInfo{Version: "v0.4.0"}, nil),
 	))
 
-	for _, path := range []string{
-		"/api/v1/settings/deployment/update/apply",
-		"/api/v1/settings/deployment/update/rollback",
-		"/api/v1/settings/deployment/restart",
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   interface{}
+	}{
+		{method: http.MethodGet, path: "/api/v1/settings/deployment"},
+		{method: http.MethodPost, path: "/api/v1/settings/deployment/update/check"},
+		{method: http.MethodPost, path: "/api/v1/settings/deployment/update/apply", body: map[string]string{"target_version": "v0.5.0"}},
+		{method: http.MethodPost, path: "/api/v1/settings/deployment/update/rollback"},
+		{method: http.MethodPost, path: "/api/v1/settings/deployment/restart"},
 	} {
-		w := doFullRequest(env, http.MethodPost, path, map[string]string{"target_version": "v0.5.0"})
+		w := doFullRequest(env, tc.method, tc.path, tc.body)
 		if w.Code != http.StatusNotFound {
-			t.Fatalf("path %s expected 404, got %d: %s", path, w.Code, w.Body.String())
+			t.Fatalf("%s %s expected 404, got %d: %s", tc.method, tc.path, w.Code, w.Body.String())
 		}
 	}
 }

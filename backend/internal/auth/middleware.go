@@ -31,7 +31,7 @@ func RequireAuth(svc *Service) gin.HandlerFunc {
 			return
 		}
 
-		claims, err := svc.ValidateAccessToken(tokenStr)
+		claims, err := svc.ValidateAccessToken(c.Request.Context(), tokenStr)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":    http.StatusUnauthorized,

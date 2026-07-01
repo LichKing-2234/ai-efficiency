@@ -49,7 +49,7 @@ func FindKiroIDESessionIDs(homeDir, workspaceRoot string) map[string]struct{} {
 			continue
 		}
 		for _, item := range index {
-			if filepath.Clean(strings.TrimSpace(item.WorkspaceDirectory)) != filepath.Clean(strings.TrimSpace(workspaceRoot)) {
+			if !sameWorkspacePath(item.WorkspaceDirectory, workspaceRoot) {
 				continue
 			}
 			sessionID := strings.TrimSpace(item.SessionID)

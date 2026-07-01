@@ -41,7 +41,7 @@ func normalizeAPIPayload(input any) (credential.Payload, error) {
 }
 
 // newGitHubProvider creates a GitHub SCM provider from an API credential payload.
-func newGitHubProvider(baseURL string, apiCredential any, logger *zap.Logger) (scm.SCMProvider, error) {
+func newGitHubProvider(baseURL string, apiCredential any, logger *zap.Logger, callbackURL string) (scm.SCMProvider, error) {
 	apiPayload, err := normalizeAPIPayload(apiCredential)
 	if err != nil {
 		return nil, err
@@ -50,11 +50,11 @@ func newGitHubProvider(baseURL string, apiCredential any, logger *zap.Logger) (s
 	if err != nil {
 		return nil, err
 	}
-	return github.New(baseURL, secret, logger)
+	return github.New(baseURL, secret, logger, callbackURL)
 }
 
 // newBitbucketProvider creates a Bitbucket Server SCM provider from an API credential payload.
-func newBitbucketProvider(baseURL string, apiCredential any, logger *zap.Logger) (scm.SCMProvider, error) {
+func newBitbucketProvider(baseURL string, apiCredential any, logger *zap.Logger, callbackURL string) (scm.SCMProvider, error) {
 	apiPayload, err := normalizeAPIPayload(apiCredential)
 	if err != nil {
 		return nil, err
@@ -63,5 +63,5 @@ func newBitbucketProvider(baseURL string, apiCredential any, logger *zap.Logger)
 	if err != nil {
 		return nil, err
 	}
-	return bitbucket.New(baseURL, secret, logger)
+	return bitbucket.New(baseURL, secret, logger, callbackURL)
 }

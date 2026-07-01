@@ -59,4 +59,54 @@ type Provider interface {
 	UpdateUserAPIKeyStatus(ctx context.Context, keyID int64, status string) error
 	RevokeUserAPIKey(ctx context.Context, keyID int64) error
 	ListUsageLogsByAPIKeyExact(ctx context.Context, apiKeyID int64, from, to time.Time) ([]UsageLog, error)
+
+	GetUserUsageDashboard(ctx context.Context, login, password string, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error)
+}
+
+// PlatformChatCompleter is an optional extension for relay implementations that
+// need platform-native protocol probes instead of a single OpenAI-compatible path.
+type PlatformChatCompleter interface {
+	ChatCompletionForPlatform(ctx context.Context, platform string, req ChatCompletionRequest) (*ChatCompletionResponse, error)
+}
+
+// PlatformModelLister is an optional extension for relay implementations that
+// expose platform-native model-list endpoints.
+type PlatformModelLister interface {
+	ListModelsForPlatform(ctx context.Context, platform string) ([]ModelOption, error)
+}
+
+// UserDisabler is an optional extension for relay implementations that can
+// disable upstream users without exposing provider-specific request details to
+// admin/offboarding handlers.
+type UserDisabler interface {
+	DisableUser(ctx context.Context, userID int64) error
+}
+
+type SubjectUsageDashboardProvider interface {
+	GetUsageDashboardForUser(ctx context.Context, relayUserID int64, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error)
+}
+
+type TeamUsageSummaryProvider interface {
+	GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params TeamUsageSummaryParams) (map[int64]TeamUserUsageStats, error)
+}
+
+type TeamMemberTrendProvider interface {
+	GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error)
+}
+
+type UserDirectoryProvider interface {
+	ListUsers(ctx context.Context) ([]User, error)
+}
+
+type UserSubscriptionLister interface {
+	ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]UserSubscription, error)
+}
+
+type UserSubscriptionQuotaResetter interface {
+	ResetSubscriptionQuotaForUser(ctx context.Context, relayUserID, groupID int64) error
+}
+
+type GroupRateMultiplierManager interface {
+	ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
+	ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error
 }

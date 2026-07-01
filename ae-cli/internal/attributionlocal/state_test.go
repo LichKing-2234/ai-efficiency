@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func TestAttributionRootDirUsesAeCliState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if got, want := AttributionRootDir(), filepath.Join(home, ".ae-cli", "state", "attribution"); got != want {
+		t.Fatalf("AttributionRootDir() = %q, want %q", got, want)
+	}
+}
+
 func TestSaveJSONAndLoadJSONRoundTrip(t *testing.T) {
 	t.Parallel()
 

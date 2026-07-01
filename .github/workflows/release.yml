@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - '!v*-cli.*'
   workflow_dispatch:
     inputs:
       tag:
@@ -41,6 +42,10 @@ jobs:
           fi
 
           echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+          if echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-cli\.'; then
+            echo "Platform release workflow must not publish CLI bridge tag $TAG; use ae-cli Bridge Release instead" >&2
+            exit 1
+          fi
 
           VERSION="${TAG#v}"
           MAJOR="${VERSION%%.*}"
@@ -77,7 +82,8 @@ jobs:
       - id: owner
         run: echo "owner_lower=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-  verify:
+  backend-test:
+    name: verify / backend
     needs: prepare
     runs-on: ubuntu-latest
     services:
@@ -105,28 +111,63 @@ jobs:
         with:
           go-version-file: backend/go.mod
           check-latest: false
-          cache-dependency-path: |
-            backend/go.sum
-            ae-cli/go.sum
+          cache-dependency-path: backend/go.sum
+      - name: Test backend
+        working-directory: backend
+        run: go test ./...
+
+  frontend-test:
+    name: verify / frontend
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
-      - name: Test backend
-        working-directory: backend
-        run: go test ./...
-      - name: Test ae-cli
-        working-directory: ae-cli
-        run: go test ./...
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
       - name: Test frontend
         working-directory: frontend
         run: npm test
+
+  release-frontend-embedding-test:
+    name: verify / release frontend embedding
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
       - name: Validate release frontend embedding
         run: bash deploy/test/release-frontend-embed-test.sh
+
+  deploy-validation:
+    name: verify / deploy validation
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
       - name: Validate deploy shell script
         run: bash -n deploy/docker-deploy.sh
       - name: Validate compose configs
@@ -150,16 +191,32 @@ jobs:
           validate_compose deploy/docker-compose.external.yml
       - name: Test docker bootstrap script
         run: bash deploy/test/docker-deploy-bootstrap-test.sh
+      - name: Test Dockerfile multi-arch build contract
+        run: bash deploy/test/dockerfile-multiarch-test.sh
 
-  release:
+  verify:
+    needs:
+      - backend-test
+      - frontend-test
+      - release-frontend-embedding-test
+      - deploy-validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark release verification complete
+        run: echo "all release verification jobs passed"
+
+  ensure-release-tag:
     needs: [prepare, verify]
     runs-on: ubuntu-latest
+    outputs:
+      release_ref: ${{ steps.tag.outputs.release_ref }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ needs.prepare.outputs.checkout_ref }}
-      - name: Ensure release tag exists and checkout tag
+      - id: tag
+        name: Ensure release tag exists
         run: |
           TAG="${{ needs.prepare.outputs.tag }}"
 
@@ -171,25 +228,18 @@ jobs:
           fi
 
           git fetch --tags --force origin
-          git checkout "refs/tags/$TAG"
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: backend/go.mod
-          check-latest: false
-          cache-dependency-path: |
-            backend/go.sum
-            ae-cli/go.sum
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-      - name: Stage frontend bundle for backend release assets
-        run: bash deploy/prepare-release-frontend.sh
+          git rev-parse "refs/tags/$TAG" >/dev/null
+          echo "release_ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
 
+  release-image:
+    name: release / GHCR image
+    needs: [prepare, ensure-release-tag]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.ensure-release-tag.outputs.release_ref }}
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -222,6 +272,33 @@ jobs:
             APP_VERSION=${{ needs.prepare.outputs.tag }}
             APP_COMMIT=${{ needs.prepare.outputs.commit_sha }}
             APP_BUILD_TIME=${{ needs.prepare.outputs.build_time }}
+
+  release-binaries:
+    name: release / binaries
+    needs: [prepare, ensure-release-tag]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.ensure-release-tag.outputs.release_ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache-dependency-path: |
+            backend/go.sum
+            ae-cli/go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Stage frontend bundle for backend release assets
+        run: bash deploy/prepare-release-frontend.sh
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:

@@ -6,8 +6,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,10 +17,10 @@ import (
 	"sync"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/relayprovider"
 	authpkg "github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -61,7 +62,6 @@ func (h *ProviderHandler) getOrCreateRelayProvider(p *ent.RelayProvider) relay.P
 	rp = relay.NewSub2apiProvider(
 		http.DefaultClient,
 		p.BaseURL,
-		p.AdminURL,
 		adminKey,
 		p.DefaultModel,
 		h.logger,
@@ -107,67 +107,63 @@ func (h *ProviderHandler) ListForUser(c *gin.Context) {
 		return
 	}
 
-	user, err := h.entClient.User.Get(ctx, uc.UserID)
+	userSetupSvc := usersetup.NewService(h.entClient, h, h.encryptionKey)
+	providerSummaries, err := userSetupSvc.ListProviders(ctx, usersetup.ListProvidersRequest{UserID: uc.UserID})
 	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "failed to get user")
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
-	if user.RelayUserID == nil {
-		primaryProvider, err := h.entClient.RelayProvider.Query().
-			Where(relayprovider.IsPrimaryEQ(true), relayprovider.EnabledEQ(true)).
-			First(ctx)
-		if err != nil || primaryProvider == nil {
-			pkg.Success(c, gin.H{"providers": []providerResponse{}})
-			return
-		}
-		rp := h.getOrCreateRelayProvider(primaryProvider)
-		relayUser, err := rp.FindUserByEmail(ctx, user.Email)
-		if err != nil || relayUser == nil {
-			pkg.Success(c, gin.H{
-				"providers": []providerResponse{},
-				"message":   "当前账号未关联 relay server，无法自动配置 AI 工具。请联系管理员。",
-			})
-			return
-		}
-		relayID := int(relayUser.ID)
-		h.entClient.User.UpdateOneID(user.ID).SetRelayUserID(relayID).Save(ctx)
-		user.RelayUserID = &relayID
-	}
-
-	providers, err := h.entClient.RelayProvider.Query().
-		Where(relayprovider.EnabledEQ(true)).
-		All(ctx)
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "failed to list providers")
-		return
-	}
-
-	var result []providerResponse
-	for _, p := range providers {
-		rp := h.getOrCreateRelayProvider(p)
-
-		// Try to find existing ae-cli-auto key first; only create if none exists.
+	result := make([]providerResponse, 0, len(providerSummaries.Providers))
+	for _, p := range providerSummaries.Providers {
 		var apiKey string
 		var apiKeyID int64
-		keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
-		if err == nil {
-			for _, k := range keys {
-				if k.Name == "ae-cli-auto" && k.Status == "active" {
-					apiKeyID = k.ID
-					break
+		for _, group := range p.Groups {
+			if group.Credential.APIKeyID > 0 {
+				apiKeyID = group.Credential.APIKeyID
+				apiKey = group.Credential.Key
+				break
+			}
+		}
+		if apiKeyID == 0 && len(p.Groups) > 0 {
+			created, err := userSetupSvc.CreateGroupCredential(ctx, usersetup.CreateGroupCredentialRequest{
+				UserID:     uc.UserID,
+				ProviderID: p.ID,
+				GroupID:    p.Groups[0].GroupID,
+			})
+			if err != nil {
+				if errors.Is(err, usersetup.ErrManagedKeyAlreadyExists) {
+					refreshed, refreshErr := userSetupSvc.ListProviders(ctx, usersetup.ListProvidersRequest{UserID: uc.UserID})
+					if refreshErr == nil {
+						for _, refreshedProvider := range refreshed.Providers {
+							if refreshedProvider.ID != p.ID {
+								continue
+							}
+							for _, group := range refreshedProvider.Groups {
+								if group.Credential.APIKeyID > 0 {
+									apiKeyID = group.Credential.APIKeyID
+									apiKey = group.Credential.Key
+									break
+								}
+							}
+						}
+					}
+				} else {
+					h.logger.Warn("failed to create API key", zap.String("provider", p.Name), zap.Error(err))
 				}
+			} else {
+				apiKey = created.Secret
+				apiKeyID = created.APIKeyID
 			}
 		}
 		if apiKeyID == 0 {
-			// No existing key found — create a new one.
-			newKey, err := rp.CreateUserAPIKey(ctx, int64(*user.RelayUserID), relay.APIKeyCreateRequest{Name: "ae-cli-auto"})
-			if err != nil {
-				h.logger.Warn("failed to create API key", zap.String("provider", p.Name), zap.Error(err))
-				continue
+			for _, group := range p.Groups {
+				if group.Credential.APIKeyID > 0 {
+					apiKeyID = group.Credential.APIKeyID
+					apiKey = group.Credential.Key
+					break
+				}
 			}
-			apiKey = newKey.Secret
-			apiKeyID = newKey.ID
 		}
 
 		result = append(result, providerResponse{
@@ -189,7 +185,6 @@ type adminProviderResponse struct {
 	Name         string `json:"name"`
 	DisplayName  string `json:"display_name"`
 	BaseURL      string `json:"base_url"`
-	AdminURL     string `json:"admin_url"`
 	RelayType    string `json:"relay_type"`
 	AdminAPIKey  string `json:"admin_api_key"`
 	DefaultModel string `json:"default_model"`
@@ -197,8 +192,9 @@ type adminProviderResponse struct {
 	Enabled      bool   `json:"enabled"`
 }
 
-type adminProviderTestRequest struct {
+type userProviderTestRequest struct {
 	Platform string `json:"platform"`
+	GroupID  string `json:"group_id"`
 	Model    string `json:"model"`
 	Prompt   string `json:"prompt"`
 }
@@ -209,7 +205,6 @@ func toAdminProviderResponse(p *ent.RelayProvider) adminProviderResponse {
 		Name:         p.Name,
 		DisplayName:  p.DisplayName,
 		BaseURL:      p.BaseURL,
-		AdminURL:     p.AdminURL,
 		RelayType:    p.RelayType,
 		AdminAPIKey:  "***",
 		DefaultModel: p.DefaultModel,
@@ -239,7 +234,6 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 		Name         string `json:"name" binding:"required"`
 		DisplayName  string `json:"display_name" binding:"required"`
 		BaseURL      string `json:"base_url" binding:"required"`
-		AdminURL     string `json:"admin_url" binding:"required"`
 		RelayType    string `json:"relay_type"`
 		AdminAPIKey  string `json:"admin_api_key" binding:"required"`
 		DefaultModel string `json:"default_model"`
@@ -264,7 +258,6 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 		SetName(req.Name).
 		SetDisplayName(req.DisplayName).
 		SetBaseURL(req.BaseURL).
-		SetAdminURL(req.AdminURL).
 		SetAdminAPIKey(encryptedKey).
 		SetIsPrimary(req.IsPrimary).
 		SetEnabled(req.Enabled)
@@ -299,7 +292,6 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	var req struct {
 		DisplayName  string `json:"display_name"`
 		BaseURL      string `json:"base_url"`
-		AdminURL     string `json:"admin_url"`
 		RelayType    string `json:"relay_type"`
 		AdminAPIKey  string `json:"admin_api_key"`
 		DefaultModel string `json:"default_model"`
@@ -319,9 +311,6 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	}
 	if req.BaseURL != "" {
 		update.SetBaseURL(req.BaseURL)
-	}
-	if req.AdminURL != "" {
-		update.SetAdminURL(req.AdminURL)
 	}
 	if req.RelayType != "" {
 		update.SetRelayType(req.RelayType)
@@ -370,7 +359,7 @@ func (h *ProviderHandler) Delete(c *gin.Context) {
 	pkg.Success(c, gin.H{"message": "deleted"})
 }
 
-// Test handles POST /api/v1/admin/providers/:id/test.
+// Test handles POST /api/v1/user/providers/:id/test.
 func (h *ProviderHandler) Test(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -408,7 +397,7 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		return
 	}
 
-	var req adminProviderTestRequest
+	var req userProviderTestRequest
 	if c.Request.Body != nil {
 		reqBody, err := io.ReadAll(c.Request.Body)
 		if err != nil {
@@ -432,6 +421,11 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, "platform is required")
 		return
 	}
+	groupID := strings.TrimSpace(req.GroupID)
+	if groupID == "" {
+		pkg.Error(c, http.StatusBadRequest, "group_id is required")
+		return
+	}
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
 		pkg.Error(c, http.StatusBadRequest, "model is required")
@@ -449,33 +443,39 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 	}
 
 	name := preferredRelayTestKeyName(strings.TrimSpace(user.Username), strings.TrimSpace(user.Email))
-	selected := pickRelayTestKey(filterRelayTestKeys(keys, platform, name))
+	selected := pickRelayTestKey(filterRelayTestKeys(keys, platform, groupID, name))
 	if selected == nil {
-		selected = pickRelayTestKey(filterRelayTestKeys(keys, platform, ""))
+		selected = pickRelayTestKey(filterRelayTestKeys(keys, platform, groupID, ""))
 	}
 	if selected == nil || strings.TrimSpace(selected.Key) == "" {
 		pkg.Success(c, gin.H{
 			"success": false,
-			"message": fmt.Sprintf("no active API key found for platform %s", platform),
+			"message": fmt.Sprintf("no active API key found for group %s and platform %s", groupID, platform),
 		})
 		return
 	}
 
 	maxTokens := 64
-	resp, err := relay.NewSub2apiProvider(
+	testProvider := relay.NewSub2apiProvider(
 		http.DefaultClient,
 		provider.BaseURL,
-		provider.AdminURL,
 		selected.Key,
 		model,
 		h.logger,
-	).ChatCompletion(ctx, relay.ChatCompletionRequest{
+	)
+	testReq := relay.ChatCompletionRequest{
 		Model: model,
 		Messages: []relay.ChatMessage{
 			{Role: "user", Content: prompt},
 		},
 		MaxTokens: &maxTokens,
-	})
+	}
+	var resp *relay.ChatCompletionResponse
+	if platformCompleter, ok := testProvider.(relay.PlatformChatCompleter); ok {
+		resp, err = platformCompleter.ChatCompletionForPlatform(ctx, platform, testReq)
+	} else {
+		resp, err = testProvider.ChatCompletion(ctx, testReq)
+	}
 	if err != nil {
 		pkg.Success(c, gin.H{
 			"success": false,
@@ -492,6 +492,105 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		data["response"] = content
 	}
 	pkg.Success(c, data)
+}
+
+// Models handles GET /api/v1/user/providers/:id/groups/:group_id/models.
+func (h *ProviderHandler) Models(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid provider id")
+		return
+	}
+
+	ctx := c.Request.Context()
+	uc := authpkg.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	platform := strings.TrimSpace(c.Query("platform"))
+	if platform == "" {
+		pkg.Error(c, http.StatusBadRequest, "platform is required")
+		return
+	}
+	groupID := strings.TrimSpace(c.Param("group_id"))
+	if groupID == "" {
+		pkg.Error(c, http.StatusBadRequest, "group_id is required")
+		return
+	}
+
+	user, err := h.entClient.User.Get(ctx, uc.UserID)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to get user")
+		return
+	}
+	if user.RelayUserID == nil {
+		pkg.Success(c, gin.H{
+			"models":  []relay.ModelOption{},
+			"message": "current account is not linked to a relay user",
+		})
+		return
+	}
+
+	provider, err := h.entClient.RelayProvider.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "provider not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get provider")
+		return
+	}
+
+	rp := h.getOrCreateRelayProvider(provider)
+	keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
+	if err != nil {
+		pkg.Success(c, gin.H{
+			"models":  []relay.ModelOption{},
+			"message": fmt.Sprintf("list user api keys: %v", err),
+		})
+		return
+	}
+
+	name := preferredRelayTestKeyName(strings.TrimSpace(user.Username), strings.TrimSpace(user.Email))
+	selected := pickRelayTestKey(filterRelayTestKeys(keys, platform, groupID, name))
+	if selected == nil {
+		selected = pickRelayTestKey(filterRelayTestKeys(keys, platform, groupID, ""))
+	}
+	if selected == nil || strings.TrimSpace(selected.Key) == "" {
+		pkg.Success(c, gin.H{
+			"models":  []relay.ModelOption{},
+			"message": fmt.Sprintf("no active API key found for group %s and platform %s", groupID, platform),
+		})
+		return
+	}
+
+	userScopedProvider := relay.NewSub2apiProvider(
+		http.DefaultClient,
+		provider.BaseURL,
+		selected.Key,
+		"",
+		h.logger,
+	)
+	lister, ok := userScopedProvider.(relay.PlatformModelLister)
+	if !ok {
+		pkg.Success(c, gin.H{
+			"models":  []relay.ModelOption{},
+			"message": "relay provider does not support model listing",
+		})
+		return
+	}
+	models, err := lister.ListModelsForPlatform(ctx, platform)
+	if err != nil {
+		pkg.Success(c, gin.H{
+			"models":  []relay.ModelOption{},
+			"message": err.Error(),
+		})
+		return
+	}
+
+	pkg.Success(c, gin.H{"models": models})
 }
 
 func encryptAESGCM(plaintext, keyHex string) (string, error) {
@@ -561,13 +660,16 @@ func preferredRelayTestKeyName(username, email string) string {
 	return email
 }
 
-func filterRelayTestKeys(keys []relay.APIKey, platform, name string) []relay.APIKey {
+func filterRelayTestKeys(keys []relay.APIKey, platform, groupID, name string) []relay.APIKey {
 	filtered := make([]relay.APIKey, 0, len(keys))
 	for _, key := range keys {
 		if !strings.EqualFold(strings.TrimSpace(key.Status), "active") {
 			continue
 		}
 		if key.Group == nil || !strings.EqualFold(strings.TrimSpace(key.Group.Platform), strings.TrimSpace(platform)) {
+			continue
+		}
+		if strconv.FormatInt(key.Group.ID, 10) != strings.TrimSpace(groupID) {
 			continue
 		}
 		if strings.TrimSpace(name) != "" && key.Name != name {

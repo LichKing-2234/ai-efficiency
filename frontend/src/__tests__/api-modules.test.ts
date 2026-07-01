@@ -14,11 +14,17 @@ vi.mock('@/api/client', () => {
 
 import client from '@/api/client'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
-import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider, testRelayProvider } from '@/api/relayProvider'
-import { listPRs, getPR, syncPRs, settlePR, refreshPRUsage } from '@/api/pr'
+import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider } from '@/api/relayProvider'
+import { listPRs, getPR, syncPRs, getPRSyncJob, getLatestPRSyncJob, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
-import { getUserProviders, createGroupCredential, regenerateGroupCredential } from '@/api/user'
 import { getSystemVersion, checkSystemUpdate } from '@/api/system'
+import { getUserProviders, createGroupCredential, regenerateGroupCredential, getUserProviderModels, testUserProvider } from '@/api/user'
+import {
+  startAdminUserSubscriptionJob,
+  getAdminUserSubscriptionJob,
+  getLatestAdminUserSubscriptionJob,
+  listAdminUserDepartments,
+} from '@/api/adminUsers'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -65,6 +71,67 @@ describe('scmProvider API', () => {
   })
 })
 
+describe('repo API', () => {
+  it('listRepos calls GET /repos with scoped pagination params', async () => {
+    const { listRepos } = await import('@/api/repo')
+    mockClient.get.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+
+    await listRepos({
+      page: 3,
+      pageSize: 15,
+      scmProviderId: 7,
+      scope: 'org',
+      bindingState: 'bound',
+    })
+
+    expect(mockClient.get).toHaveBeenCalledWith('/repos', {
+      params: {
+        page: 3,
+        page_size: 15,
+        scm_provider_id: 7,
+        scope: 'org',
+        binding_state: 'bound',
+      },
+    })
+  })
+
+  it('getRepoInventory calls GET /repos/inventory', async () => {
+    const { getRepoInventory } = await import('@/api/repo')
+    mockClient.get.mockResolvedValue({ data: { data: [] } })
+
+    await getRepoInventory()
+
+    expect(mockClient.get).toHaveBeenCalledWith('/repos/inventory')
+  })
+
+  it('repairFailedWebhooks calls POST /repos/repair-webhooks', async () => {
+    const { repairFailedWebhooks } = await import('@/api/repo')
+    mockClient.post.mockResolvedValue({
+      data: {
+        data: {
+          summary: { scanned: 0, repaired: 0, already_registered: 0, failed: 0 },
+          items: [],
+        },
+      },
+    })
+
+    await repairFailedWebhooks({ force: true })
+
+    expect(mockClient.post).toHaveBeenCalledWith('/repos/repair-webhooks', { force: true })
+  })
+
+  it('repairWebhook calls POST /repos/:id/repair-webhook', async () => {
+    const { repairWebhook } = await import('@/api/repo')
+    mockClient.post.mockResolvedValue({
+      data: { data: { repo_config_id: 5, webhook_status: 'registered' } },
+    })
+
+    await repairWebhook(5, { force: false })
+
+    expect(mockClient.post).toHaveBeenCalledWith('/repos/5/repair-webhook', { force: false })
+  })
+})
+
 describe('relayProvider API', () => {
   it('listRelayProviders calls GET /admin/providers', async () => {
     mockClient.get.mockResolvedValue({ data: { data: [] } })
@@ -74,10 +141,9 @@ describe('relayProvider API', () => {
 
   it('createRelayProvider calls POST /admin/providers', async () => {
     const payload = {
-      name: 'sub2api-main',
-      display_name: 'Sub2API Main',
-      base_url: 'https://sub2api.agoraio.cn',
-      admin_url: 'https://sub2api.agoraio.cn',
+      name: 'relay-main',
+      display_name: 'Relay Main',
+      base_url: 'https://relay.example.com',
       admin_api_key: 'admin-key',
       is_primary: true,
       enabled: true,
@@ -88,7 +154,7 @@ describe('relayProvider API', () => {
   })
 
   it('updateRelayProvider calls PUT /admin/providers/:id', async () => {
-    const payload = { display_name: 'Sub2API Secondary', enabled: false }
+    const payload = { display_name: 'Relay Secondary', enabled: false }
     mockClient.put.mockResolvedValue({ data: { data: { id: 3, ...payload } } })
     await updateRelayProvider(3, payload)
     expect(mockClient.put).toHaveBeenCalledWith('/admin/providers/3', payload)
@@ -100,11 +166,6 @@ describe('relayProvider API', () => {
     expect(mockClient.delete).toHaveBeenCalledWith('/admin/providers/7')
   })
 
-  it('testRelayProvider calls POST /admin/providers/:id/test', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { success: true, message: 'OK' } } })
-    await testRelayProvider(3, { platform: 'openai', model: 'gpt-5.4', prompt: 'Hi' })
-    expect(mockClient.post).toHaveBeenCalledWith('/admin/providers/3/test', { platform: 'openai', model: 'gpt-5.4', prompt: 'Hi' })
-  })
 })
 
 describe('pr API', () => {
@@ -128,10 +189,22 @@ describe('pr API', () => {
     expect(mockClient.get).toHaveBeenCalledWith('/prs/42')
   })
 
-  it('syncPRs calls POST /repos/:id/sync-prs', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { created: 2, updated: 1, total: 3 } } })
+  it('syncPRs starts a PR sync job', async () => {
+    mockClient.post.mockResolvedValue({ data: { data: { job_id: 44, status: 'queued', phase: 'queued' } } })
     await syncPRs(5)
     expect(mockClient.post).toHaveBeenCalledWith('/repos/5/sync-prs')
+  })
+
+  it('getPRSyncJob calls GET /pr-sync-jobs/:id', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { id: 44, status: 'running', phase: 'fetching_prs' } } })
+    await getPRSyncJob(44)
+    expect(mockClient.get).toHaveBeenCalledWith('/pr-sync-jobs/44')
+  })
+
+  it('getLatestPRSyncJob fetches the latest repo PR sync job', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { id: 44, status: 'running', phase: 'fetching_prs' } } })
+    await getLatestPRSyncJob(5)
+    expect(mockClient.get).toHaveBeenCalledWith('/repos/5/pr-sync-job/latest')
   })
 
   it('settlePR calls POST /prs/:id/settle', async () => {
@@ -156,14 +229,13 @@ describe('efficiency API', () => {
 })
 
 describe('system API', () => {
-  it('getSystemVersion calls GET /system/version', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: { version: { version: 'v0.4.0' } } } })
+  it('calls system version endpoints', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: {} } })
+    mockClient.post.mockResolvedValue({ data: { data: {} } })
+
     await getSystemVersion()
     expect(mockClient.get).toHaveBeenCalledWith('/system/version')
-  })
 
-  it('checkSystemUpdate calls POST /system/version/check', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { update_available: true } } })
     await checkSystemUpdate()
     expect(mockClient.post).toHaveBeenCalledWith('/system/version/check')
   })
@@ -182,5 +254,53 @@ describe('user API aggregate smoke', () => {
 
     await regenerateGroupCredential(7, '42')
     expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/groups/42/credential/regenerate')
+
+    await getUserProviderModels(7, '42', 'openai')
+    expect(mockClient.get).toHaveBeenCalledWith('/user/providers/7/groups/42/models', { params: { platform: 'openai' } })
+
+    await testUserProvider(7, { platform: 'openai', group_id: '42', model: 'gpt-5.4', prompt: 'Hi' })
+    expect(mockClient.post).toHaveBeenCalledWith('/user/providers/7/test', { platform: 'openai', group_id: '42', model: 'gpt-5.4', prompt: 'Hi' })
+  })
+})
+
+describe('admin users API', () => {
+  it('starts admin user subscription jobs without a timeout override', async () => {
+    const payload = {
+      scope: 'selected' as const,
+      user_ids: [1, 2],
+      operation: 'add' as const,
+      provider_id: 7,
+      group_id: '42',
+      validity_days: 30,
+    }
+    mockClient.post.mockResolvedValue({ data: { data: { id: 12, status: 'queued', phase: 'queued' } } })
+
+    await startAdminUserSubscriptionJob(payload)
+
+    expect(mockClient.post).toHaveBeenCalledWith('/admin/users/subscription-jobs', payload)
+  })
+
+  it('gets admin user subscription job progress', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { id: 12, status: 'running', phase: 'processing' } } })
+
+    await getAdminUserSubscriptionJob(12)
+
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/users/subscription-jobs/12')
+  })
+
+  it('gets the latest admin user subscription job', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: null } })
+
+    await getLatestAdminUserSubscriptionJob()
+
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/users/subscription-jobs/latest')
+  })
+
+  it('lists admin user departments for the in-route department view', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { items: [] } } })
+
+    await listAdminUserDepartments()
+
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/users/departments')
   })
 })

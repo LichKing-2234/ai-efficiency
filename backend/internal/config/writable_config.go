@@ -62,6 +62,7 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"port":         cfg.Server.Port,
 			"mode":         cfg.Server.Mode,
 			"frontend_url": cfg.Server.FrontendURL,
+			"public_url":   cfg.Server.PublicURL,
 		},
 		"db": map[string]any{
 			"dsn":               cfg.DB.DSN,
@@ -77,8 +78,6 @@ func configToYAMLMap(cfg *Config) map[string]any {
 		"relay": map[string]any{
 			"provider":         cfg.Relay.Provider,
 			"url":              cfg.Relay.URL,
-			"admin_url":        cfg.Relay.AdminURL,
-			"api_key":          cfg.Relay.APIKey,
 			"admin_api_key":    cfg.Relay.AdminAPIKey,
 			"model":            cfg.Relay.Model,
 			"default_group_id": cfg.Relay.DefaultGroupID,

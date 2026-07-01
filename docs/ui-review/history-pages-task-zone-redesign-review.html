@@ -1,0 +1,1167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 效能平台 - 历史页面任务分区重设计评审</title>
+  <style>
+    :root {
+      --bg: #f6fbfc;
+      --surface: #ffffff;
+      --surface-soft: #f0f8fa;
+      --line: #d9e7eb;
+      --line-strong: #b9d8df;
+      --text: #12323d;
+      --muted: #60757e;
+      --subtle: #7d9199;
+      --primary: #0891b2;
+      --primary-dark: #0e7490;
+      --orange: #f97316;
+      --green: #15803d;
+      --amber: #b45309;
+      --red: #b91c1c;
+      --blue: #2563eb;
+      --nav: #0f172a;
+      --nav-2: #1e293b;
+      --shadow: 0 14px 34px rgba(18, 50, 61, 0.10);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    button, input, select {
+      font: inherit;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    h1, h2, h3, h4, p {
+      margin: 0;
+    }
+
+    .page {
+      min-height: 100vh;
+    }
+
+    .hero {
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff 0%, #eff9fb 100%);
+    }
+
+    .hero-inner {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 34px 24px 28px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .eyebrow {
+      color: var(--primary-dark);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin-top: 8px;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.14;
+      letter-spacing: 0;
+    }
+
+    .hero-copy {
+      max-width: 760px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .decision-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 16px;
+      box-shadow: 0 10px 24px rgba(18, 50, 61, 0.08);
+    }
+
+    .decision-box strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    .decision-box p {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .sticky-nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid var(--line);
+      background: rgba(246, 251, 252, 0.92);
+      backdrop-filter: blur(10px);
+    }
+
+    .sticky-nav-inner {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 10px 24px;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+    }
+
+    .nav-pill {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+      padding: 8px 12px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .nav-pill:hover {
+      border-color: var(--primary);
+      color: var(--primary-dark);
+    }
+
+    .content {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .section {
+      margin-bottom: 28px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 14px;
+    }
+
+    .section-title h2 {
+      font-size: 23px;
+      letter-spacing: 0;
+    }
+
+    .section-title p {
+      max-width: 700px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 16px;
+      box-shadow: 0 8px 20px rgba(18, 50, 61, 0.05);
+    }
+
+    .card h3 {
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    .card p {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border-radius: 999px;
+      background: #e7f8fb;
+      color: var(--primary-dark);
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .tag.gray {
+      background: #f1f5f9;
+      color: #475569;
+    }
+
+    .tag.green {
+      background: #dcfce7;
+      color: var(--green);
+    }
+
+    .tag.amber {
+      background: #fef3c7;
+      color: var(--amber);
+    }
+
+    .tag.red {
+      background: #fee2e2;
+      color: var(--red);
+    }
+
+    .audit-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .audit-row {
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1fr) 120px;
+      gap: 12px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdfe;
+      padding: 12px;
+      font-size: 13px;
+    }
+
+    .audit-row code {
+      color: var(--primary-dark);
+      font-weight: 700;
+    }
+
+    .audit-row p {
+      color: var(--muted);
+    }
+
+    .shell-preview {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .browser-bar {
+      min-height: 42px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fbfc;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .browser-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .browser-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #cbd5e1;
+    }
+
+    .app-frame {
+      min-height: 640px;
+      display: grid;
+      grid-template-columns: 238px minmax(0, 1fr);
+      background: #f7fbfc;
+    }
+
+    .app-nav {
+      background: var(--nav);
+      color: #e5edf2;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .app-logo {
+      padding: 18px 18px 14px;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .nav-group {
+      border-top: 1px solid rgba(148, 163, 184, 0.18);
+      padding: 12px 10px;
+    }
+
+    .nav-group:first-of-type {
+      border-top: 0;
+    }
+
+    .nav-label {
+      padding: 0 8px 8px;
+      color: #8ca3b3;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      border-radius: 7px;
+      padding: 8px 10px;
+      color: #dbe7ef;
+      font-size: 14px;
+    }
+
+    .nav-item.active {
+      background: var(--nav-2);
+      color: #fff;
+    }
+
+    .nav-item.muted {
+      color: #9eb0bd;
+    }
+
+    .nav-spacer {
+      flex: 1;
+    }
+
+    .account-strip {
+      border-top: 1px solid rgba(148, 163, 184, 0.22);
+      padding: 14px 16px;
+      font-size: 13px;
+    }
+
+    .app-main {
+      padding: 24px;
+      overflow: hidden;
+    }
+
+    .topline {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+
+    .topline h2 {
+      font-size: 25px;
+      line-height: 1.15;
+    }
+
+    .topline p {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .btn.primary {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn.dark {
+      border-color: #111827;
+      background: #111827;
+      color: #fff;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .kpi {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 14px;
+    }
+
+    .kpi span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .kpi strong {
+      display: block;
+      margin-top: 8px;
+      color: #0f172a;
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .kpi p {
+      margin-top: 8px;
+      color: var(--subtle);
+      font-size: 12px;
+    }
+
+    .panel-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 16px;
+    }
+
+    .panel h3 {
+      font-size: 16px;
+    }
+
+    .status-list {
+      display: grid;
+      gap: 9px;
+      margin-top: 12px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-radius: 7px;
+      background: #f8fafc;
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .task-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .task {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdfe;
+      padding: 12px;
+      min-height: 86px;
+    }
+
+    .task.active {
+      border-color: rgba(8, 145, 178, 0.45);
+      background: #e9fafe;
+    }
+
+    .task strong {
+      display: block;
+      font-size: 14px;
+    }
+
+    .task p {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 13px;
+    }
+
+    .table th {
+      border-bottom: 1px solid var(--line);
+      color: var(--subtle);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-align: left;
+      text-transform: uppercase;
+      padding: 9px 8px;
+    }
+
+    .table td {
+      border-bottom: 1px solid #eef3f5;
+      padding: 11px 8px;
+      color: #253746;
+      vertical-align: top;
+    }
+
+    .code {
+      display: block;
+      border-radius: 7px;
+      background: #020617;
+      color: #86efac;
+      padding: 9px 11px;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .page-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 18px;
+    }
+
+    .page-card-head {
+      border-bottom: 1px solid var(--line);
+      background: #fbfdfe;
+      padding: 16px 18px;
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .page-card-head h3 {
+      font-size: 19px;
+    }
+
+    .page-card-head p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .page-card-body {
+      padding: 18px;
+    }
+
+    .before-after {
+      display: grid;
+      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+      gap: 14px;
+    }
+
+    .before, .after {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .before {
+      background: #fff7ed;
+      border-color: #fed7aa;
+    }
+
+    .after {
+      background: #f0fdf4;
+      border-color: #bbf7d0;
+    }
+
+    .before h4, .after h4 {
+      font-size: 14px;
+    }
+
+    .before ul, .after ul {
+      margin: 10px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .mini-wire {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fbfc;
+      padding: 14px;
+    }
+
+    .mini-row {
+      display: grid;
+      grid-template-columns: 140px minmax(0, 1fr) 110px;
+      gap: 10px;
+      align-items: center;
+      border-bottom: 1px solid #e7eef1;
+      padding: 9px 0;
+      font-size: 13px;
+    }
+
+    .mini-row:last-child {
+      border-bottom: 0;
+    }
+
+    .split-admin {
+      display: grid;
+      grid-template-columns: 230px minmax(0, 1fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .admin-menu {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdfe;
+      padding: 10px;
+    }
+
+    .admin-menu div {
+      border-radius: 7px;
+      padding: 9px 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .admin-menu div.active {
+      background: #e8f8fb;
+      color: var(--primary-dark);
+      font-weight: 800;
+    }
+
+    .callout {
+      border: 1px solid #fed7aa;
+      border-radius: 8px;
+      background: #fff7ed;
+      padding: 14px;
+      color: #7c2d12;
+      font-size: 14px;
+    }
+
+    .release-plan {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .phase {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 14px;
+    }
+
+    .phase strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .phase ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 940px) {
+      .hero-inner,
+      .grid-2,
+      .grid-3,
+      .before-after,
+      .panel-grid,
+      .split-admin,
+      .release-plan {
+        grid-template-columns: 1fr;
+      }
+
+      .app-frame {
+        grid-template-columns: 1fr;
+      }
+
+      .app-nav {
+        display: none;
+      }
+
+      .kpi-grid,
+      .task-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .audit-row,
+      .mini-row {
+        grid-template-columns: 1fr;
+      }
+
+      .section-title {
+        align-items: start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="eyebrow">Review v1 · Task-Zone Redesign</div>
+          <h1>历史页面任务分区重设计</h1>
+          <p class="hero-copy">
+            方案 B：保留现有 URL 和 API 合同，把历史页面从“技术资源列表”重组为 4 个工作区：
+            个人使用、接入配置、代码与 PR、管理后台。普通用户默认看到可理解的状态和下一步，研发和管理员仍能进入高级细节。
+          </p>
+        </div>
+        <div class="decision-box">
+          <strong>本轮 review 要确认</strong>
+          <p>1. 导航分区是否符合全公司用户心智。</p>
+          <p>2. 每个历史页面的新定位是否合理。</p>
+          <p>3. 哪些页面应先进 spec 和实现阶段。</p>
+        </div>
+      </div>
+    </header>
+
+    <nav class="sticky-nav" aria-label="review sections">
+      <div class="sticky-nav-inner">
+        <a class="nav-pill" href="#audit">历史页面审计</a>
+        <a class="nav-pill" href="#ia">全局信息架构</a>
+        <a class="nav-pill" href="#home">个人使用</a>
+        <a class="nav-pill" href="#setup">我的接入</a>
+        <a class="nav-pill" href="#records">使用记录</a>
+        <a class="nav-pill" href="#repos">代码与 PR</a>
+        <a class="nav-pill" href="#admin">管理后台</a>
+        <a class="nav-pill" href="#auth">登录授权</a>
+        <a class="nav-pill" href="#release">分阶段落地</a>
+      </div>
+    </nav>
+
+    <main class="content">
+      <section id="audit" class="section">
+        <div class="section-title">
+          <div>
+            <h2>历史页面审计</h2>
+            <p>问题不是单个页面视觉老，而是页面的默认心智混杂：普通员工、研发用户、负责人和管理员都从同一层级进入技术细节。</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="audit-list">
+            <div class="audit-row">
+              <code>/</code>
+              <p>已改为“我的 AI 使用中心”，但仍需要沉淀为全平台默认入口：个人状态、接入状态、最近记录、下一步。</p>
+              <span class="tag green">保留并增强</span>
+            </div>
+            <div class="audit-row">
+              <code>/user</code>
+              <p>现有自助接入能力有价值，但 provider/group/key/command 仍需要任务化和高级折叠。</p>
+              <span class="tag green">重排内容</span>
+            </div>
+            <div class="audit-row">
+              <code>/events</code>
+              <p>从原始事件表转向“使用记录”，默认解释工具、用量、代码关联；raw event 只进高级详情。</p>
+              <span class="tag green">继续转型</span>
+            </div>
+            <div class="audit-row">
+              <code>/repos</code>
+              <p>当前是仓库配置表，应该变成“代码仓库接入和数据新鲜度”的工作台。</p>
+              <span class="tag amber">需重设计</span>
+            </div>
+            <div class="audit-row">
+              <code>/repos/:id</code>
+              <p>PR、commit、usage snapshot 信息完整，但默认密度过高；需要先给结论，再给表格和高级明细。</p>
+              <span class="tag amber">需重设计</span>
+            </div>
+            <div class="audit-row">
+              <code>/admin/users</code>
+              <p>直接暴露 relay auth password 不适合默认视图；应改为身份映射、接入状态、风险操作分层。</p>
+              <span class="tag red">高风险调整</span>
+            </div>
+            <div class="audit-row">
+              <code>/settings</code>
+              <p>页面超过 1000 行，混合 Credentials、SCM、Relay、Deployment、LDAP 和弹窗，必须按管理任务拆分。</p>
+              <span class="tag red">必须拆分</span>
+            </div>
+            <div class="audit-row">
+              <code>/login / OAuth</code>
+              <p>登录、设备授权、OAuth 授权仍像技术 demo，且中英文不统一；应成为统一 Auth Experience。</p>
+              <span class="tag amber">需统一</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="ia" class="section">
+        <div class="section-title">
+          <div>
+            <h2>全局信息架构</h2>
+            <p>保留现有 URL，换掉用户看到的层级。普通用户默认只看到“我的工作”；管理员多出管理区。</p>
+          </div>
+        </div>
+
+        <div class="shell-preview">
+          <div class="browser-bar">
+            <div class="browser-dots"><span class="browser-dot"></span><span class="browser-dot"></span><span class="browser-dot"></span></div>
+            <span>App Shell Preview · existing routes preserved</span>
+          </div>
+          <div class="app-frame">
+            <aside class="app-nav">
+              <div class="app-logo">AI 效能平台</div>
+              <div class="nav-group">
+                <div class="nav-label">我的工作</div>
+                <div class="nav-item active">⌂ 我的 AI 使用中心</div>
+                <div class="nav-item">◎ 我的接入</div>
+                <div class="nav-item">▣ 使用记录</div>
+              </div>
+              <div class="nav-group">
+                <div class="nav-label">代码与 PR</div>
+                <div class="nav-item">▰ 代码仓库</div>
+                <div class="nav-item muted">PR 使用状态</div>
+              </div>
+              <div class="nav-group">
+                <div class="nav-label">管理</div>
+                <div class="nav-item">◌ 用户与接入</div>
+                <div class="nav-item">⚙ 管理后台</div>
+              </div>
+              <div class="nav-spacer"></div>
+              <div class="account-strip">admin<br><span style="color:#8ca3b3">中文 / English</span></div>
+            </aside>
+            <section class="app-main">
+              <div class="topline">
+                <div>
+                  <h2>我的 AI 使用中心</h2>
+                  <p>先回答“我是谁、是否接好、本周有没有数据、下一步做什么”。</p>
+                </div>
+                <button class="btn">English</button>
+              </div>
+              <div class="kpi-grid">
+                <div class="kpi"><span>代码仓库</span><strong>5</strong><p>平台可见仓库</p></div>
+                <div class="kpi"><span>使用记录</span><strong>18</strong><p>近 7 天平台信号</p></div>
+                <div class="kpi"><span>已关联代码</span><strong>12</strong><p>能追到 commit / PR</p></div>
+                <div class="kpi"><span>已接入工具</span><strong>2</strong><p>来自 relay 接入组</p></div>
+              </div>
+              <div class="panel-grid">
+                <div class="panel">
+                  <h3>接入状态</h3>
+                  <div class="status-list">
+                    <div class="status-row"><span>账号</span><span class="tag green">已登录</span></div>
+                    <div class="status-row"><span>AI 工具</span><span class="tag green">可使用</span></div>
+                    <div class="status-row"><span>代码关联</span><span class="tag amber">需确认 2 条</span></div>
+                  </div>
+                </div>
+                <div class="panel">
+                  <h3>下一步</h3>
+                  <div class="task-grid">
+                    <div class="task active"><strong>设置这台机器</strong><p>安装 CLI、登录、配置工具。</p></div>
+                    <div class="task"><strong>接入代码仓库</strong><p>检查仓库是否已绑定 SCM。</p></div>
+                    <div class="task"><strong>查看最近记录</strong><p>确认使用是否关联到代码。</p></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="home" class="section">
+        <div class="section-title">
+          <div>
+            <h2>个人使用区</h2>
+            <p>面向全公司默认用户。首页不再像管理 dashboard，而是一个“我现在是否接好”的状态页。</p>
+          </div>
+        </div>
+        <div class="page-card">
+          <div class="page-card-head">
+            <div>
+              <h3>/ · My AI Usage / 我的 AI 使用中心</h3>
+              <p>所有用户登录后默认进入；管理员也先看到个人视角，管理入口只作为分区出现。</p>
+            </div>
+            <span class="tag green">默认入口</span>
+          </div>
+          <div class="page-card-body">
+            <div class="before-after">
+              <div class="before">
+                <h4>现在的问题</h4>
+                <ul>
+                  <li>指标仍有全局 dashboard 痕迹。</li>
+                  <li>缺少最近几条使用记录。</li>
+                  <li>“平台可见信号”和“我的本机状态”边界要继续解释。</li>
+                </ul>
+              </div>
+              <div class="after">
+                <h4>新设计</h4>
+                <ul>
+                  <li>顶部：账号、语言、数据更新时间。</li>
+                  <li>中部：近 7 天使用、代码关联、工具接入、待处理项。</li>
+                  <li>底部：下一步动作和最近记录摘要。</li>
+                  <li>没有数据时给出原因候选和入口，不显示孤立的横线。</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="setup" class="section">
+        <div class="section-title">
+          <div>
+            <h2>接入配置区</h2>
+            <p>保留研发需要的 CLI 和密钥操作，但普通员工先看到“是否可用、下一步是什么”。</p>
+          </div>
+        </div>
+        <div class="page-card">
+          <div class="page-card-head">
+            <div>
+              <h3>/user · My Setup / 我的接入</h3>
+              <p>从 provider/group/key 模型改成“账号、AI 访问、接入组、命令参考、密钥管理”。</p>
+            </div>
+            <span class="tag green">继续增强</span>
+          </div>
+          <div class="page-card-body">
+            <div class="mini-wire">
+              <div class="mini-row"><strong>账号状态</strong><span>admin@dev.local · 已登录 · relay_sso</span><span class="tag green">正常</span></div>
+              <div class="mini-row"><strong>AI 访问</strong><span>Production / Group Alpha / Claude · 已有可用密钥</span><span class="tag green">可使用</span></div>
+              <div class="mini-row"><strong>机器设置</strong><span class="code">ae-cli login && ae-cli discover --provider prod</span><span class="tag gray">可复制</span></div>
+              <div class="mini-row"><strong>高级</strong><span>Reveal / Regenerate / Test Key / Manual Sync</span><span class="tag amber">折叠</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="records" class="section">
+        <div class="section-title">
+          <div>
+            <h2>使用记录区</h2>
+            <p>把 `/events` 从排障用事件流变成普通用户能读懂的记录页，保留 raw detail 给高级场景。</p>
+          </div>
+        </div>
+        <div class="page-card">
+          <div class="page-card-head">
+            <div>
+              <h3>/events · Usage Records / 使用记录</h3>
+              <p>默认列表展示业务摘要；管理员多出跨用户筛选；事件 ID、workspace、dedupe key 进入高级详情。</p>
+            </div>
+            <span class="tag green">摘要优先</span>
+          </div>
+          <div class="page-card-body">
+            <table class="table">
+              <thead>
+                <tr><th>时间</th><th>工具</th><th>仓库</th><th>代码关联</th><th>Token 用量</th><th>下一步</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>今天 10:24</td><td>Codex</td><td>ai-efficiency</td><td><span class="tag green">已关联 commit</span></td><td>4,280</td><td>查看 PR</td></tr>
+                <tr><td>昨天 18:03</td><td>Claude</td><td>-</td><td><span class="tag amber">待关联</span></td><td>1,120</td><td>运行 doctor</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="repos" class="section">
+        <div class="section-title">
+          <div>
+            <h2>代码与 PR 区</h2>
+            <p>代码仓库不只是配置列表，而是“哪些仓库已接入，PR 使用快照是否新鲜，哪里需要处理”。</p>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="page-card">
+            <div class="page-card-head">
+              <div>
+                <h3>/repos · Code Repositories / 代码仓库</h3>
+                <p>列表页变成仓库健康度和绑定状态入口。</p>
+              </div>
+            </div>
+            <div class="page-card-body">
+              <div class="mini-wire">
+                <div class="mini-row"><strong>接入完整</strong><span>3 个仓库 · 有 PR 使用快照</span><span class="tag green">正常</span></div>
+                <div class="mini-row"><strong>待绑定</strong><span>2 个 ae-cli 自动发现仓库</span><span class="tag amber">需处理</span></div>
+                <div class="mini-row"><strong>同步异常</strong><span>1 个 SCM provider token 失效</span><span class="tag red">告警</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="page-card">
+            <div class="page-card-head">
+              <div>
+                <h3>/repos/:id · Repo Detail / 仓库详情</h3>
+                <p>先给仓库状态和 PR freshness，再展示高密度 PR/commit 表。</p>
+              </div>
+            </div>
+            <div class="page-card-body">
+              <div class="mini-wire">
+                <div class="mini-row"><strong>仓库状态</strong><span>Bound · main · last sync 8 min ago</span><span class="tag green">新鲜</span></div>
+                <div class="mini-row"><strong>PR 摘要</strong><span>42 PR · 18 with AI usage · 2 pending upload</span><span class="tag amber">有待处理</span></div>
+                <div class="mini-row"><strong>高级明细</strong><span>commit snapshots / freshness reason / raw token columns</span><span class="tag gray">展开</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="admin" class="section">
+        <div class="section-title">
+          <div>
+            <h2>管理后台</h2>
+            <p>把 `/settings` 和 `/admin/users` 从长表格变成任务式控制台。管理能力完整保留，但按风险和对象分层。</p>
+          </div>
+        </div>
+        <div class="page-card">
+          <div class="page-card-head">
+            <div>
+              <h3>/settings · Admin Console / 管理后台</h3>
+              <p>页面内拆成四组：AI 服务、代码平台、组织登录、部署运行。实现上可先组件拆分，不必立即改 URL。</p>
+            </div>
+            <span class="tag red">优先重构</span>
+          </div>
+          <div class="page-card-body">
+            <div class="split-admin">
+              <div class="admin-menu">
+                <div class="active">AI 服务配置</div>
+                <div>代码平台配置</div>
+                <div>组织与登录</div>
+                <div>部署与运行</div>
+                <div>高级凭据</div>
+              </div>
+              <div class="panel">
+                <h3>AI 服务配置</h3>
+                <div class="status-list">
+                  <div class="status-row"><span>Relay Providers</span><span class="tag green">1 primary</span></div>
+                  <div class="status-row"><span>API Credentials</span><span class="tag amber">2 in use</span></div>
+                  <div class="status-row"><span>Group routing</span><span class="tag gray">view only first</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="page-card">
+          <div class="page-card-head">
+            <div>
+              <h3>/admin/users · User Management / 用户与接入</h3>
+              <p>默认看用户身份和接入状态，不默认展示可复制密码。明文复制进入风险操作，需要确认和审计提示。</p>
+            </div>
+            <span class="tag red">安全 UX</span>
+          </div>
+          <div class="page-card-body">
+            <table class="table">
+              <thead>
+                <tr><th>用户</th><th>角色</th><th>Relay 映射</th><th>接入状态</th><th>风险操作</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>alice@example.com</td><td>user</td><td><span class="tag green">已映射</span></td><td>2 tools · 3 repos</td><td>Reveal credential</td></tr>
+                <tr><td>bob@example.org</td><td>admin</td><td><span class="tag amber">缺 relay id</span></td><td>无最近记录</td><td>Copy encrypted</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="auth" class="section">
+        <div class="section-title">
+          <div>
+            <h2>登录与授权</h2>
+            <p>登录、OAuth 授权、Device Login 是同一套 Auth Experience，不应一个英文、一个中文、一个 demo 风格。</p>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="card">
+            <h3>/login</h3>
+            <p>统一品牌、语言切换、LDAP/SSO 解释。Auth Source 不作为普通用户优先理解项，默认由系统选推荐方式。</p>
+          </div>
+          <div class="card">
+            <h3>/oauth/authorize</h3>
+            <p>显示“哪个客户端请求什么权限、授权后会发生什么”，拒绝和授权按钮同层级但主次清晰。</p>
+          </div>
+          <div class="card">
+            <h3>/oauth/device</h3>
+            <p>围绕 CLI 设备登录：输入码、确认账号、授权结果、回到终端。与 `/user` 的命令引导互相衔接。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="release" class="section">
+        <div class="section-title">
+          <div>
+            <h2>分阶段落地建议</h2>
+            <p>不建议一次性把所有历史页面全重写。按用户价值和风险拆成 4 个阶段，每阶段都能单独测试和 review。</p>
+          </div>
+        </div>
+        <div class="release-plan">
+          <div class="phase">
+            <strong>Phase 1 · Shell + 普通入口</strong>
+            <ul>
+              <li>导航分组</li>
+              <li>首页增强</li>
+              <li>/user 渐进披露</li>
+              <li>/events 摘要列表</li>
+            </ul>
+          </div>
+          <div class="phase">
+            <strong>Phase 2 · 代码与 PR</strong>
+            <ul>
+              <li>/repos 健康度工作台</li>
+              <li>/repos/:id PR freshness</li>
+              <li>高密度表格进入高级区</li>
+            </ul>
+          </div>
+          <div class="phase">
+            <strong>Phase 3 · 管理后台拆分</strong>
+            <ul>
+              <li>Settings 组件拆分</li>
+              <li>AI 服务 / SCM / LDAP / Deploy tabs</li>
+              <li>风险操作确认</li>
+            </ul>
+          </div>
+          <div class="phase">
+            <strong>Phase 4 · Auth 体验统一</strong>
+            <ul>
+              <li>Login 本地化</li>
+              <li>OAuth 授权页统一</li>
+              <li>Device Login 与 CLI 引导衔接</li>
+            </ul>
+          </div>
+        </div>
+        <div class="callout" style="margin-top:16px">
+          推荐先把本 HTML review 收敛成 spec，然后写实现 plan。实现时优先不改 API，只重组前端组件和文案；如果发现缺少个人维度数据，再单独扩展薄聚合 API。
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

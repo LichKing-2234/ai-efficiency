@@ -12,6 +12,13 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ## Source-of-Truth Order
 
 1. Topic-specific current specs:
+   - `docs/superpowers/specs/2026-06-26-team-usage-representative-quota-design.md`
+   - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md`
+   - `docs/superpowers/specs/2026-06-14-user-api-key-first-onboarding-design.md`
+   - `docs/superpowers/specs/2026-06-04-admin-sub2api-subscription-assignment-design.md`
+   - `docs/superpowers/specs/2026-06-02-repo-auto-binding-design.md`
+   - `docs/superpowers/specs/2026-06-10-independent-cli-release-design.md`
+   - `docs/superpowers/specs/2026-05-26-ae-cli-post-commit-async-attribution-sync-design.md`
    - `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md`
    - `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md`
    - `docs/superpowers/specs/2026-05-13-sessionless-local-tool-attribution-design.md`
@@ -29,13 +36,14 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ```mermaid
 flowchart LR
     Browser["Browser UI<br/>Vue 3 + Vite + Pinia"]
-    CLI["ae-cli<br/>login + discover + init/sync/doctor"]
+    CLI["ae-cli<br/>login + discover + init/sync/doctor + hooks"]
     Tool["Codex / Claude"]
     Backend["ai-efficiency backend<br/>Gin + Ent modular monolith"]
     DB[("ai_efficiency database<br/>PostgreSQL")]
     SCM["SCM providers<br/>GitHub / Bitbucket Server"]
     Relay["Relay provider<br/>sub2api HTTP APIs"]
-    Workspace["Developer workspace<br/>repo, git hooks, local artifacts"]
+    Directory["Configured directory APIs<br/>admin-provided HTTPS DSL"]
+    Workspace["Developer workspace<br/>repo, managed git hooks, local artifacts"]
 
     Browser <-->|REST API / OAuth| Backend
     CLI <-->|login / diagnostics| Backend
@@ -45,15 +53,24 @@ flowchart LR
     Backend <--> DB
     Backend <--> SCM
     Backend <--> Relay
+    Backend --> Directory
 ```
 
 ### Notes
 
 - `ai-efficiency` is a standalone system. It integrates with `sub2api` through relay/provider HTTP APIs rather than direct database coupling.
+- Release units remain in one repository but are published separately. Platform releases use `v*` tags for the backend/frontend/deploy unit, GHCR image, and Helm-consumed image tags. `ae-cli` releases use `ae-cli/v*` tags and publish only CLI artifacts; CLI installer and updater discovery filters that tag namespace instead of using the platform-owned repository latest release. The exact `v0.2.0-cli.1` tag is a one-time bridge for older CLIs that still read repository `/releases/latest`; it publishes only CLI artifacts and is excluded from the platform release workflow.
 - The backend is the central orchestration point for auth, repo configuration, attribution, provider management, and SCM/webhook workflows.
 - Runtime config remains a startup bootstrap input, not the user-facing provider source of truth. On first startup the backend can seed the primary `RelayProvider` row from `relay.*` config, but `/user`, settings, and normal provider surfaces operate on DB-backed `RelayProvider` records rather than a runtime fallback provider contract.
 - The frontend is built separately and embedded into the backend binary during Docker build, so the backend process serves both API routes and the SPA entrypoint in deployed images.
-- The embedded SPA now exposes a regular-user `/user` surface for profile summary, provider-aware CLI install/login/discover guidance, and provider-first, group-second credential self-serve driven by the current relay user's allowed groups. This browser surface is distinct from the CLI-facing `/api/v1/providers` contract used by `ae-cli discover`.
+- The embedded SPA now exposes a regular-user `/user` surface as a personal AI onboarding workbench. The page keeps provider-first, group-second credential self-serve driven by the current relay user's user-scoped group facts (`allowed_groups` plus active subscription entries), but the primary flow is now group-scoped and API-key-first: users select an access group, create or regenerate a personal key, can immediately choose configuration paths once a key exists, and are encouraged to run a real connection test with the selected group's platform and model before relying on that access.
+  Once a key exists, ordinary access groups still offer manual local configuration, automatic `ae-cli discover`, and app-specific `CC Switch` provider-import links for Codex, Claude Code, or Gemini according to the selected group platform. Access groups whose names strictly start with `Agent` instead enter an Agent client configuration branch: the page hides Codex/Claude/Gemini snippets, hides the `ae-cli` automatic configuration card, shows Hermes Agent, OpenClaw, and Custom Agent manual configuration, and offers only Hermes/OpenClaw CC Switch app-import links. Agent-client manual snippets and Hermes/OpenClaw app imports normalize the provider URL to an OpenAI-compatible versioned endpoint, normally `<provider.base_url>/v1` unless the configured provider URL already ends in a version segment. The UI explains this because Hermes Agent and OpenClaw use Chat Completions providers by default, even when the selected backend group platform is Anthropic or Gemini.
+  User-owned API keys are partially masked in the browser but remain copyable when relay returns the key value. Create/regenerate operations require the relay user's own write credential because sub2api's `/api/v1/keys` endpoint requires a user JWT; the RelayProvider admin API key can list user keys and manage relay users but cannot replace user credentials for key creation. Create is idempotent per local user, relay provider, and group inside the backend process, so repeated browser clicks or concurrent requests return the same existing managed key instead of creating duplicates. Before create/regenerate, the backend ensures the local user is bound to an existing relay user and has a usable encrypted `relay_auth_password`: Relay SSO can capture the relay password only after an existing relay user authenticates successfully and must not create missing relay users, LDAP provisioning stores generated relay-side passwords, and `/user` write paths can recreate or relink a missing upstream relay user and rotate a missing/stale generated password before retrying the user-JWT write. LDAP bind passwords are never stored or forwarded to relay. New generated relay users get relay default subscriptions assigned because sub2api admin user creation has not always attached them reliably. Before assigning those default groups, the relay adapter lists the user's active subscriptions and skips groups that are already present; if a race still produces a duplicate assignment response, unambiguous `SUBSCRIPTION_ALREADY_EXISTS` responses and conflicts that are proven by a follow-up list to already have the active group are treated as idempotent success. Semantic `SUBSCRIPTION_ASSIGN_CONFLICT` responses remain errors for admin subscription operations so validity or notes mismatches stay visible there. Existing `provisioned_by_ai_efficiency_ldap` relay users with no group facts can receive the same default subscription assignment on later LDAP login. The same page can load model choices through `/api/v1/user/providers/:id/groups/:group_id/models?platform=...`, using the current user's own active group key and platform-specific sub2api model-list endpoint (`/v1/models` for OpenAI/Anthropic-compatible lists and `/v1beta/models` for Gemini native lists). It can then test the current user's own active provider key through `/api/v1/user/providers/:id/test` using the selected group's `group_id`, platform, and an explicitly selected or entered model; the backend probes sub2api with the platform-native completion endpoint (`/v1/chat/completions` for OpenAI, `/v1/messages` for Anthropic, and `/v1beta/models/{model}:generateContent` for Gemini). The `/user` surface no longer uses the old developer / non-developer toggle or progress-checklist framing, and advanced command references now live under the automatic-configuration path rather than as a global always-open section. The admin Relay Providers surface is CRUD-only and does not expose this test action. `ae-cli discover` now consumes the same user-provider credential surface at `/api/v1/user/providers`, with `/api/v1/providers` kept only as an older backend compatibility fallback.
+- The embedded SPA also exposes an admin-only `/admin/users` surface backed primarily by the local `users` table and enriched with the current single Directory Sync snapshot. Admins can switch inside the same route between a user view and a department view. The user view supports search, pagination, department subtree filtering, derived access-status filtering, and row-level department display derived from directory members matched by email; unmatched local users remain visible unless a specific department filter is active. User-visible department labels use a backend-computed name-based `display_path` rather than the source `path`, because source paths can be numeric ID chains. Access status is local-state derived rather than a live sub2api inventory read: `disabled` takes precedence when `users.token_valid_after` is set or a successful directory offboarding disable action exists, otherwise stored relay credentials show as `configured` and missing credentials show as `missing_credential`. The department view renders current departments as a collapsible tree using parent/depth metadata, shows direct and subtree member/matched-local-user counts, shows representative match coverage when the directory DSL maps representative metadata, and drills back into the user view with the selected department subtree filter. Admins can inspect `username`, `email`, `role`, `auth_source`, `relay_user_id`, timestamps, and the encrypted `relay_auth_password` ciphertext. Plaintext relay password access is separated into an explicit per-user copy action that calls `/api/v1/admin/users/:id/relay-password/reveal`; the list API never returns plaintext. The same admin surface can now load enabled relay providers' assignable subscription groups through the relay provider abstraction and manage sub2api subscriptions through one centralized workflow. The workflow supports selected local users, the current search/department/access-status filter across all pages, or all relay-mapped users, and can add, extend, remove, or reset quota for a selected subscription group by creating a persisted admin subscription job through `POST /api/v1/admin/users/subscription-jobs`; the frontend polls job progress instead of holding one long HTTP request open. Quota reset resolves each user's matching upstream subscription by group and calls sub2api's reset-quota admin endpoint for the daily, weekly, and monthly windows. Jobs are capped at 500 target users, snapshot target local users including `relay_user_id` before relay mutation starts, apply per-target deadlines plus a target-count-scaled job deadline, abandon stale active jobs with no progress for more than one hour, and report stale selected IDs as per-user failures. The older synchronous `POST /api/v1/admin/users/subscriptions/batch` and add-only `POST /api/v1/admin/users/:id/subscriptions` endpoints remain for compatibility. These subscription paths mutate relay subscription state only; they do not edit local user identity fields, fetch relay API keys, or fetch usage logs.
+- The embedded SPA also exposes representative-scoped team usage as ordinary authenticated user surfaces rather than as admin pages. The personal AI Usage Center can now load a representative-only subject selector backed by `/api/v1/user/team-usage/scope` and `/api/v1/user/team-usage/subjects`, letting an in-scope representative switch from `My Usage` to an allowed member and reuse the selected-subject usage dashboard at `/api/v1/user/team-usage/subjects/:user_id/usage/dashboard`. Team comparison is intentionally separated into `/team-usage`, which calls `/api/v1/user/team-usage/overview` for top-member trend and member ranking views without rendering quota cards or quota-edit controls. Delegated quota control stays inside the selected-member AI Usage surface and is implemented as sub2api user-group `rate_multiplier` writes through the relay provider boundary, not as local quota enforcement and not as shared group-limit edits. Every delegated write attempt is also recorded locally in `team_usage_rate_multiplier_audits`, with representative-visible `/api/v1/user/team-usage/audit` and admin-visible `/api/v1/admin/team-usage/audit` read paths.
+- The embedded SPA now exposes configurable Directory Sync under `/settings` -> Organization & Login and a separate admin offboarding review page at `/admin/directory/offboarding`. Directory Sync is owned by `backend/internal/directorysync` and stores admin-authored HTTP DSL sources, validate/preview/apply runs, current directory departments, and current directory members. The DSL is generic and declarative: it supports safe GET requests, header credential references resolved from the existing encrypted credential store, item extraction from JSONPath-like paths or a root-array `$`, mapping, explicit non-sensitive metadata mappings such as organization representative ids, and bounded execution. It does not embed vendor-specific SDKs, execute scripts, or mutate external directory systems. Preview runs never update current facts, and failed apply runs leave current facts and offboarding candidates unchanged. Apply completion replaces current facts and updates the run result plus `last_successful_run_id` in one transaction; the current company snapshot is resolved from the latest successful apply run rather than from source edit time. Successful full-company apply runs match directory members to local users by normalized email.
+- Directory offboarding candidates are local relay-bound users whose normalized email is missing from the latest complete successful full-company directory snapshot. Confirmed offboarding is an explicit admin action: the backend rechecks that the user is still missing, calls the optional `relay.UserDisabler` capability through the configured relay provider boundary, and then sets `users.token_valid_after` through the auth service. It does not automatically assign, extend, remove, delete, or reset quota for relay/sub2api subscriptions; those remain under the `/admin/users` subscription job workflow.
+- Browser login loads `/api/v1/auth/options` before choosing auth sources. If `auth.ldap.url` is configured it defaults to LDAP and also offers Relay SSO; otherwise it shows only Relay SSO. Dev Login is exposed only when the debug endpoint is explicitly enabled. Relay SSO is an existing-relay-account login path only: invalid credentials or a missing upstream relay user fail authentication and never create a sub2api user. LDAP passwords are used only for LDAP bind and are never forwarded to relay user create/update APIs. LDAP relay identity resolution prefers an exact relay email match before canonical username provisioning, and when a linked relay user has a valid role the local user role follows that relay role. When a successful LDAP login reuses an existing local `relay_sso` row by username/email, the backend updates the local `auth_source` to `ldap` so `/auth/me` and the `/user` profile reflect the actual latest login provider, while preserving any Relay SSO-captured `relay_auth_password` for later relay user JWT acquisition.
 - Official production deployment now has two supported paths: Docker Compose and Linux systemd.
 - The business entrypoint remains the backend service that also serves the frontend bundle.
 - Docker/Compose mode runs the backend from the image-provided server binary and uses the mounted state directory only for runtime-editable application config.
@@ -62,9 +79,21 @@ flowchart LR
 - `deploy/` also includes non-production `dev` / `local` compose paths for local verification.
 - Public health endpoints expose liveness/readiness. Admin-only system version endpoints expose current build metadata and an explicit GitHub release check, but they do not apply updates. In-app deployment status, binary update, rollback, and restart APIs have been removed; upgrades are handled outside the application process.
 - `ae-cli login` now supports both browser PKCE and OAuth device flow. Headless Linux environments are expected to use `ae-cli login --device`, while desktop/browser-capable environments still default to PKCE.
-- Backend-issued auth tokens currently default to a 2-hour access JWT plus a 7-day refresh token. The frontend retries a non-auth `401` once via `/api/v1/auth/refresh`, and `ae-cli` refreshes `~/.ae-cli/token.json` before authenticated commands when the token is expired or within the refresh window.
-- `ae-cli discover` now provides the current user-facing tool-configuration path for supported local agents. It fetches provider-delivered base URLs and API keys from the backend, detects installed tools locally, and writes deterministic local config for Codex, Claude, and Gemini.
+- Backend-issued auth tokens currently default to a 2-hour access JWT plus a 7-day refresh token. The frontend retries a non-auth `401` once via `/api/v1/auth/refresh`, and `ae-cli` refreshes `~/.ae-cli/token.json` before authenticated commands when the token is expired or within the refresh window. Access and refresh validation now also check `users.token_valid_after`; tokens issued before that revocation floor are rejected, which lets confirmed directory offboarding expire existing login state without introducing a full session table.
+- `ae-cli discover` now provides the current user-facing tool-configuration path for supported local agents. It fetches provider-delivered base URLs plus group-scoped credentials from the backend, detects installed tools locally, and writes deterministic local config only for tools whose platform credential exists: Codex uses `openai`, Claude uses `anthropic`, and Gemini uses `gemini`.
 - The old ae-cli session runtime/helper packages are no longer present in the active code path. Backend-side legacy `session` schema and runtime compatibility have also been removed; the remaining `matched_session_ids` / `session_ids` fields are historical names that now carry tool-native session identifiers.
+
+## Frontend Task Zones
+
+The Vue frontend keeps the existing route contract while grouping pages by user task rather than by backend resource type.
+
+- `My Work`: `/`, `/user`, and `/events` provide the ordinary company-user path for personal AI usage, setup, and readable usage records. `/` is now a lifecycle-aware personal home: users without usable AI access, or users with access but no effective usage data yet, land on an expanded setup guide card that pushes them toward `/user`; established users land on the embedded usage dashboard first, with the setup guide collapsed by default. The embedded homepage snapshot now also carries a degradable `group_quotas` section derived from the current user's reusable API keys plus their bound group limits. `Usage Records` and `Code Repositories` remain secondary drill-down paths rather than the homepage's primary narrative.
+- `AI Usage`: `/user` remains the selected-subject AI Usage Center. For ordinary users it behaves as a personal usage page. For representatives it also exposes a subject selector so they can switch between `My Usage` and represented members, inspect the selected subject's usage and subscription-group quota rows, preview effective allowance changes from draft rate-multiplier edits, and submit delegated multiplier set/reset requests plus read their own audit history. `/team-usage` is a separate representative Team Overview page for subtree-wide trend and member ranking; it does not show quota cards, subscription quota rows, or multiplier controls.
+- `Code & PR`: `/repos` and `/repos/:id` provide repository health, SCM binding state, PR usage summary, and advanced PR/commit detail workflows for developers, leads, and admins.
+- `Administration`: `/admin/users`, `/admin/directory/offboarding`, and `/settings` are admin-only surfaces. `/admin/users` defaults to the user view with user, department, relay mapping, derived access status, access-status filtering, and centralized sub2api subscription management with selected/current-filter/all-mapped scopes and add/extend/remove/reset-quota operations backed by persisted subscription jobs, while keeping plaintext relay password copy behind an explicit risk confirmation; on mobile it renders selectable user cards rather than a compressed wide table. The same route also has a collapsible tree-style department view for current Directory Sync departments and drill-in department subtree filtering, using name-based display paths in filters and row labels, with representative matched/total badges when that metadata is present. `/admin/directory/offboarding` lists directory-derived offboarding candidates and requires exact email confirmation before disabling an upstream relay user and revoking local tokens. `/settings` is implemented as task-zone section components for AI Services, Code Platforms, Organization & Login, Deployment & Runtime, and Advanced Credentials, with bilingual primary sections and add/edit dialogs; Organization & Login now includes Directory Sync source configuration, safe synthetic templates, and an AI prompt helper. Deployment & Runtime shows read-only backend build metadata and a manual latest-release check; in-app apply, rollback, and restart controls are not part of the current runtime surface.
+- Auth pages: `/login`, `/oauth/authorize`, and `/oauth/device` share a standalone AuthShell and language toggle so sign-in, app authorization, and device login read as one product flow outside the main app shell. Device login also shows the signed-in account before approve or deny.
+
+The task-zone frontend remains API-compatible with the previous route set. Connected tool counts are derived from `/api/v1/user/providers`, repository health is derived from existing repo records, and PR/event token summaries are frontend-only aggregations over existing response fields. The UI does not claim local CLI state unless that state is backed by server data.
 
 ## Current Production Deployment
 
@@ -142,32 +171,40 @@ sequenceDiagram
         Browser->>BE: /oauth/device/verify
     end
     Dev->>CLI: ae-cli discover
-    CLI->>BE: GET /api/v1/providers
+    CLI->>BE: GET /api/v1/user/providers
     CLI->>Tool: configure Codex / Claude / Gemini locally
-    Dev->>CLI: ae-cli init
-    CLI->>BE: ensure repo exists from local git remote
-    CLI->>WS: install hooks / maintain local attribution state
+    Dev->>CLI: ae-cli hooks enable --global
+    CLI->>WS: install machine-level managed hooks
+    Dev->>CLI: cd <repo> && ae-cli init
+    CLI->>BE: explicit repo registration from local git remote
+    CLI->>WS: maintain ~/.ae-cli state and eligibility cache
     Dev->>Tool: run Codex / Claude / other tools
     Tool->>WS: write local Codex / Claude / Kiro artifacts
-    WS->>BE: ensure repo exists from local git remote
+    WS->>BE: resolve reporting-enabled repo by local git remote
     WS->>WS: short-lived sync scans local artifacts
-    WS->>BE: tool_usage_events ingest
-    WS->>BE: checkpoint events + rewrite events
+    WS->>BE: tool_usage_events ingest with repo_config_id (single or batch)
+    WS->>BE: checkpoint events + rewrite events with repo_config_id
     BE->>BE: bind tool_usage_events to commit checkpoints
     BE->>BE: refresh active PR usage snapshots from checkpoint-bound usage
 ```
 
 ### Runtime Boundaries
 
-- `ae-cli` owns the sessionless CLI workflow: repo-local init, hook management, short-lived attribution sync, and diagnostics.
-- `ae-cli discover` is intentionally deterministic in the current codebase: no backend LLM loop, no `/api/v1/tools/discover` endpoint, and no per-tool provider inference. It uses the selected provider directly (primary by default, `--provider` to override) and writes tool-native config files or environment hooks.
+- `ae-cli` owns the sessionless CLI workflow: explicit repo registration, hook management, short-lived attribution sync, and diagnostics.
+- `ae-cli discover` is intentionally deterministic in the current codebase: no backend LLM loop and no `/api/v1/tools/discover` endpoint. It uses the selected provider directly (primary by default, `--provider` to override), maps installed tools to the backend-returned `group.platform`, and writes only the matching tool-native config files or environment hooks.
 - `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model, with automatic refresh against `/api/v1/auth/refresh` when the stored token is nearing expiry.
 - The backend owns durable state, repo discovery/ensure from local git remotes, repo configuration, user/provider mapping, attribution, PR usage snapshots, and SCM/webhook handling.
+- The backend auth chain prefers LDAP for implicit login requests when the LDAP provider is registered, falls back to relay SSO when registered, and resolves/provisions relay identities for LDAP users with relay-side generated credentials rather than the LDAP login password. LDAP identity resolution first reuses an exact relay email match, then falls back to canonical username or legacy username lookup; a linked relay role of `admin` or `user` is synced into the local user record so LDAP login does not downgrade an existing relay admin account. Relay SSO stores the relay password encrypted for later relay user JWT acquisition only after the upstream relay login succeeds; it does not create missing relay users, so admins must provision or assign those relay accounts outside the SSO login attempt. LDAP logins preserve any saved relay SSO password when reusing the same local user. New LDAP users provisioned into relay receive a generated relay-side password that is stored encrypted, then get relay default subscriptions assigned by the relay adapter when configured; the relay adapter first skips active subscriptions already present for those default groups, and duplicate assignment responses are idempotent only when sub2api clearly reports the assignment already exists or a follow-up list proves the active group exists. Existing `provisioned_by_ai_efficiency_ldap` relay users with no group facts can be given those default subscriptions on later LDAP login. If auth or `/user` key creation finds a missing relay binding, a stored binding whose upstream relay user no longer exists, missing local relay password, or stale stored relay password, the backend resolves/creates the relay user as needed, rotates a generated relay password through the relay admin API, stores it encrypted, and uses it only for user-JWT key writes.
 - The backend OAuth handler now manages both short-lived authorization codes and short-lived device entries in memory.
-- Relay/sub2api remains the upstream auth/LLM/usage integration boundary and attribution fallback source.
+- In the current embedded-frontend deployment, OAuth browser entry routes such as `/oauth/authorize` and `/oauth/device` serve the bundled SPA directly by path, so proxy scheme/host rewriting cannot turn `frontend_url` into a self-redirect loop. Deployments without an embedded frontend still use the configured redirect.
+- Relay/sub2api remains the upstream auth/LLM/usage integration boundary, admin subscription management boundary, and attribution fallback source.
 - SCM providers now reference reusable credentials instead of storing raw secret blobs inline.
-- Repo-to-`scm_provider` binding is an admin-managed lifecycle step rather than a hard precondition for attribution.
+- Repo-to-`scm_provider` binding remains admin-managed, but the backend now performs deterministic auto-binding when exactly one active Code Platform matches a newly created repo's canonical remote host. GitHub SaaS provider URLs such as `https://api.github.com` match `github.com` remotes. GitHub Enterprise and Bitbucket Server match by canonical host, and Code Platforms can also configure `ssh_host` for split API/SSH deployments where the clone host differs from `base_url`. Existing unbound repos can be repaired through an admin-only batch action; ambiguous and no-match repos remain manually bindable.
 - Active SCM-dependent product features such as PR sync and webhook registration require a bound repo and return `repo_unbound` when invoked before binding.
+- Repository webhook registration uses `server.public_url` / `AE_SERVER_PUBLIC_URL` as the externally reachable backend origin. Callback URLs are derived as `/api/v1/webhooks/github` and `/api/v1/webhooks/bitbucket`; repair and registration must not derive these URLs from request `Host` headers.
+- `webhook_failed` is an operational repo health status, not an attribution opt-out. Bound repos in this state remain eligible for local hook reporting, and admins can repair them through the webhook repair endpoints without deleting repo history.
+- Bitbucket Server webhooks with a stored secret require `X-Hub-Signature: sha256=<hex>` validation over the exact request body.
+- Bitbucket inbound webhook repo resolution prefers exact `full_name`, then case-insensitive `full_name`, then normalized identity from payload clone/self URLs. This keeps signed payloads from failing when Bitbucket sends uppercase project keys but local repo config was created from lowercase SSH remotes or split API/SSH host data.
 - The repo scan, optimize-preview, and repo-chat product surfaces have been retired from the active API and frontend.
 - Repo-level cached AI score summaries are no longer part of the active dashboard or repo UI/API contract.
 
@@ -181,41 +218,59 @@ flowchart LR
 
     subgraph Local["Developer machine"]
         CLI["ae-cli init / sync / doctor"]
-        Hooks["Git hooks"]
+        GlobalHooks["Global hook scripts<br/>~/.ae-cli/git-hooks"]
+        RepoHooks["Repo-local hook scripts<br/><git common dir>/ae-hooks"]
         Artifacts["Local tool artifacts<br/>~/.codex / ~/.claude / ~/.kiro / Kiro globalStorage"]
         Collector["collector<br/>build latest Snapshot"]
         Scanner["attributionlocal scanner<br/>build LocalToolUsageEvent[]"]
+        State["CLI state<br/>~/.ae-cli/state/hooks + attribution"]
     end
 
     subgraph Backend["ai-efficiency backend"]
-        Ensure["repo ensure from git remote"]
-        Checkpoint["commit_checkpoint / commit_rewrite ingest<br/>stores agent_snapshot"]
-        Usage["tool_usage_events ingest"]
+        Register["explicit repo registration<br/>init only"]
+        Resolve["read-only repo resolve<br/>resolve-remote"]
+        Checkpoint["commit_checkpoint / commit_rewrite ingest<br/>repo_config_id + agent_snapshot"]
+        Usage["tool_usage_events ingest<br/>repo_config_id + authenticated user"]
         Bind["bind usage to checkpoints"]
+        PRSyncJobs["pr_sync_jobs<br/>async PR metadata sync progress"]
         PRUsage["refresh active PR usage snapshots"]
     end
 
     UI["Repo PR list / details view"]
     Relay["sub2api / relay"]
 
-    CLI --> Ensure
-    CLI -->|"install/manage"| Hooks
+    CLI --> Register
+    CLI -->|"enable/disable/status/refresh"| GlobalHooks
+    CLI -->|"enable/disable/status/refresh"| RepoHooks
+    CLI --> State
     CLI -->|"manual sync"| Scanner
     Tools --> Artifacts
-    Hooks -->|"post-commit / post-rewrite"| Collector
-    Hooks -->|"flush pending hook queue"| Checkpoint
-    Hooks -->|"post-commit checkpoint upload"| Checkpoint
-    Hooks -->|"post-rewrite rewrite upload"| Checkpoint
-    Hooks -->|"auto attribution-sync"| Scanner
+    GlobalHooks --> Resolve
+    RepoHooks --> Resolve
+    CLI -->|"sync resolve-first"| Resolve
+    GlobalHooks -->|"eligible repo only"| Collector
+    RepoHooks -->|"eligible repo only"| Collector
+    GlobalHooks -->|"flush pending hook queue"| Checkpoint
+    RepoHooks -->|"flush pending hook queue"| Checkpoint
+    GlobalHooks -->|"post-commit checkpoint upload"| Checkpoint
+    RepoHooks -->|"post-commit checkpoint upload"| Checkpoint
+    GlobalHooks -->|"post-rewrite rewrite upload"| Checkpoint
+    RepoHooks -->|"post-rewrite rewrite upload"| Checkpoint
+    GlobalHooks -->|"mark pending sync + start async runner"| State
+    RepoHooks -->|"mark pending sync + start async runner"| State
+    State -->|"pending sync task"| Scanner
     Artifacts --> Collector
     Artifacts --> Scanner
     Collector -->|"Snapshot -> agent_snapshot"| Checkpoint
-    Scanner -->|"normalized tool_usage_events"| Usage
-    Ensure --> Checkpoint
-    Ensure --> Usage
+    Scanner -->|"normalized managed tool_usage_events"| Usage
+    Resolve --> Checkpoint
+    Resolve --> Usage
     Usage --> Bind
     Checkpoint --> Bind
     Bind --> PRUsage
+    UI -->|"start / reuse sync job"| PRSyncJobs
+    PRSyncJobs -->|"phase + counters"| UI
+    PRSyncJobs -->|"active PR usage refresh"| PRUsage
     PRUsage --> UI
     Relay --> Backend
 ```
@@ -223,11 +278,15 @@ flowchart LR
 ### Status
 
 - Current formal CLI/runtime path:
-  `ae-cli init`, `sync`, and git hooks all best-effort ensure the backend repo exists from the local git remote. The local collection layer is split in two: `ae-cli/internal/collector` builds hook-time `agent_snapshot` caches, while `ae-cli/internal/attributionlocal` extracts `tool_usage_events` for backend ingest. `Codex` is normalized under `tool = "codex"`; the scanner currently reads global `~/.codex/sessions/**/*.jsonl` plus a compatibility `~/.codex/logs_2.sqlite` branch gated by jsonl-discovered session ids. `Kiro` is normalized under `tool = "kiro"` across legacy `~/.kiro/sessions/cli/*.json`, modern `~/Library/Application Support/kiro-cli/data.sqlite3`, and Kiro IDE execution metadata under `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/**`; Kiro IDE attribution uses `workspace-sessions/<workspace>/sessions.json` as the chat-session index and execution detail JSON files with `usageSummary[].unit=credit` as the durable credit fact source, so the current stable Kiro contract is credits/request-count rather than tokens. Backend ingests `tool_usage_events`, binds them to checkpoints, and refreshes PR usage snapshots from checkpoint-bound usage.
+  `ae-cli hooks enable --global` is the recommended one-time machine-level hook setup in the `/user` guide, while `ae-cli init` remains the per-repo registration/cache bootstrap command and can still optionally enable managed hooks with `--hooks repo` or `--hooks global`; the default is `--hooks none`. `ae-cli sync` remains a manual backfill/recovery command, but it now works through the same workspace-level pending sync task and async runner contract as managed hooks. Unlike the hidden git hook path, foreground `ae-cli sync` may refresh current-repo eligibility with its own longer timeout before consuming pending hook events, so cache misses or slow backend resolve calls do not make the explicit recovery command fail on the hook-time short resolve window. Managed git hooks are resolve-first paths: they use read-only `resolve-remote`, run only for backend-known reporting-enabled repositories, and never create repos. If a stable hook binding already has an expired positive eligibility cache entry with `repo_config_id`, and the fresh `resolve-remote` refresh is unavailable or times out inside the hook eligibility window, the hook may use that stale positive entry to keep checkpoint upload and pending sync task creation durable; an explicit fresh not-eligible response still wins over stale cache. All checkpoint, rewrite, and managed tool-usage uploads carry `repo_config_id`. The local collection layer is split in two: `ae-cli/internal/collector` builds bounded hook-time `agent_snapshot` caches, while `ae-cli/internal/attributionlocal` extracts `tool_usage_events` for backend ingest. `Codex` is normalized under `tool = "codex"`; the scanner reads global `~/.codex/sessions/**/*.jsonl` plus a compatibility `~/.codex/logs_2.sqlite` branch gated by jsonl-discovered session ids, with first-run sqlite reads limited to a recent row window before normal watermark-based incrementals. The sqlite parser handles both older text counters and newer websocket `response.completed` JSON usage payloads. Codex session matching accepts exact `session_meta.cwd` matches and same-Git-common-dir linked worktree matches, so a Codex process launched from the canonical checkout can still be attributed to a commit made from a linked worktree. `Kiro` is normalized under `tool = "kiro"` across legacy `~/.kiro/sessions/cli/*.json`, modern `~/Library/Application Support/kiro-cli/data.sqlite3`, and Kiro IDE execution metadata under `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/**`; Kiro IDE attribution uses `workspace-sessions/<workspace>/sessions.json` as the chat-session index and execution detail JSON files with `usageSummary[].unit=credit` as the durable credit fact source, so the current stable Kiro contract is credits/request-count rather than tokens. Backend ingests `tool_usage_events`, binds them to checkpoints, and refreshes PR usage snapshots from checkpoint-bound usage.
 - Trigger boundary:
-  `collector` is only triggered inside git-hook handling (`post-commit` / `post-rewrite`) and writes hook-time `Snapshot` data into checkpoint `agent_snapshot`. Before a new checkpoint or rewrite is uploaded, the current code now replays any queued workspace hook events left behind by earlier fail-open uploads, and `ae-cli sync` plus hidden `ae-cli hook attribution-sync` do the same replay before scanning local artifacts. `attributionlocal` scanning remains the only source that produces `tool_usage_events` for PR/commit aggregation.
+  `collector` is only triggered inside eligible git-hook handling (`post-commit` / `post-rewrite`) and writes hook-time `Snapshot` data into checkpoint `agent_snapshot`. Hook commands run with a short overall timeout and fail open on timeout so local artifact scanning, backend calls, or queued replay cannot block `git commit`. Before a new checkpoint or rewrite is uploaded, the current code replays only queued workspace hook events whose `server_url`, `auth_subject`, `repo_config_id`, `repo_key`, and `workspace_id` match the current stable context. `post-commit` no longer performs the full `tool_usage_events` scan inline; instead it writes or refreshes a workspace `sync-task.json`, then opportunistically starts a detached async runner. Full `Codex` / `Claude` / `Kiro` artifact scanning and managed tool-usage upload now happen in that async runner or via a later manual `ae-cli sync`, outside the hook timeout. Pending/running/error state for the runner is tracked under attribution workspace state and surfaced through CLI diagnostics; a running task is only considered active while its `runner_pid` is still alive, so stale runner leases can be recovered by diagnostics or a later sync. Runner execution is bounded by a total runtime timeout, and each managed tool-usage HTTP upload attempt has its own shorter timeout, so a stuck backend connection leaves a recoverable pending task instead of an indefinitely running process. Durable sync first replays already-spooled events before scanning current artifacts, then writes newly scanned events into `spool.json` and replays them with newest `observed_end_at` first; this keeps scanned backlog visible even if a cold scan is slow while still preventing fresh usage from being hidden behind older newly-merged spool entries. Managed tool-usage replay uses `/api/v1/tool-usage-events/batch` in bounded chunks when the backend supports it, falling back to the single-event endpoint for older servers or validation isolation; this keeps historical backlog catch-up from spending one HTTPS round trip per event. Managed tool-usage spool files and uploads omit raw local source paths, source locators, and raw payloads; transient 429/502/503/504 upload responses are retried before the remaining events stay in spool, and spooling after a failed upload is still reported as runner failure so the workspace task remains retryable. `attributionlocal` scanning remains the only source that produces `tool_usage_events` for PR/commit aggregation.
+- Reporting durability:
+  Reporting durability is now at-least-once for locally captured events while local state is writable. Hook checkpoint/rewrite failures are stored in a locked workspace queue, first-run repo eligibility failures are stored in an unresolved hook queue, and tool-usage events are spooled before scan state advances. Replay never deletes events solely because the current auth/server/repo binding differs; those events remain pending for the binding that can upload them. Events that the backend permanently rejects are moved to visible dead-letter files instead of blocking later valid events.
+- Local state and hook ownership:
+  Active user-level CLI state lives under `~/.ae-cli/`: auth in `~/.ae-cli/token.json`, global managed hook scripts in `~/.ae-cli/git-hooks`, hook eligibility and installation state under `~/.ae-cli/state/hooks`, and attribution state under `~/.ae-cli/state/attribution`. Attribution workspace state now includes `scan-state.json`, `spool.json`, `hooks.jsonl`, `upload-ledger.jsonl`, `dead-letter-tool-usage.jsonl`, and workspace-level `sync-task.json`; unresolved first-run hook events live in `~/.ae-cli/state/hooks/unresolved-hooks.jsonl`. Repo-local managed hooks live under the canonical git common directory at `<git common dir>/ae-hooks`. Managed hooks resolve the runtime binary from `AE_CLI_BIN`, then `~/.local/bin/ae-cli`, then `PATH`. AE-managed hook installation owns the configured `core.hooksPath` layer it writes and does not chain previous hooks; `--force` authorizes overwriting the relevant path.
 - Current formal frontend surface:
-  repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls.
+  the repo list page is a scoped inventory workbench: `GET /api/v1/repos/inventory` summarizes Platform -> org/project scopes, using stable `provider_key` values (`scm_provider:<id>` for bound providers and `unbound` for unbound repos) for tab/query selection while `name` remains display text; `GET /api/v1/repos` accepts `scm_provider_id`, `scope`, and `binding_state` so repo table pagination applies only to the selected platform scope. Repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls. `POST /api/v1/repos/:id/sync-prs` creates or reuses a backend `pr_sync_jobs` record and the backend process performs PR metadata sync plus active PR usage refresh asynchronously. Repo detail pages recover the latest repo-level sync job through `GET /api/v1/repos/:id/pr-sync-job/latest`, then poll `GET /api/v1/pr-sync-jobs/:id` while the job is active. `StartSyncJob` abandons stale queued/running jobs that have not recorded progress for more than one hour, which prevents a lost in-process worker from permanently blocking a new sync attempt. PR list summaries use bounded aggregate queries, while only the current page rows receive PR-level freshness evaluation. Bitbucket Server PR sync records SCM `createdDate` so recent-window filters are based on actual PR age rather than first ingestion time. PR usage numbers still come from `tool_usage_events -> commit_checkpoints -> pr_commit_usage_snapshots`; freshness fields explain missing or stale usage without counting unbound evidence as valid PR usage.
 - Current global event surface:
   `/events` is a protected top-level page for browsing backend-ingested `tool_usage_events`. It shows summary cards plus event-level rows, scopes regular users to their own events, and only exposes full raw source/path/payload detail to admins.
 - Remaining direction:
@@ -239,28 +298,30 @@ flowchart LR
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Auth and identity | `backend/internal/auth`, `backend/internal/oauth` | Relay SSO, LDAP auth, local token issuance, user identity mapping |
+| Auth and identity | `backend/internal/auth`, `backend/internal/oauth` | Config-aware login source exposure, LDAP-first auth when configured, relay SSO fallback, local token issuance, user identity mapping |
 | Credentials | `backend/internal/credential` | Reusable encrypted secret assets, payload validation, provider credential migration, and credential masking |
-| Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter and usage/API key operations |
+| Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter, optional upstream user disablement, subscription add/extend/remove/reset-quota management, user/group usage reads, group rate-multiplier read/replace extensions, and usage/API key operations |
+| Directory sync | `backend/internal/directorysync` | Configurable HTTP directory DSL validation/execution, current department/member facts, scheduled apply runs, offboarding candidate derivation, and confirmed relay-user disable plus token revocation orchestration |
+| Representative scope and team usage | `backend/internal/representativescope`, `backend/internal/teamusage` | Resolve representative subtree scope from current directory metadata, enforce delegated subject visibility and ancestor-only multiplier policy, orchestrate selected-subject/team-overview usage reads, and persist local `team_usage_rate_multiplier_audits` |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
-| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Repo ensure/binding from local git remotes, provider-backed clone/auth resolution, PR labeling, and dashboard-facing summary inputs |
+| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, PR labeling, and dashboard-facing summary inputs |
 | Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution`, `backend/internal/prusage` | Commit checkpoints, rewrite mapping, checkpoint-bound tool usage propagation, and PR usage summary/detail snapshot generation |
-| API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints |
+| API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints, representative `/user/team-usage/*` endpoints, admin team-usage audit, and admin directory sync/offboarding endpoints |
 
 ### Frontend
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Views | `frontend/src/views` | Dashboard, repos, events, oauth, user self-serve, and admin/settings pages |
-| Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, state management, request orchestration |
-| App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation, route composition |
+| Views | `frontend/src/views` | Dashboard, repos, events, oauth, selected-subject AI Usage, representative Team Overview, admin users, admin directory offboarding, and admin/settings pages |
+| Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, representative team-usage clients, directory sync clients, state management, request orchestration |
+| App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation, route composition, and representative `/team-usage` route entry |
 
 ### ae-cli
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
 | Auth and backend access | `ae-cli/internal/auth`, `ae-cli/internal/client` | Login flow, backend API calls, token usage |
-| Sessionless runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/collector`, `ae-cli/internal/attributionlocal` | Workspace marker helpers, hook management, hook-time snapshot collection, and local tool-usage event extraction/upload |
+| Sessionless runtime | `ae-cli/internal/session`, `ae-cli/internal/hooks`, `ae-cli/internal/hookstate`, `ae-cli/internal/collector`, `ae-cli/internal/attributionlocal` | Git-context workspace identity, hook management, context-bound hook state, hook-time snapshot collection, and local tool-usage event extraction/upload |
 | Tool selection | `ae-cli/internal/router` | Lightweight tool-routing helpers used by the current CLI surface |
 
 ## Documentation Expectations

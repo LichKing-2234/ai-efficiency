@@ -70,20 +70,6 @@ func (rpu *RelayProviderUpdate) SetNillableBaseURL(s *string) *RelayProviderUpda
 	return rpu
 }
 
-// SetAdminURL sets the "admin_url" field.
-func (rpu *RelayProviderUpdate) SetAdminURL(s string) *RelayProviderUpdate {
-	rpu.mutation.SetAdminURL(s)
-	return rpu
-}
-
-// SetNillableAdminURL sets the "admin_url" field if the given value is not nil.
-func (rpu *RelayProviderUpdate) SetNillableAdminURL(s *string) *RelayProviderUpdate {
-	if s != nil {
-		rpu.SetAdminURL(*s)
-	}
-	return rpu
-}
-
 // SetRelayType sets the "relay_type" field.
 func (rpu *RelayProviderUpdate) SetRelayType(s string) *RelayProviderUpdate {
 	rpu.mutation.SetRelayType(s)
@@ -218,11 +204,6 @@ func (rpu *RelayProviderUpdate) check() error {
 			return &ValidationError{Name: "base_url", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.base_url": %w`, err)}
 		}
 	}
-	if v, ok := rpu.mutation.AdminURL(); ok {
-		if err := relayprovider.AdminURLValidator(v); err != nil {
-			return &ValidationError{Name: "admin_url", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.admin_url": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -246,9 +227,6 @@ func (rpu *RelayProviderUpdate) sqlSave(ctx context.Context) (n int, err error) 
 	}
 	if value, ok := rpu.mutation.BaseURL(); ok {
 		_spec.SetField(relayprovider.FieldBaseURL, field.TypeString, value)
-	}
-	if value, ok := rpu.mutation.AdminURL(); ok {
-		_spec.SetField(relayprovider.FieldAdminURL, field.TypeString, value)
 	}
 	if value, ok := rpu.mutation.RelayType(); ok {
 		_spec.SetField(relayprovider.FieldRelayType, field.TypeString, value)
@@ -326,20 +304,6 @@ func (rpuo *RelayProviderUpdateOne) SetBaseURL(s string) *RelayProviderUpdateOne
 func (rpuo *RelayProviderUpdateOne) SetNillableBaseURL(s *string) *RelayProviderUpdateOne {
 	if s != nil {
 		rpuo.SetBaseURL(*s)
-	}
-	return rpuo
-}
-
-// SetAdminURL sets the "admin_url" field.
-func (rpuo *RelayProviderUpdateOne) SetAdminURL(s string) *RelayProviderUpdateOne {
-	rpuo.mutation.SetAdminURL(s)
-	return rpuo
-}
-
-// SetNillableAdminURL sets the "admin_url" field if the given value is not nil.
-func (rpuo *RelayProviderUpdateOne) SetNillableAdminURL(s *string) *RelayProviderUpdateOne {
-	if s != nil {
-		rpuo.SetAdminURL(*s)
 	}
 	return rpuo
 }
@@ -491,11 +455,6 @@ func (rpuo *RelayProviderUpdateOne) check() error {
 			return &ValidationError{Name: "base_url", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.base_url": %w`, err)}
 		}
 	}
-	if v, ok := rpuo.mutation.AdminURL(); ok {
-		if err := relayprovider.AdminURLValidator(v); err != nil {
-			return &ValidationError{Name: "admin_url", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.admin_url": %w`, err)}
-		}
-	}
 	return nil
 }
 
@@ -536,9 +495,6 @@ func (rpuo *RelayProviderUpdateOne) sqlSave(ctx context.Context) (_node *RelayPr
 	}
 	if value, ok := rpuo.mutation.BaseURL(); ok {
 		_spec.SetField(relayprovider.FieldBaseURL, field.TypeString, value)
-	}
-	if value, ok := rpuo.mutation.AdminURL(); ok {
-		_spec.SetField(relayprovider.FieldAdminURL, field.TypeString, value)
 	}
 	if value, ok := rpuo.mutation.RelayType(); ok {
 		_spec.SetField(relayprovider.FieldRelayType, field.TypeString, value)

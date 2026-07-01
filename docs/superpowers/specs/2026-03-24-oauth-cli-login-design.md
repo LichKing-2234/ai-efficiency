@@ -6,7 +6,7 @@
 
 ## Overview
 
-为 ae-cli 实现 OAuth 授权登录流程，打通 relay server（当前为 sub2api）SSO 认证，新增 LDAP 前端管理界面。使 ae-cli 用户无需手动配置 token，通过浏览器授权即可完成登录。引入 Relay Provider 抽象层，统一封装所有 relay server 交互（认证、LLM 调用、用量查询、API key 管理），移除 sub2api 数据库直连，支持多个独立 relay provider 实例（每个即一个 LLM 端点），API key 和 base URL 通过 server 自动下发。
+为 ae-cli 实现 OAuth 授权登录流程，打通 LDAP 与 relay server（当前为 sub2api）SSO 认证，新增 LDAP 前端管理界面。当前浏览器登录页通过 `/api/v1/auth/options` 暴露可用入口：`auth.ldap.url` 已配置时默认选择 LDAP，并保留 relay SSO 作为显式选择或 fallback；未配置 LDAP 时只展示 relay SSO；Dev Login 只有在 debug endpoint 显式启用时才展示。使 ae-cli 用户无需手动配置 token，通过浏览器授权即可完成登录。引入 Relay Provider 抽象层，统一封装所有 relay server 交互（认证、LLM 调用、用量查询、API key 管理），移除 sub2api 数据库直连，支持多个独立 relay provider 实例（每个即一个 LLM 端点），API key 和 base URL 通过 server 自动下发。
 
 本 spec 聚焦后端 Relay Provider 抽象、OAuth 登录、API Key 下发。ae-cli 侧的工具自动发现、provider-工具映射、以及各工具原生配置文件写入，由独立的 **Spec 2: ae-cli 智能工具发现与自动配置** 处理。
 
@@ -39,7 +39,7 @@
 | OAuth2 server 实现 | 轻量自定义实现（早期评估过 go-oauth2/oauth2） | 与当前 Gin/JWT 代码路径更一致，减少额外抽象层 |
 | PKCE 验证 | 自建（~50 行代码） | go-oauth2/oauth2 不原生支持 PKCE server 端验证，但逻辑简单（SHA256 + base64url 比对） |
 | ae-cli OAuth client | golang.org/x/oauth2 | Go 官方库，原生支持 PKCE client 端 |
-| Relay SSO | 通过 relay.Provider 接口调用 | 不直接读密码哈希，解耦且安全（relay server 有自己的安全机制） |
+| Relay SSO | 通过 relay.Provider 接口调用 | 不直接读密码哈希，解耦且安全；LDAP 已配置时默认登录优先 LDAP，relay SSO 作为显式选择或 fallback |
 | LLM 调用 | ae-cli 直接调 provider（不走后端代理） | 用户用自己的 API key，用量天然按用户区分；延迟更低 |
 | API key 管理 | 后端自动查询/创建并下发 | 用户无需手动配置，登录后自动获取 |
 | 多 provider 支持 | 后端管理 RelayProvider 列表 | 管理员可配置多个独立 relay provider 实例，每个即一个 LLM 端点 |
@@ -219,12 +219,14 @@ func NewSub2apiProvider(httpClient *http.Client, baseURL, adminURL, apiKey, mode
 | `Ping` | `GET /health` | 无 | 健康检查 |
 | `Authenticate` | `POST /api/v1/auth/login` + `GET /api/v1/auth/me` | 用户凭据 → session token | 401 → `ErrInvalidCredentials`；`requires_2fa` → `ErrExtraVerificationRequired` |
 | `GetUser` | `GET /api/v1/admin/users/:id` | admin API key | — |
-| `FindUserByEmail` | `GET /api/v1/admin/users?email=xxx` | admin API key | 用于 LDAP 用户关联 relay 账号 |
+| `FindUserByEmail` | `GET /api/v1/admin/users?search=xxx` | admin API key | 用于 LDAP 用户关联 relay 账号；客户端必须在返回结果里做 email 精确匹配，不能把第一条结果直接当命中 |
 | `ChatCompletion` | `POST /v1/chat/completions` | Bearer API key | — |
 | `ChatCompletionWithTools` | `POST /v1/chat/completions`（带 tools 参数） | Bearer API key | — |
 | `GetUsageStats` | `GET /api/v1/admin/users/:id/usage?from=xxx&to=xxx` | admin API key | 通过 admin 端点按用户 ID 查询，需传 from/to 时间参数 |
 | `ListUserAPIKeys` | `GET /api/v1/admin/users/:id/api-keys` | admin API key | 通过 admin 端点查询，不依赖用户 session |
-| `CreateUserAPIKey` | `POST /api/v1/keys`（以用户身份）或 admin 端点 | admin API key | 为指定用户创建 API key |
+| `CreateUserAPIKey` | `POST /api/v1/keys`（以用户身份） | 用户 JWT | 为当前 relay 用户创建 API key；admin API key 只用于身份解析 / 用户管理，不伪装成用户态 key 创建 |
+
+> **Current implementation note:** `/api/v1/user/providers/:id/test` uses the current user's selected group API key, not the provider admin key. This test path uses a platform-native sub2api probe: OpenAI groups call `/v1/chat/completions`, Anthropic groups call `/v1/messages` with `anthropic-version`, and Gemini groups call `/v1beta/models/{model}:generateContent`.
 
 ### 移除 sub2apidb 包
 
@@ -244,7 +246,7 @@ sub2api_db:
 relay:
   provider: "sub2api"              # relay server 类型，便于后续扩展
   url: "http://localhost:3000"     # relay server REST API 地址
-  api_key: ""                      # relay server API key（用于 LLM 和管理端点）
+  admin_api_key: ""                # relay server admin API key（用于 identity、用户 API key 和用量管理）
   model: "claude-sonnet-4-20250514" # 默认 LLM 模型
 ```
 
@@ -262,22 +264,24 @@ type Config struct {
 }
 
 type RelayConfig struct {
-    Provider string `mapstructure:"provider"` // "sub2api" 或后续其他实现
-    URL      string `mapstructure:"url"`
-    APIKey   string `mapstructure:"api_key"`
-    Model    string `mapstructure:"model"`
+    Provider    string `mapstructure:"provider"` // "sub2api" 或后续其他实现
+    URL         string `mapstructure:"url"`
+    AdminAPIKey string `mapstructure:"admin_api_key"`
+    Model       string `mapstructure:"model"`
 }
 ```
 
 ### Provider 实例化策略
 
-Section 1 的 `relay.*` 配置优先用于创建后端的"主 provider"实例（用于 SSO 认证、LDAP 登录时的 relay identity provision、LLM 分析、session bootstrap 等后端内部功能）。
+Section 1 的 `relay.*` 配置优先用于创建后端的"主 provider"实例（用于 SSO 认证、LDAP 登录时的 relay identity provision、LLM 分析、session bootstrap 等后端内部功能）。当前静态配置合同只包含 `relay.url` + `relay.admin_api_key`；旧 `relay.api_key` / `AE_RELAY_API_KEY` 和 `relay.admin_url` / `AE_RELAY_ADMIN_URL` 已从后端配置合同中移除。
 
-Section 7 的 `RelayProvider` Ent 记录用于为每个用户下发 API key。后端为每个 `enabled=true` 的 RelayProvider Ent 记录调用 `NewSub2apiProvider()`，使用该记录的 `admin_url` + `admin_api_key` 创建独立的 Provider 实例。
+Section 7 的 `RelayProvider` Ent 记录用于为每个用户下发 API key。后端为每个 `enabled=true` 的 RelayProvider Ent 记录调用 `NewSub2apiProvider()`，使用该记录的 `base_url` + `admin_api_key` 创建独立的 Provider 实例；管理 API endpoint 从 `base_url` 派生。
 
-若 `relay.*` 未配置 URL，当前实现会在启动时回退到 `enabled=true && is_primary=true` 的 `RelayProvider` Ent 记录来构建这个主 provider。该回退路径使用该记录的 `base_url` 作为 `relay.url`、`admin_url` 作为 `relay.admin_url`，并结合 `admin_api_key` / `default_model` 完成初始化。
+若 `relay.*` 未配置 URL，当前实现会在启动时回退到 `enabled=true && is_primary=true` 的 `RelayProvider` Ent 记录来构建这个主 provider。该回退路径使用该记录的 `base_url` 作为 `relay.url`，并结合 `admin_api_key` / `default_model` 完成初始化。
 
-`is_primary=true` 的 RelayProvider Ent 记录应与 Section 1 的 `relay.*` 配置指向同一个 relay server。当前实现保留“静态配置优先、primary provider 回退”的双轨模式；当回退路径生效时，要求 primary provider 的 `base_url` / `admin_url` 与目标 relay 的 inference/admin 端点一致。后续仍可进一步移除 `relay.*` 配置，完全从数据库加载。
+`is_primary=true` 的 RelayProvider Ent 记录应与 Section 1 的 `relay.*` 配置指向同一个 relay server。当前实现保留“静态配置优先、primary provider 回退”的双轨模式；当回退路径生效时，要求 primary provider 的 `base_url` 指向目标 relay server。后续仍可进一步移除 `relay.*` 配置，完全从数据库加载。
+
+启动迁移会删除旧 `relay_providers.admin_url` 列，避免旧库中残留的 NOT NULL 列继续影响新的 provider 创建流程。
 
 ### 消费方改造
 
@@ -310,7 +314,7 @@ backend/internal/relay/
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/oauth/authorize` | 授权端点，校验参数后 302 重定向到前端页面 `{frontend_url}/oauth/authorize?{原始query参数}` |
+| GET | `/oauth/authorize` | 授权端点，校验参数后进入前端授权页；独立前端部署时 302 重定向到 `{frontend_url}/oauth/authorize?{原始query参数}`，嵌入式同源部署时直接返回后端内嵌 SPA 入口 |
 | POST | `/oauth/authorize/approve` | 用户授权确认端点（前端调用，需要用户 JWT） |
 | POST | `/oauth/token` | Token 交换端点（authorization code → JWT） |
 
@@ -324,6 +328,8 @@ server:
 ```
 
 对应 `ServerConfig` 新增 `FrontendURL string` 字段。
+
+当前 Docker/生产部署会把前端构建产物嵌入后端二进制；当请求命中后端的 OAuth 浏览器入口 path 时，`/oauth/authorize` 必须直接返回嵌入式 SPA 入口，而不是 302 到 `frontend_url` 的同一路径。该判断不依赖代理保留公网 host 或 scheme，避免 TLS 终止、代理链、域名别名或 ingress host 改写导致自重定向循环。
 
 ### Client 管理
 
@@ -438,13 +444,15 @@ func NewSSOProvider(relayProvider relay.Provider, logger *zap.Logger) *SSOProvid
 
 ### 错误处理
 
-- relay server 返回凭据错误：`relay.Provider.Authenticate` 返回 `ErrInvalidCredentials`，SSO provider fallthrough 到 LDAP
-- relay server 不可用（网络错误等）：`relay.Provider.Authenticate` 返回其他 error，SSO provider 记录 warn 日志，fallthrough 到 LDAP
-- relay server 要求额外验证（如 Turnstile、TOTP）：`relay.Provider.Authenticate` 返回 `ErrExtraVerificationRequired`，SSO provider fallthrough 到 LDAP。后续可在 OAuth 授权页中增加额外验证输入框
+- 默认登录在 LDAP provider 已注册时先走 LDAP；LDAP 未认证成功时，才会继续尝试已注册的 relay SSO provider。浏览器登录页是否展示 LDAP 入口由 `/api/v1/auth/options` 基于当前 `auth.ldap.url` 配置决定。
+- relay server 返回凭据错误：`relay.Provider.Authenticate` 返回 `ErrInvalidCredentials`，SSO provider 返回空结果并允许默认登录链继续处理失败结果。Relay SSO 只认证既有 relay/sub2api 用户；即使登录名是邮箱，SSO provider 也不得在认证失败时查找或创建缺失 relay 用户。
+- relay server 不可用（网络错误等）：`relay.Provider.Authenticate` 返回其他 error，SSO provider 记录 warn 日志并返回空结果。
+- relay server 要求额外验证（如 Turnstile、TOTP）：`relay.Provider.Authenticate` 返回 `ErrExtraVerificationRequired`，SSO provider 记录 warn 日志并返回空结果。后续可在 OAuth 授权页中增加额外验证输入框。
+- LDAP 登录只使用用户输入密码完成 LDAP bind。后续 relay identity resolve/provision 不得把 LDAP 密码转发给 relay；创建 relay 用户时使用后端生成的高熵 relay-side password，已有 relay 用户只做 username/concurrency 等元数据修复，不使用 LDAP 密码更新密码。LDAP relay identity resolution must prefer an exact relay email match before canonical username lookup/provisioning. When the resolved relay user exposes a valid `admin` or `user` role, the local user role is synced from that relay role so LDAP login does not downgrade an existing relay admin account. If a successful LDAP login reuses an existing local relay SSO row by username/email, the backend updates local `users.auth_source` to `ldap` so `/auth/me` and the `/user` profile show the latest successful login provider, while preserving any Relay SSO-captured `users.relay_auth_password`. If LDAP provisioning creates a relay user, default subscription repair first lists the user's active subscriptions and skips default groups that are already present. If an assignment races with another assigner, clear `SUBSCRIPTION_ALREADY_EXISTS` responses or a follow-up list proving the active group exists are treated as idempotent success; admin subscription operations still keep semantic conflicts fatal so validity or notes mismatches remain visible there. If a later `/user` create/regenerate operation needs a relay user JWT, the backend only uses an already stored relay credential or a generated credential saved during LDAP provisioning of a new relay user. Existing relay users without a stored relay credential are not password-repaired by `/user`; because sub2api key creation requires a user JWT, create/regenerate returns a credential-required error until the user completes Relay SSO against an already existing relay account.
 
 ### Provider Chain
 
-认证顺序不变：Relay SSO → LDAP → dev login
+默认 `/api/v1/auth/login` 认证顺序：LDAP → Relay SSO fallback（以已注册 provider 为准）。显式 `source=LDAP` 或 `source=SSO` 仍只尝试对应 provider。`dev-login` 是独立 debug endpoint，不参与普通 provider chain；前端只有在 `/api/v1/auth/options` 返回 `dev_login_enabled=true` 时展示入口。
 
 SSO provider 仅在 `relay.Provider` 可用时注册。
 
@@ -594,7 +602,7 @@ Provider 配置（base URL + API key）以及完整的工具原生配置写入�
 
 1. 从 URL query 读取 `client_id`、`redirect_uri`、`code_challenge`、`code_challenge_method`、`state`
 2. 检查用户是否已登录（localStorage 中有有效 token，调用 `/auth/me` 验证）
-3. 未登录：显示登录表单（支持 LDAP 和 sub2api SSO 两种方式）
+3. 未登录：显示登录表单（调用 `/api/v1/auth/options`；LDAP 已配置时支持 LDAP 和 sub2api SSO 并默认选择 LDAP，LDAP 未配置时只显示 SSO）
 4. 已登录：直接显示授权确认页面
 
 同一前端中的 `/login` 页面保持 `public route`，但只对未登录用户展示登录表单；若本地已有 token，前端应先调用 `/auth/me` 校验并 hydrate 当前用户，校验通过时将已登录用户重定向到经过净化的站内目标路径，而不是继续停留在登录页。对于非 auth API 的运行时 `401`，前端应先尝试使用 localStorage 中的 `refresh_token` 调用 `/auth/refresh`，成功后重放原请求；仅在 refresh 失败时才清理本地 token 并跳转 `/login`。
@@ -716,8 +724,7 @@ ae-cli 直接调用 relay provider（不走后端代理），支持多个独立 
 |------|------|------|
 | name | string, unique | provider 名称，如 `sub2api-claude`、`sub2api-codex` |
 | display_name | string | 显示名称，如 "Claude (Sub2API)"、"Codex (Sub2API)" |
-| base_url | string | LLM API 地址，如 `http://localhost:3000/v1` |
-| admin_url | string | relay server 管理 API 地址（用于查询/创建 API key），可与 base_url 不同 |
+| base_url | string | relay server 地址；后端从该地址派生 `/v1` inference endpoint 与管理 API endpoint |
 | relay_type | string | 对应的 relay.Provider 实现类型，如 `sub2api` |
 | admin_api_key | string | relay server 管理 API key（加密存储，用于后端代为创建用户 key） |
 | default_model | string | 默认模型，如 `claude-sonnet-4-20250514` |
@@ -760,9 +767,10 @@ ae-cli 直接调用 relay provider（不走后端代理），支持多个独立 
 
 `GET /api/v1/providers` 流程中，后端需要 relay user ID 来查询/创建 API key。用户的 `relay_user_id` 来源：
 
-- Relay SSO 用户：登录时已关联，直接使用
-- LDAP 用户：通过 `relay.Provider.FindUserByEmail(email)` 尝试关联。如果找到匹配的 relay 账号，将 `relay_user_id` 存入 Ent User 记录
-- LDAP-only 用户（无 relay 账号）：无法获取 API key。`GET /api/v1/providers` 返回空列表 `{"providers": []}`。ae-cli 收到空列表后提示用户："当前账号未关联 relay server，无法自动配置 AI 工具。请联系管理员。"
+- Relay SSO 用户：仅在 relay/sub2api 侧用户已存在且密码认证成功时关联，直接使用；SSO 登录失败不得自动创建 relay 用户。
+- LDAP 用户：后端先用 LDAP 派生邮箱精确查找 relay 用户，以复用现有 sub2api 账号和角色；未命中时再通过 stable username 解析 relay identity。username 路径使用 canonical username（邮箱登录时取 `@` 前缀）查找 relay 用户；必要时兼容历史 full-email username，并可修复 username/concurrency 等元数据。若解析出的 relay 用户角色为 `admin` 或 `user`，本地 `users.role` 跟随该 relay 角色。
+- LDAP 用户首次没有 relay 账号时，后端可通过 relay admin API provision relay 用户，并使用后端生成的高熵 relay-side password。LDAP 登录密码只用于 LDAP bind，不能写入本地 `relay_auth_password`，也不能作为 relay create/update password 发送给 relay。relay 默认订阅补齐是幂等 entitlement repair：如果 sub2api admin user create 已经分配过相同用户和 group 的默认订阅，后端会通过用户订阅列表先跳过已存在的 active group；若并发窗口里 assign 仍返回 409，只要后续列表能证明 active group 已存在，也不阻断 LDAP 登录。LDAP 用户通过 username/email 复用既有本地 relay SSO 用户记录时，成功登录会把本地 `auth_source` 同步为 `ldap`，并保留之前 Relay SSO 保存的加密 `relay_auth_password`，用于后续获取 relay 用户态 JWT。已有 relay 用户如果没有保存的 relay credential，`/user` create/regenerate 不会更新 relay password；当前 sub2api `/api/v1/keys` 不接受 admin API key 代替用户 JWT，因此缺少用户态凭据时不能 create/regenerate 自己的 LLM API key，需要先通过 Relay SSO 保存 relay credential。
+- 当 relay provider 不可用或无法解析/provision relay 用户时，LDAP-only 用户无法获取 API key。`GET /api/v1/providers` 返回空列表 `{"providers": []}`。ae-cli 收到空列表后提示用户："当前账号未关联 relay server，无法自动配置 AI 工具。请联系管理员。"
 
 ### relay.Provider 接口扩展
 

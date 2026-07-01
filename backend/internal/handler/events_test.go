@@ -130,6 +130,47 @@ func TestEventsListScopesNonAdminToOwnRows(t *testing.T) {
 	}
 }
 
+func TestEventsUsersSearchAdminOnly(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	nonAdminToken := createFullNonAdminToken(t, env)
+	seedEventsFixture(t, env)
+
+	userResp := doFullRequestWithToken(env, http.MethodGet, "/api/v1/events/users?q=cov&limit=20", nil, nonAdminToken)
+	if userResp.Code != http.StatusForbidden {
+		t.Fatalf("regular user status = %d, want 403, body=%s", userResp.Code, userResp.Body.String())
+	}
+}
+
+func TestEventsUsersSearchReturnsUsersWithEventsForAdmin(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	createFullNonAdminToken(t, env)
+	seedEventsFixture(t, env)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/events/users?q=cov&limit=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+
+	data := parseFullResponse(t, w)["data"].([]interface{})
+	if len(data) != 1 {
+		t.Fatalf("users=%d, want 1: %+v", len(data), data)
+	}
+	row := data[0].(map[string]interface{})
+	if row["username"] != "covuser" {
+		t.Fatalf("username=%v, want covuser", row["username"])
+	}
+	if int(row["event_count"].(float64)) != 2 {
+		t.Fatalf("event_count=%v, want 2", row["event_count"])
+	}
+	if row["latest_event_at"] == "" {
+		t.Fatalf("latest_event_at is empty: %+v", row)
+	}
+}
+
 func TestEventDetailReturnsRawFieldsOnlyForAdmin(t *testing.T) {
 	t.Parallel()
 

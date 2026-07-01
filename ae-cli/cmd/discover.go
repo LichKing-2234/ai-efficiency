@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
@@ -74,6 +75,10 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if len(result.Configured) == 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "No supported local tools matched provider %s credentials.\n", selected.Name)
+		return nil
+	}
 
 	mode := "Configured"
 	if discoverDryRun {
@@ -86,7 +91,44 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(cmd.OutOrStdout(), "    %s\n", path)
 		}
 	}
+	if hasConfiguredTool(result, "gemini") && !discoverDryRun {
+		fmt.Fprintln(cmd.OutOrStdout())
+		fmt.Fprintln(cmd.OutOrStdout(), "Gemini uses shell environment variables.")
+		fmt.Fprintln(cmd.OutOrStdout(), "For the current terminal, run:")
+		fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", geminiShellReloadCommand(result))
+		fmt.Fprintln(cmd.OutOrStdout(), "Set GEMINI_MODEL so Gemini starts with the preview model directly.")
+		fmt.Fprintln(cmd.OutOrStdout(), `  export GEMINI_MODEL="gemini-3.1-pro-preview"`)
+		fmt.Fprintln(cmd.OutOrStdout(), "Do not switch models manually inside Gemini.")
+	}
 	return nil
+}
+
+func hasConfiguredTool(result toolconfig.Result, name string) bool {
+	for _, item := range result.Configured {
+		if item.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func geminiShellReloadCommand(result toolconfig.Result) string {
+	for _, item := range result.Configured {
+		if item.Name != "gemini" {
+			continue
+		}
+		for _, path := range item.Paths {
+			switch filepath.Base(path) {
+			case ".zshrc":
+				return `source "$HOME/.zshrc"`
+			case ".bashrc":
+				return `source "$HOME/.bashrc"`
+			case ".profile":
+				return `source "$HOME/.profile"`
+			}
+		}
+	}
+	return `source "$HOME/.zshrc"`
 }
 
 func defaultListProvidersForDiscover(ctx context.Context) ([]client.ProviderInfo, error) {
@@ -107,6 +149,21 @@ func mapProviders(items []client.ProviderInfo) []toolconfig.Provider {
 			APIKeyID:     item.APIKeyID,
 			DefaultModel: item.DefaultModel,
 			IsPrimary:    item.IsPrimary,
+			Credentials:  mapProviderCredentials(item.Credentials),
+		})
+	}
+	return out
+}
+
+func mapProviderCredentials(items []client.ProviderCredentialInfo) []toolconfig.PlatformCredential {
+	out := make([]toolconfig.PlatformCredential, 0, len(items))
+	for _, item := range items {
+		out = append(out, toolconfig.PlatformCredential{
+			Platform: item.Platform,
+			GroupID:  item.GroupID,
+			APIKey:   item.APIKey,
+			APIKeyID: item.APIKeyID,
+			Status:   item.Status,
 		})
 	}
 	return out

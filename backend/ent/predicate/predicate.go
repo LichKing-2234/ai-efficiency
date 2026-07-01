@@ -6,6 +6,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// AdminSubscriptionJob is the predicate function for adminsubscriptionjob builders.
+type AdminSubscriptionJob func(*sql.Selector)
+
 // CommitCheckpoint is the predicate function for commitcheckpoint builders.
 type CommitCheckpoint func(*sql.Selector)
 
@@ -15,8 +18,26 @@ type CommitRewrite func(*sql.Selector)
 // Credential is the predicate function for credential builders.
 type Credential func(*sql.Selector)
 
+// DirectoryDepartment is the predicate function for directorydepartment builders.
+type DirectoryDepartment func(*sql.Selector)
+
+// DirectoryMember is the predicate function for directorymember builders.
+type DirectoryMember func(*sql.Selector)
+
+// DirectoryOffboardingAction is the predicate function for directoryoffboardingaction builders.
+type DirectoryOffboardingAction func(*sql.Selector)
+
+// DirectorySource is the predicate function for directorysource builders.
+type DirectorySource func(*sql.Selector)
+
+// DirectorySyncRun is the predicate function for directorysyncrun builders.
+type DirectorySyncRun func(*sql.Selector)
+
 // PRCommitUsageSnapshot is the predicate function for prcommitusagesnapshot builders.
 type PRCommitUsageSnapshot func(*sql.Selector)
+
+// PRSyncJob is the predicate function for prsyncjob builders.
+type PRSyncJob func(*sql.Selector)
 
 // PrAttributionRun is the predicate function for prattributionrun builders.
 type PrAttributionRun func(*sql.Selector)
@@ -35,6 +56,9 @@ type ScmProvider func(*sql.Selector)
 
 // SystemSetting is the predicate function for systemsetting builders.
 type SystemSetting func(*sql.Selector)
+
+// TeamUsageRateMultiplierAudit is the predicate function for teamusageratemultiplieraudit builders.
+type TeamUsageRateMultiplierAudit func(*sql.Selector)
 
 // ToolUsageEvent is the predicate function for toolusageevent builders.
 type ToolUsageEvent func(*sql.Selector)

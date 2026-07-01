@@ -65,7 +65,9 @@ func TestRootCommandHasSubcommands(t *testing.T) {
 		"init":     false,
 		"sync":     false,
 		"doctor":   false,
+		"hooks":    false,
 		"hook":     false,
+		"update":   false,
 	}
 
 	for _, cmd := range cmds {

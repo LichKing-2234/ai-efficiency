@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"database/sql"
+
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/oauth"
@@ -26,6 +28,7 @@ func SetPRUsageService(service prUsageRefresher) {
 // SetupRouter creates and configures the Gin router with all route groups.
 func SetupRouter(
 	entClient *ent.Client,
+	sqlDB *sql.DB,
 	authService *auth.Service,
 	repoService *repo.Service,
 	webhookHandler *webhook.Handler,
@@ -38,6 +41,7 @@ func SetupRouter(
 	adminSettingsHandler *AdminSettingsHandler,
 	checkpointHandler *CheckpointHandler,
 	healthHandler *HealthHandler,
+	directoryServices ...DirectoryAdminService,
 ) *gin.Engine {
 	r := gin.New()
 	r.RemoveExtraSlash = true
@@ -62,7 +66,7 @@ func SetupRouter(
 	}
 
 	// Handlers
-	authHandler := NewAuthHandler(authService, entClient)
+	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
 	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
 	repoHandler := NewRepoHandler(repoService)
@@ -72,6 +76,11 @@ func SetupRouter(
 	eventsHandler := NewEventsHandler(toolusage.NewQueryService(entClient))
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
+	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
+	if providerHandler != nil {
+		adminUsersHandler = NewAdminUsersHandler(entClient, encryptionKey, providerHandler)
+		adminUsersHandler.logger = providerHandler.logger
+	}
 
 	api := r.Group("/api/v1")
 
@@ -87,6 +96,7 @@ func SetupRouter(
 	// Auth routes — no auth middleware
 	authGroup := api.Group("/auth")
 	{
+		authGroup.GET("/options", authHandler.Options)
 		authGroup.POST("/login", authHandler.Login)
 		authGroup.POST("/refresh", authHandler.Refresh)
 		authGroup.GET("/me", auth.RequireAuth(authService), authHandler.Me)
@@ -134,13 +144,20 @@ func SetupRouter(
 	{
 		repoGroup.GET("", repoHandler.List)
 		repoGroup.POST("", repoHandler.Create)
+		repoGroup.GET("/inventory", repoHandler.Inventory)
 		repoGroup.POST("/direct", repoHandler.CreateDirect)
 		repoGroup.POST("/ensure-remote", repoHandler.EnsureRemote)
+		repoGroup.POST("/resolve-remote", repoHandler.ResolveRemote)
+		repoGroup.POST("/hook-eligible", repoHandler.HookEligible)
+		repoGroup.POST("/auto-bind-unbound", auth.RequireAdmin(), repoHandler.AutoBindUnbound)
+		repoGroup.POST("/repair-webhooks", auth.RequireAdmin(), repoHandler.RepairFailedWebhooks)
+		repoGroup.POST("/:id/repair-webhook", auth.RequireAdmin(), repoHandler.RepairWebhook)
 		repoGroup.GET("/:id", repoHandler.Get)
 		repoGroup.PUT("/:id", repoHandler.Update)
 		repoGroup.DELETE("/:id", repoHandler.Delete)
 		repoGroup.GET("/:id/prs", prHandler.ListByRepo)
 		repoGroup.POST("/:id/sync-prs", prHandler.SyncPRs)
+		repoGroup.GET("/:id/pr-sync-job/latest", prHandler.GetLatestSyncJobForRepo)
 	}
 
 	// PRs
@@ -151,6 +168,11 @@ func SetupRouter(
 		prGroup.POST("/:id/settle", prHandler.Settle)
 	}
 
+	prSyncJobGroup := protected.Group("/pr-sync-jobs")
+	{
+		prSyncJobGroup.GET("/:id", prHandler.GetSyncJob)
+	}
+
 	// Efficiency
 	effGroup := protected.Group("/efficiency")
 	{
@@ -159,17 +181,35 @@ func SetupRouter(
 
 	toolUsageGroup := protected.Group("/tool-usage-events")
 	toolUsageGroup.POST("", toolUsageHandler.Create)
+	toolUsageGroup.POST("/batch", toolUsageHandler.CreateBatch)
 
 	eventsGroup := protected.Group("/events")
 	{
 		eventsGroup.GET("/summary", eventsHandler.Summary)
+		eventsGroup.GET("/users", eventsHandler.Users)
 		eventsGroup.GET("", eventsHandler.List)
 		eventsGroup.GET("/:id", eventsHandler.Get)
 	}
 
+	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler))
+
 	userGroup := protected.Group("/user")
 	{
 		userGroup.GET("/providers", userSetupHandler.ListProviders)
+		userGroup.GET("/team-usage/scope", teamUsageHandler.Scope)
+		userGroup.GET("/team-usage/subjects", teamUsageHandler.Subjects)
+		userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamUsageHandler.SubjectDashboard)
+		userGroup.PUT("/team-usage/subjects/:user_id/groups/:group_id/rate-multiplier", teamUsageHandler.UpdateMultiplier)
+		userGroup.GET("/team-usage/overview", teamUsageHandler.Overview)
+		userGroup.GET("/team-usage/audit", teamUsageHandler.Audit)
+		if providerHandler != nil {
+			userGroup.GET("/providers/:id/groups/:group_id/models", providerHandler.Models)
+			userGroup.POST("/providers/:id/test", providerHandler.Test)
+
+			// User usage dashboard
+			userUsageHandler := NewUserUsageHandler(entClient, providerHandler, encryptionKey)
+			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
+		}
 		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
 		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)
 	}
@@ -193,8 +233,27 @@ func SetupRouter(
 			adminProviderGroup.POST("", providerHandler.Create)
 			adminProviderGroup.PUT("/:id", providerHandler.Update)
 			adminProviderGroup.DELETE("/:id", providerHandler.Delete)
-			adminProviderGroup.POST("/:id/test", providerHandler.Test)
 		}
+	}
+
+	adminUsersGroup := protected.Group("/admin/users")
+	adminUsersGroup.Use(auth.RequireAdmin())
+	{
+		adminUsersGroup.GET("", adminUsersHandler.List)
+		adminUsersGroup.GET("/departments", adminUsersHandler.ListDepartments)
+		adminUsersGroup.GET("/subscription-options", adminUsersHandler.ListSubscriptionOptions)
+		adminUsersGroup.POST("/subscription-jobs", adminUsersHandler.StartSubscriptionJob)
+		adminUsersGroup.GET("/subscription-jobs/latest", adminUsersHandler.GetLatestSubscriptionJob)
+		adminUsersGroup.GET("/subscription-jobs/:id", adminUsersHandler.GetSubscriptionJob)
+		adminUsersGroup.POST("/subscriptions/batch", adminUsersHandler.ManageSubscriptions)
+		adminUsersGroup.POST("/:id/relay-password/reveal", adminUsersHandler.RevealRelayPassword)
+		adminUsersGroup.POST("/:id/subscriptions", adminUsersHandler.AssignSubscription)
+	}
+
+	adminTeamUsageGroup := protected.Group("/admin/team-usage")
+	adminTeamUsageGroup.Use(auth.RequireAdmin())
+	{
+		adminTeamUsageGroup.GET("/audit", teamUsageHandler.AdminAudit)
 	}
 
 	adminCredentialGroup := protected.Group("/admin/credentials")
@@ -216,6 +275,12 @@ func SetupRouter(
 			ldapGroup.PUT("", adminSettingsHandler.UpdateLDAP)
 			ldapGroup.POST("/test", adminSettingsHandler.TestLDAP)
 		}
+	}
+
+	if len(directoryServices) > 0 && directoryServices[0] != nil {
+		directoryGroup := protected.Group("/admin/directory")
+		directoryGroup.Use(auth.RequireAdmin())
+		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(directoryServices[0]))
 	}
 
 	// Settings — admin only

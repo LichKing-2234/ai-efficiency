@@ -12,7 +12,7 @@ vi.mock('@/api/client', () => {
 })
 
 import client from '@/api/client'
-import { login, devLogin, refresh, getMe } from '@/api/auth'
+import { login, getAuthOptions, devLogin, refresh, getMe } from '@/api/auth'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -41,6 +41,14 @@ describe('auth API', () => {
     expect(mockClient.post).toHaveBeenCalledWith('/auth/dev-login')
   })
 
+  it('getAuthOptions calls GET /auth/options', async () => {
+    mockClient.get.mockResolvedValue({
+      data: { data: { ldap_enabled: true, dev_login_enabled: false } },
+    })
+    await getAuthOptions()
+    expect(mockClient.get).toHaveBeenCalledWith('/auth/options')
+  })
+
   it('refresh calls POST /auth/refresh with refresh_token', async () => {
     mockClient.post.mockResolvedValue({
       data: { data: { token: 'new-token' } },
@@ -51,7 +59,7 @@ describe('auth API', () => {
 
   it('getMe calls GET /auth/me', async () => {
     mockClient.get.mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
     await getMe()
     expect(mockClient.get).toHaveBeenCalledWith('/auth/me')
@@ -78,7 +86,7 @@ describe('auth API', () => {
   })
 
   it('getMe returns user data', async () => {
-    const user = { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' }
+    const user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' }
     mockClient.get.mockResolvedValue({ data: { data: user } })
     const result = await getMe()
     expect(result.data.data!).toEqual(user)

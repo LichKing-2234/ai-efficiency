@@ -1,7 +1,7 @@
 # Global Tool Usage Events Page Design
 
 **Date:** 2026-05-21  
-**Status:** Proposed current design  
+**Status:** Implemented current contract
 **Scope:** `backend/internal/handler/`, `backend/internal/toolusage/`, `frontend/src/router/`, `frontend/src/views/`, `frontend/src/api/`, `docs/`  
 **Related:**  
 - [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md)  
@@ -14,6 +14,7 @@
 - 它补足当前产品只到 `Repo -> PR -> Commit` 聚合层的可见性缺口，但**不改变** sessionless attribution 的绑定合同。
 - `tool_usage_event -> checkpoint/commit -> PR(best-effort)` 的链路仍以 [`2026-05-13-sessionless-local-tool-attribution-design.md`](./2026-05-13-sessionless-local-tool-attribution-design.md) 为准。
 - `PR` 在本页中是派生信息，不是 event 的原生字段；commit/PR 聚合的正式产品合同仍以 [`2026-05-20-pr-usage-snapshots-design.md`](./2026-05-20-pr-usage-snapshots-design.md) 为准。
+- Implementation has landed in the current codebase: `backend/internal/handler/events.go`, `backend/internal/toolusage/query.go`, `frontend/src/views/events/EventsView.vue`, and `frontend/src/api/events.ts` provide the protected event summary/list/detail/user-search surface described here. Manual browser verification is tracked in the corresponding plan rather than in this spec.
 
 ## Overview
 
@@ -103,8 +104,9 @@
 
 ### Default Time Window
 
-- 默认时间范围：最近 `24h`
+- 默认时间范围：最近 `7d`
 - 首屏必须带默认时间范围，避免全量查询造成页面和接口过重
+- 用户可以显式调整 `from` / `to`，也可以清空时间范围用于历史排查
 
 ## Permissions
 
@@ -113,7 +115,7 @@
 admin 可以：
 
 1. 查看所有事件
-2. 按用户、repo、tool、绑定状态筛选
+2. 按用户、repo、tool、绑定状态、时间范围筛选
 3. 查看完整 `raw_source_path`
 4. 查看完整 `raw_source_locator`
 5. 查看完整 `raw_payload`
@@ -213,11 +215,11 @@ admin 可以：
 
 第一版筛选项：
 
-1. 时间范围（默认 `24h`）
+1. 时间范围（默认 `7d`）
 2. `tool`
 3. `repo`
 4. `binding status`
-5. `user`（admin only）
+5. `user`（admin only searchable selector）
 6. 统一搜索框 `q`
 
 统一搜索框匹配：
@@ -227,6 +229,30 @@ admin 可以：
 3. `dedupe_key`
 4. `commit_sha`
 5. `source basename`
+
+### Pagination
+
+列表必须支持服务端分页。
+
+- 默认页大小：`20`
+- 可选页大小：`20` / `50` / `100`
+- 前端使用 `limit` + `offset`
+- 筛选条件变化时，`offset` 必须重置为 `0`
+- summary 统计当前筛选条件下的全集，不受当前页 `limit` / `offset` 影响
+
+### Admin User Selector
+
+admin 的用户筛选使用 searchable selector，而不是手填内部 `user_id`。
+
+交互规则：
+
+1. 输入框按 `email` / `username` 搜索本地用户
+2. 下拉结果展示 `email` 为主文本，`username` / `role` / event count 为辅助信息
+3. 只返回本地已经有 `tool_usage_events` 的用户，避免选到没有事件数据的 relay/sub2api 全量用户
+4. 选中用户后，前端内部携带该用户的 `id` 查询 `/events` 与 `/events/summary`
+5. 清空选中用户后回到 admin 全量视图
+
+普通用户不显示这个 selector；即使手动构造 `user_id` 或用户搜索请求，后端也必须拒绝或忽略越权访问。
 
 ### Detail Drawer
 
@@ -286,7 +312,7 @@ GET /api/v1/events/summary
 - `tool`
 - `repo_id`
 - `binding_status`
-- `user_id`（admin only）
+- `user_id`（admin only，由前端 user selector 选中后传入；不作为手填字段展示）
 - `q`
 
 返回：
@@ -309,7 +335,7 @@ GET /api/v1/events
 - `tool`
 - `repo_id`
 - `binding_status`
-- `user_id`（admin only）
+- `user_id`（admin only，由前端 user selector 选中后传入；不作为手填字段展示）
 - `q`
 - `limit`
 - `offset`
@@ -361,10 +387,39 @@ admin 额外字段：
 - `raw_source_path` 不返回或仅返回脱敏路径
 - `raw_payload` 不返回
 
+### 4. Event User Search
+
+```text
+GET /api/v1/events/users
+```
+
+admin-only endpoint，用于 `/events` 页面用户筛选下拉。
+
+查询参数：
+
+- `q`：按 `email` / `username` 模糊匹配
+- `limit`：默认 `20`，最大 `50`
+
+返回本地已有 `tool_usage_events` 的用户：
+
+- `id`
+- `username`
+- `email`
+- `role`
+- `event_count`
+- `latest_event_at`
+
+说明：
+
+- 该接口只查本系统本地 `users` 与 `tool_usage_events`，不查询 relay/sub2api 全量用户
+- 普通用户访问该接口返回 `403`
+- 返回结果按 `latest_event_at desc` 排序
+
 ### Authorization Rules
 
 - 非 admin 查询时，后端必须强制追加 `user_id = 当前用户`
 - admin 才允许使用 `user_id` 过滤他人数据
+- admin 用户筛选 UI 不暴露手填 `user_id`，但接口仍使用稳定内部 ID 避免邮箱变更造成歧义
 - 事件详情接口同理，必须验证事件属于当前用户或当前用户为 admin
 
 ## PR Reverse Lookup
@@ -423,7 +478,7 @@ admin 额外字段：
 
 第一版保护策略：
 
-1. 默认 `24h`
+1. 默认 `7d`
 2. 列表分页
 3. summary 和 list 分开请求
 4. 明细按需加载
@@ -447,7 +502,7 @@ admin 额外字段：
 ### Backend
 
 1. 非 admin 只能看到自己的事件
-2. admin 可以按 `user_id` 看他人事件
+2. admin 可以通过 `/events/users` 搜索本地有事件的用户，并用选中的 `user_id` 看他人事件
 3. `binding_status` 过滤正确
 4. `q` 能匹配 `tool_session_id` / `tool_event_id` / `dedupe_key` / `commit_sha` / `source basename`
 5. detail 接口对 admin 返回 raw 字段，对普通用户返回脱敏版
@@ -457,10 +512,12 @@ admin 额外字段：
 
 1. `/events` 路由可访问
 2. 首屏先拉 summary + list
-3. 默认时间范围为 `24h`
+3. 默认时间范围为 `7d`
 4. 行点击打开抽屉
 5. admin 能看到 raw 区块，普通用户看不到
-6. 筛选变化会刷新 summary + list
+6. 筛选变化会刷新 summary + list，并重置到第一页
+7. admin 能搜索并选择用户，普通用户看不到用户筛选控件
+8. 上一页 / 下一页 / 页大小变化会使用正确的 `limit` / `offset`
 
 ## Rollout
 

@@ -23,8 +23,6 @@ type RelayProvider struct {
 	DisplayName string `json:"display_name,omitempty"`
 	// BaseURL holds the value of the "base_url" field.
 	BaseURL string `json:"base_url,omitempty"`
-	// AdminURL holds the value of the "admin_url" field.
-	AdminURL string `json:"admin_url,omitempty"`
 	// RelayType holds the value of the "relay_type" field.
 	RelayType string `json:"relay_type,omitempty"`
 	// AdminAPIKey holds the value of the "admin_api_key" field.
@@ -51,7 +49,7 @@ func (*RelayProvider) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case relayprovider.FieldID:
 			values[i] = new(sql.NullInt64)
-		case relayprovider.FieldName, relayprovider.FieldDisplayName, relayprovider.FieldBaseURL, relayprovider.FieldAdminURL, relayprovider.FieldRelayType, relayprovider.FieldAdminAPIKey, relayprovider.FieldDefaultModel:
+		case relayprovider.FieldName, relayprovider.FieldDisplayName, relayprovider.FieldBaseURL, relayprovider.FieldRelayType, relayprovider.FieldAdminAPIKey, relayprovider.FieldDefaultModel:
 			values[i] = new(sql.NullString)
 		case relayprovider.FieldCreatedAt, relayprovider.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -93,12 +91,6 @@ func (rp *RelayProvider) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field base_url", values[i])
 			} else if value.Valid {
 				rp.BaseURL = value.String
-			}
-		case relayprovider.FieldAdminURL:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field admin_url", values[i])
-			} else if value.Valid {
-				rp.AdminURL = value.String
 			}
 		case relayprovider.FieldRelayType:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -186,9 +178,6 @@ func (rp *RelayProvider) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("base_url=")
 	builder.WriteString(rp.BaseURL)
-	builder.WriteString(", ")
-	builder.WriteString("admin_url=")
-	builder.WriteString(rp.AdminURL)
 	builder.WriteString(", ")
 	builder.WriteString("relay_type=")
 	builder.WriteString(rp.RelayType)

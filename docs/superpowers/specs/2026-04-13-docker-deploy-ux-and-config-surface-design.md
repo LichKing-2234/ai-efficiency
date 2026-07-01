@@ -132,7 +132,6 @@ preflight 路径不得回显 secret 明文值。只允许提示“已生成并�
   - `AE_SERVER_FRONTEND_URL`
 - relay 连接：
   - `AE_RELAY_URL`
-  - `AE_RELAY_API_KEY`
   - `AE_RELAY_ADMIN_API_KEY`
 - bundled PostgreSQL / Redis 的基础凭据
 - external 模式所需的 `AE_DB_DSN`、`AE_REDIS_ADDR`、`AE_REDIS_PASSWORD`、`AE_REDIS_DB`

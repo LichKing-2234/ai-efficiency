@@ -1,7 +1,7 @@
 # User Page CLI Self-Serve Design
 
 **Date:** 2026-05-21  
-**Status:** Proposed current design  
+**Status:** Implemented current contract
 **Scope:** `backend/internal/handler/`, `backend/internal/relay/`, `frontend/src/router/`, `frontend/src/views/`, `frontend/src/components/`, `frontend/src/api/`, `frontend/src/types/`, `docs/`  
 **Related:**  
 - [2026-04-13-ae-cli-user-install-design.md](./2026-04-13-ae-cli-user-install-design.md)  
@@ -16,7 +16,9 @@
 - 它**不改变** `ae-cli install.sh` 的分发合同；CLI 安装入口仍以 [`2026-04-13-ae-cli-user-install-design.md`](./2026-04-13-ae-cli-user-install-design.md) 为准。
 - 它**不改变** `ae-cli login` 的 PKCE / device flow 合同；CLI 登录协议仍以 [`2026-04-15-oauth-device-login-design.md`](./2026-04-15-oauth-device-login-design.md) 为准。
 - 它本轮**不直接改写** `ae-cli discover` 的命令形状；工具配置写入规则仍以 [`2026-05-19-ae-cli-deterministic-tool-configuration-design.md`](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md) 为准。
-- 它修正的是 `/user` 页面如何表达和调用用户态 credential provisioning：从错误的 `provider + platform` 折叠视图，改成 `provider + group` 视图，并以当前 relay user 的 `allowed_groups` 作为唯一 group 来源。
+- 它修正的是 `/user` 页面如何表达和调用用户态 credential provisioning：从错误的 `provider + platform` 折叠视图，改成 `provider + group` 视图，并以当前 relay user 的 user-scoped group facts 作为 group 来源；adapter 可以用 provider-wide group list 解析 `allowed_groups` ID，但不能把 provider 下全部 active groups 暴露给用户。
+- 本文当前还约束 `/user` 创建 / 重建 key 的写入身份：sub2api `/api/v1/keys` 要求当前 relay user 的用户态 JWT，RelayProvider admin API key 不能代替用户凭据创建 key。后端必须在创建 / 重建 key 前确保本地用户已绑定 relay user 且有可用的用户态写入凭据：Relay SSO 登录只认证既有 relay/sub2api 用户，成功后保存用户输入的 relay password；如果 SSO 登录邮箱在 relay 侧不存在或密码错误，登录失败且不得自动创建 relay user；LDAP 登录和 `/user` 写入路径不能使用 LDAP bind password，而是使用后端生成的高熵 relay-side password。若 relay user 不存在，后端通过 relay admin API 创建用户、保存生成密码，并显式分配 relay 默认订阅；若 sub2api 已在 admin user create 期间完成默认订阅分配，后端重复 assign 遇到 409 `SUBSCRIPTION_ASSIGN_CONFLICT` 时视为幂等成功。若 relay user 已存在但本地没有可解密密码，或本地密码已经失效，后端可轮换该 relay user 的生成密码、加密保存，然后用用户态 JWT 创建 / 重建 key。对旧版本已经创建出的 LDAP-provisioned relay user，如果其 `notes=provisioned_by_ai_efficiency_ldap` 且还没有 group facts，后续 LDAP 登录可补默认订阅。LDAP bind password 仍然只能用于 LDAP bind，不能写入本地或转发到 relay。
+- Implementation has landed in the current codebase. `/user` uses the DB-backed user provider surface, group-scoped credential actions, provider/group model loading, user-key test flow, and CLI setup guidance described here; `ae-cli discover` consumes `/api/v1/user/providers` with `/api/v1/providers` kept only as an older backend compatibility fallback.
 
 ## Overview
 
@@ -30,14 +32,14 @@
 结果是：
 
 1. 普通开发者知道系统“有 CLI”，但缺少一个登录后常驻入口来完成自助配置
-2. 当前 `GET /api/v1/providers` 更像 `ae-cli discover` 的程序消费接口，不是为 Web 用户界面设计的账户能力
+2. 旧 `GET /api/v1/providers` 更像早期 `ae-cli discover` 的程序消费接口，不是为 Web 用户界面设计的账户能力
 3. 用户无法在前端清楚区分：
    - 自己是谁
    - 当前有哪些 provider
    - 当前 provider 下自己到底有哪些已订阅 / 已授权 group
    - 每个 group 属于哪个 platform
    - 当前 group 是否已有可复用 credential
-   - 为什么旧 key 不能直接 reveal
+   - 为什么 key 默认只做部分 mask 展示，但仍可复制完整值
 
 因此新增一个普通登录用户可访问的新页面：
 
@@ -62,7 +64,7 @@
    - verify
 3. 让用户能看见自己当前有哪些 provider，并在进入 credential 自助时显式选择 group。
 4. 让 `/user` 只展示当前用户有订阅 / 有权限的 group，而不是把 provider 下的全部 active groups 暴露给用户。
-5. 给用户提供自己的 group-scoped provider credential 状态说明，以及安全受限的一次性 reveal / copy / regenerate 交互。
+5. 给用户提供自己的 group-scoped provider credential 状态说明，以及安全受限的 reveal / copy / regenerate 交互。
 6. 保持后端与前端语义清晰分层：
    - CLI 程序消费接口继续服务 `ae-cli`
    - Web 账户页有自己的用户态接口
@@ -72,7 +74,7 @@
 
 1. 第一版不做 profile 编辑、密码修改、认证设置修改。
 2. 第一版不做浏览器直接执行本地 CLI 命令，也不做本机探测。
-3. 第一版不把旧 key 的明文“重新读取”出来；历史 existing key 只能通过重新创建得到新的 secret。
+3. 第一版不在列表视图直接铺满展示 API key 明文；existing key 默认以部分 mask 展示，完整值通过 Copy 或 Reveal 获取。
 4. 第一版不做完整的 group 管理台；只围绕“当前用户在当前 provider 下有权使用的 groups”做自助 credential 页面。
 5. 第一版不在本 spec 内同时重写 `ae-cli discover` 为 group-first；如果 provider 下存在多个 allowed groups，discover 的 group selector 作为后续合同收口项单独处理。
 6. 第一版不引入新的 LLM-based tool discovery。
@@ -187,8 +189,9 @@
 1. `display_name`
 2. `name`
 3. `base_url`
-4. `default_model`
-5. `is_primary`
+4. `is_primary`
+
+响应中可以继续包含 `default_model` 以兼容 CLI / discover 相关消费方，但 `/user` 的 `Provider & Group Credential` 区块不把它展示成 credential 元数据。provider test 的 `model` 必须由用户在测试表单里显式选择或输入；页面应优先按当前 `provider + group + platform` 加载可用模型候选，加载失败或无候选时保留手动输入兜底。
 
 页面始终只允许单选一个 provider。默认选中规则：
 
@@ -225,7 +228,7 @@ Checklist 固定为 4 步：
 1. `~/.local/bin` 不在 `PATH`
 2. `login` 需要使用 `--device`
 3. `discover` 没有检测到工具
-4. 为什么历史 key 不能直接 reveal
+4. 为什么 key 默认只显示部分 mask
 
 ## Provider Credential Semantics
 
@@ -242,7 +245,14 @@ Checklist 固定为 4 步：
 
 ### Group Source of Truth
 
-`/user` 页面中的 groups 必须以当前 relay user 的 `allowed_groups` 作为唯一来源。
+`/user` 页面中的 groups 必须以当前 relay user 的 user-scoped group facts 作为来源。对 sub2api adapter 来说，这包括：
+
+1. relay user detail 或 admin user list 中的 `allowed_groups`
+   - 可能是 group object 数组
+   - 也可能是 group ID 数组；此时 adapter 必须通过 group list 解析 ID 对应的 `name` / `platform` / subscription metadata
+2. relay user detail 或 admin user list 中的 active `subscriptions`
+   - subscription group 只有在当前用户存在 active subscription fact 时才可展示
+   - sub2api detail endpoint 可能省略 subscriptions；adapter 可以 fallback 到 admin users list 中同一个 `user_id` 的 user-scoped facts
 
 明确禁止以下替代来源：
 
@@ -250,7 +260,7 @@ Checklist 固定为 4 步：
 2. 通过“已有 key”倒推出 group
 3. 通过 platform 折叠 group 后的近似视图
 
-如果后端当前 adapter 里没有 `allowed_groups` 能力，则应先扩展 relay adapter，再暴露 `/user` 页面，而不是继续沿用错误的 `platforms[]` 合同。
+如果后端当前 adapter 里没有 user-scoped group fact 能力，则应先扩展 relay adapter，再暴露 `/user` 页面，而不是继续沿用错误的 `platforms[]` 合同。
 
 ### Canonical Provisioning Contract
 
@@ -267,7 +277,7 @@ Checklist 固定为 4 步：
 
 当前页面不再把 group 解析包装成 platform-aware 默认解析问题。对于 `/user`：
 
-1. group 由 `allowed_groups` 直接给出
+1. group 由 relay user-scoped facts 给出；`allowed_groups` 为 ID 时由 adapter 解析成完整 group
 2. 用户点击 create / regenerate 时，目标 `group_id` 就是用户选中的 group
 3. 不允许再用 “当前 platform 对应默认 group” 替代显式 group 选择
 
@@ -278,7 +288,9 @@ Checklist 固定为 4 步：
 1. `missing`
    - 当前 `provider + group` 下没有可复用 credential
 2. `existing_hidden`
-   - 当前 `provider + group` 下已有可复用 credential，但系统拿不到旧 secret 明文
+   - 当前 `provider + group` 下已有可复用 credential
+   - 当 relay `ListUserAPIKeys` 返回 key 明文时，后端在该状态下返回 `credential.key`
+   - 前端默认只显示部分 mask 值，但复制动作使用完整 key
 
 ### Client Overlay State
 
@@ -293,29 +305,46 @@ Checklist 固定为 4 步：
 
 `session_visible` 不是后端事实，也不应通过 `GET` 接口重新读取出来。
 
-刷新页面、重新进入页面或丢失本地内存后，状态必须回退为 `existing_hidden`。
+刷新页面、重新进入页面或丢失本地内存后，状态仍以 `GET /api/v1/user/providers` 返回的 `existing_hidden` 为准；如果该响应带有 `credential.key`，页面仍可 mask 展示并复制完整 key。
+
+### Relay Write Credential Semantics
+
+`Create Key` / `Regenerate` 必须用当前 relay user 的身份写入 sub2api 用户态 key 接口，而不是把 RelayProvider admin key 伪装成用户态写入。只要本地存在可解密的 `relay_auth_password`，后端就可以用它为当前 relay user 获取用户态 JWT；这个规则同样适用于 relay 侧角色为 `admin` 的用户。
+
+`/user` create/regenerate 阶段必须主动补齐写入凭据，而不是把缺失凭据暴露成用户操作阻断。正确来源包括：
+
+1. Relay SSO 登录成功时，SSO provider 把用户输入的 relay password 作为 `RelayAuthPassword` 传给 auth service，后端用 `encryption.key` 加密保存。
+2. Relay SSO 登录遇到 `invalid credentials` 时直接失败；即使登录名是邮箱且 relay 侧没有既有用户，SSO provider 也不得查找或创建 relay user。SSO 登录只用于管理员已在 sub2api/relay 侧分配好的账号。
+3. LDAP 新用户在 relay 侧没有账号时，LDAP 登录期 relay identity provisioning 创建 relay user，并保存后端生成的高熵 relay-side password。创建后后端读取 relay `default_subscriptions` 设置并逐条调用 relay subscription assign API，使新用户具备可创建 API key 的 group entitlement；如果当前 sub2api 已经在 admin user create 内部分配默认订阅，重复 assign 返回 409 `SUBSCRIPTION_ASSIGN_CONFLICT` 时按已有订阅处理，不让首次 LDAP 登录失败。旧版本已创建但缺少 group facts 的 `provisioned_by_ai_efficiency_ldap` relay user，在后续 LDAP 登录解析身份时也可补同一组默认订阅。若本地 LDAP 用户的历史 `relay_user_id` 被后续登录修复到另一个带该 provisioning note 的 relay user，或本地用户记录缺失但登录解析到既有系统 provisioned relay user，后端会为目标 relay user 轮换新的生成密码并保存，以免本地继续持有旧 relay 身份的密码或没有可写密码。
+4. `/user` create/regenerate 发现本地用户没有 `relay_user_id`，或本地保存的 `relay_user_id` 在当前 relay/sub2api 已不存在时，通过当前 provider 按 email / canonical username 重新解析 relay user；解析不到则创建 relay user、保存生成密码，再继续 key 写入。
+5. `/user` create/regenerate 发现本地没有可解密 `relay_auth_password`，或用旧密码创建 key 失败时，后端通过 relay admin API 轮换生成密码、保存后重试一次用户态 key 写入。
+
+LDAP 登录复用既有本地 relay SSO 用户记录时，后端会把本地 `auth_source` 更新为 `ldap`，但优先保留之前 SSO 保存的 `relay_auth_password`；如果后续写入发现该密码失效，再按上面的轮换规则修复。LDAP bind password 只用于 LDAP bind，不能使用、保存或转发给 relay。
 
 ### Create, Reveal, Copy, Regenerate Rules
 
 - `Create Key`
   - 仅在当前 `provider + group` 处于 `missing` 状态时可用
   - 执行一次 ensure/create，并返回新 secret
+  - 如果当前账号缺少 relay write credential，后端先解析/创建 relay user、轮换并保存生成密码，再用用户态 JWT 创建 key
   - 成功后前端进入 `session_visible`
 - `Reveal`
-  - 仅在 `session_visible` 状态可用
-  - 用于把当前页面内存中的 secret 明文显示出来
+  - 当当前页面内存存在新 secret，或 `GET` 返回了 `credential.key` 时可用
+  - 用于把当前 key 明文显示出来
 - `Copy`
-  - 仅在 `session_visible` 状态可用
-  - 将当前页面内存中的 secret 复制到剪贴板
+  - 当当前页面内存存在新 secret，或 `GET` 返回了 `credential.key` 时可用
+  - 将完整 key 复制到剪贴板
 - `Regenerate`
   - 在 `existing_hidden` 或 `session_visible` 状态可用
-  - 先将当前 `provider + group` 下按统一合同识别出的旧 credential 标记为不可用，再按同一合同新建
+  - 先确保 relay write credential 可用，再将当前 `provider + group` 下按统一合同识别出的旧 credential 标记为不可用，最后按同一合同新建
+  - 如果已有本地 relay password 失效，后端轮换并保存生成密码后重试用户态写入
   - 成功后前端进入 `session_visible`
 
 页面必须明确解释：
 
-1. 历史旧 key 的明文不会被重新读取
-2. 如果需要重新拿到明文，只能通过 create / regenerate 得到一次性新 secret
+1. 页面默认部分 mask 展示 API key，避免列表视图直接铺满明文
+2. 只要当前 relay 响应提供 key 值，用户随时可以复制完整 key
+3. 如果某个 relay 响应不提供 key 值，页面应说明该 key 当前不可复制，需要 regenerate 得到新 key
 
 ## API Contract
 
@@ -329,15 +358,15 @@ GET /api/v1/auth/me
 
 用于 `Profile Summary`。
 
-### Why Not Reuse `GET /api/v1/providers`
+### Why Not Build `/user` On Legacy `GET /api/v1/providers`
 
-现有：
+旧接口：
 
 ```text
 GET /api/v1/providers
 ```
 
-是 `ae-cli discover` 的程序消费接口，当前语义包含：
+曾是 `ae-cli discover` 的程序消费接口，语义包含：
 
 1. 以 CLI 配置为目标的数据形状
 2. 当前实现里仍带有 provider 级自动创建 API key 的副作用
@@ -385,6 +414,7 @@ GET /api/v1/providers
             "credential": {
               "state": "existing_hidden",
               "api_key_id": 12345,
+              "key": "sk-...",
               "name": "alice",
               "status": "active",
               "created_at": "2026-05-21T01:02:03Z",
@@ -402,7 +432,7 @@ GET /api/v1/providers
 约束：
 
 1. `credential.state` 只返回 `missing | existing_hidden`
-2. 不返回旧 secret
+2. 对当前用户自己的现有 API key，如果 relay list 响应包含 `key`，则返回 `credential.key`；前端负责 mask 展示、完整复制
 3. 不返回 `session_visible`
 
 #### `POST /api/v1/user/providers/:id/groups/:group_id/credential`
@@ -437,6 +467,66 @@ GET /api/v1/providers
 2. 创建一把新的 credential
 3. 返回新 secret 的一次性明文
 
+#### `GET /api/v1/user/providers/:id/groups/:group_id/models?platform=<platform>`
+
+用途：
+
+1. 为 `/user` 连接测试表单加载当前 `provider + group + platform` 下可用的模型候选
+2. 使用当前用户在该 group 下自己的 active API key 调用 relay/sub2api，而不是使用 RelayProvider admin key
+3. 将不同平台模型列表响应归一成简单选择项
+
+建议响应字段：
+
+```json
+{
+  "data": {
+    "models": [
+      {
+        "id": "gpt-5.4",
+        "display_name": "GPT-5.4"
+      }
+    ],
+    "message": ""
+  }
+}
+```
+
+行为：
+
+1. 路由只要求登录态，不要求 admin role
+2. 后端按 `provider + group_id + platform` 选择当前用户自己的 active key
+3. OpenAI / Anthropic 兼容列表优先读取 sub2api `GET /v1/models` 的 `data[].id`
+4. Gemini 原生列表读取 `GET /v1beta/models` 的 `models[].name`，并去掉 `models/` 前缀后返回给前端选择
+5. 未找到当前用户在该 group + platform 下可用 key 时返回空 `models` 和可读 `message`，前端保留手动输入兜底
+
+#### `POST /api/v1/user/providers/:id/test`
+
+用途：
+
+1. 让普通用户从 `/user` 页面测试自己在当前 provider 下的 active API key
+2. 使用页面当前选中 group 的 `platform` 和用户显式选择或输入的具体 `model`
+3. 发送一次真实 chat completion 请求，返回连接结果和可选响应内容
+4. admin Settings 的 Relay Providers 表只保留管理 CRUD，不再提供 Test 入口
+
+请求字段：
+
+```json
+{
+  "platform": "openai",
+  "group_id": "42",
+  "model": "gpt-5.4",
+  "prompt": "Hi"
+}
+```
+
+行为：
+
+1. 路由只要求登录态，不要求 admin role；不存在对应的 `/api/v1/admin/providers/:id/test` 管理端测试合同
+2. 后端仍通过 `relay.Provider` 列出当前 relay user 的 API keys
+3. 后端按 `provider + group_id + platform` 选择当前用户自己的 active key，而不是使用 RelayProvider admin key 或同 platform 其他 group 的 key
+4. `model` 必须由调用方提供；页面不把 provider `default_model` 当作测试合同。页面可以从 user-scoped models endpoint 预填候选，但提交测试时仍必须带明确模型值
+5. 未找到当前用户在该 group + platform 下可用 key 时返回 `success: false`
+
 ### Backend Boundary
 
 这些接口应复用现有 `relay.Provider` 抽象：
@@ -444,6 +534,7 @@ GET /api/v1/providers
 1. `ListUserAPIKeys`
 2. `CreateUserAPIKey`
 3. `UpdateUserAPIKeyStatus`
+4. `ListModelsForPlatform` optional extension
 
 同时应扩展 relay adapter，增加“读取当前用户 `allowed_groups`”的能力。  
 不得绕过 provider 抽象重新引入 direct sub2api DB coupling。
@@ -455,8 +546,13 @@ GET /api/v1/providers
 显示官方安装命令：
 
 ```bash
-AE_CLI_INSTALL_SERVER_URL=<current-origin> \
-curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.sh | AE_CLI_INSTALL_SERVER_URL=<current-origin> bash
+```
+
+同时显示 Windows PowerShell 安装命令：
+
+```powershell
+$env:AE_CLI_INSTALL_SERVER_URL = "<current-origin>"; iwr -UseB https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae-cli/install.ps1 | iex
 ```
 
 ### Step 2: Login
@@ -464,13 +560,13 @@ curl -fsSL https://raw.githubusercontent.com/LichKing-2234/ai-efficiency/main/ae
 显示：
 
 ```bash
-ae-cli --server <current-origin> login
+ae-cli login
 ```
 
 并补充 headless 说明：
 
 ```bash
-ae-cli --server <current-origin> login --device
+ae-cli login --device
 ```
 
 ### Step 3: Discover
@@ -478,7 +574,7 @@ ae-cli --server <current-origin> login --device
 本 spec 本轮不改 discover 命令形状，仍沿用：
 
 ```bash
-ae-cli --server <current-origin> discover --provider <provider-name>
+ae-cli discover --provider <provider-name>
 ```
 
 但页面必须明确说明：
@@ -494,8 +590,8 @@ ae-cli --server <current-origin> discover --provider <provider-name>
 验证输入至少包括：
 
 1. `ae-cli version`
-2. `ae-cli --server <current-origin> discover --dry-run --provider <provider-name>`
-3. `ae-cli --server <current-origin> doctor`
+2. `ae-cli discover --dry-run --provider <provider-name>`
+3. `ae-cli doctor`
 
 ## Runtime Boundary and Data Ownership
 
@@ -512,7 +608,7 @@ provider 的 source of truth 是 DB，而不是 runtime fallback config 视图�
 
 ### Group Source of Truth
 
-group 的 source of truth 是当前 relay user 的 `allowed_groups`，不是 provider 下 active groups 全量枚举，也不是已有 key 推断。
+group 的 source of truth 是当前 relay user 的 user-scoped group facts：`allowed_groups` 及 active subscription entries。adapter 可以读取 provider group list 来解析 `allowed_groups` ID 的详情，但不能把 provider 下 active groups 全量枚举成用户可见 group，也不能从已有 key 反推 group。
 
 ## Testing
 
@@ -529,7 +625,8 @@ group 的 source of truth 是当前 relay user 的 `allowed_groups`，不是 pro
 4. 前端 `/user`
    - provider 切换
    - group 切换
-   - secret reveal/copy 仅在本次页面会话有效
+   - API key 默认部分 mask 展示
+   - 完整 key 可从当前页面内存的新 secret 或 `credential.key` 复制
 
 ## Rollout Notes
 

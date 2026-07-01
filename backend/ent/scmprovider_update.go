@@ -72,6 +72,26 @@ func (spu *ScmProviderUpdate) SetNillableBaseURL(s *string) *ScmProviderUpdate {
 	return spu
 }
 
+// SetSSHHost sets the "ssh_host" field.
+func (spu *ScmProviderUpdate) SetSSHHost(s string) *ScmProviderUpdate {
+	spu.mutation.SetSSHHost(s)
+	return spu
+}
+
+// SetNillableSSHHost sets the "ssh_host" field if the given value is not nil.
+func (spu *ScmProviderUpdate) SetNillableSSHHost(s *string) *ScmProviderUpdate {
+	if s != nil {
+		spu.SetSSHHost(*s)
+	}
+	return spu
+}
+
+// ClearSSHHost clears the value of the "ssh_host" field.
+func (spu *ScmProviderUpdate) ClearSSHHost() *ScmProviderUpdate {
+	spu.mutation.ClearSSHHost()
+	return spu
+}
+
 // SetCredentials sets the "credentials" field.
 func (spu *ScmProviderUpdate) SetCredentials(s string) *ScmProviderUpdate {
 	spu.mutation.SetCredentials(s)
@@ -316,6 +336,12 @@ func (spu *ScmProviderUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := spu.mutation.BaseURL(); ok {
 		_spec.SetField(scmprovider.FieldBaseURL, field.TypeString, value)
 	}
+	if value, ok := spu.mutation.SSHHost(); ok {
+		_spec.SetField(scmprovider.FieldSSHHost, field.TypeString, value)
+	}
+	if spu.mutation.SSHHostCleared() {
+		_spec.ClearField(scmprovider.FieldSSHHost, field.TypeString)
+	}
 	if value, ok := spu.mutation.Credentials(); ok {
 		_spec.SetField(scmprovider.FieldCredentials, field.TypeString, value)
 	}
@@ -493,6 +519,26 @@ func (spuo *ScmProviderUpdateOne) SetNillableBaseURL(s *string) *ScmProviderUpda
 	if s != nil {
 		spuo.SetBaseURL(*s)
 	}
+	return spuo
+}
+
+// SetSSHHost sets the "ssh_host" field.
+func (spuo *ScmProviderUpdateOne) SetSSHHost(s string) *ScmProviderUpdateOne {
+	spuo.mutation.SetSSHHost(s)
+	return spuo
+}
+
+// SetNillableSSHHost sets the "ssh_host" field if the given value is not nil.
+func (spuo *ScmProviderUpdateOne) SetNillableSSHHost(s *string) *ScmProviderUpdateOne {
+	if s != nil {
+		spuo.SetSSHHost(*s)
+	}
+	return spuo
+}
+
+// ClearSSHHost clears the value of the "ssh_host" field.
+func (spuo *ScmProviderUpdateOne) ClearSSHHost() *ScmProviderUpdateOne {
+	spuo.mutation.ClearSSHHost()
 	return spuo
 }
 
@@ -769,6 +815,12 @@ func (spuo *ScmProviderUpdateOne) sqlSave(ctx context.Context) (_node *ScmProvid
 	}
 	if value, ok := spuo.mutation.BaseURL(); ok {
 		_spec.SetField(scmprovider.FieldBaseURL, field.TypeString, value)
+	}
+	if value, ok := spuo.mutation.SSHHost(); ok {
+		_spec.SetField(scmprovider.FieldSSHHost, field.TypeString, value)
+	}
+	if spuo.mutation.SSHHostCleared() {
+		_spec.ClearField(scmprovider.FieldSSHHost, field.TypeString)
 	}
 	if value, ok := spuo.mutation.Credentials(); ok {
 		_spec.SetField(scmprovider.FieldCredentials, field.TypeString, value)

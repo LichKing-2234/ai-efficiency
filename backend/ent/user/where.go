@@ -80,6 +80,11 @@ func LdapDn(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldLdapDn, v))
 }
 
+// TokenValidAfter applies equality check predicate on the "token_valid_after" field. It's identical to TokenValidAfterEQ.
+func TokenValidAfter(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldTokenValidAfter, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldCreatedAt, v))
@@ -458,6 +463,56 @@ func RoleIn(vs ...Role) predicate.User {
 // RoleNotIn applies the NotIn predicate on the "role" field.
 func RoleNotIn(vs ...Role) predicate.User {
 	return predicate.User(sql.FieldNotIn(FieldRole, vs...))
+}
+
+// TokenValidAfterEQ applies the EQ predicate on the "token_valid_after" field.
+func TokenValidAfterEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldTokenValidAfter, v))
+}
+
+// TokenValidAfterNEQ applies the NEQ predicate on the "token_valid_after" field.
+func TokenValidAfterNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldTokenValidAfter, v))
+}
+
+// TokenValidAfterIn applies the In predicate on the "token_valid_after" field.
+func TokenValidAfterIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldTokenValidAfter, vs...))
+}
+
+// TokenValidAfterNotIn applies the NotIn predicate on the "token_valid_after" field.
+func TokenValidAfterNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldTokenValidAfter, vs...))
+}
+
+// TokenValidAfterGT applies the GT predicate on the "token_valid_after" field.
+func TokenValidAfterGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldTokenValidAfter, v))
+}
+
+// TokenValidAfterGTE applies the GTE predicate on the "token_valid_after" field.
+func TokenValidAfterGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldTokenValidAfter, v))
+}
+
+// TokenValidAfterLT applies the LT predicate on the "token_valid_after" field.
+func TokenValidAfterLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldTokenValidAfter, v))
+}
+
+// TokenValidAfterLTE applies the LTE predicate on the "token_valid_after" field.
+func TokenValidAfterLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldTokenValidAfter, v))
+}
+
+// TokenValidAfterIsNil applies the IsNil predicate on the "token_valid_after" field.
+func TokenValidAfterIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldTokenValidAfter))
+}
+
+// TokenValidAfterNotNil applies the NotNil predicate on the "token_valid_after" field.
+func TokenValidAfterNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldTokenValidAfter))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

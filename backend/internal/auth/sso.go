@@ -47,6 +47,13 @@ func (p *SSOProvider) Authenticate(ctx context.Context, username, password strin
 		return nil, nil
 	}
 
+	return relayUserInfo(relayUser, password), nil
+}
+
+func relayUserInfo(relayUser *relay.User, password string) *UserInfo {
+	if relayUser == nil {
+		return nil
+	}
 	relayID := int(relayUser.ID)
 	role := relayUser.Role
 	if role == "" {
@@ -59,5 +66,5 @@ func (p *SSOProvider) Authenticate(ctx context.Context, username, password strin
 		Role:              role,
 		RelayUserID:       &relayID,
 		RelayAuthPassword: password,
-	}, nil
+	}
 }

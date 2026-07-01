@@ -13,15 +13,15 @@ import (
 )
 
 type stubUserSetupService struct {
-	listResponse              *usersetup.ListProvidersResponse
-	listErr                   error
-	createGroupResult         *usersetup.CreateGroupCredentialResult
-	createGroupErr            error
-	regenerateGroupResult     *usersetup.CreateGroupCredentialResult
-	regenerateGroupErr        error
-	lastListReq               usersetup.ListProvidersRequest
-	lastCreateGroupReq        usersetup.CreateGroupCredentialRequest
-	lastRegenerateGroupReq    usersetup.RegenerateGroupCredentialRequest
+	listResponse           *usersetup.ListProvidersResponse
+	listErr                error
+	createGroupResult      *usersetup.CreateGroupCredentialResult
+	createGroupErr         error
+	regenerateGroupResult  *usersetup.CreateGroupCredentialResult
+	regenerateGroupErr     error
+	lastListReq            usersetup.ListProvidersRequest
+	lastCreateGroupReq     usersetup.CreateGroupCredentialRequest
+	lastRegenerateGroupReq usersetup.RegenerateGroupCredentialRequest
 }
 
 func (s *stubUserSetupService) ListProviders(ctx context.Context, req usersetup.ListProvidersRequest) (*usersetup.ListProvidersResponse, error) {

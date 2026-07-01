@@ -12,14 +12,28 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// AdminSubscriptionJob is the client for interacting with the AdminSubscriptionJob builders.
+	AdminSubscriptionJob *AdminSubscriptionJobClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
 	CommitCheckpoint *CommitCheckpointClient
 	// CommitRewrite is the client for interacting with the CommitRewrite builders.
 	CommitRewrite *CommitRewriteClient
 	// Credential is the client for interacting with the Credential builders.
 	Credential *CredentialClient
+	// DirectoryDepartment is the client for interacting with the DirectoryDepartment builders.
+	DirectoryDepartment *DirectoryDepartmentClient
+	// DirectoryMember is the client for interacting with the DirectoryMember builders.
+	DirectoryMember *DirectoryMemberClient
+	// DirectoryOffboardingAction is the client for interacting with the DirectoryOffboardingAction builders.
+	DirectoryOffboardingAction *DirectoryOffboardingActionClient
+	// DirectorySource is the client for interacting with the DirectorySource builders.
+	DirectorySource *DirectorySourceClient
+	// DirectorySyncRun is the client for interacting with the DirectorySyncRun builders.
+	DirectorySyncRun *DirectorySyncRunClient
 	// PRCommitUsageSnapshot is the client for interacting with the PRCommitUsageSnapshot builders.
 	PRCommitUsageSnapshot *PRCommitUsageSnapshotClient
+	// PRSyncJob is the client for interacting with the PRSyncJob builders.
+	PRSyncJob *PRSyncJobClient
 	// PrAttributionRun is the client for interacting with the PrAttributionRun builders.
 	PrAttributionRun *PrAttributionRunClient
 	// PrRecord is the client for interacting with the PrRecord builders.
@@ -32,6 +46,8 @@ type Tx struct {
 	ScmProvider *ScmProviderClient
 	// SystemSetting is the client for interacting with the SystemSetting builders.
 	SystemSetting *SystemSettingClient
+	// TeamUsageRateMultiplierAudit is the client for interacting with the TeamUsageRateMultiplierAudit builders.
+	TeamUsageRateMultiplierAudit *TeamUsageRateMultiplierAuditClient
 	// ToolUsageEvent is the client for interacting with the ToolUsageEvent builders.
 	ToolUsageEvent *ToolUsageEventClient
 	// User is the client for interacting with the User builders.
@@ -169,16 +185,24 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.AdminSubscriptionJob = NewAdminSubscriptionJobClient(tx.config)
 	tx.CommitCheckpoint = NewCommitCheckpointClient(tx.config)
 	tx.CommitRewrite = NewCommitRewriteClient(tx.config)
 	tx.Credential = NewCredentialClient(tx.config)
+	tx.DirectoryDepartment = NewDirectoryDepartmentClient(tx.config)
+	tx.DirectoryMember = NewDirectoryMemberClient(tx.config)
+	tx.DirectoryOffboardingAction = NewDirectoryOffboardingActionClient(tx.config)
+	tx.DirectorySource = NewDirectorySourceClient(tx.config)
+	tx.DirectorySyncRun = NewDirectorySyncRunClient(tx.config)
 	tx.PRCommitUsageSnapshot = NewPRCommitUsageSnapshotClient(tx.config)
+	tx.PRSyncJob = NewPRSyncJobClient(tx.config)
 	tx.PrAttributionRun = NewPrAttributionRunClient(tx.config)
 	tx.PrRecord = NewPrRecordClient(tx.config)
 	tx.RelayProvider = NewRelayProviderClient(tx.config)
 	tx.RepoConfig = NewRepoConfigClient(tx.config)
 	tx.ScmProvider = NewScmProviderClient(tx.config)
 	tx.SystemSetting = NewSystemSettingClient(tx.config)
+	tx.TeamUsageRateMultiplierAudit = NewTeamUsageRateMultiplierAuditClient(tx.config)
 	tx.ToolUsageEvent = NewToolUsageEventClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 	tx.WebhookDeadLetter = NewWebhookDeadLetterClient(tx.config)
@@ -191,7 +215,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: CommitCheckpoint.QueryXXX(), the query will be executed
+// applies a query, for example: AdminSubscriptionJob.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

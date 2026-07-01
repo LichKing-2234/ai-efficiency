@@ -16,6 +16,7 @@ const (
 	envFileRelativePath = ".ae-cli/env.sh"
 	managedBlockStart   = "# BEGIN AE-CLI MANAGED"
 	managedBlockEnd     = "# END AE-CLI MANAGED"
+	codexModel          = "gpt-5.4"
 )
 
 type Provider struct {
@@ -26,6 +27,15 @@ type Provider struct {
 	APIKeyID     int64
 	DefaultModel string
 	IsPrimary    bool
+	Credentials  []PlatformCredential
+}
+
+type PlatformCredential struct {
+	Platform string
+	GroupID  string
+	APIKey   string
+	APIKeyID int64
+	Status   string
 }
 
 type InstalledTool struct {
@@ -74,12 +84,43 @@ func DetectInstalledTools(toolNames []string) ([]InstalledTool, error) {
 	var tools []InstalledTool
 	for _, name := range toolNames {
 		path, err := exec.LookPath(name)
-		if err != nil {
+		if err == nil {
+			tools = append(tools, InstalledTool{Name: name, Path: path})
 			continue
 		}
-		tools = append(tools, InstalledTool{Name: name, Path: path})
+		if path, ok := detectAppBackedTool(name); ok {
+			tools = append(tools, InstalledTool{Name: name, Path: path})
+		}
 	}
 	return tools, nil
+}
+
+func detectAppBackedTool(name string) (string, bool) {
+	switch name {
+	case "codex":
+		return firstExistingDir(codexAppBundleCandidates())
+	default:
+		return "", false
+	}
+}
+
+func codexAppBundleCandidates() []string {
+	candidates := []string{}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		candidates = append(candidates, filepath.Join(home, "Applications", "Codex.app"))
+	}
+	candidates = append(candidates, "/Applications/Codex.app")
+	return candidates
+}
+
+func firstExistingDir(paths []string) (string, bool) {
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err == nil && info.IsDir() {
+			return path, true
+		}
+	}
+	return "", false
 }
 
 func ConfigureTools(opts Options) (Result, error) {
@@ -89,9 +130,6 @@ func ConfigureTools(opts Options) (Result, error) {
 	if strings.TrimSpace(opts.Provider.BaseURL) == "" {
 		return Result{}, fmt.Errorf("provider base URL is required")
 	}
-	if strings.TrimSpace(opts.Provider.APIKey) == "" {
-		return Result{}, fmt.Errorf("provider API key is required")
-	}
 
 	var (
 		result  Result
@@ -99,23 +137,30 @@ func ConfigureTools(opts Options) (Result, error) {
 		rcPath  string
 	)
 	for _, tool := range opts.Tools {
+		platform, ok := toolPlatform(tool.Name)
+		if !ok {
+			continue
+		}
+		credential, ok := opts.Provider.CredentialForPlatform(platform)
+		if !ok {
+			continue
+		}
 		switch tool.Name {
 		case "codex":
-			path, err := configureCodex(opts, tool)
+			paths, err := configureCodex(opts, credential)
 			if err != nil {
 				return Result{}, err
 			}
-			result.Configured = append(result.Configured, ConfiguredTool{Name: tool.Name, Paths: []string{path}})
-			envVars["OPENAI_API_KEY"] = opts.Provider.APIKey
+			result.Configured = append(result.Configured, ConfiguredTool{Name: tool.Name, Paths: paths})
 		case "claude":
-			path, err := configureClaude(opts, tool)
+			path, err := configureClaude(opts, credential)
 			if err != nil {
 				return Result{}, err
 			}
 			result.Configured = append(result.Configured, ConfiguredTool{Name: tool.Name, Paths: []string{path}})
 		case "gemini":
 			result.Configured = append(result.Configured, ConfiguredTool{Name: tool.Name})
-			envVars["GEMINI_API_KEY"] = opts.Provider.APIKey
+			envVars["GEMINI_API_KEY"] = credential.APIKey
 			envVars["GOOGLE_GEMINI_BASE_URL"] = opts.Provider.BaseURL
 		}
 	}
@@ -136,7 +181,7 @@ func ConfigureTools(opts Options) (Result, error) {
 		}
 		for i := range result.Configured {
 			switch result.Configured[i].Name {
-			case "codex", "gemini":
+			case "gemini":
 				result.Configured[i].Paths = append(result.Configured[i].Paths, envPath, rcPath)
 			}
 		}
@@ -145,37 +190,97 @@ func ConfigureTools(opts Options) (Result, error) {
 	return result, nil
 }
 
-func configureCodex(opts Options, tool InstalledTool) (string, error) {
-	path := filepath.Join(opts.HomeDir, ".codex", "config.toml")
+func (p Provider) CredentialForPlatform(platform string) (PlatformCredential, bool) {
+	platform = strings.TrimSpace(platform)
+	for _, credential := range p.Credentials {
+		if strings.TrimSpace(credential.APIKey) == "" {
+			continue
+		}
+		if status := strings.TrimSpace(credential.Status); status != "" && !strings.EqualFold(status, "active") {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(credential.Platform), platform) {
+			return credential, true
+		}
+	}
+	if len(p.Credentials) == 0 && strings.TrimSpace(p.APIKey) != "" {
+		return PlatformCredential{
+			Platform: platform,
+			APIKey:   p.APIKey,
+			APIKeyID: p.APIKeyID,
+			Status:   "active",
+		}, true
+	}
+	return PlatformCredential{}, false
+}
+
+func toolPlatform(tool string) (string, bool) {
+	switch tool {
+	case "codex":
+		return "openai", true
+	case "claude":
+		return "anthropic", true
+	case "gemini":
+		return "gemini", true
+	default:
+		return "", false
+	}
+}
+
+func configureCodex(opts Options, credential PlatformCredential) ([]string, error) {
+	configPath := filepath.Join(opts.HomeDir, ".codex", "config.toml")
+	authPath := filepath.Join(opts.HomeDir, ".codex", "auth.json")
 	if opts.DryRun {
-		return path, nil
+		return []string{configPath, authPath}, nil
+	}
+	providerName := strings.TrimSpace(opts.Provider.Name)
+	if providerName == "" {
+		return nil, fmt.Errorf("provider name is required for codex config")
 	}
 	cfg := map[string]any{}
-	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
+	if data, err := os.ReadFile(configPath); err == nil && len(data) > 0 {
 		if err := toml.Unmarshal(data, &cfg); err != nil {
-			return "", fmt.Errorf("parse codex config: %w", err)
+			return nil, fmt.Errorf("parse codex config: %w", err)
 		}
 	} else if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("read codex config: %w", err)
+		return nil, fmt.Errorf("read codex config: %w", err)
 	}
-	cfg["openai_base_url"] = opts.Provider.BaseURL
-	if opts.Provider.DefaultModel != "" {
-		cfg["model"] = opts.Provider.DefaultModel
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return "", fmt.Errorf("create codex config dir: %w", err)
+	delete(cfg, "openai_base_url")
+	cfg["model_provider"] = providerName
+	cfg["model"] = codexModel
+	cfg["review_model"] = codexModel
+	cfg["model_reasoning_effort"] = "xhigh"
+	cfg["disable_response_storage"] = true
+	cfg["network_access"] = "enabled"
+	cfg["windows_wsl_setup_acknowledged"] = true
+	cfg["model_context_window"] = 1000000
+	cfg["model_auto_compact_token_limit"] = 900000
+	modelProviders := ensureNestedMap(cfg, "model_providers")
+	codexProvider := ensureNestedMap(modelProviders, providerName)
+	codexProvider["name"] = providerName
+	codexProvider["base_url"] = opts.Provider.BaseURL
+	codexProvider["wire_api"] = "responses"
+	codexProvider["requires_openai_auth"] = true
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		return nil, fmt.Errorf("create codex config dir: %w", err)
 	}
 	data, err := toml.Marshal(cfg)
 	if err != nil {
-		return "", fmt.Errorf("marshal codex config: %w", err)
+		return nil, fmt.Errorf("marshal codex config: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return "", fmt.Errorf("write codex config: %w", err)
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+		return nil, fmt.Errorf("write codex config: %w", err)
 	}
-	return path, nil
+	auth := map[string]any{
+		"OPENAI_API_KEY": credential.APIKey,
+	}
+	if err := writeJSONObject(authPath, auth); err != nil {
+		return nil, fmt.Errorf("write codex auth: %w", err)
+	}
+	return []string{configPath, authPath}, nil
 }
 
-func configureClaude(opts Options, tool InstalledTool) (string, error) {
+func configureClaude(opts Options, credential PlatformCredential) (string, error) {
 	path := filepath.Join(opts.HomeDir, ".claude", "settings.json")
 	if opts.DryRun {
 		return path, nil
@@ -185,11 +290,11 @@ func configureClaude(opts Options, tool InstalledTool) (string, error) {
 		return "", fmt.Errorf("read claude settings: %w", err)
 	}
 	env := ensureNestedMap(cfg, "env")
-	env["ANTHROPIC_API_KEY"] = opts.Provider.APIKey
+	delete(env, "ANTHROPIC_API_KEY")
 	env["ANTHROPIC_BASE_URL"] = opts.Provider.BaseURL
-	if opts.Provider.DefaultModel != "" {
-		cfg["model"] = opts.Provider.DefaultModel
-	}
+	env["ANTHROPIC_AUTH_TOKEN"] = credential.APIKey
+	env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+	env["CLAUDE_CODE_ATTRIBUTION_HEADER"] = "0"
 	if err := writeJSONObject(path, cfg); err != nil {
 		return "", fmt.Errorf("write claude settings: %w", err)
 	}

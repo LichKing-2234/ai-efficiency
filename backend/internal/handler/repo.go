@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -27,6 +28,10 @@ type ensureRemoteRequest struct {
 	Branch    string `json:"branch"`
 }
 
+type hookEligibleRequest struct {
+	Repos []repo.HookEligibleRepoRequest `json:"repos" binding:"required"`
+}
+
 // NewRepoHandler creates a new repo handler.
 func NewRepoHandler(repoService *repo.Service) *RepoHandler {
 	return &RepoHandler{repoService: repoService}
@@ -39,6 +44,8 @@ func (h *RepoHandler) List(c *gin.Context) {
 	scmProviderID, _ := strconv.Atoi(c.Query("scm_provider_id"))
 	status := c.Query("status")
 	groupID := c.Query("group_id")
+	scope := c.Query("scope")
+	bindingState := c.Query("binding_state")
 
 	opts := repo.ListOpts{
 		Page:          page,
@@ -46,6 +53,8 @@ func (h *RepoHandler) List(c *gin.Context) {
 		SCMProviderID: scmProviderID,
 		Status:        status,
 		GroupID:       groupID,
+		Scope:         scope,
+		BindingState:  bindingState,
 	}
 
 	repos, total, err := h.repoService.List(c.Request.Context(), opts)
@@ -60,6 +69,17 @@ func (h *RepoHandler) List(c *gin.Context) {
 	}
 
 	pkg.Paged(c, total, page, pageSize, items)
+}
+
+// Inventory handles GET /api/v1/repos/inventory
+func (h *RepoHandler) Inventory(c *gin.Context) {
+	inventory, err := h.repoService.Inventory(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to list repo inventory")
+		return
+	}
+
+	pkg.Success(c, inventory)
 }
 
 // Create handles POST /api/v1/repos
@@ -129,6 +149,109 @@ func (h *RepoHandler) EnsureRemote(c *gin.Context) {
 	}
 
 	pkg.Success(c, buildRepoResponse(loaded))
+}
+
+// ResolveRemote handles POST /api/v1/repos/resolve-remote.
+func (h *RepoHandler) ResolveRemote(c *gin.Context) {
+	var req repo.ResolveRemoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := h.repoService.ResolveRemoteEligibility(c.Request.Context(), req)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pkg.Success(c, result)
+}
+
+// HookEligible handles POST /api/v1/repos/hook-eligible.
+func (h *RepoHandler) HookEligible(c *gin.Context) {
+	var req hookEligibleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	eligible, ineligible, err := h.repoService.BatchHookEligibility(c.Request.Context(), req.Repos)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	pkg.Success(c, gin.H{
+		"repos":      eligible,
+		"ineligible": ineligible,
+		"version":    repo.EligibilityVersion,
+	})
+}
+
+// AutoBindUnbound handles POST /api/v1/repos/auto-bind-unbound.
+func (h *RepoHandler) AutoBindUnbound(c *gin.Context) {
+	result, err := h.repoService.AutoBindUnbound(c.Request.Context())
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	pkg.Success(c, result)
+}
+
+// RepairFailedWebhooks handles POST /api/v1/repos/repair-webhooks.
+func (h *RepoHandler) RepairFailedWebhooks(c *gin.Context) {
+	var req repo.RepairWebhookRequest
+	if c.Request.Body != nil {
+		if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+			pkg.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	result, err := h.repoService.RepairFailedWebhooks(c.Request.Context(), req)
+	if err != nil {
+		writeRepairWebhookError(c, err)
+		return
+	}
+	pkg.Success(c, result)
+}
+
+// RepairWebhook handles POST /api/v1/repos/:id/repair-webhook.
+func (h *RepoHandler) RepairWebhook(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		pkg.Error(c, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	var req repo.RepairWebhookRequest
+	if c.Request.Body != nil {
+		if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+			pkg.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	result, err := h.repoService.RepairWebhook(c.Request.Context(), id, req)
+	if err != nil {
+		writeRepairWebhookError(c, err)
+		return
+	}
+	pkg.Success(c, result)
+}
+
+func writeRepairWebhookError(c *gin.Context, err error) {
+	switch {
+	case ent.IsNotFound(err):
+		pkg.Error(c, http.StatusNotFound, "repo not found")
+	case errors.Is(err, repo.ErrRepoUnbound):
+		pkg.Error(c, http.StatusConflict, "repo_unbound")
+	case errors.Is(err, repo.ErrRepoInactive), errors.Is(err, repo.ErrWebhookPublicURLRequired):
+		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
+	default:
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+	}
 }
 
 // Get handles GET /api/v1/repos/:id

@@ -105,6 +105,72 @@ func TestLoginDeviceReturnsServerErrors(t *testing.T) {
 	}
 }
 
+func TestLoginDeviceShowsIngressMessageErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oauth/device/code" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Your IP address is not allowed"})
+	}))
+	defer server.Close()
+
+	_, err := LoginDevice(context.Background(), OAuthConfig{
+		ServerURL:  server.URL,
+		ClientID:   "ae-cli",
+		Timeout:    5 * time.Second,
+		HTTPClient: server.Client(),
+		Output:     &bytes.Buffer{},
+		Sleep:      func(time.Duration) {},
+	})
+	if err == nil {
+		t.Fatal("LoginDevice() error = nil, want ingress message")
+	}
+	if !strings.Contains(err.Error(), "HTTP 403 Forbidden") ||
+		!strings.Contains(err.Error(), "Your IP address is not allowed") {
+		t.Fatalf("err = %v, want status and ingress message", err)
+	}
+}
+
+func TestLoginDeviceTokenErrorIncludesDescription(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/oauth/device/code":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"device_code":      "device-123",
+				"user_code":        "ABCD-EFGH",
+				"verification_uri": server.URL + "/oauth/device",
+				"expires_in":       900,
+				"interval":         5,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/oauth/token":
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error":             "access_denied",
+				"error_description": "authorization denied by user",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_, err := LoginDevice(context.Background(), OAuthConfig{
+		ServerURL:  server.URL,
+		ClientID:   "ae-cli",
+		Timeout:    5 * time.Second,
+		HTTPClient: server.Client(),
+		Output:     &bytes.Buffer{},
+		Sleep:      func(time.Duration) {},
+	})
+	if err == nil ||
+		!strings.Contains(err.Error(), "access_denied: authorization denied by user") {
+		t.Fatalf("err = %v, want OAuth error description", err)
+	}
+}
+
 func TestLoginDeviceUsesMinimumPollInterval(t *testing.T) {
 	polls := 0
 	var server *httptest.Server

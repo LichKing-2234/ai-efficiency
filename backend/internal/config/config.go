@@ -20,13 +20,12 @@ type ServerConfig struct {
 	Port        int    `mapstructure:"port"`
 	Mode        string `mapstructure:"mode"` // debug / release
 	FrontendURL string `mapstructure:"frontend_url"`
+	PublicURL   string `mapstructure:"public_url"`
 }
 
 type RelayConfig struct {
 	Provider       string `mapstructure:"provider"`
 	URL            string `mapstructure:"url"`
-	AdminURL       string `mapstructure:"admin_url"`
-	APIKey         string `mapstructure:"api_key"`
 	AdminAPIKey    string `mapstructure:"admin_api_key"`
 	Model          string `mapstructure:"model"`
 	DefaultGroupID string `mapstructure:"default_group_id"`
@@ -77,6 +76,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.port", 8081)
 	v.SetDefault("server.mode", "debug")
 	v.SetDefault("server.frontend_url", "http://localhost:5173")
+	v.SetDefault("server.public_url", "")
 	v.SetDefault("db.max_open_conns", 25)
 	v.SetDefault("db.max_idle_conns", 5)
 	v.SetDefault("db.conn_max_lifetime", 300)
@@ -107,14 +107,13 @@ func Load(path string) (*Config, error) {
 		"server.port",
 		"server.mode",
 		"server.frontend_url",
+		"server.public_url",
 		"db.dsn",
 		"db.max_open_conns",
 		"db.max_idle_conns",
 		"db.conn_max_lifetime",
 		"relay.provider",
 		"relay.url",
-		"relay.admin_url",
-		"relay.api_key",
 		"relay.admin_api_key",
 		"relay.model",
 		"relay.default_group_id",

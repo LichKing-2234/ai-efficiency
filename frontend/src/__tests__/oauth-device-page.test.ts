@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import DevicePage from '@/views/oauth/DevicePage.vue'
+import { setLocale } from '@/i18n'
 
 vi.mock('@/api/oauth', () => ({
   verifyDeviceAuthorization: vi.fn(),
@@ -24,6 +25,7 @@ describe('DevicePage', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    setLocale('en-US')
     vi.clearAllMocks()
   })
 
@@ -49,6 +51,7 @@ describe('DevicePage', () => {
     setActivePinia(pinia)
     const auth = useAuthStore()
     auth.token = 'jwt-token'
+    auth.user = { id: 1, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'sso' }
 
     const router = createTestRouter()
     await router.push('/oauth/device')
@@ -58,6 +61,13 @@ describe('DevicePage', () => {
       global: { plugins: [pinia, router] },
     })
 
+    expect(wrapper.text()).toContain('AI Efficiency Platform')
+    expect(wrapper.text()).toContain('Device Login')
+    expect(wrapper.text()).toContain('Device approval')
+    expect(wrapper.text()).not.toContain('Recommended sign-in')
+    expect(wrapper.text()).toContain('Signed-in account')
+    expect(wrapper.text()).toContain('alice@example.com')
+    expect(wrapper.find('[data-testid="auth-language-toggle"]').exists()).toBe(true)
     expect(wrapper.find('label[for="user-code"]').text()).toBe('User code')
     await wrapper.find('input#user-code').setValue('abcd-efgh')
     await wrapper.find('button[data-action="approve"]').trigger('click')

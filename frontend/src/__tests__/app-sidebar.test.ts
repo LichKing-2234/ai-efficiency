@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
+import { setLocale } from '@/i18n'
 
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
@@ -16,8 +17,13 @@ function createTestRouter(initialPath = '/') {
     routes: [
       { path: '/', component: { template: '<div>Dashboard</div>' } },
       { path: '/repos', component: { template: '<div>Repos</div>' } },
+      { path: '/events', component: { template: '<div>Events</div>' } },
       { path: '/user', component: { template: '<div>User</div>' } },
+      { path: '/usage', component: { template: '<div>Usage</div>' } },
+      { path: '/usage/team', component: { template: '<div>Team Usage</div>' } },
       { path: '/sessions', component: { template: '<div>Sessions</div>' } },
+      { path: '/admin/users', component: { template: '<div>Admin Users</div>' } },
+      { path: '/admin/directory/offboarding', component: { template: '<div>Offboarding</div>' } },
       { path: '/settings', component: { template: '<div>Settings</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
     ],
@@ -28,6 +34,7 @@ function createTestRouter(initialPath = '/') {
 describe('AppSidebar', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    setLocale('en-US')
     vi.clearAllMocks()
   })
 
@@ -43,7 +50,24 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).toContain('AI Efficiency')
   })
 
-  it('renders navigation links for Dashboard and Repos', async () => {
+  it('places the language toggle in the sidebar header, away from the account footer', async () => {
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    const header = wrapper.get('[data-testid="sidebar-header"]')
+    const footer = wrapper.get('[data-testid="sidebar-footer"]')
+
+    expect(header.find('[data-testid="language-toggle"]').exists()).toBe(true)
+    expect(footer.find('[data-testid="language-toggle"]').exists()).toBe(false)
+    expect(footer.find('[data-testid="sidebar-account-summary"]').exists()).toBe(true)
+  })
+
+  it('renders friendly navigation links for regular users', async () => {
     const router = createTestRouter()
     await router.push('/')
     await router.isReady()
@@ -55,14 +79,24 @@ describe('AppSidebar', () => {
     const links = wrapper.findAll('a')
     const linkTexts = links.map((l) => l.text())
 
-    expect(linkTexts).toContain('Dashboard')
-    expect(linkTexts).toContain('Events')
-    expect(linkTexts).toContain('Repos')
+    expect(linkTexts).toContain('AI Usage Center')
+    expect(linkTexts).toContain('Usage Records')
+    expect(linkTexts).toContain('Code Repositories')
+    expect(linkTexts).toContain('AI Setup & Configuration')
+    expect(linkTexts).not.toContain('Team Usage')
+    expect(linkTexts).not.toContain('My Usage')
+    expect(links.map((l) => l.attributes('href'))).toContain('/usage')
+    expect(links.map((l) => l.attributes('href'))).not.toContain('/user/usage')
+    expect(links.map((l) => l.attributes('href'))).not.toContain('/team-usage')
+    expect(links.map((l) => l.attributes('href'))).not.toContain('/usage/team')
+    expect(wrapper.text()).toContain('My Work')
+    expect(wrapper.text()).toContain('Code & PR')
+    expect(wrapper.text()).not.toContain('Administration')
     expect(linkTexts).not.toContain('Sessions')
-    expect(linkTexts).not.toContain('Settings')
+    expect(linkTexts).not.toContain('Admin Console')
   })
 
-  it('renders Settings link for admin users', async () => {
+  it('renders Admin Console link for admin users', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -80,7 +114,70 @@ describe('AppSidebar', () => {
 
     const links = wrapper.findAll('a')
     const linkTexts = links.map((l) => l.text())
-    expect(linkTexts).toContain('Settings')
+    expect(linkTexts).toContain('Admin Console')
+  })
+
+  it('renders Users & Access link for admin users', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'relay_sso' }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    const linkTexts = wrapper.findAll('a').map((l) => l.text())
+    expect(wrapper.text()).toContain('Administration')
+    expect(linkTexts).toContain('Users & Access')
+  })
+
+  it('renders Offboarding Review link for admin users', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'relay_sso' }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    const links = wrapper.findAll('a')
+    const offboardingLink = links.find((l) => l.text() === 'Offboarding Review')
+    expect(offboardingLink?.attributes('href')).toBe('/admin/directory/offboarding')
+  })
+
+  it('hides Users & Access link for regular users', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 2, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'ldap' }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    const linkTexts = wrapper.findAll('a').map((l) => l.text())
+    expect(linkTexts).not.toContain('Users & Access')
+    expect(linkTexts).not.toContain('Offboarding Review')
   })
 
   it('applies active class to current route link', async () => {
@@ -92,7 +189,7 @@ describe('AppSidebar', () => {
       global: { plugins: [createPinia(), router] },
     })
 
-    const reposLink = wrapper.findAll('a').find((a) => a.text() === 'Repos')
+    const reposLink = wrapper.findAll('a').find((a) => a.text() === 'Code Repositories')
     expect(reposLink).toBeTruthy()
     expect(reposLink!.classes()).toContain('bg-gray-800')
   })
@@ -106,9 +203,23 @@ describe('AppSidebar', () => {
       global: { plugins: [createPinia(), router] },
     })
 
-    const dashboardLink = wrapper.findAll('a').find((a) => a.text() === 'Dashboard')
+    const dashboardLink = wrapper.findAll('a').find((a) => a.text() === 'AI Usage Center')
     expect(dashboardLink).toBeTruthy()
     expect(dashboardLink!.classes()).not.toContain('bg-gray-800')
+  })
+
+  it('keeps AI Usage Center active for nested usage routes', async () => {
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    const usageLink = wrapper.findAll('a').find((a) => a.text() === 'AI Usage Center')
+    expect(usageLink).toBeTruthy()
+    expect(usageLink!.classes()).toContain('bg-gray-800')
   })
 
   it('renders logout button', async () => {
@@ -144,7 +255,36 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).toContain('admin')
   })
 
-  it('navigates to /user when clicking the footer account area', async () => {
+  it('truncates long account identity text in the footer', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = {
+      id: 1,
+      username: 'very-long-admin-account@example.com',
+      email: 'alice@example.com',
+      role: 'admin',
+      auth_source: 'sso',
+    }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+
+    const accountLines = wrapper.get('[data-testid="sidebar-account-summary"]').findAll('p')
+    expect(accountLines[0].classes()).toContain('truncate')
+    expect(accountLines[0].attributes('title')).toBe('very-long-admin-account@example.com')
+    expect(accountLines[1].classes()).toContain('truncate')
+    expect(accountLines[1].attributes('title')).toBe('admin')
+  })
+
+  it('keeps the footer account identity separate from setup navigation', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -160,10 +300,20 @@ describe('AppSidebar', () => {
       global: { plugins: [pinia, router] },
     })
 
-    await wrapper.get('[data-testid="sidebar-account-link"]').trigger('click')
-    await flushPromises()
+    const setupLinks = wrapper.findAll('a').filter((link) => link.text() === 'AI Setup & Configuration')
+    expect(setupLinks).toHaveLength(1)
+    expect(setupLinks[0].attributes('href')).toBe('/user')
 
-    expect(router.currentRoute.value.path).toBe('/user')
+    expect(wrapper.find('[data-testid="sidebar-account-link"]').exists()).toBe(false)
+    const accountSummary = wrapper.get('[data-testid="sidebar-account-summary"]')
+    expect(accountSummary.element.tagName).toBe('DIV')
+    expect(accountSummary.attributes('href')).toBeUndefined()
+    expect(accountSummary.text()).toContain('testuser')
+    expect(accountSummary.text()).toContain('user')
+
+    await accountSummary.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/')
   })
 
   // --- New tests for uncovered lines (handleLogout) ---
@@ -206,7 +356,7 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).toContain('User')
   })
 
-  it('applies active class to Settings when on settings route', async () => {
+  it('applies active class to Admin Console when on settings route', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -222,8 +372,30 @@ describe('AppSidebar', () => {
       global: { plugins: [pinia, router] },
     })
 
-    const settingsLink = wrapper.findAll('a').find((a) => a.text() === 'Settings')
+    const settingsLink = wrapper.findAll('a').find((a) => a.text() === 'Admin Console')
     expect(settingsLink).toBeTruthy()
     expect(settingsLink!.classes()).toContain('bg-gray-800')
+  })
+
+  it('switches navigation labels to Chinese for review', async () => {
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    await wrapper.get('[data-testid="language-toggle"]').trigger('click')
+
+    const linkTexts = wrapper.findAll('a').map((l) => l.text())
+    expect(wrapper.text()).toContain('我的工作')
+    expect(wrapper.text()).toContain('代码与 PR')
+    expect(linkTexts).toContain('AI 使用中心')
+    expect(linkTexts).toContain('AI 接入与配置')
+    expect(linkTexts).not.toContain('我的用量')
+    expect(linkTexts).toContain('使用记录')
+    expect(linkTexts).not.toContain('团队用量')
+    expect(linkTexts).toContain('代码仓库')
   })
 })

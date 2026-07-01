@@ -2,6 +2,7 @@ package attributionlocal
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -19,7 +20,10 @@ var (
 	reCachedTokens   = regexp.MustCompile(`cached_token_count=([0-9]+)`)
 	reReasoning      = regexp.MustCompile(`reasoning_token_count=([0-9]+)`)
 	reTimestamp      = regexp.MustCompile(`event\.timestamp=([^\s]+)`)
+	reThreadID       = regexp.MustCompile(`thread_id=([0-9a-fA-F-]+)`)
 )
+
+var codexSQLiteInitialLookbackRows int64 = 5000
 
 type CodexSQLiteParser struct{}
 
@@ -32,13 +36,20 @@ func (p *CodexSQLiteParser) Parse(dbPath string, wm CodexSQLiteWatermark) ([]Loc
 	}
 	defer db.Close()
 
+	lowerBound := wm.LastLogID
+	if lowerBound <= 0 && codexSQLiteInitialLookbackRows > 0 {
+		var maxID int64
+		if err := db.QueryRow(`SELECT COALESCE(MAX(id), 0) FROM logs`).Scan(&maxID); err == nil && maxID > codexSQLiteInitialLookbackRows {
+			lowerBound = maxID - codexSQLiteInitialLookbackRows
+		}
+	}
+
 	rows, err := db.Query(`
 		SELECT id, feedback_log_body
 		FROM logs
 		WHERE id > ?
-		  AND feedback_log_body LIKE '%response.completed%'
 		ORDER BY id ASC
-	`, wm.LastLogID)
+	`, lowerBound)
 	if err != nil {
 		return nil, wm, err
 	}
@@ -77,6 +88,12 @@ func (p *CodexSQLiteParser) Parse(dbPath string, wm CodexSQLiteWatermark) ([]Loc
 }
 
 func parseCodexCompletedLine(path string, id int64, body string) *LocalToolUsageEvent {
+	if !strings.Contains(body, "response.completed") {
+		return nil
+	}
+	if event := parseCodexCompletedJSONLine(path, id, body); event != nil {
+		return event
+	}
 	convID := regexValue(reConversationID, body)
 	respID := regexValue(reResponseID, body)
 	if convID == "" || respID == "" {
@@ -101,6 +118,82 @@ func parseCodexCompletedLine(path string, id int64, body string) *LocalToolUsage
 		OutputTokens:      parseInt64(regexValue(reOutputTokens, body)),
 		CachedInputTokens: parseInt64(regexValue(reCachedTokens, body)),
 		ReasoningTokens:   parseInt64(regexValue(reReasoning, body)),
+		ObservedStartAt:   ts,
+		ObservedEndAt:     ts,
+		RawSourcePath:     path,
+		RawSourceLocator:  fmt.Sprintf("log_id:%d", id),
+		RawPayload: map[string]any{
+			"feedback_log_body": body,
+		},
+	}
+}
+
+func parseCodexCompletedJSONLine(path string, id int64, body string) *LocalToolUsageEvent {
+	const marker = "websocket event:"
+	markerIdx := strings.Index(body, marker)
+	if markerIdx < 0 {
+		return nil
+	}
+	jsonStart := strings.Index(body[markerIdx+len(marker):], "{")
+	if jsonStart < 0 {
+		return nil
+	}
+	raw := body[markerIdx+len(marker)+jsonStart:]
+	var row struct {
+		Type     string `json:"type"`
+		Response struct {
+			ID          string `json:"id"`
+			CompletedAt int64  `json:"completed_at"`
+			Usage       struct {
+				InputTokens        int64 `json:"input_tokens"`
+				OutputTokens       int64 `json:"output_tokens"`
+				InputTokensDetails struct {
+					CachedTokens int64 `json:"cached_tokens"`
+				} `json:"input_tokens_details"`
+				OutputTokensDetails struct {
+					ReasoningTokens int64 `json:"reasoning_tokens"`
+				} `json:"output_tokens_details"`
+			} `json:"usage"`
+		} `json:"response"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	if err := decoder.Decode(&row); err != nil {
+		return nil
+	}
+	if strings.TrimSpace(row.Type) != "response.completed" || strings.TrimSpace(row.Response.ID) == "" {
+		return nil
+	}
+
+	convID := regexValue(reConversationID, body)
+	if convID == "" {
+		convID = regexValue(reThreadID, body)
+	}
+	if convID == "" {
+		return nil
+	}
+
+	ts := time.Time{}
+	if rawTS := regexValue(reTimestamp, body); rawTS != "" {
+		if parsed, err := time.Parse(time.RFC3339, rawTS); err == nil {
+			ts = parsed.UTC()
+		}
+	}
+	if ts.IsZero() && row.Response.CompletedAt > 0 {
+		ts = time.Unix(row.Response.CompletedAt, 0).UTC()
+	}
+
+	respID := strings.TrimSpace(row.Response.ID)
+	return &LocalToolUsageEvent{
+		Tool:              "codex",
+		ToolSessionID:     convID,
+		ToolEventID:       respID,
+		DedupeKey:         "codex:" + convID + ":" + respID,
+		RequestCount:      1,
+		UsageUnit:         UsageUnitToken,
+		InputTokens:       row.Response.Usage.InputTokens,
+		OutputTokens:      row.Response.Usage.OutputTokens,
+		CachedInputTokens: row.Response.Usage.InputTokensDetails.CachedTokens,
+		ReasoningTokens:   row.Response.Usage.OutputTokensDetails.ReasoningTokens,
 		ObservedStartAt:   ts,
 		ObservedEndAt:     ts,
 		RawSourcePath:     path,

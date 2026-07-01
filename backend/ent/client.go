@@ -15,16 +15,24 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/credential"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
+	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
+	"github.com/ai-efficiency/backend/ent/directorysource"
+	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 	"github.com/ai-efficiency/backend/ent/prattributionrun"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
+	"github.com/ai-efficiency/backend/ent/prsyncjob"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/ent/systemsetting"
+	"github.com/ai-efficiency/backend/ent/teamusageratemultiplieraudit"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/ent/webhookdeadletter"
@@ -35,14 +43,28 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// AdminSubscriptionJob is the client for interacting with the AdminSubscriptionJob builders.
+	AdminSubscriptionJob *AdminSubscriptionJobClient
 	// CommitCheckpoint is the client for interacting with the CommitCheckpoint builders.
 	CommitCheckpoint *CommitCheckpointClient
 	// CommitRewrite is the client for interacting with the CommitRewrite builders.
 	CommitRewrite *CommitRewriteClient
 	// Credential is the client for interacting with the Credential builders.
 	Credential *CredentialClient
+	// DirectoryDepartment is the client for interacting with the DirectoryDepartment builders.
+	DirectoryDepartment *DirectoryDepartmentClient
+	// DirectoryMember is the client for interacting with the DirectoryMember builders.
+	DirectoryMember *DirectoryMemberClient
+	// DirectoryOffboardingAction is the client for interacting with the DirectoryOffboardingAction builders.
+	DirectoryOffboardingAction *DirectoryOffboardingActionClient
+	// DirectorySource is the client for interacting with the DirectorySource builders.
+	DirectorySource *DirectorySourceClient
+	// DirectorySyncRun is the client for interacting with the DirectorySyncRun builders.
+	DirectorySyncRun *DirectorySyncRunClient
 	// PRCommitUsageSnapshot is the client for interacting with the PRCommitUsageSnapshot builders.
 	PRCommitUsageSnapshot *PRCommitUsageSnapshotClient
+	// PRSyncJob is the client for interacting with the PRSyncJob builders.
+	PRSyncJob *PRSyncJobClient
 	// PrAttributionRun is the client for interacting with the PrAttributionRun builders.
 	PrAttributionRun *PrAttributionRunClient
 	// PrRecord is the client for interacting with the PrRecord builders.
@@ -55,6 +77,8 @@ type Client struct {
 	ScmProvider *ScmProviderClient
 	// SystemSetting is the client for interacting with the SystemSetting builders.
 	SystemSetting *SystemSettingClient
+	// TeamUsageRateMultiplierAudit is the client for interacting with the TeamUsageRateMultiplierAudit builders.
+	TeamUsageRateMultiplierAudit *TeamUsageRateMultiplierAuditClient
 	// ToolUsageEvent is the client for interacting with the ToolUsageEvent builders.
 	ToolUsageEvent *ToolUsageEventClient
 	// User is the client for interacting with the User builders.
@@ -72,16 +96,24 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.AdminSubscriptionJob = NewAdminSubscriptionJobClient(c.config)
 	c.CommitCheckpoint = NewCommitCheckpointClient(c.config)
 	c.CommitRewrite = NewCommitRewriteClient(c.config)
 	c.Credential = NewCredentialClient(c.config)
+	c.DirectoryDepartment = NewDirectoryDepartmentClient(c.config)
+	c.DirectoryMember = NewDirectoryMemberClient(c.config)
+	c.DirectoryOffboardingAction = NewDirectoryOffboardingActionClient(c.config)
+	c.DirectorySource = NewDirectorySourceClient(c.config)
+	c.DirectorySyncRun = NewDirectorySyncRunClient(c.config)
 	c.PRCommitUsageSnapshot = NewPRCommitUsageSnapshotClient(c.config)
+	c.PRSyncJob = NewPRSyncJobClient(c.config)
 	c.PrAttributionRun = NewPrAttributionRunClient(c.config)
 	c.PrRecord = NewPrRecordClient(c.config)
 	c.RelayProvider = NewRelayProviderClient(c.config)
 	c.RepoConfig = NewRepoConfigClient(c.config)
 	c.ScmProvider = NewScmProviderClient(c.config)
 	c.SystemSetting = NewSystemSettingClient(c.config)
+	c.TeamUsageRateMultiplierAudit = NewTeamUsageRateMultiplierAuditClient(c.config)
 	c.ToolUsageEvent = NewToolUsageEventClient(c.config)
 	c.User = NewUserClient(c.config)
 	c.WebhookDeadLetter = NewWebhookDeadLetterClient(c.config)
@@ -175,21 +207,29 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:                   ctx,
-		config:                cfg,
-		CommitCheckpoint:      NewCommitCheckpointClient(cfg),
-		CommitRewrite:         NewCommitRewriteClient(cfg),
-		Credential:            NewCredentialClient(cfg),
-		PRCommitUsageSnapshot: NewPRCommitUsageSnapshotClient(cfg),
-		PrAttributionRun:      NewPrAttributionRunClient(cfg),
-		PrRecord:              NewPrRecordClient(cfg),
-		RelayProvider:         NewRelayProviderClient(cfg),
-		RepoConfig:            NewRepoConfigClient(cfg),
-		ScmProvider:           NewScmProviderClient(cfg),
-		SystemSetting:         NewSystemSettingClient(cfg),
-		ToolUsageEvent:        NewToolUsageEventClient(cfg),
-		User:                  NewUserClient(cfg),
-		WebhookDeadLetter:     NewWebhookDeadLetterClient(cfg),
+		ctx:                          ctx,
+		config:                       cfg,
+		AdminSubscriptionJob:         NewAdminSubscriptionJobClient(cfg),
+		CommitCheckpoint:             NewCommitCheckpointClient(cfg),
+		CommitRewrite:                NewCommitRewriteClient(cfg),
+		Credential:                   NewCredentialClient(cfg),
+		DirectoryDepartment:          NewDirectoryDepartmentClient(cfg),
+		DirectoryMember:              NewDirectoryMemberClient(cfg),
+		DirectoryOffboardingAction:   NewDirectoryOffboardingActionClient(cfg),
+		DirectorySource:              NewDirectorySourceClient(cfg),
+		DirectorySyncRun:             NewDirectorySyncRunClient(cfg),
+		PRCommitUsageSnapshot:        NewPRCommitUsageSnapshotClient(cfg),
+		PRSyncJob:                    NewPRSyncJobClient(cfg),
+		PrAttributionRun:             NewPrAttributionRunClient(cfg),
+		PrRecord:                     NewPrRecordClient(cfg),
+		RelayProvider:                NewRelayProviderClient(cfg),
+		RepoConfig:                   NewRepoConfigClient(cfg),
+		ScmProvider:                  NewScmProviderClient(cfg),
+		SystemSetting:                NewSystemSettingClient(cfg),
+		TeamUsageRateMultiplierAudit: NewTeamUsageRateMultiplierAuditClient(cfg),
+		ToolUsageEvent:               NewToolUsageEventClient(cfg),
+		User:                         NewUserClient(cfg),
+		WebhookDeadLetter:            NewWebhookDeadLetterClient(cfg),
 	}, nil
 }
 
@@ -207,28 +247,36 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:                   ctx,
-		config:                cfg,
-		CommitCheckpoint:      NewCommitCheckpointClient(cfg),
-		CommitRewrite:         NewCommitRewriteClient(cfg),
-		Credential:            NewCredentialClient(cfg),
-		PRCommitUsageSnapshot: NewPRCommitUsageSnapshotClient(cfg),
-		PrAttributionRun:      NewPrAttributionRunClient(cfg),
-		PrRecord:              NewPrRecordClient(cfg),
-		RelayProvider:         NewRelayProviderClient(cfg),
-		RepoConfig:            NewRepoConfigClient(cfg),
-		ScmProvider:           NewScmProviderClient(cfg),
-		SystemSetting:         NewSystemSettingClient(cfg),
-		ToolUsageEvent:        NewToolUsageEventClient(cfg),
-		User:                  NewUserClient(cfg),
-		WebhookDeadLetter:     NewWebhookDeadLetterClient(cfg),
+		ctx:                          ctx,
+		config:                       cfg,
+		AdminSubscriptionJob:         NewAdminSubscriptionJobClient(cfg),
+		CommitCheckpoint:             NewCommitCheckpointClient(cfg),
+		CommitRewrite:                NewCommitRewriteClient(cfg),
+		Credential:                   NewCredentialClient(cfg),
+		DirectoryDepartment:          NewDirectoryDepartmentClient(cfg),
+		DirectoryMember:              NewDirectoryMemberClient(cfg),
+		DirectoryOffboardingAction:   NewDirectoryOffboardingActionClient(cfg),
+		DirectorySource:              NewDirectorySourceClient(cfg),
+		DirectorySyncRun:             NewDirectorySyncRunClient(cfg),
+		PRCommitUsageSnapshot:        NewPRCommitUsageSnapshotClient(cfg),
+		PRSyncJob:                    NewPRSyncJobClient(cfg),
+		PrAttributionRun:             NewPrAttributionRunClient(cfg),
+		PrRecord:                     NewPrRecordClient(cfg),
+		RelayProvider:                NewRelayProviderClient(cfg),
+		RepoConfig:                   NewRepoConfigClient(cfg),
+		ScmProvider:                  NewScmProviderClient(cfg),
+		SystemSetting:                NewSystemSettingClient(cfg),
+		TeamUsageRateMultiplierAudit: NewTeamUsageRateMultiplierAuditClient(cfg),
+		ToolUsageEvent:               NewToolUsageEventClient(cfg),
+		User:                         NewUserClient(cfg),
+		WebhookDeadLetter:            NewWebhookDeadLetterClient(cfg),
 	}, nil
 }
 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		CommitCheckpoint.
+//		AdminSubscriptionJob.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -251,9 +299,12 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.PRCommitUsageSnapshot,
+		c.AdminSubscriptionJob, c.CommitCheckpoint, c.CommitRewrite, c.Credential,
+		c.DirectoryDepartment, c.DirectoryMember, c.DirectoryOffboardingAction,
+		c.DirectorySource, c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob,
 		c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider,
-		c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.SystemSetting, c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User,
+		c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -263,9 +314,12 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.CommitCheckpoint, c.CommitRewrite, c.Credential, c.PRCommitUsageSnapshot,
+		c.AdminSubscriptionJob, c.CommitCheckpoint, c.CommitRewrite, c.Credential,
+		c.DirectoryDepartment, c.DirectoryMember, c.DirectoryOffboardingAction,
+		c.DirectorySource, c.DirectorySyncRun, c.PRCommitUsageSnapshot, c.PRSyncJob,
 		c.PrAttributionRun, c.PrRecord, c.RelayProvider, c.RepoConfig, c.ScmProvider,
-		c.SystemSetting, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.SystemSetting, c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User,
+		c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -274,14 +328,28 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *AdminSubscriptionJobMutation:
+		return c.AdminSubscriptionJob.mutate(ctx, m)
 	case *CommitCheckpointMutation:
 		return c.CommitCheckpoint.mutate(ctx, m)
 	case *CommitRewriteMutation:
 		return c.CommitRewrite.mutate(ctx, m)
 	case *CredentialMutation:
 		return c.Credential.mutate(ctx, m)
+	case *DirectoryDepartmentMutation:
+		return c.DirectoryDepartment.mutate(ctx, m)
+	case *DirectoryMemberMutation:
+		return c.DirectoryMember.mutate(ctx, m)
+	case *DirectoryOffboardingActionMutation:
+		return c.DirectoryOffboardingAction.mutate(ctx, m)
+	case *DirectorySourceMutation:
+		return c.DirectorySource.mutate(ctx, m)
+	case *DirectorySyncRunMutation:
+		return c.DirectorySyncRun.mutate(ctx, m)
 	case *PRCommitUsageSnapshotMutation:
 		return c.PRCommitUsageSnapshot.mutate(ctx, m)
+	case *PRSyncJobMutation:
+		return c.PRSyncJob.mutate(ctx, m)
 	case *PrAttributionRunMutation:
 		return c.PrAttributionRun.mutate(ctx, m)
 	case *PrRecordMutation:
@@ -294,6 +362,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ScmProvider.mutate(ctx, m)
 	case *SystemSettingMutation:
 		return c.SystemSetting.mutate(ctx, m)
+	case *TeamUsageRateMultiplierAuditMutation:
+		return c.TeamUsageRateMultiplierAudit.mutate(ctx, m)
 	case *ToolUsageEventMutation:
 		return c.ToolUsageEvent.mutate(ctx, m)
 	case *UserMutation:
@@ -302,6 +372,139 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.WebhookDeadLetter.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// AdminSubscriptionJobClient is a client for the AdminSubscriptionJob schema.
+type AdminSubscriptionJobClient struct {
+	config
+}
+
+// NewAdminSubscriptionJobClient returns a client for the AdminSubscriptionJob from the given config.
+func NewAdminSubscriptionJobClient(c config) *AdminSubscriptionJobClient {
+	return &AdminSubscriptionJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `adminsubscriptionjob.Hooks(f(g(h())))`.
+func (c *AdminSubscriptionJobClient) Use(hooks ...Hook) {
+	c.hooks.AdminSubscriptionJob = append(c.hooks.AdminSubscriptionJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `adminsubscriptionjob.Intercept(f(g(h())))`.
+func (c *AdminSubscriptionJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AdminSubscriptionJob = append(c.inters.AdminSubscriptionJob, interceptors...)
+}
+
+// Create returns a builder for creating a AdminSubscriptionJob entity.
+func (c *AdminSubscriptionJobClient) Create() *AdminSubscriptionJobCreate {
+	mutation := newAdminSubscriptionJobMutation(c.config, OpCreate)
+	return &AdminSubscriptionJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AdminSubscriptionJob entities.
+func (c *AdminSubscriptionJobClient) CreateBulk(builders ...*AdminSubscriptionJobCreate) *AdminSubscriptionJobCreateBulk {
+	return &AdminSubscriptionJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AdminSubscriptionJobClient) MapCreateBulk(slice any, setFunc func(*AdminSubscriptionJobCreate, int)) *AdminSubscriptionJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AdminSubscriptionJobCreateBulk{err: fmt.Errorf("calling to AdminSubscriptionJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AdminSubscriptionJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AdminSubscriptionJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AdminSubscriptionJob.
+func (c *AdminSubscriptionJobClient) Update() *AdminSubscriptionJobUpdate {
+	mutation := newAdminSubscriptionJobMutation(c.config, OpUpdate)
+	return &AdminSubscriptionJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AdminSubscriptionJobClient) UpdateOne(asj *AdminSubscriptionJob) *AdminSubscriptionJobUpdateOne {
+	mutation := newAdminSubscriptionJobMutation(c.config, OpUpdateOne, withAdminSubscriptionJob(asj))
+	return &AdminSubscriptionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AdminSubscriptionJobClient) UpdateOneID(id int) *AdminSubscriptionJobUpdateOne {
+	mutation := newAdminSubscriptionJobMutation(c.config, OpUpdateOne, withAdminSubscriptionJobID(id))
+	return &AdminSubscriptionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AdminSubscriptionJob.
+func (c *AdminSubscriptionJobClient) Delete() *AdminSubscriptionJobDelete {
+	mutation := newAdminSubscriptionJobMutation(c.config, OpDelete)
+	return &AdminSubscriptionJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AdminSubscriptionJobClient) DeleteOne(asj *AdminSubscriptionJob) *AdminSubscriptionJobDeleteOne {
+	return c.DeleteOneID(asj.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AdminSubscriptionJobClient) DeleteOneID(id int) *AdminSubscriptionJobDeleteOne {
+	builder := c.Delete().Where(adminsubscriptionjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AdminSubscriptionJobDeleteOne{builder}
+}
+
+// Query returns a query builder for AdminSubscriptionJob.
+func (c *AdminSubscriptionJobClient) Query() *AdminSubscriptionJobQuery {
+	return &AdminSubscriptionJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAdminSubscriptionJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AdminSubscriptionJob entity by its id.
+func (c *AdminSubscriptionJobClient) Get(ctx context.Context, id int) (*AdminSubscriptionJob, error) {
+	return c.Query().Where(adminsubscriptionjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AdminSubscriptionJobClient) GetX(ctx context.Context, id int) *AdminSubscriptionJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AdminSubscriptionJobClient) Hooks() []Hook {
+	return c.hooks.AdminSubscriptionJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *AdminSubscriptionJobClient) Interceptors() []Interceptor {
+	return c.inters.AdminSubscriptionJob
+}
+
+func (c *AdminSubscriptionJobClient) mutate(ctx context.Context, m *AdminSubscriptionJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AdminSubscriptionJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AdminSubscriptionJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AdminSubscriptionJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AdminSubscriptionJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AdminSubscriptionJob mutation op: %q", m.Op())
 	}
 }
 
@@ -832,6 +1035,671 @@ func (c *CredentialClient) mutate(ctx context.Context, m *CredentialMutation) (V
 	}
 }
 
+// DirectoryDepartmentClient is a client for the DirectoryDepartment schema.
+type DirectoryDepartmentClient struct {
+	config
+}
+
+// NewDirectoryDepartmentClient returns a client for the DirectoryDepartment from the given config.
+func NewDirectoryDepartmentClient(c config) *DirectoryDepartmentClient {
+	return &DirectoryDepartmentClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `directorydepartment.Hooks(f(g(h())))`.
+func (c *DirectoryDepartmentClient) Use(hooks ...Hook) {
+	c.hooks.DirectoryDepartment = append(c.hooks.DirectoryDepartment, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `directorydepartment.Intercept(f(g(h())))`.
+func (c *DirectoryDepartmentClient) Intercept(interceptors ...Interceptor) {
+	c.inters.DirectoryDepartment = append(c.inters.DirectoryDepartment, interceptors...)
+}
+
+// Create returns a builder for creating a DirectoryDepartment entity.
+func (c *DirectoryDepartmentClient) Create() *DirectoryDepartmentCreate {
+	mutation := newDirectoryDepartmentMutation(c.config, OpCreate)
+	return &DirectoryDepartmentCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of DirectoryDepartment entities.
+func (c *DirectoryDepartmentClient) CreateBulk(builders ...*DirectoryDepartmentCreate) *DirectoryDepartmentCreateBulk {
+	return &DirectoryDepartmentCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *DirectoryDepartmentClient) MapCreateBulk(slice any, setFunc func(*DirectoryDepartmentCreate, int)) *DirectoryDepartmentCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &DirectoryDepartmentCreateBulk{err: fmt.Errorf("calling to DirectoryDepartmentClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*DirectoryDepartmentCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &DirectoryDepartmentCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for DirectoryDepartment.
+func (c *DirectoryDepartmentClient) Update() *DirectoryDepartmentUpdate {
+	mutation := newDirectoryDepartmentMutation(c.config, OpUpdate)
+	return &DirectoryDepartmentUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *DirectoryDepartmentClient) UpdateOne(dd *DirectoryDepartment) *DirectoryDepartmentUpdateOne {
+	mutation := newDirectoryDepartmentMutation(c.config, OpUpdateOne, withDirectoryDepartment(dd))
+	return &DirectoryDepartmentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *DirectoryDepartmentClient) UpdateOneID(id int) *DirectoryDepartmentUpdateOne {
+	mutation := newDirectoryDepartmentMutation(c.config, OpUpdateOne, withDirectoryDepartmentID(id))
+	return &DirectoryDepartmentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for DirectoryDepartment.
+func (c *DirectoryDepartmentClient) Delete() *DirectoryDepartmentDelete {
+	mutation := newDirectoryDepartmentMutation(c.config, OpDelete)
+	return &DirectoryDepartmentDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *DirectoryDepartmentClient) DeleteOne(dd *DirectoryDepartment) *DirectoryDepartmentDeleteOne {
+	return c.DeleteOneID(dd.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *DirectoryDepartmentClient) DeleteOneID(id int) *DirectoryDepartmentDeleteOne {
+	builder := c.Delete().Where(directorydepartment.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &DirectoryDepartmentDeleteOne{builder}
+}
+
+// Query returns a query builder for DirectoryDepartment.
+func (c *DirectoryDepartmentClient) Query() *DirectoryDepartmentQuery {
+	return &DirectoryDepartmentQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeDirectoryDepartment},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a DirectoryDepartment entity by its id.
+func (c *DirectoryDepartmentClient) Get(ctx context.Context, id int) (*DirectoryDepartment, error) {
+	return c.Query().Where(directorydepartment.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *DirectoryDepartmentClient) GetX(ctx context.Context, id int) *DirectoryDepartment {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *DirectoryDepartmentClient) Hooks() []Hook {
+	return c.hooks.DirectoryDepartment
+}
+
+// Interceptors returns the client interceptors.
+func (c *DirectoryDepartmentClient) Interceptors() []Interceptor {
+	return c.inters.DirectoryDepartment
+}
+
+func (c *DirectoryDepartmentClient) mutate(ctx context.Context, m *DirectoryDepartmentMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&DirectoryDepartmentCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&DirectoryDepartmentUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&DirectoryDepartmentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&DirectoryDepartmentDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown DirectoryDepartment mutation op: %q", m.Op())
+	}
+}
+
+// DirectoryMemberClient is a client for the DirectoryMember schema.
+type DirectoryMemberClient struct {
+	config
+}
+
+// NewDirectoryMemberClient returns a client for the DirectoryMember from the given config.
+func NewDirectoryMemberClient(c config) *DirectoryMemberClient {
+	return &DirectoryMemberClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `directorymember.Hooks(f(g(h())))`.
+func (c *DirectoryMemberClient) Use(hooks ...Hook) {
+	c.hooks.DirectoryMember = append(c.hooks.DirectoryMember, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `directorymember.Intercept(f(g(h())))`.
+func (c *DirectoryMemberClient) Intercept(interceptors ...Interceptor) {
+	c.inters.DirectoryMember = append(c.inters.DirectoryMember, interceptors...)
+}
+
+// Create returns a builder for creating a DirectoryMember entity.
+func (c *DirectoryMemberClient) Create() *DirectoryMemberCreate {
+	mutation := newDirectoryMemberMutation(c.config, OpCreate)
+	return &DirectoryMemberCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of DirectoryMember entities.
+func (c *DirectoryMemberClient) CreateBulk(builders ...*DirectoryMemberCreate) *DirectoryMemberCreateBulk {
+	return &DirectoryMemberCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *DirectoryMemberClient) MapCreateBulk(slice any, setFunc func(*DirectoryMemberCreate, int)) *DirectoryMemberCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &DirectoryMemberCreateBulk{err: fmt.Errorf("calling to DirectoryMemberClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*DirectoryMemberCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &DirectoryMemberCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for DirectoryMember.
+func (c *DirectoryMemberClient) Update() *DirectoryMemberUpdate {
+	mutation := newDirectoryMemberMutation(c.config, OpUpdate)
+	return &DirectoryMemberUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *DirectoryMemberClient) UpdateOne(dm *DirectoryMember) *DirectoryMemberUpdateOne {
+	mutation := newDirectoryMemberMutation(c.config, OpUpdateOne, withDirectoryMember(dm))
+	return &DirectoryMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *DirectoryMemberClient) UpdateOneID(id int) *DirectoryMemberUpdateOne {
+	mutation := newDirectoryMemberMutation(c.config, OpUpdateOne, withDirectoryMemberID(id))
+	return &DirectoryMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for DirectoryMember.
+func (c *DirectoryMemberClient) Delete() *DirectoryMemberDelete {
+	mutation := newDirectoryMemberMutation(c.config, OpDelete)
+	return &DirectoryMemberDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *DirectoryMemberClient) DeleteOne(dm *DirectoryMember) *DirectoryMemberDeleteOne {
+	return c.DeleteOneID(dm.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *DirectoryMemberClient) DeleteOneID(id int) *DirectoryMemberDeleteOne {
+	builder := c.Delete().Where(directorymember.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &DirectoryMemberDeleteOne{builder}
+}
+
+// Query returns a query builder for DirectoryMember.
+func (c *DirectoryMemberClient) Query() *DirectoryMemberQuery {
+	return &DirectoryMemberQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeDirectoryMember},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a DirectoryMember entity by its id.
+func (c *DirectoryMemberClient) Get(ctx context.Context, id int) (*DirectoryMember, error) {
+	return c.Query().Where(directorymember.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *DirectoryMemberClient) GetX(ctx context.Context, id int) *DirectoryMember {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *DirectoryMemberClient) Hooks() []Hook {
+	return c.hooks.DirectoryMember
+}
+
+// Interceptors returns the client interceptors.
+func (c *DirectoryMemberClient) Interceptors() []Interceptor {
+	return c.inters.DirectoryMember
+}
+
+func (c *DirectoryMemberClient) mutate(ctx context.Context, m *DirectoryMemberMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&DirectoryMemberCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&DirectoryMemberUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&DirectoryMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&DirectoryMemberDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown DirectoryMember mutation op: %q", m.Op())
+	}
+}
+
+// DirectoryOffboardingActionClient is a client for the DirectoryOffboardingAction schema.
+type DirectoryOffboardingActionClient struct {
+	config
+}
+
+// NewDirectoryOffboardingActionClient returns a client for the DirectoryOffboardingAction from the given config.
+func NewDirectoryOffboardingActionClient(c config) *DirectoryOffboardingActionClient {
+	return &DirectoryOffboardingActionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `directoryoffboardingaction.Hooks(f(g(h())))`.
+func (c *DirectoryOffboardingActionClient) Use(hooks ...Hook) {
+	c.hooks.DirectoryOffboardingAction = append(c.hooks.DirectoryOffboardingAction, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `directoryoffboardingaction.Intercept(f(g(h())))`.
+func (c *DirectoryOffboardingActionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.DirectoryOffboardingAction = append(c.inters.DirectoryOffboardingAction, interceptors...)
+}
+
+// Create returns a builder for creating a DirectoryOffboardingAction entity.
+func (c *DirectoryOffboardingActionClient) Create() *DirectoryOffboardingActionCreate {
+	mutation := newDirectoryOffboardingActionMutation(c.config, OpCreate)
+	return &DirectoryOffboardingActionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of DirectoryOffboardingAction entities.
+func (c *DirectoryOffboardingActionClient) CreateBulk(builders ...*DirectoryOffboardingActionCreate) *DirectoryOffboardingActionCreateBulk {
+	return &DirectoryOffboardingActionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *DirectoryOffboardingActionClient) MapCreateBulk(slice any, setFunc func(*DirectoryOffboardingActionCreate, int)) *DirectoryOffboardingActionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &DirectoryOffboardingActionCreateBulk{err: fmt.Errorf("calling to DirectoryOffboardingActionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*DirectoryOffboardingActionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &DirectoryOffboardingActionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for DirectoryOffboardingAction.
+func (c *DirectoryOffboardingActionClient) Update() *DirectoryOffboardingActionUpdate {
+	mutation := newDirectoryOffboardingActionMutation(c.config, OpUpdate)
+	return &DirectoryOffboardingActionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *DirectoryOffboardingActionClient) UpdateOne(doa *DirectoryOffboardingAction) *DirectoryOffboardingActionUpdateOne {
+	mutation := newDirectoryOffboardingActionMutation(c.config, OpUpdateOne, withDirectoryOffboardingAction(doa))
+	return &DirectoryOffboardingActionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *DirectoryOffboardingActionClient) UpdateOneID(id int) *DirectoryOffboardingActionUpdateOne {
+	mutation := newDirectoryOffboardingActionMutation(c.config, OpUpdateOne, withDirectoryOffboardingActionID(id))
+	return &DirectoryOffboardingActionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for DirectoryOffboardingAction.
+func (c *DirectoryOffboardingActionClient) Delete() *DirectoryOffboardingActionDelete {
+	mutation := newDirectoryOffboardingActionMutation(c.config, OpDelete)
+	return &DirectoryOffboardingActionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *DirectoryOffboardingActionClient) DeleteOne(doa *DirectoryOffboardingAction) *DirectoryOffboardingActionDeleteOne {
+	return c.DeleteOneID(doa.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *DirectoryOffboardingActionClient) DeleteOneID(id int) *DirectoryOffboardingActionDeleteOne {
+	builder := c.Delete().Where(directoryoffboardingaction.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &DirectoryOffboardingActionDeleteOne{builder}
+}
+
+// Query returns a query builder for DirectoryOffboardingAction.
+func (c *DirectoryOffboardingActionClient) Query() *DirectoryOffboardingActionQuery {
+	return &DirectoryOffboardingActionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeDirectoryOffboardingAction},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a DirectoryOffboardingAction entity by its id.
+func (c *DirectoryOffboardingActionClient) Get(ctx context.Context, id int) (*DirectoryOffboardingAction, error) {
+	return c.Query().Where(directoryoffboardingaction.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *DirectoryOffboardingActionClient) GetX(ctx context.Context, id int) *DirectoryOffboardingAction {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *DirectoryOffboardingActionClient) Hooks() []Hook {
+	return c.hooks.DirectoryOffboardingAction
+}
+
+// Interceptors returns the client interceptors.
+func (c *DirectoryOffboardingActionClient) Interceptors() []Interceptor {
+	return c.inters.DirectoryOffboardingAction
+}
+
+func (c *DirectoryOffboardingActionClient) mutate(ctx context.Context, m *DirectoryOffboardingActionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&DirectoryOffboardingActionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&DirectoryOffboardingActionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&DirectoryOffboardingActionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&DirectoryOffboardingActionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown DirectoryOffboardingAction mutation op: %q", m.Op())
+	}
+}
+
+// DirectorySourceClient is a client for the DirectorySource schema.
+type DirectorySourceClient struct {
+	config
+}
+
+// NewDirectorySourceClient returns a client for the DirectorySource from the given config.
+func NewDirectorySourceClient(c config) *DirectorySourceClient {
+	return &DirectorySourceClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `directorysource.Hooks(f(g(h())))`.
+func (c *DirectorySourceClient) Use(hooks ...Hook) {
+	c.hooks.DirectorySource = append(c.hooks.DirectorySource, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `directorysource.Intercept(f(g(h())))`.
+func (c *DirectorySourceClient) Intercept(interceptors ...Interceptor) {
+	c.inters.DirectorySource = append(c.inters.DirectorySource, interceptors...)
+}
+
+// Create returns a builder for creating a DirectorySource entity.
+func (c *DirectorySourceClient) Create() *DirectorySourceCreate {
+	mutation := newDirectorySourceMutation(c.config, OpCreate)
+	return &DirectorySourceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of DirectorySource entities.
+func (c *DirectorySourceClient) CreateBulk(builders ...*DirectorySourceCreate) *DirectorySourceCreateBulk {
+	return &DirectorySourceCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *DirectorySourceClient) MapCreateBulk(slice any, setFunc func(*DirectorySourceCreate, int)) *DirectorySourceCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &DirectorySourceCreateBulk{err: fmt.Errorf("calling to DirectorySourceClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*DirectorySourceCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &DirectorySourceCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for DirectorySource.
+func (c *DirectorySourceClient) Update() *DirectorySourceUpdate {
+	mutation := newDirectorySourceMutation(c.config, OpUpdate)
+	return &DirectorySourceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *DirectorySourceClient) UpdateOne(ds *DirectorySource) *DirectorySourceUpdateOne {
+	mutation := newDirectorySourceMutation(c.config, OpUpdateOne, withDirectorySource(ds))
+	return &DirectorySourceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *DirectorySourceClient) UpdateOneID(id int) *DirectorySourceUpdateOne {
+	mutation := newDirectorySourceMutation(c.config, OpUpdateOne, withDirectorySourceID(id))
+	return &DirectorySourceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for DirectorySource.
+func (c *DirectorySourceClient) Delete() *DirectorySourceDelete {
+	mutation := newDirectorySourceMutation(c.config, OpDelete)
+	return &DirectorySourceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *DirectorySourceClient) DeleteOne(ds *DirectorySource) *DirectorySourceDeleteOne {
+	return c.DeleteOneID(ds.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *DirectorySourceClient) DeleteOneID(id int) *DirectorySourceDeleteOne {
+	builder := c.Delete().Where(directorysource.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &DirectorySourceDeleteOne{builder}
+}
+
+// Query returns a query builder for DirectorySource.
+func (c *DirectorySourceClient) Query() *DirectorySourceQuery {
+	return &DirectorySourceQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeDirectorySource},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a DirectorySource entity by its id.
+func (c *DirectorySourceClient) Get(ctx context.Context, id int) (*DirectorySource, error) {
+	return c.Query().Where(directorysource.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *DirectorySourceClient) GetX(ctx context.Context, id int) *DirectorySource {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *DirectorySourceClient) Hooks() []Hook {
+	return c.hooks.DirectorySource
+}
+
+// Interceptors returns the client interceptors.
+func (c *DirectorySourceClient) Interceptors() []Interceptor {
+	return c.inters.DirectorySource
+}
+
+func (c *DirectorySourceClient) mutate(ctx context.Context, m *DirectorySourceMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&DirectorySourceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&DirectorySourceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&DirectorySourceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&DirectorySourceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown DirectorySource mutation op: %q", m.Op())
+	}
+}
+
+// DirectorySyncRunClient is a client for the DirectorySyncRun schema.
+type DirectorySyncRunClient struct {
+	config
+}
+
+// NewDirectorySyncRunClient returns a client for the DirectorySyncRun from the given config.
+func NewDirectorySyncRunClient(c config) *DirectorySyncRunClient {
+	return &DirectorySyncRunClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `directorysyncrun.Hooks(f(g(h())))`.
+func (c *DirectorySyncRunClient) Use(hooks ...Hook) {
+	c.hooks.DirectorySyncRun = append(c.hooks.DirectorySyncRun, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `directorysyncrun.Intercept(f(g(h())))`.
+func (c *DirectorySyncRunClient) Intercept(interceptors ...Interceptor) {
+	c.inters.DirectorySyncRun = append(c.inters.DirectorySyncRun, interceptors...)
+}
+
+// Create returns a builder for creating a DirectorySyncRun entity.
+func (c *DirectorySyncRunClient) Create() *DirectorySyncRunCreate {
+	mutation := newDirectorySyncRunMutation(c.config, OpCreate)
+	return &DirectorySyncRunCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of DirectorySyncRun entities.
+func (c *DirectorySyncRunClient) CreateBulk(builders ...*DirectorySyncRunCreate) *DirectorySyncRunCreateBulk {
+	return &DirectorySyncRunCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *DirectorySyncRunClient) MapCreateBulk(slice any, setFunc func(*DirectorySyncRunCreate, int)) *DirectorySyncRunCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &DirectorySyncRunCreateBulk{err: fmt.Errorf("calling to DirectorySyncRunClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*DirectorySyncRunCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &DirectorySyncRunCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for DirectorySyncRun.
+func (c *DirectorySyncRunClient) Update() *DirectorySyncRunUpdate {
+	mutation := newDirectorySyncRunMutation(c.config, OpUpdate)
+	return &DirectorySyncRunUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *DirectorySyncRunClient) UpdateOne(dsr *DirectorySyncRun) *DirectorySyncRunUpdateOne {
+	mutation := newDirectorySyncRunMutation(c.config, OpUpdateOne, withDirectorySyncRun(dsr))
+	return &DirectorySyncRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *DirectorySyncRunClient) UpdateOneID(id int) *DirectorySyncRunUpdateOne {
+	mutation := newDirectorySyncRunMutation(c.config, OpUpdateOne, withDirectorySyncRunID(id))
+	return &DirectorySyncRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for DirectorySyncRun.
+func (c *DirectorySyncRunClient) Delete() *DirectorySyncRunDelete {
+	mutation := newDirectorySyncRunMutation(c.config, OpDelete)
+	return &DirectorySyncRunDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *DirectorySyncRunClient) DeleteOne(dsr *DirectorySyncRun) *DirectorySyncRunDeleteOne {
+	return c.DeleteOneID(dsr.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *DirectorySyncRunClient) DeleteOneID(id int) *DirectorySyncRunDeleteOne {
+	builder := c.Delete().Where(directorysyncrun.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &DirectorySyncRunDeleteOne{builder}
+}
+
+// Query returns a query builder for DirectorySyncRun.
+func (c *DirectorySyncRunClient) Query() *DirectorySyncRunQuery {
+	return &DirectorySyncRunQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeDirectorySyncRun},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a DirectorySyncRun entity by its id.
+func (c *DirectorySyncRunClient) Get(ctx context.Context, id int) (*DirectorySyncRun, error) {
+	return c.Query().Where(directorysyncrun.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *DirectorySyncRunClient) GetX(ctx context.Context, id int) *DirectorySyncRun {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *DirectorySyncRunClient) Hooks() []Hook {
+	return c.hooks.DirectorySyncRun
+}
+
+// Interceptors returns the client interceptors.
+func (c *DirectorySyncRunClient) Interceptors() []Interceptor {
+	return c.inters.DirectorySyncRun
+}
+
+func (c *DirectorySyncRunClient) mutate(ctx context.Context, m *DirectorySyncRunMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&DirectorySyncRunCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&DirectorySyncRunUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&DirectorySyncRunUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&DirectorySyncRunDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown DirectorySyncRun mutation op: %q", m.Op())
+	}
+}
+
 // PRCommitUsageSnapshotClient is a client for the PRCommitUsageSnapshot schema.
 type PRCommitUsageSnapshotClient struct {
 	config
@@ -994,6 +1862,155 @@ func (c *PRCommitUsageSnapshotClient) mutate(ctx context.Context, m *PRCommitUsa
 		return (&PRCommitUsageSnapshotDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown PRCommitUsageSnapshot mutation op: %q", m.Op())
+	}
+}
+
+// PRSyncJobClient is a client for the PRSyncJob schema.
+type PRSyncJobClient struct {
+	config
+}
+
+// NewPRSyncJobClient returns a client for the PRSyncJob from the given config.
+func NewPRSyncJobClient(c config) *PRSyncJobClient {
+	return &PRSyncJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `prsyncjob.Hooks(f(g(h())))`.
+func (c *PRSyncJobClient) Use(hooks ...Hook) {
+	c.hooks.PRSyncJob = append(c.hooks.PRSyncJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `prsyncjob.Intercept(f(g(h())))`.
+func (c *PRSyncJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PRSyncJob = append(c.inters.PRSyncJob, interceptors...)
+}
+
+// Create returns a builder for creating a PRSyncJob entity.
+func (c *PRSyncJobClient) Create() *PRSyncJobCreate {
+	mutation := newPRSyncJobMutation(c.config, OpCreate)
+	return &PRSyncJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PRSyncJob entities.
+func (c *PRSyncJobClient) CreateBulk(builders ...*PRSyncJobCreate) *PRSyncJobCreateBulk {
+	return &PRSyncJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PRSyncJobClient) MapCreateBulk(slice any, setFunc func(*PRSyncJobCreate, int)) *PRSyncJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PRSyncJobCreateBulk{err: fmt.Errorf("calling to PRSyncJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PRSyncJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PRSyncJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PRSyncJob.
+func (c *PRSyncJobClient) Update() *PRSyncJobUpdate {
+	mutation := newPRSyncJobMutation(c.config, OpUpdate)
+	return &PRSyncJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PRSyncJobClient) UpdateOne(psj *PRSyncJob) *PRSyncJobUpdateOne {
+	mutation := newPRSyncJobMutation(c.config, OpUpdateOne, withPRSyncJob(psj))
+	return &PRSyncJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PRSyncJobClient) UpdateOneID(id int) *PRSyncJobUpdateOne {
+	mutation := newPRSyncJobMutation(c.config, OpUpdateOne, withPRSyncJobID(id))
+	return &PRSyncJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PRSyncJob.
+func (c *PRSyncJobClient) Delete() *PRSyncJobDelete {
+	mutation := newPRSyncJobMutation(c.config, OpDelete)
+	return &PRSyncJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PRSyncJobClient) DeleteOne(psj *PRSyncJob) *PRSyncJobDeleteOne {
+	return c.DeleteOneID(psj.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PRSyncJobClient) DeleteOneID(id int) *PRSyncJobDeleteOne {
+	builder := c.Delete().Where(prsyncjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PRSyncJobDeleteOne{builder}
+}
+
+// Query returns a query builder for PRSyncJob.
+func (c *PRSyncJobClient) Query() *PRSyncJobQuery {
+	return &PRSyncJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePRSyncJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PRSyncJob entity by its id.
+func (c *PRSyncJobClient) Get(ctx context.Context, id int) (*PRSyncJob, error) {
+	return c.Query().Where(prsyncjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PRSyncJobClient) GetX(ctx context.Context, id int) *PRSyncJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRepoConfig queries the repo_config edge of a PRSyncJob.
+func (c *PRSyncJobClient) QueryRepoConfig(psj *PRSyncJob) *RepoConfigQuery {
+	query := (&RepoConfigClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := psj.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(prsyncjob.Table, prsyncjob.FieldID, id),
+			sqlgraph.To(repoconfig.Table, repoconfig.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, prsyncjob.RepoConfigTable, prsyncjob.RepoConfigColumn),
+		)
+		fromV = sqlgraph.Neighbors(psj.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *PRSyncJobClient) Hooks() []Hook {
+	return c.hooks.PRSyncJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *PRSyncJobClient) Interceptors() []Interceptor {
+	return c.inters.PRSyncJob
+}
+
+func (c *PRSyncJobClient) mutate(ctx context.Context, m *PRSyncJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PRSyncJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PRSyncJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PRSyncJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PRSyncJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PRSyncJob mutation op: %q", m.Op())
 	}
 }
 
@@ -1682,6 +2699,22 @@ func (c *RepoConfigClient) QueryPrRecords(rc *RepoConfig) *PrRecordQuery {
 	return query
 }
 
+// QueryPrSyncJobs queries the pr_sync_jobs edge of a RepoConfig.
+func (c *RepoConfigClient) QueryPrSyncJobs(rc *RepoConfig) *PRSyncJobQuery {
+	query := (&PRSyncJobClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := rc.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(repoconfig.Table, repoconfig.FieldID, id),
+			sqlgraph.To(prsyncjob.Table, prsyncjob.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, repoconfig.PrSyncJobsTable, repoconfig.PrSyncJobsColumn),
+		)
+		fromV = sqlgraph.Neighbors(rc.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *RepoConfigClient) Hooks() []Hook {
 	hooks := c.hooks.RepoConfig
@@ -2019,6 +3052,139 @@ func (c *SystemSettingClient) mutate(ctx context.Context, m *SystemSettingMutati
 		return (&SystemSettingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown SystemSetting mutation op: %q", m.Op())
+	}
+}
+
+// TeamUsageRateMultiplierAuditClient is a client for the TeamUsageRateMultiplierAudit schema.
+type TeamUsageRateMultiplierAuditClient struct {
+	config
+}
+
+// NewTeamUsageRateMultiplierAuditClient returns a client for the TeamUsageRateMultiplierAudit from the given config.
+func NewTeamUsageRateMultiplierAuditClient(c config) *TeamUsageRateMultiplierAuditClient {
+	return &TeamUsageRateMultiplierAuditClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `teamusageratemultiplieraudit.Hooks(f(g(h())))`.
+func (c *TeamUsageRateMultiplierAuditClient) Use(hooks ...Hook) {
+	c.hooks.TeamUsageRateMultiplierAudit = append(c.hooks.TeamUsageRateMultiplierAudit, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `teamusageratemultiplieraudit.Intercept(f(g(h())))`.
+func (c *TeamUsageRateMultiplierAuditClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TeamUsageRateMultiplierAudit = append(c.inters.TeamUsageRateMultiplierAudit, interceptors...)
+}
+
+// Create returns a builder for creating a TeamUsageRateMultiplierAudit entity.
+func (c *TeamUsageRateMultiplierAuditClient) Create() *TeamUsageRateMultiplierAuditCreate {
+	mutation := newTeamUsageRateMultiplierAuditMutation(c.config, OpCreate)
+	return &TeamUsageRateMultiplierAuditCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TeamUsageRateMultiplierAudit entities.
+func (c *TeamUsageRateMultiplierAuditClient) CreateBulk(builders ...*TeamUsageRateMultiplierAuditCreate) *TeamUsageRateMultiplierAuditCreateBulk {
+	return &TeamUsageRateMultiplierAuditCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TeamUsageRateMultiplierAuditClient) MapCreateBulk(slice any, setFunc func(*TeamUsageRateMultiplierAuditCreate, int)) *TeamUsageRateMultiplierAuditCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TeamUsageRateMultiplierAuditCreateBulk{err: fmt.Errorf("calling to TeamUsageRateMultiplierAuditClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TeamUsageRateMultiplierAuditCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TeamUsageRateMultiplierAuditCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TeamUsageRateMultiplierAudit.
+func (c *TeamUsageRateMultiplierAuditClient) Update() *TeamUsageRateMultiplierAuditUpdate {
+	mutation := newTeamUsageRateMultiplierAuditMutation(c.config, OpUpdate)
+	return &TeamUsageRateMultiplierAuditUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TeamUsageRateMultiplierAuditClient) UpdateOne(turma *TeamUsageRateMultiplierAudit) *TeamUsageRateMultiplierAuditUpdateOne {
+	mutation := newTeamUsageRateMultiplierAuditMutation(c.config, OpUpdateOne, withTeamUsageRateMultiplierAudit(turma))
+	return &TeamUsageRateMultiplierAuditUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TeamUsageRateMultiplierAuditClient) UpdateOneID(id int) *TeamUsageRateMultiplierAuditUpdateOne {
+	mutation := newTeamUsageRateMultiplierAuditMutation(c.config, OpUpdateOne, withTeamUsageRateMultiplierAuditID(id))
+	return &TeamUsageRateMultiplierAuditUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TeamUsageRateMultiplierAudit.
+func (c *TeamUsageRateMultiplierAuditClient) Delete() *TeamUsageRateMultiplierAuditDelete {
+	mutation := newTeamUsageRateMultiplierAuditMutation(c.config, OpDelete)
+	return &TeamUsageRateMultiplierAuditDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TeamUsageRateMultiplierAuditClient) DeleteOne(turma *TeamUsageRateMultiplierAudit) *TeamUsageRateMultiplierAuditDeleteOne {
+	return c.DeleteOneID(turma.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TeamUsageRateMultiplierAuditClient) DeleteOneID(id int) *TeamUsageRateMultiplierAuditDeleteOne {
+	builder := c.Delete().Where(teamusageratemultiplieraudit.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TeamUsageRateMultiplierAuditDeleteOne{builder}
+}
+
+// Query returns a query builder for TeamUsageRateMultiplierAudit.
+func (c *TeamUsageRateMultiplierAuditClient) Query() *TeamUsageRateMultiplierAuditQuery {
+	return &TeamUsageRateMultiplierAuditQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTeamUsageRateMultiplierAudit},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TeamUsageRateMultiplierAudit entity by its id.
+func (c *TeamUsageRateMultiplierAuditClient) Get(ctx context.Context, id int) (*TeamUsageRateMultiplierAudit, error) {
+	return c.Query().Where(teamusageratemultiplieraudit.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TeamUsageRateMultiplierAuditClient) GetX(ctx context.Context, id int) *TeamUsageRateMultiplierAudit {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *TeamUsageRateMultiplierAuditClient) Hooks() []Hook {
+	return c.hooks.TeamUsageRateMultiplierAudit
+}
+
+// Interceptors returns the client interceptors.
+func (c *TeamUsageRateMultiplierAuditClient) Interceptors() []Interceptor {
+	return c.inters.TeamUsageRateMultiplierAudit
+}
+
+func (c *TeamUsageRateMultiplierAuditClient) mutate(ctx context.Context, m *TeamUsageRateMultiplierAuditMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TeamUsageRateMultiplierAuditCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TeamUsageRateMultiplierAuditUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TeamUsageRateMultiplierAuditUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TeamUsageRateMultiplierAuditDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TeamUsageRateMultiplierAudit mutation op: %q", m.Op())
 	}
 }
 
@@ -2536,13 +3702,19 @@ func (c *WebhookDeadLetterClient) mutate(ctx context.Context, m *WebhookDeadLett
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		CommitCheckpoint, CommitRewrite, Credential, PRCommitUsageSnapshot,
+		AdminSubscriptionJob, CommitCheckpoint, CommitRewrite, Credential,
+		DirectoryDepartment, DirectoryMember, DirectoryOffboardingAction,
+		DirectorySource, DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob,
 		PrAttributionRun, PrRecord, RelayProvider, RepoConfig, ScmProvider,
-		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Hook
+		SystemSetting, TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
+		WebhookDeadLetter []ent.Hook
 	}
 	inters struct {
-		CommitCheckpoint, CommitRewrite, Credential, PRCommitUsageSnapshot,
+		AdminSubscriptionJob, CommitCheckpoint, CommitRewrite, Credential,
+		DirectoryDepartment, DirectoryMember, DirectoryOffboardingAction,
+		DirectorySource, DirectorySyncRun, PRCommitUsageSnapshot, PRSyncJob,
 		PrAttributionRun, PrRecord, RelayProvider, RepoConfig, ScmProvider,
-		SystemSetting, ToolUsageEvent, User, WebhookDeadLetter []ent.Interceptor
+		SystemSetting, TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
+		WebhookDeadLetter []ent.Interceptor
 	}
 )

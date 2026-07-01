@@ -65,9 +65,11 @@ type RepoConfigEdges struct {
 	WebhookDeadLetters []*WebhookDeadLetter `json:"webhook_dead_letters,omitempty"`
 	// PrRecords holds the value of the pr_records edge.
 	PrRecords []*PrRecord `json:"pr_records,omitempty"`
+	// PrSyncJobs holds the value of the pr_sync_jobs edge.
+	PrSyncJobs []*PRSyncJob `json:"pr_sync_jobs,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [6]bool
+	loadedTypes [7]bool
 }
 
 // ScmProviderOrErr returns the ScmProvider value or an error if the edge
@@ -124,6 +126,15 @@ func (e RepoConfigEdges) PrRecordsOrErr() ([]*PrRecord, error) {
 		return e.PrRecords, nil
 	}
 	return nil, &NotLoadedError{edge: "pr_records"}
+}
+
+// PrSyncJobsOrErr returns the PrSyncJobs value or an error if the edge
+// was not loaded in eager-loading.
+func (e RepoConfigEdges) PrSyncJobsOrErr() ([]*PRSyncJob, error) {
+	if e.loadedTypes[6] {
+		return e.PrSyncJobs, nil
+	}
+	return nil, &NotLoadedError{edge: "pr_sync_jobs"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -291,6 +302,11 @@ func (rc *RepoConfig) QueryWebhookDeadLetters() *WebhookDeadLetterQuery {
 // QueryPrRecords queries the "pr_records" edge of the RepoConfig entity.
 func (rc *RepoConfig) QueryPrRecords() *PrRecordQuery {
 	return NewRepoConfigClient(rc.config).QueryPrRecords(rc)
+}
+
+// QueryPrSyncJobs queries the "pr_sync_jobs" edge of the RepoConfig entity.
+func (rc *RepoConfig) QueryPrSyncJobs() *PRSyncJobQuery {
+	return NewRepoConfigClient(rc.config).QueryPrSyncJobs(rc)
 }
 
 // Update returns a builder for updating this RepoConfig.

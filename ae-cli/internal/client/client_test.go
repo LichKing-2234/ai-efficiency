@@ -3,10 +3,14 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ai-efficiency/ae-cli/internal/httpx"
 )
 
 func TestNewClient(t *testing.T) {
@@ -141,6 +145,211 @@ func TestSendToolUsageEvent(t *testing.T) {
 	}
 }
 
+func TestSendToolUsageEventReturnsHTTPStatusErrorForValidationFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"error":"bad event"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		RepoConfigID:    123,
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "sess-1",
+		DedupeKey:       "bad-event",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now(),
+		ObservedEndAt:   time.Now(),
+	})
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("error = %T %v, want HTTPStatusError", err, err)
+	}
+	if statusErr.StatusCode != http.StatusUnprocessableEntity || statusErr.Body == "" {
+		t.Fatalf("statusErr = %+v, want 422 with body", statusErr)
+	}
+}
+
+func TestSendToolUsageEventsUsesBatchEndpoint(t *testing.T) {
+	var got ToolUsageEventsBatchRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/tool-usage-events/batch" {
+			t.Errorf("path = %s, want /api/v1/tool-usage-events/batch", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvents(context.Background(), []ToolUsageEventRequest{{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	}})
+	if err != nil {
+		t.Fatalf("SendToolUsageEvents: %v", err)
+	}
+	if len(got.Events) != 1 || got.Events[0].DedupeKey != "codex:conv-1:resp-1" {
+		t.Fatalf("batch request = %+v", got)
+	}
+}
+
+func TestSendToolUsageEventsReturnsBatchStatusWhenUnsupported(t *testing.T) {
+	var batchAttempts int32
+	var singleAttempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/tool-usage-events/batch":
+			atomic.AddInt32(&batchAttempts, 1)
+			w.WriteHeader(http.StatusNotFound)
+		case "/api/v1/tool-usage-events":
+			atomic.AddInt32(&singleAttempts, 1)
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvents(context.Background(), []ToolUsageEventRequest{{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	}})
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("error = %T %v, want HTTPStatusError", err, err)
+	}
+	if statusErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("status code = %d, want 404", statusErr.StatusCode)
+	}
+	if batchAttempts != 1 || singleAttempts != 0 {
+		t.Fatalf("batchAttempts=%d singleAttempts=%d, want 1/0", batchAttempts, singleAttempts)
+	}
+}
+
+func TestSendToolUsageEventRetriesTransientGatewayStatus(t *testing.T) {
+	origBackoffs := toolUsageRetryBackoffs
+	toolUsageRetryBackoffs = []time.Duration{0}
+	t.Cleanup(func() { toolUsageRetryBackoffs = origBackoffs })
+
+	var attempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := atomic.AddInt32(&attempts, 1); got == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"message":"bad gateway"}`))
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("SendToolUsageEvent: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestSendToolUsageEventBoundsSlowAttempt(t *testing.T) {
+	origBackoffs := toolUsageRetryBackoffs
+	origTimeout := toolUsageAttemptTimeout
+	toolUsageRetryBackoffs = nil
+	toolUsageAttemptTimeout = 20 * time.Millisecond
+	t.Cleanup(func() {
+		toolUsageRetryBackoffs = origBackoffs
+		toolUsageAttemptTimeout = origTimeout
+	})
+
+	var attempts int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	c := New(srv.URL, "tok")
+	start := time.Now()
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	})
+	if err == nil {
+		t.Fatal("SendToolUsageEvent error = nil, want timeout error")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("SendToolUsageEvent elapsed = %s, want bounded attempt", elapsed)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
+func TestSendToolUsageEventDoesNotRetryValidationError(t *testing.T) {
+	origBackoffs := toolUsageRetryBackoffs
+	toolUsageRetryBackoffs = []time.Duration{0}
+	t.Cleanup(func() { toolUsageRetryBackoffs = origBackoffs })
+
+	var attempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		w.WriteHeader(http.StatusUnprocessableEntity)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	err := c.SendToolUsageEvent(context.Background(), ToolUsageEventRequest{
+		Tool:            "codex",
+		WorkspaceID:     "ws-1",
+		ToolSessionID:   "conv-1",
+		DedupeKey:       "codex:conv-1:resp-1",
+		UsageUnit:       "token",
+		ObservedStartAt: time.Now().UTC(),
+		ObservedEndAt:   time.Now().UTC(),
+	})
+	if err == nil {
+		t.Fatal("SendToolUsageEvent error = nil, want error")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
 func TestEnsureRepoFromRemote(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -182,13 +391,160 @@ func TestEnsureRepoFromRemote(t *testing.T) {
 	}
 }
 
+func TestResolveRepoFromRemote(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/resolve-remote" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if req["remote_url"] != "git@repo-host.example.com:org/repo.git" || req["client_cache_version"] != "repo-eligibility-v1" {
+			t.Fatalf("request = %#v", req)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"eligible":       true,
+				"repo_config_id": 123,
+				"repo_key":       "repo-host.example.com/org/repo",
+				"full_name":      "org/repo",
+				"clone_url":      "git@repo-host.example.com:org/repo.git",
+				"status":         "active",
+				"binding_state":  "unbound",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	resp, err := New(srv.URL, "tok").ResolveRepoFromRemote(context.Background(), ResolveRepoRequest{
+		RemoteURL:          "git@repo-host.example.com:org/repo.git",
+		ClientCacheVersion: "repo-eligibility-v1",
+	})
+	if err != nil {
+		t.Fatalf("ResolveRepoFromRemote: %v", err)
+	}
+	if !resp.Eligible || resp.RepoConfigID != 123 {
+		t.Fatalf("response = %+v", resp)
+	}
+}
+
+func TestBatchHookEligible(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/hook-eligible" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"version": "repo-eligibility-v1",
+				"repos": []map[string]any{{
+					"eligible":       true,
+					"repo_config_id": 123,
+					"repo_key":       "repo-host.example.com/org/repo",
+				}},
+				"ineligible": []map[string]any{{
+					"eligible": false,
+					"repo_key": "repo-host.example.com/org/missing",
+					"reason":   "not_found",
+				}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	resp, err := New(srv.URL, "tok").BatchHookEligible(context.Background(), []HookEligibleRepoRequest{
+		{RepoKey: "repo-host.example.com/org/repo", RemoteURL: "https://repo-host.example.com/org/repo.git"},
+	})
+	if err != nil {
+		t.Fatalf("BatchHookEligible: %v", err)
+	}
+	if resp.Version != "repo-eligibility-v1" || len(resp.Repos) != 1 || len(resp.Ineligible) != 1 {
+		t.Fatalf("response = %+v", resp)
+	}
+}
+
+func TestResolveRepoFromRemoteReturnsHTTPXStatusError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/resolve-remote" {
+			t.Fatalf("path = %s, want /api/v1/repos/resolve-remote", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Your IP address is not allowed"})
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, "tok").ResolveRepoFromRemote(context.Background(), ResolveRepoRequest{
+		RemoteURL:          "https://git.example.com/org/repo.git",
+		ClientCacheVersion: RepoEligibilityVersion,
+	})
+	var statusErr *httpx.StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("err = %T %v, want *httpx.StatusError", err, err)
+	}
+	if statusErr.StatusCode != http.StatusForbidden ||
+		statusErr.Summary != "Your IP address is not allowed" {
+		t.Fatalf("statusErr = %+v", statusErr)
+	}
+}
+
+func TestBatchHookEligibleReturnsHTTPXStatusError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/hook-eligible" {
+			t.Fatalf("path = %s, want /api/v1/repos/hook-eligible", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("upstream unavailable"))
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, "tok").BatchHookEligible(context.Background(), []HookEligibleRepoRequest{{
+		RepoKey:   "org/repo",
+		RemoteURL: "https://git.example.com/org/repo.git",
+	}})
+	var statusErr *httpx.StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("err = %T %v, want *httpx.StatusError", err, err)
+	}
+	if statusErr.StatusCode != http.StatusBadGateway ||
+		statusErr.Summary != "upstream unavailable" {
+		t.Fatalf("statusErr = %+v", statusErr)
+	}
+}
+
+func TestManagedPayloadsIncludeRepoConfigID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if payload["repo_config_id"].(float64) != 123 {
+			t.Fatalf("payload missing repo_config_id: %#v", payload)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "tok")
+	if err := c.SendCommitCheckpoint(context.Background(), CommitCheckpointRequest{
+		EventID:       "cp",
+		RepoConfigID:  123,
+		WorkspaceID:   "ws",
+		CommitSHA:     "abc",
+		BindingSource: "unbound",
+	}); err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+}
+
 func TestListProviders(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		if r.URL.Path != "/api/v1/providers" {
-			t.Errorf("path = %s, want /api/v1/providers", r.URL.Path)
+		if r.URL.Path != "/api/v1/user/providers" {
+			t.Errorf("path = %s, want /api/v1/user/providers", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -199,10 +555,40 @@ func TestListProviders(t *testing.T) {
 						"name":          "primary",
 						"display_name":  "Primary",
 						"base_url":      "https://relay.example.com/v1",
-						"api_key":       "sk-test",
-						"api_key_id":    123,
 						"default_model": "gpt-5.3-codex",
 						"is_primary":    true,
+						"groups": []map[string]any{
+							{
+								"group_id":   "42",
+								"group_name": "OpenAI",
+								"platform":   "openai",
+								"credential": map[string]any{
+									"api_key_id": 123,
+									"key":        "sk-test",
+									"status":     "active",
+								},
+							},
+							{
+								"group_id":   "43",
+								"group_name": "Claude",
+								"platform":   "anthropic",
+								"credential": map[string]any{
+									"api_key_id": 124,
+									"key":        "sk-claude",
+									"status":     "active",
+								},
+							},
+							{
+								"group_id":   "44",
+								"group_name": "Gemini",
+								"platform":   "gemini",
+								"credential": map[string]any{
+									"api_key_id": 125,
+									"key":        "sk-inactive",
+									"status":     "inactive",
+								},
+							},
+						},
 					},
 				},
 			},
@@ -219,6 +605,65 @@ func TestListProviders(t *testing.T) {
 		t.Fatalf("providers len = %d, want 1", len(providers))
 	}
 	if providers[0].Name != "primary" || providers[0].APIKey != "sk-test" || !providers[0].IsPrimary {
+		t.Fatalf("unexpected provider payload: %+v", providers[0])
+	}
+	if len(providers[0].Credentials) != 2 {
+		t.Fatalf("credentials len = %d, want 2: %+v", len(providers[0].Credentials), providers[0].Credentials)
+	}
+	if providers[0].Credentials[0].Platform != "openai" || providers[0].Credentials[0].APIKey != "sk-test" {
+		t.Fatalf("openai credential = %+v", providers[0].Credentials[0])
+	}
+	if providers[0].Credentials[1].Platform != "anthropic" || providers[0].Credentials[1].APIKey != "sk-claude" {
+		t.Fatalf("anthropic credential = %+v", providers[0].Credentials[1])
+	}
+}
+
+func TestListProvidersFallsBackToLegacyEndpoint(t *testing.T) {
+	var sawUserEndpoint bool
+	var sawLegacyEndpoint bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/user/providers":
+			sawUserEndpoint = true
+			http.NotFound(w, r)
+		case "/api/v1/providers":
+			sawLegacyEndpoint = true
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 200,
+				"data": map[string]any{
+					"providers": []map[string]any{
+						{
+							"name":          "legacy",
+							"display_name":  "Legacy",
+							"base_url":      "https://legacy.example.com/v1",
+							"api_key":       "sk-legacy",
+							"api_key_id":    456,
+							"default_model": "gpt-5.3-codex",
+							"is_primary":    true,
+						},
+					},
+				},
+			})
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-token")
+	providers, err := c.ListProviders(context.Background())
+	if err != nil {
+		t.Fatalf("ListProviders: %v", err)
+	}
+	if !sawUserEndpoint || !sawLegacyEndpoint {
+		t.Fatalf("endpoint calls: user=%v legacy=%v, want both", sawUserEndpoint, sawLegacyEndpoint)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("providers len = %d, want 1", len(providers))
+	}
+	if providers[0].Name != "legacy" || providers[0].APIKey != "sk-legacy" {
 		t.Fatalf("unexpected provider payload: %+v", providers[0])
 	}
 }

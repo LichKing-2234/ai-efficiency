@@ -10,7 +10,68 @@
 
 **Spec:** `docs/superpowers/specs/2026-05-21-user-page-cli-self-serve-design.md`
 
-**Status:** Group-first implementation is largely landed in code and verified by backend/frontend tests. Live docker-dev `/api/v1/user/providers` now returns `groups[]`, but the list is currently empty because the upstream relay user payload available in this environment does not yet provide `allowed_groups`; that upstream fact source remains the current blocker for a populated UI. Separately, the admin Settings relay management UI is now aligned to DB-backed multi-`RelayProvider` CRUD via `/api/v1/admin/providers`; `/api/v1/settings/llm*` remains compatibility/runtime-edit surface only.
+**Status:** Group-first implementation is largely landed in code and verified by backend/frontend tests. The admin Settings relay management UI is aligned to DB-backed multi-`RelayProvider` CRUD via `/api/v1/admin/providers`; `/api/v1/settings/llm*` remains compatibility/runtime-edit surface only. The 2026-05-22 API key visibility follow-up aligns `/user` with sub2api-style behavior: existing user-owned keys are partially masked on screen and copy the full key when the relay list response includes `key`. The 2026-05-23 provider-test follow-up adds `/api/v1/user/providers/:id/test` and a `/user` page test form so regular users can test their own active API key for the selected group and platform with a caller-supplied model; the old admin Relay Providers test button and `/api/v1/admin/providers/:id/test` route are intentionally removed. The 2026-05-26 credential reliability follow-up now treats `/user` create/regenerate as responsible for ensuring relay write readiness: it hydrates `allowed_groups` ID payloads, merges active subscription facts, assigns relay defaults for new or previously LDAP-provisioned group-less relay users, removes provider default-model display from the credential header, creates or resolves relay users when local state is missing or a stored relay binding points to a missing upstream user, and rotates/stores generated relay-side passwords when local credentials are missing or stale. The 2026-05-29 LDAP default subscription conflict follow-up makes repeated sub2api default assignment conflicts idempotent for first-login relay provisioning. The 2026-06-26 Relay SSO hardening follow-up supersedes the earlier SSO self-provisioning item: Relay SSO only authenticates existing relay/sub2api users and never creates missing users. The DB-backed auth/usersetup/handler package sweep has been rerun with local Postgres.
+
+## Follow-up: API Key Visibility Alignment
+
+- [x] Return the existing relay API key value in `/api/v1/user/providers` group credential summaries when `ListUserAPIKeys` includes it.
+- [x] Show API keys partially masked in `/user` while keeping the full key available to the Copy action.
+- [x] Update the current `/user` contract docs to replace the older one-time-only reveal/copy assumption.
+
+## Follow-up: User Provider Test Migration
+
+- [x] Add a logged-in user route at `POST /api/v1/user/providers/:id/test`.
+- [x] Cover the route with a handler test proving a non-admin user tests their own platform-matched API key.
+- [x] Require test requests to include the selected `group_id` so missing-key groups cannot borrow keys from another group on the same platform.
+- [x] Add `testUserProvider` to the frontend user API client.
+- [x] Add a `/user` page test form that uses the selected group's platform and user-supplied model/prompt.
+- [x] Remove the admin Settings Relay Providers test button/dialog and `/api/v1/admin/providers/:id/test` route.
+- [x] Update the current `/user` contract docs and architecture notes for the user-scoped provider test flow.
+
+## Follow-up: LDAP Create Key Credential Handling
+
+- [x] Add usersetup coverage for LDAP users with a relay identity but no stored relay write credential.
+- [x] Add usersetup coverage for LDAP logins that reuse an existing local relay SSO user row with `relay_user_id` but no stored relay write credential.
+- [x] Require a stored Relay SSO or LDAP-provisioned generated relay credential before `/user` create/regenerate key writes.
+- [x] Superseded: `/user` now repairs missing/stale relay write credentials by rotating generated relay-side passwords before creating/regenerating keys.
+- [x] Keep LDAP bind passwords out of relay create/update flows and document the generated-credential contract.
+- [x] Run targeted backend verification for usersetup, auth, and relay packages.
+
+## Follow-up: LDAP Default Subscriptions and Credential Header Cleanup
+
+- [x] Decode sub2api relay user `allowed_groups` when it is returned as a group ID array and resolve details through active relay groups.
+- [x] Merge active subscription entries from relay user detail into `/user` group summaries without falling back to provider-wide active groups.
+- [x] Fall back to admin users list facts when sub2api user detail omits subscriptions for the same relay user ID.
+- [x] Assign relay `default_subscriptions` after LDAP provisioning creates a new sub2api user, so subscription-backed groups can create user API keys.
+- [x] Assign the same defaults on later LDAP login for existing `provisioned_by_ai_efficiency_ldap` relay users that still have no group facts from the earlier broken create path.
+- [x] Remove provider `default_model` from the `Provider & Group Credential` header; provider test still requires an explicit user-supplied model.
+- [x] Run relay adapter, LDAP relay identity, and frontend user page targeted tests for the follow-up.
+- [x] Rerun DB-backed auth/usersetup/handler package sweep once local Postgres is available.
+
+## Follow-up: LDAP Default Subscription Conflict Idempotency
+
+- [x] Add relay adapter regression coverage for sub2api returning 409 `SUBSCRIPTION_ASSIGN_CONFLICT` after admin user creation already assigned the default subscription.
+- [x] Treat that existing-subscription conflict as idempotent success during default subscription repair while keeping unrelated assignment failures fatal.
+- [x] Update architecture and current auth/user-page specs for the first-login idempotency contract.
+- [x] Run targeted backend verification for the relay/auth packages.
+
+## Follow-up: LDAP Binding Repair Password Rotation
+
+- [x] Add regression coverage for an LDAP local account whose stored `relay_user_id` is repaired from an old relay user to a different `provisioned_by_ai_efficiency_ldap` relay user.
+- [x] Rotate the generated relay-side password during that LDAP login repair and store the matching encrypted local `relay_auth_password`.
+- [x] Rotate and store a generated relay-side password when a new local LDAP row reuses an existing system-provisioned relay user after local state was deleted or lost.
+- [x] Superseded: ordinary existing relay users are now included in `/user` generated-password repair when local write credentials are missing or stale.
+- [x] Rebuild the local dev backend and verify the affected local account reaches `/api/v1/user/providers` with group-scoped credential state after equivalent local repair.
+- [ ] Manually create/regenerate a real upstream group-scoped API key only when the user explicitly asks for that side effect.
+
+## Follow-up: Guaranteed User Key Write Readiness
+
+- [x] Ensure `/user` create/regenerate creates or resolves a relay user when the local DB row has no `relay_user_id`.
+- [x] Ensure `/user` create/regenerate recreates or relinks the relay user when a stored `relay_user_id` no longer exists upstream.
+- [x] Ensure `/user` create/regenerate rotates and stores a generated relay-side password when the local row has no `relay_auth_password`.
+- [x] Ensure `/user` create retries once with a rotated generated password when the stored relay password is stale.
+- [x] Apply the same repair path to SSO, LDAP, regular relay users, and relay admins; LDAP bind passwords remain excluded.
+- [x] Superseded: Relay SSO now fails on missing users or invalid credentials and never creates missing relay users; relay user creation remains limited to LDAP provisioning and `/user` generated-credential repair paths.
 
 ---
 

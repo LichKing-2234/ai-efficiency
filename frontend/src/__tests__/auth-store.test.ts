@@ -33,7 +33,7 @@ describe('Auth Store', () => {
     localStorage.setItem('token', 'test-token')
     localStorage.setItem('refresh_token', 'test-refresh')
     const store = useAuthStore()
-    store.user = { id: 1, username: 'admin', email: 'a@b.com', role: 'admin', auth_source: 'sso' }
+    store.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
 
     store.logout()
 
@@ -50,7 +50,7 @@ describe('Auth Store', () => {
       data: { data: { token: 'new-token', refresh_token: 'new-refresh' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const store = useAuthStore()
@@ -68,7 +68,7 @@ describe('Auth Store', () => {
     ;(mockGetMe as any).mockRejectedValue(new Error('unauthorized'))
 
     const store = useAuthStore()
-    store.user = { id: 1, username: 'admin', email: 'a@b.com', role: 'admin', auth_source: 'sso' }
+    store.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
 
     await store.fetchMe()
     expect(store.user).toBeNull()
@@ -84,7 +84,7 @@ describe('Auth Store', () => {
     localStorage.setItem('refresh_token', 'saved-refresh')
 
     const store = useAuthStore()
-    store.user = { id: 1, username: 'admin', email: 'a@b.com', role: 'admin', auth_source: 'sso' }
+    store.user = { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' }
 
     await store.fetchMe()
 
@@ -116,7 +116,7 @@ describe('Auth Store', () => {
       data: { data: { token: 'new-token' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const store = useAuthStore()
@@ -130,13 +130,13 @@ describe('Auth Store', () => {
   it('fetchMe sets user from response data', async () => {
     const { getMe: mockGetMe } = await import('@/api/auth')
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 2, username: 'user2', email: 'u2@b.com', role: 'viewer' } },
+      data: { data: { id: 2, username: 'user2', email: 'bob@example.org', role: 'viewer' } },
     })
 
     const store = useAuthStore()
     await store.fetchMe()
 
-    expect(store.user).toEqual({ id: 2, username: 'user2', email: 'u2@b.com', role: 'viewer' })
+    expect(store.user).toEqual({ id: 2, username: 'user2', email: 'bob@example.org', role: 'viewer' })
   })
 
   it('fetchMe sets user to null when data is undefined', async () => {
@@ -157,7 +157,7 @@ describe('Auth Store', () => {
       data: { data: { token: 'tok', refresh_token: 'rt' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const store = useAuthStore()

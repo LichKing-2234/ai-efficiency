@@ -25,42 +25,50 @@ ae-cli discover
 
 该命令在登录后执行以下流程：
 
-1. 调用 `GET /api/v1/providers`
+1. 调用 `GET /api/v1/user/providers` 获取当前用户可用的 provider credential；若后端尚未提供该接口，兼容回退到旧 `GET /api/v1/providers`
 2. 选择一个 provider
    - 默认取 `is_primary=true`
    - 可通过 `--provider <name>` 显式覆盖
-3. 在本机 `PATH` 中检测受支持工具
-   - `codex`
+3. 在本机检测受支持工具
+   - `codex`：优先检测 `PATH` 中的 CLI；若 CLI 不存在，也识别 macOS `Codex.app`
    - `claude`
    - `gemini`
-4. 按工具的当前官方/本机配置机制写入本地配置
+4. 按工具对应的 relay `group.platform` 选择 credential
+   - `codex` -> `openai`
+   - `claude` -> `anthropic`
+   - `gemini` -> `gemini`
+5. 仅对已安装且存在匹配 platform credential 的工具写入本地配置
 
 ## Goals
 
 1. 给当前代码库一个**真实可用**的工具配置入口，而不是停留在未实现 spec。
 2. 避免引入后端 LLM 会话管理、多轮 discover 协议、或本地文件读取 tool-call 执行器。
 3. 让 Codex、Claude、Gemini 都有明确的配置落点与测试覆盖。
-4. 尽量复用现有 `GET /api/v1/providers` 能力，而不是新造临时后端端点。
+4. 复用当前 `/user` 自助 credential 合同，避免继续依赖旧 provider 级自动创建 key 的接口语义。
 
 ## Non-Goals
 
 1. 当前版本不实现 `/api/v1/tools/discover`
 2. 当前版本不实现 `ae-cli login` 后自动执行 discover
-3. 当前版本不做 per-tool provider inference
+3. 当前版本不做 LLM 驱动的 per-tool provider inference；仅按后端返回的 `group.platform` 做确定性匹配
 4. 当前版本不做 live model request 验证；只保证 CLI 配置文件/环境变量写入合同
 
 ## Current Contract
 
 ### Provider selection
 
-- `ae-cli discover` 从 `GET /api/v1/providers` 获取用户可用 provider 列表。
+- `ae-cli discover` 优先从 `GET /api/v1/user/providers` 获取用户可用 provider 列表和 group-scoped credential。
+- 对当前 `/user/providers` 合同，CLI 保留每个 `provider + group.platform` 的 active credential，不再把第一个 credential 套用到所有工具。
+- 若后端尚未实现 `/api/v1/user/providers`，CLI 可回退到旧 `GET /api/v1/providers`，以兼容旧部署；旧接口没有 group/platform 语义时，仍按 provider-level API key 走历史配置行为。
 - 如果用户传入 `--provider <name>`，则按 provider `name` / `display_name` 精确匹配。
 - 否则优先使用 `is_primary=true` 的 provider；若不存在 primary，则回退到列表第一项。
 
 ### Tool detection
 
-- CLI 仅通过 `exec.LookPath` 检测本机是否安装 `codex`、`claude`、`gemini`。
+- CLI 优先通过 `exec.LookPath` 检测本机是否安装 `codex`、`claude`、`gemini`。
+- 对 Codex，若 `codex` CLI 不在 `PATH` 中，CLI 会继续检测 `~/Applications/Codex.app` 和 `/Applications/Codex.app`。只安装 Codex App 时也应写入 `~/.codex/config.toml` 和 `~/.codex/auth.json`，因为 App 与 CLI 共用 `~/.codex` 配置目录。
 - 未安装的工具不会报错，只会跳过。
+- 已安装但没有匹配 platform credential 的工具也会跳过。例如选中的 provider 只有 `openai` group 时，CLI 只配置 Codex，不会改 Claude 或 Gemini。
 
 ### Config writes
 
@@ -68,26 +76,49 @@ ae-cli discover
 
 - 写入 `~/.codex/config.toml`
 - 当前写入字段：
-  - `openai_base_url = <provider.base_url>`
-  - `model = <provider.default_model>`（当后端提供该字段时）
-- API key 不直接写入 `config.toml`
-- API key 写入 `~/.ae-cli/env.sh` 中的：
-  - `OPENAI_API_KEY`
+  - `model_provider = <provider.name>`
+  - `model = "gpt-5.4"`
+  - `review_model = <model>`
+  - `model_reasoning_effort = "xhigh"`
+  - `disable_response_storage = true`
+  - `network_access = "enabled"`
+  - `windows_wsl_setup_acknowledged = true`
+  - `model_context_window = 1000000`
+  - `model_auto_compact_token_limit = 900000`
+  - `[model_providers.<provider.name>]`
+    - `name = <provider.name>`
+    - `base_url = <provider.base_url>`
+    - `wire_api = "responses"`
+    - `requires_openai_auth = true`
+  - `provider.name` 直接写入配置；若名称包含 TOML bare key 不支持的字符，由序列化器负责加引号
+- API key 写入 `~/.codex/auth.json`：
+  - `OPENAI_API_KEY = <openai credential.key>`
+- 当 Codex 被成功配置时，CLI 会完整重写 `~/.codex/auth.json`，移除与 Codex 无关的其他字段。
+- Codex 不再通过 `~/.ae-cli/env.sh` 写入或提示 `OPENAI_API_KEY`。
+- Codex 不使用 provider 级 `default_model`。该字段不具备 openai group 专属语义，不能自动套用到 Codex 的 `model` / `review_model`。
 
 #### Claude
 
 - 写入 `~/.claude/settings.json`
 - 当前写入字段：
-  - `env.ANTHROPIC_API_KEY = <provider.api_key>`
   - `env.ANTHROPIC_BASE_URL = <provider.base_url>`
-  - `model = <provider.default_model>`（当后端提供该字段时）
+  - `env.ANTHROPIC_AUTH_TOKEN = <anthropic credential.key>`
+  - `env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"`
+  - `env.CLAUDE_CODE_ATTRIBUTION_HEADER = "0"`
+- CLI 不再为 Claude 写入 top-level `model` 字段。
 
 #### Gemini
 
 - 当前实现**不写** `~/.gemini/settings.json`
 - API key / gateway URL 仅通过 `~/.ae-cli/env.sh` 提供：
-  - `GEMINI_API_KEY`
+  - `GEMINI_API_KEY = <gemini credential.key>`
   - `GOOGLE_GEMINI_BASE_URL`
+- 当前 Gemini 3.1 使用要求通过命令输出解释 `GEMINI_MODEL` 的用途，并提示用户在当前 shell 重新加载对应 shell rc 后手动执行：
+  - `source "$HOME/.zshrc"` / `source "$HOME/.bashrc"` / `source "$HOME/.profile"`，取决于本次写入的 rc 文件
+  - `Set GEMINI_MODEL so Gemini starts with the preview model directly.`
+  - `export GEMINI_MODEL="gemini-3.1-pro-preview"`
+- `GEMINI_MODEL` 不写入 `~/.ae-cli/env.sh`。该变量只作为当前 shell 的运行提示，避免把预览模型选择持久化进 ae-cli 管理的 env 文件。
+- 输出必须提醒用户不要在 Gemini 交互里手动切换模型，否则可能触发无 preview release channel 权限的模型访问错误。
 
 #### Shared env bootstrap
 

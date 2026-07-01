@@ -288,6 +288,7 @@ func TestSyncPRs_RefreshesOnlyActivePRs(t *testing.T) {
 	client.PrRecord.Create().
 		SetRepoConfigID(rc.ID).
 		SetScmPrID(77).
+		SetScmPrURL("https://example.com/pr/77").
 		SetTitle("old closed").
 		SetAuthor("legacy").
 		SetSourceBranch("legacy").

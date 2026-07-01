@@ -30,9 +30,6 @@ func ensurePrimaryRelayProviderFromConfig(ctx context.Context, entClient *ent.Cl
 	}
 
 	adminKey := strings.TrimSpace(cfg.AdminAPIKey)
-	if adminKey == "" {
-		adminKey = strings.TrimSpace(cfg.APIKey)
-	}
 	encryptedAdminKey := adminKey
 	if strings.TrimSpace(adminKey) != "" && strings.TrimSpace(encryptionKey) != "" {
 		encrypted, encErr := pkg.Encrypt(adminKey, encryptionKey)
@@ -44,14 +41,12 @@ func ensurePrimaryRelayProviderFromConfig(ctx context.Context, entClient *ent.Cl
 
 	name := firstNonEmpty(strings.TrimSpace(cfg.Provider), "sub2api")
 	displayName := firstNonEmpty(strings.TrimSpace(cfg.Provider), name)
-	adminURL := firstNonEmpty(strings.TrimSpace(cfg.AdminURL), strings.TrimSpace(cfg.URL))
 	model := firstNonEmpty(strings.TrimSpace(cfg.Model), "claude-sonnet-4-20250514")
 
 	_, err = entClient.RelayProvider.Create().
 		SetName(name).
 		SetDisplayName(displayName).
 		SetBaseURL(strings.TrimSpace(cfg.URL)).
-		SetAdminURL(adminURL).
 		SetRelayType(name).
 		SetAdminAPIKey(encryptedAdminKey).
 		SetDefaultModel(model).

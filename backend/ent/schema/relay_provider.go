@@ -19,8 +19,6 @@ func (RelayProvider) Fields() []ent.Field {
 			NotEmpty(),
 		field.String("base_url").
 			NotEmpty(),
-		field.String("admin_url").
-			NotEmpty(),
 		field.String("relay_type").
 			Default("sub2api"),
 		field.String("admin_api_key").

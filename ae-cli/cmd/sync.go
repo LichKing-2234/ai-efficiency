@@ -2,18 +2,20 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/ai-efficiency/ae-cli/internal/attributionlocal"
 	"github.com/ai-efficiency/ae-cli/internal/hooks"
-	"github.com/ai-efficiency/ae-cli/internal/repolink"
 	"github.com/spf13/cobra"
 )
 
 var newSyncEngine = attributionlocal.NewSyncEngine
-var runSyncEngineForWorkspace = func(engine *attributionlocal.SyncEngine, ctx context.Context, repoRoot string) error {
-	return engine.RunForWorkspace(ctx, repoRoot)
+var runSyncEngine = func(engine *attributionlocal.SyncEngine, ctx context.Context, opts attributionlocal.RunOptions) error {
+	return engine.Run(ctx, opts)
 }
+var syncRepoEligibilityTimeout = 10 * time.Second
 
 var syncCmd = &cobra.Command{
 	Use:   "sync",
@@ -26,26 +28,123 @@ var syncCmd = &cobra.Command{
 		if resolveToken(configToken, "") == "" {
 			return fmt.Errorf("not logged in — run 'ae-cli login'")
 		}
-		ctx, err := detectAttributionContext()
+		attrCtx, err := detectAttributionContext()
 		if err != nil {
 			return err
 		}
-		if _, err := repolink.Ensure(context.Background(), apiClient, gitRemoteURLForCutover(), gitBranchForCutover()); err != nil {
-			return fmt.Errorf("ensure repo link: %w", err)
+		gitCtx, err := hooks.DetectGitContext(attrCtx.repoRoot)
+		if err != nil {
+			return err
 		}
-		h := hooks.NewHandler(newHookUploader())
-		if err := h.Flush(context.Background(), ctx.repoRoot); err != nil {
-			return fmt.Errorf("flush pending hook queue: %w", err)
+		execCtx, ok, err := resolveSyncExecutionContext(context.Background(), gitCtx)
+		if err != nil {
+			return err
 		}
-		engine := newSyncEngine(apiClient)
-		if err := runSyncEngineForWorkspace(engine, context.Background(), ctx.repoRoot); err != nil {
-			return fmt.Errorf("run attribution sync: %w", err)
+		if !ok {
+			return fmt.Errorf("repository is not registered or reporting-enabled; run 'ae-cli init' or ask an admin to configure it")
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Synced local attribution data for %s\n", ctx.repoRoot)
+		if err := hooks.UpsertPendingSyncTask(hooks.SyncTask{
+			WorkspaceID:     execCtx.WorkspaceID,
+			RepoRoot:        gitCtx.RepoRoot,
+			ServerURL:       execCtx.ServerURL,
+			AuthSubject:     execCtx.AuthSubject,
+			RepoConfigID:    execCtx.RepoConfigID,
+			RepoKey:         execCtx.RepoKey,
+			Status:          hooks.SyncTaskStatusPending,
+			LastRequestedAt: time.Now().UTC(),
+		}); err != nil {
+			return fmt.Errorf("upsert pending sync task: %w", err)
+		}
+		if err := runBackgroundSyncTask(context.Background(), execCtx, newHookUploader()); errors.Is(err, hooks.ErrSyncTaskAlreadyRunning) {
+			fmt.Fprintf(cmd.OutOrStdout(), "Attribution sync already running for %s\n", attrCtx.repoRoot)
+			task, _, loadErr := hooks.LoadSyncTaskRecovering(execCtx.WorkspaceID)
+			if loadErr != nil {
+				return fmt.Errorf("load sync task: %w", loadErr)
+			}
+			printSyncTaskStatus(cmd.OutOrStdout(), task)
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("run pending sync task: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Synced local attribution data for %s\n", attrCtx.repoRoot)
+		return nil
+	},
+}
+
+func resolveSyncExecutionContext(ctx context.Context, gitCtx *hooks.GitContext) (hooks.ExecutionContext, bool, error) {
+	if execCtx, ok := resolveHookExecutionContext(ctx, gitCtx); ok {
+		return execCtx, true, nil
+	}
+	if gitCtx == nil {
+		return hooks.ExecutionContext{}, false, nil
+	}
+
+	binding := currentHookBinding()
+	binding.RepoKey = firstNonEmpty(binding.RepoKey, gitCtx.RepoKey)
+	resolver := hookRepoResolverFor(binding.ServerURL, usableToken())
+	if resolver == nil {
+		return hooks.ExecutionContext{}, false, nil
+	}
+
+	refreshCtx, cancel := context.WithTimeout(ctx, syncRepoEligibilityTimeout)
+	defer cancel()
+	if err := hooks.RefreshCurrent(refreshCtx, resolver, gitCtx.RepoRoot, binding); err != nil {
+		return hooks.ExecutionContext{}, false, fmt.Errorf("refresh repo eligibility: %w", err)
+	}
+
+	if execCtx, ok := resolveHookExecutionContext(ctx, gitCtx); ok {
+		return execCtx, true, nil
+	}
+	return hooks.ExecutionContext{}, false, nil
+}
+
+var syncStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show local attribution sync status",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		attrCtx, err := detectAttributionContext()
+		if err != nil {
+			return err
+		}
+		status, err := hooks.StatusForRepo(hooks.StatusOptions{CWD: ".", Uploads: true, Binding: currentHookBinding()})
+		if err != nil {
+			return err
+		}
+		printHookStatus(cmd.OutOrStdout(), status)
+		task, recovered, err := hooks.LoadSyncTaskRecovering(attrCtx.workspaceID)
+		if err != nil {
+			return fmt.Errorf("load sync task: %w", err)
+		}
+		if recovered {
+			fmt.Fprintln(cmd.OutOrStdout(), "Sync Task: corrupt sync task moved aside")
+		}
+		if task != nil {
+			var runnerRecovered bool
+			task, runnerRecovered, err = hooks.RecoverInactiveSyncTaskRunner(attrCtx.workspaceID, time.Now().UTC())
+			if err != nil {
+				return fmt.Errorf("recover inactive sync runner: %w", err)
+			}
+			if runnerRecovered {
+				fmt.Fprintln(cmd.OutOrStdout(), "Sync Task: inactive runner recovered")
+			}
+		}
+		printSyncTaskStatus(cmd.OutOrStdout(), task)
+		unresolvedCount, err := hooks.CountUnresolvedHookEvents()
+		if err != nil {
+			return fmt.Errorf("count unresolved hook events: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Unresolved Hook Events: %d\n", unresolvedCount)
+
+		deadLetterCount, err := attributionlocal.CountToolUsageDeadLetters(attrCtx.workspaceID)
+		if err != nil {
+			return fmt.Errorf("count tool usage dead letters: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Tool Usage Dead Letters: %d\n", deadLetterCount)
 		return nil
 	},
 }
 
 func init() {
+	syncCmd.AddCommand(syncStatusCmd)
 	rootCmd.AddCommand(syncCmd)
 }

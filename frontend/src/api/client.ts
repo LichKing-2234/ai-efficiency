@@ -18,6 +18,13 @@ function clearAuthAndRedirect() {
   window.location.href = '/login'
 }
 
+function isCredentialAuthEndpoint(url?: string) {
+  if (!url) {
+    return false
+  }
+  return url.startsWith('/auth/login') || url.startsWith('/auth/refresh') || url.startsWith('/auth/dev-login')
+}
+
 async function refreshAccessToken(): Promise<string | null> {
   const currentRefreshToken = localStorage.getItem('refresh_token')
   if (!currentRefreshToken) {
@@ -51,8 +58,7 @@ client.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config as any
-    const isAuthEndpoint = originalRequest?.url?.startsWith('/auth/')
-    if (error.response?.status === 401 && !isAuthEndpoint && !originalRequest?._retry) {
+    if (error.response?.status === 401 && !isCredentialAuthEndpoint(originalRequest?.url) && !originalRequest?._retry) {
       originalRequest._retry = true
       try {
         if (!refreshPromise) {

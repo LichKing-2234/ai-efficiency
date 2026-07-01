@@ -3,12 +3,14 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import LoginView from '@/views/LoginView.vue'
+import { setLocale } from '@/i18n'
 
 // Mock auth API
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
   devLogin: vi.fn(),
+  getAuthOptions: vi.fn(),
 }))
 
 function createTestRouter(initialPath = '/login') {
@@ -23,10 +25,15 @@ function createTestRouter(initialPath = '/login') {
 }
 
 describe('LoginView', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     localStorage.clear()
+    setLocale('en-US')
     vi.clearAllMocks()
+    const { getAuthOptions } = await import('@/api/auth')
+    ;(getAuthOptions as any).mockResolvedValue({
+      data: { data: { ldap_enabled: true, dev_login_enabled: true } },
+    })
   })
 
   it('renders login form', () => {
@@ -36,20 +43,81 @@ describe('LoginView', () => {
     })
 
     expect(wrapper.find('h1').text()).toBe('AI Efficiency Platform')
+    expect(wrapper.text()).toContain('Recommended sign-in')
+    expect(wrapper.find('[data-testid="auth-language-toggle"]').exists()).toBe(true)
     expect(wrapper.find('input#username').exists()).toBe(true)
     expect(wrapper.find('input#password').exists()).toBe(true)
     expect(wrapper.find('select#source').exists()).toBe(true)
   })
 
-  it('renders dev login button', () => {
+  it('renders dev login button when enabled', async () => {
     const router = createTestRouter()
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const buttons = wrapper.findAll('button')
     const devBtn = buttons.find((b) => b.text().includes('Dev Login'))
     expect(devBtn).toBeTruthy()
+  })
+
+  it('defaults to LDAP auth source when LDAP is enabled', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const select = wrapper.find('select#source')
+    expect((select.element as HTMLSelectElement).value).toBe('LDAP')
+  })
+
+  it('shows only SSO when LDAP is not enabled', async () => {
+    const { getAuthOptions } = await import('@/api/auth')
+    ;(getAuthOptions as any).mockResolvedValue({
+      data: { data: { ldap_enabled: false, dev_login_enabled: true } },
+    })
+    const router = createTestRouter()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const select = wrapper.find('select#source')
+    const options = wrapper.findAll('select#source option')
+    expect((select.element as HTMLSelectElement).value).toBe('SSO')
+    expect(options.map((option) => (option.element as HTMLOptionElement).value)).toEqual(['SSO'])
+  })
+
+  it('hides dev login when disabled', async () => {
+    const { getAuthOptions } = await import('@/api/auth')
+    ;(getAuthOptions as any).mockResolvedValue({
+      data: { data: { ldap_enabled: true, dev_login_enabled: false } },
+    })
+    const router = createTestRouter()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('DEV MODE')
+    expect(wrapper.findAll('button').some((button) => button.text().includes('Dev Login'))).toBe(false)
+  })
+
+  it('switches login copy to Chinese', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(LoginView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="auth-language-toggle"]').trigger('click')
+
+    expect(wrapper.text()).toContain('AI 效能平台')
+    expect(wrapper.text()).toContain('AI 使用、接入和代码可见性')
+    expect(wrapper.text()).toContain('推荐登录方式')
+    expect(wrapper.find('label[for="username"]').text()).toContain('邮箱')
   })
 
   it('shows error on failed login', async () => {
@@ -77,7 +145,7 @@ describe('LoginView', () => {
       data: { data: { token: 'dev-token', refresh_token: 'dev-refresh' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const router = createTestRouter()
@@ -87,6 +155,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const buttons = wrapper.findAll('button')
     const devBtn = buttons.find((b) => b.text().includes('Dev Login'))
@@ -106,7 +175,7 @@ describe('LoginView', () => {
       data: { data: { token: 'jwt', refresh_token: 'rt' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const router = createTestRouter()
@@ -116,12 +185,14 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     await wrapper.find('input#username').setValue('admin')
     await wrapper.find('input#password').setValue('pass')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
+    expect(mockLogin).toHaveBeenCalledWith({ username: 'admin', password: 'pass', source: 'LDAP' })
     expect(router.currentRoute.value.path).toBe('/')
   })
 
@@ -131,7 +202,7 @@ describe('LoginView', () => {
       data: { data: { token: 'jwt', refresh_token: 'rt' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const router = createTestRouter()
@@ -141,6 +212,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     await wrapper.find('input#username').setValue('admin')
     await wrapper.find('input#password').setValue('pass')
@@ -156,7 +228,7 @@ describe('LoginView', () => {
       data: { data: { token: 'jwt', refresh_token: 'rt' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const router = createTestRouter()
@@ -166,6 +238,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     await wrapper.find('input#username').setValue('admin')
     await wrapper.find('input#password').setValue('pass')
@@ -184,6 +257,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     await wrapper.find('input#username').setValue('admin')
     await wrapper.find('input#password').setValue('pass')
@@ -202,6 +276,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     await wrapper.find('input#username').setValue('admin')
     await wrapper.find('input#password').setValue('pass')
@@ -225,6 +300,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const devBtn = wrapper.findAll('button').find((b) => b.text().includes('Dev Login'))
     await devBtn!.trigger('click')
@@ -241,6 +317,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const devBtn = wrapper.findAll('button').find((b) => b.text().includes('Dev Login'))
     await devBtn!.trigger('click')
@@ -262,6 +339,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const devBtn = wrapper.findAll('button').find((b) => b.text().includes('Dev Login'))
     await devBtn!.trigger('click')
@@ -278,7 +356,7 @@ describe('LoginView', () => {
       data: { data: { token: 'dev-token' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
     })
 
     const router = createTestRouter()
@@ -288,6 +366,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const devBtn = wrapper.findAll('button').find((b) => b.text().includes('Dev Login'))
     await devBtn!.trigger('click')
@@ -302,6 +381,7 @@ describe('LoginView', () => {
     const wrapper = mount(LoginView, {
       global: { plugins: [createPinia(), router] },
     })
+    await flushPromises()
 
     const select = wrapper.find('select#source')
     await select.setValue('LDAP')

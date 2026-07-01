@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -37,7 +36,7 @@ func ParseClaudeJSONL(path, workspaceRoot string) ([]LocalToolUsageEvent, error)
 		if strings.TrimSpace(asString(row["type"])) != "assistant" {
 			continue
 		}
-		if filepath.Clean(asString(row["cwd"])) != filepath.Clean(workspaceRoot) {
+		if !sameWorkspacePath(asString(row["cwd"]), workspaceRoot) {
 			continue
 		}
 

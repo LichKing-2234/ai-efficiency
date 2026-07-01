@@ -28,7 +28,6 @@ This spec does not change broader relay provider architecture, multi-provider de
 Returns the currently effective admin-facing relay LLM settings:
 
 - `relay_url`
-- `relay_api_key` (masked)
 - `relay_admin_api_key` (masked)
 - `model`
 - `enabled`
@@ -45,7 +44,7 @@ Accepts the following writable fields:
 Persistence rules:
 
 - `relay.admin_api_key` and `relay.model` are written back under the `relay` section.
-- `relay.url` and `relay.api_key` remain read-only in this admin surface. They still come from the server's relay configuration source of truth.
+- `relay.url` remains read-only in this admin surface. `relay.api_key` / `AE_RELAY_API_KEY` and `relay.admin_url` / `AE_RELAY_ADMIN_URL` are removed from the backend config contract.
 - No values are written under `analysis.llm`; that config surface is retired.
 
 Runtime rules:

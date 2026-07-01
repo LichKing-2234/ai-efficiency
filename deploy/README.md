@@ -51,7 +51,6 @@ Before starting services, edit `.env` for operator-facing settings.
 At minimum, set:
 
 - `AE_RELAY_URL`
-- `AE_RELAY_API_KEY`
 - `AE_RELAY_ADMIN_API_KEY`
 
 Then run the local preflight and start the stack:
@@ -196,8 +195,9 @@ The application no longer exposes in-app deployment status, online update, rollb
 After the first tagged GitHub release, the public repository will publish:
 
 - `ai-efficiency-backend_<version>_<os>_<arch>.tar.gz|zip`
-- `ae-cli_<version>_<os>_<arch>.tar.gz|zip`
 - `checksums.txt`
+
+`ae-cli` artifacts are published by independent `ae-cli/v*` releases; see [`../ae-cli/README.md`](../ae-cli/README.md) for CLI installation and updates.
 
 ## GHCR Images
 

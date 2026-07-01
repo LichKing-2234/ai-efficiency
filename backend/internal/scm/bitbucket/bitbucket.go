@@ -3,15 +3,33 @@ package bitbucket
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/backend/internal/scm"
 	"go.uber.org/zap"
 )
+
+var ErrInvalidSignature = errors.New("invalid bitbucket webhook signature")
+
+func IsInvalidSignature(err error) bool {
+	return errors.Is(err, ErrInvalidSignature)
+}
+
+type webhookRepoRef struct {
+	Slug    string `json:"slug"`
+	Project struct {
+		Key string `json:"key"`
+	} `json:"project"`
+}
 
 // Provider implements scm.SCMProvider for Bitbucket Server.
 type Provider struct {
@@ -302,18 +320,33 @@ func (p *Provider) ListPRs(ctx context.Context, repoFullName string, opts scm.PR
 	} else if opts.State == "all" {
 		state = "ALL"
 	}
+	page := opts.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := opts.PageSize
+	if pageSize <= 0 {
+		pageSize = 25
+	}
+	start := (page - 1) * pageSize
 
-	data, err := p.doRequest(ctx, "GET", fmt.Sprintf("/projects/%s/repos/%s/pull-requests?state=%s&limit=%d", project, repo, state, opts.PageSize), nil)
+	path := fmt.Sprintf("/projects/%s/repos/%s/pull-requests?state=%s&limit=%d", project, repo, state, pageSize)
+	if start > 0 {
+		path += fmt.Sprintf("&start=%d", start)
+	}
+	data, err := p.doRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var result struct {
 		Values []struct {
-			ID     int    `json:"id"`
-			Title  string `json:"title"`
-			State  string `json:"state"`
-			Author struct {
+			ID          int    `json:"id"`
+			Title       string `json:"title"`
+			State       string `json:"state"`
+			CreatedDate int64  `json:"createdDate"`
+			ClosedDate  int64  `json:"closedDate"`
+			Author      struct {
 				User struct {
 					Name string `json:"name"`
 				} `json:"user"`
@@ -341,15 +374,23 @@ func (p *Provider) ListPRs(ctx context.Context, repoFullName string, opts scm.PR
 		if len(v.Links.Self) > 0 {
 			url = v.Links.Self[0].Href
 		}
-		prs = append(prs, &scm.PR{
+		state := strings.ToLower(v.State)
+		item := &scm.PR{
 			ID:           v.ID,
 			Title:        v.Title,
 			Author:       v.Author.User.Name,
 			SourceBranch: v.FromRef.DisplayID,
 			TargetBranch: v.ToRef.DisplayID,
-			State:        strings.ToLower(v.State),
+			State:        state,
 			URL:          url,
-		})
+		}
+		if v.CreatedDate > 0 {
+			item.CreatedAt = time.UnixMilli(v.CreatedDate).UTC()
+		}
+		if state == "merged" && v.ClosedDate > 0 {
+			item.MergedAt = time.UnixMilli(v.ClosedDate).UTC()
+		}
+		prs = append(prs, item)
 	}
 	return prs, nil
 }
@@ -403,9 +444,9 @@ func (p *Provider) ListPRCommits(ctx context.Context, repoFullName string, prID 
 		}
 
 		var result struct {
-			IsLastPage   bool `json:"isLastPage"`
-			NextPageStart int `json:"nextPageStart"`
-			Values       []struct {
+			IsLastPage    bool `json:"isLastPage"`
+			NextPageStart int  `json:"nextPageStart"`
+			Values        []struct {
 				ID string `json:"id"`
 			} `json:"values"`
 		}
@@ -493,6 +534,9 @@ func (p *Provider) RegisterWebhook(ctx context.Context, repoFullName string, eve
 	if err != nil {
 		return "", err
 	}
+	if strings.TrimSpace(p.webhookCallbackURL) == "" {
+		return "", fmt.Errorf("webhook callback URL is required")
+	}
 
 	bbEvents := []string{}
 	for _, e := range events {
@@ -544,6 +588,9 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 	if err != nil {
 		return nil, err
 	}
+	if err := validateWebhookSignature(body, secret, r.Header.Get("X-Hub-Signature")); err != nil {
+		return nil, err
+	}
 
 	eventKey := r.Header.Get("X-Event-Key")
 	if eventKey == "" {
@@ -558,16 +605,12 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 			ID      int    `json:"id"`
 			Title   string `json:"title"`
 			FromRef struct {
-				DisplayID  string `json:"displayId"`
-				Repository struct {
-					Slug    string `json:"slug"`
-					Project struct {
-						Key string `json:"key"`
-					} `json:"project"`
-				} `json:"repository"`
+				DisplayID  string         `json:"displayId"`
+				Repository webhookRepoRef `json:"repository"`
 			} `json:"fromRef"`
 			ToRef struct {
-				DisplayID string `json:"displayId"`
+				DisplayID  string         `json:"displayId"`
+				Repository webhookRepoRef `json:"repository"`
 			} `json:"toRef"`
 			Author struct {
 				User struct {
@@ -580,25 +623,15 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 				} `json:"self"`
 			} `json:"links"`
 		} `json:"pullRequest"`
-		Repository struct {
-			Slug    string `json:"slug"`
-			Project struct {
-				Key string `json:"key"`
-			} `json:"project"`
-		} `json:"repository"`
+		Repository webhookRepoRef `json:"repository"`
 	}
 
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("parse payload: %w", err)
 	}
 
-	repoFullName := ""
-	if payload.Repository.Project.Key != "" {
-		repoFullName = payload.Repository.Project.Key + "/" + payload.Repository.Slug
-	}
-
 	event := &scm.WebhookEvent{
-		RepoFullName: repoFullName,
+		RepoFullName: webhookRepoFullName(payload.Repository, payload.PullRequest.ToRef.Repository, payload.PullRequest.FromRef.Repository),
 		Sender:       payload.Actor.Name,
 		Raw:          body,
 	}
@@ -620,6 +653,43 @@ func (p *Provider) ParseWebhookPayload(r *http.Request, secret string) (*scm.Web
 	}
 
 	return event, nil
+}
+
+func webhookRepoFullName(repos ...webhookRepoRef) string {
+	for _, repo := range repos {
+		projectKey := strings.TrimSpace(repo.Project.Key)
+		slug := strings.TrimSpace(repo.Slug)
+		if projectKey != "" && slug != "" {
+			return projectKey + "/" + slug
+		}
+	}
+	return ""
+}
+
+func validateWebhookSignature(body []byte, secret, header string) error {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return nil
+	}
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return fmt.Errorf("%w: missing X-Hub-Signature", ErrInvalidSignature)
+	}
+	parts := strings.SplitN(header, "=", 2)
+	if len(parts) != 2 || parts[0] != "sha256" {
+		return fmt.Errorf("%w: expected sha256 signature", ErrInvalidSignature)
+	}
+	got, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return fmt.Errorf("%w: malformed signature", ErrInvalidSignature)
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	want := mac.Sum(nil)
+	if !hmac.Equal(got, want) {
+		return fmt.Errorf("%w: mismatch", ErrInvalidSignature)
+	}
+	return nil
 }
 
 func parseBBPRInfo(payload interface{}) *scm.PRInfo {

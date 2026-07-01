@@ -5,7 +5,6 @@ export interface RelayProviderPayload {
   name: string
   display_name: string
   base_url: string
-  admin_url: string
   admin_api_key: string
   is_primary: boolean
   enabled: boolean
@@ -14,22 +13,9 @@ export interface RelayProviderPayload {
 export interface RelayProviderUpdatePayload {
   display_name?: string
   base_url?: string
-  admin_url?: string
   admin_api_key?: string
   is_primary?: boolean
   enabled?: boolean
-}
-
-export interface RelayProviderTestRequest {
-  platform: string
-  model: string
-  prompt?: string
-}
-
-export interface RelayProviderTestResult {
-  success: boolean
-  message: string
-  response?: string
 }
 
 export function listRelayProviders() {
@@ -46,8 +32,4 @@ export function updateRelayProvider(id: number, data: RelayProviderUpdatePayload
 
 export function deleteRelayProvider(id: number) {
   return client.delete<ApiResponse<{ message: string }>>(`/admin/providers/${id}`)
-}
-
-export function testRelayProvider(id: number, data?: RelayProviderTestRequest) {
-  return client.post<ApiResponse<RelayProviderTestResult>>(`/admin/providers/${id}/test`, data)
 }

@@ -127,10 +127,36 @@ describe('Router Guards', () => {
     expect(userRoute?.path).toBe('/user')
   })
 
+  it('includes canonical AI Usage Center routes in the router', () => {
+    const usageRoute = router.getRoutes().find((r) => r.name === 'Usage')
+    const memberUsageRoute = router.getRoutes().find((r) => r.name === 'UsageMember')
+    const teamUsageRoute = router.getRoutes().find((r) => r.name === 'UsageTeam')
+    expect(usageRoute?.path).toBe('/usage')
+    expect(memberUsageRoute?.path).toBe('/usage/members/:user_id')
+    expect(teamUsageRoute?.path).toBe('/usage/team')
+  })
+
+  it('does not expose user usage as a separate page route', () => {
+    const userUsageRoute = router.getRoutes().find((r) => r.name === 'UserUsage' || r.path === '/user/usage')
+    expect(userUsageRoute).toBeUndefined()
+  })
+
+  it('includes admin users route requiring admin access', () => {
+    const adminUsersRoute = router.getRoutes().find((r) => r.name === 'AdminUsers')
+    expect(adminUsersRoute?.path).toBe('/admin/users')
+    expect(adminUsersRoute?.meta.requireAdmin).toBe(true)
+  })
+
+  it('includes directory offboarding route requiring admin access', () => {
+    const route = router.getRoutes().find((r) => r.name === 'DirectoryOffboarding')
+    expect(route?.path).toBe('/admin/directory/offboarding')
+    expect(route?.meta.requireAdmin).toBe(true)
+  })
+
   it('redirects authenticated users away from login using a safe redirect target', async () => {
     const { getMe: mockGetMe } = await import('@/api/auth')
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'a@b.com', role: 'admin', auth_source: 'sso' } },
+      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' } },
     })
 
     localStorage.setItem('token', 'valid-token')
@@ -154,6 +180,19 @@ describe('Router Guards', () => {
     expect(router.currentRoute.value.path).toBe('/login')
     expect(localStorage.getItem('token')).toBeNull()
     expect(localStorage.getItem('refresh_token')).toBeNull()
+  })
+
+  it('redirects non-admin users away from admin users route', async () => {
+    const { getMe: mockGetMe } = await import('@/api/auth')
+    ;(mockGetMe as any).mockResolvedValue({
+      data: { data: { id: 2, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'ldap' } },
+    })
+
+    localStorage.setItem('token', 'valid-token')
+
+    await router.push('/admin/users?case=non-admin')
+
+    expect(router.currentRoute.value.path).toBe('/usage')
   })
 })
 
