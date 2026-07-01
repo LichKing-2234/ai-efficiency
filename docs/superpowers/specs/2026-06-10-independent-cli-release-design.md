@@ -1,6 +1,6 @@
 # Independent CLI Release Design
 
-**Status:** Implemented locally with bridge release pending. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1`; current PR head also includes local installer/update hardening and a one-time `v0.2.0-cli.1` legacy update bridge after that live validation.
+**Status:** Implemented and live-validated. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1`. The one-time legacy bridge release `v0.2.0-cli.1` was published from merge commit `d228b6242201a6529696f6529ec6ae3a8aa73aae` by `ae-cli Bridge Release` run `28505257811` on 2026-07-01; it is currently repository latest for old updater discovery, contains only CLI artifacts, and remains excluded from the platform `Release` workflow.
 
 ## Overview
 

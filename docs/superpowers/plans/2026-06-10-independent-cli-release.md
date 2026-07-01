@@ -8,7 +8,7 @@
 
 **Tech Stack:** GitHub Actions, GoReleaser v2, Go 1.24+, Bash, PowerShell, GitHub Releases API.
 
-**Status:** Bridge hardening implemented locally. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1` at commit `686d5b4`; the current PR head includes later installer/update hardening plus the `v0.2.0-cli.1` legacy bridge path. Local Go tests, installer tests, workflow contract checks, GoReleaser config checks, and bridge snapshot artifact smoke have passed. Live bridge release minting is still pending. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
+**Status:** Bridge hardening and live bridge release are complete. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1` at commit `686d5b4`. The one-time legacy bridge release `v0.2.0-cli.1` was merged in PR #90 as `d228b6242201a6529696f6529ec6ae3a8aa73aae`, published by `ae-cli Bridge Release` run `28505257811`, verified as repository `/releases/latest`, and smoke-installed from the release installer. Local Go tests, installer tests, workflow contract checks, GoReleaser config checks, and bridge snapshot artifact smoke have passed. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
 
 **Local Tooling Note:** `goreleaser` is not installed as a standalone binary in this environment. GoReleaser validation is run with `GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest ...`.
 
@@ -32,7 +32,7 @@
 - [x] Added `test/release-workflow-contract-test.sh` and wired it into CI static validation.
 - [x] Re-ran `bash ae-cli/test/install-test.sh` and `bash test/release-workflow-contract-test.sh` after the bridge implementation.
 - [x] Re-ran `cd ae-cli && go test ./...`, `bash -n` checks, GoReleaser platform/CLI config checks, bridge snapshot build, `darwin_arm64` bridge artifact version smoke, YAML parsing, and `git diff --check`.
-- [ ] Live bridge release `v0.2.0-cli.1` has not been minted yet.
+- [x] Minted live bridge release `v0.2.0-cli.1`; verified `ae-cli Bridge Release` run `28505257811` succeeded, repository `/releases/latest` returns `v0.2.0-cli.1`, the release contains only CLI artifacts plus `checksums.txt`, the platform `Release` workflow did not run for the bridge tag, and a temporary HOME install smoke printed `ae-cli v0.2.0-cli.1`.
 
 ---
 
