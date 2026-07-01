@@ -284,7 +284,8 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     expect(mockGetTeamUsageOverview).toHaveBeenCalledWith(expect.objectContaining({ granularity: 'day' }))
-    expect(wrapper.text()).toContain('Top 12 token usage trend')
+    expect(wrapper.text()).toContain('Usage Trends')
+    expect(wrapper.text()).not.toContain('Team and Top 12 token usage trend')
     expect(wrapper.find('header h1').exists()).toBe(false)
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Alice')
@@ -327,7 +328,7 @@ describe('TeamOverviewView', () => {
     expect(trend.text()).toContain('Asia/Shanghai')
   })
 
-  it('renders team total as its own legend item and compares multiple subteam token trends with Top 12 members', async () => {
+  it('renders team total independently and compares multiple subteam token trends apart from Top 12 members', async () => {
     mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
@@ -340,26 +341,74 @@ describe('TeamOverviewView', () => {
 
     const trend = wrapper.get('[data-testid="team-member-trend-chart"]')
     expect(trend.text()).toContain('Team total trend')
-    expect(trend.text()).toContain('Subteam trends')
+    expect(trend.text()).toContain('Group comparison trends')
     expect(trend.text()).toContain('Team total')
     expect(trend.text()).toContain('Team One')
     expect(trend.text()).toContain('Team Two')
     expect(trend.text()).toContain('#1 Alice')
-    const chart = wrapper.get('[data-test="line-chart"]')
-    const chartData = JSON.parse(chart.attributes('data-chart') ?? '{}') as {
+    const totalChart = wrapper.get('[data-testid="team-total-trend-chart"] [data-test="line-chart"]')
+    const totalChartData = JSON.parse(totalChart.attributes('data-chart') ?? '{}') as {
+      datasets: Array<{ label: string; data: Array<number | null> }>
+    }
+    const comparisonChart = wrapper.get('[data-testid="team-comparison-trend-chart"] [data-test="line-chart"]')
+    const comparisonChartData = JSON.parse(comparisonChart.attributes('data-chart') ?? '{}') as {
+      datasets: Array<{ label: string; data: Array<number | null> }>
+    }
+    const memberChart = wrapper.get('[data-testid="top-member-trend-chart"] [data-test="line-chart"]')
+    const memberChartData = JSON.parse(memberChart.attributes('data-chart') ?? '{}') as {
       datasets: Array<{ label: string; data: Array<number | null> }>
     }
 
-    expect(chartData.datasets.map((dataset) => dataset.label)).toEqual([
-      'Team total',
-      'Team One',
-      'Team Two',
-      '#1 Alice',
-    ])
-    expect(chartData.datasets[0].data).toEqual([5900, 7000])
-    expect(chartData.datasets[1].data).toEqual([900, 1200])
-    expect(chartData.datasets[2].data).toEqual([5000, 5800])
-    expect(chartData.datasets[3].data).toEqual([5000, 7000])
+    expect(totalChartData.datasets.map((dataset) => dataset.label)).toEqual(['Team total'])
+    expect(totalChartData.datasets[0].data).toEqual([5900, 7000])
+    expect(comparisonChartData.datasets.map((dataset) => dataset.label)).toEqual(['Team One', 'Team Two'])
+    expect(comparisonChartData.datasets[0].data).toEqual([900, 1200])
+    expect(comparisonChartData.datasets[1].data).toEqual([5000, 5800])
+    expect(memberChartData.datasets.map((dataset) => dataset.label)).toEqual(['#1 Alice'])
+    expect(memberChartData.datasets[0].data).toEqual([5000, 7000])
+  })
+
+  it('keeps a single leaf team trend as an independent team total chart', () => {
+    const leafFixture: TeamOverviewResponse = structuredClone(overviewFixture)
+    leafFixture.department_trend = {
+      unit_label: 'USD',
+      unavailable: false,
+      unavailable_reason: null,
+      series: [
+        {
+          series_type: 'team_total',
+          display_name: 'Team total',
+          rank: 0,
+          unavailable: false,
+          unavailable_reason: null,
+          points: [
+            { date: '2026-06-27', actual_cost: 3.75, total_tokens: 5900 },
+            { date: '2026-06-28', actual_cost: 4.25, total_tokens: 7000 },
+          ],
+        },
+      ],
+    }
+    leafFixture.top_member_trend = {
+      ...leafFixture.top_member_trend,
+      series: [],
+    }
+    const wrapper = mount(TeamOverviewMemberTrendChart, {
+      props: {
+        state: leafFixture.top_member_trend,
+        departmentTrend: leafFixture.department_trend,
+        window: leafFixture.window,
+      },
+    })
+
+    expect(wrapper.find('[data-testid="team-total-trend-chart"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-comparison-trend-chart"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="top-member-trend-chart"]').exists()).toBe(false)
+    const totalChart = wrapper.get('[data-testid="team-total-trend-chart"] [data-test="line-chart"]')
+    const totalChartData = JSON.parse(totalChart.attributes('data-chart') ?? '{}') as {
+      datasets: Array<{ label: string; data: Array<number | null> }>
+    }
+    expect(totalChartData.datasets.map((dataset) => dataset.label)).toEqual(['Team total'])
+    expect(totalChartData.datasets[0].data).toEqual([5900, 7000])
   })
 
   it('renders team overview chrome in Chinese without English table labels', async () => {
@@ -375,6 +424,8 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('团队概览')
+    expect(wrapper.text()).toContain('用量趋势')
+    expect(wrapper.text()).not.toContain('团队与 Top 12 Token 用量趋势')
     expect(wrapper.find('header h1').exists()).toBe(false)
     expect(wrapper.text()).toContain('当前范围 Token 用量')
     expect(wrapper.text()).toContain('查看明细')
@@ -863,7 +914,7 @@ describe('TeamOverviewMemberTrendChart', () => {
       },
     })
 
-    const chart = wrapper.get('[data-test="line-chart"]')
+    const chart = wrapper.get('[data-testid="top-member-trend-chart"] [data-test="line-chart"]')
     const chartData = JSON.parse(chart.attributes('data-chart') ?? '{}') as {
       datasets: Array<{ label: string; data: Array<number | null> }>
     }
@@ -871,8 +922,8 @@ describe('TeamOverviewMemberTrendChart', () => {
       scales: { y: { title: { text: string } } }
     }
 
-    expect(chartData.datasets.find((dataset) => dataset.label === 'Team total')?.data).toEqual([5900, 7000])
     expect(chartData.datasets.find((dataset) => dataset.label === '#1 Alice')?.data).toEqual([5000, 7000])
+    expect(chartData.datasets.find((dataset) => dataset.label === 'Team total')).toBeUndefined()
     expect(chartOptions.scales.y.title.text).toBe('tokens')
   })
 })
