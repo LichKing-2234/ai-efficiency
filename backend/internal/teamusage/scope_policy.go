@@ -239,6 +239,7 @@ func BuildOverviewDepartmentTrend(departments []representativescope.DepartmentSc
 	total := newTrendAccumulator()
 	nodeByID, departmentOrder := overviewDepartmentNodeIndex(departments)
 	rootSet := overviewDepartmentRootSet(nodeByID, departmentOrder, rootIDs)
+	childIDsByParent := overviewDepartmentChildrenByParent(nodeByID, departmentOrder)
 	bucketTotals := map[string]*trendAccumulator{}
 
 	for _, subject := range subjects {
@@ -250,7 +251,7 @@ func BuildOverviewDepartmentTrend(departments []representativescope.DepartmentSc
 			continue
 		}
 		total.AddPoints(points)
-		if bucketID := overviewDepartmentTrendBucket(subject.DepartmentExternalID, nodeByID, rootSet); bucketID != "" {
+		if bucketID := overviewDepartmentTrendBucket(subject.DepartmentExternalID, nodeByID, rootSet, childIDsByParent); bucketID != "" {
 			if bucketTotals[bucketID] == nil {
 				bucketTotals[bucketID] = newTrendAccumulator()
 			}
@@ -365,11 +366,26 @@ func overviewDepartmentRootSet(nodeByID map[string]*overviewDepartmentTrendNode,
 	return rootSet
 }
 
-func overviewDepartmentTrendBucket(departmentID string, nodeByID map[string]*overviewDepartmentTrendNode, rootSet map[string]struct{}) string {
+func overviewDepartmentChildrenByParent(nodeByID map[string]*overviewDepartmentTrendNode, departmentOrder []string) map[string][]string {
+	childrenByParent := make(map[string][]string, len(nodeByID))
+	for _, departmentID := range departmentOrder {
+		node := nodeByID[departmentID]
+		if node == nil || node.ParentExternalID == nil {
+			continue
+		}
+		if _, ok := nodeByID[*node.ParentExternalID]; !ok {
+			continue
+		}
+		childrenByParent[*node.ParentExternalID] = append(childrenByParent[*node.ParentExternalID], departmentID)
+	}
+	return childrenByParent
+}
+
+func overviewDepartmentTrendBucket(departmentID string, nodeByID map[string]*overviewDepartmentTrendNode, rootSet map[string]struct{}, childIDsByParent map[string][]string) string {
 	if departmentID == "" {
 		return ""
 	}
-	path := make([]string, 0, 4)
+	leafToRoot := make([]string, 0, 4)
 	seen := map[string]struct{}{}
 	for currentID := departmentID; currentID != ""; {
 		if _, ok := seen[currentID]; ok {
@@ -380,26 +396,60 @@ func overviewDepartmentTrendBucket(departmentID string, nodeByID map[string]*ove
 		if node == nil {
 			return ""
 		}
-		path = append(path, currentID)
+		leafToRoot = append(leafToRoot, currentID)
 		if node.ParentExternalID == nil {
 			break
 		}
 		currentID = *node.ParentExternalID
 	}
-	for i := len(path) - 1; i >= 0; i-- {
-		departmentID := path[i]
-		if _, ok := rootSet[departmentID]; !ok {
+	rootToLeaf := make([]string, 0, len(leafToRoot))
+	for i := len(leafToRoot) - 1; i >= 0; i-- {
+		rootToLeaf = append(rootToLeaf, leafToRoot[i])
+	}
+	for i, candidateID := range rootToLeaf {
+		if _, ok := rootSet[candidateID]; !ok {
 			continue
 		}
 		if len(rootSet) > 1 {
-			return departmentID
+			return candidateID
 		}
-		if i > 0 {
-			return path[i-1]
+		comparisonRoot := overviewDepartmentComparisonRoot(candidateID, childIDsByParent)
+		comparisonRootIndex := -1
+		for j := i; j < len(rootToLeaf); j++ {
+			if rootToLeaf[j] == comparisonRoot {
+				comparisonRootIndex = j
+				break
+			}
 		}
-		return departmentID
+		if comparisonRootIndex < 0 {
+			return candidateID
+		}
+		if comparisonRootIndex+1 < len(rootToLeaf) {
+			return rootToLeaf[comparisonRootIndex+1]
+		}
+		return comparisonRoot
 	}
 	return ""
+}
+
+func overviewDepartmentComparisonRoot(rootID string, childIDsByParent map[string][]string) string {
+	comparisonRoot := rootID
+	seen := map[string]struct{}{}
+	for {
+		if _, ok := seen[comparisonRoot]; ok {
+			return comparisonRoot
+		}
+		seen[comparisonRoot] = struct{}{}
+		children := childIDsByParent[comparisonRoot]
+		if len(children) != 1 {
+			return comparisonRoot
+		}
+		onlyChild := children[0]
+		if len(childIDsByParent[onlyChild]) == 0 {
+			return comparisonRoot
+		}
+		comparisonRoot = onlyChild
+	}
 }
 
 func shouldSkipSingleRootDepartmentSeries(departmentID string, rootSet map[string]struct{}, bucketTotals map[string]*trendAccumulator) bool {

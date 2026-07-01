@@ -750,7 +750,7 @@ Department trend rules:
 
 1. `department_trend` is computed from the same complete scoped selected-window trend scan as `top_member_trend`; AE must not call an unscoped relay trend endpoint or aggregate users outside the representative scope.
 2. `department_trend.series[0]` uses `series_type="team_total"` and aggregates all relay-resolved scoped members for the selected range. This is the team-wide Token usage trend. The frontend must render it as an independent chart area and must not mix it into group-comparison or Top 12 member chart datasets.
-3. Additional `series_type="department"` rows are the group-comparison trend lines. If the representative has multiple largest non-overlapping represented root departments, these rows aggregate those root departments so the chart compares the first-level groups. If the representative has exactly one represented root department with child departments, these rows aggregate the direct child departments under that root so the chart compares second-level groups; members directly under the represented root may use the root as their bucket. If the representative has exactly one represented root department and no child department comparison exists, AE returns only the independent `team_total` series and omits department comparison rows.
+3. Additional `series_type="department"` rows are the group-comparison trend lines. If the representative has multiple largest non-overlapping represented root departments, these rows aggregate those root departments so the chart compares the first-level groups. If the representative has exactly one represented root department with child departments, these rows aggregate the direct child departments under that root so the chart compares second-level groups. If that single represented root is only an organizational wrapper with exactly one child that itself has children, AE continues through that single-child wrapper chain and compares the first branching child departments instead. Members directly under the selected comparison root may use that root as their bucket. If the representative has exactly one represented root department and no child department comparison exists, AE returns only the independent `team_total` series and omits department comparison rows.
 4. Department trend points use `total_tokens` as the primary chart value and keep `actual_cost` only as auxiliary legend/detail data.
 5. If the full selected-window scan is unavailable or the scope is too large, `department_trend.unavailable` follows the same reason as `top_member_trend`.
 
@@ -953,7 +953,7 @@ Selected Member Usage Detail
 
 AI Usage Center / Team Overview
   Summary cards
-  Team and Top 12 token usage trend chart
+  Usage trends: team total, group comparison, and Top 12 member trend
   Member details table
   View details action to open a member detail page
 ```
@@ -1001,6 +1001,7 @@ Team Overview first screen:
    - selects the top 12 scoped members by selected-window token usage
    - renders one trend series per selected member over the chosen date range
    - keeps legend/order in rank order
+   - keeps the right-side Top 12 member list in a fixed-height scroll area so it does not stretch the whole trend section
    - shows token totals as the chart value and primary side-list context
    - shows selected-window billed usage as auxiliary side-list context
 4. Member details table:

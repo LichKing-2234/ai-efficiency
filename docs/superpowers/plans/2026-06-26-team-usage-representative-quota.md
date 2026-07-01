@@ -10,7 +10,16 @@
 
 ---
 
-**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete. Post-login QA follow-up fixes for Team Overview rendering, representative metadata parsing, new representative UI i18n, sub2api multiplier update contract alignment, stale relay user binding reconciliation, removal of representative audit UI, `/usage` canonical IA, independent selected-member route behavior, selected-member detail IA cleanup, billed-usage terminology, Team Overview Today / 7 Days / 30 Days selected-window semantics, Team Overview range-switch loading feedback, selected-member header de-duplication, Team Overview full directory roster counts, email-based sub2api usage resolution, simplified Team members / Connected members copy, selected-window token totals, token-based Top 12/member ranking, not-connected member highlighting, organization-tree member details, team total plus subteam Token trend overlay, independent team-total/subteam chart legend grouping, clearer selected-member detail action copy, the 2026-07-01 team trend grouping correction, and the Team Overview trend-title copy cleanup are complete in code and scoped frontend/backend checks.
+**Status:** Tasks 1-9 complete. Final review follow-up fixes are complete. Post-login QA follow-up fixes for Team Overview rendering, representative metadata parsing, new representative UI i18n, sub2api multiplier update contract alignment, stale relay user binding reconciliation, removal of representative audit UI, `/usage` canonical IA, independent selected-member route behavior, selected-member detail IA cleanup, billed-usage terminology, Team Overview Today / 7 Days / 30 Days selected-window semantics, Team Overview range-switch loading feedback, selected-member header de-duplication, Team Overview full directory roster counts, email-based sub2api usage resolution, simplified Team members / Connected members copy, selected-window token totals, token-based Top 12/member ranking, not-connected member highlighting, organization-tree member details, team total plus subteam Token trend overlay, independent team-total/subteam chart legend grouping, clearer selected-member detail action copy, the 2026-07-01 team trend grouping correction, Team Overview trend-title copy cleanup, and the 2026-07-01 post-release screenshot follow-up are complete in code and scoped frontend/backend checks.
+
+## 2026-07-01 Post-release Team Trend Follow-up
+
+- [x] Add a regression test for single-root organizational wrapper chains so Team Overview compares the first branching second-level teams instead of the lone wrapper.
+- [x] Update Team Overview department trend bucketing to descend through single-child wrapper departments before choosing comparison buckets.
+- [x] Add and implement a fixed-height scroll area for the Top 12 member trend side list.
+- [x] Verify the focused backend Team Overview bucketing tests.
+- [x] Verify the focused frontend Team Overview tests.
+- [x] Verify the frontend build after the UI layout change.
 
 ## 2026-07-01 Team Overview Copy Follow-up
 
