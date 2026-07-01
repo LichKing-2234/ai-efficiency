@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - '!v*-cli.*'
   workflow_dispatch:
     inputs:
       tag:
@@ -41,6 +42,10 @@ jobs:
           fi
 
           echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+          if echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-cli\.'; then
+            echo "Platform release workflow must not publish CLI bridge tag $TAG; use ae-cli Bridge Release instead" >&2
+            exit 1
+          fi
 
           VERSION="${TAG#v}"
           MAJOR="${VERSION%%.*}"

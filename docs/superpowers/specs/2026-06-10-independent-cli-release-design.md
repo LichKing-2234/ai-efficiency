@@ -1,6 +1,6 @@
 # Independent CLI Release Design
 
-**Status:** Implemented. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1`; current PR head also includes local installer/update hardening after that live validation.
+**Status:** Implemented locally with bridge release pending. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1`; current PR head also includes local installer/update hardening and a one-time `v0.2.0-cli.1` legacy update bridge after that live validation.
 
 ## Overview
 
@@ -122,7 +122,7 @@ CLI release 只发布 `ae-cli` artifact，不发布 GHCR 镜像、不发布 back
 - 保留 GHCR image build and push。
 - 保留 backend bundle release artifact。
 - 从平台 release artifact 中移除 `ae-cli`。
-- 保持 `push.tags: v*`。
+- 保持 `push.tags: v*`，但排除 `v*-cli.*`，避免 legacy CLI bridge tag 被平台 workflow 消费。
 - 保持手动 dispatch 只接受平台 tag，例如 `v0.1.0-preview.42`。
 
 如果需要平台 release 验证 CLI 与平台 API 的基础兼容性，应以轻量 contract test 表达，而不是把 CLI artifact 纳入平台 release。
@@ -161,9 +161,39 @@ CLI workflow 的职责：
 9. GitHub Release prerelease 判断仍沿用 semver 后缀规则。
 10. CLI GitHub Release 必须保持在仓库级 latest 之外。
 
+### Legacy CLI Bridge Workflow
+
+低版本 `ae-cli update check/install` 已经发布到用户机器上，旧二进制硬编码读取仓库级 `/releases/latest`，并把返回的普通 `v*` tag 传给对应 tag 上的 `ae-cli/install.sh`。这些旧客户端无法通过代码更新直接学会筛选 `ae-cli/v*` release，因此需要一个一次性桥接 release。
+
+桥接 tag 固定为：
+
+```text
+v0.2.0-cli.1
+```
+
+桥接 workflow 使用独立文件：
+
+```text
+.github/workflows/ae-cli-bridge-release.yml
+```
+
+职责：
+
+1. 只接受精确 tag `v0.2.0-cli.1`。
+2. checkout 对应 tag。
+3. 运行 `cd ae-cli && go test ./...` 和 `bash ae-cli/test/install-test.sh`。
+4. 复用 `.goreleaser.ae-cli.yaml` 只构建 CLI artifacts。
+5. 解包 `linux_amd64` artifact 并验证 `ae-cli version` 输出 `ae-cli v0.2.0-cli.1`。
+6. 用 `gh release create v0.2.0-cli.1 ... --latest` 发布 CLI-only bridge release。
+7. 不标记为 prerelease，因为旧客户端依赖 repository `/releases/latest` 能返回该 release。
+8. 不构建 GHCR image，不发布 backend bundle，不触发 Helm rollout。
+9. 发布后验证 repository `/releases/latest` 返回 `v0.2.0-cli.1`。
+
+这个 bridge release 的存在只为把旧客户端迁移到包含 `ae-cli/v*` discovery 的新二进制。后续 CLI-only release 仍必须使用 `ae-cli/v*`，不得复用 `v*-cli.*` 作为常规 CLI 版本线。
+
 ### GitHub Latest Release Ownership
 
-仓库级 `https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest` 仍归平台 release 所有。
+仓库级 `https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest` 仍归平台 release 所有，唯一例外是一次性 legacy CLI bridge release `v0.2.0-cli.1`。
 
 这是硬性边界，因为当前平台部署和更新路径依赖 `/releases/latest`：
 
@@ -175,10 +205,11 @@ CLI workflow 的职责：
 
 - 平台 release 可以设置为 repository latest。
 - CLI release 不得设置为 repository latest。
+- `v0.2.0-cli.1` 可以临时设置为 repository latest，用于让旧 `ae-cli update check/install` 迁移到支持 `ae-cli/v*` discovery 的新 CLI。该 tag 必须通过 CLI bridge workflow 发布，不能触发平台 workflow、GHCR image 或 Helm。
 - CLI installer / updater 不得继续把仓库级 `/releases/latest` 当作 CLI latest。
 - CLI installer / updater 应通过列出 releases 并筛选 `ae-cli/v*`，或通过新的 CLI 专用 release API 入口，找到最新 CLI release。
 - CLI installer / updater 的 “latest” 含义是 GitHub releases list 中最新发布的 `ae-cli/v*` release；实现必须在当前页没有 CLI release 时跟随 GitHub `Link: rel="next"` 分页继续查找。
-- CLI installer 显式 pinned tag 必须同样使用 `ae-cli/v*` 命名空间；平台 `v*`、裸版本号、`ae-cli/0.2.0` 以及 patch 后直接接点号的非 semver tag 都必须拒绝。
+- CLI installer 显式 pinned tag 必须同样使用 `ae-cli/v*` 命名空间；平台 `v*`、裸版本号、`ae-cli/0.2.0` 以及 patch 后直接接点号的非 semver tag 都必须拒绝。精确 `v0.2.0-cli.1` 是唯一 pinned bridge exception，因为旧 `update install` 会把这个 tag 传给 installer。
 - 如果 GitHub Release 或 GoReleaser 默认会把新 release 标记为 latest，CLI workflow 必须显式关闭或在发布后校正。
 
 ### Why Not Path Filters For Release Split
@@ -189,6 +220,7 @@ GitHub Actions 官方文档说明，path filters 不会在 tag push 时求值。
 
 - 平台 tag 表示平台发布意图。
 - CLI tag 表示 CLI 发布意图。
+- 精确 `v0.2.0-cli.1` 表示一次性 legacy CLI bridge 发布意图。
 
 这比根据 changed files 推断 release unit 更明确，也更适合人工审计。
 
@@ -218,6 +250,7 @@ CLI `.goreleaser.ae-cli.yaml`：
 - workflow 以 `release --snapshot --clean --config .goreleaser.ae-cli.yaml` 运行，使用 GoReleaser 生成跨平台 archives 和 checksum，但不让 GoReleaser 创建 GitHub Release。
 - workflow 随后解包 `linux_amd64` archive 并验证 `ae-cli version` 输出 `ae-cli <version>`，再用 `gh release create <ae-cli/v*> dist/ae-cli_*.tar.gz dist/ae-cli_*.zip dist/checksums.txt --verify-tag --latest=false` 创建 CLI GitHub Release。
 - 因 tag 带有 `ae-cli/` 前缀，workflow 应把剥离后的版本传给 GoReleaser 或在配置中显式处理版本显示，确保 `ae-cli version` 输出 `vX.Y.Z`，而不是 `ae-cli/vX.Y.Z`。
+- Bridge workflow 同样复用 `.goreleaser.ae-cli.yaml`，但传入 `AE_CLI_VERSION=v0.2.0-cli.1` 和 `AE_CLI_VERSION_NO_V=0.2.0-cli.1`，使旧客户端期待的 archive 名 `ae-cli_0.2.0-cli.1_<os>_<arch>` 与 release asset 对齐。
 
 不使用 GoReleaser Pro 的 `monorepo.tag_prefix`，避免新增商业功能依赖。OSS GoReleaser 在正式 release mode 会把 `ae-cli/v*` 解析为非法 semver，因此 CLI workflow 不直接让 GoReleaser 发布 release；版本展示通过 workflow 环境变量和 build flag 显式传入剥离后的 CLI version。
 
@@ -253,6 +286,20 @@ CLI:      ae-cli v0.2.1
 6. 不执行 Helm rollout。
 
 Manual dispatch 只用于重跑已存在的 `ae-cli/v*` tag，不负责创建新 tag；tag namespace 仍是 release source of truth。
+
+### Legacy CLI Bridge Change
+
+仅在执行旧 CLI 迁移时使用：
+
+1. 确认当前提交已包含 `ae-cli/v*` release discovery、installer bridge exception 和 platform workflow `v*-cli.*` 排除。
+2. 跑 `cd ae-cli && go test ./...`、`bash ae-cli/test/install-test.sh`、`bash test/release-workflow-contract-test.sh` 和 GoReleaser CLI snapshot 验证。
+3. 合并到 `main`。
+4. 创建并推送精确 tag `v0.2.0-cli.1`。
+5. 等待 `ae-cli Bridge Release` workflow 完成。
+6. 验证 bridge GitHub Release 只包含 `ae-cli_*` archives 和 `checksums.txt`。
+7. 验证 repository `/releases/latest` 返回 `v0.2.0-cli.1`，旧 CLI 可以通过 `update check/install` 看到并安装该版本。
+8. 不执行 Helm rollout。
+9. 后续任意正常平台 release 会重新接管 repository latest；不要创建第二条 `v*-cli.*` 常规版本线。
 
 ### Platform Change
 
@@ -307,6 +354,17 @@ Manual dispatch 只用于重跑已存在的 `ae-cli/v*` tag，不负责创建新
 - CLI release 不发布 GHCR image。
 - CLI release 不影响 Helm upgrade inputs。
 
+### Bridge Release Verification
+
+实现阶段应验证：
+
+- `v0.2.0-cli.1` tag 不触发平台 release workflow。
+- Bridge workflow 只运行 CLI 测试、installer fixture 和 CLI artifact 发布。
+- Bridge artifact 的 `ae-cli version` 输出 `ae-cli v0.2.0-cli.1`。
+- Bridge release 显式成为 repository latest，且不标记为 prerelease。
+- Bridge release 不发布 GHCR image、不发布 backend bundle、不触发 Helm rollout。
+- 新 CLI installer/latest discovery 仍优先筛选 `ae-cli/v*`，不会把 `v0.2.0-cli.1` 当作长期 CLI latest。
+
 ### Local Validation
 
 实现前可用 `goreleaser release --snapshot --clean -f .goreleaser.ae-cli.yaml` 验证 CLI artifact 配置。
@@ -320,11 +378,13 @@ Manual dispatch 只用于重跑已存在的 `ae-cli/v*` tag，不负责创建新
 3. 更新 release docs 和 agent 发版规则。
 4. 用一个 dry-run 或 snapshot 验证 CLI artifact。
 5. 用一个真实 `ae-cli/v*` preview tag 验证 CLI 独立 release。
-6. 后续平台 release 时验证 `v*` 路径仍可发布 GHCR、backend bundle，并继续 Helm rollout。
+6. 用一次性 `v0.2.0-cli.1` bridge tag 验证低版本 CLI 迁移路径。
+7. 后续平台 release 时验证 `v*` 路径仍可发布 GHCR、backend bundle，并继续 Helm rollout。
 
 ## Implementation Defaults
 
 1. 第一条真实 CLI 验证 tag 使用 `ae-cli/v0.2.0-preview.1`，用于证明独立 release 链路不会触发平台发布。
 2. CLI release 不维护仓库级 latest。CLI installer / updater 必须筛选 `ae-cli/v*` releases 来确定最新 CLI 版本。
-3. 平台 release 继续维护仓库级 latest，因为平台部署和更新控制面依赖该语义。
-4. PR CI 的 changed-file based 提速不进入第一阶段。第一阶段只拆 release，避免把 required checks 策略和发布边界调整混在一起。
+3. `v0.2.0-cli.1` 是唯一 bridge exception，目的是让旧 CLI 从 repository latest 升到支持独立 discovery 的新 CLI。它不是常规 CLI tag namespace。
+4. 平台 release 继续维护仓库级 latest，因为平台部署和更新控制面依赖该语义。
+5. PR CI 的 changed-file based 提速不进入第一阶段。第一阶段只拆 release，避免把 required checks 策略和发布边界调整混在一起。

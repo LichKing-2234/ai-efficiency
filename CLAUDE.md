@@ -19,6 +19,7 @@
   - Platform: `v*` tags publish backend/frontend/deploy, GHCR image, and Helm inputs.
   - CLI: `ae-cli/v*` tags publish only `ae-cli`; no GHCR image and no Helm rollout.
   - Repository `/releases/latest` stays platform-owned.
+  - Bridge: `v0.2.0-cli.1` is the one-time legacy CLI migration exception. Publish it only with the CLI bridge workflow; do not run Helm for it.
 
 ## Commit Convention
 

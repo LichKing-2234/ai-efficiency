@@ -4,11 +4,11 @@
 
 **Goal:** Split `ae-cli` publishing from the platform release so CLI-only changes do not create backend images, backend bundles, or Helm rollouts.
 
-**Architecture:** Keep one repository and two release units. Platform releases continue to use `v*` tags and own repository-level `/releases/latest`; CLI releases use `ae-cli/v*` tags, publish only CLI artifacts, and explicitly stay out of repository-level latest. CLI installers and `ae-cli update` discover the newest CLI release by filtering releases for the `ae-cli/v*` tag namespace instead of reading the platform latest endpoint.
+**Architecture:** Keep one repository and two release units. Platform releases continue to use `v*` tags and own repository-level `/releases/latest`; CLI releases use `ae-cli/v*` tags, publish only CLI artifacts, and explicitly stay out of repository-level latest. CLI installers and `ae-cli update` discover the newest CLI release by filtering releases for the `ae-cli/v*` tag namespace instead of reading the platform latest endpoint. The exact `v0.2.0-cli.1` tag is a one-time bridge exception for legacy CLI update migration; it publishes CLI artifacts only and is excluded from the platform release workflow.
 
 **Tech Stack:** GitHub Actions, GoReleaser v2, Go 1.24+, Bash, PowerShell, GitHub Releases API.
 
-**Status:** Implemented. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1` at commit `686d5b4`; the current PR head includes later installer/update hardening that is validated locally but has not minted another live CLI release. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
+**Status:** Bridge hardening implemented locally. The live CLI release workflow was validated with `ae-cli/v0.2.0-preview.1` at commit `686d5b4`; the current PR head includes later installer/update hardening plus the `v0.2.0-cli.1` legacy bridge path. Local Go tests, installer tests, workflow contract checks, GoReleaser config checks, and bridge snapshot artifact smoke have passed. Live bridge release minting is still pending. PowerShell syntax verification is not runnable in the current local environment because `pwsh` is not installed; this remains an unchecked verification gap approved by the user on 2026-06-10.
 
 **Local Tooling Note:** `goreleaser` is not installed as a standalone binary in this environment. GoReleaser validation is run with `GOPROXY=https://goproxy.cn,direct go run github.com/goreleaser/goreleaser/v2@latest ...`.
 
@@ -23,6 +23,17 @@
 - [x] Re-ran `bash ae-cli/test/install-test.sh`, `bash -n ae-cli/install.sh`, workflow YAML parsing, `cd ae-cli && go test ./...`, and `git diff --check`.
 - [ ] PowerShell syntax validation remains not run because `pwsh` is not installed in this environment.
 
+**Legacy Bridge Hardening (2026-07-01):**
+
+- [x] Added failing installer fixture coverage for the exact bridge tag `v0.2.0-cli.1`.
+- [x] Allowed the exact bridge tag in Bash and PowerShell installers while keeping ordinary platform `v*`, bare, and malformed CLI tags rejected.
+- [x] Added platform release workflow exclusion for `v*-cli.*`.
+- [x] Added `.github/workflows/ae-cli-bridge-release.yml` to build and publish only CLI artifacts for `v0.2.0-cli.1`.
+- [x] Added `test/release-workflow-contract-test.sh` and wired it into CI static validation.
+- [x] Re-ran `bash ae-cli/test/install-test.sh` and `bash test/release-workflow-contract-test.sh` after the bridge implementation.
+- [x] Re-ran `cd ae-cli && go test ./...`, `bash -n` checks, GoReleaser platform/CLI config checks, bridge snapshot build, `darwin_arm64` bridge artifact version smoke, YAML parsing, and `git diff --check`.
+- [ ] Live bridge release `v0.2.0-cli.1` has not been minted yet.
+
 ---
 
 ## File Map
@@ -35,13 +46,16 @@
 - `.github/workflows/ae-cli-release.yml`
   CLI-only release workflow. Triggered by `ae-cli/v*` tags or manual dispatch with an existing matching tag. Runs CLI tests, builds CLI artifacts with GoReleaser snapshot mode, verifies artifact version metadata before publishing, publishes them with `gh release create --latest=false`, and verifies repository latest still points to a platform release.
 
+- `.github/workflows/ae-cli-bridge-release.yml`
+  One-time legacy CLI bridge release workflow. Triggered only by `v0.2.0-cli.1`, builds CLI artifacts with the CLI GoReleaser config, publishes them with `gh release create --latest`, and verifies repository latest points to the bridge tag for old updater discovery.
+
 ### Modify
 
 - `.goreleaser.yaml`
   Platform GoReleaser config. Remove the `ae-cli` build and archive so platform releases publish only backend server/updater bundles.
 
 - `.github/workflows/release.yml`
-  Platform release workflow. Remove the release-time `ae-cli-test` job from the platform release gate so platform publishing is not blocked by CLI-only test surface.
+  Platform release workflow. Remove the release-time `ae-cli-test` job from the platform release gate so platform publishing is not blocked by CLI-only test surface, and exclude `v*-cli.*` tags so the legacy bridge cannot build platform artifacts.
 
 - `ae-cli/internal/update/update.go`
   Change CLI update discovery from repository `/releases/latest` to release-list filtering for the latest published `ae-cli/v*` release. Follow GitHub release pagination when needed, keep semver comparison against stripped `vX.Y.Z` versions, and retain the full release tag for installer invocation.
@@ -50,13 +64,16 @@
   Add release-list tests proving platform releases are ignored, the newest CLI release is selected, and the installer receives the full `ae-cli/v*` release tag.
 
 - `ae-cli/install.sh`
-  Change default release discovery from repository latest to release-list filtering for the latest published `ae-cli/v*` release, following GitHub release pagination when needed. Explicit pinned arguments must match `ae-cli/vX.Y.Z` or `ae-cli/vX.Y.Z-prerelease`; platform, bare, and missing-`v` tags are rejected.
+  Change default release discovery from repository latest to release-list filtering for the latest published `ae-cli/v*` release, following GitHub release pagination when needed. Explicit pinned arguments must match `ae-cli/vX.Y.Z` or `ae-cli/vX.Y.Z-prerelease`; platform, bare, and missing-`v` tags are rejected except for the exact bridge tag `v0.2.0-cli.1`.
 
 - `ae-cli/install.ps1`
-  Match the Bash installer: filter release list for `ae-cli/v*`, follow GitHub release pagination, reject non-`ae-cli/v*` explicit pinned tags, and derive archive names from the stripped version.
+  Match the Bash installer: filter release list for `ae-cli/v*`, follow GitHub release pagination, reject non-`ae-cli/v*` explicit pinned tags except the exact bridge tag, and derive archive names from the stripped version.
 
 - `ae-cli/test/install-test.sh`
-  Update installer fixtures to include both platform and CLI releases, then assert the installer chooses the CLI release, supports a pinned full CLI tag, and rejects explicit non-CLI tags.
+  Update installer fixtures to include platform, CLI, and bridge releases, then assert the installer chooses the CLI release, supports a pinned full CLI tag, supports the exact bridge tag, and rejects explicit non-CLI tags.
+
+- `test/release-workflow-contract-test.sh`
+  Validate release workflow boundaries: platform release excludes bridge tags, normal CLI release stays out of repository latest, and bridge release publishes CLI artifacts only while becoming repository latest.
 
 - `ae-cli/README.md`
   Document the independent CLI tag namespace and clarify that CLI update/install reads CLI releases, not platform latest.
@@ -80,6 +97,7 @@
 
 - `cd ae-cli && go test ./...`
 - `bash ae-cli/test/install-test.sh`
+- `bash test/release-workflow-contract-test.sh`
 - `bash -n ae-cli/install.sh`
 - `pwsh -NoProfile -Command '$ErrorActionPreference = "Stop"; [scriptblock]::Create((Get-Content -Raw ae-cli/install.ps1)) | Out-Null'`
 - `goreleaser check --config .goreleaser.yaml`

@@ -74,6 +74,34 @@ func TestCheckForUpdateSelectsLatestIndependentCLIRelease(t *testing.T) {
 	}
 }
 
+func TestCheckForUpdateMovesBridgeCurrentVersionToIndependentCLIRelease(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"tag_name":"v0.2.0-cli.1","html_url":"https://example.com/releases/v0.2.0-cli.1"},
+			{"tag_name":"ae-cli/v0.2.0-preview.1","html_url":"https://example.com/releases/ae-cli/v0.2.0-preview.1"}
+		]`))
+	}))
+	defer srv.Close()
+
+	result, err := CheckForUpdate(context.Background(), CheckOptions{
+		CurrentVersion: "v0.2.0-cli.1",
+		ReleaseAPIURL:  srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("CheckForUpdate: %v", err)
+	}
+	if !result.UpdateAvailable {
+		t.Fatal("expected bridge current version to update to independent CLI release")
+	}
+	if result.LatestTag != "ae-cli/v0.2.0-preview.1" {
+		t.Fatalf("latest tag = %q, want ae-cli/v0.2.0-preview.1", result.LatestTag)
+	}
+	if result.LatestVersion != "v0.2.0-preview.1" {
+		t.Fatalf("latest version = %q, want v0.2.0-preview.1", result.LatestVersion)
+	}
+}
+
 func TestCheckForUpdateRejectsReleaseListWithoutCLIRelease(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

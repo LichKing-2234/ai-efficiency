@@ -4,6 +4,7 @@ set -euo pipefail
 GITHUB_REPO="LichKing-2234/ai-efficiency"
 CLI_RELEASE_TAG_PREFIX="ae-cli/"
 CLI_RELEASE_TAG_REGEX='^ae-cli/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$'
+CLI_BRIDGE_RELEASE_TAG="v0.2.0-cli.1"
 
 if [[ -z "${HOME:-}" ]]; then
   echo "HOME must be set to determine the installation directory" >&2
@@ -125,8 +126,11 @@ release_version_from_tag() {
 
 validate_cli_release_tag() {
   local tag="$1"
+  if [[ "$tag" == "$CLI_BRIDGE_RELEASE_TAG" ]]; then
+    return 0
+  fi
   if [[ ! "$tag" =~ $CLI_RELEASE_TAG_REGEX ]]; then
-    echo "release tag must match ae-cli/vX.Y.Z or ae-cli/vX.Y.Z-prerelease: ${tag}" >&2
+    echo "release tag must match ae-cli/vX.Y.Z, ae-cli/vX.Y.Z-prerelease, or bridge tag ${CLI_BRIDGE_RELEASE_TAG}: ${tag}" >&2
     exit 1
   fi
 }

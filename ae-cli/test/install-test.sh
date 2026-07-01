@@ -19,6 +19,7 @@ INSTALLER="$TMP_ROOT/install.sh"
 RELEASE_ROOT="$TMP_ROOT/releases"
 LATEST_TAG="ae-cli/v0.2.0-preview.1"
 PLATFORM_LATEST_TAG="v0.1.0-preview.42"
+BRIDGE_TAG="v0.2.0-cli.1"
 PINNED_TAG="ae-cli/v0.2.1-preview.1"
 LEGACY_PINNED_TAG="v0.2.1-preview.1"
 BARE_PINNED_TAG="0.2.1-preview.1"
@@ -41,6 +42,7 @@ chmod +x "$INSTALLER"
 test -f "$ROOT_DIR/ae-cli/install.ps1"
 grep -q "AE_CLI_INSTALL_SERVER_URL" "$ROOT_DIR/ae-cli/install.ps1"
 grep -q "HTTPS_PROXY" "$ROOT_DIR/ae-cli/install.ps1"
+grep -q "v0.2.0-cli.1" "$ROOT_DIR/ae-cli/install.ps1"
 
 make_cli_archive() {
   local tag="$1"
@@ -133,6 +135,7 @@ run_installer() {
 }
 
 make_cli_archive "$LATEST_TAG"
+make_cli_archive "$BRIDGE_TAG"
 make_cli_archive "$PINNED_TAG"
 make_cli_archive "$LEGACY_PINNED_TAG"
 make_cli_archive "$BARE_PINNED_TAG"
@@ -204,13 +207,14 @@ test -s "$PAGINATED_API_URL_FILE"
 
 LATEST_HOME="$TMP_ROOT/home-latest"
 PINNED_HOME="$TMP_ROOT/home-pinned"
+BRIDGE_HOME="$TMP_ROOT/home-bridge"
 BAD_HOME="$TMP_ROOT/home-bad"
 MISSING_HOME="$TMP_ROOT/home-missing"
 PATH_WARNING_HOME="$TMP_ROOT/home-path-warning"
 CONFIG_HOME="$TMP_ROOT/home-config"
 EXISTING_CONFIG_HOME="$TMP_ROOT/home-existing-config"
 NETWORK_HOME="$TMP_ROOT/home-network"
-mkdir -p "$LATEST_HOME" "$PINNED_HOME" "$BAD_HOME" "$MISSING_HOME" "$PATH_WARNING_HOME" "$NETWORK_HOME"
+mkdir -p "$LATEST_HOME" "$PINNED_HOME" "$BRIDGE_HOME" "$BAD_HOME" "$MISSING_HOME" "$PATH_WARNING_HOME" "$NETWORK_HOME"
 
 LATEST_LOG="$TMP_ROOT/latest.log"
 run_installer \
@@ -252,6 +256,18 @@ run_installer \
 test -x "$PINNED_HOME/.local/bin/ae-cli"
 "$PINNED_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${PINNED_TAG}"
 grep -q "Installed ae-cli ${PINNED_TAG} to $PINNED_HOME/.local/bin/ae-cli" "$PINNED_LOG"
+
+BRIDGE_LOG="$TMP_ROOT/bridge.log"
+run_installer \
+  "$BRIDGE_HOME" \
+  "$BRIDGE_HOME/.local/bin:/usr/bin:/bin" \
+  "file://$TMP_ROOT/latest.json" \
+  "$BRIDGE_TAG" \
+  >"$BRIDGE_LOG" 2>&1
+
+test -x "$BRIDGE_HOME/.local/bin/ae-cli"
+"$BRIDGE_HOME/.local/bin/ae-cli" | grep -q "ae-cli ${BRIDGE_TAG}"
+grep -q "Installed ae-cli ${BRIDGE_TAG} to $BRIDGE_HOME/.local/bin/ae-cli" "$BRIDGE_LOG"
 
 assert_invalid_pinned_tag() {
   local tag="$1"
