@@ -208,9 +208,10 @@ type Operation string
 
 // Operation values.
 const (
-	OperationAdd    Operation = "add"
-	OperationExtend Operation = "extend"
-	OperationRemove Operation = "remove"
+	OperationAdd        Operation = "add"
+	OperationExtend     Operation = "extend"
+	OperationRemove     Operation = "remove"
+	OperationResetQuota Operation = "reset_quota"
 )
 
 func (o Operation) String() string {
@@ -220,7 +221,7 @@ func (o Operation) String() string {
 // OperationValidator is a validator for the "operation" field enum values. It is called by the builders before save.
 func OperationValidator(o Operation) error {
 	switch o {
-	case OperationAdd, OperationExtend, OperationRemove:
+	case OperationAdd, OperationExtend, OperationRemove, OperationResetQuota:
 		return nil
 	default:
 		return fmt.Errorf("adminsubscriptionjob: invalid enum value for operation field: %q", o)

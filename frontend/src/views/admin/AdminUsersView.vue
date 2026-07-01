@@ -51,6 +51,7 @@ const subscriptionForm = reactive<{
   group_id: string
   days: number
   confirmRemove: boolean
+  confirmResetQuota: boolean
   loading: boolean
   message: string
   results: AdminManageSubscriptionsResultRow[]
@@ -61,6 +62,7 @@ const subscriptionForm = reactive<{
   group_id: '',
   days: 30,
   confirmRemove: false,
+  confirmResetQuota: false,
   loading: false,
   message: '',
   results: [],
@@ -108,6 +110,7 @@ const canSubmitSubscriptionManagement = computed(() => {
   if (subscriptionForm.scope === 'selected' && selectedCount.value === 0) return false
   if (bulkUsesDays.value && subscriptionForm.days <= 0) return false
   if (subscriptionForm.operation === 'remove' && !subscriptionForm.confirmRemove) return false
+  if (subscriptionForm.operation === 'reset_quota' && !subscriptionForm.confirmResetQuota) return false
   return true
 })
 
@@ -447,6 +450,8 @@ async function recoverLatestSubscriptionJob() {
 function clearSubscriptionFeedback() {
   stopSubscriptionJobPolling()
   subscriptionJob.value = null
+  subscriptionForm.confirmRemove = false
+  subscriptionForm.confirmResetQuota = false
   subscriptionForm.message = ''
   subscriptionForm.results = []
 }
@@ -477,9 +482,10 @@ function setSubscriptionScope(value: string) {
 }
 
 function setSubscriptionOperation(value: string) {
-  if (value === 'add' || value === 'extend' || value === 'remove') {
+  if (value === 'add' || value === 'extend' || value === 'remove' || value === 'reset_quota') {
     subscriptionForm.operation = value
     subscriptionForm.confirmRemove = false
+    subscriptionForm.confirmResetQuota = false
     if (value === 'add' && subscriptionForm.days <= 0) subscriptionForm.days = 30
     if (value === 'extend' && subscriptionForm.days <= 0) subscriptionForm.days = 7
     clearSubscriptionFeedback()
@@ -789,6 +795,7 @@ onBeforeUnmount(() => {
               <option value="add">{{ t('adminUsers.operationAdd') }}</option>
               <option value="extend">{{ t('adminUsers.operationExtend') }}</option>
               <option value="remove">{{ t('adminUsers.operationRemove') }}</option>
+              <option value="reset_quota">{{ t('adminUsers.operationResetQuota') }}</option>
             </select>
           </label>
 
@@ -848,6 +855,18 @@ onBeforeUnmount(() => {
             @change="subscriptionForm.confirmRemove = ($event.target as HTMLInputElement).checked"
           />
           <span>{{ t('adminUsers.confirmRemoveSubscription') }}</span>
+        </label>
+
+        <label v-if="subscriptionForm.operation === 'reset_quota'" class="mt-3 flex items-start gap-2 text-sm text-amber-900">
+          <input
+            data-testid="confirm-reset-subscription-quota"
+            class="mt-1 h-4 w-4 rounded border-gray-300"
+            type="checkbox"
+            :checked="subscriptionForm.confirmResetQuota"
+            :disabled="subscriptionForm.loading"
+            @change="subscriptionForm.confirmResetQuota = ($event.target as HTMLInputElement).checked"
+          />
+          <span>{{ t('adminUsers.confirmResetSubscriptionQuota') }}</span>
         </label>
 
         <p v-if="subscriptionForm.message" class="mt-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700" aria-live="polite">

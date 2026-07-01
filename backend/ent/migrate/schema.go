@@ -14,7 +14,7 @@ var (
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"queued", "running", "completed", "failed", "abandoned"}, Default: "queued"},
 		{Name: "phase", Type: field.TypeEnum, Enums: []string{"queued", "resolving_targets", "processing", "completed", "failed"}, Default: "queued"},
 		{Name: "scope", Type: field.TypeEnum, Enums: []string{"selected", "current_filter", "all_mapped"}},
-		{Name: "operation", Type: field.TypeEnum, Enums: []string{"add", "extend", "remove"}},
+		{Name: "operation", Type: field.TypeEnum, Enums: []string{"add", "extend", "remove", "reset_quota"}},
 		{Name: "provider_id", Type: field.TypeInt},
 		{Name: "group_id", Type: field.TypeString},
 		{Name: "validity_days", Type: field.TypeInt, Nullable: true},

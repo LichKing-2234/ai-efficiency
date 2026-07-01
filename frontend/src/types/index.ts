@@ -653,7 +653,7 @@ export interface AdminAssignSubscriptionResponse {
 }
 
 export type AdminSubscriptionManageScope = 'selected' | 'current_filter' | 'all_mapped'
-export type AdminSubscriptionManageOperation = 'add' | 'extend' | 'remove'
+export type AdminSubscriptionManageOperation = 'add' | 'extend' | 'remove' | 'reset_quota'
 
 export interface AdminManageSubscriptionsRequest {
   scope: AdminSubscriptionManageScope

@@ -13,14 +13,14 @@
 
 The 2026-05-26 admin users spec defined `/admin/users` as local-user inspection plus explicit relay password reveal. This spec extends that admin surface with centralized sub2api subscription management.
 
-The initial 2026-06-04 implementation added row-level single-user assignment, then a synchronous centralized batch endpoint. The current contract supersedes that synchronous frontend path with persisted subscription jobs that support one user, multiple selected users, the current filter result, and all relay-mapped users without depending on a long browser request. The old single-user assignment API and synchronous batch API remain for compatibility, but the frontend uses the subscription job API.
+The initial 2026-06-04 implementation added row-level single-user assignment, then a synchronous centralized batch endpoint. The current contract supersedes that synchronous frontend path with persisted subscription jobs that support one user, multiple selected users, the current filter result, and all relay-mapped users without depending on a long browser request. The subscription job operation set now includes subscription quota reset for the selected subscription group; this reset clears the upstream daily, weekly, and monthly usage windows through sub2api's admin API. The old single-user assignment API and synchronous batch API remain for compatibility, but the frontend uses the subscription job API.
 
 This does not change LDAP bind password handling, relay password reveal rules, provider CRUD, `/user` self-serve group visibility, or direct sub2api database coupling rules. All sub2api mutations still go through `backend/internal/relay.Provider` plus optional relay adapter interfaces.
 
 ## Goals
 
 1. Let admins manage sub2api subscriptions from `/admin/users` for one user, multiple selected users, the current filter result, or all relay-mapped users.
-2. Support three operations: add a subscription group, extend an existing subscription, and remove an existing subscription.
+2. Support four operations: add a subscription group, extend an existing subscription, remove an existing subscription, and reset the selected subscription group's usage quota.
 3. Keep the local users list backed by the local `users` table.
 4. List assignable subscription groups from enabled DB-backed relay providers through the relay adapter.
 5. Treat unmapped local users as per-user skipped results in batch operations instead of blocking the whole batch.
@@ -126,6 +126,7 @@ Allowed operations:
 1. `add`: requires positive `validity_days`; calls sub2api `POST /api/v1/admin/subscriptions/assign`.
 2. `extend`: requires positive `days`; the relay adapter first calls sub2api `GET /api/v1/admin/users/:id/subscriptions`, finds the matching `group_id`, then calls `POST /api/v1/admin/subscriptions/:subscription_id/extend`.
 3. `remove`: the relay adapter first calls sub2api `GET /api/v1/admin/users/:id/subscriptions`, finds the matching `group_id`, then calls `DELETE /api/v1/admin/subscriptions/:subscription_id`.
+4. `reset_quota`: the relay adapter first calls sub2api `GET /api/v1/admin/users/:id/subscriptions`, finds the matching `group_id`, then calls `POST /api/v1/admin/subscriptions/:subscription_id/reset-quota` with `daily`, `weekly`, and `monthly` all set to `true`.
 
 Add idempotency:
 
@@ -252,9 +253,9 @@ The frontend also disables create/regenerate buttons while the request is in fli
 
 1. Admins select table rows for single-user or multi-user management.
 2. Scope can be `Selected`, `Current filter`, or `All mapped`.
-3. Operation can be `Add`, `Extend`, or `Remove`.
+3. Operation can be `Add`, `Extend`, `Remove`, or `Reset quota`.
 4. Provider and subscription group are selected once for the operation.
-5. Add uses validity days; extend uses extension days; remove requires explicit confirmation.
+5. Add uses validity days; extend uses extension days; remove and reset quota require explicit confirmation.
 6. Submitting the form starts a subscription job and then polls progress until the job is completed or failed.
 7. The progress and result summary show processed, total, success, skipped, and failed counts plus per-user result rows.
 
@@ -270,9 +271,10 @@ Backend tests cover:
 4. Oversized subscription jobs are rejected before subscription mutations run.
 5. Subscription jobs for current-filter scope extend only matching users.
 6. Subscription jobs for all-mapped scope remove subscriptions for every mapped user.
-7. Synchronous batch compatibility still returns final per-user results for small callers.
-8. sub2api adapter posts add bodies, resolves existing subscription IDs for extend/remove, returns a not-found error when no matching group subscription exists, and keeps semantic assignment conflicts fatal.
-9. Concurrent create-key calls for the same local user, provider, and group create only one relay key and return the same result.
+7. Subscription jobs can reset quota for selected users by calling the relay reset operation for each mapped target.
+8. Synchronous batch compatibility still returns final per-user results for small callers, including all-mapped quota reset.
+9. sub2api adapter posts add bodies, resolves existing subscription IDs for extend/remove/reset, returns a not-found error when no matching group subscription exists, posts all reset windows for reset quota, and keeps semantic assignment conflicts fatal.
+10. Concurrent create-key calls for the same local user, provider, and group create only one relay key and return the same result.
 
 Frontend tests cover:
 
@@ -280,5 +282,6 @@ Frontend tests cover:
 2. Selecting one user and adding a subscription starts a subscription job with `scope=selected` and one `user_id`.
 3. Selecting multiple users and extending subscriptions starts a subscription job with both `user_ids`.
 4. Removing subscriptions for all mapped users requires explicit confirmation before starting the job.
-5. The admin users page polls a running subscription job and renders progress plus final per-user rows.
-6. User setup disables create key while the request is in flight and does not fire a second create request.
+5. Resetting subscription quota for all mapped users requires explicit confirmation before starting the job.
+6. The admin users page polls a running subscription job and renders progress plus final per-user rows.
+7. User setup disables create key while the request is in flight and does not fire a second create request.

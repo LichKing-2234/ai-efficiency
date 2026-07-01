@@ -21,7 +21,7 @@ func (AdminSubscriptionJob) Fields() []ent.Field {
 		field.Enum("scope").
 			Values("selected", "current_filter", "all_mapped"),
 		field.Enum("operation").
-			Values("add", "extend", "remove"),
+			Values("add", "extend", "remove", "reset_quota"),
 		field.Int("provider_id"),
 		field.String("group_id"),
 		field.Int("validity_days").Optional(),

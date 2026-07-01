@@ -690,6 +690,74 @@ describe('AdminUsersView', () => {
     })
   })
 
+  it('resets subscription quota for all mapped users only after explicit confirmation', async () => {
+    const { startAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(startAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ status: 'completed', phase: 'completed', scope: 'all_mapped', operation: 'reset_quota', total_count: 120, processed_count: 120, success_count: 120 }) },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+
+    await wrapper.get('[data-testid="subscription-scope"]').setValue('all_mapped')
+    await wrapper.get('[data-testid="subscription-operation"]').setValue('reset_quota')
+    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
+    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    expect((wrapper.get('[data-testid="manage-subscriptions-submit"]').element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.get('[data-testid="confirm-reset-subscription-quota"]').setValue(true)
+    await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
+      scope: 'all_mapped',
+      operation: 'reset_quota',
+      provider_id: 3,
+      group_id: '42',
+    })
+  })
+
+  it('resets subscription quota for one selected user', async () => {
+    const { startAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(startAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ status: 'completed', phase: 'completed', operation: 'reset_quota', total_count: 1, processed_count: 1, success_count: 1 }) },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+
+    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
+    await wrapper.get('[data-testid="subscription-operation"]').setValue('reset_quota')
+    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
+    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    await wrapper.get('[data-testid="confirm-reset-subscription-quota"]').setValue(true)
+    await wrapper.get('[data-testid="manage-subscriptions-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(startAdminUserSubscriptionJob).toHaveBeenCalledWith({
+      scope: 'selected',
+      user_ids: [7],
+      operation: 'reset_quota',
+      provider_id: 3,
+      group_id: '42',
+    })
+  })
+
+  it('requires a fresh reset quota confirmation after the target scope changes', async () => {
+    const { wrapper } = await mountAdminUsersView()
+
+    await wrapper.get('[data-testid="select-user-7"]').setValue(true)
+    await wrapper.get('[data-testid="subscription-operation"]').setValue('reset_quota')
+    await wrapper.get('[data-testid="subscription-provider"]').setValue('3')
+    await wrapper.get('[data-testid="subscription-group"]').setValue('42')
+    await wrapper.get('[data-testid="confirm-reset-subscription-quota"]').setValue(true)
+    expect((wrapper.get('[data-testid="manage-subscriptions-submit"]').element as HTMLButtonElement).disabled).toBe(false)
+
+    await wrapper.get('[data-testid="subscription-scope"]').setValue('all_mapped')
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="confirm-reset-subscription-quota"]').element as HTMLInputElement).checked).toBe(false)
+    expect((wrapper.get('[data-testid="manage-subscriptions-submit"]').element as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('recovers the latest running subscription job on mount and keeps polling it', async () => {
     vi.useFakeTimers()
     const { getAdminUserSubscriptionJob, getLatestAdminUserSubscriptionJob } = await import('@/api/adminUsers')
