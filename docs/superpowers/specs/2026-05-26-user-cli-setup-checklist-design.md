@@ -6,10 +6,10 @@
 
 **Scope:** `frontend/src/views/UserView.vue`, `frontend/src/utils/userSetupReview.ts`, `frontend/src/types/index.ts`, `frontend/src/__tests__/`, `docs/architecture.md`, `ae-cli/install.sh`, `ae-cli/install.ps1`
 
-**Related:**  
-- [2026-05-21-user-page-cli-self-serve-design.md](./2026-05-21-user-page-cli-self-serve-design.md)  
-- [2026-05-19-ae-cli-deterministic-tool-configuration-design.md](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md)  
-- [2026-05-23-global-git-hooks-design.md](./2026-05-23-global-git-hooks-design.md)  
+**Related:**
+- [2026-05-21-user-page-cli-self-serve-design.md](./2026-05-21-user-page-cli-self-serve-design.md)
+- [2026-05-19-ae-cli-deterministic-tool-configuration-design.md](./2026-05-19-ae-cli-deterministic-tool-configuration-design.md)
+- [2026-05-23-global-git-hooks-design.md](./2026-05-23-global-git-hooks-design.md)
 - [docs/architecture.md](../../architecture.md)
 
 ## Spec Relationship

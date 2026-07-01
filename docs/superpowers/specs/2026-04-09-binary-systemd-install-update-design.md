@@ -1,6 +1,10 @@
 # Binary Systemd Install And Update Design
 
-**Status:** Current contract for Linux binary / systemd installation and self-update
+**Status:** Partially retired as of 2026-05-22. Linux binary/systemd installation remains relevant; backend self-update, rollback, restart APIs, and in-process binary replacement are no longer current.
+
+> Retirement note (2026-05-22): The current runtime removed `backend/internal/deployment` and `/api/v1/settings/deployment*`. Treat the self-update portions below as historical design context; current upgrades are operator-driven.
+
+> Update note (2026-07-01): Current code has a read-only `backend/internal/versioncheck` path and admin `/api/v1/system/version*` endpoints for current/latest version visibility. This does not restore backend-managed binary replacement, rollback, or restart APIs.
 
 > Relationship note (2026-04-13): The binary self-update model described here is now the baseline for both Docker and non-Docker runtime modes; this spec remains the historical design entry for the non-Docker path.
 

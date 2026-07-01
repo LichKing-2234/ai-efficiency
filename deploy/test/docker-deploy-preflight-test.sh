@@ -73,14 +73,14 @@ for secret in AE_AUTH_JWT_SECRET AE_ENCRYPTION_KEY POSTGRES_PASSWORD; do
   fi
 done
 
-for hidden in COMPOSE_PROJECT_NAME AE_IMAGE_TAG AE_UPDATER_IMAGE_TAG; do
+for hidden in COMPOSE_PROJECT_NAME AE_IMAGE_TAG; do
   if grep -q "^${hidden}=" "$REPO_FIXTURE/deploy/.env"; then
     echo "unexpected ${hidden} in deploy/.env" >&2
     exit 1
   fi
 done
 
-for hidden_repo in AE_IMAGE_REPOSITORY AE_UPDATER_IMAGE_REPOSITORY; do
+for hidden_repo in AE_IMAGE_REPOSITORY; do
   if grep -q "^${hidden_repo}=" "$REPO_FIXTURE/deploy/.env"; then
     echo "unexpected ${hidden_repo} in deploy/.env" >&2
     exit 1

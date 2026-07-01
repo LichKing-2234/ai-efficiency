@@ -8,13 +8,13 @@
 
 **Tech Stack:** Go (`gin`, existing deployment/release services, `os/exec` for systemctl integration), shell scripts, systemd unit files, GitHub Release assets, existing frontend deployment settings page.
 
-**Status:** ✅ 已完成（2026-04-12）
+**Status:** Completed on 2026-04-12; self-update portions retired on 2026-05-22.
 
-**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前 deployment 代码、`deploy/install.sh`、`deploy/ai-efficiency.service` 和最新 spec 重写执行计划。
+**Replay Status:** Historical record only. Do not replay the self-update tasks; current code retains external install/deploy assets but no longer contains backend deployment update APIs.
 
-**Source Of Truth:** 已实现的 systemd 安装、binary update / rollback / restart 路径以当前代码和 `docs/architecture.md` 为准。本文保留实施切片与验收轨迹。
+**Source Of Truth:** Current systemd deployment state is defined by `deploy/install.sh`, `deploy/ai-efficiency.service`, current code, and `docs/architecture.md`. Binary update / rollback / restart API content below is historical only.
 
-> **Updated:** 2026-04-12 — 基于代码审查回填状态与 checkbox。
+> **Updated:** 2026-05-22 — marked self-update sections retired.
 
 ---
 

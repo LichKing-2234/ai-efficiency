@@ -20,14 +20,13 @@ const createDefaultRelayProvidersResponse = () => ({
   },
 })
 
-const createDefaultDeploymentStatusResponse = () => ({
+const createDefaultSystemVersionResponse = () => ({
   data: {
     data: {
       version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
-      mode: 'bundled',
-      update_available: true,
+      check_enabled: true,
       latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
-      update_status: { phase: 'idle' },
+      update_available: false,
     },
   },
 })
@@ -53,12 +52,9 @@ vi.mock('@/api/credential', () => ({
   deleteCredential: vi.fn(),
 }))
 
-vi.mock('@/api/deployment', () => ({
-  getDeploymentStatus: vi.fn(),
-  checkForUpdate: vi.fn(),
-  applyUpdate: vi.fn(),
-  rollbackUpdate: vi.fn(),
-  restartDeployment: vi.fn(),
+vi.mock('@/api/system', () => ({
+  getSystemVersion: vi.fn(),
+  checkSystemUpdate: vi.fn(),
 }))
 
 vi.mock('@/api/directory', () => ({
@@ -74,10 +70,6 @@ vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
   devLogin: vi.fn(),
-}))
-
-vi.mock('@/utils/deploymentRecovery', () => ({
-  waitForServiceRecovery: vi.fn(),
 }))
 
 async function resetApiMocks() {
@@ -114,12 +106,19 @@ async function resetApiMocks() {
   credentialApi.updateCredential.mockReset().mockResolvedValue({ data: { data: { id: 11 } } })
   credentialApi.deleteCredential.mockReset().mockResolvedValue({ data: { data: null } })
 
-  const deploymentApi = await import('@/api/deployment') as any
-  deploymentApi.getDeploymentStatus.mockReset().mockResolvedValue(createDefaultDeploymentStatusResponse())
-  deploymentApi.checkForUpdate.mockReset().mockResolvedValue({ data: { data: null } })
-  deploymentApi.applyUpdate.mockReset().mockResolvedValue({ data: { data: { phase: 'idle' } } })
-  deploymentApi.rollbackUpdate.mockReset().mockResolvedValue({ data: { data: { phase: 'idle' } } })
-  deploymentApi.restartDeployment.mockReset().mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
+  const systemApi = await import('@/api/system') as any
+  systemApi.getSystemVersion.mockReset().mockResolvedValue(createDefaultSystemVersionResponse())
+  systemApi.checkSystemUpdate.mockReset().mockResolvedValue({
+    data: {
+      data: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        check_enabled: true,
+        checked: true,
+        update_available: true,
+        latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
+      },
+    },
+  })
 
   const directoryApi = await import('@/api/directory') as any
   directoryApi.listDirectorySources.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
@@ -134,8 +133,6 @@ async function resetApiMocks() {
   authApi.getMe.mockReset().mockResolvedValue({ data: { data: {} } })
   authApi.devLogin.mockReset().mockResolvedValue({ data: { data: null } })
 
-  const recoveryApi = await import('@/utils/deploymentRecovery') as any
-  recoveryApi.waitForServiceRecovery.mockReset().mockResolvedValue(undefined)
 }
 
 function createTestRouter() {
@@ -151,11 +148,11 @@ function createTestRouter() {
   })
 }
 
-async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; credentials?: any[]; deploymentStatus?: any }, path = '/settings') {
+async function mountSettings(overrides?: { providers?: any[]; relayProviders?: any[]; credentials?: any[]; systemVersion?: any }, path = '/settings') {
   const { listProviders } = await import('@/api/scmProvider')
   const { listRelayProviders } = await import('@/api/relayProvider')
   const { listCredentials } = await import('@/api/credential')
-  const { getDeploymentStatus } = await import('@/api/deployment')
+  const { getSystemVersion } = await import('@/api/system')
 
   if (overrides?.providers) {
     ;(listProviders as any).mockResolvedValue({
@@ -168,8 +165,8 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
   if (overrides?.credentials) {
     ;(listCredentials as any).mockResolvedValue({ data: { data: overrides.credentials } })
   }
-  if (overrides?.deploymentStatus) {
-    ;(getDeploymentStatus as any).mockResolvedValue({ data: { data: overrides.deploymentStatus } })
+  if (overrides?.systemVersion) {
+    ;(getSystemVersion as any).mockResolvedValue({ data: { data: overrides.systemVersion } })
   }
 
   const router = createTestRouter()
@@ -524,38 +521,76 @@ describe('SettingsView', () => {
     expect(deleteRelayProvider).toHaveBeenCalledWith(1)
   })
 
-  it('renders deployment status and update controls', async () => {
+  it('renders system version and update check without binary upgrade controls', async () => {
+    const { checkSystemUpdate } = await import('@/api/system')
     const wrapper = await mountSettings()
     await openSettingsSection(wrapper, 'deployment-runtime')
     expect(wrapper.text()).toContain('Deployment & Runtime')
     expect(wrapper.text()).toContain('v0.4.0')
     expect(wrapper.text()).toContain('v0.5.0')
     expect(wrapper.text()).toContain('Check Updates')
-    expect(wrapper.text()).toContain('Apply Update')
-    expect(wrapper.text()).toContain('Rollback')
-    expect(wrapper.text()).toContain('Restart Service')
+    expect(wrapper.text()).not.toContain('Apply Update')
+    expect(wrapper.text()).not.toContain('Rollback')
+    expect(wrapper.text()).not.toContain('Restart Service')
+
+    const checkButton = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
+    await checkButton!.trigger('click')
+    await flushPromises()
+
+    expect(checkSystemUpdate).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Update available')
   })
 
-  it('calls restart deployment when restart control is clicked', async () => {
-    const { restartDeployment } = await import('@/api/deployment')
-    const { waitForServiceRecovery } = await import('@/utils/deploymentRecovery')
-    ;(restartDeployment as any).mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
-
-    const wrapper = await mountSettings()
+  it('shows version check unavailable when latest-release checks are disabled', async () => {
+    const { checkSystemUpdate } = await import('@/api/system')
+    const wrapper = await mountSettings({
+      systemVersion: {
+        version: { version: 'v0.4.0', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        check_enabled: false,
+        update_available: false,
+      },
+    })
     await openSettingsSection(wrapper, 'deployment-runtime')
-    const button = wrapper.findAll('button').find((b) => b.text().includes('Restart Service'))
-    await button!.trigger('click')
+
+    expect(wrapper.text()).toContain('Version check unavailable')
+    const checkButton = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
+    expect(checkButton!.attributes('disabled')).toBeDefined()
+
+    await checkButton!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Confirm restart service')
-    expect(restartDeployment).not.toHaveBeenCalled()
+    expect(checkSystemUpdate).not.toHaveBeenCalled()
+  })
 
-    const confirm = wrapper.findAll('button').find((b) => b.text().includes('Confirm restart service'))
-    await confirm!.trigger('click')
+  it('shows check errors instead of already current for non-comparable versions', async () => {
+    const { checkSystemUpdate } = await import('@/api/system')
+    ;(checkSystemUpdate as any).mockResolvedValue({
+      data: {
+        data: {
+          version: { version: 'dev', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+          check_enabled: true,
+          checked: true,
+          check_error: 'current version is not semver',
+          update_available: false,
+          latest_release: { version: 'v0.5.0', url: 'https://example.com/v0.5.0' },
+        },
+      },
+    })
+    const wrapper = await mountSettings({
+      systemVersion: {
+        version: { version: 'dev', commit: 'abc1234', build_time: '2026-04-08T12:00:00Z' },
+        check_enabled: true,
+        update_available: false,
+      },
+    })
+    await openSettingsSection(wrapper, 'deployment-runtime')
+
+    const checkButton = wrapper.findAll('button').find((b) => b.text() === 'Check Updates')
+    await checkButton!.trigger('click')
     await flushPromises()
 
-    expect(restartDeployment).toHaveBeenCalled()
-    expect(waitForServiceRecovery).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('current version is not semver')
+    expect(wrapper.text()).not.toContain('Already current')
   })
 
   it('shows loading state when code platforms are still loading', async () => {

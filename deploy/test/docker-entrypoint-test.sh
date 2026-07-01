@@ -5,50 +5,27 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-BOOTSTRAP_BINARY="$TMP_DIR/bootstrap/ai-efficiency-server"
-RUNTIME_BINARY="$TMP_DIR/runtime/ai-efficiency-server"
+APP_DIR="$TMP_DIR/app"
+SERVER_BINARY="$APP_DIR/ai-efficiency-server"
+ENTRYPOINT="$TMP_DIR/docker-entrypoint.sh"
 
-mkdir -p "$(dirname "$BOOTSTRAP_BINARY")" "$(dirname "$RUNTIME_BINARY")"
+mkdir -p "$APP_DIR"
 
-cat >"$BOOTSTRAP_BINARY" <<'EOF'
+cat >"$SERVER_BINARY" <<'EOF'
 #!/bin/sh
 if [ "${1:-}" = "--version" ]; then
   echo "local-dev"
   exit 0
 fi
-echo "bootstrap"
+echo "server"
 EOF
-chmod +x "$BOOTSTRAP_BINARY"
+chmod +x "$SERVER_BINARY"
 
-cat >"$RUNTIME_BINARY" <<'EOF'
-#!/bin/sh
-if [ "${1:-}" = "--version" ]; then
-  echo "local-dev"
-  exit 0
-fi
-echo "runtime"
-EOF
-chmod +x "$RUNTIME_BINARY"
+sed "s|/app/ai-efficiency-server|$SERVER_BINARY|" "$ROOT_DIR/deploy/docker-entrypoint.sh" >"$ENTRYPOINT"
 
-without_force="$(
-  AE_DEPLOYMENT_BOOTSTRAP_BINARY_PATH="$BOOTSTRAP_BINARY" \
-  AE_DEPLOYMENT_RUNTIME_BINARY_PATH="$RUNTIME_BINARY" \
-  sh "$ROOT_DIR/deploy/docker-entrypoint.sh"
-)"
+output="$(sh "$ENTRYPOINT")"
 
-if [[ "$without_force" != "runtime" ]]; then
-  echo "expected existing runtime binary to win without force flag, got: $without_force" >&2
-  exit 1
-fi
-
-with_force="$(
-  AE_DEPLOYMENT_BOOTSTRAP_BINARY_PATH="$BOOTSTRAP_BINARY" \
-  AE_DEPLOYMENT_RUNTIME_BINARY_PATH="$RUNTIME_BINARY" \
-  AE_DEPLOYMENT_FORCE_BOOTSTRAP=true \
-  sh "$ROOT_DIR/deploy/docker-entrypoint.sh"
-)"
-
-if [[ "$with_force" != "bootstrap" ]]; then
-  echo "expected bootstrap binary to replace runtime when force flag is set, got: $with_force" >&2
+if [[ "$output" != "server" ]]; then
+  echo "expected entrypoint to exec server binary, got: $output" >&2
   exit 1
 fi

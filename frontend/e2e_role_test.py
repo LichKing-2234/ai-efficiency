@@ -51,7 +51,7 @@ def clear_auth_routes(page):
         "**/api/v1/scm-providers**",
         "**/api/v1/admin/providers**",
         "**/api/v1/admin/credentials**",
-        "**/api/v1/settings/deployment**",
+        "**/api/v1/system/version**",
         "**/api/v1/admin/settings/ldap**",
     ]:
         try:
@@ -144,16 +144,17 @@ def mock_auth_endpoints(page, role="admin"):
         content_type="application/json",
         body=json.dumps({"code": 0, "data": []}),
     ))
-    page.route("**/api/v1/settings/deployment**", lambda route: route.fulfill(
+    page.route("**/api/v1/system/version**", lambda route: route.fulfill(
         status=200,
         content_type="application/json",
         body=json.dumps({
             "code": 0,
             "data": {
                 "version": {"version": "v0.0.0-test", "commit": "test", "build_time": "2026-01-01T00:00:00Z"},
-                "mode": "test",
+                "check_enabled": True,
+                "checked": route.request.method == "POST",
                 "update_available": False,
-                "update_status": {"phase": "idle"},
+                "latest_release": {"version": "v0.0.0-test", "url": "https://example.com/releases/v0.0.0-test"},
             },
         }),
     ))
@@ -243,8 +244,13 @@ def test_dev_login_settings(page):
     page.wait_for_timeout(300)
     report("Deployment & Runtime section visible",
            page.locator("h2:has-text('Deployment & Runtime')").is_visible())
-    report("Restart Service button visible",
-           page.locator("button:has-text('Restart Service')").is_visible())
+    report("Current version visible",
+           page.locator("text=v0.0.0-test").first.is_visible())
+    report("Check Updates button visible",
+           page.locator("button:has-text('Check Updates')").is_visible())
+    report("Restart Service button removed",
+           page.locator("button:has-text('Restart Service')").count() == 0,
+           "Restart Service button is still visible")
 
     do_logout(page)
 

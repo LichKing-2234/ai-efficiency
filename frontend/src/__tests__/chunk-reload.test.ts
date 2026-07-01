@@ -1,57 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { isChunkLoadError, reloadOnceForChunkError, waitForServiceRecovery } from '@/utils/deploymentRecovery'
+import { isChunkLoadError, reloadOnceForChunkError } from '@/utils/chunkReload'
 
-describe('deploymentRecovery', () => {
+describe('chunkReload', () => {
   beforeEach(() => {
-    vi.useFakeTimers()
     sessionStorage.clear()
   })
 
   afterEach(() => {
-    vi.useRealTimers()
     vi.restoreAllMocks()
-  })
-
-  it('waits for /api/v1/health to recover and then reloads', async () => {
-    const fetchImpl = vi.fn()
-      .mockRejectedValueOnce(new Error('down'))
-      .mockResolvedValueOnce({ ok: true })
-    const reload = vi.fn()
-
-    const promise = waitForServiceRecovery({
-      fetchImpl,
-      reload,
-      retryDelayMs: 1000,
-      maxRetries: 3,
-    })
-
-    await vi.runAllTimersAsync()
-    await promise
-
-    expect(fetchImpl).toHaveBeenCalledTimes(2)
-    expect(fetchImpl).toHaveBeenNthCalledWith(1, '/api/v1/health', {
-      method: 'GET',
-      cache: 'no-cache',
-    })
-    expect(reload).toHaveBeenCalledTimes(1)
-  })
-
-  it('reloads anyway after retries are exhausted', async () => {
-    const fetchImpl = vi.fn().mockRejectedValue(new Error('still down'))
-    const reload = vi.fn()
-
-    const promise = waitForServiceRecovery({
-      fetchImpl,
-      reload,
-      retryDelayMs: 1000,
-      maxRetries: 3,
-    })
-
-    await vi.runAllTimersAsync()
-    await promise
-
-    expect(fetchImpl).toHaveBeenCalledTimes(3)
-    expect(reload).toHaveBeenCalledTimes(1)
   })
 
   it('detects dynamic import chunk failures', () => {

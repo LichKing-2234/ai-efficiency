@@ -1,11 +1,11 @@
 # ae-cli Post-Commit Async Attribution Sync Design
 
-**Date:** 2026-05-26  
+**Date:** 2026-05-26
 **Status:** Current design with 2026-05-27 replay-order and upload-throughput follow-ups
-**Scope:** `ae-cli/cmd/`, `ae-cli/internal/hooks/`, `ae-cli/internal/attributionlocal/`, `docs/`  
-**Related:**  
-- [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md)  
-- [2026-05-23-global-git-hooks-design.md](./2026-05-23-global-git-hooks-design.md)  
+**Scope:** `ae-cli/cmd/`, `ae-cli/internal/hooks/`, `ae-cli/internal/attributionlocal/`, `docs/`
+**Related:**
+- [2026-05-13-sessionless-local-tool-attribution-design.md](./2026-05-13-sessionless-local-tool-attribution-design.md)
+- [2026-05-23-global-git-hooks-design.md](./2026-05-23-global-git-hooks-design.md)
 - [`docs/architecture.md`](../../architecture.md)
 
 ## Spec Relationship

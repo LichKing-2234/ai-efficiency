@@ -40,7 +40,7 @@
 - 同一个 release workflow 会运行 backend、`ae-cli`、frontend、release frontend embedding、deploy validation 等验证。
 - 同一个 release workflow 会发布 GHCR 平台镜像。
 - 同一个 release workflow 会调用 `.goreleaser.yaml` 发布 GitHub Release 二进制。
-- `.goreleaser.yaml` 同时定义 `backend-server`、`backend-updater` 和 `ae-cli` builds，并把 backend bundle 与 CLI artifact 放在同一个 GitHub Release。
+- `.goreleaser.yaml` 定义平台 `backend-server` build 和 `backend-bundle` archive；`ae-cli` artifacts 已拆到 `.goreleaser.ae-cli.yaml`。随 in-app binary upgrade/runtime self-update 退役，平台 release 不再包含 `backend-updater` build。
 
 这种模型的问题不是 correctness，而是 release scope 过宽：当提交只影响 `ae-cli` 时，平台镜像、后端 bundle、GitHub latest release 和后续 Helm rollout 都可能被牵动。
 
@@ -195,9 +195,9 @@ v0.2.0-cli.1
 
 仓库级 `https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest` 仍归平台 release 所有，唯一例外是一次性 legacy CLI bridge release `v0.2.0-cli.1`。
 
-这是硬性边界，因为当前平台部署和更新路径依赖 `/releases/latest`：
+这是硬性边界，因为当前平台部署和版本检查路径依赖 `/releases/latest`：
 
-- `backend/internal/deployment/release_source.go` 通过配置的 release API URL 查询 latest release。
+- `backend/internal/versioncheck` 通过配置的 release API URL 查询 latest release，用于只读版本检查。
 - `deploy/docker-deploy.sh` 和 deploy compose 默认值使用平台 `/releases/latest`。
 - 当前 `ae-cli/install.sh`、`ae-cli/install.ps1` 和 `ae-cli update` 也默认读取仓库级 `/releases/latest`，实现阶段必须同步改为 CLI 专用 release discovery。
 
@@ -236,7 +236,7 @@ GitHub Actions 官方文档说明，path filters 不会在 tag push 时求值。
 平台 `.goreleaser.yaml`：
 
 - 保留 `project_name: ai-efficiency`。
-- 保留 `backend-server` 和 `backend-updater` builds。
+- 保留 `backend-server` build；不再恢复已退役的 `backend-updater` build。
 - 保留 `backend-bundle` archive。
 - 移除 `ae-cli` build 和 `ae-cli` archive。
 

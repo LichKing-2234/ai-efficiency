@@ -7,13 +7,13 @@ import (
 )
 
 type Config struct {
-	Server     ServerConfig     `mapstructure:"server"`
-	DB         DBConfig         `mapstructure:"db"`
-	Redis      RedisConfig      `mapstructure:"redis"`
-	Auth       AuthConfig       `mapstructure:"auth"`
-	Encryption EncryptionConfig `mapstructure:"encryption"`
-	Relay      RelayConfig      `mapstructure:"relay"`
-	Deployment DeploymentConfig `mapstructure:"deployment"`
+	Server       ServerConfig       `mapstructure:"server"`
+	DB           DBConfig           `mapstructure:"db"`
+	Redis        RedisConfig        `mapstructure:"redis"`
+	Auth         AuthConfig         `mapstructure:"auth"`
+	Encryption   EncryptionConfig   `mapstructure:"encryption"`
+	Relay        RelayConfig        `mapstructure:"relay"`
+	VersionCheck VersionCheckConfig `mapstructure:"version_check"`
 }
 
 type ServerConfig struct {
@@ -64,19 +64,9 @@ type EncryptionConfig struct {
 	Key string `mapstructure:"key"` // 32-byte hex-encoded AES-256 key
 }
 
-type DeploymentConfig struct {
-	Mode     string       `mapstructure:"mode"`
-	StateDir string       `mapstructure:"state_dir"`
-	Update   UpdateConfig `mapstructure:"update"`
-}
-
-type UpdateConfig struct {
-	Enabled         bool   `mapstructure:"enabled"`
-	ApplyEnabled    bool   `mapstructure:"apply_enabled"`
-	ReleaseAPIURL   string `mapstructure:"release_api_url"`
-	UpdaterURL      string `mapstructure:"updater_url"`
-	ImageRepository string `mapstructure:"image_repository"`
-	Channel         string `mapstructure:"channel"`
+type VersionCheckConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`
+	ReleaseAPIURL string `mapstructure:"release_api_url"`
 }
 
 func Load(path string) (*Config, error) {
@@ -98,15 +88,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("auth.access_token_ttl", 7200)
 	v.SetDefault("auth.refresh_token_ttl", 604800)
 	v.SetDefault("auth.ldap.user_filter", "(uid=%s)")
-	v.SetDefault("deployment.mode", "bundled")
-	v.SetDefault("deployment.state_dir", "/var/lib/ai-efficiency")
-	v.SetDefault("deployment.update.enabled", true)
-	v.SetDefault("deployment.update.apply_enabled", true)
-	v.SetDefault("deployment.update.channel", "stable")
-	v.SetDefault("deployment.update.release_api_url", "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest")
-	v.SetDefault("deployment.update.updater_url", "")
-	v.SetDefault("deployment.update.image_repository", "ghcr.io/lichking-2234/ai-efficiency")
-
+	v.SetDefault("version_check.enabled", true)
+	v.SetDefault("version_check.release_api_url", "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest")
 	// Config file
 	if path != "" {
 		v.SetConfigFile(path)
@@ -147,14 +130,8 @@ func Load(path string) (*Config, error) {
 		"redis.addr",
 		"redis.password",
 		"redis.db",
-		"deployment.mode",
-		"deployment.state_dir",
-		"deployment.update.enabled",
-		"deployment.update.apply_enabled",
-		"deployment.update.release_api_url",
-		"deployment.update.updater_url",
-		"deployment.update.image_repository",
-		"deployment.update.channel",
+		"version_check.enabled",
+		"version_check.release_api_url",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, err

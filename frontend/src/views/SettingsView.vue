@@ -5,8 +5,7 @@ import AppLayout from '@/components/AppLayout.vue'
 import { listProviders, createProvider, updateProvider, deleteProvider } from '@/api/scmProvider'
 import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider } from '@/api/relayProvider'
 import { listCredentials, createCredential, updateCredential, deleteCredential } from '@/api/credential'
-import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
-import { waitForServiceRecovery } from '@/utils/deploymentRecovery'
+import { getSystemVersion, checkSystemUpdate } from '@/api/system'
 import client from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useModalFocus } from '@/composables/useModalFocus'
@@ -15,13 +14,12 @@ import CodePlatformSettings from '@/components/settings/CodePlatformSettings.vue
 import AdvancedCredentialSettings from '@/components/settings/AdvancedCredentialSettings.vue'
 import DeploymentRuntimeSettings from '@/components/settings/DeploymentRuntimeSettings.vue'
 import OrganizationLoginSettings from '@/components/settings/OrganizationLoginSettings.vue'
-import type { Credential, DeploymentStatus, RelayProvider, SCMProvider, UpdateStatus } from '@/types'
+import type { Credential, RelayProvider, SCMProvider, SystemVersionStatus } from '@/types'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 type SettingsSection = 'ai-services' | 'code-platforms' | 'organization-login' | 'deployment-runtime' | 'advanced-credentials'
-type DeploymentAction = 'apply' | 'rollback' | 'restart'
 
 const activeSection = ref<SettingsSection>(initialSettingsSection())
 const settingsSections = computed<Array<{ id: SettingsSection; label: string; description: string }>>(() => [
@@ -94,13 +92,12 @@ const credentialFormError = ref('')
 const credentialFormLoading = ref(false)
 const showCredentialDeleteConfirm = ref<number | null>(null)
 
-// Deployment status
-const deployment = ref<DeploymentStatus | null>(null)
-const deploymentLoading = ref(false)
-const deploymentActionLoading = ref(false)
-const deploymentMessage = ref('')
-const deploymentMessageKind = ref<'success' | 'error' | ''>('')
-const deploymentConfirmAction = ref<DeploymentAction | null>(null)
+// System version
+const systemVersion = ref<SystemVersionStatus | null>(null)
+const systemVersionLoading = ref(false)
+const systemVersionChecking = ref(false)
+const systemVersionMessage = ref('')
+const systemVersionMessageKind = ref<'success' | 'error' | ''>('')
 
 // LDAP config
 const ldapForm = ref({ url: '', base_dn: '', bind_dn: '', bind_password: '', user_filter: '', tls: false })
@@ -110,7 +107,7 @@ const ldapError = ref('')
 const ldapSuccess = ref('')
 
 onMounted(async () => {
-  await Promise.all([fetchProviders(), fetchRelayProviders(), fetchCredentials(), fetchDeploymentStatus(), fetchLDAPConfig()])
+  await Promise.all([fetchProviders(), fetchRelayProviders(), fetchCredentials(), fetchSystemVersion(), fetchLDAPConfig()])
 })
 
 const { handleKeydown: handleProviderDialogKeydown } = useModalFocus(showDialog, providerDialog, {
@@ -467,127 +464,48 @@ async function confirmDeleteCredential(id: number) {
   }
 }
 
-async function fetchDeploymentStatus() {
-  deploymentLoading.value = true
+async function fetchSystemVersion() {
+  systemVersionLoading.value = true
   try {
-    const res = await getDeploymentStatus()
-    deployment.value = res.data.data ?? null
+    const res = await getSystemVersion()
+    systemVersion.value = res.data.data ?? null
   } catch {
-    deployment.value = null
+    systemVersion.value = null
   } finally {
-    deploymentLoading.value = false
+    systemVersionLoading.value = false
   }
 }
 
-function setDeploymentMessage(kind: 'success' | 'error', message: string) {
-  deploymentMessageKind.value = kind
-  deploymentMessage.value = message
-}
-
-function applyDeploymentUpdateStatus(status: UpdateStatus) {
-  if (!deployment.value) return
-  deployment.value = {
-    ...deployment.value,
-    update_status: status,
-  }
-}
-
-function shouldWaitForRecovery(action: DeploymentAction) {
-  return action === 'restart'
-}
-
-function requestDeploymentAction(action: DeploymentAction) {
-  if (action === 'apply' && !deployment.value?.latest_release?.version?.trim()) {
-    setDeploymentMessage('error', 'No target version available')
-    deploymentConfirmAction.value = null
-    return
-  }
-  deploymentMessage.value = ''
-  deploymentMessageKind.value = ''
-  deploymentConfirmAction.value = action
-}
-
-async function confirmDeploymentAction() {
-  const action = deploymentConfirmAction.value
-  if (!action) return
-  deploymentConfirmAction.value = null
-  if (action === 'apply') {
-    await handleApplyUpdate()
-  } else if (action === 'rollback') {
-    await handleRollbackUpdate()
-  } else {
-    await handleRestartDeployment()
-  }
+function setSystemVersionMessage(kind: 'success' | 'error', message: string) {
+  systemVersionMessageKind.value = kind
+  systemVersionMessage.value = message
 }
 
 async function handleCheckUpdates() {
-  deploymentActionLoading.value = true
-  deploymentConfirmAction.value = null
-  deploymentMessage.value = ''
-  deploymentMessageKind.value = ''
-  try {
-    const res = await checkForUpdate()
-    deployment.value = res.data.data ?? null
-    setDeploymentMessage('success', t('settings.checkUpdatesCompleted'))
-  } catch (e: any) {
-    setDeploymentMessage('error', e.response?.data?.message || t('settings.checkUpdatesFailed'))
-  } finally {
-    deploymentActionLoading.value = false
-  }
-}
-
-async function handleApplyUpdate() {
-  const targetVersion = deployment.value?.latest_release?.version?.trim()
-  if (!targetVersion) {
-    setDeploymentMessage('error', t('settings.noTargetVersion'))
+  if (systemVersion.value?.check_enabled === false) {
+    setSystemVersionMessage('error', t('settings.versionCheckUnavailable'))
     return
   }
 
-  deploymentActionLoading.value = true
-  deploymentMessage.value = ''
-  deploymentMessageKind.value = ''
+  systemVersionChecking.value = true
+  systemVersionMessage.value = ''
+  systemVersionMessageKind.value = ''
   try {
-    const res = await applyUpdate({ target_version: targetVersion })
-    applyDeploymentUpdateStatus(res.data.data ?? { phase: 'unknown' })
-    setDeploymentMessage('success', t('settings.applyUpdateStaged'))
-  } catch (e: any) {
-    setDeploymentMessage('error', e.response?.data?.message || t('settings.applyUpdateFailed'))
-  } finally {
-    deploymentActionLoading.value = false
-  }
-}
-
-async function handleRollbackUpdate() {
-  deploymentActionLoading.value = true
-  deploymentMessage.value = ''
-  deploymentMessageKind.value = ''
-  try {
-    const res = await rollbackUpdate()
-    applyDeploymentUpdateStatus(res.data.data ?? { phase: 'unknown' })
-    setDeploymentMessage('success', t('settings.rollbackStaged'))
-  } catch (e: any) {
-    setDeploymentMessage('error', e.response?.data?.message || t('settings.rollbackFailed'))
-  } finally {
-    deploymentActionLoading.value = false
-  }
-}
-
-async function handleRestartDeployment() {
-  deploymentActionLoading.value = true
-  deploymentMessage.value = ''
-  deploymentMessageKind.value = ''
-  try {
-    const res = await restartDeployment()
-    applyDeploymentUpdateStatus(res.data.data ?? { phase: 'restart_requested' })
-    setDeploymentMessage('success', t('settings.restartSubmitted'))
-    if (shouldWaitForRecovery('restart')) {
-      setDeploymentMessage('success', t('settings.restartWaiting'))
-      await waitForServiceRecovery()
+    const res = await checkSystemUpdate()
+    systemVersion.value = res.data.data ?? null
+    if (systemVersion.value?.update_available) {
+      setSystemVersionMessage('success', t('settings.updateAvailable'))
+    } else if (systemVersion.value?.check_error) {
+      setSystemVersionMessage('error', systemVersion.value.check_error)
+    } else if (systemVersion.value?.checked) {
+      setSystemVersionMessage('success', t('settings.alreadyCurrent'))
+    } else if (systemVersion.value?.check_enabled === false) {
+      setSystemVersionMessage('error', t('settings.versionCheckUnavailable'))
     }
   } catch (e: any) {
-    setDeploymentMessage('error', e.response?.data?.message || t('settings.restartFailed'))
+    setSystemVersionMessage('error', e.response?.data?.message || t('settings.checkUpdatesFailed'))
   } finally {
-    deploymentActionLoading.value = false
+    systemVersionChecking.value = false
   }
 }
 
@@ -736,16 +654,12 @@ async function handleTestLDAP() {
         aria-labelledby="settings-tab-deployment-runtime"
       >
         <DeploymentRuntimeSettings
-          :deployment="deployment"
-          :deployment-loading="deploymentLoading"
-          :deployment-action-loading="deploymentActionLoading"
-          :deployment-message="deploymentMessage"
-          :deployment-message-kind="deploymentMessageKind"
-          :deployment-confirm-action="deploymentConfirmAction"
+          :system-version="systemVersion"
+          :system-version-loading="systemVersionLoading"
+          :system-version-checking="systemVersionChecking"
+          :system-version-message="systemVersionMessage"
+          :system-version-message-kind="systemVersionMessageKind"
           @check-updates="handleCheckUpdates"
-          @request-action="requestDeploymentAction"
-          @confirm-action="confirmDeploymentAction"
-          @cancel-action="deploymentConfirmAction = null"
         />
       </section>
 

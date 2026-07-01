@@ -64,7 +64,7 @@ test -d "$WORK_DIR/redis_data"
 cmp -s "$WORK_DIR/.env.example" "$WORK_DIR/deploy/.env.example"
 cmp -s "$WORK_DIR/docker-compose.yml" "$WORK_DIR/deploy/docker-compose.bootstrap.yml"
 ! grep -q 'init-db.sql' "$WORK_DIR/docker-compose.yml"
-for hidden_var in AE_IMAGE_REPOSITORY AE_IMAGE_TAG AE_UPDATER_IMAGE_REPOSITORY AE_UPDATER_IMAGE_TAG; do
+for hidden_var in AE_IMAGE_REPOSITORY AE_IMAGE_TAG; do
   if grep -q "^${hidden_var}=" "$WORK_DIR/.env"; then
     echo "unexpected ${hidden_var} in bootstrap env" >&2
     exit 1
@@ -160,6 +160,21 @@ grep -q 'restart: unless-stopped' "$NO_PORT_EXTERNAL"
 grep -F 'http://localhost:8081/api/v1/health/live' "$NO_PORT_MAIN" >/dev/null
 grep -F 'http://localhost:8081/api/v1/health/live' "$NO_PORT_BOOTSTRAP" >/dev/null
 grep -F 'http://localhost:8081/api/v1/health/live' "$NO_PORT_EXTERNAL" >/dev/null
+
+ENV_VERSION_DISABLED="$TMP_ROOT/version-disabled.env"
+sed 's/^AE_VERSION_CHECK_ENABLED=.*/AE_VERSION_CHECK_ENABLED=false/' "$ROOT_DIR/deploy/.env.example" >"$ENV_VERSION_DISABLED"
+VERSION_DISABLED_MAIN="$TMP_ROOT/version-disabled-main.yml"
+VERSION_DISABLED_BOOTSTRAP="$TMP_ROOT/version-disabled-bootstrap.yml"
+VERSION_DISABLED_EXTERNAL="$TMP_ROOT/version-disabled-external.yml"
+config_with_env "$ENV_VERSION_DISABLED" "$ROOT_DIR/deploy/docker-compose.yml" "$VERSION_DISABLED_MAIN"
+config_with_env "$ENV_VERSION_DISABLED" "$ROOT_DIR/deploy/docker-compose.bootstrap.yml" "$VERSION_DISABLED_BOOTSTRAP"
+config_with_env "$ENV_VERSION_DISABLED" "$ROOT_DIR/deploy/docker-compose.external.yml" "$VERSION_DISABLED_EXTERNAL"
+grep -q 'AE_VERSION_CHECK_ENABLED: "false"' "$VERSION_DISABLED_MAIN"
+grep -q 'AE_VERSION_CHECK_ENABLED: "false"' "$VERSION_DISABLED_BOOTSTRAP"
+grep -q 'AE_VERSION_CHECK_ENABLED: "false"' "$VERSION_DISABLED_EXTERNAL"
+grep -F 'AE_VERSION_CHECK_RELEASE_API_URL: https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest' "$VERSION_DISABLED_MAIN" >/dev/null
+grep -F 'AE_VERSION_CHECK_RELEASE_API_URL: https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest' "$VERSION_DISABLED_BOOTSTRAP" >/dev/null
+grep -F 'AE_VERSION_CHECK_RELEASE_API_URL: https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest' "$VERSION_DISABLED_EXTERNAL" >/dev/null
 
 set +e
 (

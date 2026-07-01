@@ -1,5 +1,5 @@
 # Bundled bootstrap Docker Compose stack.
-# Intended to be copied to deployment root as docker-compose.yml with a launcher-managed runtime binary.
+# Intended to be copied to a deployment root as docker-compose.yml.
 services:
   postgres:
     image: postgres:16-alpine
@@ -57,12 +57,9 @@ services:
       AE_AUTH_LDAP_USER_FILTER: "${AE_AUTH_LDAP_USER_FILTER:-(uid=%s)}"
       AE_AUTH_LDAP_TLS: "${AE_AUTH_LDAP_TLS:-false}"
       AE_ENCRYPTION_KEY: "${AE_ENCRYPTION_KEY}"
-      AE_DEPLOYMENT_MODE: "${AE_DEPLOYMENT_MODE:-bundled}"
-      AE_DEPLOYMENT_STATE_DIR: "${AE_DEPLOYMENT_STATE_DIR:-/var/lib/ai-efficiency}"
-      AE_DEPLOYMENT_UPDATE_ENABLED: "${AE_DEPLOYMENT_UPDATE_ENABLED:-true}"
-      AE_DEPLOYMENT_UPDATE_APPLY_ENABLED: "${AE_DEPLOYMENT_UPDATE_APPLY_ENABLED:-true}"
-      AE_DEPLOYMENT_UPDATE_RELEASE_API_URL: "${AE_DEPLOYMENT_UPDATE_RELEASE_API_URL:-https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest}"
-      AE_DEPLOYMENT_UPDATE_IMAGE_REPOSITORY: "${AE_IMAGE_REPOSITORY:-ghcr.io/lichking-2234/ai-efficiency}"
+      AE_STATE_DIR: "${AE_STATE_DIR:-/var/lib/ai-efficiency}"
+      AE_VERSION_CHECK_ENABLED: "${AE_VERSION_CHECK_ENABLED:-true}"
+      AE_VERSION_CHECK_RELEASE_API_URL: "${AE_VERSION_CHECK_RELEASE_API_URL:-https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest}"
     ports:
       - "${AE_SERVER_PORT:-8081}:8081"
     volumes:

@@ -1,10 +1,25 @@
 # Frontend Deployment Control Alignment Design
 
-**Status:** Current contract for settings-page deployment control behavior
+**Status:** Retired as of 2026-05-22. Updated on 2026-07-01: the settings page still does not expose deployment status or backend self-update controls, but it now includes a read-only system version area with manual latest-release check.
 
 ## Overview
 
-本文定义 `ai-efficiency` 前端在 deployment/update 方向的控制方式，目标是让管理端交互更接近 `sub2api` 当前做法，但保持与本仓库现有 backend deployment contract 一致。
+本文原本定义 `ai-efficiency` 前端在 deployment/update 方向的控制方式，目标是让管理端交互更接近 `sub2api` 当前做法，但保持与本仓库现有 backend deployment contract 一致。
+
+## 2026-07-01 Current Contract
+
+当前前端已经移除 settings page 的 Deployment 区域，但保留了只读版本可见性：
+
+- `frontend/src/views/SettingsView.vue` 不再加载 deployment status，也不再提供 apply/rollback/restart 按钮。
+- `frontend/src/views/SettingsView.vue` 会展示当前 backend build version / commit / build time，并允许管理员手动触发 latest release check。
+- `frontend/src/api/deployment.ts` 已移除；前端不再封装或调用 `/settings/deployment*` 更新接口。
+- `frontend/src/api/system.ts` 只封装 `/api/v1/system/version` 与 `/api/v1/system/version/check`，用于只读版本展示和更新可用性检查。
+- `GET /api/v1/system/version` 返回当前版本和 `check_enabled`；`POST /api/v1/system/version/check` 只在 backend latest-release check 可用时返回 `checked/latest_release/update_available`，未配置检查源时返回 409 而不是伪装成“已是最新”。如果当前版本或 release tag 不是可比较的 semver，响应会带 `check_error`，前端展示该错误而不是显示 `Already current`。GitHub release 查询会跳过只有 `ae-cli_*` asset、没有 `ai-efficiency-backend_*` asset 的 CLI-only release。
+- 服务重启后的 `/health` 恢复探测已随前端 deployment 控制入口一起移除。
+- router 层仍保留动态 chunk 加载失败后的一次性 reload 保护，但该逻辑现在归属于通用前端 bundle 恢复，不再命名为 deployment recovery。
+- backend deployment/status/update API 与运行时自更新能力也已退役；`backend/internal/versioncheck` 只做当前版本返回和 GitHub latest release 查询，不下载、不替换 binary、不 rollback、不 restart。部署脚本仍作为外部运维入口保留，升级由操作员在应用进程外完成。
+
+下方内容保留为 2026-04-13 当时的历史设计背景，不再作为当前实现合同执行。
 
 这次对齐不是把 `sub2api` 的实现整套搬进来，而是只对齐以下原则：
 
@@ -18,7 +33,7 @@
 
 - 本文补充 [`2026-04-09-binary-systemd-install-update-design.md`](./2026-04-09-binary-systemd-install-update-design.md) 中“前端 deployment 设置页按 mode 分流”的 UI/交互合同。
 - 本文不改变 [`2026-04-08-production-deployment-packaging-design.md`](./2026-04-08-production-deployment-packaging-design.md) 与 [`2026-04-09-binary-systemd-install-update-design.md`](./2026-04-09-binary-systemd-install-update-design.md) 中 backend deployment API、compose updater sidecar、systemd binary update 的职责划分。
-- 当本文与更早的“前端可能演进到更强全局状态管理”的讨论冲突时，以本文为准：当前生效合同是 **settings page only**。
+- 当本文与更早的“前端可能演进到更强全局状态管理”的讨论冲突时，以本文为准：2026-04-13 当时的生效合同是 **settings page only**。
 
 ## Scope
 

@@ -27,6 +27,10 @@ relay:
   model: "claude-sonnet-4-20250514"
   default_group_id: ""
 
+version_check:
+  enabled: true
+  release_api_url: "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest"
+
 auth:
   jwt_secret: "change-me-in-production-32-bytes!"
   access_token_ttl: 7200      # 2 hours
@@ -42,16 +46,3 @@ auth:
 encryption:
   # 32-byte hex-encoded AES-256 key (generate with: openssl rand -hex 32)
   key: "0000000000000000000000000000000000000000000000000000000000000000"
-
-deployment:
-  # bundled/external use Docker Compose with a persisted runtime binary under state_dir; systemd uses an installed runtime binary on Linux
-  mode: bundled
-  state_dir: "/var/lib/ai-efficiency"
-  update:
-    enabled: true
-    apply_enabled: true
-    channel: stable
-    release_api_url: "https://api.github.com/repos/LichKing-2234/ai-efficiency/releases/latest"
-    # Legacy compatibility field. The default unified self-update path typically leaves this empty.
-    updater_url: ""
-    image_repository: "ghcr.io/lichking-2234/ai-efficiency"

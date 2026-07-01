@@ -1,11 +1,11 @@
 # Admin Users Local Credentials Design
 
-**Date:** 2026-05-26  
-**Status:** Approved design for implementation planning  
-**Scope:** `backend/internal/handler/`, `frontend/src/router/`, `frontend/src/views/`, `frontend/src/api/`, `frontend/src/types/`, `frontend/src/__tests__/`, `docs/architecture.md`  
-**Related:**  
-- [2026-03-24-oauth-cli-login-design.md](./2026-03-24-oauth-cli-login-design.md)  
-- [2026-05-21-user-page-cli-self-serve-design.md](./2026-05-21-user-page-cli-self-serve-design.md)  
+**Date:** 2026-05-26
+**Status:** Approved design for implementation planning
+**Scope:** `backend/internal/handler/`, `frontend/src/router/`, `frontend/src/views/`, `frontend/src/api/`, `frontend/src/types/`, `frontend/src/__tests__/`, `docs/architecture.md`
+**Related:**
+- [2026-03-24-oauth-cli-login-design.md](./2026-03-24-oauth-cli-login-design.md)
+- [2026-05-21-user-page-cli-self-serve-design.md](./2026-05-21-user-page-cli-self-serve-design.md)
 - [docs/architecture.md](../../architecture.md)
 
 ## Spec Relationship

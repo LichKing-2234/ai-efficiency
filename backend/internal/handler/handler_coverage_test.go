@@ -26,10 +26,10 @@ import (
 
 // setupFullTestEnv creates a test environment with all handlers wired up.
 func setupFullTestEnv(t *testing.T) *fullTestEnv {
-	return setupFullTestEnvWithDeployment(t, nil)
+	return setupFullTestEnvWithHealth(t, nil)
 }
 
-func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentHandler) *fullTestEnv {
+func setupFullTestEnvWithHealth(t *testing.T, healthHandler *HealthHandler) *fullTestEnv {
 	t.Helper()
 
 	client := testdb.Open(t)
@@ -57,7 +57,7 @@ func setupFullTestEnvWithDeployment(t *testing.T, deploymentHandler *DeploymentH
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		middleware.CORS(nil),
 		nil, nil, nil, handlerCheckpoint(client),
-		deploymentHandler,
+		healthHandler,
 	)
 
 	// Create admin user

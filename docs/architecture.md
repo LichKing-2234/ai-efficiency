@@ -73,11 +73,11 @@ flowchart LR
 - Browser login loads `/api/v1/auth/options` before choosing auth sources. If `auth.ldap.url` is configured it defaults to LDAP and also offers Relay SSO; otherwise it shows only Relay SSO. Dev Login is exposed only when the debug endpoint is explicitly enabled. Relay SSO is an existing-relay-account login path only: invalid credentials or a missing upstream relay user fail authentication and never create a sub2api user. LDAP passwords are used only for LDAP bind and are never forwarded to relay user create/update APIs. LDAP relay identity resolution prefers an exact relay email match before canonical username provisioning, and when a linked relay user has a valid role the local user role follows that relay role. When a successful LDAP login reuses an existing local `relay_sso` row by username/email, the backend updates the local `auth_source` to `ldap` so `/auth/me` and the `/user` profile reflect the actual latest login provider, while preserving any Relay SSO-captured `relay_auth_password` for later relay user JWT acquisition.
 - Official production deployment now has two supported paths: Docker Compose and Linux systemd.
 - The business entrypoint remains the backend service that also serves the frontend bundle.
-- Docker/Compose mode now runs the backend from a persistent runtime binary under the deployment state directory and updates that runtime binary directly instead of using an updater sidecar.
-- When `AE_CONFIG_PATH` is unset, Docker/Compose and local runtime modes materialize a writable config file under the deployment state directory (or the current working directory outside managed deployment) so admin settings can persist.
-- Linux systemd mode installs the backend under `/opt/ai-efficiency`, keeps config in `/etc/ai-efficiency/config.yaml`, and performs binary self-update plus `.backup` rollback.
+- Docker/Compose mode runs the backend from the image-provided server binary and uses the mounted state directory only for runtime-editable application config.
+- When `AE_CONFIG_PATH` is unset, Docker/Compose and local runtime modes materialize a writable config file under the runtime state directory (or the current working directory outside managed deployment) so admin settings can persist.
+- Linux systemd mode installs the backend under `/opt/ai-efficiency` and keeps config in `/etc/ai-efficiency/config.yaml`; upgrades are operator-driven through the install script or release assets.
 - `deploy/` also includes non-production `dev` / `local` compose paths for local verification.
-- Public health endpoints expose liveness/readiness, and admin settings expose deployment status plus update controls.
+- Public health endpoints expose liveness/readiness. Admin-only system version endpoints expose current build metadata and an explicit GitHub release check, but they do not apply updates. In-app deployment status, binary update, rollback, and restart APIs have been removed; upgrades are handled outside the application process.
 - `ae-cli login` now supports both browser PKCE and OAuth device flow. Headless Linux environments are expected to use `ae-cli login --device`, while desktop/browser-capable environments still default to PKCE.
 - Backend-issued auth tokens currently default to a 2-hour access JWT plus a 7-day refresh token. The frontend retries a non-auth `401` once via `/api/v1/auth/refresh`, and `ae-cli` refreshes `~/.ae-cli/token.json` before authenticated commands when the token is expired or within the refresh window. Access and refresh validation now also check `users.token_valid_after`; tokens issued before that revocation floor are rejected, which lets confirmed directory offboarding expire existing login state without introducing a full session table.
 - `ae-cli discover` now provides the current user-facing tool-configuration path for supported local agents. It fetches provider-delivered base URLs plus group-scoped credentials from the backend, detects installed tools locally, and writes deterministic local config only for tools whose platform credential exists: Codex uses `openai`, Claude uses `anthropic`, and Gemini uses `gemini`.
@@ -90,7 +90,7 @@ The Vue frontend keeps the existing route contract while grouping pages by user 
 - `My Work`: `/`, `/user`, and `/events` provide the ordinary company-user path for personal AI usage, setup, and readable usage records. `/` is now a lifecycle-aware personal home: users without usable AI access, or users with access but no effective usage data yet, land on an expanded setup guide card that pushes them toward `/user`; established users land on the embedded usage dashboard first, with the setup guide collapsed by default. The embedded homepage snapshot now also carries a degradable `group_quotas` section derived from the current user's reusable API keys plus their bound group limits. `Usage Records` and `Code Repositories` remain secondary drill-down paths rather than the homepage's primary narrative.
 - `AI Usage`: `/user` remains the selected-subject AI Usage Center. For ordinary users it behaves as a personal usage page. For representatives it also exposes a subject selector so they can switch between `My Usage` and represented members, inspect the selected subject's usage and subscription-group quota rows, preview effective allowance changes from draft rate-multiplier edits, and submit delegated multiplier set/reset requests plus read their own audit history. `/team-usage` is a separate representative Team Overview page for subtree-wide trend and member ranking; it does not show quota cards, subscription quota rows, or multiplier controls.
 - `Code & PR`: `/repos` and `/repos/:id` provide repository health, SCM binding state, PR usage summary, and advanced PR/commit detail workflows for developers, leads, and admins.
-- `Administration`: `/admin/users`, `/admin/directory/offboarding`, and `/settings` are admin-only surfaces. `/admin/users` defaults to the user view with user, department, relay mapping, derived access status, access-status filtering, and centralized sub2api subscription management with selected/current-filter/all-mapped scopes and add/extend/remove/reset-quota operations backed by persisted subscription jobs, while keeping plaintext relay password copy behind an explicit risk confirmation; on mobile it renders selectable user cards rather than a compressed wide table. The same route also has a collapsible tree-style department view for current Directory Sync departments and drill-in department subtree filtering, using name-based display paths in filters and row labels, with representative matched/total badges when that metadata is present. `/admin/directory/offboarding` lists directory-derived offboarding candidates and requires exact email confirmation before disabling an upstream relay user and revoking local tokens. `/settings` is implemented as task-zone section components for AI Services, Code Platforms, Organization & Login, Deployment & Runtime, and Advanced Credentials, with bilingual primary sections and add/edit dialogs; Organization & Login now includes Directory Sync source configuration, safe synthetic templates, and an AI prompt helper. Deployment apply, rollback, and restart actions require a confirmation step before calling admin APIs.
+- `Administration`: `/admin/users`, `/admin/directory/offboarding`, and `/settings` are admin-only surfaces. `/admin/users` defaults to the user view with user, department, relay mapping, derived access status, access-status filtering, and centralized sub2api subscription management with selected/current-filter/all-mapped scopes and add/extend/remove/reset-quota operations backed by persisted subscription jobs, while keeping plaintext relay password copy behind an explicit risk confirmation; on mobile it renders selectable user cards rather than a compressed wide table. The same route also has a collapsible tree-style department view for current Directory Sync departments and drill-in department subtree filtering, using name-based display paths in filters and row labels, with representative matched/total badges when that metadata is present. `/admin/directory/offboarding` lists directory-derived offboarding candidates and requires exact email confirmation before disabling an upstream relay user and revoking local tokens. `/settings` is implemented as task-zone section components for AI Services, Code Platforms, Organization & Login, Deployment & Runtime, and Advanced Credentials, with bilingual primary sections and add/edit dialogs; Organization & Login now includes Directory Sync source configuration, safe synthetic templates, and an AI prompt helper. Deployment & Runtime shows read-only backend build metadata and a manual latest-release check; in-app apply, rollback, and restart controls are not part of the current runtime surface.
 - Auth pages: `/login`, `/oauth/authorize`, and `/oauth/device` share a standalone AuthShell and language toggle so sign-in, app authorization, and device login read as one product flow outside the main app shell. Device login also shows the signed-in account before approve or deny.
 
 The task-zone frontend remains API-compatible with the previous route set. Connected tool counts are derived from `/api/v1/user/providers`, repository health is derived from existing repo records, and PR/event token summaries are frontend-only aggregations over existing response fields. The UI does not claim local CLI state unless that state is backed by server data.
@@ -104,7 +104,7 @@ flowchart TD
     subgraph Compose["Docker Compose mode"]
     Browser["Browser"]
     Backend["Backend + Frontend bundle"]
-    Runtime["Persistent runtime binary<br/>/var/lib/ai-efficiency/runtime"]
+    State["Runtime config/state<br/>/var/lib/ai-efficiency"]
     DB[("Postgres")]
     Redis[("Redis")]
     Relay["sub2api / relay"]
@@ -113,13 +113,12 @@ flowchart TD
     Backend --> DB
     Backend --> Redis
     Backend --> Relay
-    Backend --> Runtime
+    Backend --> State
     end
 
     subgraph Systemd["Linux systemd mode"]
     Browser2["Browser"]
     Backend2["ai-efficiency-server"]
-    Systemctl["systemctl / ai-efficiency.service"]
     FS["/opt + /etc + /var/lib"]
     Relay2["sub2api / relay"]
     DB2[("Postgres")]
@@ -129,7 +128,6 @@ flowchart TD
     Backend2 --> DB2
     Backend2 --> Redis2
     Backend2 --> Relay2
-    Backend2 --> Systemctl
     Backend2 --> FS
     end
 ```
@@ -146,7 +144,8 @@ flowchart TD
 - `deploy/ai-efficiency.service` is the packaged systemd unit template.
 - `deploy/migrate-sqlite-to-postgres.sh` is the one-time bootstrap path from local SQLite data into the local Postgres test environment.
 - `deploy/.env.example` is the operator-facing configuration template.
-- Backend deployment status, update, rollback, and restart APIs are first-class admin surfaces across Docker and non-Docker modes.
+- Admin settings can display the current backend version and manually check the latest backend GitHub release through `/api/v1/system/version` and `/api/v1/system/version/check`. These endpoints are read-only and never replace binaries, restart services, or mutate deployment state.
+- In-app deployment status, update, rollback, and restart APIs are no longer part of the runtime surface. Operators upgrade Docker deployments by refreshing the image and recreating the service, and upgrade systemd deployments through install/release tooling.
 
 ## Current Runtime Flow
 

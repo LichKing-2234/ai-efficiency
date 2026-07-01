@@ -17,7 +17,7 @@ import { listProviders, createProvider, updateProvider, deleteProvider } from '@
 import { listRelayProviders, createRelayProvider, updateRelayProvider, deleteRelayProvider } from '@/api/relayProvider'
 import { listPRs, getPR, syncPRs, getPRSyncJob, getLatestPRSyncJob, settlePR, refreshPRUsage } from '@/api/pr'
 import { getDashboard } from '@/api/efficiency'
-import { getDeploymentStatus, checkForUpdate, applyUpdate, rollbackUpdate, restartDeployment } from '@/api/deployment'
+import { getSystemVersion, checkSystemUpdate } from '@/api/system'
 import { getUserProviders, createGroupCredential, regenerateGroupCredential, getUserProviderModels, testUserProvider } from '@/api/user'
 import {
   startAdminUserSubscriptionJob,
@@ -228,28 +228,16 @@ describe('efficiency API', () => {
   })
 })
 
-describe('deployment API', () => {
-  it('calls deployment endpoints', async () => {
+describe('system API', () => {
+  it('calls system version endpoints', async () => {
     mockClient.get.mockResolvedValue({ data: { data: {} } })
     mockClient.post.mockResolvedValue({ data: { data: {} } })
 
-    await getDeploymentStatus()
-    expect(mockClient.get).toHaveBeenCalledWith('/settings/deployment')
+    await getSystemVersion()
+    expect(mockClient.get).toHaveBeenCalledWith('/system/version')
 
-    await checkForUpdate()
-    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/update/check')
-
-    await applyUpdate({ target_version: 'v0.5.0' })
-    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/update/apply', { target_version: 'v0.5.0' })
-
-    await rollbackUpdate()
-    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/update/rollback')
-  })
-
-  it('calls deployment restart endpoint', async () => {
-    mockClient.post.mockResolvedValue({ data: { data: { phase: 'restart_requested' } } })
-    await restartDeployment()
-    expect(mockClient.post).toHaveBeenCalledWith('/settings/deployment/restart')
+    await checkSystemUpdate()
+    expect(mockClient.post).toHaveBeenCalledWith('/system/version/check')
   })
 })
 

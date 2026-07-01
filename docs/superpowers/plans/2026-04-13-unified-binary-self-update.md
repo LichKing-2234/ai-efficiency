@@ -8,11 +8,11 @@
 
 **Tech Stack:** Go (`gin`, `net/http`, `os`, `filepath`), Bash, Docker Compose, release bundles, Markdown docs, shell regression tests.
 
-**Status:** ✅ 已完成（2026-04-15）
+**Status:** Completed on 2026-04-15; retired on 2026-05-22 when backend-managed self-update and deployment update APIs were removed.
 
-**Replay Status:** 历史完成记录。不要直接按本文逐 task 重跑；如需再次执行或扩展，请基于当前 deployment 资产、deployment 服务和最新 spec 重写执行计划。
+**Replay Status:** Historical record only. Do not replay these tasks; current code no longer contains `backend/internal/deployment`, `backend/cmd/updater`, or `/api/v1/settings/deployment*`.
 
-> **Updated:** 2026-04-15 — 基于 `backend/internal/deployment` focused tests、`deploy/test/docker-deploy-*.sh` 和 frontend focused tests 回填 checkbox。
+> **Updated:** 2026-05-22 — marked retired after removing in-app deployment/self-update control.
 
 ---
 

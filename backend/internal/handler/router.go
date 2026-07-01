@@ -40,7 +40,7 @@ func SetupRouter(
 	providerHandler *ProviderHandler,
 	adminSettingsHandler *AdminSettingsHandler,
 	checkpointHandler *CheckpointHandler,
-	deploymentHandler *DeploymentHandler,
+	healthHandler *HealthHandler,
 	directoryServices ...DirectoryAdminService,
 ) *gin.Engine {
 	r := gin.New()
@@ -88,9 +88,9 @@ func SetupRouter(
 	api.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "ai-efficiency"})
 	})
-	if deploymentHandler != nil {
-		api.GET("/health/live", deploymentHandler.Live)
-		api.GET("/health/ready", deploymentHandler.Ready)
+	if healthHandler != nil {
+		api.GET("/health/live", healthHandler.Live)
+		api.GET("/health/ready", healthHandler.Ready)
 	}
 
 	// Auth routes — no auth middleware
@@ -119,6 +119,15 @@ func SetupRouter(
 	// Protected routes
 	protected := api.Group("")
 	protected.Use(auth.RequireAuth(authService))
+
+	if healthHandler != nil {
+		systemGroup := protected.Group("/system")
+		systemGroup.Use(auth.RequireAdmin())
+		{
+			systemGroup.GET("/version", healthHandler.Version)
+			systemGroup.POST("/version/check", healthHandler.CheckVersion)
+		}
+	}
 
 	// SCM Providers — admin only
 	scmGroup := protected.Group("/scm-providers")
@@ -275,22 +284,13 @@ func SetupRouter(
 	}
 
 	// Settings — admin only
-	if settingsHandler != nil || deploymentHandler != nil {
+	if settingsHandler != nil {
 		settingsGroup := protected.Group("/settings")
 		settingsGroup.Use(auth.RequireAdmin())
 		{
-			if settingsHandler != nil {
-				settingsGroup.GET("/llm", settingsHandler.GetLLMConfig)
-				settingsGroup.PUT("/llm", settingsHandler.UpdateLLMConfig)
-				settingsGroup.POST("/llm/test", settingsHandler.TestLLMConnection)
-			}
-			if deploymentHandler != nil {
-				settingsGroup.GET("/deployment", deploymentHandler.Status)
-				settingsGroup.POST("/deployment/update/check", deploymentHandler.CheckForUpdate)
-				settingsGroup.POST("/deployment/update/apply", deploymentHandler.ApplyUpdate)
-				settingsGroup.POST("/deployment/update/rollback", deploymentHandler.RollbackUpdate)
-				settingsGroup.POST("/deployment/restart", deploymentHandler.Restart)
-			}
+			settingsGroup.GET("/llm", settingsHandler.GetLLMConfig)
+			settingsGroup.PUT("/llm", settingsHandler.UpdateLLMConfig)
+			settingsGroup.POST("/llm/test", settingsHandler.TestLLMConnection)
 		}
 	}
 

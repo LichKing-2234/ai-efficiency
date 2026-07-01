@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { reloadOnceForChunkError } from '@/utils/deploymentRecovery'
+import { reloadOnceForChunkError } from '@/utils/chunkReload'
 
 function resolveSafeRedirect(raw: unknown, fallback = '/') {
   if (typeof raw !== 'string') {

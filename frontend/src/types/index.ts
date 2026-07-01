@@ -284,7 +284,7 @@ export interface ApiResponse<T> {
   data?: T
 }
 
-export interface VersionInfo {
+export interface BuildVersion {
   version: string
   commit: string
   build_time: string
@@ -295,22 +295,13 @@ export interface ReleaseInfo {
   url: string
 }
 
-export interface UpdateStatus {
-  phase: string
-  target_version?: string
-  message?: string
-}
-
-export interface DeploymentStatus {
-  version: VersionInfo
-  mode: string
+export interface SystemVersionStatus {
+  version: BuildVersion
+  check_enabled: boolean
+  checked?: boolean
+  check_error?: string
   update_available: boolean
   latest_release?: ReleaseInfo
-  update_status: UpdateStatus
-}
-
-export interface ApplyUpdateRequest {
-  target_version: string
 }
 
 export interface ToolUsageEventSummary {

@@ -21,7 +21,7 @@
 - `/settings` task sections and primary add/edit dialogs now switch consistently between `en-US` and `zh-CN` while preserving provider names, URLs, and technical enum values as product terms.
 - `/admin/users` keeps plaintext relay password copy behind an explicit confirmation, uses bilingual primary labels, and renders mobile user cards instead of a squeezed table.
 - `/repos/:id` keeps PR/commit details as advanced disclosure while localizing the repository health, SCM binding, PR summary, filters, and detail controls.
-- Deployment apply update, rollback, and restart controls require an explicit confirmation step before invoking the deployment API.
+- Deployment & Runtime now shows read-only backend build metadata and a manual latest-release check. Deployment apply update, rollback, and restart controls are no longer exposed in the app.
 - `/oauth/device` shares `AuthShell` and displays the signed-in account before approve or deny.
 
 ## Spec Relationship

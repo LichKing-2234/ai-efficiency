@@ -1,8 +1,9 @@
 # Production Deployment Packaging Design
 
-**Status:** Current contract for Compose deployment and update control plane; remote Docker bootstrap remains pending
+**Status:** Current for production deployment packaging, but the in-app update control plane is retired as of 2026-05-22.
 
 > Update note (2026-04-13): Docker online update behavior is superseded by `2026-04-13-unified-binary-self-update-design.md`. Historical discussion of updater sidecars is preserved here for evolution context.
+> Retirement note (2026-05-22): `2026-04-13-unified-binary-self-update-design.md` has itself been retired. Current code keeps deploy packaging and health checks, but removes backend deployment status/update APIs and backend-managed self-update.
 
 ## Overview
 

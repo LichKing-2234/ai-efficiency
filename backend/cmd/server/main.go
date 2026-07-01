@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -17,19 +16,21 @@ import (
 	_ "github.com/ai-efficiency/backend/ent/runtime"
 	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/buildinfo"
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/credential"
-	"github.com/ai-efficiency/backend/internal/deployment"
 	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
+	"github.com/ai-efficiency/backend/internal/health"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -67,7 +68,7 @@ func main() {
 
 	// Load config
 	explicitConfigPath := strings.TrimSpace(os.Getenv("AE_CONFIG_PATH"))
-	settingsConfigPath := config.ResolveWritableConfigPath(explicitConfigPath, os.Getenv("AE_DEPLOYMENT_STATE_DIR"))
+	settingsConfigPath := config.ResolveWritableConfigPath(explicitConfigPath, config.ResolveRuntimeStateDir(os.Getenv))
 	loadConfigPath := settingsConfigPath
 	if explicitConfigPath == "" {
 		if _, statErr := os.Stat(loadConfigPath); statErr != nil {
@@ -86,7 +87,7 @@ func main() {
 	if err := config.EnsureWritableConfigFile(settingsConfigPath, cfg); err != nil {
 		logger.Fatal("ensure writable config", zap.String("path", settingsConfigPath), zap.Error(err))
 	}
-	versionInfo := deployment.CurrentVersion()
+	versionInfo := buildinfo.CurrentVersion()
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
 		fmt.Println(versionInfo.Version)
 		return
@@ -97,7 +98,7 @@ func main() {
 		zap.String("commit", versionInfo.Commit),
 		zap.String("build_time", versionInfo.BuildTime),
 	)
-	if deployment.RequireExplicitDBDSN(cfg.DB.DSN) {
+	if config.RequireExplicitDBDSN(cfg.DB.DSN) {
 		logger.Fatal("DB.DSN is required and must point to PostgreSQL")
 	}
 
@@ -255,76 +256,35 @@ func main() {
 	attributionService := attribution.NewService(entClient, relayProvider)
 	handler.SetPRAttributionService(attributionService)
 	handler.SetPRUsageService(prUsageService)
-	var relayPinger deployment.Pinger
+	var relayPinger health.Pinger
 	if relayProvider != nil {
-		relayPinger = deployment.FuncPinger(func(ctx context.Context) error {
+		relayPinger = health.FuncPinger(func(ctx context.Context) error {
 			return relayProvider.Ping(ctx)
 		})
 	}
-	healthService := deployment.NewHealthService(
-		deployment.FuncPinger(func(ctx context.Context) error {
+	healthService := health.NewService(
+		health.FuncPinger(func(ctx context.Context) error {
 			if sqlDB == nil {
 				return nil
 			}
 			return sqlDB.PingContext(ctx)
 		}),
-		deployment.FuncPinger(func(ctx context.Context) error {
+		health.FuncPinger(func(ctx context.Context) error {
 			if redisClient == nil {
 				return nil
 			}
 			return redisClient.Ping(ctx).Err()
 		}),
 		relayPinger,
-		deployment.CurrentVersion(),
+		versionInfo,
 	)
-	deploymentHTTPClient := &http.Client{
-		Timeout: 10 * time.Second,
+	versionHTTPClient := &http.Client{Timeout: 10 * time.Second}
+	var releaseSource versioncheck.ReleaseSource
+	if cfg.VersionCheck.Enabled && strings.TrimSpace(cfg.VersionCheck.ReleaseAPIURL) != "" {
+		releaseSource = versioncheck.NewGitHubReleaseSource(versionHTTPClient, cfg.VersionCheck.ReleaseAPIURL)
 	}
-	var releaseSource deployment.ReleaseSource
-	if cfg.Deployment.Update.Enabled && cfg.Deployment.Update.ReleaseAPIURL != "" {
-		releaseSource = deployment.NewGitHubReleaseSource(deploymentHTTPClient, cfg.Deployment.Update.ReleaseAPIURL)
-	}
-	var updaterClient deployment.Updater
-	if cfg.Deployment.Update.Enabled && cfg.Deployment.Update.UpdaterURL != "" {
-		updaterClient = deployment.NewUpdaterClient(deploymentHTTPClient, cfg.Deployment.Update.UpdaterURL)
-	}
-	var systemdUpdater deployment.SystemdUpdater
-	var systemdManager deployment.RestartManager
-	if cfg.Deployment.Mode == "systemd" {
-		systemdManager = deployment.NewSystemdServiceManager(
-			deployment.SystemdServiceConfig{ServiceName: "ai-efficiency"},
-			nil,
-		)
-		if cfg.Deployment.Update.Enabled {
-			systemdUpdater = deployment.NewSystemdBinaryUpdater(deployment.SystemdBinaryConfig{
-				InstallDir:  "/opt/ai-efficiency",
-				BinaryName:  "ai-efficiency-server",
-				BackupName:  "ai-efficiency-server.backup",
-				DownloadDir: filepath.Join(os.TempDir(), "ai-efficiency-update"),
-				HTTPClient:  deploymentHTTPClient,
-			})
-		}
-	} else {
-		systemdManager = deployment.NewSystemdServiceManager(
-			deployment.SystemdServiceConfig{},
-			nil,
-		)
-		if cfg.Deployment.Update.Enabled {
-			runtimePaths := deployment.RuntimeBinaryPaths(cfg.Deployment.StateDir)
-			systemdUpdater = deployment.NewSystemdBinaryUpdater(deployment.SystemdBinaryConfig{
-				InstallDir:  runtimePaths.RuntimeDir,
-				BinaryName:  filepath.Base(runtimePaths.RuntimeBinary),
-				BackupName:  filepath.Base(runtimePaths.BackupBinary),
-				DownloadDir: filepath.Join(cfg.Deployment.StateDir, ".downloads"),
-				HTTPClient:  deploymentHTTPClient,
-			})
-		}
-	}
-	deploymentService := deployment.NewService(cfg.Deployment, versionInfo, releaseSource, updaterClient, systemdUpdater, systemdManager)
-	deploymentHandler := handler.NewDeploymentHandler(
-		healthService,
-		deploymentService,
-	)
+	versionCheckService := versioncheck.NewService(versionInfo, releaseSource)
+	healthHandler := handler.NewHealthHandler(healthService, versionCheckService)
 
 	r := handler.SetupRouter(
 		entClient,
@@ -340,7 +300,7 @@ func main() {
 		providerHandler,
 		adminSettingsHandler,
 		checkpointHandler,
-		deploymentHandler,
+		healthHandler,
 		directoryService,
 	)
 

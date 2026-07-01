@@ -17,7 +17,7 @@
 - [x] My Work pages redesigned for personal usage, setup, and readable usage records.
 - [x] Code & PR pages redesigned for repository health and PR usage summary.
 - [x] Admin Console split into task-zone components: AI Services, Code Platforms, Organization & Login, Deployment & Runtime, and Advanced Credentials.
-- [x] Deployment apply, rollback, and restart actions require explicit confirmation before API calls.
+- [x] Deployment & Runtime shows read-only backend build metadata plus manual latest-release check; apply, rollback, and restart actions are no longer exposed in the app.
 - [x] Auth pages share `AuthShell`; device login shows signed-in account confirmation.
 - [x] Fresh full-suite verification for this final worktree state.
 - [x] Fresh visual screenshot review after the final Settings, Admin Users, Repo Detail, and Device changes.
