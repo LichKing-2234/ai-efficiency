@@ -323,7 +323,7 @@ Allowed members are directory members whose `department_external_id` is in any r
 1. `directory_members.matched_user_id`, when present and positive.
 2. normalized email match against `users.email`, as fallback.
 
-Team Overview member details must include every directory member in the represented subtree, including the representative themself and members without a matched AE user. Rows without an AE user use `directory_member_external_id` as their stable row identity, return `user_id: 0`, `selectable: false`, and keep the View usage action disabled. Team Overview may resolve such rows to sub2api relay users by exact email match for read-only usage aggregation. Selected-member usage and quota management routes remain local-user operations and require a positive scoped `user_id` plus a relay mapping.
+Team Overview member details must include every directory member in the represented subtree, including the representative themself and members without a matched AE user. Rows without an AE user use `directory_member_external_id` as their stable row identity, return `user_id: 0`, `selectable: false`, and keep the View details action disabled. Team Overview may resolve such rows to sub2api relay users by exact email match for read-only usage aggregation. Selected-member usage and quota management routes remain local-user operations and require a positive scoped `user_id` plus a relay mapping.
 
 Security requirements:
 
@@ -749,8 +749,8 @@ Top-12 trend rules:
 Department trend rules:
 
 1. `department_trend` is computed from the same complete scoped selected-window trend scan as `top_member_trend`; AE must not call an unscoped relay trend endpoint or aggregate users outside the representative scope.
-2. `department_trend.series[0]` uses `series_type="team_total"` and aggregates all relay-resolved scoped members for the selected range. This is the team-wide Token usage trend shown together with the Top 12 chart.
-3. Additional `series_type="department"` rows aggregate each direct child department under the represented root. If a member belongs directly to the represented root, the root can be used as that member's bucket. For upper-level representatives, these rows are the visible subteam trends.
+2. `department_trend.series[0]` uses `series_type="team_total"` and aggregates all relay-resolved scoped members for the selected range. This is the team-wide Token usage trend shown together with the Top 12 chart, but the frontend must render it as its own legend group instead of mixing it into subteam comparisons.
+3. Additional `series_type="department"` rows aggregate each direct child department under the represented root. If a member belongs directly to the represented root, the root can be used as that member's bucket. For upper-level representatives with multiple represented groups, these rows are the visible subteam trend comparison lines.
 4. Department trend points use `total_tokens` as the primary chart value and keep `actual_cost` only as auxiliary legend/detail data.
 5. If the full selected-window scan is unavailable or the scope is too large, `department_trend.unavailable` follows the same reason as `top_member_trend`.
 
@@ -955,7 +955,7 @@ AI Usage Center / Team Overview
   Summary cards
   Team and Top 12 token usage trend chart
   Member details table
-  View usage action to open a member detail page
+  View details action to open a member detail page
 ```
 
 AI Usage Center subject selector:
@@ -1014,7 +1014,7 @@ Team Overview first screen:
    - selected-window billed usage
    - selected-window token usage
    - red not-connected status for members without a resolved relay user
-   - View usage action to open `/usage/members/:user_id` only when `selectable=true` and `user_id > 0`; otherwise the action is disabled
+   - View details action to open `/usage/members/:user_id` only when `selectable=true` and `user_id > 0`; otherwise the action is disabled
 
 Team Overview must not render:
 
@@ -1134,7 +1134,7 @@ Backend unit tests:
    - Team Overview top-member trend contains only scoped users
    - Team Overview top-member trend series order matches selected-window ranking order
    - Team Overview summary cards, member table, and top-12 ranking follow Today / 7 Days / 30 Days range selection
-   - Team Overview member table includes scoped directory members without local user or relay usage and disables their View usage action
+   - Team Overview member table includes scoped directory members without local user or relay usage and disables their View details action
    - Team Overview summary and member tree include selected-window token totals
    - Team Overview member tree returns largest non-overlapping represented roots and nested departments
    - Team Overview returns top-member trend unavailable when full-scope ranking would require truncation
@@ -1190,7 +1190,7 @@ Frontend tests:
 12. Team Overview marks members without a resolved relay user as not connected in red, with localized English and Chinese copy.
 13. Selected-member AI Usage renders subscription controls when the member has active subscriptions.
 14. Non-representative users do not see member subjects or Team Overview entry points.
-15. Member table View usage action switches to `/usage/members/:user_id`.
+15. Member table View details action switches to `/usage/members/:user_id`.
 16. Selected-member Quotas keep `Used / Quota` stable when draft multiplier changes.
 17. Selected-member multiplier modal explains that the multiplier affects future quota consumption speed; it is not changing the member's quota limit and does not recalculate existing Used / Quota values.
 18. Invalid multiplier disables submit.

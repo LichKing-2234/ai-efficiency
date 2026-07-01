@@ -106,6 +106,18 @@ const overviewFixture: TeamOverviewResponse = {
           { date: '2026-06-28', actual_cost: 3.5, total_tokens: 1200 },
         ],
       },
+      {
+        series_type: 'department',
+        department_external_id: 'department-alpha-team-two',
+        display_name: 'Team Two',
+        rank: 2,
+        unavailable: false,
+        unavailable_reason: null,
+        points: [
+          { date: '2026-06-27', actual_cost: 0.75, total_tokens: 5000 },
+          { date: '2026-06-28', actual_cost: 0.75, total_tokens: 5800 },
+        ],
+      },
     ],
   },
   members: [
@@ -315,7 +327,7 @@ describe('TeamOverviewView', () => {
     expect(trend.text()).toContain('Asia/Shanghai')
   })
 
-  it('renders team total and subteam token trends together with Top 12 members', async () => {
+  it('renders team total as its own legend item and compares multiple subteam token trends with Top 12 members', async () => {
     mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
@@ -327,9 +339,11 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     const trend = wrapper.get('[data-testid="team-member-trend-chart"]')
-    expect(trend.text()).toContain('Team trend')
+    expect(trend.text()).toContain('Team total trend')
+    expect(trend.text()).toContain('Subteam trends')
     expect(trend.text()).toContain('Team total')
     expect(trend.text()).toContain('Team One')
+    expect(trend.text()).toContain('Team Two')
     expect(trend.text()).toContain('#1 Alice')
     const chart = wrapper.get('[data-test="line-chart"]')
     const chartData = JSON.parse(chart.attributes('data-chart') ?? '{}') as {
@@ -339,11 +353,13 @@ describe('TeamOverviewView', () => {
     expect(chartData.datasets.map((dataset) => dataset.label)).toEqual([
       'Team total',
       'Team One',
+      'Team Two',
       '#1 Alice',
     ])
     expect(chartData.datasets[0].data).toEqual([5900, 7000])
     expect(chartData.datasets[1].data).toEqual([900, 1200])
-    expect(chartData.datasets[2].data).toEqual([5000, 7000])
+    expect(chartData.datasets[2].data).toEqual([5000, 5800])
+    expect(chartData.datasets[3].data).toEqual([5000, 7000])
   })
 
   it('renders team overview chrome in Chinese without English table labels', async () => {
@@ -361,7 +377,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).toContain('团队概览')
     expect(wrapper.find('header h1').exists()).toBe(false)
     expect(wrapper.text()).toContain('当前范围 Token 用量')
-    expect(wrapper.text()).toContain('查看用量')
+    expect(wrapper.text()).toContain('查看明细')
     expect(wrapper.text()).toContain('Token')
     expect(wrapper.text()).toContain('团队人数')
     expect(wrapper.text()).toContain('已接入人数')
@@ -785,7 +801,7 @@ describe('TeamOverviewView', () => {
     expect(zhWrapper.get('[data-testid="team-overview-member-directory-member-carol"]').text()).toContain('未接入')
   })
 
-  it('routes View usage action to the selected member detail page', async () => {
+  it('routes View details action to the selected member detail page', async () => {
     mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
@@ -796,7 +812,7 @@ describe('TeamOverviewView', () => {
     })
     await flushPromises()
 
-    const openButton = wrapper.findAll('button').find((button) => button.text() === 'View usage')
+    const openButton = wrapper.findAll('button').find((button) => button.text() === 'View details')
     expect(openButton).toBeTruthy()
     await openButton!.trigger('click')
     await flushPromises()
@@ -849,14 +865,14 @@ describe('TeamOverviewMemberTrendChart', () => {
 
     const chart = wrapper.get('[data-test="line-chart"]')
     const chartData = JSON.parse(chart.attributes('data-chart') ?? '{}') as {
-      datasets: Array<{ data: Array<number | null> }>
+      datasets: Array<{ label: string; data: Array<number | null> }>
     }
     const chartOptions = JSON.parse(chart.attributes('data-options') ?? '{}') as {
       scales: { y: { title: { text: string } } }
     }
 
-    expect(chartData.datasets[0].data).toEqual([5900, 7000])
-    expect(chartData.datasets[2].data).toEqual([5000, 7000])
+    expect(chartData.datasets.find((dataset) => dataset.label === 'Team total')?.data).toEqual([5900, 7000])
+    expect(chartData.datasets.find((dataset) => dataset.label === '#1 Alice')?.data).toEqual([5000, 7000])
     expect(chartOptions.scales.y.title.text).toBe('tokens')
   })
 })
