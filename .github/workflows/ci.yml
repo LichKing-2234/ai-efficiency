@@ -86,6 +86,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Validate release workflow contracts
         run: bash test/release-workflow-contract-test.sh
+      - name: Validate PowerShell installer
+        run: pwsh -NoProfile -File ae-cli/test/install-ps1-test.ps1
       - name: Validate deploy shell script
         run: bash -n deploy/docker-deploy.sh
       - name: Validate compose configs
