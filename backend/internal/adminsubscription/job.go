@@ -86,6 +86,7 @@ type SubscriptionOperator interface {
 	AssignSubscriptionForUser(ctx context.Context, userID, groupID int64, validityDays int) error
 	ExtendSubscriptionForUser(ctx context.Context, userID, groupID int64, days int) error
 	RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error
+	ResetSubscriptionQuotaForUser(ctx context.Context, userID, groupID int64) error
 }
 
 type Service struct {
@@ -428,8 +429,10 @@ func (s *Service) runTarget(ctx context.Context, job *ent.AdminSubscriptionJob, 
 		opErr = operator.ExtendSubscriptionForUser(targetCtx, relayUserID, groupID, job.Days)
 	case adminsubscriptionjob.OperationRemove:
 		opErr = operator.RemoveSubscriptionForUser(targetCtx, relayUserID, groupID)
+	case adminsubscriptionjob.OperationResetQuota:
+		opErr = operator.ResetSubscriptionQuotaForUser(targetCtx, relayUserID, groupID)
 	default:
-		opErr = fmt.Errorf("operation must be add, extend, or remove")
+		opErr = fmt.Errorf("operation must be add, extend, remove, or reset_quota")
 	}
 	if opErr != nil {
 		row.Status = "failed"
@@ -610,17 +613,19 @@ func validateOperation(req StartJobRequest) (adminsubscriptionjob.Operation, err
 		return adminsubscriptionjob.OperationExtend, nil
 	case string(adminsubscriptionjob.OperationRemove):
 		return adminsubscriptionjob.OperationRemove, nil
+	case string(adminsubscriptionjob.OperationResetQuota):
+		return adminsubscriptionjob.OperationResetQuota, nil
 	default:
-		return "", NewValidationError("operation must be add, extend, or remove")
+		return "", NewValidationError("operation must be add, extend, remove, or reset_quota")
 	}
 }
 
 func operationFromJob(operation adminsubscriptionjob.Operation) (adminsubscriptionjob.Operation, error) {
 	switch operation {
-	case adminsubscriptionjob.OperationAdd, adminsubscriptionjob.OperationExtend, adminsubscriptionjob.OperationRemove:
+	case adminsubscriptionjob.OperationAdd, adminsubscriptionjob.OperationExtend, adminsubscriptionjob.OperationRemove, adminsubscriptionjob.OperationResetQuota:
 		return operation, nil
 	default:
-		return "", fmt.Errorf("operation must be add, extend, or remove")
+		return "", fmt.Errorf("operation must be add, extend, remove, or reset_quota")
 	}
 }
 

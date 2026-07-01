@@ -1601,6 +1601,46 @@ func (s *sub2apiRelay) RemoveSubscriptionForUser(ctx context.Context, userID, gr
 	return nil
 }
 
+// ResetSubscriptionQuotaForUser resets daily, weekly, and monthly usage for an existing subscription group.
+func (s *sub2apiRelay) ResetSubscriptionQuotaForUser(ctx context.Context, userID, groupID int64) error {
+	if userID <= 0 {
+		return fmt.Errorf("reset subscription quota: user id is required")
+	}
+	if groupID <= 0 {
+		return fmt.Errorf("reset subscription quota: group id is required")
+	}
+	subscription, err := s.findSubscriptionForUserGroup(ctx, userID, groupID)
+	if err != nil {
+		return fmt.Errorf("reset subscription quota: %w", err)
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"daily":   true,
+		"weekly":  true,
+		"monthly": true,
+	})
+	if err != nil {
+		return fmt.Errorf("reset subscription quota: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPost, fmt.Sprintf("/api/v1/admin/subscriptions/%d/reset-quota", subscription.ID), bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("reset subscription quota: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("reset subscription quota: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffix(resp.Body))
+	}
+	var result envelopeStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("reset subscription quota: decode: %w", err)
+	}
+	if !result.ok() {
+		return fmt.Errorf("reset subscription quota: request failed")
+	}
+	return nil
+}
+
 func (s *sub2apiRelay) listDefaultSubscriptions(ctx context.Context) ([]defaultSubscriptionSetting, error) {
 	resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/settings", nil)
 	if err != nil {

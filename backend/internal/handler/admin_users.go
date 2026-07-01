@@ -54,6 +54,10 @@ type adminRelaySubscriptionRemover interface {
 	RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error
 }
 
+type adminRelaySubscriptionQuotaResetter interface {
+	ResetSubscriptionQuotaForUser(ctx context.Context, userID, groupID int64) error
+}
+
 const adminSubscriptionBatchMaxUsers = 500
 
 const (
@@ -535,8 +539,9 @@ func (h *AdminUsersHandler) StartSubscriptionJob(c *gin.Context) {
 			return
 		}
 	case "remove":
+	case "reset_quota":
 	default:
-		pkg.Error(c, http.StatusBadRequest, "operation must be add, extend, or remove")
+		pkg.Error(c, http.StatusBadRequest, "operation must be add, extend, remove, or reset_quota")
 		return
 	}
 
@@ -647,8 +652,9 @@ func (h *AdminUsersHandler) ManageSubscriptions(c *gin.Context) {
 			return
 		}
 	case "remove":
+	case "reset_quota":
 	default:
-		pkg.Error(c, http.StatusBadRequest, "operation must be add, extend, or remove")
+		pkg.Error(c, http.StatusBadRequest, "operation must be add, extend, remove, or reset_quota")
 		return
 	}
 
@@ -880,8 +886,17 @@ func adminSubscriptionOperation(c *gin.Context, rp relay.Provider, req adminMana
 		return func(ctx context.Context, relayUserID int64) error {
 			return remover.RemoveSubscriptionForUser(ctx, relayUserID, groupID)
 		}, true
+	case "reset_quota":
+		resetter, ok := rp.(adminRelaySubscriptionQuotaResetter)
+		if !ok {
+			pkg.Error(c, http.StatusUnprocessableEntity, "relay provider does not support subscription quota reset")
+			return nil, false
+		}
+		return func(ctx context.Context, relayUserID int64) error {
+			return resetter.ResetSubscriptionQuotaForUser(ctx, relayUserID, groupID)
+		}, true
 	default:
-		pkg.Error(c, http.StatusBadRequest, "operation must be add, extend, or remove")
+		pkg.Error(c, http.StatusBadRequest, "operation must be add, extend, remove, or reset_quota")
 		return nil, false
 	}
 }
@@ -912,6 +927,14 @@ func (o adminRelaySubscriptionJobOperator) RemoveSubscriptionForUser(ctx context
 		return fmt.Errorf("relay provider does not support subscription removal")
 	}
 	return remover.RemoveSubscriptionForUser(ctx, userID, groupID)
+}
+
+func (o adminRelaySubscriptionJobOperator) ResetSubscriptionQuotaForUser(ctx context.Context, userID, groupID int64) error {
+	resetter, ok := o.provider.(adminRelaySubscriptionQuotaResetter)
+	if !ok {
+		return fmt.Errorf("relay provider does not support subscription quota reset")
+	}
+	return resetter.ResetSubscriptionQuotaForUser(ctx, userID, groupID)
 }
 
 func adminSubscriptionJobResponseFromEnt(job *ent.AdminSubscriptionJob) adminSubscriptionJobResponse {

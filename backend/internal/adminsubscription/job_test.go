@@ -19,6 +19,7 @@ type fakeSubscriptionOperator struct {
 	assignCalls []subscriptionCall
 	extendCalls []subscriptionCall
 	removeCalls []subscriptionCall
+	resetCalls  []subscriptionCall
 	failUserIDs map[int64]error
 }
 
@@ -44,6 +45,11 @@ func (f *fakeSubscriptionOperator) RemoveSubscriptionForUser(ctx context.Context
 	return f.errFor(userID)
 }
 
+func (f *fakeSubscriptionOperator) ResetSubscriptionQuotaForUser(ctx context.Context, userID, groupID int64) error {
+	f.resetCalls = append(f.resetCalls, subscriptionCall{Operation: "reset_quota", UserID: userID, GroupID: groupID})
+	return f.errFor(userID)
+}
+
 func (f *fakeSubscriptionOperator) errFor(userID int64) error {
 	if f.failUserIDs == nil {
 		return nil
@@ -64,6 +70,11 @@ func (blockingSubscriptionOperator) ExtendSubscriptionForUser(ctx context.Contex
 }
 
 func (blockingSubscriptionOperator) RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (blockingSubscriptionOperator) ResetSubscriptionQuotaForUser(ctx context.Context, userID, groupID int64) error {
 	<-ctx.Done()
 	return ctx.Err()
 }
@@ -93,6 +104,15 @@ func (s *slowSubscriptionOperator) ExtendSubscriptionForUser(ctx context.Context
 }
 
 func (s *slowSubscriptionOperator) RemoveSubscriptionForUser(ctx context.Context, userID, groupID int64) error {
+	select {
+	case <-time.After(s.delay):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (s *slowSubscriptionOperator) ResetSubscriptionQuotaForUser(ctx context.Context, userID, groupID int64) error {
 	select {
 	case <-time.After(s.delay):
 	case <-ctx.Done():
@@ -504,6 +524,44 @@ func TestRunJobRecordsPerUserFailures(t *testing.T) {
 	results := ResultsFromJob(loaded)
 	if len(results) != 2 || results[1].Status != "failed" || results[1].Message != "relay rejected subscription" {
 		t.Fatalf("results = %+v, want failed relay row", results)
+	}
+}
+
+func TestRunJobResetsSubscriptionQuotaForSelectedUsers(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	alice := createAdminSubscriptionUser(t, ctx, client, "alice", 301)
+	bob := createAdminSubscriptionUser(t, ctx, client, "bob", 302)
+	operator := &fakeSubscriptionOperator{}
+	svc := NewService(client)
+	job, err := svc.StartJob(ctx, StartJobRequest{
+		Scope:      "selected",
+		UserIDs:    []int{alice.ID, bob.ID},
+		Operation:  "reset_quota",
+		ProviderID: 7,
+		GroupID:    "42",
+	})
+	if err != nil {
+		t.Fatalf("StartJob error: %v", err)
+	}
+
+	if err := svc.RunJob(ctx, job.ID, operator); err != nil {
+		t.Fatalf("RunJob error: %v", err)
+	}
+
+	if len(operator.resetCalls) != 2 {
+		t.Fatalf("reset calls = %+v, want two selected users", operator.resetCalls)
+	}
+	if operator.resetCalls[0].UserID != 301 || operator.resetCalls[0].GroupID != 42 || operator.resetCalls[1].UserID != 302 || operator.resetCalls[1].GroupID != 42 {
+		t.Fatalf("reset calls = %+v, want relay users 301/302 group 42", operator.resetCalls)
+	}
+	loaded, err := svc.GetJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("GetJob error: %v", err)
+	}
+	if loaded.ProcessedCount != 2 || loaded.SuccessCount != 2 || loaded.FailedCount != 0 {
+		t.Fatalf("counts processed/success/failed = %d/%d/%d, want 2/2/0", loaded.ProcessedCount, loaded.SuccessCount, loaded.FailedCount)
 	}
 }
 

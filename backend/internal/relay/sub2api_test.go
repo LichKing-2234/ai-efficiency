@@ -1200,6 +1200,59 @@ func TestRemoveSubscriptionForUserFindsExistingSubscriptionAndDeletes(t *testing
 	}
 }
 
+func TestResetSubscriptionQuotaForUserFindsExistingSubscriptionAndPostsAllWindows(t *testing.T) {
+	var resetBody map[string]any
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users/42/subscriptions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{
+				{
+					"id":                77,
+					"user_id":           42,
+					"group_id":          5,
+					"status":            "active",
+					"daily_usage_usd":   12.5,
+					"weekly_usage_usd":  40.0,
+					"monthly_usage_usd": 88.0,
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/subscriptions/77/reset-quota", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&resetBody); err != nil {
+			t.Fatalf("decode reset body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"id": 77, "status": "active"},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	manager, ok := p.(interface {
+		ResetSubscriptionQuotaForUser(context.Context, int64, int64) error
+	})
+	if !ok {
+		t.Fatal("provider does not implement ResetSubscriptionQuotaForUser")
+	}
+	if err := manager.ResetSubscriptionQuotaForUser(context.Background(), 42, 5); err != nil {
+		t.Fatalf("ResetSubscriptionQuotaForUser() unexpected error: %v", err)
+	}
+	if resetBody["daily"] != true || resetBody["weekly"] != true || resetBody["monthly"] != true {
+		t.Fatalf("unexpected reset body: %+v", resetBody)
+	}
+}
+
 func TestExtendSubscriptionForUserReturnsNotFoundForMissingGroupSubscription(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/users/42/subscriptions", func(w http.ResponseWriter, r *http.Request) {

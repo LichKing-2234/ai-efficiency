@@ -14,7 +14,7 @@
 
 - This spec adds a configurable organization directory sync capability. It does not replace LDAP login, Relay SSO, relay identity provisioning, `/user` setup, or the existing admin subscription assignment workflow.
 - LDAP remains an authentication source. Directory Sync is an organization-facts source used for reporting, filtering, and admin offboarding review.
-- AI access assignment and subscription add/extend/remove operations continue to use the existing admin users subscription workflow. Directory Sync must not automatically assign or remove relay/sub2api subscriptions.
+- AI access assignment and subscription add/extend/remove/reset-quota operations continue to use the existing admin users subscription workflow. Directory Sync must not automatically assign, remove, or reset relay/sub2api subscriptions.
 - Offboarding review uses Directory Sync facts to identify local users whose email is missing from the latest full-company directory snapshot. Admins must explicitly confirm any action.
 - This spec introduces a reusable local auth-token revocation capability so confirmed offboarding can invalidate existing AI Efficiency access and refresh tokens. The offboarding review page owns the disable action, while the general `/admin/users` table may surface the resulting derived access status for review and filtering.
 - Implementation must update `docs/architecture.md` after the module lands because this changes project-level runtime relationships and admin surfaces.
@@ -154,7 +154,7 @@ Existing modules remain responsible for their current domains:
 
 - `auth` owns login, JWT generation, validation, and token revocation checks.
 - `relay` owns upstream relay/sub2api user operations.
-- `adminsubscription` owns subscription add/extend/remove jobs.
+- `adminsubscription` owns subscription add/extend/remove/reset-quota jobs.
 - `handler` owns HTTP API boundaries.
 - `frontend` owns settings, preview, run history, and offboarding review UI.
 

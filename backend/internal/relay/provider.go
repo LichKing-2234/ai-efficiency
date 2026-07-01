@@ -98,6 +98,10 @@ type UserSubscriptionLister interface {
 	ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]UserSubscription, error)
 }
 
+type UserSubscriptionQuotaResetter interface {
+	ResetSubscriptionQuotaForUser(ctx context.Context, relayUserID, groupID int64) error
+}
+
 type GroupRateMultiplierManager interface {
 	ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
 	ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error

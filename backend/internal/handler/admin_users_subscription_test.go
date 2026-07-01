@@ -88,6 +88,15 @@ func (f *adminUsersRelayFake) RemoveSubscriptionForUser(ctx context.Context, use
 	return nil
 }
 
+func (f *adminUsersRelayFake) ResetSubscriptionQuotaForUser(ctx context.Context, userID, groupID int64) error {
+	f.calls = append(f.calls, adminUsersRelaySubscriptionCall{
+		Operation: "reset_quota",
+		UserID:    userID,
+		GroupID:   groupID,
+	})
+	return nil
+}
+
 func TestAdminUsersStartSubscriptionJobReturnsQueuedWithoutWaitingForRelayMutation(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -219,6 +228,64 @@ func TestAdminUsersStartSubscriptionJobUsesCurrentAccessStatusFilter(t *testing.
 	}
 	if resp.Data.TotalCount != 1 || len(resp.Data.TargetUserIDs) != 1 || resp.Data.TargetUserIDs[0] != disabledUser.ID {
 		t.Fatalf("job targets = %+v, want only disabled user %d", resp.Data, disabledUser.ID)
+	}
+}
+
+func TestAdminUsersStartSubscriptionJobSupportsSelectedQuotaReset(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	defer client.Close()
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+	localUser := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+
+	fakeRelay := &adminUsersRelayFake{
+		groups: []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"}},
+	}
+	handler := NewAdminUsersHandler(client, adminUsersTestEncryptionKey, adminUsersProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			return nil, errors.New("unexpected provider")
+		}
+		return fakeRelay, nil
+	}))
+
+	router := gin.New()
+	router.POST("/admin/users/subscription-jobs", handler.StartSubscriptionJob)
+	w := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"scope":"selected","user_ids":[%d],"operation":"reset_quota","provider_id":%d,"group_id":"42"}`, localUser.ID, provider.ID)
+	req := httptest.NewRequest(http.MethodPost, "/admin/users/subscription-jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			Status        string `json:"status"`
+			Operation     string `json:"operation"`
+			TotalCount    int    `json:"total_count"`
+			TargetUserIDs []int  `json:"target_user_ids"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v, body=%s", err, w.Body.String())
+	}
+	if resp.Data.Status != "queued" || resp.Data.Operation != "reset_quota" || resp.Data.TotalCount != 1 || len(resp.Data.TargetUserIDs) != 1 || resp.Data.TargetUserIDs[0] != localUser.ID {
+		t.Fatalf("unexpected job response: %+v", resp.Data)
 	}
 }
 
@@ -797,6 +864,70 @@ func TestAdminUsersBatchManageSubscriptionsAllMappedRemovesEveryMappedUser(t *te
 		t.Fatalf("calls = %+v, want two relay removes", fakeRelay.calls)
 	}
 	if fakeRelay.calls[0].Operation != "remove" || fakeRelay.calls[0].UserID != 42 || fakeRelay.calls[1].Operation != "remove" || fakeRelay.calls[1].UserID != 99 {
+		t.Fatalf("unexpected calls: %+v", fakeRelay.calls)
+	}
+}
+
+func TestAdminUsersBatchManageSubscriptionsAllMappedResetsQuotaForEveryMappedUser(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetDefaultModel("gpt-5.4").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(ctx)
+	client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+	client.User.Create().
+		SetUsername("bob").
+		SetEmail("bob@example.org").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SaveX(ctx)
+	client.User.Create().
+		SetUsername("carol").
+		SetEmail("carol@example.net").
+		SetAuthSource("relay_sso").
+		SetRole("user").
+		SetRelayUserID(99).
+		SaveX(ctx)
+
+	fakeRelay := &adminUsersRelayFake{
+		groups: []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"}},
+	}
+	handler := NewAdminUsersHandler(client, adminUsersTestEncryptionKey, adminUsersProviderResolverFunc(func(_ context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			return nil, errors.New("unexpected provider")
+		}
+		return fakeRelay, nil
+	}))
+
+	router := gin.New()
+	router.POST("/admin/users/subscriptions/batch", handler.ManageSubscriptions)
+	w := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"scope":"all_mapped","operation":"reset_quota","provider_id":%d,"group_id":"42"}`, provider.ID)
+	req := httptest.NewRequest(http.MethodPost, "/admin/users/subscriptions/batch", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	if len(fakeRelay.calls) != 2 {
+		t.Fatalf("calls = %+v, want two relay quota resets", fakeRelay.calls)
+	}
+	if fakeRelay.calls[0].Operation != "reset_quota" || fakeRelay.calls[0].UserID != 42 || fakeRelay.calls[1].Operation != "reset_quota" || fakeRelay.calls[1].UserID != 99 {
 		t.Fatalf("unexpected calls: %+v", fakeRelay.calls)
 	}
 }
