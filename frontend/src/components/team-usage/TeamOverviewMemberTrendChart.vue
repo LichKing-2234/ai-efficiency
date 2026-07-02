@@ -49,6 +49,8 @@ const departmentSeriesColors = [
   '#4d7c0f',
 ]
 
+const trendLegendPanelClasses = 'min-w-0 self-start max-h-64 overflow-y-auto divide-y divide-slate-100 rounded-md border border-slate-200 pr-1'
+
 const departmentTrendSeries = computed(() => props.departmentTrend?.series ?? [])
 
 const teamTotalTrendSeries = computed(() => {
@@ -288,7 +290,10 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
           </div>
         </div>
 
-        <div class="min-w-0 divide-y divide-slate-100 rounded-md border border-slate-200">
+        <div
+          data-testid="team-total-trend-legend"
+          :class="trendLegendPanelClasses"
+        >
           <div
             v-for="(series, index) in teamTotalTrendSeries"
             :key="departmentSeriesKey(series, index)"
@@ -329,7 +334,10 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
           </div>
         </div>
 
-        <div class="min-w-0 divide-y divide-slate-100 rounded-md border border-slate-200">
+        <div
+          data-testid="subteam-trend-legend"
+          :class="trendLegendPanelClasses"
+        >
           <div
             v-for="(series, index) in subteamTrendSeries"
             :key="departmentSeriesKey(series, index)"
@@ -372,7 +380,7 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
 
         <div
           data-testid="top-member-trend-legend"
-          class="min-w-0 max-h-64 overflow-y-auto divide-y divide-slate-100 rounded-md border border-slate-200"
+          :class="trendLegendPanelClasses"
         >
           <div
             v-for="(series, index) in props.state.series"

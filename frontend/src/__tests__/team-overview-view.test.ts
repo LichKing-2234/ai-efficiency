@@ -927,7 +927,7 @@ describe('TeamOverviewMemberTrendChart', () => {
     expect(chartOptions.scales.y.title.text).toBe('tokens')
   })
 
-  it('keeps the Top 12 legend scrollable instead of stretching the trend section', () => {
+  it('keeps all trend legends at the same scrollable max height', () => {
     const state = structuredClone(overviewFixture.top_member_trend)
     state.series = Array.from({ length: 12 }, (_, index) => ({
       user_id: 100 + index,
@@ -947,9 +947,11 @@ describe('TeamOverviewMemberTrendChart', () => {
       },
     })
 
-    const legend = wrapper.get('[data-testid="top-member-trend-legend"]')
-    expect(legend.classes()).toContain('max-h-64')
-    expect(legend.classes()).toContain('overflow-y-auto')
-    expect(legend.text()).toContain('#12 Member 12')
+    for (const testId of ['team-total-trend-legend', 'subteam-trend-legend', 'top-member-trend-legend']) {
+      const legend = wrapper.get(`[data-testid="${testId}"]`)
+      expect(legend.classes()).toContain('max-h-64')
+      expect(legend.classes()).toContain('overflow-y-auto')
+    }
+    expect(wrapper.get('[data-testid="top-member-trend-legend"]').text()).toContain('#12 Member 12')
   })
 })
