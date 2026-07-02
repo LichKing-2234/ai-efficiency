@@ -12,7 +12,7 @@
 
 ## Spec Relationship
 
-- This spec extends the AI Usage Center from a personal usage surface into a subject-switchable usage surface. Representatives can view `My Usage` or switch to a scoped member and see that member's AI usage.
+- This spec keeps the AI Usage Center as the current user's personal usage surface. Representatives view scoped member usage through Team Overview and the focused selected-member detail route.
 - It adds a Team Overview view inside AI Usage Center for department-subtree usage ranking and member comparison. Team Overview is intentionally different from the personal AI Usage view and must not render quota cards or quota controls.
 - It inherits the personal quota-card conventions from the 2026-06-16 group quota design for per-subject AI Usage only. Quota cards and multiplier controls belong to the selected member's personal usage context, not to the Team Overview page.
 - It inherits representative metadata from the 2026-06-22 Directory Sync design. Team membership and representative scope come from local directory facts, not from sub2api group ownership and not from a new local admin role.
@@ -37,7 +37,7 @@ Use synthetic values such as:
 AI Efficiency currently exposes personal AI usage through the AI Usage Center. Admin users can also manage relay/sub2api subscriptions for other users through admin-only flows. There is no delegated manager surface for an organization representative to answer:
 
 1. Which members in my represented department subtree are using AI.
-2. How to switch from my own AI Usage to a specific member's AI Usage without becoming an admin.
+2. How to open a specific member's AI Usage without becoming an admin.
 3. How the represented department subtree ranks by member usage.
 4. Which members are driving most of the team usage.
 5. Which subscription groups a selected member has.
@@ -54,8 +54,8 @@ The practical hard-enforcement lever available today is sub2api's user-specific 
 
 ## Goals
 
-1. Add a subject selector to AI Usage Center: `My Usage` plus scoped members.
-2. Let representatives switch to a scoped member and view that member's AI Usage.
+1. Keep personal AI Usage current-user-only, with no choose-person dropdown.
+2. Let representatives open a scoped member detail page and view that member's AI Usage.
 3. Keep representatives as normal users with delegated scope, not admins.
 4. Scope the first version to the primary relay provider only.
 5. Add a Team Overview route under AI Usage Center for the represented department subtree.
@@ -88,13 +88,13 @@ The practical hard-enforcement lever available today is sub2api's user-specific 
 | Representative source | Directory Sync metadata |
 | Representative scope | Entire represented department subtree |
 | User role | Delegated normal user, not admin |
-| Product placement | AI Usage Center subject selector plus Team Overview tab |
-| AI Usage Center IA | `My Usage` / scoped member selector / Team Overview tab for representatives |
+| Product placement | Personal AI Usage, Team Overview, and focused selected-member detail routes |
+| AI Usage Center IA | `/usage` remains current-user-only; representatives use `/usage/team` and `/usage/members/:user_id` for scoped members |
 | Team Overview IA | `/usage/team` inside AI Usage Center |
 | Team Overview Token Trend replacement | Top-12 member usage trend chart |
 | Team Overview Model Distribution replacement | Member usage table |
 | Team Overview quotas | Hidden; no quota cards or quota controls |
-| Aggregation | Personal usage by selected subject; team overview by member |
+| Aggregation | Personal usage by current user; selected-member detail by route target; Team Overview by member |
 | Provider scope | Primary provider only |
 | Usage detail | Aggregated summaries only, no raw request log |
 | Quota control | User-specific group rate multiplier |
@@ -162,7 +162,7 @@ AE will provide a delegated management facade:
 
 1. Resolve which local users the current representative may see and manage.
 2. Fetch usage and subscription facts through the primary relay provider.
-3. Display selected-subject usage with the same high-level AI Usage Center shape where upstream APIs support it.
+3. Display selected-member usage with the same high-level AI Usage shape where upstream APIs support it.
 4. Write user-specific group rate multipliers through sub2api admin APIs via relay provider extension methods.
 5. Persist an AE audit record for every attempted change.
 6. Treat self multiplier changes as forbidden, even when the current user is also a representative. A higher-level representative can change that user's multiplier only from the higher-level representative's own session.
@@ -280,9 +280,9 @@ Team Overview view
       |
       v
   primary relay provider
-    - selected-subject usage summary/trend/models
+    - selected-member usage summary/trend/models
     - team member top-12 trend, ranking, and table
-    - selected-subject subscriptions
+    - selected-member subscriptions
     - group rate multipliers
     - merged rate-multiplier write
 
@@ -924,7 +924,7 @@ Indexes:
 
 ## Frontend UX
 
-Use the existing AI Usage Center shell and components for per-subject usage. Add Team Overview as a separate route under AI Usage Center for team-level comparison.
+Use the existing AI Usage Center shell for personal usage. Team Overview and selected-member detail are separate routes for representative workflows.
 
 Canonical frontend routes:
 
@@ -941,14 +941,9 @@ AI Usage Center
   Top-level tabs
     - My Usage
     - Team Overview, visible only for representatives
-  Subject selector
-    - My Usage
-    - Alice
-    - Bob
   Personal usage cards
   Token Trend
   Model Distribution
-  Selected-subject subscription quota / multiplier controls
 
 Selected Member Usage Detail
   Explicit back action to Team Overview
@@ -966,18 +961,13 @@ AI Usage Center / Team Overview
   View details action to open a member detail page
 ```
 
-AI Usage Center subject selector:
+Personal AI Usage Center:
 
-1. Always includes `My Usage`.
-2. For representatives, includes scoped members from the represented department subtree.
-3. Selecting a member updates the entire AI Usage Center snapshot to that member's usage.
-4. Selected member snapshots reuse the existing personal layout where possible:
-   - stats cards
-   - Token Trend
-   - Model Distribution
-   - subscription quota cards or rows
-5. Rate multiplier controls appear only in selected-member subscription quota context.
-6. For `My Usage`, quota cards remain read-only. If the current user is also a representative, the UI still must not show self multiplier edit controls.
+1. `/usage` always represents the current user's `My Usage` dashboard and calls the personal usage dashboard endpoint.
+2. `/usage` must not call the representative subject-list endpoint to populate a choose-person dropdown.
+3. `/usage` must not render the member subject selector, selected-member subscription quota rows, or multiplier edit controls.
+4. Current-user quota cards remain read-only. If the current user is also a representative, the UI still must not show self multiplier edit controls.
+5. Representatives inspect scoped members through Team Overview and the focused selected-member detail route, not by switching the personal page subject.
 
 Selected Member Usage Detail:
 
@@ -1052,7 +1042,7 @@ Selected-member Quotas preview:
 Empty states:
 
 1. No representative scope: hide member subjects and the Team Overview tab; direct `/usage/team` may show a compact "No delegated team scope" state.
-2. Scope exists but no matched relay users: Team Overview shows unavailable member states; AI Usage Center subject selector keeps `My Usage` only.
+2. Scope exists but no matched relay users: Team Overview shows unavailable member states; personal AI Usage remains a current-user-only page with no subject selector.
 3. Provider unsupported: Team Overview shows "Team Overview is temporarily unavailable"; selected-member usage shows a scoped unavailable state.
 4. Member has no active subscriptions: selected-member AI Usage can show usage charts but no quota controls.
 5. Direct member route target not in scope: show the normal usage unavailable state from the target dashboard request; do not show the actor's own usage as a fallback.
@@ -1100,10 +1090,10 @@ The representative metadata parsing currently exists inside admin users handler 
 Suggested components:
 
 1. `UserUsageDashboard.vue`
-   - Add subject-aware rendering while preserving current `My Usage` behavior.
-   - Keep personal dashboard behavior unchanged.
+   - Keep `/usage` as current-user-only personal dashboard behavior.
+   - In selected-member route mode, request the route target directly while hiding personal subject switching.
 2. `UserUsageSubjectSelector.vue`
-   - Lists `My Usage` and scoped members.
+   - Superseded for `/usage`; it is not part of the current personal usage route contract unless a future surface reintroduces subject switching.
 3. `TeamOverviewPage.vue`
    - Owns independent team summary, top-12 member trend chart, and member usage table.
 4. `TeamOverviewMemberTrendChart.vue`
@@ -1111,7 +1101,7 @@ Suggested components:
 5. `TeamOverviewMemberTable.vue`
    - Owns sorting, pagination, and open-member action.
 6. `SelectedSubjectSubscriptionRows.vue`
-   - Render selected member group rows, enforcement-basis Used / Quota cells, and multiplier explanation copy in AI Usage Center.
+   - Render selected member group rows, enforcement-basis Used / Quota cells, and multiplier explanation copy in selected-member detail.
 7. `TeamRateMultiplierModal.vue`
    - Own set/reset workflow, local draft state, and confirm/cancel behavior.
 8. Admin audit table (follow-up)
@@ -1185,9 +1175,9 @@ Backend unit tests:
 
 Frontend tests:
 
-1. AI Usage Center renders a subject selector with `My Usage`.
-2. Representative subject selector includes scoped members.
-3. Selecting a member reloads the AI Usage Center snapshot for that member.
+1. Personal `/usage` does not render a subject selector and does not call the representative subject-list endpoint.
+2. Personal `/usage` calls the current-user usage dashboard instead of the selected-member dashboard endpoint.
+3. Personal `/usage` does not render member subscription rows or multiplier controls.
 4. Team Overview is reachable at `/usage/team` for representatives.
 5. Team Overview renders top-12 token usage trend chart instead of personal Token Trend.
 6. Team Overview renders member details table instead of personal Model Distribution.
@@ -1197,14 +1187,14 @@ Frontend tests:
 10. Team Overview summary shows selected-window token usage.
 11. Team Overview member details render as an expandable organization tree with department aggregate counts, billed usage, and token usage.
 12. Team Overview marks members without a resolved relay user as not connected in red, with localized English and Chinese copy.
-13. Selected-member AI Usage renders subscription controls when the member has active subscriptions.
+13. Selected-member detail renders subscription controls when the member has active subscriptions.
 14. Non-representative users do not see member subjects or Team Overview entry points.
 15. Member table View details action switches to `/usage/members/:user_id`.
 16. Selected-member Quotas keep `Used / Quota` stable when draft multiplier changes.
 17. Selected-member multiplier modal explains that the multiplier affects future quota consumption speed; it is not changing the member's quota limit and does not recalculate existing Used / Quota values.
 18. Invalid multiplier disables submit.
 19. Reset mode displays inherited default result and source.
-20. Successful write refreshes selected-member usage. Audit history is written locally but not rendered in the representative UI.
+20. Successful write refreshes selected-member detail. Audit history is written locally but not rendered in the representative UI.
 21. Self rows do not show multiplier edit controls.
 22. `/usage/members/:user_id` renders independently without top-level AI Usage Center tabs or the member subject selector.
 23. `/usage/members/:user_id` calls the selected-member dashboard endpoint directly and does not fall back to personal usage when the target cannot be loaded.
@@ -1213,8 +1203,8 @@ Frontend tests:
 
 Manual verification:
 
-1. Confirm personal My Usage remains unchanged.
-2. Confirm representative can switch to a scoped member and see stats, trend, and model distribution.
+1. Confirm personal My Usage remains current-user-only and does not show a choose-person dropdown.
+2. Confirm representative can open a scoped member detail from Team Overview and see stats, trend, and model distribution.
 3. Confirm Team Overview shows top-12 token usage trend chart and member details table, with no quota UI.
 4. Confirm Team Overview Today / 7 Days / 30 Days updates summary, ranking, chart, and member table to the selected range.
 5. Confirm representative cannot access an out-of-scope user by URL.
@@ -1230,7 +1220,7 @@ Manual verification:
 
 1. Land backend schema migration and handler contracts behind the existing authenticated user route group.
 2. Add relay optional interfaces and sub2api implementation.
-3. Add AI Usage Center subject selector and selected-member read-only usage.
+3. Keep AI Usage Center current-user-only and add selected-member read-only usage under `/usage/members/:user_id`.
 4. Add `/usage/team` Team Overview route with top-12 member trend chart and member table.
 5. Add multiplier edit workflow in selected-member usage context; keep audit display out of representative UI.
 6. Update `docs/architecture.md`.
