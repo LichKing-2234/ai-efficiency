@@ -477,6 +477,12 @@ GET /api/v1/admin/directory/sources/:id/runs
 GET /api/v1/admin/directory/runs/:id
 ```
 
+The settings UI must treat run state as backend-owned. When the page opens or an
+admin selects a source, it fetches recent runs for that source, applies the
+latest preview/apply run status, and continues polling the run detail endpoint
+when that run is queued or running instead of requiring the browser tab that
+started the run to stay open.
+
 ### Directory Facts
 
 ```text

@@ -62,8 +62,10 @@ vi.mock('@/api/directory', () => ({
   createDirectorySource: vi.fn(),
   updateDirectorySource: vi.fn(),
   validateDirectorySource: vi.fn(),
+  listDirectoryRuns: vi.fn(),
   previewDirectorySource: vi.fn(),
   startDirectoryRun: vi.fn(),
+  getDirectoryRun: vi.fn(),
 }))
 
 vi.mock('@/api/auth', () => ({

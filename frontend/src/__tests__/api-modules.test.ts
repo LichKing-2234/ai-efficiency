@@ -19,6 +19,7 @@ import { listPRs, getPR, syncPRs, getPRSyncJob, getLatestPRSyncJob, settlePR, re
 import { getDashboard } from '@/api/efficiency'
 import { getSystemVersion, checkSystemUpdate } from '@/api/system'
 import { getUserProviders, createGroupCredential, regenerateGroupCredential, getUserProviderModels, testUserProvider } from '@/api/user'
+import { listDirectoryRuns } from '@/api/directory'
 import {
   disableAdminUserAccess,
   startAdminUserSubscriptionJob,
@@ -311,5 +312,15 @@ describe('admin users API', () => {
     await listAdminUserDepartments()
 
     expect(mockClient.get).toHaveBeenCalledWith('/admin/users/departments')
+  })
+})
+
+describe('directory API', () => {
+  it('lists directory runs for a source', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { items: [] } } })
+
+    await listDirectoryRuns(7)
+
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/directory/sources/7/runs')
   })
 })

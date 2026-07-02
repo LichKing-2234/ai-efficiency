@@ -40,6 +40,10 @@ export function startDirectoryRun(id: number, data: { mode: 'apply' | 'preview' 
   return client.post<ApiResponse<DirectorySyncRun>>(`/admin/directory/sources/${id}/runs`, data)
 }
 
+export function listDirectoryRuns(id: number) {
+  return client.get<ApiResponse<{ items: DirectorySyncRun[] }>>(`/admin/directory/sources/${id}/runs`)
+}
+
 export function getDirectoryRun(id: number) {
   return client.get<ApiResponse<DirectorySyncRun>>(`/admin/directory/runs/${id}`)
 }
