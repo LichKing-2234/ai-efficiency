@@ -61,15 +61,15 @@ When code, specs, and historical documents disagree, prefer:
 ```bash
 cd backend && go test ./...
 cd ae-cli && go test ./...
-cd frontend && pnpm test
-cd frontend && pnpm build
+cd frontend && npm test
+cd frontend && npm run build
 ```
 
 ### Common Entry Points
 
 - Backend server: `cd backend && go run ./cmd/server`
 - CLI: `cd ae-cli && go run .`
-- Frontend dev server: `cd frontend && pnpm dev`
+- Frontend dev server: `cd frontend && npm run dev`
 
 ## License
 

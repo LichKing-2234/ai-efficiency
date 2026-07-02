@@ -61,15 +61,15 @@ ai-efficiency/
 ```bash
 cd backend && go test ./...
 cd ae-cli && go test ./...
-cd frontend && pnpm test
-cd frontend && pnpm build
+cd frontend && npm test
+cd frontend && npm run build
 ```
 
 ### 常用入口
 
 - 后端服务：`cd backend && go run ./cmd/server`
 - 命令行：`cd ae-cli && go run .`
-- 前端开发服务：`cd frontend && pnpm dev`
+- 前端开发服务：`cd frontend && npm run dev`
 
 ## 开源协议
 
