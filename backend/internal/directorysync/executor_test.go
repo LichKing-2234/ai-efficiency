@@ -76,8 +76,8 @@ func TestExecutorRunsForeachAndNormalizesMembers(t *testing.T) {
 	if result.Members[0].EmailNormalized != "dept-alpha@example.com" {
 		t.Fatalf("first email = %q", result.Members[0].EmailNormalized)
 	}
-	if len(result.Warnings) != 2 {
-		t.Fatalf("warnings = %#v, want invalid email and duplicate email", result.Warnings)
+	if len(result.Warnings) != 1 {
+		t.Fatalf("warnings = %#v, want invalid email only; duplicate email across departments is a membership", result.Warnings)
 	}
 	if fmt.Sprint(seenDepartmentQueries) != "[dept-alpha dept-beta]" {
 		t.Fatalf("department queries = %v", seenDepartmentQueries)
@@ -89,8 +89,67 @@ func TestExecutorRunsForeachAndNormalizesMembers(t *testing.T) {
 	}
 }
 
+func TestExecutorCoalescesDuplicateEmailIntoMultipleDepartmentMemberships(t *testing.T) {
+	var seenDepartmentQueries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/departments":
+			writeJSON(t, w, map[string]any{
+				"data": map[string]any{
+					"departments": []map[string]any{
+						{"id": "dept-alpha", "name": "Department Alpha", "path": "Department Alpha"},
+						{"id": "dept-beta", "name": "Department Beta", "path": "Department Beta"},
+					},
+				},
+			})
+		case "/users":
+			departmentID := r.URL.Query().Get("department_id")
+			seenDepartmentQueries = append(seenDepartmentQueries, departmentID)
+			writeJSON(t, w, map[string]any{"data": map[string]any{"users": []map[string]any{
+				{"id": "member-alice", "email": "alice@example.com", "name": "Alice", "status": "active"},
+			}}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	raw := strings.ReplaceAll(validDirectoryDSL, "https://directory.example.com/api/departments", server.URL+"/departments")
+	raw = strings.ReplaceAll(raw, "https://directory.example.com/api/users", server.URL+"/users")
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+
+	executor := NewExecutor(ExecutorOptions{AllowHTTP: true})
+	result, err := executor.Execute(context.Background(), cfg, staticCredentialResolver{"directory_api_key": "test-directory-secret"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if fmt.Sprint(seenDepartmentQueries) != "[dept-alpha dept-beta]" {
+		t.Fatalf("department queries = %v", seenDepartmentQueries)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %#v, want no warning for one member in two departments", result.Warnings)
+	}
+	if len(result.Members) != 1 {
+		t.Fatalf("members = %#v, want one canonical member", result.Members)
+	}
+	member := result.Members[0]
+	if member.EmailNormalized != "alice@example.com" {
+		t.Fatalf("email = %q, want alice@example.com", member.EmailNormalized)
+	}
+	if got, want := fmt.Sprint(member.DepartmentExternalIDs), "[dept-alpha dept-beta]"; got != want {
+		t.Fatalf("department ids = %s, want %s", got, want)
+	}
+	if member.DepartmentExternalID != "dept-alpha" {
+		t.Fatalf("primary department = %q, want first department dept-alpha", member.DepartmentExternalID)
+	}
+}
+
 func TestExecutorMapsFirstDepartmentIDFromMemberArray(t *testing.T) {
-	raw := strings.ReplaceAll(validDirectoryDSL, `department_external_id: "{{ item.external_id }}"`, "department_external_id: $.department_ids[0]")
+	raw := strings.ReplaceAll(validDirectoryDSL, `department_external_id: "{{ source.external_id }}"`, "department_external_id: $.department_ids[0]")
 	cfg, err := ParseDSL(raw)
 	if err != nil {
 		t.Fatalf("ParseDSL: %v", err)
@@ -111,6 +170,35 @@ func TestExecutorMapsFirstDepartmentIDFromMemberArray(t *testing.T) {
 	}
 	if mapped.DepartmentExternalID != "dept-alpha" {
 		t.Fatalf("department_external_id = %q, want dept-alpha", mapped.DepartmentExternalID)
+	}
+}
+
+func TestExecutorUnionsPrimaryAndMultipleDepartmentMappings(t *testing.T) {
+	raw := strings.ReplaceAll(validDirectoryDSL, `department_external_id: "{{ source.external_id }}"`, "department_external_id: $.primary_department_id\n        department_external_ids: $.department_ids")
+	cfg, err := ParseDSL(raw)
+	if err != nil {
+		t.Fatalf("ParseDSL: %v", err)
+	}
+	member := map[string]any{
+		"id":                    "member-alpha",
+		"email":                 "alice@example.com",
+		"name":                  "Alice",
+		"primary_department_id": "dept-primary",
+		"department_ids":        []any{"dept-secondary"},
+	}
+
+	mapped, warnings := mapMember("members", cfg.Steps[1].Map.Member, member, map[string]any{}, map[string]struct{}{})
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if mapped == nil {
+		t.Fatal("mapped member is nil")
+	}
+	if mapped.DepartmentExternalID != "dept-primary" {
+		t.Fatalf("primary department = %q, want dept-primary", mapped.DepartmentExternalID)
+	}
+	if got, want := fmt.Sprint(mapped.DepartmentExternalIDs), "[dept-primary dept-secondary]"; got != want {
+		t.Fatalf("department ids = %s, want %s", got, want)
 	}
 }
 
@@ -168,7 +256,7 @@ func TestExecutorPreservesNumericIDsAsDecimalStrings(t *testing.T) {
 	raw = strings.ReplaceAll(raw, "https://directory.example.com/api/users", server.URL+"/users")
 	raw = strings.ReplaceAll(raw, "items: $.data.departments", "items: $")
 	raw = strings.ReplaceAll(raw, "items: $.data.users", "items: $")
-	raw = strings.ReplaceAll(raw, `department_external_id: "{{ item.external_id }}"`, "department_external_id: $.departmentIds[0]")
+	raw = strings.ReplaceAll(raw, `department_external_id: "{{ source.external_id }}"`, "department_external_id: $.departmentIds[0]")
 	cfg, err := ParseDSL(raw)
 	if err != nil {
 		t.Fatalf("ParseDSL: %v", err)

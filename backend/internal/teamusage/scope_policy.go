@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"sort"
+	"strconv"
 
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
@@ -105,6 +106,7 @@ func overviewMemberFromSubject(subject representativescope.Subject, stats map[in
 		DisplayName:               subject.DisplayName,
 		Email:                     subject.Email,
 		DepartmentExternalID:      subject.DepartmentExternalID,
+		DepartmentExternalIDs:     appendUniqueStrings(nil, subject.DepartmentExternalIDs...),
 		DepartmentDisplayPath:     subject.DepartmentDisplayPath,
 		RelayUserID:               subject.RelayUserID,
 		Selectable:                subject.Selectable,
@@ -145,36 +147,13 @@ func BuildOverviewMemberTree(departments []representativescope.DepartmentScope, 
 		departmentOrder = append(departmentOrder, department.ExternalID)
 	}
 	for _, member := range members {
-		node := nodeByID[member.DepartmentExternalID]
-		if node == nil {
-			continue
-		}
-		node.Members = append(node.Members, member)
-	}
-	for i := len(departmentOrder) - 1; i >= 0; i-- {
-		node := nodeByID[departmentOrder[i]]
-		if node == nil {
-			continue
-		}
-		node.MemberCount += len(node.Members)
-		for _, member := range node.Members {
-			if member.RelayUserID != nil {
-				node.ConnectedMemberCount++
+		for _, departmentID := range overviewMemberDepartmentIDs(member) {
+			node := nodeByID[departmentID]
+			if node == nil {
+				continue
 			}
-			node.RangeActualCost += member.RangeActualCost
-			node.RangeTotalTokens = addOptionalInt64(node.RangeTotalTokens, member.TotalTokens)
+			node.Members = append(node.Members, member)
 		}
-		if node.ParentExternalID == nil {
-			continue
-		}
-		parent := nodeByID[*node.ParentExternalID]
-		if parent == nil {
-			continue
-		}
-		parent.MemberCount += node.MemberCount
-		parent.ConnectedMemberCount += node.ConnectedMemberCount
-		parent.RangeActualCost += node.RangeActualCost
-		parent.RangeTotalTokens = addOptionalInt64(parent.RangeTotalTokens, node.RangeTotalTokens)
 	}
 
 	childIDsByParent := make(map[string][]string, len(departments))
@@ -189,11 +168,11 @@ func BuildOverviewMemberTree(departments []representativescope.DepartmentScope, 
 		childIDsByParent[*node.ParentExternalID] = append(childIDsByParent[*node.ParentExternalID], departmentID)
 	}
 
-	var buildNode func(id string, rootDepth int) OverviewMemberNode
-	buildNode = func(id string, rootDepth int) OverviewMemberNode {
+	var buildNode func(id string, rootDepth int) (OverviewMemberNode, map[string]OverviewMember)
+	buildNode = func(id string, rootDepth int) (OverviewMemberNode, map[string]OverviewMember) {
 		source := nodeByID[id]
 		if source == nil {
-			return OverviewMemberNode{}
+			return OverviewMemberNode{}, map[string]OverviewMember{}
 		}
 		node := *source
 		node.Depth = node.Depth - rootDepth
@@ -202,10 +181,23 @@ func BuildOverviewMemberTree(departments []representativescope.DepartmentScope, 
 		}
 		node.Members = append(make([]OverviewMember, 0, len(source.Members)), source.Members...)
 		node.Children = make([]OverviewMemberNode, 0, len(childIDsByParent[id]))
-		for _, childID := range childIDsByParent[id] {
-			node.Children = append(node.Children, buildNode(childID, rootDepth))
+		subtreeMembers := map[string]OverviewMember{}
+		for _, member := range node.Members {
+			key := overviewMemberIdentityKey(member)
+			if key == "" {
+				continue
+			}
+			subtreeMembers[key] = member
 		}
-		return node
+		for _, childID := range childIDsByParent[id] {
+			child, childMembers := buildNode(childID, rootDepth)
+			node.Children = append(node.Children, child)
+			for key, member := range childMembers {
+				subtreeMembers[key] = member
+			}
+		}
+		applyOverviewMemberNodeTotals(&node, subtreeMembers)
+		return node, subtreeMembers
 	}
 
 	rootSet := overviewStringSet(rootIDs)
@@ -226,9 +218,56 @@ func BuildOverviewMemberTree(departments []representativescope.DepartmentScope, 
 		if node := nodeByID[departmentID]; node != nil {
 			rootDepth = node.Depth
 		}
-		roots = append(roots, buildNode(departmentID, rootDepth))
+		root, _ := buildNode(departmentID, rootDepth)
+		roots = append(roots, root)
 	}
 	return roots
+}
+
+func overviewMemberDepartmentIDs(member OverviewMember) []string {
+	departmentIDs := appendUniqueStrings(nil, member.DepartmentExternalIDs...)
+	if len(departmentIDs) == 0 {
+		departmentIDs = appendUniqueStrings(departmentIDs, member.DepartmentExternalID)
+	}
+	return departmentIDs
+}
+
+func overviewSubjectDepartmentIDs(subject representativescope.Subject) []string {
+	departmentIDs := appendUniqueStrings(nil, subject.DepartmentExternalIDs...)
+	if len(departmentIDs) == 0 {
+		departmentIDs = appendUniqueStrings(departmentIDs, subject.DepartmentExternalID)
+	}
+	return departmentIDs
+}
+
+func overviewMemberIdentityKey(member OverviewMember) string {
+	if member.UserID > 0 {
+		return "user:" + strconv.Itoa(member.UserID)
+	}
+	if member.DirectoryMemberExternalID != "" {
+		return "directory:" + member.DirectoryMemberExternalID
+	}
+	if member.Email != "" {
+		return "email:" + member.Email
+	}
+	return ""
+}
+
+func applyOverviewMemberNodeTotals(node *OverviewMemberNode, members map[string]OverviewMember) {
+	if node == nil {
+		return
+	}
+	node.MemberCount = len(members)
+	node.ConnectedMemberCount = 0
+	node.RangeActualCost = 0
+	node.RangeTotalTokens = nil
+	for _, member := range members {
+		if member.RelayUserID != nil {
+			node.ConnectedMemberCount++
+		}
+		node.RangeActualCost += member.RangeActualCost
+		node.RangeTotalTokens = addOptionalInt64(node.RangeTotalTokens, member.TotalTokens)
+	}
 }
 
 func BuildOverviewDepartmentTrend(departments []representativescope.DepartmentScope, rootIDs []string, subjects []representativescope.Subject, pointsByUser map[int64][]relay.UsageTrendPoint) DepartmentTrendState {
@@ -251,7 +290,14 @@ func BuildOverviewDepartmentTrend(departments []representativescope.DepartmentSc
 			continue
 		}
 		total.AddPoints(points)
-		if bucketID := overviewDepartmentTrendBucket(subject.DepartmentExternalID, nodeByID, rootSet, childIDsByParent); bucketID != "" {
+		bucketIDs := map[string]struct{}{}
+		for _, departmentID := range overviewSubjectDepartmentIDs(subject) {
+			bucketID := overviewDepartmentTrendBucket(departmentID, nodeByID, rootSet, childIDsByParent)
+			if bucketID != "" {
+				bucketIDs[bucketID] = struct{}{}
+			}
+		}
+		for bucketID := range bucketIDs {
 			if bucketTotals[bucketID] == nil {
 				bucketTotals[bucketID] = newTrendAccumulator()
 			}
@@ -562,6 +608,32 @@ func overviewStringSet(values []string) map[string]struct{} {
 			continue
 		}
 		out[value] = struct{}{}
+	}
+	return out
+}
+
+func appendUniqueStrings(current []string, values ...string) []string {
+	seen := make(map[string]struct{}, len(current)+len(values))
+	out := make([]string, 0, len(current)+len(values))
+	for _, value := range current {
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
 	}
 	return out
 }

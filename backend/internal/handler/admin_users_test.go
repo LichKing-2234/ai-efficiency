@@ -143,6 +143,81 @@ func seedAdminUsersDirectorySnapshot(t *testing.T, env *fullTestEnv, fixture adm
 	}
 }
 
+func seedAdminUsersMultiDepartmentMembershipSnapshot(t *testing.T, env *fullTestEnv, fixture adminUsersFixture) {
+	t.Helper()
+	ctx := context.Background()
+
+	source, err := env.client.DirectorySource.Create().
+		SetName("Example Directory").
+		SetDescription("Synthetic organization directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory source: %v", err)
+	}
+	run, err := env.client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetDepartmentCount(2).
+		SetMemberCount(1).
+		SetCompletedAt(time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory run: %v", err)
+	}
+	if _, err := env.client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("update directory source run pointers: %v", err)
+	}
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("dept-alpha").
+		SetName("Department Alpha").
+		SetPath("Department Alpha").
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create alpha department: %v", err)
+	}
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("dept-beta").
+		SetName("Department Beta").
+		SetPath("Department Beta").
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("create beta department: %v", err)
+	}
+	member, err := env.client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-alice").
+		SetEmailNormalized("alice@example.com").
+		SetDisplayName("Alice Example").
+		SetDepartmentExternalID("dept-alpha").
+		SetMatchedUserID(fixture.aliceID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create alice member: %v", err)
+	}
+	for _, departmentID := range []string{"dept-alpha", "dept-beta"} {
+		if _, err := env.client.DirectoryMemberDepartment.Create().
+			SetSourceID(source.ID).
+			SetDirectoryMemberID(member.ID).
+			SetMemberExternalID(member.ExternalID).
+			SetMemberEmailNormalized(member.EmailNormalized).
+			SetDepartmentExternalID(departmentID).
+			SetLastSeenRunID(run.ID).
+			Save(ctx); err != nil {
+			t.Fatalf("create alice %s membership: %v", departmentID, err)
+		}
+	}
+}
+
 func seedAdminUsersHierarchicalDirectorySnapshot(t *testing.T, env *fullTestEnv, fixture adminUsersFixture) {
 	t.Helper()
 	ctx := context.Background()
@@ -606,6 +681,31 @@ func TestAdminUsersListFiltersByDirectoryDepartment(t *testing.T) {
 	}
 }
 
+func TestAdminUsersListFiltersByDirectoryMemberDepartments(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersMultiDepartmentMembershipSnapshot(t, env, fixture)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?department_id=dept-beta&page=1&page_size=20", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 1 {
+		t.Fatalf("total = %d, want 1", got)
+	}
+	items := data["items"].([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	row := items[0].(map[string]interface{})
+	if row["username"] != "alice" {
+		t.Fatalf("username = %v, want alice", row["username"])
+	}
+}
+
 func TestAdminUsersListFiltersByDepartmentSubtree(t *testing.T) {
 	t.Parallel()
 
@@ -692,6 +792,31 @@ func TestAdminUsersDepartmentSummaries(t *testing.T) {
 	}
 	if int(alpha["member_count"].(float64)) != 1 || int(alpha["matched_user_count"].(float64)) != 1 {
 		t.Fatalf("alpha counts = %+v, want member_count=1 matched_user_count=1", alpha)
+	}
+}
+
+func TestAdminUsersDepartmentSummariesUseDirectoryMemberDepartments(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersMultiDepartmentMembershipSnapshot(t, env, fixture)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/departments", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want 2", len(items))
+	}
+	beta := items[1].(map[string]interface{})
+	if beta["external_id"] != "dept-beta" {
+		t.Fatalf("second department = %+v, want beta", beta)
+	}
+	if int(beta["member_count"].(float64)) != 1 || int(beta["matched_user_count"].(float64)) != 1 {
+		t.Fatalf("beta counts = %+v, want member_count=1 matched_user_count=1", beta)
 	}
 }
 

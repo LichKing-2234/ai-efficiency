@@ -223,6 +223,44 @@ func TestBuildOverviewDepartmentTrendKeepsSingleLeafRootIndependent(t *testing.T
 	}
 }
 
+func TestBuildOverviewDepartmentTrendUsesMembershipBucketsAndDeduplicatesTeamTotal(t *testing.T) {
+	tokens := int64(100)
+	departments := []representativescope.DepartmentScope{
+		{ExternalID: "department-root", Name: "Root", DisplayPath: "Root", ChildCount: 2},
+		{ExternalID: "department-alpha", ParentExternalID: stringPtr("department-root"), Name: "Alpha", DisplayPath: "Root / Alpha", Depth: 1},
+		{ExternalID: "department-beta", ParentExternalID: stringPtr("department-root"), Name: "Beta", DisplayPath: "Root / Beta", Depth: 1},
+	}
+	subjects := []representativescope.Subject{
+		{
+			SubjectType:           "member",
+			UserID:                1,
+			DepartmentExternalID:  "department-alpha",
+			DepartmentExternalIDs: []string{"department-alpha", "department-beta"},
+			RelayUserID:           intPtr(1001),
+		},
+	}
+	pointsByUser := map[int64][]relay.UsageTrendPoint{
+		1001: {{Date: "2026-06-28", ActualCost: 1, TotalTokens: &tokens}},
+	}
+
+	trend := BuildOverviewDepartmentTrend(departments, []string{"department-root"}, subjects, pointsByUser)
+
+	if got := len(trend.Series); got != 3 {
+		t.Fatalf("department trend series = %d, want team total plus two membership buckets: %#v", got, trend.Series)
+	}
+	if trend.Series[0].SeriesType != "team_total" || trend.Series[0].Points[0].TotalTokens == nil || *trend.Series[0].Points[0].TotalTokens != 100 {
+		t.Fatalf("team total series = %#v, want de-duplicated total tokens 100", trend.Series[0])
+	}
+	if got := []string{trend.Series[1].DepartmentExternalID, trend.Series[2].DepartmentExternalID}; !reflect.DeepEqual(got, []string{"department-alpha", "department-beta"}) {
+		t.Fatalf("department series ids = %#v, want both membership buckets", got)
+	}
+	for _, series := range trend.Series[1:] {
+		if series.Points[0].TotalTokens == nil || *series.Points[0].TotalTokens != 100 {
+			t.Fatalf("membership series = %#v, want Alice counted in each department bucket", series)
+		}
+	}
+}
+
 func TestBuildOverviewMemberTreeKeepsEmptyMemberSlicesNonNil(t *testing.T) {
 	departments := []representativescope.DepartmentScope{
 		{ExternalID: "dept-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha", ChildCount: 1},
@@ -242,5 +280,42 @@ func TestBuildOverviewMemberTreeKeepsEmptyMemberSlicesNonNil(t *testing.T) {
 	}
 	if tree[0].Children[0].Members == nil {
 		t.Fatalf("empty child members slice is nil, want non-nil empty slice")
+	}
+}
+
+func TestBuildOverviewMemberTreeDisplaysMultiDepartmentMemberInEachMembershipWithoutDuplicatingParentTotals(t *testing.T) {
+	tokens := int64(1200)
+	departments := []representativescope.DepartmentScope{
+		{ExternalID: "dept-root", Name: "Department Root", DisplayPath: "Department Root", ChildCount: 2},
+		{ExternalID: "dept-alpha", ParentExternalID: stringPtr("dept-root"), Name: "Alpha", DisplayPath: "Department Root / Alpha", Depth: 1},
+		{ExternalID: "dept-beta", ParentExternalID: stringPtr("dept-root"), Name: "Beta", DisplayPath: "Department Root / Beta", Depth: 1},
+	}
+	members := []OverviewMember{
+		{
+			UserID:                1,
+			DisplayName:           "Alice",
+			Email:                 "alice@example.com",
+			DepartmentExternalID:  "dept-alpha",
+			DepartmentExternalIDs: []string{"dept-alpha", "dept-beta"},
+			RelayUserID:           intPtr(1001),
+			RangeActualCost:       12,
+			TotalTokens:           &tokens,
+		},
+	}
+
+	tree := BuildOverviewMemberTree(departments, []string{"dept-root"}, members)
+
+	if len(tree) != 1 || len(tree[0].Children) != 2 {
+		t.Fatalf("tree = %#v, want root with alpha and beta children", tree)
+	}
+	root := tree[0]
+	if root.MemberCount != 1 || root.ConnectedMemberCount != 1 || root.RangeActualCost != 12 {
+		t.Fatalf("root totals = members %d connected %d cost %.2f, want de-duplicated 1 / 1 / 12", root.MemberCount, root.ConnectedMemberCount, root.RangeActualCost)
+	}
+	if root.RangeTotalTokens == nil || *root.RangeTotalTokens != 1200 {
+		t.Fatalf("root tokens = %#v, want 1200", root.RangeTotalTokens)
+	}
+	if len(root.Children[0].Members) != 1 || len(root.Children[1].Members) != 1 {
+		t.Fatalf("child members = %#v / %#v, want Alice displayed in both departments", root.Children[0].Members, root.Children[1].Members)
 	}
 }

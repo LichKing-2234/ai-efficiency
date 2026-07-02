@@ -44,7 +44,7 @@ steps:
         external_id: $.id
         email: $.email
         display_name: $.name
-        department_external_id: "{{ item.external_id }}"
+        department_external_id: "{{ source.external_id }}"
         status: $.status
 `
 

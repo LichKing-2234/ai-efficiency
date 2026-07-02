@@ -129,20 +129,21 @@ type OverviewSummary struct {
 }
 
 type OverviewMember struct {
-	Rank                      int     `json:"rank,omitempty"`
-	UserID                    int     `json:"user_id"`
-	DirectoryMemberExternalID string  `json:"directory_member_external_id,omitempty"`
-	DisplayName               string  `json:"display_name"`
-	Email                     string  `json:"email"`
-	DepartmentExternalID      string  `json:"department_external_id,omitempty"`
-	DepartmentDisplayPath     string  `json:"department_display_path"`
-	RelayUserID               *int    `json:"relay_user_id,omitempty"`
-	RangeActualCost           float64 `json:"range_actual_cost"`
-	TodayActualCost           float64 `json:"today_actual_cost"`
-	TotalActualCost           float64 `json:"total_actual_cost"`
-	TotalTokens               *int64  `json:"total_tokens,omitempty"`
-	SubscriptionCount         *int    `json:"subscription_count"`
-	Selectable                bool    `json:"selectable"`
+	Rank                      int      `json:"rank,omitempty"`
+	UserID                    int      `json:"user_id"`
+	DirectoryMemberExternalID string   `json:"directory_member_external_id,omitempty"`
+	DisplayName               string   `json:"display_name"`
+	Email                     string   `json:"email"`
+	DepartmentExternalID      string   `json:"department_external_id,omitempty"`
+	DepartmentExternalIDs     []string `json:"department_external_ids,omitempty"`
+	DepartmentDisplayPath     string   `json:"department_display_path"`
+	RelayUserID               *int     `json:"relay_user_id,omitempty"`
+	RangeActualCost           float64  `json:"range_actual_cost"`
+	TodayActualCost           float64  `json:"today_actual_cost"`
+	TotalActualCost           float64  `json:"total_actual_cost"`
+	TotalTokens               *int64   `json:"total_tokens,omitempty"`
+	SubscriptionCount         *int     `json:"subscription_count"`
+	Selectable                bool     `json:"selectable"`
 }
 
 type OverviewMemberNode struct {

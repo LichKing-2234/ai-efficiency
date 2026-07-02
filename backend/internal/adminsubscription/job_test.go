@@ -188,6 +188,34 @@ func TestStartJobCurrentFilterUsesDepartmentFilter(t *testing.T) {
 	}
 }
 
+func TestStartJobCurrentFilterUsesDirectoryMemberDepartments(t *testing.T) {
+	client := testdb.Open(t)
+	defer client.Close()
+	ctx := context.Background()
+	alice := createAdminSubscriptionUser(t, ctx, client, "alice", 801)
+	seedAdminSubscriptionMultiDepartmentMembershipSnapshot(t, ctx, client, alice)
+	svc := NewService(client)
+
+	job, err := svc.StartJob(ctx, StartJobRequest{
+		Scope:        "current_filter",
+		DepartmentID: "dept-beta",
+		Operation:    "add",
+		ProviderID:   7,
+		GroupID:      "42",
+		ValidityDays: 30,
+	})
+	if err != nil {
+		t.Fatalf("StartJob error: %v", err)
+	}
+	if got := job.TargetUserIds; len(got) != 1 || got[0] != alice.ID {
+		t.Fatalf("target_user_ids = %v, want [%d]", got, alice.ID)
+	}
+	snapshots := TargetSnapshotsFromJob(job)
+	if len(snapshots) != 1 || snapshots[0].UserID != alice.ID {
+		t.Fatalf("target snapshots = %+v, want alice only", snapshots)
+	}
+}
+
 func TestStartJobCurrentFilterUsesAccessStatusFilter(t *testing.T) {
 	client := testdb.Open(t)
 	defer client.Close()
@@ -681,6 +709,78 @@ func seedAdminSubscriptionDirectorySnapshot(t *testing.T, ctx context.Context, c
 		SetLastSeenRunID(run.ID).
 		Save(ctx); err != nil {
 		t.Fatalf("create beta member: %v", err)
+	}
+}
+
+func seedAdminSubscriptionMultiDepartmentMembershipSnapshot(t *testing.T, ctx context.Context, client *ent.Client, u *ent.User) {
+	t.Helper()
+	source, err := client.DirectorySource.Create().
+		SetName("Example Directory").
+		SetDescription("Synthetic organization directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory source: %v", err)
+	}
+	run, err := client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetDepartmentCount(2).
+		SetMemberCount(1).
+		SetCompletedAt(time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create directory run: %v", err)
+	}
+	if _, err := client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("update directory source run pointers: %v", err)
+	}
+	for _, department := range []struct {
+		externalID string
+		name       string
+	}{
+		{externalID: "dept-alpha", name: "Department Alpha"},
+		{externalID: "dept-beta", name: "Department Beta"},
+	} {
+		if _, err := client.DirectoryDepartment.Create().
+			SetSourceID(source.ID).
+			SetExternalID(department.externalID).
+			SetName(department.name).
+			SetPath(department.name).
+			SetLastSeenRunID(run.ID).
+			Save(ctx); err != nil {
+			t.Fatalf("create %s department: %v", department.externalID, err)
+		}
+	}
+	member, err := client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-" + u.Username).
+		SetEmailNormalized(u.Email).
+		SetDisplayName(u.Username).
+		SetDepartmentExternalID("dept-alpha").
+		SetMatchedUserID(u.ID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create member: %v", err)
+	}
+	for _, departmentID := range []string{"dept-alpha", "dept-beta"} {
+		if _, err := client.DirectoryMemberDepartment.Create().
+			SetSourceID(source.ID).
+			SetDirectoryMemberID(member.ID).
+			SetMemberExternalID(member.ExternalID).
+			SetMemberEmailNormalized(member.EmailNormalized).
+			SetDepartmentExternalID(departmentID).
+			SetLastSeenRunID(run.ID).
+			Save(ctx); err != nil {
+			t.Fatalf("create %s membership: %v", departmentID, err)
+		}
 	}
 }
 
