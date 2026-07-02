@@ -878,6 +878,24 @@ describe('AdminUsersView', () => {
     expect(wrapper.text()).toContain('Completed: 2 succeeded, 1 skipped, 0 failed')
   })
 
+  it('shows the latest completed subscription job on mount without polling it', async () => {
+    vi.useFakeTimers()
+    const { getAdminUserSubscriptionJob, getLatestAdminUserSubscriptionJob } = await import('@/api/adminUsers')
+    ;(getLatestAdminUserSubscriptionJob as any).mockResolvedValue({
+      data: { data: subscriptionJob({ id: 46, status: 'completed', phase: 'completed', total_count: 2, processed_count: 2, success_count: 2 }) },
+    })
+
+    const { wrapper } = await mountAdminUsersView()
+
+    expect(wrapper.text()).toContain('Completed: 2 succeeded, 0 skipped, 0 failed')
+    expect(wrapper.text()).toContain('2 / 2')
+
+    await vi.advanceTimersByTimeAsync(1500)
+    await flushPromises()
+
+    expect(getAdminUserSubscriptionJob).not.toHaveBeenCalled()
+  })
+
   it('disables selection controls while a subscription job is active and keeps polling', async () => {
     vi.useFakeTimers()
     const { getAdminUserSubscriptionJob, getLatestAdminUserSubscriptionJob } = await import('@/api/adminUsers')

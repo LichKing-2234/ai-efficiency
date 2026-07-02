@@ -9,6 +9,7 @@ vi.mock('@/api/directory', () => ({
   createDirectorySource: vi.fn(),
   updateDirectorySource: vi.fn(),
   validateDirectorySource: vi.fn(),
+  listDirectoryRuns: vi.fn(),
   previewDirectorySource: vi.fn(),
   startDirectoryRun: vi.fn(),
   getDirectoryRun: vi.fn(),
@@ -24,7 +25,7 @@ function warnings(code: string, count: number) {
   return Array.from({ length: count }, () => ({ code, message: code, step_id: 'members' }))
 }
 
-async function mountDirectorySyncSettings() {
+async function mountDirectorySyncSettings(configureMocks?: (api: any) => void) {
   const api = await import('@/api/directory') as any
   api.listDirectorySources.mockResolvedValue({
     data: {
@@ -47,9 +48,11 @@ async function mountDirectorySyncSettings() {
   })
   api.updateDirectorySource.mockResolvedValue({ data: { data: { id: 1, name: 'Example Directory' } } })
   api.validateDirectorySource.mockResolvedValue({ data: { data: { valid: true, issues: [] } } })
+  api.listDirectoryRuns.mockResolvedValue({ data: { data: { items: [] } } })
   api.previewDirectorySource.mockResolvedValue({ data: { data: { id: 10, mode: 'preview', status: 'completed' } } })
   api.startDirectoryRun.mockResolvedValue({ data: { data: { id: 11, mode: 'apply', status: 'completed' } } })
   api.getDirectoryRun.mockResolvedValue({ data: { data: { id: 10, mode: 'preview', status: 'completed' } } })
+  configureMocks?.(api)
 
   const wrapper = mount(DirectorySyncSettings, {
     props: {
@@ -338,6 +341,118 @@ auth:
       expect(wrapper.text()).toContain('运行已完成：已保留 633 个有效成员，跳过 3769 条记录；部门 184 个。')
       expect(wrapper.text()).toContain('重复邮箱：3769 条')
       expect(wrapper.text()).not.toContain('正在读取组织架构接口')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('recovers the latest active directory apply run on mount and keeps polling it', async () => {
+    vi.useFakeTimers()
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockResolvedValueOnce({
+        data: {
+          data: {
+            items: [
+              { id: 50, source_id: 1, mode: 'apply', status: 'running', phase: 'applying', department_count: 12, member_count: 34, warning_count: 5 },
+            ],
+          },
+        },
+      })
+      api.getDirectoryRun.mockResolvedValueOnce({
+        data: {
+          data: { id: 50, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 12, member_count: 34, warning_count: 0 },
+        },
+      })
+    })
+
+    try {
+      await wrapper.vm.$nextTick()
+      await flushPromises()
+
+      expect(api.listDirectoryRuns).toHaveBeenCalledWith(1)
+      expect(wrapper.text()).toContain('Applying directory facts')
+      expect(wrapper.text()).toContain('12 departments · 34 members · 5 skipped records')
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(50)
+      expect(wrapper.text()).toContain('Run completed: kept 34 valid members; 12 departments.')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('recovers the latest active apply run when starting a run returns a conflict', async () => {
+    vi.useFakeTimers()
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.startDirectoryRun.mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: { message: 'another full-company apply sync is already queued or running for this source' },
+        },
+      })
+      api.listDirectoryRuns
+        .mockResolvedValueOnce({ data: { data: { items: [] } } })
+        .mockResolvedValueOnce({
+          data: {
+            data: {
+              items: [
+                { id: 51, source_id: 1, mode: 'apply', status: 'running', phase: 'executing', department_count: 0, member_count: 0, warning_count: 0 },
+              ],
+            },
+          },
+        })
+      api.getDirectoryRun.mockResolvedValueOnce({
+        data: {
+          data: { id: 51, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 2, member_count: 3, warning_count: 0 },
+        },
+      })
+    })
+
+    try {
+      await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
+      await flushPromises()
+
+      expect(api.listDirectoryRuns).toHaveBeenCalledWith(1)
+      expect(wrapper.text()).toContain('Reading directory API')
+      expect(wrapper.text()).not.toContain('another full-company apply sync')
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(51)
+      expect(wrapper.text()).toContain('Run completed: kept 3 valid members; 2 departments.')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows the latest completed directory apply run on mount without polling', async () => {
+    vi.useFakeTimers()
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockResolvedValueOnce({
+        data: {
+          data: {
+            items: [
+              { id: 52, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 4, member_count: 9, warning_count: 0 },
+            ],
+          },
+        },
+      })
+    })
+
+    try {
+      await wrapper.vm.$nextTick()
+      await flushPromises()
+
+      expect(api.listDirectoryRuns).toHaveBeenCalledWith(1)
+      expect(wrapper.text()).toContain('Run completed: kept 9 valid members; 4 departments.')
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun).not.toHaveBeenCalledWith(52)
     } finally {
       vi.useRealTimers()
     }

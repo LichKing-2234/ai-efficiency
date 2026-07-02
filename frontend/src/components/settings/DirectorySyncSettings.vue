@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   createDirectorySource,
   getDirectoryRun,
+  listDirectoryRuns,
   listDirectorySources,
   previewDirectorySource,
   startDirectoryRun,
@@ -188,6 +189,9 @@ function selectSource(source: DirectorySource) {
     schedule_interval: source.schedule_interval || 'daily',
     schedule_timezone: source.schedule_timezone || 'UTC',
   }
+  void recoverLatestRun(source.id).catch(() => {
+    // Recovery is best-effort; normal source loading feedback stays separate.
+  })
 }
 
 function applyTemplate(dsl: string) {
@@ -265,11 +269,28 @@ function isTerminalRun(run: DirectorySyncRun | undefined) {
   return run?.status === 'completed' || run?.status === 'completed_with_warnings' || run?.status === 'failed'
 }
 
+function isActiveRun(run: DirectorySyncRun | undefined) {
+  return run?.status === 'queued' || run?.status === 'running'
+}
+
+function actionForRun(run: DirectorySyncRun | undefined): 'preview' | 'apply' | null {
+  if (run?.mode === 'preview') return 'preview'
+  if (run?.mode === 'apply') return 'apply'
+  return null
+}
+
 function stopRunPolling() {
   if (runPollTimer) {
     window.clearTimeout(runPollTimer)
     runPollTimer = undefined
   }
+}
+
+function scheduleRunPolling(runID: number, action: 'preview' | 'apply') {
+  stopRunPolling()
+  runPollTimer = window.setTimeout(() => {
+    void pollRunUntilDone(runID, action)
+  }, 1500)
 }
 
 function phaseLabel(phase?: string) {
@@ -323,9 +344,7 @@ async function pollRunUntilDone(runID: number, action: 'preview' | 'apply') {
     const run = res.data.data
     applyRunProgress(run, action)
     if (run && !isTerminalRun(run)) {
-      runPollTimer = window.setTimeout(() => {
-        void pollRunUntilDone(runID, action)
-      }, 1500)
+      scheduleRunPolling(runID, action)
     }
   } catch (e: any) {
     stopRunPolling()
@@ -333,6 +352,22 @@ async function pollRunUntilDone(runID: number, action: 'preview' | 'apply') {
     activeRunAction.value = null
     error.value = apiErrorMessage(e, t('directorySync.runProgressFailed'))
   }
+}
+
+async function recoverLatestRun(sourceID: number, expectedAction?: 'preview' | 'apply') {
+  const res = await listDirectoryRuns(sourceID)
+  const runs = res.data.data?.items ?? []
+  const run = runs.find((candidate) => {
+    const action = actionForRun(candidate)
+    return Boolean(action && (!expectedAction || action === expectedAction))
+  })
+  const action = actionForRun(run)
+  if (!run || !action) return false
+  applyRunProgress(run, action)
+  if (isActiveRun(run)) {
+    scheduleRunPolling(run.id, action)
+  }
+  return true
 }
 
 async function saveSource() {
@@ -380,6 +415,13 @@ async function previewSource() {
       await pollRunUntilDone(run.id, 'preview')
     }
   } catch (e: any) {
+    if (e?.response?.status === 409) {
+      try {
+        if (await recoverLatestRun(selectedSourceId.value, 'preview')) return
+      } catch {
+        // Fall through to the original preview error.
+      }
+    }
     error.value = apiErrorMessage(e, t('directorySync.previewFailed'))
   }
 }
@@ -397,6 +439,13 @@ async function runNow() {
       await pollRunUntilDone(run.id, 'apply')
     }
   } catch (e: any) {
+    if (e?.response?.status === 409) {
+      try {
+        if (await recoverLatestRun(selectedSourceId.value, 'apply')) return
+      } catch {
+        // Fall through to the original apply error.
+      }
+    }
     error.value = apiErrorMessage(e, t('directorySync.runFailed'))
   }
 }

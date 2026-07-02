@@ -493,7 +493,7 @@ async function recoverLatestSubscriptionJob() {
   try {
     const res = await getLatestAdminUserSubscriptionJob()
     const job = res.data.data
-    if (job && isActiveSubscriptionJob(job)) {
+    if (job) {
       applySubscriptionJob(job)
       startSubscriptionJobPolling(job)
     }
