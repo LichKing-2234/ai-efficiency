@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
+import { useModalFocus } from '@/composables/useModalFocus'
 import {
   disableAdminUserAccess,
   getAdminUserSubscriptionJob,
@@ -71,6 +72,9 @@ const disableAccessDialog = reactive<{
   messageType: '',
 })
 const selectedUserIds = ref<Set<number>>(new Set())
+const plaintextDialogPanel = ref<HTMLElement | null>(null)
+const disableAccessDialogPanel = ref<HTMLElement | null>(null)
+const disableAccessConfirmInput = ref<HTMLElement | null>(null)
 const selectAllUsersCheckbox = ref<HTMLInputElement | null>(null)
 const subscriptionJob = ref<AdminSubscriptionJob | null>(null)
 const subscriptionForm = reactive<{
@@ -123,6 +127,15 @@ const disableAccessConfirmMatches = computed(() => {
   return disableAccessDialog.confirmEmail.trim().toLowerCase() === disableAccessDialog.user.email.trim().toLowerCase()
 })
 const disableAccessCompleted = computed(() => disableAccessDialog.messageType === 'success')
+const plaintextDialogOpen = computed(() => plaintextDialog.open)
+const disableAccessDialogOpen = computed(() => disableAccessDialog.open)
+const { handleKeydown: handlePlaintextDialogKeydown } = useModalFocus(plaintextDialogOpen, plaintextDialogPanel, {
+  onClose: closePlaintextDialog,
+})
+const { handleKeydown: handleDisableAccessDialogKeydown } = useModalFocus(disableAccessDialogOpen, disableAccessDialogPanel, {
+  initialFocus: disableAccessConfirmInput,
+  onClose: closeDisableAccessDialog,
+})
 const visibleDepartments = computed(() => {
   const byID = new Map(departments.value.map((department) => [department.external_id, department]))
   return departments.value.filter((department) => {
@@ -1251,13 +1264,16 @@ onBeforeUnmount(() => {
       class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/45 px-4 py-6"
       role="presentation"
       @click.self="closePlaintextDialog"
-      @keyup.esc="closePlaintextDialog"
     >
       <section
+        ref="plaintextDialogPanel"
+        data-testid="plaintext-dialog"
         class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
         role="dialog"
         aria-modal="true"
+        tabindex="-1"
         :aria-label="t('adminUsers.copyPlaintext')"
+        @keydown="handlePlaintextDialogKeydown"
       >
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0">
@@ -1266,6 +1282,7 @@ onBeforeUnmount(() => {
           </div>
           <button
             type="button"
+            data-testid="plaintext-dialog-close"
             class="shrink-0 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
             :disabled="plaintextDialog.loading"
             @click="closePlaintextDialog"
@@ -1311,13 +1328,16 @@ onBeforeUnmount(() => {
       class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/45 px-4 py-6"
       role="presentation"
       @click.self="closeDisableAccessDialog"
-      @keyup.esc="closeDisableAccessDialog"
     >
       <section
+        ref="disableAccessDialogPanel"
+        data-testid="disable-access-dialog"
         class="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl"
         role="dialog"
         aria-modal="true"
+        tabindex="-1"
         :aria-label="t('adminUsers.disableUserConfirmTitle')"
+        @keydown="handleDisableAccessDialogKeydown"
       >
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0">
@@ -1326,6 +1346,7 @@ onBeforeUnmount(() => {
           </div>
           <button
             type="button"
+            data-testid="disable-access-dialog-close"
             class="shrink-0 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
             :disabled="disableAccessDialog.loading"
             @click="closeDisableAccessDialog"
@@ -1339,6 +1360,7 @@ onBeforeUnmount(() => {
         <label class="mt-4 block text-xs font-medium uppercase tracking-wide text-gray-500">
           {{ t('adminUsers.disableUserConfirmHint', { email: disableAccessDialog.user.email }) }}
           <input
+            ref="disableAccessConfirmInput"
             v-model="disableAccessDialog.confirmEmail"
             :data-testid="`disable-access-confirm-email-${disableAccessDialog.user.id}`"
             class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-50 disabled:text-gray-400"
@@ -1358,6 +1380,7 @@ onBeforeUnmount(() => {
         <div class="mt-5 flex justify-end gap-2">
           <button
             type="button"
+            data-testid="disable-access-dialog-cancel"
             class="rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
             :disabled="disableAccessDialog.loading"
             @click="closeDisableAccessDialog"

@@ -489,18 +489,26 @@ function hideSelectedKey() {
 
 async function copySelectedKey() {
   if (!selectedKeyValue.value) return
-  await navigator.clipboard.writeText(selectedKeyValue.value)
-  showToast({ message: t('user.copied'), tone: 'success' })
+  try {
+    await navigator.clipboard.writeText(selectedKeyValue.value)
+    showToast({ message: t('user.copied'), tone: 'success' })
+  } catch {
+    showToast({ message: t('user.copyFailed'), tone: 'error' })
+  }
 }
 
 async function copyCommand(key: string, command: string) {
   if (!command || command === t('user.selectProviderCommand')) return
-  await navigator.clipboard.writeText(command)
-  showToast({ message: t('user.copied'), tone: 'success' })
-  copiedCommandKey.value = key
-  window.setTimeout(() => {
-    if (copiedCommandKey.value === key) copiedCommandKey.value = ''
-  }, 1800)
+  try {
+    await navigator.clipboard.writeText(command)
+    showToast({ message: t('user.copied'), tone: 'success' })
+    copiedCommandKey.value = key
+    window.setTimeout(() => {
+      if (copiedCommandKey.value === key) copiedCommandKey.value = ''
+    }, 1800)
+  } catch {
+    showToast({ message: t('user.copyFailed'), tone: 'error' })
+  }
 }
 
 function copyCommandLabel(key: string) {

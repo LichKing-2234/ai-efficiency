@@ -687,6 +687,18 @@ describe('UserView', () => {
     expect(useToast().toast.message).toBe('Copied')
   })
 
+  it('shows toast feedback when copying a key fails', async () => {
+    ;(navigator.clipboard.writeText as any).mockRejectedValueOnce(new Error('clipboard unavailable'))
+    const { wrapper } = await mountUserView()
+
+    await wrapper.get('[data-testid="copy-key"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
+    await flushPromises()
+
+    expect(useToast().toast.message).toBe('Copy failed')
+    expect(useToast().toast.tone).toBe('error')
+  })
+
   it('tests the selected provider with the current group platform', async () => {
     const { testUserProvider } = await import('@/api/user')
     ;(testUserProvider as any).mockResolvedValue({

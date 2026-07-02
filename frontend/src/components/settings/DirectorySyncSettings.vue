@@ -492,8 +492,12 @@ steps:
     t('directorySync.aiPromptLine4'),
     t('directorySync.aiPromptLine5'),
   ].join('\n')
-  await navigator.clipboard.writeText(prompt)
-  showToast({ message: t('directorySync.aiPromptCopied'), tone: 'success' })
+  try {
+    await navigator.clipboard.writeText(prompt)
+    showToast({ message: t('directorySync.aiPromptCopied'), tone: 'success' })
+  } catch {
+    showToast({ message: t('directorySync.copyFailed'), tone: 'error' })
+  }
 }
 </script>
 

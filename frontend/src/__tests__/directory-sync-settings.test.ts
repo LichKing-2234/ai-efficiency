@@ -121,6 +121,17 @@ describe('DirectorySyncSettings', () => {
     expect(prompt).toContain('3. Pagination')
   })
 
+  it('shows toast feedback when copying the AI prompt fails', async () => {
+    ;(navigator.clipboard.writeText as any).mockRejectedValueOnce(new Error('clipboard unavailable'))
+    const { wrapper } = await mountDirectorySyncSettings()
+
+    await wrapper.get('[data-testid="directory-copy-ai-prompt"]').trigger('click')
+    await flushPromises()
+
+    expect(useToast().toast.message).toBe('Copy failed')
+    expect(useToast().toast.tone).toBe('error')
+  })
+
   it('shows validation issue details', async () => {
     const { wrapper, api } = await mountDirectorySyncSettings()
     api.validateDirectorySource.mockResolvedValueOnce({
