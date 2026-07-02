@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { createGroupCredential, getUserProviderModels, getUserProviders, regenerateGroupCredential, testUserProvider } from '@/api/user'
+import { useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/i18n'
 import type {
@@ -32,6 +33,7 @@ import type { ManualConfigSnippet } from '@/utils/userSetupReview'
 
 const auth = useAuthStore()
 const { t } = useI18n()
+const { showToast } = useToast()
 
 const loading = ref(true)
 const error = ref('')
@@ -488,11 +490,13 @@ function hideSelectedKey() {
 async function copySelectedKey() {
   if (!selectedKeyValue.value) return
   await navigator.clipboard.writeText(selectedKeyValue.value)
+  showToast({ message: t('user.copied'), tone: 'success' })
 }
 
 async function copyCommand(key: string, command: string) {
   if (!command || command === t('user.selectProviderCommand')) return
   await navigator.clipboard.writeText(command)
+  showToast({ message: t('user.copied'), tone: 'success' })
   copiedCommandKey.value = key
   window.setTimeout(() => {
     if (copiedCommandKey.value === key) copiedCommandKey.value = ''

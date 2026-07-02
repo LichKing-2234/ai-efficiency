@@ -9,6 +9,7 @@ import {
   updateDirectorySource,
   validateDirectorySource,
 } from '@/api/directory'
+import { useToast } from '@/composables/useToast'
 import { useI18n, type MessageKey } from '@/i18n'
 import type { Credential, DirectorySource, DirectorySourceRequest, DirectorySyncRun, DirectoryValidationIssue } from '@/types'
 
@@ -17,6 +18,7 @@ defineProps<{
 }>()
 
 const { t } = useI18n()
+const { showToast } = useToast()
 
 const sources = ref<DirectorySource[]>([])
 const selectedSourceId = ref<number | null>(null)
@@ -491,7 +493,7 @@ steps:
     t('directorySync.aiPromptLine5'),
   ].join('\n')
   await navigator.clipboard.writeText(prompt)
-  message.value = t('directorySync.aiPromptCopied')
+  showToast({ message: t('directorySync.aiPromptCopied'), tone: 'success' })
 }
 </script>
 

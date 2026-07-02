@@ -5,6 +5,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import UserView from '@/views/UserView.vue'
 import { setLocale } from '@/i18n'
+import { resetToastsForTest, useToast } from '@/composables/useToast'
 
 vi.mock('@/api/user', () => ({
   getUserProviders: vi.fn(),
@@ -200,6 +201,7 @@ async function mountUserViewWithProviders(providers: any[]) {
 describe('UserView', () => {
   beforeEach(() => {
     setLocale('en-US')
+    resetToastsForTest()
     vi.clearAllMocks()
     vi.stubGlobal('confirm', vi.fn(() => true))
   })
@@ -682,6 +684,7 @@ describe('UserView', () => {
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
     await wrapper.get('[data-testid="confirm-secret-action"]').trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('sk-existing-claude-123456')
+    expect(useToast().toast.message).toBe('Copied')
   })
 
   it('tests the selected provider with the current group platform', async () => {

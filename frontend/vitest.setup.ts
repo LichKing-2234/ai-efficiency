@@ -1,4 +1,5 @@
 import { beforeEach } from 'vitest'
+import { resetToastsForTest } from './src/composables/useToast'
 
 function createMemoryStorage(): Storage {
   const data = new Map<string, string>()
@@ -52,4 +53,5 @@ if (typeof window !== 'undefined') {
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
+  resetToastsForTest()
 })

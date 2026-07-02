@@ -13,6 +13,7 @@ import {
   revealAdminUserRelayPassword,
   startAdminUserSubscriptionJob,
 } from '@/api/adminUsers'
+import { useToast } from '@/composables/useToast'
 import { useI18n } from '@/i18n'
 import type {
   AdminAssignableSubscriptionProvider,
@@ -27,6 +28,7 @@ import type {
 } from '@/types'
 
 const { t, locale } = useI18n()
+const { showToast, dismissToast } = useToast()
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
@@ -40,12 +42,34 @@ const expandedDepartmentIds = ref<Set<string>>(new Set())
 const subscriptionProviders = ref<AdminAssignableSubscriptionProvider[]>([])
 const subscriptionOptionsLoading = ref(false)
 const subscriptionOptionsError = ref('')
-const copiedState = reactive<Record<number, string>>({})
-const plaintextConfirmUserId = ref<number | null>(null)
-const disableAccessConfirmUserId = ref<number | null>(null)
-const disableAccessConfirmEmail = ref('')
-const disableAccessMessages = reactive<Record<number, string>>({})
-const disablingAccessUserId = ref<number | null>(null)
+const plaintextDialog = reactive<{
+  open: boolean
+  user: AdminUser | null
+  loading: boolean
+  message: string
+  messageType: 'success' | 'error' | ''
+}>({
+  open: false,
+  user: null,
+  loading: false,
+  message: '',
+  messageType: '',
+})
+const disableAccessDialog = reactive<{
+  open: boolean
+  user: AdminUser | null
+  confirmEmail: string
+  loading: boolean
+  message: string
+  messageType: 'success' | 'error' | ''
+}>({
+  open: false,
+  user: null,
+  confirmEmail: '',
+  loading: false,
+  message: '',
+  messageType: '',
+})
 const selectedUserIds = ref<Set<number>>(new Set())
 const selectAllUsersCheckbox = ref<HTMLInputElement | null>(null)
 const subscriptionJob = ref<AdminSubscriptionJob | null>(null)
@@ -94,6 +118,11 @@ const visibleSelectionIndeterminate = computed(() => rows.value.some((row) => se
 const bulkGroups = computed(() => subscriptionProviders.value.find((provider) => provider.id === subscriptionForm.provider_id)?.groups ?? [])
 const bulkUsesDays = computed(() => subscriptionForm.operation === 'add' || subscriptionForm.operation === 'extend')
 const subscriptionResults = computed(() => subscriptionJob.value?.results ?? subscriptionForm.results)
+const disableAccessConfirmMatches = computed(() => {
+  if (!disableAccessDialog.user) return false
+  return disableAccessDialog.confirmEmail.trim().toLowerCase() === disableAccessDialog.user.email.trim().toLowerCase()
+})
+const disableAccessCompleted = computed(() => disableAccessDialog.messageType === 'success')
 const visibleDepartments = computed(() => {
   const byID = new Map(departments.value.map((department) => [department.external_id, department]))
   return departments.value.filter((department) => {
@@ -302,8 +331,8 @@ function canDisableAccess(user: AdminUser) {
   return adminUserAccessStatus(user) !== 'disabled' && user.relay_user_id != null
 }
 
-function disableAccessConfirmMatches(user: AdminUser) {
-  return disableAccessConfirmEmail.value.trim().toLowerCase() === user.email.trim().toLowerCase()
+function isDisablingAccess(user: AdminUser) {
+  return disableAccessDialog.loading && disableAccessDialog.user?.id === user.id
 }
 
 function departmentLabel(user: AdminUser) {
@@ -597,56 +626,86 @@ async function submitSubscriptionManagement() {
 
 async function copyEncrypted(user: AdminUser) {
   if (!user.relay_auth_password) {
-    copiedState[user.id] = t('adminUsers.noEncryptedPassword')
+    showToast({ message: t('adminUsers.noEncryptedPassword'), tone: 'error' })
     return
   }
   try {
     await navigator.clipboard.writeText(user.relay_auth_password)
-    copiedState[user.id] = t('adminUsers.copiedEncrypted')
+    showToast({ message: t('adminUsers.copiedEncrypted'), tone: 'success' })
   } catch (err: any) {
-    copiedState[user.id] = err.message || t('adminUsers.copyFailed')
+    showToast({ message: err.message || t('adminUsers.copyFailed'), tone: 'error' })
   }
 }
 
 function requestPlaintextCopy(user: AdminUser) {
-  copiedState[user.id] = ''
-  plaintextConfirmUserId.value = user.id
+  dismissToast()
+  plaintextDialog.open = true
+  plaintextDialog.user = user
+  plaintextDialog.loading = false
+  plaintextDialog.message = ''
+  plaintextDialog.messageType = ''
 }
 
 function requestDisableAccess(user: AdminUser) {
-  disableAccessMessages[user.id] = ''
-  disableAccessConfirmUserId.value = user.id
-  disableAccessConfirmEmail.value = ''
+  dismissToast()
+  disableAccessDialog.open = true
+  disableAccessDialog.user = user
+  disableAccessDialog.confirmEmail = ''
+  disableAccessDialog.loading = false
+  disableAccessDialog.message = ''
+  disableAccessDialog.messageType = ''
 }
 
-function cancelDisableAccess() {
-  disableAccessConfirmUserId.value = null
-  disableAccessConfirmEmail.value = ''
+function closePlaintextDialog() {
+  if (plaintextDialog.loading) return
+  plaintextDialog.open = false
+  plaintextDialog.user = null
+  plaintextDialog.message = ''
+  plaintextDialog.messageType = ''
 }
 
-async function confirmCopyPlaintext(user: AdminUser) {
-  copiedState[user.id] = ''
+function closeDisableAccessDialog() {
+  if (disableAccessDialog.loading) return
+  disableAccessDialog.open = false
+  disableAccessDialog.user = null
+  disableAccessDialog.confirmEmail = ''
+  disableAccessDialog.message = ''
+  disableAccessDialog.messageType = ''
+}
+
+async function confirmCopyPlaintext() {
+  const user = plaintextDialog.user
+  if (!user) return
+  plaintextDialog.loading = true
+  plaintextDialog.message = ''
+  plaintextDialog.messageType = ''
   try {
     const res = await revealAdminUserRelayPassword(user.id)
     const password = res.data.data?.password || ''
     if (!password) {
-      copiedState[user.id] = t('adminUsers.noPlaintextReturned')
+      plaintextDialog.message = t('adminUsers.noPlaintextReturned')
+      plaintextDialog.messageType = 'error'
       return
     }
     await navigator.clipboard.writeText(password)
-    copiedState[user.id] = t('adminUsers.copiedPlaintext')
-    plaintextConfirmUserId.value = null
+    plaintextDialog.message = t('adminUsers.copiedPlaintext')
+    plaintextDialog.messageType = 'success'
   } catch (err: any) {
-    copiedState[user.id] = err.response?.data?.message || err.message || t('adminUsers.copyFailed')
+    plaintextDialog.message = err.response?.data?.message || err.message || t('adminUsers.copyFailed')
+    plaintextDialog.messageType = 'error'
+  } finally {
+    plaintextDialog.loading = false
   }
 }
 
-async function confirmDisableAccess(user: AdminUser) {
-  if (!disableAccessConfirmMatches(user)) return
-  disableAccessMessages[user.id] = ''
-  disablingAccessUserId.value = user.id
+async function confirmDisableAccess() {
+  const user = disableAccessDialog.user
+  if (!user || !disableAccessConfirmMatches.value) return
+  disableAccessDialog.loading = true
+  disableAccessDialog.message = ''
+  disableAccessDialog.messageType = ''
   try {
-    const res = await disableAdminUserAccess(user.id, { confirm_email: disableAccessConfirmEmail.value.trim() })
+    const res = await disableAdminUserAccess(user.id, { confirm_email: disableAccessDialog.confirmEmail.trim() })
     const disabledAt = res.data.data?.relay_disabled_at || new Date().toISOString()
     const index = rows.value.findIndex((row) => row.id === user.id)
     if (index >= 0) {
@@ -656,13 +715,13 @@ async function confirmDisableAccess(user: AdminUser) {
         relay_disabled_at: disabledAt,
       }
     }
-    disableAccessMessages[user.id] = t('adminUsers.disabledUser', { email: user.email })
-    disableAccessConfirmUserId.value = null
-    disableAccessConfirmEmail.value = ''
+    disableAccessDialog.message = t('adminUsers.disabledUser', { email: user.email })
+    disableAccessDialog.messageType = 'success'
   } catch (err: any) {
-    disableAccessMessages[user.id] = err.response?.data?.message || err.message || t('adminUsers.disableAccessFailed')
+    disableAccessDialog.message = err.response?.data?.message || err.message || t('adminUsers.disableAccessFailed')
+    disableAccessDialog.messageType = 'error'
   } finally {
-    disablingAccessUserId.value = null
+    disableAccessDialog.loading = false
   }
 }
 
@@ -1083,48 +1142,12 @@ onBeforeUnmount(() => {
               <button
                 v-if="canDisableAccess(row)"
                 class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
-                :disabled="disablingAccessUserId === row.id"
+                :disabled="isDisablingAccess(row)"
                 @click="requestDisableAccess(row)"
               >
                 {{ t('adminUsers.disableUser') }}
               </button>
             </div>
-            <div v-if="plaintextConfirmUserId === row.id" class="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-              <p>{{ t('adminUsers.plaintextWarning') }}</p>
-              <button
-                class="mt-2 rounded bg-amber-700 px-2 py-1 font-medium text-white hover:bg-amber-800"
-                @click="confirmCopyPlaintext(row)"
-              >
-                {{ t('adminUsers.confirmRevealAndCopy') }}
-              </button>
-            </div>
-            <div v-if="disableAccessConfirmUserId === row.id" class="mt-2 rounded-md border border-red-200 bg-white p-3 text-xs shadow-sm">
-              <p class="font-medium text-gray-900">{{ t('adminUsers.disableUserConfirmTitle') }}</p>
-              <p class="mt-1 leading-5 text-gray-500">{{ t('adminUsers.disableUserWarning') }}</p>
-              <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-                <input
-                  v-model="disableAccessConfirmEmail"
-                  class="block min-w-0 flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
-                  :aria-label="t('adminUsers.disableUserConfirmHint', { email: row.email })"
-                  :placeholder="row.email"
-                />
-                <button
-                  class="shrink-0 rounded-md bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700 disabled:opacity-40"
-                  :disabled="!disableAccessConfirmMatches(row) || disablingAccessUserId === row.id"
-                  @click="confirmDisableAccess(row)"
-                >
-                  {{ disablingAccessUserId === row.id ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
-                </button>
-              </div>
-              <div class="mt-2 flex items-center justify-between gap-3 text-[11px] text-gray-500">
-                <span class="truncate">{{ t('adminUsers.disableUserConfirmHint', { email: row.email }) }}</span>
-                <button class="shrink-0 font-medium text-gray-500 hover:text-gray-700" type="button" @click="cancelDisableAccess">
-                  {{ t('adminUsers.cancelDisableUser') }}
-                </button>
-              </div>
-            </div>
-            <span v-if="copiedState[row.id]" class="mt-2 block text-xs text-gray-500" aria-live="polite">{{ copiedState[row.id] }}</span>
-            <span v-if="disableAccessMessages[row.id]" class="mt-2 block text-xs text-gray-500" aria-live="polite">{{ disableAccessMessages[row.id] }}</span>
           </div>
         </div>
 
@@ -1208,50 +1231,11 @@ onBeforeUnmount(() => {
                       v-if="canDisableAccess(row)"
                       :data-testid="`disable-access-${row.id}`"
                       class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
-                      :disabled="disablingAccessUserId === row.id"
+                      :disabled="isDisablingAccess(row)"
                       @click="requestDisableAccess(row)"
                     >
                       {{ t('adminUsers.disableUser') }}
                     </button>
-                    <div v-if="plaintextConfirmUserId === row.id" class="max-w-64 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-                      <p>{{ t('adminUsers.plaintextWarning') }}</p>
-                      <button
-                        :data-testid="`confirm-copy-plaintext-${row.id}`"
-                        class="mt-2 rounded bg-amber-700 px-2 py-1 font-medium text-white hover:bg-amber-800"
-                        @click="confirmCopyPlaintext(row)"
-                      >
-                        {{ t('adminUsers.confirmRevealAndCopy') }}
-                      </button>
-                    </div>
-                    <div v-if="disableAccessConfirmUserId === row.id" class="w-[24rem] max-w-[calc(100vw-3rem)] rounded-md border border-red-200 bg-white p-3 text-xs shadow-sm">
-                      <p class="font-medium text-gray-900">{{ t('adminUsers.disableUserConfirmTitle') }}</p>
-                      <p class="mt-1 leading-5 text-gray-500">{{ t('adminUsers.disableUserWarning') }}</p>
-                      <div class="mt-3 flex items-center gap-2">
-                        <input
-                          v-model="disableAccessConfirmEmail"
-                          :data-testid="`disable-access-confirm-email-${row.id}`"
-                          class="block min-w-0 flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
-                          :aria-label="t('adminUsers.disableUserConfirmHint', { email: row.email })"
-                          :placeholder="row.email"
-                        />
-                        <button
-                          :data-testid="`confirm-disable-access-${row.id}`"
-                          class="shrink-0 rounded-md bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700 disabled:opacity-40"
-                          :disabled="!disableAccessConfirmMatches(row) || disablingAccessUserId === row.id"
-                          @click="confirmDisableAccess(row)"
-                        >
-                          {{ disablingAccessUserId === row.id ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
-                        </button>
-                      </div>
-                      <div class="mt-2 flex items-center justify-between gap-3 text-[11px] text-gray-500">
-                        <span class="truncate">{{ t('adminUsers.disableUserConfirmHint', { email: row.email }) }}</span>
-                        <button class="shrink-0 font-medium text-gray-500 hover:text-gray-700" type="button" @click="cancelDisableAccess">
-                          {{ t('adminUsers.cancelDisableUser') }}
-                        </button>
-                      </div>
-                    </div>
-                    <span v-if="copiedState[row.id]" class="text-xs text-gray-500" aria-live="polite">{{ copiedState[row.id] }}</span>
-                    <span v-if="disableAccessMessages[row.id]" class="text-xs text-gray-500" aria-live="polite">{{ disableAccessMessages[row.id] }}</span>
                   </div>
                 </td>
               </tr>
@@ -1260,6 +1244,137 @@ onBeforeUnmount(() => {
         </div>
         <div v-else class="mt-3 text-sm text-gray-400">{{ t('adminUsers.empty') }}</div>
       </div>
+    </div>
+
+    <div
+      v-if="plaintextDialog.open && plaintextDialog.user"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/45 px-4 py-6"
+      role="presentation"
+      @click.self="closePlaintextDialog"
+      @keyup.esc="closePlaintextDialog"
+    >
+      <section
+        class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('adminUsers.copyPlaintext')"
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <h2 class="text-base font-semibold text-gray-900">{{ t('adminUsers.copyPlaintext') }}</h2>
+            <p class="mt-1 truncate text-sm text-gray-500">{{ plaintextDialog.user.email }}</p>
+          </div>
+          <button
+            type="button"
+            class="shrink-0 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            :disabled="plaintextDialog.loading"
+            @click="closePlaintextDialog"
+          >
+            {{ t('adminUsers.closeDialog') }}
+          </button>
+        </div>
+        <p class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
+          {{ t('adminUsers.plaintextWarning') }}
+        </p>
+        <p
+          v-if="plaintextDialog.message"
+          class="mt-3 rounded-md p-3 text-sm"
+          :class="plaintextDialog.messageType === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'"
+          aria-live="polite"
+        >
+          {{ plaintextDialog.message }}
+        </p>
+        <div class="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            class="rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            :disabled="plaintextDialog.loading"
+            @click="closePlaintextDialog"
+          >
+            {{ t('adminUsers.cancelDisableUser') }}
+          </button>
+          <button
+            type="button"
+            :data-testid="`confirm-copy-plaintext-${plaintextDialog.user.id}`"
+            class="rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-40"
+            :disabled="plaintextDialog.loading"
+            @click="confirmCopyPlaintext"
+          >
+            {{ plaintextDialog.loading ? t('adminUsers.working') : t('adminUsers.confirmRevealAndCopy') }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div
+      v-if="disableAccessDialog.open && disableAccessDialog.user"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/45 px-4 py-6"
+      role="presentation"
+      @click.self="closeDisableAccessDialog"
+      @keyup.esc="closeDisableAccessDialog"
+    >
+      <section
+        class="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('adminUsers.disableUserConfirmTitle')"
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <h2 class="text-base font-semibold text-gray-900">{{ t('adminUsers.disableUserConfirmTitle') }}</h2>
+            <p class="mt-1 truncate text-sm text-gray-500">{{ disableAccessDialog.user.email }}</p>
+          </div>
+          <button
+            type="button"
+            class="shrink-0 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            :disabled="disableAccessDialog.loading"
+            @click="closeDisableAccessDialog"
+          >
+            {{ t('adminUsers.closeDialog') }}
+          </button>
+        </div>
+        <p class="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm leading-6 text-red-800">
+          {{ t('adminUsers.disableUserWarning') }}
+        </p>
+        <label class="mt-4 block text-xs font-medium uppercase tracking-wide text-gray-500">
+          {{ t('adminUsers.disableUserConfirmHint', { email: disableAccessDialog.user.email }) }}
+          <input
+            v-model="disableAccessDialog.confirmEmail"
+            :data-testid="`disable-access-confirm-email-${disableAccessDialog.user.id}`"
+            class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500 disabled:bg-gray-50 disabled:text-gray-400"
+            :aria-label="t('adminUsers.disableUserConfirmHint', { email: disableAccessDialog.user.email })"
+            :placeholder="disableAccessDialog.user.email"
+            :disabled="disableAccessDialog.loading || disableAccessCompleted"
+          />
+        </label>
+        <p
+          v-if="disableAccessDialog.message"
+          class="mt-3 rounded-md p-3 text-sm"
+          :class="disableAccessDialog.messageType === 'error' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'"
+          aria-live="polite"
+        >
+          {{ disableAccessDialog.message }}
+        </p>
+        <div class="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            class="rounded-md border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            :disabled="disableAccessDialog.loading"
+            @click="closeDisableAccessDialog"
+          >
+            {{ disableAccessCompleted ? t('adminUsers.closeDialog') : t('adminUsers.cancelDisableUser') }}
+          </button>
+          <button
+            type="button"
+            :data-testid="`confirm-disable-access-${disableAccessDialog.user.id}`"
+            class="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40"
+            :disabled="!disableAccessConfirmMatches || disableAccessDialog.loading || disableAccessCompleted"
+            @click="confirmDisableAccess"
+          >
+            {{ disableAccessDialog.loading ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
+          </button>
+        </div>
+      </section>
     </div>
   </AppLayout>
 </template>
