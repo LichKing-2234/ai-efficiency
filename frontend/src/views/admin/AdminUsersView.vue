@@ -619,6 +619,11 @@ function requestDisableAccess(user: AdminUser) {
   disableAccessConfirmEmail.value = ''
 }
 
+function cancelDisableAccess() {
+  disableAccessConfirmUserId.value = null
+  disableAccessConfirmEmail.value = ''
+}
+
 async function confirmCopyPlaintext(user: AdminUser) {
   copiedState[user.id] = ''
   try {
@@ -1093,20 +1098,30 @@ onBeforeUnmount(() => {
                 {{ t('adminUsers.confirmRevealAndCopy') }}
               </button>
             </div>
-            <div v-if="disableAccessConfirmUserId === row.id" class="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-900">
-              <p>{{ t('adminUsers.disableUserWarning') }}</p>
-              <input
-                v-model="disableAccessConfirmEmail"
-                class="mt-2 w-full rounded border border-red-200 px-2 py-1 text-xs text-red-900"
-                :placeholder="row.email"
-              />
-              <button
-                class="mt-2 rounded bg-red-700 px-2 py-1 font-medium text-white hover:bg-red-800 disabled:opacity-40"
-                :disabled="!disableAccessConfirmMatches(row) || disablingAccessUserId === row.id"
-                @click="confirmDisableAccess(row)"
-              >
-                {{ disablingAccessUserId === row.id ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
-              </button>
+            <div v-if="disableAccessConfirmUserId === row.id" class="mt-2 rounded-md border border-red-200 bg-white p-3 text-xs shadow-sm">
+              <p class="font-medium text-gray-900">{{ t('adminUsers.disableUserConfirmTitle') }}</p>
+              <p class="mt-1 leading-5 text-gray-500">{{ t('adminUsers.disableUserWarning') }}</p>
+              <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  v-model="disableAccessConfirmEmail"
+                  class="block min-w-0 flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  :aria-label="t('adminUsers.disableUserConfirmHint', { email: row.email })"
+                  :placeholder="row.email"
+                />
+                <button
+                  class="shrink-0 rounded-md bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700 disabled:opacity-40"
+                  :disabled="!disableAccessConfirmMatches(row) || disablingAccessUserId === row.id"
+                  @click="confirmDisableAccess(row)"
+                >
+                  {{ disablingAccessUserId === row.id ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
+                </button>
+              </div>
+              <div class="mt-2 flex items-center justify-between gap-3 text-[11px] text-gray-500">
+                <span class="truncate">{{ t('adminUsers.disableUserConfirmHint', { email: row.email }) }}</span>
+                <button class="shrink-0 font-medium text-gray-500 hover:text-gray-700" type="button" @click="cancelDisableAccess">
+                  {{ t('adminUsers.cancelDisableUser') }}
+                </button>
+              </div>
             </div>
             <span v-if="copiedState[row.id]" class="mt-2 block text-xs text-gray-500" aria-live="polite">{{ copiedState[row.id] }}</span>
             <span v-if="disableAccessMessages[row.id]" class="mt-2 block text-xs text-gray-500" aria-live="polite">{{ disableAccessMessages[row.id] }}</span>
@@ -1208,22 +1223,32 @@ onBeforeUnmount(() => {
                         {{ t('adminUsers.confirmRevealAndCopy') }}
                       </button>
                     </div>
-                    <div v-if="disableAccessConfirmUserId === row.id" class="max-w-64 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-900">
-                      <p>{{ t('adminUsers.disableUserWarning') }}</p>
-                      <input
-                        v-model="disableAccessConfirmEmail"
-                        :data-testid="`disable-access-confirm-email-${row.id}`"
-                        class="mt-2 w-full rounded border border-red-200 px-2 py-1 text-xs text-red-900"
-                        :placeholder="row.email"
-                      />
-                      <button
-                        :data-testid="`confirm-disable-access-${row.id}`"
-                        class="mt-2 rounded bg-red-700 px-2 py-1 font-medium text-white hover:bg-red-800 disabled:opacity-40"
-                        :disabled="!disableAccessConfirmMatches(row) || disablingAccessUserId === row.id"
-                        @click="confirmDisableAccess(row)"
-                      >
-                        {{ disablingAccessUserId === row.id ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
-                      </button>
+                    <div v-if="disableAccessConfirmUserId === row.id" class="w-[24rem] max-w-[calc(100vw-3rem)] rounded-md border border-red-200 bg-white p-3 text-xs shadow-sm">
+                      <p class="font-medium text-gray-900">{{ t('adminUsers.disableUserConfirmTitle') }}</p>
+                      <p class="mt-1 leading-5 text-gray-500">{{ t('adminUsers.disableUserWarning') }}</p>
+                      <div class="mt-3 flex items-center gap-2">
+                        <input
+                          v-model="disableAccessConfirmEmail"
+                          :data-testid="`disable-access-confirm-email-${row.id}`"
+                          class="block min-w-0 flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                          :aria-label="t('adminUsers.disableUserConfirmHint', { email: row.email })"
+                          :placeholder="row.email"
+                        />
+                        <button
+                          :data-testid="`confirm-disable-access-${row.id}`"
+                          class="shrink-0 rounded-md bg-red-600 px-3 py-1.5 font-medium text-white hover:bg-red-700 disabled:opacity-40"
+                          :disabled="!disableAccessConfirmMatches(row) || disablingAccessUserId === row.id"
+                          @click="confirmDisableAccess(row)"
+                        >
+                          {{ disablingAccessUserId === row.id ? t('adminUsers.working') : t('adminUsers.confirmDisableUser') }}
+                        </button>
+                      </div>
+                      <div class="mt-2 flex items-center justify-between gap-3 text-[11px] text-gray-500">
+                        <span class="truncate">{{ t('adminUsers.disableUserConfirmHint', { email: row.email }) }}</span>
+                        <button class="shrink-0 font-medium text-gray-500 hover:text-gray-700" type="button" @click="cancelDisableAccess">
+                          {{ t('adminUsers.cancelDisableUser') }}
+                        </button>
+                      </div>
                     </div>
                     <span v-if="copiedState[row.id]" class="text-xs text-gray-500" aria-live="polite">{{ copiedState[row.id] }}</span>
                     <span v-if="disableAccessMessages[row.id]" class="text-xs text-gray-500" aria-live="polite">{{ disableAccessMessages[row.id] }}</span>

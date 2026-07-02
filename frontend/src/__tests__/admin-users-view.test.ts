@@ -502,7 +502,7 @@ describe('AdminUsersView', () => {
     await flushPromises()
 
     expect(disableAdminUserAccess).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('Disables relay user access')
+    expect(wrapper.text()).toContain('Only the relay user is disabled')
 
     await wrapper.get('[data-testid="disable-access-confirm-email-7"]').setValue('alice@example.com')
     await wrapper.get('[data-testid="confirm-disable-access-7"]').trigger('click')
