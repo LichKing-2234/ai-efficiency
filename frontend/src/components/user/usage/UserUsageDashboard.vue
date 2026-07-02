@@ -12,16 +12,16 @@
     </div>
 
     <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-      <div>
+      <div class="min-w-0">
         <component
           :is="props.embedded ? 'h2' : 'h1'"
           :class="props.embedded ? 'text-base font-semibold text-slate-950' : 'text-2xl font-semibold text-gray-900'"
         >
           {{ dashboardTitle }}
         </component>
-        <p class="mt-1 text-sm text-gray-500">{{ dashboardSubtitle }}</p>
+        <p class="mt-1 break-words text-sm text-gray-500">{{ dashboardSubtitle }}</p>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex shrink-0 flex-nowrap items-center gap-2">
         <button data-test="range-today" type="button" :class="rangeButtonClass(selectedRange === 'today')" @click="selectRange('today')">
           {{ t('usageDashboard.today') }}
         </button>

@@ -614,6 +614,41 @@ describe('DashboardView', () => {
     expect(wrapper.text()).not.toContain('My Usage')
   })
 
+  it('keeps member usage range and refresh controls on one row', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
+    ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
+      data: {
+        data: {
+          ...usageSnapshot,
+          subject: {
+            subject_type: 'member',
+            user_id: 101,
+            display_name: 'Alice',
+            email: 'alice@example.com',
+            department_display_path: 'Department Alpha / Department Beta / Department Gamma / Department Delta',
+            selectable: true,
+          },
+          subject_subscription_groups: [],
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/usage/members/101')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const controls = wrapper.get('[data-test="range-today"]').element.parentElement as HTMLElement
+    expect(controls.className).toContain('flex-nowrap')
+    expect(controls.className).toContain('shrink-0')
+    expect(controls.className).not.toContain('flex-wrap')
+  })
+
   it('shows an explicit team overview return link on canonical member route', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
