@@ -35,6 +35,16 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
   - 当前生效合同变化：更新对应最新 spec
   - 新 spec 与旧 spec 存在冲突或继承关系：在**新的 spec** 中明确说明并关联历史 spec；不要回写历史 spec 正文
 
+## Context Loading Discipline
+
+后续 agent 不应一次性读取所有 specs/plans，也不应凭历史记忆重造工具。按任务域渐进加载上下文：
+
+- 先用 `docs/architecture.md` 判断当前运行时边界和模块归属。
+- 只读取与本次改动直接相关的最新 spec；不要把历史 spec 当作当前实现合同。
+- 新增 helper、接口、CLI 命令、前端工具函数前，先用 `rg` 检查现有模块是否已有可扩展入口。
+- 优先复用已有边界：`backend/internal/relay.Provider`、`backend/internal/scm.SCMProvider`、`ae-cli/internal/toolconfig`、`ae-cli/internal/doctorcheck`、`ae-cli/internal/hooks`、`ae-cli/internal/attributionlocal`、`frontend/src/api`、`frontend/src/utils/userSetupReview.ts`。
+- 如果发现规则、spec、架构文档与当前代码不一致，按 Source of Truth 处理，并只更新最贴近当前合同的文档入口。
+
 ## Architecture Guardrails
 
 - 本项目是模块化单体，不是微服务拆分仓库。优先维持清晰模块边界，而不是引入跨模块隐式耦合。
@@ -144,8 +154,8 @@ ai-efficiency/
 
 - 后端单元测试：`cd backend && go test ./...`
 - ae-cli 默认测试：`cd ae-cli && go test ./...`
-- 前端单元测试：`cd frontend && pnpm test`
-- 前端角色回归脚本：`cd frontend && pnpm run test:e2e:role`
+- 前端单元测试：`cd frontend && npm test`
+- 前端角色回归脚本：`cd frontend && npm run test:e2e:role`
 - 环境敏感测试（本地端口监听、TTY、tmux、浏览器/E2E）需与默认单元测试结果分开说明
 
 ## Release Units

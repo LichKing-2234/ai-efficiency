@@ -2,7 +2,7 @@
 
 ## Quick Reference
 
-- Tech stack: Go 1.26+ (Gin + Ent) backend, Vue 3 (Vite + TailwindCSS + Pinia) frontend
+- Tech stack: Go 1.24.x toolchain (Gin + Ent) backend, Vue 3 (Vite + TailwindCSS + Pinia) frontend
 - Architecture overview: `docs/architecture.md`
 - Design specs: `docs/superpowers/specs/`
 - Implementation plans: `docs/superpowers/plans/`
@@ -12,8 +12,8 @@
 - Default verification:
   - `cd backend && go test ./...`
   - `cd ae-cli && go test ./...`
-  - `cd frontend && pnpm test`
-  - `cd frontend && pnpm run test:e2e:role`
+  - `cd frontend && npm test`
+  - `cd frontend && npm run test:e2e:role`
 - Primary remote: `https://github.com/LichKing-2234/ai-efficiency.git`
 - Release units:
   - Platform: `v*` tags publish backend/frontend/deploy, GHCR image, and Helm inputs.
