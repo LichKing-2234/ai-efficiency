@@ -25,6 +25,16 @@ function warnings(code: string, count: number) {
   return Array.from({ length: count }, () => ({ code, message: code, step_id: 'members' }))
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 async function mountDirectorySyncSettings(configureMocks?: (api: any) => void) {
   const api = await import('@/api/directory') as any
   api.listDirectorySources.mockResolvedValue({
@@ -453,6 +463,117 @@ auth:
       await flushPromises()
 
       expect(api.getDirectoryRun).not.toHaveBeenCalledWith(52)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let a stale source recovery overwrite the currently selected source', async () => {
+    const firstRun = deferred<any>()
+    const secondRun = deferred<any>()
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectorySources.mockResolvedValue({
+        data: {
+          data: {
+            items: [
+              {
+                id: 1,
+                name: 'First Directory',
+                description: 'First source',
+                scope: 'full_company',
+                enabled: true,
+                dsl: 'version: 1\nscope: full_company\n',
+                schedule_enabled: false,
+                schedule_interval: 'daily',
+                schedule_timezone: 'UTC',
+              },
+              {
+                id: 2,
+                name: 'Second Directory',
+                description: 'Second source',
+                scope: 'full_company',
+                enabled: true,
+                dsl: 'version: 1\nscope: full_company\n',
+                schedule_enabled: false,
+                schedule_interval: 'daily',
+                schedule_timezone: 'UTC',
+              },
+            ],
+          },
+        },
+      })
+      api.listDirectoryRuns
+        .mockImplementationOnce(() => firstRun.promise)
+        .mockImplementationOnce(() => secondRun.promise)
+    })
+
+    const secondSourceButton = wrapper.findAll('button').find((button) => button.text().includes('Second Directory'))
+    expect(secondSourceButton).toBeTruthy()
+    await secondSourceButton!.trigger('click')
+
+    secondRun.resolve({
+      data: {
+        data: {
+          items: [
+            { id: 62, source_id: 2, mode: 'apply', status: 'completed', phase: 'completed', department_count: 2, member_count: 8, warning_count: 0 },
+          ],
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Run completed: kept 8 valid members; 2 departments.')
+
+    firstRun.resolve({
+      data: {
+        data: {
+          items: [
+            { id: 61, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 9, member_count: 99, warning_count: 0 },
+          ],
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(api.listDirectoryRuns).toHaveBeenCalledWith(1)
+    expect(api.listDirectoryRuns).toHaveBeenCalledWith(2)
+    expect(wrapper.text()).toContain('Run completed: kept 8 valid members; 2 departments.')
+    expect(wrapper.text()).not.toContain('Run completed: kept 99 valid members; 9 departments.')
+  })
+
+  it('prefers an active directory run over a newer terminal preview on mount', async () => {
+    vi.useFakeTimers()
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockResolvedValueOnce({
+        data: {
+          data: {
+            items: [
+              { id: 63, source_id: 1, mode: 'preview', status: 'completed', phase: 'completed', department_count: 1, member_count: 5, warning_count: 0 },
+              { id: 64, source_id: 1, mode: 'apply', status: 'running', phase: 'applying', department_count: 7, member_count: 11, warning_count: 0 },
+            ],
+          },
+        },
+      })
+      api.getDirectoryRun.mockResolvedValueOnce({
+        data: {
+          data: { id: 64, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 7, member_count: 11, warning_count: 0 },
+        },
+      })
+    })
+
+    try {
+      await wrapper.vm.$nextTick()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Applying directory facts')
+      expect(wrapper.text()).toContain('7 departments · 11 members · 0 skipped records')
+      expect(wrapper.text()).not.toContain('Preview completed: kept 5 valid members; 1 departments.')
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(64)
+      expect(wrapper.text()).toContain('Run completed: kept 11 valid members; 7 departments.')
     } finally {
       vi.useRealTimers()
     }

@@ -33,6 +33,7 @@ const runWarningSummaries = ref<Array<{ code: string; count: number; labelKey: M
 const activeRun = ref<DirectorySyncRun | null>(null)
 const activeRunAction = ref<'preview' | 'apply' | null>(null)
 let runPollTimer: number | undefined
+let runRecoveryRequest = 0
 const form = ref<DirectorySourceRequest>({
   name: '',
   description: '',
@@ -189,7 +190,7 @@ function selectSource(source: DirectorySource) {
     schedule_interval: source.schedule_interval || 'daily',
     schedule_timezone: source.schedule_timezone || 'UTC',
   }
-  void recoverLatestRun(source.id).catch(() => {
+  void startRecoverLatestRun(source.id).catch(() => {
     // Recovery is best-effort; normal source loading feedback stays separate.
   })
 }
@@ -202,6 +203,7 @@ function applyTemplate(dsl: string) {
 }
 
 function clearFeedback() {
+  runRecoveryRequest++
   stopRunPolling()
   message.value = ''
   error.value = ''
@@ -286,10 +288,10 @@ function stopRunPolling() {
   }
 }
 
-function scheduleRunPolling(runID: number, action: 'preview' | 'apply') {
+function scheduleRunPolling(runID: number, action: 'preview' | 'apply', sourceID?: number | null) {
   stopRunPolling()
   runPollTimer = window.setTimeout(() => {
-    void pollRunUntilDone(runID, action)
+    void pollRunUntilDone(runID, action, sourceID)
   }, 1500)
 }
 
@@ -338,13 +340,16 @@ function applyRunProgress(run: DirectorySyncRun | undefined, action: 'preview' |
   message.value = t(action === 'preview' ? 'directorySync.previewStarted' : 'directorySync.applyStarted')
 }
 
-async function pollRunUntilDone(runID: number, action: 'preview' | 'apply') {
+async function pollRunUntilDone(runID: number, action: 'preview' | 'apply', sourceID?: number | null) {
   try {
     const res = await getDirectoryRun(runID)
     const run = res.data.data
+    if ((sourceID && selectedSourceId.value !== sourceID) || (run?.source_id && selectedSourceId.value !== run.source_id)) {
+      return
+    }
     applyRunProgress(run, action)
     if (run && !isTerminalRun(run)) {
-      scheduleRunPolling(runID, action)
+      scheduleRunPolling(runID, action, sourceID ?? run.source_id)
     }
   } catch (e: any) {
     stopRunPolling()
@@ -354,18 +359,24 @@ async function pollRunUntilDone(runID: number, action: 'preview' | 'apply') {
   }
 }
 
-async function recoverLatestRun(sourceID: number, expectedAction?: 'preview' | 'apply') {
+function startRecoverLatestRun(sourceID: number, expectedAction?: 'preview' | 'apply') {
+  return recoverLatestRun(sourceID, expectedAction, ++runRecoveryRequest)
+}
+
+async function recoverLatestRun(sourceID: number, expectedAction?: 'preview' | 'apply', requestID = runRecoveryRequest) {
   const res = await listDirectoryRuns(sourceID)
   const runs = res.data.data?.items ?? []
-  const run = runs.find((candidate) => {
+  if (selectedSourceId.value !== sourceID || requestID !== runRecoveryRequest) return false
+  const candidates = runs.filter((candidate) => {
     const action = actionForRun(candidate)
     return Boolean(action && (!expectedAction || action === expectedAction))
   })
+  const run = candidates.find(isActiveRun) ?? candidates[0]
   const action = actionForRun(run)
   if (!run || !action) return false
   applyRunProgress(run, action)
   if (isActiveRun(run)) {
-    scheduleRunPolling(run.id, action)
+    scheduleRunPolling(run.id, action, sourceID)
   }
   return true
 }
@@ -412,12 +423,12 @@ async function previewSource() {
     const run = res.data.data
     applyRunProgress(run, 'preview')
     if (run && !isTerminalRun(run)) {
-      await pollRunUntilDone(run.id, 'preview')
+      await pollRunUntilDone(run.id, 'preview', selectedSourceId.value)
     }
   } catch (e: any) {
     if (e?.response?.status === 409) {
       try {
-        if (await recoverLatestRun(selectedSourceId.value, 'preview')) return
+        if (await startRecoverLatestRun(selectedSourceId.value, 'preview')) return
       } catch {
         // Fall through to the original preview error.
       }
@@ -436,12 +447,12 @@ async function runNow() {
     const run = res.data.data
     applyRunProgress(run, 'apply')
     if (run && !isTerminalRun(run)) {
-      await pollRunUntilDone(run.id, 'apply')
+      await pollRunUntilDone(run.id, 'apply', selectedSourceId.value)
     }
   } catch (e: any) {
     if (e?.response?.status === 409) {
       try {
-        if (await recoverLatestRun(selectedSourceId.value, 'apply')) return
+        if (await startRecoverLatestRun(selectedSourceId.value, 'apply')) return
       } catch {
         // Fall through to the original apply error.
       }
