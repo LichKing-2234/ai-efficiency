@@ -615,6 +615,7 @@ export interface DirectoryMember {
   email_normalized: string
   display_name?: string
   department_external_id?: string
+  department_external_ids?: string[]
   status?: string
   matched_user_id?: number | null
 }
@@ -823,6 +824,8 @@ export interface TeamUsageSubject {
   directory_member_external_id?: string
   display_name: string
   email: string
+  department_external_id?: string
+  department_external_ids?: string[]
   department_display_path?: string
   relay_user_id?: number | null
   selectable: boolean
@@ -893,6 +896,7 @@ export interface TeamOverviewMember {
   display_name: string
   email: string
   department_external_id?: string
+  department_external_ids?: string[]
   department_display_path: string
   relay_user_id?: number | null
   range_actual_cost: number

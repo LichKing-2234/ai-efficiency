@@ -57,12 +57,13 @@ type DepartmentRecord struct {
 }
 
 type MemberRecord struct {
-	ExternalID           string         `json:"external_id,omitempty"`
-	EmailNormalized      string         `json:"email_normalized"`
-	DisplayName          string         `json:"display_name,omitempty"`
-	DepartmentExternalID string         `json:"department_external_id,omitempty"`
-	Status               string         `json:"status,omitempty"`
-	Metadata             map[string]any `json:"metadata,omitempty"`
+	ExternalID            string         `json:"external_id,omitempty"`
+	EmailNormalized       string         `json:"email_normalized"`
+	DisplayName           string         `json:"display_name,omitempty"`
+	DepartmentExternalID  string         `json:"department_external_id,omitempty"`
+	DepartmentExternalIDs []string       `json:"department_external_ids,omitempty"`
+	Status                string         `json:"status,omitempty"`
+	Metadata              map[string]any `json:"metadata,omitempty"`
 }
 
 type ExecutionWarning struct {
@@ -100,7 +101,8 @@ func (e *Executor) Execute(ctx context.Context, cfg *DSL, credentials Credential
 
 	result := &ExecutionResult{}
 	stepItems := map[string][]map[string]any{}
-	seenEmails := map[string]struct{}{}
+	seenMemberships := map[string]struct{}{}
+	memberIndexesByEmail := map[string]int{}
 	totalItems := 0
 
 	for _, step := range cfg.Steps {
@@ -132,10 +134,10 @@ func (e *Executor) Execute(ctx context.Context, cfg *DSL, credentials Credential
 					}
 				}
 				if step.Map.Member != nil {
-					member, warnings := mapMember(step.ID, step.Map.Member, item, iterationItem, seenEmails)
+					member, warnings := mapMember(step.ID, step.Map.Member, item, iterationItem, seenMemberships)
 					result.Warnings = append(result.Warnings, warnings...)
 					if member != nil {
-						result.Members = append(result.Members, *member)
+						mergeMemberRecord(result, memberIndexesByEmail, *member)
 					}
 				}
 				extractedForStep = append(extractedForStep, stepItem)
@@ -280,7 +282,7 @@ func mapDepartment(mapping *DepartmentMapping, item map[string]any) DepartmentRe
 	}
 }
 
-func mapMember(stepID string, mapping *MemberMapping, item, source map[string]any, seenEmails map[string]struct{}) (*MemberRecord, []ExecutionWarning) {
+func mapMember(stepID string, mapping *MemberMapping, item, source map[string]any, seenMemberships map[string]struct{}) (*MemberRecord, []ExecutionWarning) {
 	email := normalizeEmail(evaluateString(mapping.Email, item, source))
 	if email == "" || !validEmail(email) {
 		return nil, []ExecutionWarning{{
@@ -289,27 +291,98 @@ func mapMember(stepID string, mapping *MemberMapping, item, source map[string]an
 			StepID:  stepID,
 		}}
 	}
-	if _, exists := seenEmails[email]; exists {
+	departmentIDs := appendUniqueStrings(nil, evaluateStringList(mapping.DepartmentExternalID, item, source)...)
+	departmentIDs = appendUniqueStrings(departmentIDs, evaluateStringList(mapping.DepartmentExternalIDs, item, source)...)
+	newDepartmentIDs := make([]string, 0, len(departmentIDs))
+	for _, departmentID := range departmentIDs {
+		key := email + "\x00" + departmentID
+		if _, exists := seenMemberships[key]; exists {
+			continue
+		}
+		seenMemberships[key] = struct{}{}
+		newDepartmentIDs = append(newDepartmentIDs, departmentID)
+	}
+	if len(newDepartmentIDs) == 0 && len(departmentIDs) > 0 {
 		return nil, []ExecutionWarning{{
-			Code:    "duplicate_member_email",
-			Message: "duplicate member email skipped",
+			Code:    "duplicate_member_membership",
+			Message: "duplicate member department membership skipped",
 			StepID:  stepID,
 		}}
 	}
-	seenEmails[email] = struct{}{}
 
 	status := evaluateString(mapping.Status, item, source)
 	if status == "" {
 		status = "active"
 	}
+	primaryDepartmentID := ""
+	if len(newDepartmentIDs) > 0 {
+		primaryDepartmentID = newDepartmentIDs[0]
+	}
 	return &MemberRecord{
-		ExternalID:           evaluateString(mapping.ExternalID, item, source),
-		EmailNormalized:      email,
-		DisplayName:          evaluateString(mapping.DisplayName, item, source),
-		DepartmentExternalID: evaluateString(mapping.DepartmentExternalID, item, source),
-		Status:               status,
-		Metadata:             evaluateMetadata(mapping.Metadata, item, source),
+		ExternalID:            evaluateString(mapping.ExternalID, item, source),
+		EmailNormalized:       email,
+		DisplayName:           evaluateString(mapping.DisplayName, item, source),
+		DepartmentExternalID:  primaryDepartmentID,
+		DepartmentExternalIDs: newDepartmentIDs,
+		Status:                status,
+		Metadata:              evaluateMetadata(mapping.Metadata, item, source),
 	}, nil
+}
+
+func mergeMemberRecord(result *ExecutionResult, indexesByEmail map[string]int, next MemberRecord) {
+	if result == nil {
+		return
+	}
+	if idx, ok := indexesByEmail[next.EmailNormalized]; ok {
+		existing := result.Members[idx]
+		if existing.ExternalID == "" {
+			existing.ExternalID = next.ExternalID
+		}
+		if existing.DisplayName == "" {
+			existing.DisplayName = next.DisplayName
+		}
+		if existing.DepartmentExternalID == "" {
+			existing.DepartmentExternalID = next.DepartmentExternalID
+		}
+		if existing.Status == "" {
+			existing.Status = next.Status
+		}
+		existing.DepartmentExternalIDs = appendUniqueStrings(existing.DepartmentExternalIDs, next.DepartmentExternalIDs...)
+		if len(existing.DepartmentExternalIDs) == 0 && existing.DepartmentExternalID != "" {
+			existing.DepartmentExternalIDs = []string{existing.DepartmentExternalID}
+		}
+		existing.Metadata = mergeMetadata(existing.Metadata, next.Metadata)
+		result.Members[idx] = existing
+		return
+	}
+	if len(next.DepartmentExternalIDs) == 0 && next.DepartmentExternalID != "" {
+		next.DepartmentExternalIDs = []string{next.DepartmentExternalID}
+	}
+	indexesByEmail[next.EmailNormalized] = len(result.Members)
+	result.Members = append(result.Members, next)
+}
+
+func mergeMetadata(current, next map[string]any) map[string]any {
+	if len(current) == 0 {
+		if len(next) == 0 {
+			return map[string]any{}
+		}
+		merged := make(map[string]any, len(next))
+		for key, value := range next {
+			merged[key] = value
+		}
+		return merged
+	}
+	merged := make(map[string]any, len(current)+len(next))
+	for key, value := range current {
+		merged[key] = value
+	}
+	for key, value := range next {
+		if _, exists := merged[key]; !exists {
+			merged[key] = value
+		}
+	}
+	return merged
 }
 
 func evaluateMetadata(mapping map[string]string, item, source map[string]any) map[string]any {
@@ -364,6 +437,74 @@ func evaluateString(expression string, item, source map[string]any) string {
 	default:
 		return strings.TrimSpace(fmt.Sprint(v))
 	}
+}
+
+func evaluateStringList(expression string, item, source map[string]any) []string {
+	value, err := evaluateValue(expression, item, source)
+	if err != nil || value == nil {
+		return nil
+	}
+	return compactStringValues(value)
+}
+
+func compactStringValues(value any) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	var add func(any)
+	add = func(item any) {
+		switch typed := item.(type) {
+		case nil:
+			return
+		case []any:
+			for _, nested := range typed {
+				add(nested)
+			}
+		case []string:
+			for _, nested := range typed {
+				add(nested)
+			}
+		default:
+			text := strings.TrimSpace(fmt.Sprint(typed))
+			if text == "" {
+				return
+			}
+			if _, exists := seen[text]; exists {
+				return
+			}
+			seen[text] = struct{}{}
+			out = append(out, text)
+		}
+	}
+	add(value)
+	return out
+}
+
+func appendUniqueStrings(current []string, values ...string) []string {
+	seen := make(map[string]struct{}, len(current)+len(values))
+	out := make([]string, 0, len(current)+len(values))
+	for _, value := range current {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func evaluateValue(expression string, item, source map[string]any) (any, error) {

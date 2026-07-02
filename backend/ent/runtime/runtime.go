@@ -11,6 +11,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
@@ -173,6 +174,30 @@ func init() {
 	directorymember.DefaultUpdatedAt = directorymemberDescUpdatedAt.Default.(func() time.Time)
 	// directorymember.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	directorymember.UpdateDefaultUpdatedAt = directorymemberDescUpdatedAt.UpdateDefault.(func() time.Time)
+	directorymemberdepartmentFields := schema.DirectoryMemberDepartment{}.Fields()
+	_ = directorymemberdepartmentFields
+	// directorymemberdepartmentDescMemberExternalID is the schema descriptor for member_external_id field.
+	directorymemberdepartmentDescMemberExternalID := directorymemberdepartmentFields[2].Descriptor()
+	// directorymemberdepartment.DefaultMemberExternalID holds the default value on creation for the member_external_id field.
+	directorymemberdepartment.DefaultMemberExternalID = directorymemberdepartmentDescMemberExternalID.Default.(string)
+	// directorymemberdepartmentDescMemberEmailNormalized is the schema descriptor for member_email_normalized field.
+	directorymemberdepartmentDescMemberEmailNormalized := directorymemberdepartmentFields[3].Descriptor()
+	// directorymemberdepartment.MemberEmailNormalizedValidator is a validator for the "member_email_normalized" field. It is called by the builders before save.
+	directorymemberdepartment.MemberEmailNormalizedValidator = directorymemberdepartmentDescMemberEmailNormalized.Validators[0].(func(string) error)
+	// directorymemberdepartmentDescDepartmentExternalID is the schema descriptor for department_external_id field.
+	directorymemberdepartmentDescDepartmentExternalID := directorymemberdepartmentFields[4].Descriptor()
+	// directorymemberdepartment.DepartmentExternalIDValidator is a validator for the "department_external_id" field. It is called by the builders before save.
+	directorymemberdepartment.DepartmentExternalIDValidator = directorymemberdepartmentDescDepartmentExternalID.Validators[0].(func(string) error)
+	// directorymemberdepartmentDescCreatedAt is the schema descriptor for created_at field.
+	directorymemberdepartmentDescCreatedAt := directorymemberdepartmentFields[6].Descriptor()
+	// directorymemberdepartment.DefaultCreatedAt holds the default value on creation for the created_at field.
+	directorymemberdepartment.DefaultCreatedAt = directorymemberdepartmentDescCreatedAt.Default.(func() time.Time)
+	// directorymemberdepartmentDescUpdatedAt is the schema descriptor for updated_at field.
+	directorymemberdepartmentDescUpdatedAt := directorymemberdepartmentFields[7].Descriptor()
+	// directorymemberdepartment.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	directorymemberdepartment.DefaultUpdatedAt = directorymemberdepartmentDescUpdatedAt.Default.(func() time.Time)
+	// directorymemberdepartment.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	directorymemberdepartment.UpdateDefaultUpdatedAt = directorymemberdepartmentDescUpdatedAt.UpdateDefault.(func() time.Time)
 	directoryoffboardingactionFields := schema.DirectoryOffboardingAction{}.Fields()
 	_ = directoryoffboardingactionFields
 	// directoryoffboardingactionDescCreatedAt is the schema descriptor for created_at field.

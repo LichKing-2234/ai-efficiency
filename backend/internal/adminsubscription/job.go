@@ -12,6 +12,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminuseraccess"
@@ -374,10 +375,26 @@ func (s *Service) applyDepartmentFilter(ctx context.Context, query *ent.UserQuer
 	if err != nil {
 		return nil, err
 	}
+	matchingMemberIDs, memberIDsWithMemberships, err := s.memberIDSetsForDepartmentIDs(ctx, sourceID, departmentIDs)
+	if err != nil {
+		return nil, err
+	}
+	memberPredicates := make([]predicate.DirectoryMember, 0, 2)
+	if len(matchingMemberIDs) > 0 {
+		memberPredicates = append(memberPredicates, directorymember.IDIn(matchingMemberIDs...))
+	}
+	fallbackPredicate := predicate.DirectoryMember(directorymember.DepartmentExternalIDIn(departmentIDs...))
+	if len(memberIDsWithMemberships) > 0 {
+		fallbackPredicate = directorymember.And(
+			fallbackPredicate,
+			directorymember.Not(directorymember.IDIn(memberIDsWithMemberships...)),
+		)
+	}
+	memberPredicates = append(memberPredicates, fallbackPredicate)
 	members, err := s.client.DirectoryMember.Query().
 		Where(
 			directorymember.SourceIDEQ(sourceID),
-			directorymember.DepartmentExternalIDIn(departmentIDs...),
+			directorymember.Or(memberPredicates...),
 		).
 		All(ctx)
 	if err != nil {
@@ -394,6 +411,46 @@ func (s *Service) departmentSubtreeExternalIDs(ctx context.Context, sourceID int
 		return nil, fmt.Errorf("list directory departments for subtree filter: %w", err)
 	}
 	return directorytree.New(departments).SubtreeIDs(departmentID), nil
+}
+
+func (s *Service) memberIDSetsForDepartmentIDs(ctx context.Context, sourceID int, departmentIDs []string) ([]int, []int, error) {
+	if len(departmentIDs) == 0 {
+		return nil, nil, nil
+	}
+	targetDepartments := make(map[string]struct{}, len(departmentIDs))
+	for _, departmentID := range departmentIDs {
+		departmentID = strings.TrimSpace(departmentID)
+		if departmentID != "" {
+			targetDepartments[departmentID] = struct{}{}
+		}
+	}
+	memberships, err := s.client.DirectoryMemberDepartment.Query().
+		Where(directorymemberdepartment.SourceIDEQ(sourceID)).
+		All(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list directory member departments: %w", err)
+	}
+	matchingMemberIDs := map[int]struct{}{}
+	memberIDsWithMemberships := map[int]struct{}{}
+	for _, membership := range memberships {
+		memberID := membership.DirectoryMemberID
+		if memberID <= 0 {
+			continue
+		}
+		memberIDsWithMemberships[memberID] = struct{}{}
+		if _, ok := targetDepartments[strings.TrimSpace(membership.DepartmentExternalID)]; ok {
+			matchingMemberIDs[memberID] = struct{}{}
+		}
+	}
+	return intSetValues(matchingMemberIDs), intSetValues(memberIDsWithMemberships), nil
+}
+
+func intSetValues(values map[int]struct{}) []int {
+	out := make([]int, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	return out
 }
 
 func (s *Service) currentDirectorySourceID(ctx context.Context) (int, bool, error) {

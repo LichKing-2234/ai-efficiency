@@ -309,7 +309,8 @@ Inputs:
 1. Current AE user id and normalized email.
 2. Current Directory Sync source id from the latest successful full-company apply run.
 3. `directory_members` from that source.
-4. `directory_departments` from that source.
+4. `directory_member_departments` from that source.
+5. `directory_departments` from that source.
 
 Representative departments are the union of:
 
@@ -318,7 +319,11 @@ Representative departments are the union of:
 
 For each represented department, compute the subtree using `directorytree.Tree.SubtreeIDs`.
 
-Allowed members are directory members whose `department_external_id` is in any represented subtree. Resolve each member to an AE user by:
+Allowed members are directory members with at least one
+`directory_member_departments.department_external_id` in any represented subtree.
+Rows without membership links fall back to `directory_members.department_external_id`
+for compatibility with older snapshots. Resolve each canonical member to an AE
+user by:
 
 1. `directory_members.matched_user_id`, when present and positive.
 2. normalized email match against `users.email`, as fallback.
@@ -621,6 +626,7 @@ First-version response:
       "display_name": "Alice",
 	      "email": "alice@example.com",
 		      "department_external_id": "department-alpha",
+		      "department_external_ids": ["department-alpha"],
 		      "department_display_path": "Department Alpha",
 	      "range_actual_cost": 12.3,
 	      "today_actual_cost": 1.23,
@@ -691,6 +697,7 @@ First-version response:
       "display_name": "Alice",
 	      "email": "alice@example.com",
 		      "department_external_id": "department-alpha",
+		      "department_external_ids": ["department-alpha"],
 		      "department_display_path": "Department Alpha",
 	      "relay_user_id": 1001,
 	      "range_actual_cost": 12.3,
@@ -705,6 +712,7 @@ First-version response:
       "display_name": "Bob",
       "email": "bob@example.org",
 	      "department_external_id": "department-alpha",
+	      "department_external_ids": ["department-alpha", "department-beta"],
 	      "department_display_path": "Department Alpha",
 	      "relay_user_id": 1002,
 	      "range_actual_cost": 7.8,
@@ -750,11 +758,11 @@ Department trend rules:
 
 1. `department_trend` is computed from the same complete scoped selected-window trend scan as `top_member_trend`; AE must not call an unscoped relay trend endpoint or aggregate users outside the representative scope.
 2. `department_trend.series[0]` uses `series_type="team_total"` and aggregates all relay-resolved scoped members for the selected range. This is the team-wide Token usage trend. The frontend must render it as an independent chart area and must not mix it into group-comparison or Top 12 member chart datasets.
-3. Additional `series_type="department"` rows are the group-comparison trend lines. If the representative has multiple largest non-overlapping represented root departments, these rows aggregate those root departments so the chart compares the first-level groups. If the representative has exactly one represented root department with child departments, these rows aggregate the direct child departments under that root so the chart compares second-level groups. If that single represented root is only an organizational wrapper with exactly one child that itself has children, AE continues through that single-child wrapper chain and compares the first branching child departments instead. A represented root may still have a parent department outside the representative's scoped tree; that unscoped parent is not required for trend bucketing, and the represented root remains the comparison boundary. Members directly under the selected comparison root may use that root as their bucket. If the representative has exactly one represented root department and no child department comparison exists, AE returns only the independent `team_total` series and omits department comparison rows.
+3. Additional `series_type="department"` rows are the group-comparison trend lines. If the representative has multiple largest non-overlapping represented root departments, these rows aggregate those root departments so the chart compares the first-level groups. If the representative has exactly one represented root department with child departments, these rows aggregate the direct child departments under that root so the chart compares second-level groups. If that single represented root is only an organizational wrapper with exactly one child that itself has children, AE continues through that single-child wrapper chain and compares the first branching child departments instead. A represented root may still have a parent department outside the representative's scoped tree; that unscoped parent is not required for trend bucketing, and the represented root remains the comparison boundary. Members directly under the selected comparison root may use that root as their bucket. A canonical member with memberships in multiple comparison buckets contributes to each matching department series, but contributes only once to `team_total`. If the representative has exactly one represented root department and no child department comparison exists, AE returns only the independent `team_total` series and omits department comparison rows.
 4. Department trend points use `total_tokens` as the primary chart value and keep `actual_cost` only as auxiliary legend/detail data.
 5. If the full selected-window scan is unavailable or the scope is too large, `department_trend.unavailable` follows the same reason as `top_member_trend`.
 
-`member_tree` follows the current Directory Sync hierarchy. When a representative has multiple represented roots, the backend returns the largest non-overlapping roots first: if one represented root contains another represented root, only the ancestor appears as a top-level tree root and the child appears nested under it. Each department node aggregates direct members plus descendants for member count, connected member count, selected-window billed usage, and selected-window tokens. `members` remains as a compatibility flat list.
+`member_tree` follows the current Directory Sync hierarchy. When a representative has multiple represented roots, the backend returns the largest non-overlapping roots first: if one represented root contains another represented root, only the ancestor appears as a top-level tree root and the child appears nested under it. A canonical member with multiple current memberships appears under each matching department branch so the organization tree reflects every team assignment. Department-node aggregate member count, connected member count, selected-window billed usage, and selected-window tokens deduplicate by canonical member identity inside each node/subtree so one person shown in multiple branches does not inflate parent or team-total aggregates. `members` remains as a compatibility flat list.
 
 `subscription_count` is optional in the API and should be `null` unless the relay provider can return it without per-member subscription fan-out. The representative Team Overview table should not render a subscription-count column until the backend returns reliable batched subscription counts.
 

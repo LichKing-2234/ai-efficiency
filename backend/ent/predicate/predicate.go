@@ -24,6 +24,9 @@ type DirectoryDepartment func(*sql.Selector)
 // DirectoryMember is the predicate function for directorymember builders.
 type DirectoryMember func(*sql.Selector)
 
+// DirectoryMemberDepartment is the predicate function for directorymemberdepartment builders.
+type DirectoryMemberDepartment func(*sql.Selector)
+
 // DirectoryOffboardingAction is the predicate function for directoryoffboardingaction builders.
 type DirectoryOffboardingAction func(*sql.Selector)
 

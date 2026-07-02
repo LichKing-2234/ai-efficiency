@@ -18,6 +18,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
@@ -99,6 +100,7 @@ func checkColumn(table, column string) error {
 			credential.Table:                   credential.ValidColumn,
 			directorydepartment.Table:          directorydepartment.ValidColumn,
 			directorymember.Table:              directorymember.ValidColumn,
+			directorymemberdepartment.Table:    directorymemberdepartment.ValidColumn,
 			directoryoffboardingaction.Table:   directoryoffboardingaction.ValidColumn,
 			directorysource.Table:              directorysource.ValidColumn,
 			directorysyncrun.Table:             directorysyncrun.ValidColumn,

@@ -24,6 +24,8 @@ type Tx struct {
 	DirectoryDepartment *DirectoryDepartmentClient
 	// DirectoryMember is the client for interacting with the DirectoryMember builders.
 	DirectoryMember *DirectoryMemberClient
+	// DirectoryMemberDepartment is the client for interacting with the DirectoryMemberDepartment builders.
+	DirectoryMemberDepartment *DirectoryMemberDepartmentClient
 	// DirectoryOffboardingAction is the client for interacting with the DirectoryOffboardingAction builders.
 	DirectoryOffboardingAction *DirectoryOffboardingActionClient
 	// DirectorySource is the client for interacting with the DirectorySource builders.
@@ -191,6 +193,7 @@ func (tx *Tx) init() {
 	tx.Credential = NewCredentialClient(tx.config)
 	tx.DirectoryDepartment = NewDirectoryDepartmentClient(tx.config)
 	tx.DirectoryMember = NewDirectoryMemberClient(tx.config)
+	tx.DirectoryMemberDepartment = NewDirectoryMemberDepartmentClient(tx.config)
 	tx.DirectoryOffboardingAction = NewDirectoryOffboardingActionClient(tx.config)
 	tx.DirectorySource = NewDirectorySourceClient(tx.config)
 	tx.DirectorySyncRun = NewDirectorySyncRunClient(tx.config)

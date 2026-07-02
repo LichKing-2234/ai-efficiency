@@ -10,6 +10,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
@@ -477,6 +478,9 @@ func (s *Service) replaceFactsTx(ctx context.Context, tx *ent.Tx, sourceID, runI
 	if _, err := tx.DirectoryMember.Delete().Where(directorymember.SourceIDEQ(sourceID)).Exec(ctx); err != nil {
 		return err
 	}
+	if _, err := tx.DirectoryMemberDepartment.Delete().Where(directorymemberdepartment.SourceIDEQ(sourceID)).Exec(ctx); err != nil {
+		return err
+	}
 	for _, department := range result.Departments {
 		create := tx.DirectoryDepartment.Create().
 			SetSourceID(sourceID).
@@ -507,8 +511,25 @@ func (s *Service) replaceFactsTx(ctx context.Context, tx *ent.Tx, sourceID, runI
 		} else if !ent.IsNotFound(err) {
 			return err
 		}
-		if _, err := create.Save(ctx); err != nil {
+		saved, err := create.Save(ctx)
+		if err != nil {
 			return err
+		}
+		departmentIDs := appendUniqueStrings(member.DepartmentExternalIDs)
+		if len(departmentIDs) == 0 && strings.TrimSpace(member.DepartmentExternalID) != "" {
+			departmentIDs = []string{strings.TrimSpace(member.DepartmentExternalID)}
+		}
+		for _, departmentID := range departmentIDs {
+			if _, err := tx.DirectoryMemberDepartment.Create().
+				SetSourceID(sourceID).
+				SetDirectoryMemberID(saved.ID).
+				SetMemberExternalID(saved.ExternalID).
+				SetMemberEmailNormalized(saved.EmailNormalized).
+				SetDepartmentExternalID(departmentID).
+				SetLastSeenRunID(runID).
+				Save(ctx); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

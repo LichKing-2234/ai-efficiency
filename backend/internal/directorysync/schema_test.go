@@ -88,6 +88,15 @@ func TestDirectorySyncSchemaPersistsFactsAndRevocationFloor(t *testing.T) {
 		SetLastSeenRunID(run.ID).
 		SaveX(ctx)
 
+	membership := client.DirectoryMemberDepartment.Create().
+		SetSourceID(source.ID).
+		SetDirectoryMemberID(member.ID).
+		SetMemberExternalID(member.ExternalID).
+		SetMemberEmailNormalized(member.EmailNormalized).
+		SetDepartmentExternalID(department.ExternalID).
+		SetLastSeenRunID(run.ID).
+		SaveX(ctx)
+
 	action := client.DirectoryOffboardingAction.Create().
 		SetSourceID(source.ID).
 		SetUserID(user.ID).
@@ -99,7 +108,7 @@ func TestDirectorySyncSchemaPersistsFactsAndRevocationFloor(t *testing.T) {
 		SetPerformedByUserID(user.ID).
 		SaveX(ctx)
 
-	if department.ExternalID != "dept-alpha" || member.EmailNormalized != "alice@example.com" || action.UserID != user.ID {
+	if department.ExternalID != "dept-alpha" || member.EmailNormalized != "alice@example.com" || membership.DepartmentExternalID != department.ExternalID || action.UserID != user.ID {
 		t.Fatalf("persisted directory schema rows are inconsistent")
 	}
 }

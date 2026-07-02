@@ -63,12 +63,13 @@ type DepartmentMapping struct {
 }
 
 type MemberMapping struct {
-	ExternalID           string            `json:"external_id" yaml:"external_id"`
-	Email                string            `json:"email" yaml:"email"`
-	DisplayName          string            `json:"display_name" yaml:"display_name"`
-	DepartmentExternalID string            `json:"department_external_id" yaml:"department_external_id"`
-	Status               string            `json:"status" yaml:"status"`
-	Metadata             map[string]string `json:"metadata" yaml:"metadata"`
+	ExternalID            string            `json:"external_id" yaml:"external_id"`
+	Email                 string            `json:"email" yaml:"email"`
+	DisplayName           string            `json:"display_name" yaml:"display_name"`
+	DepartmentExternalID  string            `json:"department_external_id" yaml:"department_external_id"`
+	DepartmentExternalIDs string            `json:"department_external_ids" yaml:"department_external_ids"`
+	Status                string            `json:"status" yaml:"status"`
+	Metadata              map[string]string `json:"metadata" yaml:"metadata"`
 }
 
 type ValidationIssue struct {

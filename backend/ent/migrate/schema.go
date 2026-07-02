@@ -230,6 +230,46 @@ var (
 			},
 		},
 	}
+	// DirectoryMemberDepartmentsColumns holds the columns for the "directory_member_departments" table.
+	DirectoryMemberDepartmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "source_id", Type: field.TypeInt},
+		{Name: "directory_member_id", Type: field.TypeInt},
+		{Name: "member_external_id", Type: field.TypeString, Default: ""},
+		{Name: "member_email_normalized", Type: field.TypeString},
+		{Name: "department_external_id", Type: field.TypeString},
+		{Name: "last_seen_run_id", Type: field.TypeInt},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// DirectoryMemberDepartmentsTable holds the schema information for the "directory_member_departments" table.
+	DirectoryMemberDepartmentsTable = &schema.Table{
+		Name:       "directory_member_departments",
+		Columns:    DirectoryMemberDepartmentsColumns,
+		PrimaryKey: []*schema.Column{DirectoryMemberDepartmentsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "directorymemberdepartment_source_id_member_email_normalized_department_external_id",
+				Unique:  true,
+				Columns: []*schema.Column{DirectoryMemberDepartmentsColumns[1], DirectoryMemberDepartmentsColumns[4], DirectoryMemberDepartmentsColumns[5]},
+			},
+			{
+				Name:    "directorymemberdepartment_source_id_department_external_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMemberDepartmentsColumns[1], DirectoryMemberDepartmentsColumns[5]},
+			},
+			{
+				Name:    "directorymemberdepartment_directory_member_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMemberDepartmentsColumns[2]},
+			},
+			{
+				Name:    "directorymemberdepartment_last_seen_run_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMemberDepartmentsColumns[6]},
+			},
+		},
+	}
 	// DirectoryOffboardingActionsColumns holds the columns for the "directory_offboarding_actions" table.
 	DirectoryOffboardingActionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -853,6 +893,7 @@ var (
 		CredentialsTable,
 		DirectoryDepartmentsTable,
 		DirectoryMembersTable,
+		DirectoryMemberDepartmentsTable,
 		DirectoryOffboardingActionsTable,
 		DirectorySourcesTable,
 		DirectorySyncRunsTable,

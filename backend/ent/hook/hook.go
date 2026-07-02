@@ -81,6 +81,18 @@ func (f DirectoryMemberFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Va
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DirectoryMemberMutation", m)
 }
 
+// The DirectoryMemberDepartmentFunc type is an adapter to allow the use of ordinary
+// function as DirectoryMemberDepartment mutator.
+type DirectoryMemberDepartmentFunc func(context.Context, *ent.DirectoryMemberDepartmentMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f DirectoryMemberDepartmentFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.DirectoryMemberDepartmentMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DirectoryMemberDepartmentMutation", m)
+}
+
 // The DirectoryOffboardingActionFunc type is an adapter to allow the use of ordinary
 // function as DirectoryOffboardingAction mutator.
 type DirectoryOffboardingActionFunc func(context.Context, *ent.DirectoryOffboardingActionMutation) (ent.Value, error)

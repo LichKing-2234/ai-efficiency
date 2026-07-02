@@ -255,6 +255,60 @@ func TestResolveRepresentativeScopeIncludesDirectoryMembersWithoutLocalUsers(t *
 	}
 }
 
+func TestResolveRepresentativeScopeKeepsDirectoryOnlyMembersWithBlankExternalIDs(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := createScopeSource(t, client, true)
+	actor := createScopeUser(t, client, "actor", "actor@example.com", nil)
+	createScopeDepartment(t, client, source.ID, "department-team", "Department Team", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	createScopeMember(t, client, source.ID, "member-actor", actor.Email, "department-team", &actor.ID, nil)
+	createScopeMember(t, client, source.ID, "", "alice@example.com", "department-team", nil, nil)
+	createScopeMember(t, client, source.ID, "", "bob@example.org", "department-team", nil, nil)
+
+	scope, err := New(client).Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if findSubjectByEmail(scope.Subjects, "alice@example.com") == nil {
+		t.Fatalf("subjects = %#v, want alice@example.com directory-only subject", scope.Subjects)
+	}
+	if findSubjectByEmail(scope.Subjects, "bob@example.org") == nil {
+		t.Fatalf("subjects = %#v, want bob@example.org directory-only subject", scope.Subjects)
+	}
+	if len(scope.Subjects) != 2 {
+		t.Fatalf("subjects = %#v, want two directory-only members excluding actor", scope.Subjects)
+	}
+}
+
+func TestResolveRepresentativeScopeUsesDirectoryMemberDepartments(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := createScopeSource(t, client, true)
+	actor := createScopeUser(t, client, "actor", "actor@example.com", nil)
+	targetRelayID := 1010
+	target := createScopeUser(t, client, "alice", "alice@example.com", &targetRelayID)
+	alpha := createScopeDepartment(t, client, source.ID, "department-alpha", "Department Alpha", nil, nil)
+	beta := createScopeDepartment(t, client, source.ID, "department-beta", "Department Beta", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	createScopeMember(t, client, source.ID, "member-actor", actor.Email, beta.ExternalID, &actor.ID, nil)
+	alice := createScopeMember(t, client, source.ID, "member-alice", target.Email, alpha.ExternalID, &target.ID, nil)
+	createScopeMemberDepartment(t, client, source.ID, alice, beta.ExternalID)
+
+	scope, err := New(client).Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got, want := scope.AllowedUserIDs(), []int{target.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("allowed users = %#v, want multi-department target %#v", got, want)
+	}
+	subject := findSubjectByEmail(scope.Subjects, target.Email)
+	if subject == nil {
+		t.Fatalf("subjects = %#v, want target subject", scope.Subjects)
+	}
+	if subject.DepartmentExternalID != beta.ExternalID {
+		t.Fatalf("subject department = %q, want represented membership department %q", subject.DepartmentExternalID, beta.ExternalID)
+	}
+}
+
 func TestResolveRepresentativeScopeBuildsLargestDepartmentTree(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -453,4 +507,19 @@ func createScopeMember(t *testing.T, client *ent.Client, sourceID int, externalI
 		t.Fatalf("create member %s: %v", externalID, err)
 	}
 	return member
+}
+
+func createScopeMemberDepartment(t *testing.T, client *ent.Client, sourceID int, member *ent.DirectoryMember, departmentID string) {
+	t.Helper()
+	_, err := client.DirectoryMemberDepartment.Create().
+		SetSourceID(sourceID).
+		SetDirectoryMemberID(member.ID).
+		SetMemberExternalID(member.ExternalID).
+		SetMemberEmailNormalized(member.EmailNormalized).
+		SetDepartmentExternalID(departmentID).
+		SetLastSeenRunID(member.LastSeenRunID).
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create member department %s/%s: %v", member.EmailNormalized, departmentID, err)
+	}
 }

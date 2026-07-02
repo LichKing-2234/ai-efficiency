@@ -59,6 +59,23 @@
 
 **Follow-up Status (2026-06-26, code review hardening):** Complete. Review hardening fixes, targeted regressions, full backend tests, frontend full tests, build, diff hygiene, and safety scan have passed.
 
+**Follow-up Status (2026-07-02, multi-department membership):** Complete. Directory members now keep canonical email identity plus explicit membership links, Admin Users department filters/counts use those links, and backend/frontend verification has passed.
+
+## 2026-07-02 Follow-up: Multi-department Membership
+
+- [x] Add current membership persistence through `directory_member_departments`.
+- [x] Coalesce duplicate emails into one canonical directory member with multiple department memberships.
+- [x] Update `/admin/users` department filters, department summary counts, and subscription current-filter targeting to use membership links with legacy field fallback.
+- [x] Update Directory Sync prompt copy and current contract documentation for `department_external_ids`.
+- [x] Verify `cd backend && go test ./internal/directorysync`.
+- [x] Verify `cd backend && go test ./internal/handler -run 'TestDirectoryHandler|TestAdminUsers'`.
+- [x] Verify `cd backend && go test ./internal/adminsubscription`.
+- [x] Verify `cd backend && go test ./...`.
+- [x] Verify `cd frontend && pnpm test`.
+- [x] Verify `cd frontend && pnpm build`.
+- [x] Verify `git diff --check`.
+- [x] Run a diff safety scan for real company domains, internal URLs, tokens, API keys, and real employee data.
+
 ## 2026-06-26 Follow-up: Code Review Hardening
 
 - [x] Verify review findings against the current code before implementing fixes.

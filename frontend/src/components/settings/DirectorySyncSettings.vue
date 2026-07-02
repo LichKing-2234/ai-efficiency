@@ -470,6 +470,7 @@ steps:
     '- member.email: required user email; this system matches local users only by normalized email',
     '- member.display_name: optional display name',
     '- member.department_external_id: optional department id; use $.department_id, $.departmentIds[0], or {{ source.external_id }} when the member endpoint returns only direct members for the requested department',
+    '- member.department_external_ids: optional array of department ids; use this when one member row returns all department memberships, while department_external_id can remain the primary or first department',
     '- member.status: optional employment status',
     '- member.metadata.leader_department_ids: optional array of department ids where this member is the representative or leader',
     '- metadata mappings are explicit allowlists; include only non-sensitive ids or role flags needed by this system',

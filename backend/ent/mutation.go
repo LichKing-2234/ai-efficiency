@@ -17,6 +17,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
@@ -50,6 +51,7 @@ const (
 	TypeCredential                   = "Credential"
 	TypeDirectoryDepartment          = "DirectoryDepartment"
 	TypeDirectoryMember              = "DirectoryMember"
+	TypeDirectoryMemberDepartment    = "DirectoryMemberDepartment"
 	TypeDirectoryOffboardingAction   = "DirectoryOffboardingAction"
 	TypeDirectorySource              = "DirectorySource"
 	TypeDirectorySyncRun             = "DirectorySyncRun"
@@ -6874,6 +6876,812 @@ func (m *DirectoryMemberMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *DirectoryMemberMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown DirectoryMember edge %s", name)
+}
+
+// DirectoryMemberDepartmentMutation represents an operation that mutates the DirectoryMemberDepartment nodes in the graph.
+type DirectoryMemberDepartmentMutation struct {
+	config
+	op                      Op
+	typ                     string
+	id                      *int
+	source_id               *int
+	addsource_id            *int
+	directory_member_id     *int
+	adddirectory_member_id  *int
+	member_external_id      *string
+	member_email_normalized *string
+	department_external_id  *string
+	last_seen_run_id        *int
+	addlast_seen_run_id     *int
+	created_at              *time.Time
+	updated_at              *time.Time
+	clearedFields           map[string]struct{}
+	done                    bool
+	oldValue                func(context.Context) (*DirectoryMemberDepartment, error)
+	predicates              []predicate.DirectoryMemberDepartment
+}
+
+var _ ent.Mutation = (*DirectoryMemberDepartmentMutation)(nil)
+
+// directorymemberdepartmentOption allows management of the mutation configuration using functional options.
+type directorymemberdepartmentOption func(*DirectoryMemberDepartmentMutation)
+
+// newDirectoryMemberDepartmentMutation creates new mutation for the DirectoryMemberDepartment entity.
+func newDirectoryMemberDepartmentMutation(c config, op Op, opts ...directorymemberdepartmentOption) *DirectoryMemberDepartmentMutation {
+	m := &DirectoryMemberDepartmentMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeDirectoryMemberDepartment,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withDirectoryMemberDepartmentID sets the ID field of the mutation.
+func withDirectoryMemberDepartmentID(id int) directorymemberdepartmentOption {
+	return func(m *DirectoryMemberDepartmentMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *DirectoryMemberDepartment
+		)
+		m.oldValue = func(ctx context.Context) (*DirectoryMemberDepartment, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().DirectoryMemberDepartment.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withDirectoryMemberDepartment sets the old DirectoryMemberDepartment of the mutation.
+func withDirectoryMemberDepartment(node *DirectoryMemberDepartment) directorymemberdepartmentOption {
+	return func(m *DirectoryMemberDepartmentMutation) {
+		m.oldValue = func(context.Context) (*DirectoryMemberDepartment, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m DirectoryMemberDepartmentMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m DirectoryMemberDepartmentMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *DirectoryMemberDepartmentMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *DirectoryMemberDepartmentMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().DirectoryMemberDepartment.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetSourceID sets the "source_id" field.
+func (m *DirectoryMemberDepartmentMutation) SetSourceID(i int) {
+	m.source_id = &i
+	m.addsource_id = nil
+}
+
+// SourceID returns the value of the "source_id" field in the mutation.
+func (m *DirectoryMemberDepartmentMutation) SourceID() (r int, exists bool) {
+	v := m.source_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSourceID returns the old "source_id" field's value of the DirectoryMemberDepartment entity.
+// If the DirectoryMemberDepartment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DirectoryMemberDepartmentMutation) OldSourceID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSourceID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSourceID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSourceID: %w", err)
+	}
+	return oldValue.SourceID, nil
+}
+
+// AddSourceID adds i to the "source_id" field.
+func (m *DirectoryMemberDepartmentMutation) AddSourceID(i int) {
+	if m.addsource_id != nil {
+		*m.addsource_id += i
+	} else {
+		m.addsource_id = &i
+	}
+}
+
+// AddedSourceID returns the value that was added to the "source_id" field in this mutation.
+func (m *DirectoryMemberDepartmentMutation) AddedSourceID() (r int, exists bool) {
+	v := m.addsource_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSourceID resets all changes to the "source_id" field.
+func (m *DirectoryMemberDepartmentMutation) ResetSourceID() {
+	m.source_id = nil
+	m.addsource_id = nil
+}
+
+// SetDirectoryMemberID sets the "directory_member_id" field.
+func (m *DirectoryMemberDepartmentMutation) SetDirectoryMemberID(i int) {
+	m.directory_member_id = &i
+	m.adddirectory_member_id = nil
+}
+
+// DirectoryMemberID returns the value of the "directory_member_id" field in the mutation.
+func (m *DirectoryMemberDepartmentMutation) DirectoryMemberID() (r int, exists bool) {
+	v := m.directory_member_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDirectoryMemberID returns the old "directory_member_id" field's value of the DirectoryMemberDepartment entity.
+// If the DirectoryMemberDepartment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DirectoryMemberDepartmentMutation) OldDirectoryMemberID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDirectoryMemberID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDirectoryMemberID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDirectoryMemberID: %w", err)
+	}
+	return oldValue.DirectoryMemberID, nil
+}
+
+// AddDirectoryMemberID adds i to the "directory_member_id" field.
+func (m *DirectoryMemberDepartmentMutation) AddDirectoryMemberID(i int) {
+	if m.adddirectory_member_id != nil {
+		*m.adddirectory_member_id += i
+	} else {
+		m.adddirectory_member_id = &i
+	}
+}
+
+// AddedDirectoryMemberID returns the value that was added to the "directory_member_id" field in this mutation.
+func (m *DirectoryMemberDepartmentMutation) AddedDirectoryMemberID() (r int, exists bool) {
+	v := m.adddirectory_member_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetDirectoryMemberID resets all changes to the "directory_member_id" field.
+func (m *DirectoryMemberDepartmentMutation) ResetDirectoryMemberID() {
+	m.directory_member_id = nil
+	m.adddirectory_member_id = nil
+}
+
+// SetMemberExternalID sets the "member_external_id" field.
+func (m *DirectoryMemberDepartmentMutation) SetMemberExternalID(s string) {
+	m.member_external_id = &s
+}
+
+// MemberExternalID returns the value of the "member_external_id" field in the mutation.
+func (m *DirectoryMemberDepartmentMutation) MemberExternalID() (r string, exists bool) {
+	v := m.member_external_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMemberExternalID returns the old "member_external_id" field's value of the DirectoryMemberDepartment entity.
+// If the DirectoryMemberDepartment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DirectoryMemberDepartmentMutation) OldMemberExternalID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMemberExternalID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMemberExternalID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMemberExternalID: %w", err)
+	}
+	return oldValue.MemberExternalID, nil
+}
+
+// ResetMemberExternalID resets all changes to the "member_external_id" field.
+func (m *DirectoryMemberDepartmentMutation) ResetMemberExternalID() {
+	m.member_external_id = nil
+}
+
+// SetMemberEmailNormalized sets the "member_email_normalized" field.
+func (m *DirectoryMemberDepartmentMutation) SetMemberEmailNormalized(s string) {
+	m.member_email_normalized = &s
+}
+
+// MemberEmailNormalized returns the value of the "member_email_normalized" field in the mutation.
+func (m *DirectoryMemberDepartmentMutation) MemberEmailNormalized() (r string, exists bool) {
+	v := m.member_email_normalized
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMemberEmailNormalized returns the old "member_email_normalized" field's value of the DirectoryMemberDepartment entity.
+// If the DirectoryMemberDepartment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DirectoryMemberDepartmentMutation) OldMemberEmailNormalized(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMemberEmailNormalized is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMemberEmailNormalized requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMemberEmailNormalized: %w", err)
+	}
+	return oldValue.MemberEmailNormalized, nil
+}
+
+// ResetMemberEmailNormalized resets all changes to the "member_email_normalized" field.
+func (m *DirectoryMemberDepartmentMutation) ResetMemberEmailNormalized() {
+	m.member_email_normalized = nil
+}
+
+// SetDepartmentExternalID sets the "department_external_id" field.
+func (m *DirectoryMemberDepartmentMutation) SetDepartmentExternalID(s string) {
+	m.department_external_id = &s
+}
+
+// DepartmentExternalID returns the value of the "department_external_id" field in the mutation.
+func (m *DirectoryMemberDepartmentMutation) DepartmentExternalID() (r string, exists bool) {
+	v := m.department_external_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDepartmentExternalID returns the old "department_external_id" field's value of the DirectoryMemberDepartment entity.
+// If the DirectoryMemberDepartment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DirectoryMemberDepartmentMutation) OldDepartmentExternalID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDepartmentExternalID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDepartmentExternalID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDepartmentExternalID: %w", err)
+	}
+	return oldValue.DepartmentExternalID, nil
+}
+
+// ResetDepartmentExternalID resets all changes to the "department_external_id" field.
+func (m *DirectoryMemberDepartmentMutation) ResetDepartmentExternalID() {
+	m.department_external_id = nil
+}
+
+// SetLastSeenRunID sets the "last_seen_run_id" field.
+func (m *DirectoryMemberDepartmentMutation) SetLastSeenRunID(i int) {
+	m.last_seen_run_id = &i
+	m.addlast_seen_run_id = nil
+}
+
+// LastSeenRunID returns the value of the "last_seen_run_id" field in the mutation.
+func (m *DirectoryMemberDepartmentMutation) LastSeenRunID() (r int, exists bool) {
+	v := m.last_seen_run_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastSeenRunID returns the old "last_seen_run_id" field's value of the DirectoryMemberDepartment entity.
+// If the DirectoryMemberDepartment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DirectoryMemberDepartmentMutation) OldLastSeenRunID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastSeenRunID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastSeenRunID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastSeenRunID: %w", err)
+	}
+	return oldValue.LastSeenRunID, nil
+}
+
+// AddLastSeenRunID adds i to the "last_seen_run_id" field.
+func (m *DirectoryMemberDepartmentMutation) AddLastSeenRunID(i int) {
+	if m.addlast_seen_run_id != nil {
+		*m.addlast_seen_run_id += i
+	} else {
+		m.addlast_seen_run_id = &i
+	}
+}
+
+// AddedLastSeenRunID returns the value that was added to the "last_seen_run_id" field in this mutation.
+func (m *DirectoryMemberDepartmentMutation) AddedLastSeenRunID() (r int, exists bool) {
+	v := m.addlast_seen_run_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetLastSeenRunID resets all changes to the "last_seen_run_id" field.
+func (m *DirectoryMemberDepartmentMutation) ResetLastSeenRunID() {
+	m.last_seen_run_id = nil
+	m.addlast_seen_run_id = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *DirectoryMemberDepartmentMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *DirectoryMemberDepartmentMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the DirectoryMemberDepartment entity.
+// If the DirectoryMemberDepartment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DirectoryMemberDepartmentMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *DirectoryMemberDepartmentMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *DirectoryMemberDepartmentMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *DirectoryMemberDepartmentMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the DirectoryMemberDepartment entity.
+// If the DirectoryMemberDepartment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DirectoryMemberDepartmentMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *DirectoryMemberDepartmentMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the DirectoryMemberDepartmentMutation builder.
+func (m *DirectoryMemberDepartmentMutation) Where(ps ...predicate.DirectoryMemberDepartment) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the DirectoryMemberDepartmentMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *DirectoryMemberDepartmentMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.DirectoryMemberDepartment, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *DirectoryMemberDepartmentMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *DirectoryMemberDepartmentMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (DirectoryMemberDepartment).
+func (m *DirectoryMemberDepartmentMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *DirectoryMemberDepartmentMutation) Fields() []string {
+	fields := make([]string, 0, 8)
+	if m.source_id != nil {
+		fields = append(fields, directorymemberdepartment.FieldSourceID)
+	}
+	if m.directory_member_id != nil {
+		fields = append(fields, directorymemberdepartment.FieldDirectoryMemberID)
+	}
+	if m.member_external_id != nil {
+		fields = append(fields, directorymemberdepartment.FieldMemberExternalID)
+	}
+	if m.member_email_normalized != nil {
+		fields = append(fields, directorymemberdepartment.FieldMemberEmailNormalized)
+	}
+	if m.department_external_id != nil {
+		fields = append(fields, directorymemberdepartment.FieldDepartmentExternalID)
+	}
+	if m.last_seen_run_id != nil {
+		fields = append(fields, directorymemberdepartment.FieldLastSeenRunID)
+	}
+	if m.created_at != nil {
+		fields = append(fields, directorymemberdepartment.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, directorymemberdepartment.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *DirectoryMemberDepartmentMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case directorymemberdepartment.FieldSourceID:
+		return m.SourceID()
+	case directorymemberdepartment.FieldDirectoryMemberID:
+		return m.DirectoryMemberID()
+	case directorymemberdepartment.FieldMemberExternalID:
+		return m.MemberExternalID()
+	case directorymemberdepartment.FieldMemberEmailNormalized:
+		return m.MemberEmailNormalized()
+	case directorymemberdepartment.FieldDepartmentExternalID:
+		return m.DepartmentExternalID()
+	case directorymemberdepartment.FieldLastSeenRunID:
+		return m.LastSeenRunID()
+	case directorymemberdepartment.FieldCreatedAt:
+		return m.CreatedAt()
+	case directorymemberdepartment.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *DirectoryMemberDepartmentMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case directorymemberdepartment.FieldSourceID:
+		return m.OldSourceID(ctx)
+	case directorymemberdepartment.FieldDirectoryMemberID:
+		return m.OldDirectoryMemberID(ctx)
+	case directorymemberdepartment.FieldMemberExternalID:
+		return m.OldMemberExternalID(ctx)
+	case directorymemberdepartment.FieldMemberEmailNormalized:
+		return m.OldMemberEmailNormalized(ctx)
+	case directorymemberdepartment.FieldDepartmentExternalID:
+		return m.OldDepartmentExternalID(ctx)
+	case directorymemberdepartment.FieldLastSeenRunID:
+		return m.OldLastSeenRunID(ctx)
+	case directorymemberdepartment.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case directorymemberdepartment.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown DirectoryMemberDepartment field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *DirectoryMemberDepartmentMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case directorymemberdepartment.FieldSourceID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSourceID(v)
+		return nil
+	case directorymemberdepartment.FieldDirectoryMemberID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDirectoryMemberID(v)
+		return nil
+	case directorymemberdepartment.FieldMemberExternalID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMemberExternalID(v)
+		return nil
+	case directorymemberdepartment.FieldMemberEmailNormalized:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMemberEmailNormalized(v)
+		return nil
+	case directorymemberdepartment.FieldDepartmentExternalID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDepartmentExternalID(v)
+		return nil
+	case directorymemberdepartment.FieldLastSeenRunID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastSeenRunID(v)
+		return nil
+	case directorymemberdepartment.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case directorymemberdepartment.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown DirectoryMemberDepartment field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *DirectoryMemberDepartmentMutation) AddedFields() []string {
+	var fields []string
+	if m.addsource_id != nil {
+		fields = append(fields, directorymemberdepartment.FieldSourceID)
+	}
+	if m.adddirectory_member_id != nil {
+		fields = append(fields, directorymemberdepartment.FieldDirectoryMemberID)
+	}
+	if m.addlast_seen_run_id != nil {
+		fields = append(fields, directorymemberdepartment.FieldLastSeenRunID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *DirectoryMemberDepartmentMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case directorymemberdepartment.FieldSourceID:
+		return m.AddedSourceID()
+	case directorymemberdepartment.FieldDirectoryMemberID:
+		return m.AddedDirectoryMemberID()
+	case directorymemberdepartment.FieldLastSeenRunID:
+		return m.AddedLastSeenRunID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *DirectoryMemberDepartmentMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case directorymemberdepartment.FieldSourceID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSourceID(v)
+		return nil
+	case directorymemberdepartment.FieldDirectoryMemberID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDirectoryMemberID(v)
+		return nil
+	case directorymemberdepartment.FieldLastSeenRunID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLastSeenRunID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown DirectoryMemberDepartment numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *DirectoryMemberDepartmentMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *DirectoryMemberDepartmentMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *DirectoryMemberDepartmentMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown DirectoryMemberDepartment nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *DirectoryMemberDepartmentMutation) ResetField(name string) error {
+	switch name {
+	case directorymemberdepartment.FieldSourceID:
+		m.ResetSourceID()
+		return nil
+	case directorymemberdepartment.FieldDirectoryMemberID:
+		m.ResetDirectoryMemberID()
+		return nil
+	case directorymemberdepartment.FieldMemberExternalID:
+		m.ResetMemberExternalID()
+		return nil
+	case directorymemberdepartment.FieldMemberEmailNormalized:
+		m.ResetMemberEmailNormalized()
+		return nil
+	case directorymemberdepartment.FieldDepartmentExternalID:
+		m.ResetDepartmentExternalID()
+		return nil
+	case directorymemberdepartment.FieldLastSeenRunID:
+		m.ResetLastSeenRunID()
+		return nil
+	case directorymemberdepartment.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case directorymemberdepartment.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown DirectoryMemberDepartment field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *DirectoryMemberDepartmentMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *DirectoryMemberDepartmentMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *DirectoryMemberDepartmentMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *DirectoryMemberDepartmentMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *DirectoryMemberDepartmentMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *DirectoryMemberDepartmentMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *DirectoryMemberDepartmentMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown DirectoryMemberDepartment unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *DirectoryMemberDepartmentMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown DirectoryMemberDepartment edge %s", name)
 }
 
 // DirectoryOffboardingActionMutation represents an operation that mutates the DirectoryOffboardingAction nodes in the graph.

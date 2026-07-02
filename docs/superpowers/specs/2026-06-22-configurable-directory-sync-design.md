@@ -259,7 +259,32 @@ Fields:
 
 Unique index: `(source_id, email_normalized)`.
 
-If one email appears in multiple departments, first version stores one member row plus metadata for additional department memberships, or stores the primary department chosen by deterministic first-seen order and records a warning. Multi-department reporting can be expanded later.
+One normalized email has exactly one canonical member row per source. If the same
+email appears in multiple department responses, the executor coalesces those rows
+into the same canonical member, keeps `department_external_id` as a compatibility
+primary department field, and stores every current department membership in
+`directory_member_departments`.
+
+### `directory_member_departments`
+
+Stores the current department membership links for canonical members. This table
+is the source of truth for organization membership checks and multi-department
+reporting. `directory_members.department_external_id` remains a compatibility
+primary department for older rows and row-level display fallback.
+
+Fields:
+
+- `id`
+- `source_id`
+- `directory_member_id`
+- `member_external_id`
+- `member_email_normalized`
+- `department_external_id`
+- `last_seen_run_id`
+- `created_at`
+- `updated_at`
+
+Unique index: `(source_id, member_email_normalized, department_external_id)`.
 
 ### `directory_offboarding_actions`
 
@@ -384,7 +409,14 @@ Validation rules:
 7. Member mapping must include `email`.
 8. Department mapping must include `external_id` and `name`.
 9. Invalid or missing email rows become warnings and are excluded from `directory_members`.
-10. `request.url`, `request.headers`, and `request.query` must not contain
+10. Member mapping may provide either `department_external_id` for one
+    membership or `department_external_ids` for all memberships returned on the
+    member row. When both are present, the executor stores one canonical member
+    and deduplicates the union of all mapped department ids.
+11. Duplicate emails across different departments are normal multi-department
+    membership evidence. Duplicate email plus department pairs are ignored after
+    the first normalized membership.
+12. `request.url`, `request.headers`, and `request.query` must not contain
     literal credentials. Sensitive keys such as authorization, cookie, token,
     secret, password, credential, and API-key variants are rejected in request
     headers/query parameters. Secret-looking values such as bearer/basic/token
@@ -464,9 +496,11 @@ the latest successful apply run, not from `directory_sources.updated_at`.
 
 `GET /api/v1/admin/users` supports an optional `department_id` query parameter.
 When present, pagination and totals are computed after filtering local users by
-directory members whose `department_external_id` is in the selected department's
-subtree, including the selected department itself, and whose normalized email
-matches the local user email. Returned user rows may include a `department`
+directory members whose current `directory_member_departments.department_external_id`
+is in the selected department's subtree, including the selected department itself,
+and whose normalized email matches the local user email. Older rows without
+membership links fall back to `directory_members.department_external_id`.
+Returned user rows may include a `department`
 object:
 
 ```json
@@ -492,7 +526,9 @@ same user set, subject to the existing relay-mapped and target-count rules.
 single directory snapshot in tree preorder. Each row includes `external_id`,
 optional `parent_external_id`, `name`, source `path`, name-based `display_path`,
 `depth`, `child_count`, direct `member_count` / `matched_user_count`, and subtree
-`subtree_member_count` / `subtree_matched_user_count`. When representative
+`subtree_member_count` / `subtree_matched_user_count`. These counts use current
+member-department memberships and deduplicate the same canonical member inside a
+single subtree aggregate. When representative
 metadata is mapped, each row also includes `representative_count` and
 `matched_representative_count`, derived from
 `department.metadata.representative_external_ids` plus cross-checked
