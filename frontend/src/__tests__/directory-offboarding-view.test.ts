@@ -65,7 +65,7 @@ describe('DirectoryOffboardingView', () => {
     expect(api.listDirectoryOffboardingCandidates).toHaveBeenCalledWith({ q: '' })
     expect(wrapper.text()).toContain('Directory Offboarding')
     expect(wrapper.text()).toContain('bob@example.org')
-    expect(wrapper.text()).toContain('Subscriptions are not removed automatically')
+    expect(wrapper.text()).toContain('After disabling, this user will no longer be able to access AI services')
     expect(wrapper.find('input[type="number"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="disable-relay-user-7"]').attributes('disabled')).toBeDefined()
 
@@ -84,7 +84,7 @@ describe('DirectoryOffboardingView', () => {
     const { wrapper } = await mountOffboarding()
 
     expect(wrapper.text()).toContain('组织架构离职处理')
-    expect(wrapper.text()).toContain('订阅不会自动删除')
-    expect(wrapper.text()).toContain('禁用 relay 用户')
+    expect(wrapper.text()).toContain('禁用后，该用户将无法继续使用 AI 接入')
+    expect(wrapper.text()).toContain('禁用 AI 接入')
   })
 })

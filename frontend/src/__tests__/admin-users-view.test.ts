@@ -3,8 +3,10 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import AppToastHost from '@/components/AppToastHost.vue'
 import AdminUsersView from '@/views/admin/AdminUsersView.vue'
 import { setLocale } from '@/i18n'
+import { resetToastsForTest } from '@/composables/useToast'
 
 vi.mock('@/api/adminUsers', () => ({
   assignAdminUserSubscription: vi.fn(),
@@ -44,6 +46,7 @@ async function mountAdminUsersView(
     page?: number
     page_size?: number
   },
+  attachToDocument = false,
 ) {
 	  const { getLatestAdminUserSubscriptionJob, listAdminUserDepartments, listAdminUsers, listAdminUserSubscriptionOptions } = await import('@/api/adminUsers')
   ;(listAdminUsers as any).mockImplementation((params: any) => Promise.resolve({
@@ -181,11 +184,13 @@ async function mountAdminUsersView(
   await router.isReady()
 
   const wrapper = mount(AdminUsersView, {
+    attachTo: attachToDocument ? document.body : undefined,
     global: {
       plugins: [pinia, router],
       stubs: {
         AppLayout: {
-          template: '<div><slot /></div>',
+          components: { AppToastHost },
+          template: '<div><slot /><AppToastHost /></div>',
         },
       },
     },
@@ -217,10 +222,13 @@ describe('AdminUsersView', () => {
   beforeEach(() => {
     setLocale('en-US')
     vi.resetAllMocks()
+    resetToastsForTest()
   })
 
   afterEach(() => {
     vi.useRealTimers()
+    resetToastsForTest()
+    document.body.innerHTML = ''
   })
 
   it('loads and renders local users with pagination controls', async () => {
@@ -458,9 +466,12 @@ describe('AdminUsersView', () => {
     const { revealAdminUserRelayPassword } = await import('@/api/adminUsers')
 
     await wrapper.get('[data-testid="copy-encrypted-7"]').trigger('click')
+    await flushPromises()
 
     expect(revealAdminUserRelayPassword).not.toHaveBeenCalled()
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('encrypted-relay-password-ciphertext')
+    expect(wrapper.get('[data-testid="app-toast"]').text()).toContain('Copied encrypted')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 
   it('requires explicit confirmation before copying plaintext from reveal', async () => {
@@ -469,7 +480,7 @@ describe('AdminUsersView', () => {
       data: { data: { password: 'test-password' } },
     })
 
-    const { wrapper } = await mountAdminUsersView()
+    const { wrapper } = await mountAdminUsersView('/admin/users', undefined, true)
     await wrapper.get('[data-testid="copy-plaintext-7"]').trigger('click')
     await flushPromises()
 
@@ -483,6 +494,40 @@ describe('AdminUsersView', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('test-password')
     expect(wrapper.text()).toContain('Copied plaintext')
     expect(wrapper.text()).not.toContain('test-password')
+  })
+
+  it('moves focus into admin dialogs and closes them with Escape', async () => {
+    const { wrapper } = await mountAdminUsersView('/admin/users', undefined, true)
+    const trigger = wrapper.get('[data-testid="disable-access-7"]')
+    ;(trigger.element as HTMLButtonElement).focus()
+
+    await trigger.trigger('click')
+    await flushPromises()
+
+    const input = wrapper.get('[data-testid="disable-access-confirm-email-7"]')
+    expect(document.activeElement).toBe(input.element)
+
+    await wrapper.get('[data-testid="disable-access-dialog"]').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="disable-access-dialog"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
+  })
+
+  it('traps focus inside admin dialogs', async () => {
+    const { wrapper } = await mountAdminUsersView('/admin/users', undefined, true)
+
+    await wrapper.get('[data-testid="disable-access-7"]').trigger('click')
+    await flushPromises()
+
+    const closeButton = wrapper.get('[data-testid="disable-access-dialog-close"]')
+    const cancelButton = wrapper.get('[data-testid="disable-access-dialog-cancel"]')
+    ;(closeButton.element as HTMLButtonElement).focus()
+
+    await wrapper.get('[data-testid="disable-access-dialog"]').trigger('keydown', { key: 'Tab', shiftKey: true })
+    await flushPromises()
+
+    expect(document.activeElement).toBe(cancelButton.element)
   })
 
   it('requires email confirmation before disabling user access', async () => {
@@ -502,7 +547,7 @@ describe('AdminUsersView', () => {
     await flushPromises()
 
     expect(disableAdminUserAccess).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('Only the relay user is disabled')
+    expect(wrapper.text()).toContain('After disabling, this user will no longer be able to access AI services')
 
     await wrapper.get('[data-testid="disable-access-confirm-email-7"]').setValue('alice@example.com')
     await wrapper.get('[data-testid="confirm-disable-access-7"]').trigger('click')

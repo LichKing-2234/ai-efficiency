@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import DirectorySyncSettings from '@/components/settings/DirectorySyncSettings.vue'
 import { setLocale } from '@/i18n'
+import { resetToastsForTest, useToast } from '@/composables/useToast'
 
 vi.mock('@/api/directory', () => ({
   listDirectorySources: vi.fn(),
@@ -62,6 +63,7 @@ async function mountDirectorySyncSettings() {
 describe('DirectorySyncSettings', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    resetToastsForTest()
     setLocale('en-US')
   })
 
@@ -80,6 +82,7 @@ describe('DirectorySyncSettings', () => {
     await wrapper.get('[data-testid="directory-copy-ai-prompt"]').trigger('click')
 
     expect(navigator.clipboard.writeText).toHaveBeenCalled()
+    expect(useToast().toast.message).toBe('AI prompt copied')
     const prompt = (navigator.clipboard.writeText as any).mock.calls[0][0]
     expect(prompt).toContain('Target YAML contract')
     expect(prompt).toContain('Normalized output structures')
@@ -116,6 +119,17 @@ describe('DirectorySyncSettings', () => {
     expect(prompt).toContain('1. Department list endpoint')
     expect(prompt).toContain('2. Member list endpoint')
     expect(prompt).toContain('3. Pagination')
+  })
+
+  it('shows toast feedback when copying the AI prompt fails', async () => {
+    ;(navigator.clipboard.writeText as any).mockRejectedValueOnce(new Error('clipboard unavailable'))
+    const { wrapper } = await mountDirectorySyncSettings()
+
+    await wrapper.get('[data-testid="directory-copy-ai-prompt"]').trigger('click')
+    await flushPromises()
+
+    expect(useToast().toast.message).toBe('Copy failed')
+    expect(useToast().toast.tone).toBe('error')
   })
 
   it('shows validation issue details', async () => {
