@@ -400,6 +400,9 @@ func overviewDepartmentTrendBucket(departmentID string, nodeByID map[string]*ove
 		if node.ParentExternalID == nil {
 			break
 		}
+		if _, ok := nodeByID[*node.ParentExternalID]; !ok {
+			break
+		}
 		currentID = *node.ParentExternalID
 	}
 	rootToLeaf := make([]string, 0, len(leafToRoot))
