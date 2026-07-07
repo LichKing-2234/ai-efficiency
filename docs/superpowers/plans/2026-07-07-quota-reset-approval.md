@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** In progress. Backend schema, resolver, request workflow, webhook notification, and Gin APIs are implemented and verified with focused tests. Frontend UI, architecture docs, and full-suite verification remain.
+**Status:** Complete. Backend and frontend implementation, architecture documentation, and full verification are complete.
 
 ## Source Spec
 
@@ -2248,7 +2248,7 @@ git commit -m "feat(frontend): add quota reset approval settings"
 - Modify: `docs/architecture.md`
 - Modify: `docs/superpowers/plans/2026-07-07-quota-reset-approval.md`
 
-- [ ] **Step 1: Add localized strings**
+- [x] **Step 1: Add localized strings**
 
 Modify `frontend/src/i18n.ts` in both English and Chinese sections. Add keys:
 
@@ -2276,7 +2276,7 @@ Modify `frontend/src/i18n.ts` in both English and Chinese sections. Add keys:
 
 Use concise Chinese equivalents in the `zh-CN` section.
 
-- [ ] **Step 2: Update architecture docs**
+- [x] **Step 2: Update architecture docs**
 
 Modify `docs/architecture.md`:
 
@@ -2290,7 +2290,7 @@ Modify `docs/architecture.md`:
 3. Update Frontend Task Zones to include `/usage/quota-reset`.
 4. Update module table to mention `backend/internal/quotareset`.
 
-- [ ] **Step 3: Run backend tests**
+- [x] **Step 3: Run backend tests**
 
 Run:
 
@@ -2300,7 +2300,7 @@ cd backend && go test ./...
 
 Expected: PASS. If the local PostgreSQL test database is unavailable, record the exact DSN failure and rerun focused non-DB packages that can compile.
 
-- [ ] **Step 4: Run frontend tests**
+- [x] **Step 4: Run frontend tests**
 
 Run:
 
@@ -2310,7 +2310,7 @@ cd frontend && npm test
 
 Expected: PASS.
 
-- [ ] **Step 5: Run frontend build**
+- [x] **Step 5: Run frontend build**
 
 Run:
 
@@ -2320,7 +2320,7 @@ cd frontend && npm run build
 
 Expected: PASS.
 
-- [ ] **Step 6: Whitespace check**
+- [x] **Step 6: Whitespace check**
 
 Run:
 
@@ -2330,7 +2330,7 @@ git diff --check
 
 Expected: no output.
 
-- [ ] **Step 7: Commit final docs and localization**
+- [x] **Step 7: Commit final docs and localization**
 
 ```bash
 git add frontend/src/i18n.ts docs/architecture.md docs/superpowers/plans/2026-07-07-quota-reset-approval.md
