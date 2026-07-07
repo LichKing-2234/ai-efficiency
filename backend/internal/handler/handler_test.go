@@ -65,6 +65,7 @@ func setupTestEnvWithOAuth(t *testing.T, oauthHandler *oauth.Handler) *testEnv {
 		nil, // syncService
 		nil, // settingsHandler
 		"0000000000000000000000000000000000000000000000000000000000000000",
+		"",
 		middleware.CORS(nil),
 		oauthHandler, nil, nil, nil,
 		nil,
@@ -707,6 +708,7 @@ func setupTestEnvWithProvider(t *testing.T) *testEnv {
 		nil,
 		nil,
 		"0000000000000000000000000000000000000000000000000000000000000000",
+		"",
 		middleware.CORS(nil),
 		nil, providerHandler, nil, nil,
 		nil,

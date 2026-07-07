@@ -55,6 +55,7 @@ func setupFullTestEnvWithHealth(t *testing.T, healthHandler *HealthHandler) *ful
 		nil, // syncService
 		settingsHandler,
 		"0000000000000000000000000000000000000000000000000000000000000000",
+		"",
 		middleware.CORS(nil),
 		nil, nil, nil, handlerCheckpoint(client),
 		healthHandler,
@@ -341,6 +342,7 @@ func TestAuthOptionsExposeLDAPAndDevLoginWhenAvailable(t *testing.T) {
 		nil,
 		nil,
 		"0000000000000000000000000000000000000000000000000000000000000000",
+		"",
 		middleware.CORS(nil),
 		nil, nil, adminSettingsHandler, nil, nil,
 	)

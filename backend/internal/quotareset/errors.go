@@ -5,6 +5,7 @@ import "errors"
 var (
 	ErrNoRelayMapping        = errors.New("no_relay_mapping")
 	ErrProviderUnsupported   = errors.New("provider_unsupported")
+	ErrDirectoryUnavailable  = errors.New("directory_source_unavailable")
 	ErrInactiveSubscription  = errors.New("inactive_subscription")
 	ErrActiveRequestExists   = errors.New("active_request_exists")
 	ErrNotApprover           = errors.New("not_approver")

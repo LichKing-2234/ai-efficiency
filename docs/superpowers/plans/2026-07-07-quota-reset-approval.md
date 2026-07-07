@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** Not started. This plan is the live implementation ledger for `docs/superpowers/specs/2026-07-07-quota-reset-approval-design.md`.
+**Status:** In progress. Backend schema, resolver, request workflow, webhook notification, and Gin APIs are implemented and verified with focused tests. Frontend UI, architecture docs, and full-suite verification remain.
 
 ## Source Spec
 
@@ -1452,7 +1452,7 @@ git commit -m "feat(backend): add quota reset webhook notification"
 - Modify: `backend/internal/handler/router.go`
 - Modify: `backend/cmd/server/main.go`
 
-- [ ] **Step 1: Write handler tests**
+- [x] **Step 1: Write handler tests**
 
 Create `backend/internal/handler/quota_reset_test.go`:
 
@@ -1618,7 +1618,7 @@ func performQuotaResetRequest(router *gin.Engine, method, path, token string, bo
 }
 ```
 
-- [ ] **Step 2: Run handler tests to verify they fail**
+- [x] **Step 2: Run handler tests to verify they fail**
 
 Run:
 
@@ -1628,7 +1628,7 @@ cd backend && go test ./internal/handler -run 'TestQuotaReset' -count=1
 
 Expected: FAIL because `NewQuotaResetHandler` does not exist.
 
-- [ ] **Step 3: Implement handler**
+- [x] **Step 3: Implement handler**
 
 Create `backend/internal/handler/quota_reset.go`:
 
@@ -1709,7 +1709,7 @@ default:
 }
 ```
 
-- [ ] **Step 4: Register routes**
+- [x] **Step 4: Register routes**
 
 Modify `backend/internal/handler/router.go`:
 
@@ -1747,7 +1747,7 @@ adminQuotaResetGroup.Use(auth.RequireAdmin())
 }
 ```
 
-- [ ] **Step 5: Verify handler tests pass**
+- [x] **Step 5: Verify handler tests pass**
 
 Run:
 
@@ -1757,7 +1757,7 @@ cd backend && go test ./internal/handler -run 'TestQuotaReset' -count=1
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit handlers**
+- [x] **Step 6: Commit handlers**
 
 ```bash
 git add backend/internal/handler backend/cmd/server/main.go

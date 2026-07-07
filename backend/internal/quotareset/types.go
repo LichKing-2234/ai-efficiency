@@ -70,6 +70,43 @@ type NotificationSettings struct {
 	UpdatedAt    string `json:"updated_at,omitempty"`
 }
 
+type ApproverConfigListResponse struct {
+	Items []ApproverConfig `json:"items"`
+}
+
+type ApproverConfig struct {
+	ID                    int       `json:"id"`
+	DirectorySourceID     int       `json:"directory_source_id"`
+	DepartmentExternalID  string    `json:"department_external_id"`
+	DepartmentDisplayPath string    `json:"department_display_path"`
+	ApproverUserID        int       `json:"approver_user_id"`
+	ApproverUsername      string    `json:"approver_username"`
+	ApproverEmail         string    `json:"approver_email"`
+	Enabled               bool      `json:"enabled"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+}
+
+type SaveApproverConfigsInput struct {
+	ActorUserID int
+	Items       []ApproverConfigInput
+}
+
+type ApproverConfigInput struct {
+	DepartmentExternalID  string `json:"department_external_id"`
+	DepartmentDisplayPath string `json:"department_display_path"`
+	ApproverUserID        int    `json:"approver_user_id"`
+	Enabled               bool   `json:"enabled"`
+}
+
+type UpdateNotificationSettingsInput struct {
+	ActorUserID  int
+	Enabled      bool
+	URL          string
+	AuthType     string
+	CredentialID *int
+}
+
 type RequestEvent struct {
 	ID           int            `json:"id"`
 	RequestID    int            `json:"request_id"`

@@ -12,10 +12,13 @@ import (
 	"entgo.io/ent/dialect/sql"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
+	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
@@ -232,6 +235,130 @@ func (s *Service) ListApprovals(ctx context.Context, actorUserID int, params Lis
 
 func (s *Service) ListAdmin(ctx context.Context, params ListParams) (*RequestListResponse, error) {
 	return s.list(ctx, params, nil)
+}
+
+func (s *Service) ListApproverConfigs(ctx context.Context) (*ApproverConfigListResponse, error) {
+	rows, err := s.client.QuotaResetApproverConfig.Query().
+		Order(ent.Asc(quotaresetapproverconfig.FieldDepartmentDisplayPath), ent.Asc(quotaresetapproverconfig.FieldApproverUserID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list quota reset approver configs: %w", err)
+	}
+	return s.approverConfigResponse(ctx, rows)
+}
+
+func (s *Service) SaveApproverConfigs(ctx context.Context, input SaveApproverConfigsInput) (*ApproverConfigListResponse, error) {
+	sourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrDirectoryUnavailable
+	}
+	items := normalizeApproverConfigInputs(input.Items)
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin quota reset approver config tx: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.QuotaResetApproverConfig.Delete().
+		Where(quotaresetapproverconfig.DirectorySourceIDEQ(sourceID)).
+		Exec(ctx); err != nil {
+		return nil, fmt.Errorf("delete quota reset approver configs: %w", err)
+	}
+	for _, item := range items {
+		if _, err := tx.QuotaResetApproverConfig.Create().
+			SetDirectorySourceID(sourceID).
+			SetDepartmentExternalID(item.DepartmentExternalID).
+			SetDepartmentDisplayPath(item.DepartmentDisplayPath).
+			SetApproverUserID(item.ApproverUserID).
+			SetEnabled(item.Enabled).
+			SetCreatedByUserID(input.ActorUserID).
+			SetUpdatedByUserID(input.ActorUserID).
+			Save(ctx); err != nil {
+			return nil, fmt.Errorf("create quota reset approver config: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit quota reset approver configs: %w", err)
+	}
+	return s.ListApproverConfigs(ctx)
+}
+
+func (s *Service) GetNotificationSettings(ctx context.Context) (*NotificationSettings, error) {
+	row, err := s.client.QuotaResetNotificationSetting.Query().
+		Order(ent.Asc(quotaresetnotificationsetting.FieldID)).
+		First(ctx)
+	if ent.IsNotFound(err) {
+		return &NotificationSettings{AuthType: quotaresetnotificationsetting.AuthTypeNone.String()}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load quota reset notification settings: %w", err)
+	}
+	return notificationSettingsResponse(row), nil
+}
+
+func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNotificationSettingsInput) (*NotificationSettings, error) {
+	input.URL = strings.TrimSpace(input.URL)
+	input.AuthType = strings.TrimSpace(input.AuthType)
+	if input.AuthType == "" {
+		input.AuthType = quotaresetnotificationsetting.AuthTypeNone.String()
+	}
+	authType := quotaresetnotificationsetting.AuthType(input.AuthType)
+	if err := quotaresetnotificationsetting.AuthTypeValidator(authType); err != nil {
+		return nil, fmt.Errorf("invalid notification auth type: %w", err)
+	}
+	if authType == quotaresetnotificationsetting.AuthTypeNone {
+		input.CredentialID = nil
+	}
+	row, err := s.client.QuotaResetNotificationSetting.Query().
+		Order(ent.Asc(quotaresetnotificationsetting.FieldID)).
+		First(ctx)
+	if ent.IsNotFound(err) {
+		create := s.client.QuotaResetNotificationSetting.Create().
+			SetEnabled(input.Enabled).
+			SetURL(input.URL).
+			SetAuthType(authType).
+			SetCreatedByUserID(input.ActorUserID).
+			SetUpdatedByUserID(input.ActorUserID)
+		if input.CredentialID != nil {
+			create.SetCredentialID(*input.CredentialID)
+		}
+		row, err = create.Save(ctx)
+	} else if err == nil {
+		update := s.client.QuotaResetNotificationSetting.UpdateOneID(row.ID).
+			SetEnabled(input.Enabled).
+			SetURL(input.URL).
+			SetAuthType(authType).
+			SetUpdatedByUserID(input.ActorUserID)
+		if input.CredentialID != nil {
+			update.SetCredentialID(*input.CredentialID)
+		} else {
+			update.ClearCredentialID()
+		}
+		row, err = update.Save(ctx)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("save quota reset notification settings: %w", err)
+	}
+	return notificationSettingsResponse(row), nil
+}
+
+func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int) error {
+	if s.notifier == nil {
+		return nil
+	}
+	return s.notifier.NotifyRequestEvent(ctx, "quota_reset_notification_test", &ent.QuotaResetRequest{
+		ID:                      0,
+		RequesterUserID:         actorUserID,
+		ProviderID:              0,
+		GroupID:                 "0",
+		GroupName:               "Group Alpha",
+		GroupPlatform:           "openai",
+		Reason:                  "Notification test",
+		Status:                  quotaresetrequest.StatusPending,
+		ResolvedApproverUserIds: []int{actorUserID},
+	})
 }
 
 func (s *Service) resolveRequesterAndPrimaryProvider(ctx context.Context, userID int) (*ent.User, *ent.RelayProvider, relay.Provider, error) {
@@ -638,4 +765,86 @@ func subscriptionGroupPlatform(subscription relay.UserSubscription) string {
 		return strings.TrimSpace(subscription.Group.Platform)
 	}
 	return ""
+}
+
+func normalizeApproverConfigInputs(items []ApproverConfigInput) []ApproverConfigInput {
+	out := make([]ApproverConfigInput, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		item.DepartmentExternalID = strings.TrimSpace(item.DepartmentExternalID)
+		item.DepartmentDisplayPath = strings.TrimSpace(item.DepartmentDisplayPath)
+		if item.DepartmentExternalID == "" || item.ApproverUserID <= 0 {
+			continue
+		}
+		key := fmt.Sprintf("%s/%d", item.DepartmentExternalID, item.ApproverUserID)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].DepartmentDisplayPath != out[j].DepartmentDisplayPath {
+			return out[i].DepartmentDisplayPath < out[j].DepartmentDisplayPath
+		}
+		if out[i].DepartmentExternalID != out[j].DepartmentExternalID {
+			return out[i].DepartmentExternalID < out[j].DepartmentExternalID
+		}
+		return out[i].ApproverUserID < out[j].ApproverUserID
+	})
+	return out
+}
+
+func (s *Service) approverConfigResponse(ctx context.Context, rows []*ent.QuotaResetApproverConfig) (*ApproverConfigListResponse, error) {
+	userIDs := make([]int, 0, len(rows))
+	seen := map[int]struct{}{}
+	for _, row := range rows {
+		if _, ok := seen[row.ApproverUserID]; ok {
+			continue
+		}
+		seen[row.ApproverUserID] = struct{}{}
+		userIDs = append(userIDs, row.ApproverUserID)
+	}
+	usersByID := map[int]*ent.User{}
+	if len(userIDs) > 0 {
+		users, err := s.client.User.Query().Where(entuser.IDIn(userIDs...)).All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load quota reset approver users: %w", err)
+		}
+		for _, user := range users {
+			usersByID[user.ID] = user
+		}
+	}
+	items := make([]ApproverConfig, 0, len(rows))
+	for _, row := range rows {
+		item := ApproverConfig{
+			ID:                    row.ID,
+			DirectorySourceID:     row.DirectorySourceID,
+			DepartmentExternalID:  row.DepartmentExternalID,
+			DepartmentDisplayPath: row.DepartmentDisplayPath,
+			ApproverUserID:        row.ApproverUserID,
+			Enabled:               row.Enabled,
+			CreatedAt:             row.CreatedAt,
+			UpdatedAt:             row.UpdatedAt,
+		}
+		if user := usersByID[row.ApproverUserID]; user != nil {
+			item.ApproverUsername = user.Username
+			item.ApproverEmail = user.Email
+		}
+		items = append(items, item)
+	}
+	return &ApproverConfigListResponse{Items: items}, nil
+}
+
+func notificationSettingsResponse(row *ent.QuotaResetNotificationSetting) *NotificationSettings {
+	if row == nil {
+		return &NotificationSettings{AuthType: quotaresetnotificationsetting.AuthTypeNone.String()}
+	}
+	return &NotificationSettings{
+		Enabled:      row.Enabled,
+		URL:          row.URL,
+		AuthType:     row.AuthType.String(),
+		CredentialID: row.CredentialID,
+		UpdatedAt:    row.UpdatedAt.UTC().Format(time.RFC3339),
+	}
 }
