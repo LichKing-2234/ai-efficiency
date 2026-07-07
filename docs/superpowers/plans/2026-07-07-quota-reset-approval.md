@@ -2155,7 +2155,7 @@ git commit -m "feat(frontend): add quota reset request workflow"
 - Create: `frontend/src/__tests__/quota-reset-approval-settings.test.ts`
 - Modify: `frontend/src/__tests__/settings-view.test.ts`
 
-- [ ] **Step 1: Write settings component test**
+- [x] **Step 1: Write settings component test**
 
 Create `frontend/src/__tests__/quota-reset-approval-settings.test.ts`:
 
@@ -2199,7 +2199,7 @@ describe('QuotaResetApprovalSettings', () => {
 })
 ```
 
-- [ ] **Step 2: Implement settings component**
+- [x] **Step 2: Implement settings component**
 
 Create `frontend/src/components/settings/QuotaResetApprovalSettings.vue`:
 
@@ -2214,7 +2214,7 @@ Create `frontend/src/components/settings/QuotaResetApprovalSettings.vue`:
 
 Do not show secret text values; render only credential names and masked summaries.
 
-- [ ] **Step 3: Mount settings under Organization & Login**
+- [x] **Step 3: Mount settings under Organization & Login**
 
 Modify `frontend/src/components/settings/OrganizationLoginSettings.vue`:
 
@@ -2224,7 +2224,7 @@ Modify `frontend/src/components/settings/OrganizationLoginSettings.vue`:
 
 Import the component at the top.
 
-- [ ] **Step 4: Verify settings tests**
+- [x] **Step 4: Verify settings tests**
 
 Run:
 
@@ -2234,7 +2234,7 @@ cd frontend && npm test -- quota-reset-approval-settings settings-view
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit settings UI**
+- [x] **Step 5: Commit settings UI**
 
 ```bash
 git add frontend/src/components/settings frontend/src/views/SettingsView.vue frontend/src/__tests__/quota-reset-approval-settings.test.ts frontend/src/__tests__/settings-view.test.ts

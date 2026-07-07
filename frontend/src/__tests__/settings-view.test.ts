@@ -68,6 +68,14 @@ vi.mock('@/api/directory', () => ({
   getDirectoryRun: vi.fn(),
 }))
 
+vi.mock('@/api/quotaReset', () => ({
+  getQuotaResetApproverConfigs: vi.fn(),
+  saveQuotaResetApproverConfigs: vi.fn(),
+  getQuotaResetNotificationSettings: vi.fn(),
+  updateQuotaResetNotificationSettings: vi.fn(),
+  testQuotaResetNotificationSettings: vi.fn(),
+}))
+
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
@@ -129,6 +137,13 @@ async function resetApiMocks() {
   directoryApi.validateDirectorySource.mockReset().mockResolvedValue({ data: { data: { valid: true, issues: [] } } })
   directoryApi.previewDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1, status: 'completed' } } })
   directoryApi.startDirectoryRun.mockReset().mockResolvedValue({ data: { data: { id: 2, status: 'completed' } } })
+
+  const quotaResetApi = await import('@/api/quotaReset') as any
+  quotaResetApi.getQuotaResetApproverConfigs.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
+  quotaResetApi.saveQuotaResetApproverConfigs.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
+  quotaResetApi.getQuotaResetNotificationSettings.mockReset().mockResolvedValue({ data: { data: { enabled: false, url: '', auth_type: 'none' } } })
+  quotaResetApi.updateQuotaResetNotificationSettings.mockReset().mockResolvedValue({ data: { data: { enabled: false, url: '', auth_type: 'none' } } })
+  quotaResetApi.testQuotaResetNotificationSettings.mockReset().mockResolvedValue({ data: { data: { message: 'ok' } } })
 
   const authApi = await import('@/api/auth') as any
   authApi.login.mockReset().mockResolvedValue({ data: { data: null } })
@@ -217,6 +232,7 @@ describe('SettingsView', () => {
 
     await openSettingsSection(wrapper, 'organization-login')
 
+    expect(wrapper.text()).toContain('Quota Reset Approval')
     expect(wrapper.text()).toContain('Directory Sync')
     expect(wrapper.text()).toContain('Departments then members')
     expect(wrapper.text()).toContain('Copy AI Prompt')
