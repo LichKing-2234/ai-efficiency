@@ -1774,7 +1774,7 @@ git commit -m "feat(backend): expose quota reset approval APIs"
 - Create: `frontend/src/__tests__/quota-reset-api.test.ts`
 - Modify: `frontend/src/__tests__/router.test.ts`
 
-- [ ] **Step 1: Add frontend types**
+- [x] **Step 1: Add frontend types**
 
 Append to `frontend/src/types/index.ts`:
 
@@ -1870,7 +1870,7 @@ export interface QuotaResetNotificationSettings {
 }
 ```
 
-- [ ] **Step 2: Add API wrapper**
+- [x] **Step 2: Add API wrapper**
 
 Create `frontend/src/api/quotaReset.ts`:
 
@@ -1942,7 +1942,7 @@ export function testQuotaResetNotificationSettings() {
 }
 ```
 
-- [ ] **Step 3: Test API paths**
+- [x] **Step 3: Test API paths**
 
 Create `frontend/src/__tests__/quota-reset-api.test.ts` with axios client mocked like existing API tests:
 
@@ -1982,7 +1982,7 @@ describe('quota reset api', () => {
 })
 ```
 
-- [ ] **Step 4: Add route skeleton**
+- [x] **Step 4: Add route skeleton**
 
 Create `frontend/src/views/QuotaResetView.vue`:
 
@@ -2020,7 +2020,7 @@ Modify `frontend/src/router/index.ts`:
 },
 ```
 
-- [ ] **Step 5: Verify frontend API and route tests**
+- [x] **Step 5: Verify frontend API and route tests**
 
 Run:
 
@@ -2030,7 +2030,7 @@ cd frontend && npm test -- quota-reset-api router
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit frontend API skeleton**
+- [x] **Step 6: Commit frontend API skeleton**
 
 ```bash
 git add frontend/src/types/index.ts frontend/src/api/quotaReset.ts frontend/src/router/index.ts frontend/src/views/QuotaResetView.vue frontend/src/components/user/usage/UsageCenterTabs.vue frontend/src/__tests__/quota-reset-api.test.ts frontend/src/__tests__/router.test.ts

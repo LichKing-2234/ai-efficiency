@@ -56,6 +56,11 @@ const router = createRouter({
       component: () => import('@/views/TeamOverviewView.vue'),
     },
     {
+      path: '/usage/quota-reset',
+      name: 'UsageQuotaReset',
+      component: () => import('@/views/QuotaResetView.vue'),
+    },
+    {
       path: '/repos',
       name: 'RepoList',
       component: () => import('@/views/repos/RepoListView.vue'),

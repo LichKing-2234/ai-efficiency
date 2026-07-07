@@ -131,9 +131,11 @@ describe('Router Guards', () => {
     const usageRoute = router.getRoutes().find((r) => r.name === 'Usage')
     const memberUsageRoute = router.getRoutes().find((r) => r.name === 'UsageMember')
     const teamUsageRoute = router.getRoutes().find((r) => r.name === 'UsageTeam')
+    const quotaResetRoute = router.getRoutes().find((r) => r.name === 'UsageQuotaReset')
     expect(usageRoute?.path).toBe('/usage')
     expect(memberUsageRoute?.path).toBe('/usage/members/:user_id')
     expect(teamUsageRoute?.path).toBe('/usage/team')
+    expect(quotaResetRoute?.path).toBe('/usage/quota-reset')
   })
 
   it('does not expose user usage as a separate page route', () => {
