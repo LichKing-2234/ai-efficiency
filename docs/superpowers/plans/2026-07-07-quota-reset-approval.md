@@ -1227,7 +1227,7 @@ git commit -m "feat(backend): add quota reset request workflow"
 - Create: `backend/internal/quotareset/notification_test.go`
 - Modify: `backend/internal/handler/credential.go`
 
-- [ ] **Step 1: Write notification tests**
+- [x] **Step 1: Write notification tests**
 
 Create `backend/internal/quotareset/notification_test.go`:
 
@@ -1336,7 +1336,7 @@ func createNotificationQuotaResetRequest(t *testing.T, ctx context.Context, clie
 }
 ```
 
-- [ ] **Step 2: Run notification tests to verify they fail**
+- [x] **Step 2: Run notification tests to verify they fail**
 
 Run:
 
@@ -1346,7 +1346,7 @@ cd backend && go test ./internal/quotareset -run 'TestWebhookNotifier' -count=1
 
 Expected: FAIL because `NewWebhookNotifier` is not implemented.
 
-- [ ] **Step 3: Implement webhook notifier**
+- [x] **Step 3: Implement webhook notifier**
 
 Create `backend/internal/quotareset/notification.go`:
 
@@ -1397,7 +1397,7 @@ Implement `NotifyRequestEvent` to:
 5. If `auth_type=bearer_token`, decrypt the referenced `Credential`, parse `credentialpkg.SecretTextPayload`, and set `Authorization`.
 6. Send POST and treat any status outside `200..299` as error.
 
-- [ ] **Step 4: Protect in-use webhook credential deletion**
+- [x] **Step 4: Protect in-use webhook credential deletion**
 
 Modify `backend/internal/handler/credential.go` in `Delete` so `usageCount` includes notification settings:
 
@@ -1417,7 +1417,7 @@ if count+notificationCount > 0 {
 
 Also update `toResponseFromPayload` so `UsageCount` includes `notificationCount`.
 
-- [ ] **Step 5: Verify notification tests pass**
+- [x] **Step 5: Verify notification tests pass**
 
 Run:
 
@@ -1427,7 +1427,7 @@ cd backend && go test ./internal/quotareset -run 'TestWebhookNotifier' -count=1
 
 Expected: PASS.
 
-- [ ] **Step 6: Verify credential handler still passes**
+- [x] **Step 6: Verify credential handler still passes**
 
 Run:
 
@@ -1437,7 +1437,7 @@ cd backend && go test ./internal/handler -run 'Test.*Credential|Test.*Settings' 
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit notification work**
+- [x] **Step 7: Commit notification work**
 
 ```bash
 git add backend/internal/quotareset backend/internal/handler/credential.go
