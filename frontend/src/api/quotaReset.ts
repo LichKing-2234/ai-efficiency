@@ -15,6 +15,8 @@ export interface QuotaResetListParams {
   status?: string
 }
 
+export type QuotaResetApproverConfigSaveMode = 'replace_departments' | 'replace_all'
+
 export function getQuotaResetOptions() {
   return client.get<ApiResponse<QuotaResetOptionsResponse>>('/user/quota-reset/options')
 }
@@ -67,8 +69,11 @@ export function getQuotaResetApproverConfigs() {
   return client.get<ApiResponse<QuotaResetApproverConfigListResponse>>('/admin/quota-reset/approver-configs')
 }
 
-export function saveQuotaResetApproverConfigs(items: QuotaResetApproverConfigInput[]) {
-  return client.put<ApiResponse<QuotaResetApproverConfigListResponse>>('/admin/quota-reset/approver-configs', { items })
+export function saveQuotaResetApproverConfigs(
+  items: QuotaResetApproverConfigInput[],
+  mode: QuotaResetApproverConfigSaveMode = 'replace_departments',
+) {
+  return client.put<ApiResponse<QuotaResetApproverConfigListResponse>>('/admin/quota-reset/approver-configs', { items, mode })
 }
 
 export function getQuotaResetNotificationSettings() {

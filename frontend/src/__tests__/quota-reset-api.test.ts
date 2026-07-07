@@ -51,14 +51,14 @@ describe('quota reset api', () => {
     listAdminQuotaResetRequests({ page: 2, page_size: 20 })
     adminApproveQuotaResetRequest(99, { decision_reason: 'Approved' })
     getQuotaResetApproverConfigs()
-    saveQuotaResetApproverConfigs([
-      {
-        department_external_id: 'department-alpha',
-        department_display_path: 'Department Alpha',
-        approver_user_id: 7,
-        enabled: true,
-      },
-    ])
+	    saveQuotaResetApproverConfigs([
+	      {
+	        department_external_id: 'department-alpha',
+	        department_display_path: 'Department Alpha',
+	        approver_user_id: 7,
+	        enabled: true,
+	      },
+	    ], 'replace_all')
     getQuotaResetNotificationSettings()
     updateQuotaResetNotificationSettings({
       enabled: true,
@@ -73,16 +73,17 @@ describe('quota reset api', () => {
       decision_reason: 'Approved',
     })
     expect(mockClient.get).toHaveBeenCalledWith('/admin/quota-reset/approver-configs')
-    expect(mockClient.put).toHaveBeenCalledWith('/admin/quota-reset/approver-configs', {
-      items: [
-        {
-          department_external_id: 'department-alpha',
-          department_display_path: 'Department Alpha',
-          approver_user_id: 7,
-          enabled: true,
-        },
-      ],
-    })
+	    expect(mockClient.put).toHaveBeenCalledWith('/admin/quota-reset/approver-configs', {
+	      items: [
+	        {
+	          department_external_id: 'department-alpha',
+	          department_display_path: 'Department Alpha',
+	          approver_user_id: 7,
+	          enabled: true,
+	        },
+	      ],
+	      mode: 'replace_all',
+	    })
     expect(mockClient.get).toHaveBeenCalledWith('/admin/quota-reset/notification-settings')
     expect(mockClient.put).toHaveBeenCalledWith('/admin/quota-reset/notification-settings', {
       enabled: true,

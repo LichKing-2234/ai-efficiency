@@ -3,6 +3,7 @@
 package migrate
 
 import (
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/dialect/sql/schema"
 	"entgo.io/ent/schema/field"
 )
@@ -691,6 +692,14 @@ var (
 				Name:    "quotaresetrequest_provider_id_group_id_status",
 				Unique:  false,
 				Columns: []*schema.Column{QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4], QuotaResetRequestsColumns[8]},
+			},
+			{
+				Name:    "quotaresetrequest_requester_user_id_provider_id_group_id",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status IN ('pending', 'approved_resetting', 'approved_reset_failed')",
+				},
 			},
 			{
 				Name:    "quotaresetrequest_updated_at",

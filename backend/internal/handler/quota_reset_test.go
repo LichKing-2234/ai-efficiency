@@ -129,6 +129,21 @@ func TestQuotaResetAdminApproveUsesAdminFlag(t *testing.T) {
 	}
 }
 
+func TestQuotaResetSaveApproverConfigsPassesMode(t *testing.T) {
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		saveApproverConfigsFn: func(_ context.Context, input quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error) {
+			if input.ActorUserID != 2 || input.Mode != quotareset.ApproverConfigSaveModeReplaceAll || len(input.Items) != 1 {
+				t.Fatalf("input = %+v", input)
+			}
+			return &quotareset.ApproverConfigListResponse{}, nil
+		},
+	})
+	rec := performQuotaResetRequest(env.router, http.MethodPut, "/api/v1/admin/quota-reset/approver-configs", env.adminToken, `{"mode":"replace_all","items":[{"department_external_id":"dept-alpha","approver_user_id":7,"enabled":true}]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 type quotaResetHandlerTestEnv struct {
 	router     *gin.Engine
 	userToken  string
@@ -173,6 +188,7 @@ func newQuotaResetHandlerTestEnv(t *testing.T, service *fakeQuotaResetService) *
 	adminGroup := router.Group("/api/v1/admin/quota-reset")
 	adminGroup.Use(auth.RequireAuth(authSvc), auth.RequireAdmin())
 	adminGroup.POST("/requests/:id/approve", handler.AdminApprove)
+	adminGroup.PUT("/approver-configs", handler.SaveApproverConfigs)
 
 	return &quotaResetHandlerTestEnv{
 		router:     router,

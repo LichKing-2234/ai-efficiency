@@ -234,13 +234,15 @@ Indexes:
 1. `(requester_user_id, created_at)`
 2. `(status, created_at)`
 3. `(provider_id, group_id, status)`
-4. `(updated_at)`
+4. Partial unique guard on `(requester_user_id, provider_id, group_id)` for active statuses.
+5. `(updated_at)`
 
 Duplicate guard:
 
 1. A requester cannot have more than one active request for the same `provider_id + group_id`.
 2. Active statuses are `pending`, `approved_resetting`, and `approved_reset_failed`.
-3. After `approved_reset_succeeded`, `rejected`, or `cancelled`, the user may file a new request for the same group.
+3. The service checks before create and the database enforces the guard to cover concurrent submissions.
+4. After `approved_reset_succeeded`, `rejected`, or `cancelled`, the user may file a new request for the same group.
 
 ### `quota_reset_request_events`
 
@@ -459,8 +461,9 @@ Rules:
 1. Requires authenticated user.
 2. Non-admin users can access only requests whose snapshotted `resolved_approver_user_ids` include their user id.
 3. Requesters cannot approve, reject, or retry their own requests through approver APIs even if they appear in stale approver snapshots.
-4. Reject requires `decision_reason`.
-5. Approval may include optional `decision_reason`.
+4. Admin APIs are the fallback path and can process every request, including a request submitted by the same admin account.
+5. Reject requires `decision_reason`.
+6. Approval may include optional `decision_reason`.
 
 ### Admin APIs
 
@@ -469,14 +472,16 @@ GET /api/v1/admin/quota-reset/approver-configs
 PUT /api/v1/admin/quota-reset/approver-configs
 ```
 
-The PUT endpoint replaces the configured approvers for supplied departments. It should not require admins to resubmit every department in the tree unless the UI explicitly chooses a full replacement mode.
+The PUT endpoint accepts flattened config rows. By default it replaces configured approvers only for departments present in `items`. If `mode` is `replace_all`, it replaces the full current-source approver config set. The Organization & Login settings UI is a full-list editor and therefore sends `mode: "replace_all"` deliberately.
 
 ```json
 {
-  "configs": [
+  "mode": "replace_departments",
+  "items": [
     {
       "department_external_id": "department-alpha",
-      "approver_user_ids": [7, 8],
+      "department_display_path": "Department Alpha",
+      "approver_user_id": 7,
       "enabled": true
     }
   ]
@@ -552,14 +557,15 @@ Add quota reset approval settings to `/settings` under Organization & Login beca
 
 Controls:
 
-1. Department tree selector.
-2. Approver user multi-select per department.
-3. Stale config display when a configured department is not in the current tree.
-4. Webhook enabled toggle.
-5. Webhook URL.
-6. Auth type select: none or bearer token.
-7. Credential select for bearer token.
-8. Test webhook button.
+1. Full-list approver config table with row edit, enable/disable, and delete.
+2. Add-row form with department external id, display path, and comma-separated approver user ids for the first release.
+3. Webhook enabled toggle.
+4. Webhook URL with `http`/`https` validation when enabled.
+5. Auth type select: none or bearer token.
+6. Credential select for bearer token; bearer credentials must reference `secret_text` credentials.
+7. Test webhook button.
+
+Department tree selection and user multi-select are desirable polish once the settings surface needs stronger discoverability, but they are not required for the first release contract.
 
 ## Notification Contract
 

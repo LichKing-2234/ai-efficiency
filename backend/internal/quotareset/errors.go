@@ -13,4 +13,5 @@ var (
 	ErrInvalidStatus         = errors.New("invalid_status")
 	ErrReasonRequired        = errors.New("reason_required")
 	ErrDecisionRequired      = errors.New("decision_reason_required")
+	ErrInvalidNotification   = errors.New("invalid_notification_settings")
 )

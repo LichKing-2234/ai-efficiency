@@ -89,6 +89,7 @@ type ApproverConfig struct {
 
 type SaveApproverConfigsInput struct {
 	ActorUserID int
+	Mode        string
 	Items       []ApproverConfigInput
 }
 

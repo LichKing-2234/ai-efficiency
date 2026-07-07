@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	entsql "entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
@@ -46,6 +47,9 @@ func (QuotaResetRequest) Indexes() []ent.Index {
 		index.Fields("requester_user_id", "created_at"),
 		index.Fields("status", "created_at"),
 		index.Fields("provider_id", "group_id", "status"),
+		index.Fields("requester_user_id", "provider_id", "group_id").
+			Unique().
+			Annotations(entsql.IndexWhere("status IN ('pending', 'approved_resetting', 'approved_reset_failed')")),
 		index.Fields("updated_at"),
 	}
 }

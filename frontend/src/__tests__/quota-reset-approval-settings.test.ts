@@ -25,6 +25,40 @@ beforeEach(async () => {
 })
 
 describe('QuotaResetApprovalSettings', () => {
+  it('removes existing approver rows with explicit full replacement save', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.getQuotaResetApproverConfigs.mockResolvedValueOnce({
+      data: {
+        data: {
+          items: [
+            {
+              id: 7,
+              directory_source_id: 1,
+              department_external_id: 'dept-alpha',
+              department_display_path: 'Department Alpha',
+              approver_user_id: 12,
+              approver_username: 'lead',
+              approver_email: 'lead@example.com',
+              enabled: true,
+              created_at: '',
+              updated_at: '',
+            },
+          ],
+        },
+      },
+    })
+    api.saveQuotaResetApproverConfigs.mockResolvedValueOnce({ data: { data: { items: [] } } })
+    const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
+    await flushPromises()
+
+    expect((wrapper.find('input[aria-label="Display path"]').element as HTMLInputElement).value).toBe('Department Alpha')
+    await wrapper.find('[data-testid="quota-reset-config-remove-7"]').trigger('click')
+    await wrapper.find('[data-testid="quota-reset-save-approvers"]').trigger('click')
+    await flushPromises()
+
+    expect(api.saveQuotaResetApproverConfigs).toHaveBeenCalledWith([], 'replace_all')
+  })
+
   it('saves webhook settings without exposing credential secrets', async () => {
     const wrapper = mount(QuotaResetApprovalSettings, {
       props: {

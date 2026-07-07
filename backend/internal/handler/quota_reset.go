@@ -52,6 +52,7 @@ type quotaResetDecisionRequest struct {
 
 type quotaResetSaveApproverConfigsRequest struct {
 	Items []quotareset.ApproverConfigInput `json:"items"`
+	Mode  string                           `json:"mode"`
 }
 
 type quotaResetNotificationSettingsRequest struct {
@@ -210,6 +211,7 @@ func (h *QuotaResetHandler) SaveApproverConfigs(c *gin.Context) {
 	}
 	resp, err := h.service.SaveApproverConfigs(c.Request.Context(), quotareset.SaveApproverConfigsInput{
 		ActorUserID: uc.UserID,
+		Mode:        strings.TrimSpace(req.Mode),
 		Items:       req.Items,
 	})
 	if err != nil {
@@ -384,7 +386,7 @@ func writeQuotaResetError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, quotareset.ErrNoRelayMapping), errors.Is(err, quotareset.ErrNotApprover), errors.Is(err, quotareset.ErrSelfApprovalForbidden):
 		pkg.Error(c, http.StatusForbidden, err.Error())
-	case errors.Is(err, quotareset.ErrReasonRequired), errors.Is(err, quotareset.ErrDecisionRequired), errors.Is(err, quotareset.ErrInactiveSubscription), errors.Is(err, quotareset.ErrInvalidStatus):
+	case errors.Is(err, quotareset.ErrReasonRequired), errors.Is(err, quotareset.ErrDecisionRequired), errors.Is(err, quotareset.ErrInactiveSubscription), errors.Is(err, quotareset.ErrInvalidStatus), errors.Is(err, quotareset.ErrInvalidNotification):
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, quotareset.ErrActiveRequestExists):
 		pkg.Error(c, http.StatusConflict, err.Error())

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 
 	"github.com/ai-efficiency/backend/ent"
+	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -26,6 +28,9 @@ const (
 	defaultPage     = 1
 	defaultPageSize = 20
 	maxPageSize     = 100
+
+	ApproverConfigSaveModeReplaceDepartments = "replace_departments"
+	ApproverConfigSaveModeReplaceAll         = "replace_all"
 )
 
 type Service struct {
@@ -111,6 +116,9 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 		SetMatchedDepartmentPaths(pathMaps).
 		Save(ctx)
 	if err != nil {
+		if activeRequestCreateWasDuplicate(ctx, s.client, err, requester.ID, providerRow.ID, input.GroupID) {
+			return nil, ErrActiveRequestExists
+		}
 		return nil, fmt.Errorf("create quota reset request: %w", err)
 	}
 	if err := s.writeEvent(ctx, req.ID, &requester.ID, quotaresetrequestevent.EventTypeCreated, map[string]any{
@@ -172,7 +180,7 @@ func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaR
 	if err := s.writeEvent(ctx, req.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeApproved, map[string]any{
 		"admin": input.Admin,
 	}, ""); err != nil {
-		return nil, err
+		return s.storeResetFailure(ctx, updated.ID, input.ActorUserID, err)
 	}
 	return s.executeReset(ctx, updated.ID, input.ActorUserID, false)
 }
@@ -256,15 +264,31 @@ func (s *Service) SaveApproverConfigs(ctx context.Context, input SaveApproverCon
 		return nil, ErrDirectoryUnavailable
 	}
 	items := normalizeApproverConfigInputs(input.Items)
+	replaceAll := input.Mode == ApproverConfigSaveModeReplaceAll
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin quota reset approver config tx: %w", err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.QuotaResetApproverConfig.Delete().
-		Where(quotaresetapproverconfig.DirectorySourceIDEQ(sourceID)).
-		Exec(ctx); err != nil {
-		return nil, fmt.Errorf("delete quota reset approver configs: %w", err)
+	switch {
+	case replaceAll:
+		if _, err := tx.QuotaResetApproverConfig.Delete().
+			Where(quotaresetapproverconfig.DirectorySourceIDEQ(sourceID)).
+			Exec(ctx); err != nil {
+			return nil, fmt.Errorf("delete quota reset approver configs: %w", err)
+		}
+	default:
+		departmentIDs := approverConfigDepartmentIDs(items)
+		if len(departmentIDs) > 0 {
+			if _, err := tx.QuotaResetApproverConfig.Delete().
+				Where(
+					quotaresetapproverconfig.DirectorySourceIDEQ(sourceID),
+					quotaresetapproverconfig.DepartmentExternalIDIn(departmentIDs...),
+				).
+				Exec(ctx); err != nil {
+				return nil, fmt.Errorf("delete quota reset approver configs: %w", err)
+			}
+		}
 	}
 	for _, item := range items {
 		if _, err := tx.QuotaResetApproverConfig.Create().
@@ -307,6 +331,9 @@ func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNo
 	authType := quotaresetnotificationsetting.AuthType(input.AuthType)
 	if err := quotaresetnotificationsetting.AuthTypeValidator(authType); err != nil {
 		return nil, fmt.Errorf("invalid notification auth type: %w", err)
+	}
+	if err := s.validateNotificationSettings(ctx, input, authType); err != nil {
+		return nil, err
 	}
 	if authType == quotaresetnotificationsetting.AuthTypeNone {
 		input.CredentialID = nil
@@ -449,6 +476,13 @@ func activeRequestExists(ctx context.Context, client *ent.Client, requesterUserI
 	return nil
 }
 
+func activeRequestCreateWasDuplicate(ctx context.Context, client *ent.Client, err error, requesterUserID int, providerID int, groupID string) bool {
+	if !ent.IsConstraintError(err) {
+		return false
+	}
+	return activeRequestExists(ctx, client, requesterUserID, providerID, groupID) == ErrActiveRequestExists
+}
+
 func (s *Service) requireDecisionAllowed(ctx context.Context, input DecisionInput, requiredStatus quotaresetrequest.Status) (*ent.QuotaResetRequest, error) {
 	req, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
 	if err != nil {
@@ -457,11 +491,11 @@ func (s *Service) requireDecisionAllowed(ctx context.Context, input DecisionInpu
 	if req.Status != requiredStatus {
 		return nil, ErrInvalidStatus
 	}
-	if req.RequesterUserID == input.ActorUserID {
-		return nil, ErrSelfApprovalForbidden
-	}
 	if input.Admin {
 		return req, nil
+	}
+	if req.RequesterUserID == input.ActorUserID {
+		return nil, ErrSelfApprovalForbidden
 	}
 	if !isResolvedApprover(req, input.ActorUserID) {
 		return nil, ErrNotApprover
@@ -506,28 +540,18 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetStarted, map[string]any{
 		"retry": retry,
 	}, ""); err != nil {
-		return nil, err
+		return s.storeResetFailure(ctx, requestID, actorUserID, err)
 	}
 	provider, err := s.providerResolver.Resolve(ctx, running.ProviderID)
 	if err != nil {
-		return nil, err
+		return s.storeResetFailure(ctx, requestID, actorUserID, err)
 	}
 	resetter, ok := provider.(relay.UserSubscriptionQuotaResetter)
 	if !ok {
-		return nil, ErrProviderUnsupported
+		return s.storeResetFailure(ctx, requestID, actorUserID, ErrProviderUnsupported)
 	}
 	if err := resetter.ResetSubscriptionQuotaForUser(ctx, running.RequesterRelayUserID, groupID); err != nil {
-		failed, saveErr := s.client.QuotaResetRequest.UpdateOneID(requestID).
-			SetStatus(quotaresetrequest.StatusApprovedResetFailed).
-			SetResetError(err.Error()).
-			SetResetCompletedAt(time.Now()).
-			Save(ctx)
-		if saveErr != nil {
-			return nil, fmt.Errorf("store reset failure: %w", saveErr)
-		}
-		_ = s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetFailed, nil, err.Error())
-		_ = s.notify(ctx, "quota_reset_request_reset_failed", failed)
-		return failed, nil
+		return s.storeResetFailure(ctx, requestID, actorUserID, err)
 	}
 	succeeded, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
 		SetStatus(quotaresetrequest.StatusApprovedResetSucceeded).
@@ -542,6 +566,24 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	}
 	_ = s.notify(ctx, "quota_reset_request_reset_succeeded", succeeded)
 	return succeeded, nil
+}
+
+func (s *Service) storeResetFailure(ctx context.Context, requestID int, actorUserID int, resetErr error) (*ent.QuotaResetRequest, error) {
+	errorMessage := ""
+	if resetErr != nil {
+		errorMessage = resetErr.Error()
+	}
+	failed, saveErr := s.client.QuotaResetRequest.UpdateOneID(requestID).
+		SetStatus(quotaresetrequest.StatusApprovedResetFailed).
+		SetResetError(errorMessage).
+		SetResetCompletedAt(time.Now()).
+		Save(ctx)
+	if saveErr != nil {
+		return nil, fmt.Errorf("store reset failure: %w", saveErr)
+	}
+	_ = s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetFailed, nil, errorMessage)
+	_ = s.notify(ctx, "quota_reset_request_reset_failed", failed)
+	return failed, nil
 }
 
 func (s *Service) writeEvent(ctx context.Context, requestID int, actorUserID *int, eventType quotaresetrequestevent.EventType, metadata map[string]any, errorMessage string) error {
@@ -795,6 +837,24 @@ func normalizeApproverConfigInputs(items []ApproverConfigInput) []ApproverConfig
 	return out
 }
 
+func approverConfigDepartmentIDs(items []ApproverConfigInput) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		departmentID := strings.TrimSpace(item.DepartmentExternalID)
+		if departmentID == "" {
+			continue
+		}
+		if _, ok := seen[departmentID]; ok {
+			continue
+		}
+		seen[departmentID] = struct{}{}
+		out = append(out, departmentID)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (s *Service) approverConfigResponse(ctx context.Context, rows []*ent.QuotaResetApproverConfig) (*ApproverConfigListResponse, error) {
 	userIDs := make([]int, 0, len(rows))
 	seen := map[int]struct{}{}
@@ -834,6 +894,29 @@ func (s *Service) approverConfigResponse(ctx context.Context, rows []*ent.QuotaR
 		items = append(items, item)
 	}
 	return &ApproverConfigListResponse{Items: items}, nil
+}
+
+func (s *Service) validateNotificationSettings(ctx context.Context, input UpdateNotificationSettingsInput, authType quotaresetnotificationsetting.AuthType) error {
+	if input.Enabled {
+		parsed, err := url.Parse(strings.TrimSpace(input.URL))
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("%w: invalid webhook url", ErrInvalidNotification)
+		}
+	}
+	if authType != quotaresetnotificationsetting.AuthTypeBearerToken {
+		return nil
+	}
+	if input.CredentialID == nil || *input.CredentialID <= 0 {
+		return fmt.Errorf("%w: bearer token credential is required", ErrInvalidNotification)
+	}
+	credential, err := s.client.Credential.Get(ctx, *input.CredentialID)
+	if err != nil {
+		return fmt.Errorf("%w: load webhook credential: %v", ErrInvalidNotification, err)
+	}
+	if credential.Kind != entcredential.KindSecretText {
+		return fmt.Errorf("%w: webhook credential must be secret_text", ErrInvalidNotification)
+	}
+	return nil
 }
 
 func notificationSettingsResponse(row *ent.QuotaResetNotificationSetting) *NotificationSettings {

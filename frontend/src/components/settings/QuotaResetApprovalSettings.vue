@@ -71,11 +71,11 @@ async function loadSettings() {
 
 function configRowsForSave(): QuotaResetApproverConfigInput[] {
   const existing = configs.value.map((config) => ({
-    department_external_id: config.department_external_id,
-    department_display_path: config.department_display_path,
-    approver_user_id: config.approver_user_id,
+    department_external_id: config.department_external_id.trim(),
+    department_display_path: config.department_display_path.trim(),
+    approver_user_id: Number(config.approver_user_id),
     enabled: config.enabled,
-  }))
+  })).filter((config) => config.department_external_id && Number.isInteger(config.approver_user_id) && config.approver_user_id > 0)
   const departmentID = configForm.value.department_external_id.trim()
   const approverIDs = configForm.value.approver_user_ids
     .split(',')
@@ -100,7 +100,7 @@ async function saveConfigs() {
   message.value = ''
   error.value = ''
   try {
-    const res = await saveQuotaResetApproverConfigs(configRowsForSave())
+    const res = await saveQuotaResetApproverConfigs(configRowsForSave(), 'replace_all')
     configs.value = res.data.data?.items ?? []
     configForm.value = { department_external_id: '', department_display_path: '', approver_user_ids: '', enabled: true }
     message.value = t('quotaResetSettings.configSaved')
@@ -109,6 +109,10 @@ async function saveConfigs() {
   } finally {
     savingConfigs.value = false
   }
+}
+
+function removeConfig(index: number) {
+  configs.value = configs.value.filter((_, i) => i !== index)
 }
 
 async function saveNotification() {
@@ -183,28 +187,60 @@ function credentialOptionLabel(credential: Credential) {
           <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50 text-left text-xs font-medium uppercase text-gray-500">
               <tr>
-                <th class="px-3 py-2">{{ t('quotaResetSettings.department') }}</th>
-                <th class="px-3 py-2">{{ t('quotaResetSettings.approver') }}</th>
-                <th class="px-3 py-2">{{ t('settings.enabled') }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100 bg-white">
-              <tr v-for="config in configs" :key="config.id || `${config.department_external_id}-${config.approver_user_id}`">
-                <td class="px-3 py-2">
-                  <div class="font-medium text-gray-900">{{ config.department_display_path || config.department_external_id }}</div>
-                  <div class="text-xs text-gray-500">{{ config.department_external_id }}</div>
-                </td>
-                <td class="px-3 py-2 text-gray-700">
-                  {{ config.approver_username || config.approver_user_id }}
-                  <span v-if="config.approver_email" class="text-gray-500">· {{ config.approver_email }}</span>
-                </td>
-                <td class="px-3 py-2 text-gray-700">{{ config.enabled ? t('settings.enabled') : t('settings.disabled') }}</td>
-              </tr>
-              <tr v-if="configs.length === 0">
-                <td colspan="3" class="px-3 py-3 text-gray-500">{{ t('quotaResetSettings.noApprovers') }}</td>
-              </tr>
-            </tbody>
-          </table>
+	                <th class="px-3 py-2">{{ t('quotaResetSettings.department') }}</th>
+	                <th class="px-3 py-2">{{ t('quotaResetSettings.approver') }}</th>
+	                <th class="px-3 py-2">{{ t('settings.enabled') }}</th>
+	                <th class="px-3 py-2">{{ t('settings.actions') }}</th>
+	              </tr>
+	            </thead>
+	            <tbody class="divide-y divide-gray-100 bg-white">
+	              <tr v-for="(config, index) in configs" :key="config.id || `${config.department_external_id}-${config.approver_user_id}`">
+	                <td class="min-w-[18rem] px-3 py-2">
+	                  <input
+	                    v-model="config.department_display_path"
+	                    :aria-label="t('quotaResetSettings.displayPath')"
+	                    type="text"
+	                    class="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+	                  />
+	                  <input
+	                    v-model="config.department_external_id"
+	                    :aria-label="t('quotaResetSettings.departmentID')"
+	                    type="text"
+	                    class="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600"
+	                  />
+	                </td>
+	                <td class="min-w-[14rem] px-3 py-2 text-gray-700">
+	                  <input
+	                    v-model.number="config.approver_user_id"
+	                    :aria-label="t('quotaResetSettings.approverIDs')"
+	                    type="number"
+	                    min="1"
+	                    class="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+	                  />
+	                  <div class="mt-1 text-xs text-gray-500">
+	                    {{ config.approver_username || config.approver_user_id }}
+	                    <span v-if="config.approver_email">· {{ config.approver_email }}</span>
+	                  </div>
+	                </td>
+	                <td class="px-3 py-2 text-gray-700">
+	                  <input v-model="config.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600" />
+	                </td>
+	                <td class="px-3 py-2 text-right">
+	                  <button
+	                    type="button"
+	                    :data-testid="`quota-reset-config-remove-${config.id}`"
+	                    class="text-sm font-medium text-red-600 hover:text-red-700"
+	                    @click="removeConfig(index)"
+	                  >
+	                    {{ t('settings.delete') }}
+	                  </button>
+	                </td>
+	              </tr>
+	              <tr v-if="configs.length === 0">
+	                <td colspan="4" class="px-3 py-3 text-gray-500">{{ t('quotaResetSettings.noApprovers') }}</td>
+	              </tr>
+	            </tbody>
+	          </table>
         </div>
       </div>
 
@@ -221,10 +257,11 @@ function credentialOptionLabel(credential: Credential) {
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.approverIDs') }}</span>
           <input v-model="configForm.approver_user_ids" type="text" placeholder="12,34" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
         </label>
-        <button
-          type="button"
-          class="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-60"
-          :disabled="savingConfigs"
+	        <button
+	          type="button"
+	          data-testid="quota-reset-save-approvers"
+	          class="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-60"
+	          :disabled="savingConfigs"
           @click="saveConfigs"
         >
           {{ savingConfigs ? t('settings.saving') : t('quotaResetSettings.saveApprovers') }}

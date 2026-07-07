@@ -10,7 +10,18 @@
 
 ---
 
-**Status:** Complete. Backend and frontend implementation, architecture documentation, and full verification are complete.
+**Status:** Complete. Backend and frontend implementation, architecture documentation, code review follow-up fixes, and full verification are complete.
+
+## Code Review Follow-up - 2026-07-07
+
+- [x] Store `approved_reset_failed` for post-approval reset execution failures, including provider resolution and unsupported resetter errors.
+- [x] Add a database-backed active request duplicate guard for concurrent submissions.
+- [x] Allow admin fallback to process a request submitted by the same admin account.
+- [x] Validate enabled webhook URL and bearer-token credential references on save.
+- [x] Make the approver settings UI an explicit full-list editor with row edit, enable/disable, and delete.
+- [x] Update the current quota reset approval spec for save mode and validation contract.
+- [x] Run focused backend and frontend regressions for the review fixes.
+- [x] Run full backend, frontend, build, and diff verification after review fixes.
 
 ## Source Spec
 
@@ -86,7 +97,7 @@ Frontend views and components:
 - Create: `frontend/src/views/QuotaResetView.vue`
 - Create: `frontend/src/components/quota-reset/QuotaResetRequestModal.vue`
 - Create: `frontend/src/components/quota-reset/QuotaResetRequestList.vue`
-- Create: `frontend/src/components/quota-reset/QuotaResetRequestDetail.vue`
+- Request events and decision details are rendered through `QuotaResetRequestList.vue`; a separate detail component is deferred.
 - Create: `frontend/src/components/settings/QuotaResetApprovalSettings.vue`
 - Modify: `frontend/src/components/settings/OrganizationLoginSettings.vue`
 - Modify: `frontend/src/i18n.ts`
