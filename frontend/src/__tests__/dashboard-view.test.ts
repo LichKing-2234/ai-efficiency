@@ -51,6 +51,11 @@ vi.mock('@/api/teamUsage', () => ({
   updateTeamUsageRateMultiplier: vi.fn(),
 }))
 
+vi.mock('@/api/quotaReset', () => ({
+  getQuotaResetOptions: vi.fn(),
+  createQuotaResetRequest: vi.fn(),
+}))
+
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
@@ -1027,6 +1032,66 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('$32.40 / $100.00')
     expect(wrapper.text()).toContain('$18.20 / ∞')
     expect(wrapper.text()).toContain('My Usage')
+  })
+
+  it('opens quota reset request modal from group quota cards and submits a request', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { getQuotaResetOptions, createQuotaResetRequest } = await import('@/api/quotaReset')
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [
+            {
+              id: 1,
+              name: 'prod',
+              display_name: 'Production',
+              base_url: 'https://relay.example.com',
+              default_model: 'gpt-5.4',
+              is_primary: true,
+              groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'existing_hidden' } }],
+            },
+          ],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshotWithQuotas } })
+    ;(getQuotaResetOptions as any).mockResolvedValue({
+      data: {
+        data: {
+          provider_id: 1,
+          groups: [
+            {
+              group_id: '42',
+              group_name: 'Group Alpha',
+              platform: 'openai',
+              daily_usage_usd: 10,
+              weekly_usage_usd: 20,
+              monthly_usage_usd: 30,
+            },
+          ],
+        },
+      },
+    })
+    ;(createQuotaResetRequest as any).mockResolvedValue({ data: { data: { id: 9, status: 'pending' } } })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-quota-reset-request"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('textarea').setValue('Need reset for a build investigation')
+    await wrapper.get('[data-testid="quota-reset-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(getQuotaResetOptions).toHaveBeenCalled()
+    expect(createQuotaResetRequest).toHaveBeenCalledWith({
+      group_id: '42',
+      reason: 'Need reset for a build investigation',
+    })
   })
 
   it('hides the quota section when the snapshot reports empty quotas', async () => {

@@ -2049,7 +2049,7 @@ git commit -m "feat(frontend): add quota reset API and route"
 - Create: `frontend/src/__tests__/quota-reset-view.test.ts`
 - Modify: `frontend/src/__tests__/dashboard-view.test.ts`
 
-- [ ] **Step 1: Write modal test**
+- [x] **Step 1: Write modal test**
 
 Create `frontend/src/__tests__/quota-reset-request-modal.test.ts`:
 
@@ -2078,7 +2078,7 @@ describe('QuotaResetRequestModal', () => {
 })
 ```
 
-- [ ] **Step 2: Implement modal**
+- [x] **Step 2: Implement modal**
 
 Create `frontend/src/components/quota-reset/QuotaResetRequestModal.vue` with:
 
@@ -2088,7 +2088,7 @@ Create `frontend/src/components/quota-reset/QuotaResetRequestModal.vue` with:
 4. Submit emits `{ group_id, reason }` only when reason is non-empty.
 5. Copy states that approval resets daily, weekly, and monthly used amounts and does not change future limits.
 
-- [ ] **Step 3: Add request button to quota section**
+- [x] **Step 3: Add request button to quota section**
 
 Modify `UsageGroupQuotaSection.vue`:
 
@@ -2110,7 +2110,7 @@ Modify `UsageGroupQuotaSection.vue`:
 
 Modify `UserUsageDashboard.vue` to open `QuotaResetRequestModal`, load `getQuotaResetOptions`, submit `createQuotaResetRequest`, and refresh the modal state after success.
 
-- [ ] **Step 4: Build request list component**
+- [x] **Step 4: Build request list component**
 
 Create `frontend/src/components/quota-reset/QuotaResetRequestList.vue`:
 
@@ -2119,7 +2119,7 @@ Create `frontend/src/components/quota-reset/QuotaResetRequestList.vue`:
 3. Render status, group, requester, reason preview, and action buttons based on mode.
 4. Use stable row keys `request.id`.
 
-- [ ] **Step 5: Complete QuotaResetView**
+- [x] **Step 5: Complete QuotaResetView**
 
 Modify `QuotaResetView.vue`:
 
@@ -2129,7 +2129,7 @@ Modify `QuotaResetView.vue`:
 4. Implement filters `pending`, `processed`, and `failed`.
 5. Wire cancel, approve, reject, retry actions through API calls and refresh lists.
 
-- [ ] **Step 6: Verify focused frontend tests**
+- [x] **Step 6: Verify focused frontend tests**
 
 Run:
 
@@ -2139,7 +2139,7 @@ cd frontend && npm test -- quota-reset-request-modal quota-reset-view dashboard-
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit user UI**
+- [x] **Step 7: Commit user UI**
 
 ```bash
 git add frontend/src/components/quota-reset frontend/src/components/user/usage frontend/src/views/QuotaResetView.vue frontend/src/__tests__/quota-reset-request-modal.test.ts frontend/src/__tests__/quota-reset-view.test.ts frontend/src/__tests__/dashboard-view.test.ts
