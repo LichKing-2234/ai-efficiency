@@ -117,7 +117,7 @@ Docs:
 - Create: `backend/ent/schema/quota_reset_notification_setting.go`
 - Generated: `backend/ent/*quotareset*`
 
-- [ ] **Step 1: Create approver config schema**
+- [x] **Step 1: Create approver config schema**
 
 Create `backend/ent/schema/quota_reset_approver_config.go`:
 
@@ -157,7 +157,7 @@ func (QuotaResetApproverConfig) Indexes() []ent.Index {
 }
 ```
 
-- [ ] **Step 2: Create request schema**
+- [x] **Step 2: Create request schema**
 
 Create `backend/ent/schema/quota_reset_request.go`:
 
@@ -215,7 +215,7 @@ func (QuotaResetRequest) Indexes() []ent.Index {
 }
 ```
 
-- [ ] **Step 3: Create request event schema**
+- [x] **Step 3: Create request event schema**
 
 Create `backend/ent/schema/quota_reset_request_event.go`:
 
@@ -264,7 +264,7 @@ func (QuotaResetRequestEvent) Indexes() []ent.Index {
 }
 ```
 
-- [ ] **Step 4: Create notification setting schema**
+- [x] **Step 4: Create notification setting schema**
 
 Create `backend/ent/schema/quota_reset_notification_setting.go`:
 
@@ -294,7 +294,7 @@ func (QuotaResetNotificationSetting) Fields() []ent.Field {
 }
 ```
 
-- [ ] **Step 5: Generate Ent code**
+- [x] **Step 5: Generate Ent code**
 
 Run:
 
@@ -304,7 +304,7 @@ cd backend && go generate ./ent
 
 Expected: command exits `0` and creates generated `quotareset*` packages under `backend/ent/`.
 
-- [ ] **Step 6: Verify schema compilation**
+- [x] **Step 6: Verify schema compilation**
 
 Run:
 
@@ -314,7 +314,7 @@ cd backend && go test ./ent ./internal/testdb
 
 Expected: PASS. If local PostgreSQL is unavailable, record the failure as environment-sensitive and continue only with `go test ./ent`.
 
-- [ ] **Step 7: Commit schema**
+- [x] **Step 7: Commit schema**
 
 ```bash
 git add backend/ent

@@ -26,6 +26,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/prsyncjob"
+	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
+	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
+	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
+	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
@@ -45,28 +49,32 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeAdminSubscriptionJob         = "AdminSubscriptionJob"
-	TypeCommitCheckpoint             = "CommitCheckpoint"
-	TypeCommitRewrite                = "CommitRewrite"
-	TypeCredential                   = "Credential"
-	TypeDirectoryDepartment          = "DirectoryDepartment"
-	TypeDirectoryMember              = "DirectoryMember"
-	TypeDirectoryMemberDepartment    = "DirectoryMemberDepartment"
-	TypeDirectoryOffboardingAction   = "DirectoryOffboardingAction"
-	TypeDirectorySource              = "DirectorySource"
-	TypeDirectorySyncRun             = "DirectorySyncRun"
-	TypePRCommitUsageSnapshot        = "PRCommitUsageSnapshot"
-	TypePRSyncJob                    = "PRSyncJob"
-	TypePrAttributionRun             = "PrAttributionRun"
-	TypePrRecord                     = "PrRecord"
-	TypeRelayProvider                = "RelayProvider"
-	TypeRepoConfig                   = "RepoConfig"
-	TypeScmProvider                  = "ScmProvider"
-	TypeSystemSetting                = "SystemSetting"
-	TypeTeamUsageRateMultiplierAudit = "TeamUsageRateMultiplierAudit"
-	TypeToolUsageEvent               = "ToolUsageEvent"
-	TypeUser                         = "User"
-	TypeWebhookDeadLetter            = "WebhookDeadLetter"
+	TypeAdminSubscriptionJob          = "AdminSubscriptionJob"
+	TypeCommitCheckpoint              = "CommitCheckpoint"
+	TypeCommitRewrite                 = "CommitRewrite"
+	TypeCredential                    = "Credential"
+	TypeDirectoryDepartment           = "DirectoryDepartment"
+	TypeDirectoryMember               = "DirectoryMember"
+	TypeDirectoryMemberDepartment     = "DirectoryMemberDepartment"
+	TypeDirectoryOffboardingAction    = "DirectoryOffboardingAction"
+	TypeDirectorySource               = "DirectorySource"
+	TypeDirectorySyncRun              = "DirectorySyncRun"
+	TypePRCommitUsageSnapshot         = "PRCommitUsageSnapshot"
+	TypePRSyncJob                     = "PRSyncJob"
+	TypePrAttributionRun              = "PrAttributionRun"
+	TypePrRecord                      = "PrRecord"
+	TypeQuotaResetApproverConfig      = "QuotaResetApproverConfig"
+	TypeQuotaResetNotificationSetting = "QuotaResetNotificationSetting"
+	TypeQuotaResetRequest             = "QuotaResetRequest"
+	TypeQuotaResetRequestEvent        = "QuotaResetRequestEvent"
+	TypeRelayProvider                 = "RelayProvider"
+	TypeRepoConfig                    = "RepoConfig"
+	TypeScmProvider                   = "ScmProvider"
+	TypeSystemSetting                 = "SystemSetting"
+	TypeTeamUsageRateMultiplierAudit  = "TeamUsageRateMultiplierAudit"
+	TypeToolUsageEvent                = "ToolUsageEvent"
+	TypeUser                          = "User"
+	TypeWebhookDeadLetter             = "WebhookDeadLetter"
 )
 
 // AdminSubscriptionJobMutation represents an operation that mutates the AdminSubscriptionJob nodes in the graph.
@@ -19428,6 +19436,4073 @@ func (m *PrRecordMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown PrRecord edge %s", name)
+}
+
+// QuotaResetApproverConfigMutation represents an operation that mutates the QuotaResetApproverConfig nodes in the graph.
+type QuotaResetApproverConfigMutation struct {
+	config
+	op                      Op
+	typ                     string
+	id                      *int
+	directory_source_id     *int
+	adddirectory_source_id  *int
+	department_external_id  *string
+	department_display_path *string
+	approver_user_id        *int
+	addapprover_user_id     *int
+	enabled                 *bool
+	created_by_user_id      *int
+	addcreated_by_user_id   *int
+	updated_by_user_id      *int
+	addupdated_by_user_id   *int
+	created_at              *time.Time
+	updated_at              *time.Time
+	clearedFields           map[string]struct{}
+	done                    bool
+	oldValue                func(context.Context) (*QuotaResetApproverConfig, error)
+	predicates              []predicate.QuotaResetApproverConfig
+}
+
+var _ ent.Mutation = (*QuotaResetApproverConfigMutation)(nil)
+
+// quotaresetapproverconfigOption allows management of the mutation configuration using functional options.
+type quotaresetapproverconfigOption func(*QuotaResetApproverConfigMutation)
+
+// newQuotaResetApproverConfigMutation creates new mutation for the QuotaResetApproverConfig entity.
+func newQuotaResetApproverConfigMutation(c config, op Op, opts ...quotaresetapproverconfigOption) *QuotaResetApproverConfigMutation {
+	m := &QuotaResetApproverConfigMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeQuotaResetApproverConfig,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withQuotaResetApproverConfigID sets the ID field of the mutation.
+func withQuotaResetApproverConfigID(id int) quotaresetapproverconfigOption {
+	return func(m *QuotaResetApproverConfigMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *QuotaResetApproverConfig
+		)
+		m.oldValue = func(ctx context.Context) (*QuotaResetApproverConfig, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().QuotaResetApproverConfig.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withQuotaResetApproverConfig sets the old QuotaResetApproverConfig of the mutation.
+func withQuotaResetApproverConfig(node *QuotaResetApproverConfig) quotaresetapproverconfigOption {
+	return func(m *QuotaResetApproverConfigMutation) {
+		m.oldValue = func(context.Context) (*QuotaResetApproverConfig, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m QuotaResetApproverConfigMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m QuotaResetApproverConfigMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *QuotaResetApproverConfigMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *QuotaResetApproverConfigMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().QuotaResetApproverConfig.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetDirectorySourceID sets the "directory_source_id" field.
+func (m *QuotaResetApproverConfigMutation) SetDirectorySourceID(i int) {
+	m.directory_source_id = &i
+	m.adddirectory_source_id = nil
+}
+
+// DirectorySourceID returns the value of the "directory_source_id" field in the mutation.
+func (m *QuotaResetApproverConfigMutation) DirectorySourceID() (r int, exists bool) {
+	v := m.directory_source_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDirectorySourceID returns the old "directory_source_id" field's value of the QuotaResetApproverConfig entity.
+// If the QuotaResetApproverConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetApproverConfigMutation) OldDirectorySourceID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDirectorySourceID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDirectorySourceID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDirectorySourceID: %w", err)
+	}
+	return oldValue.DirectorySourceID, nil
+}
+
+// AddDirectorySourceID adds i to the "directory_source_id" field.
+func (m *QuotaResetApproverConfigMutation) AddDirectorySourceID(i int) {
+	if m.adddirectory_source_id != nil {
+		*m.adddirectory_source_id += i
+	} else {
+		m.adddirectory_source_id = &i
+	}
+}
+
+// AddedDirectorySourceID returns the value that was added to the "directory_source_id" field in this mutation.
+func (m *QuotaResetApproverConfigMutation) AddedDirectorySourceID() (r int, exists bool) {
+	v := m.adddirectory_source_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetDirectorySourceID resets all changes to the "directory_source_id" field.
+func (m *QuotaResetApproverConfigMutation) ResetDirectorySourceID() {
+	m.directory_source_id = nil
+	m.adddirectory_source_id = nil
+}
+
+// SetDepartmentExternalID sets the "department_external_id" field.
+func (m *QuotaResetApproverConfigMutation) SetDepartmentExternalID(s string) {
+	m.department_external_id = &s
+}
+
+// DepartmentExternalID returns the value of the "department_external_id" field in the mutation.
+func (m *QuotaResetApproverConfigMutation) DepartmentExternalID() (r string, exists bool) {
+	v := m.department_external_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDepartmentExternalID returns the old "department_external_id" field's value of the QuotaResetApproverConfig entity.
+// If the QuotaResetApproverConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetApproverConfigMutation) OldDepartmentExternalID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDepartmentExternalID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDepartmentExternalID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDepartmentExternalID: %w", err)
+	}
+	return oldValue.DepartmentExternalID, nil
+}
+
+// ResetDepartmentExternalID resets all changes to the "department_external_id" field.
+func (m *QuotaResetApproverConfigMutation) ResetDepartmentExternalID() {
+	m.department_external_id = nil
+}
+
+// SetDepartmentDisplayPath sets the "department_display_path" field.
+func (m *QuotaResetApproverConfigMutation) SetDepartmentDisplayPath(s string) {
+	m.department_display_path = &s
+}
+
+// DepartmentDisplayPath returns the value of the "department_display_path" field in the mutation.
+func (m *QuotaResetApproverConfigMutation) DepartmentDisplayPath() (r string, exists bool) {
+	v := m.department_display_path
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDepartmentDisplayPath returns the old "department_display_path" field's value of the QuotaResetApproverConfig entity.
+// If the QuotaResetApproverConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetApproverConfigMutation) OldDepartmentDisplayPath(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDepartmentDisplayPath is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDepartmentDisplayPath requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDepartmentDisplayPath: %w", err)
+	}
+	return oldValue.DepartmentDisplayPath, nil
+}
+
+// ResetDepartmentDisplayPath resets all changes to the "department_display_path" field.
+func (m *QuotaResetApproverConfigMutation) ResetDepartmentDisplayPath() {
+	m.department_display_path = nil
+}
+
+// SetApproverUserID sets the "approver_user_id" field.
+func (m *QuotaResetApproverConfigMutation) SetApproverUserID(i int) {
+	m.approver_user_id = &i
+	m.addapprover_user_id = nil
+}
+
+// ApproverUserID returns the value of the "approver_user_id" field in the mutation.
+func (m *QuotaResetApproverConfigMutation) ApproverUserID() (r int, exists bool) {
+	v := m.approver_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldApproverUserID returns the old "approver_user_id" field's value of the QuotaResetApproverConfig entity.
+// If the QuotaResetApproverConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetApproverConfigMutation) OldApproverUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldApproverUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldApproverUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldApproverUserID: %w", err)
+	}
+	return oldValue.ApproverUserID, nil
+}
+
+// AddApproverUserID adds i to the "approver_user_id" field.
+func (m *QuotaResetApproverConfigMutation) AddApproverUserID(i int) {
+	if m.addapprover_user_id != nil {
+		*m.addapprover_user_id += i
+	} else {
+		m.addapprover_user_id = &i
+	}
+}
+
+// AddedApproverUserID returns the value that was added to the "approver_user_id" field in this mutation.
+func (m *QuotaResetApproverConfigMutation) AddedApproverUserID() (r int, exists bool) {
+	v := m.addapprover_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetApproverUserID resets all changes to the "approver_user_id" field.
+func (m *QuotaResetApproverConfigMutation) ResetApproverUserID() {
+	m.approver_user_id = nil
+	m.addapprover_user_id = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *QuotaResetApproverConfigMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *QuotaResetApproverConfigMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the QuotaResetApproverConfig entity.
+// If the QuotaResetApproverConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetApproverConfigMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *QuotaResetApproverConfigMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (m *QuotaResetApproverConfigMutation) SetCreatedByUserID(i int) {
+	m.created_by_user_id = &i
+	m.addcreated_by_user_id = nil
+}
+
+// CreatedByUserID returns the value of the "created_by_user_id" field in the mutation.
+func (m *QuotaResetApproverConfigMutation) CreatedByUserID() (r int, exists bool) {
+	v := m.created_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedByUserID returns the old "created_by_user_id" field's value of the QuotaResetApproverConfig entity.
+// If the QuotaResetApproverConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetApproverConfigMutation) OldCreatedByUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedByUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedByUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedByUserID: %w", err)
+	}
+	return oldValue.CreatedByUserID, nil
+}
+
+// AddCreatedByUserID adds i to the "created_by_user_id" field.
+func (m *QuotaResetApproverConfigMutation) AddCreatedByUserID(i int) {
+	if m.addcreated_by_user_id != nil {
+		*m.addcreated_by_user_id += i
+	} else {
+		m.addcreated_by_user_id = &i
+	}
+}
+
+// AddedCreatedByUserID returns the value that was added to the "created_by_user_id" field in this mutation.
+func (m *QuotaResetApproverConfigMutation) AddedCreatedByUserID() (r int, exists bool) {
+	v := m.addcreated_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreatedByUserID resets all changes to the "created_by_user_id" field.
+func (m *QuotaResetApproverConfigMutation) ResetCreatedByUserID() {
+	m.created_by_user_id = nil
+	m.addcreated_by_user_id = nil
+}
+
+// SetUpdatedByUserID sets the "updated_by_user_id" field.
+func (m *QuotaResetApproverConfigMutation) SetUpdatedByUserID(i int) {
+	m.updated_by_user_id = &i
+	m.addupdated_by_user_id = nil
+}
+
+// UpdatedByUserID returns the value of the "updated_by_user_id" field in the mutation.
+func (m *QuotaResetApproverConfigMutation) UpdatedByUserID() (r int, exists bool) {
+	v := m.updated_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedByUserID returns the old "updated_by_user_id" field's value of the QuotaResetApproverConfig entity.
+// If the QuotaResetApproverConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetApproverConfigMutation) OldUpdatedByUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedByUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedByUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedByUserID: %w", err)
+	}
+	return oldValue.UpdatedByUserID, nil
+}
+
+// AddUpdatedByUserID adds i to the "updated_by_user_id" field.
+func (m *QuotaResetApproverConfigMutation) AddUpdatedByUserID(i int) {
+	if m.addupdated_by_user_id != nil {
+		*m.addupdated_by_user_id += i
+	} else {
+		m.addupdated_by_user_id = &i
+	}
+}
+
+// AddedUpdatedByUserID returns the value that was added to the "updated_by_user_id" field in this mutation.
+func (m *QuotaResetApproverConfigMutation) AddedUpdatedByUserID() (r int, exists bool) {
+	v := m.addupdated_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUpdatedByUserID resets all changes to the "updated_by_user_id" field.
+func (m *QuotaResetApproverConfigMutation) ResetUpdatedByUserID() {
+	m.updated_by_user_id = nil
+	m.addupdated_by_user_id = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *QuotaResetApproverConfigMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *QuotaResetApproverConfigMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the QuotaResetApproverConfig entity.
+// If the QuotaResetApproverConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetApproverConfigMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *QuotaResetApproverConfigMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *QuotaResetApproverConfigMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *QuotaResetApproverConfigMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the QuotaResetApproverConfig entity.
+// If the QuotaResetApproverConfig object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetApproverConfigMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *QuotaResetApproverConfigMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the QuotaResetApproverConfigMutation builder.
+func (m *QuotaResetApproverConfigMutation) Where(ps ...predicate.QuotaResetApproverConfig) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the QuotaResetApproverConfigMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *QuotaResetApproverConfigMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.QuotaResetApproverConfig, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *QuotaResetApproverConfigMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *QuotaResetApproverConfigMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (QuotaResetApproverConfig).
+func (m *QuotaResetApproverConfigMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *QuotaResetApproverConfigMutation) Fields() []string {
+	fields := make([]string, 0, 9)
+	if m.directory_source_id != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldDirectorySourceID)
+	}
+	if m.department_external_id != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldDepartmentExternalID)
+	}
+	if m.department_display_path != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldDepartmentDisplayPath)
+	}
+	if m.approver_user_id != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldApproverUserID)
+	}
+	if m.enabled != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldEnabled)
+	}
+	if m.created_by_user_id != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldCreatedByUserID)
+	}
+	if m.updated_by_user_id != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldUpdatedByUserID)
+	}
+	if m.created_at != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *QuotaResetApproverConfigMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case quotaresetapproverconfig.FieldDirectorySourceID:
+		return m.DirectorySourceID()
+	case quotaresetapproverconfig.FieldDepartmentExternalID:
+		return m.DepartmentExternalID()
+	case quotaresetapproverconfig.FieldDepartmentDisplayPath:
+		return m.DepartmentDisplayPath()
+	case quotaresetapproverconfig.FieldApproverUserID:
+		return m.ApproverUserID()
+	case quotaresetapproverconfig.FieldEnabled:
+		return m.Enabled()
+	case quotaresetapproverconfig.FieldCreatedByUserID:
+		return m.CreatedByUserID()
+	case quotaresetapproverconfig.FieldUpdatedByUserID:
+		return m.UpdatedByUserID()
+	case quotaresetapproverconfig.FieldCreatedAt:
+		return m.CreatedAt()
+	case quotaresetapproverconfig.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *QuotaResetApproverConfigMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case quotaresetapproverconfig.FieldDirectorySourceID:
+		return m.OldDirectorySourceID(ctx)
+	case quotaresetapproverconfig.FieldDepartmentExternalID:
+		return m.OldDepartmentExternalID(ctx)
+	case quotaresetapproverconfig.FieldDepartmentDisplayPath:
+		return m.OldDepartmentDisplayPath(ctx)
+	case quotaresetapproverconfig.FieldApproverUserID:
+		return m.OldApproverUserID(ctx)
+	case quotaresetapproverconfig.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case quotaresetapproverconfig.FieldCreatedByUserID:
+		return m.OldCreatedByUserID(ctx)
+	case quotaresetapproverconfig.FieldUpdatedByUserID:
+		return m.OldUpdatedByUserID(ctx)
+	case quotaresetapproverconfig.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case quotaresetapproverconfig.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown QuotaResetApproverConfig field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *QuotaResetApproverConfigMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case quotaresetapproverconfig.FieldDirectorySourceID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDirectorySourceID(v)
+		return nil
+	case quotaresetapproverconfig.FieldDepartmentExternalID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDepartmentExternalID(v)
+		return nil
+	case quotaresetapproverconfig.FieldDepartmentDisplayPath:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDepartmentDisplayPath(v)
+		return nil
+	case quotaresetapproverconfig.FieldApproverUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetApproverUserID(v)
+		return nil
+	case quotaresetapproverconfig.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case quotaresetapproverconfig.FieldCreatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedByUserID(v)
+		return nil
+	case quotaresetapproverconfig.FieldUpdatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedByUserID(v)
+		return nil
+	case quotaresetapproverconfig.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case quotaresetapproverconfig.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetApproverConfig field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *QuotaResetApproverConfigMutation) AddedFields() []string {
+	var fields []string
+	if m.adddirectory_source_id != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldDirectorySourceID)
+	}
+	if m.addapprover_user_id != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldApproverUserID)
+	}
+	if m.addcreated_by_user_id != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldCreatedByUserID)
+	}
+	if m.addupdated_by_user_id != nil {
+		fields = append(fields, quotaresetapproverconfig.FieldUpdatedByUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *QuotaResetApproverConfigMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case quotaresetapproverconfig.FieldDirectorySourceID:
+		return m.AddedDirectorySourceID()
+	case quotaresetapproverconfig.FieldApproverUserID:
+		return m.AddedApproverUserID()
+	case quotaresetapproverconfig.FieldCreatedByUserID:
+		return m.AddedCreatedByUserID()
+	case quotaresetapproverconfig.FieldUpdatedByUserID:
+		return m.AddedUpdatedByUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *QuotaResetApproverConfigMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case quotaresetapproverconfig.FieldDirectorySourceID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDirectorySourceID(v)
+		return nil
+	case quotaresetapproverconfig.FieldApproverUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddApproverUserID(v)
+		return nil
+	case quotaresetapproverconfig.FieldCreatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatedByUserID(v)
+		return nil
+	case quotaresetapproverconfig.FieldUpdatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpdatedByUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetApproverConfig numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *QuotaResetApproverConfigMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *QuotaResetApproverConfigMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *QuotaResetApproverConfigMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown QuotaResetApproverConfig nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *QuotaResetApproverConfigMutation) ResetField(name string) error {
+	switch name {
+	case quotaresetapproverconfig.FieldDirectorySourceID:
+		m.ResetDirectorySourceID()
+		return nil
+	case quotaresetapproverconfig.FieldDepartmentExternalID:
+		m.ResetDepartmentExternalID()
+		return nil
+	case quotaresetapproverconfig.FieldDepartmentDisplayPath:
+		m.ResetDepartmentDisplayPath()
+		return nil
+	case quotaresetapproverconfig.FieldApproverUserID:
+		m.ResetApproverUserID()
+		return nil
+	case quotaresetapproverconfig.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case quotaresetapproverconfig.FieldCreatedByUserID:
+		m.ResetCreatedByUserID()
+		return nil
+	case quotaresetapproverconfig.FieldUpdatedByUserID:
+		m.ResetUpdatedByUserID()
+		return nil
+	case quotaresetapproverconfig.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case quotaresetapproverconfig.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetApproverConfig field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *QuotaResetApproverConfigMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *QuotaResetApproverConfigMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *QuotaResetApproverConfigMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *QuotaResetApproverConfigMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *QuotaResetApproverConfigMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *QuotaResetApproverConfigMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *QuotaResetApproverConfigMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown QuotaResetApproverConfig unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *QuotaResetApproverConfigMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown QuotaResetApproverConfig edge %s", name)
+}
+
+// QuotaResetNotificationSettingMutation represents an operation that mutates the QuotaResetNotificationSetting nodes in the graph.
+type QuotaResetNotificationSettingMutation struct {
+	config
+	op                    Op
+	typ                   string
+	id                    *int
+	enabled               *bool
+	url                   *string
+	auth_type             *quotaresetnotificationsetting.AuthType
+	credential_id         *int
+	addcredential_id      *int
+	created_by_user_id    *int
+	addcreated_by_user_id *int
+	updated_by_user_id    *int
+	addupdated_by_user_id *int
+	created_at            *time.Time
+	updated_at            *time.Time
+	clearedFields         map[string]struct{}
+	done                  bool
+	oldValue              func(context.Context) (*QuotaResetNotificationSetting, error)
+	predicates            []predicate.QuotaResetNotificationSetting
+}
+
+var _ ent.Mutation = (*QuotaResetNotificationSettingMutation)(nil)
+
+// quotaresetnotificationsettingOption allows management of the mutation configuration using functional options.
+type quotaresetnotificationsettingOption func(*QuotaResetNotificationSettingMutation)
+
+// newQuotaResetNotificationSettingMutation creates new mutation for the QuotaResetNotificationSetting entity.
+func newQuotaResetNotificationSettingMutation(c config, op Op, opts ...quotaresetnotificationsettingOption) *QuotaResetNotificationSettingMutation {
+	m := &QuotaResetNotificationSettingMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeQuotaResetNotificationSetting,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withQuotaResetNotificationSettingID sets the ID field of the mutation.
+func withQuotaResetNotificationSettingID(id int) quotaresetnotificationsettingOption {
+	return func(m *QuotaResetNotificationSettingMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *QuotaResetNotificationSetting
+		)
+		m.oldValue = func(ctx context.Context) (*QuotaResetNotificationSetting, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().QuotaResetNotificationSetting.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withQuotaResetNotificationSetting sets the old QuotaResetNotificationSetting of the mutation.
+func withQuotaResetNotificationSetting(node *QuotaResetNotificationSetting) quotaresetnotificationsettingOption {
+	return func(m *QuotaResetNotificationSettingMutation) {
+		m.oldValue = func(context.Context) (*QuotaResetNotificationSetting, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m QuotaResetNotificationSettingMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m QuotaResetNotificationSettingMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *QuotaResetNotificationSettingMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *QuotaResetNotificationSettingMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().QuotaResetNotificationSetting.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *QuotaResetNotificationSettingMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *QuotaResetNotificationSettingMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the QuotaResetNotificationSetting entity.
+// If the QuotaResetNotificationSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetNotificationSettingMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *QuotaResetNotificationSettingMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetURL sets the "url" field.
+func (m *QuotaResetNotificationSettingMutation) SetURL(s string) {
+	m.url = &s
+}
+
+// URL returns the value of the "url" field in the mutation.
+func (m *QuotaResetNotificationSettingMutation) URL() (r string, exists bool) {
+	v := m.url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldURL returns the old "url" field's value of the QuotaResetNotificationSetting entity.
+// If the QuotaResetNotificationSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetNotificationSettingMutation) OldURL(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldURL: %w", err)
+	}
+	return oldValue.URL, nil
+}
+
+// ResetURL resets all changes to the "url" field.
+func (m *QuotaResetNotificationSettingMutation) ResetURL() {
+	m.url = nil
+}
+
+// SetAuthType sets the "auth_type" field.
+func (m *QuotaResetNotificationSettingMutation) SetAuthType(qt quotaresetnotificationsetting.AuthType) {
+	m.auth_type = &qt
+}
+
+// AuthType returns the value of the "auth_type" field in the mutation.
+func (m *QuotaResetNotificationSettingMutation) AuthType() (r quotaresetnotificationsetting.AuthType, exists bool) {
+	v := m.auth_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAuthType returns the old "auth_type" field's value of the QuotaResetNotificationSetting entity.
+// If the QuotaResetNotificationSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetNotificationSettingMutation) OldAuthType(ctx context.Context) (v quotaresetnotificationsetting.AuthType, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAuthType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAuthType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAuthType: %w", err)
+	}
+	return oldValue.AuthType, nil
+}
+
+// ResetAuthType resets all changes to the "auth_type" field.
+func (m *QuotaResetNotificationSettingMutation) ResetAuthType() {
+	m.auth_type = nil
+}
+
+// SetCredentialID sets the "credential_id" field.
+func (m *QuotaResetNotificationSettingMutation) SetCredentialID(i int) {
+	m.credential_id = &i
+	m.addcredential_id = nil
+}
+
+// CredentialID returns the value of the "credential_id" field in the mutation.
+func (m *QuotaResetNotificationSettingMutation) CredentialID() (r int, exists bool) {
+	v := m.credential_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCredentialID returns the old "credential_id" field's value of the QuotaResetNotificationSetting entity.
+// If the QuotaResetNotificationSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetNotificationSettingMutation) OldCredentialID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCredentialID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCredentialID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCredentialID: %w", err)
+	}
+	return oldValue.CredentialID, nil
+}
+
+// AddCredentialID adds i to the "credential_id" field.
+func (m *QuotaResetNotificationSettingMutation) AddCredentialID(i int) {
+	if m.addcredential_id != nil {
+		*m.addcredential_id += i
+	} else {
+		m.addcredential_id = &i
+	}
+}
+
+// AddedCredentialID returns the value that was added to the "credential_id" field in this mutation.
+func (m *QuotaResetNotificationSettingMutation) AddedCredentialID() (r int, exists bool) {
+	v := m.addcredential_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCredentialID clears the value of the "credential_id" field.
+func (m *QuotaResetNotificationSettingMutation) ClearCredentialID() {
+	m.credential_id = nil
+	m.addcredential_id = nil
+	m.clearedFields[quotaresetnotificationsetting.FieldCredentialID] = struct{}{}
+}
+
+// CredentialIDCleared returns if the "credential_id" field was cleared in this mutation.
+func (m *QuotaResetNotificationSettingMutation) CredentialIDCleared() bool {
+	_, ok := m.clearedFields[quotaresetnotificationsetting.FieldCredentialID]
+	return ok
+}
+
+// ResetCredentialID resets all changes to the "credential_id" field.
+func (m *QuotaResetNotificationSettingMutation) ResetCredentialID() {
+	m.credential_id = nil
+	m.addcredential_id = nil
+	delete(m.clearedFields, quotaresetnotificationsetting.FieldCredentialID)
+}
+
+// SetCreatedByUserID sets the "created_by_user_id" field.
+func (m *QuotaResetNotificationSettingMutation) SetCreatedByUserID(i int) {
+	m.created_by_user_id = &i
+	m.addcreated_by_user_id = nil
+}
+
+// CreatedByUserID returns the value of the "created_by_user_id" field in the mutation.
+func (m *QuotaResetNotificationSettingMutation) CreatedByUserID() (r int, exists bool) {
+	v := m.created_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedByUserID returns the old "created_by_user_id" field's value of the QuotaResetNotificationSetting entity.
+// If the QuotaResetNotificationSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetNotificationSettingMutation) OldCreatedByUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedByUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedByUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedByUserID: %w", err)
+	}
+	return oldValue.CreatedByUserID, nil
+}
+
+// AddCreatedByUserID adds i to the "created_by_user_id" field.
+func (m *QuotaResetNotificationSettingMutation) AddCreatedByUserID(i int) {
+	if m.addcreated_by_user_id != nil {
+		*m.addcreated_by_user_id += i
+	} else {
+		m.addcreated_by_user_id = &i
+	}
+}
+
+// AddedCreatedByUserID returns the value that was added to the "created_by_user_id" field in this mutation.
+func (m *QuotaResetNotificationSettingMutation) AddedCreatedByUserID() (r int, exists bool) {
+	v := m.addcreated_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCreatedByUserID resets all changes to the "created_by_user_id" field.
+func (m *QuotaResetNotificationSettingMutation) ResetCreatedByUserID() {
+	m.created_by_user_id = nil
+	m.addcreated_by_user_id = nil
+}
+
+// SetUpdatedByUserID sets the "updated_by_user_id" field.
+func (m *QuotaResetNotificationSettingMutation) SetUpdatedByUserID(i int) {
+	m.updated_by_user_id = &i
+	m.addupdated_by_user_id = nil
+}
+
+// UpdatedByUserID returns the value of the "updated_by_user_id" field in the mutation.
+func (m *QuotaResetNotificationSettingMutation) UpdatedByUserID() (r int, exists bool) {
+	v := m.updated_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedByUserID returns the old "updated_by_user_id" field's value of the QuotaResetNotificationSetting entity.
+// If the QuotaResetNotificationSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetNotificationSettingMutation) OldUpdatedByUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedByUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedByUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedByUserID: %w", err)
+	}
+	return oldValue.UpdatedByUserID, nil
+}
+
+// AddUpdatedByUserID adds i to the "updated_by_user_id" field.
+func (m *QuotaResetNotificationSettingMutation) AddUpdatedByUserID(i int) {
+	if m.addupdated_by_user_id != nil {
+		*m.addupdated_by_user_id += i
+	} else {
+		m.addupdated_by_user_id = &i
+	}
+}
+
+// AddedUpdatedByUserID returns the value that was added to the "updated_by_user_id" field in this mutation.
+func (m *QuotaResetNotificationSettingMutation) AddedUpdatedByUserID() (r int, exists bool) {
+	v := m.addupdated_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUpdatedByUserID resets all changes to the "updated_by_user_id" field.
+func (m *QuotaResetNotificationSettingMutation) ResetUpdatedByUserID() {
+	m.updated_by_user_id = nil
+	m.addupdated_by_user_id = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *QuotaResetNotificationSettingMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *QuotaResetNotificationSettingMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the QuotaResetNotificationSetting entity.
+// If the QuotaResetNotificationSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetNotificationSettingMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *QuotaResetNotificationSettingMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *QuotaResetNotificationSettingMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *QuotaResetNotificationSettingMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the QuotaResetNotificationSetting entity.
+// If the QuotaResetNotificationSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetNotificationSettingMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *QuotaResetNotificationSettingMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the QuotaResetNotificationSettingMutation builder.
+func (m *QuotaResetNotificationSettingMutation) Where(ps ...predicate.QuotaResetNotificationSetting) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the QuotaResetNotificationSettingMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *QuotaResetNotificationSettingMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.QuotaResetNotificationSetting, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *QuotaResetNotificationSettingMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *QuotaResetNotificationSettingMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (QuotaResetNotificationSetting).
+func (m *QuotaResetNotificationSettingMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *QuotaResetNotificationSettingMutation) Fields() []string {
+	fields := make([]string, 0, 8)
+	if m.enabled != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldEnabled)
+	}
+	if m.url != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldURL)
+	}
+	if m.auth_type != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldAuthType)
+	}
+	if m.credential_id != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldCredentialID)
+	}
+	if m.created_by_user_id != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldCreatedByUserID)
+	}
+	if m.updated_by_user_id != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldUpdatedByUserID)
+	}
+	if m.created_at != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *QuotaResetNotificationSettingMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case quotaresetnotificationsetting.FieldEnabled:
+		return m.Enabled()
+	case quotaresetnotificationsetting.FieldURL:
+		return m.URL()
+	case quotaresetnotificationsetting.FieldAuthType:
+		return m.AuthType()
+	case quotaresetnotificationsetting.FieldCredentialID:
+		return m.CredentialID()
+	case quotaresetnotificationsetting.FieldCreatedByUserID:
+		return m.CreatedByUserID()
+	case quotaresetnotificationsetting.FieldUpdatedByUserID:
+		return m.UpdatedByUserID()
+	case quotaresetnotificationsetting.FieldCreatedAt:
+		return m.CreatedAt()
+	case quotaresetnotificationsetting.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *QuotaResetNotificationSettingMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case quotaresetnotificationsetting.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case quotaresetnotificationsetting.FieldURL:
+		return m.OldURL(ctx)
+	case quotaresetnotificationsetting.FieldAuthType:
+		return m.OldAuthType(ctx)
+	case quotaresetnotificationsetting.FieldCredentialID:
+		return m.OldCredentialID(ctx)
+	case quotaresetnotificationsetting.FieldCreatedByUserID:
+		return m.OldCreatedByUserID(ctx)
+	case quotaresetnotificationsetting.FieldUpdatedByUserID:
+		return m.OldUpdatedByUserID(ctx)
+	case quotaresetnotificationsetting.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case quotaresetnotificationsetting.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown QuotaResetNotificationSetting field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *QuotaResetNotificationSettingMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case quotaresetnotificationsetting.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case quotaresetnotificationsetting.FieldURL:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetURL(v)
+		return nil
+	case quotaresetnotificationsetting.FieldAuthType:
+		v, ok := value.(quotaresetnotificationsetting.AuthType)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAuthType(v)
+		return nil
+	case quotaresetnotificationsetting.FieldCredentialID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCredentialID(v)
+		return nil
+	case quotaresetnotificationsetting.FieldCreatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedByUserID(v)
+		return nil
+	case quotaresetnotificationsetting.FieldUpdatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedByUserID(v)
+		return nil
+	case quotaresetnotificationsetting.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case quotaresetnotificationsetting.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetNotificationSetting field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *QuotaResetNotificationSettingMutation) AddedFields() []string {
+	var fields []string
+	if m.addcredential_id != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldCredentialID)
+	}
+	if m.addcreated_by_user_id != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldCreatedByUserID)
+	}
+	if m.addupdated_by_user_id != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldUpdatedByUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *QuotaResetNotificationSettingMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case quotaresetnotificationsetting.FieldCredentialID:
+		return m.AddedCredentialID()
+	case quotaresetnotificationsetting.FieldCreatedByUserID:
+		return m.AddedCreatedByUserID()
+	case quotaresetnotificationsetting.FieldUpdatedByUserID:
+		return m.AddedUpdatedByUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *QuotaResetNotificationSettingMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case quotaresetnotificationsetting.FieldCredentialID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCredentialID(v)
+		return nil
+	case quotaresetnotificationsetting.FieldCreatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCreatedByUserID(v)
+		return nil
+	case quotaresetnotificationsetting.FieldUpdatedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUpdatedByUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetNotificationSetting numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *QuotaResetNotificationSettingMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(quotaresetnotificationsetting.FieldCredentialID) {
+		fields = append(fields, quotaresetnotificationsetting.FieldCredentialID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *QuotaResetNotificationSettingMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *QuotaResetNotificationSettingMutation) ClearField(name string) error {
+	switch name {
+	case quotaresetnotificationsetting.FieldCredentialID:
+		m.ClearCredentialID()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetNotificationSetting nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *QuotaResetNotificationSettingMutation) ResetField(name string) error {
+	switch name {
+	case quotaresetnotificationsetting.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case quotaresetnotificationsetting.FieldURL:
+		m.ResetURL()
+		return nil
+	case quotaresetnotificationsetting.FieldAuthType:
+		m.ResetAuthType()
+		return nil
+	case quotaresetnotificationsetting.FieldCredentialID:
+		m.ResetCredentialID()
+		return nil
+	case quotaresetnotificationsetting.FieldCreatedByUserID:
+		m.ResetCreatedByUserID()
+		return nil
+	case quotaresetnotificationsetting.FieldUpdatedByUserID:
+		m.ResetUpdatedByUserID()
+		return nil
+	case quotaresetnotificationsetting.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case quotaresetnotificationsetting.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetNotificationSetting field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *QuotaResetNotificationSettingMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *QuotaResetNotificationSettingMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *QuotaResetNotificationSettingMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *QuotaResetNotificationSettingMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *QuotaResetNotificationSettingMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *QuotaResetNotificationSettingMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *QuotaResetNotificationSettingMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown QuotaResetNotificationSetting unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *QuotaResetNotificationSettingMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown QuotaResetNotificationSetting edge %s", name)
+}
+
+// QuotaResetRequestMutation represents an operation that mutates the QuotaResetRequest nodes in the graph.
+type QuotaResetRequestMutation struct {
+	config
+	op                               Op
+	typ                              string
+	id                               *int
+	requester_user_id                *int
+	addrequester_user_id             *int
+	requester_relay_user_id          *int64
+	addrequester_relay_user_id       *int64
+	provider_id                      *int
+	addprovider_id                   *int
+	group_id                         *string
+	group_name                       *string
+	group_platform                   *string
+	reason                           *string
+	status                           *quotaresetrequest.Status
+	resolved_approver_user_ids       *[]int
+	appendresolved_approver_user_ids []int
+	matched_department_paths         *[]map[string]interface{}
+	appendmatched_department_paths   []map[string]interface{}
+	approved_by_user_id              *int
+	addapproved_by_user_id           *int
+	rejected_by_user_id              *int
+	addrejected_by_user_id           *int
+	decision_reason                  *string
+	decided_at                       *time.Time
+	reset_error                      *string
+	reset_started_at                 *time.Time
+	reset_completed_at               *time.Time
+	created_at                       *time.Time
+	updated_at                       *time.Time
+	clearedFields                    map[string]struct{}
+	done                             bool
+	oldValue                         func(context.Context) (*QuotaResetRequest, error)
+	predicates                       []predicate.QuotaResetRequest
+}
+
+var _ ent.Mutation = (*QuotaResetRequestMutation)(nil)
+
+// quotaresetrequestOption allows management of the mutation configuration using functional options.
+type quotaresetrequestOption func(*QuotaResetRequestMutation)
+
+// newQuotaResetRequestMutation creates new mutation for the QuotaResetRequest entity.
+func newQuotaResetRequestMutation(c config, op Op, opts ...quotaresetrequestOption) *QuotaResetRequestMutation {
+	m := &QuotaResetRequestMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeQuotaResetRequest,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withQuotaResetRequestID sets the ID field of the mutation.
+func withQuotaResetRequestID(id int) quotaresetrequestOption {
+	return func(m *QuotaResetRequestMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *QuotaResetRequest
+		)
+		m.oldValue = func(ctx context.Context) (*QuotaResetRequest, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().QuotaResetRequest.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withQuotaResetRequest sets the old QuotaResetRequest of the mutation.
+func withQuotaResetRequest(node *QuotaResetRequest) quotaresetrequestOption {
+	return func(m *QuotaResetRequestMutation) {
+		m.oldValue = func(context.Context) (*QuotaResetRequest, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m QuotaResetRequestMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m QuotaResetRequestMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *QuotaResetRequestMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *QuotaResetRequestMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().QuotaResetRequest.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRequesterUserID sets the "requester_user_id" field.
+func (m *QuotaResetRequestMutation) SetRequesterUserID(i int) {
+	m.requester_user_id = &i
+	m.addrequester_user_id = nil
+}
+
+// RequesterUserID returns the value of the "requester_user_id" field in the mutation.
+func (m *QuotaResetRequestMutation) RequesterUserID() (r int, exists bool) {
+	v := m.requester_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequesterUserID returns the old "requester_user_id" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldRequesterUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequesterUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequesterUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequesterUserID: %w", err)
+	}
+	return oldValue.RequesterUserID, nil
+}
+
+// AddRequesterUserID adds i to the "requester_user_id" field.
+func (m *QuotaResetRequestMutation) AddRequesterUserID(i int) {
+	if m.addrequester_user_id != nil {
+		*m.addrequester_user_id += i
+	} else {
+		m.addrequester_user_id = &i
+	}
+}
+
+// AddedRequesterUserID returns the value that was added to the "requester_user_id" field in this mutation.
+func (m *QuotaResetRequestMutation) AddedRequesterUserID() (r int, exists bool) {
+	v := m.addrequester_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRequesterUserID resets all changes to the "requester_user_id" field.
+func (m *QuotaResetRequestMutation) ResetRequesterUserID() {
+	m.requester_user_id = nil
+	m.addrequester_user_id = nil
+}
+
+// SetRequesterRelayUserID sets the "requester_relay_user_id" field.
+func (m *QuotaResetRequestMutation) SetRequesterRelayUserID(i int64) {
+	m.requester_relay_user_id = &i
+	m.addrequester_relay_user_id = nil
+}
+
+// RequesterRelayUserID returns the value of the "requester_relay_user_id" field in the mutation.
+func (m *QuotaResetRequestMutation) RequesterRelayUserID() (r int64, exists bool) {
+	v := m.requester_relay_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequesterRelayUserID returns the old "requester_relay_user_id" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldRequesterRelayUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequesterRelayUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequesterRelayUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequesterRelayUserID: %w", err)
+	}
+	return oldValue.RequesterRelayUserID, nil
+}
+
+// AddRequesterRelayUserID adds i to the "requester_relay_user_id" field.
+func (m *QuotaResetRequestMutation) AddRequesterRelayUserID(i int64) {
+	if m.addrequester_relay_user_id != nil {
+		*m.addrequester_relay_user_id += i
+	} else {
+		m.addrequester_relay_user_id = &i
+	}
+}
+
+// AddedRequesterRelayUserID returns the value that was added to the "requester_relay_user_id" field in this mutation.
+func (m *QuotaResetRequestMutation) AddedRequesterRelayUserID() (r int64, exists bool) {
+	v := m.addrequester_relay_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRequesterRelayUserID resets all changes to the "requester_relay_user_id" field.
+func (m *QuotaResetRequestMutation) ResetRequesterRelayUserID() {
+	m.requester_relay_user_id = nil
+	m.addrequester_relay_user_id = nil
+}
+
+// SetProviderID sets the "provider_id" field.
+func (m *QuotaResetRequestMutation) SetProviderID(i int) {
+	m.provider_id = &i
+	m.addprovider_id = nil
+}
+
+// ProviderID returns the value of the "provider_id" field in the mutation.
+func (m *QuotaResetRequestMutation) ProviderID() (r int, exists bool) {
+	v := m.provider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderID returns the old "provider_id" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldProviderID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderID: %w", err)
+	}
+	return oldValue.ProviderID, nil
+}
+
+// AddProviderID adds i to the "provider_id" field.
+func (m *QuotaResetRequestMutation) AddProviderID(i int) {
+	if m.addprovider_id != nil {
+		*m.addprovider_id += i
+	} else {
+		m.addprovider_id = &i
+	}
+}
+
+// AddedProviderID returns the value that was added to the "provider_id" field in this mutation.
+func (m *QuotaResetRequestMutation) AddedProviderID() (r int, exists bool) {
+	v := m.addprovider_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProviderID resets all changes to the "provider_id" field.
+func (m *QuotaResetRequestMutation) ResetProviderID() {
+	m.provider_id = nil
+	m.addprovider_id = nil
+}
+
+// SetGroupID sets the "group_id" field.
+func (m *QuotaResetRequestMutation) SetGroupID(s string) {
+	m.group_id = &s
+}
+
+// GroupID returns the value of the "group_id" field in the mutation.
+func (m *QuotaResetRequestMutation) GroupID() (r string, exists bool) {
+	v := m.group_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupID returns the old "group_id" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldGroupID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupID: %w", err)
+	}
+	return oldValue.GroupID, nil
+}
+
+// ResetGroupID resets all changes to the "group_id" field.
+func (m *QuotaResetRequestMutation) ResetGroupID() {
+	m.group_id = nil
+}
+
+// SetGroupName sets the "group_name" field.
+func (m *QuotaResetRequestMutation) SetGroupName(s string) {
+	m.group_name = &s
+}
+
+// GroupName returns the value of the "group_name" field in the mutation.
+func (m *QuotaResetRequestMutation) GroupName() (r string, exists bool) {
+	v := m.group_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupName returns the old "group_name" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldGroupName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupName: %w", err)
+	}
+	return oldValue.GroupName, nil
+}
+
+// ResetGroupName resets all changes to the "group_name" field.
+func (m *QuotaResetRequestMutation) ResetGroupName() {
+	m.group_name = nil
+}
+
+// SetGroupPlatform sets the "group_platform" field.
+func (m *QuotaResetRequestMutation) SetGroupPlatform(s string) {
+	m.group_platform = &s
+}
+
+// GroupPlatform returns the value of the "group_platform" field in the mutation.
+func (m *QuotaResetRequestMutation) GroupPlatform() (r string, exists bool) {
+	v := m.group_platform
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGroupPlatform returns the old "group_platform" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldGroupPlatform(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGroupPlatform is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGroupPlatform requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGroupPlatform: %w", err)
+	}
+	return oldValue.GroupPlatform, nil
+}
+
+// ResetGroupPlatform resets all changes to the "group_platform" field.
+func (m *QuotaResetRequestMutation) ResetGroupPlatform() {
+	m.group_platform = nil
+}
+
+// SetReason sets the "reason" field.
+func (m *QuotaResetRequestMutation) SetReason(s string) {
+	m.reason = &s
+}
+
+// Reason returns the value of the "reason" field in the mutation.
+func (m *QuotaResetRequestMutation) Reason() (r string, exists bool) {
+	v := m.reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldReason returns the old "reason" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldReason: %w", err)
+	}
+	return oldValue.Reason, nil
+}
+
+// ResetReason resets all changes to the "reason" field.
+func (m *QuotaResetRequestMutation) ResetReason() {
+	m.reason = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *QuotaResetRequestMutation) SetStatus(q quotaresetrequest.Status) {
+	m.status = &q
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *QuotaResetRequestMutation) Status() (r quotaresetrequest.Status, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldStatus(ctx context.Context) (v quotaresetrequest.Status, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *QuotaResetRequestMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetResolvedApproverUserIds sets the "resolved_approver_user_ids" field.
+func (m *QuotaResetRequestMutation) SetResolvedApproverUserIds(i []int) {
+	m.resolved_approver_user_ids = &i
+	m.appendresolved_approver_user_ids = nil
+}
+
+// ResolvedApproverUserIds returns the value of the "resolved_approver_user_ids" field in the mutation.
+func (m *QuotaResetRequestMutation) ResolvedApproverUserIds() (r []int, exists bool) {
+	v := m.resolved_approver_user_ids
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResolvedApproverUserIds returns the old "resolved_approver_user_ids" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldResolvedApproverUserIds(ctx context.Context) (v []int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResolvedApproverUserIds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResolvedApproverUserIds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResolvedApproverUserIds: %w", err)
+	}
+	return oldValue.ResolvedApproverUserIds, nil
+}
+
+// AppendResolvedApproverUserIds adds i to the "resolved_approver_user_ids" field.
+func (m *QuotaResetRequestMutation) AppendResolvedApproverUserIds(i []int) {
+	m.appendresolved_approver_user_ids = append(m.appendresolved_approver_user_ids, i...)
+}
+
+// AppendedResolvedApproverUserIds returns the list of values that were appended to the "resolved_approver_user_ids" field in this mutation.
+func (m *QuotaResetRequestMutation) AppendedResolvedApproverUserIds() ([]int, bool) {
+	if len(m.appendresolved_approver_user_ids) == 0 {
+		return nil, false
+	}
+	return m.appendresolved_approver_user_ids, true
+}
+
+// ClearResolvedApproverUserIds clears the value of the "resolved_approver_user_ids" field.
+func (m *QuotaResetRequestMutation) ClearResolvedApproverUserIds() {
+	m.resolved_approver_user_ids = nil
+	m.appendresolved_approver_user_ids = nil
+	m.clearedFields[quotaresetrequest.FieldResolvedApproverUserIds] = struct{}{}
+}
+
+// ResolvedApproverUserIdsCleared returns if the "resolved_approver_user_ids" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) ResolvedApproverUserIdsCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldResolvedApproverUserIds]
+	return ok
+}
+
+// ResetResolvedApproverUserIds resets all changes to the "resolved_approver_user_ids" field.
+func (m *QuotaResetRequestMutation) ResetResolvedApproverUserIds() {
+	m.resolved_approver_user_ids = nil
+	m.appendresolved_approver_user_ids = nil
+	delete(m.clearedFields, quotaresetrequest.FieldResolvedApproverUserIds)
+}
+
+// SetMatchedDepartmentPaths sets the "matched_department_paths" field.
+func (m *QuotaResetRequestMutation) SetMatchedDepartmentPaths(value []map[string]interface{}) {
+	m.matched_department_paths = &value
+	m.appendmatched_department_paths = nil
+}
+
+// MatchedDepartmentPaths returns the value of the "matched_department_paths" field in the mutation.
+func (m *QuotaResetRequestMutation) MatchedDepartmentPaths() (r []map[string]interface{}, exists bool) {
+	v := m.matched_department_paths
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMatchedDepartmentPaths returns the old "matched_department_paths" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldMatchedDepartmentPaths(ctx context.Context) (v []map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMatchedDepartmentPaths is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMatchedDepartmentPaths requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMatchedDepartmentPaths: %w", err)
+	}
+	return oldValue.MatchedDepartmentPaths, nil
+}
+
+// AppendMatchedDepartmentPaths adds value to the "matched_department_paths" field.
+func (m *QuotaResetRequestMutation) AppendMatchedDepartmentPaths(value []map[string]interface{}) {
+	m.appendmatched_department_paths = append(m.appendmatched_department_paths, value...)
+}
+
+// AppendedMatchedDepartmentPaths returns the list of values that were appended to the "matched_department_paths" field in this mutation.
+func (m *QuotaResetRequestMutation) AppendedMatchedDepartmentPaths() ([]map[string]interface{}, bool) {
+	if len(m.appendmatched_department_paths) == 0 {
+		return nil, false
+	}
+	return m.appendmatched_department_paths, true
+}
+
+// ClearMatchedDepartmentPaths clears the value of the "matched_department_paths" field.
+func (m *QuotaResetRequestMutation) ClearMatchedDepartmentPaths() {
+	m.matched_department_paths = nil
+	m.appendmatched_department_paths = nil
+	m.clearedFields[quotaresetrequest.FieldMatchedDepartmentPaths] = struct{}{}
+}
+
+// MatchedDepartmentPathsCleared returns if the "matched_department_paths" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) MatchedDepartmentPathsCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldMatchedDepartmentPaths]
+	return ok
+}
+
+// ResetMatchedDepartmentPaths resets all changes to the "matched_department_paths" field.
+func (m *QuotaResetRequestMutation) ResetMatchedDepartmentPaths() {
+	m.matched_department_paths = nil
+	m.appendmatched_department_paths = nil
+	delete(m.clearedFields, quotaresetrequest.FieldMatchedDepartmentPaths)
+}
+
+// SetApprovedByUserID sets the "approved_by_user_id" field.
+func (m *QuotaResetRequestMutation) SetApprovedByUserID(i int) {
+	m.approved_by_user_id = &i
+	m.addapproved_by_user_id = nil
+}
+
+// ApprovedByUserID returns the value of the "approved_by_user_id" field in the mutation.
+func (m *QuotaResetRequestMutation) ApprovedByUserID() (r int, exists bool) {
+	v := m.approved_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldApprovedByUserID returns the old "approved_by_user_id" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldApprovedByUserID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldApprovedByUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldApprovedByUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldApprovedByUserID: %w", err)
+	}
+	return oldValue.ApprovedByUserID, nil
+}
+
+// AddApprovedByUserID adds i to the "approved_by_user_id" field.
+func (m *QuotaResetRequestMutation) AddApprovedByUserID(i int) {
+	if m.addapproved_by_user_id != nil {
+		*m.addapproved_by_user_id += i
+	} else {
+		m.addapproved_by_user_id = &i
+	}
+}
+
+// AddedApprovedByUserID returns the value that was added to the "approved_by_user_id" field in this mutation.
+func (m *QuotaResetRequestMutation) AddedApprovedByUserID() (r int, exists bool) {
+	v := m.addapproved_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearApprovedByUserID clears the value of the "approved_by_user_id" field.
+func (m *QuotaResetRequestMutation) ClearApprovedByUserID() {
+	m.approved_by_user_id = nil
+	m.addapproved_by_user_id = nil
+	m.clearedFields[quotaresetrequest.FieldApprovedByUserID] = struct{}{}
+}
+
+// ApprovedByUserIDCleared returns if the "approved_by_user_id" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) ApprovedByUserIDCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldApprovedByUserID]
+	return ok
+}
+
+// ResetApprovedByUserID resets all changes to the "approved_by_user_id" field.
+func (m *QuotaResetRequestMutation) ResetApprovedByUserID() {
+	m.approved_by_user_id = nil
+	m.addapproved_by_user_id = nil
+	delete(m.clearedFields, quotaresetrequest.FieldApprovedByUserID)
+}
+
+// SetRejectedByUserID sets the "rejected_by_user_id" field.
+func (m *QuotaResetRequestMutation) SetRejectedByUserID(i int) {
+	m.rejected_by_user_id = &i
+	m.addrejected_by_user_id = nil
+}
+
+// RejectedByUserID returns the value of the "rejected_by_user_id" field in the mutation.
+func (m *QuotaResetRequestMutation) RejectedByUserID() (r int, exists bool) {
+	v := m.rejected_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRejectedByUserID returns the old "rejected_by_user_id" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldRejectedByUserID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRejectedByUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRejectedByUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRejectedByUserID: %w", err)
+	}
+	return oldValue.RejectedByUserID, nil
+}
+
+// AddRejectedByUserID adds i to the "rejected_by_user_id" field.
+func (m *QuotaResetRequestMutation) AddRejectedByUserID(i int) {
+	if m.addrejected_by_user_id != nil {
+		*m.addrejected_by_user_id += i
+	} else {
+		m.addrejected_by_user_id = &i
+	}
+}
+
+// AddedRejectedByUserID returns the value that was added to the "rejected_by_user_id" field in this mutation.
+func (m *QuotaResetRequestMutation) AddedRejectedByUserID() (r int, exists bool) {
+	v := m.addrejected_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRejectedByUserID clears the value of the "rejected_by_user_id" field.
+func (m *QuotaResetRequestMutation) ClearRejectedByUserID() {
+	m.rejected_by_user_id = nil
+	m.addrejected_by_user_id = nil
+	m.clearedFields[quotaresetrequest.FieldRejectedByUserID] = struct{}{}
+}
+
+// RejectedByUserIDCleared returns if the "rejected_by_user_id" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) RejectedByUserIDCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldRejectedByUserID]
+	return ok
+}
+
+// ResetRejectedByUserID resets all changes to the "rejected_by_user_id" field.
+func (m *QuotaResetRequestMutation) ResetRejectedByUserID() {
+	m.rejected_by_user_id = nil
+	m.addrejected_by_user_id = nil
+	delete(m.clearedFields, quotaresetrequest.FieldRejectedByUserID)
+}
+
+// SetDecisionReason sets the "decision_reason" field.
+func (m *QuotaResetRequestMutation) SetDecisionReason(s string) {
+	m.decision_reason = &s
+}
+
+// DecisionReason returns the value of the "decision_reason" field in the mutation.
+func (m *QuotaResetRequestMutation) DecisionReason() (r string, exists bool) {
+	v := m.decision_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDecisionReason returns the old "decision_reason" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldDecisionReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDecisionReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDecisionReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDecisionReason: %w", err)
+	}
+	return oldValue.DecisionReason, nil
+}
+
+// ResetDecisionReason resets all changes to the "decision_reason" field.
+func (m *QuotaResetRequestMutation) ResetDecisionReason() {
+	m.decision_reason = nil
+}
+
+// SetDecidedAt sets the "decided_at" field.
+func (m *QuotaResetRequestMutation) SetDecidedAt(t time.Time) {
+	m.decided_at = &t
+}
+
+// DecidedAt returns the value of the "decided_at" field in the mutation.
+func (m *QuotaResetRequestMutation) DecidedAt() (r time.Time, exists bool) {
+	v := m.decided_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDecidedAt returns the old "decided_at" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldDecidedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDecidedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDecidedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDecidedAt: %w", err)
+	}
+	return oldValue.DecidedAt, nil
+}
+
+// ClearDecidedAt clears the value of the "decided_at" field.
+func (m *QuotaResetRequestMutation) ClearDecidedAt() {
+	m.decided_at = nil
+	m.clearedFields[quotaresetrequest.FieldDecidedAt] = struct{}{}
+}
+
+// DecidedAtCleared returns if the "decided_at" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) DecidedAtCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldDecidedAt]
+	return ok
+}
+
+// ResetDecidedAt resets all changes to the "decided_at" field.
+func (m *QuotaResetRequestMutation) ResetDecidedAt() {
+	m.decided_at = nil
+	delete(m.clearedFields, quotaresetrequest.FieldDecidedAt)
+}
+
+// SetResetError sets the "reset_error" field.
+func (m *QuotaResetRequestMutation) SetResetError(s string) {
+	m.reset_error = &s
+}
+
+// ResetError returns the value of the "reset_error" field in the mutation.
+func (m *QuotaResetRequestMutation) ResetError() (r string, exists bool) {
+	v := m.reset_error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResetError returns the old "reset_error" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldResetError(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResetError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResetError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResetError: %w", err)
+	}
+	return oldValue.ResetError, nil
+}
+
+// ResetResetError resets all changes to the "reset_error" field.
+func (m *QuotaResetRequestMutation) ResetResetError() {
+	m.reset_error = nil
+}
+
+// SetResetStartedAt sets the "reset_started_at" field.
+func (m *QuotaResetRequestMutation) SetResetStartedAt(t time.Time) {
+	m.reset_started_at = &t
+}
+
+// ResetStartedAt returns the value of the "reset_started_at" field in the mutation.
+func (m *QuotaResetRequestMutation) ResetStartedAt() (r time.Time, exists bool) {
+	v := m.reset_started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResetStartedAt returns the old "reset_started_at" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldResetStartedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResetStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResetStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResetStartedAt: %w", err)
+	}
+	return oldValue.ResetStartedAt, nil
+}
+
+// ClearResetStartedAt clears the value of the "reset_started_at" field.
+func (m *QuotaResetRequestMutation) ClearResetStartedAt() {
+	m.reset_started_at = nil
+	m.clearedFields[quotaresetrequest.FieldResetStartedAt] = struct{}{}
+}
+
+// ResetStartedAtCleared returns if the "reset_started_at" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) ResetStartedAtCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldResetStartedAt]
+	return ok
+}
+
+// ResetResetStartedAt resets all changes to the "reset_started_at" field.
+func (m *QuotaResetRequestMutation) ResetResetStartedAt() {
+	m.reset_started_at = nil
+	delete(m.clearedFields, quotaresetrequest.FieldResetStartedAt)
+}
+
+// SetResetCompletedAt sets the "reset_completed_at" field.
+func (m *QuotaResetRequestMutation) SetResetCompletedAt(t time.Time) {
+	m.reset_completed_at = &t
+}
+
+// ResetCompletedAt returns the value of the "reset_completed_at" field in the mutation.
+func (m *QuotaResetRequestMutation) ResetCompletedAt() (r time.Time, exists bool) {
+	v := m.reset_completed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResetCompletedAt returns the old "reset_completed_at" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldResetCompletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResetCompletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResetCompletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResetCompletedAt: %w", err)
+	}
+	return oldValue.ResetCompletedAt, nil
+}
+
+// ClearResetCompletedAt clears the value of the "reset_completed_at" field.
+func (m *QuotaResetRequestMutation) ClearResetCompletedAt() {
+	m.reset_completed_at = nil
+	m.clearedFields[quotaresetrequest.FieldResetCompletedAt] = struct{}{}
+}
+
+// ResetCompletedAtCleared returns if the "reset_completed_at" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) ResetCompletedAtCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldResetCompletedAt]
+	return ok
+}
+
+// ResetResetCompletedAt resets all changes to the "reset_completed_at" field.
+func (m *QuotaResetRequestMutation) ResetResetCompletedAt() {
+	m.reset_completed_at = nil
+	delete(m.clearedFields, quotaresetrequest.FieldResetCompletedAt)
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *QuotaResetRequestMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *QuotaResetRequestMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *QuotaResetRequestMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *QuotaResetRequestMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *QuotaResetRequestMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *QuotaResetRequestMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the QuotaResetRequestMutation builder.
+func (m *QuotaResetRequestMutation) Where(ps ...predicate.QuotaResetRequest) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the QuotaResetRequestMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *QuotaResetRequestMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.QuotaResetRequest, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *QuotaResetRequestMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *QuotaResetRequestMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (QuotaResetRequest).
+func (m *QuotaResetRequestMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *QuotaResetRequestMutation) Fields() []string {
+	fields := make([]string, 0, 19)
+	if m.requester_user_id != nil {
+		fields = append(fields, quotaresetrequest.FieldRequesterUserID)
+	}
+	if m.requester_relay_user_id != nil {
+		fields = append(fields, quotaresetrequest.FieldRequesterRelayUserID)
+	}
+	if m.provider_id != nil {
+		fields = append(fields, quotaresetrequest.FieldProviderID)
+	}
+	if m.group_id != nil {
+		fields = append(fields, quotaresetrequest.FieldGroupID)
+	}
+	if m.group_name != nil {
+		fields = append(fields, quotaresetrequest.FieldGroupName)
+	}
+	if m.group_platform != nil {
+		fields = append(fields, quotaresetrequest.FieldGroupPlatform)
+	}
+	if m.reason != nil {
+		fields = append(fields, quotaresetrequest.FieldReason)
+	}
+	if m.status != nil {
+		fields = append(fields, quotaresetrequest.FieldStatus)
+	}
+	if m.resolved_approver_user_ids != nil {
+		fields = append(fields, quotaresetrequest.FieldResolvedApproverUserIds)
+	}
+	if m.matched_department_paths != nil {
+		fields = append(fields, quotaresetrequest.FieldMatchedDepartmentPaths)
+	}
+	if m.approved_by_user_id != nil {
+		fields = append(fields, quotaresetrequest.FieldApprovedByUserID)
+	}
+	if m.rejected_by_user_id != nil {
+		fields = append(fields, quotaresetrequest.FieldRejectedByUserID)
+	}
+	if m.decision_reason != nil {
+		fields = append(fields, quotaresetrequest.FieldDecisionReason)
+	}
+	if m.decided_at != nil {
+		fields = append(fields, quotaresetrequest.FieldDecidedAt)
+	}
+	if m.reset_error != nil {
+		fields = append(fields, quotaresetrequest.FieldResetError)
+	}
+	if m.reset_started_at != nil {
+		fields = append(fields, quotaresetrequest.FieldResetStartedAt)
+	}
+	if m.reset_completed_at != nil {
+		fields = append(fields, quotaresetrequest.FieldResetCompletedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, quotaresetrequest.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, quotaresetrequest.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *QuotaResetRequestMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case quotaresetrequest.FieldRequesterUserID:
+		return m.RequesterUserID()
+	case quotaresetrequest.FieldRequesterRelayUserID:
+		return m.RequesterRelayUserID()
+	case quotaresetrequest.FieldProviderID:
+		return m.ProviderID()
+	case quotaresetrequest.FieldGroupID:
+		return m.GroupID()
+	case quotaresetrequest.FieldGroupName:
+		return m.GroupName()
+	case quotaresetrequest.FieldGroupPlatform:
+		return m.GroupPlatform()
+	case quotaresetrequest.FieldReason:
+		return m.Reason()
+	case quotaresetrequest.FieldStatus:
+		return m.Status()
+	case quotaresetrequest.FieldResolvedApproverUserIds:
+		return m.ResolvedApproverUserIds()
+	case quotaresetrequest.FieldMatchedDepartmentPaths:
+		return m.MatchedDepartmentPaths()
+	case quotaresetrequest.FieldApprovedByUserID:
+		return m.ApprovedByUserID()
+	case quotaresetrequest.FieldRejectedByUserID:
+		return m.RejectedByUserID()
+	case quotaresetrequest.FieldDecisionReason:
+		return m.DecisionReason()
+	case quotaresetrequest.FieldDecidedAt:
+		return m.DecidedAt()
+	case quotaresetrequest.FieldResetError:
+		return m.ResetError()
+	case quotaresetrequest.FieldResetStartedAt:
+		return m.ResetStartedAt()
+	case quotaresetrequest.FieldResetCompletedAt:
+		return m.ResetCompletedAt()
+	case quotaresetrequest.FieldCreatedAt:
+		return m.CreatedAt()
+	case quotaresetrequest.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *QuotaResetRequestMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case quotaresetrequest.FieldRequesterUserID:
+		return m.OldRequesterUserID(ctx)
+	case quotaresetrequest.FieldRequesterRelayUserID:
+		return m.OldRequesterRelayUserID(ctx)
+	case quotaresetrequest.FieldProviderID:
+		return m.OldProviderID(ctx)
+	case quotaresetrequest.FieldGroupID:
+		return m.OldGroupID(ctx)
+	case quotaresetrequest.FieldGroupName:
+		return m.OldGroupName(ctx)
+	case quotaresetrequest.FieldGroupPlatform:
+		return m.OldGroupPlatform(ctx)
+	case quotaresetrequest.FieldReason:
+		return m.OldReason(ctx)
+	case quotaresetrequest.FieldStatus:
+		return m.OldStatus(ctx)
+	case quotaresetrequest.FieldResolvedApproverUserIds:
+		return m.OldResolvedApproverUserIds(ctx)
+	case quotaresetrequest.FieldMatchedDepartmentPaths:
+		return m.OldMatchedDepartmentPaths(ctx)
+	case quotaresetrequest.FieldApprovedByUserID:
+		return m.OldApprovedByUserID(ctx)
+	case quotaresetrequest.FieldRejectedByUserID:
+		return m.OldRejectedByUserID(ctx)
+	case quotaresetrequest.FieldDecisionReason:
+		return m.OldDecisionReason(ctx)
+	case quotaresetrequest.FieldDecidedAt:
+		return m.OldDecidedAt(ctx)
+	case quotaresetrequest.FieldResetError:
+		return m.OldResetError(ctx)
+	case quotaresetrequest.FieldResetStartedAt:
+		return m.OldResetStartedAt(ctx)
+	case quotaresetrequest.FieldResetCompletedAt:
+		return m.OldResetCompletedAt(ctx)
+	case quotaresetrequest.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case quotaresetrequest.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown QuotaResetRequest field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *QuotaResetRequestMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case quotaresetrequest.FieldRequesterUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequesterUserID(v)
+		return nil
+	case quotaresetrequest.FieldRequesterRelayUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequesterRelayUserID(v)
+		return nil
+	case quotaresetrequest.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderID(v)
+		return nil
+	case quotaresetrequest.FieldGroupID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupID(v)
+		return nil
+	case quotaresetrequest.FieldGroupName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupName(v)
+		return nil
+	case quotaresetrequest.FieldGroupPlatform:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGroupPlatform(v)
+		return nil
+	case quotaresetrequest.FieldReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetReason(v)
+		return nil
+	case quotaresetrequest.FieldStatus:
+		v, ok := value.(quotaresetrequest.Status)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case quotaresetrequest.FieldResolvedApproverUserIds:
+		v, ok := value.([]int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResolvedApproverUserIds(v)
+		return nil
+	case quotaresetrequest.FieldMatchedDepartmentPaths:
+		v, ok := value.([]map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMatchedDepartmentPaths(v)
+		return nil
+	case quotaresetrequest.FieldApprovedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetApprovedByUserID(v)
+		return nil
+	case quotaresetrequest.FieldRejectedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRejectedByUserID(v)
+		return nil
+	case quotaresetrequest.FieldDecisionReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDecisionReason(v)
+		return nil
+	case quotaresetrequest.FieldDecidedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDecidedAt(v)
+		return nil
+	case quotaresetrequest.FieldResetError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResetError(v)
+		return nil
+	case quotaresetrequest.FieldResetStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResetStartedAt(v)
+		return nil
+	case quotaresetrequest.FieldResetCompletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResetCompletedAt(v)
+		return nil
+	case quotaresetrequest.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case quotaresetrequest.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetRequest field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *QuotaResetRequestMutation) AddedFields() []string {
+	var fields []string
+	if m.addrequester_user_id != nil {
+		fields = append(fields, quotaresetrequest.FieldRequesterUserID)
+	}
+	if m.addrequester_relay_user_id != nil {
+		fields = append(fields, quotaresetrequest.FieldRequesterRelayUserID)
+	}
+	if m.addprovider_id != nil {
+		fields = append(fields, quotaresetrequest.FieldProviderID)
+	}
+	if m.addapproved_by_user_id != nil {
+		fields = append(fields, quotaresetrequest.FieldApprovedByUserID)
+	}
+	if m.addrejected_by_user_id != nil {
+		fields = append(fields, quotaresetrequest.FieldRejectedByUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *QuotaResetRequestMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case quotaresetrequest.FieldRequesterUserID:
+		return m.AddedRequesterUserID()
+	case quotaresetrequest.FieldRequesterRelayUserID:
+		return m.AddedRequesterRelayUserID()
+	case quotaresetrequest.FieldProviderID:
+		return m.AddedProviderID()
+	case quotaresetrequest.FieldApprovedByUserID:
+		return m.AddedApprovedByUserID()
+	case quotaresetrequest.FieldRejectedByUserID:
+		return m.AddedRejectedByUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *QuotaResetRequestMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case quotaresetrequest.FieldRequesterUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequesterUserID(v)
+		return nil
+	case quotaresetrequest.FieldRequesterRelayUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequesterRelayUserID(v)
+		return nil
+	case quotaresetrequest.FieldProviderID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderID(v)
+		return nil
+	case quotaresetrequest.FieldApprovedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddApprovedByUserID(v)
+		return nil
+	case quotaresetrequest.FieldRejectedByUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRejectedByUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetRequest numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *QuotaResetRequestMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(quotaresetrequest.FieldResolvedApproverUserIds) {
+		fields = append(fields, quotaresetrequest.FieldResolvedApproverUserIds)
+	}
+	if m.FieldCleared(quotaresetrequest.FieldMatchedDepartmentPaths) {
+		fields = append(fields, quotaresetrequest.FieldMatchedDepartmentPaths)
+	}
+	if m.FieldCleared(quotaresetrequest.FieldApprovedByUserID) {
+		fields = append(fields, quotaresetrequest.FieldApprovedByUserID)
+	}
+	if m.FieldCleared(quotaresetrequest.FieldRejectedByUserID) {
+		fields = append(fields, quotaresetrequest.FieldRejectedByUserID)
+	}
+	if m.FieldCleared(quotaresetrequest.FieldDecidedAt) {
+		fields = append(fields, quotaresetrequest.FieldDecidedAt)
+	}
+	if m.FieldCleared(quotaresetrequest.FieldResetStartedAt) {
+		fields = append(fields, quotaresetrequest.FieldResetStartedAt)
+	}
+	if m.FieldCleared(quotaresetrequest.FieldResetCompletedAt) {
+		fields = append(fields, quotaresetrequest.FieldResetCompletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *QuotaResetRequestMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *QuotaResetRequestMutation) ClearField(name string) error {
+	switch name {
+	case quotaresetrequest.FieldResolvedApproverUserIds:
+		m.ClearResolvedApproverUserIds()
+		return nil
+	case quotaresetrequest.FieldMatchedDepartmentPaths:
+		m.ClearMatchedDepartmentPaths()
+		return nil
+	case quotaresetrequest.FieldApprovedByUserID:
+		m.ClearApprovedByUserID()
+		return nil
+	case quotaresetrequest.FieldRejectedByUserID:
+		m.ClearRejectedByUserID()
+		return nil
+	case quotaresetrequest.FieldDecidedAt:
+		m.ClearDecidedAt()
+		return nil
+	case quotaresetrequest.FieldResetStartedAt:
+		m.ClearResetStartedAt()
+		return nil
+	case quotaresetrequest.FieldResetCompletedAt:
+		m.ClearResetCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetRequest nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *QuotaResetRequestMutation) ResetField(name string) error {
+	switch name {
+	case quotaresetrequest.FieldRequesterUserID:
+		m.ResetRequesterUserID()
+		return nil
+	case quotaresetrequest.FieldRequesterRelayUserID:
+		m.ResetRequesterRelayUserID()
+		return nil
+	case quotaresetrequest.FieldProviderID:
+		m.ResetProviderID()
+		return nil
+	case quotaresetrequest.FieldGroupID:
+		m.ResetGroupID()
+		return nil
+	case quotaresetrequest.FieldGroupName:
+		m.ResetGroupName()
+		return nil
+	case quotaresetrequest.FieldGroupPlatform:
+		m.ResetGroupPlatform()
+		return nil
+	case quotaresetrequest.FieldReason:
+		m.ResetReason()
+		return nil
+	case quotaresetrequest.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case quotaresetrequest.FieldResolvedApproverUserIds:
+		m.ResetResolvedApproverUserIds()
+		return nil
+	case quotaresetrequest.FieldMatchedDepartmentPaths:
+		m.ResetMatchedDepartmentPaths()
+		return nil
+	case quotaresetrequest.FieldApprovedByUserID:
+		m.ResetApprovedByUserID()
+		return nil
+	case quotaresetrequest.FieldRejectedByUserID:
+		m.ResetRejectedByUserID()
+		return nil
+	case quotaresetrequest.FieldDecisionReason:
+		m.ResetDecisionReason()
+		return nil
+	case quotaresetrequest.FieldDecidedAt:
+		m.ResetDecidedAt()
+		return nil
+	case quotaresetrequest.FieldResetError:
+		m.ResetResetError()
+		return nil
+	case quotaresetrequest.FieldResetStartedAt:
+		m.ResetResetStartedAt()
+		return nil
+	case quotaresetrequest.FieldResetCompletedAt:
+		m.ResetResetCompletedAt()
+		return nil
+	case quotaresetrequest.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case quotaresetrequest.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetRequest field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *QuotaResetRequestMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *QuotaResetRequestMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *QuotaResetRequestMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *QuotaResetRequestMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *QuotaResetRequestMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *QuotaResetRequestMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *QuotaResetRequestMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown QuotaResetRequest unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *QuotaResetRequestMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown QuotaResetRequest edge %s", name)
+}
+
+// QuotaResetRequestEventMutation represents an operation that mutates the QuotaResetRequestEvent nodes in the graph.
+type QuotaResetRequestEventMutation struct {
+	config
+	op               Op
+	typ              string
+	id               *int
+	request_id       *int
+	addrequest_id    *int
+	actor_user_id    *int
+	addactor_user_id *int
+	event_type       *quotaresetrequestevent.EventType
+	metadata         *map[string]interface{}
+	error_message    *string
+	created_at       *time.Time
+	clearedFields    map[string]struct{}
+	done             bool
+	oldValue         func(context.Context) (*QuotaResetRequestEvent, error)
+	predicates       []predicate.QuotaResetRequestEvent
+}
+
+var _ ent.Mutation = (*QuotaResetRequestEventMutation)(nil)
+
+// quotaresetrequesteventOption allows management of the mutation configuration using functional options.
+type quotaresetrequesteventOption func(*QuotaResetRequestEventMutation)
+
+// newQuotaResetRequestEventMutation creates new mutation for the QuotaResetRequestEvent entity.
+func newQuotaResetRequestEventMutation(c config, op Op, opts ...quotaresetrequesteventOption) *QuotaResetRequestEventMutation {
+	m := &QuotaResetRequestEventMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeQuotaResetRequestEvent,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withQuotaResetRequestEventID sets the ID field of the mutation.
+func withQuotaResetRequestEventID(id int) quotaresetrequesteventOption {
+	return func(m *QuotaResetRequestEventMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *QuotaResetRequestEvent
+		)
+		m.oldValue = func(ctx context.Context) (*QuotaResetRequestEvent, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().QuotaResetRequestEvent.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withQuotaResetRequestEvent sets the old QuotaResetRequestEvent of the mutation.
+func withQuotaResetRequestEvent(node *QuotaResetRequestEvent) quotaresetrequesteventOption {
+	return func(m *QuotaResetRequestEventMutation) {
+		m.oldValue = func(context.Context) (*QuotaResetRequestEvent, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m QuotaResetRequestEventMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m QuotaResetRequestEventMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *QuotaResetRequestEventMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *QuotaResetRequestEventMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().QuotaResetRequestEvent.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *QuotaResetRequestEventMutation) SetRequestID(i int) {
+	m.request_id = &i
+	m.addrequest_id = nil
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *QuotaResetRequestEventMutation) RequestID() (r int, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the QuotaResetRequestEvent entity.
+// If the QuotaResetRequestEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestEventMutation) OldRequestID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// AddRequestID adds i to the "request_id" field.
+func (m *QuotaResetRequestEventMutation) AddRequestID(i int) {
+	if m.addrequest_id != nil {
+		*m.addrequest_id += i
+	} else {
+		m.addrequest_id = &i
+	}
+}
+
+// AddedRequestID returns the value that was added to the "request_id" field in this mutation.
+func (m *QuotaResetRequestEventMutation) AddedRequestID() (r int, exists bool) {
+	v := m.addrequest_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *QuotaResetRequestEventMutation) ResetRequestID() {
+	m.request_id = nil
+	m.addrequest_id = nil
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (m *QuotaResetRequestEventMutation) SetActorUserID(i int) {
+	m.actor_user_id = &i
+	m.addactor_user_id = nil
+}
+
+// ActorUserID returns the value of the "actor_user_id" field in the mutation.
+func (m *QuotaResetRequestEventMutation) ActorUserID() (r int, exists bool) {
+	v := m.actor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActorUserID returns the old "actor_user_id" field's value of the QuotaResetRequestEvent entity.
+// If the QuotaResetRequestEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestEventMutation) OldActorUserID(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActorUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActorUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActorUserID: %w", err)
+	}
+	return oldValue.ActorUserID, nil
+}
+
+// AddActorUserID adds i to the "actor_user_id" field.
+func (m *QuotaResetRequestEventMutation) AddActorUserID(i int) {
+	if m.addactor_user_id != nil {
+		*m.addactor_user_id += i
+	} else {
+		m.addactor_user_id = &i
+	}
+}
+
+// AddedActorUserID returns the value that was added to the "actor_user_id" field in this mutation.
+func (m *QuotaResetRequestEventMutation) AddedActorUserID() (r int, exists bool) {
+	v := m.addactor_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearActorUserID clears the value of the "actor_user_id" field.
+func (m *QuotaResetRequestEventMutation) ClearActorUserID() {
+	m.actor_user_id = nil
+	m.addactor_user_id = nil
+	m.clearedFields[quotaresetrequestevent.FieldActorUserID] = struct{}{}
+}
+
+// ActorUserIDCleared returns if the "actor_user_id" field was cleared in this mutation.
+func (m *QuotaResetRequestEventMutation) ActorUserIDCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequestevent.FieldActorUserID]
+	return ok
+}
+
+// ResetActorUserID resets all changes to the "actor_user_id" field.
+func (m *QuotaResetRequestEventMutation) ResetActorUserID() {
+	m.actor_user_id = nil
+	m.addactor_user_id = nil
+	delete(m.clearedFields, quotaresetrequestevent.FieldActorUserID)
+}
+
+// SetEventType sets the "event_type" field.
+func (m *QuotaResetRequestEventMutation) SetEventType(qt quotaresetrequestevent.EventType) {
+	m.event_type = &qt
+}
+
+// EventType returns the value of the "event_type" field in the mutation.
+func (m *QuotaResetRequestEventMutation) EventType() (r quotaresetrequestevent.EventType, exists bool) {
+	v := m.event_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEventType returns the old "event_type" field's value of the QuotaResetRequestEvent entity.
+// If the QuotaResetRequestEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestEventMutation) OldEventType(ctx context.Context) (v quotaresetrequestevent.EventType, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEventType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEventType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEventType: %w", err)
+	}
+	return oldValue.EventType, nil
+}
+
+// ResetEventType resets all changes to the "event_type" field.
+func (m *QuotaResetRequestEventMutation) ResetEventType() {
+	m.event_type = nil
+}
+
+// SetMetadata sets the "metadata" field.
+func (m *QuotaResetRequestEventMutation) SetMetadata(value map[string]interface{}) {
+	m.metadata = &value
+}
+
+// Metadata returns the value of the "metadata" field in the mutation.
+func (m *QuotaResetRequestEventMutation) Metadata() (r map[string]interface{}, exists bool) {
+	v := m.metadata
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadata returns the old "metadata" field's value of the QuotaResetRequestEvent entity.
+// If the QuotaResetRequestEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestEventMutation) OldMetadata(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadata is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadata requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadata: %w", err)
+	}
+	return oldValue.Metadata, nil
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (m *QuotaResetRequestEventMutation) ClearMetadata() {
+	m.metadata = nil
+	m.clearedFields[quotaresetrequestevent.FieldMetadata] = struct{}{}
+}
+
+// MetadataCleared returns if the "metadata" field was cleared in this mutation.
+func (m *QuotaResetRequestEventMutation) MetadataCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequestevent.FieldMetadata]
+	return ok
+}
+
+// ResetMetadata resets all changes to the "metadata" field.
+func (m *QuotaResetRequestEventMutation) ResetMetadata() {
+	m.metadata = nil
+	delete(m.clearedFields, quotaresetrequestevent.FieldMetadata)
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (m *QuotaResetRequestEventMutation) SetErrorMessage(s string) {
+	m.error_message = &s
+}
+
+// ErrorMessage returns the value of the "error_message" field in the mutation.
+func (m *QuotaResetRequestEventMutation) ErrorMessage() (r string, exists bool) {
+	v := m.error_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldErrorMessage returns the old "error_message" field's value of the QuotaResetRequestEvent entity.
+// If the QuotaResetRequestEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestEventMutation) OldErrorMessage(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldErrorMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldErrorMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldErrorMessage: %w", err)
+	}
+	return oldValue.ErrorMessage, nil
+}
+
+// ResetErrorMessage resets all changes to the "error_message" field.
+func (m *QuotaResetRequestEventMutation) ResetErrorMessage() {
+	m.error_message = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *QuotaResetRequestEventMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *QuotaResetRequestEventMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the QuotaResetRequestEvent entity.
+// If the QuotaResetRequestEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestEventMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *QuotaResetRequestEventMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// Where appends a list predicates to the QuotaResetRequestEventMutation builder.
+func (m *QuotaResetRequestEventMutation) Where(ps ...predicate.QuotaResetRequestEvent) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the QuotaResetRequestEventMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *QuotaResetRequestEventMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.QuotaResetRequestEvent, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *QuotaResetRequestEventMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *QuotaResetRequestEventMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (QuotaResetRequestEvent).
+func (m *QuotaResetRequestEventMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *QuotaResetRequestEventMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.request_id != nil {
+		fields = append(fields, quotaresetrequestevent.FieldRequestID)
+	}
+	if m.actor_user_id != nil {
+		fields = append(fields, quotaresetrequestevent.FieldActorUserID)
+	}
+	if m.event_type != nil {
+		fields = append(fields, quotaresetrequestevent.FieldEventType)
+	}
+	if m.metadata != nil {
+		fields = append(fields, quotaresetrequestevent.FieldMetadata)
+	}
+	if m.error_message != nil {
+		fields = append(fields, quotaresetrequestevent.FieldErrorMessage)
+	}
+	if m.created_at != nil {
+		fields = append(fields, quotaresetrequestevent.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *QuotaResetRequestEventMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case quotaresetrequestevent.FieldRequestID:
+		return m.RequestID()
+	case quotaresetrequestevent.FieldActorUserID:
+		return m.ActorUserID()
+	case quotaresetrequestevent.FieldEventType:
+		return m.EventType()
+	case quotaresetrequestevent.FieldMetadata:
+		return m.Metadata()
+	case quotaresetrequestevent.FieldErrorMessage:
+		return m.ErrorMessage()
+	case quotaresetrequestevent.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *QuotaResetRequestEventMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case quotaresetrequestevent.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case quotaresetrequestevent.FieldActorUserID:
+		return m.OldActorUserID(ctx)
+	case quotaresetrequestevent.FieldEventType:
+		return m.OldEventType(ctx)
+	case quotaresetrequestevent.FieldMetadata:
+		return m.OldMetadata(ctx)
+	case quotaresetrequestevent.FieldErrorMessage:
+		return m.OldErrorMessage(ctx)
+	case quotaresetrequestevent.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown QuotaResetRequestEvent field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *QuotaResetRequestEventMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case quotaresetrequestevent.FieldRequestID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case quotaresetrequestevent.FieldActorUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActorUserID(v)
+		return nil
+	case quotaresetrequestevent.FieldEventType:
+		v, ok := value.(quotaresetrequestevent.EventType)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEventType(v)
+		return nil
+	case quotaresetrequestevent.FieldMetadata:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadata(v)
+		return nil
+	case quotaresetrequestevent.FieldErrorMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetErrorMessage(v)
+		return nil
+	case quotaresetrequestevent.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetRequestEvent field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *QuotaResetRequestEventMutation) AddedFields() []string {
+	var fields []string
+	if m.addrequest_id != nil {
+		fields = append(fields, quotaresetrequestevent.FieldRequestID)
+	}
+	if m.addactor_user_id != nil {
+		fields = append(fields, quotaresetrequestevent.FieldActorUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *QuotaResetRequestEventMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case quotaresetrequestevent.FieldRequestID:
+		return m.AddedRequestID()
+	case quotaresetrequestevent.FieldActorUserID:
+		return m.AddedActorUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *QuotaResetRequestEventMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case quotaresetrequestevent.FieldRequestID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRequestID(v)
+		return nil
+	case quotaresetrequestevent.FieldActorUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddActorUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetRequestEvent numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *QuotaResetRequestEventMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(quotaresetrequestevent.FieldActorUserID) {
+		fields = append(fields, quotaresetrequestevent.FieldActorUserID)
+	}
+	if m.FieldCleared(quotaresetrequestevent.FieldMetadata) {
+		fields = append(fields, quotaresetrequestevent.FieldMetadata)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *QuotaResetRequestEventMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *QuotaResetRequestEventMutation) ClearField(name string) error {
+	switch name {
+	case quotaresetrequestevent.FieldActorUserID:
+		m.ClearActorUserID()
+		return nil
+	case quotaresetrequestevent.FieldMetadata:
+		m.ClearMetadata()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetRequestEvent nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *QuotaResetRequestEventMutation) ResetField(name string) error {
+	switch name {
+	case quotaresetrequestevent.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case quotaresetrequestevent.FieldActorUserID:
+		m.ResetActorUserID()
+		return nil
+	case quotaresetrequestevent.FieldEventType:
+		m.ResetEventType()
+		return nil
+	case quotaresetrequestevent.FieldMetadata:
+		m.ResetMetadata()
+		return nil
+	case quotaresetrequestevent.FieldErrorMessage:
+		m.ResetErrorMessage()
+		return nil
+	case quotaresetrequestevent.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown QuotaResetRequestEvent field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *QuotaResetRequestEventMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *QuotaResetRequestEventMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *QuotaResetRequestEventMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *QuotaResetRequestEventMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *QuotaResetRequestEventMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *QuotaResetRequestEventMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *QuotaResetRequestEventMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown QuotaResetRequestEvent unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *QuotaResetRequestEventMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown QuotaResetRequestEvent edge %s", name)
 }
 
 // RelayProviderMutation represents an operation that mutates the RelayProvider nodes in the graph.
