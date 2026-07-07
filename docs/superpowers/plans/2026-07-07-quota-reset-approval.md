@@ -890,7 +890,7 @@ git commit -m "feat(backend): resolve quota reset approvers from departments"
 - Create: `backend/internal/quotareset/service.go`
 - Create: `backend/internal/quotareset/service_test.go`
 
-- [ ] **Step 1: Write service workflow tests**
+- [x] **Step 1: Write service workflow tests**
 
 Create `backend/internal/quotareset/service_test.go` with focused tests:
 
@@ -1078,7 +1078,7 @@ func createPendingQuotaResetRequest(t *testing.T, ctx context.Context, client *e
 }
 ```
 
-- [ ] **Step 2: Run service tests to verify they fail**
+- [x] **Step 2: Run service tests to verify they fail**
 
 Run:
 
@@ -1088,7 +1088,7 @@ cd backend && go test ./internal/quotareset -run 'Test(CreateRequest|ApproverApp
 
 Expected: FAIL because `Service` methods are not implemented.
 
-- [ ] **Step 3: Extend domain types and provider resolver**
+- [x] **Step 3: Extend domain types and provider resolver**
 
 Append to `backend/internal/quotareset/types.go`:
 
@@ -1127,7 +1127,7 @@ type RequestSummary struct {
 
 Ensure `types.go` imports `context`, `time`, and `github.com/ai-efficiency/backend/internal/relay`.
 
-- [ ] **Step 4: Implement service core**
+- [x] **Step 4: Implement service core**
 
 Create `backend/internal/quotareset/service.go` with:
 
@@ -1203,7 +1203,7 @@ updated, err := s.client.QuotaResetRequest.UpdateOneID(input.RequestID).
 	Save(ctx)
 ```
 
-- [ ] **Step 5: Verify service tests pass**
+- [x] **Step 5: Verify service tests pass**
 
 Run:
 
@@ -1213,7 +1213,7 @@ cd backend && go test ./internal/quotareset -count=1
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit service workflow**
+- [x] **Step 6: Commit service workflow**
 
 ```bash
 git add backend/internal/quotareset
