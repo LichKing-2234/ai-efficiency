@@ -329,7 +329,7 @@ git commit -m "feat(backend): add quota reset approval schemas"
 - Create: `backend/internal/quotareset/resolver.go`
 - Create: `backend/internal/quotareset/resolver_test.go`
 
-- [ ] **Step 1: Write resolver tests**
+- [x] **Step 1: Write resolver tests**
 
 Create `backend/internal/quotareset/resolver_test.go` with these tests:
 
@@ -549,7 +549,7 @@ func intPtr(v int) *int {
 }
 ```
 
-- [ ] **Step 2: Run resolver tests to verify they fail**
+- [x] **Step 2: Run resolver tests to verify they fail**
 
 Run:
 
@@ -559,7 +559,7 @@ cd backend && go test ./internal/quotareset -run 'TestResolveApprovers' -count=1
 
 Expected: FAIL because `backend/internal/quotareset` does not exist.
 
-- [ ] **Step 3: Create domain errors**
+- [x] **Step 3: Create domain errors**
 
 Create `backend/internal/quotareset/errors.go`:
 
@@ -581,7 +581,7 @@ var (
 )
 ```
 
-- [ ] **Step 4: Create domain types**
+- [x] **Step 4: Create domain types**
 
 Create `backend/internal/quotareset/types.go`:
 
@@ -663,7 +663,7 @@ type RequestEvent struct {
 }
 ```
 
-- [ ] **Step 5: Implement resolver**
+- [x] **Step 5: Implement resolver**
 
 Create `backend/internal/quotareset/resolver.go` with a resolver that:
 
@@ -866,7 +866,7 @@ func resolveDepartmentPath(tree *directorytree.Tree, departmentsByID map[string]
 }
 ```
 
-- [ ] **Step 6: Verify resolver tests pass**
+- [x] **Step 6: Verify resolver tests pass**
 
 Run:
 
@@ -876,7 +876,7 @@ cd backend && go test ./internal/quotareset -run 'TestResolveApprovers' -count=1
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit resolver**
+- [x] **Step 7: Commit resolver**
 
 ```bash
 git add backend/internal/quotareset
