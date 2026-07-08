@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ type quotaResetService interface {
 	ListMine(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
 	ListApprovals(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
 	ListAdmin(context.Context, quotareset.ListParams) (*quotareset.RequestListResponse, error)
+	ListApproverCandidates(context.Context, int, string) (*quotareset.ApproverCandidateListResponse, error)
 	ListApproverConfigs(context.Context) (*quotareset.ApproverConfigListResponse, error)
 	SaveApproverConfigs(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error)
 	GetNotificationSettings(context.Context) (*quotareset.NotificationSettings, error)
@@ -192,6 +194,25 @@ func (h *QuotaResetHandler) AdminRetryReset(c *gin.Context) {
 
 func (h *QuotaResetHandler) ListApproverConfigs(c *gin.Context) {
 	resp, err := h.service.ListApproverConfigs(c.Request.Context())
+	if err != nil {
+		writeQuotaResetError(c, err)
+		return
+	}
+	pkg.Success(c, resp)
+}
+
+func (h *QuotaResetHandler) ListApproverCandidates(c *gin.Context) {
+	sourceID, err := strconv.Atoi(strings.TrimSpace(c.Query("source_id")))
+	if err != nil || sourceID <= 0 {
+		writeQuotaResetError(c, fmt.Errorf("%w: source_id is required", quotareset.ErrInvalidApproverConfig))
+		return
+	}
+	departmentExternalID := strings.TrimSpace(c.Query("department_external_id"))
+	if departmentExternalID == "" {
+		writeQuotaResetError(c, fmt.Errorf("%w: department_external_id is required", quotareset.ErrInvalidApproverConfig))
+		return
+	}
+	resp, err := h.service.ListApproverCandidates(c.Request.Context(), sourceID, departmentExternalID)
 	if err != nil {
 		writeQuotaResetError(c, err)
 		return
@@ -386,7 +407,7 @@ func writeQuotaResetError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, quotareset.ErrNoRelayMapping), errors.Is(err, quotareset.ErrNotApprover), errors.Is(err, quotareset.ErrSelfApprovalForbidden):
 		pkg.Error(c, http.StatusForbidden, err.Error())
-	case errors.Is(err, quotareset.ErrReasonRequired), errors.Is(err, quotareset.ErrDecisionRequired), errors.Is(err, quotareset.ErrInactiveSubscription), errors.Is(err, quotareset.ErrInvalidStatus), errors.Is(err, quotareset.ErrInvalidNotification):
+	case errors.Is(err, quotareset.ErrReasonRequired), errors.Is(err, quotareset.ErrDecisionRequired), errors.Is(err, quotareset.ErrInactiveSubscription), errors.Is(err, quotareset.ErrInvalidStatus), errors.Is(err, quotareset.ErrInvalidNotification), errors.Is(err, quotareset.ErrInvalidApproverConfig):
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, quotareset.ErrActiveRequestExists):
 		pkg.Error(c, http.StatusConflict, err.Error())

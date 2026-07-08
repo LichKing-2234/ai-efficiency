@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"sort"
 	"strconv"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
+	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -236,7 +239,11 @@ func (s *Service) ListMine(ctx context.Context, actorUserID int, params ListPara
 func (s *Service) ListApprovals(ctx context.Context, actorUserID int, params ListParams) (*RequestListResponse, error) {
 	return s.list(ctx, params, func(q *ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery {
 		return q.Where(func(selector *sql.Selector) {
-			selector.Where(sql.ExprP(fmt.Sprintf("%s::jsonb @> ?", selector.C(quotaresetrequest.FieldResolvedApproverUserIds)), fmt.Sprintf("[%d]", actorUserID)))
+			selector.Where(sql.P(func(builder *sql.Builder) {
+				builder.WriteString(selector.C(quotaresetrequest.FieldResolvedApproverUserIds)).
+					WriteString("::jsonb @> ").
+					Arg(fmt.Sprintf("[%d]", actorUserID))
+			}))
 		})
 	})
 }
@@ -255,6 +262,18 @@ func (s *Service) ListApproverConfigs(ctx context.Context) (*ApproverConfigListR
 	return s.approverConfigResponse(ctx, rows)
 }
 
+func (s *Service) ListApproverCandidates(ctx context.Context, sourceID int, departmentExternalID string) (*ApproverCandidateListResponse, error) {
+	departmentExternalID = strings.TrimSpace(departmentExternalID)
+	if sourceID <= 0 || departmentExternalID == "" {
+		return nil, fmt.Errorf("%w: source_id and department_external_id are required", ErrInvalidApproverConfig)
+	}
+	candidates, unmatched, err := s.approverCandidates(ctx, sourceID, departmentExternalID)
+	if err != nil {
+		return nil, err
+	}
+	return &ApproverCandidateListResponse{Items: candidates, UnmatchedRepresentatives: unmatched}, nil
+}
+
 func (s *Service) SaveApproverConfigs(ctx context.Context, input SaveApproverConfigsInput) (*ApproverConfigListResponse, error) {
 	sourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
 	if err != nil {
@@ -264,6 +283,9 @@ func (s *Service) SaveApproverConfigs(ctx context.Context, input SaveApproverCon
 		return nil, ErrDirectoryUnavailable
 	}
 	items := normalizeApproverConfigInputs(input.Items)
+	if err := s.validateApproverConfigs(ctx, sourceID, items); err != nil {
+		return nil, err
+	}
 	replaceAll := input.Mode == ApproverConfigSaveModeReplaceAll
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
@@ -807,6 +829,290 @@ func subscriptionGroupPlatform(subscription relay.UserSubscription) string {
 		return strings.TrimSpace(subscription.Group.Platform)
 	}
 	return ""
+}
+
+func (s *Service) approverCandidates(ctx context.Context, sourceID int, departmentExternalID string) ([]ApproverCandidate, []UnmatchedApproverRepresentative, error) {
+	userIDsByDepartment, memberByUserID, unmatchedByDepartment, err := s.approverCandidateUserIDsByDepartment(ctx, sourceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	departmentExternalID = strings.TrimSpace(departmentExternalID)
+	unmatched := unmatchedByDepartment[departmentExternalID]
+	userIDSet := userIDsByDepartment[departmentExternalID]
+	if len(userIDSet) == 0 {
+		return []ApproverCandidate{}, unmatched, nil
+	}
+	userIDs := make([]int, 0, len(userIDSet))
+	for userID := range userIDSet {
+		userIDs = append(userIDs, userID)
+	}
+	sort.Ints(userIDs)
+	users, err := s.client.User.Query().Where(entuser.IDIn(userIDs...)).All(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load quota reset approver candidate users: %w", err)
+	}
+	usersByID := make(map[int]*ent.User, len(users))
+	for _, user := range users {
+		usersByID[user.ID] = user
+	}
+	candidates := make([]ApproverCandidate, 0, len(userIDs))
+	for _, userID := range userIDs {
+		user := usersByID[userID]
+		member := memberByUserID[userID]
+		if user == nil || member == nil {
+			continue
+		}
+		candidates = append(candidates, ApproverCandidate{
+			UserID:                    user.ID,
+			Username:                  user.Username,
+			Email:                     user.Email,
+			DisplayName:               strings.TrimSpace(member.DisplayName),
+			DirectoryMemberExternalID: strings.TrimSpace(member.ExternalID),
+		})
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left := strings.ToLower(strings.TrimSpace(candidates[i].DisplayName))
+		if left == "" {
+			left = strings.ToLower(strings.TrimSpace(candidates[i].Username))
+		}
+		right := strings.ToLower(strings.TrimSpace(candidates[j].DisplayName))
+		if right == "" {
+			right = strings.ToLower(strings.TrimSpace(candidates[j].Username))
+		}
+		if left != right {
+			return left < right
+		}
+		return candidates[i].UserID < candidates[j].UserID
+	})
+	sort.SliceStable(unmatched, func(i, j int) bool {
+		left := strings.ToLower(strings.TrimSpace(unmatched[i].DisplayName))
+		if left == "" {
+			left = strings.ToLower(strings.TrimSpace(unmatched[i].DirectoryMemberExternalID))
+		}
+		right := strings.ToLower(strings.TrimSpace(unmatched[j].DisplayName))
+		if right == "" {
+			right = strings.ToLower(strings.TrimSpace(unmatched[j].DirectoryMemberExternalID))
+		}
+		if left != right {
+			return left < right
+		}
+		return unmatched[i].DirectoryMemberExternalID < unmatched[j].DirectoryMemberExternalID
+	})
+	return candidates, unmatched, nil
+}
+
+func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, items []ApproverConfigInput) error {
+	if len(items) == 0 {
+		return nil
+	}
+	userIDsByDepartment, _, _, err := s.approverCandidateUserIDsByDepartment(ctx, sourceID)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		departmentID := strings.TrimSpace(item.DepartmentExternalID)
+		if departmentID == "" || item.ApproverUserID <= 0 {
+			continue
+		}
+		if _, ok := userIDsByDepartment[departmentID][item.ApproverUserID]; !ok {
+			return fmt.Errorf("%w: approver_user_id %d is not a representative for department %s", ErrInvalidApproverConfig, item.ApproverUserID, departmentID)
+		}
+	}
+	return nil
+}
+
+func (s *Service) approverCandidateUserIDsByDepartment(ctx context.Context, sourceID int) (map[string]map[int]struct{}, map[int]*ent.DirectoryMember, map[string][]UnmatchedApproverRepresentative, error) {
+	departments, err := s.client.DirectoryDepartment.Query().
+		Where(directorydepartment.SourceIDEQ(sourceID)).
+		All(ctx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("query approver candidate departments: %w", err)
+	}
+	members, err := s.client.DirectoryMember.Query().
+		Where(directorymember.SourceIDEQ(sourceID)).
+		All(ctx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("query approver candidate members: %w", err)
+	}
+	representatives := representativeExternalIDsByDepartment(departments, members)
+	membersByExternalID := make(map[string]*ent.DirectoryMember, len(members))
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		externalID := strings.TrimSpace(member.ExternalID)
+		if externalID != "" {
+			membersByExternalID[externalID] = member
+		}
+	}
+	usersByEmail, err := s.approverCandidateUsersByEmail(ctx, representatives, membersByExternalID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	userIDsByDepartment := make(map[string]map[int]struct{}, len(representatives))
+	memberByUserID := map[int]*ent.DirectoryMember{}
+	unmatchedByDepartment := map[string][]UnmatchedApproverRepresentative{}
+	for departmentID, representativeExternalIDs := range representatives {
+		for representativeExternalID := range representativeExternalIDs {
+			member := membersByExternalID[representativeExternalID]
+			if member == nil {
+				unmatchedByDepartment[departmentID] = append(unmatchedByDepartment[departmentID], UnmatchedApproverRepresentative{
+					DirectoryMemberExternalID: representativeExternalID,
+				})
+				continue
+			}
+			userID := 0
+			if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
+				userID = *member.MatchedUserID
+			} else if user := usersByEmail[strings.TrimSpace(strings.ToLower(member.EmailNormalized))]; user != nil {
+				userID = user.ID
+			}
+			if userID <= 0 {
+				unmatchedByDepartment[departmentID] = append(unmatchedByDepartment[departmentID], UnmatchedApproverRepresentative{
+					DirectoryMemberExternalID: strings.TrimSpace(member.ExternalID),
+					DisplayName:               strings.TrimSpace(member.DisplayName),
+					Email:                     strings.TrimSpace(member.EmailNormalized),
+				})
+				continue
+			}
+			if userIDsByDepartment[departmentID] == nil {
+				userIDsByDepartment[departmentID] = map[int]struct{}{}
+			}
+			userIDsByDepartment[departmentID][userID] = struct{}{}
+			memberByUserID[userID] = member
+		}
+	}
+	return userIDsByDepartment, memberByUserID, unmatchedByDepartment, nil
+}
+
+func (s *Service) approverCandidateUsersByEmail(ctx context.Context, representatives map[string]map[string]struct{}, membersByExternalID map[string]*ent.DirectoryMember) (map[string]*ent.User, error) {
+	emails := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, representativeExternalIDs := range representatives {
+		for representativeExternalID := range representativeExternalIDs {
+			member := membersByExternalID[representativeExternalID]
+			if member == nil || member.MatchedUserID != nil {
+				continue
+			}
+			email := strings.TrimSpace(strings.ToLower(member.EmailNormalized))
+			if email == "" {
+				continue
+			}
+			if _, ok := seen[email]; ok {
+				continue
+			}
+			seen[email] = struct{}{}
+			emails = append(emails, email)
+		}
+	}
+	if len(emails) == 0 {
+		return map[string]*ent.User{}, nil
+	}
+	users, err := s.client.User.Query().Where(entuser.EmailIn(emails...)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load quota reset approver candidate users by email: %w", err)
+	}
+	usersByEmail := make(map[string]*ent.User, len(users))
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		email := strings.TrimSpace(strings.ToLower(user.Email))
+		if email != "" {
+			usersByEmail[email] = user
+		}
+	}
+	return usersByEmail, nil
+}
+
+func representativeExternalIDsByDepartment(departments []*ent.DirectoryDepartment, members []*ent.DirectoryMember) map[string]map[string]struct{} {
+	representatives := make(map[string]map[string]struct{}, len(departments))
+	add := func(departmentID, representativeExternalID string) {
+		departmentID = strings.TrimSpace(departmentID)
+		representativeExternalID = strings.TrimSpace(representativeExternalID)
+		if departmentID == "" || representativeExternalID == "" {
+			return
+		}
+		if representatives[departmentID] == nil {
+			representatives[departmentID] = map[string]struct{}{}
+		}
+		representatives[departmentID][representativeExternalID] = struct{}{}
+	}
+	for _, department := range departments {
+		if department == nil {
+			continue
+		}
+		for _, representativeExternalID := range quotaResetMetadataStringValues(department.Metadata["representative_external_ids"]) {
+			add(department.ExternalID, representativeExternalID)
+		}
+	}
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		for _, departmentID := range quotaResetMetadataStringValues(member.Metadata["leader_department_ids"]) {
+			add(departmentID, member.ExternalID)
+		}
+	}
+	return representatives
+}
+
+func quotaResetMetadataStringValues(value any) []string {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case []string:
+		return compactQuotaResetStrings(typed)
+	case []any:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			values = append(values, quotaResetMetadataScalarString(item))
+		}
+		return compactQuotaResetStrings(values)
+	case string:
+		return compactQuotaResetStrings(strings.Split(typed, ","))
+	default:
+		return compactQuotaResetStrings([]string{quotaResetMetadataScalarString(typed)})
+	}
+}
+
+func quotaResetMetadataScalarString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case json.Number:
+		return strings.TrimSpace(typed.String())
+	case float64:
+		if math.Trunc(typed) == typed {
+			return strconv.FormatInt(int64(typed), 10)
+		}
+		return strings.TrimSpace(strconv.FormatFloat(typed, 'f', -1, 64))
+	case float32:
+		value := float64(typed)
+		if math.Trunc(value) == value {
+			return strconv.FormatInt(int64(value), 10)
+		}
+		return strings.TrimSpace(strconv.FormatFloat(value, 'f', -1, 32))
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func compactQuotaResetStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func normalizeApproverConfigInputs(items []ApproverConfigInput) []ApproverConfigInput {

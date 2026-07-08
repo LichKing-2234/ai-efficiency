@@ -138,6 +138,12 @@ describe('Router Guards', () => {
     expect(quotaResetRoute?.path).toBe('/usage/quota-reset')
   })
 
+  it('includes Work Items route for authenticated users', () => {
+    const route = router.getRoutes().find((r) => r.name === 'WorkItems')
+    expect(route?.path).toBe('/work-items')
+    expect(route?.meta.requireAdmin).toBeUndefined()
+  })
+
   it('does not expose user usage as a separate page route', () => {
     const userUsageRoute = router.getRoutes().find((r) => r.name === 'UserUsage' || r.path === '/user/usage')
     expect(userUsageRoute).toBeUndefined()

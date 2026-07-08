@@ -10,7 +10,61 @@
 
 ---
 
-**Status:** Complete. Backend and frontend implementation, architecture documentation, code review follow-up fixes, and full verification are complete.
+**Status:** Complete. The original quota reset approval implementation, architecture documentation, code review follow-up fixes, the 2026-07-07 Work Items / department picker follow-up, the 2026-07-08 representative picker / display-path follow-up, the 2026-07-08 inline-filter department dropdown UX follow-up, the 2026-07-08 unmatched representative diagnostics / row alignment follow-up, the 2026-07-08 WeCom webhook delivery follow-up, and the 2026-07-08 quota reset page visual hierarchy follow-up are complete and verified.
+
+## User Feedback Follow-up - 2026-07-08 Quota Reset Page Visual Hierarchy
+
+- [x] Convert the quota reset queue switcher from loose peer buttons into one segmented control.
+- [x] Downgrade the status filters to lighter compact pills so they do not compete with the main queue switcher.
+- [x] Add a frontend regression test for the separated queue selector and status filter structure.
+- [x] Run focused quota reset view tests, full frontend tests, frontend production build, compose rebuild, and narrow-browser verification.
+
+## User Feedback Follow-up - 2026-07-08 WeCom Webhook Delivery
+
+- [x] Reproduce the local saved webhook test against the configured Enterprise WeChat group robot URL without printing the secret key.
+- [x] Confirm Enterprise WeChat returns HTTP 200 with JSON `errcode=40008` for the old generic JSON payload, while AI Efficiency incorrectly reported test success.
+- [x] Add backend regression tests for non-zero webhook `errcode` handling and Enterprise WeChat text-message payload formatting.
+- [x] Send Enterprise WeChat group robot URLs as `msgtype=text` payloads instead of generic quota reset JSON.
+- [x] Treat HTTP 2xx responses with JSON `errcode` present and non-zero as webhook failures.
+- [x] Show backend webhook test failure details in the settings UI instead of only the generic failure string.
+- [x] Update the quota reset approval spec's notification contract for generic webhook payloads, Enterprise WeChat adaptation, and `errcode` handling.
+- [x] Run focused backend and frontend regressions for the webhook delivery follow-up.
+
+## User Feedback Follow-up - 2026-07-08 Unmatched Representatives
+
+- [x] Confirm from the local dev database that the selected R&D department has directory representatives, but those members currently have no matched local user rows.
+- [x] Make quota reset approver candidate resolution fall back to local users matched by normalized email when `directory_members.matched_user_id` is stale or empty.
+- [x] Return unmatched directory representatives from the candidate API so the settings UI can explain why the approver dropdown is empty.
+- [x] Show unmatched representative details in the approver settings UI instead of only a generic empty state.
+- [x] Top-align the add-row controls so the department selector is not pushed down by approver helper text.
+- [x] Run full backend, frontend, build, diff, and browser verification after the unmatched-representative follow-up.
+
+## User Feedback Follow-up - 2026-07-08 Department Dropdown UX
+
+- [x] Replace the approver settings department add control's standalone search input and search button with a direct dropdown selector.
+- [x] Move department text filtering inside the open dropdown panel.
+- [x] Add a frontend regression test that rejects the old standalone search control and verifies dropdown filtering still calls the department search API.
+- [x] Run full frontend, build, diff, and browser verification after the dropdown UX follow-up.
+
+## User Feedback Follow-up - 2026-07-08 Representative Picker
+
+- [x] Make `/admin/directory/departments` return and search by backend-computed `display_path` so department pickers do not show numeric source paths as the primary label.
+- [x] Add backend approver candidate resolution for a selected Directory Sync department, using `representative_external_ids` and `leader_department_ids`.
+- [x] Reject quota reset approver config saves when the approver is not a matched representative for the selected department.
+- [x] Replace the approver settings add form's raw approver user ID entry with a representative dropdown loaded after department selection.
+- [x] Remove raw department/approver ID edit inputs from existing config rows; keep row enable/disable and delete.
+- [x] Run focused backend and frontend regressions for the representative dropdown and save validation.
+- [x] Run full backend, frontend, build, diff, and browser verification after the representative-picker follow-up.
+
+## User Feedback Follow-up - 2026-07-07
+
+- [x] Add backend work item counts for pending quota reset approvals, admin quota reset fallback queue, and directory offboarding candidates.
+- [x] Add a user-visible `/work-items` route and sidebar badge, using `total_count` with `99+` overflow formatting and hiding zero counts.
+- [x] Keep `/usage/quota-reset` as the quota workflow detail page and show queue count badges from list totals.
+- [x] Make the AI Usage Center quota reset tab visible for ordinary users from `/usage`.
+- [x] Replace the approver settings add form's raw department ID entry with current Directory Sync department search/selection.
+- [x] Run focused backend and frontend regressions for the follow-up.
+- [x] Run frontend build and browser self-test for the final UX.
 
 ## Code Review Follow-up - 2026-07-07
 

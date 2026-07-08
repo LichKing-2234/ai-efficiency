@@ -127,7 +127,7 @@ function toggleGuideExpanded() {
       <UserUsageDashboard v-if="isMemberUsageRoute" embedded member-route />
 
       <template v-else>
-        <UsageCenterTabs active="personal" :show-team="hasTeamUsageScope" />
+        <UsageCenterTabs active="personal" :show-team="hasTeamUsageScope" show-quota-reset />
 
         <div v-if="loading" class="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
           {{ t('home.loading') }}

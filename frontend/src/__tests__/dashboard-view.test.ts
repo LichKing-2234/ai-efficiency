@@ -127,6 +127,7 @@ function createTestRouter() {
       { path: '/usage', name: 'Usage', component: DashboardView },
       { path: '/usage/members/:user_id', name: 'UsageMember', component: DashboardView },
       { path: '/usage/team', name: 'UsageTeam', component: { template: '<div>Team Usage</div>' } },
+      { path: '/usage/quota-reset', name: 'UsageQuotaReset', component: { template: '<div>Quota Reset</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
       { path: '/repos', component: { template: '<div>Repos</div>' } },
       { path: '/events', component: { template: '<div>Events</div>' } },
@@ -158,6 +159,7 @@ describe('DashboardView', () => {
 
     expect(wrapper.find('h1').text()).toContain('Complete AI setup first')
     expect(wrapper.text()).toContain('AI Usage Center')
+    expect(wrapper.find('a[href="/usage/quota-reset"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Platform Signals')
   })
 

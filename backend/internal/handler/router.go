@@ -12,6 +12,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/ai-efficiency/backend/internal/webhook"
+	"github.com/ai-efficiency/backend/internal/workitems"
 	"github.com/gin-gonic/gin"
 )
 
@@ -79,6 +80,7 @@ func SetupRouter(
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
+	workItemsHandler := NewWorkItemsHandler(workitems.NewService(entClient))
 	var quotaResetHandler *QuotaResetHandler
 	if providerHandler != nil {
 		adminUsersHandler = NewAdminUsersHandler(entClient, encryptionKey, providerHandler)
@@ -201,6 +203,8 @@ func SetupRouter(
 		eventsGroup.GET("/:id", eventsHandler.Get)
 	}
 
+	RegisterWorkItemsRoutes(protected, workItemsHandler)
+
 	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler))
 
 	userGroup := protected.Group("/user")
@@ -281,6 +285,7 @@ func SetupRouter(
 		adminQuotaResetGroup := protected.Group("/admin/quota-reset")
 		adminQuotaResetGroup.Use(auth.RequireAdmin())
 		{
+			adminQuotaResetGroup.GET("/approver-candidates", quotaResetHandler.ListApproverCandidates)
 			adminQuotaResetGroup.GET("/approver-configs", quotaResetHandler.ListApproverConfigs)
 			adminQuotaResetGroup.PUT("/approver-configs", quotaResetHandler.SaveApproverConfigs)
 			adminQuotaResetGroup.GET("/requests", quotaResetHandler.ListAdmin)

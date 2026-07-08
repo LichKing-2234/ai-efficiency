@@ -82,7 +82,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   const api = await import('@/api/quotaReset') as any
   api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 1 } } })
-  api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
+  api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 7 } } })
   api.listAdminQuotaResetRequests.mockResolvedValue({ data: { data: { items: [], page: 1, page_size: 20, total: 0 } } })
   api.approveQuotaResetRequest.mockResolvedValue({ data: { data: { ...approvalRequest, status: 'approved_reset_succeeded' } } })
 })
@@ -114,5 +114,30 @@ describe('QuotaResetView', () => {
     expect(api.listAdminQuotaResetRequests).toHaveBeenCalled()
     await wrapper.get('[data-testid="quota-reset-tab-admin"]').trigger('click')
     expect(wrapper.text()).toContain('Group Beta')
+  })
+
+  it('uses list totals as queue tab badges', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 4 } } })
+    api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 7 } } })
+    api.listAdminQuotaResetRequests.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 12 } } })
+
+    const wrapper = await mountQuotaResetView('admin')
+
+    expect(wrapper.get('[data-testid="quota-reset-tab-mine-count"]').text()).toBe('4')
+    expect(wrapper.get('[data-testid="quota-reset-tab-approvals-count"]').text()).toBe('7')
+    expect(wrapper.get('[data-testid="quota-reset-tab-admin-count"]').text()).toBe('12')
+  })
+
+  it('separates queue switching from lighter status filters', async () => {
+    const wrapper = await mountQuotaResetView('admin')
+
+    const queueSelector = wrapper.get('[data-testid="quota-reset-queue-selector"]')
+    expect(queueSelector.classes()).toContain('rounded-lg')
+    expect(queueSelector.classes()).toContain('bg-slate-100')
+
+    const statusFilters = wrapper.get('[data-testid="quota-reset-status-filters"]')
+    expect(statusFilters.classes()).toContain('rounded-full')
+    expect(statusFilters.find('[data-testid="quota-reset-filter-all"]').classes()).toContain('text-xs')
   })
 })

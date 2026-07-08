@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -185,6 +187,26 @@ func TestAdminCanApproveOwnRequestThroughAdminFallback(t *testing.T) {
 	}
 }
 
+func TestListApprovalsFiltersByResolvedApprover(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	approver := createQuotaResetUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	otherApprover := createQuotaResetUser(t, ctx, client, "other-lead", "other-lead@example.com", nil, "user")
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	want := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{approver.ID})
+	createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "43", []int{otherApprover.ID})
+	svc := NewService(client, nil, nil, nil)
+
+	resp, err := svc.ListApprovals(ctx, approver.ID, ListParams{})
+	if err != nil {
+		t.Fatalf("ListApprovals() error = %v", err)
+	}
+	if resp.Total != 1 || len(resp.Items) != 1 || resp.Items[0].ID != want.ID {
+		t.Fatalf("ListApprovals() = total %d items %+v, want request %d only", resp.Total, resp.Items, want.ID)
+	}
+}
+
 func TestResetFailureCanBeRetriedByAdmin(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -247,6 +269,106 @@ func TestUpdateNotificationSettingsValidatesEnabledURLAndBearerCredential(t *tes
 	})
 	if err == nil || !strings.Contains(err.Error(), "must be secret_text") {
 		t.Fatalf("wrong credential kind error = %v, want secret_text error", err)
+	}
+}
+
+func TestListApproverCandidatesReturnsSelectedDepartmentRepresentativesOnly(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	alpha := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
+	beta := createQuotaResetDepartment(t, ctx, client, source.ID, "department-beta", "Department Beta", nil)
+	alphaLead := createQuotaResetUser(t, ctx, client, "lead-alpha", "lead-alpha@example.com", nil, "user")
+	staleMatchedLead := createQuotaResetUser(t, ctx, client, "lead-alpha-stale", "lead-alpha-stale@example.com", nil, "user")
+	betaLead := createQuotaResetUser(t, ctx, client, "lead-beta", "lead-beta@example.com", nil, "user")
+	peer := createQuotaResetUser(t, ctx, client, "peer-alpha", "peer-alpha@example.com", nil, "user")
+	client.DirectoryDepartment.UpdateOneID(alpha.ID).
+		SetMetadata(map[string]any{"representative_external_ids": []any{"member-alpha-lead", "member-alpha-stale", "member-alpha-unmatched"}}).
+		SaveX(ctx)
+	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-lead", alphaLead.Email, alpha.ExternalID, &alphaLead.ID)
+	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-stale", staleMatchedLead.Email, alpha.ExternalID, nil)
+	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-unmatched", "lead-alpha-unmatched@example.com", alpha.ExternalID, nil)
+	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-peer", peer.Email, alpha.ExternalID, &peer.ID)
+	client.DirectoryMember.UpdateOneID(createQuotaResetMember(t, ctx, client, source.ID, "member-beta-lead", betaLead.Email, beta.ExternalID, &betaLead.ID).ID).
+		SetMetadata(map[string]any{"leader_department_ids": []any{beta.ExternalID}}).
+		SaveX(ctx)
+	svc := NewService(client, nil, nil, nil)
+
+	resp, err := svc.ListApproverCandidates(ctx, source.ID, alpha.ExternalID)
+	if err != nil {
+		t.Fatalf("ListApproverCandidates() error = %v", err)
+	}
+	if got, want := approverCandidateUserIDs(resp.Items), []int{alphaLead.ID, staleMatchedLead.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("alpha candidate ids = %#v, want matched and email-fallback representatives %#v", got, want)
+	}
+	if resp.Items[0].Email != alphaLead.Email || resp.Items[0].DirectoryMemberExternalID != "member-alpha-lead" {
+		t.Fatalf("alpha candidate detail = %#v", resp.Items[0])
+	}
+	if len(resp.UnmatchedRepresentatives) != 1 || resp.UnmatchedRepresentatives[0].DirectoryMemberExternalID != "member-alpha-unmatched" {
+		t.Fatalf("alpha unmatched representatives = %#v, want member-alpha-unmatched", resp.UnmatchedRepresentatives)
+	}
+
+	resp, err = svc.ListApproverCandidates(ctx, source.ID, beta.ExternalID)
+	if err != nil {
+		t.Fatalf("ListApproverCandidates(beta) error = %v", err)
+	}
+	if len(resp.Items) != 1 || resp.Items[0].UserID != betaLead.ID {
+		t.Fatalf("beta candidates = %#v, want beta representative from member metadata", resp.Items)
+	}
+}
+
+func approverCandidateUserIDs(items []ApproverCandidate) []int {
+	ids := make([]int, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.UserID)
+	}
+	sort.Ints(ids)
+	return ids
+}
+
+func TestSaveApproverConfigsRejectsApproverOutsideDepartmentRepresentatives(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
+	lead := createQuotaResetUser(t, ctx, client, "lead-alpha", "lead-alpha@example.com", nil, "user")
+	peer := createQuotaResetUser(t, ctx, client, "peer-alpha", "peer-alpha@example.com", nil, "user")
+	client.DirectoryDepartment.UpdateOneID(department.ID).
+		SetMetadata(map[string]any{"representative_external_ids": []any{"member-alpha-lead"}}).
+		SaveX(ctx)
+	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-lead", lead.Email, department.ExternalID, &lead.ID)
+	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-peer", peer.Email, department.ExternalID, &peer.ID)
+	svc := NewService(client, nil, nil, nil)
+
+	_, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+		ActorUserID: 1,
+		Mode:        ApproverConfigSaveModeReplaceAll,
+		Items: []ApproverConfigInput{{
+			DepartmentExternalID:  department.ExternalID,
+			DepartmentDisplayPath: department.Name,
+			ApproverUserID:        peer.ID,
+			Enabled:               true,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidApproverConfig) {
+		t.Fatalf("SaveApproverConfigs(non representative) error = %v, want ErrInvalidApproverConfig", err)
+	}
+
+	resp, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+		ActorUserID: 1,
+		Mode:        ApproverConfigSaveModeReplaceAll,
+		Items: []ApproverConfigInput{{
+			DepartmentExternalID:  department.ExternalID,
+			DepartmentDisplayPath: department.Name,
+			ApproverUserID:        lead.ID,
+			Enabled:               true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SaveApproverConfigs(representative) error = %v", err)
+	}
+	if len(resp.Items) != 1 || resp.Items[0].ApproverUserID != lead.ID {
+		t.Fatalf("saved configs = %#v, want lead only", resp.Items)
 	}
 }
 

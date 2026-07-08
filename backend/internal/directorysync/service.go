@@ -17,6 +17,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/directorytree"
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
@@ -73,6 +74,20 @@ type Service struct {
 	now            func() time.Time
 	runningMu      sync.Mutex
 	runningSources map[int]struct{}
+}
+
+type DepartmentOption struct {
+	ID               int            `json:"id"`
+	SourceID         int            `json:"source_id"`
+	ExternalID       string         `json:"external_id"`
+	ParentExternalID *string        `json:"parent_external_id,omitempty"`
+	Name             string         `json:"name"`
+	Path             string         `json:"path"`
+	DisplayPath      string         `json:"display_path"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
+	LastSeenRunID    int            `json:"last_seen_run_id"`
+	CreatedAt        time.Time      `json:"created_at"`
+	UpdatedAt        time.Time      `json:"updated_at"`
 }
 
 func NewService(client *ent.Client, options ServiceOptions) *Service {
@@ -546,16 +561,64 @@ func (s *Service) ListRuns(ctx context.Context, sourceID int) ([]*ent.DirectoryS
 		All(ctx)
 }
 
-func (s *Service) ListDepartments(ctx context.Context, sourceID int, q string) ([]*ent.DirectoryDepartment, error) {
-	query := s.client.DirectoryDepartment.Query().Where(directorydepartment.SourceIDEQ(sourceID))
-	if strings.TrimSpace(q) != "" {
-		query = query.Where(directorydepartment.Or(
-			directorydepartment.NameContainsFold(q),
-			directorydepartment.ExternalIDContainsFold(q),
-			directorydepartment.PathContainsFold(q),
-		))
+func (s *Service) ListDepartments(ctx context.Context, sourceID int, q string) ([]DepartmentOption, error) {
+	departments, err := s.client.DirectoryDepartment.Query().
+		Where(directorydepartment.SourceIDEQ(sourceID)).
+		Order(ent.Asc(directorydepartment.FieldName), ent.Asc(directorydepartment.FieldExternalID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list directory departments: %w", err)
 	}
-	return query.Order(ent.Asc(directorydepartment.FieldName)).All(ctx)
+	tree := directorytree.New(departments)
+	needle := strings.ToLower(strings.TrimSpace(q))
+	items := make([]DepartmentOption, 0, len(departments))
+	for _, department := range tree.Ordered() {
+		if department == nil {
+			continue
+		}
+		displayPath := tree.DisplayPath(department.ExternalID)
+		if needle != "" && !departmentOptionMatches(department, displayPath, needle) {
+			continue
+		}
+		items = append(items, departmentOptionFromEnt(department, displayPath))
+	}
+	return items, nil
+}
+
+func departmentOptionMatches(department *ent.DirectoryDepartment, displayPath string, needle string) bool {
+	for _, value := range []string{
+		department.Name,
+		department.ExternalID,
+		department.Path,
+		displayPath,
+	} {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(value)), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func departmentOptionFromEnt(department *ent.DirectoryDepartment, displayPath string) DepartmentOption {
+	if displayPath == "" {
+		displayPath = strings.TrimSpace(department.Name)
+	}
+	if displayPath == "" {
+		displayPath = strings.TrimSpace(department.ExternalID)
+	}
+	return DepartmentOption{
+		ID:               department.ID,
+		SourceID:         department.SourceID,
+		ExternalID:       department.ExternalID,
+		ParentExternalID: department.ParentExternalID,
+		Name:             department.Name,
+		Path:             department.Path,
+		DisplayPath:      displayPath,
+		Metadata:         department.Metadata,
+		LastSeenRunID:    department.LastSeenRunID,
+		CreatedAt:        department.CreatedAt,
+		UpdatedAt:        department.UpdatedAt,
+	}
 }
 
 func (s *Service) ListMembers(ctx context.Context, sourceID int, q string) ([]*ent.DirectoryMember, error) {

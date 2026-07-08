@@ -22,6 +22,7 @@ type fakeQuotaResetService struct {
 	createFn                     func(context.Context, quotareset.CreateRequestInput) (*ent.QuotaResetRequest, error)
 	approveFn                    func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
 	rejectFn                     func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
+	listApproverCandidatesFn     func(context.Context, int, string) (*quotareset.ApproverCandidateListResponse, error)
 	listApproverConfigsFn        func(context.Context) (*quotareset.ApproverConfigListResponse, error)
 	saveApproverConfigsFn        func(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error)
 	getNotificationSettingsFn    func(context.Context) (*quotareset.NotificationSettings, error)
@@ -65,6 +66,13 @@ func (f *fakeQuotaResetService) ListApprovals(context.Context, int, quotareset.L
 
 func (f *fakeQuotaResetService) ListAdmin(context.Context, quotareset.ListParams) (*quotareset.RequestListResponse, error) {
 	return &quotareset.RequestListResponse{}, nil
+}
+
+func (f *fakeQuotaResetService) ListApproverCandidates(ctx context.Context, sourceID int, departmentExternalID string) (*quotareset.ApproverCandidateListResponse, error) {
+	if f.listApproverCandidatesFn != nil {
+		return f.listApproverCandidatesFn(ctx, sourceID, departmentExternalID)
+	}
+	return &quotareset.ApproverCandidateListResponse{}, nil
 }
 
 func (f *fakeQuotaResetService) ListApproverConfigs(ctx context.Context) (*quotareset.ApproverConfigListResponse, error) {
@@ -144,6 +152,27 @@ func TestQuotaResetSaveApproverConfigsPassesMode(t *testing.T) {
 	}
 }
 
+func TestQuotaResetListApproverCandidatesPassesDepartmentSelection(t *testing.T) {
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		listApproverCandidatesFn: func(_ context.Context, sourceID int, departmentExternalID string) (*quotareset.ApproverCandidateListResponse, error) {
+			if sourceID != 3 || departmentExternalID != "department-alpha" {
+				t.Fatalf("sourceID/department = %d/%s", sourceID, departmentExternalID)
+			}
+			return &quotareset.ApproverCandidateListResponse{Items: []quotareset.ApproverCandidate{{
+				UserID:                    12,
+				Username:                  "lead-alpha",
+				Email:                     "lead-alpha@example.com",
+				DisplayName:               "Lead Alpha",
+				DirectoryMemberExternalID: "member-alpha-lead",
+			}}}, nil
+		},
+	})
+	rec := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/approver-candidates?source_id=3&department_external_id=department-alpha", env.adminToken, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"lead-alpha@example.com"`) {
+		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 type quotaResetHandlerTestEnv struct {
 	router     *gin.Engine
 	userToken  string
@@ -188,6 +217,7 @@ func newQuotaResetHandlerTestEnv(t *testing.T, service *fakeQuotaResetService) *
 	adminGroup := router.Group("/api/v1/admin/quota-reset")
 	adminGroup.Use(auth.RequireAuth(authSvc), auth.RequireAdmin())
 	adminGroup.POST("/requests/:id/approve", handler.AdminApprove)
+	adminGroup.GET("/approver-candidates", handler.ListApproverCandidates)
 	adminGroup.PUT("/approver-configs", handler.SaveApproverConfigs)
 
 	return &quotaResetHandlerTestEnv{

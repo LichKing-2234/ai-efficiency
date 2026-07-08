@@ -32,6 +32,9 @@ const activeFilter = ref<FilterMode>('all')
 const myRequests = ref<QuotaResetRequestSummary[]>([])
 const approvalRequests = ref<QuotaResetRequestSummary[]>([])
 const adminRequests = ref<QuotaResetRequestSummary[]>([])
+const myTotal = ref(0)
+const approvalTotal = ref(0)
+const adminTotal = ref(0)
 const loading = ref(false)
 const actionBusy = ref(false)
 const loadError = ref('')
@@ -56,11 +59,15 @@ async function loadQueues() {
     const [mine, approvals] = await Promise.all(requests)
     myRequests.value = mine.data.data?.items ?? []
     approvalRequests.value = approvals.data.data?.items ?? []
+    myTotal.value = mine.data.data?.total ?? myRequests.value.length
+    approvalTotal.value = approvals.data.data?.total ?? approvalRequests.value.length
     if (auth.isAdmin) {
       const admin = await listAdminQuotaResetRequests()
       adminRequests.value = admin.data.data?.items ?? []
+      adminTotal.value = admin.data.data?.total ?? adminRequests.value.length
     } else {
       adminRequests.value = []
+      adminTotal.value = 0
     }
   } catch {
     loadError.value = t('quotaReset.loadFailed')
@@ -81,6 +88,35 @@ function filterLabel(filter: FilterMode) {
   if (filter === 'processed') return t('quotaReset.filter.processed')
   if (filter === 'failed') return t('quotaReset.filter.failed')
   return t('quotaReset.filter.all')
+}
+
+function countBadge(count: number) {
+  return count > 99 ? '99+' : String(count)
+}
+
+function queueButtonClass(active: boolean) {
+  return [
+    'inline-flex min-h-10 items-center justify-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
+    active
+      ? 'bg-white text-slate-950 shadow-sm ring-1 ring-slate-200'
+      : 'text-slate-600 hover:bg-white/70',
+  ]
+}
+
+function queueBadgeClass(active: boolean) {
+  return [
+    'ml-2 inline-flex min-w-6 justify-center rounded-full px-1.5 text-xs font-semibold',
+    active ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200',
+  ]
+}
+
+function filterButtonClass(active: boolean) {
+  return [
+    'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+    active
+      ? 'bg-white text-slate-950 shadow-sm ring-1 ring-slate-200'
+      : 'text-slate-500 hover:bg-white/70',
+  ]
 }
 
 async function withAction(action: () => Promise<unknown>) {
@@ -142,45 +178,72 @@ onMounted(loadQueues)
         <p class="mt-1 text-sm text-slate-600">{{ t('quotaReset.subtitle') }}</p>
       </div>
 
-      <div class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          data-testid="quota-reset-tab-mine"
-          :class="['rounded-md px-3 py-2 text-sm font-medium', activeQueue === 'mine' ? 'bg-slate-900 text-white' : 'border border-slate-300 bg-white text-slate-700']"
-          @click="activeQueue = 'mine'"
+      <section class="space-y-3" aria-label="Quota reset queues and filters">
+        <div
+          data-testid="quota-reset-queue-selector"
+          :class="['grid w-full gap-1 rounded-lg bg-slate-100 p-1 sm:w-auto', auth.isAdmin ? 'grid-cols-3' : 'grid-cols-2']"
         >
-          {{ t('quotaReset.myRequests') }}
-        </button>
-        <button
-          type="button"
-          data-testid="quota-reset-tab-approvals"
-          :class="['rounded-md px-3 py-2 text-sm font-medium', activeQueue === 'approvals' ? 'bg-slate-900 text-white' : 'border border-slate-300 bg-white text-slate-700']"
-          @click="activeQueue = 'approvals'"
-        >
-          {{ t('quotaReset.myApprovals') }}
-        </button>
-        <button
-          v-if="auth.isAdmin"
-          type="button"
-          data-testid="quota-reset-tab-admin"
-          :class="['rounded-md px-3 py-2 text-sm font-medium', activeQueue === 'admin' ? 'bg-slate-900 text-white' : 'border border-slate-300 bg-white text-slate-700']"
-          @click="activeQueue = 'admin'"
-        >
-          {{ t('quotaReset.adminQueue') }}
-        </button>
-      </div>
+          <button
+            type="button"
+            data-testid="quota-reset-tab-mine"
+            :class="queueButtonClass(activeQueue === 'mine')"
+            @click="activeQueue = 'mine'"
+          >
+            {{ t('quotaReset.myRequests') }}
+            <span
+              v-if="myTotal > 0"
+              data-testid="quota-reset-tab-mine-count"
+              :class="queueBadgeClass(activeQueue === 'mine')"
+            >
+              {{ countBadge(myTotal) }}
+            </span>
+          </button>
+          <button
+            type="button"
+            data-testid="quota-reset-tab-approvals"
+            :class="queueButtonClass(activeQueue === 'approvals')"
+            @click="activeQueue = 'approvals'"
+          >
+            {{ t('quotaReset.myApprovals') }}
+            <span
+              v-if="approvalTotal > 0"
+              data-testid="quota-reset-tab-approvals-count"
+              :class="queueBadgeClass(activeQueue === 'approvals')"
+            >
+              {{ countBadge(approvalTotal) }}
+            </span>
+          </button>
+          <button
+            v-if="auth.isAdmin"
+            type="button"
+            data-testid="quota-reset-tab-admin"
+            :class="queueButtonClass(activeQueue === 'admin')"
+            @click="activeQueue = 'admin'"
+          >
+            {{ t('quotaReset.adminQueue') }}
+            <span
+              v-if="adminTotal > 0"
+              data-testid="quota-reset-tab-admin-count"
+              :class="queueBadgeClass(activeQueue === 'admin')"
+            >
+              {{ countBadge(adminTotal) }}
+            </span>
+          </button>
+        </div>
 
-      <div class="flex flex-wrap gap-2">
-        <button
-          v-for="filter in filters"
-          :key="filter"
-          type="button"
-          :class="['rounded-md px-3 py-1.5 text-sm font-medium', activeFilter === filter ? 'bg-cyan-700 text-white' : 'border border-slate-300 bg-white text-slate-700']"
-          @click="activeFilter = filter"
-        >
-          {{ filterLabel(filter) }}
-        </button>
-      </div>
+        <div data-testid="quota-reset-status-filters" class="flex w-fit max-w-full flex-wrap gap-1 rounded-full bg-slate-100 p-1">
+          <button
+            v-for="filter in filters"
+            :key="filter"
+            type="button"
+            :data-testid="`quota-reset-filter-${filter}`"
+            :class="filterButtonClass(activeFilter === filter)"
+            @click="activeFilter = filter"
+          >
+            {{ filterLabel(filter) }}
+          </button>
+        </div>
+      </section>
 
       <div v-if="loadError" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
         {{ loadError }}

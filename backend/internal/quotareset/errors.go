@@ -14,4 +14,5 @@ var (
 	ErrReasonRequired        = errors.New("reason_required")
 	ErrDecisionRequired      = errors.New("decision_reason_required")
 	ErrInvalidNotification   = errors.New("invalid_notification_settings")
+	ErrInvalidApproverConfig = errors.New("invalid_approver_config")
 )

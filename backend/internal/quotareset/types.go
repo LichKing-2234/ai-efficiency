@@ -74,6 +74,25 @@ type ApproverConfigListResponse struct {
 	Items []ApproverConfig `json:"items"`
 }
 
+type ApproverCandidateListResponse struct {
+	Items                    []ApproverCandidate               `json:"items"`
+	UnmatchedRepresentatives []UnmatchedApproverRepresentative `json:"unmatched_representatives,omitempty"`
+}
+
+type ApproverCandidate struct {
+	UserID                    int    `json:"user_id"`
+	Username                  string `json:"username"`
+	Email                     string `json:"email"`
+	DisplayName               string `json:"display_name"`
+	DirectoryMemberExternalID string `json:"directory_member_external_id"`
+}
+
+type UnmatchedApproverRepresentative struct {
+	DirectoryMemberExternalID string `json:"directory_member_external_id"`
+	DisplayName               string `json:"display_name,omitempty"`
+	Email                     string `json:"email,omitempty"`
+}
+
 type ApproverConfig struct {
 	ID                    int       `json:"id"`
 	DirectorySourceID     int       `json:"directory_source_id"`

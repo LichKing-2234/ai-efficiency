@@ -3,16 +3,22 @@ import { computed, onMounted, ref } from 'vue'
 import {
   getQuotaResetApproverConfigs,
   getQuotaResetNotificationSettings,
+  listQuotaResetApproverCandidates,
   saveQuotaResetApproverConfigs,
   testQuotaResetNotificationSettings,
   updateQuotaResetNotificationSettings,
 } from '@/api/quotaReset'
+import { listDirectoryDepartments, listDirectorySources } from '@/api/directory'
 import { useI18n } from '@/i18n'
 import type {
   Credential,
+  DirectoryDepartment,
+  DirectorySource,
+  QuotaResetApproverCandidate,
   QuotaResetApproverConfig,
   QuotaResetApproverConfigInput,
   QuotaResetNotificationSettings,
+  QuotaResetUnmatchedApproverRepresentative,
 } from '@/types'
 
 const props = defineProps<{
@@ -25,13 +31,22 @@ const loading = ref(false)
 const savingConfigs = ref(false)
 const savingNotification = ref(false)
 const testingNotification = ref(false)
+const searchingDepartments = ref(false)
+const loadingApproverCandidates = ref(false)
 const message = ref('')
 const error = ref('')
+const departmentSources = ref<DirectorySource[]>([])
+const selectedDirectorySourceID = ref<number | null>(null)
+const departmentSearch = ref('')
+const departmentDropdownOpen = ref(false)
+const departmentOptions = ref<DirectoryDepartment[]>([])
+const approverCandidates = ref<QuotaResetApproverCandidate[]>([])
+const unmatchedRepresentatives = ref<QuotaResetUnmatchedApproverRepresentative[]>([])
 
 const configForm = ref({
   department_external_id: '',
   department_display_path: '',
-  approver_user_ids: '',
+  approver_user_id: null as number | null,
   enabled: true,
 })
 
@@ -43,8 +58,12 @@ const notification = ref<QuotaResetNotificationSettings>({
 })
 
 const bearerCredentials = computed(() => props.credentials.filter((credential) => credential.kind === 'secret_text'))
+const selectedDepartmentLabel = computed(() => configForm.value.department_display_path || configForm.value.department_external_id)
 
-onMounted(loadSettings)
+onMounted(() => {
+  void loadSettings()
+  void loadDirectorySourceOptions()
+})
 
 async function loadSettings() {
   loading.value = true
@@ -69,6 +88,107 @@ async function loadSettings() {
   }
 }
 
+async function loadDirectorySourceOptions() {
+  try {
+    const res = await listDirectorySources()
+    departmentSources.value = res.data.data?.items ?? []
+    const current = departmentSources.value.find((source) => source.last_successful_run_id) ?? departmentSources.value[0]
+    selectedDirectorySourceID.value = current?.id ?? null
+  } catch {
+    departmentSources.value = []
+    selectedDirectorySourceID.value = null
+  }
+}
+
+function departmentDisplayPath(department: DirectoryDepartment) {
+  return department.display_path || department.name || department.path || department.external_id
+}
+
+function approverOptionLabel(candidate: QuotaResetApproverCandidate) {
+  const name = candidate.display_name || candidate.username || `User #${candidate.user_id}`
+  return candidate.email ? `${name} · ${candidate.email}` : name
+}
+
+function unmatchedRepresentativeLabel(representative: QuotaResetUnmatchedApproverRepresentative) {
+  const name = representative.display_name || representative.directory_member_external_id
+  return representative.email ? `${name} · ${representative.email}` : name
+}
+
+async function searchDepartments() {
+  const sourceID = selectedDirectorySourceID.value
+  if (!sourceID) {
+    departmentOptions.value = []
+    return
+  }
+  searchingDepartments.value = true
+  try {
+    const res = await listDirectoryDepartments({
+      source_id: sourceID,
+      q: departmentSearch.value.trim(),
+    })
+    departmentOptions.value = res.data.data?.items ?? []
+  } catch {
+    departmentOptions.value = []
+  } finally {
+    searchingDepartments.value = false
+  }
+}
+
+function toggleDepartmentDropdown() {
+  if (!selectedDirectorySourceID.value) return
+  departmentDropdownOpen.value = !departmentDropdownOpen.value
+  if (departmentDropdownOpen.value) {
+    void searchDepartments()
+  }
+}
+
+function selectDepartment(department: DirectoryDepartment) {
+  configForm.value.department_external_id = department.external_id
+  configForm.value.department_display_path = departmentDisplayPath(department)
+  configForm.value.approver_user_id = null
+  departmentSearch.value = ''
+  departmentDropdownOpen.value = false
+  departmentOptions.value = []
+  unmatchedRepresentatives.value = []
+  void loadApproverCandidates()
+}
+
+function resetSelectedDepartment() {
+  configForm.value.department_external_id = ''
+  configForm.value.department_display_path = ''
+  configForm.value.approver_user_id = null
+  departmentSearch.value = ''
+  departmentDropdownOpen.value = false
+  departmentOptions.value = []
+  approverCandidates.value = []
+  unmatchedRepresentatives.value = []
+}
+
+async function loadApproverCandidates() {
+  const sourceID = selectedDirectorySourceID.value
+  const departmentID = configForm.value.department_external_id.trim()
+  configForm.value.approver_user_id = null
+  if (!sourceID || !departmentID) {
+    approverCandidates.value = []
+    unmatchedRepresentatives.value = []
+    return
+  }
+  loadingApproverCandidates.value = true
+  try {
+    const res = await listQuotaResetApproverCandidates({
+      source_id: sourceID,
+      department_external_id: departmentID,
+    })
+    approverCandidates.value = res.data.data?.items ?? []
+    unmatchedRepresentatives.value = res.data.data?.unmatched_representatives ?? []
+  } catch {
+    approverCandidates.value = []
+    unmatchedRepresentatives.value = []
+  } finally {
+    loadingApproverCandidates.value = false
+  }
+}
+
 function configRowsForSave(): QuotaResetApproverConfigInput[] {
   const existing = configs.value.map((config) => ({
     department_external_id: config.department_external_id.trim(),
@@ -77,21 +197,18 @@ function configRowsForSave(): QuotaResetApproverConfigInput[] {
     enabled: config.enabled,
   })).filter((config) => config.department_external_id && Number.isInteger(config.approver_user_id) && config.approver_user_id > 0)
   const departmentID = configForm.value.department_external_id.trim()
-  const approverIDs = configForm.value.approver_user_ids
-    .split(',')
-    .map((part) => Number(part.trim()))
-    .filter((id) => Number.isInteger(id) && id > 0)
-  if (!departmentID || approverIDs.length === 0) {
+  const approverID = Number(configForm.value.approver_user_id)
+  if (!departmentID || !Number.isInteger(approverID) || approverID <= 0) {
     return existing
   }
   return [
     ...existing,
-    ...approverIDs.map((approverID) => ({
+    {
       department_external_id: departmentID,
       department_display_path: configForm.value.department_display_path.trim() || departmentID,
       approver_user_id: approverID,
       enabled: configForm.value.enabled,
-    })),
+    },
   ]
 }
 
@@ -102,7 +219,12 @@ async function saveConfigs() {
   try {
     const res = await saveQuotaResetApproverConfigs(configRowsForSave(), 'replace_all')
     configs.value = res.data.data?.items ?? []
-    configForm.value = { department_external_id: '', department_display_path: '', approver_user_ids: '', enabled: true }
+    configForm.value = { department_external_id: '', department_display_path: '', approver_user_id: null, enabled: true }
+    departmentSearch.value = ''
+    departmentDropdownOpen.value = false
+    departmentOptions.value = []
+    approverCandidates.value = []
+    unmatchedRepresentatives.value = []
     message.value = t('quotaResetSettings.configSaved')
   } catch {
     error.value = t('quotaResetSettings.configSaveFailed')
@@ -149,8 +271,8 @@ async function testNotification() {
   try {
     await testQuotaResetNotificationSettings()
     message.value = t('quotaResetSettings.notificationTestSent')
-  } catch {
-    error.value = t('quotaResetSettings.notificationTestFailed')
+  } catch (err: any) {
+    error.value = err?.response?.data?.message || err?.message || t('quotaResetSettings.notificationTestFailed')
   } finally {
     testingNotification.value = false
   }
@@ -196,30 +318,20 @@ function credentialOptionLabel(credential: Credential) {
 	            <tbody class="divide-y divide-gray-100 bg-white">
 	              <tr v-for="(config, index) in configs" :key="config.id || `${config.department_external_id}-${config.approver_user_id}`">
 	                <td class="min-w-[18rem] px-3 py-2">
-	                  <input
-	                    v-model="config.department_display_path"
-	                    :aria-label="t('quotaResetSettings.displayPath')"
-	                    type="text"
-	                    class="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
-	                  />
-	                  <input
-	                    v-model="config.department_external_id"
-	                    :aria-label="t('quotaResetSettings.departmentID')"
-	                    type="text"
-	                    class="mt-1 w-full rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600"
-	                  />
+	                  <div class="font-medium text-slate-800">
+	                    {{ config.department_display_path || config.department_external_id }}
+	                  </div>
+	                  <div class="mt-1 text-xs text-slate-500">
+	                    {{ config.department_external_id }}
+	                  </div>
 	                </td>
 	                <td class="min-w-[14rem] px-3 py-2 text-gray-700">
-	                  <input
-	                    v-model.number="config.approver_user_id"
-	                    :aria-label="t('quotaResetSettings.approverIDs')"
-	                    type="number"
-	                    min="1"
-	                    class="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
-	                  />
-	                  <div class="mt-1 text-xs text-gray-500">
-	                    {{ config.approver_username || config.approver_user_id }}
-	                    <span v-if="config.approver_email">· {{ config.approver_email }}</span>
+	                  <div class="font-medium text-slate-800">
+	                    {{ config.approver_username || `User #${config.approver_user_id}` }}
+	                  </div>
+	                  <div class="mt-1 text-xs text-slate-500">
+	                    <span v-if="config.approver_email">{{ config.approver_email }}</span>
+	                    <span v-else>User #{{ config.approver_user_id }}</span>
 	                  </div>
 	                </td>
 	                <td class="px-3 py-2 text-gray-700">
@@ -244,24 +356,112 @@ function credentialOptionLabel(credential: Credential) {
         </div>
       </div>
 
-      <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+      <div class="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto] md:items-start">
+        <div class="block">
+          <div class="relative">
+            <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.departmentSearch') }}</span>
+            <button
+              type="button"
+              data-testid="quota-reset-department-select"
+              class="mt-1 flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-60"
+              aria-haspopup="listbox"
+              :aria-expanded="departmentDropdownOpen ? 'true' : 'false'"
+              :disabled="!selectedDirectorySourceID"
+              @click="toggleDepartmentDropdown"
+            >
+              <span class="truncate">
+                {{ selectedDepartmentLabel || t('quotaResetSettings.departmentSelectPlaceholder') }}
+              </span>
+              <span aria-hidden="true" class="text-xs text-gray-400">v</span>
+            </button>
+            <div
+              v-if="departmentDropdownOpen"
+              class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white p-2 shadow-lg"
+            >
+              <input
+                v-model="departmentSearch"
+                data-testid="quota-reset-department-filter"
+                type="text"
+                :placeholder="t('quotaResetSettings.departmentSearchPlaceholder')"
+                class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                @input="searchDepartments"
+                @keyup.enter="searchDepartments"
+              />
+              <div v-if="searchingDepartments" class="px-3 py-3 text-sm text-gray-500">
+                {{ t('settings.loading') }}
+              </div>
+              <div
+                v-else-if="departmentOptions.length > 0"
+                class="mt-2 max-h-44 overflow-y-auto"
+                role="listbox"
+              >
+                <button
+                  v-for="department in departmentOptions"
+                  :key="department.id"
+                  type="button"
+                  :data-testid="`quota-reset-department-option-${department.external_id}`"
+                  class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50"
+                  role="option"
+                  @click="selectDepartment(department)"
+                >
+                  <span class="block truncate font-medium text-slate-800">{{ departmentDisplayPath(department) }}</span>
+                  <span class="block truncate text-xs text-slate-500">{{ department.external_id }}</span>
+                </button>
+              </div>
+              <div v-else-if="departmentSearch" class="px-3 py-3 text-sm text-gray-500">
+                {{ t('quotaResetSettings.noDepartmentMatches') }}
+              </div>
+            </div>
+          </div>
+          <label v-if="departmentSources.length > 1" class="mt-2 block">
+            <span class="text-xs font-medium text-gray-500">{{ t('quotaResetSettings.directorySource') }}</span>
+            <select
+              v-model.number="selectedDirectorySourceID"
+              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              @change="resetSelectedDepartment"
+            >
+              <option v-for="source in departmentSources" :key="source.id" :value="source.id">{{ source.name }}</option>
+            </select>
+          </label>
+        </div>
         <label class="block">
-          <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.departmentID') }}</span>
-          <input v-model="configForm.department_external_id" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+          <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.approverSelect') }}</span>
+          <select
+            v-model.number="configForm.approver_user_id"
+            data-testid="quota-reset-approver-select"
+            class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            :disabled="loadingApproverCandidates || !configForm.department_external_id || approverCandidates.length === 0"
+          >
+            <option :value="null">
+              {{ loadingApproverCandidates ? t('settings.loading') : t('quotaResetSettings.selectApproverPlaceholder') }}
+            </option>
+            <option v-for="candidate in approverCandidates" :key="candidate.user_id" :value="candidate.user_id">
+              {{ approverOptionLabel(candidate) }}
+            </option>
+          </select>
+          <div v-if="configForm.department_external_id && !loadingApproverCandidates && approverCandidates.length === 0 && unmatchedRepresentatives.length === 0" class="mt-2 text-xs text-gray-500">
+            {{ t('quotaResetSettings.noApproverCandidates') }}
+          </div>
+          <div
+            v-else-if="configForm.department_external_id && !loadingApproverCandidates && approverCandidates.length === 0 && unmatchedRepresentatives.length > 0"
+            class="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            data-testid="quota-reset-unmatched-representatives"
+          >
+            <div>
+              {{ t('quotaResetSettings.unmatchedRepresentatives', { count: unmatchedRepresentatives.length }) }}
+            </div>
+            <div class="mt-1 space-y-1">
+              <div v-for="representative in unmatchedRepresentatives" :key="representative.directory_member_external_id" class="truncate">
+                {{ unmatchedRepresentativeLabel(representative) }}
+              </div>
+            </div>
+          </div>
         </label>
-        <label class="block">
-          <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.displayPath') }}</span>
-          <input v-model="configForm.department_display_path" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        </label>
-        <label class="block">
-          <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.approverIDs') }}</span>
-          <input v-model="configForm.approver_user_ids" type="text" placeholder="12,34" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-        </label>
-	        <button
-	          type="button"
-	          data-testid="quota-reset-save-approvers"
-	          class="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-60"
-	          :disabled="savingConfigs"
+        <button
+          type="button"
+          data-testid="quota-reset-save-approvers"
+          class="self-start rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-60 md:mt-6"
+          :disabled="savingConfigs"
           @click="saveConfigs"
         >
           {{ savingConfigs ? t('settings.saving') : t('quotaResetSettings.saveApprovers') }}

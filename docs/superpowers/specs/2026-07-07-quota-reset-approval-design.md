@@ -86,6 +86,7 @@ The existing representative quota control is rate-multiplier based and affects f
 | Provider scope | Primary relay provider only |
 | Approver source | Admin-authored local department approver configuration |
 | Directory source | Current successful Directory Sync snapshot |
+| Approver config eligibility | Admins select approvers from local users matched to group representatives for the selected department, derived from `department.metadata.representative_external_ids` and `member.metadata.leader_department_ids`; candidate resolution may fall back to current local-user email matching when `directory_members.matched_user_id` is stale |
 | Approver resolution | For each requester department membership, walk upward until the nearest configured approver department is found |
 | Multiple memberships | Resolve each membership path independently, merge approvers, and allow any approver to approve |
 | Admin fallback | Admins can view and handle all requests |
@@ -189,7 +190,8 @@ Rules:
 1. A department can have multiple approvers.
 2. An approver can be configured on multiple departments.
 3. Configs are local and must not be overwritten by Directory Sync apply runs.
-4. If a configured department disappears from the current directory tree, the config is stale and no longer resolves for new requests, but the row remains visible to admins for cleanup.
+4. New or updated configs must use a local user matched to a Directory Sync member that is a representative for the selected department. Representative facts come from `directory_departments.metadata.representative_external_ids` and `directory_members.metadata.leader_department_ids`.
+5. If a configured department disappears from the current directory tree, the config is stale and no longer resolves for new requests, but the row remains visible to admins for cleanup.
 
 ### `quota_reset_requests`
 
@@ -468,11 +470,12 @@ Rules:
 ### Admin APIs
 
 ```text
+GET /api/v1/admin/quota-reset/approver-candidates?source_id=1&department_external_id=department-alpha
 GET /api/v1/admin/quota-reset/approver-configs
 PUT /api/v1/admin/quota-reset/approver-configs
 ```
 
-The PUT endpoint accepts flattened config rows. By default it replaces configured approvers only for departments present in `items`. If `mode` is `replace_all`, it replaces the full current-source approver config set. The Organization & Login settings UI is a full-list editor and therefore sends `mode: "replace_all"` deliberately.
+The approver candidates endpoint returns only local users matched to representatives for the selected department. It also returns unmatched directory representatives for admin diagnostics when a representative exists in the directory snapshot but has no local login user match yet. The PUT endpoint accepts flattened config rows. By default it replaces configured approvers only for departments present in `items`. If `mode` is `replace_all`, it replaces the full current-source approver config set. The service rejects rows whose `approver_user_id` is not a matched representative for the row's department. The Organization & Login settings UI is a full-list editor and therefore sends `mode: "replace_all"` deliberately.
 
 ```json
 {
@@ -557,8 +560,8 @@ Add quota reset approval settings to `/settings` under Organization & Login beca
 
 Controls:
 
-1. Full-list approver config table with row edit, enable/disable, and delete.
-2. Add-row form with department external id, display path, and comma-separated approver user ids for the first release.
+1. Full-list approver config table with readable department and approver identity, enable/disable, and delete.
+2. Add-row form with a Directory Sync department dropdown that opens directly and filters departments inside the dropdown panel, followed by an approver dropdown loaded from matched representatives for that department. If the directory has representatives but none are matched to local login users, the UI shows the unmatched representative details as an admin diagnostic instead of a generic empty state.
 3. Webhook enabled toggle.
 4. Webhook URL with `http`/`https` validation when enabled.
 5. Auth type select: none or bearer token.
@@ -577,36 +580,44 @@ If `auth_type=bearer_token`, the sender loads the configured `secret_text` crede
 Authorization: Bearer <secret>
 ```
 
-Payload shape:
+Generic webhook payload shape:
 
 ```json
 {
   "event": "quota_reset_request_created",
   "request_id": 123,
   "status": "pending",
-  "requester": {
-    "user_id": 10,
-    "display_name": "Alice Example",
-    "email": "alice@example.com"
-  },
-  "subscription_group": {
-    "group_id": "42",
-    "group_name": "Group Alpha",
-    "platform": "openai"
-  },
+  "requester_user_id": 10,
+  "provider_id": 1,
+  "group_id": "42",
+  "group_name": "Group Alpha",
+  "group_platform": "openai",
   "reason_preview": "Need to finish a time-sensitive build investigation.",
-  "approver_user_ids": [7, 8],
+  "resolved_approver_user_ids": [7, 8],
   "action_url": "https://ai-efficiency.example.com/usage/quota-reset?request_id=123",
   "occurred_at": "2026-07-07T10:00:00Z"
+}
+```
+
+When the configured URL targets an Enterprise WeChat group robot endpoint (`qyapi.weixin.qq.com/cgi-bin/webhook/send`), the sender adapts the request body to WeCom's text-message format:
+
+```json
+{
+  "msgtype": "text",
+  "text": {
+    "content": "AI Efficiency 额度重置审批通知\n事件：新申请待审批\n申请ID：123\n订阅组：Group Alpha\n状态：pending\n原因：Need to finish a time-sensitive build investigation.\n处理入口：https://ai-efficiency.example.com/usage/quota-reset?request_id=123"
+  }
 }
 ```
 
 Events that send notifications:
 
 1. `quota_reset_request_created`: notify resolved approvers; if no approver is resolved, notify admin-facing webhook as fallback.
-2. `quota_reset_request_approved_reset_succeeded`: notify requester.
+2. `quota_reset_request_cancelled`: notify that the request was cancelled.
 3. `quota_reset_request_rejected`: notify requester.
-4. `quota_reset_request_reset_failed`: notify resolved approvers and admins.
+4. `quota_reset_request_reset_succeeded`: notify that the reset succeeded.
+5. `quota_reset_request_reset_failed`: notify resolved approvers and admins.
+6. `quota_reset_notification_test`: sent only by the admin settings test action.
 
 Rules:
 
@@ -615,6 +626,8 @@ Rules:
 3. Use short HTTP timeouts. Five seconds is the default.
 4. Do not retry automatically in the first version to avoid duplicate external messages.
 5. The webhook URL is admin-configured and must use `http` or `https`.
+6. HTTP non-2xx responses are failures.
+7. HTTP 2xx responses with JSON `errcode` present and non-zero are failures; the test action should surface the returned error text to admins.
 
 ## Error Handling
 

@@ -1,6 +1,7 @@
 import client from './client'
 import type {
   ApiResponse,
+  QuotaResetApproverCandidateListResponse,
   QuotaResetApproverConfigInput,
   QuotaResetApproverConfigListResponse,
   QuotaResetNotificationSettings,
@@ -16,6 +17,11 @@ export interface QuotaResetListParams {
 }
 
 export type QuotaResetApproverConfigSaveMode = 'replace_departments' | 'replace_all'
+
+export interface QuotaResetApproverCandidateParams {
+  source_id: number
+  department_external_id: string
+}
 
 export function getQuotaResetOptions() {
   return client.get<ApiResponse<QuotaResetOptionsResponse>>('/user/quota-reset/options')
@@ -67,6 +73,10 @@ export function adminRetryQuotaResetRequest(id: number) {
 
 export function getQuotaResetApproverConfigs() {
   return client.get<ApiResponse<QuotaResetApproverConfigListResponse>>('/admin/quota-reset/approver-configs')
+}
+
+export function listQuotaResetApproverCandidates(params: QuotaResetApproverCandidateParams) {
+  return client.get<ApiResponse<QuotaResetApproverCandidateListResponse>>('/admin/quota-reset/approver-candidates', { params })
 }
 
 export function saveQuotaResetApproverConfigs(

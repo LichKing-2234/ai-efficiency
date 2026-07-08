@@ -18,7 +18,10 @@ import (
 	"github.com/ai-efficiency/backend/internal/pkg"
 )
 
-const defaultWebhookTimeout = 5 * time.Second
+const (
+	defaultWebhookTimeout       = 5 * time.Second
+	maxWebhookResponseBodyBytes = 4096
+)
 
 type WebhookNotifier struct {
 	client        *ent.Client
@@ -56,7 +59,7 @@ func (n *WebhookNotifier) NotifyRequestEvent(ctx context.Context, event string, 
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return fmt.Errorf("invalid webhook url")
 	}
-	payload := n.payload(event, req)
+	payload := n.payloadForURL(parsed, event, req)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal webhook payload: %w", err)
@@ -78,11 +81,26 @@ func (n *WebhookNotifier) NotifyRequestEvent(ctx context.Context, event string, 
 		return fmt.Errorf("send webhook: %w", err)
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxWebhookResponseBodyBytes))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return fmt.Errorf("webhook returned %d", resp.StatusCode)
 	}
+	if err := webhookResponseBusinessError(respBody); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (n *WebhookNotifier) payloadForURL(parsed *url.URL, event string, req *ent.QuotaResetRequest) any {
+	if isWeComRobotWebhookURL(parsed) {
+		return map[string]any{
+			"msgtype": "text",
+			"text": map[string]string{
+				"content": n.weComRobotTextContent(event, req),
+			},
+		}
+	}
+	return n.payload(event, req)
 }
 
 func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest) map[string]any {
@@ -103,6 +121,68 @@ func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest) map[
 		payload["action_url"] = fmt.Sprintf("%s/usage/quota-reset?request_id=%d", n.frontendURL, req.ID)
 	}
 	return payload
+}
+
+func (n *WebhookNotifier) weComRobotTextContent(event string, req *ent.QuotaResetRequest) string {
+	lines := []string{
+		"AI Efficiency 额度重置审批通知",
+		"事件：" + quotaResetWebhookEventLabel(event),
+		fmt.Sprintf("申请ID：%d", req.ID),
+		"订阅组：" + req.GroupName,
+		"状态：" + req.Status.String(),
+	}
+	if reason := reasonPreview(req.Reason); reason != "" {
+		lines = append(lines, "原因："+reason)
+	}
+	if n.frontendURL != "" {
+		lines = append(lines, "处理入口："+fmt.Sprintf("%s/usage/quota-reset?request_id=%d", n.frontendURL, req.ID))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func isWeComRobotWebhookURL(parsed *url.URL) bool {
+	if parsed == nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Hostname(), "qyapi.weixin.qq.com") && parsed.Path == "/cgi-bin/webhook/send"
+}
+
+func quotaResetWebhookEventLabel(event string) string {
+	switch event {
+	case "quota_reset_notification_test":
+		return "测试通知"
+	case "quota_reset_request_created":
+		return "新申请待审批"
+	case "quota_reset_request_cancelled":
+		return "申请已取消"
+	case "quota_reset_request_rejected":
+		return "申请已拒绝"
+	case "quota_reset_request_reset_succeeded":
+		return "额度已重置"
+	case "quota_reset_request_reset_failed":
+		return "额度重置失败"
+	default:
+		return event
+	}
+}
+
+func webhookResponseBusinessError(body []byte) error {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil
+	}
+	var response struct {
+		ErrCode *int   `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil || response.ErrCode == nil || *response.ErrCode == 0 {
+		return nil
+	}
+	errmsg := strings.TrimSpace(response.ErrMsg)
+	if errmsg == "" {
+		return fmt.Errorf("webhook returned errcode %d", *response.ErrCode)
+	}
+	return fmt.Errorf("webhook returned errcode %d: %s", *response.ErrCode, errmsg)
 }
 
 func (n *WebhookNotifier) bearerToken(ctx context.Context, setting *ent.QuotaResetNotificationSetting) (string, error) {

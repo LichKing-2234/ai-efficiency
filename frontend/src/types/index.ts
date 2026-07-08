@@ -605,8 +605,10 @@ export interface DirectoryDepartment {
   id: number
   source_id: number
   external_id: string
+  parent_external_id?: string | null
   name: string
   path?: string
+  display_path?: string
 }
 
 export interface DirectoryMember {
@@ -1150,10 +1152,36 @@ export interface QuotaResetApproverConfigListResponse {
   items: QuotaResetApproverConfig[]
 }
 
+export interface QuotaResetApproverCandidate {
+  user_id: number
+  username: string
+  email: string
+  display_name: string
+  directory_member_external_id: string
+}
+
+export interface QuotaResetUnmatchedApproverRepresentative {
+  directory_member_external_id: string
+  display_name?: string
+  email?: string
+}
+
+export interface QuotaResetApproverCandidateListResponse {
+  items: QuotaResetApproverCandidate[]
+  unmatched_representatives?: QuotaResetUnmatchedApproverRepresentative[]
+}
+
 export interface QuotaResetNotificationSettings {
   enabled: boolean
   url: string
   auth_type: 'none' | 'bearer_token'
   credential_id?: number | null
   updated_at?: string
+}
+
+export interface WorkItemCounts {
+  quota_reset_approval_count: number
+  quota_reset_admin_count: number
+  offboarding_count: number
+  total_count: number
 }
