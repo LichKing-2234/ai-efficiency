@@ -10,7 +10,14 @@
 
 ---
 
-**Status:** Complete. The original quota reset approval implementation, architecture documentation, earlier code review follow-up fixes, the 2026-07-07 Work Items / department picker follow-up, the 2026-07-08 representative picker / display-path follow-up, the 2026-07-08 inline-filter department dropdown UX follow-up, the 2026-07-08 unmatched representative diagnostics / row alignment follow-up, the 2026-07-08 WeCom webhook delivery follow-up, the 2026-07-08 quota reset page visual hierarchy follow-up, and the 2026-07-09 PR review follow-up are complete and verified.
+**Status:** Complete. The original quota reset approval implementation, architecture documentation, earlier code review follow-up fixes, the 2026-07-07 Work Items / department picker follow-up, the 2026-07-08 representative picker / display-path follow-up, the 2026-07-08 inline-filter department dropdown UX follow-up, the 2026-07-08 unmatched representative diagnostics / row alignment follow-up, the 2026-07-08 WeCom webhook delivery follow-up, the 2026-07-08 quota reset page visual hierarchy follow-up, the 2026-07-09 PR review follow-up, and the 2026-07-09 homepage/work-items follow-up are complete and verified.
+
+## User Feedback Follow-up - 2026-07-09 Homepage Work Items
+
+- [x] Add failing frontend regressions for removing homepage AI-access guide cards and moving missing-AI-access reminders into Work Items.
+- [x] Remove the homepage AI-access/current-status guide card and suppress home-mode setup prompts.
+- [x] Add a Work Items entry and badge contribution for missing reusable AI access.
+- [x] Run focused frontend tests, full frontend tests, frontend build, full backend tests, docs sync, and diff check after the follow-up.
 
 ## Code Review Follow-up - 2026-07-09
 

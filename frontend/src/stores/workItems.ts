@@ -6,6 +6,7 @@ import type { WorkItemCounts } from '@/types'
 const emptyCounts: WorkItemCounts = {
   quota_reset_approval_count: 0,
   quota_reset_admin_count: 0,
+  ai_access_setup_count: 0,
   offboarding_count: 0,
   total_count: 0,
 }
@@ -14,6 +15,7 @@ function normalizeCounts(data?: Partial<WorkItemCounts> | null): WorkItemCounts 
   return {
     quota_reset_approval_count: Number(data?.quota_reset_approval_count ?? 0),
     quota_reset_admin_count: Number(data?.quota_reset_admin_count ?? 0),
+    ai_access_setup_count: Number(data?.ai_access_setup_count ?? 0),
     offboarding_count: Number(data?.offboarding_count ?? 0),
     total_count: Number(data?.total_count ?? 0),
   }

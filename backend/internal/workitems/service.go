@@ -9,21 +9,32 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/internal/directorysync"
+	"github.com/ai-efficiency/backend/internal/usersetup"
 )
 
 type CountsResponse struct {
 	QuotaResetApprovalCount int `json:"quota_reset_approval_count"`
 	QuotaResetAdminCount    int `json:"quota_reset_admin_count"`
+	AIAccessSetupCount      int `json:"ai_access_setup_count"`
 	OffboardingCount        int `json:"offboarding_count"`
 	TotalCount              int `json:"total_count"`
 }
 
-type Service struct {
-	client *ent.Client
+type providerLister interface {
+	ListProviders(ctx context.Context, req usersetup.ListProvidersRequest) (*usersetup.ListProvidersResponse, error)
 }
 
-func NewService(client *ent.Client) *Service {
-	return &Service{client: client}
+type Service struct {
+	client         *ent.Client
+	providerLister providerLister
+}
+
+func NewService(client *ent.Client, providerListers ...providerLister) *Service {
+	var lister providerLister
+	if len(providerListers) > 0 {
+		lister = providerListers[0]
+	}
+	return &Service{client: client, providerLister: lister}
 }
 
 func (s *Service) Counts(ctx context.Context, userID int, admin bool) (*CountsResponse, error) {
@@ -34,7 +45,14 @@ func (s *Service) Counts(ctx context.Context, userID int, admin bool) (*CountsRe
 	if err != nil {
 		return nil, err
 	}
-	counts := &CountsResponse{QuotaResetApprovalCount: approvalCount}
+	aiAccessSetupCount, err := s.countAIAccessSetup(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	counts := &CountsResponse{
+		QuotaResetApprovalCount: approvalCount,
+		AIAccessSetupCount:      aiAccessSetupCount,
+	}
 	if admin {
 		adminQuotaCount, err := s.countAdminQuotaApprovals(ctx)
 		if err != nil {
@@ -46,11 +64,32 @@ func (s *Service) Counts(ctx context.Context, userID int, admin bool) (*CountsRe
 		}
 		counts.QuotaResetAdminCount = adminQuotaCount
 		counts.OffboardingCount = offboardingCount
-		counts.TotalCount = adminQuotaCount + offboardingCount
+		counts.TotalCount = aiAccessSetupCount + adminQuotaCount + offboardingCount
 		return counts, nil
 	}
-	counts.TotalCount = approvalCount
+	counts.TotalCount = aiAccessSetupCount + approvalCount
 	return counts, nil
+}
+
+func (s *Service) countAIAccessSetup(ctx context.Context, userID int) (int, error) {
+	if s.providerLister == nil {
+		return 0, nil
+	}
+	resp, err := s.providerLister.ListProviders(ctx, usersetup.ListProvidersRequest{UserID: userID})
+	if err != nil {
+		return 0, fmt.Errorf("count ai access setup work item: %w", err)
+	}
+	if resp == nil {
+		return 1, nil
+	}
+	for _, provider := range resp.Providers {
+		for _, group := range provider.Groups {
+			if group.Credential.State == "existing_hidden" {
+				return 0, nil
+			}
+		}
+	}
+	return 1, nil
 }
 
 func (s *Service) countAssignedQuotaApprovals(ctx context.Context, userID int) (int, error) {

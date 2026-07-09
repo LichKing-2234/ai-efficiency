@@ -22,6 +22,7 @@ function createTestRouter() {
     routes: [
       { path: '/work-items', component: WorkItemsView },
       { path: '/usage/quota-reset', component: { template: '<div>Quota Reset</div>' } },
+      { path: '/user', component: { template: '<div>User Setup</div>' } },
       { path: '/admin/directory/offboarding', component: { template: '<div>Offboarding</div>' } },
     ],
   })
@@ -51,6 +52,7 @@ beforeEach(async () => {
       data: {
         quota_reset_approval_count: 2,
         quota_reset_admin_count: 5,
+        ai_access_setup_count: 0,
         offboarding_count: 3,
         total_count: 8,
       },
@@ -77,5 +79,27 @@ describe('WorkItemsView', () => {
     expect(wrapper.text()).toContain('Offboarding review')
     expect(wrapper.text()).toContain('3')
     expect(wrapper.find('a[href="/admin/directory/offboarding"]').exists()).toBe(true)
+  })
+
+  it('shows missing AI access setup as a regular work item', async () => {
+    const api = await import('@/api/workItems') as any
+    api.getWorkItemCounts.mockResolvedValue({
+      data: {
+        data: {
+          quota_reset_approval_count: 0,
+          quota_reset_admin_count: 0,
+          ai_access_setup_count: 1,
+          offboarding_count: 0,
+          total_count: 1,
+        },
+      },
+    })
+
+    const wrapper = await mountWorkItemsView('user')
+
+    expect(wrapper.text()).toContain('AI access setup')
+    expect(wrapper.text()).toContain('1')
+    expect(wrapper.find('a[href="/user"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/usage/quota-reset"]').exists()).toBe(false)
   })
 })

@@ -57,7 +57,7 @@
     <div v-else-if="errorMessage" class="rounded-lg border border-red-200 bg-red-50 p-6">
       <h2 class="text-base font-semibold text-red-900">{{ errorMessage }}</h2>
       <p class="mt-2 text-sm text-red-800">{{ t('usageDashboard.retryHelp') }}</p>
-      <router-link v-if="credentialError" to="/user" class="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+      <router-link v-if="credentialError && !props.homeMode" to="/user" class="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
         {{ t('usageDashboard.openSetup') }}
       </router-link>
     </div>
@@ -157,7 +157,7 @@ const route = useRoute()
 let dashboardRequestSeq = 0
 
 const currentSnapshot = computed(() => snapshot.value ?? props.initialSnapshot)
-const setupRequired = computed(() => currentSnapshot.value?.configured === false)
+const setupRequired = computed(() => !props.homeMode && currentSnapshot.value?.configured === false)
 const selectedRangeLabel = computed(() => rangeLabel(selectedRange.value))
 const snapshotRangeLabel = computed(() => rangeLabel(snapshotRange.value))
 const dashboardTitle = computed(() => {

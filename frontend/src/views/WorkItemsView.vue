@@ -18,8 +18,9 @@ const quotaResetCount = computed(() => (
     ? workItems.counts.quota_reset_admin_count
     : workItems.counts.quota_reset_approval_count
 ))
+const aiAccessSetupCount = computed(() => workItems.counts.ai_access_setup_count)
 const offboardingCount = computed(() => auth.isAdmin ? workItems.counts.offboarding_count : 0)
-const hasVisibleWork = computed(() => quotaResetCount.value > 0 || offboardingCount.value > 0)
+const hasVisibleWork = computed(() => aiAccessSetupCount.value > 0 || quotaResetCount.value > 0 || offboardingCount.value > 0)
 </script>
 
 <template>
@@ -35,6 +36,20 @@ const hasVisibleWork = computed(() => quotaResetCount.value > 0 || offboardingCo
       </div>
 
       <div class="grid gap-3 lg:grid-cols-2">
+        <RouterLink
+          v-if="aiAccessSetupCount > 0"
+          to="/user"
+          class="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm hover:border-cyan-300 hover:bg-cyan-50/30"
+        >
+          <div class="min-w-0">
+            <h2 class="text-sm font-semibold text-slate-950">{{ t('workItems.aiAccessSetup') }}</h2>
+            <p class="mt-1 text-sm text-slate-500">{{ t('workItems.aiAccessSetupHelp') }}</p>
+          </div>
+          <span class="inline-flex min-w-8 shrink-0 justify-center rounded-full bg-cyan-700 px-2.5 py-1 text-sm font-semibold text-white">
+            {{ formatWorkItemCount(aiAccessSetupCount) }}
+          </span>
+        </RouterLink>
+
         <RouterLink
           v-if="quotaResetCount > 0"
           to="/usage/quota-reset"

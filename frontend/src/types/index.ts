@@ -1182,6 +1182,7 @@ export interface QuotaResetNotificationSettings {
 export interface WorkItemCounts {
   quota_reset_approval_count: number
   quota_reset_admin_count: number
+  ai_access_setup_count: number
   offboarding_count: number
   total_count: number
 }

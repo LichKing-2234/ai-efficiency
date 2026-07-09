@@ -47,6 +47,7 @@ describe('AppSidebar', () => {
         data: {
           quota_reset_approval_count: 0,
           quota_reset_admin_count: 0,
+          ai_access_setup_count: 0,
           offboarding_count: 0,
           total_count: 0,
         },
@@ -121,6 +122,7 @@ describe('AppSidebar', () => {
         data: {
           quota_reset_approval_count: 2,
           quota_reset_admin_count: 0,
+          ai_access_setup_count: 0,
           offboarding_count: 0,
           total_count: 2,
         },

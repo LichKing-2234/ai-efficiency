@@ -12,7 +12,17 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/testdb"
+	"github.com/ai-efficiency/backend/internal/usersetup"
 )
+
+type fakeProviderLister struct {
+	resp *usersetup.ListProvidersResponse
+	err  error
+}
+
+func (f fakeProviderLister) ListProviders(context.Context, usersetup.ListProvidersRequest) (*usersetup.ListProvidersResponse, error) {
+	return f.resp, f.err
+}
 
 func TestCountsForRegularApproverIncludesAssignedPendingAndFailedResetApprovals(t *testing.T) {
 	ctx := context.Background()
@@ -33,6 +43,43 @@ func TestCountsForRegularApproverIncludesAssignedPendingAndFailedResetApprovals(
 	}
 	if counts.QuotaResetAdminCount != 0 || counts.OffboardingCount != 0 || counts.TotalCount != 2 {
 		t.Fatalf("counts = %+v, want two actionable regular approvals", counts)
+	}
+}
+
+func TestCountsForRegularUserIncludesMissingAIAccessSetup(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	user := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	lister := fakeProviderLister{resp: &usersetup.ListProvidersResponse{
+		Providers: []usersetup.ProviderSummary{
+			{
+				ID:          1,
+				Name:        "sub2api",
+				DisplayName: "sub2api",
+				Groups: []usersetup.GroupCredentialSummary{
+					{
+						GroupID:   "42",
+						GroupName: "Group Alpha",
+						Platform:  "openai",
+						Credential: usersetup.GroupCredentialState{
+							State: "missing",
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	counts, err := NewService(client, lister).Counts(ctx, user.ID, false)
+	if err != nil {
+		t.Fatalf("Counts() error = %v", err)
+	}
+
+	if counts.AIAccessSetupCount != 1 {
+		t.Fatalf("ai_access_setup_count = %d, want 1", counts.AIAccessSetupCount)
+	}
+	if counts.TotalCount != 1 {
+		t.Fatalf("total_count = %d, want missing AI access setup count 1", counts.TotalCount)
 	}
 }
 

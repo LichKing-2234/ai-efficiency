@@ -80,7 +80,11 @@ func SetupRouter(
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
-	workItemsHandler := NewWorkItemsHandler(workitems.NewService(entClient))
+	workItemsService := workitems.NewService(entClient)
+	if providerHandler != nil {
+		workItemsService = workitems.NewService(entClient, userSetupService)
+	}
+	workItemsHandler := NewWorkItemsHandler(workItemsService)
 	var quotaResetHandler *QuotaResetHandler
 	if providerHandler != nil {
 		adminUsersHandler = NewAdminUsersHandler(entClient, encryptionKey, providerHandler)
