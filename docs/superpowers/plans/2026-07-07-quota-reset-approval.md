@@ -10,7 +10,18 @@
 
 ---
 
-**Status:** Complete. The original quota reset approval implementation, architecture documentation, code review follow-up fixes, the 2026-07-07 Work Items / department picker follow-up, the 2026-07-08 representative picker / display-path follow-up, the 2026-07-08 inline-filter department dropdown UX follow-up, the 2026-07-08 unmatched representative diagnostics / row alignment follow-up, the 2026-07-08 WeCom webhook delivery follow-up, and the 2026-07-08 quota reset page visual hierarchy follow-up are complete and verified.
+**Status:** Complete. The original quota reset approval implementation, architecture documentation, earlier code review follow-up fixes, the 2026-07-07 Work Items / department picker follow-up, the 2026-07-08 representative picker / display-path follow-up, the 2026-07-08 inline-filter department dropdown UX follow-up, the 2026-07-08 unmatched representative diagnostics / row alignment follow-up, the 2026-07-08 WeCom webhook delivery follow-up, the 2026-07-08 quota reset page visual hierarchy follow-up, and the 2026-07-09 PR review follow-up are complete and verified.
+
+## Code Review Follow-up - 2026-07-09
+
+- [x] Add failing backend regressions for retry reset state guarding, failed reset work-item counts, current-source approver config listing, duplicate notification setting cleanup, and disabled/no-setting notification tests.
+- [x] Guard retry reset execution so a retry can only transition from `approved_reset_failed` to `approved_resetting` before the relay reset call.
+- [x] Include `approved_reset_failed` in ordinary approver and admin work-item counts.
+- [x] Scope approver config listing to the current Directory Sync source.
+- [x] Collapse duplicate quota reset notification setting rows during save and serialize saves through an existing `system_settings` lock row.
+- [x] Require an enabled saved webhook URL before reporting notification test success.
+- [x] Update the quota reset approval spec status from draft to current implemented contract.
+- [x] Run full backend tests, frontend tests, frontend build, and diff verification after the PR review fixes.
 
 ## User Feedback Follow-up - 2026-07-08 Quota Reset Page Visual Hierarchy
 

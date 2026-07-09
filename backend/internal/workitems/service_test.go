@@ -14,7 +14,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
 
-func TestCountsForRegularApproverIncludesOnlyAssignedPendingApprovals(t *testing.T) {
+func TestCountsForRegularApproverIncludesAssignedPendingAndFailedResetApprovals(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	approver := createWorkItemsUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
@@ -28,15 +28,15 @@ func TestCountsForRegularApproverIncludesOnlyAssignedPendingApprovals(t *testing
 		t.Fatalf("Counts() error = %v", err)
 	}
 
-	if counts.QuotaResetApprovalCount != 1 {
-		t.Fatalf("quota_reset_approval_count = %d, want 1", counts.QuotaResetApprovalCount)
+	if counts.QuotaResetApprovalCount != 2 {
+		t.Fatalf("quota_reset_approval_count = %d, want 2", counts.QuotaResetApprovalCount)
 	}
-	if counts.QuotaResetAdminCount != 0 || counts.OffboardingCount != 0 || counts.TotalCount != 1 {
-		t.Fatalf("counts = %+v, want only one regular approval", counts)
+	if counts.QuotaResetAdminCount != 0 || counts.OffboardingCount != 0 || counts.TotalCount != 2 {
+		t.Fatalf("counts = %+v, want two actionable regular approvals", counts)
 	}
 }
 
-func TestCountsForAdminIncludesPendingQuotaAndOffboardingCandidates(t *testing.T) {
+func TestCountsForAdminIncludesPendingAndFailedResetQuotaWithOffboardingCandidates(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	admin := createWorkItemsUser(t, ctx, client, "admin", "admin@example.com", nil, "admin")
@@ -44,6 +44,7 @@ func TestCountsForAdminIncludesPendingQuotaAndOffboardingCandidates(t *testing.T
 	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "42", quotaresetrequest.StatusPending, []int{admin.ID})
 	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "43", quotaresetrequest.StatusPending, nil)
 	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "44", quotaresetrequest.StatusApprovedResetSucceeded, []int{admin.ID})
+	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "45", quotaresetrequest.StatusApprovedResetFailed, []int{admin.ID})
 
 	source, run := createWorkItemsDirectorySnapshot(t, ctx, client, "alice@example.com")
 	missing := createWorkItemsUser(t, ctx, client, "bob", "bob@example.org", intPtr(2002), "user")
@@ -65,17 +66,17 @@ func TestCountsForAdminIncludesPendingQuotaAndOffboardingCandidates(t *testing.T
 		t.Fatalf("Counts() error = %v", err)
 	}
 
-	if counts.QuotaResetApprovalCount != 1 {
-		t.Fatalf("quota_reset_approval_count = %d, want assigned approval count 1", counts.QuotaResetApprovalCount)
+	if counts.QuotaResetApprovalCount != 2 {
+		t.Fatalf("quota_reset_approval_count = %d, want assigned approval count 2", counts.QuotaResetApprovalCount)
 	}
-	if counts.QuotaResetAdminCount != 2 {
-		t.Fatalf("quota_reset_admin_count = %d, want all pending quota requests 2", counts.QuotaResetAdminCount)
+	if counts.QuotaResetAdminCount != 3 {
+		t.Fatalf("quota_reset_admin_count = %d, want all pending and failed quota requests 3", counts.QuotaResetAdminCount)
 	}
 	if counts.OffboardingCount != 1 {
 		t.Fatalf("offboarding_count = %d, want missing user count 1", counts.OffboardingCount)
 	}
-	if counts.TotalCount != 3 {
-		t.Fatalf("total_count = %d, want admin pending quota plus offboarding 3", counts.TotalCount)
+	if counts.TotalCount != 4 {
+		t.Fatalf("total_count = %d, want admin actionable quota plus offboarding 4", counts.TotalCount)
 	}
 }
 

@@ -1,7 +1,7 @@
 # Quota Reset Approval Design
 
 **Date:** 2026-07-07
-**Status:** Draft for user review
+**Status:** Current implemented contract
 **Scope:** `backend/ent/schema/`, `backend/internal/quotareset/`, `backend/internal/handler/`, `backend/internal/relay/`, `backend/internal/directorytree/`, `frontend/src/views/`, `frontend/src/components/`, `frontend/src/api/`, `frontend/src/types/`, `frontend/src/i18n.ts`
 **Related:**
 
@@ -12,7 +12,7 @@
 
 ## Spec Relationship
 
-This spec adds a planned quota reset approval workflow. It does not describe current implemented behavior until the implementation lands.
+This spec describes the current implemented quota reset approval workflow. It was originally drafted before implementation and is now the contract for the shipped request, approval, reset, audit-event, approver-configuration, and notification behavior.
 
 It extends the current Directory Sync and relay/sub2api contracts:
 
@@ -21,7 +21,7 @@ It extends the current Directory Sync and relay/sub2api contracts:
 3. Quota reset still uses the relay provider boundary, specifically `relay.UserSubscriptionQuotaResetter`, rather than direct sub2api database access.
 4. The workflow resets a selected active subscription group's daily, weekly, and monthly usage windows. It does not edit group limits, subscriptions, API keys, or delegated rate multipliers.
 
-When this feature is implemented, `docs/architecture.md` must be updated to describe the current runtime surface and boundaries.
+`docs/architecture.md` has been updated to describe the current runtime surface and boundaries.
 
 ## Data Hygiene
 

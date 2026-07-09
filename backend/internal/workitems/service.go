@@ -56,7 +56,7 @@ func (s *Service) Counts(ctx context.Context, userID int, admin bool) (*CountsRe
 func (s *Service) countAssignedQuotaApprovals(ctx context.Context, userID int) (int, error) {
 	count, err := s.client.QuotaResetRequest.Query().
 		Where(
-			quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending),
+			quotaresetrequest.StatusIn(actionableQuotaResetStatuses()...),
 			quotaresetrequest.RequesterUserIDNEQ(userID),
 			func(selector *sql.Selector) {
 				selector.Where(jsonbContainsInt(selector, quotaresetrequest.FieldResolvedApproverUserIds, userID))
@@ -79,12 +79,19 @@ func jsonbContainsInt(selector *sql.Selector, field string, value int) *sql.Pred
 
 func (s *Service) countAdminQuotaApprovals(ctx context.Context) (int, error) {
 	count, err := s.client.QuotaResetRequest.Query().
-		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending)).
+		Where(quotaresetrequest.StatusIn(actionableQuotaResetStatuses()...)).
 		Count(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("count admin quota reset approvals: %w", err)
 	}
 	return count, nil
+}
+
+func actionableQuotaResetStatuses() []quotaresetrequest.Status {
+	return []quotaresetrequest.Status{
+		quotaresetrequest.StatusPending,
+		quotaresetrequest.StatusApprovedResetFailed,
+	}
 }
 
 func (s *Service) countOffboardingCandidates(ctx context.Context) (int, error) {

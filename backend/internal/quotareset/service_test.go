@@ -230,6 +230,28 @@ func TestResetFailureCanBeRetriedByAdmin(t *testing.T) {
 	}
 }
 
+func TestRetryResetRejectsRequestAlreadyResettingBeforeCallingProvider(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	admin := client.User.Create().SetUsername("admin").SetEmail("admin@example.com").SetAuthSource("ldap").SetRole(entuser.RoleAdmin).SaveX(ctx)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", nil)
+	client.QuotaResetRequest.UpdateOneID(request.ID).
+		SetStatus(quotaresetrequest.StatusApprovedResetting).
+		SaveX(ctx)
+	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
+
+	_, err := svc.executeReset(ctx, request.ID, admin.ID, true, true)
+	if !errors.Is(err, ErrInvalidStatus) {
+		t.Fatalf("executeReset(retry while resetting) error = %v, want ErrInvalidStatus", err)
+	}
+	if fake.resetCalls != 0 {
+		t.Fatalf("reset calls = %d, want 0", fake.resetCalls)
+	}
+}
+
 func TestUpdateNotificationSettingsValidatesEnabledURLAndBearerCredential(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -269,6 +291,69 @@ func TestUpdateNotificationSettingsValidatesEnabledURLAndBearerCredential(t *tes
 	})
 	if err == nil || !strings.Contains(err.Error(), "must be secret_text") {
 		t.Fatalf("wrong credential kind error = %v, want secret_text error", err)
+	}
+}
+
+func TestUpdateNotificationSettingsCollapsesDuplicateRows(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(false).
+		SetURL("https://hooks.example.com/old-a").
+		SetAuthType("none").
+		SetCreatedByUserID(1).
+		SetUpdatedByUserID(1).
+		SaveX(ctx)
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetURL("https://hooks.example.com/old-b").
+		SetAuthType("none").
+		SetCreatedByUserID(1).
+		SetUpdatedByUserID(1).
+		SaveX(ctx)
+	svc := NewService(client, nil, nil, nil)
+
+	updated, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+		ActorUserID: 7,
+		Enabled:     true,
+		URL:         "https://hooks.example.com/quota-reset",
+		AuthType:    "none",
+	})
+	if err != nil {
+		t.Fatalf("UpdateNotificationSettings() error = %v", err)
+	}
+	if updated.URL != "https://hooks.example.com/quota-reset" || !updated.Enabled {
+		t.Fatalf("updated settings = %+v, want new enabled URL", updated)
+	}
+	rows := client.QuotaResetNotificationSetting.Query().AllX(ctx)
+	if len(rows) != 1 {
+		t.Fatalf("notification setting row count = %d, want 1", len(rows))
+	}
+	if rows[0].URL != "https://hooks.example.com/quota-reset" || rows[0].UpdatedByUserID != 7 {
+		t.Fatalf("remaining row = %+v, want updated canonical row", rows[0])
+	}
+}
+
+func TestNotificationSettingsTestRequiresEnabledSavedWebhook(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	svc := NewService(client, nil, nil, NewWebhookNotifier(client, "", ""))
+
+	err := svc.TestNotificationSettings(ctx, 7)
+	if !errors.Is(err, ErrInvalidNotification) {
+		t.Fatalf("TestNotificationSettings(no setting) error = %v, want ErrInvalidNotification", err)
+	}
+
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(false).
+		SetURL("https://hooks.example.com/quota-reset").
+		SetAuthType("none").
+		SetCreatedByUserID(1).
+		SetUpdatedByUserID(1).
+		SaveX(ctx)
+	err = svc.TestNotificationSettings(ctx, 7)
+	if !errors.Is(err, ErrInvalidNotification) {
+		t.Fatalf("TestNotificationSettings(disabled setting) error = %v, want ErrInvalidNotification", err)
 	}
 }
 
@@ -324,6 +409,29 @@ func approverCandidateUserIDs(items []ApproverCandidate) []int {
 	}
 	sort.Ints(ids)
 	return ids
+}
+
+func TestListApproverConfigsOnlyReturnsCurrentDirectorySource(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	staleSource := createQuotaResetDirectorySource(t, ctx, client)
+	staleApprover := createQuotaResetUser(t, ctx, client, "lead-stale", "lead-stale@example.com", nil, "user")
+	createQuotaResetApproverConfig(t, ctx, client, staleSource.ID, "department-stale", "Department Stale", staleApprover.ID)
+	currentSource := createQuotaResetDirectorySource(t, ctx, client)
+	currentApprover := createQuotaResetUser(t, ctx, client, "lead-current", "lead-current@example.com", nil, "user")
+	createQuotaResetApproverConfig(t, ctx, client, currentSource.ID, "department-current", "Department Current", currentApprover.ID)
+	svc := NewService(client, nil, nil, nil)
+
+	resp, err := svc.ListApproverConfigs(ctx)
+	if err != nil {
+		t.Fatalf("ListApproverConfigs() error = %v", err)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("config count = %d, want current source only", len(resp.Items))
+	}
+	if resp.Items[0].DirectorySourceID != currentSource.ID || resp.Items[0].ApproverUserID != currentApprover.ID {
+		t.Fatalf("configs = %#v, want current source config only", resp.Items)
+	}
 }
 
 func TestSaveApproverConfigsRejectsApproverOutsideDepartmentRepresentatives(t *testing.T) {
@@ -393,6 +501,7 @@ type fakeQuotaResetProvider struct {
 	resetErr      error
 	resetUserID   int64
 	resetGroupID  int64
+	resetCalls    int
 }
 
 func (f *fakeQuotaResetProvider) ListUserSubscriptions(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
@@ -400,6 +509,7 @@ func (f *fakeQuotaResetProvider) ListUserSubscriptions(_ context.Context, relayU
 }
 
 func (f *fakeQuotaResetProvider) ResetSubscriptionQuotaForUser(_ context.Context, relayUserID, groupID int64) error {
+	f.resetCalls++
 	f.resetUserID = relayUserID
 	f.resetGroupID = groupID
 	return f.resetErr
