@@ -534,6 +534,16 @@ Tabs:
 2. `Approvals`: visible when the user has pending or historical approval assignments.
 3. `All Requests`: visible to admins.
 
+Queue badge semantics:
+
+1. `My Requests` shows the unfiltered historical total returned by the requester list API.
+2. `Approvals` shows `quota_reset_approval_count` from `/api/v1/work-items/counts`.
+3. `All Requests` shows `quota_reset_admin_count` from `/api/v1/work-items/counts`.
+4. Approval queue badges therefore count only actionable `pending` and `approved_reset_failed` requests. Completed history remains available under the `All` filter but does not keep a work badge visible.
+5. The workbench refreshes shared Work Items counts with its queue data, including after approval, rejection, cancellation, or reset retry, so its badges and the sidebar stay aligned. A post-action refresh queues a fresh count request after any already in-flight pre-action request completes.
+6. Work Items count loading is supplemental: slow or failed count requests do not block quota-reset history. The workbench hides approval badges while counts are unavailable instead of reporting stale values as current.
+7. Shared frontend counts reset when the authenticated session changes, and late responses from a previous session are ignored.
+
 First-version filters:
 
 1. Pending.

@@ -18,11 +18,13 @@ import {
 import { useToast } from '@/composables/useToast'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkItemsStore } from '@/stores/workItems'
 import type { QuotaResetRequestSummary, QuotaResetStatus } from '@/types'
 
 const { t } = useI18n()
 const { showToast } = useToast()
 const auth = useAuthStore()
+const workItems = useWorkItemsStore()
 
 type QueueMode = 'mine' | 'approvals' | 'admin'
 type FilterMode = 'all' | 'pending' | 'processed' | 'failed'
@@ -33,12 +35,12 @@ const myRequests = ref<QuotaResetRequestSummary[]>([])
 const approvalRequests = ref<QuotaResetRequestSummary[]>([])
 const adminRequests = ref<QuotaResetRequestSummary[]>([])
 const myTotal = ref(0)
-const approvalTotal = ref(0)
-const adminTotal = ref(0)
 const loading = ref(false)
 const actionBusy = ref(false)
 const loadError = ref('')
 const filters: FilterMode[] = ['all', 'pending', 'processed', 'failed']
+const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : workItems.counts.quota_reset_approval_count)
+const adminTotal = computed(() => workItems.loading || workItems.error || !auth.isAdmin ? 0 : workItems.counts.quota_reset_admin_count)
 
 const queueItems = computed(() => {
   if (activeQueue.value === 'approvals') return approvalRequests.value
@@ -48,9 +50,10 @@ const queueItems = computed(() => {
 
 const visibleItems = computed(() => queueItems.value.filter((item) => filterMatches(item.status, activeFilter.value)))
 
-async function loadQueues() {
+async function loadQueues(forceCounts = false) {
   loading.value = true
   loadError.value = ''
+  void workItems.loadCounts({ force: forceCounts })
   try {
     const requests = [
       listMyQuotaResetRequests(),
@@ -60,14 +63,11 @@ async function loadQueues() {
     myRequests.value = mine.data.data?.items ?? []
     approvalRequests.value = approvals.data.data?.items ?? []
     myTotal.value = mine.data.data?.total ?? myRequests.value.length
-    approvalTotal.value = approvals.data.data?.total ?? approvalRequests.value.length
     if (auth.isAdmin) {
       const admin = await listAdminQuotaResetRequests()
       adminRequests.value = admin.data.data?.items ?? []
-      adminTotal.value = admin.data.data?.total ?? adminRequests.value.length
     } else {
       adminRequests.value = []
-      adminTotal.value = 0
     }
   } catch {
     loadError.value = t('quotaReset.loadFailed')
@@ -123,7 +123,7 @@ async function withAction(action: () => Promise<unknown>) {
   actionBusy.value = true
   try {
     await action()
-    await loadQueues()
+    await loadQueues(true)
     showToast({ message: t('quotaReset.actionSucceeded'), tone: 'success' })
   } catch {
     showToast({ message: t('quotaReset.actionFailed'), tone: 'error' })
