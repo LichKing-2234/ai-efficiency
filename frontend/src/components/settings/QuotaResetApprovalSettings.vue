@@ -42,6 +42,7 @@ const departmentDropdownOpen = ref(false)
 const departmentOptions = ref<DirectoryDepartment[]>([])
 const approverCandidates = ref<QuotaResetApproverCandidate[]>([])
 const unmatchedRepresentatives = ref<QuotaResetUnmatchedApproverRepresentative[]>([])
+let departmentSearchRequestSeq = 0
 
 const configForm = ref({
   department_external_id: '',
@@ -115,23 +116,37 @@ function unmatchedRepresentativeLabel(representative: QuotaResetUnmatchedApprove
 }
 
 async function searchDepartments() {
+  const requestSeq = ++departmentSearchRequestSeq
   const sourceID = selectedDirectorySourceID.value
   if (!sourceID) {
-    departmentOptions.value = []
+    if (requestSeq === departmentSearchRequestSeq) {
+      departmentOptions.value = []
+      searchingDepartments.value = false
+    }
     return
   }
+  const query = departmentSearch.value.trim()
   searchingDepartments.value = true
   try {
     const res = await listDirectoryDepartments({
       source_id: sourceID,
-      q: departmentSearch.value.trim(),
+      q: query,
     })
+    if (requestSeq !== departmentSearchRequestSeq) return
     departmentOptions.value = res.data.data?.items ?? []
   } catch {
+    if (requestSeq !== departmentSearchRequestSeq) return
     departmentOptions.value = []
   } finally {
-    searchingDepartments.value = false
+    if (requestSeq === departmentSearchRequestSeq) {
+      searchingDepartments.value = false
+    }
   }
+}
+
+function invalidateDepartmentSearch() {
+  departmentSearchRequestSeq += 1
+  searchingDepartments.value = false
 }
 
 function toggleDepartmentDropdown() {
@@ -139,10 +154,13 @@ function toggleDepartmentDropdown() {
   departmentDropdownOpen.value = !departmentDropdownOpen.value
   if (departmentDropdownOpen.value) {
     void searchDepartments()
+  } else {
+    invalidateDepartmentSearch()
   }
 }
 
 function selectDepartment(department: DirectoryDepartment) {
+  invalidateDepartmentSearch()
   configForm.value.department_external_id = department.external_id
   configForm.value.department_display_path = departmentDisplayPath(department)
   configForm.value.approver_user_id = null
@@ -154,6 +172,7 @@ function selectDepartment(department: DirectoryDepartment) {
 }
 
 function resetSelectedDepartment() {
+  invalidateDepartmentSearch()
   configForm.value.department_external_id = ''
   configForm.value.department_display_path = ''
   configForm.value.approver_user_id = null
@@ -220,6 +239,7 @@ async function saveConfigs() {
     const res = await saveQuotaResetApproverConfigs(configRowsForSave(), 'replace_all')
     configs.value = res.data.data?.items ?? []
     configForm.value = { department_external_id: '', department_display_path: '', approver_user_id: null, enabled: true }
+    invalidateDepartmentSearch()
     departmentSearch.value = ''
     departmentDropdownOpen.value = false
     departmentOptions.value = []

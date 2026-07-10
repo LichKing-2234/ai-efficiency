@@ -2,6 +2,7 @@ package workitems
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -80,6 +81,22 @@ func TestCountsForRegularUserIncludesMissingAIAccessSetup(t *testing.T) {
 	}
 	if counts.TotalCount != 1 {
 		t.Fatalf("total_count = %d, want missing AI access setup count 1", counts.TotalCount)
+	}
+}
+
+func TestCountsKeepLocalWorkItemsWhenAIAccessLookupFails(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	approver := createWorkItemsUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	requester := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "42", quotaresetrequest.StatusPending, []int{approver.ID})
+
+	counts, err := NewService(client, fakeProviderLister{err: errors.New("relay unavailable")}).Counts(ctx, approver.ID, false)
+	if err != nil {
+		t.Fatalf("Counts() error = %v, want local counts to remain available", err)
+	}
+	if counts.QuotaResetApprovalCount != 1 || counts.AIAccessSetupCount != 0 || counts.TotalCount != 1 {
+		t.Fatalf("counts = %+v, want local approval count with unknown AI access omitted", counts)
 	}
 }
 

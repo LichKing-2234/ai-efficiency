@@ -17,6 +17,16 @@ vi.mock('@/api/directory', () => ({
   listDirectoryDepartments: vi.fn(),
 }))
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 beforeEach(async () => {
   setLocale('en-US')
   vi.clearAllMocks()
@@ -210,6 +220,61 @@ describe('QuotaResetApprovalSettings', () => {
         enabled: true,
       },
     ], 'replace_all')
+  })
+
+  it('keeps the latest filtered departments when the initial unfiltered request resolves later', async () => {
+    const directory = await import('@/api/directory') as any
+    const unfiltered = deferred<any>()
+    const filtered = deferred<any>()
+    directory.listDirectoryDepartments.mockImplementation(({ q }: { q: string }) => (
+      q === 'Platform' ? filtered.promise : unfiltered.promise
+    ))
+
+    const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="quota-reset-department-select"]').trigger('click')
+    await wrapper.find('[data-testid="quota-reset-department-filter"]').setValue('Platform')
+
+    filtered.resolve({
+      data: {
+        data: {
+          items: [
+            {
+              id: 11,
+              source_id: 1,
+              external_id: 'dept-platform',
+              name: 'Platform',
+              path: '1.2',
+              display_path: 'Department Alpha / Platform',
+            },
+          ],
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="quota-reset-department-option-dept-platform"]').exists()).toBe(true)
+
+    unfiltered.resolve({
+      data: {
+        data: {
+          items: [
+            {
+              id: 12,
+              source_id: 1,
+              external_id: 'dept-all',
+              name: 'All Departments',
+              path: '1',
+              display_path: 'All Departments',
+            },
+          ],
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="quota-reset-department-option-dept-platform"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="quota-reset-department-option-dept-all"]').exists()).toBe(false)
   })
 
   it('explains when directory representatives are not matched to local users', async () => {

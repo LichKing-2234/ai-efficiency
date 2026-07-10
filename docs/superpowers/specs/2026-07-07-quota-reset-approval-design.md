@@ -563,7 +563,7 @@ Quota reset contributes:
 1. `quota_reset_approval_count`: actionable requests assigned to the current approver, excluding the approver's own requests.
 2. `quota_reset_admin_count`: all actionable requests for admin fallback processing.
 
-The shared counts contract also includes `ai_access_setup_count` for the current user's missing reusable AI access and `offboarding_count` for admin-only directory offboarding candidates. `total_count` is the number displayed in the sidebar badge. For admins, `total_count` uses personal AI access setup plus admin fallback quota-reset count plus offboarding count; it does not add the separate assigned-approver count again.
+The shared counts contract also includes `ai_access_setup_count` for the current user's missing reusable AI access and `offboarding_count` for admin-only directory offboarding candidates. `total_count` is the number displayed in the sidebar badge. For admins, `total_count` uses personal AI access setup plus admin fallback quota-reset count plus offboarding count; it does not add the separate assigned-approver count again. AI access status is relay-derived and best-effort: a relay/provider lookup failure omits `ai_access_setup_count` for that response but must not fail or hide locally derived quota-reset and offboarding counts. Concurrent frontend consumers share one in-flight counts request.
 
 ### Admin Settings
 
@@ -572,7 +572,7 @@ Add quota reset approval settings to `/settings` under Organization & Login beca
 Controls:
 
 1. Full-list approver config table with readable department and approver identity, enable/disable, and delete.
-2. Add-row form with a Directory Sync department dropdown that opens directly and filters departments inside the dropdown panel, followed by an approver dropdown loaded from matched representatives for that department. If the directory has representatives but none are matched to local login users, the UI shows the unmatched representative details as an admin diagnostic instead of a generic empty state.
+2. Add-row form with a Directory Sync department dropdown that opens directly and filters departments inside the dropdown panel, followed by an approver dropdown loaded from matched representatives for that department. Department results follow latest-request-wins semantics so a slower unfiltered response cannot replace a newer filtered result. If the directory has representatives but none are matched to local login users, the UI shows the unmatched representative details as an admin diagnostic instead of a generic empty state.
 3. Webhook enabled toggle.
 4. Webhook URL with `http`/`https` validation when enabled.
 5. Auth type select: none or bearer token.

@@ -10,7 +10,15 @@
 
 ---
 
-**Status:** Complete. The original quota reset approval implementation, architecture documentation, earlier code review follow-up fixes, the 2026-07-07 Work Items / department picker follow-up, the 2026-07-08 representative picker / display-path follow-up, the 2026-07-08 inline-filter department dropdown UX follow-up, the 2026-07-08 unmatched representative diagnostics / row alignment follow-up, the 2026-07-08 WeCom webhook delivery follow-up, the 2026-07-08 quota reset page visual hierarchy follow-up, the 2026-07-09 PR review follow-up, and the 2026-07-09 homepage/work-items follow-up are complete and verified.
+**Status:** Complete. The original quota reset approval implementation and all earlier follow-ups remain complete and verified. The 2026-07-10 stability follow-up fixed department dropdown request ordering, sidebar item order, and Work Items count loading resilience, with focused and full-suite verification.
+
+## User Feedback Follow-up - 2026-07-10 Stability Fixes
+
+- [x] Add failing regressions for stale department search responses, sidebar ordering, concurrent Work Items loads, and provider lookup failure isolation.
+- [x] Prevent stale department responses from replacing the latest filtered results.
+- [x] Move Work Items after AI Setup & Configuration in the sidebar.
+- [x] Deduplicate concurrent frontend Work Items loads and keep provider lookup failures from failing unrelated counts.
+- [x] Run focused tests, full frontend tests, frontend build, full backend tests, and diff verification.
 
 ## User Feedback Follow-up - 2026-07-09 Homepage Work Items
 

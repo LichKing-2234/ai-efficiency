@@ -30,23 +30,31 @@ export const useWorkItemsStore = defineStore('workItems', () => {
   const loading = ref(false)
   const loaded = ref(false)
   const error = ref('')
+  let loadPromise: Promise<void> | null = null
 
   const totalCount = computed(() => counts.value.total_count)
   const badgeLabel = computed(() => formatWorkItemCount(totalCount.value))
 
-  async function loadCounts() {
+  function loadCounts() {
+    if (loadPromise) return loadPromise
     loading.value = true
     error.value = ''
-    try {
-      const res = await getWorkItemCounts()
-      counts.value = normalizeCounts(res.data.data)
-      loaded.value = true
-    } catch {
-      error.value = 'failed'
-      counts.value = { ...emptyCounts }
-    } finally {
-      loading.value = false
-    }
+    loadPromise = (async () => {
+      try {
+        const res = await getWorkItemCounts()
+        counts.value = normalizeCounts(res.data.data)
+        loaded.value = true
+      } catch {
+        error.value = 'failed'
+        if (!loaded.value) {
+          counts.value = { ...emptyCounts }
+        }
+      } finally {
+        loading.value = false
+        loadPromise = null
+      }
+    })()
+    return loadPromise
   }
 
   return { counts, loading, loaded, error, totalCount, badgeLabel, loadCounts }
