@@ -45,9 +45,10 @@ func (s *Service) Counts(ctx context.Context, userID int, admin bool) (*CountsRe
 	if err != nil {
 		return nil, err
 	}
-	aiAccessSetupCount, err := s.countAIAccessSetup(ctx, userID)
-	if err != nil {
-		return nil, err
+	// AI access is remote-derived; an unavailable relay must not hide local approval queues.
+	aiAccessSetupCount := 0
+	if count, accessErr := s.countAIAccessSetup(ctx, userID); accessErr == nil {
+		aiAccessSetupCount = count
 	}
 	counts := &CountsResponse{
 		QuotaResetApprovalCount: approvalCount,
