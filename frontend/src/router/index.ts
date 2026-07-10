@@ -46,6 +46,11 @@ const router = createRouter({
       component: () => import('@/views/DashboardView.vue'),
     },
     {
+      path: '/work-items',
+      name: 'WorkItems',
+      component: () => import('@/views/WorkItemsView.vue'),
+    },
+    {
       path: '/usage/members/:user_id',
       name: 'UsageMember',
       component: () => import('@/views/DashboardView.vue'),
@@ -54,6 +59,11 @@ const router = createRouter({
       path: '/usage/team',
       name: 'UsageTeam',
       component: () => import('@/views/TeamOverviewView.vue'),
+    },
+    {
+      path: '/usage/quota-reset',
+      name: 'UsageQuotaReset',
+      component: () => import('@/views/QuotaResetView.vue'),
     },
     {
       path: '/repos',

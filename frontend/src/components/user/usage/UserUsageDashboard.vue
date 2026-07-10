@@ -57,7 +57,7 @@
     <div v-else-if="errorMessage" class="rounded-lg border border-red-200 bg-red-50 p-6">
       <h2 class="text-base font-semibold text-red-900">{{ errorMessage }}</h2>
       <p class="mt-2 text-sm text-red-800">{{ t('usageDashboard.retryHelp') }}</p>
-      <router-link v-if="credentialError" to="/user" class="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+      <router-link v-if="credentialError && !props.homeMode" to="/user" class="mt-4 inline-flex rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
         {{ t('usageDashboard.openSetup') }}
       </router-link>
     </div>
@@ -73,6 +73,8 @@
         :quotas="currentSnapshot?.group_quotas ?? null"
         :loading="loading && !!currentSnapshot"
         :range-label="selectedRangeLabel"
+        :show-reset-request="canRequestQuotaReset"
+        @request-reset="openQuotaResetModal"
       />
       <UsageStatsCards
         :stats="currentSnapshot?.stats ?? null"
@@ -86,19 +88,30 @@
         <UsageModelChart :data="currentSnapshot?.models ?? []" :loading="loading" :hide-cost="props.homeMode" />
       </div>
     </div>
+
+    <QuotaResetRequestModal
+      :open="quotaResetModalOpen"
+      :groups="quotaResetGroups"
+      :submitting="quotaResetSubmitting || quotaResetOptionsLoading"
+      @close="quotaResetModalOpen = false"
+      @submit="submitQuotaResetRequest"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { createQuotaResetRequest, getQuotaResetOptions } from '@/api/quotaReset'
 import { getUserUsageDashboard } from '@/api/userUsage'
 import {
   getTeamUsageSubjectDashboard,
   updateTeamUsageRateMultiplier,
 } from '@/api/teamUsage'
+import { useToast } from '@/composables/useToast'
 import { useI18n } from '@/i18n'
 import type {
+  QuotaResetOptionGroup,
   SubjectSubscriptionGroup,
   TeamUsageSubject,
   UpdateTeamUsageRateMultiplierRequest,
@@ -110,6 +123,7 @@ import UsageTrendChart from '@/components/user/usage/UsageTrendChart.vue'
 import UsageModelChart from '@/components/user/usage/UsageModelChart.vue'
 import UsageGroupQuotaSection from '@/components/user/usage/UsageGroupQuotaSection.vue'
 import SelectedSubjectSubscriptionRows from '@/components/user/usage/SelectedSubjectSubscriptionRows.vue'
+import QuotaResetRequestModal from '@/components/quota-reset/QuotaResetRequestModal.vue'
 
 type RangeOption = 'today' | '7d' | '30d'
 
@@ -133,12 +147,17 @@ const selectedSubjectSubscriptions = ref<SubjectSubscriptionGroup[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const credentialError = ref(false)
+const quotaResetModalOpen = ref(false)
+const quotaResetOptionsLoading = ref(false)
+const quotaResetSubmitting = ref(false)
+const quotaResetGroups = ref<QuotaResetOptionGroup[]>([])
 const { t } = useI18n()
+const { showToast } = useToast()
 const route = useRoute()
 let dashboardRequestSeq = 0
 
 const currentSnapshot = computed(() => snapshot.value ?? props.initialSnapshot)
-const setupRequired = computed(() => currentSnapshot.value?.configured === false)
+const setupRequired = computed(() => !props.homeMode && currentSnapshot.value?.configured === false)
 const selectedRangeLabel = computed(() => rangeLabel(selectedRange.value))
 const snapshotRangeLabel = computed(() => rangeLabel(snapshotRange.value))
 const dashboardTitle = computed(() => {
@@ -154,6 +173,10 @@ const dashboardSubtitle = computed(() => {
 const selectedMemberSubject = computed(() => {
   if (props.memberRoute) return memberRouteSubject.value
   return null
+})
+const canRequestQuotaReset = computed(() => {
+  if (props.memberRoute) return false
+  return (currentSnapshot.value?.group_quotas?.groups?.length ?? 0) > 0
 })
 
 function rangeLabel(range: RangeOption) {
@@ -250,6 +273,32 @@ function selectRange(range: RangeOption) {
 async function handleMultiplierConfirm(event: { subjectUserId: number; groupID: string; payload: UpdateTeamUsageRateMultiplierRequest }) {
   await updateTeamUsageRateMultiplier(event.subjectUserId, event.groupID, event.payload)
   await loadDashboard()
+}
+
+async function openQuotaResetModal() {
+  quotaResetOptionsLoading.value = true
+  try {
+    const res = await getQuotaResetOptions()
+    quotaResetGroups.value = res.data.data?.groups ?? []
+    quotaResetModalOpen.value = true
+  } catch {
+    showToast({ message: t('quotaReset.optionsLoadFailed'), tone: 'error' })
+  } finally {
+    quotaResetOptionsLoading.value = false
+  }
+}
+
+async function submitQuotaResetRequest(payload: { group_id: string; reason: string }) {
+  quotaResetSubmitting.value = true
+  try {
+    await createQuotaResetRequest(payload)
+    quotaResetModalOpen.value = false
+    showToast({ message: t('quotaReset.requestSubmitted'), tone: 'success' })
+  } catch {
+    showToast({ message: t('quotaReset.requestSubmitFailed'), tone: 'error' })
+  } finally {
+    quotaResetSubmitting.value = false
+  }
 }
 
 onMounted(async () => {

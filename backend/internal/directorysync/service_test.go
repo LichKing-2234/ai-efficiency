@@ -233,6 +233,68 @@ func TestCurrentSourceIDUsesLatestSuccessfulApplyRun(t *testing.T) {
 	}
 }
 
+func TestServiceListDepartmentsReturnsDisplayPathAndFiltersByIt(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := client.DirectorySource.Create().
+		SetName("Example Directory").
+		SetDescription("Synthetic organization directory").
+		SetScope("full_company").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		SetScheduleEnabled(false).
+		SetScheduleInterval("daily").
+		SetScheduleTimezone("UTC").
+		SaveX(ctx)
+	run := client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetDepartmentCount(2).
+		SetMemberCount(0).
+		SetCompletedAt(time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)).
+		SaveX(ctx)
+	client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("1684075").
+		SetName("Department Alpha").
+		SetPath("1.488797.1684075").
+		SetLastSeenRunID(run.ID).
+		SaveX(ctx)
+	client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("1684207").
+		SetParentExternalID("1684075").
+		SetName("Team One").
+		SetPath("1.488797.1684075.1684077.1684207").
+		SetLastSeenRunID(run.ID).
+		SaveX(ctx)
+	svc := NewService(client, ServiceOptions{})
+
+	items, err := svc.ListDepartments(ctx, source.ID, "Team One")
+	if err != nil {
+		t.Fatalf("ListDepartments: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1: %#v", len(items), items)
+	}
+	if items[0].Path != "1.488797.1684075.1684077.1684207" {
+		t.Fatalf("path = %q, want raw numeric source path", items[0].Path)
+	}
+	if items[0].DisplayPath != "Department Alpha / Team One" {
+		t.Fatalf("display_path = %q, want name-based hierarchy", items[0].DisplayPath)
+	}
+
+	items, err = svc.ListDepartments(ctx, source.ID, "Department Alpha / Team One")
+	if err != nil {
+		t.Fatalf("ListDepartments by display path: %v", err)
+	}
+	if len(items) != 1 || items[0].ExternalID != "1684207" {
+		t.Fatalf("display path search items = %#v, want child department", items)
+	}
+}
+
 func TestServiceListOffboardingCandidatesUsesCurrentSourceWhenSourceIDMissing(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()

@@ -11,11 +11,16 @@ vi.mock('@/api/auth', () => ({
   devLogin: vi.fn(),
 }))
 
+vi.mock('@/api/workItems', () => ({
+  getWorkItemCounts: vi.fn(),
+}))
+
 function createTestRouter(initialPath = '/') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div>Dashboard</div>' } },
+      { path: '/work-items', component: { template: '<div>Work Items</div>' } },
       { path: '/repos', component: { template: '<div>Repos</div>' } },
       { path: '/events', component: { template: '<div>Events</div>' } },
       { path: '/user', component: { template: '<div>User</div>' } },
@@ -32,10 +37,22 @@ function createTestRouter(initialPath = '/') {
 }
 
 describe('AppSidebar', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     setLocale('en-US')
     vi.clearAllMocks()
+    const api = await import('@/api/workItems') as any
+    api.getWorkItemCounts.mockResolvedValue({
+      data: {
+        data: {
+          quota_reset_approval_count: 0,
+          quota_reset_admin_count: 0,
+          ai_access_setup_count: 0,
+          offboarding_count: 0,
+          total_count: 0,
+        },
+      },
+    })
   })
 
   it('renders app title', async () => {
@@ -80,12 +97,14 @@ describe('AppSidebar', () => {
     const linkTexts = links.map((l) => l.text())
 
     expect(linkTexts).toContain('AI Usage Center')
+    expect(linkTexts).toContain('Work Items')
     expect(linkTexts).toContain('Usage Records')
     expect(linkTexts).toContain('Code Repositories')
     expect(linkTexts).toContain('AI Setup & Configuration')
     expect(linkTexts).not.toContain('Team Usage')
     expect(linkTexts).not.toContain('My Usage')
     expect(links.map((l) => l.attributes('href'))).toContain('/usage')
+    expect(links.map((l) => l.attributes('href'))).toContain('/work-items')
     expect(links.map((l) => l.attributes('href'))).not.toContain('/user/usage')
     expect(links.map((l) => l.attributes('href'))).not.toContain('/team-usage')
     expect(links.map((l) => l.attributes('href'))).not.toContain('/usage/team')
@@ -94,6 +113,50 @@ describe('AppSidebar', () => {
     expect(wrapper.text()).not.toContain('Administration')
     expect(linkTexts).not.toContain('Sessions')
     expect(linkTexts).not.toContain('Admin Console')
+  })
+
+  it('shows the Work Items badge when there is pending work', async () => {
+    const api = await import('@/api/workItems') as any
+    api.getWorkItemCounts.mockResolvedValueOnce({
+      data: {
+        data: {
+          quota_reset_approval_count: 2,
+          quota_reset_admin_count: 0,
+          ai_access_setup_count: 0,
+          offboarding_count: 0,
+          total_count: 2,
+        },
+      },
+    })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore(pinia)
+    auth.user = { id: 2, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'ldap' }
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [pinia, router] },
+    })
+    await flushPromises()
+
+    const badge = wrapper.get('[data-testid="sidebar-work-items-badge"]')
+    expect(badge.text()).toBe('2')
+  })
+
+  it('hides the Work Items badge when the total is zero', async () => {
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppSidebar, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="sidebar-work-items-badge"]').exists()).toBe(false)
   })
 
   it('renders Admin Console link for admin users', async () => {

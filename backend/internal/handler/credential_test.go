@@ -59,3 +59,29 @@ func TestCredentialDeleteRejectsProviderInUse(t *testing.T) {
 		t.Fatalf("delete status = %d body=%s", resp.Code, resp.Body.String())
 	}
 }
+
+func TestCredentialDeleteRejectsQuotaResetNotificationInUse(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+
+	cred := env.client.Credential.Create().
+		SetName("Webhook token").
+		SetDescription("quota reset notification").
+		SetKind(entcredential.KindSecretText).
+		SetPayload("encrypted").
+		SaveX(ctx)
+
+	env.client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetURL("https://hooks.example.com/ai-efficiency").
+		SetAuthType("bearer_token").
+		SetCredentialID(cred.ID).
+		SetCreatedByUserID(1).
+		SetUpdatedByUserID(1).
+		SaveX(ctx)
+
+	resp := doRequest(env, "DELETE", fmt.Sprintf("/api/v1/admin/credentials/%d", cred.ID), nil)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("delete status = %d body=%s", resp.Code, resp.Body.String())
+	}
+}

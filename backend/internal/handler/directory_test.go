@@ -54,8 +54,8 @@ func (f *fakeDirectoryService) ListRuns(context.Context, int) ([]*ent.DirectoryS
 	return []*ent.DirectorySyncRun{{ID: 3, SourceID: 1, Mode: "apply", Status: "completed"}}, nil
 }
 
-func (f *fakeDirectoryService) ListDepartments(context.Context, int, string) ([]*ent.DirectoryDepartment, error) {
-	return []*ent.DirectoryDepartment{{ID: 4, SourceID: 1, ExternalID: "dept-alpha", Name: "Department Alpha"}}, nil
+func (f *fakeDirectoryService) ListDepartments(context.Context, int, string) ([]directorysync.DepartmentOption, error) {
+	return []directorysync.DepartmentOption{{ID: 4, SourceID: 1, ExternalID: "dept-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha"}}, nil
 }
 
 func (f *fakeDirectoryService) ListMembers(context.Context, int, string) ([]*ent.DirectoryMember, error) {

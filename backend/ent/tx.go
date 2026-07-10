@@ -40,6 +40,14 @@ type Tx struct {
 	PrAttributionRun *PrAttributionRunClient
 	// PrRecord is the client for interacting with the PrRecord builders.
 	PrRecord *PrRecordClient
+	// QuotaResetApproverConfig is the client for interacting with the QuotaResetApproverConfig builders.
+	QuotaResetApproverConfig *QuotaResetApproverConfigClient
+	// QuotaResetNotificationSetting is the client for interacting with the QuotaResetNotificationSetting builders.
+	QuotaResetNotificationSetting *QuotaResetNotificationSettingClient
+	// QuotaResetRequest is the client for interacting with the QuotaResetRequest builders.
+	QuotaResetRequest *QuotaResetRequestClient
+	// QuotaResetRequestEvent is the client for interacting with the QuotaResetRequestEvent builders.
+	QuotaResetRequestEvent *QuotaResetRequestEventClient
 	// RelayProvider is the client for interacting with the RelayProvider builders.
 	RelayProvider *RelayProviderClient
 	// RepoConfig is the client for interacting with the RepoConfig builders.
@@ -201,6 +209,10 @@ func (tx *Tx) init() {
 	tx.PRSyncJob = NewPRSyncJobClient(tx.config)
 	tx.PrAttributionRun = NewPrAttributionRunClient(tx.config)
 	tx.PrRecord = NewPrRecordClient(tx.config)
+	tx.QuotaResetApproverConfig = NewQuotaResetApproverConfigClient(tx.config)
+	tx.QuotaResetNotificationSetting = NewQuotaResetNotificationSettingClient(tx.config)
+	tx.QuotaResetRequest = NewQuotaResetRequestClient(tx.config)
+	tx.QuotaResetRequestEvent = NewQuotaResetRequestEventClient(tx.config)
 	tx.RelayProvider = NewRelayProviderClient(tx.config)
 	tx.RepoConfig = NewRepoConfigClient(tx.config)
 	tx.ScmProvider = NewScmProviderClient(tx.config)

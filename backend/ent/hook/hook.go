@@ -177,6 +177,54 @@ func (f PrRecordFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PrRecordMutation", m)
 }
 
+// The QuotaResetApproverConfigFunc type is an adapter to allow the use of ordinary
+// function as QuotaResetApproverConfig mutator.
+type QuotaResetApproverConfigFunc func(context.Context, *ent.QuotaResetApproverConfigMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f QuotaResetApproverConfigFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.QuotaResetApproverConfigMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetApproverConfigMutation", m)
+}
+
+// The QuotaResetNotificationSettingFunc type is an adapter to allow the use of ordinary
+// function as QuotaResetNotificationSetting mutator.
+type QuotaResetNotificationSettingFunc func(context.Context, *ent.QuotaResetNotificationSettingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f QuotaResetNotificationSettingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.QuotaResetNotificationSettingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetNotificationSettingMutation", m)
+}
+
+// The QuotaResetRequestFunc type is an adapter to allow the use of ordinary
+// function as QuotaResetRequest mutator.
+type QuotaResetRequestFunc func(context.Context, *ent.QuotaResetRequestMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f QuotaResetRequestFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.QuotaResetRequestMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetRequestMutation", m)
+}
+
+// The QuotaResetRequestEventFunc type is an adapter to allow the use of ordinary
+// function as QuotaResetRequestEvent mutator.
+type QuotaResetRequestEventFunc func(context.Context, *ent.QuotaResetRequestEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f QuotaResetRequestEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.QuotaResetRequestEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetRequestEventMutation", m)
+}
+
 // The RelayProviderFunc type is an adapter to allow the use of ordinary
 // function as RelayProvider mutator.
 type RelayProviderFunc func(context.Context, *ent.RelayProviderMutation) (ent.Value, error)

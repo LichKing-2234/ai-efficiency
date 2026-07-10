@@ -605,8 +605,10 @@ export interface DirectoryDepartment {
   id: number
   source_id: number
   external_id: string
+  parent_external_id?: string | null
   name: string
   path?: string
+  display_path?: string
 }
 
 export interface DirectoryMember {
@@ -1047,4 +1049,140 @@ export interface UpdateTeamUsageRateMultiplierResponse {
   changed: boolean
   old_effective_monthly_allowance_usd?: number | null
   new_effective_monthly_allowance_usd?: number | null
+}
+
+export type QuotaResetStatus =
+  | 'pending'
+  | 'approved_resetting'
+  | 'approved_reset_succeeded'
+  | 'approved_reset_failed'
+  | 'rejected'
+  | 'cancelled'
+
+export interface QuotaResetOptionGroup {
+  group_id: string
+  group_name: string
+  platform: string
+  daily_usage_usd: number
+  weekly_usage_usd: number
+  monthly_usage_usd: number
+  daily_limit_usd?: number | null
+  weekly_limit_usd?: number | null
+  monthly_limit_usd?: number | null
+}
+
+export interface QuotaResetOptionsResponse {
+  provider_id: number
+  groups: QuotaResetOptionGroup[]
+}
+
+export interface QuotaResetDepartmentPathNode {
+  external_id: string
+  display_path: string
+}
+
+export interface QuotaResetDepartmentPathEvidence {
+  start_department_external_id: string
+  path: QuotaResetDepartmentPathNode[]
+  matched_department_external_id?: string
+  matched_approver_user_ids?: number[]
+  resolution: 'matched' | 'no_config_found'
+}
+
+export interface QuotaResetRequestEvent {
+  id: number
+  request_id: number
+  actor_user_id?: number | null
+  event_type: string
+  metadata?: Record<string, unknown>
+  error_message?: string
+  created_at: string
+}
+
+export interface QuotaResetRequestSummary {
+  id: number
+  requester_user_id: number
+  requester_display_name?: string
+  requester_email?: string
+  provider_id: number
+  group_id: string
+  group_name: string
+  group_platform: string
+  reason: string
+  status: QuotaResetStatus
+  resolved_approver_user_ids: number[]
+  matched_department_paths?: QuotaResetDepartmentPathEvidence[]
+  approved_by_user_id?: number | null
+  rejected_by_user_id?: number | null
+  decision_reason?: string
+  reset_error?: string
+  created_at: string
+  updated_at: string
+  events?: QuotaResetRequestEvent[]
+}
+
+export interface QuotaResetRequestListResponse {
+  items: QuotaResetRequestSummary[]
+  page: number
+  page_size: number
+  total: number
+}
+
+export interface QuotaResetApproverConfig {
+  id: number
+  directory_source_id: number
+  department_external_id: string
+  department_display_path: string
+  approver_user_id: number
+  approver_username: string
+  approver_email: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface QuotaResetApproverConfigInput {
+  department_external_id: string
+  department_display_path: string
+  approver_user_id: number
+  enabled: boolean
+}
+
+export interface QuotaResetApproverConfigListResponse {
+  items: QuotaResetApproverConfig[]
+}
+
+export interface QuotaResetApproverCandidate {
+  user_id: number
+  username: string
+  email: string
+  display_name: string
+  directory_member_external_id: string
+}
+
+export interface QuotaResetUnmatchedApproverRepresentative {
+  directory_member_external_id: string
+  display_name?: string
+  email?: string
+}
+
+export interface QuotaResetApproverCandidateListResponse {
+  items: QuotaResetApproverCandidate[]
+  unmatched_representatives?: QuotaResetUnmatchedApproverRepresentative[]
+}
+
+export interface QuotaResetNotificationSettings {
+  enabled: boolean
+  url: string
+  auth_type: 'none' | 'bearer_token'
+  credential_id?: number | null
+  updated_at?: string
+}
+
+export interface WorkItemCounts {
+  quota_reset_approval_count: number
+  quota_reset_admin_count: number
+  ai_access_setup_count: number
+  offboarding_count: number
+  total_count: number
 }

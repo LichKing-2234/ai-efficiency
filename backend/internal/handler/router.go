@@ -6,11 +6,13 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/ai-efficiency/backend/internal/webhook"
+	"github.com/ai-efficiency/backend/internal/workitems"
 	"github.com/gin-gonic/gin"
 )
 
@@ -35,6 +37,7 @@ func SetupRouter(
 	syncService prSyncer,
 	settingsHandler *SettingsHandler,
 	encryptionKey string,
+	publicURL string,
 	corsMiddleware gin.HandlerFunc,
 	oauthHandler *oauth.Handler,
 	providerHandler *ProviderHandler,
@@ -77,9 +80,22 @@ func SetupRouter(
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
+	workItemsService := workitems.NewService(entClient)
+	if providerHandler != nil {
+		workItemsService = workitems.NewService(entClient, userSetupService)
+	}
+	workItemsHandler := NewWorkItemsHandler(workItemsService)
+	var quotaResetHandler *QuotaResetHandler
 	if providerHandler != nil {
 		adminUsersHandler = NewAdminUsersHandler(entClient, encryptionKey, providerHandler)
 		adminUsersHandler.logger = providerHandler.logger
+		quotaResetService := quotareset.NewService(
+			entClient,
+			providerHandler,
+			quotareset.NewApproverResolver(entClient),
+			quotareset.NewWebhookNotifier(entClient, encryptionKey, publicURL),
+		)
+		quotaResetHandler = NewQuotaResetHandler(quotaResetService)
 	}
 
 	api := r.Group("/api/v1")
@@ -191,11 +207,23 @@ func SetupRouter(
 		eventsGroup.GET("/:id", eventsHandler.Get)
 	}
 
+	RegisterWorkItemsRoutes(protected, workItemsHandler)
+
 	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler))
 
 	userGroup := protected.Group("/user")
 	{
 		userGroup.GET("/providers", userSetupHandler.ListProviders)
+		if quotaResetHandler != nil {
+			userGroup.GET("/quota-reset/options", quotaResetHandler.Options)
+			userGroup.POST("/quota-reset/requests", quotaResetHandler.CreateRequest)
+			userGroup.GET("/quota-reset/requests", quotaResetHandler.ListMine)
+			userGroup.POST("/quota-reset/requests/:id/cancel", quotaResetHandler.Cancel)
+			userGroup.GET("/quota-reset/approvals", quotaResetHandler.ListApprovals)
+			userGroup.POST("/quota-reset/approvals/:id/approve", quotaResetHandler.Approve)
+			userGroup.POST("/quota-reset/approvals/:id/reject", quotaResetHandler.Reject)
+			userGroup.POST("/quota-reset/approvals/:id/retry-reset", quotaResetHandler.RetryReset)
+		}
 		userGroup.GET("/team-usage/scope", teamUsageHandler.Scope)
 		userGroup.GET("/team-usage/subjects", teamUsageHandler.Subjects)
 		userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamUsageHandler.SubjectDashboard)
@@ -255,6 +283,23 @@ func SetupRouter(
 	adminTeamUsageGroup.Use(auth.RequireAdmin())
 	{
 		adminTeamUsageGroup.GET("/audit", teamUsageHandler.AdminAudit)
+	}
+
+	if quotaResetHandler != nil {
+		adminQuotaResetGroup := protected.Group("/admin/quota-reset")
+		adminQuotaResetGroup.Use(auth.RequireAdmin())
+		{
+			adminQuotaResetGroup.GET("/approver-candidates", quotaResetHandler.ListApproverCandidates)
+			adminQuotaResetGroup.GET("/approver-configs", quotaResetHandler.ListApproverConfigs)
+			adminQuotaResetGroup.PUT("/approver-configs", quotaResetHandler.SaveApproverConfigs)
+			adminQuotaResetGroup.GET("/requests", quotaResetHandler.ListAdmin)
+			adminQuotaResetGroup.POST("/requests/:id/approve", quotaResetHandler.AdminApprove)
+			adminQuotaResetGroup.POST("/requests/:id/reject", quotaResetHandler.AdminReject)
+			adminQuotaResetGroup.POST("/requests/:id/retry-reset", quotaResetHandler.AdminRetryReset)
+			adminQuotaResetGroup.GET("/notification-settings", quotaResetHandler.GetNotificationSettings)
+			adminQuotaResetGroup.PUT("/notification-settings", quotaResetHandler.UpdateNotificationSettings)
+			adminQuotaResetGroup.POST("/notification-settings/test", quotaResetHandler.TestNotificationSettings)
+		}
 	}
 
 	adminCredentialGroup := protected.Group("/admin/credentials")

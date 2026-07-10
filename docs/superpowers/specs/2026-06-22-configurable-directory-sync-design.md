@@ -492,6 +492,12 @@ GET /api/v1/admin/directory/members?source_id=1&q=alice&department_id=dept-alpha
 
 Responses must not include raw unredacted metadata by default.
 
+Department rows include the source `path` plus a backend-computed, name-based
+`display_path`. Search must match `name`, `external_id`, source `path`, and
+`display_path`. UI surfaces should render `display_path` first and treat source
+`path` as a secondary technical field because some directory APIs use numeric
+ID chains for `path`.
+
 The product UI treats organization data as one current company snapshot. `source_id`
 is a persistence detail for the directory sync module and must not be exposed as a
 normal selector in `/admin/users`. Admin-facing user management APIs that need

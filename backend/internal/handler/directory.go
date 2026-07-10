@@ -25,7 +25,7 @@ type DirectoryAdminService interface {
 	ExecuteRun(ctx context.Context, runID int) (*ent.DirectorySyncRun, error)
 	GetRun(ctx context.Context, runID int) (*ent.DirectorySyncRun, error)
 	ListRuns(ctx context.Context, sourceID int) ([]*ent.DirectorySyncRun, error)
-	ListDepartments(ctx context.Context, sourceID int, q string) ([]*ent.DirectoryDepartment, error)
+	ListDepartments(ctx context.Context, sourceID int, q string) ([]directorysync.DepartmentOption, error)
 	ListMembers(ctx context.Context, sourceID int, q string) ([]*ent.DirectoryMember, error)
 	ListOffboardingCandidates(ctx context.Context, sourceID int, q string) ([]directorysync.OffboardingCandidate, error)
 	DisableRelayUserForCandidate(ctx context.Context, req directorysync.DisableCandidateRequest) (*ent.DirectoryOffboardingAction, error)

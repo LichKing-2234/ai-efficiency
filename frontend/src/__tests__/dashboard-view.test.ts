@@ -51,6 +51,11 @@ vi.mock('@/api/teamUsage', () => ({
   updateTeamUsageRateMultiplier: vi.fn(),
 }))
 
+vi.mock('@/api/quotaReset', () => ({
+  getQuotaResetOptions: vi.fn(),
+  createQuotaResetRequest: vi.fn(),
+}))
+
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
   getMe: vi.fn(),
@@ -122,6 +127,8 @@ function createTestRouter() {
       { path: '/usage', name: 'Usage', component: DashboardView },
       { path: '/usage/members/:user_id', name: 'UsageMember', component: DashboardView },
       { path: '/usage/team', name: 'UsageTeam', component: { template: '<div>Team Usage</div>' } },
+      { path: '/usage/quota-reset', name: 'UsageQuotaReset', component: { template: '<div>Quota Reset</div>' } },
+      { path: '/work-items', name: 'WorkItems', component: { template: '<div>Work Items</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
       { path: '/repos', component: { template: '<div>Repos</div>' } },
       { path: '/events', component: { template: '<div>Events</div>' } },
@@ -140,7 +147,9 @@ describe('DashboardView', () => {
 
   it('renders personal AI usage title', async () => {
     const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
     ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
 
     const router = createTestRouter()
     await router.push('/')
@@ -151,16 +160,16 @@ describe('DashboardView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.find('h1').text()).toContain('Complete AI setup first')
+    expect(getUserProviders).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('My Usage')
     expect(wrapper.text()).toContain('AI Usage Center')
+    expect(wrapper.find('a[href="/usage/quota-reset"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Platform Signals')
   })
 
   it('displays loading state initially', async () => {
-    const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     // Never resolve to keep loading state
-    ;(getUserProviders as any).mockReturnValue(new Promise(() => {}))
     ;(getUserUsageDashboard as any).mockReturnValue(new Promise(() => {}))
 
     const router = createTestRouter()
@@ -189,6 +198,7 @@ describe('DashboardView', () => {
     })
     await flushPromises()
 
+    expect(getUserProviders).not.toHaveBeenCalled()
     expect((getUserUsageDashboard as any).mock.calls[0][0]).toMatchObject({
       granularity: 'day',
       start_date: expect.any(String),
@@ -222,15 +232,17 @@ describe('DashboardView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Complete AI setup first')
-    expect(wrapper.text()).toContain('Go to AI Setup & Configuration')
+    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).not.toContain('Complete AI setup first')
+    expect(wrapper.text()).not.toContain('Complete AI service configuration')
+    expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
     expect(wrapper.text()).not.toContain('Check recent records')
     expect(wrapper.text()).not.toContain('Connect a repository')
     expect(wrapper.text()).not.toContain('I am an engineer')
     expect(wrapper.text()).not.toContain('Platform Signals')
   })
 
-  it('uses provider credentials to mark AI setup done inside the guide card', async () => {
+  it('does not load provider credentials to classify homepage setup state', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     ;(getUserProviders as any).mockResolvedValue({
@@ -296,10 +308,11 @@ describe('DashboardView', () => {
 
     await flushPromises()
 
-    expect(getUserProviders).toHaveBeenCalled()
-    expect(wrapper.text()).toContain('AI setup is ready, start your first usage')
-    expect(wrapper.text()).toContain('AI setup')
-    expect(wrapper.text()).toContain('Done')
+    expect(getUserProviders).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).not.toContain('AI setup is ready, start your first usage')
+    expect(wrapper.text()).not.toContain('AI setup')
+    expect(wrapper.text()).not.toContain('Done')
     expect(wrapper.text()).not.toContain('Code association')
   })
 
@@ -319,8 +332,9 @@ describe('DashboardView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Unable to load your current homepage status')
-    expect(wrapper.text()).toContain('Go to AI Setup & Configuration')
+    expect(getUserProviders).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Usage dashboard is temporarily unavailable')
+    expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
   })
 
   it('renders the embedded usage dashboard without cost cards', async () => {
@@ -1029,6 +1043,66 @@ describe('DashboardView', () => {
     expect(wrapper.text()).toContain('My Usage')
   })
 
+  it('opens quota reset request modal from group quota cards and submits a request', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { getQuotaResetOptions, createQuotaResetRequest } = await import('@/api/quotaReset')
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [
+            {
+              id: 1,
+              name: 'prod',
+              display_name: 'Production',
+              base_url: 'https://relay.example.com',
+              default_model: 'gpt-5.4',
+              is_primary: true,
+              groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'existing_hidden' } }],
+            },
+          ],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshotWithQuotas } })
+    ;(getQuotaResetOptions as any).mockResolvedValue({
+      data: {
+        data: {
+          provider_id: 1,
+          groups: [
+            {
+              group_id: '42',
+              group_name: 'Group Alpha',
+              platform: 'openai',
+              daily_usage_usd: 10,
+              weekly_usage_usd: 20,
+              monthly_usage_usd: 30,
+            },
+          ],
+        },
+      },
+    })
+    ;(createQuotaResetRequest as any).mockResolvedValue({ data: { data: { id: 9, status: 'pending' } } })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="open-quota-reset-request"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('textarea').setValue('Need reset for a build investigation')
+    await wrapper.get('[data-testid="quota-reset-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(getQuotaResetOptions).toHaveBeenCalled()
+    expect(createQuotaResetRequest).toHaveBeenCalledWith({
+      group_id: '42',
+      reason: 'Need reset for a build investigation',
+    })
+  })
+
   it('hides the quota section when the snapshot reports empty quotas', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
@@ -1110,7 +1184,7 @@ describe('DashboardView', () => {
     expect(wrapper.find('[data-testid="usage-group-quotas-loading"]').exists()).toBe(false)
   })
 
-  it('shows the expanded guide card for users without any reusable AI access', async () => {
+  it('does not render a homepage guide card for users without reusable AI access', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     ;(getUserProviders as any).mockResolvedValue({
@@ -1147,12 +1221,61 @@ describe('DashboardView', () => {
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Complete AI setup first')
-    expect(wrapper.text()).toContain('Go to AI Setup & Configuration')
+    expect(getUserProviders).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).not.toContain('Complete AI setup first')
+    expect(wrapper.text()).not.toContain('Complete AI service configuration')
+    expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
     expect(wrapper.text()).not.toContain('Platform Signals')
   })
 
-  it('keeps the guide card expanded when AI access exists but no effective usage data is available', async () => {
+  it('keeps missing AI access reminders out of the home page', async () => {
+    const { getUserProviders } = await import('@/api/user')
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserProviders as any).mockResolvedValue({
+      data: {
+        data: {
+          providers: [
+            {
+              id: 1,
+              name: 'prod',
+              display_name: 'Production',
+              base_url: 'https://relay.example.com',
+              default_model: 'gpt-5.4',
+              is_primary: true,
+              groups: [{ group_id: '42', group_name: 'Group Alpha', platform: 'openai', credential: { state: 'missing' } }],
+            },
+          ],
+        },
+      },
+    })
+    ;(getUserUsageDashboard as any).mockResolvedValue({
+      data: {
+        data: {
+          configured: false,
+          range: { start_date: '2026-06-09', end_date: '2026-06-15', granularity: 'day', timezone: 'Asia/Shanghai' },
+          stats: null,
+          trend: [],
+          models: [],
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).not.toContain('Complete AI setup first')
+    expect(wrapper.text()).not.toContain('Complete AI service configuration')
+    expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
+  })
+
+  it('keeps users with access but no effective usage on the usage dashboard', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     ;(getUserProviders as any).mockResolvedValue({
@@ -1209,11 +1332,14 @@ describe('DashboardView', () => {
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('AI setup is ready, start your first usage')
-    expect(wrapper.text()).toContain('Go to AI Setup & Configuration')
+    expect(getUserProviders).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('My Usage')
+    expect(wrapper.text()).not.toContain('AI setup is ready, start your first usage')
+    expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
   })
 
-  it('shows usage first and collapses the guide card for established users', async () => {
+  it('shows usage without a setup guide for established users', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     ;(getUserProviders as any).mockResolvedValue({
@@ -1241,8 +1367,10 @@ describe('DashboardView', () => {
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('AI setup completed')
-    expect(wrapper.text()).toContain('View setup guidance')
+    expect(getUserProviders).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid^="home-guide-"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('AI setup completed')
+    expect(wrapper.text()).not.toContain('View setup guidance')
     expect(wrapper.text()).toContain('My Usage')
     expect(wrapper.text()).not.toContain('Check recent records')
     expect(wrapper.text()).not.toContain('Connect a repository')
@@ -1284,7 +1412,7 @@ describe('DashboardView', () => {
     expect(wrapper.find('[data-testid="home-developer-toggle"]').exists()).toBe(false)
   })
 
-  it('shows a degraded-state warning instead of misclassifying provider or usage failures as setup-needed', async () => {
+  it('shows a usage unavailable state instead of setup guidance when homepage data fails', async () => {
     const { getUserProviders } = await import('@/api/user')
     const { getUserUsageDashboard } = await import('@/api/userUsage')
     ;(getUserProviders as any).mockRejectedValue(new Error('provider network error'))
@@ -1296,7 +1424,9 @@ describe('DashboardView', () => {
     const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Unable to load your current homepage status')
+    expect(getUserProviders).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Usage dashboard is temporarily unavailable')
     expect(wrapper.text()).not.toContain('Complete AI setup first')
+    expect(wrapper.text()).not.toContain('Go to AI Setup & Configuration')
   })
 })

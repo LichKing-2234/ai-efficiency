@@ -7,6 +7,11 @@ const props = defineProps<{
   quotas?: UserUsageGroupQuotaState | null
   loading?: boolean
   rangeLabel?: string
+  showResetRequest?: boolean
+}>()
+
+defineEmits<{
+  requestReset: []
 }>()
 
 const { t } = useI18n()
@@ -71,6 +76,15 @@ function quotaTitle(rangeLabel?: string) {
         <h2 class="text-base font-semibold text-gray-900">{{ quotaTitle(props.rangeLabel) }}</h2>
         <p class="mt-1 text-sm text-gray-500">{{ t('usageDashboard.groupQuotasHelp') }}</p>
       </div>
+      <button
+        v-if="props.showResetRequest"
+        type="button"
+        class="inline-flex shrink-0 rounded-md border border-cyan-700 px-3 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50"
+        data-testid="open-quota-reset-request"
+        @click="$emit('requestReset')"
+      >
+        {{ t('quotaReset.requestReset') }}
+      </button>
     </div>
 
     <div v-if="props.loading" class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3" data-testid="usage-group-quotas-loading">

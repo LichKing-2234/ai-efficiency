@@ -2,8 +2,9 @@
 import { useI18n } from '@/i18n'
 
 defineProps<{
-  active: 'personal' | 'team'
+  active: 'personal' | 'team' | 'quota-reset'
   showTeam?: boolean
+  showQuotaReset?: boolean
 }>()
 
 const { t } = useI18n()
@@ -25,6 +26,13 @@ function linkClass(active: boolean) {
     </RouterLink>
     <RouterLink v-if="showTeam || active === 'team'" to="/usage/team" :class="linkClass(active === 'team')">
       {{ t('usageDashboard.teamTab') }}
+    </RouterLink>
+    <RouterLink
+      v-if="showQuotaReset || active === 'quota-reset'"
+      to="/usage/quota-reset"
+      :class="linkClass(active === 'quota-reset')"
+    >
+      {{ t('quotaReset.tab') }}
     </RouterLink>
   </div>
 </template>

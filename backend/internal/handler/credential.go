@@ -7,6 +7,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
+	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -198,18 +199,13 @@ func (h *CredentialHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	count, err := h.entClient.ScmProvider.Query().
-		Where(scmprovider.Or(
-			scmprovider.APICredentialIDEQ(id),
-			scmprovider.CloneCredentialIDEQ(id),
-		)).
-		Count(c.Request.Context())
+	usageCount, err := h.credentialUsageCount(c, id)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "failed to check credential usage")
 		return
 	}
-	if count > 0 {
-		pkg.Error(c, http.StatusConflict, "credential is still referenced by scm providers")
+	if usageCount > 0 {
+		pkg.Error(c, http.StatusConflict, "credential is still referenced")
 		return
 	}
 
@@ -238,12 +234,7 @@ func (h *CredentialHandler) toResponse(c *gin.Context, row *ent.Credential) (cre
 }
 
 func (h *CredentialHandler) toResponseFromPayload(c *gin.Context, row *ent.Credential, payload credential.Payload) (credentialResponse, error) {
-	usageCount, err := h.entClient.ScmProvider.Query().
-		Where(scmprovider.Or(
-			scmprovider.APICredentialIDEQ(row.ID),
-			scmprovider.CloneCredentialIDEQ(row.ID),
-		)).
-		Count(c.Request.Context())
+	usageCount, err := h.credentialUsageCount(c, row.ID)
 	if err != nil {
 		return credentialResponse{}, err
 	}
@@ -257,4 +248,23 @@ func (h *CredentialHandler) toResponseFromPayload(c *gin.Context, row *ent.Crede
 		CreatedAt:   row.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   row.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}, nil
+}
+
+func (h *CredentialHandler) credentialUsageCount(c *gin.Context, credentialID int) (int, error) {
+	scmCount, err := h.entClient.ScmProvider.Query().
+		Where(scmprovider.Or(
+			scmprovider.APICredentialIDEQ(credentialID),
+			scmprovider.CloneCredentialIDEQ(credentialID),
+		)).
+		Count(c.Request.Context())
+	if err != nil {
+		return 0, err
+	}
+	notificationCount, err := h.entClient.QuotaResetNotificationSetting.Query().
+		Where(quotaresetnotificationsetting.CredentialIDEQ(credentialID)).
+		Count(c.Request.Context())
+	if err != nil {
+		return 0, err
+	}
+	return scmCount + notificationCount, nil
 }

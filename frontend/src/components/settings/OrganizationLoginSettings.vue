@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from '@/i18n'
 import DirectorySyncSettings from '@/components/settings/DirectorySyncSettings.vue'
+import QuotaResetApprovalSettings from '@/components/settings/QuotaResetApprovalSettings.vue'
 import type { Credential } from '@/types'
 
 const { t } = useI18n()
@@ -76,6 +77,7 @@ defineEmits<{
         </div>
       </div>
     </div>
+    <QuotaResetApprovalSettings :credentials="credentials" />
     <DirectorySyncSettings :credentials="credentials" />
   </div>
 </template>

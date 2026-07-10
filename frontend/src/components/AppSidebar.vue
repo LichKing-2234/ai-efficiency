@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkItemsStore } from '@/stores/workItems'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/i18n'
 
@@ -13,6 +14,7 @@ const emit = defineEmits<{
 }>()
 
 const auth = useAuthStore()
+const workItems = useWorkItemsStore()
 const router = useRouter()
 const { languageToggleLabel, t, toggleLocale } = useI18n()
 const displayUsername = computed(() => auth.user?.username ?? 'User')
@@ -21,6 +23,14 @@ const usageLinkClass = computed(() => [
   'flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800',
   router.currentRoute.value.path.startsWith('/usage') ? 'bg-gray-800' : '',
 ])
+const workItemsLinkClass = computed(() => [
+  'flex items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-gray-800',
+  router.currentRoute.value.path.startsWith('/work-items') ? 'bg-gray-800' : '',
+])
+
+onMounted(() => {
+  void workItems.loadCounts()
+})
 
 function handleLogout() {
   auth.logout()
@@ -65,6 +75,25 @@ function handleNavigate() {
             d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1" />
         </svg>
         {{ t('nav.myUsage') }}
+      </RouterLink>
+
+      <RouterLink
+        to="/work-items"
+        :class="workItemsLinkClass"
+        @click="handleNavigate"
+      >
+        <svg class="mr-3 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 7l2 2 4-4" />
+        </svg>
+        <span class="min-w-0 flex-1 truncate">{{ t('nav.workItems') }}</span>
+        <span
+          v-if="workItems.totalCount > 0"
+          data-testid="sidebar-work-items-badge"
+          class="ml-2 inline-flex min-w-6 shrink-0 justify-center rounded-full bg-cyan-500 px-1.5 py-0.5 text-xs font-semibold text-white"
+        >
+          {{ workItems.badgeLabel }}
+        </span>
       </RouterLink>
 
       <RouterLink
