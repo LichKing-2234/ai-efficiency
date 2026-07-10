@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkItemsStore } from '@/stores/workItems'
 
 // Mock the auth API
 vi.mock('@/api/auth', () => ({
@@ -9,10 +10,15 @@ vi.mock('@/api/auth', () => ({
   devLogin: vi.fn(),
 }))
 
+vi.mock('@/api/workItems', () => ({
+  getWorkItemCounts: vi.fn(),
+}))
+
 describe('Auth Store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    vi.clearAllMocks()
   })
 
   it('starts unauthenticated when no token in localStorage', () => {
@@ -42,6 +48,30 @@ describe('Auth Store', () => {
     expect(store.isAuthenticated).toBe(false)
     expect(localStorage.getItem('token')).toBeNull()
     expect(localStorage.getItem('refresh_token')).toBeNull()
+  })
+
+  it('logout clears work-item counts from the previous user', async () => {
+    const workItemsApi = await import('@/api/workItems') as any
+    workItemsApi.getWorkItemCounts.mockResolvedValue({
+      data: {
+        data: {
+          quota_reset_approval_count: 2,
+          quota_reset_admin_count: 0,
+          ai_access_setup_count: 0,
+          offboarding_count: 0,
+          total_count: 2,
+        },
+      },
+    })
+    const auth = useAuthStore()
+    const workItems = useWorkItemsStore()
+    await workItems.loadCounts()
+
+    auth.logout()
+
+    expect(workItems.totalCount).toBe(0)
+    expect(workItems.loaded).toBe(false)
+    expect(workItems.error).toBe('')
   })
 
   it('login stores token and fetches user', async () => {

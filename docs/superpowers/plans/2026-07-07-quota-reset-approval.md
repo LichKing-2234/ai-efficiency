@@ -10,7 +10,17 @@
 
 ---
 
-**Status:** Complete. The original quota reset approval implementation and all earlier follow-ups remain complete and verified. The 2026-07-10 stability follow-up fixed department dropdown request ordering, sidebar item order, and Work Items count loading resilience, with focused and full-suite verification.
+**Status:** Complete. The quota reset approval implementation and all follow-ups are complete and verified. The 2026-07-10 actionable queue badge correction aligns workbench badges with shared Work Items counts, keeps queue history independent from supplemental count loading, and isolates counts across authenticated sessions.
+
+## User Feedback Follow-up - 2026-07-10 Actionable Queue Badges
+
+- [x] Reproduce the successful historical request incorrectly keeping the admin queue badge visible.
+- [x] Add a failing frontend regression that distinguishes requester history totals from actionable approval counts.
+- [x] Source approval and admin queue badges from the shared Work Items counts and refresh them after workflow actions.
+- [x] Update the current quota reset approval spec with the corrected badge contract.
+- [x] Keep count loading from blocking quota-reset history and isolate shared counts across authenticated sessions.
+- [x] Force one fresh count request after actions even when a pre-action count request is still in flight.
+- [x] Re-run focused tests, full frontend tests, frontend build, browser acceptance, and diff verification after code review fixes.
 
 ## User Feedback Follow-up - 2026-07-10 Stability Fixes
 
@@ -86,7 +96,7 @@
 
 - [x] Add backend work item counts for pending quota reset approvals, admin quota reset fallback queue, and directory offboarding candidates.
 - [x] Add a user-visible `/work-items` route and sidebar badge, using `total_count` with `99+` overflow formatting and hiding zero counts.
-- [x] Keep `/usage/quota-reset` as the quota workflow detail page and show queue count badges from list totals.
+- [x] Keep `/usage/quota-reset` as the quota workflow detail page. Its original list-total badge behavior is superseded by the 2026-07-10 actionable queue badge follow-up.
 - [x] Make the AI Usage Center quota reset tab visible for ordinary users from `/usage`.
 - [x] Replace the approver settings add form's raw department ID entry with current Directory Sync department search/selection.
 - [x] Run focused backend and frontend regressions for the follow-up.

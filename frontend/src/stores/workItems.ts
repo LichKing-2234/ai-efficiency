@@ -31,31 +31,49 @@ export const useWorkItemsStore = defineStore('workItems', () => {
   const loaded = ref(false)
   const error = ref('')
   let loadPromise: Promise<void> | null = null
+  let sessionGeneration = 0
 
   const totalCount = computed(() => counts.value.total_count)
   const badgeLabel = computed(() => formatWorkItemCount(totalCount.value))
 
-  function loadCounts() {
-    if (loadPromise) return loadPromise
+  function loadCounts(options: { force?: boolean } = {}): Promise<void> {
+    if (loadPromise) {
+      return options.force ? loadPromise.then(() => loadCounts()) : loadPromise
+    }
     loading.value = true
     error.value = ''
-    loadPromise = (async () => {
+    const requestGeneration = sessionGeneration
+    const request = (async () => {
       try {
         const res = await getWorkItemCounts()
+        if (requestGeneration !== sessionGeneration) return
         counts.value = normalizeCounts(res.data.data)
         loaded.value = true
       } catch {
+        if (requestGeneration !== sessionGeneration) return
         error.value = 'failed'
         if (!loaded.value) {
           counts.value = { ...emptyCounts }
         }
       } finally {
-        loading.value = false
-        loadPromise = null
+        if (requestGeneration === sessionGeneration) {
+          loading.value = false
+          loadPromise = null
+        }
       }
     })()
-    return loadPromise
+    loadPromise = request
+    return request
   }
 
-  return { counts, loading, loaded, error, totalCount, badgeLabel, loadCounts }
+  function resetCounts() {
+    sessionGeneration += 1
+    counts.value = { ...emptyCounts }
+    loading.value = false
+    loaded.value = false
+    error.value = ''
+    loadPromise = null
+  }
+
+  return { counts, loading, loaded, error, totalCount, badgeLabel, loadCounts, resetCounts }
 })

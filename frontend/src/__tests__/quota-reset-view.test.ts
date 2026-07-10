@@ -25,6 +25,10 @@ vi.mock('@/api/quotaReset', () => ({
   adminRetryQuotaResetRequest: vi.fn(),
 }))
 
+vi.mock('@/api/workItems', () => ({
+  getWorkItemCounts: vi.fn(),
+}))
+
 const mineRequest = {
   id: 1,
   requester_user_id: 10,
@@ -49,6 +53,14 @@ const approvalRequest = {
   requester_email: 'bob@example.org',
   group_name: 'Group Beta',
   reason: 'Need reset for release validation',
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
 }
 
 function createTestRouter() {
@@ -81,15 +93,28 @@ beforeEach(async () => {
   setLocale('en-US')
   vi.clearAllMocks()
   const api = await import('@/api/quotaReset') as any
+  const workItemsApi = await import('@/api/workItems') as any
   api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 1 } } })
   api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 7 } } })
   api.listAdminQuotaResetRequests.mockResolvedValue({ data: { data: { items: [], page: 1, page_size: 20, total: 0 } } })
   api.approveQuotaResetRequest.mockResolvedValue({ data: { data: { ...approvalRequest, status: 'approved_reset_succeeded' } } })
+  workItemsApi.getWorkItemCounts.mockResolvedValue({
+    data: {
+      data: {
+        quota_reset_approval_count: 2,
+        quota_reset_admin_count: 3,
+        ai_access_setup_count: 0,
+        offboarding_count: 0,
+        total_count: 3,
+      },
+    },
+  })
 })
 
 describe('QuotaResetView', () => {
   it('loads my requests and approval queue, then approves a pending request', async () => {
     const api = await import('@/api/quotaReset') as any
+    const workItemsApi = await import('@/api/workItems') as any
     const wrapper = await mountQuotaResetView()
 
     expect(api.listMyQuotaResetRequests).toHaveBeenCalled()
@@ -103,6 +128,46 @@ describe('QuotaResetView', () => {
 
     expect(api.approveQuotaResetRequest).toHaveBeenCalledWith(2, {})
     expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(2)
+    expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
+  })
+
+  it('forces a fresh actionable-count request when an action finishes during an in-flight load', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const workItemsApi = await import('@/api/workItems') as any
+    const initialCounts = deferred<any>()
+    workItemsApi.getWorkItemCounts
+      .mockReturnValueOnce(initialCounts.promise)
+      .mockResolvedValueOnce({
+        data: {
+          data: {
+            quota_reset_approval_count: 0,
+            quota_reset_admin_count: 0,
+            ai_access_setup_count: 0,
+            offboarding_count: 0,
+            total_count: 0,
+          },
+        },
+      })
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-approve-2"]').trigger('click')
+
+    initialCounts.resolve({
+      data: {
+        data: {
+          quota_reset_approval_count: 1,
+          quota_reset_admin_count: 0,
+          ai_access_setup_count: 0,
+          offboarding_count: 0,
+          total_count: 1,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(api.approveQuotaResetRequest).toHaveBeenCalledWith(2, {})
+    expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="quota-reset-tab-approvals-count"]').exists()).toBe(false)
   })
 
   it('loads admin queue for admins', async () => {
@@ -116,7 +181,7 @@ describe('QuotaResetView', () => {
     expect(wrapper.text()).toContain('Group Beta')
   })
 
-  it('uses list totals as queue tab badges', async () => {
+  it('uses historical totals for my requests and actionable counts for approval queues', async () => {
     const api = await import('@/api/quotaReset') as any
     api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 4 } } })
     api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 7 } } })
@@ -125,8 +190,79 @@ describe('QuotaResetView', () => {
     const wrapper = await mountQuotaResetView('admin')
 
     expect(wrapper.get('[data-testid="quota-reset-tab-mine-count"]').text()).toBe('4')
-    expect(wrapper.get('[data-testid="quota-reset-tab-approvals-count"]').text()).toBe('7')
-    expect(wrapper.get('[data-testid="quota-reset-tab-admin-count"]').text()).toBe('12')
+    expect(wrapper.get('[data-testid="quota-reset-tab-approvals-count"]').text()).toBe('2')
+    expect(wrapper.get('[data-testid="quota-reset-tab-admin-count"]').text()).toBe('3')
+  })
+
+  it('does not show approval badges for completed history when actionable counts are zero', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const workItemsApi = await import('@/api/workItems') as any
+    const succeededRequest = {
+      ...mineRequest,
+      requester_user_id: 99,
+      requester_display_name: 'admin',
+      requester_email: 'admin@example.com',
+      status: 'approved_reset_succeeded',
+    }
+    api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [succeededRequest], page: 1, page_size: 20, total: 1 } } })
+    api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [succeededRequest], page: 1, page_size: 20, total: 1 } } })
+    api.listAdminQuotaResetRequests.mockResolvedValue({ data: { data: { items: [succeededRequest], page: 1, page_size: 20, total: 1 } } })
+    workItemsApi.getWorkItemCounts.mockResolvedValue({
+      data: {
+        data: {
+          quota_reset_approval_count: 0,
+          quota_reset_admin_count: 0,
+          ai_access_setup_count: 0,
+          offboarding_count: 0,
+          total_count: 0,
+        },
+      },
+    })
+
+    const wrapper = await mountQuotaResetView('admin')
+
+    expect(wrapper.get('[data-testid="quota-reset-tab-mine-count"]').text()).toBe('1')
+    expect(wrapper.find('[data-testid="quota-reset-tab-approvals-count"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-tab-admin-count"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Group Alpha')
+
+    await wrapper.get('[data-testid="quota-reset-tab-admin"]').trigger('click')
+    expect(wrapper.text()).toContain('Group Alpha')
+  })
+
+  it('renders queue history without waiting for actionable counts', async () => {
+    const workItemsApi = await import('@/api/workItems') as any
+    const pendingCounts = deferred<any>()
+    workItemsApi.getWorkItemCounts.mockReturnValue(pendingCounts.promise)
+
+    const wrapper = await mountQuotaResetView('admin')
+
+    expect(wrapper.text()).toContain('Group Alpha')
+
+    pendingCounts.resolve({
+      data: {
+        data: {
+          quota_reset_approval_count: 0,
+          quota_reset_admin_count: 0,
+          ai_access_setup_count: 0,
+          offboarding_count: 0,
+          total_count: 0,
+        },
+      },
+    })
+    await flushPromises()
+  })
+
+  it('keeps queue history available when actionable counts fail to load', async () => {
+    const workItemsApi = await import('@/api/workItems') as any
+    workItemsApi.getWorkItemCounts.mockRejectedValue(new Error('counts unavailable'))
+
+    const wrapper = await mountQuotaResetView('admin')
+
+    expect(wrapper.text()).toContain('Group Alpha')
+    expect(wrapper.find('[data-testid="quota-reset-tab-approvals-count"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-tab-admin-count"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Failed to load quota reset requests')
   })
 
   it('separates queue switching from lighter status filters', async () => {
