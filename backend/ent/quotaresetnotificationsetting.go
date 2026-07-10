@@ -19,6 +19,12 @@ type QuotaResetNotificationSetting struct {
 	ID int `json:"id,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
+	// ChannelType holds the value of the "channel_type" field.
+	ChannelType quotaresetnotificationsetting.ChannelType `json:"channel_type,omitempty"`
+	// ChannelTypeConfigured holds the value of the "channel_type_configured" field.
+	ChannelTypeConfigured bool `json:"channel_type_configured,omitempty"`
+	// TemplateVersion holds the value of the "template_version" field.
+	TemplateVersion int `json:"template_version,omitempty"`
 	// URL holds the value of the "url" field.
 	URL string `json:"url,omitempty"`
 	// AuthType holds the value of the "auth_type" field.
@@ -41,11 +47,11 @@ func (*QuotaResetNotificationSetting) scanValues(columns []string) ([]any, error
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case quotaresetnotificationsetting.FieldEnabled:
+		case quotaresetnotificationsetting.FieldEnabled, quotaresetnotificationsetting.FieldChannelTypeConfigured:
 			values[i] = new(sql.NullBool)
-		case quotaresetnotificationsetting.FieldID, quotaresetnotificationsetting.FieldCredentialID, quotaresetnotificationsetting.FieldCreatedByUserID, quotaresetnotificationsetting.FieldUpdatedByUserID:
+		case quotaresetnotificationsetting.FieldID, quotaresetnotificationsetting.FieldTemplateVersion, quotaresetnotificationsetting.FieldCredentialID, quotaresetnotificationsetting.FieldCreatedByUserID, quotaresetnotificationsetting.FieldUpdatedByUserID:
 			values[i] = new(sql.NullInt64)
-		case quotaresetnotificationsetting.FieldURL, quotaresetnotificationsetting.FieldAuthType:
+		case quotaresetnotificationsetting.FieldChannelType, quotaresetnotificationsetting.FieldURL, quotaresetnotificationsetting.FieldAuthType:
 			values[i] = new(sql.NullString)
 		case quotaresetnotificationsetting.FieldCreatedAt, quotaresetnotificationsetting.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -75,6 +81,24 @@ func (qrns *QuotaResetNotificationSetting) assignValues(columns []string, values
 				return fmt.Errorf("unexpected type %T for field enabled", values[i])
 			} else if value.Valid {
 				qrns.Enabled = value.Bool
+			}
+		case quotaresetnotificationsetting.FieldChannelType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field channel_type", values[i])
+			} else if value.Valid {
+				qrns.ChannelType = quotaresetnotificationsetting.ChannelType(value.String)
+			}
+		case quotaresetnotificationsetting.FieldChannelTypeConfigured:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field channel_type_configured", values[i])
+			} else if value.Valid {
+				qrns.ChannelTypeConfigured = value.Bool
+			}
+		case quotaresetnotificationsetting.FieldTemplateVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field template_version", values[i])
+			} else if value.Valid {
+				qrns.TemplateVersion = int(value.Int64)
 			}
 		case quotaresetnotificationsetting.FieldURL:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -157,6 +181,15 @@ func (qrns *QuotaResetNotificationSetting) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", qrns.ID))
 	builder.WriteString("enabled=")
 	builder.WriteString(fmt.Sprintf("%v", qrns.Enabled))
+	builder.WriteString(", ")
+	builder.WriteString("channel_type=")
+	builder.WriteString(fmt.Sprintf("%v", qrns.ChannelType))
+	builder.WriteString(", ")
+	builder.WriteString("channel_type_configured=")
+	builder.WriteString(fmt.Sprintf("%v", qrns.ChannelTypeConfigured))
+	builder.WriteString(", ")
+	builder.WriteString("template_version=")
+	builder.WriteString(fmt.Sprintf("%v", qrns.TemplateVersion))
 	builder.WriteString(", ")
 	builder.WriteString("url=")
 	builder.WriteString(qrns.URL)

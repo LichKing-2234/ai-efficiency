@@ -59,6 +59,16 @@ func Enabled(v bool) predicate.QuotaResetNotificationSetting {
 	return predicate.QuotaResetNotificationSetting(sql.FieldEQ(FieldEnabled, v))
 }
 
+// ChannelTypeConfigured applies equality check predicate on the "channel_type_configured" field. It's identical to ChannelTypeConfiguredEQ.
+func ChannelTypeConfigured(v bool) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldEQ(FieldChannelTypeConfigured, v))
+}
+
+// TemplateVersion applies equality check predicate on the "template_version" field. It's identical to TemplateVersionEQ.
+func TemplateVersion(v int) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldEQ(FieldTemplateVersion, v))
+}
+
 // URL applies equality check predicate on the "url" field. It's identical to URLEQ.
 func URL(v string) predicate.QuotaResetNotificationSetting {
 	return predicate.QuotaResetNotificationSetting(sql.FieldEQ(FieldURL, v))
@@ -97,6 +107,76 @@ func EnabledEQ(v bool) predicate.QuotaResetNotificationSetting {
 // EnabledNEQ applies the NEQ predicate on the "enabled" field.
 func EnabledNEQ(v bool) predicate.QuotaResetNotificationSetting {
 	return predicate.QuotaResetNotificationSetting(sql.FieldNEQ(FieldEnabled, v))
+}
+
+// ChannelTypeEQ applies the EQ predicate on the "channel_type" field.
+func ChannelTypeEQ(v ChannelType) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldEQ(FieldChannelType, v))
+}
+
+// ChannelTypeNEQ applies the NEQ predicate on the "channel_type" field.
+func ChannelTypeNEQ(v ChannelType) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldNEQ(FieldChannelType, v))
+}
+
+// ChannelTypeIn applies the In predicate on the "channel_type" field.
+func ChannelTypeIn(vs ...ChannelType) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldIn(FieldChannelType, vs...))
+}
+
+// ChannelTypeNotIn applies the NotIn predicate on the "channel_type" field.
+func ChannelTypeNotIn(vs ...ChannelType) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldNotIn(FieldChannelType, vs...))
+}
+
+// ChannelTypeConfiguredEQ applies the EQ predicate on the "channel_type_configured" field.
+func ChannelTypeConfiguredEQ(v bool) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldEQ(FieldChannelTypeConfigured, v))
+}
+
+// ChannelTypeConfiguredNEQ applies the NEQ predicate on the "channel_type_configured" field.
+func ChannelTypeConfiguredNEQ(v bool) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldNEQ(FieldChannelTypeConfigured, v))
+}
+
+// TemplateVersionEQ applies the EQ predicate on the "template_version" field.
+func TemplateVersionEQ(v int) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldEQ(FieldTemplateVersion, v))
+}
+
+// TemplateVersionNEQ applies the NEQ predicate on the "template_version" field.
+func TemplateVersionNEQ(v int) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldNEQ(FieldTemplateVersion, v))
+}
+
+// TemplateVersionIn applies the In predicate on the "template_version" field.
+func TemplateVersionIn(vs ...int) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldIn(FieldTemplateVersion, vs...))
+}
+
+// TemplateVersionNotIn applies the NotIn predicate on the "template_version" field.
+func TemplateVersionNotIn(vs ...int) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldNotIn(FieldTemplateVersion, vs...))
+}
+
+// TemplateVersionGT applies the GT predicate on the "template_version" field.
+func TemplateVersionGT(v int) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldGT(FieldTemplateVersion, v))
+}
+
+// TemplateVersionGTE applies the GTE predicate on the "template_version" field.
+func TemplateVersionGTE(v int) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldGTE(FieldTemplateVersion, v))
+}
+
+// TemplateVersionLT applies the LT predicate on the "template_version" field.
+func TemplateVersionLT(v int) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldLT(FieldTemplateVersion, v))
+}
+
+// TemplateVersionLTE applies the LTE predicate on the "template_version" field.
+func TemplateVersionLTE(v int) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldLTE(FieldTemplateVersion, v))
 }
 
 // URLEQ applies the EQ predicate on the "url" field.

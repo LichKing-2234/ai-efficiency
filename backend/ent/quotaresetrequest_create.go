@@ -78,6 +78,88 @@ func (qrrc *QuotaResetRequestCreate) SetReason(s string) *QuotaResetRequestCreat
 	return qrrc
 }
 
+// SetWorkflowVersion sets the "workflow_version" field.
+func (qrrc *QuotaResetRequestCreate) SetWorkflowVersion(i int) *QuotaResetRequestCreate {
+	qrrc.mutation.SetWorkflowVersion(i)
+	return qrrc
+}
+
+// SetNillableWorkflowVersion sets the "workflow_version" field if the given value is not nil.
+func (qrrc *QuotaResetRequestCreate) SetNillableWorkflowVersion(i *int) *QuotaResetRequestCreate {
+	if i != nil {
+		qrrc.SetWorkflowVersion(*i)
+	}
+	return qrrc
+}
+
+// SetCurrentNodeID sets the "current_node_id" field.
+func (qrrc *QuotaResetRequestCreate) SetCurrentNodeID(i int) *QuotaResetRequestCreate {
+	qrrc.mutation.SetCurrentNodeID(i)
+	return qrrc
+}
+
+// SetNillableCurrentNodeID sets the "current_node_id" field if the given value is not nil.
+func (qrrc *QuotaResetRequestCreate) SetNillableCurrentNodeID(i *int) *QuotaResetRequestCreate {
+	if i != nil {
+		qrrc.SetCurrentNodeID(*i)
+	}
+	return qrrc
+}
+
+// SetWorkflowCompletedByDecisionID sets the "workflow_completed_by_decision_id" field.
+func (qrrc *QuotaResetRequestCreate) SetWorkflowCompletedByDecisionID(i int) *QuotaResetRequestCreate {
+	qrrc.mutation.SetWorkflowCompletedByDecisionID(i)
+	return qrrc
+}
+
+// SetNillableWorkflowCompletedByDecisionID sets the "workflow_completed_by_decision_id" field if the given value is not nil.
+func (qrrc *QuotaResetRequestCreate) SetNillableWorkflowCompletedByDecisionID(i *int) *QuotaResetRequestCreate {
+	if i != nil {
+		qrrc.SetWorkflowCompletedByDecisionID(*i)
+	}
+	return qrrc
+}
+
+// SetRequesterDisplayNameSnapshot sets the "requester_display_name_snapshot" field.
+func (qrrc *QuotaResetRequestCreate) SetRequesterDisplayNameSnapshot(s string) *QuotaResetRequestCreate {
+	qrrc.mutation.SetRequesterDisplayNameSnapshot(s)
+	return qrrc
+}
+
+// SetNillableRequesterDisplayNameSnapshot sets the "requester_display_name_snapshot" field if the given value is not nil.
+func (qrrc *QuotaResetRequestCreate) SetNillableRequesterDisplayNameSnapshot(s *string) *QuotaResetRequestCreate {
+	if s != nil {
+		qrrc.SetRequesterDisplayNameSnapshot(*s)
+	}
+	return qrrc
+}
+
+// SetRequesterEmailSnapshot sets the "requester_email_snapshot" field.
+func (qrrc *QuotaResetRequestCreate) SetRequesterEmailSnapshot(s string) *QuotaResetRequestCreate {
+	qrrc.mutation.SetRequesterEmailSnapshot(s)
+	return qrrc
+}
+
+// SetNillableRequesterEmailSnapshot sets the "requester_email_snapshot" field if the given value is not nil.
+func (qrrc *QuotaResetRequestCreate) SetNillableRequesterEmailSnapshot(s *string) *QuotaResetRequestCreate {
+	if s != nil {
+		qrrc.SetRequesterEmailSnapshot(*s)
+	}
+	return qrrc
+}
+
+// SetRequesterDepartmentPaths sets the "requester_department_paths" field.
+func (qrrc *QuotaResetRequestCreate) SetRequesterDepartmentPaths(s []string) *QuotaResetRequestCreate {
+	qrrc.mutation.SetRequesterDepartmentPaths(s)
+	return qrrc
+}
+
+// SetRequesterNotificationIds sets the "requester_notification_ids" field.
+func (qrrc *QuotaResetRequestCreate) SetRequesterNotificationIds(m map[string]string) *QuotaResetRequestCreate {
+	qrrc.mutation.SetRequesterNotificationIds(m)
+	return qrrc
+}
+
 // SetStatus sets the "status" field.
 func (qrrc *QuotaResetRequestCreate) SetStatus(q quotaresetrequest.Status) *QuotaResetRequestCreate {
 	qrrc.mutation.SetStatus(q)
@@ -273,6 +355,18 @@ func (qrrc *QuotaResetRequestCreate) defaults() {
 		v := quotaresetrequest.DefaultGroupPlatform
 		qrrc.mutation.SetGroupPlatform(v)
 	}
+	if _, ok := qrrc.mutation.WorkflowVersion(); !ok {
+		v := quotaresetrequest.DefaultWorkflowVersion
+		qrrc.mutation.SetWorkflowVersion(v)
+	}
+	if _, ok := qrrc.mutation.RequesterDisplayNameSnapshot(); !ok {
+		v := quotaresetrequest.DefaultRequesterDisplayNameSnapshot
+		qrrc.mutation.SetRequesterDisplayNameSnapshot(v)
+	}
+	if _, ok := qrrc.mutation.RequesterEmailSnapshot(); !ok {
+		v := quotaresetrequest.DefaultRequesterEmailSnapshot
+		qrrc.mutation.SetRequesterEmailSnapshot(v)
+	}
 	if _, ok := qrrc.mutation.Status(); !ok {
 		v := quotaresetrequest.DefaultStatus
 		qrrc.mutation.SetStatus(v)
@@ -327,6 +421,15 @@ func (qrrc *QuotaResetRequestCreate) check() error {
 		if err := quotaresetrequest.ReasonValidator(v); err != nil {
 			return &ValidationError{Name: "reason", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.reason": %w`, err)}
 		}
+	}
+	if _, ok := qrrc.mutation.WorkflowVersion(); !ok {
+		return &ValidationError{Name: "workflow_version", err: errors.New(`ent: missing required field "QuotaResetRequest.workflow_version"`)}
+	}
+	if _, ok := qrrc.mutation.RequesterDisplayNameSnapshot(); !ok {
+		return &ValidationError{Name: "requester_display_name_snapshot", err: errors.New(`ent: missing required field "QuotaResetRequest.requester_display_name_snapshot"`)}
+	}
+	if _, ok := qrrc.mutation.RequesterEmailSnapshot(); !ok {
+		return &ValidationError{Name: "requester_email_snapshot", err: errors.New(`ent: missing required field "QuotaResetRequest.requester_email_snapshot"`)}
 	}
 	if _, ok := qrrc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "QuotaResetRequest.status"`)}
@@ -401,6 +504,34 @@ func (qrrc *QuotaResetRequestCreate) createSpec() (*QuotaResetRequest, *sqlgraph
 	if value, ok := qrrc.mutation.Reason(); ok {
 		_spec.SetField(quotaresetrequest.FieldReason, field.TypeString, value)
 		_node.Reason = value
+	}
+	if value, ok := qrrc.mutation.WorkflowVersion(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflowVersion, field.TypeInt, value)
+		_node.WorkflowVersion = value
+	}
+	if value, ok := qrrc.mutation.CurrentNodeID(); ok {
+		_spec.SetField(quotaresetrequest.FieldCurrentNodeID, field.TypeInt, value)
+		_node.CurrentNodeID = &value
+	}
+	if value, ok := qrrc.mutation.WorkflowCompletedByDecisionID(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflowCompletedByDecisionID, field.TypeInt, value)
+		_node.WorkflowCompletedByDecisionID = &value
+	}
+	if value, ok := qrrc.mutation.RequesterDisplayNameSnapshot(); ok {
+		_spec.SetField(quotaresetrequest.FieldRequesterDisplayNameSnapshot, field.TypeString, value)
+		_node.RequesterDisplayNameSnapshot = value
+	}
+	if value, ok := qrrc.mutation.RequesterEmailSnapshot(); ok {
+		_spec.SetField(quotaresetrequest.FieldRequesterEmailSnapshot, field.TypeString, value)
+		_node.RequesterEmailSnapshot = value
+	}
+	if value, ok := qrrc.mutation.RequesterDepartmentPaths(); ok {
+		_spec.SetField(quotaresetrequest.FieldRequesterDepartmentPaths, field.TypeJSON, value)
+		_node.RequesterDepartmentPaths = value
+	}
+	if value, ok := qrrc.mutation.RequesterNotificationIds(); ok {
+		_spec.SetField(quotaresetrequest.FieldRequesterNotificationIds, field.TypeJSON, value)
+		_node.RequesterNotificationIds = value
 	}
 	if value, ok := qrrc.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequest.FieldStatus, field.TypeEnum, value)

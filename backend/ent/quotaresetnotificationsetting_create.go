@@ -34,6 +34,48 @@ func (qrnsc *QuotaResetNotificationSettingCreate) SetNillableEnabled(b *bool) *Q
 	return qrnsc
 }
 
+// SetChannelType sets the "channel_type" field.
+func (qrnsc *QuotaResetNotificationSettingCreate) SetChannelType(qt quotaresetnotificationsetting.ChannelType) *QuotaResetNotificationSettingCreate {
+	qrnsc.mutation.SetChannelType(qt)
+	return qrnsc
+}
+
+// SetNillableChannelType sets the "channel_type" field if the given value is not nil.
+func (qrnsc *QuotaResetNotificationSettingCreate) SetNillableChannelType(qt *quotaresetnotificationsetting.ChannelType) *QuotaResetNotificationSettingCreate {
+	if qt != nil {
+		qrnsc.SetChannelType(*qt)
+	}
+	return qrnsc
+}
+
+// SetChannelTypeConfigured sets the "channel_type_configured" field.
+func (qrnsc *QuotaResetNotificationSettingCreate) SetChannelTypeConfigured(b bool) *QuotaResetNotificationSettingCreate {
+	qrnsc.mutation.SetChannelTypeConfigured(b)
+	return qrnsc
+}
+
+// SetNillableChannelTypeConfigured sets the "channel_type_configured" field if the given value is not nil.
+func (qrnsc *QuotaResetNotificationSettingCreate) SetNillableChannelTypeConfigured(b *bool) *QuotaResetNotificationSettingCreate {
+	if b != nil {
+		qrnsc.SetChannelTypeConfigured(*b)
+	}
+	return qrnsc
+}
+
+// SetTemplateVersion sets the "template_version" field.
+func (qrnsc *QuotaResetNotificationSettingCreate) SetTemplateVersion(i int) *QuotaResetNotificationSettingCreate {
+	qrnsc.mutation.SetTemplateVersion(i)
+	return qrnsc
+}
+
+// SetNillableTemplateVersion sets the "template_version" field if the given value is not nil.
+func (qrnsc *QuotaResetNotificationSettingCreate) SetNillableTemplateVersion(i *int) *QuotaResetNotificationSettingCreate {
+	if i != nil {
+		qrnsc.SetTemplateVersion(*i)
+	}
+	return qrnsc
+}
+
 // SetURL sets the "url" field.
 func (qrnsc *QuotaResetNotificationSettingCreate) SetURL(s string) *QuotaResetNotificationSettingCreate {
 	qrnsc.mutation.SetURL(s)
@@ -171,6 +213,18 @@ func (qrnsc *QuotaResetNotificationSettingCreate) defaults() {
 		v := quotaresetnotificationsetting.DefaultEnabled
 		qrnsc.mutation.SetEnabled(v)
 	}
+	if _, ok := qrnsc.mutation.ChannelType(); !ok {
+		v := quotaresetnotificationsetting.DefaultChannelType
+		qrnsc.mutation.SetChannelType(v)
+	}
+	if _, ok := qrnsc.mutation.ChannelTypeConfigured(); !ok {
+		v := quotaresetnotificationsetting.DefaultChannelTypeConfigured
+		qrnsc.mutation.SetChannelTypeConfigured(v)
+	}
+	if _, ok := qrnsc.mutation.TemplateVersion(); !ok {
+		v := quotaresetnotificationsetting.DefaultTemplateVersion
+		qrnsc.mutation.SetTemplateVersion(v)
+	}
 	if _, ok := qrnsc.mutation.URL(); !ok {
 		v := quotaresetnotificationsetting.DefaultURL
 		qrnsc.mutation.SetURL(v)
@@ -201,6 +255,20 @@ func (qrnsc *QuotaResetNotificationSettingCreate) defaults() {
 func (qrnsc *QuotaResetNotificationSettingCreate) check() error {
 	if _, ok := qrnsc.mutation.Enabled(); !ok {
 		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "QuotaResetNotificationSetting.enabled"`)}
+	}
+	if _, ok := qrnsc.mutation.ChannelType(); !ok {
+		return &ValidationError{Name: "channel_type", err: errors.New(`ent: missing required field "QuotaResetNotificationSetting.channel_type"`)}
+	}
+	if v, ok := qrnsc.mutation.ChannelType(); ok {
+		if err := quotaresetnotificationsetting.ChannelTypeValidator(v); err != nil {
+			return &ValidationError{Name: "channel_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetNotificationSetting.channel_type": %w`, err)}
+		}
+	}
+	if _, ok := qrnsc.mutation.ChannelTypeConfigured(); !ok {
+		return &ValidationError{Name: "channel_type_configured", err: errors.New(`ent: missing required field "QuotaResetNotificationSetting.channel_type_configured"`)}
+	}
+	if _, ok := qrnsc.mutation.TemplateVersion(); !ok {
+		return &ValidationError{Name: "template_version", err: errors.New(`ent: missing required field "QuotaResetNotificationSetting.template_version"`)}
 	}
 	if _, ok := qrnsc.mutation.URL(); !ok {
 		return &ValidationError{Name: "url", err: errors.New(`ent: missing required field "QuotaResetNotificationSetting.url"`)}
@@ -254,6 +322,18 @@ func (qrnsc *QuotaResetNotificationSettingCreate) createSpec() (*QuotaResetNotif
 	if value, ok := qrnsc.mutation.Enabled(); ok {
 		_spec.SetField(quotaresetnotificationsetting.FieldEnabled, field.TypeBool, value)
 		_node.Enabled = value
+	}
+	if value, ok := qrnsc.mutation.ChannelType(); ok {
+		_spec.SetField(quotaresetnotificationsetting.FieldChannelType, field.TypeEnum, value)
+		_node.ChannelType = value
+	}
+	if value, ok := qrnsc.mutation.ChannelTypeConfigured(); ok {
+		_spec.SetField(quotaresetnotificationsetting.FieldChannelTypeConfigured, field.TypeBool, value)
+		_node.ChannelTypeConfigured = value
+	}
+	if value, ok := qrnsc.mutation.TemplateVersion(); ok {
+		_spec.SetField(quotaresetnotificationsetting.FieldTemplateVersion, field.TypeInt, value)
+		_node.TemplateVersion = value
 	}
 	if value, ok := qrnsc.mutation.URL(); ok {
 		_spec.SetField(quotaresetnotificationsetting.FieldURL, field.TypeString, value)

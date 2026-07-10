@@ -32,6 +32,20 @@ type QuotaResetRequest struct {
 	GroupPlatform string `json:"group_platform,omitempty"`
 	// Reason holds the value of the "reason" field.
 	Reason string `json:"reason,omitempty"`
+	// WorkflowVersion holds the value of the "workflow_version" field.
+	WorkflowVersion int `json:"workflow_version,omitempty"`
+	// CurrentNodeID holds the value of the "current_node_id" field.
+	CurrentNodeID *int `json:"current_node_id,omitempty"`
+	// WorkflowCompletedByDecisionID holds the value of the "workflow_completed_by_decision_id" field.
+	WorkflowCompletedByDecisionID *int `json:"workflow_completed_by_decision_id,omitempty"`
+	// RequesterDisplayNameSnapshot holds the value of the "requester_display_name_snapshot" field.
+	RequesterDisplayNameSnapshot string `json:"requester_display_name_snapshot,omitempty"`
+	// RequesterEmailSnapshot holds the value of the "requester_email_snapshot" field.
+	RequesterEmailSnapshot string `json:"requester_email_snapshot,omitempty"`
+	// RequesterDepartmentPaths holds the value of the "requester_department_paths" field.
+	RequesterDepartmentPaths []string `json:"requester_department_paths,omitempty"`
+	// RequesterNotificationIds holds the value of the "requester_notification_ids" field.
+	RequesterNotificationIds map[string]string `json:"requester_notification_ids,omitempty"`
 	// Status holds the value of the "status" field.
 	Status quotaresetrequest.Status `json:"status,omitempty"`
 	// ResolvedApproverUserIds holds the value of the "resolved_approver_user_ids" field.
@@ -64,11 +78,11 @@ func (*QuotaResetRequest) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case quotaresetrequest.FieldResolvedApproverUserIds, quotaresetrequest.FieldMatchedDepartmentPaths:
+		case quotaresetrequest.FieldRequesterDepartmentPaths, quotaresetrequest.FieldRequesterNotificationIds, quotaresetrequest.FieldResolvedApproverUserIds, quotaresetrequest.FieldMatchedDepartmentPaths:
 			values[i] = new([]byte)
-		case quotaresetrequest.FieldID, quotaresetrequest.FieldRequesterUserID, quotaresetrequest.FieldRequesterRelayUserID, quotaresetrequest.FieldProviderID, quotaresetrequest.FieldApprovedByUserID, quotaresetrequest.FieldRejectedByUserID:
+		case quotaresetrequest.FieldID, quotaresetrequest.FieldRequesterUserID, quotaresetrequest.FieldRequesterRelayUserID, quotaresetrequest.FieldProviderID, quotaresetrequest.FieldWorkflowVersion, quotaresetrequest.FieldCurrentNodeID, quotaresetrequest.FieldWorkflowCompletedByDecisionID, quotaresetrequest.FieldApprovedByUserID, quotaresetrequest.FieldRejectedByUserID:
 			values[i] = new(sql.NullInt64)
-		case quotaresetrequest.FieldGroupID, quotaresetrequest.FieldGroupName, quotaresetrequest.FieldGroupPlatform, quotaresetrequest.FieldReason, quotaresetrequest.FieldStatus, quotaresetrequest.FieldDecisionReason, quotaresetrequest.FieldResetError:
+		case quotaresetrequest.FieldGroupID, quotaresetrequest.FieldGroupName, quotaresetrequest.FieldGroupPlatform, quotaresetrequest.FieldReason, quotaresetrequest.FieldRequesterDisplayNameSnapshot, quotaresetrequest.FieldRequesterEmailSnapshot, quotaresetrequest.FieldStatus, quotaresetrequest.FieldDecisionReason, quotaresetrequest.FieldResetError:
 			values[i] = new(sql.NullString)
 		case quotaresetrequest.FieldDecidedAt, quotaresetrequest.FieldResetStartedAt, quotaresetrequest.FieldResetCompletedAt, quotaresetrequest.FieldCreatedAt, quotaresetrequest.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -134,6 +148,54 @@ func (qrr *QuotaResetRequest) assignValues(columns []string, values []any) error
 				return fmt.Errorf("unexpected type %T for field reason", values[i])
 			} else if value.Valid {
 				qrr.Reason = value.String
+			}
+		case quotaresetrequest.FieldWorkflowVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field workflow_version", values[i])
+			} else if value.Valid {
+				qrr.WorkflowVersion = int(value.Int64)
+			}
+		case quotaresetrequest.FieldCurrentNodeID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field current_node_id", values[i])
+			} else if value.Valid {
+				qrr.CurrentNodeID = new(int)
+				*qrr.CurrentNodeID = int(value.Int64)
+			}
+		case quotaresetrequest.FieldWorkflowCompletedByDecisionID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field workflow_completed_by_decision_id", values[i])
+			} else if value.Valid {
+				qrr.WorkflowCompletedByDecisionID = new(int)
+				*qrr.WorkflowCompletedByDecisionID = int(value.Int64)
+			}
+		case quotaresetrequest.FieldRequesterDisplayNameSnapshot:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field requester_display_name_snapshot", values[i])
+			} else if value.Valid {
+				qrr.RequesterDisplayNameSnapshot = value.String
+			}
+		case quotaresetrequest.FieldRequesterEmailSnapshot:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field requester_email_snapshot", values[i])
+			} else if value.Valid {
+				qrr.RequesterEmailSnapshot = value.String
+			}
+		case quotaresetrequest.FieldRequesterDepartmentPaths:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field requester_department_paths", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &qrr.RequesterDepartmentPaths); err != nil {
+					return fmt.Errorf("unmarshal field requester_department_paths: %w", err)
+				}
+			}
+		case quotaresetrequest.FieldRequesterNotificationIds:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field requester_notification_ids", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &qrr.RequesterNotificationIds); err != nil {
+					return fmt.Errorf("unmarshal field requester_notification_ids: %w", err)
+				}
 			}
 		case quotaresetrequest.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -272,6 +334,31 @@ func (qrr *QuotaResetRequest) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("reason=")
 	builder.WriteString(qrr.Reason)
+	builder.WriteString(", ")
+	builder.WriteString("workflow_version=")
+	builder.WriteString(fmt.Sprintf("%v", qrr.WorkflowVersion))
+	builder.WriteString(", ")
+	if v := qrr.CurrentNodeID; v != nil {
+		builder.WriteString("current_node_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := qrr.WorkflowCompletedByDecisionID; v != nil {
+		builder.WriteString("workflow_completed_by_decision_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("requester_display_name_snapshot=")
+	builder.WriteString(qrr.RequesterDisplayNameSnapshot)
+	builder.WriteString(", ")
+	builder.WriteString("requester_email_snapshot=")
+	builder.WriteString(qrr.RequesterEmailSnapshot)
+	builder.WriteString(", ")
+	builder.WriteString("requester_department_paths=")
+	builder.WriteString(fmt.Sprintf("%v", qrr.RequesterDepartmentPaths))
+	builder.WriteString(", ")
+	builder.WriteString("requester_notification_ids=")
+	builder.WriteString(fmt.Sprintf("%v", qrr.RequesterNotificationIds))
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", qrr.Status))

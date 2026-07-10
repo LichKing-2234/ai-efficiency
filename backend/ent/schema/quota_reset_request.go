@@ -20,6 +20,13 @@ func (QuotaResetRequest) Fields() []ent.Field {
 		field.String("group_name").Default(""),
 		field.String("group_platform").Default(""),
 		field.String("reason").NotEmpty(),
+		field.Int("workflow_version").Default(1),
+		field.Int("current_node_id").Optional().Nillable(),
+		field.Int("workflow_completed_by_decision_id").Optional().Nillable(),
+		field.String("requester_display_name_snapshot").Default(""),
+		field.String("requester_email_snapshot").Default(""),
+		field.JSON("requester_department_paths", []string{}).Optional(),
+		field.JSON("requester_notification_ids", map[string]string{}).Optional(),
 		field.Enum("status").Values(
 			"pending",
 			"approved_resetting",
@@ -46,6 +53,8 @@ func (QuotaResetRequest) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("requester_user_id", "created_at"),
 		index.Fields("status", "created_at"),
+		index.Fields("workflow_version", "status", "created_at"),
+		index.Fields("current_node_id"),
 		index.Fields("provider_id", "group_id", "status"),
 		index.Fields("requester_user_id", "provider_id", "group_id").
 			Unique().

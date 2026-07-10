@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL, Vue 3 `<script setup lang="ts">`, Pinia, Vite, Vitest, TailwindCSS, Python Playwright role checks.
 
-**Status:** Not started
+**Status:** In progress
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -115,7 +115,7 @@
 - Create: `backend/internal/quotareset/schema_test.go`
 - Generated: `backend/ent/*`
 
-- [ ] **Step 1: Write the failing schema round-trip test**
+- [x] **Step 1: Write the failing schema round-trip test**
 
 Create `backend/internal/quotareset/schema_test.go`:
 
@@ -175,7 +175,7 @@ func TestWorkflowSchemasRoundTrip(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the schema test and verify it fails before generation**
+- [x] **Step 2: Run the schema test and verify it fails before generation**
 
 Run:
 
@@ -185,7 +185,7 @@ cd backend && go test ./internal/quotareset -run TestWorkflowSchemasRoundTrip -c
 
 Expected: FAIL to compile because the new Ent entities and setters do not exist.
 
-- [ ] **Step 3: Add the five new Ent schemas**
+- [x] **Step 3: Add the five new Ent schemas**
 
 Create `backend/ent/schema/quota_reset_approval_chain.go`:
 
@@ -363,7 +363,7 @@ func (QuotaResetRequestDecision) Indexes() []ent.Index {
 }
 ```
 
-- [ ] **Step 4: Extend existing request, event, and notification schemas**
+- [x] **Step 4: Extend existing request, event, and notification schemas**
 
 Add these fields to `QuotaResetRequest.Fields()` immediately after `reason`:
 
@@ -406,7 +406,7 @@ field.Int("template_version").Default(1),
 `channel_type_configured` distinguishes auto-migrated existing rows from explicit
 new admin choices.
 
-- [ ] **Step 5: Generate Ent code and run schema-sensitive tests**
+- [x] **Step 5: Generate Ent code and run schema-sensitive tests**
 
 Run:
 
@@ -418,7 +418,7 @@ cd backend && go test ./internal/quotareset ./internal/workitems ./internal/test
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the schema unit**
+- [x] **Step 6: Commit the schema unit**
 
 ```bash
 git add backend/ent backend/internal/quotareset/schema_test.go

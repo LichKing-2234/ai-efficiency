@@ -595,6 +595,70 @@ var (
 			},
 		},
 	}
+	// QuotaResetApprovalChainsColumns holds the columns for the "quota_reset_approval_chains" table.
+	QuotaResetApprovalChainsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "provider_id", Type: field.TypeInt},
+		{Name: "group_id", Type: field.TypeString},
+		{Name: "group_name", Type: field.TypeString, Default: ""},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "created_by_user_id", Type: field.TypeInt, Default: 0},
+		{Name: "updated_by_user_id", Type: field.TypeInt, Default: 0},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// QuotaResetApprovalChainsTable holds the schema information for the "quota_reset_approval_chains" table.
+	QuotaResetApprovalChainsTable = &schema.Table{
+		Name:       "quota_reset_approval_chains",
+		Columns:    QuotaResetApprovalChainsColumns,
+		PrimaryKey: []*schema.Column{QuotaResetApprovalChainsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "quotaresetapprovalchain_provider_id_group_id",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetApprovalChainsColumns[1], QuotaResetApprovalChainsColumns[2]},
+			},
+			{
+				Name:    "quotaresetapprovalchain_enabled_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetApprovalChainsColumns[4], QuotaResetApprovalChainsColumns[8]},
+			},
+		},
+	}
+	// QuotaResetApprovalChainNodesColumns holds the columns for the "quota_reset_approval_chain_nodes" table.
+	QuotaResetApprovalChainNodesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "chain_id", Type: field.TypeInt},
+		{Name: "position", Type: field.TypeInt},
+		{Name: "directory_source_id", Type: field.TypeInt},
+		{Name: "department_external_id", Type: field.TypeString},
+		{Name: "department_display_path", Type: field.TypeString, Default: ""},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// QuotaResetApprovalChainNodesTable holds the schema information for the "quota_reset_approval_chain_nodes" table.
+	QuotaResetApprovalChainNodesTable = &schema.Table{
+		Name:       "quota_reset_approval_chain_nodes",
+		Columns:    QuotaResetApprovalChainNodesColumns,
+		PrimaryKey: []*schema.Column{QuotaResetApprovalChainNodesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "quotaresetapprovalchainnode_chain_id_position",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetApprovalChainNodesColumns[1], QuotaResetApprovalChainNodesColumns[2]},
+			},
+			{
+				Name:    "quotaresetapprovalchainnode_chain_id_department_external_id",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetApprovalChainNodesColumns[1], QuotaResetApprovalChainNodesColumns[4]},
+			},
+			{
+				Name:    "quotaresetapprovalchainnode_directory_source_id_department_external_id",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetApprovalChainNodesColumns[3], QuotaResetApprovalChainNodesColumns[4]},
+			},
+		},
+	}
 	// QuotaResetApproverConfigsColumns holds the columns for the "quota_reset_approver_configs" table.
 	QuotaResetApproverConfigsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -635,6 +699,9 @@ var (
 	QuotaResetNotificationSettingsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "enabled", Type: field.TypeBool, Default: false},
+		{Name: "channel_type", Type: field.TypeEnum, Enums: []string{"generic_webhook", "wecom_group_robot"}, Default: "generic_webhook"},
+		{Name: "channel_type_configured", Type: field.TypeBool, Default: false},
+		{Name: "template_version", Type: field.TypeInt, Default: 1},
 		{Name: "url", Type: field.TypeString, Default: ""},
 		{Name: "auth_type", Type: field.TypeEnum, Enums: []string{"none", "bearer_token"}, Default: "none"},
 		{Name: "credential_id", Type: field.TypeInt, Nullable: true},
@@ -659,6 +726,13 @@ var (
 		{Name: "group_name", Type: field.TypeString, Default: ""},
 		{Name: "group_platform", Type: field.TypeString, Default: ""},
 		{Name: "reason", Type: field.TypeString},
+		{Name: "workflow_version", Type: field.TypeInt, Default: 1},
+		{Name: "current_node_id", Type: field.TypeInt, Nullable: true},
+		{Name: "workflow_completed_by_decision_id", Type: field.TypeInt, Nullable: true},
+		{Name: "requester_display_name_snapshot", Type: field.TypeString, Default: ""},
+		{Name: "requester_email_snapshot", Type: field.TypeString, Default: ""},
+		{Name: "requester_department_paths", Type: field.TypeJSON, Nullable: true},
+		{Name: "requester_notification_ids", Type: field.TypeJSON, Nullable: true},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"pending", "approved_resetting", "approved_reset_succeeded", "approved_reset_failed", "rejected", "cancelled"}, Default: "pending"},
 		{Name: "resolved_approver_user_ids", Type: field.TypeJSON, Nullable: true},
 		{Name: "matched_department_paths", Type: field.TypeJSON, Nullable: true},
@@ -681,17 +755,27 @@ var (
 			{
 				Name:    "quotaresetrequest_requester_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[18]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[25]},
 			},
 			{
 				Name:    "quotaresetrequest_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[8], QuotaResetRequestsColumns[18]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[15], QuotaResetRequestsColumns[25]},
+			},
+			{
+				Name:    "quotaresetrequest_workflow_version_status_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestsColumns[8], QuotaResetRequestsColumns[15], QuotaResetRequestsColumns[25]},
+			},
+			{
+				Name:    "quotaresetrequest_current_node_id",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestsColumns[9]},
 			},
 			{
 				Name:    "quotaresetrequest_provider_id_group_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4], QuotaResetRequestsColumns[8]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4], QuotaResetRequestsColumns[15]},
 			},
 			{
 				Name:    "quotaresetrequest_requester_user_id_provider_id_group_id",
@@ -704,7 +788,42 @@ var (
 			{
 				Name:    "quotaresetrequest_updated_at",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[19]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[26]},
+			},
+		},
+	}
+	// QuotaResetRequestDecisionsColumns holds the columns for the "quota_reset_request_decisions" table.
+	QuotaResetRequestDecisionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "request_id", Type: field.TypeInt},
+		{Name: "request_node_id", Type: field.TypeInt},
+		{Name: "actor_user_id", Type: field.TypeInt},
+		{Name: "actor_display_name", Type: field.TypeString, Default: ""},
+		{Name: "decision", Type: field.TypeEnum, Enums: []string{"approve", "reject"}},
+		{Name: "comment", Type: field.TypeString},
+		{Name: "admin_override", Type: field.TypeBool, Default: false},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// QuotaResetRequestDecisionsTable holds the schema information for the "quota_reset_request_decisions" table.
+	QuotaResetRequestDecisionsTable = &schema.Table{
+		Name:       "quota_reset_request_decisions",
+		Columns:    QuotaResetRequestDecisionsColumns,
+		PrimaryKey: []*schema.Column{QuotaResetRequestDecisionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "quotaresetrequestdecision_request_node_id",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetRequestDecisionsColumns[2]},
+			},
+			{
+				Name:    "quotaresetrequestdecision_request_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestDecisionsColumns[1], QuotaResetRequestDecisionsColumns[8]},
+			},
+			{
+				Name:    "quotaresetrequestdecision_actor_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestDecisionsColumns[3], QuotaResetRequestDecisionsColumns[8]},
 			},
 		},
 	}
@@ -713,7 +832,7 @@ var (
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "request_id", Type: field.TypeInt},
 		{Name: "actor_user_id", Type: field.TypeInt, Nullable: true},
-		{Name: "event_type", Type: field.TypeEnum, Enums: []string{"created", "approver_resolved", "notification_sent", "notification_failed", "approved", "reset_started", "reset_succeeded", "reset_failed", "rejected", "cancelled", "reset_retried"}},
+		{Name: "event_type", Type: field.TypeEnum, Enums: []string{"created", "approver_resolved", "notification_sent", "notification_failed", "approved", "reset_started", "reset_succeeded", "reset_failed", "rejected", "cancelled", "reset_retried", "workflow_snapshotted", "node_activated", "node_approved", "node_satisfied_by_prior_approval", "node_skipped_no_approver", "admin_fallback_activated"}},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
 		{Name: "error_message", Type: field.TypeString, Default: ""},
 		{Name: "created_at", Type: field.TypeTime},
@@ -738,6 +857,75 @@ var (
 				Name:    "quotaresetrequestevent_actor_user_id_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{QuotaResetRequestEventsColumns[2], QuotaResetRequestEventsColumns[6]},
+			},
+		},
+	}
+	// QuotaResetRequestNodesColumns holds the columns for the "quota_reset_request_nodes" table.
+	QuotaResetRequestNodesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "request_id", Type: field.TypeInt},
+		{Name: "position", Type: field.TypeInt},
+		{Name: "node_type", Type: field.TypeEnum, Enums: []string{"requester_departments", "configured_department"}},
+		{Name: "label", Type: field.TypeString, Default: ""},
+		{Name: "department_snapshots", Type: field.TypeJSON, Nullable: true},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"queued", "active", "approved", "satisfied_by_prior_approval", "skipped_no_approver", "rejected"}, Default: "queued"},
+		{Name: "admin_fallback_required", Type: field.TypeBool, Default: false},
+		{Name: "satisfied_by_decision_id", Type: field.TypeInt, Nullable: true},
+		{Name: "activated_at", Type: field.TypeTime, Nullable: true},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// QuotaResetRequestNodesTable holds the schema information for the "quota_reset_request_nodes" table.
+	QuotaResetRequestNodesTable = &schema.Table{
+		Name:       "quota_reset_request_nodes",
+		Columns:    QuotaResetRequestNodesColumns,
+		PrimaryKey: []*schema.Column{QuotaResetRequestNodesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "quotaresetrequestnode_request_id_position",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetRequestNodesColumns[1], QuotaResetRequestNodesColumns[2]},
+			},
+			{
+				Name:    "quotaresetrequestnode_request_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestNodesColumns[1], QuotaResetRequestNodesColumns[6]},
+			},
+			{
+				Name:    "quotaresetrequestnode_status_activated_at",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestNodesColumns[6], QuotaResetRequestNodesColumns[9]},
+			},
+		},
+	}
+	// QuotaResetRequestNodeApproversColumns holds the columns for the "quota_reset_request_node_approvers" table.
+	QuotaResetRequestNodeApproversColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "request_node_id", Type: field.TypeInt},
+		{Name: "user_id", Type: field.TypeInt},
+		{Name: "display_name", Type: field.TypeString, Default: ""},
+		{Name: "email", Type: field.TypeString, Default: ""},
+		{Name: "source", Type: field.TypeEnum, Enums: []string{"configured", "directory_representative"}},
+		{Name: "source_department_external_ids", Type: field.TypeJSON, Nullable: true},
+		{Name: "notification_ids", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+	}
+	// QuotaResetRequestNodeApproversTable holds the schema information for the "quota_reset_request_node_approvers" table.
+	QuotaResetRequestNodeApproversTable = &schema.Table{
+		Name:       "quota_reset_request_node_approvers",
+		Columns:    QuotaResetRequestNodeApproversColumns,
+		PrimaryKey: []*schema.Column{QuotaResetRequestNodeApproversColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "quotaresetrequestnodeapprover_request_node_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetRequestNodeApproversColumns[1], QuotaResetRequestNodeApproversColumns[2]},
+			},
+			{
+				Name:    "quotaresetrequestnodeapprover_user_id_request_node_id",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestNodeApproversColumns[2], QuotaResetRequestNodeApproversColumns[1]},
 			},
 		},
 	}
@@ -1048,10 +1236,15 @@ var (
 		PrSyncJobsTable,
 		PrAttributionRunsTable,
 		PrRecordsTable,
+		QuotaResetApprovalChainsTable,
+		QuotaResetApprovalChainNodesTable,
 		QuotaResetApproverConfigsTable,
 		QuotaResetNotificationSettingsTable,
 		QuotaResetRequestsTable,
+		QuotaResetRequestDecisionsTable,
 		QuotaResetRequestEventsTable,
+		QuotaResetRequestNodesTable,
+		QuotaResetRequestNodeApproversTable,
 		RelayProvidersTable,
 		RepoConfigsTable,
 		ScmProvidersTable,

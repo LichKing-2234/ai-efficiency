@@ -40,14 +40,24 @@ type Tx struct {
 	PrAttributionRun *PrAttributionRunClient
 	// PrRecord is the client for interacting with the PrRecord builders.
 	PrRecord *PrRecordClient
+	// QuotaResetApprovalChain is the client for interacting with the QuotaResetApprovalChain builders.
+	QuotaResetApprovalChain *QuotaResetApprovalChainClient
+	// QuotaResetApprovalChainNode is the client for interacting with the QuotaResetApprovalChainNode builders.
+	QuotaResetApprovalChainNode *QuotaResetApprovalChainNodeClient
 	// QuotaResetApproverConfig is the client for interacting with the QuotaResetApproverConfig builders.
 	QuotaResetApproverConfig *QuotaResetApproverConfigClient
 	// QuotaResetNotificationSetting is the client for interacting with the QuotaResetNotificationSetting builders.
 	QuotaResetNotificationSetting *QuotaResetNotificationSettingClient
 	// QuotaResetRequest is the client for interacting with the QuotaResetRequest builders.
 	QuotaResetRequest *QuotaResetRequestClient
+	// QuotaResetRequestDecision is the client for interacting with the QuotaResetRequestDecision builders.
+	QuotaResetRequestDecision *QuotaResetRequestDecisionClient
 	// QuotaResetRequestEvent is the client for interacting with the QuotaResetRequestEvent builders.
 	QuotaResetRequestEvent *QuotaResetRequestEventClient
+	// QuotaResetRequestNode is the client for interacting with the QuotaResetRequestNode builders.
+	QuotaResetRequestNode *QuotaResetRequestNodeClient
+	// QuotaResetRequestNodeApprover is the client for interacting with the QuotaResetRequestNodeApprover builders.
+	QuotaResetRequestNodeApprover *QuotaResetRequestNodeApproverClient
 	// RelayProvider is the client for interacting with the RelayProvider builders.
 	RelayProvider *RelayProviderClient
 	// RepoConfig is the client for interacting with the RepoConfig builders.
@@ -209,10 +219,15 @@ func (tx *Tx) init() {
 	tx.PRSyncJob = NewPRSyncJobClient(tx.config)
 	tx.PrAttributionRun = NewPrAttributionRunClient(tx.config)
 	tx.PrRecord = NewPrRecordClient(tx.config)
+	tx.QuotaResetApprovalChain = NewQuotaResetApprovalChainClient(tx.config)
+	tx.QuotaResetApprovalChainNode = NewQuotaResetApprovalChainNodeClient(tx.config)
 	tx.QuotaResetApproverConfig = NewQuotaResetApproverConfigClient(tx.config)
 	tx.QuotaResetNotificationSetting = NewQuotaResetNotificationSettingClient(tx.config)
 	tx.QuotaResetRequest = NewQuotaResetRequestClient(tx.config)
+	tx.QuotaResetRequestDecision = NewQuotaResetRequestDecisionClient(tx.config)
 	tx.QuotaResetRequestEvent = NewQuotaResetRequestEventClient(tx.config)
+	tx.QuotaResetRequestNode = NewQuotaResetRequestNodeClient(tx.config)
+	tx.QuotaResetRequestNodeApprover = NewQuotaResetRequestNodeApproverClient(tx.config)
 	tx.RelayProvider = NewRelayProviderClient(tx.config)
 	tx.RepoConfig = NewRepoConfigClient(tx.config)
 	tx.ScmProvider = NewScmProviderClient(tx.config)
