@@ -126,6 +126,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestnode"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
@@ -162,15 +163,22 @@ func TestWorkflowSchemasRoundTrip(t *testing.T) {
 		SetRequestID(request.ID).SetRequestNodeID(node.ID).SetActorUserID(approver.ID).
 		SetActorDisplayName("Bob").SetDecision("approve").
 		SetComment("Approved for the current investigation").SetAdminOverride(false).SaveX(ctx)
-	client.QuotaResetRequestNode.UpdateOneID(node.ID).
+	approvedNode := client.QuotaResetRequestNode.UpdateOneID(node.ID).
 		SetStatus(quotaresetrequestnode.StatusApproved).SetSatisfiedByDecisionID(decision.ID).SaveX(ctx)
-	client.QuotaResetRequest.UpdateOneID(request.ID).
-		SetCurrentNodeID(node.ID).SetWorkflowCompletedByDecisionID(decision.ID).SaveX(ctx)
+	completedRequest := client.QuotaResetRequest.UpdateOneID(request.ID).
+		ClearCurrentNodeID().SetWorkflowCompletedByDecisionID(decision.ID).
+		SetStatus(quotaresetrequest.StatusApprovedResetSucceeded).SaveX(ctx)
 	if got := client.QuotaResetRequestNodeApprover.Query().CountX(ctx); got != 1 {
 		t.Fatalf("node approver count = %d, want 1", got)
 	}
 	if got := client.QuotaResetRequestDecision.Query().OnlyX(ctx).Comment; got != "Approved for the current investigation" {
 		t.Fatalf("decision comment = %q", got)
+	}
+	if approvedNode.Status != quotaresetrequestnode.StatusApproved || completedRequest.CurrentNodeID != nil ||
+		completedRequest.WorkflowCompletedByDecisionID == nil ||
+		*completedRequest.WorkflowCompletedByDecisionID != decision.ID ||
+		completedRequest.Status != quotaresetrequest.StatusApprovedResetSucceeded {
+		t.Fatal("workflow did not persist a valid completed state")
 	}
 }
 ```
@@ -262,6 +270,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	entsql "entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
@@ -270,17 +279,17 @@ type QuotaResetRequestNode struct{ ent.Schema }
 
 func (QuotaResetRequestNode) Fields() []ent.Field {
 	return []ent.Field{
-		field.Int("request_id"),
-		field.Int("position").NonNegative(),
-		field.Enum("node_type").Values("requester_departments", "configured_department"),
-		field.String("label").Default(""),
-		field.JSON("department_snapshots", []map[string]any{}).Optional(),
+		field.Int("request_id").Immutable(),
+		field.Int("position").NonNegative().Immutable(),
+		field.Enum("node_type").Values("requester_departments", "configured_department").Immutable(),
+		field.String("label").Default("").Immutable(),
+		field.JSON("department_snapshots", []map[string]any{}).Optional().Immutable(),
 		field.Enum("status").Values("queued", "active", "approved", "satisfied_by_prior_approval", "skipped_no_approver", "rejected").Default("queued"),
-		field.Bool("admin_fallback_required").Default(false),
+		field.Bool("admin_fallback_required").Default(false).Immutable(),
 		field.Int("satisfied_by_decision_id").Optional().Nillable(),
 		field.Time("activated_at").Optional().Nillable(),
 		field.Time("completed_at").Optional().Nillable(),
-		field.Time("created_at").Default(timeNow),
+		field.Time("created_at").Default(timeNow).Immutable(),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
 	}
 }
@@ -288,6 +297,9 @@ func (QuotaResetRequestNode) Fields() []ent.Field {
 func (QuotaResetRequestNode) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("request_id", "position").Unique(),
+		index.Fields("request_id").
+			Unique().
+			Annotations(entsql.IndexWhere("status = 'active'")),
 		index.Fields("request_id", "status"),
 		index.Fields("status", "activated_at"),
 	}
@@ -309,14 +321,14 @@ type QuotaResetRequestNodeApprover struct{ ent.Schema }
 
 func (QuotaResetRequestNodeApprover) Fields() []ent.Field {
 	return []ent.Field{
-		field.Int("request_node_id"),
-		field.Int("user_id"),
-		field.String("display_name").Default(""),
-		field.String("email").Default(""),
-		field.Enum("source").Values("configured", "directory_representative"),
-		field.JSON("source_department_external_ids", []string{}).Optional(),
-		field.JSON("notification_ids", map[string]string{}).Optional(),
-		field.Time("created_at").Default(timeNow),
+		field.Int("request_node_id").Immutable(),
+		field.Int("user_id").Immutable(),
+		field.String("display_name").Default("").Immutable(),
+		field.String("email").Default("").Immutable(),
+		field.Enum("source").Values("configured", "directory_representative").Immutable(),
+		field.JSON("source_department_external_ids", []string{}).Optional().Immutable(),
+		field.JSON("notification_ids", map[string]string{}).Optional().Immutable(),
+		field.Time("created_at").Default(timeNow).Immutable(),
 	}
 }
 
@@ -343,14 +355,14 @@ type QuotaResetRequestDecision struct{ ent.Schema }
 
 func (QuotaResetRequestDecision) Fields() []ent.Field {
 	return []ent.Field{
-		field.Int("request_id"),
-		field.Int("request_node_id"),
-		field.Int("actor_user_id"),
-		field.String("actor_display_name").Default(""),
-		field.Enum("decision").Values("approve", "reject"),
-		field.String("comment").NotEmpty(),
-		field.Bool("admin_override").Default(false),
-		field.Time("created_at").Default(timeNow),
+		field.Int("request_id").Immutable(),
+		field.Int("request_node_id").Immutable(),
+		field.Int("actor_user_id").Immutable(),
+		field.String("actor_display_name").Default("").Immutable(),
+		field.Enum("decision").Values("approve", "reject").Immutable(),
+		field.String("comment").NotEmpty().Immutable(),
+		field.Bool("admin_override").Default(false).Immutable(),
+		field.Time("created_at").Default(timeNow).Immutable(),
 	}
 }
 
@@ -424,6 +436,16 @@ Expected: PASS.
 git add backend/ent backend/internal/quotareset/schema_test.go
 git commit -m "feat(backend): add quota reset workflow schemas"
 ```
+
+**Review follow-up quality evidence (2026-07-10):**
+
+- [x] RED proves the pre-fix schema permits two active nodes for one request.
+- [x] Structural node snapshots and all approver/decision snapshot fields are immutable in generated update APIs.
+- [x] PostgreSQL enforces at most one active node per request while retaining the non-unique query indexes.
+- [x] Durable tests cover legacy request defaults, existing notification defaults, new lifecycle events, and valid completed state.
+- [x] An independent reviewer completed a PostgreSQL base-to-head migration with representative v1 rows; no hand-written old-DDL fixture was added.
+- [x] Focused, package, full-backend, generation reproducibility, and diff checks pass.
+- [x] Follow-up fixes are committed separately from `b60cdf9`.
 
 ---
 

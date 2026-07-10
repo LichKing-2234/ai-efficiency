@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -25,139 +24,6 @@ type QuotaResetRequestDecisionUpdate struct {
 // Where appends a list predicates to the QuotaResetRequestDecisionUpdate builder.
 func (qrrdu *QuotaResetRequestDecisionUpdate) Where(ps ...predicate.QuotaResetRequestDecision) *QuotaResetRequestDecisionUpdate {
 	qrrdu.mutation.Where(ps...)
-	return qrrdu
-}
-
-// SetRequestID sets the "request_id" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetRequestID(i int) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.ResetRequestID()
-	qrrdu.mutation.SetRequestID(i)
-	return qrrdu
-}
-
-// SetNillableRequestID sets the "request_id" field if the given value is not nil.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetNillableRequestID(i *int) *QuotaResetRequestDecisionUpdate {
-	if i != nil {
-		qrrdu.SetRequestID(*i)
-	}
-	return qrrdu
-}
-
-// AddRequestID adds i to the "request_id" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) AddRequestID(i int) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.AddRequestID(i)
-	return qrrdu
-}
-
-// SetRequestNodeID sets the "request_node_id" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetRequestNodeID(i int) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.ResetRequestNodeID()
-	qrrdu.mutation.SetRequestNodeID(i)
-	return qrrdu
-}
-
-// SetNillableRequestNodeID sets the "request_node_id" field if the given value is not nil.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetNillableRequestNodeID(i *int) *QuotaResetRequestDecisionUpdate {
-	if i != nil {
-		qrrdu.SetRequestNodeID(*i)
-	}
-	return qrrdu
-}
-
-// AddRequestNodeID adds i to the "request_node_id" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) AddRequestNodeID(i int) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.AddRequestNodeID(i)
-	return qrrdu
-}
-
-// SetActorUserID sets the "actor_user_id" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetActorUserID(i int) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.ResetActorUserID()
-	qrrdu.mutation.SetActorUserID(i)
-	return qrrdu
-}
-
-// SetNillableActorUserID sets the "actor_user_id" field if the given value is not nil.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetNillableActorUserID(i *int) *QuotaResetRequestDecisionUpdate {
-	if i != nil {
-		qrrdu.SetActorUserID(*i)
-	}
-	return qrrdu
-}
-
-// AddActorUserID adds i to the "actor_user_id" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) AddActorUserID(i int) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.AddActorUserID(i)
-	return qrrdu
-}
-
-// SetActorDisplayName sets the "actor_display_name" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetActorDisplayName(s string) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.SetActorDisplayName(s)
-	return qrrdu
-}
-
-// SetNillableActorDisplayName sets the "actor_display_name" field if the given value is not nil.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetNillableActorDisplayName(s *string) *QuotaResetRequestDecisionUpdate {
-	if s != nil {
-		qrrdu.SetActorDisplayName(*s)
-	}
-	return qrrdu
-}
-
-// SetDecision sets the "decision" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetDecision(q quotaresetrequestdecision.Decision) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.SetDecision(q)
-	return qrrdu
-}
-
-// SetNillableDecision sets the "decision" field if the given value is not nil.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetNillableDecision(q *quotaresetrequestdecision.Decision) *QuotaResetRequestDecisionUpdate {
-	if q != nil {
-		qrrdu.SetDecision(*q)
-	}
-	return qrrdu
-}
-
-// SetComment sets the "comment" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetComment(s string) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.SetComment(s)
-	return qrrdu
-}
-
-// SetNillableComment sets the "comment" field if the given value is not nil.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetNillableComment(s *string) *QuotaResetRequestDecisionUpdate {
-	if s != nil {
-		qrrdu.SetComment(*s)
-	}
-	return qrrdu
-}
-
-// SetAdminOverride sets the "admin_override" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetAdminOverride(b bool) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.SetAdminOverride(b)
-	return qrrdu
-}
-
-// SetNillableAdminOverride sets the "admin_override" field if the given value is not nil.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetNillableAdminOverride(b *bool) *QuotaResetRequestDecisionUpdate {
-	if b != nil {
-		qrrdu.SetAdminOverride(*b)
-	}
-	return qrrdu
-}
-
-// SetCreatedAt sets the "created_at" field.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetCreatedAt(t time.Time) *QuotaResetRequestDecisionUpdate {
-	qrrdu.mutation.SetCreatedAt(t)
-	return qrrdu
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (qrrdu *QuotaResetRequestDecisionUpdate) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestDecisionUpdate {
-	if t != nil {
-		qrrdu.SetCreatedAt(*t)
-	}
 	return qrrdu
 }
 
@@ -193,25 +59,7 @@ func (qrrdu *QuotaResetRequestDecisionUpdate) ExecX(ctx context.Context) {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (qrrdu *QuotaResetRequestDecisionUpdate) check() error {
-	if v, ok := qrrdu.mutation.Decision(); ok {
-		if err := quotaresetrequestdecision.DecisionValidator(v); err != nil {
-			return &ValidationError{Name: "decision", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestDecision.decision": %w`, err)}
-		}
-	}
-	if v, ok := qrrdu.mutation.Comment(); ok {
-		if err := quotaresetrequestdecision.CommentValidator(v); err != nil {
-			return &ValidationError{Name: "comment", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestDecision.comment": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (qrrdu *QuotaResetRequestDecisionUpdate) sqlSave(ctx context.Context) (n int, err error) {
-	if err := qrrdu.check(); err != nil {
-		return n, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(quotaresetrequestdecision.Table, quotaresetrequestdecision.Columns, sqlgraph.NewFieldSpec(quotaresetrequestdecision.FieldID, field.TypeInt))
 	if ps := qrrdu.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
@@ -219,39 +67,6 @@ func (qrrdu *QuotaResetRequestDecisionUpdate) sqlSave(ctx context.Context) (n in
 				ps[i](selector)
 			}
 		}
-	}
-	if value, ok := qrrdu.mutation.RequestID(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldRequestID, field.TypeInt, value)
-	}
-	if value, ok := qrrdu.mutation.AddedRequestID(); ok {
-		_spec.AddField(quotaresetrequestdecision.FieldRequestID, field.TypeInt, value)
-	}
-	if value, ok := qrrdu.mutation.RequestNodeID(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldRequestNodeID, field.TypeInt, value)
-	}
-	if value, ok := qrrdu.mutation.AddedRequestNodeID(); ok {
-		_spec.AddField(quotaresetrequestdecision.FieldRequestNodeID, field.TypeInt, value)
-	}
-	if value, ok := qrrdu.mutation.ActorUserID(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldActorUserID, field.TypeInt, value)
-	}
-	if value, ok := qrrdu.mutation.AddedActorUserID(); ok {
-		_spec.AddField(quotaresetrequestdecision.FieldActorUserID, field.TypeInt, value)
-	}
-	if value, ok := qrrdu.mutation.ActorDisplayName(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldActorDisplayName, field.TypeString, value)
-	}
-	if value, ok := qrrdu.mutation.Decision(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldDecision, field.TypeEnum, value)
-	}
-	if value, ok := qrrdu.mutation.Comment(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldComment, field.TypeString, value)
-	}
-	if value, ok := qrrdu.mutation.AdminOverride(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldAdminOverride, field.TypeBool, value)
-	}
-	if value, ok := qrrdu.mutation.CreatedAt(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldCreatedAt, field.TypeTime, value)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, qrrdu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -271,139 +86,6 @@ type QuotaResetRequestDecisionUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *QuotaResetRequestDecisionMutation
-}
-
-// SetRequestID sets the "request_id" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetRequestID(i int) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.ResetRequestID()
-	qrrduo.mutation.SetRequestID(i)
-	return qrrduo
-}
-
-// SetNillableRequestID sets the "request_id" field if the given value is not nil.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetNillableRequestID(i *int) *QuotaResetRequestDecisionUpdateOne {
-	if i != nil {
-		qrrduo.SetRequestID(*i)
-	}
-	return qrrduo
-}
-
-// AddRequestID adds i to the "request_id" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) AddRequestID(i int) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.AddRequestID(i)
-	return qrrduo
-}
-
-// SetRequestNodeID sets the "request_node_id" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetRequestNodeID(i int) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.ResetRequestNodeID()
-	qrrduo.mutation.SetRequestNodeID(i)
-	return qrrduo
-}
-
-// SetNillableRequestNodeID sets the "request_node_id" field if the given value is not nil.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetNillableRequestNodeID(i *int) *QuotaResetRequestDecisionUpdateOne {
-	if i != nil {
-		qrrduo.SetRequestNodeID(*i)
-	}
-	return qrrduo
-}
-
-// AddRequestNodeID adds i to the "request_node_id" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) AddRequestNodeID(i int) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.AddRequestNodeID(i)
-	return qrrduo
-}
-
-// SetActorUserID sets the "actor_user_id" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetActorUserID(i int) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.ResetActorUserID()
-	qrrduo.mutation.SetActorUserID(i)
-	return qrrduo
-}
-
-// SetNillableActorUserID sets the "actor_user_id" field if the given value is not nil.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetNillableActorUserID(i *int) *QuotaResetRequestDecisionUpdateOne {
-	if i != nil {
-		qrrduo.SetActorUserID(*i)
-	}
-	return qrrduo
-}
-
-// AddActorUserID adds i to the "actor_user_id" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) AddActorUserID(i int) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.AddActorUserID(i)
-	return qrrduo
-}
-
-// SetActorDisplayName sets the "actor_display_name" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetActorDisplayName(s string) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.SetActorDisplayName(s)
-	return qrrduo
-}
-
-// SetNillableActorDisplayName sets the "actor_display_name" field if the given value is not nil.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetNillableActorDisplayName(s *string) *QuotaResetRequestDecisionUpdateOne {
-	if s != nil {
-		qrrduo.SetActorDisplayName(*s)
-	}
-	return qrrduo
-}
-
-// SetDecision sets the "decision" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetDecision(q quotaresetrequestdecision.Decision) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.SetDecision(q)
-	return qrrduo
-}
-
-// SetNillableDecision sets the "decision" field if the given value is not nil.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetNillableDecision(q *quotaresetrequestdecision.Decision) *QuotaResetRequestDecisionUpdateOne {
-	if q != nil {
-		qrrduo.SetDecision(*q)
-	}
-	return qrrduo
-}
-
-// SetComment sets the "comment" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetComment(s string) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.SetComment(s)
-	return qrrduo
-}
-
-// SetNillableComment sets the "comment" field if the given value is not nil.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetNillableComment(s *string) *QuotaResetRequestDecisionUpdateOne {
-	if s != nil {
-		qrrduo.SetComment(*s)
-	}
-	return qrrduo
-}
-
-// SetAdminOverride sets the "admin_override" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetAdminOverride(b bool) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.SetAdminOverride(b)
-	return qrrduo
-}
-
-// SetNillableAdminOverride sets the "admin_override" field if the given value is not nil.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetNillableAdminOverride(b *bool) *QuotaResetRequestDecisionUpdateOne {
-	if b != nil {
-		qrrduo.SetAdminOverride(*b)
-	}
-	return qrrduo
-}
-
-// SetCreatedAt sets the "created_at" field.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetCreatedAt(t time.Time) *QuotaResetRequestDecisionUpdateOne {
-	qrrduo.mutation.SetCreatedAt(t)
-	return qrrduo
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestDecisionUpdateOne {
-	if t != nil {
-		qrrduo.SetCreatedAt(*t)
-	}
-	return qrrduo
 }
 
 // Mutation returns the QuotaResetRequestDecisionMutation object of the builder.
@@ -451,25 +133,7 @@ func (qrrduo *QuotaResetRequestDecisionUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (qrrduo *QuotaResetRequestDecisionUpdateOne) check() error {
-	if v, ok := qrrduo.mutation.Decision(); ok {
-		if err := quotaresetrequestdecision.DecisionValidator(v); err != nil {
-			return &ValidationError{Name: "decision", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestDecision.decision": %w`, err)}
-		}
-	}
-	if v, ok := qrrduo.mutation.Comment(); ok {
-		if err := quotaresetrequestdecision.CommentValidator(v); err != nil {
-			return &ValidationError{Name: "comment", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestDecision.comment": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (qrrduo *QuotaResetRequestDecisionUpdateOne) sqlSave(ctx context.Context) (_node *QuotaResetRequestDecision, err error) {
-	if err := qrrduo.check(); err != nil {
-		return _node, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(quotaresetrequestdecision.Table, quotaresetrequestdecision.Columns, sqlgraph.NewFieldSpec(quotaresetrequestdecision.FieldID, field.TypeInt))
 	id, ok := qrrduo.mutation.ID()
 	if !ok {
@@ -494,39 +158,6 @@ func (qrrduo *QuotaResetRequestDecisionUpdateOne) sqlSave(ctx context.Context) (
 				ps[i](selector)
 			}
 		}
-	}
-	if value, ok := qrrduo.mutation.RequestID(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldRequestID, field.TypeInt, value)
-	}
-	if value, ok := qrrduo.mutation.AddedRequestID(); ok {
-		_spec.AddField(quotaresetrequestdecision.FieldRequestID, field.TypeInt, value)
-	}
-	if value, ok := qrrduo.mutation.RequestNodeID(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldRequestNodeID, field.TypeInt, value)
-	}
-	if value, ok := qrrduo.mutation.AddedRequestNodeID(); ok {
-		_spec.AddField(quotaresetrequestdecision.FieldRequestNodeID, field.TypeInt, value)
-	}
-	if value, ok := qrrduo.mutation.ActorUserID(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldActorUserID, field.TypeInt, value)
-	}
-	if value, ok := qrrduo.mutation.AddedActorUserID(); ok {
-		_spec.AddField(quotaresetrequestdecision.FieldActorUserID, field.TypeInt, value)
-	}
-	if value, ok := qrrduo.mutation.ActorDisplayName(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldActorDisplayName, field.TypeString, value)
-	}
-	if value, ok := qrrduo.mutation.Decision(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldDecision, field.TypeEnum, value)
-	}
-	if value, ok := qrrduo.mutation.Comment(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldComment, field.TypeString, value)
-	}
-	if value, ok := qrrduo.mutation.AdminOverride(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldAdminOverride, field.TypeBool, value)
-	}
-	if value, ok := qrrduo.mutation.CreatedAt(); ok {
-		_spec.SetField(quotaresetrequestdecision.FieldCreatedAt, field.TypeTime, value)
 	}
 	_node = &QuotaResetRequestDecision{config: qrrduo.config}
 	_spec.Assign = _node.assignValues

@@ -888,6 +888,14 @@ var (
 				Columns: []*schema.Column{QuotaResetRequestNodesColumns[1], QuotaResetRequestNodesColumns[2]},
 			},
 			{
+				Name:    "quotaresetrequestnode_request_id",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetRequestNodesColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status = 'active'",
+				},
+			},
+			{
 				Name:    "quotaresetrequestnode_request_id_status",
 				Unique:  false,
 				Columns: []*schema.Column{QuotaResetRequestNodesColumns[1], QuotaResetRequestNodesColumns[6]},

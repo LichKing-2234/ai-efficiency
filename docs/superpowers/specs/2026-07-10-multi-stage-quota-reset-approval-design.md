@@ -376,11 +376,17 @@ Fields:
 | `created_at` | time | |
 | `updated_at` | time | |
 
+`request_id`, `position`, `node_type`, `label`, `department_snapshots`,
+`admin_fallback_required`, and `created_at` are immutable after insert. Workflow
+state fields `status`, `satisfied_by_decision_id`, `activated_at`, `completed_at`,
+and `updated_at` remain mutable.
+
 Indexes:
 
 1. Unique `(request_id, position)`.
-2. `(request_id, status)`.
-3. `(status, activated_at)`.
+2. PostgreSQL partial unique `(request_id) WHERE status = 'active'`.
+3. `(request_id, status)`.
+4. `(status, activated_at)`.
 
 ### `quota_reset_request_node_approvers`
 
@@ -399,6 +405,8 @@ Fields:
 | `source_department_external_ids` | JSON array | Evidence for multi-department initial node |
 | `notification_ids` | JSON object | Channel-keyed recipient ids |
 | `created_at` | time | |
+
+Every field is immutable after insert.
 
 Unique index: `(request_node_id, user_id)`.
 
@@ -419,6 +427,8 @@ Fields:
 | `comment` | string | Required and non-empty |
 | `admin_override` | bool | Actor used current admin permission |
 | `created_at` | time | |
+
+Every field is immutable after insert.
 
 Indexes:
 

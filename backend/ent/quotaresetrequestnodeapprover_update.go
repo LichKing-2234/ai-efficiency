@@ -6,11 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestnodeapprover"
@@ -26,134 +24,6 @@ type QuotaResetRequestNodeApproverUpdate struct {
 // Where appends a list predicates to the QuotaResetRequestNodeApproverUpdate builder.
 func (qrrnau *QuotaResetRequestNodeApproverUpdate) Where(ps ...predicate.QuotaResetRequestNodeApprover) *QuotaResetRequestNodeApproverUpdate {
 	qrrnau.mutation.Where(ps...)
-	return qrrnau
-}
-
-// SetRequestNodeID sets the "request_node_id" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetRequestNodeID(i int) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.ResetRequestNodeID()
-	qrrnau.mutation.SetRequestNodeID(i)
-	return qrrnau
-}
-
-// SetNillableRequestNodeID sets the "request_node_id" field if the given value is not nil.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetNillableRequestNodeID(i *int) *QuotaResetRequestNodeApproverUpdate {
-	if i != nil {
-		qrrnau.SetRequestNodeID(*i)
-	}
-	return qrrnau
-}
-
-// AddRequestNodeID adds i to the "request_node_id" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) AddRequestNodeID(i int) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.AddRequestNodeID(i)
-	return qrrnau
-}
-
-// SetUserID sets the "user_id" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetUserID(i int) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.ResetUserID()
-	qrrnau.mutation.SetUserID(i)
-	return qrrnau
-}
-
-// SetNillableUserID sets the "user_id" field if the given value is not nil.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetNillableUserID(i *int) *QuotaResetRequestNodeApproverUpdate {
-	if i != nil {
-		qrrnau.SetUserID(*i)
-	}
-	return qrrnau
-}
-
-// AddUserID adds i to the "user_id" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) AddUserID(i int) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.AddUserID(i)
-	return qrrnau
-}
-
-// SetDisplayName sets the "display_name" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetDisplayName(s string) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.SetDisplayName(s)
-	return qrrnau
-}
-
-// SetNillableDisplayName sets the "display_name" field if the given value is not nil.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetNillableDisplayName(s *string) *QuotaResetRequestNodeApproverUpdate {
-	if s != nil {
-		qrrnau.SetDisplayName(*s)
-	}
-	return qrrnau
-}
-
-// SetEmail sets the "email" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetEmail(s string) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.SetEmail(s)
-	return qrrnau
-}
-
-// SetNillableEmail sets the "email" field if the given value is not nil.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetNillableEmail(s *string) *QuotaResetRequestNodeApproverUpdate {
-	if s != nil {
-		qrrnau.SetEmail(*s)
-	}
-	return qrrnau
-}
-
-// SetSource sets the "source" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetSource(q quotaresetrequestnodeapprover.Source) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.SetSource(q)
-	return qrrnau
-}
-
-// SetNillableSource sets the "source" field if the given value is not nil.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetNillableSource(q *quotaresetrequestnodeapprover.Source) *QuotaResetRequestNodeApproverUpdate {
-	if q != nil {
-		qrrnau.SetSource(*q)
-	}
-	return qrrnau
-}
-
-// SetSourceDepartmentExternalIds sets the "source_department_external_ids" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetSourceDepartmentExternalIds(s []string) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.SetSourceDepartmentExternalIds(s)
-	return qrrnau
-}
-
-// AppendSourceDepartmentExternalIds appends s to the "source_department_external_ids" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) AppendSourceDepartmentExternalIds(s []string) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.AppendSourceDepartmentExternalIds(s)
-	return qrrnau
-}
-
-// ClearSourceDepartmentExternalIds clears the value of the "source_department_external_ids" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) ClearSourceDepartmentExternalIds() *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.ClearSourceDepartmentExternalIds()
-	return qrrnau
-}
-
-// SetNotificationIds sets the "notification_ids" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetNotificationIds(m map[string]string) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.SetNotificationIds(m)
-	return qrrnau
-}
-
-// ClearNotificationIds clears the value of the "notification_ids" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) ClearNotificationIds() *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.ClearNotificationIds()
-	return qrrnau
-}
-
-// SetCreatedAt sets the "created_at" field.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetCreatedAt(t time.Time) *QuotaResetRequestNodeApproverUpdate {
-	qrrnau.mutation.SetCreatedAt(t)
-	return qrrnau
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestNodeApproverUpdate {
-	if t != nil {
-		qrrnau.SetCreatedAt(*t)
-	}
 	return qrrnau
 }
 
@@ -189,20 +59,7 @@ func (qrrnau *QuotaResetRequestNodeApproverUpdate) ExecX(ctx context.Context) {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (qrrnau *QuotaResetRequestNodeApproverUpdate) check() error {
-	if v, ok := qrrnau.mutation.Source(); ok {
-		if err := quotaresetrequestnodeapprover.SourceValidator(v); err != nil {
-			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestNodeApprover.source": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (qrrnau *QuotaResetRequestNodeApproverUpdate) sqlSave(ctx context.Context) (n int, err error) {
-	if err := qrrnau.check(); err != nil {
-		return n, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(quotaresetrequestnodeapprover.Table, quotaresetrequestnodeapprover.Columns, sqlgraph.NewFieldSpec(quotaresetrequestnodeapprover.FieldID, field.TypeInt))
 	if ps := qrrnau.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
@@ -211,46 +68,11 @@ func (qrrnau *QuotaResetRequestNodeApproverUpdate) sqlSave(ctx context.Context) 
 			}
 		}
 	}
-	if value, ok := qrrnau.mutation.RequestNodeID(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldRequestNodeID, field.TypeInt, value)
-	}
-	if value, ok := qrrnau.mutation.AddedRequestNodeID(); ok {
-		_spec.AddField(quotaresetrequestnodeapprover.FieldRequestNodeID, field.TypeInt, value)
-	}
-	if value, ok := qrrnau.mutation.UserID(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldUserID, field.TypeInt, value)
-	}
-	if value, ok := qrrnau.mutation.AddedUserID(); ok {
-		_spec.AddField(quotaresetrequestnodeapprover.FieldUserID, field.TypeInt, value)
-	}
-	if value, ok := qrrnau.mutation.DisplayName(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldDisplayName, field.TypeString, value)
-	}
-	if value, ok := qrrnau.mutation.Email(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldEmail, field.TypeString, value)
-	}
-	if value, ok := qrrnau.mutation.Source(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldSource, field.TypeEnum, value)
-	}
-	if value, ok := qrrnau.mutation.SourceDepartmentExternalIds(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds, field.TypeJSON, value)
-	}
-	if value, ok := qrrnau.mutation.AppendedSourceDepartmentExternalIds(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds, value)
-		})
-	}
 	if qrrnau.mutation.SourceDepartmentExternalIdsCleared() {
 		_spec.ClearField(quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds, field.TypeJSON)
 	}
-	if value, ok := qrrnau.mutation.NotificationIds(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldNotificationIds, field.TypeJSON, value)
-	}
 	if qrrnau.mutation.NotificationIdsCleared() {
 		_spec.ClearField(quotaresetrequestnodeapprover.FieldNotificationIds, field.TypeJSON)
-	}
-	if value, ok := qrrnau.mutation.CreatedAt(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldCreatedAt, field.TypeTime, value)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, qrrnau.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -270,134 +92,6 @@ type QuotaResetRequestNodeApproverUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *QuotaResetRequestNodeApproverMutation
-}
-
-// SetRequestNodeID sets the "request_node_id" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetRequestNodeID(i int) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.ResetRequestNodeID()
-	qrrnauo.mutation.SetRequestNodeID(i)
-	return qrrnauo
-}
-
-// SetNillableRequestNodeID sets the "request_node_id" field if the given value is not nil.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetNillableRequestNodeID(i *int) *QuotaResetRequestNodeApproverUpdateOne {
-	if i != nil {
-		qrrnauo.SetRequestNodeID(*i)
-	}
-	return qrrnauo
-}
-
-// AddRequestNodeID adds i to the "request_node_id" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) AddRequestNodeID(i int) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.AddRequestNodeID(i)
-	return qrrnauo
-}
-
-// SetUserID sets the "user_id" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetUserID(i int) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.ResetUserID()
-	qrrnauo.mutation.SetUserID(i)
-	return qrrnauo
-}
-
-// SetNillableUserID sets the "user_id" field if the given value is not nil.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetNillableUserID(i *int) *QuotaResetRequestNodeApproverUpdateOne {
-	if i != nil {
-		qrrnauo.SetUserID(*i)
-	}
-	return qrrnauo
-}
-
-// AddUserID adds i to the "user_id" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) AddUserID(i int) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.AddUserID(i)
-	return qrrnauo
-}
-
-// SetDisplayName sets the "display_name" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetDisplayName(s string) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.SetDisplayName(s)
-	return qrrnauo
-}
-
-// SetNillableDisplayName sets the "display_name" field if the given value is not nil.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetNillableDisplayName(s *string) *QuotaResetRequestNodeApproverUpdateOne {
-	if s != nil {
-		qrrnauo.SetDisplayName(*s)
-	}
-	return qrrnauo
-}
-
-// SetEmail sets the "email" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetEmail(s string) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.SetEmail(s)
-	return qrrnauo
-}
-
-// SetNillableEmail sets the "email" field if the given value is not nil.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetNillableEmail(s *string) *QuotaResetRequestNodeApproverUpdateOne {
-	if s != nil {
-		qrrnauo.SetEmail(*s)
-	}
-	return qrrnauo
-}
-
-// SetSource sets the "source" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetSource(q quotaresetrequestnodeapprover.Source) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.SetSource(q)
-	return qrrnauo
-}
-
-// SetNillableSource sets the "source" field if the given value is not nil.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetNillableSource(q *quotaresetrequestnodeapprover.Source) *QuotaResetRequestNodeApproverUpdateOne {
-	if q != nil {
-		qrrnauo.SetSource(*q)
-	}
-	return qrrnauo
-}
-
-// SetSourceDepartmentExternalIds sets the "source_department_external_ids" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetSourceDepartmentExternalIds(s []string) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.SetSourceDepartmentExternalIds(s)
-	return qrrnauo
-}
-
-// AppendSourceDepartmentExternalIds appends s to the "source_department_external_ids" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) AppendSourceDepartmentExternalIds(s []string) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.AppendSourceDepartmentExternalIds(s)
-	return qrrnauo
-}
-
-// ClearSourceDepartmentExternalIds clears the value of the "source_department_external_ids" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) ClearSourceDepartmentExternalIds() *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.ClearSourceDepartmentExternalIds()
-	return qrrnauo
-}
-
-// SetNotificationIds sets the "notification_ids" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetNotificationIds(m map[string]string) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.SetNotificationIds(m)
-	return qrrnauo
-}
-
-// ClearNotificationIds clears the value of the "notification_ids" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) ClearNotificationIds() *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.ClearNotificationIds()
-	return qrrnauo
-}
-
-// SetCreatedAt sets the "created_at" field.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetCreatedAt(t time.Time) *QuotaResetRequestNodeApproverUpdateOne {
-	qrrnauo.mutation.SetCreatedAt(t)
-	return qrrnauo
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestNodeApproverUpdateOne {
-	if t != nil {
-		qrrnauo.SetCreatedAt(*t)
-	}
-	return qrrnauo
 }
 
 // Mutation returns the QuotaResetRequestNodeApproverMutation object of the builder.
@@ -445,20 +139,7 @@ func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) ExecX(ctx context.Context
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) check() error {
-	if v, ok := qrrnauo.mutation.Source(); ok {
-		if err := quotaresetrequestnodeapprover.SourceValidator(v); err != nil {
-			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestNodeApprover.source": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) sqlSave(ctx context.Context) (_node *QuotaResetRequestNodeApprover, err error) {
-	if err := qrrnauo.check(); err != nil {
-		return _node, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(quotaresetrequestnodeapprover.Table, quotaresetrequestnodeapprover.Columns, sqlgraph.NewFieldSpec(quotaresetrequestnodeapprover.FieldID, field.TypeInt))
 	id, ok := qrrnauo.mutation.ID()
 	if !ok {
@@ -484,46 +165,11 @@ func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) sqlSave(ctx context.Conte
 			}
 		}
 	}
-	if value, ok := qrrnauo.mutation.RequestNodeID(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldRequestNodeID, field.TypeInt, value)
-	}
-	if value, ok := qrrnauo.mutation.AddedRequestNodeID(); ok {
-		_spec.AddField(quotaresetrequestnodeapprover.FieldRequestNodeID, field.TypeInt, value)
-	}
-	if value, ok := qrrnauo.mutation.UserID(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldUserID, field.TypeInt, value)
-	}
-	if value, ok := qrrnauo.mutation.AddedUserID(); ok {
-		_spec.AddField(quotaresetrequestnodeapprover.FieldUserID, field.TypeInt, value)
-	}
-	if value, ok := qrrnauo.mutation.DisplayName(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldDisplayName, field.TypeString, value)
-	}
-	if value, ok := qrrnauo.mutation.Email(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldEmail, field.TypeString, value)
-	}
-	if value, ok := qrrnauo.mutation.Source(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldSource, field.TypeEnum, value)
-	}
-	if value, ok := qrrnauo.mutation.SourceDepartmentExternalIds(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds, field.TypeJSON, value)
-	}
-	if value, ok := qrrnauo.mutation.AppendedSourceDepartmentExternalIds(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds, value)
-		})
-	}
 	if qrrnauo.mutation.SourceDepartmentExternalIdsCleared() {
 		_spec.ClearField(quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds, field.TypeJSON)
 	}
-	if value, ok := qrrnauo.mutation.NotificationIds(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldNotificationIds, field.TypeJSON, value)
-	}
 	if qrrnauo.mutation.NotificationIdsCleared() {
 		_spec.ClearField(quotaresetrequestnodeapprover.FieldNotificationIds, field.TypeJSON)
-	}
-	if value, ok := qrrnauo.mutation.CreatedAt(); ok {
-		_spec.SetField(quotaresetrequestnodeapprover.FieldCreatedAt, field.TypeTime, value)
 	}
 	_node = &QuotaResetRequestNodeApprover{config: qrrnauo.config}
 	_spec.Assign = _node.assignValues

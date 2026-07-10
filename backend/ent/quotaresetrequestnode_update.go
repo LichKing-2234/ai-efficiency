@@ -10,7 +10,6 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestnode"
@@ -29,94 +28,6 @@ func (qrrnu *QuotaResetRequestNodeUpdate) Where(ps ...predicate.QuotaResetReques
 	return qrrnu
 }
 
-// SetRequestID sets the "request_id" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetRequestID(i int) *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.ResetRequestID()
-	qrrnu.mutation.SetRequestID(i)
-	return qrrnu
-}
-
-// SetNillableRequestID sets the "request_id" field if the given value is not nil.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetNillableRequestID(i *int) *QuotaResetRequestNodeUpdate {
-	if i != nil {
-		qrrnu.SetRequestID(*i)
-	}
-	return qrrnu
-}
-
-// AddRequestID adds i to the "request_id" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) AddRequestID(i int) *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.AddRequestID(i)
-	return qrrnu
-}
-
-// SetPosition sets the "position" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetPosition(i int) *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.ResetPosition()
-	qrrnu.mutation.SetPosition(i)
-	return qrrnu
-}
-
-// SetNillablePosition sets the "position" field if the given value is not nil.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetNillablePosition(i *int) *QuotaResetRequestNodeUpdate {
-	if i != nil {
-		qrrnu.SetPosition(*i)
-	}
-	return qrrnu
-}
-
-// AddPosition adds i to the "position" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) AddPosition(i int) *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.AddPosition(i)
-	return qrrnu
-}
-
-// SetNodeType sets the "node_type" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetNodeType(qt quotaresetrequestnode.NodeType) *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.SetNodeType(qt)
-	return qrrnu
-}
-
-// SetNillableNodeType sets the "node_type" field if the given value is not nil.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetNillableNodeType(qt *quotaresetrequestnode.NodeType) *QuotaResetRequestNodeUpdate {
-	if qt != nil {
-		qrrnu.SetNodeType(*qt)
-	}
-	return qrrnu
-}
-
-// SetLabel sets the "label" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetLabel(s string) *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.SetLabel(s)
-	return qrrnu
-}
-
-// SetNillableLabel sets the "label" field if the given value is not nil.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetNillableLabel(s *string) *QuotaResetRequestNodeUpdate {
-	if s != nil {
-		qrrnu.SetLabel(*s)
-	}
-	return qrrnu
-}
-
-// SetDepartmentSnapshots sets the "department_snapshots" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetDepartmentSnapshots(m []map[string]interface{}) *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.SetDepartmentSnapshots(m)
-	return qrrnu
-}
-
-// AppendDepartmentSnapshots appends m to the "department_snapshots" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) AppendDepartmentSnapshots(m []map[string]interface{}) *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.AppendDepartmentSnapshots(m)
-	return qrrnu
-}
-
-// ClearDepartmentSnapshots clears the value of the "department_snapshots" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) ClearDepartmentSnapshots() *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.ClearDepartmentSnapshots()
-	return qrrnu
-}
-
 // SetStatus sets the "status" field.
 func (qrrnu *QuotaResetRequestNodeUpdate) SetStatus(q quotaresetrequestnode.Status) *QuotaResetRequestNodeUpdate {
 	qrrnu.mutation.SetStatus(q)
@@ -127,20 +38,6 @@ func (qrrnu *QuotaResetRequestNodeUpdate) SetStatus(q quotaresetrequestnode.Stat
 func (qrrnu *QuotaResetRequestNodeUpdate) SetNillableStatus(q *quotaresetrequestnode.Status) *QuotaResetRequestNodeUpdate {
 	if q != nil {
 		qrrnu.SetStatus(*q)
-	}
-	return qrrnu
-}
-
-// SetAdminFallbackRequired sets the "admin_fallback_required" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetAdminFallbackRequired(b bool) *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.SetAdminFallbackRequired(b)
-	return qrrnu
-}
-
-// SetNillableAdminFallbackRequired sets the "admin_fallback_required" field if the given value is not nil.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetNillableAdminFallbackRequired(b *bool) *QuotaResetRequestNodeUpdate {
-	if b != nil {
-		qrrnu.SetAdminFallbackRequired(*b)
 	}
 	return qrrnu
 }
@@ -212,20 +109,6 @@ func (qrrnu *QuotaResetRequestNodeUpdate) ClearCompletedAt() *QuotaResetRequestN
 	return qrrnu
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetCreatedAt(t time.Time) *QuotaResetRequestNodeUpdate {
-	qrrnu.mutation.SetCreatedAt(t)
-	return qrrnu
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (qrrnu *QuotaResetRequestNodeUpdate) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestNodeUpdate {
-	if t != nil {
-		qrrnu.SetCreatedAt(*t)
-	}
-	return qrrnu
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (qrrnu *QuotaResetRequestNodeUpdate) SetUpdatedAt(t time.Time) *QuotaResetRequestNodeUpdate {
 	qrrnu.mutation.SetUpdatedAt(t)
@@ -275,16 +158,6 @@ func (qrrnu *QuotaResetRequestNodeUpdate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (qrrnu *QuotaResetRequestNodeUpdate) check() error {
-	if v, ok := qrrnu.mutation.Position(); ok {
-		if err := quotaresetrequestnode.PositionValidator(v); err != nil {
-			return &ValidationError{Name: "position", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestNode.position": %w`, err)}
-		}
-	}
-	if v, ok := qrrnu.mutation.NodeType(); ok {
-		if err := quotaresetrequestnode.NodeTypeValidator(v); err != nil {
-			return &ValidationError{Name: "node_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestNode.node_type": %w`, err)}
-		}
-	}
 	if v, ok := qrrnu.mutation.Status(); ok {
 		if err := quotaresetrequestnode.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestNode.status": %w`, err)}
@@ -305,40 +178,11 @@ func (qrrnu *QuotaResetRequestNodeUpdate) sqlSave(ctx context.Context) (n int, e
 			}
 		}
 	}
-	if value, ok := qrrnu.mutation.RequestID(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldRequestID, field.TypeInt, value)
-	}
-	if value, ok := qrrnu.mutation.AddedRequestID(); ok {
-		_spec.AddField(quotaresetrequestnode.FieldRequestID, field.TypeInt, value)
-	}
-	if value, ok := qrrnu.mutation.Position(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldPosition, field.TypeInt, value)
-	}
-	if value, ok := qrrnu.mutation.AddedPosition(); ok {
-		_spec.AddField(quotaresetrequestnode.FieldPosition, field.TypeInt, value)
-	}
-	if value, ok := qrrnu.mutation.NodeType(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldNodeType, field.TypeEnum, value)
-	}
-	if value, ok := qrrnu.mutation.Label(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldLabel, field.TypeString, value)
-	}
-	if value, ok := qrrnu.mutation.DepartmentSnapshots(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldDepartmentSnapshots, field.TypeJSON, value)
-	}
-	if value, ok := qrrnu.mutation.AppendedDepartmentSnapshots(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, quotaresetrequestnode.FieldDepartmentSnapshots, value)
-		})
-	}
 	if qrrnu.mutation.DepartmentSnapshotsCleared() {
 		_spec.ClearField(quotaresetrequestnode.FieldDepartmentSnapshots, field.TypeJSON)
 	}
 	if value, ok := qrrnu.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequestnode.FieldStatus, field.TypeEnum, value)
-	}
-	if value, ok := qrrnu.mutation.AdminFallbackRequired(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldAdminFallbackRequired, field.TypeBool, value)
 	}
 	if value, ok := qrrnu.mutation.SatisfiedByDecisionID(); ok {
 		_spec.SetField(quotaresetrequestnode.FieldSatisfiedByDecisionID, field.TypeInt, value)
@@ -360,9 +204,6 @@ func (qrrnu *QuotaResetRequestNodeUpdate) sqlSave(ctx context.Context) (n int, e
 	}
 	if qrrnu.mutation.CompletedAtCleared() {
 		_spec.ClearField(quotaresetrequestnode.FieldCompletedAt, field.TypeTime)
-	}
-	if value, ok := qrrnu.mutation.CreatedAt(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldCreatedAt, field.TypeTime, value)
 	}
 	if value, ok := qrrnu.mutation.UpdatedAt(); ok {
 		_spec.SetField(quotaresetrequestnode.FieldUpdatedAt, field.TypeTime, value)
@@ -387,94 +228,6 @@ type QuotaResetRequestNodeUpdateOne struct {
 	mutation *QuotaResetRequestNodeMutation
 }
 
-// SetRequestID sets the "request_id" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetRequestID(i int) *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.ResetRequestID()
-	qrrnuo.mutation.SetRequestID(i)
-	return qrrnuo
-}
-
-// SetNillableRequestID sets the "request_id" field if the given value is not nil.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetNillableRequestID(i *int) *QuotaResetRequestNodeUpdateOne {
-	if i != nil {
-		qrrnuo.SetRequestID(*i)
-	}
-	return qrrnuo
-}
-
-// AddRequestID adds i to the "request_id" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) AddRequestID(i int) *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.AddRequestID(i)
-	return qrrnuo
-}
-
-// SetPosition sets the "position" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetPosition(i int) *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.ResetPosition()
-	qrrnuo.mutation.SetPosition(i)
-	return qrrnuo
-}
-
-// SetNillablePosition sets the "position" field if the given value is not nil.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetNillablePosition(i *int) *QuotaResetRequestNodeUpdateOne {
-	if i != nil {
-		qrrnuo.SetPosition(*i)
-	}
-	return qrrnuo
-}
-
-// AddPosition adds i to the "position" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) AddPosition(i int) *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.AddPosition(i)
-	return qrrnuo
-}
-
-// SetNodeType sets the "node_type" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetNodeType(qt quotaresetrequestnode.NodeType) *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.SetNodeType(qt)
-	return qrrnuo
-}
-
-// SetNillableNodeType sets the "node_type" field if the given value is not nil.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetNillableNodeType(qt *quotaresetrequestnode.NodeType) *QuotaResetRequestNodeUpdateOne {
-	if qt != nil {
-		qrrnuo.SetNodeType(*qt)
-	}
-	return qrrnuo
-}
-
-// SetLabel sets the "label" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetLabel(s string) *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.SetLabel(s)
-	return qrrnuo
-}
-
-// SetNillableLabel sets the "label" field if the given value is not nil.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetNillableLabel(s *string) *QuotaResetRequestNodeUpdateOne {
-	if s != nil {
-		qrrnuo.SetLabel(*s)
-	}
-	return qrrnuo
-}
-
-// SetDepartmentSnapshots sets the "department_snapshots" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetDepartmentSnapshots(m []map[string]interface{}) *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.SetDepartmentSnapshots(m)
-	return qrrnuo
-}
-
-// AppendDepartmentSnapshots appends m to the "department_snapshots" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) AppendDepartmentSnapshots(m []map[string]interface{}) *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.AppendDepartmentSnapshots(m)
-	return qrrnuo
-}
-
-// ClearDepartmentSnapshots clears the value of the "department_snapshots" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) ClearDepartmentSnapshots() *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.ClearDepartmentSnapshots()
-	return qrrnuo
-}
-
 // SetStatus sets the "status" field.
 func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetStatus(q quotaresetrequestnode.Status) *QuotaResetRequestNodeUpdateOne {
 	qrrnuo.mutation.SetStatus(q)
@@ -485,20 +238,6 @@ func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetStatus(q quotaresetrequestnode.
 func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetNillableStatus(q *quotaresetrequestnode.Status) *QuotaResetRequestNodeUpdateOne {
 	if q != nil {
 		qrrnuo.SetStatus(*q)
-	}
-	return qrrnuo
-}
-
-// SetAdminFallbackRequired sets the "admin_fallback_required" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetAdminFallbackRequired(b bool) *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.SetAdminFallbackRequired(b)
-	return qrrnuo
-}
-
-// SetNillableAdminFallbackRequired sets the "admin_fallback_required" field if the given value is not nil.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetNillableAdminFallbackRequired(b *bool) *QuotaResetRequestNodeUpdateOne {
-	if b != nil {
-		qrrnuo.SetAdminFallbackRequired(*b)
 	}
 	return qrrnuo
 }
@@ -570,20 +309,6 @@ func (qrrnuo *QuotaResetRequestNodeUpdateOne) ClearCompletedAt() *QuotaResetRequ
 	return qrrnuo
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetCreatedAt(t time.Time) *QuotaResetRequestNodeUpdateOne {
-	qrrnuo.mutation.SetCreatedAt(t)
-	return qrrnuo
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestNodeUpdateOne {
-	if t != nil {
-		qrrnuo.SetCreatedAt(*t)
-	}
-	return qrrnuo
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (qrrnuo *QuotaResetRequestNodeUpdateOne) SetUpdatedAt(t time.Time) *QuotaResetRequestNodeUpdateOne {
 	qrrnuo.mutation.SetUpdatedAt(t)
@@ -646,16 +371,6 @@ func (qrrnuo *QuotaResetRequestNodeUpdateOne) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (qrrnuo *QuotaResetRequestNodeUpdateOne) check() error {
-	if v, ok := qrrnuo.mutation.Position(); ok {
-		if err := quotaresetrequestnode.PositionValidator(v); err != nil {
-			return &ValidationError{Name: "position", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestNode.position": %w`, err)}
-		}
-	}
-	if v, ok := qrrnuo.mutation.NodeType(); ok {
-		if err := quotaresetrequestnode.NodeTypeValidator(v); err != nil {
-			return &ValidationError{Name: "node_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestNode.node_type": %w`, err)}
-		}
-	}
 	if v, ok := qrrnuo.mutation.Status(); ok {
 		if err := quotaresetrequestnode.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestNode.status": %w`, err)}
@@ -693,40 +408,11 @@ func (qrrnuo *QuotaResetRequestNodeUpdateOne) sqlSave(ctx context.Context) (_nod
 			}
 		}
 	}
-	if value, ok := qrrnuo.mutation.RequestID(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldRequestID, field.TypeInt, value)
-	}
-	if value, ok := qrrnuo.mutation.AddedRequestID(); ok {
-		_spec.AddField(quotaresetrequestnode.FieldRequestID, field.TypeInt, value)
-	}
-	if value, ok := qrrnuo.mutation.Position(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldPosition, field.TypeInt, value)
-	}
-	if value, ok := qrrnuo.mutation.AddedPosition(); ok {
-		_spec.AddField(quotaresetrequestnode.FieldPosition, field.TypeInt, value)
-	}
-	if value, ok := qrrnuo.mutation.NodeType(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldNodeType, field.TypeEnum, value)
-	}
-	if value, ok := qrrnuo.mutation.Label(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldLabel, field.TypeString, value)
-	}
-	if value, ok := qrrnuo.mutation.DepartmentSnapshots(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldDepartmentSnapshots, field.TypeJSON, value)
-	}
-	if value, ok := qrrnuo.mutation.AppendedDepartmentSnapshots(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, quotaresetrequestnode.FieldDepartmentSnapshots, value)
-		})
-	}
 	if qrrnuo.mutation.DepartmentSnapshotsCleared() {
 		_spec.ClearField(quotaresetrequestnode.FieldDepartmentSnapshots, field.TypeJSON)
 	}
 	if value, ok := qrrnuo.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequestnode.FieldStatus, field.TypeEnum, value)
-	}
-	if value, ok := qrrnuo.mutation.AdminFallbackRequired(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldAdminFallbackRequired, field.TypeBool, value)
 	}
 	if value, ok := qrrnuo.mutation.SatisfiedByDecisionID(); ok {
 		_spec.SetField(quotaresetrequestnode.FieldSatisfiedByDecisionID, field.TypeInt, value)
@@ -748,9 +434,6 @@ func (qrrnuo *QuotaResetRequestNodeUpdateOne) sqlSave(ctx context.Context) (_nod
 	}
 	if qrrnuo.mutation.CompletedAtCleared() {
 		_spec.ClearField(quotaresetrequestnode.FieldCompletedAt, field.TypeTime)
-	}
-	if value, ok := qrrnuo.mutation.CreatedAt(); ok {
-		_spec.SetField(quotaresetrequestnode.FieldCreatedAt, field.TypeTime, value)
 	}
 	if value, ok := qrrnuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(quotaresetrequestnode.FieldUpdatedAt, field.TypeTime, value)
