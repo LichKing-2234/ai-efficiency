@@ -2992,6 +2992,33 @@ were limited to explicit synthetic fixtures and redaction code.
 
 Commit evidence: `177c834` (`fix(backend): harden quota reset notifications`).
 
+#### Security SPEC re-review follow-up (2026-07-14)
+
+- [x] Seal the sanitized notification error boundary against unsafe cause recovery.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestSanitizedNotificationErrorDoesNotExposeOriginalCause$' -count=1` failed
+with `error chain element 2 exposed secret: secret-bearing cause for
+https://robot.example.test/webhook/send?key=synthetic-chain-secret`, proving
+that `errors.Unwrap` exposed the original secret-bearing custom cause. It
+passed after `sanitizedNotificationError` stopped retaining or unwrapping the
+unsafe cause while preserving the redacted message and safe outer context.
+
+- [x] Run final security re-review verification and commit the fix.
+
+GREEN evidence: the new regression passed (`ok .../internal/quotareset
+0.462s`); the four prior SPEC-fix regressions passed (`ok
+.../internal/quotareset 1.554s`); and the unchanged Task 7 focused suite passed
+(`ok .../internal/quotareset 1.867s`). `cd backend && go test
+./internal/quotareset -count=1` passed in `32.291s`; `cd backend && go test
+./cmd/server ./internal/quotareset -count=1` passed in `4.203s` and `34.859s`;
+`cd backend && go test ./... -count=1` passed; and `cd backend && go vet ./...`,
+`git diff --check`, gofmt, unsafe-unwrap, added-line secret, real robot URL, and
+TODO/FIXME scans all completed cleanly.
+
+Commit evidence: `e775ef5` (`fix(backend): seal notification error redaction
+boundary`).
+
 ---
 
 ### Task 8: Expose V2 Workflow and Configuration HTTP Contracts
