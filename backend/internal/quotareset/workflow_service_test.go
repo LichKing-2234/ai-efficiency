@@ -2,13 +2,14 @@ package quotareset
 
 import (
 	"context"
+	stdsql "database/sql"
 	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
 	"time"
 
-	"entgo.io/ent/dialect/sql"
+	entsql "entgo.io/ent/dialect/sql"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -111,6 +112,44 @@ func TestCreateRequestWithOnlySkippedInitialNodeExecutesReset(t *testing.T) {
 	}
 	if fixture.provider.resetCalls != 1 {
 		t.Fatalf("reset calls = %d, want 1", fixture.provider.resetCalls)
+	}
+}
+
+func TestCreateWorkflowRequestRollsBackBeforeDuplicateLookup(t *testing.T) {
+	ctx := context.Background()
+	setupClient, dsn := testdb.OpenWithDSN(t)
+	requester := createQuotaResetUser(t, ctx, setupClient, "alice", "alice@example.com", intPtr(1001), "user")
+	createPendingWorkflowDirectoryFixture(t, ctx, setupClient, requester)
+	providerRow := createQuotaResetRelayProvider(t, ctx, setupClient)
+	createPendingQuotaResetRequest(t, ctx, setupClient, requester.ID, 1001, providerRow.ID, "42", []int{})
+
+	db, err := stdsql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open single-connection database: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	singleClient := ent.NewClient(ent.Driver(entsql.OpenDB("postgres", db)))
+	t.Cleanup(func() {
+		if err := singleClient.Close(); err != nil {
+			t.Errorf("close single-connection Ent client: %v", err)
+		}
+	})
+	provider := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
+	service := NewService(singleClient, fakeProviderResolver(providerRow.ID, provider), NewApproverResolver(singleClient), nil)
+
+	callCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	_, err = service.createWorkflowRequest(callCtx, requester, providerRow, activeQuotaResetSubscription(42, "Group Alpha"), CreateRequestInput{
+		RequesterUserID: requester.ID,
+		GroupID:         "42",
+		Reason:          "Duplicate active request",
+	})
+	if !errors.Is(err, ErrActiveRequestExists) {
+		t.Fatalf("createWorkflowRequest() error = %v, want ErrActiveRequestExists", err)
+	}
+	if callCtx.Err() != nil {
+		t.Fatalf("duplicate lookup exhausted context instead of returning promptly: %v", callCtx.Err())
 	}
 }
 
@@ -326,7 +365,7 @@ func TestWorkflowDecisionRejectsStaleNode(t *testing.T) {
 	if _, err := gateTx.QuotaResetRequest.Query().
 		Where(
 			quotaresetrequest.IDEQ(fixture.request.ID),
-			func(selector *sql.Selector) { selector.ForUpdate() },
+			func(selector *entsql.Selector) { selector.ForUpdate() },
 		).
 		Only(ctx); err != nil {
 		t.Fatalf("lock gate request: %v", err)
@@ -537,6 +576,104 @@ func TestCancelDispatchPreservesV1AndV2Behavior(t *testing.T) {
 			updated, err := service.Cancel(ctx, requester.ID, request.ID)
 			if err != nil || updated.Status != quotaresetrequest.StatusCancelled {
 				t.Fatalf("Cancel(v%d) = %+v, %v", workflowVersion, updated, err)
+			}
+			if count := client.QuotaResetRequestEvent.Query().
+				Where(
+					quotaresetrequestevent.RequestIDEQ(request.ID),
+					quotaresetrequestevent.EventTypeEQ(quotaresetrequestevent.EventTypeCancelled),
+				).
+				CountX(ctx); count != 1 {
+				t.Fatalf("Cancel(v%d) cancelled event count = %d, want 1", workflowVersion, count)
+			}
+		})
+	}
+}
+
+func TestCancelRollsBackWhenAuditEventFails(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+	injectedErr := errors.New("injected cancelled event failure")
+	fixture.client.QuotaResetRequestEvent.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+			eventMutation, ok := mutation.(*ent.QuotaResetRequestEventMutation)
+			if ok && mutation.Op().Is(ent.OpCreate) {
+				if eventType, exists := eventMutation.EventType(); exists && eventType == quotaresetrequestevent.EventTypeCancelled {
+					return nil, injectedErr
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+
+	_, err := fixture.service.Cancel(fixture.ctx, fixture.requester.ID, fixture.request.ID)
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("Cancel() error = %v, want injected event failure", err)
+	}
+	request := fixture.client.QuotaResetRequest.GetX(fixture.ctx, fixture.request.ID)
+	if request.Status != quotaresetrequest.StatusPending || request.CurrentNodeID == nil || *request.CurrentNodeID != fixture.nodes[0].ID {
+		t.Fatalf("request after failed cancellation = %s/%v, want pending/current node %d", request.Status, request.CurrentNodeID, fixture.nodes[0].ID)
+	}
+	if node := fixture.client.QuotaResetRequestNode.GetX(fixture.ctx, fixture.nodes[0].ID); node.Status != quotaresetrequestnode.StatusActive {
+		t.Fatalf("active node status after failed cancellation = %s, want active", node.Status)
+	}
+	if count := fixture.client.QuotaResetRequestEvent.Query().
+		Where(
+			quotaresetrequestevent.RequestIDEQ(fixture.request.ID),
+			quotaresetrequestevent.EventTypeEQ(quotaresetrequestevent.EventTypeCancelled),
+		).
+		CountX(fixture.ctx); count != 0 {
+		t.Fatalf("cancelled event count after failed cancellation = %d, want 0", count)
+	}
+}
+
+func TestCancelPreservesActiveNodeEvidence(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+
+	updated, err := fixture.service.Cancel(fixture.ctx, fixture.requester.ID, fixture.request.ID)
+	if err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+	if updated.Status != quotaresetrequest.StatusCancelled || updated.CurrentNodeID == nil || *updated.CurrentNodeID != fixture.nodes[0].ID {
+		t.Fatalf("cancelled request = %s/%v, want cancelled/current node %d", updated.Status, updated.CurrentNodeID, fixture.nodes[0].ID)
+	}
+	if node := fixture.client.QuotaResetRequestNode.GetX(fixture.ctx, fixture.nodes[0].ID); node.Status != quotaresetrequestnode.StatusActive {
+		t.Fatalf("cancelled request active-node evidence = %s, want active", node.Status)
+	}
+}
+
+func TestCancelReturnsVersionedStaleError(t *testing.T) {
+	for _, workflowVersion := range []int{1, WorkflowVersionV2} {
+		t.Run(quotaresetWorkflowVersionName(workflowVersion), func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+			provider := createQuotaResetRelayProvider(t, ctx, client)
+			create := client.QuotaResetRequest.Create().
+				SetRequesterUserID(requester.ID).
+				SetRequesterRelayUserID(1001).
+				SetProviderID(provider.ID).
+				SetGroupID("42").
+				SetGroupName("Group Alpha").
+				SetGroupPlatform("openai").
+				SetReason("Need a reset for a build investigation").
+				SetStatus(quotaresetrequest.StatusRejected).
+				SetResolvedApproverUserIds([]int{}).
+				SetMatchedDepartmentPaths([]map[string]any{})
+			if workflowVersion == WorkflowVersionV2 {
+				create.SetWorkflowVersion(WorkflowVersionV2)
+			}
+			request := create.SaveX(ctx)
+			service := NewService(client, nil, nil, nil)
+
+			_, err := service.Cancel(ctx, requester.ID, request.ID)
+			if workflowVersion == WorkflowVersionV2 {
+				var advanced *WorkflowAdvancedError
+				if !errors.As(err, &advanced) || advanced.RequestID != request.ID || !errors.Is(err, ErrWorkflowAdvanced) {
+					t.Fatalf("Cancel(v2 stale) error = %v, want WorkflowAdvancedError for request %d", err, request.ID)
+				}
+				return
+			}
+			if !errors.Is(err, ErrInvalidStatus) {
+				t.Fatalf("Cancel(v1 stale) error = %v, want ErrInvalidStatus", err)
 			}
 		})
 	}

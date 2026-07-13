@@ -37,7 +37,12 @@ func (s *Service) createWorkflowRequest(
 	if err != nil {
 		return nil, fmt.Errorf("begin workflow snapshot transaction: %w", err)
 	}
-	defer tx.Rollback()
+	txClosed := false
+	defer func() {
+		if !txClosed {
+			_ = tx.Rollback()
+		}
+	}()
 
 	request, err := tx.QuotaResetRequest.Create().
 		SetRequesterUserID(requester.ID).
@@ -56,10 +61,16 @@ func (s *Service) createWorkflowRequest(
 		SetMatchedDepartmentPaths([]map[string]any{}).
 		Save(ctx)
 	if err != nil {
-		if activeRequestCreateWasDuplicate(ctx, s.client, err, requester.ID, providerRow.ID, input.GroupID) {
+		createErr := err
+		rollbackErr := tx.Rollback()
+		txClosed = true
+		if rollbackErr != nil {
+			return nil, fmt.Errorf("rollback workflow snapshot after request create failed: %v (create error: %w)", rollbackErr, createErr)
+		}
+		if activeRequestCreateWasDuplicate(ctx, s.client, createErr, requester.ID, providerRow.ID, input.GroupID) {
 			return nil, ErrActiveRequestExists
 		}
-		return nil, fmt.Errorf("create v2 quota reset request: %w", err)
+		return nil, fmt.Errorf("create v2 quota reset request: %w", createErr)
 	}
 
 	var activeNodeID *int
@@ -141,6 +152,7 @@ func (s *Service) createWorkflowRequest(
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit workflow snapshot: %w", err)
 	}
+	txClosed = true
 	if activeNodeID == nil {
 		return s.executeReset(ctx, request.ID, requester.ID, false, false)
 	}

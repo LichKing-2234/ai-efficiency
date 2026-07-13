@@ -101,25 +101,40 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 }
 
 func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.QuotaResetRequest, error) {
-	req, err := s.client.QuotaResetRequest.Get(ctx, requestID)
+	tx, err := s.client.Tx(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("begin quota reset cancellation: %w", err)
+	}
+	defer tx.Rollback()
+	req, err := tx.QuotaResetRequest.Query().
+		Where(
+			quotaresetrequest.IDEQ(requestID),
+			func(selector *sql.Selector) { selector.ForUpdate() },
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("lock quota reset request for cancellation: %w", err)
 	}
 	if req.RequesterUserID != actorUserID {
 		return nil, ErrNotApprover
 	}
 	if req.Status != quotaresetrequest.StatusPending {
+		if req.WorkflowVersion >= WorkflowVersionV2 {
+			return nil, &WorkflowAdvancedError{RequestID: req.ID}
+		}
 		return nil, ErrInvalidStatus
 	}
-	updated, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
-		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending)).
+	updated, err := tx.QuotaResetRequest.UpdateOneID(requestID).
 		SetStatus(quotaresetrequest.StatusCancelled).
 		Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("cancel quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeCancelled, nil, ""); err != nil {
+	if err := writeWorkflowEvent(ctx, tx, requestID, &actorUserID, quotaresetrequestevent.EventTypeCancelled, nil); err != nil {
 		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit quota reset cancellation: %w", err)
 	}
 	_ = s.notify(ctx, "quota_reset_request_cancelled", updated)
 	return updated, nil
