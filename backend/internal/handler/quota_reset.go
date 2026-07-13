@@ -26,7 +26,7 @@ type quotaResetService interface {
 	ListMine(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
 	ListApprovals(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
 	ListAdmin(context.Context, quotareset.ListParams) (*quotareset.RequestListResponse, error)
-	ListApproverCandidates(context.Context, int, string) (*quotareset.ApproverCandidateListResponse, error)
+	ListApproverCandidates(context.Context, quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error)
 	ListApproverConfigs(context.Context) (*quotareset.ApproverConfigListResponse, error)
 	SaveApproverConfigs(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error)
 	GetNotificationSettings(context.Context) (*quotareset.NotificationSettings, error)
@@ -202,17 +202,17 @@ func (h *QuotaResetHandler) ListApproverConfigs(c *gin.Context) {
 }
 
 func (h *QuotaResetHandler) ListApproverCandidates(c *gin.Context) {
-	sourceID, err := strconv.Atoi(strings.TrimSpace(c.Query("source_id")))
-	if err != nil || sourceID <= 0 {
+	sourceID := parseOptionalInt(c.Query("source_id"))
+	if sourceID <= 0 {
 		writeQuotaResetError(c, fmt.Errorf("%w: source_id is required", quotareset.ErrInvalidApproverConfig))
 		return
 	}
-	departmentExternalID := strings.TrimSpace(c.Query("department_external_id"))
-	if departmentExternalID == "" {
-		writeQuotaResetError(c, fmt.Errorf("%w: department_external_id is required", quotareset.ErrInvalidApproverConfig))
-		return
-	}
-	resp, err := h.service.ListApproverCandidates(c.Request.Context(), sourceID, departmentExternalID)
+	resp, err := h.service.ListApproverCandidates(c.Request.Context(), quotareset.ApproverCandidateParams{
+		SourceID: sourceID,
+		Query:    strings.TrimSpace(c.Query("q")),
+		Page:     parseOptionalInt(c.Query("page")),
+		PageSize: parseOptionalInt(c.Query("page_size")),
+	})
 	if err != nil {
 		writeQuotaResetError(c, err)
 		return

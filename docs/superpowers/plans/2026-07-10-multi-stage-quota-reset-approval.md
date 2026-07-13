@@ -932,6 +932,18 @@ contract tests, chain/options tests, and full quota reset package all pass. A
 self-review regression also proved that raw numeric source paths are rendered
 through the current name-based directory hierarchy.
 
+Task 2 buildability adapter evidence (2026-07-13):
+
+- [x] `go test ./cmd/server -run '^$'` and the focused handler build were RED
+  because the existing handler-private service interface still required the old
+  representative-filter candidate signature.
+- [x] The existing candidate route now keeps `source_id` required, forwards
+  optional `q`, `page`, and `page_size` through `ApproverCandidateParams`, and
+  ignores the legacy `department_external_id` input. No Task 8 chain routes or
+  workflow HTTP contracts were pulled into Task 2.
+- [x] Focused handler tests, the server compile check, full backend tests, full
+  backend vet, and diff checks pass after the adapter.
+
 - [x] **Step 7: Commit chain configuration**
 
 ```bash
