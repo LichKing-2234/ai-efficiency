@@ -496,16 +496,14 @@ func (QuotaResetRequest) Hooks() []ent.Hook {
 	return []ent.Hook{
 		func(next ent.Mutator) ent.Mutator {
 			return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
-				if mutation.Op().Is(ent.OpUpdate | ent.OpUpdateOne) {
-					for _, fieldName := range [...]string{
-						"requester_department_paths",
-						"requester_notification_ids",
-						"resolved_approver_user_ids",
-						"matched_department_paths",
-					} {
-						if mutation.FieldCleared(fieldName) {
-							return nil, errQuotaResetRequestJSONSnapshotClear
-						}
+				for _, fieldName := range [...]string{
+					"requester_department_paths",
+					"requester_notification_ids",
+					"resolved_approver_user_ids",
+					"matched_department_paths",
+				} {
+					if mutation.FieldCleared(fieldName) {
+						return nil, errQuotaResetRequestJSONSnapshotClear
 					}
 				}
 				return next.Mutate(ctx, mutation)
@@ -612,6 +610,14 @@ git commit -m "feat(backend): add quota reset workflow schemas"
 - [x] Focused schema tests pass.
 - [x] Package, full-backend, vet, generation reproducibility, and diff checks pass.
 - [x] Migration correction is committed separately from `ddbaaf2` as `7a40383`.
+
+**Request JSON `SetOp` bypass follow-up evidence (2026-07-13):**
+
+- [x] RED proves `Update` and `UpdateOne` direct mutations can set each clear flag, relabel the mutation to `OpCreate` or `OpDelete`, and persist SQL `NULL` through the operation-gated hook.
+- [x] Clear-flag rejection is unconditional and independent of `Mutation.Op`; every field/op/update combination returns the deterministic immutable-snapshot error and preserves stored values.
+- [x] Focused schema tests preserve omitted fresh defaults, explicit-nil validation, scalar immutability, and normal mutable request state transitions.
+- [x] Package, full-backend, vet, generation reproducibility, and diff checks pass.
+- [ ] `SetOp` bypass fix is committed separately from `2dcb6e7`.
 
 ---
 

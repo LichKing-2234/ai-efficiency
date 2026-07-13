@@ -84,16 +84,14 @@ func (QuotaResetRequest) Hooks() []ent.Hook {
 	return []ent.Hook{
 		func(next ent.Mutator) ent.Mutator {
 			return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
-				if mutation.Op().Is(ent.OpUpdate | ent.OpUpdateOne) {
-					for _, fieldName := range [...]string{
-						"requester_department_paths",
-						"requester_notification_ids",
-						"resolved_approver_user_ids",
-						"matched_department_paths",
-					} {
-						if mutation.FieldCleared(fieldName) {
-							return nil, errQuotaResetRequestJSONSnapshotClear
-						}
+				for _, fieldName := range [...]string{
+					"requester_department_paths",
+					"requester_notification_ids",
+					"resolved_approver_user_ids",
+					"matched_department_paths",
+				} {
+					if mutation.FieldCleared(fieldName) {
+						return nil, errQuotaResetRequestJSONSnapshotClear
 					}
 				}
 				return next.Mutate(ctx, mutation)

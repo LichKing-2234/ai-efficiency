@@ -373,10 +373,11 @@ Ent create. Explicit nil setters fail schema validation, as do nil element maps 
 
 Ent's `Optional().Immutable()` JSON generation exposes `Clear*` methods on the
 public mutation object even though update builders expose no normal setters. A
-`QuotaResetRequest` schema hook rejects those four clear flags for both `Update`
-and `UpdateOne`, including direct `Mutation()` calls, before SQL executes. Thus
-historical `NULL` remains readable without allowing a stored snapshot to be
-cleared after creation.
+`QuotaResetRequest` schema hook rejects those four clear flags unconditionally,
+including direct `Mutation()` calls, before SQL executes. It does not trust the
+mutable reported mutation operation, so `SetOp` cannot relabel an update and
+bypass the guard. Thus historical `NULL` remains readable without allowing a
+stored snapshot to be cleared after creation.
 
 When the legacy v1 resolver has no approver snapshot, its create builder omits
 that setter and lets the schema factory supply `[]`. This is distinct from an

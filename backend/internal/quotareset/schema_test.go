@@ -201,64 +201,83 @@ func TestQuotaResetRequestJSONSnapshotClearsAreRejected(t *testing.T) {
 	}
 	updateCases := []struct {
 		name string
-		run  func(*testing.T, *ent.Client, int, string) error
+		run  func(*testing.T, *ent.Client, int, string, ent.Op, bool) error
 	}{
 		{
 			name: "update one direct mutation",
-			run: func(t *testing.T, client *ent.Client, requestID int, clearMethod string) error {
+			run: func(t *testing.T, client *ent.Client, requestID int, clearMethod string, reportedOp ent.Op, relabelOp bool) error {
 				update := client.QuotaResetRequest.UpdateOneID(requestID)
-				invokeRequestSnapshotClearMethods(t, update.Mutation(), []string{clearMethod})
+				mutation := update.Mutation()
+				invokeRequestSnapshotClearMethods(t, mutation, []string{clearMethod})
+				if relabelOp {
+					mutation.SetOp(reportedOp)
+				}
 				_, err := update.Save(ctx)
 				return err
 			},
 		},
 		{
 			name: "bulk update direct mutation",
-			run: func(t *testing.T, client *ent.Client, requestID int, clearMethod string) error {
+			run: func(t *testing.T, client *ent.Client, requestID int, clearMethod string, reportedOp ent.Op, relabelOp bool) error {
 				update := client.QuotaResetRequest.Update().
 					Where(quotaresetrequest.IDEQ(requestID))
-				invokeRequestSnapshotClearMethods(t, update.Mutation(), []string{clearMethod})
+				mutation := update.Mutation()
+				invokeRequestSnapshotClearMethods(t, mutation, []string{clearMethod})
+				if relabelOp {
+					mutation.SetOp(reportedOp)
+				}
 				_, err := update.Save(ctx)
 				return err
 			},
 		},
 	}
+	reportedOps := []struct {
+		name      string
+		op        ent.Op
+		relabelOp bool
+	}{
+		{name: "native update op"},
+		{name: "relabeled create op", op: ent.OpCreate, relabelOp: true},
+		{name: "relabeled delete op", op: ent.OpDelete, relabelOp: true},
+	}
 
 	for _, test := range updateCases {
-		for _, clearMethod := range clearMethods {
-			t.Run(fmt.Sprintf("%s/%s", test.name, clearMethod), func(t *testing.T) {
-				client := testdb.Open(t)
-				requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
-				provider := createQuotaResetRelayProvider(t, ctx, client)
-				request := client.QuotaResetRequest.Create().
-					SetRequesterUserID(requester.ID).SetRequesterRelayUserID(1001).
-					SetProviderID(provider.ID).SetGroupID("42").
-					SetGroupName("Group Alpha").SetGroupPlatform("openai").
-					SetReason("Request with immutable JSON snapshots").SetWorkflowVersion(2).
-					SetRequesterDepartmentPaths([]string{"Department Alpha"}).
-					SetRequesterNotificationIds(map[string]string{"wecom": "alice-wecom"}).
-					SetResolvedApproverUserIds([]int{requester.ID}).
-					SetMatchedDepartmentPaths([]map[string]any{{"external_id": "department-alpha"}}).
-					SaveX(ctx)
+		for _, reportedOp := range reportedOps {
+			for _, clearMethod := range clearMethods {
+				t.Run(fmt.Sprintf("%s/%s/%s", test.name, reportedOp.name, clearMethod), func(t *testing.T) {
+					client := testdb.Open(t)
+					requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+					provider := createQuotaResetRelayProvider(t, ctx, client)
+					request := client.QuotaResetRequest.Create().
+						SetRequesterUserID(requester.ID).SetRequesterRelayUserID(1001).
+						SetProviderID(provider.ID).SetGroupID("42").
+						SetGroupName("Group Alpha").SetGroupPlatform("openai").
+						SetReason("Request with immutable JSON snapshots").SetWorkflowVersion(2).
+						SetRequesterDepartmentPaths([]string{"Department Alpha"}).
+						SetRequesterNotificationIds(map[string]string{"wecom": "alice-wecom"}).
+						SetResolvedApproverUserIds([]int{requester.ID}).
+						SetMatchedDepartmentPaths([]map[string]any{{"external_id": "department-alpha"}}).
+						SaveX(ctx)
 
-				err := test.run(t, client, request.ID, clearMethod)
-				if err == nil || err.Error() != wantError {
-					t.Errorf("clear snapshots error = %v, want %q", err, wantError)
-				}
-				stored := client.QuotaResetRequest.GetX(ctx, request.ID)
-				if !reflect.DeepEqual(stored.RequesterDepartmentPaths, request.RequesterDepartmentPaths) {
-					t.Errorf("requester department paths = %#v, want %#v", stored.RequesterDepartmentPaths, request.RequesterDepartmentPaths)
-				}
-				if !reflect.DeepEqual(stored.RequesterNotificationIds, request.RequesterNotificationIds) {
-					t.Errorf("requester notification ids = %#v, want %#v", stored.RequesterNotificationIds, request.RequesterNotificationIds)
-				}
-				if !reflect.DeepEqual(stored.ResolvedApproverUserIds, request.ResolvedApproverUserIds) {
-					t.Errorf("resolved approver user ids = %#v, want %#v", stored.ResolvedApproverUserIds, request.ResolvedApproverUserIds)
-				}
-				if !reflect.DeepEqual(stored.MatchedDepartmentPaths, request.MatchedDepartmentPaths) {
-					t.Errorf("matched department paths = %#v, want %#v", stored.MatchedDepartmentPaths, request.MatchedDepartmentPaths)
-				}
-			})
+					err := test.run(t, client, request.ID, clearMethod, reportedOp.op, reportedOp.relabelOp)
+					if err == nil || err.Error() != wantError {
+						t.Errorf("clear snapshots error = %v, want %q", err, wantError)
+					}
+					stored := client.QuotaResetRequest.GetX(ctx, request.ID)
+					if !reflect.DeepEqual(stored.RequesterDepartmentPaths, request.RequesterDepartmentPaths) {
+						t.Errorf("requester department paths = %#v, want %#v", stored.RequesterDepartmentPaths, request.RequesterDepartmentPaths)
+					}
+					if !reflect.DeepEqual(stored.RequesterNotificationIds, request.RequesterNotificationIds) {
+						t.Errorf("requester notification ids = %#v, want %#v", stored.RequesterNotificationIds, request.RequesterNotificationIds)
+					}
+					if !reflect.DeepEqual(stored.ResolvedApproverUserIds, request.ResolvedApproverUserIds) {
+						t.Errorf("resolved approver user ids = %#v, want %#v", stored.ResolvedApproverUserIds, request.ResolvedApproverUserIds)
+					}
+					if !reflect.DeepEqual(stored.MatchedDepartmentPaths, request.MatchedDepartmentPaths) {
+						t.Errorf("matched department paths = %#v, want %#v", stored.MatchedDepartmentPaths, request.MatchedDepartmentPaths)
+					}
+				})
+			}
 		}
 	}
 }
