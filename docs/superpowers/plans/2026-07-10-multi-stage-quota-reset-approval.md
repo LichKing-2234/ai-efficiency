@@ -2375,7 +2375,10 @@ Evidence: `cd backend && go test ./internal/quotareset -run
 ./... -count=1`, `cd backend && go vet ./...`, and `git diff --check` all
 passed.
 
-- [ ] Commit the quality-review fixes.
+- [x] Commit the quality-review fixes.
+
+Evidence: `git commit -m "fix(backend): harden quota reset notification
+endpoints"` created `e3a13d0`.
 
 ---
 
