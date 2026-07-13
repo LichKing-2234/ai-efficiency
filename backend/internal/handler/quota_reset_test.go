@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -169,6 +170,29 @@ func TestQuotaResetListApproverCandidatesPassesSearchAndPagination(t *testing.T)
 	})
 	rec := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/approver-candidates?source_id=3&department_external_id=department-alpha&q=%20Alice%20&page=2&page_size=15", env.adminToken, "")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"lead-alpha@example.com"`) {
+		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestQuotaResetListApproverCandidatesForwardsMaxIntPage(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		listApproverCandidatesFn: func(_ context.Context, params quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error) {
+			if params.SourceID != 3 || params.Page != maxInt || params.PageSize != 20 {
+				t.Fatalf("params = %+v", params)
+			}
+			return &quotareset.ApproverCandidateListResponse{
+				Items:    []quotareset.ApproverCandidate{},
+				Page:     params.Page,
+				PageSize: params.PageSize,
+				Total:    1,
+			}, nil
+		},
+	})
+	path := "/api/v1/admin/quota-reset/approver-candidates?source_id=3&page=" + strconv.Itoa(maxInt) + "&page_size=20"
+
+	rec := performQuotaResetRequest(env.router, http.MethodGet, path, env.adminToken, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"page":`+strconv.Itoa(maxInt)) || !strings.Contains(rec.Body.String(), `"items":[]`) {
 		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
 	}
 }

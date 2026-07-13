@@ -954,6 +954,22 @@ Task 2 enabled-chain reference correction evidence (2026-07-13):
 - [x] The Task 2 focused tests, full quota reset package, handler/server compile
   checks, full backend tests, full backend vet, and diff checks pass.
 
+Task 2 approval configuration transaction quality evidence (2026-07-13):
+
+- [x] Approval-chain reads, chain replacement, and approver-config replacement
+  now acquire the same persisted lock transaction and build their responses from
+  that transaction's client, preventing partial revisions from being returned.
+- [x] Both writers re-run database-dependent validation after acquiring the
+  shared lock. Serialized full-list saves intentionally use last-write-wins;
+  cross-writer stale validation is rejected after the preceding commit.
+- [x] Candidate pagination returns an empty page without overflowing for a
+  max-int page request. Destructive approver changes report every affected
+  enabled chain once, sorted by provider ID, group ID, and group name; disabled
+  chains are excluded.
+- [x] The focused package tests and race tests, full quota reset package,
+  handler package, server compile check, full backend tests, backend vet, and
+  diff checks pass.
+
 - [x] **Step 7: Commit chain configuration**
 
 ```bash

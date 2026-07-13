@@ -15,13 +15,81 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetapprovalchainnode"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
 	entrelayprovider "github.com/ai-efficiency/backend/ent/relayprovider"
+	"github.com/ai-efficiency/backend/ent/systemsetting"
 	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/directorytree"
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
+const quotaResetApprovalConfigurationLockKey = "quota_reset_approval_configuration"
+
+type approvalConfigurationLockHooksContextKey struct{}
+
+type approvalConfigurationLockHooks struct {
+	beforeLock func()
+	afterLock  func()
+}
+
 type platformGroupLister interface {
 	ListPlatformGroups(context.Context) ([]relay.Group, error)
+}
+
+func (s *Service) beginApprovalConfigurationTx(ctx context.Context) (*ent.Tx, error) {
+	if err := s.ensureApprovalConfigurationLockRow(ctx); err != nil {
+		return nil, err
+	}
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin quota reset approval configuration tx: %w", err)
+	}
+	hooks, _ := ctx.Value(approvalConfigurationLockHooksContextKey{}).(approvalConfigurationLockHooks)
+	if hooks.beforeLock != nil {
+		hooks.beforeLock()
+	}
+	if err := lockApprovalConfiguration(ctx, tx); err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	if hooks.afterLock != nil {
+		hooks.afterLock()
+	}
+	return tx, nil
+}
+
+func (s *Service) ensureApprovalConfigurationLockRow(ctx context.Context) error {
+	exists, err := s.client.SystemSetting.Query().
+		Where(systemsetting.KeyEQ(quotaResetApprovalConfigurationLockKey)).
+		Exist(ctx)
+	if err != nil {
+		return fmt.Errorf("check quota reset approval configuration lock: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := s.client.SystemSetting.Create().
+		SetKey(quotaResetApprovalConfigurationLockKey).
+		SetValue(quotaResetApprovalConfigurationLockKey).
+		Save(ctx); err != nil {
+		if ent.IsConstraintError(err) {
+			return nil
+		}
+		return fmt.Errorf("ensure quota reset approval configuration lock: %w", err)
+	}
+	return nil
+}
+
+func lockApprovalConfiguration(ctx context.Context, tx *ent.Tx) error {
+	affected, err := tx.SystemSetting.Update().
+		Where(systemsetting.KeyEQ(quotaResetApprovalConfigurationLockKey)).
+		SetValue(quotaResetApprovalConfigurationLockKey).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("lock quota reset approval configuration: %w", err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("lock quota reset approval configuration: affected %d rows", affected)
+	}
+	return nil
 }
 
 func (s *Service) ListApproverCandidates(ctx context.Context, params ApproverCandidateParams) (*ApproverCandidateListResponse, error) {
@@ -47,8 +115,14 @@ func (s *Service) ListApproverCandidates(ctx context.Context, params ApproverCan
 	}
 	items := matchApproverCandidates(params.Query, members, memberships, departments, users)
 	total := len(items)
-	start := min((page-1)*pageSize, total)
-	end := min(start+pageSize, total)
+	if total == 0 || (page > 1 && page-1 > (total-1)/pageSize) {
+		return &ApproverCandidateListResponse{Items: []ApproverCandidate{}, Page: page, PageSize: pageSize, Total: total}, nil
+	}
+	start := (page - 1) * pageSize
+	end := total
+	if pageSize < total-start {
+		end = start + pageSize
+	}
 	return &ApproverCandidateListResponse{Items: items[start:end], Page: page, PageSize: pageSize, Total: total}, nil
 }
 
@@ -421,7 +495,23 @@ func (s *Service) ListApprovalChainOptions(ctx context.Context) (*ApprovalChainO
 }
 
 func (s *Service) ListApprovalChains(ctx context.Context) (*ApprovalChainListResponse, error) {
-	chainRows, err := s.client.QuotaResetApprovalChain.Query().
+	tx, err := s.beginApprovalConfigurationTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	response, err := listApprovalChains(ctx, tx.Client())
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit quota reset approval chain list: %w", err)
+	}
+	return response, nil
+}
+
+func listApprovalChains(ctx context.Context, client *ent.Client) (*ApprovalChainListResponse, error) {
+	chainRows, err := client.QuotaResetApprovalChain.Query().
 		Order(
 			ent.Asc(quotaresetapprovalchain.FieldProviderID),
 			ent.Asc(quotaresetapprovalchain.FieldGroupID),
@@ -431,7 +521,7 @@ func (s *Service) ListApprovalChains(ctx context.Context) (*ApprovalChainListRes
 	if err != nil {
 		return nil, fmt.Errorf("list quota reset approval chains: %w", err)
 	}
-	nodeRows, err := s.client.QuotaResetApprovalChainNode.Query().
+	nodeRows, err := client.QuotaResetApprovalChainNode.Query().
 		Order(
 			ent.Asc(quotaresetapprovalchainnode.FieldChainID),
 			ent.Asc(quotaresetapprovalchainnode.FieldPosition),
@@ -469,10 +559,17 @@ func (s *Service) ListApprovalChains(ctx context.Context) (*ApprovalChainListRes
 
 func (s *Service) SaveApprovalChains(ctx context.Context, input SaveApprovalChainsInput) (*ApprovalChainListResponse, error) {
 	items := normalizeApprovalChainInputs(input.Items)
+	tx, err := s.beginApprovalConfigurationTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	txService := *s
+	txService.client = tx.Client()
 	allowedGroups := map[string]ApprovalChainGroupOption{}
 	allowedDepartments := map[string]ApprovalChainDepartmentOption{}
 	if len(items) > 0 {
-		options, err := s.ListApprovalChainOptions(ctx)
+		options, err := txService.ListApprovalChainOptions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -516,11 +613,6 @@ func (s *Service) SaveApprovalChains(ctx context.Context, input SaveApprovalChai
 		}
 	}
 
-	tx, err := s.client.Tx(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin quota reset approval chain tx: %w", err)
-	}
-	defer tx.Rollback()
 	if _, err := tx.QuotaResetApprovalChainNode.Delete().Exec(ctx); err != nil {
 		return nil, fmt.Errorf("delete quota reset approval chain nodes: %w", err)
 	}
@@ -551,10 +643,14 @@ func (s *Service) SaveApprovalChains(ctx context.Context, input SaveApprovalChai
 			}
 		}
 	}
+	response, err := listApprovalChains(ctx, tx.Client())
+	if err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit quota reset approval chains: %w", err)
 	}
-	return s.ListApprovalChains(ctx)
+	return response, nil
 }
 
 func (s *Service) projectApproverConfigsAfterSave(ctx context.Context, sourceID int, items []ApproverConfigInput, replaceAll bool) ([]ApproverConfigInput, error) {
@@ -593,14 +689,20 @@ func (s *Service) validateChainReferencesAfterApproverSave(ctx context.Context, 
 			remaining[strings.TrimSpace(item.DepartmentExternalID)] = struct{}{}
 		}
 	}
-	enabledChainIDs, err := s.client.QuotaResetApprovalChain.Query().
+	enabledChains, err := s.client.QuotaResetApprovalChain.Query().
 		Where(quotaresetapprovalchain.EnabledEQ(true)).
-		IDs(ctx)
+		All(ctx)
 	if err != nil {
 		return fmt.Errorf("list enabled approval chains: %w", err)
 	}
-	if len(enabledChainIDs) == 0 {
+	if len(enabledChains) == 0 {
 		return nil
+	}
+	enabledChainIDs := make([]int, 0, len(enabledChains))
+	chainsByID := make(map[int]*ent.QuotaResetApprovalChain, len(enabledChains))
+	for _, chain := range enabledChains {
+		enabledChainIDs = append(enabledChainIDs, chain.ID)
+		chainsByID[chain.ID] = chain
 	}
 	nodes, err := s.client.QuotaResetApprovalChainNode.Query().
 		Where(
@@ -611,12 +713,36 @@ func (s *Service) validateChainReferencesAfterApproverSave(ctx context.Context, 
 	if err != nil {
 		return fmt.Errorf("list approval chain references: %w", err)
 	}
+	referencingChains := make(map[int]*ent.QuotaResetApprovalChain)
 	for _, node := range nodes {
 		if _, ok := remaining[strings.TrimSpace(node.DepartmentExternalID)]; !ok {
-			return fmt.Errorf("%w: department %s is used by an approval chain", ErrApproverConfigReferenced, node.DepartmentDisplayPath)
+			referencingChains[node.ChainID] = chainsByID[node.ChainID]
 		}
 	}
-	return nil
+	if len(referencingChains) == 0 {
+		return nil
+	}
+	chains := make([]*ent.QuotaResetApprovalChain, 0, len(referencingChains))
+	for _, chain := range referencingChains {
+		chains = append(chains, chain)
+	}
+	sort.Slice(chains, func(i, j int) bool {
+		if chains[i].ProviderID != chains[j].ProviderID {
+			return chains[i].ProviderID < chains[j].ProviderID
+		}
+		if chains[i].GroupID != chains[j].GroupID {
+			return chains[i].GroupID < chains[j].GroupID
+		}
+		if chains[i].GroupName != chains[j].GroupName {
+			return chains[i].GroupName < chains[j].GroupName
+		}
+		return chains[i].ID < chains[j].ID
+	})
+	identities := make([]string, 0, len(chains))
+	for _, chain := range chains {
+		identities = append(identities, fmt.Sprintf("provider_id=%d group_id=%s group_name=%q", chain.ProviderID, chain.GroupID, chain.GroupName))
+	}
+	return fmt.Errorf("%w: enabled approval chains reference departments without approver configs: %s", ErrApproverConfigReferenced, strings.Join(identities, ", "))
 }
 
 func normalizeApprovalChainInputs(items []ApprovalChainInput) []ApprovalChainInput {

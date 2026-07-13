@@ -3,6 +3,8 @@ package quotareset
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -67,6 +69,26 @@ func TestListApproverCandidatesExcludesInactiveMembers(t *testing.T) {
 	}
 	if len(resp.Items) != 1 || resp.Items[0].UserID != activeUser.ID {
 		t.Fatalf("candidates = %#v, want active non-disabled user only", resp.Items)
+	}
+}
+
+func TestListApproverCandidatesMaxIntPageReturnsEmpty(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
+	user := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", nil, "user")
+	member := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", user.Email, department.ExternalID, &user.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, member, department.ExternalID)
+	svc := NewService(client, nil, nil, nil)
+	maxInt := int(^uint(0) >> 1)
+
+	resp, err := svc.ListApproverCandidates(ctx, ApproverCandidateParams{SourceID: source.ID, Page: maxInt, PageSize: 20})
+	if err != nil {
+		t.Fatalf("ListApproverCandidates(max page) error = %v", err)
+	}
+	if len(resp.Items) != 0 || resp.Page != maxInt || resp.PageSize != 20 || resp.Total != 1 {
+		t.Fatalf("response = %#v, want empty max-int page with 1 total", resp)
 	}
 }
 
@@ -341,6 +363,510 @@ func TestSaveApproverConfigsAllowsRemovingDepartmentReferencedOnlyByDisabledChai
 	}
 }
 
+func TestSaveApproverConfigsReferenceErrorListsEnabledGroupsDeterministically(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
+	approver := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", nil, "user")
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, department.ExternalID, department.Path, approver.ID)
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	secondProvider := client.RelayProvider.Create().
+		SetName("secondary-relay").
+		SetDisplayName("Secondary Relay").
+		SetBaseURL("https://secondary-relay.example.com").
+		SetAdminAPIKey("test-secondary-admin-api-key").
+		SetRelayType("sub2api").
+		SetEnabled(true).
+		SaveX(ctx)
+	for _, item := range []struct {
+		providerID int
+		groupID   string
+		groupName string
+		enabled   bool
+	}{
+		{providerID: secondProvider.ID, groupID: "40", groupName: "Group Gamma", enabled: true},
+		{providerID: provider.ID, groupID: "43", groupName: "Group Beta", enabled: true},
+		{providerID: provider.ID, groupID: "41", groupName: "Group Disabled", enabled: false},
+		{providerID: provider.ID, groupID: "42", groupName: "Group Alpha", enabled: true},
+	} {
+		chain := client.QuotaResetApprovalChain.Create().
+			SetProviderID(item.providerID).
+			SetGroupID(item.groupID).
+			SetGroupName(item.groupName).
+			SetEnabled(item.enabled).
+			SaveX(ctx)
+		client.QuotaResetApprovalChainNode.Create().
+			SetChainID(chain.ID).
+			SetPosition(0).
+			SetDirectorySourceID(source.ID).
+			SetDepartmentExternalID(department.ExternalID).
+			SetDepartmentDisplayPath(department.Path).
+			SaveX(ctx)
+	}
+	svc := NewService(client, nil, nil, nil)
+
+	_, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+		ActorUserID: 1,
+		Mode:        ApproverConfigSaveModeReplaceAll,
+		Items:       []ApproverConfigInput{},
+	})
+	if !errors.Is(err, ErrApproverConfigReferenced) {
+		t.Fatalf("SaveApproverConfigs() error = %v, want ErrApproverConfigReferenced", err)
+	}
+	want := fmt.Sprintf(
+		`approver_config_referenced: enabled approval chains reference departments without approver configs: provider_id=%d group_id=42 group_name="Group Alpha", provider_id=%d group_id=43 group_name="Group Beta", provider_id=%d group_id=40 group_name="Group Gamma"`,
+		provider.ID,
+		provider.ID,
+		secondProvider.ID,
+	)
+	if err.Error() != want {
+		t.Fatalf("SaveApproverConfigs() error = %q, want %q", err, want)
+	}
+}
+
+func TestEnsureApprovalConfigurationLockRowHandlesConcurrentCreation(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	svc := NewService(client, nil, nil, nil)
+	const workers = 16
+	start := make(chan struct{})
+	results := make(chan error, workers)
+
+	for range workers {
+		go func() {
+			<-start
+			results <- svc.ensureApprovalConfigurationLockRow(ctx)
+		}()
+	}
+	close(start)
+	for range workers {
+		if err := <-results; err != nil {
+			t.Fatalf("ensureApprovalConfigurationLockRow() error = %v", err)
+		}
+	}
+	if got := client.SystemSetting.Query().CountX(ctx); got != 1 {
+		t.Fatalf("system setting count = %d, want one shared lock row", got)
+	}
+}
+
+func TestApprovalConfigurationLockSerializesCriticalSections(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	svc := NewService(client, nil, nil, nil)
+	firstEntered := make(chan struct{})
+	firstRelease := make(chan struct{})
+	secondAttempted := make(chan struct{})
+	secondEntered := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseFirst := func() {
+		releaseOnce.Do(func() { close(firstRelease) })
+	}
+	defer releaseFirst()
+
+	firstCtx := approvalConfigurationLockTestContext(ctx, nil, func() {
+		close(firstEntered)
+		<-firstRelease
+	})
+	firstResult := make(chan error, 1)
+	go func() {
+		tx, err := svc.beginApprovalConfigurationTx(firstCtx)
+		if err == nil {
+			err = tx.Commit()
+		}
+		firstResult <- err
+	}()
+	waitForApprovalConfigurationSignal(t, firstEntered, "first transaction to enter critical section")
+
+	secondCtx := approvalConfigurationLockTestContext(ctx, func() {
+		close(secondAttempted)
+	}, func() {
+		close(secondEntered)
+	})
+	secondResult := make(chan error, 1)
+	go func() {
+		tx, err := svc.beginApprovalConfigurationTx(secondCtx)
+		if err == nil {
+			err = tx.Commit()
+		}
+		secondResult <- err
+	}()
+	waitForApprovalConfigurationSignal(t, secondAttempted, "second transaction to attempt lock")
+	assertNoApprovalConfigurationSignal(t, secondEntered, "second transaction entered before first released lock")
+
+	releaseFirst()
+	if err := waitForApprovalConfigurationResult(t, firstResult, "first transaction"); err != nil {
+		t.Fatalf("first transaction error = %v", err)
+	}
+	waitForApprovalConfigurationSignal(t, secondEntered, "second transaction to enter after first commit")
+	if err := waitForApprovalConfigurationResult(t, secondResult, "second transaction"); err != nil {
+		t.Fatalf("second transaction error = %v", err)
+	}
+}
+
+func TestSaveApprovalChainsConcurrentFullListSavesAreSerialized(t *testing.T) {
+	ctx := context.Background()
+	_, svc, source, provider, alpha, beta := setupApprovalChainTest(t, ctx)
+	firstEntered := make(chan struct{})
+	firstRelease := make(chan struct{})
+	secondAttempted := make(chan struct{})
+	secondEntered := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseFirst := func() {
+		releaseOnce.Do(func() { close(firstRelease) })
+	}
+	defer releaseFirst()
+
+	firstInput := SaveApprovalChainsInput{ActorUserID: 9, Items: []ApprovalChainInput{{
+		ProviderID: provider.ID,
+		GroupID:    "42",
+		GroupName:  "Group Alpha",
+		Enabled:    true,
+		Nodes: []ApprovalChainNodeInput{{
+			DirectorySourceID:     source.ID,
+			DepartmentExternalID:  alpha.ExternalID,
+			DepartmentDisplayPath: alpha.Path,
+		}},
+	}}}
+	secondInput := SaveApprovalChainsInput{ActorUserID: 10, Items: []ApprovalChainInput{{
+		ProviderID: provider.ID,
+		GroupID:    "43",
+		GroupName:  "Group Beta",
+		Enabled:    true,
+		Nodes: []ApprovalChainNodeInput{{
+			DirectorySourceID:     source.ID,
+			DepartmentExternalID:  beta.ExternalID,
+			DepartmentDisplayPath: beta.Path,
+		}},
+	}}}
+
+	firstCtx := approvalConfigurationLockTestContext(ctx, nil, func() {
+		close(firstEntered)
+		<-firstRelease
+	})
+	firstResult := make(chan approvalChainSaveResult, 1)
+	go func() {
+		response, err := svc.SaveApprovalChains(firstCtx, firstInput)
+		firstResult <- approvalChainSaveResult{response: response, err: err}
+	}()
+	waitForApprovalConfigurationSignal(t, firstEntered, "first chain save to enter critical section")
+
+	secondCtx := approvalConfigurationLockTestContext(ctx, func() {
+		close(secondAttempted)
+	}, func() {
+		close(secondEntered)
+	})
+	secondResult := make(chan approvalChainSaveResult, 1)
+	go func() {
+		response, err := svc.SaveApprovalChains(secondCtx, secondInput)
+		secondResult <- approvalChainSaveResult{response: response, err: err}
+	}()
+	waitForApprovalConfigurationSignal(t, secondAttempted, "second chain save to attempt lock")
+	assertNoApprovalConfigurationSignal(t, secondEntered, "second chain save entered before first released lock")
+
+	releaseFirst()
+	first := waitForApprovalChainSaveResult(t, firstResult, "first chain save")
+	if first.err != nil {
+		t.Fatalf("first SaveApprovalChains() error = %v", first.err)
+	}
+	assertSingleApprovalChain(t, first.response, "42", alpha.ExternalID)
+	waitForApprovalConfigurationSignal(t, secondEntered, "second chain save to enter after first commit")
+	second := waitForApprovalChainSaveResult(t, secondResult, "second chain save")
+	if second.err != nil {
+		t.Fatalf("second SaveApprovalChains() error = %v", second.err)
+	}
+	assertSingleApprovalChain(t, second.response, "43", beta.ExternalID)
+
+	final, err := svc.ListApprovalChains(ctx)
+	if err != nil {
+		t.Fatalf("ListApprovalChains() error = %v", err)
+	}
+	assertSingleApprovalChain(t, final, "43", beta.ExternalID)
+}
+
+func TestListApprovalChainsWaitsForLockedSaveAndReturnsCompleteRevision(t *testing.T) {
+	ctx := context.Background()
+	_, svc, source, provider, alpha, beta := setupApprovalChainTest(t, ctx)
+	writerEntered := make(chan struct{})
+	writerRelease := make(chan struct{})
+	readerAttempted := make(chan struct{})
+	readerEntered := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseWriter := func() {
+		releaseOnce.Do(func() { close(writerRelease) })
+	}
+	defer releaseWriter()
+
+	writerCtx := approvalConfigurationLockTestContext(ctx, nil, func() {
+		close(writerEntered)
+		<-writerRelease
+	})
+	writerResult := make(chan approvalChainSaveResult, 1)
+	go func() {
+		response, err := svc.SaveApprovalChains(writerCtx, SaveApprovalChainsInput{ActorUserID: 9, Items: []ApprovalChainInput{{
+			ProviderID: provider.ID,
+			GroupID:    "42",
+			GroupName:  "Group Alpha",
+			Enabled:    true,
+			Nodes: []ApprovalChainNodeInput{
+				{DirectorySourceID: source.ID, DepartmentExternalID: beta.ExternalID, DepartmentDisplayPath: beta.Path},
+				{DirectorySourceID: source.ID, DepartmentExternalID: alpha.ExternalID, DepartmentDisplayPath: alpha.Path},
+			},
+		}}})
+		writerResult <- approvalChainSaveResult{response: response, err: err}
+	}()
+	waitForApprovalConfigurationSignal(t, writerEntered, "chain writer to enter critical section")
+
+	readerCtx := approvalConfigurationLockTestContext(ctx, func() {
+		close(readerAttempted)
+	}, func() {
+		close(readerEntered)
+	})
+	readerResult := make(chan approvalChainSaveResult, 1)
+	go func() {
+		response, err := svc.ListApprovalChains(readerCtx)
+		readerResult <- approvalChainSaveResult{response: response, err: err}
+	}()
+	waitForApprovalConfigurationSignal(t, readerAttempted, "chain reader to attempt lock")
+	assertNoApprovalConfigurationSignal(t, readerEntered, "chain reader entered before writer released lock")
+
+	releaseWriter()
+	writer := waitForApprovalChainSaveResult(t, writerResult, "chain writer")
+	if writer.err != nil {
+		t.Fatalf("SaveApprovalChains() error = %v", writer.err)
+	}
+	waitForApprovalConfigurationSignal(t, readerEntered, "chain reader to enter after writer commit")
+	reader := waitForApprovalChainSaveResult(t, readerResult, "chain reader")
+	if reader.err != nil {
+		t.Fatalf("ListApprovalChains() error = %v", reader.err)
+	}
+	if len(reader.response.Items) != 1 || len(reader.response.Items[0].Nodes) != 2 {
+		t.Fatalf("reader response = %#v, want one complete two-node chain", reader.response)
+	}
+	if got := reader.response.Items[0].Nodes; got[0].DepartmentExternalID != beta.ExternalID || got[1].DepartmentExternalID != alpha.ExternalID {
+		t.Fatalf("reader nodes = %#v, want Beta then Alpha", got)
+	}
+}
+
+func TestSaveApprovalChainsRevalidatesAfterSerializedApproverRemoval(t *testing.T) {
+	ctx := context.Background()
+	client, svc, source, provider, alpha, _ := setupApprovalChainTest(t, ctx)
+	removalEntered := make(chan struct{})
+	removalRelease := make(chan struct{})
+	chainAttempted := make(chan struct{})
+	chainEntered := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseRemoval := func() {
+		releaseOnce.Do(func() { close(removalRelease) })
+	}
+	defer releaseRemoval()
+
+	removalCtx := approvalConfigurationLockTestContext(ctx, nil, func() {
+		close(removalEntered)
+		<-removalRelease
+	})
+	removalResult := make(chan approverConfigSaveResult, 1)
+	go func() {
+		response, err := svc.SaveApproverConfigs(removalCtx, SaveApproverConfigsInput{
+			ActorUserID: 1,
+			Mode:        ApproverConfigSaveModeReplaceAll,
+			Items:       []ApproverConfigInput{},
+		})
+		removalResult <- approverConfigSaveResult{response: response, err: err}
+	}()
+	waitForApprovalConfigurationSignal(t, removalEntered, "approver removal to enter critical section")
+
+	chainCtx := approvalConfigurationLockTestContext(ctx, func() {
+		close(chainAttempted)
+	}, func() {
+		close(chainEntered)
+	})
+	chainResult := make(chan approvalChainSaveResult, 1)
+	go func() {
+		response, err := svc.SaveApprovalChains(chainCtx, SaveApprovalChainsInput{ActorUserID: 9, Items: []ApprovalChainInput{{
+			ProviderID: provider.ID,
+			GroupID:    "42",
+			GroupName:  "Group Alpha",
+			Enabled:    true,
+			Nodes: []ApprovalChainNodeInput{{
+				DirectorySourceID:     source.ID,
+				DepartmentExternalID:  alpha.ExternalID,
+				DepartmentDisplayPath: alpha.Path,
+			}},
+		}}})
+		chainResult <- approvalChainSaveResult{response: response, err: err}
+	}()
+	waitForApprovalConfigurationSignal(t, chainAttempted, "chain save to attempt lock")
+	assertNoApprovalConfigurationSignal(t, chainEntered, "chain save entered before approver removal released lock")
+
+	releaseRemoval()
+	removal := waitForApproverConfigSaveResult(t, removalResult, "approver removal")
+	if removal.err != nil {
+		t.Fatalf("SaveApproverConfigs() error = %v", removal.err)
+	}
+	if len(removal.response.Items) != 0 {
+		t.Fatalf("approver removal response = %#v, want empty list", removal.response.Items)
+	}
+	waitForApprovalConfigurationSignal(t, chainEntered, "chain save to enter after approver removal commit")
+	chain := waitForApprovalChainSaveResult(t, chainResult, "chain save")
+	if !errors.Is(chain.err, ErrInvalidApproverConfig) {
+		t.Fatalf("SaveApprovalChains() error = %v, want ErrInvalidApproverConfig", chain.err)
+	}
+	if got := client.QuotaResetApprovalChain.Query().CountX(ctx); got != 0 {
+		t.Fatalf("approval chain count = %d, want no invalid chain", got)
+	}
+	if got := client.QuotaResetApproverConfig.Query().CountX(ctx); got != 0 {
+		t.Fatalf("approver config count = %d, want completed removal", got)
+	}
+}
+
+func TestSaveApproverConfigsRevalidatesAfterSerializedChainSave(t *testing.T) {
+	ctx := context.Background()
+	client, svc, source, provider, alpha, _ := setupApprovalChainTest(t, ctx)
+	chainEntered := make(chan struct{})
+	chainRelease := make(chan struct{})
+	removalAttempted := make(chan struct{})
+	removalEntered := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseChain := func() {
+		releaseOnce.Do(func() { close(chainRelease) })
+	}
+	defer releaseChain()
+
+	chainCtx := approvalConfigurationLockTestContext(ctx, nil, func() {
+		close(chainEntered)
+		<-chainRelease
+	})
+	chainResult := make(chan approvalChainSaveResult, 1)
+	go func() {
+		response, err := svc.SaveApprovalChains(chainCtx, SaveApprovalChainsInput{ActorUserID: 9, Items: []ApprovalChainInput{{
+			ProviderID: provider.ID,
+			GroupID:    "42",
+			GroupName:  "Group Alpha",
+			Enabled:    true,
+			Nodes: []ApprovalChainNodeInput{{
+				DirectorySourceID:     source.ID,
+				DepartmentExternalID:  alpha.ExternalID,
+				DepartmentDisplayPath: alpha.Path,
+			}},
+		}}})
+		chainResult <- approvalChainSaveResult{response: response, err: err}
+	}()
+	waitForApprovalConfigurationSignal(t, chainEntered, "chain save to enter critical section")
+
+	removalCtx := approvalConfigurationLockTestContext(ctx, func() {
+		close(removalAttempted)
+	}, func() {
+		close(removalEntered)
+	})
+	removalResult := make(chan approverConfigSaveResult, 1)
+	go func() {
+		response, err := svc.SaveApproverConfigs(removalCtx, SaveApproverConfigsInput{
+			ActorUserID: 1,
+			Mode:        ApproverConfigSaveModeReplaceAll,
+			Items:       []ApproverConfigInput{},
+		})
+		removalResult <- approverConfigSaveResult{response: response, err: err}
+	}()
+	waitForApprovalConfigurationSignal(t, removalAttempted, "approver removal to attempt lock")
+	assertNoApprovalConfigurationSignal(t, removalEntered, "approver removal entered before chain save released lock")
+
+	releaseChain()
+	chain := waitForApprovalChainSaveResult(t, chainResult, "chain save")
+	if chain.err != nil {
+		t.Fatalf("SaveApprovalChains() error = %v", chain.err)
+	}
+	waitForApprovalConfigurationSignal(t, removalEntered, "approver removal to enter after chain save commit")
+	removal := waitForApproverConfigSaveResult(t, removalResult, "approver removal")
+	if !errors.Is(removal.err, ErrApproverConfigReferenced) {
+		t.Fatalf("SaveApproverConfigs() error = %v, want ErrApproverConfigReferenced", removal.err)
+	}
+	if got := client.QuotaResetApproverConfig.Query().CountX(ctx); got != 2 {
+		t.Fatalf("approver config count = %d, want unchanged configs", got)
+	}
+	if got := client.QuotaResetApprovalChain.Query().CountX(ctx); got != 1 {
+		t.Fatalf("approval chain count = %d, want committed chain", got)
+	}
+}
+
+type approvalChainSaveResult struct {
+	response *ApprovalChainListResponse
+	err      error
+}
+
+type approverConfigSaveResult struct {
+	response *ApproverConfigListResponse
+	err      error
+}
+
+func approvalConfigurationLockTestContext(ctx context.Context, beforeLock, afterLock func()) context.Context {
+	return context.WithValue(ctx, approvalConfigurationLockHooksContextKey{}, approvalConfigurationLockHooks{
+		beforeLock: beforeLock,
+		afterLock:  afterLock,
+	})
+}
+
+func waitForApprovalConfigurationSignal(t *testing.T, signal <-chan struct{}, description string) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", description)
+	}
+}
+
+func assertNoApprovalConfigurationSignal(t *testing.T, signal <-chan struct{}, failure string) {
+	t.Helper()
+	select {
+	case <-signal:
+		t.Fatal(failure)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+func waitForApprovalConfigurationResult(t *testing.T, result <-chan error, description string) error {
+	t.Helper()
+	select {
+	case err := <-result:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", description)
+		return nil
+	}
+}
+
+func waitForApprovalChainSaveResult(t *testing.T, result <-chan approvalChainSaveResult, description string) approvalChainSaveResult {
+	t.Helper()
+	select {
+	case value := <-result:
+		return value
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", description)
+		return approvalChainSaveResult{}
+	}
+}
+
+func waitForApproverConfigSaveResult(t *testing.T, result <-chan approverConfigSaveResult, description string) approverConfigSaveResult {
+	t.Helper()
+	select {
+	case value := <-result:
+		return value
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", description)
+		return approverConfigSaveResult{}
+	}
+}
+
+func assertSingleApprovalChain(t *testing.T, response *ApprovalChainListResponse, groupID, departmentID string) {
+	t.Helper()
+	if response == nil || len(response.Items) != 1 || len(response.Items[0].Nodes) != 1 {
+		t.Fatalf("approval chains = %#v, want one complete one-node chain", response)
+	}
+	if response.Items[0].GroupID != groupID || response.Items[0].Nodes[0].DepartmentExternalID != departmentID {
+		t.Fatalf("approval chains = %#v, want group %s and department %s", response.Items, groupID, departmentID)
+	}
+}
+
 func setupApprovalChainTest(t *testing.T, ctx context.Context) (*ent.Client, *Service, *ent.DirectorySource, *ent.RelayProvider, *ent.DirectoryDepartment, *ent.DirectoryDepartment) {
 	t.Helper()
 	client := testdb.Open(t)
@@ -351,12 +877,10 @@ func setupApprovalChainTest(t *testing.T, ctx context.Context) (*ent.Client, *Se
 	createQuotaResetApproverConfig(t, ctx, client, source.ID, alpha.ExternalID, alpha.Path, approver.ID)
 	createQuotaResetApproverConfig(t, ctx, client, source.ID, beta.ExternalID, beta.Path, approver.ID)
 	provider := createQuotaResetRelayProvider(t, ctx, client)
-	fake := &fakeQuotaResetProvider{groups: []relay.Group{{
-		ID:               42,
-		Name:             "Group Alpha",
-		Platform:         "openai",
-		SubscriptionType: "subscription",
-	}}}
+	fake := &fakeQuotaResetProvider{groups: []relay.Group{
+		{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"},
+		{ID: 43, Name: "Group Beta", Platform: "anthropic", SubscriptionType: "subscription"},
+	}}
 	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil)
 	return client, svc, source, provider, alpha, beta
 }

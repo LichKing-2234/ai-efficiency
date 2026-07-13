@@ -268,30 +268,32 @@ func (s *Service) ListApproverConfigs(ctx context.Context) (*ApproverConfigListR
 }
 
 func (s *Service) SaveApproverConfigs(ctx context.Context, input SaveApproverConfigsInput) (*ApproverConfigListResponse, error) {
-	sourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
+	items := normalizeApproverConfigInputs(input.Items)
+	tx, err := s.beginApprovalConfigurationTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	txService := *s
+	txService.client = tx.Client()
+	sourceID, ok, err := directorysync.CurrentSourceID(ctx, txService.client)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, ErrDirectoryUnavailable
 	}
-	items := normalizeApproverConfigInputs(input.Items)
-	if err := s.validateApproverConfigs(ctx, sourceID, items); err != nil {
+	if err := txService.validateApproverConfigs(ctx, sourceID, items); err != nil {
 		return nil, err
 	}
 	replaceAll := input.Mode == ApproverConfigSaveModeReplaceAll
-	finalItems, err := s.projectApproverConfigsAfterSave(ctx, sourceID, items, replaceAll)
+	finalItems, err := txService.projectApproverConfigsAfterSave(ctx, sourceID, items, replaceAll)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.validateChainReferencesAfterApproverSave(ctx, sourceID, finalItems); err != nil {
+	if err := txService.validateChainReferencesAfterApproverSave(ctx, sourceID, finalItems); err != nil {
 		return nil, err
 	}
-	tx, err := s.client.Tx(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin quota reset approver config tx: %w", err)
-	}
-	defer tx.Rollback()
 	switch {
 	case replaceAll:
 		if _, err := tx.QuotaResetApproverConfig.Delete().
@@ -325,10 +327,21 @@ func (s *Service) SaveApproverConfigs(ctx context.Context, input SaveApproverCon
 			return nil, fmt.Errorf("create quota reset approver config: %w", err)
 		}
 	}
+	rows, err := tx.QuotaResetApproverConfig.Query().
+		Where(quotaresetapproverconfig.DirectorySourceIDEQ(sourceID)).
+		Order(ent.Asc(quotaresetapproverconfig.FieldDepartmentDisplayPath), ent.Asc(quotaresetapproverconfig.FieldApproverUserID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list saved quota reset approver configs: %w", err)
+	}
+	response, err := txService.approverConfigResponse(ctx, rows)
+	if err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit quota reset approver configs: %w", err)
 	}
-	return s.ListApproverConfigs(ctx)
+	return response, nil
 }
 
 func (s *Service) GetNotificationSettings(ctx context.Context) (*NotificationSettings, error) {
