@@ -336,11 +336,22 @@ func TestWorkflowDecisionRejectsStaleNode(t *testing.T) {
 		operation string
 		err       error
 	}
-	ready := make(chan struct{}, 2)
+	reachedRequestLockQuery := make(chan string, 2)
+	releaseRequestLockQuery := make(chan struct{})
+	releasedRequestLockQuery := make(chan string, 2)
+	callerContext := func(operation string) context.Context {
+		return context.WithValue(ctx, workflowRequestLockQueryHookContextKey{}, workflowRequestLockQueryHook(func() {
+			reachedRequestLockQuery <- operation
+			select {
+			case <-releaseRequestLockQuery:
+				releasedRequestLockQuery <- operation
+			case <-ctx.Done():
+			}
+		}))
+	}
 	results := make(chan callResult, 2)
 	go func() {
-		ready <- struct{}{}
-		_, err := fixture.service.Approve(ctx, DecisionInput{
+		_, err := fixture.service.Approve(callerContext("approve"), DecisionInput{
 			ActorUserID:    fixture.actorA.ID,
 			RequestID:      fixture.request.ID,
 			RequestNodeID:  fixture.nodes[0].ID,
@@ -349,8 +360,7 @@ func TestWorkflowDecisionRejectsStaleNode(t *testing.T) {
 		results <- callResult{operation: "approve", err: err}
 	}()
 	go func() {
-		ready <- struct{}{}
-		_, err := fixture.service.Reject(ctx, DecisionInput{
+		_, err := fixture.service.Reject(callerContext("reject"), DecisionInput{
 			ActorUserID:    fixture.actorB.ID,
 			RequestID:      fixture.request.ID,
 			RequestNodeID:  fixture.nodes[0].ID,
@@ -358,12 +368,30 @@ func TestWorkflowDecisionRejectsStaleNode(t *testing.T) {
 		})
 		results <- callResult{operation: "reject", err: err}
 	}()
+	reached := make(map[string]bool, 2)
 	for i := 0; i < 2; i++ {
 		select {
-		case <-ready:
+		case operation := <-reachedRequestLockQuery:
+			reached[operation] = true
 		case <-ctx.Done():
-			t.Fatalf("waiting for decision caller %d readiness: %v", i+1, ctx.Err())
+			t.Fatalf("waiting for decision caller %d to reach request lock query: %v", i+1, ctx.Err())
 		}
+	}
+	if !reached["approve"] || !reached["reject"] {
+		t.Fatalf("request lock query callers = %#v, want approve and reject", reached)
+	}
+	close(releaseRequestLockQuery)
+	released := make(map[string]bool, 2)
+	for i := 0; i < 2; i++ {
+		select {
+		case operation := <-releasedRequestLockQuery:
+			released[operation] = true
+		case <-ctx.Done():
+			t.Fatalf("waiting for decision caller %d request lock hook release: %v", i+1, ctx.Err())
+		}
+	}
+	if !released["approve"] || !released["reject"] {
+		t.Fatalf("released request lock query callers = %#v, want approve and reject", released)
 	}
 	if err := gateTx.Commit(); err != nil {
 		t.Fatalf("release request lock gate: %v", err)

@@ -333,11 +333,20 @@ func (s *Service) retryResetWorkflow(ctx context.Context, input DecisionInput, r
 	return s.executeReset(ctx, request.ID, input.ActorUserID, true, input.Admin)
 }
 
+type workflowRequestLockQueryHookContextKey struct{}
+
+type workflowRequestLockQueryHook func()
+
 func lockAndAuthorizeCurrentNode(ctx context.Context, tx *ent.Tx, input DecisionInput) (*ent.QuotaResetRequest, *ent.QuotaResetRequestNode, *ent.User, bool, error) {
 	request, err := tx.QuotaResetRequest.Query().
 		Where(
 			quotaresetrequest.IDEQ(input.RequestID),
-			func(selector *sql.Selector) { selector.ForUpdate() },
+			func(selector *sql.Selector) {
+				selector.ForUpdate()
+				if hook, ok := ctx.Value(workflowRequestLockQueryHookContextKey{}).(workflowRequestLockQueryHook); ok && hook != nil {
+					hook()
+				}
+			},
 		).
 		Only(ctx)
 	if err != nil {

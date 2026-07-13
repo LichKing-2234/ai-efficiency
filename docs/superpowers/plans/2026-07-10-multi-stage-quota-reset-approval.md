@@ -1845,16 +1845,41 @@ sequentially. It did not prove concurrent PostgreSQL request-row lock
 contention, so Step 7 was reopened until a deterministic gated concurrent test
 passed normally and under the race detector.
 
-Corrected evidence (2026-07-14): the test now holds the request row with a gate
-transaction, starts `Approve` and `Reject` concurrently against the same active
-node, waits for both callers to announce readiness, then commits the gate so
-the two public service transactions contend for the request lock. The focused
+Invalidated first follow-up evidence (2026-07-14): the test held the request row
+with a gate transaction, started `Approve` and `Reject` concurrently against
+the same active node, waited for both callers to announce readiness, then
+committed the gate intending to make the two public service transactions
+contend for the request lock. The focused
 test passed once in 1.365s and 20 repeated runs in 5.232s; the race-detector run
 passed 10 repetitions in 4.805s. Exactly one operation succeeds, the loser
 returns `WorkflowAdvancedError`, exactly one decision persists, winner-specific
 request/node state is preserved, and reset is not called. The full Task 4
 state-machine command passed in 9.080s, all quota reset tests passed in 24.689s,
 and `go test ./... -count=1`, `go vet ./...`, and `git diff --check` passed.
+
+Invalidated follow-up evidence (2026-07-14): the readiness signal above was
+still emitted immediately before entering the public service method. A caller
+could signal and be descheduled before its transaction reached the request
+`FOR UPDATE` selector, allowing the gate transaction to commit too early.
+Step 7 was reopened again until both callers were synchronized from inside the
+actual request-lock query path.
+
+Hook RED evidence (2026-07-14): `go test ./internal/quotareset -run
+'^TestWorkflowDecisionRejectsStaleNode$' -count=1` failed at compile time because
+the new test referenced the not-yet-implemented private
+`workflowRequestLockQueryHookContextKey` and `workflowRequestLockQueryHook`.
+
+Final corrected evidence (2026-07-14): the request `FOR UPDATE` selector now
+checks a private context hook immediately after `selector.ForUpdate()` and
+immediately before Ent executes the lock query. The test gives both public
+decision calls hook-bearing contexts, waits for both hooks to signal from
+inside that selector modifier, releases both hooks, waits for their release
+acknowledgements, and only then commits the gate transaction. The focused test
+passed once in 1.213s and 20 repeated runs in 5.268s; 10 race-detector
+repetitions passed in 4.728s. The full Task 4 state-machine command passed in
+9.213s, all quota reset tests passed in 24.806s, and `go test ./... -count=1`,
+`go vet ./...`, and `git diff --check` passed. Request-then-node lock order is
+unchanged.
 
 - [x] **Step 8: Commit the state machine**
 
