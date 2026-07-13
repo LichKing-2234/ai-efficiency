@@ -1107,7 +1107,7 @@ func validateNotificationSettings(ctx context.Context, client *ent.Client, enabl
 func validateNotificationEndpoint(channelType quotaresetnotificationsetting.ChannelType, parsed *url.URL, authType quotaresetnotificationsetting.AuthType) error {
 	switch channelType {
 	case quotaresetnotificationsetting.ChannelTypeWecomGroupRobot:
-		if !strings.EqualFold(parsed.Hostname(), "qyapi.weixin.qq.com") || parsed.Path != "/cgi-bin/webhook/send" || strings.TrimSpace(parsed.Query().Get("key")) == "" {
+		if !strings.EqualFold(parsed.Scheme, "https") || !strings.EqualFold(parsed.Hostname(), "qyapi.weixin.qq.com") || parsed.Path != "/cgi-bin/webhook/send" || strings.TrimSpace(parsed.Query().Get("key")) == "" {
 			return fmt.Errorf("%w: invalid Enterprise WeChat group robot URL", ErrInvalidNotification)
 		}
 		if authType != quotaresetnotificationsetting.AuthTypeNone {
@@ -1123,7 +1123,7 @@ func validateNotificationEndpoint(channelType quotaresetnotificationsetting.Chan
 	return nil
 }
 
-func webhookURLPreview(raw string) string {
+func webhookURLPreview(channelType quotaresetnotificationsetting.ChannelType, raw string) string {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return ""
@@ -1132,6 +1132,10 @@ func webhookURLPreview(raw string) string {
 	parsed.RawQuery = ""
 	parsed.ForceQuery = false
 	parsed.Fragment = ""
+	if channelType != quotaresetnotificationsetting.ChannelTypeWecomGroupRobot {
+		parsed.Path = ""
+		parsed.RawPath = ""
+	}
 	return parsed.String()
 }
 
@@ -1148,7 +1152,7 @@ func notificationSettingsResponse(row *ent.QuotaResetNotificationSetting) *Notif
 		ChannelType:     row.ChannelType.String(),
 		TemplateVersion: row.TemplateVersion,
 		URLConfigured:   strings.TrimSpace(row.URL) != "",
-		URLPreview:      webhookURLPreview(row.URL),
+		URLPreview:      webhookURLPreview(row.ChannelType, row.URL),
 		AuthType:        row.AuthType.String(),
 		CredentialID:    row.CredentialID,
 		UpdatedAt:       row.UpdatedAt.UTC().Format(time.RFC3339),

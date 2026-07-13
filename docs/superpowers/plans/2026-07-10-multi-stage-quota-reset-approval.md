@@ -2357,6 +2357,26 @@ git commit -m "feat(backend): configure quota reset notification channels"
 Evidence (2026-07-14): committed the Task 6 implementation as `f6dfa8e`
 (`feat(backend): configure quota reset notification channels`).
 
+#### Quality-review follow-up (2026-07-14)
+
+- [x] Add RED tests for HTTPS-only WeCom endpoints and generic webhook path redaction.
+
+Evidence: `cd backend && go test ./internal/quotareset -run
+'TestNotificationSettings(RejectsHTTPWeComRobotEndpoint|ReadRedactsGenericWebhookPath)' -count=1`
+failed as expected: the HTTP WeCom endpoint returned nil error and the generic
+preview exposed `/services/synthetic-id/synthetic-token`.
+
+- [x] Implement the endpoint and preview hardening.
+- [x] Run focused and full backend verification.
+
+Evidence: `cd backend && go test ./internal/quotareset -run
+'Test(NotificationSettings|BackfillNotificationChannels)' -count=1`, `cd backend
+&& go test ./cmd/server ./internal/quotareset -count=1`, `cd backend && go test
+./... -count=1`, `cd backend && go vet ./...`, and `git diff --check` all
+passed.
+
+- [ ] Commit the quality-review fixes.
+
 ---
 
 ### Task 7: Add Generic and Enterprise WeChat Notification Adapters

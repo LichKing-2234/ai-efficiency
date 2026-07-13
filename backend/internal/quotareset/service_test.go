@@ -346,6 +346,24 @@ func TestNotificationSettingsValidatesWeComEndpointAndDisallowsBearer(t *testing
 	}
 }
 
+func TestNotificationSettingsRejectsHTTPWeComRobotEndpoint(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	svc := NewService(client, nil, nil, nil)
+	robotURL := "http://qyapi.weixin.qq.com/cgi-bin/webhook/send" + "?" + "key=test-secret"
+
+	_, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+		ActorUserID: 1,
+		Enabled:     false,
+		ChannelType: "wecom_group_robot",
+		URL:         &robotURL,
+		AuthType:    "none",
+	})
+	if !errors.Is(err, ErrInvalidNotification) || !strings.Contains(err.Error(), "invalid Enterprise WeChat") {
+		t.Fatalf("HTTP WeCom endpoint error = %v, want invalid Enterprise WeChat endpoint", err)
+	}
+}
+
 func TestNotificationSettingsReadRedactsRobotKey(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -369,6 +387,32 @@ func TestNotificationSettingsReadRedactsRobotKey(t *testing.T) {
 	}
 	if strings.Contains(fmt.Sprintf("%+v", settings), "test-secret") {
 		t.Fatalf("settings leaked robot key: %+v", settings)
+	}
+}
+
+func TestNotificationSettingsReadRedactsGenericWebhookPath(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	endpoint := "https://hooks.example.com/services/synthetic-id/synthetic-token"
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetChannelType("generic_webhook").
+		SetChannelTypeConfigured(true).
+		SetURL(endpoint).
+		SetAuthType("none").
+		SetCreatedByUserID(1).
+		SetUpdatedByUserID(1).
+		SaveX(ctx)
+
+	settings, err := NewService(client, nil, nil, nil).GetNotificationSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetNotificationSettings() error = %v", err)
+	}
+	if settings.URLPreview != "https://hooks.example.com" {
+		t.Fatalf("URL preview = %q, want host-only generic preview", settings.URLPreview)
+	}
+	if strings.Contains(fmt.Sprintf("%+v", settings), "synthetic-token") {
+		t.Fatalf("settings leaked generic webhook path token: %+v", settings)
 	}
 }
 
@@ -397,7 +441,7 @@ func TestNotificationSettingsOmittedURLPreservesExistingSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateNotificationSettings(omitted URL) error = %v", err)
 	}
-	if !settings.URLConfigured || settings.URLPreview != "https://hooks.example.com/quota-reset" {
+	if !settings.URLConfigured || settings.URLPreview != "https://hooks.example.com" {
 		t.Fatalf("settings = %+v, want preserved redacted URL", settings)
 	}
 	row := client.QuotaResetNotificationSetting.Query().OnlyX(ctx)
