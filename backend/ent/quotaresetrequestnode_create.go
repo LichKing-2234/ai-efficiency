@@ -195,6 +195,10 @@ func (qrrnc *QuotaResetRequestNodeCreate) defaults() {
 		v := quotaresetrequestnode.DefaultLabel
 		qrrnc.mutation.SetLabel(v)
 	}
+	if _, ok := qrrnc.mutation.DepartmentSnapshots(); !ok {
+		v := quotaresetrequestnode.DefaultDepartmentSnapshots
+		qrrnc.mutation.SetDepartmentSnapshots(v)
+	}
 	if _, ok := qrrnc.mutation.Status(); !ok {
 		v := quotaresetrequestnode.DefaultStatus
 		qrrnc.mutation.SetStatus(v)
@@ -236,6 +240,9 @@ func (qrrnc *QuotaResetRequestNodeCreate) check() error {
 	}
 	if _, ok := qrrnc.mutation.Label(); !ok {
 		return &ValidationError{Name: "label", err: errors.New(`ent: missing required field "QuotaResetRequestNode.label"`)}
+	}
+	if _, ok := qrrnc.mutation.DepartmentSnapshots(); !ok {
+		return &ValidationError{Name: "department_snapshots", err: errors.New(`ent: missing required field "QuotaResetRequestNode.department_snapshots"`)}
 	}
 	if _, ok := qrrnc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "QuotaResetRequestNode.status"`)}

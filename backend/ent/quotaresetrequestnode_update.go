@@ -178,9 +178,6 @@ func (qrrnu *QuotaResetRequestNodeUpdate) sqlSave(ctx context.Context) (n int, e
 			}
 		}
 	}
-	if qrrnu.mutation.DepartmentSnapshotsCleared() {
-		_spec.ClearField(quotaresetrequestnode.FieldDepartmentSnapshots, field.TypeJSON)
-	}
 	if value, ok := qrrnu.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequestnode.FieldStatus, field.TypeEnum, value)
 	}
@@ -407,9 +404,6 @@ func (qrrnuo *QuotaResetRequestNodeUpdateOne) sqlSave(ctx context.Context) (_nod
 				ps[i](selector)
 			}
 		}
-	}
-	if qrrnuo.mutation.DepartmentSnapshotsCleared() {
-		_spec.ClearField(quotaresetrequestnode.FieldDepartmentSnapshots, field.TypeJSON)
 	}
 	if value, ok := qrrnuo.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequestnode.FieldStatus, field.TypeEnum, value)

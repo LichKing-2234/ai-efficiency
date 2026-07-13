@@ -309,26 +309,6 @@ func SourceNotIn(vs ...Source) predicate.QuotaResetRequestNodeApprover {
 	return predicate.QuotaResetRequestNodeApprover(sql.FieldNotIn(FieldSource, vs...))
 }
 
-// SourceDepartmentExternalIdsIsNil applies the IsNil predicate on the "source_department_external_ids" field.
-func SourceDepartmentExternalIdsIsNil() predicate.QuotaResetRequestNodeApprover {
-	return predicate.QuotaResetRequestNodeApprover(sql.FieldIsNull(FieldSourceDepartmentExternalIds))
-}
-
-// SourceDepartmentExternalIdsNotNil applies the NotNil predicate on the "source_department_external_ids" field.
-func SourceDepartmentExternalIdsNotNil() predicate.QuotaResetRequestNodeApprover {
-	return predicate.QuotaResetRequestNodeApprover(sql.FieldNotNull(FieldSourceDepartmentExternalIds))
-}
-
-// NotificationIdsIsNil applies the IsNil predicate on the "notification_ids" field.
-func NotificationIdsIsNil() predicate.QuotaResetRequestNodeApprover {
-	return predicate.QuotaResetRequestNodeApprover(sql.FieldIsNull(FieldNotificationIds))
-}
-
-// NotificationIdsNotNil applies the NotNil predicate on the "notification_ids" field.
-func NotificationIdsNotNil() predicate.QuotaResetRequestNodeApprover {
-	return predicate.QuotaResetRequestNodeApprover(sql.FieldNotNull(FieldNotificationIds))
-}
-
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.QuotaResetRequestNodeApprover {
 	return predicate.QuotaResetRequestNodeApprover(sql.FieldEQ(FieldCreatedAt, v))

@@ -27001,24 +27001,10 @@ func (m *QuotaResetRequestNodeMutation) AppendedDepartmentSnapshots() ([]map[str
 	return m.appenddepartment_snapshots, true
 }
 
-// ClearDepartmentSnapshots clears the value of the "department_snapshots" field.
-func (m *QuotaResetRequestNodeMutation) ClearDepartmentSnapshots() {
-	m.department_snapshots = nil
-	m.appenddepartment_snapshots = nil
-	m.clearedFields[quotaresetrequestnode.FieldDepartmentSnapshots] = struct{}{}
-}
-
-// DepartmentSnapshotsCleared returns if the "department_snapshots" field was cleared in this mutation.
-func (m *QuotaResetRequestNodeMutation) DepartmentSnapshotsCleared() bool {
-	_, ok := m.clearedFields[quotaresetrequestnode.FieldDepartmentSnapshots]
-	return ok
-}
-
 // ResetDepartmentSnapshots resets all changes to the "department_snapshots" field.
 func (m *QuotaResetRequestNodeMutation) ResetDepartmentSnapshots() {
 	m.department_snapshots = nil
 	m.appenddepartment_snapshots = nil
-	delete(m.clearedFields, quotaresetrequestnode.FieldDepartmentSnapshots)
 }
 
 // SetStatus sets the "status" field.
@@ -27631,9 +27617,6 @@ func (m *QuotaResetRequestNodeMutation) AddField(name string, value ent.Value) e
 // mutation.
 func (m *QuotaResetRequestNodeMutation) ClearedFields() []string {
 	var fields []string
-	if m.FieldCleared(quotaresetrequestnode.FieldDepartmentSnapshots) {
-		fields = append(fields, quotaresetrequestnode.FieldDepartmentSnapshots)
-	}
 	if m.FieldCleared(quotaresetrequestnode.FieldSatisfiedByDecisionID) {
 		fields = append(fields, quotaresetrequestnode.FieldSatisfiedByDecisionID)
 	}
@@ -27657,9 +27640,6 @@ func (m *QuotaResetRequestNodeMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *QuotaResetRequestNodeMutation) ClearField(name string) error {
 	switch name {
-	case quotaresetrequestnode.FieldDepartmentSnapshots:
-		m.ClearDepartmentSnapshots()
-		return nil
 	case quotaresetrequestnode.FieldSatisfiedByDecisionID:
 		m.ClearSatisfiedByDecisionID()
 		return nil
@@ -28151,24 +28131,10 @@ func (m *QuotaResetRequestNodeApproverMutation) AppendedSourceDepartmentExternal
 	return m.appendsource_department_external_ids, true
 }
 
-// ClearSourceDepartmentExternalIds clears the value of the "source_department_external_ids" field.
-func (m *QuotaResetRequestNodeApproverMutation) ClearSourceDepartmentExternalIds() {
-	m.source_department_external_ids = nil
-	m.appendsource_department_external_ids = nil
-	m.clearedFields[quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds] = struct{}{}
-}
-
-// SourceDepartmentExternalIdsCleared returns if the "source_department_external_ids" field was cleared in this mutation.
-func (m *QuotaResetRequestNodeApproverMutation) SourceDepartmentExternalIdsCleared() bool {
-	_, ok := m.clearedFields[quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds]
-	return ok
-}
-
 // ResetSourceDepartmentExternalIds resets all changes to the "source_department_external_ids" field.
 func (m *QuotaResetRequestNodeApproverMutation) ResetSourceDepartmentExternalIds() {
 	m.source_department_external_ids = nil
 	m.appendsource_department_external_ids = nil
-	delete(m.clearedFields, quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds)
 }
 
 // SetNotificationIds sets the "notification_ids" field.
@@ -28202,22 +28168,9 @@ func (m *QuotaResetRequestNodeApproverMutation) OldNotificationIds(ctx context.C
 	return oldValue.NotificationIds, nil
 }
 
-// ClearNotificationIds clears the value of the "notification_ids" field.
-func (m *QuotaResetRequestNodeApproverMutation) ClearNotificationIds() {
-	m.notification_ids = nil
-	m.clearedFields[quotaresetrequestnodeapprover.FieldNotificationIds] = struct{}{}
-}
-
-// NotificationIdsCleared returns if the "notification_ids" field was cleared in this mutation.
-func (m *QuotaResetRequestNodeApproverMutation) NotificationIdsCleared() bool {
-	_, ok := m.clearedFields[quotaresetrequestnodeapprover.FieldNotificationIds]
-	return ok
-}
-
 // ResetNotificationIds resets all changes to the "notification_ids" field.
 func (m *QuotaResetRequestNodeApproverMutation) ResetNotificationIds() {
 	m.notification_ids = nil
-	delete(m.clearedFields, quotaresetrequestnodeapprover.FieldNotificationIds)
 }
 
 // SetCreatedAt sets the "created_at" field.
@@ -28485,14 +28438,7 @@ func (m *QuotaResetRequestNodeApproverMutation) AddField(name string, value ent.
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *QuotaResetRequestNodeApproverMutation) ClearedFields() []string {
-	var fields []string
-	if m.FieldCleared(quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds) {
-		fields = append(fields, quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds)
-	}
-	if m.FieldCleared(quotaresetrequestnodeapprover.FieldNotificationIds) {
-		fields = append(fields, quotaresetrequestnodeapprover.FieldNotificationIds)
-	}
-	return fields
+	return nil
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -28505,14 +28451,6 @@ func (m *QuotaResetRequestNodeApproverMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *QuotaResetRequestNodeApproverMutation) ClearField(name string) error {
-	switch name {
-	case quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds:
-		m.ClearSourceDepartmentExternalIds()
-		return nil
-	case quotaresetrequestnodeapprover.FieldNotificationIds:
-		m.ClearNotificationIds()
-		return nil
-	}
 	return fmt.Errorf("unknown QuotaResetRequestNodeApprover nullable field %s", name)
 }
 

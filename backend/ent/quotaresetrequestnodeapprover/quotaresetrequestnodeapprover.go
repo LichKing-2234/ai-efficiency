@@ -62,6 +62,10 @@ var (
 	DefaultDisplayName string
 	// DefaultEmail holds the default value on creation for the "email" field.
 	DefaultEmail string
+	// DefaultSourceDepartmentExternalIds holds the default value on creation for the "source_department_external_ids" field.
+	DefaultSourceDepartmentExternalIds []string
+	// DefaultNotificationIds holds the default value on creation for the "notification_ids" field.
+	DefaultNotificationIds map[string]string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )

@@ -135,6 +135,14 @@ func (qrrnac *QuotaResetRequestNodeApproverCreate) defaults() {
 		v := quotaresetrequestnodeapprover.DefaultEmail
 		qrrnac.mutation.SetEmail(v)
 	}
+	if _, ok := qrrnac.mutation.SourceDepartmentExternalIds(); !ok {
+		v := quotaresetrequestnodeapprover.DefaultSourceDepartmentExternalIds
+		qrrnac.mutation.SetSourceDepartmentExternalIds(v)
+	}
+	if _, ok := qrrnac.mutation.NotificationIds(); !ok {
+		v := quotaresetrequestnodeapprover.DefaultNotificationIds
+		qrrnac.mutation.SetNotificationIds(v)
+	}
 	if _, ok := qrrnac.mutation.CreatedAt(); !ok {
 		v := quotaresetrequestnodeapprover.DefaultCreatedAt()
 		qrrnac.mutation.SetCreatedAt(v)
@@ -162,6 +170,12 @@ func (qrrnac *QuotaResetRequestNodeApproverCreate) check() error {
 		if err := quotaresetrequestnodeapprover.SourceValidator(v); err != nil {
 			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestNodeApprover.source": %w`, err)}
 		}
+	}
+	if _, ok := qrrnac.mutation.SourceDepartmentExternalIds(); !ok {
+		return &ValidationError{Name: "source_department_external_ids", err: errors.New(`ent: missing required field "QuotaResetRequestNodeApprover.source_department_external_ids"`)}
+	}
+	if _, ok := qrrnac.mutation.NotificationIds(); !ok {
+		return &ValidationError{Name: "notification_ids", err: errors.New(`ent: missing required field "QuotaResetRequestNodeApprover.notification_ids"`)}
 	}
 	if _, ok := qrrnac.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "QuotaResetRequestNodeApprover.created_at"`)}

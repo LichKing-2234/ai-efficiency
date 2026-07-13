@@ -703,6 +703,10 @@ func init() {
 	quotaresetrequestnodeDescLabel := quotaresetrequestnodeFields[3].Descriptor()
 	// quotaresetrequestnode.DefaultLabel holds the default value on creation for the label field.
 	quotaresetrequestnode.DefaultLabel = quotaresetrequestnodeDescLabel.Default.(string)
+	// quotaresetrequestnodeDescDepartmentSnapshots is the schema descriptor for department_snapshots field.
+	quotaresetrequestnodeDescDepartmentSnapshots := quotaresetrequestnodeFields[4].Descriptor()
+	// quotaresetrequestnode.DefaultDepartmentSnapshots holds the default value on creation for the department_snapshots field.
+	quotaresetrequestnode.DefaultDepartmentSnapshots = quotaresetrequestnodeDescDepartmentSnapshots.Default.([]map[string]interface{})
 	// quotaresetrequestnodeDescAdminFallbackRequired is the schema descriptor for admin_fallback_required field.
 	quotaresetrequestnodeDescAdminFallbackRequired := quotaresetrequestnodeFields[6].Descriptor()
 	// quotaresetrequestnode.DefaultAdminFallbackRequired holds the default value on creation for the admin_fallback_required field.
@@ -727,6 +731,14 @@ func init() {
 	quotaresetrequestnodeapproverDescEmail := quotaresetrequestnodeapproverFields[3].Descriptor()
 	// quotaresetrequestnodeapprover.DefaultEmail holds the default value on creation for the email field.
 	quotaresetrequestnodeapprover.DefaultEmail = quotaresetrequestnodeapproverDescEmail.Default.(string)
+	// quotaresetrequestnodeapproverDescSourceDepartmentExternalIds is the schema descriptor for source_department_external_ids field.
+	quotaresetrequestnodeapproverDescSourceDepartmentExternalIds := quotaresetrequestnodeapproverFields[5].Descriptor()
+	// quotaresetrequestnodeapprover.DefaultSourceDepartmentExternalIds holds the default value on creation for the source_department_external_ids field.
+	quotaresetrequestnodeapprover.DefaultSourceDepartmentExternalIds = quotaresetrequestnodeapproverDescSourceDepartmentExternalIds.Default.([]string)
+	// quotaresetrequestnodeapproverDescNotificationIds is the schema descriptor for notification_ids field.
+	quotaresetrequestnodeapproverDescNotificationIds := quotaresetrequestnodeapproverFields[6].Descriptor()
+	// quotaresetrequestnodeapprover.DefaultNotificationIds holds the default value on creation for the notification_ids field.
+	quotaresetrequestnodeapprover.DefaultNotificationIds = quotaresetrequestnodeapproverDescNotificationIds.Default.(map[string]string)
 	// quotaresetrequestnodeapproverDescCreatedAt is the schema descriptor for created_at field.
 	quotaresetrequestnodeapproverDescCreatedAt := quotaresetrequestnodeapproverFields[7].Descriptor()
 	// quotaresetrequestnodeapprover.DefaultCreatedAt holds the default value on creation for the created_at field.

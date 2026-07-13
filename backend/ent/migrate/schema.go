@@ -867,7 +867,7 @@ var (
 		{Name: "position", Type: field.TypeInt},
 		{Name: "node_type", Type: field.TypeEnum, Enums: []string{"requester_departments", "configured_department"}},
 		{Name: "label", Type: field.TypeString, Default: ""},
-		{Name: "department_snapshots", Type: field.TypeJSON, Nullable: true},
+		{Name: "department_snapshots", Type: field.TypeJSON},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"queued", "active", "approved", "satisfied_by_prior_approval", "skipped_no_approver", "rejected"}, Default: "queued"},
 		{Name: "admin_fallback_required", Type: field.TypeBool, Default: false},
 		{Name: "satisfied_by_decision_id", Type: field.TypeInt, Nullable: true},
@@ -915,8 +915,8 @@ var (
 		{Name: "display_name", Type: field.TypeString, Default: ""},
 		{Name: "email", Type: field.TypeString, Default: ""},
 		{Name: "source", Type: field.TypeEnum, Enums: []string{"configured", "directory_representative"}},
-		{Name: "source_department_external_ids", Type: field.TypeJSON, Nullable: true},
-		{Name: "notification_ids", Type: field.TypeJSON, Nullable: true},
+		{Name: "source_department_external_ids", Type: field.TypeJSON},
+		{Name: "notification_ids", Type: field.TypeJSON},
 		{Name: "created_at", Type: field.TypeTime},
 	}
 	// QuotaResetRequestNodeApproversTable holds the schema information for the "quota_reset_request_node_approvers" table.

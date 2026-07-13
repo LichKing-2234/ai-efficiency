@@ -259,16 +259,6 @@ func LabelContainsFold(v string) predicate.QuotaResetRequestNode {
 	return predicate.QuotaResetRequestNode(sql.FieldContainsFold(FieldLabel, v))
 }
 
-// DepartmentSnapshotsIsNil applies the IsNil predicate on the "department_snapshots" field.
-func DepartmentSnapshotsIsNil() predicate.QuotaResetRequestNode {
-	return predicate.QuotaResetRequestNode(sql.FieldIsNull(FieldDepartmentSnapshots))
-}
-
-// DepartmentSnapshotsNotNil applies the NotNil predicate on the "department_snapshots" field.
-func DepartmentSnapshotsNotNil() predicate.QuotaResetRequestNode {
-	return predicate.QuotaResetRequestNode(sql.FieldNotNull(FieldDepartmentSnapshots))
-}
-
 // StatusEQ applies the EQ predicate on the "status" field.
 func StatusEQ(v Status) predicate.QuotaResetRequestNode {
 	return predicate.QuotaResetRequestNode(sql.FieldEQ(FieldStatus, v))

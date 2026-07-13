@@ -2,6 +2,7 @@ package quotareset
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -98,12 +99,70 @@ func TestWorkflowSchemaDefaultsAndLifecycleEvent(t *testing.T) {
 		t.Fatalf("notification template version = %d, want 1", got)
 	}
 
-	event := client.QuotaResetRequestEvent.Create().
-		SetRequestID(legacyRequest.ID).
-		SetEventType(quotaresetrequestevent.EventTypeWorkflowSnapshotted).
-		SaveX(ctx)
-	if got := event.EventType; got != quotaresetrequestevent.EventTypeWorkflowSnapshotted {
-		t.Fatalf("event type = %q, want %q", got, quotaresetrequestevent.EventTypeWorkflowSnapshotted)
+	eventTypes := []quotaresetrequestevent.EventType{
+		quotaresetrequestevent.EventTypeWorkflowSnapshotted,
+		quotaresetrequestevent.EventTypeNodeActivated,
+		quotaresetrequestevent.EventTypeNodeApproved,
+		quotaresetrequestevent.EventTypeNodeSatisfiedByPriorApproval,
+		quotaresetrequestevent.EventTypeNodeSkippedNoApprover,
+		quotaresetrequestevent.EventTypeAdminFallbackActivated,
+	}
+	for _, eventType := range eventTypes {
+		t.Run(string(eventType), func(t *testing.T) {
+			event := client.QuotaResetRequestEvent.Create().
+				SetRequestID(legacyRequest.ID).
+				SetEventType(eventType).
+				SaveX(ctx)
+			if got := event.EventType; got != eventType {
+				t.Fatalf("event type = %q, want %q", got, eventType)
+			}
+		})
+	}
+	if got := client.QuotaResetRequestEvent.Query().
+		Where(quotaresetrequestevent.RequestIDEQ(legacyRequest.ID)).
+		CountX(ctx); got != len(eventTypes) {
+		t.Fatalf("lifecycle event count = %d, want %d", got, len(eventTypes))
+	}
+}
+
+func TestWorkflowSnapshotJSONFieldsAreNonNullableAndNotClearable(t *testing.T) {
+	clearMethods := []struct {
+		mutationType reflect.Type
+		method       string
+	}{
+		{reflect.TypeOf((*ent.QuotaResetRequestNodeMutation)(nil)), "ClearDepartmentSnapshots"},
+		{reflect.TypeOf((*ent.QuotaResetRequestNodeApproverMutation)(nil)), "ClearSourceDepartmentExternalIds"},
+		{reflect.TypeOf((*ent.QuotaResetRequestNodeApproverMutation)(nil)), "ClearNotificationIds"},
+	}
+	for _, clearMethod := range clearMethods {
+		if _, ok := clearMethod.mutationType.MethodByName(clearMethod.method); ok {
+			t.Errorf("%s exposes %s", clearMethod.mutationType, clearMethod.method)
+		}
+	}
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := client.QuotaResetRequest.Create().
+		SetRequesterUserID(requester.ID).SetRequesterRelayUserID(1001).
+		SetProviderID(provider.ID).SetGroupID("42").SetGroupName("Group Alpha").SetGroupPlatform("openai").
+		SetReason("Request with default workflow snapshots").SetWorkflowVersion(2).SaveX(ctx)
+	node := client.QuotaResetRequestNode.Create().
+		SetRequestID(request.ID).SetPosition(0).SetNodeType("requester_departments").SaveX(ctx)
+	nodeApprover := client.QuotaResetRequestNodeApprover.Create().
+		SetRequestNodeID(node.ID).SetUserID(approver.ID).SetSource("configured").SaveX(ctx)
+	node = client.QuotaResetRequestNode.GetX(ctx, node.ID)
+	nodeApprover = client.QuotaResetRequestNodeApprover.GetX(ctx, nodeApprover.ID)
+	if node.DepartmentSnapshots == nil {
+		t.Error("department snapshots = nil, want non-null empty array")
+	}
+	if nodeApprover.SourceDepartmentExternalIds == nil {
+		t.Error("source department external ids = nil, want non-null empty array")
+	}
+	if nodeApprover.NotificationIds == nil {
+		t.Error("notification ids = nil, want non-null empty object")
 	}
 }
 
@@ -116,12 +175,25 @@ func TestWorkflowSchemaRejectsMultipleActiveNodesPerRequest(t *testing.T) {
 		SetRequesterUserID(requester.ID).SetRequesterRelayUserID(1001).
 		SetProviderID(provider.ID).SetGroupID("42").SetGroupName("Group Alpha").SetGroupPlatform("openai").
 		SetReason("Request with one active workflow node").SetWorkflowVersion(2).SaveX(ctx)
+	for position := 0; position < 2; position++ {
+		client.QuotaResetRequestNode.Create().
+			SetRequestID(request.ID).SetPosition(position).SetNodeType("configured_department").
+			SetStatus(quotaresetrequestnode.StatusQueued).SaveX(ctx)
+	}
+	if got := client.QuotaResetRequestNode.Query().
+		Where(
+			quotaresetrequestnode.RequestIDEQ(request.ID),
+			quotaresetrequestnode.StatusEQ(quotaresetrequestnode.StatusQueued),
+		).
+		CountX(ctx); got != 2 {
+		t.Fatalf("queued node count = %d, want 2", got)
+	}
 	client.QuotaResetRequestNode.Create().
-		SetRequestID(request.ID).SetPosition(0).SetNodeType("requester_departments").
+		SetRequestID(request.ID).SetPosition(2).SetNodeType("requester_departments").
 		SetStatus(quotaresetrequestnode.StatusActive).SaveX(ctx)
 
 	_, err := client.QuotaResetRequestNode.Create().
-		SetRequestID(request.ID).SetPosition(1).SetNodeType("configured_department").
+		SetRequestID(request.ID).SetPosition(3).SetNodeType("configured_department").
 		SetStatus(quotaresetrequestnode.StatusActive).Save(ctx)
 	if !ent.IsConstraintError(err) {
 		t.Fatalf("second active node error = %v, want constraint error", err)

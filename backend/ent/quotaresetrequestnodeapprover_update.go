@@ -68,12 +68,6 @@ func (qrrnau *QuotaResetRequestNodeApproverUpdate) sqlSave(ctx context.Context) 
 			}
 		}
 	}
-	if qrrnau.mutation.SourceDepartmentExternalIdsCleared() {
-		_spec.ClearField(quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds, field.TypeJSON)
-	}
-	if qrrnau.mutation.NotificationIdsCleared() {
-		_spec.ClearField(quotaresetrequestnodeapprover.FieldNotificationIds, field.TypeJSON)
-	}
 	if n, err = sqlgraph.UpdateNodes(ctx, qrrnau.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{quotaresetrequestnodeapprover.Label}
@@ -164,12 +158,6 @@ func (qrrnauo *QuotaResetRequestNodeApproverUpdateOne) sqlSave(ctx context.Conte
 				ps[i](selector)
 			}
 		}
-	}
-	if qrrnauo.mutation.SourceDepartmentExternalIdsCleared() {
-		_spec.ClearField(quotaresetrequestnodeapprover.FieldSourceDepartmentExternalIds, field.TypeJSON)
-	}
-	if qrrnauo.mutation.NotificationIdsCleared() {
-		_spec.ClearField(quotaresetrequestnodeapprover.FieldNotificationIds, field.TypeJSON)
 	}
 	_node = &QuotaResetRequestNodeApprover{config: qrrnauo.config}
 	_spec.Assign = _node.assignValues

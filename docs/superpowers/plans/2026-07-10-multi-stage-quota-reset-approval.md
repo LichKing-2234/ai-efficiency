@@ -283,7 +283,7 @@ func (QuotaResetRequestNode) Fields() []ent.Field {
 		field.Int("position").NonNegative().Immutable(),
 		field.Enum("node_type").Values("requester_departments", "configured_department").Immutable(),
 		field.String("label").Default("").Immutable(),
-		field.JSON("department_snapshots", []map[string]any{}).Optional().Immutable(),
+		field.JSON("department_snapshots", []map[string]any{}).Default([]map[string]any{}).Immutable(),
 		field.Enum("status").Values("queued", "active", "approved", "satisfied_by_prior_approval", "skipped_no_approver", "rejected").Default("queued"),
 		field.Bool("admin_fallback_required").Default(false).Immutable(),
 		field.Int("satisfied_by_decision_id").Optional().Nillable(),
@@ -326,8 +326,8 @@ func (QuotaResetRequestNodeApprover) Fields() []ent.Field {
 		field.String("display_name").Default("").Immutable(),
 		field.String("email").Default("").Immutable(),
 		field.Enum("source").Values("configured", "directory_representative").Immutable(),
-		field.JSON("source_department_external_ids", []string{}).Optional().Immutable(),
-		field.JSON("notification_ids", map[string]string{}).Optional().Immutable(),
+		field.JSON("source_department_external_ids", []string{}).Default([]string{}).Immutable(),
+		field.JSON("notification_ids", map[string]string{}).Default(map[string]string{}).Immutable(),
 		field.Time("created_at").Default(timeNow).Immutable(),
 	}
 }
@@ -446,6 +446,14 @@ git commit -m "feat(backend): add quota reset workflow schemas"
 - [x] An independent reviewer completed a PostgreSQL base-to-head migration with representative v1 rows; no hand-written old-DDL fixture was added.
 - [x] Focused, package, full-backend, generation reproducibility, and diff checks pass.
 - [x] Follow-up fixes are committed separately from `b60cdf9`.
+
+**Final JSON immutability follow-up evidence (2026-07-13):**
+
+- [x] RED proves optional immutable JSON snapshots still expose public `Clear*` mutation methods and can read back as null.
+- [x] The three JSON snapshot fields are non-null, explicitly defaulted, immutable, and expose no public clear mutation methods.
+- [x] Durable tests cover multiple queued nodes, the active-node uniqueness constraint, and all six new lifecycle event values.
+- [x] Focused, package, full-backend, vet, generation reproducibility, and diff checks pass.
+- [x] Final quality fixes are committed separately from `55e19bf`.
 
 ---
 

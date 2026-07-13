@@ -15,8 +15,8 @@ func (QuotaResetRequestNodeApprover) Fields() []ent.Field {
 		field.String("display_name").Default("").Immutable(),
 		field.String("email").Default("").Immutable(),
 		field.Enum("source").Values("configured", "directory_representative").Immutable(),
-		field.JSON("source_department_external_ids", []string{}).Optional().Immutable(),
-		field.JSON("notification_ids", map[string]string{}).Optional().Immutable(),
+		field.JSON("source_department_external_ids", []string{}).Default([]string{}).Immutable(),
+		field.JSON("notification_ids", map[string]string{}).Default(map[string]string{}).Immutable(),
 		field.Time("created_at").Default(timeNow).Immutable(),
 	}
 }
