@@ -611,7 +611,7 @@ git commit -m "feat(backend): add quota reset workflow schemas"
 - [x] A new Ent-created request received four non-nil empty defaults and stored no SQL `NULL`; the isolated PostgreSQL schema was dropped afterward.
 - [x] Focused schema tests pass.
 - [x] Package, full-backend, vet, generation reproducibility, and diff checks pass.
-- [ ] Migration correction is committed separately from `ddbaaf2`.
+- [x] Migration correction is committed separately from `ddbaaf2` as `7a40383`.
 
 ---
 
