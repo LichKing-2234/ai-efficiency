@@ -269,6 +269,8 @@ Create `backend/ent/schema/quota_reset_request_node.go`:
 package schema
 
 import (
+	"errors"
+
 	"entgo.io/ent"
 	entsql "entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
@@ -283,7 +285,10 @@ func (QuotaResetRequestNode) Fields() []ent.Field {
 		field.Int("position").NonNegative().Immutable(),
 		field.Enum("node_type").Values("requester_departments", "configured_department").Immutable(),
 		field.String("label").Default("").Immutable(),
-		field.JSON("department_snapshots", []map[string]any{}).Default([]map[string]any{}).Immutable(),
+		validatedJSONField(
+			field.JSON("department_snapshots", []map[string]any{}).Default([]map[string]any{}).Immutable(),
+			validateDepartmentSnapshots,
+		),
 		field.Enum("status").Values("queued", "active", "approved", "satisfied_by_prior_approval", "skipped_no_approver", "rejected").Default("queued"),
 		field.Bool("admin_fallback_required").Default(false).Immutable(),
 		field.Int("satisfied_by_decision_id").Optional().Nillable(),
@@ -292,6 +297,24 @@ func (QuotaResetRequestNode) Fields() []ent.Field {
 		field.Time("created_at").Default(timeNow).Immutable(),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
 	}
+}
+
+func validatedJSONField[T any](jsonField ent.Field, validator func(T) error) ent.Field {
+	descriptor := jsonField.Descriptor()
+	descriptor.Validators = append(descriptor.Validators, validator)
+	return jsonField
+}
+
+func validateDepartmentSnapshots(snapshots []map[string]any) error {
+	if snapshots == nil {
+		return errors.New("department snapshots must not be nil")
+	}
+	for _, snapshot := range snapshots {
+		if snapshot == nil {
+			return errors.New("department snapshots must not contain nil elements")
+		}
+	}
+	return nil
 }
 
 func (QuotaResetRequestNode) Indexes() []ent.Index {
@@ -312,6 +335,8 @@ Create `backend/ent/schema/quota_reset_request_node_approver.go`:
 package schema
 
 import (
+	"errors"
+
 	"entgo.io/ent"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
@@ -326,10 +351,30 @@ func (QuotaResetRequestNodeApprover) Fields() []ent.Field {
 		field.String("display_name").Default("").Immutable(),
 		field.String("email").Default("").Immutable(),
 		field.Enum("source").Values("configured", "directory_representative").Immutable(),
-		field.JSON("source_department_external_ids", []string{}).Default([]string{}).Immutable(),
-		field.JSON("notification_ids", map[string]string{}).Default(map[string]string{}).Immutable(),
+		validatedJSONField(
+			field.JSON("source_department_external_ids", []string{}).Default([]string{}).Immutable(),
+			validateSourceDepartmentExternalIDs,
+		),
+		validatedJSONField(
+			field.JSON("notification_ids", map[string]string{}).Default(map[string]string{}).Immutable(),
+			validateNotificationIDs,
+		),
 		field.Time("created_at").Default(timeNow).Immutable(),
 	}
+}
+
+func validateSourceDepartmentExternalIDs(externalIDs []string) error {
+	if externalIDs == nil {
+		return errors.New("source department external ids must not be nil")
+	}
+	return nil
+}
+
+func validateNotificationIDs(notificationIDs map[string]string) error {
+	if notificationIDs == nil {
+		return errors.New("notification ids must not be nil")
+	}
+	return nil
 }
 
 func (QuotaResetRequestNodeApprover) Indexes() []ent.Index {
@@ -454,6 +499,14 @@ git commit -m "feat(backend): add quota reset workflow schemas"
 - [x] Durable tests cover multiple queued nodes, the active-node uniqueness constraint, and all six new lifecycle event values.
 - [x] Focused, package, full-backend, vet, generation reproducibility, and diff checks pass.
 - [x] Final quality fixes are committed separately from `55e19bf`.
+
+**Explicit nil validation follow-up evidence (2026-07-13):**
+
+- [x] RED proves all three explicit-nil setters persist JSON null; department snapshots also accept a nil element map.
+- [x] Ent schema validators reject nil containers and nil department-snapshot elements while allowing empty non-nil values.
+- [x] Omitted setters still persist non-null empty `[]` and `{}` defaults.
+- [x] Focused, package, full-backend, vet, generation reproducibility, and diff checks pass.
+- [x] Explicit-nil invariant fixes are committed separately from `6c8d5b9`.
 
 ---
 

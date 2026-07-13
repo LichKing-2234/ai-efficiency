@@ -367,7 +367,7 @@ Fields:
 | `position` | int | Initial node is zero; configured nodes follow |
 | `node_type` | enum | `requester_departments` or `configured_department` |
 | `label` | string | Readable snapshot |
-| `department_snapshots` | JSON array | Non-null, defaults to `[]`; department ids and display paths used by this node |
+| `department_snapshots` | JSON array | Non-null, defaults to `[]`; explicit nil containers and nil element maps fail Ent schema validation |
 | `status` | enum | See node state model |
 | `admin_fallback_required` | bool | No currently usable normal candidate |
 | `satisfied_by_decision_id` | nullable int | Manual decision satisfying this node |
@@ -380,6 +380,11 @@ Fields:
 `admin_fallback_required`, and `created_at` are immutable after insert. Workflow
 state fields `status`, `satisfied_by_decision_id`, `activated_at`, `completed_at`,
 and `updated_at` remain mutable.
+
+An omitted `department_snapshots` setter persists the empty default. An explicit
+nil container or any nil element map is rejected before create; empty non-nil
+arrays remain valid. Business-content validation belongs to workflow resolution,
+not this schema validator.
 
 Indexes:
 
@@ -402,11 +407,14 @@ Fields:
 | `display_name` | string | Snapshot |
 | `email` | string | Snapshot |
 | `source` | enum | `configured` or `directory_representative` |
-| `source_department_external_ids` | JSON array | Non-null, defaults to `[]`; evidence for multi-department initial node |
-| `notification_ids` | JSON object | Non-null, defaults to `{}`; channel-keyed recipient ids |
+| `source_department_external_ids` | JSON array | Non-null, defaults to `[]`; explicit nil fails Ent schema validation |
+| `notification_ids` | JSON object | Non-null, defaults to `{}`; explicit nil fails Ent schema validation |
 | `created_at` | time | |
 
 Every field is immutable after insert.
+
+Omitted setters persist the empty defaults. Explicit nil containers are rejected
+before create, while empty non-nil arrays and objects remain valid.
 
 Unique index: `(request_node_id, user_id)`.
 

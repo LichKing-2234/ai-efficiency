@@ -166,6 +166,90 @@ func TestWorkflowSnapshotJSONFieldsAreNonNullableAndNotClearable(t *testing.T) {
 	}
 }
 
+func TestWorkflowSnapshotJSONFieldsRejectExplicitNil(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	sourceApprover := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	notificationApprover := createQuotaResetUser(t, ctx, client, "carol", "carol@example.net", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := client.QuotaResetRequest.Create().
+		SetRequesterUserID(requester.ID).SetRequesterRelayUserID(1001).
+		SetProviderID(provider.ID).SetGroupID("42").SetGroupName("Group Alpha").SetGroupPlatform("openai").
+		SetReason("Request with explicit nil workflow snapshots").SetWorkflowVersion(2).SaveX(ctx)
+	approverNode := client.QuotaResetRequestNode.Create().
+		SetRequestID(request.ID).SetPosition(2).SetNodeType("requester_departments").SaveX(ctx)
+
+	tests := []struct {
+		name   string
+		create func() (bool, error)
+	}{
+		{
+			name: "department snapshots nil container",
+			create: func() (bool, error) {
+				node, err := client.QuotaResetRequestNode.Create().
+					SetRequestID(request.ID).SetPosition(0).SetNodeType("requester_departments").
+					SetDepartmentSnapshots(nil).Save(ctx)
+				if err != nil {
+					return false, err
+				}
+				node, err = client.QuotaResetRequestNode.Get(ctx, node.ID)
+				return node != nil && node.DepartmentSnapshots == nil, err
+			},
+		},
+		{
+			name: "department snapshots nil element",
+			create: func() (bool, error) {
+				node, err := client.QuotaResetRequestNode.Create().
+					SetRequestID(request.ID).SetPosition(1).SetNodeType("requester_departments").
+					SetDepartmentSnapshots([]map[string]any{nil}).Save(ctx)
+				if err != nil {
+					return false, err
+				}
+				node, err = client.QuotaResetRequestNode.Get(ctx, node.ID)
+				return node != nil && len(node.DepartmentSnapshots) == 1 && node.DepartmentSnapshots[0] == nil, err
+			},
+		},
+		{
+			name: "source department external ids nil container",
+			create: func() (bool, error) {
+				approver, err := client.QuotaResetRequestNodeApprover.Create().
+					SetRequestNodeID(approverNode.ID).SetUserID(sourceApprover.ID).SetSource("configured").
+					SetSourceDepartmentExternalIds(nil).Save(ctx)
+				if err != nil {
+					return false, err
+				}
+				approver, err = client.QuotaResetRequestNodeApprover.Get(ctx, approver.ID)
+				return approver != nil && approver.SourceDepartmentExternalIds == nil, err
+			},
+		},
+		{
+			name: "notification ids nil container",
+			create: func() (bool, error) {
+				approver, err := client.QuotaResetRequestNodeApprover.Create().
+					SetRequestNodeID(approverNode.ID).SetUserID(notificationApprover.ID).SetSource("configured").
+					SetNotificationIds(nil).Save(ctx)
+				if err != nil {
+					return false, err
+				}
+				approver, err = client.QuotaResetRequestNodeApprover.Get(ctx, approver.ID)
+				return approver != nil && approver.NotificationIds == nil, err
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			persistedInvalidValue, err := test.create()
+			if err == nil {
+				t.Fatalf("explicit nil value accepted; persisted invalid JSON = %t, want validation error", persistedInvalidValue)
+			}
+			if !ent.IsValidationError(err) {
+				t.Fatalf("explicit nil error = %v, want validation error", err)
+			}
+		})
+	}
+}
+
 func TestWorkflowSchemaRejectsMultipleActiveNodesPerRequest(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

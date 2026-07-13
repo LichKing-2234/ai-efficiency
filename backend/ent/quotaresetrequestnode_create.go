@@ -244,6 +244,11 @@ func (qrrnc *QuotaResetRequestNodeCreate) check() error {
 	if _, ok := qrrnc.mutation.DepartmentSnapshots(); !ok {
 		return &ValidationError{Name: "department_snapshots", err: errors.New(`ent: missing required field "QuotaResetRequestNode.department_snapshots"`)}
 	}
+	if v, ok := qrrnc.mutation.DepartmentSnapshots(); ok {
+		if err := quotaresetrequestnode.DepartmentSnapshotsValidator(v); err != nil {
+			return &ValidationError{Name: "department_snapshots", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestNode.department_snapshots": %w`, err)}
+		}
+	}
 	if _, ok := qrrnc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "QuotaResetRequestNode.status"`)}
 	}
