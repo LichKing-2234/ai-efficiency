@@ -20,6 +20,7 @@ func TestCreateRequestRequiresActiveSubscriptionAndReason(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	createPendingWorkflowDirectoryFixture(t, ctx, client, requester)
 	provider := createQuotaResetRelayProvider(t, ctx, client)
 	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
 	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
@@ -32,7 +33,7 @@ func TestCreateRequestRequiresActiveSubscriptionAndReason(t *testing.T) {
 		t.Fatalf("request = %+v", req)
 	}
 	if count := client.QuotaResetRequestEvent.Query().CountX(ctx); count != 2 {
-		t.Fatalf("event count = %d, want created and approver_resolved", count)
+		t.Fatalf("event count = %d, want workflow snapshot and activation", count)
 	}
 }
 
@@ -40,6 +41,7 @@ func TestCreateRequestRejectsDuplicateActiveRequest(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	createPendingWorkflowDirectoryFixture(t, ctx, client, requester)
 	provider := createQuotaResetRelayProvider(t, ctx, client)
 	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
 	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
@@ -525,6 +527,18 @@ func createQuotaResetRelayProvider(t *testing.T, ctx context.Context, client *en
 		t.Fatalf("create relay provider: %v", err)
 	}
 	return provider
+}
+
+func createPendingWorkflowDirectoryFixture(t *testing.T, ctx context.Context, client *ent.Client, requester *ent.User) {
+	t.Helper()
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
+	approver := createQuotaResetUser(t, ctx, client, "approver-alpha", "approver-alpha@example.com", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, department.ExternalID, &requester.ID)
+	approverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-approver-alpha", approver.Email, department.ExternalID, &approver.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, department.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, approverMember, department.ExternalID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, department.ExternalID, department.Name, approver.ID)
 }
 
 func createPendingQuotaResetRequest(t *testing.T, ctx context.Context, client *ent.Client, requesterUserID int, requesterRelayUserID int64, providerID int, groupID string, approverIDs []int) *ent.QuotaResetRequest {

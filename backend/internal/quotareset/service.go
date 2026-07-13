@@ -97,50 +97,7 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 	if err := activeRequestExists(ctx, s.client, requester.ID, providerRow.ID, input.GroupID); err != nil {
 		return nil, err
 	}
-	resolution := &ApproverResolution{}
-	if s.approverResolver != nil {
-		resolution, err = s.approverResolver.Resolve(ctx, requester.ID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	pathMaps, err := departmentPathEvidenceToMaps(resolution.Paths)
-	if err != nil {
-		return nil, err
-	}
-	relayUserID := int64(*requester.RelayUserID)
-	create := s.client.QuotaResetRequest.Create().
-		SetRequesterUserID(requester.ID).
-		SetRequesterRelayUserID(relayUserID).
-		SetProviderID(providerRow.ID).
-		SetGroupID(input.GroupID).
-		SetGroupName(subscriptionGroupName(subscription)).
-		SetGroupPlatform(subscriptionGroupPlatform(subscription)).
-		SetReason(input.Reason).
-		SetMatchedDepartmentPaths(pathMaps)
-	if resolution.ApproverUserIDs != nil {
-		create.SetResolvedApproverUserIds(resolution.ApproverUserIDs)
-	}
-	req, err := create.Save(ctx)
-	if err != nil {
-		if activeRequestCreateWasDuplicate(ctx, s.client, err, requester.ID, providerRow.ID, input.GroupID) {
-			return nil, ErrActiveRequestExists
-		}
-		return nil, fmt.Errorf("create quota reset request: %w", err)
-	}
-	if err := s.writeEvent(ctx, req.ID, &requester.ID, quotaresetrequestevent.EventTypeCreated, map[string]any{
-		"group_id": input.GroupID,
-	}, ""); err != nil {
-		return nil, err
-	}
-	if err := s.writeEvent(ctx, req.ID, nil, quotaresetrequestevent.EventTypeApproverResolved, map[string]any{
-		"approver_user_ids": resolution.ApproverUserIDs,
-		"path_count":        len(resolution.Paths),
-	}, ""); err != nil {
-		return nil, err
-	}
-	_ = s.notify(ctx, "quota_reset_request_created", req)
-	return req, nil
+	return s.createWorkflowRequest(ctx, requester, providerRow, subscription, input)
 }
 
 func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.QuotaResetRequest, error) {
@@ -169,6 +126,17 @@ func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.
 }
 
 func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
+	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
+	if err != nil {
+		return nil, err
+	}
+	if request.WorkflowVersion >= WorkflowVersionV2 {
+		return s.approveWorkflow(ctx, input)
+	}
+	return s.approveLegacy(ctx, input)
+}
+
+func (s *Service) approveLegacy(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
 	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
 		return nil, err
@@ -193,6 +161,17 @@ func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaR
 }
 
 func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
+	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
+	if err != nil {
+		return nil, err
+	}
+	if request.WorkflowVersion >= WorkflowVersionV2 {
+		return s.rejectWorkflow(ctx, input)
+	}
+	return s.rejectLegacy(ctx, input)
+}
+
+func (s *Service) rejectLegacy(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
 	input.DecisionReason = strings.TrimSpace(input.DecisionReason)
 	if input.DecisionReason == "" {
 		return nil, ErrDecisionRequired
@@ -222,6 +201,17 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 }
 
 func (s *Service) RetryReset(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
+	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
+	if err != nil {
+		return nil, err
+	}
+	if request.WorkflowVersion >= WorkflowVersionV2 {
+		return s.retryResetWorkflow(ctx, input, request)
+	}
+	return s.retryResetLegacy(ctx, input)
+}
+
+func (s *Service) retryResetLegacy(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
 	_, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusApprovedResetFailed)
 	if err != nil {
 		return nil, err

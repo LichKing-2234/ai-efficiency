@@ -1,6 +1,9 @@
 package quotareset
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	ErrNoRelayMapping           = errors.New("no_relay_mapping")
@@ -16,4 +19,17 @@ var (
 	ErrInvalidNotification      = errors.New("invalid_notification_settings")
 	ErrInvalidApproverConfig    = errors.New("invalid_approver_config")
 	ErrApproverConfigReferenced = errors.New("approver_config_referenced")
+	ErrWorkflowAdvanced         = errors.New("workflow_advanced")
 )
+
+type WorkflowAdvancedError struct {
+	RequestID int
+}
+
+func (e *WorkflowAdvancedError) Error() string {
+	return fmt.Sprintf("%s: request_id=%d", ErrWorkflowAdvanced, e.RequestID)
+}
+
+func (e *WorkflowAdvancedError) Unwrap() error {
+	return ErrWorkflowAdvanced
+}

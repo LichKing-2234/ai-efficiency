@@ -1368,7 +1368,7 @@ Follow-up evidence (2026-07-14): committed metadata, stale-match, and chain-sour
 - Modify: `backend/internal/quotareset/types.go`
 - Modify: `backend/internal/quotareset/errors.go`
 
-- [ ] **Step 1: Write failing creation and transition tests**
+- [x] **Step 1: Write failing creation and transition tests**
 
 Create `workflow_service_test.go` with:
 
@@ -1421,7 +1421,7 @@ if fake.resetCalls != 0 {
 }
 ```
 
-- [ ] **Step 2: Run state-machine tests and verify failure**
+- [x] **Step 2: Run state-machine tests and verify failure**
 
 Run:
 
@@ -1431,7 +1431,14 @@ cd backend && go test ./internal/quotareset -run 'Test(CreateRequestSnapshotsV2|
 
 Expected: FAIL because requests still use the v1 resolver and decision path.
 
-- [ ] **Step 3: Extend decision input and stale-workflow errors**
+Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run
+'Test(CreateRequestSnapshotsV2|CreateRequestSkipsEmpty|CreateRequestWithOnlySkipped|Workflow)'
+-count=1` failed at compile time because `DecisionInput.RequestNodeID`,
+`WorkflowAdvancedError`, and the v2 workflow decision path were not yet
+defined. This is the expected feature-missing RED after adding all named Task 4
+tests plus v1/v2 cancellation coverage.
+
+- [x] **Step 3: Extend decision input and stale-workflow errors**
 
 Add to `DecisionInput`:
 
@@ -1459,7 +1466,7 @@ func (e *WorkflowAdvancedError) Unwrap() error {
 
 Add `fmt` to the imports.
 
-- [ ] **Step 4: Persist a complete workflow snapshot in one transaction**
+- [x] **Step 4: Persist a complete workflow snapshot in one transaction**
 
 Create `workflow_service.go`. Add a `createWorkflowRequest` helper called by
 `CreateRequest` after existing reason, relay mapping, active subscription, and
@@ -1603,7 +1610,7 @@ return s.createWorkflowRequest(ctx, requester, providerRow, subscription, input)
 Do not remove v1 creation helpers yet; legacy rows still use v1 decisions and
 summaries.
 
-- [ ] **Step 5: Implement transactional approval and cross-node reuse**
+- [x] **Step 5: Implement transactional approval and cross-node reuse**
 
 Add `approveWorkflow`:
 
@@ -1768,7 +1775,7 @@ Modify(func(selector *sql.Selector) {
 })
 ```
 
-- [ ] **Step 6: Implement rejection, cancellation, dispatch, and retry**
+- [x] **Step 6: Implement rejection, cancellation, dispatch, and retry**
 
 `rejectWorkflow` uses the same lock and authorization helper, inserts a reject
 decision, marks the node and request rejected, commits, then sends one terminal
@@ -1814,7 +1821,13 @@ if !input.Admin {
 return s.executeReset(ctx, request.ID, input.ActorUserID, true, input.Admin)
 ```
 
-- [ ] **Step 7: Run state-machine and race-sensitive tests**
+Evidence (2026-07-14): the focused Task 4 command passed in 9.430s after
+persisting v2 snapshots and implementing approval, non-contiguous reuse,
+admin override, rejection, stale-node handling, and retry authorization. The
+separate v1/v2 cancellation plus legacy approve/retry dispatch regression
+command also passed in 2.009s.
+
+- [x] **Step 7: Run state-machine and race-sensitive tests**
 
 Run:
 
@@ -1825,6 +1838,11 @@ cd backend && go test -race ./internal/quotareset -run 'TestWorkflowDecisionReje
 
 Expected: PASS. PostgreSQL is required; report test-database setup failures
 separately from behavioral failures.
+
+Evidence (2026-07-14): the exact focused command passed in 9.430s. The exact
+race command `go test -race ./internal/quotareset -run
+'^TestWorkflowDecisionRejectsStaleNode$' -count=1` passed in 2.418s. The full
+quota reset package also passed in 25.072s.
 
 - [ ] **Step 8: Commit the state machine**
 

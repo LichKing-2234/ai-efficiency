@@ -52,6 +52,7 @@ type CreateRequestInput struct {
 type DecisionInput struct {
 	ActorUserID    int
 	RequestID      int
+	RequestNodeID  int
 	DecisionReason string
 	Admin          bool
 }
