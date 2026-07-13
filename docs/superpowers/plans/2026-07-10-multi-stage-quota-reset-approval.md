@@ -1328,12 +1328,14 @@ requests.
 
 Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run 'Test(WorkflowResolver|ResolveApprovers)' -count=1` passed. `go test ./internal/quotareset -count=1` also passed.
 
-- [ ] **Step 7: Commit workflow resolution**
+- [x] **Step 7: Commit workflow resolution**
 
 ```bash
 git add backend/internal/quotareset
 git commit -m "feat(backend): resolve quota reset workflow snapshots"
 ```
+
+Evidence (2026-07-14): committed workflow resolution as `791e6e4` (`feat(backend): resolve quota reset workflow snapshots`).
 
 ---
 
