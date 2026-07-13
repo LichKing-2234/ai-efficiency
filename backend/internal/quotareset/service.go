@@ -235,25 +235,34 @@ func (s *Service) retryResetLegacy(ctx context.Context, input DecisionInput) (*e
 }
 
 func (s *Service) ListMine(ctx context.Context, actorUserID int, params ListParams) (*RequestListResponse, error) {
-	return s.list(ctx, params, func(q *ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery {
+	return s.list(ctx, params, summaryViewer{UserID: actorUserID, Requester: true}, func(q *ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery {
 		return q.Where(quotaresetrequest.RequesterUserIDEQ(actorUserID))
 	})
 }
 
 func (s *Service) ListApprovals(ctx context.Context, actorUserID int, params ListParams) (*RequestListResponse, error) {
-	return s.list(ctx, params, func(q *ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery {
-		return q.Where(func(selector *sql.Selector) {
-			selector.Where(sql.P(func(builder *sql.Builder) {
-				builder.WriteString(selector.C(quotaresetrequest.FieldResolvedApproverUserIds)).
-					WriteString("::jsonb @> ").
-					Arg(fmt.Sprintf("[%d]", actorUserID))
-			}))
-		})
+	return s.list(ctx, params, summaryViewer{UserID: actorUserID}, func(q *ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery {
+		return q.Where(quotaresetrequest.Or(
+			quotaresetrequest.And(
+				quotaresetrequest.WorkflowVersionLT(WorkflowVersionV2),
+				legacyApproverJSONPredicate(actorUserID),
+			),
+			quotaresetrequest.And(
+				quotaresetrequest.WorkflowVersionGTE(WorkflowVersionV2),
+				quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending),
+				v2ActiveApproverPredicate(actorUserID),
+			),
+			quotaresetrequest.And(
+				quotaresetrequest.WorkflowVersionGTE(WorkflowVersionV2),
+				quotaresetrequest.StatusEQ(quotaresetrequest.StatusApprovedResetFailed),
+				v2CompletionActorPredicate(actorUserID),
+			),
+		))
 	})
 }
 
-func (s *Service) ListAdmin(ctx context.Context, params ListParams) (*RequestListResponse, error) {
-	return s.list(ctx, params, nil)
+func (s *Service) ListAdmin(ctx context.Context, actorUserID int, params ListParams) (*RequestListResponse, error) {
+	return s.list(ctx, params, summaryViewer{UserID: actorUserID, Admin: true}, nil)
 }
 
 func (s *Service) ListApproverConfigs(ctx context.Context) (*ApproverConfigListResponse, error) {
@@ -717,7 +726,7 @@ func (s *Service) notify(ctx context.Context, event string, req *ent.QuotaResetR
 	}, "")
 }
 
-func (s *Service) list(ctx context.Context, params ListParams, filter func(*ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery) (*RequestListResponse, error) {
+func (s *Service) list(ctx context.Context, params ListParams, viewer summaryViewer, filter func(*ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery) (*RequestListResponse, error) {
 	page, pageSize := normalizePage(params.Page, params.PageSize)
 	query := s.client.QuotaResetRequest.Query()
 	if filter != nil {
@@ -739,7 +748,7 @@ func (s *Service) list(ctx context.Context, params ListParams, filter func(*ent.
 	if err != nil {
 		return nil, fmt.Errorf("list quota reset requests: %w", err)
 	}
-	items, err := s.summaries(ctx, requests)
+	items, err := s.summaries(ctx, requests, viewer)
 	if err != nil {
 		return nil, err
 	}
@@ -759,7 +768,7 @@ func normalizePage(page, pageSize int) (int, int) {
 	return page, pageSize
 }
 
-func (s *Service) summaries(ctx context.Context, requests []*ent.QuotaResetRequest) ([]RequestSummary, error) {
+func (s *Service) summaries(ctx context.Context, requests []*ent.QuotaResetRequest, viewer summaryViewer) ([]RequestSummary, error) {
 	if len(requests) == 0 {
 		return []RequestSummary{}, nil
 	}
@@ -768,14 +777,21 @@ func (s *Service) summaries(ctx context.Context, requests []*ent.QuotaResetReque
 	requestIDs := make([]int, 0, len(requests))
 	for _, req := range requests {
 		requestIDs = append(requestIDs, req.ID)
-		if _, ok := seenUsers[req.RequesterUserID]; !ok {
+		if req.WorkflowVersion < WorkflowVersionV2 {
+			if _, ok := seenUsers[req.RequesterUserID]; ok {
+				continue
+			}
 			seenUsers[req.RequesterUserID] = struct{}{}
 			userIDs = append(userIDs, req.RequesterUserID)
 		}
 	}
-	users, err := s.client.User.Query().Where(entuser.IDIn(userIDs...)).All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("load request users: %w", err)
+	users := []*ent.User{}
+	var err error
+	if len(userIDs) > 0 {
+		users, err = s.client.User.Query().Where(entuser.IDIn(userIDs...)).All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load request users: %w", err)
+		}
 	}
 	usersByID := make(map[int]*ent.User, len(users))
 	for _, user := range users {
@@ -792,6 +808,10 @@ func (s *Service) summaries(ctx context.Context, requests []*ent.QuotaResetReque
 	for _, event := range events {
 		eventsByRequest[event.RequestID] = append(eventsByRequest[event.RequestID], requestEventSummary(event))
 	}
+	workflowSummaries, err := s.loadWorkflowSummaries(ctx, requests, viewer)
+	if err != nil {
+		return nil, err
+	}
 	items := make([]RequestSummary, 0, len(requests))
 	for _, req := range requests {
 		item, err := requestSummary(req, usersByID[req.RequesterUserID])
@@ -799,6 +819,7 @@ func (s *Service) summaries(ctx context.Context, requests []*ent.QuotaResetReque
 			return nil, err
 		}
 		item.Events = eventsByRequest[req.ID]
+		item.Workflow = workflowSummaries[req.ID]
 		items = append(items, item)
 	}
 	return items, nil
@@ -810,24 +831,28 @@ func requestSummary(req *ent.QuotaResetRequest, requester *ent.User) (RequestSum
 		return RequestSummary{}, err
 	}
 	item := RequestSummary{
-		ID:                      req.ID,
-		RequesterUserID:         req.RequesterUserID,
-		ProviderID:              req.ProviderID,
-		GroupID:                 req.GroupID,
-		GroupName:               req.GroupName,
-		GroupPlatform:           req.GroupPlatform,
-		Reason:                  req.Reason,
-		Status:                  req.Status.String(),
-		ResolvedApproverUserIDs: req.ResolvedApproverUserIds,
-		MatchedDepartmentPaths:  paths,
-		ApprovedByUserID:        req.ApprovedByUserID,
-		RejectedByUserID:        req.RejectedByUserID,
-		DecisionReason:          req.DecisionReason,
-		ResetError:              req.ResetError,
-		CreatedAt:               req.CreatedAt,
-		UpdatedAt:               req.UpdatedAt,
+		ID:                       req.ID,
+		RequesterUserID:          req.RequesterUserID,
+		RequesterDepartmentPaths: append([]string{}, req.RequesterDepartmentPaths...),
+		ProviderID:               req.ProviderID,
+		GroupID:                  req.GroupID,
+		GroupName:                req.GroupName,
+		GroupPlatform:            req.GroupPlatform,
+		Reason:                   req.Reason,
+		Status:                   req.Status.String(),
+		ResolvedApproverUserIDs:  req.ResolvedApproverUserIds,
+		MatchedDepartmentPaths:   paths,
+		ApprovedByUserID:         req.ApprovedByUserID,
+		RejectedByUserID:         req.RejectedByUserID,
+		DecisionReason:           req.DecisionReason,
+		ResetError:               req.ResetError,
+		CreatedAt:                req.CreatedAt,
+		UpdatedAt:                req.UpdatedAt,
 	}
-	if requester != nil {
+	if req.WorkflowVersion >= WorkflowVersionV2 {
+		item.RequesterDisplayName = req.RequesterDisplayNameSnapshot
+		item.RequesterEmail = req.RequesterEmailSnapshot
+	} else if requester != nil {
 		item.RequesterDisplayName = requester.Username
 		item.RequesterEmail = requester.Email
 	}

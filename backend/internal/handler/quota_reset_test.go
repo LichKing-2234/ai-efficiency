@@ -25,6 +25,7 @@ type fakeQuotaResetService struct {
 	createFn                     func(context.Context, quotareset.CreateRequestInput) (*ent.QuotaResetRequest, error)
 	approveFn                    func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
 	rejectFn                     func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
+	listAdminFn                  func(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
 	listApproverCandidatesFn     func(context.Context, quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error)
 	listApproverConfigsFn        func(context.Context) (*quotareset.ApproverConfigListResponse, error)
 	saveApproverConfigsFn        func(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error)
@@ -67,7 +68,10 @@ func (f *fakeQuotaResetService) ListApprovals(context.Context, int, quotareset.L
 	return &quotareset.RequestListResponse{}, nil
 }
 
-func (f *fakeQuotaResetService) ListAdmin(context.Context, quotareset.ListParams) (*quotareset.RequestListResponse, error) {
+func (f *fakeQuotaResetService) ListAdmin(ctx context.Context, actorUserID int, params quotareset.ListParams) (*quotareset.RequestListResponse, error) {
+	if f.listAdminFn != nil {
+		return f.listAdminFn(ctx, actorUserID, params)
+	}
 	return &quotareset.RequestListResponse{}, nil
 }
 
@@ -136,6 +140,21 @@ func TestQuotaResetAdminApproveUsesAdminFlag(t *testing.T) {
 	})
 	rec := performQuotaResetRequest(env.router, http.MethodPost, "/api/v1/admin/quota-reset/requests/99/approve", env.adminToken, `{}`)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"approved_reset_succeeded"`) {
+		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestQuotaResetListAdminForwardsAuthenticatedActorID(t *testing.T) {
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		listAdminFn: func(_ context.Context, actorUserID int, params quotareset.ListParams) (*quotareset.RequestListResponse, error) {
+			if actorUserID != 2 || params.Page != 3 || params.PageSize != 7 || params.Status != "pending" {
+				t.Fatalf("actor/params = %d / %+v", actorUserID, params)
+			}
+			return &quotareset.RequestListResponse{Page: 3, PageSize: 7}, nil
+		},
+	})
+	rec := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/requests?page=3&page_size=7&status=pending", env.adminToken, "")
+	if rec.Code != http.StatusOK {
 		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -266,6 +285,7 @@ func newQuotaResetHandlerTestEnv(t *testing.T, service *fakeQuotaResetService) *
 
 	adminGroup := router.Group("/api/v1/admin/quota-reset")
 	adminGroup.Use(auth.RequireAuth(authSvc), auth.RequireAdmin())
+	adminGroup.GET("/requests", handler.ListAdmin)
 	adminGroup.POST("/requests/:id/approve", handler.AdminApprove)
 	adminGroup.GET("/approver-candidates", handler.ListApproverCandidates)
 	adminGroup.PUT("/approver-configs", handler.SaveApproverConfigs)

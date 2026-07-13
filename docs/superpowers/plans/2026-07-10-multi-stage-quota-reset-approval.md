@@ -1936,7 +1936,7 @@ required, and this residual is not solved by Task 4.
 - Modify: `backend/internal/handler/quota_reset.go`
 - Modify: `backend/internal/handler/quota_reset_test.go`
 
-- [ ] **Step 1: Write failing list, permission, and count tests**
+- [x] **Step 1: Write failing list, permission, and count tests**
 
 Add:
 
@@ -1954,7 +1954,13 @@ different active node. Expect zero until the future node activates. For the
 retry test, set `approved_reset_failed` plus
 `workflow_completed_by_decision_id` and expect only that decision actor.
 
-- [ ] **Step 2: Run focused tests and verify failure**
+Evidence (2026-07-14): added all six required tests in
+`backend/internal/quotareset/work_items_test.go`, including future-node
+exclusion, immutable requester snapshots, deterministic node/decision ordering,
+viewer permissions, completion-actor retry, admin deduplication, and v1
+compatibility fixtures.
+
+- [x] **Step 2: Run focused tests and verify failure**
 
 Run:
 
@@ -1964,7 +1970,13 @@ cd backend && go test ./internal/quotareset ./internal/workitems -run 'Test(List
 
 Expected: FAIL because v2 list and count queries do not exist.
 
-- [ ] **Step 3: Add workflow and action fields to request summaries**
+Evidence (2026-07-14): the focused command failed as expected. Missing
+`RequestSummary.Workflow`, `RequesterDepartmentPaths`, `summaryViewer`, and the
+viewer-aware `summaries` signature failed the list/summary tests; rerunning with
+`-gcflags=all=-e` also reported `CountWorkItems` undefined from each of the
+three required count tests.
+
+- [x] **Step 3: Add workflow and action fields to request summaries**
 
 Add to `RequestSummary`:
 
@@ -2020,7 +2032,12 @@ passes `{UserID: actorUserID}`, and `ListAdmin` passes
 admin self-approval false in computed permissions instead of using a synthetic
 viewer id.
 
-- [ ] **Step 4: Update list predicates for v1 and v2**
+Evidence (2026-07-14): request summaries now use immutable v2 requester
+snapshots, batch-load ordered workflow nodes/approvers/decisions, suppress
+workflow details for unauthorized and future-only viewers, compute all four
+permissions from the real viewer, and forward the authenticated admin actor id.
+
+- [x] **Step 4: Update list predicates for v1 and v2**
 
 Replace v2 approval listing with an `EXISTS` query over current active nodes and
 node approvers while retaining the JSONB v1 predicate:
@@ -2046,7 +2063,12 @@ return q.Where(quotaresetrequest.Or(
 Implement the three SQL predicates in `workflow_summary.go` using parameterized
 `EXISTS` subqueries; do not interpolate user input into SQL strings.
 
-- [ ] **Step 5: Centralize Work Items quota queries in quotareset**
+Evidence (2026-07-14): `ListApprovals` now unions parameterized legacy JSONB,
+correlated current-active-node approver, and correlated workflow-completion
+actor predicates. The focused list test excludes a future queued actor until
+activation and includes the completion actor for failed-reset retry.
+
+- [x] **Step 5: Centralize Work Items quota queries in quotareset**
 
 Create:
 
@@ -2084,7 +2106,13 @@ if admin {
 Keep AI access and offboarding degradation and total-count deduplication exactly
 as currently implemented.
 
-- [ ] **Step 6: Run list, count, and regression tests**
+Evidence (2026-07-14): `quotareset.CountWorkItems` counts each request once
+across v1 assignments, v2 current active assignments, and v2 completion-actor
+retry; admin counts use all pending/failed requests once. `workitems.Service`
+delegates quota counts while retaining AI-access degradation, offboarding, and
+admin total deduplication behavior.
+
+- [x] **Step 6: Run list, count, and regression tests**
 
 Run:
 
@@ -2095,6 +2123,12 @@ cd backend && go test ./internal/handler -count=1
 ```
 
 Expected: PASS.
+
+Evidence (2026-07-14): focused quota-reset/work-items command PASS; complete
+`./internal/quotareset ./internal/workitems` packages PASS; complete
+`./internal/handler` package PASS. A dedicated handler RED/GREEN test also
+proved that `ListAdmin` forwards the authenticated admin actor id. Full
+`go test ./... -count=1`, `go vet ./...`, and `git diff --check` also PASS.
 
 - [ ] **Step 7: Commit summaries and counts**
 

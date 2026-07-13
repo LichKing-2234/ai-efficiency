@@ -210,23 +210,25 @@ type RequestListResponse struct {
 }
 
 type RequestSummary struct {
-	ID                      int                      `json:"id"`
-	RequesterUserID         int                      `json:"requester_user_id"`
-	RequesterDisplayName    string                   `json:"requester_display_name"`
-	RequesterEmail          string                   `json:"requester_email"`
-	ProviderID              int                      `json:"provider_id"`
-	GroupID                 string                   `json:"group_id"`
-	GroupName               string                   `json:"group_name"`
-	GroupPlatform           string                   `json:"group_platform"`
-	Reason                  string                   `json:"reason"`
-	Status                  string                   `json:"status"`
-	ResolvedApproverUserIDs []int                    `json:"resolved_approver_user_ids"`
-	MatchedDepartmentPaths  []DepartmentPathEvidence `json:"matched_department_paths"`
-	ApprovedByUserID        *int                     `json:"approved_by_user_id,omitempty"`
-	RejectedByUserID        *int                     `json:"rejected_by_user_id,omitempty"`
-	DecisionReason          string                   `json:"decision_reason,omitempty"`
-	ResetError              string                   `json:"reset_error,omitempty"`
-	CreatedAt               time.Time                `json:"created_at"`
-	UpdatedAt               time.Time                `json:"updated_at"`
-	Events                  []RequestEvent           `json:"events,omitempty"`
+	ID                       int                      `json:"id"`
+	RequesterUserID          int                      `json:"requester_user_id"`
+	RequesterDisplayName     string                   `json:"requester_display_name"`
+	RequesterEmail           string                   `json:"requester_email"`
+	RequesterDepartmentPaths []string                 `json:"requester_department_paths"`
+	ProviderID               int                      `json:"provider_id"`
+	GroupID                  string                   `json:"group_id"`
+	GroupName                string                   `json:"group_name"`
+	GroupPlatform            string                   `json:"group_platform"`
+	Reason                   string                   `json:"reason"`
+	Status                   string                   `json:"status"`
+	ResolvedApproverUserIDs  []int                    `json:"resolved_approver_user_ids"`
+	MatchedDepartmentPaths   []DepartmentPathEvidence `json:"matched_department_paths"`
+	ApprovedByUserID         *int                     `json:"approved_by_user_id,omitempty"`
+	RejectedByUserID         *int                     `json:"rejected_by_user_id,omitempty"`
+	DecisionReason           string                   `json:"decision_reason,omitempty"`
+	ResetError               string                   `json:"reset_error,omitempty"`
+	CreatedAt                time.Time                `json:"created_at"`
+	UpdatedAt                time.Time                `json:"updated_at"`
+	Events                   []RequestEvent           `json:"events,omitempty"`
+	Workflow                 *WorkflowSummary         `json:"workflow,omitempty"`
 }

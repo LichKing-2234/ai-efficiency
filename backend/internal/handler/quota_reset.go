@@ -25,7 +25,7 @@ type quotaResetService interface {
 	RetryReset(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
 	ListMine(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
 	ListApprovals(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
-	ListAdmin(context.Context, quotareset.ListParams) (*quotareset.RequestListResponse, error)
+	ListAdmin(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
 	ListApproverCandidates(context.Context, quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error)
 	ListApproverConfigs(context.Context) (*quotareset.ApproverConfigListResponse, error)
 	SaveApproverConfigs(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error)
@@ -172,7 +172,11 @@ func (h *QuotaResetHandler) RetryReset(c *gin.Context) {
 }
 
 func (h *QuotaResetHandler) ListAdmin(c *gin.Context) {
-	resp, err := h.service.ListAdmin(c.Request.Context(), parseQuotaResetListParams(c))
+	uc, ok := quotaResetActor(c)
+	if !ok {
+		return
+	}
+	resp, err := h.service.ListAdmin(c.Request.Context(), uc.UserID, parseQuotaResetListParams(c))
 	if err != nil {
 		writeQuotaResetError(c, err)
 		return
