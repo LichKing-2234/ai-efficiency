@@ -144,12 +144,9 @@ func redactedWebhookSendError(channelType quotaresetnotificationsetting.ChannelT
 
 type sanitizedNotificationError struct {
 	message string
-	cause   error
 }
 
 func (e *sanitizedNotificationError) Error() string { return e.message }
-
-func (e *sanitizedNotificationError) Unwrap() error { return e.cause }
 
 func sanitizeWebhookError(channelType quotaresetnotificationsetting.ChannelType, rawURL string, err error) error {
 	if err == nil {
@@ -185,7 +182,7 @@ func sanitizeWebhookError(channelType quotaresetnotificationsetting.ChannelType,
 			}
 		}
 	}
-	return &sanitizedNotificationError{message: message, cause: err}
+	return &sanitizedNotificationError{message: message}
 }
 
 func webhookResponseBusinessError(body []byte) error {

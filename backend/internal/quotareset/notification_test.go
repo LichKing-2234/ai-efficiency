@@ -586,6 +586,32 @@ func TestWebhookNotifierRedactsQueryStringFromDeliveryErrors(t *testing.T) {
 	}
 }
 
+func TestSanitizedNotificationErrorDoesNotExposeOriginalCause(t *testing.T) {
+	const secret = "synthetic-chain-secret"
+	rawURL := "https://robot.example.test/webhook/send?key=" + secret
+	unsafeCause := &secretBearingNotificationError{message: "secret-bearing cause for " + rawURL}
+	sanitized := sanitizeWebhookError(quotaresetnotificationsetting.ChannelTypeWecomGroupRobot, rawURL, unsafeCause)
+	returned := fmt.Errorf("read webhook response: %w", sanitized)
+
+	if !strings.Contains(returned.Error(), "read webhook response") || !strings.Contains(returned.Error(), "https://robot.example.test/webhook/send") {
+		t.Fatalf("sanitized error lost safe context: %v", returned)
+	}
+	depth := 0
+	for chainErr := error(returned); chainErr != nil; chainErr = errors.Unwrap(chainErr) {
+		if strings.Contains(chainErr.Error(), secret) {
+			t.Fatalf("error chain element %d exposed secret: %v", depth, chainErr)
+		}
+		depth++
+		if depth > 8 {
+			t.Fatal("sanitized error chain did not terminate")
+		}
+	}
+	var recovered *secretBearingNotificationError
+	if errors.As(returned, &recovered) {
+		t.Fatalf("errors.As recovered unsafe cause: %v", recovered)
+	}
+}
+
 func TestNotificationFailureRedactsResponseReadSecrets(t *testing.T) {
 	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
 	const (
@@ -769,3 +795,7 @@ type notificationReadErrorBody struct{ err error }
 func (b *notificationReadErrorBody) Read([]byte) (int, error) { return 0, b.err }
 
 func (b *notificationReadErrorBody) Close() error { return nil }
+
+type secretBearingNotificationError struct{ message string }
+
+func (e *secretBearingNotificationError) Error() string { return e.message }
