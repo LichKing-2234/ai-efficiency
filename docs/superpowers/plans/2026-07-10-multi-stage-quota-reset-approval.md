@@ -570,7 +570,7 @@ git commit -m "feat(backend): add quota reset workflow schemas"
 - [x] Legacy v1 builders omit an absent approver snapshot so the schema factory supplies `[]`; direct explicit-nil setters remain invalid.
 - [x] The completion fixture establishes and asserts a current node before clearing it.
 - [x] Focused, package, full-backend, vet, generation reproducibility, and diff checks pass.
-- [ ] Request snapshot invariant fixes are committed separately from `402badc`.
+- [x] Request snapshot invariant fixes are committed separately from `402badc`.
 
 ---
 
