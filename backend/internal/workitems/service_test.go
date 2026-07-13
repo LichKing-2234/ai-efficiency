@@ -11,7 +11,11 @@ import (
 	"github.com/ai-efficiency/backend/ent/directorysource"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
+	"github.com/ai-efficiency/backend/ent/quotaresetrequestdecision"
+	"github.com/ai-efficiency/backend/ent/quotaresetrequestnode"
+	"github.com/ai-efficiency/backend/ent/quotaresetrequestnodeapprover"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 )
@@ -30,9 +34,9 @@ func TestCountsForRegularApproverIncludesAssignedPendingAndFailedResetApprovals(
 	client := testdb.Open(t)
 	approver := createWorkItemsUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
 	requester := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
-	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "42", quotaresetrequest.StatusPending, []int{approver.ID})
-	createWorkItemsQuotaRequest(t, ctx, client, approver.ID, 1002, 1, "43", quotaresetrequest.StatusPending, []int{approver.ID})
-	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "44", quotaresetrequest.StatusApprovedResetFailed, []int{approver.ID})
+	createWorkItemsV2QuotaRequest(t, ctx, client, requester.ID, "42", quotaresetrequest.StatusPending, []int{approver.ID}, nil)
+	createWorkItemsV2QuotaRequest(t, ctx, client, approver.ID, "43", quotaresetrequest.StatusPending, []int{approver.ID}, nil)
+	createWorkItemsV2QuotaRequest(t, ctx, client, requester.ID, "44", quotaresetrequest.StatusApprovedResetFailed, nil, &approver.ID)
 
 	counts, err := NewService(client).Counts(ctx, approver.ID, false)
 	if err != nil {
@@ -179,6 +183,69 @@ func createWorkItemsQuotaRequest(t *testing.T, ctx context.Context, client *ent.
 	request, err := create.Save(ctx)
 	if err != nil {
 		t.Fatalf("create quota request %s: %v", groupID, err)
+	}
+	return request
+}
+
+func createWorkItemsV2QuotaRequest(t *testing.T, ctx context.Context, client *ent.Client, requesterUserID int, groupID string, status quotaresetrequest.Status, approverIDs []int, completionActorID *int) *ent.QuotaResetRequest {
+	t.Helper()
+	request := client.QuotaResetRequest.Create().
+		SetRequesterUserID(requesterUserID).
+		SetRequesterRelayUserID(int64(1000 + requesterUserID)).
+		SetProviderID(1).
+		SetGroupID(groupID).
+		SetGroupName("Group Alpha").
+		SetGroupPlatform("openai").
+		SetReason("Need reset for a build investigation").
+		SetWorkflowVersion(quotareset.WorkflowVersionV2).
+		SetRequesterDisplayNameSnapshot("Alice Snapshot").
+		SetRequesterEmailSnapshot("alice@example.com").
+		SetRequesterDepartmentPaths([]string{"Department Alpha"}).
+		SetRequesterNotificationIds(map[string]string{}).
+		SetStatus(status).
+		SetResolvedApproverUserIds([]int{}).
+		SetMatchedDepartmentPaths([]map[string]any{}).
+		SaveX(ctx)
+	nodeStatus := quotaresetrequestnode.StatusApproved
+	if status == quotaresetrequest.StatusPending {
+		nodeStatus = quotaresetrequestnode.StatusActive
+	}
+	node := client.QuotaResetRequestNode.Create().
+		SetRequestID(request.ID).
+		SetPosition(0).
+		SetNodeType(quotaresetrequestnode.NodeTypeConfiguredDepartment).
+		SetLabel("Department review").
+		SetDepartmentSnapshots([]map[string]any{}).
+		SetStatus(nodeStatus).
+		SaveX(ctx)
+	for _, approverID := range approverIDs {
+		user := client.User.GetX(ctx, approverID)
+		client.QuotaResetRequestNodeApprover.Create().
+			SetRequestNodeID(node.ID).
+			SetUserID(user.ID).
+			SetDisplayName(user.Username).
+			SetEmail(user.Email).
+			SetSource(quotaresetrequestnodeapprover.SourceConfigured).
+			SetSourceDepartmentExternalIds([]string{"dept-alpha"}).
+			SetNotificationIds(map[string]string{}).
+			SaveX(ctx)
+	}
+	if status == quotaresetrequest.StatusPending {
+		request = client.QuotaResetRequest.UpdateOneID(request.ID).SetCurrentNodeID(node.ID).SaveX(ctx)
+	}
+	if completionActorID != nil {
+		actor := client.User.GetX(ctx, *completionActorID)
+		decision := client.QuotaResetRequestDecision.Create().
+			SetRequestID(request.ID).
+			SetRequestNodeID(node.ID).
+			SetActorUserID(actor.ID).
+			SetActorDisplayName(actor.Username).
+			SetDecision(quotaresetrequestdecision.DecisionApprove).
+			SetComment("Approved before reset failure").
+			SaveX(ctx)
+		request = client.QuotaResetRequest.UpdateOneID(request.ID).
+			SetWorkflowCompletedByDecisionID(decision.ID).
+			SaveX(ctx)
 	}
 	return request
 }
