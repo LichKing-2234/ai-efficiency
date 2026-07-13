@@ -464,28 +464,56 @@ field.Int("workflow_completed_by_decision_id").Optional().Nillable(),
 field.String("requester_display_name_snapshot").Default("").Immutable(),
 field.String("requester_email_snapshot").Default("").Immutable(),
 validatedQuotaResetJSONField(
-	field.JSON("requester_department_paths", []string{}).Default(newQuotaResetSlice[string]).Immutable(),
+	field.JSON("requester_department_paths", []string{}).Default(newQuotaResetSlice[string]).Optional().Immutable(),
 	validateQuotaResetSlice[string],
 ),
 validatedQuotaResetJSONField(
-	field.JSON("requester_notification_ids", map[string]string{}).Default(newQuotaResetMap[string, string]).Immutable(),
+	field.JSON("requester_notification_ids", map[string]string{}).Default(newQuotaResetMap[string, string]).Optional().Immutable(),
 	validateQuotaResetMap[string, string],
 ),
 validatedQuotaResetJSONField(
-	field.JSON("resolved_approver_user_ids", []int{}).Default(newQuotaResetSlice[int]).Immutable(),
+	field.JSON("resolved_approver_user_ids", []int{}).Default(newQuotaResetSlice[int]).Optional().Immutable(),
 	validateQuotaResetSlice[int],
 ),
 validatedQuotaResetJSONField(
-	field.JSON("matched_department_paths", []map[string]any{}).Default(newQuotaResetSlice[map[string]any]).Immutable(),
+	field.JSON("matched_department_paths", []map[string]any{}).Default(newQuotaResetSlice[map[string]any]).Optional().Immutable(),
 	validateQuotaResetMapSlice,
 ),
 field.Time("created_at").Default(timeNow).Immutable(),
 ```
 
 Keep `status`, `current_node_id`, `workflow_completed_by_decision_id`, the v1
-approval/rejection/reset/decision state, and `updated_at` mutable. Every JSON
-snapshot rejects an explicit nil container before create; slices of maps also
-reject nil elements. Empty non-nil containers remain valid.
+approval/rejection/reset/decision state, and `updated_at` mutable. The four
+request JSON snapshots remain SQL-nullable for historical v1 rows, but every new
+create gets a fresh non-nil application default. Explicit nil setters fail schema
+validation; slices of maps also reject nil elements.
+
+Add a request schema hook that blocks Ent's `Optional().Immutable()` mutation
+clear bypass on both update operations:
+
+```go
+func (QuotaResetRequest) Hooks() []ent.Hook {
+	return []ent.Hook{
+		func(next ent.Mutator) ent.Mutator {
+			return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+				if mutation.Op().Is(ent.OpUpdate | ent.OpUpdateOne) {
+					for _, fieldName := range [...]string{
+						"requester_department_paths",
+						"requester_notification_ids",
+						"resolved_approver_user_ids",
+						"matched_department_paths",
+					} {
+						if mutation.FieldCleared(fieldName) {
+							return nil, errQuotaResetRequestJSONSnapshotClear
+						}
+					}
+				}
+				return next.Mutate(ctx, mutation)
+			})
+		},
+	}
+}
+```
 
 Add request indexes:
 
@@ -571,6 +599,19 @@ git commit -m "feat(backend): add quota reset workflow schemas"
 - [x] The completion fixture establishes and asserts a current node before clearing it.
 - [x] Focused, package, full-backend, vet, generation reproducibility, and diff checks pass.
 - [x] Request snapshot invariant fixes are committed separately from `402badc`.
+
+**Legacy request JSON migration correction evidence (2026-07-13):**
+
+- [x] First RED proves the non-optional generated mutation types omit all four `Clear*` paths; the generated migration schema simultaneously marked those columns non-null.
+- [x] Second RED proves `Optional().Immutable()` exposes direct mutation `Clear*` paths on `Update` and `UpdateOne`, and both paths persist SQL `NULL` before the hook.
+- [x] The request schema hook returns `quotaresetrequest: JSON creation snapshots cannot be cleared` for both update operations and leaves all stored snapshots unchanged.
+- [x] Real PostgreSQL migration ran from exact pre-Task-1 commit `0c7d0be6a0764f391ce3c5fcf24c5f469855bf82` to the generated final head in isolated schema `quota_probe_sxp4aa` on `127.0.0.1:15432`.
+- [x] The representative v1 request retained SQL `NULL` in `resolved_approver_user_ids`, `matched_department_paths`, and both newly added requester JSON columns; it read back with `workflow_version=1`.
+- [x] The representative v1 `created` event remained readable, and the notification row migrated to `generic_webhook`, `channel_type_configured=false`, `template_version=1`.
+- [x] A new Ent-created request received four non-nil empty defaults and stored no SQL `NULL`; the isolated PostgreSQL schema was dropped afterward.
+- [x] Focused schema tests pass.
+- [x] Package, full-backend, vet, generation reproducibility, and diff checks pass.
+- [ ] Migration correction is committed separately from `ddbaaf2`.
 
 ---
 

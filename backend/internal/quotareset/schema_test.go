@@ -2,6 +2,7 @@ package quotareset
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -135,18 +136,6 @@ func TestQuotaResetRequestCreationFactsAreImmutable(t *testing.T) {
 			}
 		}
 	}
-	requestMutationType := reflect.TypeOf((*ent.QuotaResetRequestMutation)(nil))
-	for _, fieldName := range []string{
-		"RequesterDepartmentPaths",
-		"RequesterNotificationIds",
-		"ResolvedApproverUserIds",
-		"MatchedDepartmentPaths",
-	} {
-		methodName := "Clear" + fieldName
-		if _, ok := requestMutationType.MethodByName(methodName); ok {
-			t.Errorf("%s exposes creation-snapshot method %s", requestMutationType, methodName)
-		}
-	}
 }
 
 func TestQuotaResetRequestCreationFactsIgnoreDirectUpdateMutation(t *testing.T) {
@@ -181,6 +170,108 @@ func TestQuotaResetRequestCreationFactsIgnoreDirectUpdateMutation(t *testing.T) 
 	}
 	if got := updated.RequesterNotificationIds["wecom"]; got != "alice-wecom" {
 		t.Fatalf("requester notification id after direct mutation = %q, want original", got)
+	}
+}
+
+func TestQuotaResetRequestJSONSnapshotClearsAreRejected(t *testing.T) {
+	const wantError = "quotaresetrequest: JSON creation snapshots cannot be cleared"
+
+	ctx := context.Background()
+	clearMethods := []string{
+		"ClearRequesterDepartmentPaths",
+		"ClearRequesterNotificationIds",
+		"ClearResolvedApproverUserIds",
+		"ClearMatchedDepartmentPaths",
+	}
+	for _, updateType := range []reflect.Type{
+		reflect.TypeOf((*ent.QuotaResetRequestUpdate)(nil)),
+		reflect.TypeOf((*ent.QuotaResetRequestUpdateOne)(nil)),
+	} {
+		for _, methodName := range clearMethods {
+			if _, ok := updateType.MethodByName(methodName); ok {
+				t.Errorf("%s exposes %s", updateType, methodName)
+			}
+		}
+	}
+	mutationType := reflect.TypeOf((*ent.QuotaResetRequestMutation)(nil))
+	for _, methodName := range clearMethods {
+		if _, ok := mutationType.MethodByName(methodName); !ok {
+			t.Errorf("%s does not expose hook-protected %s", mutationType, methodName)
+		}
+	}
+	updateCases := []struct {
+		name string
+		run  func(*testing.T, *ent.Client, int, string) error
+	}{
+		{
+			name: "update one direct mutation",
+			run: func(t *testing.T, client *ent.Client, requestID int, clearMethod string) error {
+				update := client.QuotaResetRequest.UpdateOneID(requestID)
+				invokeRequestSnapshotClearMethods(t, update.Mutation(), []string{clearMethod})
+				_, err := update.Save(ctx)
+				return err
+			},
+		},
+		{
+			name: "bulk update direct mutation",
+			run: func(t *testing.T, client *ent.Client, requestID int, clearMethod string) error {
+				update := client.QuotaResetRequest.Update().
+					Where(quotaresetrequest.IDEQ(requestID))
+				invokeRequestSnapshotClearMethods(t, update.Mutation(), []string{clearMethod})
+				_, err := update.Save(ctx)
+				return err
+			},
+		},
+	}
+
+	for _, test := range updateCases {
+		for _, clearMethod := range clearMethods {
+			t.Run(fmt.Sprintf("%s/%s", test.name, clearMethod), func(t *testing.T) {
+				client := testdb.Open(t)
+				requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+				provider := createQuotaResetRelayProvider(t, ctx, client)
+				request := client.QuotaResetRequest.Create().
+					SetRequesterUserID(requester.ID).SetRequesterRelayUserID(1001).
+					SetProviderID(provider.ID).SetGroupID("42").
+					SetGroupName("Group Alpha").SetGroupPlatform("openai").
+					SetReason("Request with immutable JSON snapshots").SetWorkflowVersion(2).
+					SetRequesterDepartmentPaths([]string{"Department Alpha"}).
+					SetRequesterNotificationIds(map[string]string{"wecom": "alice-wecom"}).
+					SetResolvedApproverUserIds([]int{requester.ID}).
+					SetMatchedDepartmentPaths([]map[string]any{{"external_id": "department-alpha"}}).
+					SaveX(ctx)
+
+				err := test.run(t, client, request.ID, clearMethod)
+				if err == nil || err.Error() != wantError {
+					t.Errorf("clear snapshots error = %v, want %q", err, wantError)
+				}
+				stored := client.QuotaResetRequest.GetX(ctx, request.ID)
+				if !reflect.DeepEqual(stored.RequesterDepartmentPaths, request.RequesterDepartmentPaths) {
+					t.Errorf("requester department paths = %#v, want %#v", stored.RequesterDepartmentPaths, request.RequesterDepartmentPaths)
+				}
+				if !reflect.DeepEqual(stored.RequesterNotificationIds, request.RequesterNotificationIds) {
+					t.Errorf("requester notification ids = %#v, want %#v", stored.RequesterNotificationIds, request.RequesterNotificationIds)
+				}
+				if !reflect.DeepEqual(stored.ResolvedApproverUserIds, request.ResolvedApproverUserIds) {
+					t.Errorf("resolved approver user ids = %#v, want %#v", stored.ResolvedApproverUserIds, request.ResolvedApproverUserIds)
+				}
+				if !reflect.DeepEqual(stored.MatchedDepartmentPaths, request.MatchedDepartmentPaths) {
+					t.Errorf("matched department paths = %#v, want %#v", stored.MatchedDepartmentPaths, request.MatchedDepartmentPaths)
+				}
+			})
+		}
+	}
+}
+
+func invokeRequestSnapshotClearMethods(t *testing.T, target any, methods []string) {
+	t.Helper()
+	value := reflect.ValueOf(target)
+	for _, methodName := range methods {
+		method := value.MethodByName(methodName)
+		if !method.IsValid() {
+			t.Fatalf("%T does not expose %s", target, methodName)
+		}
+		method.Call(nil)
 	}
 }
 

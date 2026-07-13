@@ -350,8 +350,8 @@ Add:
 | `workflow_completed_by_decision_id` | nullable int | Decision that completed the final unsatisfied node |
 | `requester_display_name_snapshot` | string | Immutable notification and audit identity |
 | `requester_email_snapshot` | string | Immutable notification and audit identity |
-| `requester_department_paths` | JSON array | Immutable; all direct department display paths; fresh non-null `[]` default |
-| `requester_notification_ids` | JSON object | Immutable; fresh non-null `{}` default; channel-keyed ids, for example `{"wecom":"alice-id"}` |
+| `requester_department_paths` | nullable JSON array | Historical v1 `NULL` is allowed; new Ent creates receive a fresh `[]`; immutable after insert |
+| `requester_notification_ids` | nullable JSON object | Historical v1 `NULL` is allowed; new Ent creates receive a fresh `{}`; immutable after insert; channel-keyed ids, for example `{"wecom":"alice-id"}` |
 
 Existing v1 resolution and decision fields remain for compatibility. V2 services
 must treat request nodes and decisions as authoritative.
@@ -363,11 +363,20 @@ both requester JSON snapshots, the existing `resolved_approver_user_ids` and
 `matched_department_paths` resolution snapshots, and `created_at`. Workflow state,
 the v1 approval/rejection/reset/decision state, and `updated_at` remain mutable.
 
-Every request JSON creation snapshot uses a factory that returns a fresh non-nil
-empty slice or map for each create. Explicit nil containers fail Ent schema
-validation, as do nil element maps in `matched_department_paths`; empty non-nil
-containers remain valid. This preserves legacy defaults without sharing mutable
-map or slice instances across creates.
+The four request JSON creation snapshots (`requester_department_paths`,
+`requester_notification_ids`, `resolved_approver_user_ids`, and
+`matched_department_paths`) remain SQL-nullable because they live on an existing
+production table and historical v1 rows may contain SQL `NULL`. Their application
+defaults are factories that return a fresh non-nil empty slice or map for each new
+Ent create. Explicit nil setters fail schema validation, as do nil element maps in
+`matched_department_paths`; empty non-nil containers remain valid.
+
+Ent's `Optional().Immutable()` JSON generation exposes `Clear*` methods on the
+public mutation object even though update builders expose no normal setters. A
+`QuotaResetRequest` schema hook rejects those four clear flags for both `Update`
+and `UpdateOne`, including direct `Mutation()` calls, before SQL executes. Thus
+historical `NULL` remains readable without allowing a stored snapshot to be
+cleared after creation.
 
 When the legacy v1 resolver has no approver snapshot, its create builder omits
 that setter and lets the schema factory supply `[]`. This is distinct from an
@@ -433,7 +442,8 @@ Every field is immutable after insert.
 Omitted setters receive fresh empty defaults for each create. Explicit nil
 containers are rejected before create, while empty non-nil arrays and objects
 remain valid. Request, node, and node-approver JSON snapshots share schema-only
-factory and validator helpers so this contract is applied consistently.
+factory and validator helpers, while only the existing request table retains SQL
+nullability for legacy compatibility.
 
 Unique index: `(request_node_id, user_id)`.
 

@@ -251,7 +251,9 @@ func (qrru *QuotaResetRequestUpdate) Mutation() *QuotaResetRequestMutation {
 
 // Save executes the query and returns the number of nodes affected by the update operation.
 func (qrru *QuotaResetRequestUpdate) Save(ctx context.Context) (int, error) {
-	qrru.defaults()
+	if err := qrru.defaults(); err != nil {
+		return 0, err
+	}
 	return withHooks(ctx, qrru.sqlSave, qrru.mutation, qrru.hooks)
 }
 
@@ -278,11 +280,15 @@ func (qrru *QuotaResetRequestUpdate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (qrru *QuotaResetRequestUpdate) defaults() {
+func (qrru *QuotaResetRequestUpdate) defaults() error {
 	if _, ok := qrru.mutation.UpdatedAt(); !ok {
+		if quotaresetrequest.UpdateDefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized quotaresetrequest.UpdateDefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := quotaresetrequest.UpdateDefaultUpdatedAt()
 		qrru.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -325,8 +331,20 @@ func (qrru *QuotaResetRequestUpdate) sqlSave(ctx context.Context) (n int, err er
 	if qrru.mutation.WorkflowCompletedByDecisionIDCleared() {
 		_spec.ClearField(quotaresetrequest.FieldWorkflowCompletedByDecisionID, field.TypeInt)
 	}
+	if qrru.mutation.RequesterDepartmentPathsCleared() {
+		_spec.ClearField(quotaresetrequest.FieldRequesterDepartmentPaths, field.TypeJSON)
+	}
+	if qrru.mutation.RequesterNotificationIdsCleared() {
+		_spec.ClearField(quotaresetrequest.FieldRequesterNotificationIds, field.TypeJSON)
+	}
 	if value, ok := qrru.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequest.FieldStatus, field.TypeEnum, value)
+	}
+	if qrru.mutation.ResolvedApproverUserIdsCleared() {
+		_spec.ClearField(quotaresetrequest.FieldResolvedApproverUserIds, field.TypeJSON)
+	}
+	if qrru.mutation.MatchedDepartmentPathsCleared() {
+		_spec.ClearField(quotaresetrequest.FieldMatchedDepartmentPaths, field.TypeJSON)
 	}
 	if value, ok := qrru.mutation.ApprovedByUserID(); ok {
 		_spec.SetField(quotaresetrequest.FieldApprovedByUserID, field.TypeInt, value)
@@ -629,7 +647,9 @@ func (qrruo *QuotaResetRequestUpdateOne) Select(field string, fields ...string) 
 
 // Save executes the query and returns the updated QuotaResetRequest entity.
 func (qrruo *QuotaResetRequestUpdateOne) Save(ctx context.Context) (*QuotaResetRequest, error) {
-	qrruo.defaults()
+	if err := qrruo.defaults(); err != nil {
+		return nil, err
+	}
 	return withHooks(ctx, qrruo.sqlSave, qrruo.mutation, qrruo.hooks)
 }
 
@@ -656,11 +676,15 @@ func (qrruo *QuotaResetRequestUpdateOne) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (qrruo *QuotaResetRequestUpdateOne) defaults() {
+func (qrruo *QuotaResetRequestUpdateOne) defaults() error {
 	if _, ok := qrruo.mutation.UpdatedAt(); !ok {
+		if quotaresetrequest.UpdateDefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized quotaresetrequest.UpdateDefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := quotaresetrequest.UpdateDefaultUpdatedAt()
 		qrruo.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -720,8 +744,20 @@ func (qrruo *QuotaResetRequestUpdateOne) sqlSave(ctx context.Context) (_node *Qu
 	if qrruo.mutation.WorkflowCompletedByDecisionIDCleared() {
 		_spec.ClearField(quotaresetrequest.FieldWorkflowCompletedByDecisionID, field.TypeInt)
 	}
+	if qrruo.mutation.RequesterDepartmentPathsCleared() {
+		_spec.ClearField(quotaresetrequest.FieldRequesterDepartmentPaths, field.TypeJSON)
+	}
+	if qrruo.mutation.RequesterNotificationIdsCleared() {
+		_spec.ClearField(quotaresetrequest.FieldRequesterNotificationIds, field.TypeJSON)
+	}
 	if value, ok := qrruo.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequest.FieldStatus, field.TypeEnum, value)
+	}
+	if qrruo.mutation.ResolvedApproverUserIdsCleared() {
+		_spec.ClearField(quotaresetrequest.FieldResolvedApproverUserIds, field.TypeJSON)
+	}
+	if qrruo.mutation.MatchedDepartmentPathsCleared() {
+		_spec.ClearField(quotaresetrequest.FieldMatchedDepartmentPaths, field.TypeJSON)
 	}
 	if value, ok := qrruo.mutation.ApprovedByUserID(); ok {
 		_spec.SetField(quotaresetrequest.FieldApprovedByUserID, field.TypeInt, value)

@@ -23695,10 +23695,24 @@ func (m *QuotaResetRequestMutation) AppendedRequesterDepartmentPaths() ([]string
 	return m.appendrequester_department_paths, true
 }
 
+// ClearRequesterDepartmentPaths clears the value of the "requester_department_paths" field.
+func (m *QuotaResetRequestMutation) ClearRequesterDepartmentPaths() {
+	m.requester_department_paths = nil
+	m.appendrequester_department_paths = nil
+	m.clearedFields[quotaresetrequest.FieldRequesterDepartmentPaths] = struct{}{}
+}
+
+// RequesterDepartmentPathsCleared returns if the "requester_department_paths" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) RequesterDepartmentPathsCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldRequesterDepartmentPaths]
+	return ok
+}
+
 // ResetRequesterDepartmentPaths resets all changes to the "requester_department_paths" field.
 func (m *QuotaResetRequestMutation) ResetRequesterDepartmentPaths() {
 	m.requester_department_paths = nil
 	m.appendrequester_department_paths = nil
+	delete(m.clearedFields, quotaresetrequest.FieldRequesterDepartmentPaths)
 }
 
 // SetRequesterNotificationIds sets the "requester_notification_ids" field.
@@ -23732,9 +23746,22 @@ func (m *QuotaResetRequestMutation) OldRequesterNotificationIds(ctx context.Cont
 	return oldValue.RequesterNotificationIds, nil
 }
 
+// ClearRequesterNotificationIds clears the value of the "requester_notification_ids" field.
+func (m *QuotaResetRequestMutation) ClearRequesterNotificationIds() {
+	m.requester_notification_ids = nil
+	m.clearedFields[quotaresetrequest.FieldRequesterNotificationIds] = struct{}{}
+}
+
+// RequesterNotificationIdsCleared returns if the "requester_notification_ids" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) RequesterNotificationIdsCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldRequesterNotificationIds]
+	return ok
+}
+
 // ResetRequesterNotificationIds resets all changes to the "requester_notification_ids" field.
 func (m *QuotaResetRequestMutation) ResetRequesterNotificationIds() {
 	m.requester_notification_ids = nil
+	delete(m.clearedFields, quotaresetrequest.FieldRequesterNotificationIds)
 }
 
 // SetStatus sets the "status" field.
@@ -23818,10 +23845,24 @@ func (m *QuotaResetRequestMutation) AppendedResolvedApproverUserIds() ([]int, bo
 	return m.appendresolved_approver_user_ids, true
 }
 
+// ClearResolvedApproverUserIds clears the value of the "resolved_approver_user_ids" field.
+func (m *QuotaResetRequestMutation) ClearResolvedApproverUserIds() {
+	m.resolved_approver_user_ids = nil
+	m.appendresolved_approver_user_ids = nil
+	m.clearedFields[quotaresetrequest.FieldResolvedApproverUserIds] = struct{}{}
+}
+
+// ResolvedApproverUserIdsCleared returns if the "resolved_approver_user_ids" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) ResolvedApproverUserIdsCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldResolvedApproverUserIds]
+	return ok
+}
+
 // ResetResolvedApproverUserIds resets all changes to the "resolved_approver_user_ids" field.
 func (m *QuotaResetRequestMutation) ResetResolvedApproverUserIds() {
 	m.resolved_approver_user_ids = nil
 	m.appendresolved_approver_user_ids = nil
+	delete(m.clearedFields, quotaresetrequest.FieldResolvedApproverUserIds)
 }
 
 // SetMatchedDepartmentPaths sets the "matched_department_paths" field.
@@ -23869,10 +23910,24 @@ func (m *QuotaResetRequestMutation) AppendedMatchedDepartmentPaths() ([]map[stri
 	return m.appendmatched_department_paths, true
 }
 
+// ClearMatchedDepartmentPaths clears the value of the "matched_department_paths" field.
+func (m *QuotaResetRequestMutation) ClearMatchedDepartmentPaths() {
+	m.matched_department_paths = nil
+	m.appendmatched_department_paths = nil
+	m.clearedFields[quotaresetrequest.FieldMatchedDepartmentPaths] = struct{}{}
+}
+
+// MatchedDepartmentPathsCleared returns if the "matched_department_paths" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) MatchedDepartmentPathsCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldMatchedDepartmentPaths]
+	return ok
+}
+
 // ResetMatchedDepartmentPaths resets all changes to the "matched_department_paths" field.
 func (m *QuotaResetRequestMutation) ResetMatchedDepartmentPaths() {
 	m.matched_department_paths = nil
 	m.appendmatched_department_paths = nil
+	delete(m.clearedFields, quotaresetrequest.FieldMatchedDepartmentPaths)
 }
 
 // SetApprovedByUserID sets the "approved_by_user_id" field.
@@ -24866,6 +24921,18 @@ func (m *QuotaResetRequestMutation) ClearedFields() []string {
 	if m.FieldCleared(quotaresetrequest.FieldWorkflowCompletedByDecisionID) {
 		fields = append(fields, quotaresetrequest.FieldWorkflowCompletedByDecisionID)
 	}
+	if m.FieldCleared(quotaresetrequest.FieldRequesterDepartmentPaths) {
+		fields = append(fields, quotaresetrequest.FieldRequesterDepartmentPaths)
+	}
+	if m.FieldCleared(quotaresetrequest.FieldRequesterNotificationIds) {
+		fields = append(fields, quotaresetrequest.FieldRequesterNotificationIds)
+	}
+	if m.FieldCleared(quotaresetrequest.FieldResolvedApproverUserIds) {
+		fields = append(fields, quotaresetrequest.FieldResolvedApproverUserIds)
+	}
+	if m.FieldCleared(quotaresetrequest.FieldMatchedDepartmentPaths) {
+		fields = append(fields, quotaresetrequest.FieldMatchedDepartmentPaths)
+	}
 	if m.FieldCleared(quotaresetrequest.FieldApprovedByUserID) {
 		fields = append(fields, quotaresetrequest.FieldApprovedByUserID)
 	}
@@ -24900,6 +24967,18 @@ func (m *QuotaResetRequestMutation) ClearField(name string) error {
 		return nil
 	case quotaresetrequest.FieldWorkflowCompletedByDecisionID:
 		m.ClearWorkflowCompletedByDecisionID()
+		return nil
+	case quotaresetrequest.FieldRequesterDepartmentPaths:
+		m.ClearRequesterDepartmentPaths()
+		return nil
+	case quotaresetrequest.FieldRequesterNotificationIds:
+		m.ClearRequesterNotificationIds()
+		return nil
+	case quotaresetrequest.FieldResolvedApproverUserIds:
+		m.ClearResolvedApproverUserIds()
+		return nil
+	case quotaresetrequest.FieldMatchedDepartmentPaths:
+		m.ClearMatchedDepartmentPaths()
 		return nil
 	case quotaresetrequest.FieldApprovedByUserID:
 		m.ClearApprovedByUserID()

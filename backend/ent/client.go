@@ -3225,7 +3225,8 @@ func (c *QuotaResetRequestClient) GetX(ctx context.Context, id int) *QuotaResetR
 
 // Hooks returns the client hooks.
 func (c *QuotaResetRequestClient) Hooks() []Hook {
-	return c.hooks.QuotaResetRequest
+	hooks := c.hooks.QuotaResetRequest
+	return append(hooks[:len(hooks):len(hooks)], quotaresetrequest.Hooks[:]...)
 }
 
 // Interceptors returns the client interceptors.

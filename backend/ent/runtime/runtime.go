@@ -617,6 +617,8 @@ func init() {
 	quotaresetnotificationsetting.DefaultUpdatedAt = quotaresetnotificationsettingDescUpdatedAt.Default.(func() time.Time)
 	// quotaresetnotificationsetting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	quotaresetnotificationsetting.UpdateDefaultUpdatedAt = quotaresetnotificationsettingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	quotaresetrequestHooks := schema.QuotaResetRequest{}.Hooks()
+	quotaresetrequest.Hooks[0] = quotaresetrequestHooks[0]
 	quotaresetrequestFields := schema.QuotaResetRequest{}.Fields()
 	_ = quotaresetrequestFields
 	// quotaresetrequestDescGroupID is the schema descriptor for group_id field.

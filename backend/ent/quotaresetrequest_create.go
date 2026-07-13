@@ -319,7 +319,9 @@ func (qrrc *QuotaResetRequestCreate) Mutation() *QuotaResetRequestMutation {
 
 // Save creates the QuotaResetRequest in the database.
 func (qrrc *QuotaResetRequestCreate) Save(ctx context.Context) (*QuotaResetRequest, error) {
-	qrrc.defaults()
+	if err := qrrc.defaults(); err != nil {
+		return nil, err
+	}
 	return withHooks(ctx, qrrc.sqlSave, qrrc.mutation, qrrc.hooks)
 }
 
@@ -346,7 +348,7 @@ func (qrrc *QuotaResetRequestCreate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (qrrc *QuotaResetRequestCreate) defaults() {
+func (qrrc *QuotaResetRequestCreate) defaults() error {
 	if _, ok := qrrc.mutation.GroupName(); !ok {
 		v := quotaresetrequest.DefaultGroupName
 		qrrc.mutation.SetGroupName(v)
@@ -368,10 +370,16 @@ func (qrrc *QuotaResetRequestCreate) defaults() {
 		qrrc.mutation.SetRequesterEmailSnapshot(v)
 	}
 	if _, ok := qrrc.mutation.RequesterDepartmentPaths(); !ok {
+		if quotaresetrequest.DefaultRequesterDepartmentPaths == nil {
+			return fmt.Errorf("ent: uninitialized quotaresetrequest.DefaultRequesterDepartmentPaths (forgotten import ent/runtime?)")
+		}
 		v := quotaresetrequest.DefaultRequesterDepartmentPaths()
 		qrrc.mutation.SetRequesterDepartmentPaths(v)
 	}
 	if _, ok := qrrc.mutation.RequesterNotificationIds(); !ok {
+		if quotaresetrequest.DefaultRequesterNotificationIds == nil {
+			return fmt.Errorf("ent: uninitialized quotaresetrequest.DefaultRequesterNotificationIds (forgotten import ent/runtime?)")
+		}
 		v := quotaresetrequest.DefaultRequesterNotificationIds()
 		qrrc.mutation.SetRequesterNotificationIds(v)
 	}
@@ -380,10 +388,16 @@ func (qrrc *QuotaResetRequestCreate) defaults() {
 		qrrc.mutation.SetStatus(v)
 	}
 	if _, ok := qrrc.mutation.ResolvedApproverUserIds(); !ok {
+		if quotaresetrequest.DefaultResolvedApproverUserIds == nil {
+			return fmt.Errorf("ent: uninitialized quotaresetrequest.DefaultResolvedApproverUserIds (forgotten import ent/runtime?)")
+		}
 		v := quotaresetrequest.DefaultResolvedApproverUserIds()
 		qrrc.mutation.SetResolvedApproverUserIds(v)
 	}
 	if _, ok := qrrc.mutation.MatchedDepartmentPaths(); !ok {
+		if quotaresetrequest.DefaultMatchedDepartmentPaths == nil {
+			return fmt.Errorf("ent: uninitialized quotaresetrequest.DefaultMatchedDepartmentPaths (forgotten import ent/runtime?)")
+		}
 		v := quotaresetrequest.DefaultMatchedDepartmentPaths()
 		qrrc.mutation.SetMatchedDepartmentPaths(v)
 	}
@@ -396,13 +410,20 @@ func (qrrc *QuotaResetRequestCreate) defaults() {
 		qrrc.mutation.SetResetError(v)
 	}
 	if _, ok := qrrc.mutation.CreatedAt(); !ok {
+		if quotaresetrequest.DefaultCreatedAt == nil {
+			return fmt.Errorf("ent: uninitialized quotaresetrequest.DefaultCreatedAt (forgotten import ent/runtime?)")
+		}
 		v := quotaresetrequest.DefaultCreatedAt()
 		qrrc.mutation.SetCreatedAt(v)
 	}
 	if _, ok := qrrc.mutation.UpdatedAt(); !ok {
+		if quotaresetrequest.DefaultUpdatedAt == nil {
+			return fmt.Errorf("ent: uninitialized quotaresetrequest.DefaultUpdatedAt (forgotten import ent/runtime?)")
+		}
 		v := quotaresetrequest.DefaultUpdatedAt()
 		qrrc.mutation.SetUpdatedAt(v)
 	}
+	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -447,16 +468,10 @@ func (qrrc *QuotaResetRequestCreate) check() error {
 	if _, ok := qrrc.mutation.RequesterEmailSnapshot(); !ok {
 		return &ValidationError{Name: "requester_email_snapshot", err: errors.New(`ent: missing required field "QuotaResetRequest.requester_email_snapshot"`)}
 	}
-	if _, ok := qrrc.mutation.RequesterDepartmentPaths(); !ok {
-		return &ValidationError{Name: "requester_department_paths", err: errors.New(`ent: missing required field "QuotaResetRequest.requester_department_paths"`)}
-	}
 	if v, ok := qrrc.mutation.RequesterDepartmentPaths(); ok {
 		if err := quotaresetrequest.RequesterDepartmentPathsValidator(v); err != nil {
 			return &ValidationError{Name: "requester_department_paths", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.requester_department_paths": %w`, err)}
 		}
-	}
-	if _, ok := qrrc.mutation.RequesterNotificationIds(); !ok {
-		return &ValidationError{Name: "requester_notification_ids", err: errors.New(`ent: missing required field "QuotaResetRequest.requester_notification_ids"`)}
 	}
 	if v, ok := qrrc.mutation.RequesterNotificationIds(); ok {
 		if err := quotaresetrequest.RequesterNotificationIdsValidator(v); err != nil {
@@ -471,16 +486,10 @@ func (qrrc *QuotaResetRequestCreate) check() error {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.status": %w`, err)}
 		}
 	}
-	if _, ok := qrrc.mutation.ResolvedApproverUserIds(); !ok {
-		return &ValidationError{Name: "resolved_approver_user_ids", err: errors.New(`ent: missing required field "QuotaResetRequest.resolved_approver_user_ids"`)}
-	}
 	if v, ok := qrrc.mutation.ResolvedApproverUserIds(); ok {
 		if err := quotaresetrequest.ResolvedApproverUserIdsValidator(v); err != nil {
 			return &ValidationError{Name: "resolved_approver_user_ids", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.resolved_approver_user_ids": %w`, err)}
 		}
-	}
-	if _, ok := qrrc.mutation.MatchedDepartmentPaths(); !ok {
-		return &ValidationError{Name: "matched_department_paths", err: errors.New(`ent: missing required field "QuotaResetRequest.matched_department_paths"`)}
 	}
 	if v, ok := qrrc.mutation.MatchedDepartmentPaths(); ok {
 		if err := quotaresetrequest.MatchedDepartmentPathsValidator(v); err != nil {
