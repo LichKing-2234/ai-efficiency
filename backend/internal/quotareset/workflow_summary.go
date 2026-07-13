@@ -250,3 +250,16 @@ func v2CompletionActorPredicate(userID int) predicate.QuotaResetRequest {
 		requests.Where(sql.Exists(decisionExists))
 	}
 }
+
+func v2DecisionActorPredicate(userID int) predicate.QuotaResetRequest {
+	return func(requests *sql.Selector) {
+		decisions := sql.Table(quotaresetrequestdecision.Table)
+		decisionExists := sql.SelectExpr(sql.Expr("1")).
+			From(decisions).
+			Where(sql.And(
+				sql.ColumnsEQ(decisions.C(quotaresetrequestdecision.FieldRequestID), requests.C(quotaresetrequest.FieldID)),
+				sql.EQ(decisions.C(quotaresetrequestdecision.FieldActorUserID), userID),
+			))
+		requests.Where(sql.Exists(decisionExists))
+	}
+}

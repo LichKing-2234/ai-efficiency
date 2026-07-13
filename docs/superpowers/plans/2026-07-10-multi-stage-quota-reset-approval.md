@@ -2140,6 +2140,21 @@ git commit -m "feat(backend): expose actionable quota reset workflow state"
 Evidence (2026-07-14): committed Task 5 as `583fae6` with subject
 `feat(backend): expose actionable quota reset workflow state`.
 
+Follow-up evidence (2026-07-14): public `ListApprovals` tests first failed with
+zero results for an approver after the workflow advanced and for a rejection
+actor after terminal rejection. A parameterized, request-correlated v2
+decision-actor `EXISTS` predicate now keeps immutable workflow and decision
+history visible to those actors while unrelated and future-only users remain
+excluded. Focused list/summary/count tests, complete quota-reset/work-items/
+handler packages, `go test ./... -count=1`, `go vet ./...`, and
+`git diff --check` PASS.
+
+The admin quota count intentionally remains status-based for every v1/v2
+`pending` or `approved_reset_failed` request, including malformed pending v2
+rows, because current admins own the fallback queue. Historical decision actors
+are not included in assigned Work Items unless they are also the current active
+approver or failed-reset completion actor.
+
 ---
 
 ### Task 6: Make Notification Channel Selection Explicit and Migratable

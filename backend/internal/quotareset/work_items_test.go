@@ -66,6 +66,102 @@ func TestListApprovalsReturnsOnlyActiveV2Assignments(t *testing.T) {
 	}
 }
 
+func TestListApprovalsKeepsV2DecisionHistoryAfterWorkflowAdvances(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}, {}})
+	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
+	fixture.replaceApproverIDs(t, 1, fixture.actorB.ID)
+	unrelated := createQuotaResetUser(t, fixture.ctx, fixture.client, "unrelated-history", "unrelated-history@example.net", nil, "user")
+
+	future, err := fixture.service.ListApprovals(fixture.ctx, fixture.actorB.ID, ListParams{})
+	if err != nil {
+		t.Fatalf("ListApprovals() future actor error = %v", err)
+	}
+	if future.Total != 0 || len(future.Items) != 0 {
+		t.Fatalf("future actor response = %+v, want no queued assignment", future)
+	}
+
+	updated, err := fixture.service.Approve(fixture.ctx, DecisionInput{
+		ActorUserID:    fixture.actorA.ID,
+		RequestID:      fixture.request.ID,
+		RequestNodeID:  fixture.nodes[0].ID,
+		DecisionReason: "Approved the initial review",
+	})
+	if err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if updated.CurrentNodeID == nil || *updated.CurrentNodeID != fixture.nodes[1].ID {
+		t.Fatalf("current node = %v, want advanced node %d", updated.CurrentNodeID, fixture.nodes[1].ID)
+	}
+
+	history, err := fixture.service.ListApprovals(fixture.ctx, fixture.actorA.ID, ListParams{})
+	if err != nil {
+		t.Fatalf("ListApprovals() decision actor error = %v", err)
+	}
+	if history.Total != 1 || len(history.Items) != 1 || history.Items[0].ID != fixture.request.ID {
+		t.Fatalf("decision actor response = %+v, want advanced request history", history)
+	}
+	workflow := history.Items[0].Workflow
+	if workflow == nil || workflow.CurrentNode == nil || workflow.CurrentNode.ID != fixture.nodes[1].ID || len(workflow.Decisions) != 1 {
+		t.Fatalf("workflow history = %+v, want advanced node and stored decision", workflow)
+	}
+	if workflow.Decisions[0].ActorUserID != fixture.actorA.ID || workflow.Decisions[0].Comment != "Approved the initial review" {
+		t.Fatalf("decision history = %+v", workflow.Decisions)
+	}
+	if workflow.CanApprove || workflow.CanReject || workflow.CanCancel || workflow.CanRetry {
+		t.Fatalf("prior actor permissions = %+v, want history-only access", workflow)
+	}
+
+	unrelatedHistory, err := fixture.service.ListApprovals(fixture.ctx, unrelated.ID, ListParams{})
+	if err != nil {
+		t.Fatalf("ListApprovals() unrelated actor error = %v", err)
+	}
+	if unrelatedHistory.Total != 0 || len(unrelatedHistory.Items) != 0 {
+		t.Fatalf("unrelated actor response = %+v, want no history leak", unrelatedHistory)
+	}
+}
+
+func TestListApprovalsReturnsRejectedV2DecisionHistory(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
+	unrelated := createQuotaResetUser(t, fixture.ctx, fixture.client, "unrelated-rejection", "unrelated-rejection@example.org", nil, "user")
+
+	updated, err := fixture.service.Reject(fixture.ctx, DecisionInput{
+		ActorUserID:    fixture.actorA.ID,
+		RequestID:      fixture.request.ID,
+		RequestNodeID:  fixture.nodes[0].ID,
+		DecisionReason: "Rejected after reviewing the request",
+	})
+	if err != nil {
+		t.Fatalf("Reject() error = %v", err)
+	}
+	if updated.Status != quotaresetrequest.StatusRejected {
+		t.Fatalf("status = %s, want rejected", updated.Status)
+	}
+
+	history, err := fixture.service.ListApprovals(fixture.ctx, fixture.actorA.ID, ListParams{})
+	if err != nil {
+		t.Fatalf("ListApprovals() rejection actor error = %v", err)
+	}
+	if history.Total != 1 || len(history.Items) != 1 || history.Items[0].Status != quotaresetrequest.StatusRejected.String() {
+		t.Fatalf("rejection actor response = %+v, want rejected request history", history)
+	}
+	workflow := history.Items[0].Workflow
+	if workflow == nil || workflow.CurrentNode != nil || len(workflow.Decisions) != 1 || workflow.Decisions[0].Decision != quotaresetrequestdecision.DecisionReject.String() {
+		t.Fatalf("rejected workflow history = %+v", workflow)
+	}
+	if workflow.CanApprove || workflow.CanReject || workflow.CanCancel || workflow.CanRetry {
+		t.Fatalf("rejection actor permissions = %+v, want history-only access", workflow)
+	}
+
+	unrelatedHistory, err := fixture.service.ListApprovals(fixture.ctx, unrelated.ID, ListParams{})
+	if err != nil {
+		t.Fatalf("ListApprovals() unrelated actor error = %v", err)
+	}
+	if unrelatedHistory.Total != 0 || len(unrelatedHistory.Items) != 0 {
+		t.Fatalf("unrelated actor response = %+v, want no rejected history leak", unrelatedHistory)
+	}
+}
+
 func TestWorkflowSummaryReturnsOrderedNodesDecisionsAndPermissions(t *testing.T) {
 	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}, {}, {}})
 	fixture.replaceApproverIDs(t, 0, fixture.actorB.ID, fixture.actorA.ID)

@@ -257,6 +257,10 @@ func (s *Service) ListApprovals(ctx context.Context, actorUserID int, params Lis
 				quotaresetrequest.StatusEQ(quotaresetrequest.StatusApprovedResetFailed),
 				v2CompletionActorPredicate(actorUserID),
 			),
+			quotaresetrequest.And(
+				quotaresetrequest.WorkflowVersionGTE(WorkflowVersionV2),
+				v2DecisionActorPredicate(actorUserID),
+			),
 		))
 	})
 }
