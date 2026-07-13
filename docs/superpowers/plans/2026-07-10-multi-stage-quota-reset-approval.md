@@ -2408,7 +2408,10 @@ Evidence: `cd backend && go test ./internal/quotareset -run
 && go test ./internal/quotareset -count=1`, `cd backend && go test ./cmd/server
 ./internal/quotareset -count=1`, `cd backend && go test ./... -count=1`, `cd
 backend && go vet ./...`, and `git diff --check` all passed.
-- [ ] Commit the backfill hardening.
+- [x] Commit the backfill hardening.
+
+Evidence: `git commit -m "fix(backend): disable legacy insecure WeCom
+webhooks"` created `60906ef`.
 
 ---
 
