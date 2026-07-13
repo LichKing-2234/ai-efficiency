@@ -31,7 +31,7 @@ func TestBackfillNotificationChannelsClassifiesExistingWeComOnce(t *testing.T) {
 	if !row.ChannelTypeConfigured || row.ChannelType != quotaresetnotificationsetting.ChannelTypeWecomGroupRobot {
 		t.Fatalf("row channel = %q configured=%t, want WeCom configured", row.ChannelType, row.ChannelTypeConfigured)
 	}
-	if row.URL != robotURL || row.AuthType != quotaresetnotificationsetting.AuthTypeNone || row.CreatedByUserID != 7 || row.UpdatedByUserID != 8 {
+	if !row.Enabled || row.URL != robotURL || row.AuthType != quotaresetnotificationsetting.AuthTypeNone || row.CreatedByUserID != 7 || row.UpdatedByUserID != 8 {
 		t.Fatalf("backfill changed preserved fields: %+v", row)
 	}
 
@@ -41,6 +41,42 @@ func TestBackfillNotificationChannelsClassifiesExistingWeComOnce(t *testing.T) {
 	}
 	if updated != 0 {
 		t.Fatalf("second updated = %d, want 0", updated)
+	}
+}
+
+func TestBackfillNotificationChannelsDisablesLegacyHTTPWeComAndPreservesGenericHTTP(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	legacyRobotURL := "http://qyapi.weixin.qq.com/cgi-bin/webhook/send" + "?" + "key=test-secret"
+	legacyRobot := client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetURL(legacyRobotURL).
+		SetAuthType("none").
+		SetCreatedByUserID(7).
+		SetUpdatedByUserID(8).
+		SaveX(ctx)
+	genericHTTP := client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetURL("http://hooks.example.com/quota-reset").
+		SetAuthType("none").
+		SetCreatedByUserID(9).
+		SetUpdatedByUserID(10).
+		SaveX(ctx)
+
+	updated, err := BackfillNotificationChannelTypes(ctx, client)
+	if err != nil {
+		t.Fatalf("BackfillNotificationChannelTypes() error = %v", err)
+	}
+	if updated != 2 {
+		t.Fatalf("updated = %d, want 2", updated)
+	}
+	legacyRobot = client.QuotaResetNotificationSetting.GetX(ctx, legacyRobot.ID)
+	if legacyRobot.Enabled || !legacyRobot.ChannelTypeConfigured || legacyRobot.ChannelType != quotaresetnotificationsetting.ChannelTypeWecomGroupRobot || legacyRobot.URL != legacyRobotURL {
+		t.Fatalf("legacy HTTP robot row = %+v, want disabled configured WeCom with preserved URL", legacyRobot)
+	}
+	genericHTTP = client.QuotaResetNotificationSetting.GetX(ctx, genericHTTP.ID)
+	if !genericHTTP.Enabled || !genericHTTP.ChannelTypeConfigured || genericHTTP.ChannelType != quotaresetnotificationsetting.ChannelTypeGenericWebhook {
+		t.Fatalf("generic HTTP row = %+v, want enabled configured generic webhook", genericHTTP)
 	}
 }
 

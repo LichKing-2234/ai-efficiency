@@ -21,18 +21,23 @@ func BackfillNotificationChannelTypes(ctx context.Context, client *ent.Client) (
 	updated := 0
 	for _, row := range rows {
 		channelType := quotaresetnotificationsetting.ChannelTypeGenericWebhook
+		disable := false
 		parsed, _ := url.Parse(strings.TrimSpace(row.URL))
 		if parsed != nil && strings.EqualFold(parsed.Hostname(), "qyapi.weixin.qq.com") && parsed.Path == "/cgi-bin/webhook/send" {
 			channelType = quotaresetnotificationsetting.ChannelTypeWecomGroupRobot
+			disable = !strings.EqualFold(parsed.Scheme, "https")
 		}
-		affected, err := client.QuotaResetNotificationSetting.Update().
+		update := client.QuotaResetNotificationSetting.Update().
 			Where(
 				quotaresetnotificationsetting.IDEQ(row.ID),
 				quotaresetnotificationsetting.ChannelTypeConfigured(false),
 			).
 			SetChannelType(channelType).
-			SetChannelTypeConfigured(true).
-			Save(ctx)
+			SetChannelTypeConfigured(true)
+		if disable {
+			update.SetEnabled(false)
+		}
+		affected, err := update.Save(ctx)
 		if err != nil {
 			return updated, fmt.Errorf("backfill notification setting %d: %w", row.ID, err)
 		}

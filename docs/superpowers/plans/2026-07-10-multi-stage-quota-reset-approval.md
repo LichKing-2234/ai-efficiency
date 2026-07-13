@@ -2392,6 +2392,24 @@ failed with `URLPreview:https://hooks.example.com`; after the test-only
 host-only expectation update, it passed along with the corrected full-package
 verification commands above.
 
+#### Legacy HTTP WeCom backfill follow-up (2026-07-14)
+
+- [x] Add a RED migration regression for legacy HTTP WeCom rows.
+
+Evidence: `cd backend && go test ./internal/quotareset -run
+'^TestBackfillNotificationChannelsDisablesLegacyHTTPWeComAndPreservesGenericHTTP$' -count=1`
+failed because the classified legacy row remained `enabled=true`.
+
+- [x] Disable legacy HTTP WeCom rows during conditional channel backfill.
+- [x] Run focused and full backend verification.
+
+Evidence: `cd backend && go test ./internal/quotareset -run
+'Test(NotificationSettings|BackfillNotificationChannels)' -count=1`, `cd backend
+&& go test ./internal/quotareset -count=1`, `cd backend && go test ./cmd/server
+./internal/quotareset -count=1`, `cd backend && go test ./... -count=1`, `cd
+backend && go vet ./...`, and `git diff --check` all passed.
+- [ ] Commit the backfill hardening.
+
 ---
 
 ### Task 7: Add Generic and Enterprise WeChat Notification Adapters
