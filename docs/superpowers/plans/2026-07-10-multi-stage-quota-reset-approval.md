@@ -3019,6 +3019,83 @@ TODO/FIXME scans all completed cleanly.
 Commit evidence: `e775ef5` (`fix(backend): seal notification error redaction
 boundary`).
 
+#### Quality-review follow-up (2026-07-14)
+
+- [x] Reject reserved Enterprise WeChat mention IDs through one shared predicate.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^(TestWeComAdapterRejectsReservedMentionUserIDs|TestNotificationTestRejectsReservedWeComMentionUserID)$'
+-count=1` rendered `待审批：<@all> <@ALL>` and returned test coverage
+`Delivered:true RecipientCount:1 MissingRecipientCount:0 Warning:`. It passed
+in `1.803s` after both renderer and test-recipient selection used the shared
+trimmed, case-insensitive reserved-ID predicate.
+
+- [x] Audit the notifier's actual channel and delivery result instead of the service preload.
+
+RED evidence: the result-contract regression initially failed to compile
+because `NotificationDeliveryResult` lacked `Delivered` and `ChannelType`.
+After adding those fields, the four deterministic interleaving regressions
+failed with one false `notification_sent` event, a false test delivery, stale
+`generic_webhook` metadata after a WeCom switch, and no WeCom coverage warning
+after a test-action switch. The combined five-test command passed in `2.373s`
+after the service treated the notifier result as authoritative and skipped sent
+audits for non-delivery.
+
+- [x] Preserve rendered recipient coverage on post-render delivery failures.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestNotificationFailurePreservesRenderedRecipientCoverage$' -count=1`
+failed with `notification_failed recipient_count = 0, want 1`. It passed in
+`1.046s` after coverage moved immediately after rendering and the nonnil result
+flowed through the synthetic HTTP 500 path, persisting exact `1/1` coverage.
+
+- [x] Reject delayed node activation after request cancellation.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestWorkflowActivationSkipsCancelledRequestAfterDelayedContext$' -count=1`
+failed with `notifyActiveNode() error = nil for cancelled request`. It passed in
+`2.054s` after activation context required a pending request, matching current
+node ID, and active node row; the cancellation delivery remained intact.
+
+- [x] Restrict current directory identity lookup to potential indexed matches.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestCurrentNotificationPeopleQueriesOnlyPotentialDirectoryMatches$' -count=1`
+captured `WHERE "directory_members"."source_id" = $1` without a
+`matched_user_id` predicate. It passed in `3.813s` with `source_id AND
+(matched_user_id IN (...) OR email_normalized IN (...))`, while also verifying
+active filtering, matched-ID precedence, email fallback, and caller order.
+
+- [x] Bound schema-version 2 generic webhook payloads.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestGenericWebhookAdapterBoundsUserControlledPayload$' -count=1` produced a
+`3280948`-byte body against the `65536`-byte limit. It passed in `2.764s` after
+per-field and collection bounds, UTF-8-safe truncation, bounded typed copies,
+and a fail-closed final body check retained the stable schema and required
+request, node, and action fields without channel IDs.
+
+- [x] Use event-appropriate Enterprise WeChat recipient wording.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestWeComAdapterUsesEventAppropriateRecipientLabel$' -count=1` failed for all
+five terminal/test events because they retained `待审批：`. It passed in `1.472s`;
+only node activation now uses that label and all other events use `通知对象：`.
+
+- [x] Run final quality-review verification and commit the fixes.
+
+GREEN evidence: all 12 new quality regressions passed together in `3.155s`,
+and the unchanged Task 7 focused suite passed in `1.728s`. `cd backend && go
+test ./internal/quotareset -count=1` passed in `33.973s`; `cd backend && go test
+./cmd/server ./internal/quotareset -count=1` passed in `3.562s` and `35.819s`;
+`cd backend && go test ./... -count=1` passed; and `cd backend && go vet ./...`,
+`gofmt -d`, `git diff --check`, changed-file review, TODO/FIXME scan, and
+credential/robot-URL scans all completed cleanly. Robot endpoint scan hits were
+limited to explicit synthetic-key fixtures.
+
+Commit evidence: `6b4358d` (`fix(backend): harden quota reset notification
+delivery`).
+
 ---
 
 ### Task 8: Expose V2 Workflow and Configuration HTTP Contracts
