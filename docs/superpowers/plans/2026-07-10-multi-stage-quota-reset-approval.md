@@ -1013,7 +1013,7 @@ git commit -m "feat(backend): configure quota reset approval chains"
 - Create: `backend/internal/quotareset/workflow_resolver_test.go`
 - Modify: `backend/internal/quotareset/service.go`
 
-- [ ] **Step 1: Write failing resolution tests**
+- [x] **Step 1: Write failing resolution tests**
 
 Create these tests in `workflow_resolver_test.go`:
 
@@ -1036,7 +1036,7 @@ node. The configured-chain test must leave a later department without config,
 give it representative metadata, and assert zero candidates plus
 `AdminFallbackRequired=true`.
 
-- [ ] **Step 2: Run resolution tests and verify failure**
+- [x] **Step 2: Run resolution tests and verify failure**
 
 Run:
 
@@ -1046,7 +1046,9 @@ cd backend && go test ./internal/quotareset -run TestWorkflowResolver -count=1
 
 Expected: FAIL because the v2 resolver does not exist.
 
-- [ ] **Step 3: Define workflow snapshot and response types**
+Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run TestWorkflowResolver -count=1` failed as expected because `WorkflowSnapshot`, `ResolvedWorkflowNode`, and `NewWorkflowResolver` were undefined.
+
+- [x] **Step 3: Define workflow snapshot and response types**
 
 Create `workflow_types.go`:
 
@@ -1136,7 +1138,7 @@ type WorkflowSummary struct {
 }
 ```
 
-- [ ] **Step 4: Implement the exact-department resolver**
+- [x] **Step 4: Implement the exact-department resolver**
 
 Create `workflow_resolver.go` with:
 
@@ -1295,7 +1297,7 @@ configured for one direct department and a representative for another. This
 makes the single stored source deterministic while retaining all department
 evidence.
 
-- [ ] **Step 5: Initialize the resolver without changing existing constructors**
+- [x] **Step 5: Initialize the resolver without changing existing constructors**
 
 Add `workflowResolver *WorkflowResolver` to `Service` and initialize it:
 
@@ -1311,7 +1313,9 @@ func NewService(client *ent.Client, providerResolver ProviderResolver, approverR
 }
 ```
 
-- [ ] **Step 6: Run resolver and legacy tests**
+Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run TestWorkflowResolver -count=1` passed after adding the v2 snapshot types, exact-department resolver, and `Service.workflowResolver` initialization.
+
+- [x] **Step 6: Run resolver and legacy tests**
 
 Run:
 
@@ -1321,6 +1325,8 @@ cd backend && go test ./internal/quotareset -run 'Test(WorkflowResolver|ResolveA
 
 Expected: PASS. The v1 nearest-ancestor resolver remains unchanged for legacy
 requests.
+
+Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run 'Test(WorkflowResolver|ResolveApprovers)' -count=1` passed. `go test ./internal/quotareset -count=1` also passed.
 
 - [ ] **Step 7: Commit workflow resolution**
 

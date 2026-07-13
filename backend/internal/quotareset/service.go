@@ -40,6 +40,7 @@ type Service struct {
 	client           *ent.Client
 	providerResolver ProviderResolver
 	approverResolver *ApproverResolver
+	workflowResolver *WorkflowResolver
 	notifier         Notifier
 }
 
@@ -48,6 +49,7 @@ func NewService(client *ent.Client, providerResolver ProviderResolver, approverR
 		client:           client,
 		providerResolver: providerResolver,
 		approverResolver: approverResolver,
+		workflowResolver: NewWorkflowResolver(client),
 		notifier:         notifier,
 	}
 }
