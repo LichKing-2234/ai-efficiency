@@ -2426,7 +2426,7 @@ webhooks"` created `60906ef`.
 - Modify: `backend/internal/quotareset/types.go`
 - Modify: `backend/internal/quotareset/workflow_service.go`
 
-- [ ] **Step 1: Write failing renderer, recipient, and routing tests**
+- [x] **Step 1: Write failing renderer, recipient, and routing tests**
 
 Replace URL-inference assertions with:
 
@@ -2467,7 +2467,12 @@ rendered content does not contain `<@all>`. The approval-reuse test records HTTP
 delivery count and asserts one delivery for the newly active unmatched node and
 zero for every auto-satisfied node.
 
-- [ ] **Step 2: Run notification tests and verify failure**
+Evidence (2026-07-14): added all ten named Task 7 renderer, recipient coverage,
+explicit-channel, workflow routing, business-error, and test-warning cases in
+`backend/internal/quotareset/notification_test.go`. The RED command and failure
+evidence are recorded in Step 2 after execution.
+
+- [x] **Step 2: Run notification tests and verify failure**
 
 Run:
 
@@ -2477,7 +2482,13 @@ cd backend && go test ./internal/quotareset -run 'Test(GenericWebhookAdapter|WeC
 
 Expected: FAIL because the adapter registry and enriched context do not exist.
 
-- [ ] **Step 3: Define a channel-neutral notification contract**
+Evidence (2026-07-14): the exact focused command failed as expected with
+undefined `genericWebhookAdapter`, `weComGroupRobotAdapter`,
+`NotificationContext`, `NotificationPerson`, and `NotificationNodeActivated`
+symbols. The package stopped at the Go compiler with `build failed`, confirming
+the Task 7 adapter and neutral-context surface was absent before implementation.
+
+- [x] **Step 3: Define a channel-neutral notification contract**
 
 Create `notification_channel.go`:
 
@@ -2594,7 +2605,7 @@ type NotificationTestResult struct {
 }
 ```
 
-- [ ] **Step 4: Implement the generic JSON adapter**
+- [x] **Step 4: Implement the generic JSON adapter**
 
 Create `notification_generic.go`:
 
@@ -2646,7 +2657,7 @@ func (genericWebhookAdapter) ValidateResponse(statusCode int, _ []byte) error {
 
 Add `fmt` and `time` imports.
 
-- [ ] **Step 5: Implement safe Enterprise WeChat Markdown rendering**
+- [x] **Step 5: Implement safe Enterprise WeChat Markdown rendering**
 
 Create `notification_wecom.go` with trusted mentions separated from escaped
 user content:
@@ -2799,7 +2810,7 @@ Implement `weComEventCopy` as an exhaustive switch for the six defined events.
 Do not concatenate an unknown event into user-visible Markdown; return a neutral
 synthetic label.
 
-- [ ] **Step 6: Refactor WebhookNotifier to use explicit adapters**
+- [x] **Step 6: Refactor WebhookNotifier to use explicit adapters**
 
 `Notify` must:
 
@@ -2829,7 +2840,7 @@ if err != nil {
 request.Header = rendered.Headers.Clone()
 ```
 
-- [ ] **Step 7: Build notification context and route node events**
+- [x] **Step 7: Build notification context and route node events**
 
 Add `notificationContextForRequest(ctx, requestID, nodeID, event)` in
 `workflow_summary.go`. It must load requester snapshots, current node approvers,
@@ -2872,7 +2883,7 @@ reuse writes node events but never calls the notifier for satisfied nodes.
 For legacy v1 events, build a minimal neutral context from the existing request
 and live requester lookup so the configured adapter still handles old requests.
 
-- [ ] **Step 8: Run notification tests**
+- [x] **Step 8: Run notification tests**
 
 Run:
 
@@ -2883,12 +2894,51 @@ cd backend && go test ./internal/quotareset -count=1
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit adapters and routing**
+Evidence (2026-07-14): implemented the neutral notification contract, explicit
+adapter registry, schema-version 2 generic renderer, bounded Enterprise WeChat
+Markdown renderer, explicit-channel webhook delivery, immutable workflow
+context construction, event routing, coverage metadata, and the concrete test
+result contract. The exact focused command passed, followed by `cd backend &&
+go test ./internal/quotareset -count=1` and `cd backend && go test ./cmd/server
+./internal/quotareset -count=1`.
+
+#### Self-review follow-up (2026-07-14)
+
+- [x] Add and verify a RED regression for resolvable current-admin fallback recipients.
+
+Evidence: `cd backend && go test ./internal/quotareset -run
+'^TestWorkflowAdminFallbackUsesOnlyResolvableCurrentAdminRecipients$' -count=1`
+failed because the context included both the resolvable admin and an admin with
+no Enterprise WeChat identity; it passed after filtering only admin-fallback
+activation/cancellation recipients. Reset-failure routing still includes all
+current admins before deduplication.
+
+- [x] Add and verify a RED regression for nested webhook query-string redaction.
+
+Evidence: `cd backend && go test ./internal/quotareset -run
+'^TestWebhookNotifierRedactsQueryStringFromDeliveryErrors$' -count=1` failed
+because the wrapped transport error retained `?key=synthetic-test-key`; it
+passed after sanitizing wrapped request, transport, and response errors while
+preserving error unwrapping.
+
+- [x] Run final Task 7 backend and hygiene verification.
+
+Evidence: the exact focused Task 7 command, `cd backend && go test
+./internal/quotareset -count=1`, `cd backend && go test ./cmd/server
+./internal/quotareset -count=1`, `cd backend && go test ./... -count=1`, `cd
+backend && go vet ./...`, `git diff --check`, gofmt inspection, legacy-symbol
+scan, synthetic robot-key scan, recipient-metadata scan, and TODO/FIXME scan all
+passed.
+
+- [x] **Step 9: Commit adapters and routing**
 
 ```bash
 git add backend/internal/quotareset
 git commit -m "feat(backend): notify quota reset workflow approvers"
 ```
+
+Evidence (2026-07-14): committed the Task 7 production and test changes as
+`f9d4e7d` (`feat(backend): notify quota reset workflow approvers`).
 
 ---
 
