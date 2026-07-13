@@ -13,20 +13,26 @@ type QuotaResetRequest struct {
 
 func (QuotaResetRequest) Fields() []ent.Field {
 	return []ent.Field{
-		field.Int("requester_user_id"),
-		field.Int64("requester_relay_user_id"),
-		field.Int("provider_id"),
-		field.String("group_id").NotEmpty(),
-		field.String("group_name").Default(""),
-		field.String("group_platform").Default(""),
-		field.String("reason").NotEmpty(),
-		field.Int("workflow_version").Default(1),
+		field.Int("requester_user_id").Immutable(),
+		field.Int64("requester_relay_user_id").Immutable(),
+		field.Int("provider_id").Immutable(),
+		field.String("group_id").NotEmpty().Immutable(),
+		field.String("group_name").Default("").Immutable(),
+		field.String("group_platform").Default("").Immutable(),
+		field.String("reason").NotEmpty().Immutable(),
+		field.Int("workflow_version").Default(1).Immutable(),
 		field.Int("current_node_id").Optional().Nillable(),
 		field.Int("workflow_completed_by_decision_id").Optional().Nillable(),
-		field.String("requester_display_name_snapshot").Default(""),
-		field.String("requester_email_snapshot").Default(""),
-		field.JSON("requester_department_paths", []string{}).Optional(),
-		field.JSON("requester_notification_ids", map[string]string{}).Optional(),
+		field.String("requester_display_name_snapshot").Default("").Immutable(),
+		field.String("requester_email_snapshot").Default("").Immutable(),
+		validatedQuotaResetJSONField(
+			field.JSON("requester_department_paths", []string{}).Default(newQuotaResetSlice[string]).Immutable(),
+			validateQuotaResetSlice[string],
+		),
+		validatedQuotaResetJSONField(
+			field.JSON("requester_notification_ids", map[string]string{}).Default(newQuotaResetMap[string, string]).Immutable(),
+			validateQuotaResetMap[string, string],
+		),
 		field.Enum("status").Values(
 			"pending",
 			"approved_resetting",
@@ -35,8 +41,14 @@ func (QuotaResetRequest) Fields() []ent.Field {
 			"rejected",
 			"cancelled",
 		).Default("pending"),
-		field.JSON("resolved_approver_user_ids", []int{}).Optional(),
-		field.JSON("matched_department_paths", []map[string]any{}).Optional(),
+		validatedQuotaResetJSONField(
+			field.JSON("resolved_approver_user_ids", []int{}).Default(newQuotaResetSlice[int]).Immutable(),
+			validateQuotaResetSlice[int],
+		),
+		validatedQuotaResetJSONField(
+			field.JSON("matched_department_paths", []map[string]any{}).Default(newQuotaResetSlice[map[string]any]).Immutable(),
+			validateQuotaResetMapSlice,
+		),
 		field.Int("approved_by_user_id").Optional().Nillable(),
 		field.Int("rejected_by_user_id").Optional().Nillable(),
 		field.String("decision_reason").Default(""),
@@ -44,7 +56,7 @@ func (QuotaResetRequest) Fields() []ent.Field {
 		field.String("reset_error").Default(""),
 		field.Time("reset_started_at").Optional().Nillable(),
 		field.Time("reset_completed_at").Optional().Nillable(),
-		field.Time("created_at").Default(timeNow),
+		field.Time("created_at").Default(timeNow).Immutable(),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
 	}
 }

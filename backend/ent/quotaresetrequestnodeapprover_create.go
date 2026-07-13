@@ -136,11 +136,11 @@ func (qrrnac *QuotaResetRequestNodeApproverCreate) defaults() {
 		qrrnac.mutation.SetEmail(v)
 	}
 	if _, ok := qrrnac.mutation.SourceDepartmentExternalIds(); !ok {
-		v := quotaresetrequestnodeapprover.DefaultSourceDepartmentExternalIds
+		v := quotaresetrequestnodeapprover.DefaultSourceDepartmentExternalIds()
 		qrrnac.mutation.SetSourceDepartmentExternalIds(v)
 	}
 	if _, ok := qrrnac.mutation.NotificationIds(); !ok {
-		v := quotaresetrequestnodeapprover.DefaultNotificationIds
+		v := quotaresetrequestnodeapprover.DefaultNotificationIds()
 		qrrnac.mutation.SetNotificationIds(v)
 	}
 	if _, ok := qrrnac.mutation.CreatedAt(); !ok {

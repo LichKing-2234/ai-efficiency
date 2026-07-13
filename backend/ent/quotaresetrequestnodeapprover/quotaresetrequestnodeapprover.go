@@ -63,11 +63,11 @@ var (
 	// DefaultEmail holds the default value on creation for the "email" field.
 	DefaultEmail string
 	// DefaultSourceDepartmentExternalIds holds the default value on creation for the "source_department_external_ids" field.
-	DefaultSourceDepartmentExternalIds []string
+	DefaultSourceDepartmentExternalIds func() []string
 	// SourceDepartmentExternalIdsValidator is a validator for the "source_department_external_ids" field. It is called by the builders before save.
 	SourceDepartmentExternalIdsValidator func([]string) error
 	// DefaultNotificationIds holds the default value on creation for the "notification_ids" field.
-	DefaultNotificationIds map[string]string
+	DefaultNotificationIds func() map[string]string
 	// NotificationIdsValidator is a validator for the "notification_ids" field. It is called by the builders before save.
 	NotificationIdsValidator func(map[string]string) error
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.

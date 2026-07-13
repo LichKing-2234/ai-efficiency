@@ -163,7 +163,7 @@ func createWorkItemsUser(t *testing.T, ctx context.Context, client *ent.Client, 
 
 func createWorkItemsQuotaRequest(t *testing.T, ctx context.Context, client *ent.Client, requesterUserID int, requesterRelayUserID int64, providerID int, groupID string, status quotaresetrequest.Status, approverIDs []int) *ent.QuotaResetRequest {
 	t.Helper()
-	request, err := client.QuotaResetRequest.Create().
+	create := client.QuotaResetRequest.Create().
 		SetRequesterUserID(requesterUserID).
 		SetRequesterRelayUserID(requesterRelayUserID).
 		SetProviderID(providerID).
@@ -172,9 +172,11 @@ func createWorkItemsQuotaRequest(t *testing.T, ctx context.Context, client *ent.
 		SetGroupPlatform("openai").
 		SetReason("Need reset for a build investigation").
 		SetStatus(status).
-		SetResolvedApproverUserIds(approverIDs).
-		SetMatchedDepartmentPaths([]map[string]any{}).
-		Save(ctx)
+		SetMatchedDepartmentPaths([]map[string]any{})
+	if approverIDs != nil {
+		create.SetResolvedApproverUserIds(approverIDs)
+	}
+	request, err := create.Save(ctx)
 	if err != nil {
 		t.Fatalf("create quota request %s: %v", groupID, err)
 	}

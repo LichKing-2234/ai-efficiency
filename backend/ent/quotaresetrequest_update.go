@@ -10,7 +10,6 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -26,146 +25,6 @@ type QuotaResetRequestUpdate struct {
 // Where appends a list predicates to the QuotaResetRequestUpdate builder.
 func (qrru *QuotaResetRequestUpdate) Where(ps ...predicate.QuotaResetRequest) *QuotaResetRequestUpdate {
 	qrru.mutation.Where(ps...)
-	return qrru
-}
-
-// SetRequesterUserID sets the "requester_user_id" field.
-func (qrru *QuotaResetRequestUpdate) SetRequesterUserID(i int) *QuotaResetRequestUpdate {
-	qrru.mutation.ResetRequesterUserID()
-	qrru.mutation.SetRequesterUserID(i)
-	return qrru
-}
-
-// SetNillableRequesterUserID sets the "requester_user_id" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableRequesterUserID(i *int) *QuotaResetRequestUpdate {
-	if i != nil {
-		qrru.SetRequesterUserID(*i)
-	}
-	return qrru
-}
-
-// AddRequesterUserID adds i to the "requester_user_id" field.
-func (qrru *QuotaResetRequestUpdate) AddRequesterUserID(i int) *QuotaResetRequestUpdate {
-	qrru.mutation.AddRequesterUserID(i)
-	return qrru
-}
-
-// SetRequesterRelayUserID sets the "requester_relay_user_id" field.
-func (qrru *QuotaResetRequestUpdate) SetRequesterRelayUserID(i int64) *QuotaResetRequestUpdate {
-	qrru.mutation.ResetRequesterRelayUserID()
-	qrru.mutation.SetRequesterRelayUserID(i)
-	return qrru
-}
-
-// SetNillableRequesterRelayUserID sets the "requester_relay_user_id" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableRequesterRelayUserID(i *int64) *QuotaResetRequestUpdate {
-	if i != nil {
-		qrru.SetRequesterRelayUserID(*i)
-	}
-	return qrru
-}
-
-// AddRequesterRelayUserID adds i to the "requester_relay_user_id" field.
-func (qrru *QuotaResetRequestUpdate) AddRequesterRelayUserID(i int64) *QuotaResetRequestUpdate {
-	qrru.mutation.AddRequesterRelayUserID(i)
-	return qrru
-}
-
-// SetProviderID sets the "provider_id" field.
-func (qrru *QuotaResetRequestUpdate) SetProviderID(i int) *QuotaResetRequestUpdate {
-	qrru.mutation.ResetProviderID()
-	qrru.mutation.SetProviderID(i)
-	return qrru
-}
-
-// SetNillableProviderID sets the "provider_id" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableProviderID(i *int) *QuotaResetRequestUpdate {
-	if i != nil {
-		qrru.SetProviderID(*i)
-	}
-	return qrru
-}
-
-// AddProviderID adds i to the "provider_id" field.
-func (qrru *QuotaResetRequestUpdate) AddProviderID(i int) *QuotaResetRequestUpdate {
-	qrru.mutation.AddProviderID(i)
-	return qrru
-}
-
-// SetGroupID sets the "group_id" field.
-func (qrru *QuotaResetRequestUpdate) SetGroupID(s string) *QuotaResetRequestUpdate {
-	qrru.mutation.SetGroupID(s)
-	return qrru
-}
-
-// SetNillableGroupID sets the "group_id" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableGroupID(s *string) *QuotaResetRequestUpdate {
-	if s != nil {
-		qrru.SetGroupID(*s)
-	}
-	return qrru
-}
-
-// SetGroupName sets the "group_name" field.
-func (qrru *QuotaResetRequestUpdate) SetGroupName(s string) *QuotaResetRequestUpdate {
-	qrru.mutation.SetGroupName(s)
-	return qrru
-}
-
-// SetNillableGroupName sets the "group_name" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableGroupName(s *string) *QuotaResetRequestUpdate {
-	if s != nil {
-		qrru.SetGroupName(*s)
-	}
-	return qrru
-}
-
-// SetGroupPlatform sets the "group_platform" field.
-func (qrru *QuotaResetRequestUpdate) SetGroupPlatform(s string) *QuotaResetRequestUpdate {
-	qrru.mutation.SetGroupPlatform(s)
-	return qrru
-}
-
-// SetNillableGroupPlatform sets the "group_platform" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableGroupPlatform(s *string) *QuotaResetRequestUpdate {
-	if s != nil {
-		qrru.SetGroupPlatform(*s)
-	}
-	return qrru
-}
-
-// SetReason sets the "reason" field.
-func (qrru *QuotaResetRequestUpdate) SetReason(s string) *QuotaResetRequestUpdate {
-	qrru.mutation.SetReason(s)
-	return qrru
-}
-
-// SetNillableReason sets the "reason" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableReason(s *string) *QuotaResetRequestUpdate {
-	if s != nil {
-		qrru.SetReason(*s)
-	}
-	return qrru
-}
-
-// SetWorkflowVersion sets the "workflow_version" field.
-func (qrru *QuotaResetRequestUpdate) SetWorkflowVersion(i int) *QuotaResetRequestUpdate {
-	qrru.mutation.ResetWorkflowVersion()
-	qrru.mutation.SetWorkflowVersion(i)
-	return qrru
-}
-
-// SetNillableWorkflowVersion sets the "workflow_version" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableWorkflowVersion(i *int) *QuotaResetRequestUpdate {
-	if i != nil {
-		qrru.SetWorkflowVersion(*i)
-	}
-	return qrru
-}
-
-// AddWorkflowVersion adds i to the "workflow_version" field.
-func (qrru *QuotaResetRequestUpdate) AddWorkflowVersion(i int) *QuotaResetRequestUpdate {
-	qrru.mutation.AddWorkflowVersion(i)
 	return qrru
 }
 
@@ -223,64 +82,6 @@ func (qrru *QuotaResetRequestUpdate) ClearWorkflowCompletedByDecisionID() *Quota
 	return qrru
 }
 
-// SetRequesterDisplayNameSnapshot sets the "requester_display_name_snapshot" field.
-func (qrru *QuotaResetRequestUpdate) SetRequesterDisplayNameSnapshot(s string) *QuotaResetRequestUpdate {
-	qrru.mutation.SetRequesterDisplayNameSnapshot(s)
-	return qrru
-}
-
-// SetNillableRequesterDisplayNameSnapshot sets the "requester_display_name_snapshot" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableRequesterDisplayNameSnapshot(s *string) *QuotaResetRequestUpdate {
-	if s != nil {
-		qrru.SetRequesterDisplayNameSnapshot(*s)
-	}
-	return qrru
-}
-
-// SetRequesterEmailSnapshot sets the "requester_email_snapshot" field.
-func (qrru *QuotaResetRequestUpdate) SetRequesterEmailSnapshot(s string) *QuotaResetRequestUpdate {
-	qrru.mutation.SetRequesterEmailSnapshot(s)
-	return qrru
-}
-
-// SetNillableRequesterEmailSnapshot sets the "requester_email_snapshot" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableRequesterEmailSnapshot(s *string) *QuotaResetRequestUpdate {
-	if s != nil {
-		qrru.SetRequesterEmailSnapshot(*s)
-	}
-	return qrru
-}
-
-// SetRequesterDepartmentPaths sets the "requester_department_paths" field.
-func (qrru *QuotaResetRequestUpdate) SetRequesterDepartmentPaths(s []string) *QuotaResetRequestUpdate {
-	qrru.mutation.SetRequesterDepartmentPaths(s)
-	return qrru
-}
-
-// AppendRequesterDepartmentPaths appends s to the "requester_department_paths" field.
-func (qrru *QuotaResetRequestUpdate) AppendRequesterDepartmentPaths(s []string) *QuotaResetRequestUpdate {
-	qrru.mutation.AppendRequesterDepartmentPaths(s)
-	return qrru
-}
-
-// ClearRequesterDepartmentPaths clears the value of the "requester_department_paths" field.
-func (qrru *QuotaResetRequestUpdate) ClearRequesterDepartmentPaths() *QuotaResetRequestUpdate {
-	qrru.mutation.ClearRequesterDepartmentPaths()
-	return qrru
-}
-
-// SetRequesterNotificationIds sets the "requester_notification_ids" field.
-func (qrru *QuotaResetRequestUpdate) SetRequesterNotificationIds(m map[string]string) *QuotaResetRequestUpdate {
-	qrru.mutation.SetRequesterNotificationIds(m)
-	return qrru
-}
-
-// ClearRequesterNotificationIds clears the value of the "requester_notification_ids" field.
-func (qrru *QuotaResetRequestUpdate) ClearRequesterNotificationIds() *QuotaResetRequestUpdate {
-	qrru.mutation.ClearRequesterNotificationIds()
-	return qrru
-}
-
 // SetStatus sets the "status" field.
 func (qrru *QuotaResetRequestUpdate) SetStatus(q quotaresetrequest.Status) *QuotaResetRequestUpdate {
 	qrru.mutation.SetStatus(q)
@@ -292,42 +93,6 @@ func (qrru *QuotaResetRequestUpdate) SetNillableStatus(q *quotaresetrequest.Stat
 	if q != nil {
 		qrru.SetStatus(*q)
 	}
-	return qrru
-}
-
-// SetResolvedApproverUserIds sets the "resolved_approver_user_ids" field.
-func (qrru *QuotaResetRequestUpdate) SetResolvedApproverUserIds(i []int) *QuotaResetRequestUpdate {
-	qrru.mutation.SetResolvedApproverUserIds(i)
-	return qrru
-}
-
-// AppendResolvedApproverUserIds appends i to the "resolved_approver_user_ids" field.
-func (qrru *QuotaResetRequestUpdate) AppendResolvedApproverUserIds(i []int) *QuotaResetRequestUpdate {
-	qrru.mutation.AppendResolvedApproverUserIds(i)
-	return qrru
-}
-
-// ClearResolvedApproverUserIds clears the value of the "resolved_approver_user_ids" field.
-func (qrru *QuotaResetRequestUpdate) ClearResolvedApproverUserIds() *QuotaResetRequestUpdate {
-	qrru.mutation.ClearResolvedApproverUserIds()
-	return qrru
-}
-
-// SetMatchedDepartmentPaths sets the "matched_department_paths" field.
-func (qrru *QuotaResetRequestUpdate) SetMatchedDepartmentPaths(m []map[string]interface{}) *QuotaResetRequestUpdate {
-	qrru.mutation.SetMatchedDepartmentPaths(m)
-	return qrru
-}
-
-// AppendMatchedDepartmentPaths appends m to the "matched_department_paths" field.
-func (qrru *QuotaResetRequestUpdate) AppendMatchedDepartmentPaths(m []map[string]interface{}) *QuotaResetRequestUpdate {
-	qrru.mutation.AppendMatchedDepartmentPaths(m)
-	return qrru
-}
-
-// ClearMatchedDepartmentPaths clears the value of the "matched_department_paths" field.
-func (qrru *QuotaResetRequestUpdate) ClearMatchedDepartmentPaths() *QuotaResetRequestUpdate {
-	qrru.mutation.ClearMatchedDepartmentPaths()
 	return qrru
 }
 
@@ -473,20 +238,6 @@ func (qrru *QuotaResetRequestUpdate) ClearResetCompletedAt() *QuotaResetRequestU
 	return qrru
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (qrru *QuotaResetRequestUpdate) SetCreatedAt(t time.Time) *QuotaResetRequestUpdate {
-	qrru.mutation.SetCreatedAt(t)
-	return qrru
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (qrru *QuotaResetRequestUpdate) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestUpdate {
-	if t != nil {
-		qrru.SetCreatedAt(*t)
-	}
-	return qrru
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (qrru *QuotaResetRequestUpdate) SetUpdatedAt(t time.Time) *QuotaResetRequestUpdate {
 	qrru.mutation.SetUpdatedAt(t)
@@ -536,16 +287,6 @@ func (qrru *QuotaResetRequestUpdate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (qrru *QuotaResetRequestUpdate) check() error {
-	if v, ok := qrru.mutation.GroupID(); ok {
-		if err := quotaresetrequest.GroupIDValidator(v); err != nil {
-			return &ValidationError{Name: "group_id", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.group_id": %w`, err)}
-		}
-	}
-	if v, ok := qrru.mutation.Reason(); ok {
-		if err := quotaresetrequest.ReasonValidator(v); err != nil {
-			return &ValidationError{Name: "reason", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.reason": %w`, err)}
-		}
-	}
 	if v, ok := qrru.mutation.Status(); ok {
 		if err := quotaresetrequest.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.status": %w`, err)}
@@ -566,42 +307,6 @@ func (qrru *QuotaResetRequestUpdate) sqlSave(ctx context.Context) (n int, err er
 			}
 		}
 	}
-	if value, ok := qrru.mutation.RequesterUserID(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterUserID, field.TypeInt, value)
-	}
-	if value, ok := qrru.mutation.AddedRequesterUserID(); ok {
-		_spec.AddField(quotaresetrequest.FieldRequesterUserID, field.TypeInt, value)
-	}
-	if value, ok := qrru.mutation.RequesterRelayUserID(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterRelayUserID, field.TypeInt64, value)
-	}
-	if value, ok := qrru.mutation.AddedRequesterRelayUserID(); ok {
-		_spec.AddField(quotaresetrequest.FieldRequesterRelayUserID, field.TypeInt64, value)
-	}
-	if value, ok := qrru.mutation.ProviderID(); ok {
-		_spec.SetField(quotaresetrequest.FieldProviderID, field.TypeInt, value)
-	}
-	if value, ok := qrru.mutation.AddedProviderID(); ok {
-		_spec.AddField(quotaresetrequest.FieldProviderID, field.TypeInt, value)
-	}
-	if value, ok := qrru.mutation.GroupID(); ok {
-		_spec.SetField(quotaresetrequest.FieldGroupID, field.TypeString, value)
-	}
-	if value, ok := qrru.mutation.GroupName(); ok {
-		_spec.SetField(quotaresetrequest.FieldGroupName, field.TypeString, value)
-	}
-	if value, ok := qrru.mutation.GroupPlatform(); ok {
-		_spec.SetField(quotaresetrequest.FieldGroupPlatform, field.TypeString, value)
-	}
-	if value, ok := qrru.mutation.Reason(); ok {
-		_spec.SetField(quotaresetrequest.FieldReason, field.TypeString, value)
-	}
-	if value, ok := qrru.mutation.WorkflowVersion(); ok {
-		_spec.SetField(quotaresetrequest.FieldWorkflowVersion, field.TypeInt, value)
-	}
-	if value, ok := qrru.mutation.AddedWorkflowVersion(); ok {
-		_spec.AddField(quotaresetrequest.FieldWorkflowVersion, field.TypeInt, value)
-	}
 	if value, ok := qrru.mutation.CurrentNodeID(); ok {
 		_spec.SetField(quotaresetrequest.FieldCurrentNodeID, field.TypeInt, value)
 	}
@@ -620,53 +325,8 @@ func (qrru *QuotaResetRequestUpdate) sqlSave(ctx context.Context) (n int, err er
 	if qrru.mutation.WorkflowCompletedByDecisionIDCleared() {
 		_spec.ClearField(quotaresetrequest.FieldWorkflowCompletedByDecisionID, field.TypeInt)
 	}
-	if value, ok := qrru.mutation.RequesterDisplayNameSnapshot(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterDisplayNameSnapshot, field.TypeString, value)
-	}
-	if value, ok := qrru.mutation.RequesterEmailSnapshot(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterEmailSnapshot, field.TypeString, value)
-	}
-	if value, ok := qrru.mutation.RequesterDepartmentPaths(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterDepartmentPaths, field.TypeJSON, value)
-	}
-	if value, ok := qrru.mutation.AppendedRequesterDepartmentPaths(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, quotaresetrequest.FieldRequesterDepartmentPaths, value)
-		})
-	}
-	if qrru.mutation.RequesterDepartmentPathsCleared() {
-		_spec.ClearField(quotaresetrequest.FieldRequesterDepartmentPaths, field.TypeJSON)
-	}
-	if value, ok := qrru.mutation.RequesterNotificationIds(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterNotificationIds, field.TypeJSON, value)
-	}
-	if qrru.mutation.RequesterNotificationIdsCleared() {
-		_spec.ClearField(quotaresetrequest.FieldRequesterNotificationIds, field.TypeJSON)
-	}
 	if value, ok := qrru.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequest.FieldStatus, field.TypeEnum, value)
-	}
-	if value, ok := qrru.mutation.ResolvedApproverUserIds(); ok {
-		_spec.SetField(quotaresetrequest.FieldResolvedApproverUserIds, field.TypeJSON, value)
-	}
-	if value, ok := qrru.mutation.AppendedResolvedApproverUserIds(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, quotaresetrequest.FieldResolvedApproverUserIds, value)
-		})
-	}
-	if qrru.mutation.ResolvedApproverUserIdsCleared() {
-		_spec.ClearField(quotaresetrequest.FieldResolvedApproverUserIds, field.TypeJSON)
-	}
-	if value, ok := qrru.mutation.MatchedDepartmentPaths(); ok {
-		_spec.SetField(quotaresetrequest.FieldMatchedDepartmentPaths, field.TypeJSON, value)
-	}
-	if value, ok := qrru.mutation.AppendedMatchedDepartmentPaths(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, quotaresetrequest.FieldMatchedDepartmentPaths, value)
-		})
-	}
-	if qrru.mutation.MatchedDepartmentPathsCleared() {
-		_spec.ClearField(quotaresetrequest.FieldMatchedDepartmentPaths, field.TypeJSON)
 	}
 	if value, ok := qrru.mutation.ApprovedByUserID(); ok {
 		_spec.SetField(quotaresetrequest.FieldApprovedByUserID, field.TypeInt, value)
@@ -710,9 +370,6 @@ func (qrru *QuotaResetRequestUpdate) sqlSave(ctx context.Context) (n int, err er
 	if qrru.mutation.ResetCompletedAtCleared() {
 		_spec.ClearField(quotaresetrequest.FieldResetCompletedAt, field.TypeTime)
 	}
-	if value, ok := qrru.mutation.CreatedAt(); ok {
-		_spec.SetField(quotaresetrequest.FieldCreatedAt, field.TypeTime, value)
-	}
 	if value, ok := qrru.mutation.UpdatedAt(); ok {
 		_spec.SetField(quotaresetrequest.FieldUpdatedAt, field.TypeTime, value)
 	}
@@ -734,146 +391,6 @@ type QuotaResetRequestUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *QuotaResetRequestMutation
-}
-
-// SetRequesterUserID sets the "requester_user_id" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetRequesterUserID(i int) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.ResetRequesterUserID()
-	qrruo.mutation.SetRequesterUserID(i)
-	return qrruo
-}
-
-// SetNillableRequesterUserID sets the "requester_user_id" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableRequesterUserID(i *int) *QuotaResetRequestUpdateOne {
-	if i != nil {
-		qrruo.SetRequesterUserID(*i)
-	}
-	return qrruo
-}
-
-// AddRequesterUserID adds i to the "requester_user_id" field.
-func (qrruo *QuotaResetRequestUpdateOne) AddRequesterUserID(i int) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.AddRequesterUserID(i)
-	return qrruo
-}
-
-// SetRequesterRelayUserID sets the "requester_relay_user_id" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetRequesterRelayUserID(i int64) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.ResetRequesterRelayUserID()
-	qrruo.mutation.SetRequesterRelayUserID(i)
-	return qrruo
-}
-
-// SetNillableRequesterRelayUserID sets the "requester_relay_user_id" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableRequesterRelayUserID(i *int64) *QuotaResetRequestUpdateOne {
-	if i != nil {
-		qrruo.SetRequesterRelayUserID(*i)
-	}
-	return qrruo
-}
-
-// AddRequesterRelayUserID adds i to the "requester_relay_user_id" field.
-func (qrruo *QuotaResetRequestUpdateOne) AddRequesterRelayUserID(i int64) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.AddRequesterRelayUserID(i)
-	return qrruo
-}
-
-// SetProviderID sets the "provider_id" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetProviderID(i int) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.ResetProviderID()
-	qrruo.mutation.SetProviderID(i)
-	return qrruo
-}
-
-// SetNillableProviderID sets the "provider_id" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableProviderID(i *int) *QuotaResetRequestUpdateOne {
-	if i != nil {
-		qrruo.SetProviderID(*i)
-	}
-	return qrruo
-}
-
-// AddProviderID adds i to the "provider_id" field.
-func (qrruo *QuotaResetRequestUpdateOne) AddProviderID(i int) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.AddProviderID(i)
-	return qrruo
-}
-
-// SetGroupID sets the "group_id" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetGroupID(s string) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetGroupID(s)
-	return qrruo
-}
-
-// SetNillableGroupID sets the "group_id" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableGroupID(s *string) *QuotaResetRequestUpdateOne {
-	if s != nil {
-		qrruo.SetGroupID(*s)
-	}
-	return qrruo
-}
-
-// SetGroupName sets the "group_name" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetGroupName(s string) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetGroupName(s)
-	return qrruo
-}
-
-// SetNillableGroupName sets the "group_name" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableGroupName(s *string) *QuotaResetRequestUpdateOne {
-	if s != nil {
-		qrruo.SetGroupName(*s)
-	}
-	return qrruo
-}
-
-// SetGroupPlatform sets the "group_platform" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetGroupPlatform(s string) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetGroupPlatform(s)
-	return qrruo
-}
-
-// SetNillableGroupPlatform sets the "group_platform" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableGroupPlatform(s *string) *QuotaResetRequestUpdateOne {
-	if s != nil {
-		qrruo.SetGroupPlatform(*s)
-	}
-	return qrruo
-}
-
-// SetReason sets the "reason" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetReason(s string) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetReason(s)
-	return qrruo
-}
-
-// SetNillableReason sets the "reason" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableReason(s *string) *QuotaResetRequestUpdateOne {
-	if s != nil {
-		qrruo.SetReason(*s)
-	}
-	return qrruo
-}
-
-// SetWorkflowVersion sets the "workflow_version" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetWorkflowVersion(i int) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.ResetWorkflowVersion()
-	qrruo.mutation.SetWorkflowVersion(i)
-	return qrruo
-}
-
-// SetNillableWorkflowVersion sets the "workflow_version" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableWorkflowVersion(i *int) *QuotaResetRequestUpdateOne {
-	if i != nil {
-		qrruo.SetWorkflowVersion(*i)
-	}
-	return qrruo
-}
-
-// AddWorkflowVersion adds i to the "workflow_version" field.
-func (qrruo *QuotaResetRequestUpdateOne) AddWorkflowVersion(i int) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.AddWorkflowVersion(i)
-	return qrruo
 }
 
 // SetCurrentNodeID sets the "current_node_id" field.
@@ -930,64 +447,6 @@ func (qrruo *QuotaResetRequestUpdateOne) ClearWorkflowCompletedByDecisionID() *Q
 	return qrruo
 }
 
-// SetRequesterDisplayNameSnapshot sets the "requester_display_name_snapshot" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetRequesterDisplayNameSnapshot(s string) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetRequesterDisplayNameSnapshot(s)
-	return qrruo
-}
-
-// SetNillableRequesterDisplayNameSnapshot sets the "requester_display_name_snapshot" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableRequesterDisplayNameSnapshot(s *string) *QuotaResetRequestUpdateOne {
-	if s != nil {
-		qrruo.SetRequesterDisplayNameSnapshot(*s)
-	}
-	return qrruo
-}
-
-// SetRequesterEmailSnapshot sets the "requester_email_snapshot" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetRequesterEmailSnapshot(s string) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetRequesterEmailSnapshot(s)
-	return qrruo
-}
-
-// SetNillableRequesterEmailSnapshot sets the "requester_email_snapshot" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableRequesterEmailSnapshot(s *string) *QuotaResetRequestUpdateOne {
-	if s != nil {
-		qrruo.SetRequesterEmailSnapshot(*s)
-	}
-	return qrruo
-}
-
-// SetRequesterDepartmentPaths sets the "requester_department_paths" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetRequesterDepartmentPaths(s []string) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetRequesterDepartmentPaths(s)
-	return qrruo
-}
-
-// AppendRequesterDepartmentPaths appends s to the "requester_department_paths" field.
-func (qrruo *QuotaResetRequestUpdateOne) AppendRequesterDepartmentPaths(s []string) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.AppendRequesterDepartmentPaths(s)
-	return qrruo
-}
-
-// ClearRequesterDepartmentPaths clears the value of the "requester_department_paths" field.
-func (qrruo *QuotaResetRequestUpdateOne) ClearRequesterDepartmentPaths() *QuotaResetRequestUpdateOne {
-	qrruo.mutation.ClearRequesterDepartmentPaths()
-	return qrruo
-}
-
-// SetRequesterNotificationIds sets the "requester_notification_ids" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetRequesterNotificationIds(m map[string]string) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetRequesterNotificationIds(m)
-	return qrruo
-}
-
-// ClearRequesterNotificationIds clears the value of the "requester_notification_ids" field.
-func (qrruo *QuotaResetRequestUpdateOne) ClearRequesterNotificationIds() *QuotaResetRequestUpdateOne {
-	qrruo.mutation.ClearRequesterNotificationIds()
-	return qrruo
-}
-
 // SetStatus sets the "status" field.
 func (qrruo *QuotaResetRequestUpdateOne) SetStatus(q quotaresetrequest.Status) *QuotaResetRequestUpdateOne {
 	qrruo.mutation.SetStatus(q)
@@ -999,42 +458,6 @@ func (qrruo *QuotaResetRequestUpdateOne) SetNillableStatus(q *quotaresetrequest.
 	if q != nil {
 		qrruo.SetStatus(*q)
 	}
-	return qrruo
-}
-
-// SetResolvedApproverUserIds sets the "resolved_approver_user_ids" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetResolvedApproverUserIds(i []int) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetResolvedApproverUserIds(i)
-	return qrruo
-}
-
-// AppendResolvedApproverUserIds appends i to the "resolved_approver_user_ids" field.
-func (qrruo *QuotaResetRequestUpdateOne) AppendResolvedApproverUserIds(i []int) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.AppendResolvedApproverUserIds(i)
-	return qrruo
-}
-
-// ClearResolvedApproverUserIds clears the value of the "resolved_approver_user_ids" field.
-func (qrruo *QuotaResetRequestUpdateOne) ClearResolvedApproverUserIds() *QuotaResetRequestUpdateOne {
-	qrruo.mutation.ClearResolvedApproverUserIds()
-	return qrruo
-}
-
-// SetMatchedDepartmentPaths sets the "matched_department_paths" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetMatchedDepartmentPaths(m []map[string]interface{}) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetMatchedDepartmentPaths(m)
-	return qrruo
-}
-
-// AppendMatchedDepartmentPaths appends m to the "matched_department_paths" field.
-func (qrruo *QuotaResetRequestUpdateOne) AppendMatchedDepartmentPaths(m []map[string]interface{}) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.AppendMatchedDepartmentPaths(m)
-	return qrruo
-}
-
-// ClearMatchedDepartmentPaths clears the value of the "matched_department_paths" field.
-func (qrruo *QuotaResetRequestUpdateOne) ClearMatchedDepartmentPaths() *QuotaResetRequestUpdateOne {
-	qrruo.mutation.ClearMatchedDepartmentPaths()
 	return qrruo
 }
 
@@ -1180,20 +603,6 @@ func (qrruo *QuotaResetRequestUpdateOne) ClearResetCompletedAt() *QuotaResetRequ
 	return qrruo
 }
 
-// SetCreatedAt sets the "created_at" field.
-func (qrruo *QuotaResetRequestUpdateOne) SetCreatedAt(t time.Time) *QuotaResetRequestUpdateOne {
-	qrruo.mutation.SetCreatedAt(t)
-	return qrruo
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (qrruo *QuotaResetRequestUpdateOne) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestUpdateOne {
-	if t != nil {
-		qrruo.SetCreatedAt(*t)
-	}
-	return qrruo
-}
-
 // SetUpdatedAt sets the "updated_at" field.
 func (qrruo *QuotaResetRequestUpdateOne) SetUpdatedAt(t time.Time) *QuotaResetRequestUpdateOne {
 	qrruo.mutation.SetUpdatedAt(t)
@@ -1256,16 +665,6 @@ func (qrruo *QuotaResetRequestUpdateOne) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (qrruo *QuotaResetRequestUpdateOne) check() error {
-	if v, ok := qrruo.mutation.GroupID(); ok {
-		if err := quotaresetrequest.GroupIDValidator(v); err != nil {
-			return &ValidationError{Name: "group_id", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.group_id": %w`, err)}
-		}
-	}
-	if v, ok := qrruo.mutation.Reason(); ok {
-		if err := quotaresetrequest.ReasonValidator(v); err != nil {
-			return &ValidationError{Name: "reason", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.reason": %w`, err)}
-		}
-	}
 	if v, ok := qrruo.mutation.Status(); ok {
 		if err := quotaresetrequest.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.status": %w`, err)}
@@ -1303,42 +702,6 @@ func (qrruo *QuotaResetRequestUpdateOne) sqlSave(ctx context.Context) (_node *Qu
 			}
 		}
 	}
-	if value, ok := qrruo.mutation.RequesterUserID(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterUserID, field.TypeInt, value)
-	}
-	if value, ok := qrruo.mutation.AddedRequesterUserID(); ok {
-		_spec.AddField(quotaresetrequest.FieldRequesterUserID, field.TypeInt, value)
-	}
-	if value, ok := qrruo.mutation.RequesterRelayUserID(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterRelayUserID, field.TypeInt64, value)
-	}
-	if value, ok := qrruo.mutation.AddedRequesterRelayUserID(); ok {
-		_spec.AddField(quotaresetrequest.FieldRequesterRelayUserID, field.TypeInt64, value)
-	}
-	if value, ok := qrruo.mutation.ProviderID(); ok {
-		_spec.SetField(quotaresetrequest.FieldProviderID, field.TypeInt, value)
-	}
-	if value, ok := qrruo.mutation.AddedProviderID(); ok {
-		_spec.AddField(quotaresetrequest.FieldProviderID, field.TypeInt, value)
-	}
-	if value, ok := qrruo.mutation.GroupID(); ok {
-		_spec.SetField(quotaresetrequest.FieldGroupID, field.TypeString, value)
-	}
-	if value, ok := qrruo.mutation.GroupName(); ok {
-		_spec.SetField(quotaresetrequest.FieldGroupName, field.TypeString, value)
-	}
-	if value, ok := qrruo.mutation.GroupPlatform(); ok {
-		_spec.SetField(quotaresetrequest.FieldGroupPlatform, field.TypeString, value)
-	}
-	if value, ok := qrruo.mutation.Reason(); ok {
-		_spec.SetField(quotaresetrequest.FieldReason, field.TypeString, value)
-	}
-	if value, ok := qrruo.mutation.WorkflowVersion(); ok {
-		_spec.SetField(quotaresetrequest.FieldWorkflowVersion, field.TypeInt, value)
-	}
-	if value, ok := qrruo.mutation.AddedWorkflowVersion(); ok {
-		_spec.AddField(quotaresetrequest.FieldWorkflowVersion, field.TypeInt, value)
-	}
 	if value, ok := qrruo.mutation.CurrentNodeID(); ok {
 		_spec.SetField(quotaresetrequest.FieldCurrentNodeID, field.TypeInt, value)
 	}
@@ -1357,53 +720,8 @@ func (qrruo *QuotaResetRequestUpdateOne) sqlSave(ctx context.Context) (_node *Qu
 	if qrruo.mutation.WorkflowCompletedByDecisionIDCleared() {
 		_spec.ClearField(quotaresetrequest.FieldWorkflowCompletedByDecisionID, field.TypeInt)
 	}
-	if value, ok := qrruo.mutation.RequesterDisplayNameSnapshot(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterDisplayNameSnapshot, field.TypeString, value)
-	}
-	if value, ok := qrruo.mutation.RequesterEmailSnapshot(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterEmailSnapshot, field.TypeString, value)
-	}
-	if value, ok := qrruo.mutation.RequesterDepartmentPaths(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterDepartmentPaths, field.TypeJSON, value)
-	}
-	if value, ok := qrruo.mutation.AppendedRequesterDepartmentPaths(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, quotaresetrequest.FieldRequesterDepartmentPaths, value)
-		})
-	}
-	if qrruo.mutation.RequesterDepartmentPathsCleared() {
-		_spec.ClearField(quotaresetrequest.FieldRequesterDepartmentPaths, field.TypeJSON)
-	}
-	if value, ok := qrruo.mutation.RequesterNotificationIds(); ok {
-		_spec.SetField(quotaresetrequest.FieldRequesterNotificationIds, field.TypeJSON, value)
-	}
-	if qrruo.mutation.RequesterNotificationIdsCleared() {
-		_spec.ClearField(quotaresetrequest.FieldRequesterNotificationIds, field.TypeJSON)
-	}
 	if value, ok := qrruo.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequest.FieldStatus, field.TypeEnum, value)
-	}
-	if value, ok := qrruo.mutation.ResolvedApproverUserIds(); ok {
-		_spec.SetField(quotaresetrequest.FieldResolvedApproverUserIds, field.TypeJSON, value)
-	}
-	if value, ok := qrruo.mutation.AppendedResolvedApproverUserIds(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, quotaresetrequest.FieldResolvedApproverUserIds, value)
-		})
-	}
-	if qrruo.mutation.ResolvedApproverUserIdsCleared() {
-		_spec.ClearField(quotaresetrequest.FieldResolvedApproverUserIds, field.TypeJSON)
-	}
-	if value, ok := qrruo.mutation.MatchedDepartmentPaths(); ok {
-		_spec.SetField(quotaresetrequest.FieldMatchedDepartmentPaths, field.TypeJSON, value)
-	}
-	if value, ok := qrruo.mutation.AppendedMatchedDepartmentPaths(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, quotaresetrequest.FieldMatchedDepartmentPaths, value)
-		})
-	}
-	if qrruo.mutation.MatchedDepartmentPathsCleared() {
-		_spec.ClearField(quotaresetrequest.FieldMatchedDepartmentPaths, field.TypeJSON)
 	}
 	if value, ok := qrruo.mutation.ApprovedByUserID(); ok {
 		_spec.SetField(quotaresetrequest.FieldApprovedByUserID, field.TypeInt, value)
@@ -1446,9 +764,6 @@ func (qrruo *QuotaResetRequestUpdateOne) sqlSave(ctx context.Context) (_node *Qu
 	}
 	if qrruo.mutation.ResetCompletedAtCleared() {
 		_spec.ClearField(quotaresetrequest.FieldResetCompletedAt, field.TypeTime)
-	}
-	if value, ok := qrruo.mutation.CreatedAt(); ok {
-		_spec.SetField(quotaresetrequest.FieldCreatedAt, field.TypeTime, value)
 	}
 	if value, ok := qrruo.mutation.UpdatedAt(); ok {
 		_spec.SetField(quotaresetrequest.FieldUpdatedAt, field.TypeTime, value)

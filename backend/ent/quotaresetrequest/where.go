@@ -809,26 +809,6 @@ func RequesterEmailSnapshotContainsFold(v string) predicate.QuotaResetRequest {
 	return predicate.QuotaResetRequest(sql.FieldContainsFold(FieldRequesterEmailSnapshot, v))
 }
 
-// RequesterDepartmentPathsIsNil applies the IsNil predicate on the "requester_department_paths" field.
-func RequesterDepartmentPathsIsNil() predicate.QuotaResetRequest {
-	return predicate.QuotaResetRequest(sql.FieldIsNull(FieldRequesterDepartmentPaths))
-}
-
-// RequesterDepartmentPathsNotNil applies the NotNil predicate on the "requester_department_paths" field.
-func RequesterDepartmentPathsNotNil() predicate.QuotaResetRequest {
-	return predicate.QuotaResetRequest(sql.FieldNotNull(FieldRequesterDepartmentPaths))
-}
-
-// RequesterNotificationIdsIsNil applies the IsNil predicate on the "requester_notification_ids" field.
-func RequesterNotificationIdsIsNil() predicate.QuotaResetRequest {
-	return predicate.QuotaResetRequest(sql.FieldIsNull(FieldRequesterNotificationIds))
-}
-
-// RequesterNotificationIdsNotNil applies the NotNil predicate on the "requester_notification_ids" field.
-func RequesterNotificationIdsNotNil() predicate.QuotaResetRequest {
-	return predicate.QuotaResetRequest(sql.FieldNotNull(FieldRequesterNotificationIds))
-}
-
 // StatusEQ applies the EQ predicate on the "status" field.
 func StatusEQ(v Status) predicate.QuotaResetRequest {
 	return predicate.QuotaResetRequest(sql.FieldEQ(FieldStatus, v))
@@ -847,26 +827,6 @@ func StatusIn(vs ...Status) predicate.QuotaResetRequest {
 // StatusNotIn applies the NotIn predicate on the "status" field.
 func StatusNotIn(vs ...Status) predicate.QuotaResetRequest {
 	return predicate.QuotaResetRequest(sql.FieldNotIn(FieldStatus, vs...))
-}
-
-// ResolvedApproverUserIdsIsNil applies the IsNil predicate on the "resolved_approver_user_ids" field.
-func ResolvedApproverUserIdsIsNil() predicate.QuotaResetRequest {
-	return predicate.QuotaResetRequest(sql.FieldIsNull(FieldResolvedApproverUserIds))
-}
-
-// ResolvedApproverUserIdsNotNil applies the NotNil predicate on the "resolved_approver_user_ids" field.
-func ResolvedApproverUserIdsNotNil() predicate.QuotaResetRequest {
-	return predicate.QuotaResetRequest(sql.FieldNotNull(FieldResolvedApproverUserIds))
-}
-
-// MatchedDepartmentPathsIsNil applies the IsNil predicate on the "matched_department_paths" field.
-func MatchedDepartmentPathsIsNil() predicate.QuotaResetRequest {
-	return predicate.QuotaResetRequest(sql.FieldIsNull(FieldMatchedDepartmentPaths))
-}
-
-// MatchedDepartmentPathsNotNil applies the NotNil predicate on the "matched_department_paths" field.
-func MatchedDepartmentPathsNotNil() predicate.QuotaResetRequest {
-	return predicate.QuotaResetRequest(sql.FieldNotNull(FieldMatchedDepartmentPaths))
 }
 
 // ApprovedByUserIDEQ applies the EQ predicate on the "approved_by_user_id" field.

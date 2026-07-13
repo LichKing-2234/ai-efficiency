@@ -367,9 +367,25 @@ func (qrrc *QuotaResetRequestCreate) defaults() {
 		v := quotaresetrequest.DefaultRequesterEmailSnapshot
 		qrrc.mutation.SetRequesterEmailSnapshot(v)
 	}
+	if _, ok := qrrc.mutation.RequesterDepartmentPaths(); !ok {
+		v := quotaresetrequest.DefaultRequesterDepartmentPaths()
+		qrrc.mutation.SetRequesterDepartmentPaths(v)
+	}
+	if _, ok := qrrc.mutation.RequesterNotificationIds(); !ok {
+		v := quotaresetrequest.DefaultRequesterNotificationIds()
+		qrrc.mutation.SetRequesterNotificationIds(v)
+	}
 	if _, ok := qrrc.mutation.Status(); !ok {
 		v := quotaresetrequest.DefaultStatus
 		qrrc.mutation.SetStatus(v)
+	}
+	if _, ok := qrrc.mutation.ResolvedApproverUserIds(); !ok {
+		v := quotaresetrequest.DefaultResolvedApproverUserIds()
+		qrrc.mutation.SetResolvedApproverUserIds(v)
+	}
+	if _, ok := qrrc.mutation.MatchedDepartmentPaths(); !ok {
+		v := quotaresetrequest.DefaultMatchedDepartmentPaths()
+		qrrc.mutation.SetMatchedDepartmentPaths(v)
 	}
 	if _, ok := qrrc.mutation.DecisionReason(); !ok {
 		v := quotaresetrequest.DefaultDecisionReason
@@ -431,12 +447,44 @@ func (qrrc *QuotaResetRequestCreate) check() error {
 	if _, ok := qrrc.mutation.RequesterEmailSnapshot(); !ok {
 		return &ValidationError{Name: "requester_email_snapshot", err: errors.New(`ent: missing required field "QuotaResetRequest.requester_email_snapshot"`)}
 	}
+	if _, ok := qrrc.mutation.RequesterDepartmentPaths(); !ok {
+		return &ValidationError{Name: "requester_department_paths", err: errors.New(`ent: missing required field "QuotaResetRequest.requester_department_paths"`)}
+	}
+	if v, ok := qrrc.mutation.RequesterDepartmentPaths(); ok {
+		if err := quotaresetrequest.RequesterDepartmentPathsValidator(v); err != nil {
+			return &ValidationError{Name: "requester_department_paths", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.requester_department_paths": %w`, err)}
+		}
+	}
+	if _, ok := qrrc.mutation.RequesterNotificationIds(); !ok {
+		return &ValidationError{Name: "requester_notification_ids", err: errors.New(`ent: missing required field "QuotaResetRequest.requester_notification_ids"`)}
+	}
+	if v, ok := qrrc.mutation.RequesterNotificationIds(); ok {
+		if err := quotaresetrequest.RequesterNotificationIdsValidator(v); err != nil {
+			return &ValidationError{Name: "requester_notification_ids", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.requester_notification_ids": %w`, err)}
+		}
+	}
 	if _, ok := qrrc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "QuotaResetRequest.status"`)}
 	}
 	if v, ok := qrrc.mutation.Status(); ok {
 		if err := quotaresetrequest.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.status": %w`, err)}
+		}
+	}
+	if _, ok := qrrc.mutation.ResolvedApproverUserIds(); !ok {
+		return &ValidationError{Name: "resolved_approver_user_ids", err: errors.New(`ent: missing required field "QuotaResetRequest.resolved_approver_user_ids"`)}
+	}
+	if v, ok := qrrc.mutation.ResolvedApproverUserIds(); ok {
+		if err := quotaresetrequest.ResolvedApproverUserIdsValidator(v); err != nil {
+			return &ValidationError{Name: "resolved_approver_user_ids", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.resolved_approver_user_ids": %w`, err)}
+		}
+	}
+	if _, ok := qrrc.mutation.MatchedDepartmentPaths(); !ok {
+		return &ValidationError{Name: "matched_department_paths", err: errors.New(`ent: missing required field "QuotaResetRequest.matched_department_paths"`)}
+	}
+	if v, ok := qrrc.mutation.MatchedDepartmentPaths(); ok {
+		if err := quotaresetrequest.MatchedDepartmentPathsValidator(v); err != nil {
+			return &ValidationError{Name: "matched_department_paths", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.matched_department_paths": %w`, err)}
 		}
 	}
 	if _, ok := qrrc.mutation.DecisionReason(); !ok {

@@ -23,6 +23,7 @@
 - Create `backend/ent/schema/quota_reset_request_node.go`: immutable workflow-node snapshot and current state.
 - Create `backend/ent/schema/quota_reset_request_node_approver.go`: immutable normal-approver and notification-identity snapshot.
 - Create `backend/ent/schema/quota_reset_request_decision.go`: one durable manual decision per active node.
+- Create `backend/ent/schema/quota_reset_json.go`: fresh JSON default factories and shared snapshot validators.
 - Modify `backend/ent/schema/quota_reset_request.go`: workflow version, current-node pointer, completion decision, and requester identity snapshots.
 - Modify `backend/ent/schema/quota_reset_request_event.go`: node lifecycle event types.
 - Modify `backend/ent/schema/quota_reset_notification_setting.go`: explicit channel type, backfill marker, and template version.
@@ -109,10 +110,13 @@
 - Create: `backend/ent/schema/quota_reset_request_node.go`
 - Create: `backend/ent/schema/quota_reset_request_node_approver.go`
 - Create: `backend/ent/schema/quota_reset_request_decision.go`
+- Create: `backend/ent/schema/quota_reset_json.go`
 - Modify: `backend/ent/schema/quota_reset_request.go`
 - Modify: `backend/ent/schema/quota_reset_request_event.go`
 - Modify: `backend/ent/schema/quota_reset_notification_setting.go`
 - Create: `backend/internal/quotareset/schema_test.go`
+- Modify: `backend/internal/quotareset/service.go` and its test fixture so an absent legacy approver snapshot uses the schema default.
+- Modify: `backend/internal/workitems/service_test.go` so an absent legacy approver snapshot uses the schema default.
 - Generated: `backend/ent/*`
 
 - [x] **Step 1: Write the failing schema round-trip test**
@@ -155,6 +159,10 @@ func TestWorkflowSchemasRoundTrip(t *testing.T) {
 		SetLabel("Requester departments").
 		SetDepartmentSnapshots([]map[string]any{{"external_id": "department-alpha", "display_path": "Department Alpha"}}).
 		SetStatus(quotaresetrequestnode.StatusActive).SaveX(ctx)
+	activeRequest := client.QuotaResetRequest.UpdateOneID(request.ID).SetCurrentNodeID(node.ID).SaveX(ctx)
+	if activeRequest.CurrentNodeID == nil || *activeRequest.CurrentNodeID != node.ID {
+		t.Fatalf("active request current node id = %v, want %d", activeRequest.CurrentNodeID, node.ID)
+	}
 	client.QuotaResetRequestNodeApprover.Create().
 		SetRequestNodeID(node.ID).SetUserID(approver.ID).SetDisplayName("Bob").SetEmail("bob@example.org").
 		SetSource("configured").SetSourceDepartmentExternalIds([]string{"department-alpha"}).
@@ -263,7 +271,8 @@ func (QuotaResetApprovalChainNode) Indexes() []ent.Index {
 }
 ```
 
-Create `backend/ent/schema/quota_reset_request_node.go`:
+Create `backend/ent/schema/quota_reset_json.go` for the JSON builders in this
+task. Ent's JSON builder accepts a factory through `Default(factory)`:
 
 ```go
 package schema
@@ -271,6 +280,56 @@ package schema
 import (
 	"errors"
 
+	"entgo.io/ent"
+)
+
+func validatedQuotaResetJSONField[T any](jsonField ent.Field, validator func(T) error) ent.Field {
+	descriptor := jsonField.Descriptor()
+	descriptor.Validators = append(descriptor.Validators, validator)
+	return jsonField
+}
+
+func newQuotaResetSlice[T any]() []T {
+	return []T{}
+}
+
+func newQuotaResetMap[K comparable, V any]() map[K]V {
+	return map[K]V{}
+}
+
+func validateQuotaResetSlice[T any](values []T) error {
+	if values == nil {
+		return errors.New("JSON snapshot container must not be nil")
+	}
+	return nil
+}
+
+func validateQuotaResetMap[K comparable, V any](values map[K]V) error {
+	if values == nil {
+		return errors.New("JSON snapshot container must not be nil")
+	}
+	return nil
+}
+
+func validateQuotaResetMapSlice(values []map[string]any) error {
+	if err := validateQuotaResetSlice(values); err != nil {
+		return err
+	}
+	for _, value := range values {
+		if value == nil {
+			return errors.New("JSON snapshot must not contain nil map elements")
+		}
+	}
+	return nil
+}
+```
+
+Create `backend/ent/schema/quota_reset_request_node.go`:
+
+```go
+package schema
+
+import (
 	"entgo.io/ent"
 	entsql "entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
@@ -285,9 +344,9 @@ func (QuotaResetRequestNode) Fields() []ent.Field {
 		field.Int("position").NonNegative().Immutable(),
 		field.Enum("node_type").Values("requester_departments", "configured_department").Immutable(),
 		field.String("label").Default("").Immutable(),
-		validatedJSONField(
-			field.JSON("department_snapshots", []map[string]any{}).Default([]map[string]any{}).Immutable(),
-			validateDepartmentSnapshots,
+		validatedQuotaResetJSONField(
+			field.JSON("department_snapshots", []map[string]any{}).Default(newQuotaResetSlice[map[string]any]).Immutable(),
+			validateQuotaResetMapSlice,
 		),
 		field.Enum("status").Values("queued", "active", "approved", "satisfied_by_prior_approval", "skipped_no_approver", "rejected").Default("queued"),
 		field.Bool("admin_fallback_required").Default(false).Immutable(),
@@ -297,24 +356,6 @@ func (QuotaResetRequestNode) Fields() []ent.Field {
 		field.Time("created_at").Default(timeNow).Immutable(),
 		field.Time("updated_at").Default(timeNow).UpdateDefault(timeNow),
 	}
-}
-
-func validatedJSONField[T any](jsonField ent.Field, validator func(T) error) ent.Field {
-	descriptor := jsonField.Descriptor()
-	descriptor.Validators = append(descriptor.Validators, validator)
-	return jsonField
-}
-
-func validateDepartmentSnapshots(snapshots []map[string]any) error {
-	if snapshots == nil {
-		return errors.New("department snapshots must not be nil")
-	}
-	for _, snapshot := range snapshots {
-		if snapshot == nil {
-			return errors.New("department snapshots must not contain nil elements")
-		}
-	}
-	return nil
 }
 
 func (QuotaResetRequestNode) Indexes() []ent.Index {
@@ -335,8 +376,6 @@ Create `backend/ent/schema/quota_reset_request_node_approver.go`:
 package schema
 
 import (
-	"errors"
-
 	"entgo.io/ent"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
@@ -351,30 +390,16 @@ func (QuotaResetRequestNodeApprover) Fields() []ent.Field {
 		field.String("display_name").Default("").Immutable(),
 		field.String("email").Default("").Immutable(),
 		field.Enum("source").Values("configured", "directory_representative").Immutable(),
-		validatedJSONField(
-			field.JSON("source_department_external_ids", []string{}).Default([]string{}).Immutable(),
-			validateSourceDepartmentExternalIDs,
+		validatedQuotaResetJSONField(
+			field.JSON("source_department_external_ids", []string{}).Default(newQuotaResetSlice[string]).Immutable(),
+			validateQuotaResetSlice[string],
 		),
-		validatedJSONField(
-			field.JSON("notification_ids", map[string]string{}).Default(map[string]string{}).Immutable(),
-			validateNotificationIDs,
+		validatedQuotaResetJSONField(
+			field.JSON("notification_ids", map[string]string{}).Default(newQuotaResetMap[string, string]).Immutable(),
+			validateQuotaResetMap[string, string],
 		),
 		field.Time("created_at").Default(timeNow).Immutable(),
 	}
-}
-
-func validateSourceDepartmentExternalIDs(externalIDs []string) error {
-	if externalIDs == nil {
-		return errors.New("source department external ids must not be nil")
-	}
-	return nil
-}
-
-func validateNotificationIDs(notificationIDs map[string]string) error {
-	if notificationIDs == nil {
-		return errors.New("notification ids must not be nil")
-	}
-	return nil
 }
 
 func (QuotaResetRequestNodeApprover) Indexes() []ent.Index {
@@ -422,17 +447,45 @@ func (QuotaResetRequestDecision) Indexes() []ent.Index {
 
 - [x] **Step 4: Extend existing request, event, and notification schemas**
 
-Add these fields to `QuotaResetRequest.Fields()` immediately after `reason`:
+Mark every request creation fact and snapshot immutable. Ent's JSON builder uses
+`Default(factory)` to create a fresh non-nil value for each create:
 
 ```go
-field.Int("workflow_version").Default(1),
+field.Int("requester_user_id").Immutable(),
+field.Int64("requester_relay_user_id").Immutable(),
+field.Int("provider_id").Immutable(),
+field.String("group_id").NotEmpty().Immutable(),
+field.String("group_name").Default("").Immutable(),
+field.String("group_platform").Default("").Immutable(),
+field.String("reason").NotEmpty().Immutable(),
+field.Int("workflow_version").Default(1).Immutable(),
 field.Int("current_node_id").Optional().Nillable(),
 field.Int("workflow_completed_by_decision_id").Optional().Nillable(),
-field.String("requester_display_name_snapshot").Default(""),
-field.String("requester_email_snapshot").Default(""),
-field.JSON("requester_department_paths", []string{}).Optional(),
-field.JSON("requester_notification_ids", map[string]string{}).Optional(),
+field.String("requester_display_name_snapshot").Default("").Immutable(),
+field.String("requester_email_snapshot").Default("").Immutable(),
+validatedQuotaResetJSONField(
+	field.JSON("requester_department_paths", []string{}).Default(newQuotaResetSlice[string]).Immutable(),
+	validateQuotaResetSlice[string],
+),
+validatedQuotaResetJSONField(
+	field.JSON("requester_notification_ids", map[string]string{}).Default(newQuotaResetMap[string, string]).Immutable(),
+	validateQuotaResetMap[string, string],
+),
+validatedQuotaResetJSONField(
+	field.JSON("resolved_approver_user_ids", []int{}).Default(newQuotaResetSlice[int]).Immutable(),
+	validateQuotaResetSlice[int],
+),
+validatedQuotaResetJSONField(
+	field.JSON("matched_department_paths", []map[string]any{}).Default(newQuotaResetSlice[map[string]any]).Immutable(),
+	validateQuotaResetMapSlice,
+),
+field.Time("created_at").Default(timeNow).Immutable(),
 ```
+
+Keep `status`, `current_node_id`, `workflow_completed_by_decision_id`, the v1
+approval/rejection/reset/decision state, and `updated_at` mutable. Every JSON
+snapshot rejects an explicit nil container before create; slices of maps also
+reject nil elements. Empty non-nil containers remain valid.
 
 Add request indexes:
 
@@ -507,6 +560,17 @@ git commit -m "feat(backend): add quota reset workflow schemas"
 - [x] Omitted setters still persist non-null empty `[]` and `{}` defaults.
 - [x] Focused, package, full-backend, vet, generation reproducibility, and diff checks pass.
 - [x] Explicit-nil invariant fixes are committed separately from `6c8d5b9`.
+
+**Comprehensive request snapshot invariant follow-up evidence (2026-07-13):**
+
+- [x] No handwritten request update mutates a creation fact or snapshot.
+- [x] RED proves request creation setters remain effective, request JSON accepts explicit nil, and static notification-map defaults leak or are absent.
+- [x] All request creation facts are immutable while workflow and v1 decision/reset state remains mutable.
+- [x] Every request, node, and node-approver JSON snapshot uses a fresh default factory and schema-level nil validation.
+- [x] Legacy v1 builders omit an absent approver snapshot so the schema factory supplies `[]`; direct explicit-nil setters remain invalid.
+- [x] The completion fixture establishes and asserts a current node before clearing it.
+- [x] Focused, package, full-backend, vet, generation reproducibility, and diff checks pass.
+- [ ] Request snapshot invariant fixes are committed separately from `402badc`.
 
 ---
 

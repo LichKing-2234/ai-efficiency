@@ -75,7 +75,7 @@ var (
 	// DefaultLabel holds the default value on creation for the "label" field.
 	DefaultLabel string
 	// DefaultDepartmentSnapshots holds the default value on creation for the "department_snapshots" field.
-	DefaultDepartmentSnapshots []map[string]interface{}
+	DefaultDepartmentSnapshots func() []map[string]interface{}
 	// DepartmentSnapshotsValidator is a validator for the "department_snapshots" field. It is called by the builders before save.
 	DepartmentSnapshotsValidator func([]map[string]interface{}) error
 	// DefaultAdminFallbackRequired holds the default value on creation for the "admin_fallback_required" field.

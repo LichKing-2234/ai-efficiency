@@ -196,7 +196,7 @@ func (qrrnc *QuotaResetRequestNodeCreate) defaults() {
 		qrrnc.mutation.SetLabel(v)
 	}
 	if _, ok := qrrnc.mutation.DepartmentSnapshots(); !ok {
-		v := quotaresetrequestnode.DefaultDepartmentSnapshots
+		v := quotaresetrequestnode.DefaultDepartmentSnapshots()
 		qrrnc.mutation.SetDepartmentSnapshots(v)
 	}
 	if _, ok := qrrnc.mutation.Status(); !ok {

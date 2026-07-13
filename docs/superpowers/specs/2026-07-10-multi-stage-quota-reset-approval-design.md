@@ -345,16 +345,33 @@ Add:
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `workflow_version` | int | Existing rows backfill to `1`; new workflow uses `2` |
+| `workflow_version` | int | Immutable creation fact; existing rows backfill to `1`; new workflow uses `2` |
 | `current_node_id` | nullable int | Active v2 node |
 | `workflow_completed_by_decision_id` | nullable int | Decision that completed the final unsatisfied node |
-| `requester_display_name_snapshot` | string | Notification and audit identity |
-| `requester_email_snapshot` | string | Notification and audit identity |
-| `requester_department_paths` | JSON array | All direct department display paths |
-| `requester_notification_ids` | JSON object | Channel-keyed ids, for example `{"wecom":"alice-id"}` |
+| `requester_display_name_snapshot` | string | Immutable notification and audit identity |
+| `requester_email_snapshot` | string | Immutable notification and audit identity |
+| `requester_department_paths` | JSON array | Immutable; all direct department display paths; fresh non-null `[]` default |
+| `requester_notification_ids` | JSON object | Immutable; fresh non-null `{}` default; channel-keyed ids, for example `{"wecom":"alice-id"}` |
 
 Existing v1 resolution and decision fields remain for compatibility. V2 services
 must treat request nodes and decisions as authoritative.
+
+All request creation facts are immutable after insert: `requester_user_id`,
+`requester_relay_user_id`, `provider_id`, `group_id`, `group_name`,
+`group_platform`, `reason`, `workflow_version`, both requester identity snapshots,
+both requester JSON snapshots, the existing `resolved_approver_user_ids` and
+`matched_department_paths` resolution snapshots, and `created_at`. Workflow state,
+the v1 approval/rejection/reset/decision state, and `updated_at` remain mutable.
+
+Every request JSON creation snapshot uses a factory that returns a fresh non-nil
+empty slice or map for each create. Explicit nil containers fail Ent schema
+validation, as do nil element maps in `matched_department_paths`; empty non-nil
+containers remain valid. This preserves legacy defaults without sharing mutable
+map or slice instances across creates.
+
+When the legacy v1 resolver has no approver snapshot, its create builder omits
+that setter and lets the schema factory supply `[]`. This is distinct from an
+explicit nil setter, which remains a validation error.
 
 ### `quota_reset_request_nodes`
 
@@ -381,10 +398,10 @@ Fields:
 state fields `status`, `satisfied_by_decision_id`, `activated_at`, `completed_at`,
 and `updated_at` remain mutable.
 
-An omitted `department_snapshots` setter persists the empty default. An explicit
-nil container or any nil element map is rejected before create; empty non-nil
-arrays remain valid. Business-content validation belongs to workflow resolution,
-not this schema validator.
+An omitted `department_snapshots` setter receives a fresh empty default for that
+create. An explicit nil container or any nil element map is rejected before
+create; empty non-nil arrays remain valid. Business-content validation belongs to
+workflow resolution, not this schema validator.
 
 Indexes:
 
@@ -413,8 +430,10 @@ Fields:
 
 Every field is immutable after insert.
 
-Omitted setters persist the empty defaults. Explicit nil containers are rejected
-before create, while empty non-nil arrays and objects remain valid.
+Omitted setters receive fresh empty defaults for each create. Explicit nil
+containers are rejected before create, while empty non-nil arrays and objects
+remain valid. Request, node, and node-approver JSON snapshots share schema-only
+factory and validator helpers so this contract is applied consistently.
 
 Unique index: `(request_node_id, user_id)`.
 

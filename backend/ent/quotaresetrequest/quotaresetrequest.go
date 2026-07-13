@@ -126,6 +126,22 @@ var (
 	DefaultRequesterDisplayNameSnapshot string
 	// DefaultRequesterEmailSnapshot holds the default value on creation for the "requester_email_snapshot" field.
 	DefaultRequesterEmailSnapshot string
+	// DefaultRequesterDepartmentPaths holds the default value on creation for the "requester_department_paths" field.
+	DefaultRequesterDepartmentPaths func() []string
+	// RequesterDepartmentPathsValidator is a validator for the "requester_department_paths" field. It is called by the builders before save.
+	RequesterDepartmentPathsValidator func([]string) error
+	// DefaultRequesterNotificationIds holds the default value on creation for the "requester_notification_ids" field.
+	DefaultRequesterNotificationIds func() map[string]string
+	// RequesterNotificationIdsValidator is a validator for the "requester_notification_ids" field. It is called by the builders before save.
+	RequesterNotificationIdsValidator func(map[string]string) error
+	// DefaultResolvedApproverUserIds holds the default value on creation for the "resolved_approver_user_ids" field.
+	DefaultResolvedApproverUserIds func() []int
+	// ResolvedApproverUserIdsValidator is a validator for the "resolved_approver_user_ids" field. It is called by the builders before save.
+	ResolvedApproverUserIdsValidator func([]int) error
+	// DefaultMatchedDepartmentPaths holds the default value on creation for the "matched_department_paths" field.
+	DefaultMatchedDepartmentPaths func() []map[string]interface{}
+	// MatchedDepartmentPathsValidator is a validator for the "matched_department_paths" field. It is called by the builders before save.
+	MatchedDepartmentPathsValidator func([]map[string]interface{}) error
 	// DefaultDecisionReason holds the default value on creation for the "decision_reason" field.
 	DefaultDecisionReason string
 	// DefaultResetError holds the default value on creation for the "reset_error" field.

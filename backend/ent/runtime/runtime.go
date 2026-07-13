@@ -647,6 +647,30 @@ func init() {
 	quotaresetrequestDescRequesterEmailSnapshot := quotaresetrequestFields[11].Descriptor()
 	// quotaresetrequest.DefaultRequesterEmailSnapshot holds the default value on creation for the requester_email_snapshot field.
 	quotaresetrequest.DefaultRequesterEmailSnapshot = quotaresetrequestDescRequesterEmailSnapshot.Default.(string)
+	// quotaresetrequestDescRequesterDepartmentPaths is the schema descriptor for requester_department_paths field.
+	quotaresetrequestDescRequesterDepartmentPaths := quotaresetrequestFields[12].Descriptor()
+	// quotaresetrequest.DefaultRequesterDepartmentPaths holds the default value on creation for the requester_department_paths field.
+	quotaresetrequest.DefaultRequesterDepartmentPaths = quotaresetrequestDescRequesterDepartmentPaths.Default.(func() []string)
+	// quotaresetrequest.RequesterDepartmentPathsValidator is a validator for the "requester_department_paths" field. It is called by the builders before save.
+	quotaresetrequest.RequesterDepartmentPathsValidator = quotaresetrequestDescRequesterDepartmentPaths.Validators[0].(func([]string) error)
+	// quotaresetrequestDescRequesterNotificationIds is the schema descriptor for requester_notification_ids field.
+	quotaresetrequestDescRequesterNotificationIds := quotaresetrequestFields[13].Descriptor()
+	// quotaresetrequest.DefaultRequesterNotificationIds holds the default value on creation for the requester_notification_ids field.
+	quotaresetrequest.DefaultRequesterNotificationIds = quotaresetrequestDescRequesterNotificationIds.Default.(func() map[string]string)
+	// quotaresetrequest.RequesterNotificationIdsValidator is a validator for the "requester_notification_ids" field. It is called by the builders before save.
+	quotaresetrequest.RequesterNotificationIdsValidator = quotaresetrequestDescRequesterNotificationIds.Validators[0].(func(map[string]string) error)
+	// quotaresetrequestDescResolvedApproverUserIds is the schema descriptor for resolved_approver_user_ids field.
+	quotaresetrequestDescResolvedApproverUserIds := quotaresetrequestFields[15].Descriptor()
+	// quotaresetrequest.DefaultResolvedApproverUserIds holds the default value on creation for the resolved_approver_user_ids field.
+	quotaresetrequest.DefaultResolvedApproverUserIds = quotaresetrequestDescResolvedApproverUserIds.Default.(func() []int)
+	// quotaresetrequest.ResolvedApproverUserIdsValidator is a validator for the "resolved_approver_user_ids" field. It is called by the builders before save.
+	quotaresetrequest.ResolvedApproverUserIdsValidator = quotaresetrequestDescResolvedApproverUserIds.Validators[0].(func([]int) error)
+	// quotaresetrequestDescMatchedDepartmentPaths is the schema descriptor for matched_department_paths field.
+	quotaresetrequestDescMatchedDepartmentPaths := quotaresetrequestFields[16].Descriptor()
+	// quotaresetrequest.DefaultMatchedDepartmentPaths holds the default value on creation for the matched_department_paths field.
+	quotaresetrequest.DefaultMatchedDepartmentPaths = quotaresetrequestDescMatchedDepartmentPaths.Default.(func() []map[string]interface{})
+	// quotaresetrequest.MatchedDepartmentPathsValidator is a validator for the "matched_department_paths" field. It is called by the builders before save.
+	quotaresetrequest.MatchedDepartmentPathsValidator = quotaresetrequestDescMatchedDepartmentPaths.Validators[0].(func([]map[string]interface{}) error)
 	// quotaresetrequestDescDecisionReason is the schema descriptor for decision_reason field.
 	quotaresetrequestDescDecisionReason := quotaresetrequestFields[19].Descriptor()
 	// quotaresetrequest.DefaultDecisionReason holds the default value on creation for the decision_reason field.
@@ -706,7 +730,7 @@ func init() {
 	// quotaresetrequestnodeDescDepartmentSnapshots is the schema descriptor for department_snapshots field.
 	quotaresetrequestnodeDescDepartmentSnapshots := quotaresetrequestnodeFields[4].Descriptor()
 	// quotaresetrequestnode.DefaultDepartmentSnapshots holds the default value on creation for the department_snapshots field.
-	quotaresetrequestnode.DefaultDepartmentSnapshots = quotaresetrequestnodeDescDepartmentSnapshots.Default.([]map[string]interface{})
+	quotaresetrequestnode.DefaultDepartmentSnapshots = quotaresetrequestnodeDescDepartmentSnapshots.Default.(func() []map[string]interface{})
 	// quotaresetrequestnode.DepartmentSnapshotsValidator is a validator for the "department_snapshots" field. It is called by the builders before save.
 	quotaresetrequestnode.DepartmentSnapshotsValidator = quotaresetrequestnodeDescDepartmentSnapshots.Validators[0].(func([]map[string]interface{}) error)
 	// quotaresetrequestnodeDescAdminFallbackRequired is the schema descriptor for admin_fallback_required field.
@@ -736,13 +760,13 @@ func init() {
 	// quotaresetrequestnodeapproverDescSourceDepartmentExternalIds is the schema descriptor for source_department_external_ids field.
 	quotaresetrequestnodeapproverDescSourceDepartmentExternalIds := quotaresetrequestnodeapproverFields[5].Descriptor()
 	// quotaresetrequestnodeapprover.DefaultSourceDepartmentExternalIds holds the default value on creation for the source_department_external_ids field.
-	quotaresetrequestnodeapprover.DefaultSourceDepartmentExternalIds = quotaresetrequestnodeapproverDescSourceDepartmentExternalIds.Default.([]string)
+	quotaresetrequestnodeapprover.DefaultSourceDepartmentExternalIds = quotaresetrequestnodeapproverDescSourceDepartmentExternalIds.Default.(func() []string)
 	// quotaresetrequestnodeapprover.SourceDepartmentExternalIdsValidator is a validator for the "source_department_external_ids" field. It is called by the builders before save.
 	quotaresetrequestnodeapprover.SourceDepartmentExternalIdsValidator = quotaresetrequestnodeapproverDescSourceDepartmentExternalIds.Validators[0].(func([]string) error)
 	// quotaresetrequestnodeapproverDescNotificationIds is the schema descriptor for notification_ids field.
 	quotaresetrequestnodeapproverDescNotificationIds := quotaresetrequestnodeapproverFields[6].Descriptor()
 	// quotaresetrequestnodeapprover.DefaultNotificationIds holds the default value on creation for the notification_ids field.
-	quotaresetrequestnodeapprover.DefaultNotificationIds = quotaresetrequestnodeapproverDescNotificationIds.Default.(map[string]string)
+	quotaresetrequestnodeapprover.DefaultNotificationIds = quotaresetrequestnodeapproverDescNotificationIds.Default.(func() map[string]string)
 	// quotaresetrequestnodeapprover.NotificationIdsValidator is a validator for the "notification_ids" field. It is called by the builders before save.
 	quotaresetrequestnodeapprover.NotificationIdsValidator = quotaresetrequestnodeapproverDescNotificationIds.Validators[0].(func(map[string]string) error)
 	// quotaresetrequestnodeapproverDescCreatedAt is the schema descriptor for created_at field.

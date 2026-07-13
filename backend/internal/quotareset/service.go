@@ -110,7 +110,7 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 		return nil, err
 	}
 	relayUserID := int64(*requester.RelayUserID)
-	req, err := s.client.QuotaResetRequest.Create().
+	create := s.client.QuotaResetRequest.Create().
 		SetRequesterUserID(requester.ID).
 		SetRequesterRelayUserID(relayUserID).
 		SetProviderID(providerRow.ID).
@@ -118,9 +118,11 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 		SetGroupName(subscriptionGroupName(subscription)).
 		SetGroupPlatform(subscriptionGroupPlatform(subscription)).
 		SetReason(input.Reason).
-		SetResolvedApproverUserIds(resolution.ApproverUserIDs).
-		SetMatchedDepartmentPaths(pathMaps).
-		Save(ctx)
+		SetMatchedDepartmentPaths(pathMaps)
+	if resolution.ApproverUserIDs != nil {
+		create.SetResolvedApproverUserIds(resolution.ApproverUserIDs)
+	}
+	req, err := create.Save(ctx)
 	if err != nil {
 		if activeRequestCreateWasDuplicate(ctx, s.client, err, requester.ID, providerRow.ID, input.GroupID) {
 			return nil, ErrActiveRequestExists
