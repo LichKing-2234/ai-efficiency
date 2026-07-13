@@ -2940,6 +2940,58 @@ git commit -m "feat(backend): notify quota reset workflow approvers"
 Evidence (2026-07-14): committed the Task 7 production and test changes as
 `f9d4e7d` (`feat(backend): notify quota reset workflow approvers`).
 
+#### SPEC-review follow-up (2026-07-14)
+
+- [x] Refuse webhook redirects and validate the original redirect status.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestWebhookNotifierRejectsRedirectWithoutFollowing$' -count=1` failed with
+`Notify() error = <nil>, want redirect status failure`, proving the default
+client followed the synthetic 307 response. The test passed after configuring
+`CheckRedirect` to return `http.ErrUseLastResponse`; the redirect source
+received one delivery and the target received zero.
+
+- [x] Preserve all current admins in neutral fallback recipients while keeping the test-action exception.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^(TestWorkflowAdminFallbackPreservesMissingRecipientCoverage|TestNotificationTestReturnsMentionCoverageWarning)$'
+-count=1` failed because activation and cancellation each retained only the
+resolvable admin, while the test message rendered `admin（无法 @）`. The command
+passed after both fallback events retained all current admins for adapter-level
+coverage and unresolved test actors were omitted from `Recipients` while still
+returning one missing-recipient warning.
+
+- [x] Redact nested response-read errors before return and durable persistence.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestNotificationFailureRedactsResponseReadSecrets$' -count=1` failed because
+the returned read error exposed the synthetic robot username, password, and
+query key. It passed after body-read errors gained URL sanitization, userinfo
+redaction, and `notifyRequestEvent` sanitized notifier errors again before
+returning or writing `notification_failed.error_message`.
+
+- [x] Reject oversized and malformed Enterprise WeChat business responses.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestWebhookNotifierRejectsOversizedOrMalformedWeComResponse$' -count=1`
+failed because both the oversized nonzero-`errcode` response and malformed JSON
+returned nil errors. It passed after bounded `4096+1` reads detected overflow
+and the Enterprise WeChat parser rejected empty, malformed, and missing-errcode
+responses.
+
+- [x] Run final SPEC-review verification and commit the fixes.
+
+GREEN evidence: `cd backend && go test ./internal/quotareset -run
+'^(TestWebhookNotifierRejectsRedirectWithoutFollowing|TestWorkflowAdminFallbackPreservesMissingRecipientCoverage|TestNotificationTestReturnsMentionCoverageWarning|TestNotificationFailureRedactsResponseReadSecrets|TestWebhookNotifierRejectsOversizedOrMalformedWeComResponse)$'
+-count=1` passed, followed by the unchanged Task 7 focused command, `cd backend
+&& go test ./internal/quotareset -count=1`, `cd backend && go test ./cmd/server
+./internal/quotareset -count=1`, `cd backend && go test ./... -count=1`, `cd
+backend && go vet ./...`, `git diff --check`, gofmt inspection, changed-file
+scope review, and secret/TODO/FIXME scans. All passed; credential-like scan hits
+were limited to explicit synthetic fixtures and redaction code.
+
+Commit evidence: `177c834` (`fix(backend): harden quota reset notifications`).
+
 ---
 
 ### Task 8: Expose V2 Workflow and Configuration HTTP Contracts
