@@ -64,11 +64,14 @@ type ListParams struct {
 }
 
 type NotificationSettings struct {
-	Enabled      bool   `json:"enabled"`
-	URL          string `json:"url"`
-	AuthType     string `json:"auth_type"`
-	CredentialID *int   `json:"credential_id,omitempty"`
-	UpdatedAt    string `json:"updated_at,omitempty"`
+	Enabled         bool   `json:"enabled"`
+	ChannelType     string `json:"channel_type"`
+	TemplateVersion int    `json:"template_version"`
+	URLConfigured   bool   `json:"url_configured"`
+	URLPreview      string `json:"url_preview"`
+	AuthType        string `json:"auth_type"`
+	CredentialID    *int   `json:"credential_id,omitempty"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
 }
 
 type ApproverConfigListResponse struct {
@@ -179,7 +182,8 @@ type ApprovalChainOptionsResponse struct {
 type UpdateNotificationSettingsInput struct {
 	ActorUserID  int
 	Enabled      bool
-	URL          string
+	ChannelType  string
+	URL          *string
 	AuthType     string
 	CredentialID *int
 }

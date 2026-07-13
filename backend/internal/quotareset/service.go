@@ -369,7 +369,7 @@ func (s *Service) GetNotificationSettings(ctx context.Context) (*NotificationSet
 		Order(ent.Asc(quotaresetnotificationsetting.FieldID)).
 		First(ctx)
 	if ent.IsNotFound(err) {
-		return &NotificationSettings{AuthType: quotaresetnotificationsetting.AuthTypeNone.String()}, nil
+		return notificationSettingsResponse(nil), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load quota reset notification settings: %w", err)
@@ -378,17 +378,21 @@ func (s *Service) GetNotificationSettings(ctx context.Context) (*NotificationSet
 }
 
 func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNotificationSettingsInput) (*NotificationSettings, error) {
-	input.URL = strings.TrimSpace(input.URL)
+	input.ChannelType = strings.TrimSpace(input.ChannelType)
 	input.AuthType = strings.TrimSpace(input.AuthType)
 	if input.AuthType == "" {
 		input.AuthType = quotaresetnotificationsetting.AuthTypeNone.String()
 	}
+	if input.ChannelType == "" {
+		return nil, fmt.Errorf("%w: channel_type is required", ErrInvalidNotification)
+	}
+	channelType := quotaresetnotificationsetting.ChannelType(input.ChannelType)
+	if err := quotaresetnotificationsetting.ChannelTypeValidator(channelType); err != nil {
+		return nil, fmt.Errorf("%w: invalid channel_type", ErrInvalidNotification)
+	}
 	authType := quotaresetnotificationsetting.AuthType(input.AuthType)
 	if err := quotaresetnotificationsetting.AuthTypeValidator(authType); err != nil {
-		return nil, fmt.Errorf("invalid notification auth type: %w", err)
-	}
-	if err := s.validateNotificationSettings(ctx, input, authType); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: invalid notification auth type", ErrInvalidNotification)
 	}
 	if authType == quotaresetnotificationsetting.AuthTypeNone {
 		input.CredentialID = nil
@@ -410,11 +414,22 @@ func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNo
 	if err != nil {
 		return nil, fmt.Errorf("load quota reset notification settings: %w", err)
 	}
+	effectiveURL := ""
+	if input.URL != nil {
+		effectiveURL = strings.TrimSpace(*input.URL)
+	} else if len(rows) > 0 {
+		effectiveURL = strings.TrimSpace(rows[0].URL)
+	}
+	if err := validateNotificationSettings(ctx, tx.Client(), input.Enabled, channelType, effectiveURL, authType, input.CredentialID); err != nil {
+		return nil, err
+	}
 	var row *ent.QuotaResetNotificationSetting
 	if len(rows) == 0 {
 		create := tx.QuotaResetNotificationSetting.Create().
 			SetEnabled(input.Enabled).
-			SetURL(input.URL).
+			SetChannelType(channelType).
+			SetChannelTypeConfigured(true).
+			SetURL(effectiveURL).
 			SetAuthType(authType).
 			SetCreatedByUserID(input.ActorUserID).
 			SetUpdatedByUserID(input.ActorUserID)
@@ -425,7 +440,9 @@ func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNo
 	} else {
 		update := tx.QuotaResetNotificationSetting.UpdateOneID(rows[0].ID).
 			SetEnabled(input.Enabled).
-			SetURL(input.URL).
+			SetChannelType(channelType).
+			SetChannelTypeConfigured(true).
+			SetURL(effectiveURL).
 			SetAuthType(authType).
 			SetUpdatedByUserID(input.ActorUserID)
 		if input.CredentialID != nil {
@@ -1050,22 +1067,36 @@ func lockNotificationSettings(ctx context.Context, tx *ent.Tx) error {
 	return nil
 }
 
-func (s *Service) validateNotificationSettings(ctx context.Context, input UpdateNotificationSettingsInput, authType quotaresetnotificationsetting.AuthType) error {
-	if input.Enabled {
-		parsed, err := url.Parse(strings.TrimSpace(input.URL))
-		if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			return fmt.Errorf("%w: invalid webhook url", ErrInvalidNotification)
+func validateNotificationSettings(ctx context.Context, client *ent.Client, enabled bool, channelType quotaresetnotificationsetting.ChannelType, rawURL string, authType quotaresetnotificationsetting.AuthType, credentialID *int) error {
+	if rawURL == "" {
+		if enabled {
+			return fmt.Errorf("%w: enabled webhook URL is required", ErrInvalidNotification)
 		}
+	} else {
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("%w: invalid webhook URL", ErrInvalidNotification)
+		}
+		if err := validateNotificationEndpoint(channelType, parsed, authType); err != nil {
+			return err
+		}
+	}
+
+	if channelType == quotaresetnotificationsetting.ChannelTypeWecomGroupRobot {
+		if authType != quotaresetnotificationsetting.AuthTypeNone {
+			return fmt.Errorf("%w: Enterprise WeChat group robot does not use bearer auth", ErrInvalidNotification)
+		}
+		return nil
 	}
 	if authType != quotaresetnotificationsetting.AuthTypeBearerToken {
 		return nil
 	}
-	if input.CredentialID == nil || *input.CredentialID <= 0 {
+	if credentialID == nil || *credentialID <= 0 {
 		return fmt.Errorf("%w: bearer token credential is required", ErrInvalidNotification)
 	}
-	credential, err := s.client.Credential.Get(ctx, *input.CredentialID)
+	credential, err := client.Credential.Get(ctx, *credentialID)
 	if err != nil {
-		return fmt.Errorf("%w: load webhook credential: %v", ErrInvalidNotification, err)
+		return fmt.Errorf("%w: load webhook credential", ErrInvalidNotification)
 	}
 	if credential.Kind != entcredential.KindSecretText {
 		return fmt.Errorf("%w: webhook credential must be secret_text", ErrInvalidNotification)
@@ -1073,15 +1104,53 @@ func (s *Service) validateNotificationSettings(ctx context.Context, input Update
 	return nil
 }
 
+func validateNotificationEndpoint(channelType quotaresetnotificationsetting.ChannelType, parsed *url.URL, authType quotaresetnotificationsetting.AuthType) error {
+	switch channelType {
+	case quotaresetnotificationsetting.ChannelTypeWecomGroupRobot:
+		if !strings.EqualFold(parsed.Hostname(), "qyapi.weixin.qq.com") || parsed.Path != "/cgi-bin/webhook/send" || strings.TrimSpace(parsed.Query().Get("key")) == "" {
+			return fmt.Errorf("%w: invalid Enterprise WeChat group robot URL", ErrInvalidNotification)
+		}
+		if authType != quotaresetnotificationsetting.AuthTypeNone {
+			return fmt.Errorf("%w: Enterprise WeChat group robot does not use bearer auth", ErrInvalidNotification)
+		}
+	case quotaresetnotificationsetting.ChannelTypeGenericWebhook:
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return fmt.Errorf("%w: invalid webhook URL", ErrInvalidNotification)
+		}
+	default:
+		return fmt.Errorf("%w: channel_type is required", ErrInvalidNotification)
+	}
+	return nil
+}
+
+func webhookURLPreview(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
 func notificationSettingsResponse(row *ent.QuotaResetNotificationSetting) *NotificationSettings {
 	if row == nil {
-		return &NotificationSettings{AuthType: quotaresetnotificationsetting.AuthTypeNone.String()}
+		return &NotificationSettings{
+			ChannelType:     quotaresetnotificationsetting.DefaultChannelType.String(),
+			TemplateVersion: 1,
+			AuthType:        quotaresetnotificationsetting.AuthTypeNone.String(),
+		}
 	}
 	return &NotificationSettings{
-		Enabled:      row.Enabled,
-		URL:          row.URL,
-		AuthType:     row.AuthType.String(),
-		CredentialID: row.CredentialID,
-		UpdatedAt:    row.UpdatedAt.UTC().Format(time.RFC3339),
+		Enabled:         row.Enabled,
+		ChannelType:     row.ChannelType.String(),
+		TemplateVersion: row.TemplateVersion,
+		URLConfigured:   strings.TrimSpace(row.URL) != "",
+		URLPreview:      webhookURLPreview(row.URL),
+		AuthType:        row.AuthType.String(),
+		CredentialID:    row.CredentialID,
+		UpdatedAt:       row.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }

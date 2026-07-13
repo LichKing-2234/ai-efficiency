@@ -256,21 +256,25 @@ func TestUpdateNotificationSettingsValidatesEnabledURLAndBearerCredential(t *tes
 	ctx := context.Background()
 	client := testdb.Open(t)
 	svc := NewService(client, nil, nil, nil)
+	invalidURL := "ftp://hooks.example.com/quota-reset"
 
 	_, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
 		ActorUserID: 1,
 		Enabled:     true,
-		URL:         "ftp://hooks.example.com/quota-reset",
+		ChannelType: "generic_webhook",
+		URL:         &invalidURL,
 		AuthType:    "none",
 	})
-	if err == nil || !strings.Contains(err.Error(), "invalid webhook url") {
-		t.Fatalf("invalid URL error = %v, want invalid webhook url", err)
+	if err == nil || !strings.Contains(err.Error(), "invalid webhook URL") {
+		t.Fatalf("invalid URL error = %v, want invalid webhook URL", err)
 	}
 
+	endpoint := "https://hooks.example.com/quota-reset"
 	_, err = svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
 		ActorUserID: 1,
 		Enabled:     true,
-		URL:         "https://hooks.example.com/quota-reset",
+		ChannelType: "generic_webhook",
+		URL:         &endpoint,
 		AuthType:    "bearer_token",
 	})
 	if err == nil || !strings.Contains(err.Error(), "credential is required") {
@@ -285,12 +289,120 @@ func TestUpdateNotificationSettingsValidatesEnabledURLAndBearerCredential(t *tes
 	_, err = svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
 		ActorUserID:  1,
 		Enabled:      true,
-		URL:          "https://hooks.example.com/quota-reset",
+		ChannelType:  "generic_webhook",
+		URL:          &endpoint,
 		AuthType:     "bearer_token",
 		CredentialID: &wrongKind.ID,
 	})
 	if err == nil || !strings.Contains(err.Error(), "must be secret_text") {
 		t.Fatalf("wrong credential kind error = %v, want secret_text error", err)
+	}
+}
+
+func TestNotificationSettingsRequiresExplicitChannelType(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	svc := NewService(client, nil, nil, nil)
+	endpoint := "https://hooks.example.com/quota-reset"
+
+	_, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+		ActorUserID: 1,
+		Enabled:     false,
+		URL:         &endpoint,
+		AuthType:    "none",
+	})
+	if !errors.Is(err, ErrInvalidNotification) || !strings.Contains(err.Error(), "channel_type is required") {
+		t.Fatalf("UpdateNotificationSettings() error = %v, want explicit channel_type error", err)
+	}
+}
+
+func TestNotificationSettingsValidatesWeComEndpointAndDisallowsBearer(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	svc := NewService(client, nil, nil, nil)
+	wrongEndpoint := "https://qyapi.weixin.qq.com/cgi-bin/webhook/other?key=synthetic-key"
+
+	_, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+		ActorUserID: 1,
+		Enabled:     false,
+		ChannelType: "wecom_group_robot",
+		URL:         &wrongEndpoint,
+		AuthType:    "none",
+	})
+	if !errors.Is(err, ErrInvalidNotification) || !strings.Contains(err.Error(), "Enterprise WeChat") {
+		t.Fatalf("wrong WeCom endpoint error = %v, want Enterprise WeChat endpoint error", err)
+	}
+
+	robotURL := "https://qyapi.weixin.qq.com/cgi-bin/webhook/send" + "?" + "key=test-secret"
+	_, err = svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+		ActorUserID: 1,
+		Enabled:     false,
+		ChannelType: "wecom_group_robot",
+		URL:         &robotURL,
+		AuthType:    "bearer_token",
+	})
+	if !errors.Is(err, ErrInvalidNotification) || !strings.Contains(err.Error(), "does not use bearer auth") {
+		t.Fatalf("WeCom bearer error = %v, want bearer prohibition", err)
+	}
+}
+
+func TestNotificationSettingsReadRedactsRobotKey(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	robotURL := "https://qyapi.weixin.qq.com/cgi-bin/webhook/send" + "?" + "key=test-secret"
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetChannelType("wecom_group_robot").
+		SetChannelTypeConfigured(true).
+		SetURL(robotURL).
+		SetAuthType("none").
+		SetCreatedByUserID(1).
+		SetUpdatedByUserID(1).
+		SaveX(ctx)
+
+	settings, err := NewService(client, nil, nil, nil).GetNotificationSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetNotificationSettings() error = %v", err)
+	}
+	if !settings.URLConfigured || settings.URLPreview != "https://qyapi.weixin.qq.com/cgi-bin/webhook/send" {
+		t.Fatalf("settings = %+v, want redacted configured robot URL", settings)
+	}
+	if strings.Contains(fmt.Sprintf("%+v", settings), "test-secret") {
+		t.Fatalf("settings leaked robot key: %+v", settings)
+	}
+}
+
+func TestNotificationSettingsOmittedURLPreservesExistingSecret(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	svc := NewService(client, nil, nil, nil)
+	endpoint := "https://hooks.example.com/quota-reset?token=synthetic-secret"
+
+	if _, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+		ActorUserID: 1,
+		Enabled:     true,
+		ChannelType: "generic_webhook",
+		URL:         &endpoint,
+		AuthType:    "none",
+	}); err != nil {
+		t.Fatalf("initial UpdateNotificationSettings() error = %v", err)
+	}
+	settings, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+		ActorUserID: 2,
+		Enabled:     true,
+		ChannelType: "generic_webhook",
+		URL:         nil,
+		AuthType:    "none",
+	})
+	if err != nil {
+		t.Fatalf("UpdateNotificationSettings(omitted URL) error = %v", err)
+	}
+	if !settings.URLConfigured || settings.URLPreview != "https://hooks.example.com/quota-reset" {
+		t.Fatalf("settings = %+v, want preserved redacted URL", settings)
+	}
+	row := client.QuotaResetNotificationSetting.Query().OnlyX(ctx)
+	if row.URL != endpoint {
+		t.Fatalf("stored URL = %q, want preserved secret URL", row.URL)
 	}
 }
 
@@ -312,18 +424,20 @@ func TestUpdateNotificationSettingsCollapsesDuplicateRows(t *testing.T) {
 		SetUpdatedByUserID(1).
 		SaveX(ctx)
 	svc := NewService(client, nil, nil, nil)
+	endpoint := "https://hooks.example.com/quota-reset"
 
 	updated, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
 		ActorUserID: 7,
 		Enabled:     true,
-		URL:         "https://hooks.example.com/quota-reset",
+		ChannelType: "generic_webhook",
+		URL:         &endpoint,
 		AuthType:    "none",
 	})
 	if err != nil {
 		t.Fatalf("UpdateNotificationSettings() error = %v", err)
 	}
-	if updated.URL != "https://hooks.example.com/quota-reset" || !updated.Enabled {
-		t.Fatalf("updated settings = %+v, want new enabled URL", updated)
+	if updated.URLPreview != endpoint || !updated.URLConfigured || !updated.Enabled {
+		t.Fatalf("updated settings = %+v, want new enabled redacted URL", updated)
 	}
 	rows := client.QuotaResetNotificationSetting.Query().AllX(ctx)
 	if len(rows) != 1 {

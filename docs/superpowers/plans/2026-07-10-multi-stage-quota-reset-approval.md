@@ -2167,7 +2167,7 @@ approver or failed-reset completion actor.
 - Modify: `backend/internal/quotareset/service_test.go`
 - Modify: `backend/cmd/server/main.go`
 
-- [ ] **Step 1: Write failing settings and backfill tests**
+- [x] **Step 1: Write failing settings and backfill tests**
 
 Add:
 
@@ -2190,7 +2190,7 @@ robotURL := "https://qyapi.weixin.qq.com/cgi-bin/webhook/send" + "?" + "key=test
 Store `robotURL` and assert the response does not contain `test-secret`, returns
 `url_configured=true`, and returns a host/path preview.
 
-- [ ] **Step 2: Run settings tests and verify failure**
+- [x] **Step 2: Run settings tests and verify failure**
 
 Run:
 
@@ -2201,7 +2201,13 @@ cd backend && go test ./internal/quotareset -run 'Test(NotificationSettings|Back
 Expected: FAIL because explicit channel and redacted response contracts do not
 exist.
 
-- [ ] **Step 3: Replace public notification setting contracts**
+Evidence (2026-07-14): added the six specified tests. `cd backend && go test
+./internal/quotareset -run 'Test(NotificationSettings|BackfillNotificationChannels)' -count=1`
+failed at compile time as expected: `BackfillNotificationChannelTypes` is
+undefined, `UpdateNotificationSettingsInput.URL` is still `string`,
+`ChannelType` is absent, and `NotificationSettings` has no redacted URL fields.
+
+- [x] **Step 3: Replace public notification setting contracts**
 
 Use:
 
@@ -2230,7 +2236,11 @@ type UpdateNotificationSettingsInput struct {
 `URL=nil` means preserve the existing URL. A non-nil empty URL clears it and is
 valid only when notifications are disabled.
 
-- [ ] **Step 4: Implement type-specific validation and redacted reads**
+Evidence (2026-07-14): `NotificationSettings` now exposes only the explicit
+channel/template and redacted URL state; `UpdateNotificationSettingsInput.URL`
+is `*string`, with handler JSON decoding preserving omitted versus empty URL.
+
+- [x] **Step 4: Implement type-specific validation and redacted reads**
 
 Implement:
 
@@ -2268,7 +2278,12 @@ func webhookURLPreview(raw string) string {
 On save, set `channel_type_configured=true`. `GetNotificationSettings` and save
 responses must never return the raw URL.
 
-- [ ] **Step 5: Implement one-time channel backfill**
+Evidence (2026-07-14): save validation runs after the existing transaction lock
+loads the canonical row, validates the effective URL and credentials through
+`tx.Client()`, and returns only a scheme/host/path preview with query,
+fragment, and user info removed.
+
+- [x] **Step 5: Implement one-time channel backfill**
 
 Create:
 
@@ -2308,7 +2323,12 @@ if _, err := quotareset.BackfillNotificationChannelTypes(context.Background(), e
 }
 ```
 
-- [ ] **Step 6: Run settings and startup package tests**
+Evidence (2026-07-14): `BackfillNotificationChannelTypes` classifies only
+unconfigured rows and uses an `ID` plus `channel_type_configured=false`
+predicate so concurrent startup executions count only their actual changes;
+startup runs it immediately after `Schema.Create` and fails fatally on error.
+
+- [x] **Step 6: Run settings and startup package tests**
 
 Run:
 
@@ -2318,6 +2338,14 @@ cd backend && go test ./cmd/server ./internal/quotareset -count=1
 ```
 
 Expected: PASS.
+
+Evidence (2026-07-14): GREEN focused command passed:
+`cd backend && go test ./internal/quotareset -run
+'Test(NotificationSettings|BackfillNotificationChannels)' -count=1`. The
+required `go test ./cmd/server ./internal/quotareset -count=1` command, handler
+compile/regression suite, full `go test ./... -count=1`, `go vet ./...`, and
+`git diff --check` all passed. A diff-only scan found no added complete WeCom
+robot URL; `test-secret` remains only in the synthetic split-string tests.
 
 - [ ] **Step 7: Commit explicit channel settings**
 

@@ -28,6 +28,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
+	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
@@ -129,6 +130,9 @@ func main() {
 	// Auto-migrate
 	if err := entClient.Schema.Create(context.Background()); err != nil {
 		logger.Fatal("ent auto-migrate", zap.Error(err))
+	}
+	if _, err := quotareset.BackfillNotificationChannelTypes(context.Background(), entClient); err != nil {
+		logger.Fatal("backfill quota reset notification channels", zap.Error(err))
 	}
 	if err := dropLegacyRelayProviderAdminURL(context.Background(), db); err != nil {
 		logger.Fatal("drop legacy relay provider admin_url", zap.Error(err))

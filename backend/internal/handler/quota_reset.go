@@ -58,10 +58,11 @@ type quotaResetSaveApproverConfigsRequest struct {
 }
 
 type quotaResetNotificationSettingsRequest struct {
-	Enabled      bool   `json:"enabled"`
-	URL          string `json:"url"`
-	AuthType     string `json:"auth_type"`
-	CredentialID *int   `json:"credential_id"`
+	Enabled      bool    `json:"enabled"`
+	ChannelType  string  `json:"channel_type"`
+	URL          *string `json:"url"`
+	AuthType     string  `json:"auth_type"`
+	CredentialID *int    `json:"credential_id"`
 }
 
 type quotaResetRequestResponse struct {
@@ -268,6 +269,7 @@ func (h *QuotaResetHandler) UpdateNotificationSettings(c *gin.Context) {
 	resp, err := h.service.UpdateNotificationSettings(c.Request.Context(), quotareset.UpdateNotificationSettingsInput{
 		ActorUserID:  uc.UserID,
 		Enabled:      req.Enabled,
+		ChannelType:  req.ChannelType,
 		URL:          req.URL,
 		AuthType:     req.AuthType,
 		CredentialID: req.CredentialID,
