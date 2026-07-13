@@ -1844,12 +1844,19 @@ race command `go test -race ./internal/quotareset -run
 '^TestWorkflowDecisionRejectsStaleNode$' -count=1` passed in 2.418s. The full
 quota reset package also passed in 25.072s.
 
-- [ ] **Step 8: Commit the state machine**
+- [x] **Step 8: Commit the state machine**
 
 ```bash
 git add backend/internal/quotareset
 git commit -m "feat(backend): execute multi-stage quota reset approvals"
 ```
+
+Evidence (2026-07-14): committed the Task 4 state machine as `906f306`
+(`feat(backend): execute multi-stage quota reset approvals`). Final verification
+after self-review passed the focused Task 4 command in 9.439s, the exact stale
+decision race command in 2.033s, the full quota reset package in 24.874s,
+`go test ./... -count=1`, `go vet ./...`, `git diff --check`, and the synthetic
+test-data domain scan.
 
 ---
 
