@@ -1839,10 +1839,22 @@ cd backend && go test -race ./internal/quotareset -run 'TestWorkflowDecisionReje
 Expected: PASS. PostgreSQL is required; report test-database setup failures
 separately from behavioral failures.
 
-Evidence (2026-07-14): the exact focused command passed in 9.430s. The exact
-race command `go test -race ./internal/quotareset -run
-'^TestWorkflowDecisionRejectsStaleNode$' -count=1` passed in 2.418s. The full
-quota reset package also passed in 25.072s.
+Invalidated evidence (2026-07-14): the earlier `-race` command passed, but
+`TestWorkflowDecisionRejectsStaleNode` submitted approval and rejection
+sequentially. It did not prove concurrent PostgreSQL request-row lock
+contention, so Step 7 was reopened until a deterministic gated concurrent test
+passed normally and under the race detector.
+
+Corrected evidence (2026-07-14): the test now holds the request row with a gate
+transaction, starts `Approve` and `Reject` concurrently against the same active
+node, waits for both callers to announce readiness, then commits the gate so
+the two public service transactions contend for the request lock. The focused
+test passed once in 1.365s and 20 repeated runs in 5.232s; the race-detector run
+passed 10 repetitions in 4.805s. Exactly one operation succeeds, the loser
+returns `WorkflowAdvancedError`, exactly one decision persists, winner-specific
+request/node state is preserved, and reset is not called. The full Task 4
+state-machine command passed in 9.080s, all quota reset tests passed in 24.689s,
+and `go test ./... -count=1`, `go vet ./...`, and `git diff --check` passed.
 
 - [x] **Step 8: Commit the state machine**
 
@@ -1853,10 +1865,10 @@ git commit -m "feat(backend): execute multi-stage quota reset approvals"
 
 Evidence (2026-07-14): committed the Task 4 state machine as `906f306`
 (`feat(backend): execute multi-stage quota reset approvals`). Final verification
-after self-review passed the focused Task 4 command in 9.439s, the exact stale
-decision race command in 2.033s, the full quota reset package in 24.874s,
-`go test ./... -count=1`, `go vet ./...`, `git diff --check`, and the synthetic
-test-data domain scan.
+after self-review passed the focused Task 4 command in 9.439s, the then-current
+sequential stale-decision test under `-race` in 2.033s, the full quota reset
+package in 24.874s, `go test ./... -count=1`, `go vet ./...`,
+`git diff --check`, and the synthetic test-data domain scan.
 
 ---
 

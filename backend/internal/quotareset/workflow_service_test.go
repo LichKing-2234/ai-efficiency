@@ -6,6 +6,9 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
+
+	"entgo.io/ent/dialect/sql"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -305,34 +308,121 @@ func TestWorkflowRejectTerminatesRequest(t *testing.T) {
 
 func TestWorkflowDecisionRejectsStaleNode(t *testing.T) {
 	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}, {}})
-	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
+	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID, fixture.actorB.ID)
 	fixture.replaceApproverIDs(t, 1, fixture.actorB.ID)
 
-	_, err := fixture.service.Approve(fixture.ctx, DecisionInput{
-		ActorUserID:    fixture.actorA.ID,
-		RequestID:      fixture.request.ID,
-		RequestNodeID:  fixture.nodes[0].ID,
-		DecisionReason: "Approved the current node",
-	})
+	ctx, cancel := context.WithTimeout(fixture.ctx, 10*time.Second)
+	defer cancel()
+	gateTx, err := fixture.client.Tx(ctx)
 	if err != nil {
-		t.Fatalf("first Approve() error = %v", err)
+		t.Fatalf("begin gate transaction: %v", err)
 	}
-	_, err = fixture.service.Reject(fixture.ctx, DecisionInput{
-		ActorUserID:    fixture.actorB.ID,
-		RequestID:      fixture.request.ID,
-		RequestNodeID:  fixture.nodes[0].ID,
-		DecisionReason: "Stale rejection",
-	})
-	var advanced *WorkflowAdvancedError
-	if !errors.As(err, &advanced) || advanced.RequestID != fixture.request.ID || !errors.Is(err, ErrWorkflowAdvanced) {
-		t.Fatalf("stale Reject() error = %v, want WorkflowAdvancedError for request %d", err, fixture.request.ID)
+	gateCommitted := false
+	defer func() {
+		if !gateCommitted {
+			_ = gateTx.Rollback()
+		}
+	}()
+	if _, err := gateTx.QuotaResetRequest.Query().
+		Where(
+			quotaresetrequest.IDEQ(fixture.request.ID),
+			func(selector *sql.Selector) { selector.ForUpdate() },
+		).
+		Only(ctx); err != nil {
+		t.Fatalf("lock gate request: %v", err)
 	}
-	latest := fixture.client.QuotaResetRequest.GetX(fixture.ctx, fixture.request.ID)
-	if latest.Status != quotaresetrequest.StatusPending || latest.CurrentNodeID == nil || *latest.CurrentNodeID != fixture.nodes[1].ID || fixture.provider.resetCalls != 0 {
-		t.Fatalf("latest state/current/reset calls = %s/%v/%d, want pending/node %d/0", latest.Status, latest.CurrentNodeID, fixture.provider.resetCalls, fixture.nodes[1].ID)
+
+	type callResult struct {
+		operation string
+		err       error
+	}
+	ready := make(chan struct{}, 2)
+	results := make(chan callResult, 2)
+	go func() {
+		ready <- struct{}{}
+		_, err := fixture.service.Approve(ctx, DecisionInput{
+			ActorUserID:    fixture.actorA.ID,
+			RequestID:      fixture.request.ID,
+			RequestNodeID:  fixture.nodes[0].ID,
+			DecisionReason: "Approved the current node",
+		})
+		results <- callResult{operation: "approve", err: err}
+	}()
+	go func() {
+		ready <- struct{}{}
+		_, err := fixture.service.Reject(ctx, DecisionInput{
+			ActorUserID:    fixture.actorB.ID,
+			RequestID:      fixture.request.ID,
+			RequestNodeID:  fixture.nodes[0].ID,
+			DecisionReason: "Rejected the current node",
+		})
+		results <- callResult{operation: "reject", err: err}
+	}()
+	for i := 0; i < 2; i++ {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			t.Fatalf("waiting for decision caller %d readiness: %v", i+1, ctx.Err())
+		}
+	}
+	if err := gateTx.Commit(); err != nil {
+		t.Fatalf("release request lock gate: %v", err)
+	}
+	gateCommitted = true
+
+	completed := make([]callResult, 0, 2)
+	resultDeadline := time.NewTimer(5 * time.Second)
+	defer resultDeadline.Stop()
+	for len(completed) < 2 {
+		select {
+		case result := <-results:
+			completed = append(completed, result)
+		case <-resultDeadline.C:
+			cancel()
+			t.Fatalf("timed out waiting for concurrent decisions; received %d of 2 results", len(completed))
+		}
+	}
+
+	var winner string
+	advancedCount := 0
+	for _, result := range completed {
+		if result.err == nil {
+			if winner != "" {
+				t.Fatalf("both concurrent decisions succeeded: first=%s second=%s", winner, result.operation)
+			}
+			winner = result.operation
+			continue
+		}
+		var advanced *WorkflowAdvancedError
+		if !errors.As(result.err, &advanced) || advanced.RequestID != fixture.request.ID || !errors.Is(result.err, ErrWorkflowAdvanced) {
+			t.Fatalf("%s error = %v, want WorkflowAdvancedError for request %d", result.operation, result.err, fixture.request.ID)
+		}
+		advancedCount++
+	}
+	if winner == "" || advancedCount != 1 {
+		t.Fatalf("winner/advanced count = %q/%d, want one success and one workflow_advanced", winner, advancedCount)
 	}
 	if count := fixture.client.QuotaResetRequestDecision.Query().CountX(fixture.ctx); count != 1 {
 		t.Fatalf("decision count = %d, want 1", count)
+	}
+	decision := fixture.client.QuotaResetRequestDecision.Query().OnlyX(fixture.ctx)
+	latest := fixture.client.QuotaResetRequest.GetX(fixture.ctx, fixture.request.ID)
+	current := fixture.client.QuotaResetRequestNode.GetX(fixture.ctx, fixture.nodes[0].ID)
+	future := fixture.client.QuotaResetRequestNode.GetX(fixture.ctx, fixture.nodes[1].ID)
+	switch winner {
+	case "approve":
+		if decision.Decision != quotaresetrequestdecision.DecisionApprove || latest.Status != quotaresetrequest.StatusPending || latest.CurrentNodeID == nil || *latest.CurrentNodeID != future.ID || current.Status != quotaresetrequestnode.StatusApproved || future.Status != quotaresetrequestnode.StatusActive {
+			t.Fatalf("approve winner state = decision %s request %s/%v nodes %s/%s", decision.Decision, latest.Status, latest.CurrentNodeID, current.Status, future.Status)
+		}
+	case "reject":
+		if decision.Decision != quotaresetrequestdecision.DecisionReject || latest.Status != quotaresetrequest.StatusRejected || latest.CurrentNodeID != nil || current.Status != quotaresetrequestnode.StatusRejected || future.Status != quotaresetrequestnode.StatusQueued {
+			t.Fatalf("reject winner state = decision %s request %s/%v nodes %s/%s", decision.Decision, latest.Status, latest.CurrentNodeID, current.Status, future.Status)
+		}
+	default:
+		t.Fatalf("unexpected winner %q", winner)
+	}
+	if fixture.provider.resetCalls != 0 {
+		t.Fatalf("reset calls = %d, want 0", fixture.provider.resetCalls)
 	}
 }
 
