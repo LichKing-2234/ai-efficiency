@@ -313,7 +313,7 @@ func (s *Service) rejectWorkflow(ctx context.Context, input DecisionInput) (*ent
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit workflow rejection: %w", err)
 	}
-	_ = s.notify(ctx, "quota_reset_request_rejected", request)
+	_ = s.notifyRequestEvent(ctx, request.ID, node.ID, NotificationRejected)
 	return request, nil
 }
 
@@ -516,9 +516,5 @@ func (s *Service) notifyActiveNode(ctx context.Context, requestID, requestNodeID
 	if requestNodeID <= 0 {
 		return nil
 	}
-	request, err := s.client.QuotaResetRequest.Get(ctx, requestID)
-	if err != nil {
-		return err
-	}
-	return s.notify(ctx, "quota_reset_approval_node_activated", request)
+	return s.notifyRequestEvent(ctx, requestID, requestNodeID, NotificationNodeActivated)
 }

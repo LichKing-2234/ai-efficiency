@@ -136,7 +136,7 @@ func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit quota reset cancellation: %w", err)
 	}
-	_ = s.notify(ctx, "quota_reset_request_cancelled", updated)
+	_ = s.notify(ctx, NotificationCancelled, updated)
 	return updated, nil
 }
 
@@ -211,7 +211,7 @@ func (s *Service) rejectLegacy(ctx context.Context, input DecisionInput) (*ent.Q
 	}, ""); err != nil {
 		return nil, err
 	}
-	_ = s.notify(ctx, "quota_reset_request_rejected", updated)
+	_ = s.notify(ctx, NotificationRejected, updated)
 	return updated, nil
 }
 
@@ -472,33 +472,66 @@ func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNo
 	return notificationSettingsResponse(row), nil
 }
 
-func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int) error {
+func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int) (*NotificationTestResult, error) {
 	if s.notifier == nil {
-		return nil
+		return &NotificationTestResult{}, nil
 	}
-	setting, err := s.client.QuotaResetNotificationSetting.Query().
-		Order(ent.Asc(quotaresetnotificationsetting.FieldID)).
-		First(ctx)
-	if ent.IsNotFound(err) {
-		return fmt.Errorf("%w: enabled webhook url is required before sending test notification", ErrInvalidNotification)
-	}
+	setting, err := loadEnabledNotificationSetting(ctx, s.client)
 	if err != nil {
-		return fmt.Errorf("load quota reset notification settings: %w", err)
+		return nil, err
 	}
-	if !setting.Enabled || strings.TrimSpace(setting.URL) == "" {
-		return fmt.Errorf("%w: enabled webhook url is required before sending test notification", ErrInvalidNotification)
+	if setting == nil || strings.TrimSpace(setting.URL) == "" {
+		return nil, fmt.Errorf("%w: enabled webhook url is required before sending test notification", ErrInvalidNotification)
 	}
-	return s.notifier.NotifyRequestEvent(ctx, "quota_reset_notification_test", &ent.QuotaResetRequest{
-		ID:                      0,
-		RequesterUserID:         actorUserID,
-		ProviderID:              0,
-		GroupID:                 "0",
-		GroupName:               "Group Alpha",
-		GroupPlatform:           "openai",
-		Reason:                  "Notification test",
-		Status:                  quotaresetrequest.StatusPending,
-		ResolvedApproverUserIds: []int{actorUserID},
+	actorPeople, err := s.currentNotificationPeopleForUserIDs(ctx, []int{actorUserID})
+	if err != nil {
+		return nil, err
+	}
+	actor := NotificationPerson{UserID: actorUserID, DisplayName: "Admin", NotificationIDs: map[string]string{}}
+	if len(actorPeople) > 0 {
+		actor = actorPeople[0]
+	}
+	delivery, err := s.notifier.Notify(ctx, NotificationContext{
+		Event:      NotificationTest,
+		OccurredAt: time.Now().UTC(),
+		RequestID:  0,
+		Status:     quotaresetrequest.StatusPending.String(),
+		Requester: NotificationPerson{
+			DisplayName:     "Alice",
+			Email:           "alice@example.com",
+			NotificationIDs: map[string]string{},
+		},
+		Recipients:      []NotificationPerson{actor},
+		DepartmentPaths: []string{"Department Alpha / Team One"},
+		GroupID:         "42",
+		GroupName:       "Group Alpha",
+		GroupPlatform:   "openai",
+		Reason:          "Complete a time-sensitive build investigation.",
+		CurrentNode: &NotificationNode{
+			Position: 0,
+			Total:    1,
+			Label:    "Department Alpha",
+			Approvers: []NotificationPerson{{
+				DisplayName:     "Bob",
+				Email:           "bob@example.org",
+				NotificationIDs: map[string]string{},
+			}},
+		},
+		ApprovalHistory: []NotificationDecision{},
+		ActionURL:       s.notificationActionURL(0),
 	})
+	if err != nil {
+		return nil, err
+	}
+	result := &NotificationTestResult{
+		Delivered:             true,
+		RecipientCount:        delivery.RecipientCount,
+		MissingRecipientCount: len(delivery.MissingRecipientUserIDs),
+	}
+	if setting.ChannelType == quotaresetnotificationsetting.ChannelTypeWecomGroupRobot && result.MissingRecipientCount > 0 {
+		result.Warning = "wecom_recipient_unavailable"
+	}
+	return result, nil
 }
 
 func (s *Service) resolveRequesterAndPrimaryProvider(ctx context.Context, userID int) (*ent.User, *ent.RelayProvider, relay.Provider, error) {
@@ -692,7 +725,7 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetSucceeded, nil, ""); err != nil {
 		return nil, err
 	}
-	_ = s.notify(ctx, "quota_reset_request_reset_succeeded", succeeded)
+	_ = s.notify(ctx, NotificationResetSucceeded, succeeded)
 	return succeeded, nil
 }
 
@@ -710,7 +743,7 @@ func (s *Service) storeResetFailure(ctx context.Context, requestID int, actorUse
 		return nil, fmt.Errorf("store reset failure: %w", saveErr)
 	}
 	_ = s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetFailed, nil, errorMessage)
-	_ = s.notify(ctx, "quota_reset_request_reset_failed", failed)
+	_ = s.notify(ctx, NotificationResetFailed, failed)
 	return failed, nil
 }
 
@@ -732,19 +765,55 @@ func (s *Service) writeEvent(ctx context.Context, requestID int, actorUserID *in
 	return nil
 }
 
-func (s *Service) notify(ctx context.Context, event string, req *ent.QuotaResetRequest) error {
+func (s *Service) notify(ctx context.Context, event NotificationEvent, req *ent.QuotaResetRequest) error {
 	if s.notifier == nil || req == nil {
 		return nil
 	}
-	if err := s.notifier.NotifyRequestEvent(ctx, event, req); err != nil {
-		_ = s.writeEvent(ctx, req.ID, nil, quotaresetrequestevent.EventTypeNotificationFailed, map[string]any{
-			"event": event,
-		}, err.Error())
+	nodeID := 0
+	if req.CurrentNodeID != nil {
+		nodeID = *req.CurrentNodeID
+	}
+	return s.notifyRequestEvent(ctx, req.ID, nodeID, event)
+}
+
+func (s *Service) notifyRequestEvent(ctx context.Context, requestID, nodeID int, event NotificationEvent) error {
+	if s.notifier == nil || requestID <= 0 {
+		return nil
+	}
+	setting, err := loadEnabledNotificationSetting(ctx, s.client)
+	if err != nil {
+		_ = s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationFailed, notificationDeliveryMetadata(event, "", nil), err.Error())
 		return err
 	}
-	return s.writeEvent(ctx, req.ID, nil, quotaresetrequestevent.EventTypeNotificationSent, map[string]any{
-		"event": event,
-	}, "")
+	if setting == nil {
+		return nil
+	}
+	notificationContext, err := s.notificationContextForRequest(ctx, requestID, nodeID, event)
+	if err != nil {
+		_ = s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationFailed, notificationDeliveryMetadata(event, setting.ChannelType.String(), nil), err.Error())
+		return err
+	}
+	delivery, err := s.notifier.Notify(ctx, notificationContext)
+	if err != nil {
+		_ = s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationFailed, notificationDeliveryMetadata(event, setting.ChannelType.String(), nil), err.Error())
+		return err
+	}
+	return s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationSent, notificationDeliveryMetadata(event, setting.ChannelType.String(), delivery), "")
+}
+
+func notificationDeliveryMetadata(event NotificationEvent, channelType string, delivery *NotificationDeliveryResult) map[string]any {
+	recipientCount := 0
+	missingRecipientCount := 0
+	if delivery != nil {
+		recipientCount = delivery.RecipientCount
+		missingRecipientCount = len(delivery.MissingRecipientUserIDs)
+	}
+	return map[string]any{
+		"event":                   string(event),
+		"channel_type":            channelType,
+		"recipient_count":         recipientCount,
+		"missing_recipient_count": missingRecipientCount,
+	}
 }
 
 func (s *Service) list(ctx context.Context, params ListParams, viewer summaryViewer, filter func(*ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery) (*RequestListResponse, error) {

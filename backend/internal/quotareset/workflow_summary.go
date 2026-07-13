@@ -4,15 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestdecision"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestnode"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestnodeapprover"
+	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/directorysync"
 )
 
 type summaryViewer struct {
@@ -202,6 +207,318 @@ func workflowNodeHasApprover(node WorkflowNodeSummary, userID int) bool {
 		}
 	}
 	return false
+}
+
+func (s *Service) notificationContextForRequest(ctx context.Context, requestID, nodeID int, event NotificationEvent) (NotificationContext, error) {
+	request, err := s.client.QuotaResetRequest.Get(ctx, requestID)
+	if err != nil {
+		return NotificationContext{}, fmt.Errorf("load quota reset request for notification: %w", err)
+	}
+	requester, err := s.notificationRequester(ctx, request)
+	if err != nil {
+		return NotificationContext{}, err
+	}
+	nodes, err := s.client.QuotaResetRequestNode.Query().
+		Where(quotaresetrequestnode.RequestIDEQ(request.ID)).
+		Order(ent.Asc(quotaresetrequestnode.FieldPosition), ent.Asc(quotaresetrequestnode.FieldID)).
+		All(ctx)
+	if err != nil {
+		return NotificationContext{}, fmt.Errorf("load quota reset nodes for notification: %w", err)
+	}
+	nodeIDs := make([]int, 0, len(nodes))
+	for _, node := range nodes {
+		nodeIDs = append(nodeIDs, node.ID)
+	}
+	approvers := make([]*ent.QuotaResetRequestNodeApprover, 0)
+	if len(nodeIDs) > 0 {
+		approvers, err = s.client.QuotaResetRequestNodeApprover.Query().
+			Where(quotaresetrequestnodeapprover.RequestNodeIDIn(nodeIDs...)).
+			Order(ent.Asc(quotaresetrequestnodeapprover.FieldRequestNodeID), ent.Asc(quotaresetrequestnodeapprover.FieldUserID), ent.Asc(quotaresetrequestnodeapprover.FieldID)).
+			All(ctx)
+		if err != nil {
+			return NotificationContext{}, fmt.Errorf("load quota reset approvers for notification: %w", err)
+		}
+	}
+	decisions, err := s.client.QuotaResetRequestDecision.Query().
+		Where(quotaresetrequestdecision.RequestIDEQ(request.ID)).
+		Order(ent.Asc(quotaresetrequestdecision.FieldCreatedAt), ent.Asc(quotaresetrequestdecision.FieldID)).
+		All(ctx)
+	if err != nil {
+		return NotificationContext{}, fmt.Errorf("load quota reset decisions for notification: %w", err)
+	}
+
+	approversByNode := make(map[int][]NotificationPerson, len(nodes))
+	approversByUser := make(map[int]NotificationPerson)
+	for _, approver := range approvers {
+		person := notificationPersonFromApprover(approver)
+		approversByNode[approver.RequestNodeID] = append(approversByNode[approver.RequestNodeID], person)
+		if _, exists := approversByUser[person.UserID]; !exists {
+			approversByUser[person.UserID] = person
+		}
+	}
+	if nodeID <= 0 && request.CurrentNodeID != nil {
+		nodeID = *request.CurrentNodeID
+	}
+	completionDecision := workflowCompletionDecision(request, decisions)
+	if nodeID <= 0 && completionDecision != nil {
+		nodeID = completionDecision.RequestNodeID
+	}
+	var currentNode *NotificationNode
+	var currentNodeRow *ent.QuotaResetRequestNode
+	for _, node := range nodes {
+		if node.ID != nodeID {
+			continue
+		}
+		currentNodeRow = node
+		currentNode = &NotificationNode{
+			ID:            node.ID,
+			Position:      node.Position,
+			Total:         len(nodes),
+			Label:         node.Label,
+			Approvers:     append([]NotificationPerson(nil), approversByNode[node.ID]...),
+			AdminFallback: node.AdminFallbackRequired,
+		}
+		break
+	}
+	if event == NotificationNodeActivated && (currentNodeRow == nil || currentNodeRow.Status != quotaresetrequestnode.StatusActive) {
+		return NotificationContext{}, fmt.Errorf("build node activation notification: node %d is not active", nodeID)
+	}
+
+	history := make([]NotificationDecision, 0, len(decisions))
+	for _, decision := range decisions {
+		history = append(history, NotificationDecision{
+			ActorDisplayName: decision.ActorDisplayName,
+			Decision:         decision.Decision.String(),
+			Comment:          decision.Comment,
+			CreatedAt:        decision.CreatedAt.UTC(),
+		})
+	}
+	recipients, err := s.notificationRecipients(ctx, request, event, currentNode, completionDecision, approversByUser, requester)
+	if err != nil {
+		return NotificationContext{}, err
+	}
+	return NotificationContext{
+		Event:           event,
+		OccurredAt:      time.Now().UTC(),
+		RequestID:       request.ID,
+		Status:          request.Status.String(),
+		Requester:       requester,
+		Recipients:      uniqueNotificationPeople(recipients),
+		DepartmentPaths: append([]string(nil), request.RequesterDepartmentPaths...),
+		GroupID:         request.GroupID,
+		GroupName:       request.GroupName,
+		GroupPlatform:   request.GroupPlatform,
+		Reason:          request.Reason,
+		CurrentNode:     currentNode,
+		ApprovalHistory: history,
+		ActionURL:       s.notificationActionURL(request.ID),
+	}, nil
+}
+
+func (s *Service) notificationRequester(ctx context.Context, request *ent.QuotaResetRequest) (NotificationPerson, error) {
+	if request.WorkflowVersion >= WorkflowVersionV2 {
+		return NotificationPerson{
+			UserID:          request.RequesterUserID,
+			DisplayName:     request.RequesterDisplayNameSnapshot,
+			Email:           request.RequesterEmailSnapshot,
+			NotificationIDs: cloneStringMap(request.RequesterNotificationIds),
+		}, nil
+	}
+	people, err := s.currentNotificationPeopleForUserIDs(ctx, []int{request.RequesterUserID})
+	if err != nil {
+		return NotificationPerson{}, fmt.Errorf("resolve legacy requester notification identity: %w", err)
+	}
+	if len(people) == 0 {
+		return NotificationPerson{UserID: request.RequesterUserID, NotificationIDs: map[string]string{}}, nil
+	}
+	return people[0], nil
+}
+
+func (s *Service) notificationRecipients(ctx context.Context, request *ent.QuotaResetRequest, event NotificationEvent, currentNode *NotificationNode, completionDecision *ent.QuotaResetRequestDecision, approversByUser map[int]NotificationPerson, requester NotificationPerson) ([]NotificationPerson, error) {
+	switch event {
+	case NotificationNodeActivated:
+		if currentNode != nil && currentNode.AdminFallback {
+			return s.currentResolvableAdminNotificationPeople(ctx)
+		}
+		if currentNode != nil {
+			return append([]NotificationPerson(nil), currentNode.Approvers...), nil
+		}
+	case NotificationRejected, NotificationResetSucceeded:
+		return []NotificationPerson{requester}, nil
+	case NotificationCancelled:
+		if currentNode != nil && currentNode.AdminFallback {
+			return s.currentResolvableAdminNotificationPeople(ctx)
+		}
+		if currentNode != nil {
+			return append([]NotificationPerson(nil), currentNode.Approvers...), nil
+		}
+		return s.currentNotificationPeopleForUserIDs(ctx, request.ResolvedApproverUserIds)
+	case NotificationResetFailed:
+		recipients := []NotificationPerson{requester}
+		if completionDecision != nil {
+			actor := NotificationPerson{
+				UserID:          completionDecision.ActorUserID,
+				DisplayName:     completionDecision.ActorDisplayName,
+				NotificationIDs: map[string]string{},
+			}
+			if snapshot, exists := approversByUser[actor.UserID]; exists {
+				mergeNotificationPerson(&actor, snapshot)
+			}
+			recipients = append(recipients, actor)
+		} else if request.ApprovedByUserID != nil {
+			legacyActor, err := s.currentNotificationPeopleForUserIDs(ctx, []int{*request.ApprovedByUserID})
+			if err != nil {
+				return nil, err
+			}
+			recipients = append(recipients, legacyActor...)
+		}
+		admins, err := s.currentAdminNotificationPeople(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return append(recipients, admins...), nil
+	case NotificationTest:
+		return nil, nil
+	}
+	return []NotificationPerson{}, nil
+}
+
+func workflowCompletionDecision(request *ent.QuotaResetRequest, decisions []*ent.QuotaResetRequestDecision) *ent.QuotaResetRequestDecision {
+	if request.WorkflowCompletedByDecisionID == nil {
+		return nil
+	}
+	for _, decision := range decisions {
+		if decision.ID == *request.WorkflowCompletedByDecisionID {
+			return decision
+		}
+	}
+	return nil
+}
+
+func notificationPersonFromApprover(approver *ent.QuotaResetRequestNodeApprover) NotificationPerson {
+	return NotificationPerson{
+		UserID:          approver.UserID,
+		DisplayName:     approver.DisplayName,
+		Email:           approver.Email,
+		NotificationIDs: cloneStringMap(approver.NotificationIds),
+	}
+}
+
+func (s *Service) currentAdminNotificationPeople(ctx context.Context) ([]NotificationPerson, error) {
+	admins, err := s.client.User.Query().
+		Where(entuser.RoleEQ(entuser.RoleAdmin)).
+		Order(ent.Asc(entuser.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load current admins for notification: %w", err)
+	}
+	return s.currentNotificationPeople(ctx, admins)
+}
+
+func (s *Service) currentResolvableAdminNotificationPeople(ctx context.Context) ([]NotificationPerson, error) {
+	admins, err := s.currentAdminNotificationPeople(ctx)
+	if err != nil {
+		return nil, err
+	}
+	recipients := make([]NotificationPerson, 0, len(admins))
+	for _, admin := range admins {
+		if userID := strings.TrimSpace(admin.NotificationIDs["wecom"]); safeWeComUserID.MatchString(userID) {
+			recipients = append(recipients, admin)
+		}
+	}
+	return recipients, nil
+}
+
+func (s *Service) currentNotificationPeopleForUserIDs(ctx context.Context, userIDs []int) ([]NotificationPerson, error) {
+	orderedIDs := make([]int, 0, len(userIDs))
+	seen := make(map[int]struct{}, len(userIDs))
+	for _, userID := range userIDs {
+		if userID <= 0 {
+			continue
+		}
+		if _, exists := seen[userID]; exists {
+			continue
+		}
+		seen[userID] = struct{}{}
+		orderedIDs = append(orderedIDs, userID)
+	}
+	if len(orderedIDs) == 0 {
+		return []NotificationPerson{}, nil
+	}
+	users, err := s.client.User.Query().Where(entuser.IDIn(orderedIDs...)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load notification users: %w", err)
+	}
+	usersByID := make(map[int]*ent.User, len(users))
+	for _, user := range users {
+		usersByID[user.ID] = user
+	}
+	orderedUsers := make([]*ent.User, 0, len(users))
+	for _, userID := range orderedIDs {
+		if user := usersByID[userID]; user != nil {
+			orderedUsers = append(orderedUsers, user)
+		}
+	}
+	return s.currentNotificationPeople(ctx, orderedUsers)
+}
+
+func (s *Service) currentNotificationPeople(ctx context.Context, users []*ent.User) ([]NotificationPerson, error) {
+	people := make([]NotificationPerson, 0, len(users))
+	usersByID := make(map[int]*ent.User, len(users))
+	usersByEmail := make(map[string]*ent.User, len(users))
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		usersByID[user.ID] = user
+		if email := strings.ToLower(strings.TrimSpace(user.Email)); email != "" {
+			usersByEmail[email] = user
+		}
+	}
+	membersByUserID := make(map[int]*ent.DirectoryMember)
+	sourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
+	if err != nil {
+		return nil, fmt.Errorf("resolve current directory for notification: %w", err)
+	}
+	if ok && len(usersByID) > 0 {
+		members, err := s.client.DirectoryMember.Query().
+			Where(directorymember.SourceIDEQ(sourceID)).
+			Order(ent.Asc(directorymember.FieldID)).
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load current directory notification identities: %w", err)
+		}
+		for _, member := range members {
+			if !workflowMemberIsActive(member) {
+				continue
+			}
+			user := workflowMemberUser(member, usersByID, usersByEmail)
+			if user == nil || membersByUserID[user.ID] != nil {
+				continue
+			}
+			membersByUserID[user.ID] = member
+		}
+	}
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		member := membersByUserID[user.ID]
+		people = append(people, NotificationPerson{
+			UserID:          user.ID,
+			DisplayName:     firstNonEmptyQuotaReset(requesterMemberDisplayName(member), user.Username),
+			Email:           user.Email,
+			NotificationIDs: notificationIDsForMember(member),
+		})
+	}
+	return people, nil
+}
+
+func (s *Service) notificationActionURL(requestID int) string {
+	if provider, ok := s.notifier.(interface{ notificationActionURL(int) string }); ok {
+		return provider.notificationActionURL(requestID)
+	}
+	return fmt.Sprintf("/usage/quota-reset?request_id=%d", requestID)
 }
 
 func legacyApproverJSONPredicate(userID int) predicate.QuotaResetRequest {

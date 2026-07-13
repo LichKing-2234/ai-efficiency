@@ -110,8 +110,8 @@ func (f *fakeQuotaResetService) UpdateNotificationSettings(ctx context.Context, 
 	return &quotareset.NotificationSettings{}, nil
 }
 
-func (f *fakeQuotaResetService) TestNotificationSettings(context.Context, int) error {
-	return nil
+func (f *fakeQuotaResetService) TestNotificationSettings(context.Context, int) (*quotareset.NotificationTestResult, error) {
+	return &quotareset.NotificationTestResult{Delivered: true}, nil
 }
 
 func TestQuotaResetCreateRequestPassesActorAndBody(t *testing.T) {

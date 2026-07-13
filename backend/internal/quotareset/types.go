@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
@@ -203,7 +202,19 @@ type ProviderResolver interface {
 }
 
 type Notifier interface {
-	NotifyRequestEvent(ctx context.Context, event string, req *ent.QuotaResetRequest) error
+	Notify(context.Context, NotificationContext) (*NotificationDeliveryResult, error)
+}
+
+type NotificationDeliveryResult struct {
+	RecipientCount          int
+	MissingRecipientUserIDs []int
+}
+
+type NotificationTestResult struct {
+	Delivered             bool   `json:"delivered"`
+	RecipientCount        int    `json:"recipient_count"`
+	MissingRecipientCount int    `json:"missing_recipient_count"`
+	Warning               string `json:"warning,omitempty"`
 }
 
 type RequestListResponse struct {

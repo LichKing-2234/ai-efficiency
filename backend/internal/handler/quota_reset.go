@@ -31,7 +31,7 @@ type quotaResetService interface {
 	SaveApproverConfigs(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error)
 	GetNotificationSettings(context.Context) (*quotareset.NotificationSettings, error)
 	UpdateNotificationSettings(context.Context, quotareset.UpdateNotificationSettingsInput) (*quotareset.NotificationSettings, error)
-	TestNotificationSettings(context.Context, int) error
+	TestNotificationSettings(context.Context, int) (*quotareset.NotificationTestResult, error)
 }
 
 type QuotaResetHandler struct {
@@ -286,7 +286,7 @@ func (h *QuotaResetHandler) TestNotificationSettings(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.service.TestNotificationSettings(c.Request.Context(), uc.UserID); err != nil {
+	if _, err := h.service.TestNotificationSettings(c.Request.Context(), uc.UserID); err != nil {
 		writeQuotaResetError(c, err)
 		return
 	}

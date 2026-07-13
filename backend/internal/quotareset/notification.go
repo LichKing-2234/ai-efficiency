@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,131 +40,133 @@ func NewWebhookNotifier(client *ent.Client, encryptionKey string, frontendURL st
 	}
 }
 
-func (n *WebhookNotifier) NotifyRequestEvent(ctx context.Context, event string, req *ent.QuotaResetRequest) error {
-	if n == nil || n.client == nil || req == nil {
-		return nil
+func (n *WebhookNotifier) Notify(ctx context.Context, notificationContext NotificationContext) (*NotificationDeliveryResult, error) {
+	result := &NotificationDeliveryResult{}
+	if n == nil || n.client == nil {
+		return result, nil
 	}
-	setting, err := n.client.QuotaResetNotificationSetting.Query().
-		Order(ent.Asc(quotaresetnotificationsetting.FieldID)).
-		First(ctx)
-	if ent.IsNotFound(err) {
-		return nil
-	}
+	setting, err := loadEnabledNotificationSetting(ctx, n.client)
 	if err != nil {
-		return fmt.Errorf("load quota reset notification setting: %w", err)
+		return nil, err
 	}
-	if !setting.Enabled || strings.TrimSpace(setting.URL) == "" {
-		return nil
+	if setting == nil {
+		return result, nil
 	}
-	parsed, err := url.Parse(strings.TrimSpace(setting.URL))
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return fmt.Errorf("invalid webhook url")
-	}
-	payload := n.payloadForURL(parsed, event, req)
-	body, err := json.Marshal(payload)
+	adapter, err := notificationAdapterFor(setting.ChannelType.String())
 	if err != nil {
-		return fmt.Errorf("marshal webhook payload: %w", err)
+		return nil, err
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.String(), bytes.NewReader(body))
+	rendered, err := adapter.Render(notificationContext)
 	if err != nil {
-		return fmt.Errorf("create webhook request: %w", err)
+		return nil, fmt.Errorf("render %s notification: %w", setting.ChannelType, err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if setting.AuthType == quotaresetnotificationsetting.AuthTypeBearerToken {
+	rawURL := strings.TrimSpace(setting.URL)
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fmt.Errorf("%w: invalid saved webhook URL", ErrInvalidNotification)
+	}
+	if err := validateNotificationEndpoint(setting.ChannelType, parsed, setting.AuthType); err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(rendered.Body))
+	if err != nil {
+		return nil, fmt.Errorf("create webhook request: %w", sanitizeWebhookError(setting.ChannelType, rawURL, err))
+	}
+	request.Header = rendered.Headers.Clone()
+	if setting.ChannelType == quotaresetnotificationsetting.ChannelTypeGenericWebhook && setting.AuthType == quotaresetnotificationsetting.AuthTypeBearerToken {
 		token, err := n.bearerToken(ctx, setting)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		httpReq.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := n.httpClient.Do(httpReq)
+	response, err := n.httpClient.Do(request)
 	if err != nil {
-		return fmt.Errorf("send webhook: %w", err)
+		return nil, redactedWebhookSendError(setting.ChannelType, rawURL, err)
 	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxWebhookResponseBodyBytes))
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("webhook returned %d", resp.StatusCode)
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxWebhookResponseBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read webhook response: %w", err)
 	}
-	if err := webhookResponseBusinessError(respBody); err != nil {
-		return err
+	if err := adapter.ValidateResponse(response.StatusCode, responseBody); err != nil {
+		return nil, sanitizeWebhookError(setting.ChannelType, rawURL, err)
 	}
-	return nil
+	result.RecipientCount = rendered.RecipientCount
+	result.MissingRecipientUserIDs = append([]int(nil), rendered.MissingRecipientUserIDs...)
+	return result, nil
 }
 
-func (n *WebhookNotifier) payloadForURL(parsed *url.URL, event string, req *ent.QuotaResetRequest) any {
-	if isWeComRobotWebhookURL(parsed) {
-		return map[string]any{
-			"msgtype": "text",
-			"text": map[string]string{
-				"content": n.weComRobotTextContent(event, req),
-			},
+func loadEnabledNotificationSetting(ctx context.Context, client *ent.Client) (*ent.QuotaResetNotificationSetting, error) {
+	rows, err := client.QuotaResetNotificationSetting.Query().
+		Where(quotaresetnotificationsetting.Enabled(true)).
+		Order(ent.Asc(quotaresetnotificationsetting.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load enabled quota reset notification setting: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	if len(rows) != 1 {
+		return nil, fmt.Errorf("%w: expected one enabled notification setting, found %d", ErrInvalidNotification, len(rows))
+	}
+	return rows[0], nil
+}
+
+func (n *WebhookNotifier) notificationActionURL(requestID int) string {
+	path := fmt.Sprintf("/usage/quota-reset?request_id=%d", requestID)
+	if n == nil || n.frontendURL == "" {
+		return path
+	}
+	return n.frontendURL + path
+}
+
+func redactedWebhookSendError(channelType quotaresetnotificationsetting.ChannelType, rawURL string, err error) error {
+	preview := webhookURLPreview(channelType, rawURL)
+	if preview == "" {
+		preview = "configured webhook"
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil {
+		err = urlErr.Err
+	}
+	return fmt.Errorf("send webhook to %s: %w", preview, sanitizeWebhookError(channelType, rawURL, err))
+}
+
+type sanitizedNotificationError struct {
+	message string
+	cause   error
+}
+
+func (e *sanitizedNotificationError) Error() string { return e.message }
+
+func (e *sanitizedNotificationError) Unwrap() error { return e.cause }
+
+func sanitizeWebhookError(channelType quotaresetnotificationsetting.ChannelType, rawURL string, err error) error {
+	if err == nil {
+		return nil
+	}
+	preview := webhookURLPreview(channelType, rawURL)
+	if preview == "" {
+		preview = "configured webhook"
+	}
+	message := strings.ReplaceAll(err.Error(), rawURL, preview)
+	parsed, parseErr := url.Parse(rawURL)
+	if parseErr == nil && parsed.RawQuery != "" {
+		message = strings.ReplaceAll(message, "?"+parsed.RawQuery, "")
+		message = strings.ReplaceAll(message, parsed.RawQuery, "[redacted query]")
+		for _, values := range parsed.Query() {
+			for _, value := range values {
+				if value == "" {
+					continue
+				}
+				message = strings.ReplaceAll(message, value, "[redacted]")
+				message = strings.ReplaceAll(message, url.QueryEscape(value), "[redacted]")
+			}
 		}
 	}
-	return n.payload(event, req)
-}
-
-func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest) map[string]any {
-	payload := map[string]any{
-		"event":                      event,
-		"request_id":                 req.ID,
-		"status":                     req.Status.String(),
-		"requester_user_id":          req.RequesterUserID,
-		"provider_id":                req.ProviderID,
-		"group_id":                   req.GroupID,
-		"group_name":                 req.GroupName,
-		"group_platform":             req.GroupPlatform,
-		"reason_preview":             reasonPreview(req.Reason),
-		"resolved_approver_user_ids": req.ResolvedApproverUserIds,
-		"occurred_at":                time.Now().UTC().Format(time.RFC3339),
-	}
-	if n.frontendURL != "" {
-		payload["action_url"] = fmt.Sprintf("%s/usage/quota-reset?request_id=%d", n.frontendURL, req.ID)
-	}
-	return payload
-}
-
-func (n *WebhookNotifier) weComRobotTextContent(event string, req *ent.QuotaResetRequest) string {
-	lines := []string{
-		"AI Efficiency 额度重置审批通知",
-		"事件：" + quotaResetWebhookEventLabel(event),
-		fmt.Sprintf("申请ID：%d", req.ID),
-		"订阅组：" + req.GroupName,
-		"状态：" + req.Status.String(),
-	}
-	if reason := reasonPreview(req.Reason); reason != "" {
-		lines = append(lines, "原因："+reason)
-	}
-	if n.frontendURL != "" {
-		lines = append(lines, "处理入口："+fmt.Sprintf("%s/usage/quota-reset?request_id=%d", n.frontendURL, req.ID))
-	}
-	return strings.Join(lines, "\n")
-}
-
-func isWeComRobotWebhookURL(parsed *url.URL) bool {
-	if parsed == nil {
-		return false
-	}
-	return strings.EqualFold(parsed.Hostname(), "qyapi.weixin.qq.com") && parsed.Path == "/cgi-bin/webhook/send"
-}
-
-func quotaResetWebhookEventLabel(event string) string {
-	switch event {
-	case "quota_reset_notification_test":
-		return "测试通知"
-	case "quota_reset_request_created":
-		return "新申请待审批"
-	case "quota_reset_request_cancelled":
-		return "申请已取消"
-	case "quota_reset_request_rejected":
-		return "申请已拒绝"
-	case "quota_reset_request_reset_succeeded":
-		return "额度已重置"
-	case "quota_reset_request_reset_failed":
-		return "额度重置失败"
-	default:
-		return event
-	}
+	return &sanitizedNotificationError{message: message, cause: err}
 }
 
 func webhookResponseBusinessError(body []byte) error {
@@ -213,13 +216,4 @@ func (n *WebhookNotifier) bearerToken(ctx context.Context, setting *ent.QuotaRes
 		return "", fmt.Errorf("webhook bearer token credential is empty")
 	}
 	return token, nil
-}
-
-func reasonPreview(reason string) string {
-	reason = strings.TrimSpace(reason)
-	runes := []rune(reason)
-	if len(runes) <= 160 {
-		return reason
-	}
-	return string(runes[:160])
 }

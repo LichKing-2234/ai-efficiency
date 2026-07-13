@@ -497,7 +497,7 @@ func TestNotificationSettingsTestRequiresEnabledSavedWebhook(t *testing.T) {
 	client := testdb.Open(t)
 	svc := NewService(client, nil, nil, NewWebhookNotifier(client, "", ""))
 
-	err := svc.TestNotificationSettings(ctx, 7)
+	_, err := svc.TestNotificationSettings(ctx, 7)
 	if !errors.Is(err, ErrInvalidNotification) {
 		t.Fatalf("TestNotificationSettings(no setting) error = %v, want ErrInvalidNotification", err)
 	}
@@ -509,7 +509,7 @@ func TestNotificationSettingsTestRequiresEnabledSavedWebhook(t *testing.T) {
 		SetCreatedByUserID(1).
 		SetUpdatedByUserID(1).
 		SaveX(ctx)
-	err = svc.TestNotificationSettings(ctx, 7)
+	_, err = svc.TestNotificationSettings(ctx, 7)
 	if !errors.Is(err, ErrInvalidNotification) {
 		t.Fatalf("TestNotificationSettings(disabled setting) error = %v, want ErrInvalidNotification", err)
 	}
