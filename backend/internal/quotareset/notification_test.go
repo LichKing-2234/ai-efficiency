@@ -20,6 +20,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestnode"
+	"github.com/ai-efficiency/backend/ent/quotaresetrequestnodeapprover"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
@@ -85,6 +86,95 @@ func TestGenericWebhookAdapterRendersVersionedWorkflowPayload(t *testing.T) {
 	}
 }
 
+func TestGenericWebhookAdapterBoundsUserControlledPayload(t *testing.T) {
+	ctx := notificationAdapterTestContext()
+	ctx.Requester.DisplayName = "Requester-" + strings.Repeat("申", 12000)
+	ctx.Requester.Email = strings.Repeat("e", 12000) + "@example.com"
+	ctx.Requester.NotificationIDs = map[string]string{"wecom": "generic-hidden-requester-channel-id"}
+	ctx.Status = "pending-" + strings.Repeat("状", 4000)
+	ctx.DepartmentPaths = make([]string, 0, 80)
+	for i := 0; i < 80; i++ {
+		ctx.DepartmentPaths = append(ctx.DepartmentPaths, fmt.Sprintf("Department %02d-%s", i, strings.Repeat("部", 2000)))
+	}
+	ctx.GroupID = "group-" + strings.Repeat("标", 4000)
+	ctx.GroupName = "Group Alpha-" + strings.Repeat("组", 4000)
+	ctx.GroupPlatform = "platform-" + strings.Repeat("平", 4000)
+	ctx.Reason = "Reason-" + strings.Repeat("理", 30000) + "-reason-tail"
+	ctx.CurrentNode.Label = "Node-" + strings.Repeat("节", 6000)
+	ctx.CurrentNode.Approvers = make([]NotificationPerson, 0, 80)
+	for i := 0; i < 80; i++ {
+		ctx.CurrentNode.Approvers = append(ctx.CurrentNode.Approvers, NotificationPerson{
+			UserID:          i + 1,
+			DisplayName:     fmt.Sprintf("Approver %02d-%s", i, strings.Repeat("审", 2000)),
+			Email:           fmt.Sprintf("approver-%02d-%s@example.org", i, strings.Repeat("e", 2000)),
+			NotificationIDs: map[string]string{"wecom": fmt.Sprintf("generic-hidden-approver-channel-id-%d", i)},
+		})
+	}
+	ctx.ApprovalHistory = make([]NotificationDecision, 0, 80)
+	for i := 0; i < 80; i++ {
+		ctx.ApprovalHistory = append(ctx.ApprovalHistory, NotificationDecision{
+			ActorDisplayName: fmt.Sprintf("Reviewer %02d-%s", i, strings.Repeat("批", 2000)),
+			Decision:         "approve-" + strings.Repeat("决", 1000),
+			Comment:          fmt.Sprintf("Comment %02d-%s-comment-tail", i, strings.Repeat("评", 5000)),
+			CreatedAt:        time.Date(2026, time.July, 10, 2, i%60, 0, 0, time.UTC),
+		})
+	}
+	ctx.ActionURL = "https://ai-efficiency.example.com/usage/quota-reset?request_id=123&context=" + strings.Repeat("链", 6000)
+
+	rendered, err := (genericWebhookAdapter{}).Render(ctx)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if got := len(rendered.Body); got > 64*1024 {
+		t.Fatalf("generic payload bytes = %d, want <= 65536", got)
+	}
+	if !utf8.Valid(rendered.Body) {
+		t.Fatal("generic payload is not valid UTF-8")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rendered.Body, &payload); err != nil {
+		t.Fatalf("decode bounded generic payload: %v", err)
+	}
+	for _, key := range []string{"schema_version", "event", "request", "current_node", "approval_history", "action_url", "occurred_at"} {
+		if _, exists := payload[key]; !exists {
+			t.Fatalf("bounded payload missing stable key %q: %#v", key, payload)
+		}
+	}
+	if payload["schema_version"] != float64(2) || payload["event"] != string(NotificationNodeActivated) {
+		t.Fatalf("bounded payload schema/event = %#v/%#v", payload["schema_version"], payload["event"])
+	}
+	request := notificationJSONMap(t, payload["request"], "request")
+	if request["id"] != float64(123) || request["reason"] == "" || strings.Contains(fmt.Sprint(request["reason"]), "reason-tail") {
+		t.Fatalf("bounded request = %#v, want required id and truncated reason", request)
+	}
+	requester := notificationJSONMap(t, request["requester"], "request.requester")
+	departments, ok := requester["departments"].([]any)
+	if !ok || len(departments) > 16 {
+		t.Fatalf("bounded departments = %#v, want at most 16", requester["departments"])
+	}
+	node := notificationJSONMap(t, payload["current_node"], "current_node")
+	if node["id"] != float64(456) {
+		t.Fatalf("bounded current_node = %#v, want required node id", node)
+	}
+	approvers, ok := node["approvers"].([]any)
+	if !ok || len(approvers) > 20 {
+		t.Fatalf("bounded approvers = %#v, want at most 20", node["approvers"])
+	}
+	history, ok := payload["approval_history"].([]any)
+	if !ok || len(history) > 16 {
+		t.Fatalf("bounded approval_history = %#v, want at most 16", payload["approval_history"])
+	}
+	if actionURL, ok := payload["action_url"].(string); !ok || !strings.Contains(actionURL, "request_id=123") {
+		t.Fatalf("bounded action_url = %#v, want required request link", payload["action_url"])
+	}
+	body := string(rendered.Body)
+	for _, forbidden := range []string{"generic-hidden-", "notification_ids", "recipients"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("bounded generic payload exposed channel data %q", forbidden)
+		}
+	}
+}
+
 func TestWeComAdapterRendersMarkdownRequesterTeamReasonAndMentions(t *testing.T) {
 	rendered, err := (weComGroupRobotAdapter{maxBytes: 4096}).Render(notificationAdapterTestContext())
 	if err != nil {
@@ -115,6 +205,39 @@ func TestWeComAdapterRendersMarkdownRequesterTeamReasonAndMentions(t *testing.T)
 	}
 }
 
+func TestWeComAdapterUsesEventAppropriateRecipientLabel(t *testing.T) {
+	tests := []struct {
+		event     NotificationEvent
+		wantLabel string
+	}{
+		{event: NotificationNodeActivated, wantLabel: "待审批："},
+		{event: NotificationRejected, wantLabel: "通知对象："},
+		{event: NotificationCancelled, wantLabel: "通知对象："},
+		{event: NotificationResetSucceeded, wantLabel: "通知对象："},
+		{event: NotificationResetFailed, wantLabel: "通知对象："},
+		{event: NotificationTest, wantLabel: "通知对象："},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.event), func(t *testing.T) {
+			ctx := notificationAdapterTestContext()
+			ctx.Event = tt.event
+			rendered, err := (weComGroupRobotAdapter{maxBytes: 4096}).Render(ctx)
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+			_, content := decodeWeComNotification(t, rendered.Body)
+			if !strings.Contains(content, tt.wantLabel+"<@bob-wecom-id>") {
+				t.Fatalf("content = %q, want recipient label %q", content, tt.wantLabel)
+			}
+			for _, label := range []string{"待审批：", "通知对象："} {
+				if label != tt.wantLabel && strings.Contains(content, label) {
+					t.Fatalf("content = %q, retained wrong recipient label %q", content, label)
+				}
+			}
+		})
+	}
+}
+
 func TestWeComAdapterEscapesUserControlledMentionAndMarkdownSyntax(t *testing.T) {
 	ctx := notificationAdapterTestContext()
 	ctx.Reason = "<@all> **approve now**"
@@ -131,6 +254,31 @@ func TestWeComAdapterEscapesUserControlledMentionAndMarkdownSyntax(t *testing.T)
 		if !strings.Contains(content, want) {
 			t.Fatalf("escaped content = %q, want %q", content, want)
 		}
+	}
+}
+
+func TestWeComAdapterRejectsReservedMentionUserIDs(t *testing.T) {
+	ctx := notificationAdapterTestContext()
+	ctx.Recipients = []NotificationPerson{
+		{UserID: 8, DisplayName: "Reserved Lower", NotificationIDs: map[string]string{"wecom": "all"}},
+		{UserID: 9, DisplayName: "Reserved Upper", NotificationIDs: map[string]string{"wecom": " ALL "}},
+	}
+
+	rendered, err := (weComGroupRobotAdapter{maxBytes: 4096}).Render(ctx)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	_, content := decodeWeComNotification(t, rendered.Body)
+	if strings.Contains(strings.ToLower(content), "<@all>") {
+		t.Fatalf("content rendered reserved group mention: %q", content)
+	}
+	for _, want := range []string{"Reserved Lower（无法 @）", "Reserved Upper（无法 @）"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("content = %q, want unavailable marker %q", content, want)
+		}
+	}
+	if rendered.RecipientCount != 0 || !reflect.DeepEqual(rendered.MissingRecipientUserIDs, []int{8, 9}) {
+		t.Fatalf("recipient coverage = %d/%v, want 0/[8 9]", rendered.RecipientCount, rendered.MissingRecipientUserIDs)
 	}
 }
 
@@ -228,6 +376,194 @@ func TestWebhookNotifierUsesExplicitChannelInsteadOfURLShape(t *testing.T) {
 	}
 }
 
+func TestWebhookNotifierReportsActualChannelAndDeliveryState(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	notifier := NewWebhookNotifier(client, "", "https://ai-efficiency.example.com")
+
+	result, err := notifier.Notify(ctx, notificationAdapterTestContext())
+	if err != nil {
+		t.Fatalf("Notify() without setting error = %v", err)
+	}
+	if result == nil || result.Delivered || result.ChannelType != "" {
+		t.Fatalf("Notify() without setting result = %+v, want non-delivered result without channel", result)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	createNotificationSetting(t, ctx, client, quotaresetnotificationsetting.ChannelTypeGenericWebhook,
+		server.URL, quotaresetnotificationsetting.AuthTypeNone, nil)
+
+	result, err = notifier.Notify(ctx, notificationAdapterTestContext())
+	if err != nil {
+		t.Fatalf("Notify() error = %v", err)
+	}
+	if result == nil || !result.Delivered || result.ChannelType != quotaresetnotificationsetting.ChannelTypeGenericWebhook.String() {
+		t.Fatalf("Notify() result = %+v, want delivered generic_webhook snapshot", result)
+	}
+}
+
+func TestWorkflowNotificationDoesNotAuditSentWhenSettingDisabledAfterPreload(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
+	var deliveries atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deliveries.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	createNotificationSetting(t, fixture.ctx, fixture.client, quotaresetnotificationsetting.ChannelTypeGenericWebhook,
+		server.URL, quotaresetnotificationsetting.AuthTypeNone, nil)
+	setting := fixture.client.QuotaResetNotificationSetting.Query().OnlyX(fixture.ctx)
+	inner := NewWebhookNotifier(fixture.client, "", "https://ai-efficiency.example.com")
+	fixture.service.notifier = notificationNotifierFunc(func(ctx context.Context, notificationContext NotificationContext) (*NotificationDeliveryResult, error) {
+		fixture.client.QuotaResetNotificationSetting.UpdateOneID(setting.ID).SetEnabled(false).SaveX(ctx)
+		return inner.Notify(ctx, notificationContext)
+	})
+
+	if err := fixture.service.notifyRequestEvent(fixture.ctx, fixture.request.ID, fixture.nodes[0].ID, NotificationNodeActivated); err != nil {
+		t.Fatalf("notifyRequestEvent() error = %v", err)
+	}
+	if got := deliveries.Load(); got != 0 {
+		t.Fatalf("HTTP deliveries = %d, want 0 after setting disable", got)
+	}
+	sentEvents := fixture.client.QuotaResetRequestEvent.Query().
+		Where(
+			quotaresetrequestevent.RequestIDEQ(fixture.request.ID),
+			quotaresetrequestevent.EventTypeEQ(quotaresetrequestevent.EventTypeNotificationSent),
+		).
+		AllX(fixture.ctx)
+	if len(sentEvents) != 0 {
+		t.Fatalf("notification_sent events = %d, want 0 for non-delivery", len(sentEvents))
+	}
+}
+
+func TestNotificationTestDoesNotClaimDeliveryWhenSettingDisabledAfterPreload(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	admin := createQuotaResetUser(t, ctx, client, "admin-disabled", "admin-disabled@example.com", nil, "admin")
+	var deliveries atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deliveries.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	createNotificationSetting(t, ctx, client, quotaresetnotificationsetting.ChannelTypeGenericWebhook,
+		server.URL, quotaresetnotificationsetting.AuthTypeNone, nil)
+	setting := client.QuotaResetNotificationSetting.Query().OnlyX(ctx)
+	inner := NewWebhookNotifier(client, "", "https://ai-efficiency.example.com")
+	service := NewService(client, nil, nil, notificationNotifierFunc(func(ctx context.Context, notificationContext NotificationContext) (*NotificationDeliveryResult, error) {
+		client.QuotaResetNotificationSetting.UpdateOneID(setting.ID).SetEnabled(false).SaveX(ctx)
+		return inner.Notify(ctx, notificationContext)
+	}))
+
+	result, err := service.TestNotificationSettings(ctx, admin.ID)
+	if err != nil {
+		t.Fatalf("TestNotificationSettings() error = %v", err)
+	}
+	if result == nil || result.Delivered {
+		t.Fatalf("test result = %+v, want non-delivered result", result)
+	}
+	if got := deliveries.Load(); got != 0 {
+		t.Fatalf("HTTP deliveries = %d, want 0 after setting disable", got)
+	}
+}
+
+func TestWorkflowNotificationAuditsActualNotifierChannel(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
+	var deliveries atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deliveries.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+	}))
+	defer server.Close()
+	createNotificationSetting(t, fixture.ctx, fixture.client, quotaresetnotificationsetting.ChannelTypeGenericWebhook,
+		server.URL, quotaresetnotificationsetting.AuthTypeNone, nil)
+	setting := fixture.client.QuotaResetNotificationSetting.Query().OnlyX(fixture.ctx)
+	inner := NewWebhookNotifier(fixture.client, "", "https://ai-efficiency.example.com")
+	inner.httpClient = &http.Client{Transport: rewriteURLTransport(t, server.URL)}
+	fixture.service.notifier = notificationNotifierFunc(func(ctx context.Context, notificationContext NotificationContext) (*NotificationDeliveryResult, error) {
+		fixture.client.QuotaResetNotificationSetting.UpdateOneID(setting.ID).
+			SetChannelType(quotaresetnotificationsetting.ChannelTypeWecomGroupRobot).
+			SetURL("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-channel-switch-key").
+			SetAuthType(quotaresetnotificationsetting.AuthTypeNone).
+			SaveX(ctx)
+		return inner.Notify(ctx, notificationContext)
+	})
+
+	if err := fixture.service.notifyRequestEvent(fixture.ctx, fixture.request.ID, fixture.nodes[0].ID, NotificationNodeActivated); err != nil {
+		t.Fatalf("notifyRequestEvent() error = %v", err)
+	}
+	if got := deliveries.Load(); got != 1 {
+		t.Fatalf("HTTP deliveries = %d, want 1", got)
+	}
+	event := fixture.client.QuotaResetRequestEvent.Query().
+		Where(
+			quotaresetrequestevent.RequestIDEQ(fixture.request.ID),
+			quotaresetrequestevent.EventTypeEQ(quotaresetrequestevent.EventTypeNotificationSent),
+		).
+		OnlyX(fixture.ctx)
+	if event.Metadata["channel_type"] != quotaresetnotificationsetting.ChannelTypeWecomGroupRobot.String() {
+		t.Fatalf("notification metadata = %#v, want actual WeCom channel", event.Metadata)
+	}
+}
+
+func TestNotificationTestUsesActualChannelAfterConcurrentSwitch(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	admin := createQuotaResetUser(t, ctx, client, "admin-switch", "admin-switch@example.com", nil, "admin")
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-switch", "Department Switch", nil)
+	member := createQuotaResetMember(t, ctx, client, source.ID, "switch-member", admin.Email, department.ExternalID, &admin.ID)
+	client.DirectoryMember.UpdateOneID(member.ID).
+		SetMetadata(map[string]any{"wecom_userid": "all"}).
+		SaveX(ctx)
+
+	var deliveredContent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Markdown struct {
+				Content string `json:"content"`
+			} `json:"markdown"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode switched test notification: %v", err)
+		}
+		deliveredContent = payload.Markdown.Content
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+	}))
+	defer server.Close()
+	createNotificationSetting(t, ctx, client, quotaresetnotificationsetting.ChannelTypeGenericWebhook,
+		server.URL, quotaresetnotificationsetting.AuthTypeNone, nil)
+	setting := client.QuotaResetNotificationSetting.Query().OnlyX(ctx)
+	inner := NewWebhookNotifier(client, "", "https://ai-efficiency.example.com")
+	inner.httpClient = &http.Client{Transport: rewriteURLTransport(t, server.URL)}
+	service := NewService(client, nil, nil, notificationNotifierFunc(func(ctx context.Context, notificationContext NotificationContext) (*NotificationDeliveryResult, error) {
+		client.QuotaResetNotificationSetting.UpdateOneID(setting.ID).
+			SetChannelType(quotaresetnotificationsetting.ChannelTypeWecomGroupRobot).
+			SetURL("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-test-switch-key").
+			SetAuthType(quotaresetnotificationsetting.AuthTypeNone).
+			SaveX(ctx)
+		return inner.Notify(ctx, notificationContext)
+	}))
+
+	result, err := service.TestNotificationSettings(ctx, admin.ID)
+	if err != nil {
+		t.Fatalf("TestNotificationSettings() error = %v", err)
+	}
+	if result == nil || !result.Delivered || result.RecipientCount != 0 || result.MissingRecipientCount != 1 || result.Warning != "wecom_recipient_unavailable" {
+		t.Fatalf("test result = %+v, want actual-channel unavailable-recipient warning", result)
+	}
+	if strings.Contains(strings.ToLower(deliveredContent), "<@all>") {
+		t.Fatalf("switched test notification rendered reserved group mention: %q", deliveredContent)
+	}
+}
+
 func TestWebhookNotifierRejectsRedirectWithoutFollowing(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -307,6 +643,48 @@ func TestWorkflowActivationNotifiesOnlyActiveNode(t *testing.T) {
 	assertNotificationEventMetadata(t, fixture.ctx, fixture.client, request.ID, 1)
 }
 
+func TestWorkflowActivationSkipsCancelledRequestAfterDelayedContext(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
+	deliveredEvents := make([]string, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode notification payload: %v", err)
+		}
+		deliveredEvents = append(deliveredEvents, fmt.Sprint(payload["event"]))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	createNotificationSetting(t, fixture.ctx, fixture.client, quotaresetnotificationsetting.ChannelTypeGenericWebhook,
+		server.URL, quotaresetnotificationsetting.AuthTypeNone, nil)
+	fixture.service.notifier = NewWebhookNotifier(fixture.client, "", "https://ai-efficiency.example.com")
+
+	if _, err := fixture.service.Cancel(fixture.ctx, fixture.requester.ID, fixture.request.ID); err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+	if !reflect.DeepEqual(deliveredEvents, []string{string(NotificationCancelled)}) {
+		t.Fatalf("events after cancellation = %v, want cancellation delivery", deliveredEvents)
+	}
+
+	err := fixture.service.notifyActiveNode(fixture.ctx, fixture.request.ID, fixture.nodes[0].ID)
+	if err == nil {
+		t.Fatal("notifyActiveNode() error = nil for cancelled request")
+	}
+	if !reflect.DeepEqual(deliveredEvents, []string{string(NotificationCancelled)}) {
+		t.Fatalf("events after delayed activation = %v, want no activation delivery", deliveredEvents)
+	}
+	sentEvents := fixture.client.QuotaResetRequestEvent.Query().
+		Where(
+			quotaresetrequestevent.RequestIDEQ(fixture.request.ID),
+			quotaresetrequestevent.EventTypeEQ(quotaresetrequestevent.EventTypeNotificationSent),
+		).
+		AllX(fixture.ctx)
+	if len(sentEvents) != 1 || sentEvents[0].Metadata["event"] != string(NotificationCancelled) {
+		t.Fatalf("notification_sent events = %#v, want cancellation only", sentEvents)
+	}
+}
+
 func TestWorkflowAdminFallbackPreservesMissingRecipientCoverage(t *testing.T) {
 	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{adminFallback: true}})
 	source := createQuotaResetDirectorySource(t, fixture.ctx, fixture.client)
@@ -343,6 +721,66 @@ func TestWorkflowAdminFallbackPreservesMissingRecipientCoverage(t *testing.T) {
 				t.Fatalf("recipient coverage = %d/%v, want 1/%v", rendered.RecipientCount, rendered.MissingRecipientUserIDs, []int{unresolvedAdmin.ID})
 			}
 		})
+	}
+}
+
+func TestCurrentNotificationPeopleQueriesOnlyPotentialDirectoryMatches(t *testing.T) {
+	ctx := context.Background()
+	client, dsn := testdb.OpenWithDSN(t)
+	matchedUser := createQuotaResetUser(t, ctx, client, "matched-user", "matched-user@example.com", nil, "user")
+	conflictingEmailUser := createQuotaResetUser(t, ctx, client, "email-conflict", "email-conflict@example.org", nil, "user")
+	emailFallbackUser := createQuotaResetUser(t, ctx, client, "email-fallback", "email-fallback@example.com", nil, "user")
+	unrelatedUser := createQuotaResetUser(t, ctx, client, "unrelated-user", "unrelated-user@example.org", nil, "user")
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-targeted", "Department Targeted", nil)
+	createQuotaResetMember(t, ctx, client, source.ID, "matched-id-wecom", conflictingEmailUser.Email, department.ExternalID, &matchedUser.ID)
+	createQuotaResetMember(t, ctx, client, source.ID, "email-fallback-wecom", emailFallbackUser.Email, department.ExternalID, nil)
+	inactive := createQuotaResetMember(t, ctx, client, source.ID, "inactive-conflict-wecom", "inactive-conflict@example.net", department.ExternalID, &conflictingEmailUser.ID)
+	client.DirectoryMember.UpdateOneID(inactive.ID).SetStatus("inactive").SaveX(ctx)
+	createQuotaResetMember(t, ctx, client, source.ID, "unrelated-wecom", unrelatedUser.Email, department.ExternalID, &unrelatedUser.ID)
+
+	queryLogs := make([]string, 0)
+	debugClient, err := ent.Open("postgres", dsn, ent.Debug(), ent.Log(func(values ...any) {
+		queryLogs = append(queryLogs, fmt.Sprint(values...))
+	}))
+	if err != nil {
+		t.Fatalf("open debug ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = debugClient.Close() })
+	service := NewService(debugClient, nil, nil, nil)
+
+	people, err := service.currentNotificationPeople(ctx, []*ent.User{emailFallbackUser, matchedUser, conflictingEmailUser})
+	if err != nil {
+		t.Fatalf("currentNotificationPeople() error = %v", err)
+	}
+	if len(people) != 3 || people[0].UserID != emailFallbackUser.ID || people[1].UserID != matchedUser.ID || people[2].UserID != conflictingEmailUser.ID {
+		t.Fatalf("notification people order = %#v, want requested user order", people)
+	}
+	if people[0].NotificationIDs["wecom"] != "email-fallback-wecom" || people[1].NotificationIDs["wecom"] != "matched-id-wecom" {
+		t.Fatalf("resolved notification identities = %#v, want email fallback and matched-id identities", people)
+	}
+	if len(people[2].NotificationIDs) != 0 {
+		t.Fatalf("inactive/conflicting identity resolved for user %d: %#v", conflictingEmailUser.ID, people[2])
+	}
+
+	directoryQuery := ""
+	for _, queryLog := range queryLogs {
+		if strings.Contains(queryLog, `FROM "directory_members"`) {
+			directoryQuery = queryLog
+		}
+	}
+	whereIndex := strings.Index(directoryQuery, " WHERE ")
+	if whereIndex < 0 {
+		t.Fatalf("directory member query missing WHERE clause: %q", directoryQuery)
+	}
+	whereClause := directoryQuery[whereIndex:]
+	for _, required := range []string{`"source_id"`, `"matched_user_id"`, `"email_normalized"`, " OR "} {
+		if !strings.Contains(whereClause, required) {
+			t.Fatalf("directory member WHERE clause = %q, want %q", whereClause, required)
+		}
+	}
+	if strings.Contains(directoryQuery, unrelatedUser.Email) {
+		t.Fatalf("directory member query included unrelated email: %q", directoryQuery)
 	}
 }
 
@@ -506,6 +944,50 @@ func TestNotificationTestReturnsMentionCoverageWarning(t *testing.T) {
 	}
 }
 
+func TestNotificationTestRejectsReservedWeComMentionUserID(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	admin := createQuotaResetUser(t, ctx, client, "admin-reserved", "admin-reserved@example.com", nil, "admin")
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-reserved", "Department Reserved", nil)
+	member := createQuotaResetMember(t, ctx, client, source.ID, "reserved-member", admin.Email, department.ExternalID, &admin.ID)
+	client.DirectoryMember.UpdateOneID(member.ID).
+		SetMetadata(map[string]any{"wecom_userid": " ALL "}).
+		SaveX(ctx)
+
+	var deliveredContent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Markdown struct {
+				Content string `json:"content"`
+			} `json:"markdown"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode test notification: %v", err)
+		}
+		deliveredContent = payload.Markdown.Content
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+	}))
+	defer server.Close()
+	createNotificationSetting(t, ctx, client, quotaresetnotificationsetting.ChannelTypeWecomGroupRobot,
+		"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-reserved-id-key", quotaresetnotificationsetting.AuthTypeNone, nil)
+	notifier := NewWebhookNotifier(client, "", "https://ai-efficiency.example.com")
+	notifier.httpClient = &http.Client{Transport: rewriteURLTransport(t, server.URL)}
+	service := NewService(client, nil, nil, notifier)
+
+	result, err := service.TestNotificationSettings(ctx, admin.ID)
+	if err != nil {
+		t.Fatalf("TestNotificationSettings() error = %v", err)
+	}
+	if !result.Delivered || result.RecipientCount != 0 || result.MissingRecipientCount != 1 || result.Warning != "wecom_recipient_unavailable" {
+		t.Fatalf("test result = %+v, want delivered unavailable-recipient warning", result)
+	}
+	if strings.Contains(strings.ToLower(deliveredContent), "<@all>") {
+		t.Fatalf("test notification rendered reserved group mention: %q", deliveredContent)
+	}
+}
+
 func TestWebhookNotifierSendsBearerTokenAndWritesNoSecretToPayload(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -561,6 +1043,58 @@ func TestWebhookNotifierReturnsErrorForHTTPFailure(t *testing.T) {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Notify() returned timeout instead of HTTP status: %v", err)
+	}
+}
+
+func TestNotificationFailurePreservesRenderedRecipientCoverage(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+	fixture.client.QuotaResetRequestNodeApprover.Delete().
+		Where(quotaresetrequestnodeapprover.RequestNodeIDEQ(fixture.nodes[0].ID)).
+		ExecX(fixture.ctx)
+	for _, user := range []*ent.User{fixture.actorA, fixture.actorB} {
+		notificationIDs := map[string]string{"wecom": "all"}
+		if user.ID == fixture.actorA.ID {
+			notificationIDs["wecom"] = "approver-alpha-wecom-id"
+		}
+		fixture.client.QuotaResetRequestNodeApprover.Create().
+			SetRequestNodeID(fixture.nodes[0].ID).
+			SetUserID(user.ID).
+			SetDisplayName(user.Username).
+			SetEmail(user.Email).
+			SetSource(quotaresetrequestnodeapprover.SourceConfigured).
+			SetSourceDepartmentExternalIds([]string{"department-review"}).
+			SetNotificationIds(notificationIDs).
+			SaveX(fixture.ctx)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	createNotificationSetting(t, fixture.ctx, fixture.client, quotaresetnotificationsetting.ChannelTypeWecomGroupRobot,
+		"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-coverage-key", quotaresetnotificationsetting.AuthTypeNone, nil)
+	notifier := NewWebhookNotifier(fixture.client, "", "https://ai-efficiency.example.com")
+	notifier.httpClient = &http.Client{Transport: rewriteURLTransport(t, server.URL)}
+	fixture.service.notifier = notifier
+
+	err := fixture.service.notifyRequestEvent(fixture.ctx, fixture.request.ID, fixture.nodes[0].ID, NotificationNodeActivated)
+	if err == nil || !strings.Contains(err.Error(), "webhook returned 500") {
+		t.Fatalf("notifyRequestEvent() error = %v, want webhook returned 500", err)
+	}
+	event := fixture.client.QuotaResetRequestEvent.Query().
+		Where(
+			quotaresetrequestevent.RequestIDEQ(fixture.request.ID),
+			quotaresetrequestevent.EventTypeEQ(quotaresetrequestevent.EventTypeNotificationFailed),
+		).
+		OnlyX(fixture.ctx)
+	if got := notificationMetadataInt(t, event.Metadata, "recipient_count"); got != 1 {
+		t.Fatalf("notification_failed recipient_count = %d, want 1", got)
+	}
+	if got := notificationMetadataInt(t, event.Metadata, "missing_recipient_count"); got != 1 {
+		t.Fatalf("notification_failed missing_recipient_count = %d, want 1", got)
+	}
+	if event.Metadata["channel_type"] != quotaresetnotificationsetting.ChannelTypeWecomGroupRobot.String() {
+		t.Fatalf("notification_failed metadata = %#v, want actual WeCom channel", event.Metadata)
 	}
 }
 
@@ -711,6 +1245,19 @@ func notificationJSONMap(t *testing.T, value any, label string) map[string]any {
 	return result
 }
 
+func notificationMetadataInt(t *testing.T, metadata map[string]any, key string) int {
+	t.Helper()
+	switch value := metadata[key].(type) {
+	case int:
+		return value
+	case float64:
+		return int(value)
+	default:
+		t.Fatalf("notification metadata %s = %#v, want integer", key, metadata[key])
+		return 0
+	}
+}
+
 func decodeWeComNotification(t *testing.T, body []byte) (string, string) {
 	t.Helper()
 	var payload struct {
@@ -799,3 +1346,9 @@ func (b *notificationReadErrorBody) Close() error { return nil }
 type secretBearingNotificationError struct{ message string }
 
 func (e *secretBearingNotificationError) Error() string { return e.message }
+
+type notificationNotifierFunc func(context.Context, NotificationContext) (*NotificationDeliveryResult, error)
+
+func (fn notificationNotifierFunc) Notify(ctx context.Context, notificationContext NotificationContext) (*NotificationDeliveryResult, error) {
+	return fn(ctx, notificationContext)
+}

@@ -206,6 +206,8 @@ type Notifier interface {
 }
 
 type NotificationDeliveryResult struct {
+	ChannelType             string
+	Delivered               bool
 	RecipientCount          int
 	MissingRecipientUserIDs []int
 }

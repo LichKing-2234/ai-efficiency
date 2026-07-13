@@ -485,16 +485,14 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 	}
 	recipients := []NotificationPerson{}
 	missingTestRecipientCount := 0
-	if setting.ChannelType == quotaresetnotificationsetting.ChannelTypeWecomGroupRobot {
-		actorPeople, err := s.currentNotificationPeopleForUserIDs(ctx, []int{actorUserID})
-		if err != nil {
-			return nil, err
-		}
-		if len(actorPeople) > 0 && safeWeComUserID.MatchString(strings.TrimSpace(actorPeople[0].NotificationIDs["wecom"])) {
-			recipients = append(recipients, actorPeople[0])
-		} else {
-			missingTestRecipientCount = 1
-		}
+	actorPeople, err := s.currentNotificationPeopleForUserIDs(ctx, []int{actorUserID})
+	if err != nil {
+		return nil, err
+	}
+	if len(actorPeople) > 0 && validWeComMentionUserID(actorPeople[0].NotificationIDs["wecom"]) {
+		recipients = append(recipients, actorPeople[0])
+	} else {
+		missingTestRecipientCount = 1
 	}
 	delivery, err := s.notifier.Notify(ctx, NotificationContext{
 		Event:      NotificationTest,
@@ -528,12 +526,17 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 	if err != nil {
 		return nil, err
 	}
-	result := &NotificationTestResult{
-		Delivered:             true,
-		RecipientCount:        delivery.RecipientCount,
-		MissingRecipientCount: len(delivery.MissingRecipientUserIDs) + missingTestRecipientCount,
+	result := &NotificationTestResult{}
+	if delivery == nil {
+		return result, nil
 	}
-	if setting.ChannelType == quotaresetnotificationsetting.ChannelTypeWecomGroupRobot && result.MissingRecipientCount > 0 {
+	result.Delivered = delivery.Delivered
+	result.RecipientCount = delivery.RecipientCount
+	result.MissingRecipientCount = len(delivery.MissingRecipientUserIDs)
+	if delivery.ChannelType == quotaresetnotificationsetting.ChannelTypeWecomGroupRobot.String() {
+		result.MissingRecipientCount += missingTestRecipientCount
+	}
+	if delivery.ChannelType == quotaresetnotificationsetting.ChannelTypeWecomGroupRobot.String() && result.MissingRecipientCount > 0 {
 		result.Warning = "wecom_recipient_unavailable"
 	}
 	return result, nil
@@ -795,16 +798,24 @@ func (s *Service) notifyRequestEvent(ctx context.Context, requestID, nodeID int,
 	}
 	notificationContext, err := s.notificationContextForRequest(ctx, requestID, nodeID, event)
 	if err != nil {
-		_ = s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationFailed, notificationDeliveryMetadata(event, setting.ChannelType.String(), nil), err.Error())
-		return err
-	}
-	delivery, err := s.notifier.Notify(ctx, notificationContext)
-	if err != nil {
 		redactedErr := sanitizeWebhookError(setting.ChannelType, setting.URL, err)
 		_ = s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationFailed, notificationDeliveryMetadata(event, setting.ChannelType.String(), nil), redactedErr.Error())
 		return redactedErr
 	}
-	return s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationSent, notificationDeliveryMetadata(event, setting.ChannelType.String(), delivery), "")
+	delivery, err := s.notifier.Notify(ctx, notificationContext)
+	channelType := setting.ChannelType.String()
+	if delivery != nil && delivery.ChannelType != "" {
+		channelType = delivery.ChannelType
+	}
+	if err != nil {
+		redactedErr := sanitizeWebhookError(setting.ChannelType, setting.URL, err)
+		_ = s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationFailed, notificationDeliveryMetadata(event, channelType, delivery), redactedErr.Error())
+		return redactedErr
+	}
+	if delivery == nil || !delivery.Delivered {
+		return nil
+	}
+	return s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationSent, notificationDeliveryMetadata(event, channelType, delivery), "")
 }
 
 func notificationDeliveryMetadata(event NotificationEvent, channelType string, delivery *NotificationDeliveryResult) map[string]any {

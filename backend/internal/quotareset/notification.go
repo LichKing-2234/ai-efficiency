@@ -57,51 +57,53 @@ func (n *WebhookNotifier) Notify(ctx context.Context, notificationContext Notifi
 	if setting == nil {
 		return result, nil
 	}
+	result.ChannelType = setting.ChannelType.String()
 	adapter, err := notificationAdapterFor(setting.ChannelType.String())
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 	rendered, err := adapter.Render(notificationContext)
 	if err != nil {
-		return nil, fmt.Errorf("render %s notification: %w", setting.ChannelType, err)
+		return result, fmt.Errorf("render %s notification: %w", setting.ChannelType, err)
 	}
+	result.RecipientCount = rendered.RecipientCount
+	result.MissingRecipientUserIDs = append([]int(nil), rendered.MissingRecipientUserIDs...)
 	rawURL := strings.TrimSpace(setting.URL)
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return nil, fmt.Errorf("%w: invalid saved webhook URL", ErrInvalidNotification)
+		return result, fmt.Errorf("%w: invalid saved webhook URL", ErrInvalidNotification)
 	}
 	if err := validateNotificationEndpoint(setting.ChannelType, parsed, setting.AuthType); err != nil {
-		return nil, err
+		return result, err
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(rendered.Body))
 	if err != nil {
-		return nil, fmt.Errorf("create webhook request: %w", sanitizeWebhookError(setting.ChannelType, rawURL, err))
+		return result, fmt.Errorf("create webhook request: %w", sanitizeWebhookError(setting.ChannelType, rawURL, err))
 	}
 	request.Header = rendered.Headers.Clone()
 	if setting.ChannelType == quotaresetnotificationsetting.ChannelTypeGenericWebhook && setting.AuthType == quotaresetnotificationsetting.AuthTypeBearerToken {
 		token, err := n.bearerToken(ctx, setting)
 		if err != nil {
-			return nil, err
+			return result, err
 		}
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	response, err := n.httpClient.Do(request)
 	if err != nil {
-		return nil, redactedWebhookSendError(setting.ChannelType, rawURL, err)
+		return result, redactedWebhookSendError(setting.ChannelType, rawURL, err)
 	}
 	defer response.Body.Close()
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxWebhookResponseBodyBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read webhook response: %w", sanitizeWebhookError(setting.ChannelType, rawURL, err))
+		return result, fmt.Errorf("read webhook response: %w", sanitizeWebhookError(setting.ChannelType, rawURL, err))
 	}
 	if len(responseBody) > maxWebhookResponseBodyBytes {
-		return nil, fmt.Errorf("webhook response exceeds %d bytes", maxWebhookResponseBodyBytes)
+		return result, fmt.Errorf("webhook response exceeds %d bytes", maxWebhookResponseBodyBytes)
 	}
 	if err := adapter.ValidateResponse(response.StatusCode, responseBody); err != nil {
-		return nil, sanitizeWebhookError(setting.ChannelType, rawURL, err)
+		return result, sanitizeWebhookError(setting.ChannelType, rawURL, err)
 	}
-	result.RecipientCount = rendered.RecipientCount
-	result.MissingRecipientUserIDs = append([]int(nil), rendered.MissingRecipientUserIDs...)
+	result.Delivered = true
 	return result, nil
 }
 

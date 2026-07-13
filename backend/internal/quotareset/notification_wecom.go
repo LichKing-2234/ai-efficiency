@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -37,9 +38,14 @@ func escapeWeComUserText(value string) string {
 	return replacer.Replace(value)
 }
 
+func validWeComMentionUserID(value string) bool {
+	value = strings.TrimSpace(value)
+	return safeWeComUserID.MatchString(value) && !strings.EqualFold(value, "all")
+}
+
 func weComMention(person NotificationPerson) (string, bool) {
 	userID := strings.TrimSpace(person.NotificationIDs["wecom"])
-	if userID == "" || !safeWeComUserID.MatchString(userID) {
+	if !validWeComMentionUserID(userID) {
 		displayName := escapeWeComUserText(person.DisplayName)
 		if displayName == "" {
 			displayName = "未知用户"
@@ -75,6 +81,7 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 	missing := make([]int, 0)
 	mentioned := 0
 	mentionEntries := make([]string, 0, len(ctx.Recipients))
+	recipientLabel := weComRecipientLabel(ctx.Event)
 	for _, recipient := range uniqueNotificationPeople(ctx.Recipients) {
 		mention, mentionable := weComMention(recipient)
 		if !mentionable {
@@ -82,7 +89,7 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 		}
 		candidateEntries := append(append([]string(nil), mentionEntries...), mention)
 		candidateTail := append([]string(nil), requiredTail...)
-		candidateTail = append(candidateTail, "待审批："+strings.Join(candidateEntries, " "), actionLine)
+		candidateTail = append(candidateTail, recipientLabel+strings.Join(candidateEntries, " "), actionLine)
 		if joinedWeComMarkdownBytes(requiredHead, candidateTail) > maxBytes {
 			if mentionable {
 				missing = appendUniqueNotificationUserID(missing, recipient.UserID)
@@ -95,7 +102,7 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 		}
 	}
 	if len(mentionEntries) > 0 {
-		requiredTail = append(requiredTail, "待审批："+strings.Join(mentionEntries, " "))
+		requiredTail = append(requiredTail, recipientLabel+strings.Join(mentionEntries, " "))
 	}
 	requiredTail = append(requiredTail, actionLine)
 
@@ -133,6 +140,13 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 	}, nil
 }
 
+func weComRecipientLabel(event NotificationEvent) string {
+	if event == NotificationNodeActivated {
+		return "待审批："
+	}
+	return "通知对象："
+}
+
 func fitWeComMarkdown(requiredHead, optional, requiredTail []string, maxBytes int) string {
 	required := append(append([]string(nil), requiredHead...), requiredTail...)
 	if joinedWeComMarkdownBytes(required) > maxBytes {
@@ -162,18 +176,25 @@ func truncateUTF8(value string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
 	}
-	if len([]byte(value)) <= maxBytes {
-		return value
+	if len(value) <= maxBytes {
+		if utf8.ValidString(value) {
+			return value
+		}
+		return strings.ToValidUTF8(value, "")
 	}
 	suffix := "..."
 	if maxBytes <= len(suffix) {
 		return suffix[:maxBytes]
 	}
-	runes := []rune(value)
-	for len(runes) > 0 && len([]byte(string(runes)+suffix)) > maxBytes {
-		runes = runes[:len(runes)-1]
+	prefixBytes := maxBytes - len(suffix)
+	for prefixBytes > 0 && !utf8.RuneStart(value[prefixBytes]) {
+		prefixBytes--
 	}
-	return string(runes) + suffix
+	prefix := value[:prefixBytes]
+	if !utf8.ValidString(prefix) {
+		prefix = strings.ToValidUTF8(prefix, "")
+	}
+	return prefix + suffix
 }
 
 func weComActionLink(rawURL string) (string, error) {

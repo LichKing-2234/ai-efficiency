@@ -280,8 +280,12 @@ func (s *Service) notificationContextForRequest(ctx context.Context, requestID, 
 		}
 		break
 	}
-	if event == NotificationNodeActivated && (currentNodeRow == nil || currentNodeRow.Status != quotaresetrequestnode.StatusActive) {
-		return NotificationContext{}, fmt.Errorf("build node activation notification: node %d is not active", nodeID)
+	if event == NotificationNodeActivated && (request.Status != quotaresetrequest.StatusPending ||
+		request.CurrentNodeID == nil ||
+		*request.CurrentNodeID != nodeID ||
+		currentNodeRow == nil ||
+		currentNodeRow.Status != quotaresetrequestnode.StatusActive) {
+		return NotificationContext{}, fmt.Errorf("build node activation notification: node %d is not the active pending request node", nodeID)
 	}
 
 	history := make([]NotificationDecision, 0, len(decisions))
@@ -452,12 +456,20 @@ func (s *Service) currentNotificationPeople(ctx context.Context, users []*ent.Us
 	people := make([]NotificationPerson, 0, len(users))
 	usersByID := make(map[int]*ent.User, len(users))
 	usersByEmail := make(map[string]*ent.User, len(users))
+	requestedUserIDs := make([]int, 0, len(users))
+	requestedEmails := make([]string, 0, len(users))
 	for _, user := range users {
 		if user == nil {
 			continue
 		}
+		if _, exists := usersByID[user.ID]; !exists {
+			requestedUserIDs = append(requestedUserIDs, user.ID)
+		}
 		usersByID[user.ID] = user
 		if email := strings.ToLower(strings.TrimSpace(user.Email)); email != "" {
+			if _, exists := usersByEmail[email]; !exists {
+				requestedEmails = append(requestedEmails, email)
+			}
 			usersByEmail[email] = user
 		}
 	}
@@ -467,8 +479,18 @@ func (s *Service) currentNotificationPeople(ctx context.Context, users []*ent.Us
 		return nil, fmt.Errorf("resolve current directory for notification: %w", err)
 	}
 	if ok && len(usersByID) > 0 {
+		matches := make([]predicate.DirectoryMember, 0, 2)
+		if len(requestedUserIDs) > 0 {
+			matches = append(matches, directorymember.MatchedUserIDIn(requestedUserIDs...))
+		}
+		if len(requestedEmails) > 0 {
+			matches = append(matches, directorymember.EmailNormalizedIn(requestedEmails...))
+		}
 		members, err := s.client.DirectoryMember.Query().
-			Where(directorymember.SourceIDEQ(sourceID)).
+			Where(
+				directorymember.SourceIDEQ(sourceID),
+				directorymember.Or(matches...),
+			).
 			Order(ent.Asc(directorymember.FieldID)).
 			All(ctx)
 		if err != nil {
