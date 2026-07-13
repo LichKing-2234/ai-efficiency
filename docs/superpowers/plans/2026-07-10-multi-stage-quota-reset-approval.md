@@ -1355,6 +1355,8 @@ Evidence (2026-07-14): committed workflow resolution as `791e6e4` (`feat(backend
 
 Follow-up evidence (2026-07-14): committed P1 resolver review fixes as `3f1b9b8` (`fix(backend): harden quota reset workflow resolver`).
 
+Follow-up evidence (2026-07-14): committed metadata, stale-match, and chain-source resolver fixes as `cd77039` (`fix(backend): normalize quota reset workflow facts`).
+
 ---
 
 ### Task 4: Persist V2 Requests and Implement the Node State Machine
