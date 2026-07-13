@@ -53,6 +53,28 @@ func TestWorkflowResolverFallsBackToRepresentativeOfSameDepartment(t *testing.T)
 	}
 }
 
+func TestWorkflowResolverFallsBackToMemberDeclaredRepresentative(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Alpha", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	representative := createQuotaResetUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, department.ExternalID, &requester.ID)
+	representativeMember := createQuotaResetMember(t, ctx, client, source.ID, "member-lead", representative.Email, department.ExternalID, &representative.ID)
+	representativeMember = client.DirectoryMember.UpdateOneID(representativeMember.ID).
+		SetMetadata(map[string]any{"leader_department_ids": []any{" department-alpha ", "department-alpha"}}).
+		SaveX(ctx)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, department.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, representativeMember, department.ExternalID)
+
+	snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 1, "group-alpha")
+	assertResolvedNodeApproverIDs(t, snapshot.Nodes[0], representative.ID)
+	if got := snapshot.Nodes[0].Approvers[0].Source; got != "directory_representative" {
+		t.Fatalf("source = %q, want directory_representative", got)
+	}
+}
+
 func TestWorkflowResolverMergesConfiguredAndRepresentativeDepartments(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -63,9 +85,11 @@ func TestWorkflowResolverMergesConfiguredAndRepresentativeDepartments(t *testing
 	configured := createQuotaResetUser(t, ctx, client, "alpha-lead", "alpha-lead@example.com", nil, "user")
 	representative := createQuotaResetUser(t, ctx, client, "beta-lead", "beta-lead@example.com", nil, "user")
 	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, alpha.ExternalID, &requester.ID)
+	configuredMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-lead", configured.Email, alpha.ExternalID, &configured.ID)
 	representativeMember := createQuotaResetMember(t, ctx, client, source.ID, "member-beta-lead", representative.Email, beta.ExternalID, &representative.ID)
 	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, alpha.ExternalID)
 	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, beta.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, configuredMember, alpha.ExternalID)
 	createQuotaResetMemberDepartment(t, ctx, client, source.ID, representativeMember, beta.ExternalID)
 	client.DirectoryDepartment.UpdateOneID(beta.ID).SetMetadata(map[string]any{"representative_external_ids": []any{representativeMember.ExternalID}}).SaveX(ctx)
 	createQuotaResetApproverConfig(t, ctx, client, source.ID, alpha.ExternalID, alpha.Name, configured.ID)
@@ -90,7 +114,9 @@ func TestWorkflowResolverUsesMembershipRowsBeforePrimaryCompatibilityFallback(t 
 	primaryApprover := createQuotaResetUser(t, ctx, client, "primary-lead", "primary-lead@example.com", nil, "user")
 	directApprover := createQuotaResetUser(t, ctx, client, "direct-lead", "direct-lead@example.com", nil, "user")
 	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, primary.ExternalID, &requester.ID)
+	directApproverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-direct-lead", directApprover.Email, direct.ExternalID, &directApprover.ID)
 	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, direct.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, directApproverMember, direct.ExternalID)
 	createQuotaResetApproverConfig(t, ctx, client, source.ID, primary.ExternalID, primary.Name, primaryApprover.ID)
 	createQuotaResetApproverConfig(t, ctx, client, source.ID, direct.ExternalID, direct.Name, directApprover.ID)
 
@@ -141,6 +167,32 @@ func TestWorkflowResolverConfiguredChainNeverFallsBackToRepresentative(t *testin
 	later := snapshot.Nodes[1]
 	if len(later.Approvers) != 0 || !later.AdminFallbackRequired || later.InitialStatus != "queued" {
 		t.Fatalf("configured node = %#v, want queued empty admin fallback", later)
+	}
+}
+
+func TestWorkflowResolverExcludesConfiguredUserMissingCurrentDirectoryMember(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	initialDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-initial", "Initial", nil)
+	chainDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-chain", "Chain", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	localOnlyApprover := createQuotaResetUser(t, ctx, client, "local-only", "local-only@example.com", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, initialDepartment.ExternalID, &requester.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, initialDepartment.ExternalID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, initialDepartment.ExternalID, initialDepartment.Name, localOnlyApprover.ID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, chainDepartment.ExternalID, chainDepartment.Name, localOnlyApprover.ID)
+	createWorkflowChain(t, ctx, client, 7, "group-alpha", source.ID, chainDepartment)
+
+	snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 7, "group-alpha")
+	if len(snapshot.Nodes) != 2 {
+		t.Fatalf("node count = %d, want initial plus configured node", len(snapshot.Nodes))
+	}
+	if initial := snapshot.Nodes[0]; initial.InitialStatus != "skipped_no_approver" || len(initial.Approvers) != 0 {
+		t.Fatalf("initial node = %#v, want skipped without local-only user", initial)
+	}
+	if later := snapshot.Nodes[1]; len(later.Approvers) != 0 || !later.AdminFallbackRequired {
+		t.Fatalf("configured node = %#v, want empty admin fallback", later)
 	}
 }
 

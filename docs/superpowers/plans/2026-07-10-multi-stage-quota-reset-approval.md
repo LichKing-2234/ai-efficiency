@@ -1048,6 +1048,8 @@ Expected: FAIL because the v2 resolver does not exist.
 
 Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run TestWorkflowResolver -count=1` failed as expected because `WorkflowSnapshot`, `ResolvedWorkflowNode`, and `NewWorkflowResolver` were undefined.
 
+Follow-up evidence (2026-07-14): added review regression tests for member-declared `leader_department_ids` representatives and configured users absent from the current directory snapshot.
+
 - [x] **Step 3: Define workflow snapshot and response types**
 
 Create `workflow_types.go`:
@@ -1315,6 +1317,10 @@ func NewService(client *ent.Client, providerResolver ProviderResolver, approverR
 
 Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run TestWorkflowResolver -count=1` passed after adding the v2 snapshot types, exact-department resolver, and `Service.workflowResolver` initialization.
 
+Follow-up evidence (2026-07-14): the two focused review regressions failed before the fix: member-declared representative resolution returned no approver, and a local-only configured user was selected.
+
+Follow-up evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run 'TestWorkflowResolver(FallsBackToMemberDeclaredRepresentative|ExcludesConfiguredUserMissingCurrentDirectoryMember)' -count=1` passed after merging both representative metadata directions and requiring an active current-source member for configured users.
+
 - [x] **Step 6: Run resolver and legacy tests**
 
 Run:
@@ -1327,6 +1333,8 @@ Expected: PASS. The v1 nearest-ancestor resolver remains unchanged for legacy
 requests.
 
 Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run 'Test(WorkflowResolver|ResolveApprovers)' -count=1` passed. `go test ./internal/quotareset -count=1` also passed.
+
+Follow-up evidence (2026-07-14): review regression suite `Test(WorkflowResolver|ResolveApprovers)`, full `./internal/quotareset`, `go test ./... -count=1`, `go vet ./...`, and `git diff --check` all passed.
 
 - [x] **Step 7: Commit workflow resolution**
 

@@ -17,7 +17,10 @@ import (
 	"github.com/ai-efficiency/backend/internal/directorytree"
 )
 
-const departmentRepresentativeIDsMetadataKey = "representative_external_ids"
+const (
+	departmentRepresentativeIDsMetadataKey = "representative_external_ids"
+	memberLeaderDepartmentIDsMetadataKey   = "leader_department_ids"
+)
 
 type WorkflowResolver struct{ client *ent.Client }
 
@@ -32,7 +35,6 @@ type workflowDirectoryFacts struct {
 	representatives        map[string][]*ent.DirectoryMember
 	usersByID              map[int]*ent.User
 	usersByEmail           map[string]*ent.User
-	membersByUserID        map[int][]*ent.DirectoryMember
 	activeMembersByUserID  map[int]*ent.DirectoryMember
 }
 
@@ -129,7 +131,6 @@ func (r *WorkflowResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 			usersByEmail[email] = user
 		}
 	}
-	membersByUserID := make(map[int][]*ent.DirectoryMember)
 	activeMembersByUserID := make(map[int]*ent.DirectoryMember)
 	membersByExternalID := make(map[string]*ent.DirectoryMember)
 	for _, member := range members {
@@ -144,7 +145,6 @@ func (r *WorkflowResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 		if user == nil {
 			continue
 		}
-		membersByUserID[user.ID] = append(membersByUserID[user.ID], member)
 		if !workflowMemberIsActive(member) || user.RelayDisabledAt != nil || user.TokenValidAfter != nil {
 			continue
 		}
@@ -161,18 +161,40 @@ func (r *WorkflowResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 		}
 		configsByDepartment[departmentID] = appendUniqueSortedInt(configsByDepartment[departmentID], config.ApproverUserID)
 	}
-	representatives := make(map[string][]*ent.DirectoryMember)
+	representativeSets := make(map[string]map[int]*ent.DirectoryMember)
+	addRepresentative := func(departmentID string, member *ent.DirectoryMember) {
+		departmentID = strings.TrimSpace(departmentID)
+		if departmentID == "" || member == nil {
+			return
+		}
+		if representativeSets[departmentID] == nil {
+			representativeSets[departmentID] = make(map[int]*ent.DirectoryMember)
+		}
+		representativeSets[departmentID][member.ID] = member
+	}
 	for _, department := range departments {
 		if department == nil {
 			continue
 		}
 		for _, externalID := range departmentRepresentativeExternalIDs(department.Metadata) {
 			if member := membersByExternalID[externalID]; member != nil {
-				representatives[department.ExternalID] = append(representatives[department.ExternalID], member)
+				addRepresentative(department.ExternalID, member)
 			}
 		}
 	}
-	for departmentID := range representatives {
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		for _, departmentID := range memberLeaderDepartmentIDs(member.Metadata) {
+			addRepresentative(departmentID, member)
+		}
+	}
+	representatives := make(map[string][]*ent.DirectoryMember, len(representativeSets))
+	for departmentID, membersByID := range representativeSets {
+		for _, member := range membersByID {
+			representatives[departmentID] = append(representatives[departmentID], member)
+		}
 		sort.SliceStable(representatives[departmentID], func(i, j int) bool {
 			return representatives[departmentID][i].ID < representatives[departmentID][j].ID
 		})
@@ -196,7 +218,6 @@ func (r *WorkflowResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 		representatives:        representatives,
 		usersByID:              usersByID,
 		usersByEmail:           usersByEmail,
-		membersByUserID:        membersByUserID,
 		activeMembersByUserID:  activeMembersByUserID,
 	}, nil
 }
@@ -322,10 +343,7 @@ func usableConfiguredApprovers(userIDs []int, facts *workflowDirectoryFacts, req
 		}
 		user := facts.usersByID[userID]
 		member := facts.activeMembersByUserID[userID]
-		if user == nil || user.RelayDisabledAt != nil || user.TokenValidAfter != nil {
-			continue
-		}
-		if len(facts.membersByUserID[userID]) > 0 && member == nil {
+		if user == nil || member == nil || user.RelayDisabledAt != nil || user.TokenValidAfter != nil {
 			continue
 		}
 		candidates = append(candidates, workflowApproverCandidate{user: user, member: member})
@@ -440,11 +458,19 @@ func notificationIDsForMember(member *ent.DirectoryMember) map[string]string {
 }
 
 func departmentRepresentativeExternalIDs(metadata map[string]any) []string {
+	return metadataStringValues(metadata, departmentRepresentativeIDsMetadataKey)
+}
+
+func memberLeaderDepartmentIDs(metadata map[string]any) []string {
+	return metadataStringValues(metadata, memberLeaderDepartmentIDsMetadataKey)
+}
+
+func metadataStringValues(metadata map[string]any, key string) []string {
 	if metadata == nil {
 		return []string{}
 	}
 	var values []any
-	switch raw := metadata[departmentRepresentativeIDsMetadataKey].(type) {
+	switch raw := metadata[key].(type) {
 	case []any:
 		values = raw
 	case []string:
