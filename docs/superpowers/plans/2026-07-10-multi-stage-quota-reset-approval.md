@@ -2347,12 +2347,15 @@ compile/regression suite, full `go test ./... -count=1`, `go vet ./...`, and
 `git diff --check` all passed. A diff-only scan found no added complete WeCom
 robot URL; `test-secret` remains only in the synthetic split-string tests.
 
-- [ ] **Step 7: Commit explicit channel settings**
+- [x] **Step 7: Commit explicit channel settings**
 
 ```bash
 git add backend/internal/quotareset backend/cmd/server/main.go
 git commit -m "feat(backend): configure quota reset notification channels"
 ```
+
+Evidence (2026-07-14): committed the Task 6 implementation as `f6dfa8e`
+(`feat(backend): configure quota reset notification channels`).
 
 ---
 
