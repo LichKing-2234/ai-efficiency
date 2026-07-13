@@ -302,6 +302,45 @@ func TestSaveApproverConfigsRejectsRemovingChainReferencedDepartment(t *testing.
 	}
 }
 
+func TestSaveApproverConfigsAllowsRemovingDepartmentReferencedOnlyByDisabledChain(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
+	approver := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", nil, "user")
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, department.ExternalID, department.Path, approver.ID)
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	chain := client.QuotaResetApprovalChain.Create().
+		SetProviderID(provider.ID).
+		SetGroupID("42").
+		SetGroupName("Group Alpha").
+		SetEnabled(false).
+		SaveX(ctx)
+	client.QuotaResetApprovalChainNode.Create().
+		SetChainID(chain.ID).
+		SetPosition(0).
+		SetDirectorySourceID(source.ID).
+		SetDepartmentExternalID(department.ExternalID).
+		SetDepartmentDisplayPath(department.Path).
+		SaveX(ctx)
+	svc := NewService(client, nil, nil, nil)
+
+	resp, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+		ActorUserID: 1,
+		Mode:        ApproverConfigSaveModeReplaceAll,
+		Items:       []ApproverConfigInput{},
+	})
+	if err != nil {
+		t.Fatalf("SaveApproverConfigs(remove disabled-chain department) error = %v", err)
+	}
+	if len(resp.Items) != 0 {
+		t.Fatalf("saved configs = %#v, want empty replacement", resp.Items)
+	}
+	if got := client.QuotaResetApproverConfig.Query().CountX(ctx); got != 0 {
+		t.Fatalf("approver config count = %d, want removed row", got)
+	}
+}
+
 func setupApprovalChainTest(t *testing.T, ctx context.Context) (*ent.Client, *Service, *ent.DirectorySource, *ent.RelayProvider, *ent.DirectoryDepartment, *ent.DirectoryDepartment) {
 	t.Helper()
 	client := testdb.Open(t)

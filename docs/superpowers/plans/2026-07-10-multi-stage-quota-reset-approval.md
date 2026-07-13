@@ -944,6 +944,16 @@ Task 2 buildability adapter evidence (2026-07-13):
 - [x] Focused handler tests, the server compile check, full backend tests, full
   backend vet, and diff checks pass after the adapter.
 
+Task 2 enabled-chain reference correction evidence (2026-07-13):
+
+- [x] RED proved that an enabled chain correctly blocked destructive approver
+  replacement while the same department node under a disabled chain was also,
+  incorrectly, returning `ErrApproverConfigReferenced`.
+- [x] Reference validation now limits source-scoped nodes to enabled parent
+  chain IDs; disabled chains and their nodes remain persisted unchanged.
+- [x] The Task 2 focused tests, full quota reset package, handler/server compile
+  checks, full backend tests, full backend vet, and diff checks pass.
+
 - [x] **Step 7: Commit chain configuration**
 
 ```bash

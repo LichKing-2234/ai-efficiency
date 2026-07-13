@@ -593,8 +593,20 @@ func (s *Service) validateChainReferencesAfterApproverSave(ctx context.Context, 
 			remaining[strings.TrimSpace(item.DepartmentExternalID)] = struct{}{}
 		}
 	}
+	enabledChainIDs, err := s.client.QuotaResetApprovalChain.Query().
+		Where(quotaresetapprovalchain.EnabledEQ(true)).
+		IDs(ctx)
+	if err != nil {
+		return fmt.Errorf("list enabled approval chains: %w", err)
+	}
+	if len(enabledChainIDs) == 0 {
+		return nil
+	}
 	nodes, err := s.client.QuotaResetApprovalChainNode.Query().
-		Where(quotaresetapprovalchainnode.DirectorySourceIDEQ(sourceID)).
+		Where(
+			quotaresetapprovalchainnode.DirectorySourceIDEQ(sourceID),
+			quotaresetapprovalchainnode.ChainIDIn(enabledChainIDs...),
+		).
 		All(ctx)
 	if err != nil {
 		return fmt.Errorf("list approval chain references: %w", err)
