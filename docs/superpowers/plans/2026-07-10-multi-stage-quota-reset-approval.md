@@ -2130,12 +2130,15 @@ Evidence (2026-07-14): focused quota-reset/work-items command PASS; complete
 proved that `ListAdmin` forwards the authenticated admin actor id. Full
 `go test ./... -count=1`, `go vet ./...`, and `git diff --check` also PASS.
 
-- [ ] **Step 7: Commit summaries and counts**
+- [x] **Step 7: Commit summaries and counts**
 
 ```bash
 git add backend/internal/quotareset backend/internal/workitems backend/internal/handler/quota_reset.go backend/internal/handler/quota_reset_test.go
 git commit -m "feat(backend): expose actionable quota reset workflow state"
 ```
+
+Evidence (2026-07-14): committed Task 5 as `583fae6` with subject
+`feat(backend): expose actionable quota reset workflow state`.
 
 ---
 
