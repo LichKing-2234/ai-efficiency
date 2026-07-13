@@ -1345,6 +1345,8 @@ git commit -m "feat(backend): resolve quota reset workflow snapshots"
 
 Evidence (2026-07-14): committed workflow resolution as `791e6e4` (`feat(backend): resolve quota reset workflow snapshots`).
 
+Follow-up evidence (2026-07-14): committed P1 resolver review fixes as `3f1b9b8` (`fix(backend): harden quota reset workflow resolver`).
+
 ---
 
 ### Task 4: Persist V2 Requests and Implement the Node State Machine
