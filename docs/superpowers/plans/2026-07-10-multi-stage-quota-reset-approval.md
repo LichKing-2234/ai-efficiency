@@ -617,7 +617,7 @@ git commit -m "feat(backend): add quota reset workflow schemas"
 - [x] Clear-flag rejection is unconditional and independent of `Mutation.Op`; every field/op/update combination returns the deterministic immutable-snapshot error and preserves stored values.
 - [x] Focused schema tests preserve omitted fresh defaults, explicit-nil validation, scalar immutability, and normal mutable request state transitions.
 - [x] Package, full-backend, vet, generation reproducibility, and diff checks pass.
-- [ ] `SetOp` bypass fix is committed separately from `2dcb6e7`.
+- [x] `SetOp` bypass fix is committed separately from `2dcb6e7` as `f8d3c15`.
 
 ---
 
