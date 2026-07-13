@@ -1895,6 +1895,32 @@ sequential stale-decision test under `-race` in 2.033s, the full quota reset
 package in 24.874s, `go test ./... -count=1`, `go vet ./...`,
 `git diff --check`, and the synthetic test-data domain scan.
 
+Important follow-up evidence (2026-07-14): the single-connection duplicate
+creation RED exhausted its one-second context and returned the raw unique
+constraint because the failed transaction still owned the only pooled
+connection. After explicit rollback-before-classification, it passed in
+1.274s and returned `ErrActiveRequestExists` only after confirming the active
+row. Cancellation RED proved an injected cancelled-event failure leaked
+`cancelled` request state and stale v2 cancellation returned `ErrInvalidStatus`.
+After moving request locking, status update, and cancelled-event insertion into
+one transaction, the final cancellation tests passed in 2.317s with rollback
+preserving pending/current-node evidence, stale v2 returning
+`WorkflowAdvancedError`, and stale v1 retaining `ErrInvalidStatus`. The combined
+focused regressions passed in 2.169s and five race-detector repetitions passed
+in 11.599s. The full Task 4 suite passed in 9.021s, all quota reset tests passed
+in 26.243s, and `go test ./... -count=1`, `go vet ./...`, and
+`git diff --check` passed. The transaction fixes and regressions were committed
+as `315320b` (`fix(backend): harden quota reset create and cancel
+transactions`).
+
+**Known Operational Residual:** Task 4 commits `approved_resetting` before the
+synchronous provider reset call. A process crash after that commit and before
+the provider result is recorded, including a crash after an unrecorded provider
+success, leaves reset completion ambiguous. This task defines no durable reset
+job/outbox, worker, or provider idempotency key; automatic at-least-once
+recovery could grant a second reset. A future idempotency and recovery design is
+required, and this residual is not solved by Task 4.
+
 ---
 
 ### Task 5: Add Viewer-Aware Summaries and Actionable Work Counts
