@@ -480,7 +480,7 @@ func TestUpdateNotificationSettingsCollapsesDuplicateRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateNotificationSettings() error = %v", err)
 	}
-	if updated.URLPreview != endpoint || !updated.URLConfigured || !updated.Enabled {
+	if updated.URLPreview != "https://hooks.example.com" || !updated.URLConfigured || !updated.Enabled {
 		t.Fatalf("updated settings = %+v, want new enabled redacted URL", updated)
 	}
 	rows := client.QuotaResetNotificationSetting.Query().AllX(ctx)

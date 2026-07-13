@@ -2369,16 +2369,28 @@ preview exposed `/services/synthetic-id/synthetic-token`.
 - [x] Implement the endpoint and preview hardening.
 - [x] Run focused and full backend verification.
 
-Evidence: `cd backend && go test ./internal/quotareset -run
-'Test(NotificationSettings|BackfillNotificationChannels)' -count=1`, `cd backend
-&& go test ./cmd/server ./internal/quotareset -count=1`, `cd backend && go test
-./... -count=1`, `cd backend && go vet ./...`, and `git diff --check` all
-passed.
+Corrected evidence (2026-07-14): the prior statement did not record a full
+`go test ./internal/quotareset -count=1` run and was invalidated by
+`TestUpdateNotificationSettingsCollapsesDuplicateRows`, whose stale raw-path
+assertion failed at the current head. After correcting that assertion, `cd
+backend && go test ./internal/quotareset -run
+'^TestUpdateNotificationSettingsCollapsesDuplicateRows$' -count=1`, `cd backend
+&& go test ./internal/quotareset -count=1`, `cd backend && go test ./cmd/server
+./internal/quotareset -count=1`, `cd backend && go test ./... -count=1`, `cd
+backend && go vet ./...`, and `git diff --check` all passed.
 
 - [x] Commit the quality-review fixes.
 
 Evidence: `git commit -m "fix(backend): harden quota reset notification
 endpoints"` created `e3a13d0`.
+
+- [x] Correct the duplicate-row generic preview assertion and verification evidence.
+
+Evidence: `cd backend && go test ./internal/quotareset -run
+'^TestUpdateNotificationSettingsCollapsesDuplicateRows$' -count=1` first
+failed with `URLPreview:https://hooks.example.com`; after the test-only
+host-only expectation update, it passed along with the corrected full-package
+verification commands above.
 
 ---
 
