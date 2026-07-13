@@ -338,7 +338,7 @@ func (s *Service) notificationRecipients(ctx context.Context, request *ent.Quota
 	switch event {
 	case NotificationNodeActivated:
 		if currentNode != nil && currentNode.AdminFallback {
-			return s.currentResolvableAdminNotificationPeople(ctx)
+			return s.currentAdminNotificationPeople(ctx)
 		}
 		if currentNode != nil {
 			return append([]NotificationPerson(nil), currentNode.Approvers...), nil
@@ -347,7 +347,7 @@ func (s *Service) notificationRecipients(ctx context.Context, request *ent.Quota
 		return []NotificationPerson{requester}, nil
 	case NotificationCancelled:
 		if currentNode != nil && currentNode.AdminFallback {
-			return s.currentResolvableAdminNotificationPeople(ctx)
+			return s.currentAdminNotificationPeople(ctx)
 		}
 		if currentNode != nil {
 			return append([]NotificationPerson(nil), currentNode.Approvers...), nil
@@ -413,20 +413,6 @@ func (s *Service) currentAdminNotificationPeople(ctx context.Context) ([]Notific
 		return nil, fmt.Errorf("load current admins for notification: %w", err)
 	}
 	return s.currentNotificationPeople(ctx, admins)
-}
-
-func (s *Service) currentResolvableAdminNotificationPeople(ctx context.Context) ([]NotificationPerson, error) {
-	admins, err := s.currentAdminNotificationPeople(ctx)
-	if err != nil {
-		return nil, err
-	}
-	recipients := make([]NotificationPerson, 0, len(admins))
-	for _, admin := range admins {
-		if userID := strings.TrimSpace(admin.NotificationIDs["wecom"]); safeWeComUserID.MatchString(userID) {
-			recipients = append(recipients, admin)
-		}
-	}
-	return recipients, nil
 }
 
 func (s *Service) currentNotificationPeopleForUserIDs(ctx context.Context, userIDs []int) ([]NotificationPerson, error) {

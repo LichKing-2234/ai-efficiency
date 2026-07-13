@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -227,6 +228,38 @@ func TestWebhookNotifierUsesExplicitChannelInsteadOfURLShape(t *testing.T) {
 	}
 }
 
+func TestWebhookNotifierRejectsRedirectWithoutFollowing(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	var sourceDeliveries atomic.Int32
+	var targetDeliveries atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/redirect", func(w http.ResponseWriter, r *http.Request) {
+		sourceDeliveries.Add(1)
+		http.Redirect(w, r, "/target", http.StatusTemporaryRedirect)
+	})
+	mux.HandleFunc("/target", func(w http.ResponseWriter, r *http.Request) {
+		targetDeliveries.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	createNotificationSetting(t, ctx, client, quotaresetnotificationsetting.ChannelTypeGenericWebhook,
+		server.URL+"/redirect", quotaresetnotificationsetting.AuthTypeNone, nil)
+	notifier := NewWebhookNotifier(client, "", "https://ai-efficiency.example.com")
+
+	_, err := notifier.Notify(ctx, notificationAdapterTestContext())
+	if err == nil || !strings.Contains(err.Error(), "webhook returned 307") {
+		t.Fatalf("Notify() error = %v, want redirect status failure", err)
+	}
+	if got := sourceDeliveries.Load(); got != 1 {
+		t.Fatalf("redirect source deliveries = %d, want 1", got)
+	}
+	if got := targetDeliveries.Load(); got != 0 {
+		t.Fatalf("redirect target deliveries = %d, want 0", got)
+	}
+}
+
 func TestWorkflowActivationNotifiesOnlyActiveNode(t *testing.T) {
 	fixture := newWorkflowCreationFixture(t, false, true)
 	deliveries := 0
@@ -274,24 +307,42 @@ func TestWorkflowActivationNotifiesOnlyActiveNode(t *testing.T) {
 	assertNotificationEventMetadata(t, fixture.ctx, fixture.client, request.ID, 1)
 }
 
-func TestWorkflowAdminFallbackUsesOnlyResolvableCurrentAdminRecipients(t *testing.T) {
+func TestWorkflowAdminFallbackPreservesMissingRecipientCoverage(t *testing.T) {
 	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{adminFallback: true}})
 	source := createQuotaResetDirectorySource(t, fixture.ctx, fixture.client)
 	department := createQuotaResetDepartment(t, fixture.ctx, fixture.client, source.ID, "department-admin", "Department Admin", nil)
 	createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "admin-wecom-id", fixture.admin.Email, department.ExternalID, &fixture.admin.ID)
 	unresolvedAdmin := createQuotaResetUser(t, fixture.ctx, fixture.client, "admin-without-wecom", "admin-without-wecom@example.org", nil, "admin")
 
-	notificationContext, err := fixture.service.notificationContextForRequest(
-		fixture.ctx,
-		fixture.request.ID,
-		fixture.nodes[0].ID,
-		NotificationNodeActivated,
-	)
-	if err != nil {
-		t.Fatalf("notificationContextForRequest() error = %v", err)
-	}
-	if len(notificationContext.Recipients) != 1 || notificationContext.Recipients[0].UserID != fixture.admin.ID || notificationContext.Recipients[0].NotificationIDs["wecom"] != "admin-wecom-id" {
-		t.Fatalf("admin fallback recipients = %#v, want only resolvable admin %d and not %d", notificationContext.Recipients, fixture.admin.ID, unresolvedAdmin.ID)
+	for _, event := range []NotificationEvent{NotificationNodeActivated, NotificationCancelled} {
+		t.Run(string(event), func(t *testing.T) {
+			notificationContext, err := fixture.service.notificationContextForRequest(
+				fixture.ctx,
+				fixture.request.ID,
+				fixture.nodes[0].ID,
+				event,
+			)
+			if err != nil {
+				t.Fatalf("notificationContextForRequest() error = %v", err)
+			}
+			if len(notificationContext.Recipients) != 2 || notificationContext.Recipients[0].UserID != fixture.admin.ID || notificationContext.Recipients[1].UserID != unresolvedAdmin.ID {
+				t.Fatalf("admin fallback recipients = %#v, want both current admins", notificationContext.Recipients)
+			}
+			if notificationContext.Recipients[0].NotificationIDs["wecom"] != "admin-wecom-id" || len(notificationContext.Recipients[1].NotificationIDs) != 0 {
+				t.Fatalf("admin fallback identities = %#v, want live resolved and unresolved identities retained", notificationContext.Recipients)
+			}
+			rendered, err := (weComGroupRobotAdapter{maxBytes: 4096}).Render(notificationContext)
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+			_, content := decodeWeComNotification(t, rendered.Body)
+			if !strings.Contains(content, "<@admin-wecom-id>") || !strings.Contains(content, "admin-without-wecom（无法 @）") {
+				t.Fatalf("content = %q, want resolved mention and unresolved marker", content)
+			}
+			if rendered.RecipientCount != 1 || !reflect.DeepEqual(rendered.MissingRecipientUserIDs, []int{unresolvedAdmin.ID}) {
+				t.Fatalf("recipient coverage = %d/%v, want 1/%v", rendered.RecipientCount, rendered.MissingRecipientUserIDs, []int{unresolvedAdmin.ID})
+			}
+		})
 	}
 }
 
@@ -372,11 +423,56 @@ func TestWebhookNotifierReturnsWeComBusinessError(t *testing.T) {
 	}
 }
 
+func TestWebhookNotifierRejectsOversizedOrMalformedWeComResponse(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "oversized nonzero errcode",
+			body: `{"errcode":40008,"errmsg":"` + strings.Repeat("x", maxWebhookResponseBodyBytes+256) + `"}`,
+		},
+		{
+			name: "malformed business response",
+			body: `{"errcode":`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+			createNotificationSetting(t, ctx, client, quotaresetnotificationsetting.ChannelTypeWecomGroupRobot,
+				"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-response-key", quotaresetnotificationsetting.AuthTypeNone, nil)
+			notifier := NewWebhookNotifier(client, "", "https://ai-efficiency.example.com")
+			notifier.httpClient = &http.Client{Transport: rewriteURLTransport(t, server.URL)}
+
+			if _, err := notifier.Notify(ctx, notificationAdapterTestContext()); err == nil {
+				t.Fatalf("Notify() error = nil for %s response", tt.name)
+			}
+		})
+	}
+}
+
 func TestNotificationTestReturnsMentionCoverageWarning(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	admin := createQuotaResetUser(t, ctx, client, "admin", "admin@example.com", nil, "admin")
+	var deliveredContent string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Markdown struct {
+				Content string `json:"content"`
+			} `json:"markdown"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode test notification: %v", err)
+		}
+		deliveredContent = payload.Markdown.Content
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
 	}))
@@ -393,6 +489,9 @@ func TestNotificationTestReturnsMentionCoverageWarning(t *testing.T) {
 	}
 	if !result.Delivered || result.RecipientCount != 0 || result.MissingRecipientCount != 1 || result.Warning != "wecom_recipient_unavailable" {
 		t.Fatalf("test result = %+v, want delivered coverage warning", result)
+	}
+	if strings.Contains(deliveredContent, "admin（无法 @）") || strings.Contains(deliveredContent, "待审批：") {
+		t.Fatalf("test notification included unresolved triggering admin: %q", deliveredContent)
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
@@ -484,6 +583,51 @@ func TestWebhookNotifierRedactsQueryStringFromDeliveryErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "https://qyapi.weixin.qq.com/cgi-bin/webhook/send") {
 		t.Fatalf("Notify() error = %v, want redacted endpoint context", err)
+	}
+}
+
+func TestNotificationFailureRedactsResponseReadSecrets(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+	const (
+		username = "synthetic-robot-user"
+		password = "synthetic-robot-password"
+		queryKey = "synthetic-read-key"
+	)
+	robotURL := "https://" + username + ":" + password + "@qyapi.weixin.qq.com/cgi-bin/webhook/send?key=" + queryKey
+	createNotificationSetting(t, fixture.ctx, fixture.client, quotaresetnotificationsetting.ChannelTypeWecomGroupRobot,
+		robotURL, quotaresetnotificationsetting.AuthTypeNone, nil)
+	notifier := NewWebhookNotifier(fixture.client, "", "https://ai-efficiency.example.com")
+	notifier.httpClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		endpoint := request.URL.Scheme + "://" + request.URL.User.String() + "@" + request.URL.Host + request.URL.Path
+		readErr := fmt.Errorf("synthetic response read failure from %s; query %s", endpoint, request.URL.RawQuery)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       &notificationReadErrorBody{err: readErr},
+			Request:    request,
+		}, nil
+	})}
+	fixture.service.notifier = notifier
+
+	err := fixture.service.notifyRequestEvent(fixture.ctx, fixture.request.ID, fixture.nodes[0].ID, NotificationNodeActivated)
+	if err == nil {
+		t.Fatal("notifyRequestEvent() error = nil, want response read failure")
+	}
+	event := fixture.client.QuotaResetRequestEvent.Query().
+		Where(
+			quotaresetrequestevent.RequestIDEQ(fixture.request.ID),
+			quotaresetrequestevent.EventTypeEQ(quotaresetrequestevent.EventTypeNotificationFailed),
+		).
+		OnlyX(fixture.ctx)
+	for label, message := range map[string]string{"returned": err.Error(), "persisted": event.ErrorMessage} {
+		for _, forbidden := range []string{username, password, queryKey, "?key=", "key=" + queryKey} {
+			if strings.Contains(message, forbidden) {
+				t.Fatalf("%s notification error leaked %q: %s", label, forbidden, message)
+			}
+		}
+		if !strings.Contains(message, "read webhook response") || !strings.Contains(message, "qyapi.weixin.qq.com/cgi-bin/webhook/send") {
+			t.Fatalf("%s notification error lost useful context: %s", label, message)
+		}
 	}
 }
 
@@ -619,3 +763,9 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
 }
+
+type notificationReadErrorBody struct{ err error }
+
+func (b *notificationReadErrorBody) Read([]byte) (int, error) { return 0, b.err }
+
+func (b *notificationReadErrorBody) Close() error { return nil }

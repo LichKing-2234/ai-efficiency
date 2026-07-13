@@ -483,13 +483,18 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 	if setting == nil || strings.TrimSpace(setting.URL) == "" {
 		return nil, fmt.Errorf("%w: enabled webhook url is required before sending test notification", ErrInvalidNotification)
 	}
-	actorPeople, err := s.currentNotificationPeopleForUserIDs(ctx, []int{actorUserID})
-	if err != nil {
-		return nil, err
-	}
-	actor := NotificationPerson{UserID: actorUserID, DisplayName: "Admin", NotificationIDs: map[string]string{}}
-	if len(actorPeople) > 0 {
-		actor = actorPeople[0]
+	recipients := []NotificationPerson{}
+	missingTestRecipientCount := 0
+	if setting.ChannelType == quotaresetnotificationsetting.ChannelTypeWecomGroupRobot {
+		actorPeople, err := s.currentNotificationPeopleForUserIDs(ctx, []int{actorUserID})
+		if err != nil {
+			return nil, err
+		}
+		if len(actorPeople) > 0 && safeWeComUserID.MatchString(strings.TrimSpace(actorPeople[0].NotificationIDs["wecom"])) {
+			recipients = append(recipients, actorPeople[0])
+		} else {
+			missingTestRecipientCount = 1
+		}
 	}
 	delivery, err := s.notifier.Notify(ctx, NotificationContext{
 		Event:      NotificationTest,
@@ -501,7 +506,7 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 			Email:           "alice@example.com",
 			NotificationIDs: map[string]string{},
 		},
-		Recipients:      []NotificationPerson{actor},
+		Recipients:      recipients,
 		DepartmentPaths: []string{"Department Alpha / Team One"},
 		GroupID:         "42",
 		GroupName:       "Group Alpha",
@@ -526,7 +531,7 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 	result := &NotificationTestResult{
 		Delivered:             true,
 		RecipientCount:        delivery.RecipientCount,
-		MissingRecipientCount: len(delivery.MissingRecipientUserIDs),
+		MissingRecipientCount: len(delivery.MissingRecipientUserIDs) + missingTestRecipientCount,
 	}
 	if setting.ChannelType == quotaresetnotificationsetting.ChannelTypeWecomGroupRobot && result.MissingRecipientCount > 0 {
 		result.Warning = "wecom_recipient_unavailable"
@@ -795,8 +800,9 @@ func (s *Service) notifyRequestEvent(ctx context.Context, requestID, nodeID int,
 	}
 	delivery, err := s.notifier.Notify(ctx, notificationContext)
 	if err != nil {
-		_ = s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationFailed, notificationDeliveryMetadata(event, setting.ChannelType.String(), nil), err.Error())
-		return err
+		redactedErr := sanitizeWebhookError(setting.ChannelType, setting.URL, err)
+		_ = s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationFailed, notificationDeliveryMetadata(event, setting.ChannelType.String(), nil), redactedErr.Error())
+		return redactedErr
 	}
 	return s.writeEvent(ctx, requestID, nil, quotaresetrequestevent.EventTypeNotificationSent, notificationDeliveryMetadata(event, setting.ChannelType.String(), delivery), "")
 }

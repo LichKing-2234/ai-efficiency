@@ -36,7 +36,12 @@ func NewWebhookNotifier(client *ent.Client, encryptionKey string, frontendURL st
 		client:        client,
 		encryptionKey: encryptionKey,
 		frontendURL:   strings.TrimRight(frontendURL, "/"),
-		httpClient:    &http.Client{Timeout: defaultWebhookTimeout},
+		httpClient: &http.Client{
+			Timeout: defaultWebhookTimeout,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
@@ -85,9 +90,12 @@ func (n *WebhookNotifier) Notify(ctx context.Context, notificationContext Notifi
 		return nil, redactedWebhookSendError(setting.ChannelType, rawURL, err)
 	}
 	defer response.Body.Close()
-	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxWebhookResponseBodyBytes))
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxWebhookResponseBodyBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read webhook response: %w", err)
+		return nil, fmt.Errorf("read webhook response: %w", sanitizeWebhookError(setting.ChannelType, rawURL, err))
+	}
+	if len(responseBody) > maxWebhookResponseBodyBytes {
+		return nil, fmt.Errorf("webhook response exceeds %d bytes", maxWebhookResponseBodyBytes)
 	}
 	if err := adapter.ValidateResponse(response.StatusCode, responseBody); err != nil {
 		return nil, sanitizeWebhookError(setting.ChannelType, rawURL, err)
@@ -153,6 +161,17 @@ func sanitizeWebhookError(channelType quotaresetnotificationsetting.ChannelType,
 	}
 	message := strings.ReplaceAll(err.Error(), rawURL, preview)
 	parsed, parseErr := url.Parse(rawURL)
+	if parseErr == nil && parsed.User != nil {
+		message = strings.ReplaceAll(message, parsed.User.String()+"@", "")
+		if username := parsed.User.Username(); username != "" {
+			message = strings.ReplaceAll(message, username, "[redacted]")
+			message = strings.ReplaceAll(message, url.QueryEscape(username), "[redacted]")
+		}
+		if password, ok := parsed.User.Password(); ok && password != "" {
+			message = strings.ReplaceAll(message, password, "[redacted]")
+			message = strings.ReplaceAll(message, url.QueryEscape(password), "[redacted]")
+		}
+	}
 	if parseErr == nil && parsed.RawQuery != "" {
 		message = strings.ReplaceAll(message, "?"+parsed.RawQuery, "")
 		message = strings.ReplaceAll(message, parsed.RawQuery, "[redacted query]")
@@ -172,13 +191,19 @@ func sanitizeWebhookError(channelType quotaresetnotificationsetting.ChannelType,
 func webhookResponseBusinessError(body []byte) error {
 	body = bytes.TrimSpace(body)
 	if len(body) == 0 {
-		return nil
+		return fmt.Errorf("webhook returned empty business response")
 	}
 	var response struct {
 		ErrCode *int   `json:"errcode"`
 		ErrMsg  string `json:"errmsg"`
 	}
-	if err := json.Unmarshal(body, &response); err != nil || response.ErrCode == nil || *response.ErrCode == 0 {
+	if err := json.Unmarshal(body, &response); err != nil {
+		return fmt.Errorf("decode webhook business response: %w", err)
+	}
+	if response.ErrCode == nil {
+		return fmt.Errorf("webhook business response missing errcode")
+	}
+	if *response.ErrCode == 0 {
 		return nil
 	}
 	errmsg := strings.TrimSpace(response.ErrMsg)
