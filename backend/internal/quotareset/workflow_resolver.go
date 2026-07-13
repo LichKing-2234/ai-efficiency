@@ -3,6 +3,7 @@ package quotareset
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -31,6 +32,7 @@ type workflowDirectoryFacts struct {
 	requesterDepartmentIDs []string
 	departmentPaths        []string
 	tree                   *directorytree.Tree
+	currentDepartmentIDs   map[string]struct{}
 	configsByDepartment    map[string][]int
 	representatives        map[string][]*ent.DirectoryMember
 	usersByID              map[int]*ent.User
@@ -128,7 +130,18 @@ func (r *WorkflowResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 		usersByID[user.ID] = user
 		email := strings.ToLower(strings.TrimSpace(user.Email))
 		if email != "" {
-			usersByEmail[email] = user
+			if existing := usersByEmail[email]; existing == nil || user.ID < existing.ID {
+				usersByEmail[email] = user
+			}
+		}
+	}
+	currentDepartmentIDs := make(map[string]struct{}, len(departments))
+	for _, department := range departments {
+		if department == nil {
+			continue
+		}
+		if departmentID := strings.TrimSpace(department.ExternalID); departmentID != "" {
+			currentDepartmentIDs[departmentID] = struct{}{}
 		}
 	}
 	activeMembersByUserID := make(map[int]*ent.DirectoryMember)
@@ -214,6 +227,7 @@ func (r *WorkflowResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 		requesterDepartmentIDs: requesterDepartmentIDs,
 		departmentPaths:        departmentPaths,
 		tree:                   tree,
+		currentDepartmentIDs:   currentDepartmentIDs,
 		configsByDepartment:    configsByDepartment,
 		representatives:        representatives,
 		usersByID:              usersByID,
@@ -276,7 +290,12 @@ func (r *WorkflowResolver) resolveConfiguredNodes(ctx context.Context, facts *wo
 	nodes := make([]ResolvedWorkflowNode, 0, len(chainRows))
 	for _, row := range chainRows {
 		departmentID := strings.TrimSpace(row.DepartmentExternalID)
-		approvers := resolvedApproversForDepartment(usableConfiguredApprovers(facts.configsByDepartment[departmentID], facts, facts.requester.ID), departmentID, "configured")
+		approvers := []ResolvedNodeApprover{}
+		if row.DirectorySourceID == facts.sourceID {
+			if _, current := facts.currentDepartmentIDs[departmentID]; current {
+				approvers = resolvedApproversForDepartment(usableConfiguredApprovers(facts.configsByDepartment[departmentID], facts, facts.requester.ID), departmentID, "configured")
+			}
+		}
 		nodes = append(nodes, ResolvedWorkflowNode{
 			NodeType: "configured_department",
 			Label:    row.DepartmentDisplayPath,
@@ -418,7 +437,9 @@ func workflowMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User
 		return nil
 	}
 	if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-		return usersByID[*member.MatchedUserID]
+		if user := usersByID[*member.MatchedUserID]; user != nil {
+			return user
+		}
 	}
 	if usersByEmail == nil {
 		return nil
@@ -469,8 +490,12 @@ func metadataStringValues(metadata map[string]any, key string) []string {
 	if metadata == nil {
 		return []string{}
 	}
+	return metadataValueStrings(metadata[key])
+}
+
+func metadataValueStrings(value any) []string {
 	var values []any
-	switch raw := metadata[key].(type) {
+	switch raw := value.(type) {
 	case []any:
 		values = raw
 	case []string:
@@ -479,13 +504,36 @@ func metadataStringValues(metadata map[string]any, key string) []string {
 			values[i] = raw[i]
 		}
 	case string:
+		values = make([]any, 0, len(strings.Split(raw, ",")))
+		for _, item := range strings.Split(raw, ",") {
+			values = append(values, item)
+		}
+	default:
 		values = []any{raw}
 	}
 	ids := make([]string, 0, len(values))
 	for _, value := range values {
-		if id, ok := value.(string); ok {
-			ids = appendUniqueSortedString(ids, id)
-		}
+		ids = appendUniqueSortedString(ids, metadataScalarString(value))
 	}
 	return ids
+}
+
+func metadataScalarString(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case float64:
+		if math.Trunc(typed) == typed {
+			return fmt.Sprintf("%.0f", typed)
+		}
+		return strings.TrimSpace(fmt.Sprint(typed))
+	case float32:
+		floatValue := float64(typed)
+		if math.Trunc(floatValue) == floatValue {
+			return fmt.Sprintf("%.0f", floatValue)
+		}
+		return strings.TrimSpace(fmt.Sprint(typed))
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
 }

@@ -1050,6 +1050,8 @@ Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run TestWor
 
 Follow-up evidence (2026-07-14): added review regression tests for member-declared `leader_department_ids` representatives and configured users absent from the current directory snapshot.
 
+Follow-up evidence (2026-07-14): added review regression coverage for scalar/numeric representative metadata, stale member matches, and stale or removed configured-chain departments.
+
 - [x] **Step 3: Define workflow snapshot and response types**
 
 Create `workflow_types.go`:
@@ -1319,6 +1321,10 @@ Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run TestWor
 
 Follow-up evidence (2026-07-14): the two focused review regressions failed before the fix: member-declared representative resolution returned no approver, and a local-only configured user was selected.
 
+Follow-up evidence (2026-07-14): the five focused metadata, stale-match, and chain-source review regressions failed before the fix: representative resolution was empty for both metadata shapes, stale matched IDs did not fall back to email, and stale/removed chain rows selected current configured users.
+
+Follow-up evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run 'TestWorkflowResolver(AcceptsCommaSeparatedDepartmentRepresentativeMetadata|AcceptsNumericMemberLeaderDepartmentMetadata|FallsBackToEmailWhenRepresentativeMatchedUserIsStale|StaleChainSourceCannotBindCurrentDepartment|RemovedCurrentChainDepartmentRequiresAdminFallback)' -count=1` passed after the local normalizer, stale-ID email fallback, and chain source/current-department checks.
+
 Follow-up evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run 'TestWorkflowResolver(FallsBackToMemberDeclaredRepresentative|ExcludesConfiguredUserMissingCurrentDirectoryMember)' -count=1` passed after merging both representative metadata directions and requiring an active current-source member for configured users.
 
 - [x] **Step 6: Run resolver and legacy tests**
@@ -1335,6 +1341,8 @@ requests.
 Evidence (2026-07-14): `cd backend && go test ./internal/quotareset -run 'Test(WorkflowResolver|ResolveApprovers)' -count=1` passed. `go test ./internal/quotareset -count=1` also passed.
 
 Follow-up evidence (2026-07-14): review regression suite `Test(WorkflowResolver|ResolveApprovers)`, full `./internal/quotareset`, `go test ./... -count=1`, `go vet ./...`, and `git diff --check` all passed.
+
+Follow-up evidence (2026-07-14): metadata, stale-match, and chain-source review fixes passed the focused resolver suite, `Test(WorkflowResolver|ResolveApprovers)`, full `./internal/quotareset`, `go test ./... -count=1`, `go vet ./...`, and `git diff --check`.
 
 - [x] **Step 7: Commit workflow resolution**
 

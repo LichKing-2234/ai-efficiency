@@ -53,6 +53,44 @@ func TestWorkflowResolverFallsBackToRepresentativeOfSameDepartment(t *testing.T)
 	}
 }
 
+func TestWorkflowResolverAcceptsCommaSeparatedDepartmentRepresentativeMetadata(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Alpha", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	representative := createQuotaResetUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, department.ExternalID, &requester.ID)
+	representativeMember := createQuotaResetMember(t, ctx, client, source.ID, "member-lead", representative.Email, department.ExternalID, &representative.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, department.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, representativeMember, department.ExternalID)
+	client.DirectoryDepartment.UpdateOneID(department.ID).
+		SetMetadata(map[string]any{"representative_external_ids": " missing-member, member-lead , member-lead "}).
+		SaveX(ctx)
+
+	snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 1, "group-alpha")
+	assertResolvedNodeApproverIDs(t, snapshot.Nodes[0], representative.ID)
+}
+
+func TestWorkflowResolverAcceptsNumericMemberLeaderDepartmentMetadata(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "1684078", "Numeric", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	representative := createQuotaResetUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, department.ExternalID, &requester.ID)
+	representativeMember := createQuotaResetMember(t, ctx, client, source.ID, "member-lead", representative.Email, department.ExternalID, &representative.ID)
+	representativeMember = client.DirectoryMember.UpdateOneID(representativeMember.ID).
+		SetMetadata(map[string]any{"leader_department_ids": []any{float64(1684078)}}).
+		SaveX(ctx)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, department.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, representativeMember, department.ExternalID)
+
+	snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 1, "group-alpha")
+	assertResolvedNodeApproverIDs(t, snapshot.Nodes[0], representative.ID)
+}
+
 func TestWorkflowResolverFallsBackToMemberDeclaredRepresentative(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -73,6 +111,25 @@ func TestWorkflowResolverFallsBackToMemberDeclaredRepresentative(t *testing.T) {
 	if got := snapshot.Nodes[0].Approvers[0].Source; got != "directory_representative" {
 		t.Fatalf("source = %q, want directory_representative", got)
 	}
+}
+
+func TestWorkflowResolverFallsBackToEmailWhenRepresentativeMatchedUserIsStale(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Alpha", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	representative := createQuotaResetUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	staleUser := createQuotaResetUser(t, ctx, client, "stale", "stale@example.com", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, department.ExternalID, &requester.ID)
+	representativeMember := createQuotaResetMember(t, ctx, client, source.ID, "member-lead", representative.Email, department.ExternalID, &staleUser.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, department.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, representativeMember, department.ExternalID)
+	client.DirectoryDepartment.UpdateOneID(department.ID).SetMetadata(map[string]any{"representative_external_ids": representativeMember.ExternalID}).SaveX(ctx)
+	client.User.DeleteOneID(staleUser.ID).ExecX(ctx)
+
+	snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 1, "group-alpha")
+	assertResolvedNodeApproverIDs(t, snapshot.Nodes[0], representative.ID)
 }
 
 func TestWorkflowResolverMergesConfiguredAndRepresentativeDepartments(t *testing.T) {
@@ -167,6 +224,50 @@ func TestWorkflowResolverConfiguredChainNeverFallsBackToRepresentative(t *testin
 	later := snapshot.Nodes[1]
 	if len(later.Approvers) != 0 || !later.AdminFallbackRequired || later.InitialStatus != "queued" {
 		t.Fatalf("configured node = %#v, want queued empty admin fallback", later)
+	}
+}
+
+func TestWorkflowResolverStaleChainSourceCannotBindCurrentDepartment(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	staleSource := createQuotaResetDirectorySource(t, ctx, client)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	initialDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-initial", "Initial", nil)
+	chainDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-chain", "Current Chain", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, initialDepartment.ExternalID, &requester.ID)
+	approverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-lead", approver.Email, initialDepartment.ExternalID, &approver.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, initialDepartment.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, approverMember, initialDepartment.ExternalID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, chainDepartment.ExternalID, chainDepartment.Name, approver.ID)
+	createWorkflowChain(t, ctx, client, 7, "group-alpha", staleSource.ID, chainDepartment)
+
+	snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 7, "group-alpha")
+	later := snapshot.Nodes[1]
+	if len(later.Approvers) != 0 || !later.AdminFallbackRequired || later.Label != chainDepartment.Name {
+		t.Fatalf("configured node = %#v, want preserved stale snapshot with admin fallback", later)
+	}
+}
+
+func TestWorkflowResolverRemovedCurrentChainDepartmentRequiresAdminFallback(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	initialDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-initial", "Initial", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, initialDepartment.ExternalID, &requester.ID)
+	approverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-lead", approver.Email, initialDepartment.ExternalID, &approver.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, initialDepartment.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, approverMember, initialDepartment.ExternalID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, "department-removed", "Removed", approver.ID)
+	createWorkflowChain(t, ctx, client, 7, "group-alpha", source.ID, &ent.DirectoryDepartment{ExternalID: "department-removed", Name: "Removed"})
+
+	snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 7, "group-alpha")
+	later := snapshot.Nodes[1]
+	if len(later.Approvers) != 0 || !later.AdminFallbackRequired || later.Label != "Removed" {
+		t.Fatalf("configured node = %#v, want preserved removed snapshot with admin fallback", later)
 	}
 }
 
