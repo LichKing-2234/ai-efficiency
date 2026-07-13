@@ -74,23 +74,28 @@ type ApproverConfigListResponse struct {
 	Items []ApproverConfig `json:"items"`
 }
 
-type ApproverCandidateListResponse struct {
-	Items                    []ApproverCandidate               `json:"items"`
-	UnmatchedRepresentatives []UnmatchedApproverRepresentative `json:"unmatched_representatives,omitempty"`
+type ApproverCandidateParams struct {
+	SourceID int
+	Query    string
+	Page     int
+	PageSize int
 }
 
 type ApproverCandidate struct {
-	UserID                    int    `json:"user_id"`
-	Username                  string `json:"username"`
-	Email                     string `json:"email"`
-	DisplayName               string `json:"display_name"`
-	DirectoryMemberExternalID string `json:"directory_member_external_id"`
+	UserID                    int      `json:"user_id"`
+	Username                  string   `json:"username"`
+	Email                     string   `json:"email"`
+	DisplayName               string   `json:"display_name"`
+	DirectoryMemberExternalID string   `json:"directory_member_external_id"`
+	DepartmentPaths           []string `json:"department_paths"`
+	WeComMentionAvailable     bool     `json:"wecom_mention_available"`
 }
 
-type UnmatchedApproverRepresentative struct {
-	DirectoryMemberExternalID string `json:"directory_member_external_id"`
-	DisplayName               string `json:"display_name,omitempty"`
-	Email                     string `json:"email,omitempty"`
+type ApproverCandidateListResponse struct {
+	Items    []ApproverCandidate `json:"items"`
+	Page     int                 `json:"page"`
+	PageSize int                 `json:"page_size"`
+	Total    int                 `json:"total"`
 }
 
 type ApproverConfig struct {
@@ -117,6 +122,57 @@ type ApproverConfigInput struct {
 	DepartmentDisplayPath string `json:"department_display_path"`
 	ApproverUserID        int    `json:"approver_user_id"`
 	Enabled               bool   `json:"enabled"`
+}
+
+type ApprovalChainNodeInput struct {
+	DirectorySourceID     int    `json:"directory_source_id"`
+	DepartmentExternalID  string `json:"department_external_id"`
+	DepartmentDisplayPath string `json:"department_display_path"`
+}
+
+type ApprovalChainInput struct {
+	ProviderID int                      `json:"provider_id"`
+	GroupID    string                   `json:"group_id"`
+	GroupName  string                   `json:"group_name"`
+	Enabled    bool                     `json:"enabled"`
+	Nodes      []ApprovalChainNodeInput `json:"nodes"`
+}
+
+type SaveApprovalChainsInput struct {
+	ActorUserID int
+	Items       []ApprovalChainInput
+}
+
+type ApprovalChain struct {
+	ID         int                      `json:"id"`
+	ProviderID int                      `json:"provider_id"`
+	GroupID    string                   `json:"group_id"`
+	GroupName  string                   `json:"group_name"`
+	Enabled    bool                     `json:"enabled"`
+	Nodes      []ApprovalChainNodeInput `json:"nodes"`
+}
+
+type ApprovalChainListResponse struct {
+	Items []ApprovalChain `json:"items"`
+}
+
+type ApprovalChainGroupOption struct {
+	ProviderID int    `json:"provider_id"`
+	GroupID    string `json:"group_id"`
+	GroupName  string `json:"group_name"`
+	Platform   string `json:"platform"`
+}
+
+type ApprovalChainDepartmentOption struct {
+	DirectorySourceID     int    `json:"directory_source_id"`
+	DepartmentExternalID  string `json:"department_external_id"`
+	DepartmentDisplayPath string `json:"department_display_path"`
+	ApproverCount         int    `json:"approver_count"`
+}
+
+type ApprovalChainOptionsResponse struct {
+	Groups      []ApprovalChainGroupOption      `json:"groups"`
+	Departments []ApprovalChainDepartmentOption `json:"departments"`
 }
 
 type UpdateNotificationSettingsInput struct {

@@ -631,7 +631,7 @@ git commit -m "feat(backend): add quota reset workflow schemas"
 - Modify: `backend/internal/quotareset/service.go`
 - Modify: `backend/internal/quotareset/service_test.go`
 
-- [ ] **Step 1: Write failing candidate and chain tests**
+- [x] **Step 1: Write failing candidate and chain tests**
 
 Create tests named:
 
@@ -677,7 +677,7 @@ func (f *fakeQuotaResetProvider) ListPlatformGroups(context.Context) ([]relay.Gr
 }
 ```
 
-- [ ] **Step 2: Run focused tests and verify failure**
+- [x] **Step 2: Run focused tests and verify failure**
 
 Run:
 
@@ -687,7 +687,11 @@ cd backend && go test ./internal/quotareset -run 'Test(ListApproverCandidatesInc
 
 Expected: FAIL because the contracts and methods do not exist.
 
-- [ ] **Step 3: Add chain and candidate contracts**
+RED evidence (2026-07-13): the focused command failed at compile time on the
+missing `ApproverCandidateParams`, candidate fields, pure matching helper, and
+approval-chain service methods.
+
+- [x] **Step 3: Add chain and candidate contracts**
 
 Add to `types.go`:
 
@@ -774,7 +778,7 @@ Add to `errors.go`:
 ErrApproverConfigReferenced = errors.New("approver_config_referenced")
 ```
 
-- [ ] **Step 4: Implement bounded candidate lookup**
+- [x] **Step 4: Implement bounded candidate lookup**
 
 Create `chain_config.go`. `ListApproverCandidates` must:
 
@@ -838,7 +842,7 @@ Replace `validateApproverConfigs` with current-source department existence plus
 candidate-user membership validation. An approver does not need to belong to or
 represent the selected department.
 
-- [ ] **Step 5: Implement chain list, options, atomic save, and reference guard**
+- [x] **Step 5: Implement chain list, options, atomic save, and reference guard**
 
 Use a local optional relay interface:
 
@@ -911,7 +915,7 @@ func (s *Service) validateChainReferencesAfterApproverSave(ctx context.Context, 
 }
 ```
 
-- [ ] **Step 6: Run focused and full quota reset tests**
+- [x] **Step 6: Run focused and full quota reset tests**
 
 Run:
 
@@ -923,7 +927,12 @@ cd backend && go test ./internal/quotareset -count=1
 Expected: PASS. Update representative-only candidate tests to assert the new
 directory-matched-user contract while keeping representative resolver tests.
 
-- [ ] **Step 7: Commit chain configuration**
+GREEN evidence (2026-07-13): the specified focused command, candidate/helper
+contract tests, chain/options tests, and full quota reset package all pass. A
+self-review regression also proved that raw numeric source paths are rendered
+through the current name-based directory hierarchy.
+
+- [x] **Step 7: Commit chain configuration**
 
 ```bash
 git add backend/internal/quotareset

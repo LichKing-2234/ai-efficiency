@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
@@ -357,58 +355,37 @@ func TestNotificationSettingsTestRequiresEnabledSavedWebhook(t *testing.T) {
 	}
 }
 
-func TestListApproverCandidatesReturnsSelectedDepartmentRepresentativesOnly(t *testing.T) {
+func TestListApproverCandidatesReturnsDirectoryMatchedUsers(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	source := createQuotaResetDirectorySource(t, ctx, client)
 	alpha := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
-	beta := createQuotaResetDepartment(t, ctx, client, source.ID, "department-beta", "Department Beta", nil)
 	alphaLead := createQuotaResetUser(t, ctx, client, "lead-alpha", "lead-alpha@example.com", nil, "user")
-	staleMatchedLead := createQuotaResetUser(t, ctx, client, "lead-alpha-stale", "lead-alpha-stale@example.com", nil, "user")
-	betaLead := createQuotaResetUser(t, ctx, client, "lead-beta", "lead-beta@example.com", nil, "user")
 	peer := createQuotaResetUser(t, ctx, client, "peer-alpha", "peer-alpha@example.com", nil, "user")
 	client.DirectoryDepartment.UpdateOneID(alpha.ID).
-		SetMetadata(map[string]any{"representative_external_ids": []any{"member-alpha-lead", "member-alpha-stale", "member-alpha-unmatched"}}).
+		SetMetadata(map[string]any{"representative_external_ids": []any{"member-alpha-lead"}}).
 		SaveX(ctx)
-	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-lead", alphaLead.Email, alpha.ExternalID, &alphaLead.ID)
-	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-stale", staleMatchedLead.Email, alpha.ExternalID, nil)
-	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-unmatched", "lead-alpha-unmatched@example.com", alpha.ExternalID, nil)
-	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-peer", peer.Email, alpha.ExternalID, &peer.ID)
-	client.DirectoryMember.UpdateOneID(createQuotaResetMember(t, ctx, client, source.ID, "member-beta-lead", betaLead.Email, beta.ExternalID, &betaLead.ID).ID).
-		SetMetadata(map[string]any{"leader_department_ids": []any{beta.ExternalID}}).
-		SaveX(ctx)
+	leadMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-lead", alphaLead.Email, alpha.ExternalID, &alphaLead.ID)
+	peerMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-peer", peer.Email, alpha.ExternalID, &peer.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, leadMember, alpha.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, peerMember, alpha.ExternalID)
 	svc := NewService(client, nil, nil, nil)
 
-	resp, err := svc.ListApproverCandidates(ctx, source.ID, alpha.ExternalID)
+	resp, err := svc.ListApproverCandidates(ctx, ApproverCandidateParams{
+		SourceID: source.ID,
+		Query:    "peer-alpha",
+		Page:     1,
+		PageSize: 20,
+	})
 	if err != nil {
 		t.Fatalf("ListApproverCandidates() error = %v", err)
 	}
-	if got, want := approverCandidateUserIDs(resp.Items), []int{alphaLead.ID, staleMatchedLead.ID}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("alpha candidate ids = %#v, want matched and email-fallback representatives %#v", got, want)
+	if len(resp.Items) != 1 || resp.Items[0].UserID != peer.ID {
+		t.Fatalf("candidates = %#v, want matched non-representative peer", resp.Items)
 	}
-	if resp.Items[0].Email != alphaLead.Email || resp.Items[0].DirectoryMemberExternalID != "member-alpha-lead" {
-		t.Fatalf("alpha candidate detail = %#v", resp.Items[0])
+	if resp.Page != 1 || resp.PageSize != 20 || resp.Total != 1 {
+		t.Fatalf("pagination = page %d size %d total %d, want 1/20/1", resp.Page, resp.PageSize, resp.Total)
 	}
-	if len(resp.UnmatchedRepresentatives) != 1 || resp.UnmatchedRepresentatives[0].DirectoryMemberExternalID != "member-alpha-unmatched" {
-		t.Fatalf("alpha unmatched representatives = %#v, want member-alpha-unmatched", resp.UnmatchedRepresentatives)
-	}
-
-	resp, err = svc.ListApproverCandidates(ctx, source.ID, beta.ExternalID)
-	if err != nil {
-		t.Fatalf("ListApproverCandidates(beta) error = %v", err)
-	}
-	if len(resp.Items) != 1 || resp.Items[0].UserID != betaLead.ID {
-		t.Fatalf("beta candidates = %#v, want beta representative from member metadata", resp.Items)
-	}
-}
-
-func approverCandidateUserIDs(items []ApproverCandidate) []int {
-	ids := make([]int, 0, len(items))
-	for _, item := range items {
-		ids = append(ids, item.UserID)
-	}
-	sort.Ints(ids)
-	return ids
 }
 
 func TestListApproverConfigsOnlyReturnsCurrentDirectorySource(t *testing.T) {
@@ -434,7 +411,7 @@ func TestListApproverConfigsOnlyReturnsCurrentDirectorySource(t *testing.T) {
 	}
 }
 
-func TestSaveApproverConfigsRejectsApproverOutsideDepartmentRepresentatives(t *testing.T) {
+func TestSaveApproverConfigsAcceptsMatchedNonRepresentative(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	source := createQuotaResetDirectorySource(t, ctx, client)
@@ -444,11 +421,13 @@ func TestSaveApproverConfigsRejectsApproverOutsideDepartmentRepresentatives(t *t
 	client.DirectoryDepartment.UpdateOneID(department.ID).
 		SetMetadata(map[string]any{"representative_external_ids": []any{"member-alpha-lead"}}).
 		SaveX(ctx)
-	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-lead", lead.Email, department.ExternalID, &lead.ID)
-	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-peer", peer.Email, department.ExternalID, &peer.ID)
+	leadMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-lead", lead.Email, department.ExternalID, &lead.ID)
+	peerMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-peer", peer.Email, department.ExternalID, &peer.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, leadMember, department.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, peerMember, department.ExternalID)
 	svc := NewService(client, nil, nil, nil)
 
-	_, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+	resp, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
 		ActorUserID: 1,
 		Mode:        ApproverConfigSaveModeReplaceAll,
 		Items: []ApproverConfigInput{{
@@ -458,25 +437,11 @@ func TestSaveApproverConfigsRejectsApproverOutsideDepartmentRepresentatives(t *t
 			Enabled:               true,
 		}},
 	})
-	if !errors.Is(err, ErrInvalidApproverConfig) {
-		t.Fatalf("SaveApproverConfigs(non representative) error = %v, want ErrInvalidApproverConfig", err)
-	}
-
-	resp, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
-		ActorUserID: 1,
-		Mode:        ApproverConfigSaveModeReplaceAll,
-		Items: []ApproverConfigInput{{
-			DepartmentExternalID:  department.ExternalID,
-			DepartmentDisplayPath: department.Name,
-			ApproverUserID:        lead.ID,
-			Enabled:               true,
-		}},
-	})
 	if err != nil {
-		t.Fatalf("SaveApproverConfigs(representative) error = %v", err)
+		t.Fatalf("SaveApproverConfigs(non representative) error = %v", err)
 	}
-	if len(resp.Items) != 1 || resp.Items[0].ApproverUserID != lead.ID {
-		t.Fatalf("saved configs = %#v, want lead only", resp.Items)
+	if len(resp.Items) != 1 || resp.Items[0].ApproverUserID != peer.ID {
+		t.Fatalf("saved configs = %#v, want non-representative peer", resp.Items)
 	}
 }
 
@@ -498,10 +463,15 @@ func fakeProviderResolver(wantID int, provider relay.Provider) ProviderResolver 
 type fakeQuotaResetProvider struct {
 	relay.Provider
 	subscriptions []relay.UserSubscription
+	groups        []relay.Group
 	resetErr      error
 	resetUserID   int64
 	resetGroupID  int64
 	resetCalls    int
+}
+
+func (f *fakeQuotaResetProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
+	return append([]relay.Group(nil), f.groups...), nil
 }
 
 func (f *fakeQuotaResetProvider) ListUserSubscriptions(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
