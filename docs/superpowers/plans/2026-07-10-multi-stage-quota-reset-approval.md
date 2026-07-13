@@ -970,6 +970,32 @@ Task 2 approval configuration transaction quality evidence (2026-07-13):
   handler package, server compile check, full backend tests, backend vet, and
   diff checks pass.
 
+Task 2 review quality follow-up evidence (2026-07-14):
+
+- [x] Handler RED returned HTTP 500 for a wrapped
+  `ErrApproverConfigReferenced`. The shared error writer now returns HTTP 409
+  while preserving the complete enabled-chain identity message.
+- [x] Lock-boundary RED proved that a paused relay group lister held the shared
+  approval-configuration lock until a concurrent chain read hit its deadline.
+  Group discovery now runs on the base client before the transaction under one
+  explicit 10-second context timeout; `ListApprovalChainOptions` uses the same
+  bounded discovery helper.
+- [x] Provider revalidation RED proved that disabling a provider after group
+  discovery still allowed its chain to be saved. After locking, chain saves now
+  use only `tx.Client()` to revalidate enabled providers, the current directory
+  source and departments, and enabled approver-config coverage before replacing
+  rows and assembling the exact in-transaction response.
+- [x] Focused handler and quota-reset tests, focused race tests, full quota-reset
+  and handler packages, the server compile check, full backend tests, backend
+  vet, and diff checks pass.
+
+Known remaining Minor (2026-07-14): the older lock-serialization tests still use
+the existing 150 ms absence-of-signal assertion after their explicit
+before-lock hook. The new stalled-discovery regression instead requires a
+positive chain-read completion while discovery is paused. A deterministic
+replacement for the older assertion would require SQL lock introspection; no
+`pg_locks` harness was added in this Task 2 follow-up.
+
 - [x] **Step 7: Commit chain configuration**
 
 ```bash

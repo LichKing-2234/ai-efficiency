@@ -462,15 +462,19 @@ func fakeProviderResolver(wantID int, provider relay.Provider) ProviderResolver 
 
 type fakeQuotaResetProvider struct {
 	relay.Provider
-	subscriptions []relay.UserSubscription
-	groups        []relay.Group
-	resetErr      error
-	resetUserID   int64
-	resetGroupID  int64
-	resetCalls    int
+	subscriptions        []relay.UserSubscription
+	groups               []relay.Group
+	listPlatformGroupsFn func(context.Context) ([]relay.Group, error)
+	resetErr             error
+	resetUserID          int64
+	resetGroupID         int64
+	resetCalls           int
 }
 
-func (f *fakeQuotaResetProvider) ListPlatformGroups(context.Context) ([]relay.Group, error) {
+func (f *fakeQuotaResetProvider) ListPlatformGroups(ctx context.Context) ([]relay.Group, error) {
+	if f.listPlatformGroupsFn != nil {
+		return f.listPlatformGroupsFn(ctx)
+	}
 	return append([]relay.Group(nil), f.groups...), nil
 }
 

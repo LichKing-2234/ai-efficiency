@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -150,6 +152,30 @@ func TestQuotaResetSaveApproverConfigsPassesMode(t *testing.T) {
 	rec := performQuotaResetRequest(env.router, http.MethodPut, "/api/v1/admin/quota-reset/approver-configs", env.adminToken, `{"mode":"replace_all","items":[{"department_external_id":"dept-alpha","approver_user_id":7,"enabled":true}]}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestQuotaResetSaveApproverConfigsMapsReferencedConflict(t *testing.T) {
+	detail := `enabled approval chains reference departments without approver configs: provider_id=1 group_id=42 group_name="Group Alpha"`
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		saveApproverConfigsFn: func(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error) {
+			return nil, fmt.Errorf("save approver configs: %w: %s", quotareset.ErrApproverConfigReferenced, detail)
+		},
+	})
+
+	rec := performQuotaResetRequest(env.router, http.MethodPut, "/api/v1/admin/quota-reset/approver-configs", env.adminToken, `{"mode":"replace_all","items":[]}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+	wantMessage := "save approver configs: " + quotareset.ErrApproverConfigReferenced.Error() + ": " + detail
+	var body struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if body.Message != wantMessage {
+		t.Fatalf("message = %q, want %q", body.Message, wantMessage)
 	}
 }
 

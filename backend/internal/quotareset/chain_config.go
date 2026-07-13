@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
@@ -21,7 +22,10 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
-const quotaResetApprovalConfigurationLockKey = "quota_reset_approval_configuration"
+const (
+	quotaResetApprovalConfigurationLockKey = "quota_reset_approval_configuration"
+	approvalChainGroupDiscoveryTimeout     = 10 * time.Second
+)
 
 type approvalConfigurationLockHooksContextKey struct{}
 
@@ -379,23 +383,34 @@ func normalizeCandidateValue(value string) string {
 }
 
 func (s *Service) ListApprovalChainOptions(ctx context.Context) (*ApprovalChainOptionsResponse, error) {
-	response := &ApprovalChainOptionsResponse{
-		Groups:      []ApprovalChainGroupOption{},
-		Departments: []ApprovalChainDepartmentOption{},
+	groups, err := s.discoverApprovalChainGroups(ctx)
+	if err != nil {
+		return nil, err
 	}
+	departments, err := listApprovalChainDepartmentOptions(ctx, s.client)
+	if err != nil {
+		return nil, err
+	}
+	return &ApprovalChainOptionsResponse{Groups: groups, Departments: departments}, nil
+}
+
+func (s *Service) discoverApprovalChainGroups(ctx context.Context) ([]ApprovalChainGroupOption, error) {
+	discoveryCtx, cancel := context.WithTimeout(ctx, approvalChainGroupDiscoveryTimeout)
+	defer cancel()
 	providers, err := s.client.RelayProvider.Query().
 		Where(entrelayprovider.EnabledEQ(true)).
 		Order(ent.Asc(entrelayprovider.FieldID)).
-		All(ctx)
+		All(discoveryCtx)
 	if err != nil {
 		return nil, fmt.Errorf("list enabled relay providers for approval chains: %w", err)
 	}
 	if len(providers) > 0 && s.providerResolver == nil {
 		return nil, ErrProviderUnsupported
 	}
+	groupsResponse := make([]ApprovalChainGroupOption, 0)
 	seenGroups := map[string]struct{}{}
 	for _, providerRow := range providers {
-		provider, err := s.providerResolver.Resolve(ctx, providerRow.ID)
+		provider, err := s.providerResolver.Resolve(discoveryCtx, providerRow.ID)
 		if err != nil {
 			return nil, fmt.Errorf("resolve relay provider %d for approval chains: %w", providerRow.ID, err)
 		}
@@ -403,7 +418,7 @@ func (s *Service) ListApprovalChainOptions(ctx context.Context) (*ApprovalChainO
 		if !ok {
 			return nil, fmt.Errorf("%w: relay provider %d does not list platform groups", ErrProviderUnsupported, providerRow.ID)
 		}
-		groups, err := lister.ListPlatformGroups(ctx)
+		groups, err := lister.ListPlatformGroups(discoveryCtx)
 		if err != nil {
 			return nil, fmt.Errorf("list platform groups for relay provider %d: %w", providerRow.ID, err)
 		}
@@ -417,7 +432,7 @@ func (s *Service) ListApprovalChainOptions(ctx context.Context) (*ApprovalChainO
 				continue
 			}
 			seenGroups[key] = struct{}{}
-			response.Groups = append(response.Groups, ApprovalChainGroupOption{
+			groupsResponse = append(groupsResponse, ApprovalChainGroupOption{
 				ProviderID: providerRow.ID,
 				GroupID:    groupID,
 				GroupName:  strings.TrimSpace(group.Name),
@@ -425,26 +440,30 @@ func (s *Service) ListApprovalChainOptions(ctx context.Context) (*ApprovalChainO
 			})
 		}
 	}
-	sort.SliceStable(response.Groups, func(i, j int) bool {
-		if response.Groups[i].ProviderID != response.Groups[j].ProviderID {
-			return response.Groups[i].ProviderID < response.Groups[j].ProviderID
+	sort.SliceStable(groupsResponse, func(i, j int) bool {
+		if groupsResponse[i].ProviderID != groupsResponse[j].ProviderID {
+			return groupsResponse[i].ProviderID < groupsResponse[j].ProviderID
 		}
-		leftName := normalizeCandidateValue(response.Groups[i].GroupName)
-		rightName := normalizeCandidateValue(response.Groups[j].GroupName)
+		leftName := normalizeCandidateValue(groupsResponse[i].GroupName)
+		rightName := normalizeCandidateValue(groupsResponse[j].GroupName)
 		if leftName != rightName {
 			return leftName < rightName
 		}
-		return response.Groups[i].GroupID < response.Groups[j].GroupID
+		return groupsResponse[i].GroupID < groupsResponse[j].GroupID
 	})
+	return groupsResponse, nil
+}
 
-	sourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
+func listApprovalChainDepartmentOptions(ctx context.Context, client *ent.Client) ([]ApprovalChainDepartmentOption, error) {
+	response := make([]ApprovalChainDepartmentOption, 0)
+	sourceID, ok, err := directorysync.CurrentSourceID(ctx, client)
 	if err != nil {
 		return nil, fmt.Errorf("resolve current directory source for approval chains: %w", err)
 	}
 	if !ok {
 		return response, nil
 	}
-	configs, err := s.client.QuotaResetApproverConfig.Query().
+	configs, err := client.QuotaResetApproverConfig.Query().
 		Where(
 			quotaresetapproverconfig.DirectorySourceIDEQ(sourceID),
 			quotaresetapproverconfig.EnabledEQ(true),
@@ -463,7 +482,7 @@ func (s *Service) ListApprovalChainOptions(ctx context.Context) (*ApprovalChainO
 	if len(approverCounts) == 0 {
 		return response, nil
 	}
-	departments, err := s.client.DirectoryDepartment.Query().
+	departments, err := client.DirectoryDepartment.Query().
 		Where(directorydepartment.SourceIDEQ(sourceID)).
 		All(ctx)
 	if err != nil {
@@ -476,20 +495,20 @@ func (s *Service) ListApprovalChainOptions(ctx context.Context) (*ApprovalChainO
 		if approverCount == 0 {
 			continue
 		}
-		response.Departments = append(response.Departments, ApprovalChainDepartmentOption{
+		response = append(response, ApprovalChainDepartmentOption{
 			DirectorySourceID:     sourceID,
 			DepartmentExternalID:  departmentID,
 			DepartmentDisplayPath: candidateDepartmentPath(departmentTree, department),
 			ApproverCount:         approverCount,
 		})
 	}
-	sort.SliceStable(response.Departments, func(i, j int) bool {
-		leftPath := normalizeCandidateValue(response.Departments[i].DepartmentDisplayPath)
-		rightPath := normalizeCandidateValue(response.Departments[j].DepartmentDisplayPath)
+	sort.SliceStable(response, func(i, j int) bool {
+		leftPath := normalizeCandidateValue(response[i].DepartmentDisplayPath)
+		rightPath := normalizeCandidateValue(response[j].DepartmentDisplayPath)
 		if leftPath != rightPath {
 			return leftPath < rightPath
 		}
-		return response.Departments[i].DepartmentExternalID < response.Departments[j].DepartmentExternalID
+		return response[i].DepartmentExternalID < response[j].DepartmentExternalID
 	})
 	return response, nil
 }
@@ -559,58 +578,22 @@ func listApprovalChains(ctx context.Context, client *ent.Client) (*ApprovalChain
 
 func (s *Service) SaveApprovalChains(ctx context.Context, input SaveApprovalChainsInput) (*ApprovalChainListResponse, error) {
 	items := normalizeApprovalChainInputs(input.Items)
+	if len(items) > 0 {
+		groups, err := s.discoverApprovalChainGroups(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateApprovalChainGroupSnapshot(items, groups); err != nil {
+			return nil, err
+		}
+	}
 	tx, err := s.beginApprovalConfigurationTx(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
-	txService := *s
-	txService.client = tx.Client()
-	allowedGroups := map[string]ApprovalChainGroupOption{}
-	allowedDepartments := map[string]ApprovalChainDepartmentOption{}
-	if len(items) > 0 {
-		options, err := txService.ListApprovalChainOptions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, group := range options.Groups {
-			allowedGroups[approvalChainGroupKey(group.ProviderID, group.GroupID)] = group
-		}
-		for _, department := range options.Departments {
-			allowedDepartments[approvalChainDepartmentKey(department.DirectorySourceID, department.DepartmentExternalID)] = department
-		}
-	}
-	seenGroups := map[string]struct{}{}
-	for itemIndex := range items {
-		item := &items[itemIndex]
-		groupKey := approvalChainGroupKey(item.ProviderID, item.GroupID)
-		group, ok := allowedGroups[groupKey]
-		if !ok {
-			return nil, fmt.Errorf("%w: unknown subscription group %s", ErrInvalidApproverConfig, groupKey)
-		}
-		if _, duplicate := seenGroups[groupKey]; duplicate {
-			return nil, fmt.Errorf("%w: duplicate subscription group %s", ErrInvalidApproverConfig, groupKey)
-		}
-		seenGroups[groupKey] = struct{}{}
-		if item.GroupName == "" {
-			item.GroupName = group.GroupName
-		}
-		seenDepartments := map[string]struct{}{}
-		for nodeIndex := range item.Nodes {
-			node := &item.Nodes[nodeIndex]
-			nodeKey := approvalChainDepartmentKey(node.DirectorySourceID, node.DepartmentExternalID)
-			department, ok := allowedDepartments[nodeKey]
-			if !ok {
-				return nil, fmt.Errorf("%w: department %s has no enabled approver config", ErrInvalidApproverConfig, nodeKey)
-			}
-			if _, duplicate := seenDepartments[nodeKey]; duplicate {
-				return nil, fmt.Errorf("%w: duplicate department %s", ErrInvalidApproverConfig, nodeKey)
-			}
-			seenDepartments[nodeKey] = struct{}{}
-			if node.DepartmentDisplayPath == "" {
-				node.DepartmentDisplayPath = department.DepartmentDisplayPath
-			}
-		}
+	if err := validateApprovalChainDatabaseFacts(ctx, tx.Client(), items); err != nil {
+		return nil, err
 	}
 
 	if _, err := tx.QuotaResetApprovalChainNode.Delete().Exec(ctx); err != nil {
@@ -651,6 +634,95 @@ func (s *Service) SaveApprovalChains(ctx context.Context, input SaveApprovalChai
 		return nil, fmt.Errorf("commit quota reset approval chains: %w", err)
 	}
 	return response, nil
+}
+
+func validateApprovalChainGroupSnapshot(items []ApprovalChainInput, groups []ApprovalChainGroupOption) error {
+	allowedGroups := make(map[string]ApprovalChainGroupOption, len(groups))
+	for _, group := range groups {
+		allowedGroups[approvalChainGroupKey(group.ProviderID, group.GroupID)] = group
+	}
+	seenGroups := map[string]struct{}{}
+	for itemIndex := range items {
+		item := &items[itemIndex]
+		groupKey := approvalChainGroupKey(item.ProviderID, item.GroupID)
+		group, ok := allowedGroups[groupKey]
+		if !ok {
+			return fmt.Errorf("%w: unknown subscription group %s", ErrInvalidApproverConfig, groupKey)
+		}
+		if _, duplicate := seenGroups[groupKey]; duplicate {
+			return fmt.Errorf("%w: duplicate subscription group %s", ErrInvalidApproverConfig, groupKey)
+		}
+		seenGroups[groupKey] = struct{}{}
+		if item.GroupName == "" {
+			item.GroupName = group.GroupName
+		}
+		seenDepartments := map[string]struct{}{}
+		for nodeIndex := range item.Nodes {
+			node := &item.Nodes[nodeIndex]
+			nodeKey := approvalChainDepartmentKey(node.DirectorySourceID, node.DepartmentExternalID)
+			if _, duplicate := seenDepartments[nodeKey]; duplicate {
+				return fmt.Errorf("%w: duplicate department %s", ErrInvalidApproverConfig, nodeKey)
+			}
+			seenDepartments[nodeKey] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func validateApprovalChainDatabaseFacts(ctx context.Context, client *ent.Client, items []ApprovalChainInput) error {
+	if len(items) == 0 {
+		return nil
+	}
+	providerIDs := make([]int, 0, len(items))
+	seenProviderIDs := make(map[int]struct{}, len(items))
+	for _, item := range items {
+		if _, seen := seenProviderIDs[item.ProviderID]; seen {
+			continue
+		}
+		seenProviderIDs[item.ProviderID] = struct{}{}
+		providerIDs = append(providerIDs, item.ProviderID)
+	}
+	enabledProviderIDs, err := client.RelayProvider.Query().
+		Where(
+			entrelayprovider.IDIn(providerIDs...),
+			entrelayprovider.EnabledEQ(true),
+		).
+		IDs(ctx)
+	if err != nil {
+		return fmt.Errorf("revalidate enabled relay providers for approval chains: %w", err)
+	}
+	enabledProviders := make(map[int]struct{}, len(enabledProviderIDs))
+	for _, providerID := range enabledProviderIDs {
+		enabledProviders[providerID] = struct{}{}
+	}
+	sort.Ints(providerIDs)
+	for _, providerID := range providerIDs {
+		if _, ok := enabledProviders[providerID]; !ok {
+			return fmt.Errorf("%w: relay provider %d is not enabled", ErrInvalidApproverConfig, providerID)
+		}
+	}
+	departments, err := listApprovalChainDepartmentOptions(ctx, client)
+	if err != nil {
+		return err
+	}
+	allowedDepartments := make(map[string]ApprovalChainDepartmentOption, len(departments))
+	for _, department := range departments {
+		allowedDepartments[approvalChainDepartmentKey(department.DirectorySourceID, department.DepartmentExternalID)] = department
+	}
+	for itemIndex := range items {
+		for nodeIndex := range items[itemIndex].Nodes {
+			node := &items[itemIndex].Nodes[nodeIndex]
+			nodeKey := approvalChainDepartmentKey(node.DirectorySourceID, node.DepartmentExternalID)
+			department, ok := allowedDepartments[nodeKey]
+			if !ok {
+				return fmt.Errorf("%w: department %s has no enabled approver config", ErrInvalidApproverConfig, nodeKey)
+			}
+			if node.DepartmentDisplayPath == "" {
+				node.DepartmentDisplayPath = department.DepartmentDisplayPath
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Service) projectApproverConfigsAfterSave(ctx context.Context, sourceID int, items []ApproverConfigInput, replaceAll bool) ([]ApproverConfigInput, error) {

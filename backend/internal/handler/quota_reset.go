@@ -409,7 +409,7 @@ func writeQuotaResetError(c *gin.Context, err error) {
 		pkg.Error(c, http.StatusForbidden, err.Error())
 	case errors.Is(err, quotareset.ErrReasonRequired), errors.Is(err, quotareset.ErrDecisionRequired), errors.Is(err, quotareset.ErrInactiveSubscription), errors.Is(err, quotareset.ErrInvalidStatus), errors.Is(err, quotareset.ErrInvalidNotification), errors.Is(err, quotareset.ErrInvalidApproverConfig):
 		pkg.Error(c, http.StatusBadRequest, err.Error())
-	case errors.Is(err, quotareset.ErrActiveRequestExists):
+	case errors.Is(err, quotareset.ErrActiveRequestExists), errors.Is(err, quotareset.ErrApproverConfigReferenced):
 		pkg.Error(c, http.StatusConflict, err.Error())
 	case errors.Is(err, quotareset.ErrProviderUnsupported), errors.Is(err, quotareset.ErrDirectoryUnavailable):
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())

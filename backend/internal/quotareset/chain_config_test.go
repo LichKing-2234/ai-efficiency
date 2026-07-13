@@ -381,9 +381,9 @@ func TestSaveApproverConfigsReferenceErrorListsEnabledGroupsDeterministically(t 
 		SaveX(ctx)
 	for _, item := range []struct {
 		providerID int
-		groupID   string
-		groupName string
-		enabled   bool
+		groupID    string
+		groupName  string
+		enabled    bool
 	}{
 		{providerID: secondProvider.ID, groupID: "40", groupName: "Group Gamma", enabled: true},
 		{providerID: provider.ID, groupID: "43", groupName: "Group Beta", enabled: true},
@@ -501,6 +501,88 @@ func TestApprovalConfigurationLockSerializesCriticalSections(t *testing.T) {
 	waitForApprovalConfigurationSignal(t, secondEntered, "second transaction to enter after first commit")
 	if err := waitForApprovalConfigurationResult(t, secondResult, "second transaction"); err != nil {
 		t.Fatalf("second transaction error = %v", err)
+	}
+}
+
+func TestSaveApprovalChainsPausedGroupDiscoveryDoesNotHoldConfigurationLock(t *testing.T) {
+	ctx := context.Background()
+	client, _, source, provider, alpha, _ := setupApprovalChainTest(t, ctx)
+	discoveryEntered := make(chan struct{})
+	discoveryRelease := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseDiscovery := func() {
+		releaseOnce.Do(func() { close(discoveryRelease) })
+	}
+	defer releaseDiscovery()
+	fake := &fakeQuotaResetProvider{
+		listPlatformGroupsFn: func(ctx context.Context) ([]relay.Group, error) {
+			close(discoveryEntered)
+			select {
+			case <-discoveryRelease:
+				return []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"}}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil)
+	saveResult := make(chan approvalChainSaveResult, 1)
+	go func() {
+		response, err := svc.SaveApprovalChains(ctx, SaveApprovalChainsInput{ActorUserID: 9, Items: []ApprovalChainInput{{
+			ProviderID: provider.ID,
+			GroupID:    "42",
+			Enabled:    true,
+			Nodes: []ApprovalChainNodeInput{{
+				DirectorySourceID:    source.ID,
+				DepartmentExternalID: alpha.ExternalID,
+			}},
+		}}})
+		saveResult <- approvalChainSaveResult{response: response, err: err}
+	}()
+	waitForApprovalConfigurationSignal(t, discoveryEntered, "group discovery to pause")
+
+	readCtx, cancelRead := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelRead()
+	readResponse, err := svc.ListApprovalChains(readCtx)
+	releaseDiscovery()
+	saved := waitForApprovalChainSaveResult(t, saveResult, "chain save after group discovery release")
+	if err != nil {
+		t.Fatalf("ListApprovalChains() while discovery paused error = %v", err)
+	}
+	if len(readResponse.Items) != 0 {
+		t.Fatalf("ListApprovalChains() while discovery paused = %#v, want pre-save empty revision", readResponse.Items)
+	}
+	if saved.err != nil {
+		t.Fatalf("SaveApprovalChains() error = %v", saved.err)
+	}
+	assertSingleApprovalChain(t, saved.response, "42", alpha.ExternalID)
+}
+
+func TestSaveApprovalChainsRevalidatesEnabledProviderAfterDiscovery(t *testing.T) {
+	ctx := context.Background()
+	client, _, source, provider, alpha, _ := setupApprovalChainTest(t, ctx)
+	fake := &fakeQuotaResetProvider{
+		listPlatformGroupsFn: func(context.Context) ([]relay.Group, error) {
+			client.RelayProvider.UpdateOneID(provider.ID).SetEnabled(false).SaveX(ctx)
+			return []relay.Group{{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"}}, nil
+		},
+	}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil)
+
+	_, err := svc.SaveApprovalChains(ctx, SaveApprovalChainsInput{ActorUserID: 9, Items: []ApprovalChainInput{{
+		ProviderID: provider.ID,
+		GroupID:    "42",
+		Enabled:    true,
+		Nodes: []ApprovalChainNodeInput{{
+			DirectorySourceID:    source.ID,
+			DepartmentExternalID: alpha.ExternalID,
+		}},
+	}}})
+	if !errors.Is(err, ErrInvalidApproverConfig) {
+		t.Fatalf("SaveApprovalChains() error = %v, want ErrInvalidApproverConfig", err)
+	}
+	if got := client.QuotaResetApprovalChain.Query().CountX(ctx); got != 0 {
+		t.Fatalf("approval chain count = %d, want no chain for disabled provider", got)
 	}
 }
 
