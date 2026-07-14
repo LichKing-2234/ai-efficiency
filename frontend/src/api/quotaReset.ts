@@ -24,7 +24,7 @@ export interface QuotaResetListParams {
 export type QuotaResetApproverConfigSaveMode = 'replace_departments' | 'replace_all'
 
 export interface QuotaResetApproverCandidateParams {
-  source_id?: number
+  source_id: number
   q?: string
   page?: number
   page_size?: number

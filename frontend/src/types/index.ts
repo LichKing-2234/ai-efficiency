@@ -1280,13 +1280,28 @@ export interface QuotaResetNotificationSettings {
   updated_at?: string
 }
 
-export interface QuotaResetNotificationSettingsInput {
+interface QuotaResetNotificationSettingsInputBase {
   enabled: boolean
-  channel_type: QuotaResetNotificationChannel
   url?: string | null
-  auth_type: 'none' | 'bearer_token'
-  credential_id?: number | null
 }
+
+export type QuotaResetNotificationSettingsInput = QuotaResetNotificationSettingsInputBase & (
+  | {
+      channel_type: 'wecom_group_robot'
+      auth_type: 'none'
+      credential_id?: null
+    }
+  | {
+      channel_type: 'generic_webhook'
+      auth_type: 'none'
+      credential_id?: null
+    }
+  | {
+      channel_type: 'generic_webhook'
+      auth_type: 'bearer_token'
+      credential_id: number
+    }
+)
 
 export interface QuotaResetNotificationTestResult {
   delivered: boolean

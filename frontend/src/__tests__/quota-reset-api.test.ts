@@ -167,11 +167,12 @@ describe('quota reset api', () => {
       workflow?: QuotaResetWorkflow
     }>()
     expectTypeOf<QuotaResetApproverCandidateParams>().toEqualTypeOf<{
-      source_id?: number
+      source_id: number
       q?: string
       page?: number
       page_size?: number
     }>()
+    expectTypeOf<{}>().not.toMatchTypeOf<QuotaResetApproverCandidateParams>()
     expectTypeOf<{ request_node_id: number; decision_reason: string }>().toMatchTypeOf<QuotaResetApproveInput>()
     expectTypeOf<{}>().toMatchTypeOf<QuotaResetApproveInput>()
     expectTypeOf<{ decision_reason: string }>().toMatchTypeOf<QuotaResetApproveInput>()
@@ -179,6 +180,46 @@ describe('quota reset api', () => {
     expectTypeOf<{ request_node_id: number; decision_reason: string }>().toMatchTypeOf<QuotaResetRejectInput>()
     expectTypeOf<{ decision_reason: string }>().toMatchTypeOf<QuotaResetRejectInput>()
     expectTypeOf<{ request_node_id: number }>().not.toMatchTypeOf<QuotaResetRejectInput>()
+  })
+
+  it('exports only backend-valid notification input variants', () => {
+    expectTypeOf<{
+      enabled: boolean
+      channel_type: 'wecom_group_robot'
+      url: null
+      auth_type: 'none'
+      credential_id: null
+    }>().toMatchTypeOf<QuotaResetNotificationSettingsInput>()
+    expectTypeOf<{
+      enabled: boolean
+      channel_type: 'generic_webhook'
+      auth_type: 'none'
+    }>().toMatchTypeOf<QuotaResetNotificationSettingsInput>()
+    expectTypeOf<{
+      enabled: boolean
+      channel_type: 'generic_webhook'
+      url: string
+      auth_type: 'bearer_token'
+      credential_id: number
+    }>().toMatchTypeOf<QuotaResetNotificationSettingsInput>()
+
+    expectTypeOf<{
+      enabled: boolean
+      channel_type: 'wecom_group_robot'
+      auth_type: 'bearer_token'
+      credential_id: number
+    }>().not.toMatchTypeOf<QuotaResetNotificationSettingsInput>()
+    expectTypeOf<{
+      enabled: boolean
+      channel_type: 'generic_webhook'
+      auth_type: 'bearer_token'
+    }>().not.toMatchTypeOf<QuotaResetNotificationSettingsInput>()
+    expectTypeOf<{
+      enabled: boolean
+      channel_type: 'generic_webhook'
+      auth_type: 'none'
+      credential_id: number
+    }>().not.toMatchTypeOf<QuotaResetNotificationSettingsInput>()
   })
 
   it('uses user request endpoints', () => {
@@ -300,7 +341,7 @@ describe('quota reset api', () => {
       .toEqualTypeOf<ApiResponse<QuotaResetApprovalChainOptionsResponse>>()
   })
 
-  it('preserves omitted and empty notification URLs and returns the test result', () => {
+  it('preserves omitted and empty notification URLs', () => {
     const omittedURL: QuotaResetNotificationSettingsInput = {
       enabled: true,
       channel_type: 'generic_webhook',
@@ -324,27 +365,40 @@ describe('quota reset api', () => {
       credential_id: null,
       updated_at: '2026-07-14T04:00:00Z',
     }
-    const testResult: QuotaResetNotificationTestResult = {
-      delivered: false,
-      recipient_count: 0,
-      missing_recipient_count: 1,
-      warning: 'wecom_recipient_unavailable',
-    }
-
     getQuotaResetNotificationSettings()
     updateQuotaResetNotificationSettings(omittedURL)
     updateQuotaResetNotificationSettings(emptyURL)
-    testQuotaResetNotificationSettings()
 
     expect(settings.url_configured).toBe(true)
-    expect(testResult.warning).toBe('wecom_recipient_unavailable')
     expect(mockClient.get).toHaveBeenCalledWith('/admin/quota-reset/notification-settings')
     expect(mockClient.put).toHaveBeenNthCalledWith(1, '/admin/quota-reset/notification-settings', omittedURL)
     expect(mockClient.put).toHaveBeenNthCalledWith(2, '/admin/quota-reset/notification-settings', emptyURL)
-    expect(mockClient.post).toHaveBeenCalledWith('/admin/quota-reset/notification-settings/test')
 
     type NotificationSettingsHasRawURL = 'url' extends keyof QuotaResetNotificationSettings ? true : false
     expectTypeOf<NotificationSettingsHasRawURL>().toEqualTypeOf<false>()
+  })
+
+  it('returns the notification test response and warning unchanged', async () => {
+    const result = {
+      delivered: false,
+      recipient_count: 2,
+      missing_recipient_count: 1,
+      warning: 'wecom_recipient_unavailable',
+    } satisfies QuotaResetNotificationTestResult
+    const sentinelResponse = {
+      data: {
+        code: 0,
+        data: result,
+      } satisfies ApiResponse<QuotaResetNotificationTestResult>,
+    }
+    mockClient.post.mockResolvedValueOnce(sentinelResponse)
+
+    const response = await testQuotaResetNotificationSettings()
+
+    expect(mockClient.post).toHaveBeenCalledWith('/admin/quota-reset/notification-settings/test')
+    expect(response).toBe(sentinelResponse)
+    expect(response.data.data).toEqual(result)
+    expect(response.data.data?.warning).toBe('wecom_recipient_unavailable')
     expectTypeOf<Awaited<ReturnType<typeof testQuotaResetNotificationSettings>>['data']>()
       .toEqualTypeOf<ApiResponse<QuotaResetNotificationTestResult>>()
   })
