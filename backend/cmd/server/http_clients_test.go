@@ -8,7 +8,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/config"
 )
 
-func TestNewRuntimeHTTPClientsUsesBoundedSharedPoolsAndStrictTimeouts(t *testing.T) {
+func TestNewRuntimeHTTPClientsUsesBoundedIsolatedPoolsAndStrictTimeouts(t *testing.T) {
 	cfg := config.HTTPClientConfig{
 		ConnectTimeoutSeconds:        5,
 		TLSHandshakeTimeoutSeconds:   5,
@@ -21,26 +21,45 @@ func TestNewRuntimeHTTPClientsUsesBoundedSharedPoolsAndStrictTimeouts(t *testing
 	}
 	clients := newRuntimeHTTPClients(cfg)
 
-	shared := map[string]*http.Client{
+	relayClients := map[string]*http.Client{
 		"runtime relay":          clients.runtimeRelay,
 		"provider-created relay": clients.providerRelay,
-		"directory":              clients.directory,
 		"settings":               clients.settings,
-		"scm":                    clients.scm,
 	}
-	for name, client := range shared {
+	for name, client := range relayClients {
 		if client != clients.runtimeRelay {
-			t.Fatalf("%s client = %p, want shared downstream client %p", name, client, clients.runtimeRelay)
+			t.Fatalf("%s client = %p, want shared Relay client %p", name, client, clients.runtimeRelay)
 		}
 		assertBoundedRuntimeClient(t, name, client, 30*time.Second)
 	}
-	if clients.version == clients.runtimeRelay || clients.webhook == clients.runtimeRelay || clients.version == clients.webhook {
-		t.Fatal("version and webhook clients must use separate connection pools")
+
+	generalClients := map[string]*http.Client{
+		"directory": clients.directory,
+		"scm":       clients.scm,
+	}
+	for name, client := range generalClients {
+		if client != clients.directory {
+			t.Fatalf("%s client = %p, want shared general downstream client %p", name, client, clients.directory)
+		}
+		assertBoundedRuntimeClient(t, name, client, 30*time.Second)
+	}
+
+	if clients.runtimeRelay == clients.directory {
+		t.Fatal("Relay and general downstream clients must use separate connection pools")
+	}
+	if clients.runtimeRelay.Transport == clients.directory.Transport {
+		t.Fatal("Relay transport must be isolated so it can be wrapped without affecting Directory or SCM")
+	}
+	if clients.version == clients.runtimeRelay || clients.version == clients.directory ||
+		clients.webhook == clients.runtimeRelay || clients.webhook == clients.directory ||
+		clients.version == clients.webhook {
+		t.Fatal("version and webhook clients must each use separate connection pools")
 	}
 	assertBoundedRuntimeClient(t, "version", clients.version, 10*time.Second)
 	assertBoundedRuntimeClient(t, "webhook", clients.webhook, 5*time.Second)
 
 	t.Cleanup(clients.runtimeRelay.CloseIdleConnections)
+	t.Cleanup(clients.directory.CloseIdleConnections)
 	t.Cleanup(clients.version.CloseIdleConnections)
 	t.Cleanup(clients.webhook.CloseIdleConnections)
 }

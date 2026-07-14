@@ -80,7 +80,8 @@ func httpClientOptions(cfg config.HTTPClientConfig) httpclient.Options {
 
 func newRuntimeHTTPClients(cfg config.HTTPClientConfig) runtimeHTTPClients {
 	downstreamOptions := httpClientOptions(cfg)
-	downstream := httpclient.New(downstreamOptions)
+	relayClient := httpclient.New(downstreamOptions)
+	generalClient := httpclient.New(downstreamOptions)
 
 	versionOptions := downstreamOptions
 	versionOptions.OverallTimeout = 10 * time.Second
@@ -91,11 +92,11 @@ func newRuntimeHTTPClients(cfg config.HTTPClientConfig) runtimeHTTPClients {
 	webhook := httpclient.New(webhookOptions)
 
 	return runtimeHTTPClients{
-		runtimeRelay:  downstream,
-		providerRelay: downstream,
-		directory:     downstream,
-		settings:      downstream,
-		scm:           downstream,
+		runtimeRelay:  relayClient,
+		providerRelay: relayClient,
+		directory:     generalClient,
+		settings:      relayClient,
+		scm:           generalClient,
 		version:       version,
 		webhook:       webhook,
 	}
@@ -159,6 +160,7 @@ func main() {
 	}
 	httpClients := newRuntimeHTTPClients(cfg.HTTPClient)
 	defer httpClients.runtimeRelay.CloseIdleConnections()
+	defer httpClients.directory.CloseIdleConnections()
 	defer httpClients.version.CloseIdleConnections()
 	defer httpClients.webhook.CloseIdleConnections()
 
