@@ -4929,6 +4929,25 @@ Code, tests, and current-spec changes are commit `c67f12c` (`fix(backend):
 honor matched quota reset identities`); this ledger update is committed
 separately.
 
+Final quality-review RED evidence (2026-07-15): `go test
+./internal/quotareset -run
+'^TestWorkflowNotificationAdminFallbackExcludesRequester$' -count=1 -v`
+failed both activation and cancellation subtests (`0.924s`). With the requester
+currently an admin and all immutable snapshotted approvers unusable, fallback
+returned both requester `1` with synthetic `requester-wecom-id` and the other
+current admin `4`, proving the self-notification path.
+
+Final quality-review GREEN and verification evidence (2026-07-15): filtering
+the requester only from node-fallback admin recipients made the focused RED
+test pass (`0.848s`) for activation and cancellation while retaining the other
+current admin and excluding the requester mention. The broader notification
+selection passed (`8.655s`), the complete quotareset package passed (`42.136s`),
+and full backend tests passed, including `internal/quotareset 69.815s`. `go vet
+./...` and `git diff --check` exited 0.
+Code, test, and current-spec changes are commit `7e0444f` (`fix(backend):
+exclude requester from quota fallback notices`); this ledger update is committed
+separately.
+
 ### Task 15: Persist Reset Terminal State and Audit Event Atomically
 
 **Files:**
