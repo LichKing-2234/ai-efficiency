@@ -45,6 +45,18 @@ func TestListApproverCandidatesIncludesMatchedNonRepresentative(t *testing.T) {
 	}
 }
 
+func TestListApproverCandidatesRequiresSourceID(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createQuotaResetDirectorySource(t, ctx, client)
+	svc := NewService(client, nil, nil, nil)
+
+	_, err := svc.ListApproverCandidates(ctx, ApproverCandidateParams{})
+	if !errors.Is(err, ErrInvalidApproverConfig) {
+		t.Fatalf("ListApproverCandidates() error = %v, want ErrInvalidApproverConfig", err)
+	}
+}
+
 func TestListApproverCandidatesExcludesInactiveMembers(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

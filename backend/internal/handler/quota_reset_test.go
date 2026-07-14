@@ -23,14 +23,21 @@ import (
 type fakeQuotaResetService struct {
 	optionsFn                    func(context.Context, int) (*quotareset.OptionsResponse, error)
 	createFn                     func(context.Context, quotareset.CreateRequestInput) (*ent.QuotaResetRequest, error)
+	cancelFn                     func(context.Context, int, int) (*ent.QuotaResetRequest, error)
 	approveFn                    func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
 	rejectFn                     func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
+	retryResetFn                 func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
 	listAdminFn                  func(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
 	listApproverCandidatesFn     func(context.Context, quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error)
 	listApproverConfigsFn        func(context.Context) (*quotareset.ApproverConfigListResponse, error)
 	saveApproverConfigsFn        func(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error)
+	listApprovalChainsFn         func(context.Context) (*quotareset.ApprovalChainListResponse, error)
+	saveApprovalChainsFn         func(context.Context, quotareset.SaveApprovalChainsInput) (*quotareset.ApprovalChainListResponse, error)
+	listApprovalChainOptionsFn   func(context.Context) (*quotareset.ApprovalChainOptionsResponse, error)
+	getRequestSummaryFn          func(context.Context, int, int, bool) (*quotareset.RequestSummary, error)
 	getNotificationSettingsFn    func(context.Context) (*quotareset.NotificationSettings, error)
 	updateNotificationSettingsFn func(context.Context, quotareset.UpdateNotificationSettingsInput) (*quotareset.NotificationSettings, error)
+	testNotificationSettingsFn   func(context.Context, int) (*quotareset.NotificationTestResult, error)
 }
 
 func (f *fakeQuotaResetService) Options(ctx context.Context, userID int) (*quotareset.OptionsResponse, error) {
@@ -41,22 +48,37 @@ func (f *fakeQuotaResetService) Options(ctx context.Context, userID int) (*quota
 }
 
 func (f *fakeQuotaResetService) CreateRequest(ctx context.Context, input quotareset.CreateRequestInput) (*ent.QuotaResetRequest, error) {
+	if f.createFn == nil {
+		return &ent.QuotaResetRequest{ID: 99, Status: quotaresetrequest.StatusPending}, nil
+	}
 	return f.createFn(ctx, input)
 }
 
-func (f *fakeQuotaResetService) Cancel(context.Context, int, int) (*ent.QuotaResetRequest, error) {
+func (f *fakeQuotaResetService) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.QuotaResetRequest, error) {
+	if f.cancelFn != nil {
+		return f.cancelFn(ctx, actorUserID, requestID)
+	}
 	return &ent.QuotaResetRequest{ID: 99, Status: quotaresetrequest.StatusCancelled}, nil
 }
 
 func (f *fakeQuotaResetService) Approve(ctx context.Context, input quotareset.DecisionInput) (*ent.QuotaResetRequest, error) {
+	if f.approveFn == nil {
+		return &ent.QuotaResetRequest{ID: input.RequestID, Status: quotaresetrequest.StatusApprovedResetSucceeded}, nil
+	}
 	return f.approveFn(ctx, input)
 }
 
 func (f *fakeQuotaResetService) Reject(ctx context.Context, input quotareset.DecisionInput) (*ent.QuotaResetRequest, error) {
+	if f.rejectFn == nil {
+		return &ent.QuotaResetRequest{ID: input.RequestID, Status: quotaresetrequest.StatusRejected}, nil
+	}
 	return f.rejectFn(ctx, input)
 }
 
-func (f *fakeQuotaResetService) RetryReset(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error) {
+func (f *fakeQuotaResetService) RetryReset(ctx context.Context, input quotareset.DecisionInput) (*ent.QuotaResetRequest, error) {
+	if f.retryResetFn != nil {
+		return f.retryResetFn(ctx, input)
+	}
 	return &ent.QuotaResetRequest{ID: 99, Status: quotaresetrequest.StatusApprovedResetSucceeded}, nil
 }
 
@@ -96,6 +118,37 @@ func (f *fakeQuotaResetService) SaveApproverConfigs(ctx context.Context, input q
 	return &quotareset.ApproverConfigListResponse{}, nil
 }
 
+func (f *fakeQuotaResetService) ListApprovalChains(ctx context.Context) (*quotareset.ApprovalChainListResponse, error) {
+	if f.listApprovalChainsFn != nil {
+		return f.listApprovalChainsFn(ctx)
+	}
+	return &quotareset.ApprovalChainListResponse{Items: []quotareset.ApprovalChain{}}, nil
+}
+
+func (f *fakeQuotaResetService) SaveApprovalChains(ctx context.Context, input quotareset.SaveApprovalChainsInput) (*quotareset.ApprovalChainListResponse, error) {
+	if f.saveApprovalChainsFn != nil {
+		return f.saveApprovalChainsFn(ctx, input)
+	}
+	return &quotareset.ApprovalChainListResponse{Items: []quotareset.ApprovalChain{}}, nil
+}
+
+func (f *fakeQuotaResetService) ListApprovalChainOptions(ctx context.Context) (*quotareset.ApprovalChainOptionsResponse, error) {
+	if f.listApprovalChainOptionsFn != nil {
+		return f.listApprovalChainOptionsFn(ctx)
+	}
+	return &quotareset.ApprovalChainOptionsResponse{
+		Groups:      []quotareset.ApprovalChainGroupOption{},
+		Departments: []quotareset.ApprovalChainDepartmentOption{},
+	}, nil
+}
+
+func (f *fakeQuotaResetService) GetRequestSummary(ctx context.Context, requestID, viewerUserID int, admin bool) (*quotareset.RequestSummary, error) {
+	if f.getRequestSummaryFn != nil {
+		return f.getRequestSummaryFn(ctx, requestID, viewerUserID, admin)
+	}
+	return &quotareset.RequestSummary{ID: requestID}, nil
+}
+
 func (f *fakeQuotaResetService) GetNotificationSettings(ctx context.Context) (*quotareset.NotificationSettings, error) {
 	if f.getNotificationSettingsFn != nil {
 		return f.getNotificationSettingsFn(ctx)
@@ -110,7 +163,10 @@ func (f *fakeQuotaResetService) UpdateNotificationSettings(ctx context.Context, 
 	return &quotareset.NotificationSettings{}, nil
 }
 
-func (f *fakeQuotaResetService) TestNotificationSettings(context.Context, int) (*quotareset.NotificationTestResult, error) {
+func (f *fakeQuotaResetService) TestNotificationSettings(ctx context.Context, actorUserID int) (*quotareset.NotificationTestResult, error) {
+	if f.testNotificationSettingsFn != nil {
+		return f.testNotificationSettingsFn(ctx, actorUserID)
+	}
 	return &quotareset.NotificationTestResult{Delivered: true}, nil
 }
 
@@ -121,6 +177,12 @@ func TestQuotaResetCreateRequestPassesActorAndBody(t *testing.T) {
 				t.Fatalf("input = %+v", input)
 			}
 			return &ent.QuotaResetRequest{ID: 99, Status: quotaresetrequest.StatusPending}, nil
+		},
+		getRequestSummaryFn: func(_ context.Context, requestID, viewerUserID int, admin bool) (*quotareset.RequestSummary, error) {
+			if requestID != 99 || viewerUserID != 1 || admin {
+				t.Fatalf("summary args = request %d viewer %d admin %t", requestID, viewerUserID, admin)
+			}
+			return &quotareset.RequestSummary{ID: requestID, Status: quotaresetrequest.StatusPending.String()}, nil
 		},
 	})
 	rec := performQuotaResetRequest(env.router, http.MethodPost, "/api/v1/user/quota-reset/requests", env.userToken, `{"group_id":"42","reason":"Need reset"}`)
@@ -137,10 +199,183 @@ func TestQuotaResetAdminApproveUsesAdminFlag(t *testing.T) {
 			}
 			return &ent.QuotaResetRequest{ID: 99, Status: quotaresetrequest.StatusApprovedResetSucceeded}, nil
 		},
+		getRequestSummaryFn: func(_ context.Context, requestID, viewerUserID int, admin bool) (*quotareset.RequestSummary, error) {
+			if requestID != 99 || viewerUserID != 2 || !admin {
+				t.Fatalf("summary args = request %d viewer %d admin %t", requestID, viewerUserID, admin)
+			}
+			return &quotareset.RequestSummary{ID: requestID, Status: quotaresetrequest.StatusApprovedResetSucceeded.String()}, nil
+		},
 	})
 	rec := performQuotaResetRequest(env.router, http.MethodPost, "/api/v1/admin/quota-reset/requests/99/approve", env.adminToken, `{}`)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"approved_reset_succeeded"`) {
 		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestQuotaResetApproveRequiresNodeAndCommentForV2(t *testing.T) {
+	t.Run("forwards v2 node and decision comment", func(t *testing.T) {
+		var got quotareset.DecisionInput
+		env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+			approveFn: func(_ context.Context, input quotareset.DecisionInput) (*ent.QuotaResetRequest, error) {
+				got = input
+				return &ent.QuotaResetRequest{ID: input.RequestID, Status: quotaresetrequest.StatusPending}, nil
+			},
+			getRequestSummaryFn: func(_ context.Context, requestID, viewerUserID int, admin bool) (*quotareset.RequestSummary, error) {
+				return &quotareset.RequestSummary{ID: requestID, Status: quotaresetrequest.StatusPending.String()}, nil
+			},
+		})
+
+		rec := performQuotaResetRequest(env.router, http.MethodPost, "/api/v1/user/quota-reset/approvals/123/approve", env.userToken, `{"request_node_id":456,"decision_reason":"Approved for the release investigation."}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+		}
+		if got.ActorUserID != 1 || got.RequestID != 123 || got.RequestNodeID != 456 || got.DecisionReason != "Approved for the release investigation." || got.Admin {
+			t.Fatalf("decision input = %+v", got)
+		}
+	})
+
+	t.Run("keeps legacy reason compatibility", func(t *testing.T) {
+		var got quotareset.DecisionInput
+		env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+			approveFn: func(_ context.Context, input quotareset.DecisionInput) (*ent.QuotaResetRequest, error) {
+				got = input
+				return &ent.QuotaResetRequest{ID: input.RequestID, Status: quotaresetrequest.StatusApprovedResetSucceeded}, nil
+			},
+		})
+
+		rec := performQuotaResetRequest(env.router, http.MethodPost, "/api/v1/user/quota-reset/approvals/123/approve", env.userToken, `{"reason":"Legacy approval reason"}`)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+		}
+		if got.RequestNodeID != 0 || got.DecisionReason != "Legacy approval reason" {
+			t.Fatalf("legacy decision input = %+v", got)
+		}
+	})
+
+	t.Run("maps missing v2 comment validation", func(t *testing.T) {
+		env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+			approveFn: func(_ context.Context, input quotareset.DecisionInput) (*ent.QuotaResetRequest, error) {
+				if input.DecisionReason == "" {
+					return nil, quotareset.ErrDecisionRequired
+				}
+				return &ent.QuotaResetRequest{ID: input.RequestID}, nil
+			},
+		})
+
+		rec := performQuotaResetRequest(env.router, http.MethodPost, "/api/v1/user/quota-reset/approvals/123/approve", env.userToken, `{"request_node_id":456}`)
+
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), quotareset.ErrDecisionRequired.Error()) {
+			t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestQuotaResetWorkflowAdvancedReturnsLatestSummaryDetails(t *testing.T) {
+	latest := &quotareset.RequestSummary{
+		ID:     123,
+		Status: quotaresetrequest.StatusPending.String(),
+		Workflow: &quotareset.WorkflowSummary{
+			Version:     quotareset.WorkflowVersionV2,
+			CurrentNode: &quotareset.WorkflowNodeSummary{ID: 457},
+			Nodes:       []quotareset.WorkflowNodeSummary{},
+			Decisions:   []quotareset.WorkflowDecisionSummary{},
+		},
+	}
+	advanced := &quotareset.WorkflowAdvancedError{RequestID: 123, Latest: latest}
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		approveFn: func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error) {
+			return nil, advanced
+		},
+	})
+
+	rec := performQuotaResetRequest(env.router, http.MethodPost, "/api/v1/user/quota-reset/approvals/123/approve", env.userToken, `{"request_node_id":456,"decision_reason":"Approved for the release investigation."}`)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+	var body struct {
+		Message string `json:"message"`
+		Details struct {
+			Request *quotareset.RequestSummary `json:"request"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Message != quotareset.ErrWorkflowAdvanced.Error() || body.Details.Request == nil || body.Details.Request.ID != 123 || body.Details.Request.Workflow == nil || body.Details.Request.Workflow.CurrentNode == nil || body.Details.Request.Workflow.CurrentNode.ID != 457 {
+		t.Fatalf("stale response = %+v", body)
+	}
+
+	nilLatestEnv := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		approveFn: func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error) {
+			return nil, &quotareset.WorkflowAdvancedError{RequestID: 124}
+		},
+	})
+	nilLatest := performQuotaResetRequest(nilLatestEnv.router, http.MethodPost, "/api/v1/user/quota-reset/approvals/124/approve", nilLatestEnv.userToken, `{"request_node_id":456,"decision_reason":"Approved for the release investigation."}`)
+	if nilLatest.Code != http.StatusConflict {
+		t.Fatalf("nil-latest status = %d, want %d; body = %s", nilLatest.Code, http.StatusConflict, nilLatest.Body.String())
+	}
+	var nilBody struct {
+		Message string                     `json:"message"`
+		Details map[string]json.RawMessage `json:"details"`
+	}
+	if err := json.Unmarshal(nilLatest.Body.Bytes(), &nilBody); err != nil {
+		t.Fatalf("decode nil-latest response: %v", err)
+	}
+	requestDetails, ok := nilBody.Details["request"]
+	if nilBody.Message != quotareset.ErrWorkflowAdvanced.Error() || !ok || string(requestDetails) != "null" {
+		t.Fatalf("nil-latest response = %+v", nilBody)
+	}
+}
+
+func TestQuotaResetMutationResponsesUseViewerAwareSummary(t *testing.T) {
+	tests := []struct {
+		name         string
+		method       string
+		path         string
+		body         string
+		admin        bool
+		requestID    int
+		viewerUserID int
+	}{
+		{name: "create", method: http.MethodPost, path: "/api/v1/user/quota-reset/requests", body: `{"group_id":"42","reason":"Need reset"}`, requestID: 99, viewerUserID: 1},
+		{name: "cancel", method: http.MethodPost, path: "/api/v1/user/quota-reset/requests/99/cancel", body: `{}`, requestID: 99, viewerUserID: 1},
+		{name: "approve", method: http.MethodPost, path: "/api/v1/user/quota-reset/approvals/99/approve", body: `{"request_node_id":456,"decision_reason":"Approved"}`, requestID: 99, viewerUserID: 1},
+		{name: "reject", method: http.MethodPost, path: "/api/v1/user/quota-reset/approvals/99/reject", body: `{"request_node_id":456,"decision_reason":"Rejected"}`, requestID: 99, viewerUserID: 1},
+		{name: "retry", method: http.MethodPost, path: "/api/v1/user/quota-reset/approvals/99/retry-reset", body: `{}`, requestID: 99, viewerUserID: 1},
+		{name: "admin approve", method: http.MethodPost, path: "/api/v1/admin/quota-reset/requests/99/approve", body: `{"request_node_id":456,"decision_reason":"Approved"}`, admin: true, requestID: 99, viewerUserID: 2},
+		{name: "admin reject", method: http.MethodPost, path: "/api/v1/admin/quota-reset/requests/99/reject", body: `{"request_node_id":456,"decision_reason":"Rejected"}`, admin: true, requestID: 99, viewerUserID: 2},
+		{name: "admin retry", method: http.MethodPost, path: "/api/v1/admin/quota-reset/requests/99/retry-reset", body: `{}`, admin: true, requestID: 99, viewerUserID: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			summaryCalls := 0
+			env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+				getRequestSummaryFn: func(_ context.Context, requestID, viewerUserID int, admin bool) (*quotareset.RequestSummary, error) {
+					summaryCalls++
+					if requestID != tt.requestID || viewerUserID != tt.viewerUserID || admin != tt.admin {
+						t.Fatalf("summary args = request %d viewer %d admin %t", requestID, viewerUserID, admin)
+					}
+					return &quotareset.RequestSummary{ID: requestID, RequesterDisplayName: "Summary Viewer"}, nil
+				},
+			})
+			token := env.userToken
+			if tt.admin {
+				token = env.adminToken
+			}
+
+			rec := performQuotaResetRequest(env.router, tt.method, tt.path, token, tt.body)
+
+			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"requester_display_name":"Summary Viewer"`) {
+				t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+			}
+			if summaryCalls != 1 {
+				t.Fatalf("summary calls = %d, want 1", summaryCalls)
+			}
+		})
 	}
 }
 
@@ -198,7 +433,7 @@ func TestQuotaResetSaveApproverConfigsMapsReferencedConflict(t *testing.T) {
 	}
 }
 
-func TestQuotaResetListApproverCandidatesPassesSearchAndPagination(t *testing.T) {
+func TestQuotaResetApproverCandidatesAcceptSearchAndPagination(t *testing.T) {
 	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
 		listApproverCandidatesFn: func(_ context.Context, params quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error) {
 			if params.SourceID != 3 || params.Query != "Alice" || params.Page != 2 || params.PageSize != 15 {
@@ -216,6 +451,21 @@ func TestQuotaResetListApproverCandidatesPassesSearchAndPagination(t *testing.T)
 	rec := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/approver-candidates?source_id=3&department_external_id=department-alpha&q=%20Alice%20&page=2&page_size=15", env.adminToken, "")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"lead-alpha@example.com"`) {
 		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+
+	serviceValidated := false
+	env = newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		listApproverCandidatesFn: func(_ context.Context, params quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error) {
+			serviceValidated = true
+			if params.SourceID != 0 || params.Query != "alice" || params.Page != 0 || params.PageSize != 0 {
+				t.Fatalf("params = %+v", params)
+			}
+			return nil, fmt.Errorf("%w: source_id is required", quotareset.ErrInvalidApproverConfig)
+		},
+	})
+	rec = performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/approver-candidates?source_id=invalid&q=%20alice%20", env.adminToken, "")
+	if rec.Code != http.StatusBadRequest || !serviceValidated {
+		t.Fatalf("service validation response = %d %s; called = %t", rec.Code, rec.Body.String(), serviceValidated)
 	}
 }
 
@@ -238,6 +488,152 @@ func TestQuotaResetListApproverCandidatesForwardsMaxIntPage(t *testing.T) {
 
 	rec := performQuotaResetRequest(env.router, http.MethodGet, path, env.adminToken, "")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"page":`+strconv.Itoa(maxInt)) || !strings.Contains(rec.Body.String(), `"items":[]`) {
+		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestQuotaResetApprovalChainRoutesListOptionsAndSave(t *testing.T) {
+	actualRouter := setupTestEnvWithProvider(t).router
+	wantRoutes := map[string]bool{
+		http.MethodGet + " /api/v1/admin/quota-reset/approval-chains":        false,
+		http.MethodPut + " /api/v1/admin/quota-reset/approval-chains":        false,
+		http.MethodGet + " /api/v1/admin/quota-reset/approval-chain-options": false,
+	}
+	for _, route := range actualRouter.Routes() {
+		key := route.Method + " " + route.Path
+		if _, ok := wantRoutes[key]; ok {
+			wantRoutes[key] = true
+		}
+	}
+	for route, registered := range wantRoutes {
+		if !registered {
+			t.Errorf("route %s is not registered by SetupRouter", route)
+		}
+	}
+
+	listCalls := 0
+	optionsCalls := 0
+	saveCalls := 0
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		listApprovalChainsFn: func(context.Context) (*quotareset.ApprovalChainListResponse, error) {
+			listCalls++
+			return &quotareset.ApprovalChainListResponse{Items: []quotareset.ApprovalChain{{ID: 10, GroupID: "group-alpha"}}}, nil
+		},
+		listApprovalChainOptionsFn: func(context.Context) (*quotareset.ApprovalChainOptionsResponse, error) {
+			optionsCalls++
+			return &quotareset.ApprovalChainOptionsResponse{Groups: []quotareset.ApprovalChainGroupOption{{GroupID: "group-alpha"}}, Departments: []quotareset.ApprovalChainDepartmentOption{}}, nil
+		},
+		saveApprovalChainsFn: func(_ context.Context, input quotareset.SaveApprovalChainsInput) (*quotareset.ApprovalChainListResponse, error) {
+			saveCalls++
+			if input.ActorUserID != 2 || input.Items == nil || len(input.Items) != 0 {
+				t.Fatalf("save input = %+v", input)
+			}
+			return &quotareset.ApprovalChainListResponse{Items: []quotareset.ApprovalChain{}}, nil
+		},
+	})
+
+	forbidden := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/approval-chains", env.userToken, "")
+	if forbidden.Code != http.StatusForbidden {
+		t.Fatalf("non-admin response = %d %s", forbidden.Code, forbidden.Body.String())
+	}
+	list := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/approval-chains", env.adminToken, "")
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"group_id":"group-alpha"`) {
+		t.Fatalf("list response = %d %s", list.Code, list.Body.String())
+	}
+	options := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/approval-chain-options", env.adminToken, "")
+	if options.Code != http.StatusOK || !strings.Contains(options.Body.String(), `"groups"`) {
+		t.Fatalf("options response = %d %s", options.Code, options.Body.String())
+	}
+	saved := performQuotaResetRequest(env.router, http.MethodPut, "/api/v1/admin/quota-reset/approval-chains", env.adminToken, `{"items":[]}`)
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `"items":[]`) {
+		t.Fatalf("save response = %d %s", saved.Code, saved.Body.String())
+	}
+	if listCalls != 1 || optionsCalls != 1 || saveCalls != 1 {
+		t.Fatalf("chain calls = list %d options %d save %d", listCalls, optionsCalls, saveCalls)
+	}
+}
+
+func TestQuotaResetNotificationSettingsUseExplicitChannelAndRedactedURL(t *testing.T) {
+	var updates []quotareset.UpdateNotificationSettingsInput
+	redacted := &quotareset.NotificationSettings{
+		Enabled:         true,
+		ChannelType:     "generic_webhook",
+		TemplateVersion: 1,
+		URLConfigured:   true,
+		URLPreview:      "https://hooks.example.com/.../redacted",
+		AuthType:        "none",
+	}
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		getNotificationSettingsFn: func(context.Context) (*quotareset.NotificationSettings, error) {
+			return redacted, nil
+		},
+		updateNotificationSettingsFn: func(_ context.Context, input quotareset.UpdateNotificationSettingsInput) (*quotareset.NotificationSettings, error) {
+			updates = append(updates, input)
+			return redacted, nil
+		},
+	})
+
+	get := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/notification-settings", env.adminToken, "")
+	if get.Code != http.StatusOK || !strings.Contains(get.Body.String(), `"url_configured":true`) || strings.Contains(get.Body.String(), `"url":`) {
+		t.Fatalf("get response = %d %s", get.Code, get.Body.String())
+	}
+	omitted := performQuotaResetRequest(env.router, http.MethodPut, "/api/v1/admin/quota-reset/notification-settings", env.adminToken, `{"enabled":true,"channel_type":"generic_webhook","auth_type":"none"}`)
+	if omitted.Code != http.StatusOK || strings.Contains(omitted.Body.String(), `"url":`) {
+		t.Fatalf("omitted-url response = %d %s", omitted.Code, omitted.Body.String())
+	}
+	empty := performQuotaResetRequest(env.router, http.MethodPut, "/api/v1/admin/quota-reset/notification-settings", env.adminToken, `{"enabled":false,"channel_type":"generic_webhook","url":"","auth_type":"none","credential_id":null}`)
+	if empty.Code != http.StatusOK || strings.Contains(empty.Body.String(), `"url":`) {
+		t.Fatalf("empty-url response = %d %s", empty.Code, empty.Body.String())
+	}
+	if len(updates) != 2 || updates[0].ActorUserID != 2 || updates[0].ChannelType != "generic_webhook" || updates[0].URL != nil || updates[1].URL == nil || *updates[1].URL != "" {
+		t.Fatalf("notification updates = %+v", updates)
+	}
+}
+
+func TestQuotaResetNotificationTestReturnsCoverageWarning(t *testing.T) {
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		testNotificationSettingsFn: func(_ context.Context, actorUserID int) (*quotareset.NotificationTestResult, error) {
+			if actorUserID != 2 {
+				t.Fatalf("actor user id = %d", actorUserID)
+			}
+			return &quotareset.NotificationTestResult{
+				Delivered:             true,
+				RecipientCount:        1,
+				MissingRecipientCount: 1,
+				Warning:               "The test was delivered without an Enterprise WeChat mention.",
+			}, nil
+		},
+	})
+
+	rec := performQuotaResetRequest(env.router, http.MethodPost, "/api/v1/admin/quota-reset/notification-settings/test", env.adminToken, `{}`)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Data["delivered"] != true || body.Data["recipient_count"] != float64(1) || body.Data["missing_recipient_count"] != float64(1) || body.Data["warning"] == "" {
+		t.Fatalf("notification test data = %#v", body.Data)
+	}
+	if _, leaked := body.Data["recipient_ids"]; leaked {
+		t.Fatalf("notification test leaked recipient ids: %#v", body.Data)
+	}
+}
+
+func TestQuotaResetDirectoryUnavailableMapsToServiceUnavailable(t *testing.T) {
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		listApproverCandidatesFn: func(context.Context, quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error) {
+			return nil, fmt.Errorf("load directory snapshot: %w", quotareset.ErrDirectoryUnavailable)
+		},
+	})
+
+	rec := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/approver-candidates?source_id=3", env.adminToken, "")
+
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), quotareset.ErrDirectoryUnavailable.Error()) {
 		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -281,14 +677,25 @@ func newQuotaResetHandlerTestEnv(t *testing.T, service *fakeQuotaResetService) *
 	userGroup := router.Group("/api/v1/user")
 	userGroup.Use(auth.RequireAuth(authSvc))
 	userGroup.POST("/quota-reset/requests", handler.CreateRequest)
+	userGroup.POST("/quota-reset/requests/:id/cancel", handler.Cancel)
 	userGroup.POST("/quota-reset/approvals/:id/approve", handler.Approve)
+	userGroup.POST("/quota-reset/approvals/:id/reject", handler.Reject)
+	userGroup.POST("/quota-reset/approvals/:id/retry-reset", handler.RetryReset)
 
 	adminGroup := router.Group("/api/v1/admin/quota-reset")
 	adminGroup.Use(auth.RequireAuth(authSvc), auth.RequireAdmin())
 	adminGroup.GET("/requests", handler.ListAdmin)
 	adminGroup.POST("/requests/:id/approve", handler.AdminApprove)
+	adminGroup.POST("/requests/:id/reject", handler.AdminReject)
+	adminGroup.POST("/requests/:id/retry-reset", handler.AdminRetryReset)
 	adminGroup.GET("/approver-candidates", handler.ListApproverCandidates)
 	adminGroup.PUT("/approver-configs", handler.SaveApproverConfigs)
+	adminGroup.GET("/notification-settings", handler.GetNotificationSettings)
+	adminGroup.PUT("/notification-settings", handler.UpdateNotificationSettings)
+	adminGroup.POST("/notification-settings/test", handler.TestNotificationSettings)
+	adminGroup.GET("/approval-chains", handler.ListApprovalChains)
+	adminGroup.PUT("/approval-chains", handler.SaveApprovalChains)
+	adminGroup.GET("/approval-chain-options", handler.ListApprovalChainOptions)
 
 	return &quotaResetHandlerTestEnv{
 		router:     router,

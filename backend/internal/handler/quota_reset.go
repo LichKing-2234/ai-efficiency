@@ -3,11 +3,9 @@ package handler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -29,6 +27,10 @@ type quotaResetService interface {
 	ListApproverCandidates(context.Context, quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error)
 	ListApproverConfigs(context.Context) (*quotareset.ApproverConfigListResponse, error)
 	SaveApproverConfigs(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error)
+	ListApprovalChains(context.Context) (*quotareset.ApprovalChainListResponse, error)
+	SaveApprovalChains(context.Context, quotareset.SaveApprovalChainsInput) (*quotareset.ApprovalChainListResponse, error)
+	ListApprovalChainOptions(context.Context) (*quotareset.ApprovalChainOptionsResponse, error)
+	GetRequestSummary(context.Context, int, int, bool) (*quotareset.RequestSummary, error)
 	GetNotificationSettings(context.Context) (*quotareset.NotificationSettings, error)
 	UpdateNotificationSettings(context.Context, quotareset.UpdateNotificationSettingsInput) (*quotareset.NotificationSettings, error)
 	TestNotificationSettings(context.Context, int) (*quotareset.NotificationTestResult, error)
@@ -48,6 +50,7 @@ type quotaResetCreateRequest struct {
 }
 
 type quotaResetDecisionRequest struct {
+	RequestNodeID  int    `json:"request_node_id"`
 	Reason         string `json:"reason"`
 	DecisionReason string `json:"decision_reason"`
 }
@@ -57,33 +60,16 @@ type quotaResetSaveApproverConfigsRequest struct {
 	Mode  string                           `json:"mode"`
 }
 
+type quotaResetSaveApprovalChainsRequest struct {
+	Items []quotareset.ApprovalChainInput `json:"items"`
+}
+
 type quotaResetNotificationSettingsRequest struct {
 	Enabled      bool    `json:"enabled"`
 	ChannelType  string  `json:"channel_type"`
 	URL          *string `json:"url"`
 	AuthType     string  `json:"auth_type"`
 	CredentialID *int    `json:"credential_id"`
-}
-
-type quotaResetRequestResponse struct {
-	ID                      int        `json:"id"`
-	RequesterUserID         int        `json:"requester_user_id"`
-	ProviderID              int        `json:"provider_id"`
-	GroupID                 string     `json:"group_id"`
-	GroupName               string     `json:"group_name"`
-	GroupPlatform           string     `json:"group_platform"`
-	Reason                  string     `json:"reason"`
-	Status                  string     `json:"status"`
-	ResolvedApproverUserIDs []int      `json:"resolved_approver_user_ids"`
-	ApprovedByUserID        *int       `json:"approved_by_user_id,omitempty"`
-	RejectedByUserID        *int       `json:"rejected_by_user_id,omitempty"`
-	DecisionReason          string     `json:"decision_reason,omitempty"`
-	ResetError              string     `json:"reset_error,omitempty"`
-	CreatedAt               time.Time  `json:"created_at"`
-	UpdatedAt               time.Time  `json:"updated_at"`
-	DecidedAt               *time.Time `json:"decided_at,omitempty"`
-	ResetStartedAt          *time.Time `json:"reset_started_at,omitempty"`
-	ResetCompletedAt        *time.Time `json:"reset_completed_at,omitempty"`
 }
 
 func (h *QuotaResetHandler) Options(c *gin.Context) {
@@ -118,7 +104,7 @@ func (h *QuotaResetHandler) CreateRequest(c *gin.Context) {
 		writeQuotaResetError(c, err)
 		return
 	}
-	pkg.Success(c, quotaResetEntResponse(created))
+	h.respondWithRequestSummary(c, created.ID, uc.UserID, false)
 }
 
 func (h *QuotaResetHandler) ListMine(c *gin.Context) {
@@ -144,7 +130,7 @@ func (h *QuotaResetHandler) Cancel(c *gin.Context) {
 		writeQuotaResetError(c, err)
 		return
 	}
-	pkg.Success(c, quotaResetEntResponse(resp))
+	h.respondWithRequestSummary(c, resp.ID, uc.UserID, false)
 }
 
 func (h *QuotaResetHandler) ListApprovals(c *gin.Context) {
@@ -207,17 +193,51 @@ func (h *QuotaResetHandler) ListApproverConfigs(c *gin.Context) {
 }
 
 func (h *QuotaResetHandler) ListApproverCandidates(c *gin.Context) {
-	sourceID := parseOptionalInt(c.Query("source_id"))
-	if sourceID <= 0 {
-		writeQuotaResetError(c, fmt.Errorf("%w: source_id is required", quotareset.ErrInvalidApproverConfig))
-		return
-	}
 	resp, err := h.service.ListApproverCandidates(c.Request.Context(), quotareset.ApproverCandidateParams{
-		SourceID: sourceID,
+		SourceID: parseOptionalInt(c.Query("source_id")),
 		Query:    strings.TrimSpace(c.Query("q")),
 		Page:     parseOptionalInt(c.Query("page")),
 		PageSize: parseOptionalInt(c.Query("page_size")),
 	})
+	if err != nil {
+		writeQuotaResetError(c, err)
+		return
+	}
+	pkg.Success(c, resp)
+}
+
+func (h *QuotaResetHandler) ListApprovalChains(c *gin.Context) {
+	resp, err := h.service.ListApprovalChains(c.Request.Context())
+	if err != nil {
+		writeQuotaResetError(c, err)
+		return
+	}
+	pkg.Success(c, resp)
+}
+
+func (h *QuotaResetHandler) SaveApprovalChains(c *gin.Context) {
+	uc, ok := quotaResetActor(c)
+	if !ok {
+		return
+	}
+	var req quotaResetSaveApprovalChainsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp, err := h.service.SaveApprovalChains(c.Request.Context(), quotareset.SaveApprovalChainsInput{
+		ActorUserID: uc.UserID,
+		Items:       req.Items,
+	})
+	if err != nil {
+		writeQuotaResetError(c, err)
+		return
+	}
+	pkg.Success(c, resp)
+}
+
+func (h *QuotaResetHandler) ListApprovalChainOptions(c *gin.Context) {
+	resp, err := h.service.ListApprovalChainOptions(c.Request.Context())
 	if err != nil {
 		writeQuotaResetError(c, err)
 		return
@@ -286,11 +306,12 @@ func (h *QuotaResetHandler) TestNotificationSettings(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if _, err := h.service.TestNotificationSettings(c.Request.Context(), uc.UserID); err != nil {
+	result, err := h.service.TestNotificationSettings(c.Request.Context(), uc.UserID)
+	if err != nil {
 		writeQuotaResetError(c, err)
 		return
 	}
-	pkg.Success(c, gin.H{"message": "notification test sent"})
+	pkg.Success(c, result)
 }
 
 func (h *QuotaResetHandler) decide(c *gin.Context, admin bool, approve bool) {
@@ -308,6 +329,7 @@ func (h *QuotaResetHandler) decide(c *gin.Context, admin bool, approve bool) {
 	input := quotareset.DecisionInput{
 		ActorUserID:    uc.UserID,
 		RequestID:      requestID,
+		RequestNodeID:  req.RequestNodeID,
 		DecisionReason: quotaResetDecisionReason(req),
 		Admin:          admin,
 	}
@@ -324,7 +346,7 @@ func (h *QuotaResetHandler) decide(c *gin.Context, admin bool, approve bool) {
 		writeQuotaResetError(c, err)
 		return
 	}
-	pkg.Success(c, quotaResetEntResponse(resp))
+	h.respondWithRequestSummary(c, resp.ID, uc.UserID, admin)
 }
 
 func (h *QuotaResetHandler) retryReset(c *gin.Context, admin bool) {
@@ -341,7 +363,16 @@ func (h *QuotaResetHandler) retryReset(c *gin.Context, admin bool) {
 		writeQuotaResetError(c, err)
 		return
 	}
-	pkg.Success(c, quotaResetEntResponse(resp))
+	h.respondWithRequestSummary(c, resp.ID, uc.UserID, admin)
+}
+
+func (h *QuotaResetHandler) respondWithRequestSummary(c *gin.Context, requestID, viewerUserID int, admin bool) {
+	resp, err := h.service.GetRequestSummary(c.Request.Context(), requestID, viewerUserID, admin)
+	if err != nil {
+		writeQuotaResetError(c, err)
+		return
+	}
+	pkg.Success(c, resp)
 }
 
 func quotaResetDecisionReason(req quotaResetDecisionRequest) string {
@@ -383,41 +414,30 @@ func parseQuotaResetListParams(c *gin.Context) quotareset.ListParams {
 	}
 }
 
-func quotaResetEntResponse(req *ent.QuotaResetRequest) quotaResetRequestResponse {
-	if req == nil {
-		return quotaResetRequestResponse{}
-	}
-	return quotaResetRequestResponse{
-		ID:                      req.ID,
-		RequesterUserID:         req.RequesterUserID,
-		ProviderID:              req.ProviderID,
-		GroupID:                 req.GroupID,
-		GroupName:               req.GroupName,
-		GroupPlatform:           req.GroupPlatform,
-		Reason:                  req.Reason,
-		Status:                  req.Status.String(),
-		ResolvedApproverUserIDs: req.ResolvedApproverUserIds,
-		ApprovedByUserID:        req.ApprovedByUserID,
-		RejectedByUserID:        req.RejectedByUserID,
-		DecisionReason:          req.DecisionReason,
-		ResetError:              req.ResetError,
-		CreatedAt:               req.CreatedAt,
-		UpdatedAt:               req.UpdatedAt,
-		DecidedAt:               req.DecidedAt,
-		ResetStartedAt:          req.ResetStartedAt,
-		ResetCompletedAt:        req.ResetCompletedAt,
-	}
-}
-
 func writeQuotaResetError(c *gin.Context, err error) {
+	var advanced *quotareset.WorkflowAdvancedError
+	if errors.As(err, &advanced) {
+		var latest *quotareset.RequestSummary
+		if advanced != nil {
+			latest = advanced.Latest
+		}
+		pkg.ErrorWithDetails(c, http.StatusConflict, quotareset.ErrWorkflowAdvanced.Error(), gin.H{
+			"request": latest,
+		})
+		return
+	}
 	switch {
+	case ent.IsNotFound(err):
+		pkg.Error(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, quotareset.ErrNoRelayMapping), errors.Is(err, quotareset.ErrNotApprover), errors.Is(err, quotareset.ErrSelfApprovalForbidden):
 		pkg.Error(c, http.StatusForbidden, err.Error())
 	case errors.Is(err, quotareset.ErrReasonRequired), errors.Is(err, quotareset.ErrDecisionRequired), errors.Is(err, quotareset.ErrInactiveSubscription), errors.Is(err, quotareset.ErrInvalidStatus), errors.Is(err, quotareset.ErrInvalidNotification), errors.Is(err, quotareset.ErrInvalidApproverConfig):
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, quotareset.ErrActiveRequestExists), errors.Is(err, quotareset.ErrApproverConfigReferenced):
 		pkg.Error(c, http.StatusConflict, err.Error())
-	case errors.Is(err, quotareset.ErrProviderUnsupported), errors.Is(err, quotareset.ErrDirectoryUnavailable):
+	case errors.Is(err, quotareset.ErrDirectoryUnavailable):
+		pkg.Error(c, http.StatusServiceUnavailable, err.Error())
+	case errors.Is(err, quotareset.ErrProviderUnsupported):
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 	default:
 		pkg.Error(c, http.StatusInternalServerError, err.Error())

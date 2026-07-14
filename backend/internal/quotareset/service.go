@@ -101,6 +101,14 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 }
 
 func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.QuotaResetRequest, error) {
+	request, err := s.cancel(ctx, actorUserID, requestID)
+	if err != nil {
+		return nil, s.enrichWorkflowAdvancedError(ctx, err, actorUserID, false)
+	}
+	return request, nil
+}
+
+func (s *Service) cancel(ctx context.Context, actorUserID, requestID int) (*ent.QuotaResetRequest, error) {
 	tx, err := s.client.Tx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin quota reset cancellation: %w", err)
@@ -146,7 +154,11 @@ func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaR
 		return nil, err
 	}
 	if request.WorkflowVersion >= WorkflowVersionV2 {
-		return s.approveWorkflow(ctx, input)
+		updated, err := s.approveWorkflow(ctx, input)
+		if err != nil {
+			return nil, s.enrichWorkflowAdvancedError(ctx, err, input.ActorUserID, input.Admin)
+		}
+		return updated, nil
 	}
 	return s.approveLegacy(ctx, input)
 }
@@ -181,7 +193,11 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 		return nil, err
 	}
 	if request.WorkflowVersion >= WorkflowVersionV2 {
-		return s.rejectWorkflow(ctx, input)
+		updated, err := s.rejectWorkflow(ctx, input)
+		if err != nil {
+			return nil, s.enrichWorkflowAdvancedError(ctx, err, input.ActorUserID, input.Admin)
+		}
+		return updated, nil
 	}
 	return s.rejectLegacy(ctx, input)
 }
@@ -221,7 +237,11 @@ func (s *Service) RetryReset(ctx context.Context, input DecisionInput) (*ent.Quo
 		return nil, err
 	}
 	if request.WorkflowVersion >= WorkflowVersionV2 {
-		return s.retryResetWorkflow(ctx, input, request)
+		updated, err := s.retryResetWorkflow(ctx, input, request)
+		if err != nil {
+			return nil, s.enrichWorkflowAdvancedError(ctx, err, input.ActorUserID, input.Admin)
+		}
+		return updated, nil
 	}
 	return s.retryResetLegacy(ctx, input)
 }

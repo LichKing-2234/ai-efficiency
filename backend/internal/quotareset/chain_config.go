@@ -98,7 +98,7 @@ func lockApprovalConfiguration(ctx context.Context, tx *ent.Tx) error {
 
 func (s *Service) ListApproverCandidates(ctx context.Context, params ApproverCandidateParams) (*ApproverCandidateListResponse, error) {
 	page, pageSize := normalizePage(params.Page, params.PageSize)
-	sourceID, err := resolveCandidateSourceID(ctx, s.client, params.SourceID)
+	sourceID, err := requireCandidateSourceID(params.SourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -130,21 +130,14 @@ func (s *Service) ListApproverCandidates(ctx context.Context, params ApproverCan
 	return &ApproverCandidateListResponse{Items: items[start:end], Page: page, PageSize: pageSize, Total: total}, nil
 }
 
-func resolveCandidateSourceID(ctx context.Context, client *ent.Client, requested int) (int, error) {
+func requireCandidateSourceID(requested int) (int, error) {
 	if requested > 0 {
 		return requested, nil
 	}
 	if requested < 0 {
 		return 0, fmt.Errorf("%w: source_id must not be negative", ErrInvalidApproverConfig)
 	}
-	sourceID, ok, err := directorysync.CurrentSourceID(ctx, client)
-	if err != nil {
-		return 0, fmt.Errorf("resolve current approver candidate source: %w", err)
-	}
-	if !ok {
-		return 0, ErrDirectoryUnavailable
-	}
-	return sourceID, nil
+	return 0, fmt.Errorf("%w: source_id is required", ErrInvalidApproverConfig)
 }
 
 func loadCandidateOrganizationFacts(ctx context.Context, client *ent.Client, sourceID int) ([]*ent.DirectoryMemberDepartment, map[string]*ent.DirectoryDepartment, error) {

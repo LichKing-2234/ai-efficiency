@@ -273,6 +273,42 @@ func TestWorkflowSummaryReturnsOrderedNodesDecisionsAndPermissions(t *testing.T)
 	}
 }
 
+func TestGetRequestSummaryUsesViewerPermissions(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
+
+	getter, ok := any(fixture.service).(interface {
+		GetRequestSummary(context.Context, int, int, bool) (*RequestSummary, error)
+	})
+	if !ok {
+		t.Fatal("Service does not implement GetRequestSummary")
+	}
+
+	approver, err := getter.GetRequestSummary(fixture.ctx, fixture.request.ID, fixture.actorA.ID, false)
+	if err != nil {
+		t.Fatalf("GetRequestSummary() approver error = %v", err)
+	}
+	if approver.ID != fixture.request.ID || approver.Workflow == nil || !approver.Workflow.CanApprove || !approver.Workflow.CanReject || approver.Workflow.CanCancel || approver.Workflow.CanRetry {
+		t.Fatalf("approver summary = %+v", approver)
+	}
+
+	requester, err := getter.GetRequestSummary(fixture.ctx, fixture.request.ID, fixture.requester.ID, false)
+	if err != nil {
+		t.Fatalf("GetRequestSummary() requester error = %v", err)
+	}
+	if requester.Workflow == nil || requester.Workflow.CanApprove || requester.Workflow.CanReject || !requester.Workflow.CanCancel || requester.Workflow.CanRetry {
+		t.Fatalf("requester summary = %+v", requester)
+	}
+
+	admin, err := getter.GetRequestSummary(fixture.ctx, fixture.request.ID, fixture.admin.ID, true)
+	if err != nil {
+		t.Fatalf("GetRequestSummary() admin error = %v", err)
+	}
+	if admin.Workflow == nil || !admin.Workflow.CanApprove || !admin.Workflow.CanReject || admin.Workflow.CanCancel || admin.Workflow.CanRetry {
+		t.Fatalf("admin summary = %+v", admin)
+	}
+}
+
 func TestWorkflowSummaryHidesFutureQueueFromUnrelatedApprover(t *testing.T) {
 	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}, {}})
 	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)

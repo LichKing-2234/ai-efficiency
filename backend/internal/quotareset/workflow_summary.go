@@ -3,6 +3,7 @@ package quotareset
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -24,6 +25,37 @@ type summaryViewer struct {
 	UserID    int
 	Admin     bool
 	Requester bool
+}
+
+func (s *Service) GetRequestSummary(ctx context.Context, requestID, viewerUserID int, admin bool) (*RequestSummary, error) {
+	request, err := s.client.QuotaResetRequest.Get(ctx, requestID)
+	if err != nil {
+		return nil, fmt.Errorf("load quota reset request summary: %w", err)
+	}
+	items, err := s.summaries(ctx, []*ent.QuotaResetRequest{request}, summaryViewer{
+		UserID:    viewerUserID,
+		Admin:     admin,
+		Requester: request.RequesterUserID == viewerUserID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(items) != 1 {
+		return nil, fmt.Errorf("load quota reset request summary: request %d produced %d summaries", requestID, len(items))
+	}
+	return &items[0], nil
+}
+
+func (s *Service) enrichWorkflowAdvancedError(ctx context.Context, err error, viewerUserID int, admin bool) error {
+	var advanced *WorkflowAdvancedError
+	if !errors.As(err, &advanced) || advanced == nil {
+		return err
+	}
+	latest, latestErr := s.GetRequestSummary(ctx, advanced.RequestID, viewerUserID, admin)
+	if latestErr == nil {
+		advanced.Latest = latest
+	}
+	return err
 }
 
 func (s *Service) loadWorkflowSummary(ctx context.Context, request *ent.QuotaResetRequest, viewer summaryViewer) (*WorkflowSummary, error) {

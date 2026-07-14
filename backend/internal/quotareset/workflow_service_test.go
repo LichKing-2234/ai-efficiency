@@ -464,6 +464,9 @@ func TestWorkflowDecisionRejectsStaleNode(t *testing.T) {
 		if !errors.As(result.err, &advanced) || advanced.RequestID != fixture.request.ID || !errors.Is(result.err, ErrWorkflowAdvanced) {
 			t.Fatalf("%s error = %v, want WorkflowAdvancedError for request %d", result.operation, result.err, fixture.request.ID)
 		}
+		if latest := requireWorkflowAdvancedLatest(t, advanced); latest.ID != fixture.request.ID {
+			t.Fatalf("%s latest summary id = %d, want %d", result.operation, latest.ID, fixture.request.ID)
+		}
 		advancedCount++
 	}
 	if winner == "" || advancedCount != 1 {
@@ -670,6 +673,10 @@ func TestCancelReturnsVersionedStaleError(t *testing.T) {
 				if !errors.As(err, &advanced) || advanced.RequestID != request.ID || !errors.Is(err, ErrWorkflowAdvanced) {
 					t.Fatalf("Cancel(v2 stale) error = %v, want WorkflowAdvancedError for request %d", err, request.ID)
 				}
+				latest := requireWorkflowAdvancedLatest(t, advanced)
+				if latest.ID != request.ID || latest.Status != quotaresetrequest.StatusRejected.String() || latest.Workflow == nil || latest.Workflow.CanCancel {
+					t.Fatalf("Cancel(v2 stale) latest summary = %+v", latest)
+				}
 				return
 			}
 			if !errors.Is(err, ErrInvalidStatus) {
@@ -677,6 +684,42 @@ func TestCancelReturnsVersionedStaleError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWorkflowAdvancedSummaryUsesAdminViewer(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}, {}})
+
+	_, err := fixture.service.Approve(fixture.ctx, DecisionInput{
+		ActorUserID:    fixture.admin.ID,
+		RequestID:      fixture.request.ID,
+		RequestNodeID:  fixture.nodes[1].ID,
+		DecisionReason: "Approved the wrong node",
+		Admin:          true,
+	})
+	var advanced *WorkflowAdvancedError
+	if !errors.As(err, &advanced) || !errors.Is(err, ErrWorkflowAdvanced) {
+		t.Fatalf("Approve(stale admin) error = %v, want WorkflowAdvancedError", err)
+	}
+	latest := requireWorkflowAdvancedLatest(t, advanced)
+	if latest.Workflow == nil || latest.Workflow.CurrentNode == nil || latest.Workflow.CurrentNode.ID != fixture.nodes[0].ID || !latest.Workflow.CanApprove || !latest.Workflow.CanReject {
+		t.Fatalf("Approve(stale admin) latest summary = %+v", latest)
+	}
+}
+
+func requireWorkflowAdvancedLatest(t *testing.T, advanced *WorkflowAdvancedError) *RequestSummary {
+	t.Helper()
+	latestField := reflect.ValueOf(advanced).Elem().FieldByName("Latest")
+	if !latestField.IsValid() {
+		t.Fatal("WorkflowAdvancedError does not expose Latest")
+	}
+	if latestField.IsNil() {
+		t.Fatal("WorkflowAdvancedError.Latest is nil")
+	}
+	latest, ok := latestField.Interface().(*RequestSummary)
+	if !ok {
+		t.Fatalf("WorkflowAdvancedError.Latest type = %T, want *RequestSummary", latestField.Interface())
+	}
+	return latest
 }
 
 type workflowCreationFixture struct {

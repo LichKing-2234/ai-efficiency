@@ -24,6 +24,7 @@ var (
 
 type WorkflowAdvancedError struct {
 	RequestID int
+	Latest    *RequestSummary
 }
 
 func (e *WorkflowAdvancedError) Error() string {
