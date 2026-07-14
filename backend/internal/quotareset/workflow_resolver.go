@@ -440,10 +440,8 @@ func workflowMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User
 	if member == nil {
 		return nil
 	}
-	if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-		if user := usersByID[*member.MatchedUserID]; user != nil {
-			return user
-		}
+	if member.MatchedUserID != nil {
+		return usersByID[*member.MatchedUserID]
 	}
 	if usersByEmail == nil {
 		return nil

@@ -731,6 +731,7 @@ func TestWorkflowNotificationsRevalidateSnapshottedApprovers(t *testing.T) {
 		wantRecipient      func(fixture *workflowDecisionFixture) *ent.User
 		wantDisplayName    string
 		wantWeComRecipient string
+		forbiddenWeComID   string
 	}{
 		{
 			name: "all snapshotted approvers unusable routes only current admins",
@@ -766,6 +767,19 @@ func TestWorkflowNotificationsRevalidateSnapshottedApprovers(t *testing.T) {
 			wantRecipient:   func(fixture *workflowDecisionFixture) *ent.User { return fixture.actorA },
 			wantDisplayName: "Live Approver Alpha",
 		},
+		{
+			name: "matched user id conflict does not email fallback or leak notification id",
+			configureDirectory: func(t *testing.T, fixture *workflowDecisionFixture, source *ent.DirectorySource, department *ent.DirectoryDepartment) {
+				formerUser := createQuotaResetUser(t, fixture.ctx, fixture.client, "former-approver", "former-approver@example.net", nil, "user")
+				createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "former-user-wecom-id", fixture.actorA.Email, department.ExternalID, &formerUser.ID)
+				inactive := createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "live-approver-beta", fixture.actorB.Email, department.ExternalID, &fixture.actorB.ID)
+				fixture.client.DirectoryMember.UpdateOneID(inactive.ID).SetStatus("inactive").SaveX(fixture.ctx)
+			},
+			wantRecipient:      func(fixture *workflowDecisionFixture) *ent.User { return fixture.admin },
+			wantDisplayName:    "live-admin",
+			wantWeComRecipient: "live-admin",
+			forbiddenWeComID:   "former-user-wecom-id",
+		},
 	}
 
 	for _, event := range []NotificationEvent{NotificationNodeActivated, NotificationCancelled} {
@@ -795,6 +809,21 @@ func TestWorkflowNotificationsRevalidateSnapshottedApprovers(t *testing.T) {
 				recipient := notificationContext.Recipients[0]
 				if recipient.DisplayName != tt.wantDisplayName || recipient.NotificationIDs["wecom"] != tt.wantWeComRecipient {
 					t.Fatalf("live recipient = %#v, want display name %q and WeCom id %q", recipient, tt.wantDisplayName, tt.wantWeComRecipient)
+				}
+				if tt.forbiddenWeComID != "" {
+					for _, recipient := range notificationContext.Recipients {
+						if recipient.NotificationIDs["wecom"] == tt.forbiddenWeComID {
+							t.Fatalf("recipients leaked conflicting member identity %q: %#v", tt.forbiddenWeComID, notificationContext.Recipients)
+						}
+					}
+					rendered, err := (weComGroupRobotAdapter{maxBytes: 4096}).Render(notificationContext)
+					if err != nil {
+						t.Fatalf("Render() error = %v", err)
+					}
+					_, content := decodeWeComNotification(t, rendered.Body)
+					if strings.Contains(content, tt.forbiddenWeComID) {
+						t.Fatalf("notification content leaked conflicting member identity %q: %s", tt.forbiddenWeComID, content)
+					}
 				}
 				if notificationContext.CurrentNode == nil || notificationContext.CurrentNode.AdminFallback {
 					t.Fatalf("current node = %#v, want immutable non-fallback snapshot", notificationContext.CurrentNode)

@@ -231,6 +231,22 @@ Use **Option A**. Normalized workflow tables own current state, while
    successful directory snapshot, excluding the requester for that request. A
    relay mapping and a channel recipient id are not required to approve.
 
+### Directory Member Identity Precedence
+
+When mapping a current directory member to a local approver or notification
+candidate, a non-null `matched_user_id` is authoritative. The resolver returns
+that exact user only when the id exists in the caller's allowed user map; an
+unavailable, deleted, or out-of-scope matched user leaves the member unmatched.
+It must not reassign that member by email. Normalized-email fallback is allowed
+only when `matched_user_id` is null.
+
+This precedence applies both to workflow creation and to live activation or
+cancellation recipient resolution. In particular, notification resolution may
+use a user subset containing only snapshotted candidates; a member still
+matched to another user cannot contribute its display identity or notification
+ids to a candidate that later acquired the same email address. Requester
+user-to-member lookup remains the separate algorithm documented below.
+
 ## Architecture
 
 `backend/internal/quotareset` remains the workflow owner. It is responsible for:
@@ -1012,6 +1028,7 @@ Legacy v1 requests retain current count semantics.
 | Concurrent decisions | First committed decision wins |
 | Some snapshotted node approvers become unusable before activation/cancellation delivery | Notify only the snapshotted approvers that remain currently usable |
 | Every snapshotted node approver becomes unusable before activation/cancellation delivery | Notify current admins exclusively without changing workflow snapshots or authorization |
+| Directory member has a non-null matched user outside the allowed candidate set, but its email matches a candidate | Treat the member as unmatched; do not email-fallback or expose its notification identity |
 | Notification recipient id missing | Send without that mention and return/log coverage warning |
 | Notification delivery fails | Record event; do not change workflow |
 | Reset fails | Preserve completed approvals and allow authorized retry |

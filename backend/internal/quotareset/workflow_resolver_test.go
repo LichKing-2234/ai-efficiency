@@ -113,7 +113,7 @@ func TestWorkflowResolverFallsBackToMemberDeclaredRepresentative(t *testing.T) {
 	}
 }
 
-func TestWorkflowResolverFallsBackToEmailWhenRepresentativeMatchedUserIsStale(t *testing.T) {
+func TestWorkflowResolverDoesNotEmailFallbackWhenRepresentativeMatchedUserIsUnavailable(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	source := createQuotaResetDirectorySource(t, ctx, client)
@@ -129,7 +129,12 @@ func TestWorkflowResolverFallsBackToEmailWhenRepresentativeMatchedUserIsStale(t 
 	client.User.DeleteOneID(staleUser.ID).ExecX(ctx)
 
 	snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 1, "group-alpha")
-	assertResolvedNodeApproverIDs(t, snapshot.Nodes[0], representative.ID)
+	if got := len(snapshot.Nodes[0].Approvers); got != 0 {
+		t.Fatalf("approvers = %#v, want none", snapshot.Nodes[0].Approvers)
+	}
+	if got := snapshot.Nodes[0].InitialStatus; got != "skipped_no_approver" {
+		t.Fatalf("initial status = %q, want skipped_no_approver", got)
+	}
 }
 
 func TestWorkflowResolverMergesConfiguredAndRepresentativeDepartments(t *testing.T) {
