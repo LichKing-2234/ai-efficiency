@@ -517,6 +517,172 @@ func TestApproverApproveExecutesResetAndWritesEvents(t *testing.T) {
 	}
 }
 
+func TestApproveCallerCancellationBeforeRelayStillStoresResetFailure(t *testing.T) {
+	setupCtx := context.Background()
+	client := testdb.Open(t)
+	requestCtx, cancel := context.WithCancel(setupCtx)
+	requester := createQuotaResetUser(t, setupCtx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, setupCtx, client, "lead", "lead@example.com", nil, "user")
+	provider := createQuotaResetRelayProvider(t, setupCtx, client)
+	request := createPendingQuotaResetRequest(t, setupCtx, client, requester.ID, 1001, provider.ID, "42", []int{approver.ID})
+	resolver := providerResolverFunc(func(ctx context.Context, providerID int) (relay.Provider, error) {
+		if providerID != provider.ID {
+			t.Fatalf("provider id = %d, want %d", providerID, provider.ID)
+		}
+		cancel()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("synthetic provider resolution failure after caller cancellation")
+	})
+	svc := NewService(client, resolver, NewApproverResolver(client), nil)
+
+	updated, err := svc.Approve(requestCtx, DecisionInput{
+		ActorUserID:    approver.ID,
+		RequestID:      request.ID,
+		DecisionReason: "Approved",
+	})
+	reloaded := client.QuotaResetRequest.GetX(setupCtx, request.ID)
+	events := quotaResetEventTypes(t, setupCtx, client, request.ID)
+	if err != nil || updated == nil || updated.Status != quotaresetrequest.StatusApprovedResetFailed || reloaded.Status != quotaresetrequest.StatusApprovedResetFailed {
+		t.Fatalf("Approve() error = %v, returned = %+v, stored status = %s, events = %#v; want stored approved_reset_failed after caller cancellation", err, updated, reloaded.Status, events)
+	}
+	if !reflect.DeepEqual(events, []string{
+		quotaresetrequestevent.EventTypeApproved.String(),
+		quotaresetrequestevent.EventTypeResetStarted.String(),
+		quotaresetrequestevent.EventTypeResetFailed.String(),
+	}) {
+		t.Fatalf("event types = %#v, want approved, reset_started, reset_failed", events)
+	}
+}
+
+func TestRetryResetCallerCancellationDuringRelayStillStoresResetFailure(t *testing.T) {
+	setupCtx := context.Background()
+	client := testdb.Open(t)
+	revisions, before := initializeQuotaResetRevisions(t, setupCtx, client)
+	requestCtx, cancel := context.WithCancel(setupCtx)
+	admin := createQuotaResetUser(t, setupCtx, client, "admin", "admin@example.com", nil, "admin")
+	requester := createQuotaResetUser(t, setupCtx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	provider := createQuotaResetRelayProvider(t, setupCtx, client)
+	request := createPendingQuotaResetRequest(t, setupCtx, client, requester.ID, 1001, provider.ID, "42", nil)
+	client.QuotaResetRequest.UpdateOneID(request.ID).
+		SetStatus(quotaresetrequest.StatusApprovedResetFailed).
+		SetResetError("Synthetic prior reset failure").
+		SaveX(setupCtx)
+	var relayContextDone <-chan struct{}
+	var relayContextBounded bool
+	var relayContextCancelled bool
+	var failureContextBounded bool
+	var failureContextUncancelled bool
+	var failureContextIndependent bool
+	client.QuotaResetRequest.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+			requestMutation, ok := mutation.(*ent.QuotaResetRequestMutation)
+			if ok {
+				status, exists := requestMutation.Status()
+				if exists && status == quotaresetrequest.StatusApprovedResetFailed {
+					_, failureContextBounded = ctx.Deadline()
+					failureContextUncancelled = ctx.Err() == nil
+					failureContextIndependent = relayContextDone != nil && ctx.Done() != relayContextDone
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+	var revisionAtRelay string
+	fake := &fakeQuotaResetProvider{}
+	fake.resetFunc = func(ctx context.Context, _, _ int64) error {
+		revisionAtRelay = currentQuotaResetRevision(t, setupCtx, revisions)
+		relayContextDone = ctx.Done()
+		_, relayContextBounded = ctx.Deadline()
+		cancel()
+		relayContextCancelled = ctx.Err() != nil
+		return errors.New("synthetic relay failure after caller cancellation")
+	}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil, revisions)
+
+	updated, err := svc.RetryReset(requestCtx, DecisionInput{ActorUserID: admin.ID, RequestID: request.ID, Admin: true})
+	reloaded := client.QuotaResetRequest.GetX(setupCtx, request.ID)
+	events := quotaResetEventTypes(t, setupCtx, client, request.ID)
+	after := currentQuotaResetRevision(t, setupCtx, revisions)
+	if err != nil || updated == nil || updated.Status != quotaresetrequest.StatusApprovedResetFailed || reloaded.Status != quotaresetrequest.StatusApprovedResetFailed {
+		t.Fatalf("RetryReset() error = %v, returned = %+v, stored status = %s, events = %#v; want stored approved_reset_failed after caller cancellation", err, updated, reloaded.Status, events)
+	}
+	if !relayContextBounded || relayContextCancelled || !failureContextBounded || !failureContextUncancelled || !failureContextIndependent {
+		t.Fatalf("contexts: relay_bounded=%v relay_cancelled=%v failure_bounded=%v failure_uncancelled=%v failure_independent=%v; want true/false/true/true/true", relayContextBounded, relayContextCancelled, failureContextBounded, failureContextUncancelled, failureContextIndependent)
+	}
+	if revisionAtRelay == "" || revisionAtRelay == before || after == revisionAtRelay {
+		t.Fatalf("revisions before=%q at_relay=%q after=%q, want retry and failure commits to advance independently", before, revisionAtRelay, after)
+	}
+	if !reflect.DeepEqual(events, []string{
+		quotaresetrequestevent.EventTypeResetRetried.String(),
+		quotaresetrequestevent.EventTypeResetStarted.String(),
+		quotaresetrequestevent.EventTypeResetFailed.String(),
+	}) {
+		t.Fatalf("event types = %#v, want reset_retried, reset_started, reset_failed", events)
+	}
+}
+
+func TestApproveCallerCancellationAfterRelaySuccessStillStoresResetSuccess(t *testing.T) {
+	setupCtx := context.Background()
+	client := testdb.Open(t)
+	requestCtx, cancel := context.WithCancel(setupCtx)
+	requester := createQuotaResetUser(t, setupCtx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, setupCtx, client, "lead", "lead@example.com", nil, "user")
+	provider := createQuotaResetRelayProvider(t, setupCtx, client)
+	request := createPendingQuotaResetRequest(t, setupCtx, client, requester.ID, 1001, provider.ID, "42", []int{approver.ID})
+	var relayContextDone <-chan struct{}
+	var relayContextBounded bool
+	var relayContextCancelled bool
+	var successContextBounded bool
+	var successContextUncancelled bool
+	var successContextIndependent bool
+	client.QuotaResetRequest.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+			requestMutation, ok := mutation.(*ent.QuotaResetRequestMutation)
+			if ok {
+				status, exists := requestMutation.Status()
+				if exists && status == quotaresetrequest.StatusApprovedResetSucceeded {
+					_, successContextBounded = ctx.Deadline()
+					successContextUncancelled = ctx.Err() == nil
+					successContextIndependent = relayContextDone != nil && ctx.Done() != relayContextDone
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+	fake := &fakeQuotaResetProvider{}
+	fake.resetFunc = func(ctx context.Context, _, _ int64) error {
+		relayContextDone = ctx.Done()
+		_, relayContextBounded = ctx.Deadline()
+		cancel()
+		relayContextCancelled = ctx.Err() != nil
+		return nil
+	}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
+
+	updated, err := svc.Approve(requestCtx, DecisionInput{
+		ActorUserID:    approver.ID,
+		RequestID:      request.ID,
+		DecisionReason: "Approved",
+	})
+	reloaded := client.QuotaResetRequest.GetX(setupCtx, request.ID)
+	events := quotaResetEventTypes(t, setupCtx, client, request.ID)
+	if err != nil || updated == nil || updated.Status != quotaresetrequest.StatusApprovedResetSucceeded || reloaded.Status != quotaresetrequest.StatusApprovedResetSucceeded {
+		t.Fatalf("Approve() error = %v, returned = %+v, stored status = %s, events = %#v; want stored approved_reset_succeeded after caller cancellation", err, updated, reloaded.Status, events)
+	}
+	if !relayContextBounded || relayContextCancelled || !successContextBounded || !successContextUncancelled || !successContextIndependent {
+		t.Fatalf("contexts: relay_bounded=%v relay_cancelled=%v success_bounded=%v success_uncancelled=%v success_independent=%v; want true/false/true/true/true", relayContextBounded, relayContextCancelled, successContextBounded, successContextUncancelled, successContextIndependent)
+	}
+	if !reflect.DeepEqual(events, []string{
+		quotaresetrequestevent.EventTypeApproved.String(),
+		quotaresetrequestevent.EventTypeResetStarted.String(),
+		quotaresetrequestevent.EventTypeResetSucceeded.String(),
+	}) {
+		t.Fatalf("event types = %#v, want approved, reset_started, reset_succeeded", events)
+	}
+}
+
 func TestApproveV1RequiresComment(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

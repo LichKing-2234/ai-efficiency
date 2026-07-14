@@ -700,7 +700,7 @@ var (
 			{
 				Name:    "quotaresetrequest_resolved_approver_user_ids",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[9]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[12]},
 				Annotation: &entsql.IndexAnnotation{
 					OpClass: "jsonb_path_ops",
 					Type:    "GIN",
