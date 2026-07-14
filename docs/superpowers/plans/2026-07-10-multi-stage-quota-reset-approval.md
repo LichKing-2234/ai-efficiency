@@ -4955,18 +4955,43 @@ separately.
 - Modify: `backend/internal/quotareset/service_test.go`
 - Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
 
-- [ ] **Step 1: Add failing success/failure audit-event rollback tests**
+- [x] **Step 1: Add failing success/failure audit-event rollback tests**
 
 Inject terminal event failures and prove terminal status, completion time,
 error text, and result notifications do not commit independently of the event.
 
-- [ ] **Step 2: Persist each provider outcome in one transaction**
+RED evidence (2026-07-15): `go test ./internal/quotareset -run
+'^TestReset(Success|Failure)AuditFailureRollsBackTerminalOutcome$' -count=1 -v`
+failed both regressions (`0.832s`). The success case observed committed
+`approved_reset_succeeded` state and `reset_completed_at` after only the
+`reset_succeeded` event was rejected. The failure case returned an
+`approved_reset_failed` summary with a nil service error after only the
+`reset_failed` event was rejected.
+
+- [x] **Step 2: Persist each provider outcome in one transaction**
 
 Lock an `approved_resetting` request, write its terminal state and matching
 event, and commit before notification. Preserve the separately documented
 provider-idempotency crash residual.
 
-- [ ] **Step 3: Run focused and full backend verification, update the current spec, and commit**
+GREEN evidence (2026-07-15): the focused RED command passed both regressions
+(`0.857s`). The broader eight-test outcome/audit set passed (`2.266s`), covering
+legacy success, provider-resolution and unsupported-provider failures, both
+terminal-event rollbacks, failure retry, retry CAS protection, and v2
+skipped-initial-node reset execution. The provider remains outside the local
+transaction and is never replayed by this change.
+
+- [x] **Step 3: Run focused and full backend verification, update the current spec, and commit**
+
+Final verification evidence (2026-07-15): the focused eight-test
+outcome/audit set passed after the final assertions (`2.237s`), the complete
+quotareset package passed (`42.105s`), and `go test ./... -count=1` passed,
+including `internal/handler 64.406s` and `internal/quotareset 67.211s`.
+`go vet ./...` and `git diff --check` exited 0. Handler error mapping was not
+changed. Code, tests, and the current design were committed as `fa7665f`
+(`fix(backend): persist quota reset outcomes atomically`). The current design
+and this plan continue to state that the unkeyed provider call and its crash
+window remain outside the local transaction and are not solved by Task 15.
 
 ### Task 16: Reconcile Final Review Evidence and Reverify
 
