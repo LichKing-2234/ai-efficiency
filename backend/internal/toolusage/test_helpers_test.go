@@ -25,6 +25,14 @@ type bindingFixture struct {
 	PreviousCapturedAt time.Time
 }
 
+type eventFilterFixture struct {
+	Alpha      testToolUsageScope
+	Beta       testToolUsageScope
+	From       time.Time
+	To         time.Time
+	EventNames map[int]string
+}
+
 type TestToolUsageScope = testToolUsageScope
 type BindingFixture = bindingFixture
 
@@ -112,6 +120,106 @@ func createToolUsageBindingFixture(t *testing.T, client *ent.Client) bindingFixt
 		CheckpointID:       checkpoint.ID,
 		CommitCapturedAt:   commitAt,
 		PreviousCapturedAt: prev,
+	}
+}
+
+func seedEventFilterFixture(t *testing.T, client *ent.Client) eventFilterFixture {
+	t.Helper()
+
+	ctx := context.Background()
+	alpha := seedToolUsageScope(t, client)
+	beta := seedToolUsageScope(t, client)
+	client.User.UpdateOneID(alpha.UserID).
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		ExecX(ctx)
+	client.User.UpdateOneID(beta.UserID).
+		SetUsername("bob").
+		SetEmail("bob@example.org").
+		ExecX(ctx)
+	client.RepoConfig.UpdateOneID(alpha.RepoConfigID).
+		SetName("alpha").
+		SetFullName("org/alpha").
+		ExecX(ctx)
+	client.RepoConfig.UpdateOneID(beta.RepoConfigID).
+		SetName("beta").
+		SetFullName("org/beta").
+		ExecX(ctx)
+
+	from := time.Date(2026, time.July, 15, 2, 0, 0, 0, time.UTC)
+	to := from.Add(time.Hour)
+	boundaryCheckpoint := client.CommitCheckpoint.Create().
+		SetEventID("cp-boundary").
+		SetUserID(alpha.UserID).
+		SetWorkspaceID(alpha.WorkspaceID).
+		SetRepoConfigID(alpha.RepoConfigID).
+		SetCommitSha("boundary-sha").
+		SetParentShas([]string{"boundary-parent"}).
+		SetBindingSource(commitcheckpoint.BindingSourceManual).
+		SetCapturedAt(from.Add(-time.Minute)).
+		SaveX(ctx)
+	commitNeedleCheckpoint := client.CommitCheckpoint.Create().
+		SetEventID("cp-commit-needle").
+		SetUserID(beta.UserID).
+		SetWorkspaceID(beta.WorkspaceID).
+		SetRepoConfigID(beta.RepoConfigID).
+		SetCommitSha("prefix-COMMIT-NEEDLE-suffix").
+		SetParentShas([]string{"commit-parent"}).
+		SetBindingSource(commitcheckpoint.BindingSourceUnbound).
+		SetCapturedAt(to.Add(time.Minute)).
+		SaveX(ctx)
+
+	eventNames := make(map[int]string)
+	seed := func(
+		name string,
+		scope testToolUsageScope,
+		repoID int,
+		tool string,
+		toolSessionID string,
+		toolEventID string,
+		dedupeKey string,
+		observedEndAt time.Time,
+		rawSourcePath string,
+		checkpointID int,
+	) {
+		create := client.ToolUsageEvent.Create().
+			SetTool(tool).
+			SetWorkspaceID(scope.WorkspaceID).
+			SetRepoConfigID(repoID).
+			SetUserID(scope.UserID).
+			SetToolSessionID(toolSessionID).
+			SetToolEventID(toolEventID).
+			SetDedupeKey(dedupeKey).
+			SetUsageUnit(toolusageevent.UsageUnitToken).
+			SetRequestCount(1).
+			SetObservedStartAt(observedEndAt.Add(-time.Second)).
+			SetObservedEndAt(observedEndAt).
+			SetRawPayload(map[string]any{"fixture": name})
+		if rawSourcePath != "" {
+			create.SetRawSourcePath(rawSourcePath)
+		}
+		if checkpointID > 0 {
+			create.SetCommitCheckpointID(checkpointID)
+		}
+		event := create.SaveX(ctx)
+		eventNames[event.ID] = name
+	}
+
+	seed("time-from", alpha, alpha.RepoConfigID, "kiro", "time-from-session", "time-from-event", "time-from-dedupe", from, "", boundaryCheckpoint.ID)
+	seed("time-to", alpha, alpha.RepoConfigID, "claude", "time-to-session", "time-to-event", "time-to-dedupe", to, "", boundaryCheckpoint.ID)
+	seed("q-source", alpha, beta.RepoConfigID, "claude", "q-source-session", "q-source-event", "q-source-dedupe", from.Add(-2*time.Hour), "/synthetic/sources/SOURCE-NEEDLE.JSONL/", 0)
+	seed("q-session", beta, beta.RepoConfigID, "codex", "prefix-SESSION-NEEDLE-suffix", "q-session-event", "q-session-dedupe", to.Add(2*time.Hour), "", 0)
+	seed("q-event", beta, beta.RepoConfigID, "claude", "q-event-session", "prefix-EVENT-NEEDLE-suffix", "q-event-dedupe", to.Add(3*time.Hour), "", 0)
+	seed("q-dedupe", beta, alpha.RepoConfigID, "claude", "q-dedupe-session", "q-dedupe-event", "prefix-DEDUPE-NEEDLE-suffix", to.Add(4*time.Hour), "", 0)
+	seed("q-commit", beta, beta.RepoConfigID, "kiro", "q-commit-session", "q-commit-event", "q-commit-dedupe", to.Add(5*time.Hour), "", commitNeedleCheckpoint.ID)
+	seed("directory-decoy", beta, beta.RepoConfigID, "kiro", "directory-decoy-session", "directory-decoy-event", "directory-decoy-dedupe", to.Add(6*time.Hour), "/private/directory-only-needle/source.jsonl", 0)
+
+	return eventFilterFixture{
+		Alpha:      alpha,
+		Beta:       beta,
+		From:       from,
+		To:         to,
+		EventNames: eventNames,
 	}
 }
 

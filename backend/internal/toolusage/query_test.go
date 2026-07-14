@@ -3,15 +3,242 @@ package toolusage
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"sort"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
+
+func TestEventSummaryAndListShareFilterSemantics(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := testdb.Open(t)
+	fixture := seedEventFilterFixture(t, client)
+	svc := NewQueryService(client)
+	from, to := fixture.From, fixture.To
+
+	tests := []struct {
+		name   string
+		filter queryFilter
+		want   []string
+	}{
+		{"time inclusive", queryFilter{From: from, To: to}, []string{"time-from", "time-to"}},
+		{"tool", queryFilter{Tool: "codex"}, []string{"q-session"}},
+		{"repo", queryFilter{RepoID: fixture.Alpha.RepoConfigID}, []string{"q-dedupe"}},
+		{"bound", queryFilter{BindingStatus: "bound"}, []string{"q-commit"}},
+		{"unbound", queryFilter{BindingStatus: "unbound"}, []string{"q-source"}},
+		{"q session", queryFilter{Q: "SESSION-NEEDLE"}, []string{"q-session"}},
+		{"q event", queryFilter{Q: "EVENT-NEEDLE"}, []string{"q-event"}},
+		{"q dedupe", queryFilter{Q: "DEDUPE-NEEDLE"}, []string{"q-dedupe"}},
+		{"q commit", queryFilter{Q: "COMMIT-NEEDLE"}, []string{"q-commit"}},
+		{"q source", queryFilter{Q: "SOURCE-NEEDLE.JSONL"}, []string{"q-source"}},
+		{"q wildcard is literal", queryFilter{Q: "%"}, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter := tt.filter
+			switch tt.name {
+			case "time inclusive", "unbound":
+				filter.ActorUserID = fixture.Alpha.UserID
+				filter.ActorRole = string(user.RoleUser)
+			case "tool", "repo", "bound":
+				filter.ActorUserID = fixture.Beta.UserID
+				filter.ActorRole = string(user.RoleAdmin)
+				filter.UserID = fixture.Beta.UserID
+			default:
+				filter.ActorUserID = fixture.Beta.UserID
+				filter.ActorRole = string(user.RoleAdmin)
+			}
+			assertSummaryAndListFilter(t, ctx, svc, fixture.EventNames, filter, tt.want)
+		})
+	}
+
+	t.Run("source directory is not searchable", func(t *testing.T) {
+		assertSummaryAndListFilter(t, ctx, svc, fixture.EventNames, queryFilter{
+			ActorUserID: fixture.Beta.UserID,
+			ActorRole:   string(user.RoleAdmin),
+			Q:           "directory-only-needle",
+		}, nil)
+	})
+}
+
+func TestGetSummaryUsesDatabaseAggregates(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client, dsn := testdb.OpenWithDSN(t)
+	fixture := seedEventFilterFixture(t, client)
+
+	var (
+		logsMu sync.Mutex
+		logs   []string
+	)
+	recordingClient, err := ent.Open(
+		"postgres",
+		dsn,
+		ent.Debug(),
+		ent.Log(func(values ...any) {
+			logsMu.Lock()
+			defer logsMu.Unlock()
+			logs = append(logs, fmt.Sprint(values...))
+		}),
+	)
+	if err != nil {
+		t.Fatalf("open recording ent client: %v", err)
+	}
+	t.Cleanup(func() { recordingClient.Close() })
+
+	summary, err := NewQueryService(recordingClient).GetSummary(ctx, SummaryRequest{
+		ActorUserID: fixture.Beta.UserID,
+		ActorRole:   string(user.RoleAdmin),
+	})
+	if err != nil {
+		t.Fatalf("GetSummary: %v", err)
+	}
+	want := &SummaryResponse{
+		TotalEvents:   8,
+		BoundEvents:   3,
+		UnboundEvents: 5,
+		ToolCounts: []ToolCountDTO{
+			{Tool: "claude", Count: 4},
+			{Tool: "codex", Count: 1},
+			{Tool: "kiro", Count: 3},
+		},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("summary = %+v, want %+v", summary, want)
+	}
+
+	logsMu.Lock()
+	captured := append([]string(nil), logs...)
+	logsMu.Unlock()
+	var summaryQueries []string
+	for _, entry := range captured {
+		upper := strings.ToUpper(entry)
+		if !strings.Contains(upper, `FROM "TOOL_USAGE_EVENTS"`) {
+			continue
+		}
+		summaryQueries = append(summaryQueries, entry)
+		if strings.Contains(strings.ToLower(entry), "raw_payload") {
+			t.Errorf("summary query projects raw_payload: %s", entry)
+		}
+		if !strings.Contains(upper, "COUNT(") && !strings.Contains(upper, "GROUP BY") {
+			t.Errorf("summary query is not an aggregate: %s", entry)
+		}
+	}
+	if len(summaryQueries) < 4 {
+		t.Errorf("captured %d summary aggregate queries, want at least 4; logs:\n%s", len(summaryQueries), strings.Join(captured, "\n"))
+	}
+}
+
+func assertSummaryAndListFilter(
+	t *testing.T,
+	ctx context.Context,
+	svc *QueryService,
+	eventNames map[int]string,
+	filter queryFilter,
+	want []string,
+) {
+	t.Helper()
+
+	rows, total, err := svc.ListEvents(ctx, ListEventsRequest{
+		ActorUserID:   filter.ActorUserID,
+		ActorRole:     filter.ActorRole,
+		From:          filter.From,
+		To:            filter.To,
+		Tool:          filter.Tool,
+		RepoID:        filter.RepoID,
+		BindingStatus: filter.BindingStatus,
+		UserID:        filter.UserID,
+		Q:             filter.Q,
+		Limit:         100,
+	})
+	if err != nil {
+		t.Fatalf("ListEvents: %v", err)
+	}
+	got := make([]string, 0, len(rows))
+	for _, row := range rows {
+		name, ok := eventNames[row.ID]
+		if !ok {
+			t.Fatalf("ListEvents returned unknown event ID %d", row.ID)
+		}
+		got = append(got, name)
+	}
+	sort.Strings(got)
+	normalizedWant := append(make([]string, 0, len(want)), want...)
+	sort.Strings(normalizedWant)
+	if len(got) != len(normalizedWant) {
+		t.Fatalf("ListEvents names = %v, want %v", got, normalizedWant)
+	}
+	for i := range got {
+		if got[i] != normalizedWant[i] {
+			t.Fatalf("ListEvents names = %v, want %v", got, normalizedWant)
+		}
+	}
+	if total != len(normalizedWant) {
+		t.Fatalf("ListEvents total = %d, want %d", total, len(normalizedWant))
+	}
+
+	summary, err := svc.GetSummary(ctx, SummaryRequest{
+		ActorUserID:   filter.ActorUserID,
+		ActorRole:     filter.ActorRole,
+		From:          filter.From,
+		To:            filter.To,
+		Tool:          filter.Tool,
+		RepoID:        filter.RepoID,
+		BindingStatus: filter.BindingStatus,
+		UserID:        filter.UserID,
+		Q:             filter.Q,
+	})
+	if err != nil {
+		t.Fatalf("GetSummary: %v", err)
+	}
+	if summary.TotalEvents != total {
+		t.Fatalf("summary total = %d, list total = %d", summary.TotalEvents, total)
+	}
+	if summary.ToolCounts == nil {
+		t.Fatal("summary tool counts = nil, want an empty slice")
+	}
+	toolCounts := make(map[string]int)
+	bound, unbound := 0, 0
+	for _, row := range rows {
+		toolCounts[row.Tool]++
+		if row.BindingStatus == "bound" {
+			bound++
+		} else {
+			unbound++
+		}
+	}
+	if summary.BoundEvents != bound || summary.UnboundEvents != unbound {
+		t.Fatalf(
+			"summary binding counts = %d/%d, list counts = %d/%d",
+			summary.BoundEvents,
+			summary.UnboundEvents,
+			bound,
+			unbound,
+		)
+	}
+	for _, item := range summary.ToolCounts {
+		if toolCounts[item.Tool] != item.Count {
+			t.Fatalf("summary tool count for %q = %d, list count = %d", item.Tool, item.Count, toolCounts[item.Tool])
+		}
+		delete(toolCounts, item.Tool)
+	}
+	if len(toolCounts) != 0 {
+		t.Fatalf("summary omitted list tool counts: %v", toolCounts)
+	}
+}
 
 func TestListEventsScopesRegularUserToOwnRows(t *testing.T) {
 	t.Parallel()
