@@ -11,6 +11,7 @@
     "test:e2e:role": "python3 e2e_role_test.py"
   },
   "dependencies": {
+    "@lucide/vue": "^1.24.0",
     "axios": "^1.7.9",
     "chart.js": "^4.5.1",
     "pinia": "^2.3.0",
