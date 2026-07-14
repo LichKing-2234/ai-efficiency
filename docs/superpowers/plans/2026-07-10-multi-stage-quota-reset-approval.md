@@ -3437,6 +3437,38 @@ TODO/FIXME scans completed cleanly.
 Commit evidence: `8f07550` (`fix(backend): harden quota reset authorization and
 snapshots`).
 
+#### Quality re-review follow-up (2026-07-14)
+
+- [x] Preserve verified admin retry capability when the requester uses an admin
+  route without trusting the route flag or allowing self-approval.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestGetRequestSummaryRequesterAdminRoutePreservesRetryCapability$' -count=1`
+failed (`exit 1`, 1.273s) because the current-admin requester received a failed
+V2 summary with `CanRetry:false` when the completion decision actor was another
+user.
+
+GREEN evidence: the same focused command passed (`ok`, 1.276s), covering the
+verified-admin requester on the admin route, the same requester on the user
+route, a non-admin requester with `adminRoute=true`, and the pending
+self-approval guard.
+
+- [x] Run final Task 8 quality re-review verification and commit the fix.
+
+Final verification evidence: the focused summary visibility, stale workflow,
+current-source, and candidate snapshot command passed (`ok`, 3.962s). `cd
+backend && go test ./internal/handler -run TestQuotaReset -count=1` passed
+(`ok`, 7.341s). `cd backend && go test ./internal/handler
+./internal/quotareset -count=1` passed (`handler` 49.188s, `quotareset`
+49.331s); `cd backend && go test ./cmd/server -count=1` passed (`ok`, 1.097s);
+and `cd backend && go test ./... -count=1` passed, including `handler`
+(67.170s) and `quotareset` (66.332s). `cd backend && go vet ./...`, `git diff
+--check`, changed-Go-file `gofmt -d`, and added-line credential, non-example
+email-domain, and TODO/FIXME scans completed cleanly.
+
+Commit evidence: `2bba696` (`fix(backend): preserve requester admin retry
+capability`).
+
 ---
 
 ### Task 9: Add Frontend Workflow Types and API Clients
