@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL, Vue 3 `<script setup lang="ts">`, Pinia, Vite, Vitest, TailwindCSS, Python Playwright role checks.
 
-**Status:** Final verification in progress
+**Status:** Final whole-branch review pending
 
 **Known Remaining Gaps:**
 
@@ -27,9 +27,8 @@
   verification matrix.
 - The existing role E2E passes all assertions but logs non-fatal Vite proxy
   `ECONNREFUSED` messages for dashboard helper requests outside its mock set.
-- Task 16 still requires focused/full backend and frontend suites, Compose
-  rebuild/readiness, and whole-branch spec and standards review before this plan
-  can be marked complete.
+- Task 16 still requires final whole-branch spec and standards review and plan
+  closure before this plan can be marked complete.
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -5019,6 +5018,11 @@ changes, so full backend was not rerun. Tests are commits `33ac940`
 (`test(backend): stabilize quota reset commit failure injection`); the
 spec/header implementation-note refresh is completed under Task 16 Step 2.
 
+Final quality-review evidence (2026-07-15): review reported no Critical,
+Important, or Minor findings. The reviewer reran the rollback and retry/CAS
+tests at `-count=20`, the complete `internal/quotareset` package, `go vet`, the
+full backend suite, and `git diff --check`; every command passed.
+
 ### Task 16: Reconcile Final Review Evidence and Reverify
 
 **Files:**
@@ -5052,18 +5056,37 @@ Evidence (2026-07-15): `AGENTS.md` now lists the current quota reset workflow
 and notification contract in both Source of Truth and Important Files. The
 design header distinguishes production implementation through `fa7665f` from
 review-driven backend test coverage through `80d2266`. The Known Remaining
-Gaps above retain every accepted product and browser residual and explicitly
-keep the unrun full-suite, Compose, and final-review gates open.
+Gaps above retain every accepted product and browser residual; after Step 3,
+only final whole-branch review and plan closure remain open.
 
-- [ ] **Step 3: Run focused/full backend and frontend suites, browser checks, Compose rebuild/readiness, and hygiene scans**
+- [x] **Step 3: Run focused/full backend and frontend suites, browser checks, Compose rebuild/readiness, and hygiene scans**
 
-Partial evidence (2026-07-15): the source-server browser command passed 5/5
-and wrote six screenshots to `/tmp/ae-e2e-quota-reset`. `git diff --check`
-exited 0. A changed-line endpoint and credential scan found exactly one added
-Enterprise WeChat robot host/path and its adjacent synthetic browser key
-fragment; a negative scan found no added non-synthetic webhook key. This step
-remains unchecked because the focused/full backend and frontend suites, Compose
-rebuild/readiness, and the complete Step 3 verification matrix have not been
-run.
+Completion evidence (2026-07-15): `cd backend && go test ./... -count=1`
+exited 0, including `internal/handler 78.120s` and
+`internal/quotareset 81.336s`; `cd backend && go vet ./...` also exited 0.
+`cd frontend && npm test` passed 40 files and 482/482 tests, and
+`cd frontend && npm run build` exited 0 after 1955 modules transformed.
+`BASE_URL=http://127.0.0.1:5173 npm run test:e2e:role` passed 16/16, while
+`BASE=http://127.0.0.1:5173 python3 e2e_quota_reset_workflow.py` passed 5/5.
+`python3 -m py_compile e2e_quota_reset_workflow.py` exited 0.
+
+The exact Compose source build/recreate command succeeded after an initial
+external Docker Hub metadata EOF was worked around by seeding official
+namespace base-image tags from the directly reachable DaoCloud mirror. The
+resolved base digests were `golang sha256:8bee1901...`,
+`node sha256:fb4cd12c...`, and `alpine sha256:d9e853e...`. The resulting
+`ai-efficiency-backend` image/container id was
+`sha256:14e1f31521acc8c8204d96f5b8d5f6a9d10ff83fd0387b8613ab8526ff490d73`;
+backend, PostgreSQL, and Redis were all healthy. `GET /api/v1/health/live`
+returned `200 live`; `GET /api/v1/health/ready` returned `200 ready` with
+database, Redis, and relay all up; and `GET /` returned `200 text/html`.
+`BASE=http://127.0.0.1:18081 python3 e2e_quota_reset_workflow.py` passed 5/5
+against the rebuilt Compose service.
+
+Visual inspection of the desktop and 390 px mobile admin screenshots found no
+overlap, horizontal clipping, or truncation, consistent with the deterministic
+layout assertions. `git diff --check` was clean; scoped webhook and domain
+scans found only synthetic Enterprise WeChat robot keys and no real employee or
+company-domain data in added fixtures.
 
 - [ ] **Step 4: Commit review reconciliation, rerun whole-branch spec and standards review, then mark this plan complete only with evidence**
