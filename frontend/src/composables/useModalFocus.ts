@@ -20,6 +20,7 @@ export function useModalFocus(
   container: Ref<HTMLElement | null>,
   options: {
     initialFocus?: Ref<HTMLElement | null>
+    restoreFocusFallback?: Ref<HTMLElement | null>
     onClose: () => void
   }
 ) {
@@ -35,7 +36,12 @@ export function useModalFocus(
     }
 
     await nextTick()
-    previousFocus?.focus()
+    const restoreTarget = previousFocus?.isConnected
+      ? previousFocus
+      : options.restoreFocusFallback?.value
+    if (restoreTarget?.isConnected) {
+      restoreTarget.focus()
+    }
     previousFocus = null
   })
 

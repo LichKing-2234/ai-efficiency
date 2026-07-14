@@ -415,6 +415,32 @@ describe('QuotaResetView', () => {
     }
   })
 
+  it('restores focus to a stable queue control when refresh removes the detail trigger', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listMyQuotaResetRequests
+      .mockResolvedValueOnce({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 1 } } })
+      .mockResolvedValueOnce({ data: { data: { items: [], page: 1, page_size: 20, total: 0 } } })
+    api.cancelQuotaResetRequest.mockResolvedValue({ data: { data: { ...mineRequest, status: 'cancelled' } } })
+    const wrapper = await mountQuotaResetView('user', document.body)
+
+    try {
+      const trigger = wrapper.get('[data-testid="quota-reset-view-details-1"]')
+      ;(trigger.element as HTMLButtonElement).focus()
+      await trigger.trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="quota-reset-detail-dialog"]').exists()).toBe(true)
+
+      await wrapper.get('[data-testid="quota-reset-cancel-1"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="quota-reset-detail-dialog"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="quota-reset-view-details-1"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(wrapper.get('[data-testid="quota-reset-tab-mine"]').element)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('renders ordered node status and prior-approval attribution', async () => {
     const api = await import('@/api/quotaReset') as any
     api.listMyQuotaResetRequests.mockResolvedValue({

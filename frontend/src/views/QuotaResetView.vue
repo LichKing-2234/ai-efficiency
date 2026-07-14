@@ -45,6 +45,7 @@ const loadError = ref('')
 const selectedRequest = ref<QuotaResetRequestSummary | null>(null)
 const requestDetailDialog = ref<HTMLElement | null>(null)
 const requestDetailCloseButton = ref<HTMLElement | null>(null)
+const requestDetailRestoreFocusButton = ref<HTMLElement | null>(null)
 const decisionRequest = ref<QuotaResetRequestSummary | null>(null)
 const decisionMode = ref<'approve' | 'reject'>('approve')
 const decisionQueue = ref<QueueMode>('approvals')
@@ -66,6 +67,7 @@ const { handleKeydown: handleRequestDetailKeydown } = useModalFocus(
   requestDetailDialog,
   {
     initialFocus: requestDetailCloseButton,
+    restoreFocusFallback: requestDetailRestoreFocusButton,
     onClose: closeRequestDetails,
   },
 )
@@ -330,6 +332,7 @@ onMounted(loadQueues)
           :class="['grid w-full gap-1 rounded-lg bg-slate-100 p-1 sm:w-auto', auth.isAdmin ? 'grid-cols-3' : 'grid-cols-2']"
         >
           <button
+            ref="requestDetailRestoreFocusButton"
             type="button"
             data-testid="quota-reset-tab-mine"
             :class="queueButtonClass(activeQueue === 'mine')"
