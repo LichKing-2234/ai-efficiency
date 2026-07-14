@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -375,26 +376,60 @@ func TestCreateRequestApprovalChainReplacementUsesOneSnapshot(t *testing.T) {
 }
 
 func TestCreateRequestRevalidatesRequesterRelayBindingInsideWorkflowSnapshot(t *testing.T) {
+	subscriptionsFor := func(relayUserID, groupID int64, groupName string) []relay.UserSubscription {
+		subscription := activeQuotaResetSubscription(groupID, groupName)
+		subscription.UserID = relayUserID
+		return []relay.UserSubscription{subscription}
+	}
 	tests := []struct {
-		name            string
-		relayUserID     *int
-		username        string
-		email           string
-		wantNoMapping   bool
-		wantRelayUserID int64
+		name                       string
+		relayUserID                *int
+		username                   string
+		email                      string
+		subscriptionsByRelayUserID map[int64][]relay.UserSubscription
+		wantErr                    error
+		wantRelayUserID            int64
+		wantGroupName              string
+		wantListedRelayUserIDs     []int64
+		wantResetCalls             int
 	}{
 		{
-			name:            "changed binding and identity",
-			relayUserID:     intPtr(2002),
-			username:        "alice-new",
-			email:           "alice-new@example.org",
-			wantRelayUserID: 2002,
+			name:        "changed binding retries subscription preflight",
+			relayUserID: intPtr(2002),
+			username:    "alice-new",
+			email:       "alice-new@example.org",
+			subscriptionsByRelayUserID: map[int64][]relay.UserSubscription{
+				1001: subscriptionsFor(1001, 42, "Old Account Group"),
+				2002: subscriptionsFor(2002, 42, "New Account Group"),
+			},
+			wantRelayUserID:        2002,
+			wantGroupName:          "New Account Group",
+			wantListedRelayUserIDs: []int64{1001, 2002},
+			wantResetCalls:         1,
 		},
 		{
-			name:          "removed binding",
-			username:      "alice-unmapped",
-			email:         "alice-unmapped@example.net",
-			wantNoMapping: true,
+			name:        "new binding lacks requested group",
+			relayUserID: intPtr(2002),
+			username:    "alice-new-without-group",
+			email:       "alice-new-without-group@example.net",
+			subscriptionsByRelayUserID: map[int64][]relay.UserSubscription{
+				1001: subscriptionsFor(1001, 42, "Old Account Group"),
+				2002: subscriptionsFor(2002, 43, "New Account Other Group"),
+			},
+			wantErr:                ErrInactiveSubscription,
+			wantListedRelayUserIDs: []int64{1001, 2002},
+			wantResetCalls:         0,
+		},
+		{
+			name:     "removed binding",
+			username: "alice-unmapped",
+			email:    "alice-unmapped@example.net",
+			subscriptionsByRelayUserID: map[int64][]relay.UserSubscription{
+				1001: subscriptionsFor(1001, 42, "Old Account Group"),
+			},
+			wantErr:                ErrNoRelayMapping,
+			wantListedRelayUserIDs: []int64{1001},
+			wantResetCalls:         0,
 		},
 	}
 	for _, tt := range tests {
@@ -412,16 +447,14 @@ func TestCreateRequestRevalidatesRequesterRelayBindingInsideWorkflowSnapshot(t *
 				}
 			})
 
-			source := createQuotaResetDirectorySource(t, ctx, client)
-			chainDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-chain", "Department Chain", nil)
+			createQuotaResetDirectorySource(t, ctx, client)
 			requester := createQuotaResetUser(t, ctx, client, "alice-old", "alice-old@example.com", intPtr(1001), "user")
-			approver := createQuotaResetUser(t, ctx, client, "chain-approver", "chain-approver@example.org", nil, "user")
-			approverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-chain-approver", approver.Email, chainDepartment.ExternalID, &approver.ID)
-			createQuotaResetMemberDepartment(t, ctx, client, source.ID, approverMember, chainDepartment.ExternalID)
-			createQuotaResetApproverConfig(t, ctx, client, source.ID, chainDepartment.ExternalID, chainDepartment.Path, approver.ID)
 			providerRow := createQuotaResetRelayProvider(t, ctx, client)
-			createWorkflowChain(t, ctx, client, providerRow.ID, "42", source.ID, chainDepartment)
-			provider := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
+			provider := &fakeQuotaResetProvider{
+				listUserSubscriptionsFn: func(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
+					return append([]relay.UserSubscription(nil), tt.subscriptionsByRelayUserID[relayUserID]...), nil
+				},
+			}
 			service := NewService(client, fakeProviderResolver(providerRow.ID, provider), NewApproverResolver(client), nil)
 
 			preflightComplete := make(chan struct{})
@@ -487,12 +520,18 @@ func TestCreateRequestRevalidatesRequesterRelayBindingInsideWorkflowSnapshot(t *
 			case <-ctx.Done():
 				t.Fatalf("wait for workflow creation: %v", ctx.Err())
 			}
-			if tt.wantNoMapping {
-				if !errors.Is(created.err, ErrNoRelayMapping) {
-					t.Fatalf("CreateRequest() error = %v, want ErrNoRelayMapping", created.err)
+			if tt.wantErr != nil {
+				if !errors.Is(created.err, tt.wantErr) {
+					t.Fatalf("CreateRequest() error = %v, want %v", created.err, tt.wantErr)
 				}
 				if count := client.QuotaResetRequest.Query().CountX(ctx); count != 0 {
 					t.Fatalf("quota reset request count = %d, want 0", count)
+				}
+				if provider.resetCalls != tt.wantResetCalls {
+					t.Fatalf("reset calls = %d, want %d", provider.resetCalls, tt.wantResetCalls)
+				}
+				if !reflect.DeepEqual(provider.listedRelayUserIDs, tt.wantListedRelayUserIDs) {
+					t.Fatalf("listed relay user ids = %#v, want %#v", provider.listedRelayUserIDs, tt.wantListedRelayUserIDs)
 				}
 				return
 			}
@@ -500,14 +539,80 @@ func TestCreateRequestRevalidatesRequesterRelayBindingInsideWorkflowSnapshot(t *
 				t.Fatalf("CreateRequest() error = %v", created.err)
 			}
 			request := client.QuotaResetRequest.GetX(ctx, created.request.ID)
-			if request.RequesterRelayUserID != tt.wantRelayUserID ||
+			if request.RequesterRelayUserID != tt.wantRelayUserID || request.GroupName != tt.wantGroupName ||
 				request.RequesterDisplayNameSnapshot != tt.username ||
 				request.RequesterEmailSnapshot != tt.email {
-				t.Fatalf("requester snapshot = relay:%d display:%q email:%q, want relay:%d display:%q email:%q",
-					request.RequesterRelayUserID, request.RequesterDisplayNameSnapshot, request.RequesterEmailSnapshot,
-					tt.wantRelayUserID, tt.username, tt.email)
+				t.Fatalf("request snapshot = relay:%d group:%q display:%q email:%q, want relay:%d group:%q display:%q email:%q",
+					request.RequesterRelayUserID, request.GroupName, request.RequesterDisplayNameSnapshot, request.RequesterEmailSnapshot,
+					tt.wantRelayUserID, tt.wantGroupName, tt.username, tt.email)
+			}
+			if count := client.QuotaResetRequest.Query().CountX(ctx); count != 1 {
+				t.Fatalf("quota reset request count = %d, want 1", count)
+			}
+			if provider.resetCalls != tt.wantResetCalls || provider.resetUserID != tt.wantRelayUserID || provider.resetGroupID != 42 {
+				t.Fatalf("reset = calls:%d relay:%d group:%d, want calls:%d relay:%d group:42",
+					provider.resetCalls, provider.resetUserID, provider.resetGroupID, tt.wantResetCalls, tt.wantRelayUserID)
+			}
+			if !reflect.DeepEqual(provider.listedRelayUserIDs, tt.wantListedRelayUserIDs) {
+				t.Fatalf("listed relay user ids = %#v, want %#v", provider.listedRelayUserIDs, tt.wantListedRelayUserIDs)
 			}
 		})
+	}
+}
+
+func TestCreateRequestStopsAfterRepeatedRequesterRelayBindingChurn(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	client, dsn := testdb.OpenWithDSN(t)
+	secondClient, err := ent.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open second Ent client: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := secondClient.Close(); err != nil {
+			t.Errorf("close second Ent client: %v", err)
+		}
+	})
+
+	createQuotaResetDirectorySource(t, ctx, client)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	providerRow := createQuotaResetRelayProvider(t, ctx, client)
+	nextRelayUserID := map[int64]int{1001: 2002, 2002: 3003, 3003: 4004}
+	provider := &fakeQuotaResetProvider{
+		listUserSubscriptionsFn: func(ctx context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
+			nextID, ok := nextRelayUserID[relayUserID]
+			if !ok {
+				return nil, errors.New("unexpected unbounded relay binding lookup")
+			}
+			if _, err := secondClient.User.UpdateOneID(requester.ID).SetRelayUserID(nextID).Save(ctx); err != nil {
+				return nil, err
+			}
+			subscription := activeQuotaResetSubscription(42, "Group Alpha")
+			subscription.UserID = relayUserID
+			return []relay.UserSubscription{subscription}, nil
+		},
+	}
+	service := NewService(client, fakeProviderResolver(providerRow.ID, provider), NewApproverResolver(client), nil)
+
+	request, err := service.CreateRequest(ctx, CreateRequestInput{
+		RequesterUserID: requester.ID,
+		GroupID:         "42",
+		Reason:          "Need bounded requester binding retries",
+	})
+	if request != nil {
+		t.Fatalf("CreateRequest() request = %+v, want nil after repeated binding churn", request)
+	}
+	if err == nil || !strings.Contains(err.Error(), "requester relay binding changed") {
+		t.Fatalf("CreateRequest() error = %v, want explicit requester relay binding churn error", err)
+	}
+	if !reflect.DeepEqual(provider.listedRelayUserIDs, []int64{1001, 2002, 3003}) {
+		t.Fatalf("listed relay user ids = %#v, want three bounded attempts", provider.listedRelayUserIDs)
+	}
+	if count := client.QuotaResetRequest.Query().CountX(ctx); count != 0 {
+		t.Fatalf("quota reset request count = %d, want 0", count)
+	}
+	if provider.resetCalls != 0 {
+		t.Fatalf("reset calls = %d, want 0", provider.resetCalls)
 	}
 }
 

@@ -622,13 +622,15 @@ func fakeProviderResolver(wantID int, provider relay.Provider) ProviderResolver 
 
 type fakeQuotaResetProvider struct {
 	relay.Provider
-	subscriptions        []relay.UserSubscription
-	groups               []relay.Group
-	listPlatformGroupsFn func(context.Context) ([]relay.Group, error)
-	resetErr             error
-	resetUserID          int64
-	resetGroupID         int64
-	resetCalls           int
+	subscriptions           []relay.UserSubscription
+	listUserSubscriptionsFn func(context.Context, int64) ([]relay.UserSubscription, error)
+	listedRelayUserIDs      []int64
+	groups                  []relay.Group
+	listPlatformGroupsFn    func(context.Context) ([]relay.Group, error)
+	resetErr                error
+	resetUserID             int64
+	resetGroupID            int64
+	resetCalls              int
 }
 
 func (f *fakeQuotaResetProvider) ListPlatformGroups(ctx context.Context) ([]relay.Group, error) {
@@ -638,8 +640,12 @@ func (f *fakeQuotaResetProvider) ListPlatformGroups(ctx context.Context) ([]rela
 	return append([]relay.Group(nil), f.groups...), nil
 }
 
-func (f *fakeQuotaResetProvider) ListUserSubscriptions(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
-	return f.subscriptions, nil
+func (f *fakeQuotaResetProvider) ListUserSubscriptions(ctx context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
+	f.listedRelayUserIDs = append(f.listedRelayUserIDs, relayUserID)
+	if f.listUserSubscriptionsFn != nil {
+		return f.listUserSubscriptionsFn(ctx, relayUserID)
+	}
+	return append([]relay.UserSubscription(nil), f.subscriptions...), nil
 }
 
 func (f *fakeQuotaResetProvider) ResetSubscriptionQuotaForUser(_ context.Context, relayUserID, groupID int64) error {

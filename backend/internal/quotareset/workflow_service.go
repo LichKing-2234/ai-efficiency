@@ -44,6 +44,9 @@ func (s *Service) createWorkflowRequest(
 	if transactionRequester.RelayUserID == nil {
 		return nil, ErrNoRelayMapping
 	}
+	if *transactionRequester.RelayUserID != *requester.RelayUserID {
+		return nil, errRequesterRelayBindingChanged
+	}
 	snapshot, err := NewWorkflowResolver(tx.Client()).Resolve(ctx, transactionRequester.ID, providerRow.ID, input.GroupID)
 	if err != nil {
 		return nil, err

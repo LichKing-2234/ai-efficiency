@@ -506,13 +506,21 @@ request from facts that never coexisted in a committed database snapshot.
 Request creation does not take the admin approval-configuration `SystemSetting`
 lock; repeatable-read isolation is the consistency boundary.
 
-Relay subscription preflight may occur before this transaction. After the
-transaction begins, request creation re-reads the requester and revalidates the
-relay binding through the transaction client. The immutable requester relay id,
-display name, and email snapshots come from that transaction view and its
-directory resolution, not from the earlier preflight user object. If the relay
-binding disappeared after preflight, creation returns `ErrNoRelayMapping` and
-persists no workflow request.
+Relay subscription preflight occurs before this transaction. Each creation
+attempt records the requester relay id used to list active subscriptions and
+validate the requested group. After the transaction begins, request creation
+re-reads the requester through the transaction client. If the transaction relay
+id differs, the attempt rolls back before resolver or persistence work and
+retries the complete requester, provider, subscription, group, and active-request
+preflight with the new binding. Creation uses a maximum of three attempts; if
+the binding changes on every attempt, it returns an explicit wrapped binding
+churn error instead of looping. If the new binding lacks the requested group,
+the normal `ErrInactiveSubscription` behavior applies with no request. If the
+binding disappears, creation returns `ErrNoRelayMapping` with no request. Only
+an attempt whose subscription lookup and transaction snapshot use the same
+relay id may persist. The immutable requester relay id, display name, and email
+snapshots come from that transaction view and its directory resolution, not
+from an earlier attempt's user object.
 
 Within that transaction, the resolver uses the current successful full-company
 directory snapshot.

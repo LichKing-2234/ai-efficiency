@@ -3,6 +3,7 @@ package quotareset
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -30,11 +31,15 @@ const (
 	defaultPageSize = 20
 	maxPageSize     = 100
 
+	maxCreateRequestAttempts = 3
+
 	ApproverConfigSaveModeReplaceDepartments = "replace_departments"
 	ApproverConfigSaveModeReplaceAll         = "replace_all"
 
 	quotaResetNotificationSettingsLockKey = "quota_reset_notification_settings"
 )
+
+var errRequesterRelayBindingChanged = errors.New("requester relay binding changed")
 
 type Service struct {
 	client           *ent.Client
@@ -80,22 +85,31 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 	if input.Reason == "" {
 		return nil, ErrReasonRequired
 	}
-	requester, providerRow, provider, err := s.resolveRequesterAndPrimaryProvider(ctx, input.RequesterUserID)
-	if err != nil {
-		return nil, err
+	for attempt := 1; attempt <= maxCreateRequestAttempts; attempt++ {
+		requester, providerRow, provider, err := s.resolveRequesterAndPrimaryProvider(ctx, input.RequesterUserID)
+		if err != nil {
+			return nil, err
+		}
+		subscriptions, err := listActiveSubscriptions(ctx, provider, int64(*requester.RelayUserID))
+		if err != nil {
+			return nil, err
+		}
+		subscription, err := findSubscription(subscriptions, input.GroupID)
+		if err != nil {
+			return nil, err
+		}
+		if err := activeRequestExists(ctx, s.client, requester.ID, providerRow.ID, input.GroupID); err != nil {
+			return nil, err
+		}
+		request, err := s.createWorkflowRequest(ctx, requester, providerRow, subscription, input)
+		if !errors.Is(err, errRequesterRelayBindingChanged) {
+			return request, err
+		}
+		if attempt == maxCreateRequestAttempts {
+			return nil, fmt.Errorf("create quota reset request after %d attempts: %w", maxCreateRequestAttempts, err)
+		}
 	}
-	subscriptions, err := listActiveSubscriptions(ctx, provider, int64(*requester.RelayUserID))
-	if err != nil {
-		return nil, err
-	}
-	subscription, err := findSubscription(subscriptions, input.GroupID)
-	if err != nil {
-		return nil, err
-	}
-	if err := activeRequestExists(ctx, s.client, requester.ID, providerRow.ID, input.GroupID); err != nil {
-		return nil, err
-	}
-	return s.createWorkflowRequest(ctx, requester, providerRow, subscription, input)
+	return nil, fmt.Errorf("create quota reset request: %w", errRequesterRelayBindingChanged)
 }
 
 func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.QuotaResetRequest, error) {
