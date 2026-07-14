@@ -3684,7 +3684,7 @@ Change `testQuotaResetNotificationSettings` to return
 the settings component; do not collapse a coverage warning into a generic
 success message.
 
-- [ ] **Step 5: Run API tests and typecheck**
+- [x] **Step 5: Run API tests and typecheck**
 
 Run:
 
@@ -3702,9 +3702,9 @@ reported 12 errors, all in the unchanged Task 10-owned
 `QuotaResetApprovalSettings.vue`: it still imports the removed
 representative-only type, sends the removed `department_external_id` candidate
 filter, reads `unmatched_representatives`, and reads/writes the redacted raw
-notification `url`. Step 5 remains unchecked until the Task 10 component is
-migrated; Task 9 does not retain stale contract fields or modify Task 10 UI to
-hide this dependency.
+notification `url`. At this interim checkpoint, Step 5 remained unchecked until
+the Task 10 component was migrated; Task 9 did not retain stale contract fields
+or modify Task 10 UI to hide this dependency.
 
 - [x] **Step 6: Commit frontend contracts**
 
@@ -3724,8 +3724,9 @@ data review were clean; all added identities use `example.com` synthetic data
 and no credential values were added.
 
 Commit evidence: `546a873` (`feat(frontend): add quota reset workflow
-contracts`). Task 9 Step 5 remains open only for the exact project-wide
-`npx vue-tsc -b` rerun after Task 10 migrates its component to these contracts.
+contracts`). At that handoff, Task 9 Step 5 remained open only for the exact
+project-wide `npx vue-tsc -b` rerun after Task 10 migrated its component to
+these contracts.
 
 Task 9 quality-review follow-up (2026-07-14):
 
@@ -3757,6 +3758,12 @@ file failed. `git diff --check` passed, the temporary typecheck project was
 removed, changed-line TODO/FIXME and real-data scans were clean, and `npm run`
 confirmed there is no formatter or lint script.
 
+Task 9 typecheck closure evidence (2026-07-14): after Task 10 split the legacy
+settings component and migrated it to the required candidate and notification
+contracts, `cd frontend && npx vue-tsc -b` exited 0 with no diagnostics. This
+completes the deferred project-wide half of Step 5; the API test half had
+already passed all 10 tests in the Task 9 quality follow-up.
+
 Quality-fix commit evidence: `9618f8d` (`fix(frontend): tighten quota reset API
 contracts`).
 
@@ -3772,8 +3779,10 @@ contracts`).
 - Modify: `frontend/src/__tests__/quota-reset-approval-settings.test.ts`
 - Modify: `frontend/src/__tests__/settings-view.test.ts`
 - Modify: `frontend/src/i18n.ts`
+- Modify: `frontend/package.json`
+- Modify: `frontend/package-lock.json`
 
-- [ ] **Step 1: Write failing settings interaction tests**
+- [x] **Step 1: Write failing settings interaction tests**
 
 Add tests that assert:
 
@@ -3805,7 +3814,7 @@ expect(wrapper.text()).toContain('Can mention in WeCom')
 The chain reorder test starts with Alpha then Beta, clicks the Beta up button,
 saves, and expects `[Beta, Alpha]`.
 
-- [ ] **Step 2: Run settings tests and verify failure**
+- [x] **Step 2: Run settings tests and verify failure**
 
 Run:
 
@@ -3815,7 +3824,17 @@ cd frontend && npm test -- quota-reset-approval-settings settings-view
 
 Expected: FAIL on missing components and contracts.
 
-- [ ] **Step 3: Reduce the parent to orchestration**
+RED evidence (2026-07-14): `cd frontend && npm test --
+quota-reset-approval-settings settings-view` exited 1. The new Task 10 suite
+failed all 16 interaction tests, and the settings-view integration assertion
+also failed, while 19 existing focused tests passed. The failures were the
+expected legacy-surface gaps: the parent still owned the outer card and
+representative-only candidate request with `department_external_id`, and the
+split child surfaces, approval-chain controls, explicit notification channel,
+redacted replacement URL, preset preview, and mention-warning feedback were not
+yet present.
+
+- [x] **Step 3: Reduce the parent to orchestration**
 
 Replace the 552-line parent with:
 
@@ -3849,7 +3868,7 @@ const approverRevision = ref(0)
 Do not wrap child sections in another card. Each child owns one bordered
 settings surface.
 
-- [ ] **Step 4: Implement searchable department approvers**
+- [x] **Step 4: Implement searchable department approvers**
 
 Move the current department selector, latest-request-wins search sequence,
 config table, and full-list save into `DepartmentApproverSettings.vue`.
@@ -3889,7 +3908,7 @@ async function searchCandidates() {
 Use backend names rather than raw ids in existing rows. Emit `saved` after a
 successful full replacement.
 
-- [ ] **Step 5: Implement the subscription-group chain editor**
+- [x] **Step 5: Implement the subscription-group chain editor**
 
 Create `SubscriptionGroupApprovalChains.vue` with:
 
@@ -3929,7 +3948,7 @@ The UI must:
 Do not use drag-and-drop; explicit controls are keyboard accessible and stable
 on mobile.
 
-- [ ] **Step 6: Implement explicit notification channel settings**
+- [x] **Step 6: Implement explicit notification channel settings**
 
 Create `QuotaResetNotificationSettings.vue`:
 
@@ -3969,7 +3988,7 @@ Render:
    says the message arrived without an `@` mention.
 7. No raw JSON or template editor.
 
-- [ ] **Step 7: Add bilingual settings copy**
+- [x] **Step 7: Add bilingual settings copy**
 
 Add exact English and Chinese keys for:
 
@@ -3995,7 +4014,7 @@ Add exact English and Chinese keys for:
 
 Use concise Chinese product copy, not implementation guidance.
 
-- [ ] **Step 8: Run settings tests and production typecheck**
+- [x] **Step 8: Run settings tests and production typecheck**
 
 Run:
 
@@ -4006,12 +4025,43 @@ cd frontend && npx vue-tsc -b
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit admin settings**
+GREEN evidence (2026-07-14): `cd frontend && npm test --
+quota-reset-approval-settings settings-view` passed both files and all 37
+tests. `cd frontend && npx vue-tsc -b` then exited 0 with no diagnostics,
+removing all legacy settings errors and closing the deferred Task 9 project
+typecheck.
+
+- [x] **Step 9: Commit admin settings**
 
 ```bash
-git add frontend/src/components/settings frontend/src/__tests__/quota-reset-approval-settings.test.ts frontend/src/__tests__/settings-view.test.ts frontend/src/i18n.ts
+git add frontend/package.json frontend/package-lock.json frontend/src/components/settings frontend/src/__tests__/quota-reset-approval-settings.test.ts frontend/src/__tests__/settings-view.test.ts frontend/src/i18n.ts
 git commit -m "feat(frontend): configure quota reset approval workflows"
 ```
+
+Task 10 self-review follow-up (2026-07-14):
+
+- The fixed-size move/delete control test was extended to require SVG icons as
+  well as localized `aria-label` and `title` values. Its focused RED run exited
+  1 because the first implementation still rendered text glyphs. The checkout
+  did not yet contain the task-requested Lucide dependency, so
+  `@lucide/vue@1.24.0` was added and the controls now use `ArrowUp`,
+  `ArrowDown`, and `Trash2`; the same focused test then passed.
+- A second focused accessibility RED run exited 1 because the dropdown search
+  inputs relied on placeholders without explicit accessible names. Localized
+  `aria-label` values were added to department, approver, subscription-group,
+  and chain-department filters; the complete focused suite then passed both
+  files and all 37 tests.
+- Final verification passed `cd frontend && npx vue-tsc -b` with no
+  diagnostics and `cd frontend && npm test` with all 39 files / 448 tests.
+  `git diff --check` and `git diff --cached --check` passed. `npm run` confirmed
+  there is no formatter or lint script. Changed-file TODO/FIXME and real-data
+  scans were empty; active components contained no raw robot URL/secret or
+  legacy unmatched-representative references. The only raw robot-key match was
+  the explicitly synthetic test fixture used to prove that the saved key never
+  renders.
+
+Commit evidence: `207fbb1` (`feat(frontend): configure quota reset approval
+workflows`).
 
 ---
 
