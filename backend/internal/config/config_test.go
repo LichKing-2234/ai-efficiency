@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -26,6 +27,82 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Auth.RefreshTokenTTL != 604800 {
 		t.Errorf("default refresh_token_ttl = %d, want 604800", cfg.Auth.RefreshTokenTTL)
+	}
+}
+
+func TestLoadHTTPRuntimeDefaults(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	wantServer := ServerConfig{
+		Port:                     8081,
+		Mode:                     "debug",
+		FrontendURL:              "http://localhost:5173",
+		ReadHeaderTimeoutSeconds: 5,
+		IdleTimeoutSeconds:       120,
+		ReadinessTimeoutSeconds:  2,
+	}
+	if !reflect.DeepEqual(cfg.Server, wantServer) {
+		t.Fatalf("Server = %#v, want %#v", cfg.Server, wantServer)
+	}
+
+	wantHTTPClient := HTTPClientConfig{
+		ConnectTimeoutSeconds:        5,
+		TLSHandshakeTimeoutSeconds:   5,
+		ResponseHeaderTimeoutSeconds: 15,
+		OverallTimeoutSeconds:        30,
+		IdleConnTimeoutSeconds:       90,
+		MaxIdleConns:                 100,
+		MaxIdleConnsPerHost:          20,
+		MaxConnsPerHost:              50,
+	}
+	if !reflect.DeepEqual(cfg.HTTPClient, wantHTTPClient) {
+		t.Fatalf("HTTPClient = %#v, want %#v", cfg.HTTPClient, wantHTTPClient)
+	}
+}
+
+func TestLoadHTTPRuntimeEnvironmentOverrides(t *testing.T) {
+	t.Setenv("AE_SERVER_READ_HEADER_TIMEOUT_SECONDS", "6")
+	t.Setenv("AE_SERVER_IDLE_TIMEOUT_SECONDS", "121")
+	t.Setenv("AE_SERVER_READINESS_TIMEOUT_SECONDS", "3")
+	t.Setenv("AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS", "7")
+	t.Setenv("AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS", "8")
+	t.Setenv("AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS", "16")
+	t.Setenv("AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS", "31")
+	t.Setenv("AE_HTTP_CLIENT_IDLE_CONN_TIMEOUT_SECONDS", "91")
+	t.Setenv("AE_HTTP_CLIENT_MAX_IDLE_CONNS", "101")
+	t.Setenv("AE_HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST", "21")
+	t.Setenv("AE_HTTP_CLIENT_MAX_CONNS_PER_HOST", "51")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	wantServerTimeouts := []int{6, 121, 3}
+	gotServerTimeouts := []int{
+		cfg.Server.ReadHeaderTimeoutSeconds,
+		cfg.Server.IdleTimeoutSeconds,
+		cfg.Server.ReadinessTimeoutSeconds,
+	}
+	if !reflect.DeepEqual(gotServerTimeouts, wantServerTimeouts) {
+		t.Fatalf("server timeout overrides = %v, want %v", gotServerTimeouts, wantServerTimeouts)
+	}
+
+	wantHTTPClient := HTTPClientConfig{
+		ConnectTimeoutSeconds:        7,
+		TLSHandshakeTimeoutSeconds:   8,
+		ResponseHeaderTimeoutSeconds: 16,
+		OverallTimeoutSeconds:        31,
+		IdleConnTimeoutSeconds:       91,
+		MaxIdleConns:                 101,
+		MaxIdleConnsPerHost:          21,
+		MaxConnsPerHost:              51,
+	}
+	if !reflect.DeepEqual(cfg.HTTPClient, wantHTTPClient) {
+		t.Fatalf("HTTPClient overrides = %#v, want %#v", cfg.HTTPClient, wantHTTPClient)
 	}
 }
 
@@ -454,10 +531,23 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 
 	cfg := &Config{
 		Server: ServerConfig{
-			Port:        8081,
-			Mode:        "release",
-			FrontendURL: "http://localhost:8081",
-			PublicURL:   "https://ai-efficiency.example.com",
+			Port:                     8081,
+			Mode:                     "release",
+			FrontendURL:              "http://localhost:8081",
+			PublicURL:                "https://ai-efficiency.example.com",
+			ReadHeaderTimeoutSeconds: 7,
+			IdleTimeoutSeconds:       123,
+			ReadinessTimeoutSeconds:  4,
+		},
+		HTTPClient: HTTPClientConfig{
+			ConnectTimeoutSeconds:        8,
+			TLSHandshakeTimeoutSeconds:   9,
+			ResponseHeaderTimeoutSeconds: 17,
+			OverallTimeoutSeconds:        32,
+			IdleConnTimeoutSeconds:       92,
+			MaxIdleConns:                 102,
+			MaxIdleConnsPerHost:          22,
+			MaxConnsPerHost:              52,
 		},
 		DB: DBConfig{
 			DSN:             "postgres://postgres:postgres@localhost:5432/ai_efficiency?sslmode=disable",
@@ -515,6 +605,12 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if loaded.Server.PublicURL != "https://ai-efficiency.example.com" {
 		t.Fatalf("server.public_url = %q, want %q", loaded.Server.PublicURL, "https://ai-efficiency.example.com")
+	}
+	if !reflect.DeepEqual(loaded.Server, cfg.Server) {
+		t.Fatalf("persisted Server = %#v, want %#v", loaded.Server, cfg.Server)
+	}
+	if !reflect.DeepEqual(loaded.HTTPClient, cfg.HTTPClient) {
+		t.Fatalf("persisted HTTPClient = %#v, want %#v", loaded.HTTPClient, cfg.HTTPClient)
 	}
 }
 

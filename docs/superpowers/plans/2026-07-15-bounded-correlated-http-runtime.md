@@ -63,7 +63,7 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 - Produces `newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *http.Server`.
 - Produces config fields `Server.ReadHeaderTimeoutSeconds`, `Server.IdleTimeoutSeconds`, `Server.ReadinessTimeoutSeconds`, and top-level `HTTPClient HTTPClientConfig`.
 
-- [ ] **Step 1: Add failing config and client deadline tests**
+- [x] **Step 1: Add failing config and client deadline tests**
 
   Add config assertions for the exact defaults and `AE_SERVER_READ_HEADER_TIMEOUT_SECONDS`, `AE_SERVER_IDLE_TIMEOUT_SECONDS`, `AE_SERVER_READINESS_TIMEOUT_SECONDS`, and the individual `AE_HTTP_CLIENT_*` overrides. Assert generated writable YAML retains the non-secret runtime budget fields.
 
@@ -77,7 +77,7 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   The response-header case accepts a connection but withholds headers beyond 40ms. The overall case returns headers then withholds the body. Both clients use test-only millisecond budgets and must return a timeout without inspecting raw endpoint data.
 
-- [ ] **Step 2: Run Task 1 tests and record RED**
+- [x] **Step 2: Run Task 1 tests and record RED**
 
   Run separately:
 
@@ -86,7 +86,9 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   Expected: FAIL because the config fields and `httpclient` package do not exist.
 
-- [ ] **Step 3: Implement the bounded client and configuration**
+  Evidence (2026-07-15): both commands failed as expected. The config package reported missing `ServerConfig` timeout fields and `HTTPClientConfig`; the httpclient package reported missing `New`, `Options`, and `TransportWrapper`.
+
+- [x] **Step 3: Implement the bounded client and configuration**
 
   `httpclient.New` must create its own transport using a `net.Dialer`, set all exact timeout/pool fields, and set `http.Client.Timeout` to `OverallTimeout`. Do not mutate `http.DefaultTransport` or `http.DefaultClient`. Apply wrappers to the private transport and return one reusable client.
 
@@ -107,7 +109,9 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   Bind all environment keys and persist the fields through `EnsureWritableConfigFile`. Add the exact values to `deploy/config.example.yaml` with comments that version/webhook clients retain stricter overall budgets.
 
-- [ ] **Step 4: Add failing server field and slow-header tests**
+  Evidence (2026-07-15): the focused config command passed in 0.200s and the httpclient package command passed in 0.277s after implementation.
+
+- [x] **Step 4: Add failing server field and slow-header tests**
 
   Test `newHTTPServer` field values. Start it on `127.0.0.1:0` with a test-only 50ms `ReadHeaderTimeout`, write an incomplete request header over TCP, and assert the server closes the connection before a one-second test deadline. The test owns and closes its listener/server.
 
@@ -115,7 +119,9 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   Expected: FAIL because `newHTTPServer` does not exist.
 
-- [ ] **Step 5: Implement and verify the server constructor**
+  Evidence (2026-07-15): the focused server command failed as expected with `undefined: newHTTPServer` at both constructor call sites.
+
+- [x] **Step 5: Implement and verify the server constructor**
 
   Construct the production server through `newHTTPServer`, mapping the two configured values to `time.Duration). Do not introduce a short `ReadTimeout` or `WriteTimeout` during the current synchronous Team Overview migration.
 
@@ -126,6 +132,8 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
   - `git diff --check`
 
   Expected: PASS. Record the slow-header listener test separately as environment-sensitive evidence.
+
+  Evidence (2026-07-15): the environment-sensitive slow-header listener command passed in 0.363s; the combined config/httpclient/server command passed in 0.193s, 0.427s, and 0.781s respectively; `git diff --check` passed.
 
 - [ ] **Step 6: Commit Task 1 and record the checkpoint**
 

@@ -45,6 +45,15 @@ type authTokenAdapter struct {
 	authService *auth.Service
 }
 
+func newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: time.Duration(cfg.ReadHeaderTimeoutSeconds) * time.Second,
+		IdleTimeout:       time.Duration(cfg.IdleTimeoutSeconds) * time.Second,
+	}
+}
+
 func (a *authTokenAdapter) GenerateAccessToken(userID int, username, role string) (string, string, int, error) {
 	info := &auth.UserInfo{
 		ID:       userID,
@@ -307,10 +316,7 @@ func main() {
 
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: r,
-	}
+	srv := newHTTPServer(addr, r, cfg.Server)
 
 	go func() {
 		logger.Info("starting server", zap.String("addr", addr))

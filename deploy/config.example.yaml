@@ -7,6 +7,21 @@ server:
   # Public backend origin reachable by GitHub/Bitbucket webhooks.
   # Production deployments should set this to the externally routed HTTPS origin.
   public_url: "http://localhost:8081"
+  read_header_timeout_seconds: 5
+  idle_timeout_seconds: 120
+  readiness_timeout_seconds: 2
+
+# Shared downstream HTTP defaults. Version checks and quota notification webhooks
+# retain their stricter 10-second and 5-second overall budgets.
+http_client:
+  connect_timeout_seconds: 5
+  tls_handshake_timeout_seconds: 5
+  response_header_timeout_seconds: 15
+  overall_timeout_seconds: 30
+  idle_conn_timeout_seconds: 90
+  max_idle_conns: 100
+  max_idle_conns_per_host: 20
+  max_conns_per_host: 50
 
 # AI Efficiency platform database (read-write)
 db:

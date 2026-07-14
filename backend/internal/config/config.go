@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	Server       ServerConfig       `mapstructure:"server"`
+	HTTPClient   HTTPClientConfig   `mapstructure:"http_client"`
 	DB           DBConfig           `mapstructure:"db"`
 	Redis        RedisConfig        `mapstructure:"redis"`
 	Auth         AuthConfig         `mapstructure:"auth"`
@@ -17,10 +18,24 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port        int    `mapstructure:"port"`
-	Mode        string `mapstructure:"mode"` // debug / release
-	FrontendURL string `mapstructure:"frontend_url"`
-	PublicURL   string `mapstructure:"public_url"`
+	Port                     int    `mapstructure:"port"`
+	Mode                     string `mapstructure:"mode"` // debug / release
+	FrontendURL              string `mapstructure:"frontend_url"`
+	PublicURL                string `mapstructure:"public_url"`
+	ReadHeaderTimeoutSeconds int    `mapstructure:"read_header_timeout_seconds"`
+	IdleTimeoutSeconds       int    `mapstructure:"idle_timeout_seconds"`
+	ReadinessTimeoutSeconds  int    `mapstructure:"readiness_timeout_seconds"`
+}
+
+type HTTPClientConfig struct {
+	ConnectTimeoutSeconds        int `mapstructure:"connect_timeout_seconds"`
+	TLSHandshakeTimeoutSeconds   int `mapstructure:"tls_handshake_timeout_seconds"`
+	ResponseHeaderTimeoutSeconds int `mapstructure:"response_header_timeout_seconds"`
+	OverallTimeoutSeconds        int `mapstructure:"overall_timeout_seconds"`
+	IdleConnTimeoutSeconds       int `mapstructure:"idle_conn_timeout_seconds"`
+	MaxIdleConns                 int `mapstructure:"max_idle_conns"`
+	MaxIdleConnsPerHost          int `mapstructure:"max_idle_conns_per_host"`
+	MaxConnsPerHost              int `mapstructure:"max_conns_per_host"`
 }
 
 type RelayConfig struct {
@@ -77,6 +92,17 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.mode", "debug")
 	v.SetDefault("server.frontend_url", "http://localhost:5173")
 	v.SetDefault("server.public_url", "")
+	v.SetDefault("server.read_header_timeout_seconds", 5)
+	v.SetDefault("server.idle_timeout_seconds", 120)
+	v.SetDefault("server.readiness_timeout_seconds", 2)
+	v.SetDefault("http_client.connect_timeout_seconds", 5)
+	v.SetDefault("http_client.tls_handshake_timeout_seconds", 5)
+	v.SetDefault("http_client.response_header_timeout_seconds", 15)
+	v.SetDefault("http_client.overall_timeout_seconds", 30)
+	v.SetDefault("http_client.idle_conn_timeout_seconds", 90)
+	v.SetDefault("http_client.max_idle_conns", 100)
+	v.SetDefault("http_client.max_idle_conns_per_host", 20)
+	v.SetDefault("http_client.max_conns_per_host", 50)
 	v.SetDefault("db.max_open_conns", 25)
 	v.SetDefault("db.max_idle_conns", 5)
 	v.SetDefault("db.conn_max_lifetime", 300)
@@ -108,6 +134,17 @@ func Load(path string) (*Config, error) {
 		"server.mode",
 		"server.frontend_url",
 		"server.public_url",
+		"server.read_header_timeout_seconds",
+		"server.idle_timeout_seconds",
+		"server.readiness_timeout_seconds",
+		"http_client.connect_timeout_seconds",
+		"http_client.tls_handshake_timeout_seconds",
+		"http_client.response_header_timeout_seconds",
+		"http_client.overall_timeout_seconds",
+		"http_client.idle_conn_timeout_seconds",
+		"http_client.max_idle_conns",
+		"http_client.max_idle_conns_per_host",
+		"http_client.max_conns_per_host",
 		"db.dsn",
 		"db.max_open_conns",
 		"db.max_idle_conns",
