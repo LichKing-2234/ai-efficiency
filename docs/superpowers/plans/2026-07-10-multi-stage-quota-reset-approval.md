@@ -5264,6 +5264,70 @@ hygiene, scope, or Task 18/19 ownership issue.
 Task 17 Step 4 remains unchecked until the independent spec and standards
 re-review passes.
 
+Final re-review follow-up status (2026-07-15): Task 17 was reopened after
+commit `1f97743` for deep approver-config row decoding, server-page exhaustion
+tracking, shrinking-total handling, and removal of the temporary workflow
+identity wrappers. Step 4 remains open through implementation and independent
+re-review.
+
+Final re-review config-decoder RED evidence (2026-07-15): `cd frontend && npm
+test -- quota-reset-approval-settings` ran 81 tests and failed the intended 28
+while 53 passed. GET and PUT each accepted all 14 malformed response cases:
+`[null]`, `[{}]`, unsafe/non-positive ids, wrong string/boolean/timestamp
+types, a row source differing from the top-level source, and nonempty items
+with a null top-level source. The null-row cases additionally raised the
+expected render-time `Cannot read properties of null (reading 'id')`, proving
+that malformed rows reached authoritative component state.
+
+Final re-review pagination RED evidence (2026-07-15): `cd frontend && npm
+test -- quota-reset-approval-settings -t 'stops loading when|accepts an empty
+later'` ran the two new regressions (81 skipped) and both failed. A duplicate-
+only final page left the load-more control visible (`expected false`, received
+`true`) because `total` was compared with the deduplicated display count. An
+empty page 2 after `total` shrank from 21 to 10 surfaced `Failed to load
+approver candidates` and retained load-more instead of accepting the validated
+empty server page as exhausted.
+
+Final re-review frontend GREEN evidence (2026-07-15): after adding a
+field-complete shared config decoder and explicit validated raw-page exhaustion
+state, `cd frontend && npm test -- quota-reset-approval-settings` passed all
+83/83 tests. GET and PUT now reject malformed rows and source invariants before
+assigning configs or the authoritative source. Load-more is derived from raw
+`offset + items.length < total`, so a duplicate-only final page is exhausted;
+an empty later page whose offset is at or beyond a shrunken total is accepted,
+retains prior displayed candidates, and clears load-more. Existing stale-search
+and genuine page-2 error/retry coverage remains green.
+
+Final re-review neutral-helper evidence (2026-07-15): removed all three
+`workflow*` delegation wrappers from `directory_identity.go` and changed only
+the corresponding identity/access call sites in `workflow_summary.go` to the
+neutral shared helpers. `rg` found no remaining wrapper names, and `cd backend
+&& go test ./internal/quotareset -count=1` passed uncached in 45.422s. No Task
+18 notification-progress behavior changed.
+
+Final re-review verification (2026-07-15): `cd frontend && npm test --
+quota-reset-approval-settings quota-reset-api` passed both focused files and
+93/93 tests. `cd backend && go test ./internal/quotareset ./internal/handler
+-count=1` passed uncached (`quotareset` 54.848s, `handler` 48.103s). `cd
+backend && go test ./... -count=1` passed the full suite, including
+`internal/handler` 65.191s and `internal/quotareset` 69.725s, and `cd backend &&
+go vet ./...` exited 0. After the self-review naming cleanup, the focused
+frontend command again passed 93/93, `cd frontend && npm test` passed all 40
+files and 525/525 tests, and `cd frontend && npm run build` passed `vue-tsc -b`
+plus the Vite build after transforming 1955 modules.
+
+Final re-review hygiene and self-review (2026-07-15): `git diff --check` and
+changed-Go-file `gofmt -d` were clean. The three removed wrapper names and the
+obsolete unique-count pagination terms had no remaining matches. Changed-line
+TODO/FIXME, non-example email, and credential-shaped scans returned no matches.
+The six-file diff contains only Task 17-owned files, its live plan/spec, and the
+explicitly requested neutral-helper call-site rename in `workflow_summary.go`;
+manual review found no Task 18/19 behavior change or remaining correctness,
+contract, accessibility, data-hygiene, or scope issue.
+
+Task 17 Step 4 remains unchecked until the independent spec and standards
+re-review passes.
+
 ### Task 18: Include Durable Workflow Progress in Notifications
 
 **Files:**

@@ -32,16 +32,3 @@ func directoryMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.Use
 	}
 	return usersByEmail[strings.ToLower(strings.TrimSpace(member.EmailNormalized))]
 }
-
-// Keep existing workflow-summary callers on the shared directory identity semantics.
-func workflowMemberIsActive(member *ent.DirectoryMember) bool {
-	return directoryMemberIsActive(member)
-}
-
-func workflowApproverIsCurrentlyUsable(user *ent.User, member *ent.DirectoryMember) bool {
-	return directoryApproverIsCurrentlyUsable(user, member)
-}
-
-func workflowMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) *ent.User {
-	return directoryMemberUser(member, usersByID, usersByEmail)
-}

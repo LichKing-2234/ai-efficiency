@@ -48,7 +48,7 @@ const candidates = ref<QuotaResetApproverCandidate[]>([])
 const candidateLoading = ref(false)
 const candidatePage = ref(0)
 const candidatePageSize = ref(defaultCandidatePageSize)
-const candidateTotal = ref(0)
+const candidateHasMore = ref(false)
 let candidateRequestSequence = 0
 
 const form = ref({
@@ -70,7 +70,7 @@ const currentSourceError = computed(() => (
     ? t('quotaResetSettings.directoryUnavailable')
     : ''
 ))
-const canLoadMoreCandidates = computed(() => candidateTotal.value > candidates.value.length)
+const canLoadMoreCandidates = computed(() => candidateHasMore.value)
 const visibleError = computed(() => (
   error.value || candidateError.value || directoryError.value || currentSourceError.value
 ))
@@ -96,6 +96,20 @@ function isNonNegativeSafeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
+function isApproverConfig(value: unknown): value is QuotaResetApproverConfig {
+  if (!isRecord(value)) return false
+  return isPositiveSafeInteger(value.id)
+    && isPositiveSafeInteger(value.directory_source_id)
+    && typeof value.department_external_id === 'string'
+    && typeof value.department_display_path === 'string'
+    && isPositiveSafeInteger(value.approver_user_id)
+    && typeof value.approver_username === 'string'
+    && typeof value.approver_email === 'string'
+    && typeof value.enabled === 'boolean'
+    && typeof value.created_at === 'string'
+    && typeof value.updated_at === 'string'
+}
+
 function decodeApproverConfigResponse(
   value: unknown,
   malformedMessage: string,
@@ -104,12 +118,26 @@ function decodeApproverConfigResponse(
     throw new Error(malformedMessage)
   }
   const sourceID = value.directory_source_id
-  if (sourceID !== null && !isPositiveSafeInteger(sourceID)) {
+  if (sourceID === null) {
+    if (value.items.length !== 0) {
+      throw new Error(malformedMessage)
+    }
+    return {
+      directory_source_id: null,
+      items: [],
+    }
+  }
+  if (
+    !isPositiveSafeInteger(sourceID)
+    || !value.items.every(item => (
+      isApproverConfig(item) && item.directory_source_id === sourceID
+    ))
+  ) {
     throw new Error(malformedMessage)
   }
   return {
     directory_source_id: sourceID,
-    items: value.items as QuotaResetApproverConfig[],
+    items: value.items,
   }
 }
 
@@ -125,12 +153,16 @@ function isApproverCandidate(value: unknown): value is QuotaResetApproverCandida
     && typeof value.wecom_mention_available === 'boolean'
 }
 
+type DecodedCandidatePage = QuotaResetApproverCandidateListResponse & {
+  hasMore: boolean
+}
+
 function decodeCandidatePage(
   value: unknown,
   requestedPage: number,
   requestedPageSize: number,
   malformedMessage: string,
-): QuotaResetApproverCandidateListResponse {
+): DecodedCandidatePage {
   if (!isRecord(value) || !Array.isArray(value.items) || !value.items.every(isApproverCandidate)) {
     throw new Error(malformedMessage)
   }
@@ -147,24 +179,34 @@ function decodeCandidatePage(
     throw new Error(malformedMessage)
   }
   const offset = (page - 1) * pageSize
-  const returnedEnd = offset + value.items.length
-  const hasMore = returnedEnd < total
   if (
     !Number.isSafeInteger(offset)
-    || !Number.isSafeInteger(returnedEnd)
     || value.items.length > pageSize
-    || returnedEnd > total
-    || (total === 0 && (page !== 1 || value.items.length !== 0))
-    || (total > 0 && offset >= total)
-    || (hasMore && value.items.length !== pageSize)
   ) {
     throw new Error(malformedMessage)
+  }
+  let hasMore = false
+  if (offset >= total) {
+    if (value.items.length !== 0) {
+      throw new Error(malformedMessage)
+    }
+  } else {
+    const returnedEnd = offset + value.items.length
+    hasMore = returnedEnd < total
+    if (
+      !Number.isSafeInteger(returnedEnd)
+      || returnedEnd > total
+      || (hasMore && value.items.length !== pageSize)
+    ) {
+      throw new Error(malformedMessage)
+    }
   }
   return {
     items: value.items,
     page,
     page_size: pageSize,
     total,
+    hasMore,
   }
 }
 
@@ -225,7 +267,7 @@ function resetCandidateResults() {
   candidates.value = []
   candidatePage.value = 0
   candidatePageSize.value = defaultCandidatePageSize
-  candidateTotal.value = 0
+  candidateHasMore.value = false
 }
 
 function mergeUniqueCandidates(
@@ -347,7 +389,7 @@ async function loadCandidatePage(page: number, append: boolean) {
     candidates.value = mergeUniqueCandidates(append ? candidates.value : [], data.items)
     candidatePage.value = data.page
     candidatePageSize.value = data.page_size
-    candidateTotal.value = data.total
+    candidateHasMore.value = data.hasMore
     candidateError.value = ''
   } catch (err) {
     if (sequence !== candidateRequestSequence) return

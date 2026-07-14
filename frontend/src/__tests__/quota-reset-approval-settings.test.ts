@@ -66,6 +66,101 @@ const configuredAliceApprover = {
   updated_at: '',
 }
 
+const malformedApproverConfigResponses = [
+  {
+    name: 'a null row',
+    data: { directory_source_id: 1, items: [null] },
+  },
+  {
+    name: 'an empty row',
+    data: { directory_source_id: 1, items: [{}] },
+  },
+  {
+    name: 'an unsafe id',
+    data: {
+      directory_source_id: 1,
+      items: [{ ...configuredAliceApprover, id: Number.MAX_SAFE_INTEGER + 1 }],
+    },
+  },
+  {
+    name: 'a non-positive row source id',
+    data: {
+      directory_source_id: 1,
+      items: [{ ...configuredAliceApprover, directory_source_id: 0 }],
+    },
+  },
+  {
+    name: 'a non-string department id',
+    data: {
+      directory_source_id: 1,
+      items: [{ ...configuredAliceApprover, department_external_id: 17 }],
+    },
+  },
+  {
+    name: 'a non-string department path',
+    data: {
+      directory_source_id: 1,
+      items: [{ ...configuredAliceApprover, department_display_path: false }],
+    },
+  },
+  {
+    name: 'a non-positive approver user id',
+    data: {
+      directory_source_id: 1,
+      items: [{ ...configuredAliceApprover, approver_user_id: 0 }],
+    },
+  },
+  {
+    name: 'a non-string approver username',
+    data: {
+      directory_source_id: 1,
+      items: [{ ...configuredAliceApprover, approver_username: null }],
+    },
+  },
+  {
+    name: 'a non-string approver email',
+    data: {
+      directory_source_id: 1,
+      items: [{ ...configuredAliceApprover, approver_email: [] }],
+    },
+  },
+  {
+    name: 'a non-boolean enabled value',
+    data: {
+      directory_source_id: 1,
+      items: [{ ...configuredAliceApprover, enabled: 'true' }],
+    },
+  },
+  {
+    name: 'a non-string created timestamp',
+    data: {
+      directory_source_id: 1,
+      items: [{ ...configuredAliceApprover, created_at: 1 }],
+    },
+  },
+  {
+    name: 'a non-string updated timestamp',
+    data: {
+      directory_source_id: 1,
+      items: [{ ...configuredAliceApprover, updated_at: {} }],
+    },
+  },
+  {
+    name: 'a row source that differs from the response source',
+    data: {
+      directory_source_id: 2,
+      items: [configuredAliceApprover],
+    },
+  },
+  {
+    name: 'items when the response source is null',
+    data: {
+      directory_source_id: null,
+      items: [configuredAliceApprover],
+    },
+  },
+]
+
 function approverConfigResponse(items: any[] = [], directorySourceID: number | null = 1) {
   return {
     data: {
@@ -387,6 +482,38 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.get('[data-testid="quota-reset-save-approvers"]').attributes()).not.toHaveProperty('disabled')
   })
 
+  it.each(malformedApproverConfigResponses)(
+    'rejects malformed approver config GET responses with $name',
+    async ({ data }) => {
+      const api = await import('@/api/quotaReset') as any
+      const directory = await import('@/api/directory') as any
+      api.getQuotaResetApproverConfigs.mockResolvedValueOnce(
+        approverConfigResponse([configuredAliceApprover], 1),
+      )
+      directory.listDirectorySources.mockResolvedValueOnce({
+        data: {
+          data: {
+            items: [
+              directorySource(1, 'Directory Alpha', 10),
+              directorySource(2, 'Directory Beta', 20),
+            ],
+          },
+        },
+      })
+      const wrapper = await mountDepartmentApprovers()
+      expect(wrapper.find('[data-testid="quota-reset-config-row-7"]').exists()).toBe(true)
+
+      api.getQuotaResetApproverConfigs.mockResolvedValueOnce({ data: { data } })
+      await wrapper.get('[data-testid="quota-reset-reload-approvers"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Failed to load department approvers')
+      expect(wrapper.get('[data-testid="quota-reset-current-directory-source"]').text()).toBe('Directory Alpha')
+      expect(wrapper.find('[data-testid="quota-reset-config-row-7"]').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="quota-reset-save-approvers"]').attributes()).toHaveProperty('disabled')
+    },
+  )
+
   it('searches all matched users and shows WeCom mention coverage', async () => {
     const wrapper = await mountSettings()
     const api = await import('@/api/quotaReset') as any
@@ -646,10 +773,62 @@ describe('QuotaResetApprovalSettings', () => {
     })
     expect(wrapper.findAll('[data-testid^="quota-reset-approver-option-"]')).toHaveLength(21)
     expect(wrapper.findAll('[data-testid="quota-reset-approver-option-20"]')).toHaveLength(1)
-    expect(wrapper.find('[data-testid="quota-reset-approver-load-more"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="quota-reset-approver-load-more"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="quota-reset-approver-option-21"]').trigger('click')
     expect(wrapper.get('[data-testid="quota-reset-approver-select"]').text()).toContain('Candidate 21')
+  })
+
+  it('stops loading when the final raw page contains only a displayed duplicate', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const firstPage = Array.from({ length: 20 }, (_, index) => pagedCandidate(index + 1))
+    api.listQuotaResetApproverCandidates.mockImplementation(({ page }: { page: number }) => Promise.resolve({
+      data: {
+        data: {
+          items: page === 2 ? [firstPage[19]] : firstPage,
+          page,
+          page_size: 20,
+          total: 21,
+        },
+      },
+    }))
+    const wrapper = await mountDepartmentApprovers()
+    await selectApproverDepartment(wrapper)
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="quota-reset-approver-load-more"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid^="quota-reset-approver-option-"]')).toHaveLength(20)
+    expect(wrapper.findAll('[data-testid="quota-reset-approver-option-20"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="quota-reset-approver-load-more"]').exists()).toBe(false)
+  })
+
+  it('accepts an empty later page after total shrinks and marks results exhausted', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const firstPage = Array.from({ length: 20 }, (_, index) => pagedCandidate(index + 1))
+    api.listQuotaResetApproverCandidates.mockImplementation(({ page }: { page: number }) => Promise.resolve({
+      data: {
+        data: {
+          items: page === 2 ? [] : firstPage,
+          page,
+          page_size: 20,
+          total: page === 2 ? 10 : 21,
+        },
+      },
+    }))
+    const wrapper = await mountDepartmentApprovers()
+    await selectApproverDepartment(wrapper)
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="quota-reset-approver-load-more"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Failed to load approver candidates')
+    expect(wrapper.findAll('[data-testid^="quota-reset-approver-option-"]')).toHaveLength(20)
+    expect(wrapper.find('[data-testid="quota-reset-approver-load-more"]').exists()).toBe(false)
   })
 
   it.each([
@@ -1035,6 +1214,37 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.get('[data-testid="quota-reset-current-directory-source"]').text()).toBe('Directory A')
     expect(wrapper.find('[data-testid="quota-reset-config-row-7"]').exists()).toBe(true)
   })
+
+  it.each(malformedApproverConfigResponses)(
+    'rejects malformed approver config PUT responses with $name',
+    async ({ data }) => {
+      const api = await import('@/api/quotaReset') as any
+      const directory = await import('@/api/directory') as any
+      api.getQuotaResetApproverConfigs.mockResolvedValueOnce(
+        approverConfigResponse([configuredAliceApprover], 1),
+      )
+      api.saveQuotaResetApproverConfigs.mockResolvedValueOnce({ data: { data } })
+      directory.listDirectorySources.mockResolvedValueOnce({
+        data: {
+          data: {
+            items: [
+              directorySource(1, 'Directory Alpha', 10),
+              directorySource(2, 'Directory Beta', 20),
+            ],
+          },
+        },
+      })
+      const wrapper = await mountDepartmentApprovers()
+
+      await wrapper.get('[data-testid="quota-reset-save-approvers"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Failed to save approver configs')
+      expect(wrapper.text()).not.toContain('Approver configs saved')
+      expect(wrapper.get('[data-testid="quota-reset-current-directory-source"]').text()).toBe('Directory Alpha')
+      expect(wrapper.find('[data-testid="quota-reset-config-row-7"]').exists()).toBe(true)
+    },
+  )
 
   it('uses the authoritative current source returned by a successful save', async () => {
     const api = await import('@/api/quotaReset') as any

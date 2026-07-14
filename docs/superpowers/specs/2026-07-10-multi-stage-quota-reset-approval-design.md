@@ -325,8 +325,12 @@ sources to render a readable label, but they must not fetch or rank sync runs
 to choose a source.
 
 The frontend decodes both GET and successful PUT approver-config responses with
-the same strict decoder before mutating state. Malformed data fails the
-operation and preserves the prior authoritative configs and source. When a
+the same strict decoder before mutating state. Every config row must be an
+object with positive safe-integer `id`, `directory_source_id`, and
+`approver_user_id`; string department, approver identity, and timestamp fields;
+and a boolean `enabled` field. Every row source must equal the top-level source,
+and a null top-level source requires an empty item list. Malformed data fails
+the operation and preserves the prior authoritative configs and source. When a
 valid response changes `directory_source_id`, the component closes both
 dropdowns, invalidates both request generations, and clears all source-scoped
 department form state, options, candidate results, pagination, and errors
@@ -972,7 +976,9 @@ config save response use:
 ```
 
 `directory_source_id` is `number | null`; the key is always present, including
-when there is no current source or no configured rows.
+when there is no current source or no configured rows. Any non-null value must
+be a positive safe integer, and every fully typed row carries that same source
+id. A null source requires empty `items`.
 
 ### Decisions
 
@@ -1027,15 +1033,19 @@ feedback only.
    participate in source resolution.
 7. Opening the candidate dropdown or changing its search loads page 1 and
    resets prior pagination. Show an explicit accessible load-more command only
-   while API `total` exceeds the number of unique loaded users.
+   while the last validated raw server page is not exhausted, defined by
+   `(page - 1) * page_size + items.length < total`.
 8. Append later pages in server order, deduplicate by local `user_id`, and use a
    request generation so stale search or pagination responses cannot replace or
-   append to current results.
+   append to current results. Display deduplication does not participate in
+   server-page exhaustion.
 9. Validate candidate items and pagination metadata before changing state. The
    response page must equal the requested page; page and page size must be
    positive safe integers; page size must match the request; total must be a
    coherent nonnegative safe integer; and returned item count must fit the
-   declared page and total.
+   declared page and total. An empty requested later page whose raw offset is at
+   or beyond a newly shrunken total is valid and exhausted; a nonempty page at
+   or beyond total remains malformed.
 10. A later-page network or decode error preserves all prior pages and leaves
     load-more enabled to retry the same page. Page/search metadata advances only
     after a valid response.
@@ -1194,10 +1204,14 @@ Cover:
     suppression, search reset to page 1, and stale-response isolation.
 12. Source changes invalidate in-flight department and candidate requests and
     clear all source-scoped form/results state.
-13. GET and PUT approver-config responses share strict decoding; malformed PUT
-    data preserves prior authoritative state and reports save failure.
+13. GET and PUT approver-config responses share strict decoding; malformed
+    rows, field types, ids, timestamps, and source invariants preserve prior
+    authoritative state and report the corresponding load or save failure.
 14. Candidate page mismatch, invalid metadata, and incoherent totals fail
     closed, while a page-2 error preserves page 1 and retries page 2.
+15. Candidate exhaustion uses validated raw page geometry rather than unique
+    display count; duplicate-only final pages stop loading, and an empty later
+    page beyond a shrunken total retains prior results without a retry error.
 
 ### Browser Verification
 

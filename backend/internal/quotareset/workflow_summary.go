@@ -586,7 +586,7 @@ func (s *Service) currentUsableNotificationPeopleForUserIDs(ctx context.Context,
 			continue
 		}
 		member := membersByUserID[user.ID]
-		if !workflowApproverIsCurrentlyUsable(user, member) {
+		if !directoryApproverIsCurrentlyUsable(user, member) {
 			continue
 		}
 		people = append(people, notificationPersonFromCurrentUser(user, member))
@@ -686,10 +686,10 @@ func (s *Service) currentDirectoryMembersForUsers(ctx context.Context, users []*
 			return nil, fmt.Errorf("load current directory notification identities: %w", err)
 		}
 		for _, member := range members {
-			if !workflowMemberIsActive(member) {
+			if !directoryMemberIsActive(member) {
 				continue
 			}
-			user := workflowMemberUser(member, usersByID, usersByEmail)
+			user := directoryMemberUser(member, usersByID, usersByEmail)
 			if user == nil || membersByUserID[user.ID] != nil {
 				continue
 			}
