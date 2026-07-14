@@ -237,25 +237,55 @@ func TestCreateRequestApprovalChainReplacementUsesOneSnapshot(t *testing.T) {
 
 	source := createQuotaResetDirectorySource(t, ctx, client)
 	initialDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-initial", "Department Initial", nil)
-	oldChainDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-old-chain", "Department Old Chain", nil)
-	newChainDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-new-chain", "Department New Chain", nil)
 	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
 	initialApprover := createQuotaResetUser(t, ctx, client, "initial-approver", "initial-approver@example.com", nil, "user")
-	oldChainApprover := createQuotaResetUser(t, ctx, client, "old-chain-approver", "old-chain-approver@example.org", nil, "user")
-	newChainApprover := createQuotaResetUser(t, ctx, client, "new-chain-approver", "new-chain-approver@example.net", nil, "user")
 	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, initialDepartment.ExternalID, &requester.ID)
 	initialApproverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-initial-approver", initialApprover.Email, initialDepartment.ExternalID, &initialApprover.ID)
-	oldChainMember := createQuotaResetMember(t, ctx, client, source.ID, "member-old-chain-approver", oldChainApprover.Email, oldChainDepartment.ExternalID, &oldChainApprover.ID)
-	newChainMember := createQuotaResetMember(t, ctx, client, source.ID, "member-new-chain-approver", newChainApprover.Email, newChainDepartment.ExternalID, &newChainApprover.ID)
 	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, initialDepartment.ExternalID)
 	createQuotaResetMemberDepartment(t, ctx, client, source.ID, initialApproverMember, initialDepartment.ExternalID)
-	createQuotaResetMemberDepartment(t, ctx, client, source.ID, oldChainMember, oldChainDepartment.ExternalID)
-	createQuotaResetMemberDepartment(t, ctx, client, source.ID, newChainMember, newChainDepartment.ExternalID)
 	createQuotaResetApproverConfig(t, ctx, client, source.ID, initialDepartment.ExternalID, initialDepartment.Path, initialApprover.ID)
-	createQuotaResetApproverConfig(t, ctx, client, source.ID, oldChainDepartment.ExternalID, oldChainDepartment.Path, oldChainApprover.ID)
-	createQuotaResetApproverConfig(t, ctx, client, source.ID, newChainDepartment.ExternalID, newChainDepartment.Path, newChainApprover.ID)
+	type chainCandidateSpec struct {
+		departmentID   string
+		departmentName string
+		username       string
+		email          string
+		memberID       string
+	}
+	type chainGeneration struct {
+		departments []*ent.DirectoryDepartment
+		labels      []string
+		approverIDs []int
+	}
+	createGeneration := func(specs []chainCandidateSpec) chainGeneration {
+		generation := chainGeneration{
+			departments: make([]*ent.DirectoryDepartment, 0, len(specs)),
+			labels:      make([]string, 0, len(specs)),
+			approverIDs: make([]int, 0, len(specs)),
+		}
+		for _, spec := range specs {
+			department := createQuotaResetDepartment(t, ctx, client, source.ID, spec.departmentID, spec.departmentName, nil)
+			approver := createQuotaResetUser(t, ctx, client, spec.username, spec.email, nil, "user")
+			member := createQuotaResetMember(t, ctx, client, source.ID, spec.memberID, approver.Email, department.ExternalID, &approver.ID)
+			createQuotaResetMemberDepartment(t, ctx, client, source.ID, member, department.ExternalID)
+			createQuotaResetApproverConfig(t, ctx, client, source.ID, department.ExternalID, department.Path, approver.ID)
+			generation.departments = append(generation.departments, department)
+			generation.labels = append(generation.labels, department.Name)
+			generation.approverIDs = append(generation.approverIDs, approver.ID)
+		}
+		return generation
+	}
+	oldGeneration := createGeneration([]chainCandidateSpec{
+		{departmentID: "department-old-alpha", departmentName: "Old Review Alpha", username: "old-approver-alpha", email: "old-alpha@example.org", memberID: "member-old-alpha"},
+		{departmentID: "department-old-beta", departmentName: "Old Review Beta", username: "old-approver-beta", email: "old-beta@example.org", memberID: "member-old-beta"},
+		{departmentID: "department-old-gamma", departmentName: "Old Review Gamma", username: "old-approver-gamma", email: "old-gamma@example.org", memberID: "member-old-gamma"},
+	})
+	newGeneration := createGeneration([]chainCandidateSpec{
+		{departmentID: "department-new-delta", departmentName: "New Review Delta", username: "new-approver-delta", email: "new-delta@example.net", memberID: "member-new-delta"},
+		{departmentID: "department-new-epsilon", departmentName: "New Review Epsilon", username: "new-approver-epsilon", email: "new-epsilon@example.net", memberID: "member-new-epsilon"},
+		{departmentID: "department-new-zeta", departmentName: "New Review Zeta", username: "new-approver-zeta", email: "new-zeta@example.net", memberID: "member-new-zeta"},
+	})
 	providerRow := createQuotaResetRelayProvider(t, ctx, client)
-	createWorkflowChain(t, ctx, client, providerRow.ID, "42", source.ID, oldChainDepartment)
+	createWorkflowChain(t, ctx, client, providerRow.ID, "42", source.ID, oldGeneration.departments...)
 	provider := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
 	service := NewService(client, fakeProviderResolver(providerRow.ID, provider), NewApproverResolver(client), nil)
 
@@ -302,7 +332,7 @@ func TestCreateRequestApprovalChainReplacementUsesOneSnapshot(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("wait for workflow approval chain query: %v", ctx.Err())
 	}
-	if err := replaceWorkflowApprovalChain(ctx, secondClient, providerRow.ID, source.ID, newChainDepartment); err != nil {
+	if err := replaceWorkflowApprovalChain(ctx, secondClient, providerRow.ID, source.ID, newGeneration.departments...); err != nil {
 		close(releaseResolution)
 		t.Fatalf("replace approval chain: %v", err)
 	}
@@ -318,12 +348,29 @@ func TestCreateRequestApprovalChainReplacementUsesOneSnapshot(t *testing.T) {
 		t.Fatalf("CreateRequest() error = %v", created.err)
 	}
 	nodes := workflowRequestNodes(t, ctx, client, created.request.ID)
-	if len(nodes) != 2 {
-		t.Fatalf("workflow nodes = %#v, want initial node plus one complete configured-chain generation", nodes)
+	if len(nodes) != len(oldGeneration.labels)+1 {
+		t.Fatalf("workflow nodes = %#v, want initial node plus one complete configured-chain generation of %d nodes", nodes, len(oldGeneration.labels))
 	}
-	configured := nodes[1]
-	if configured.Label != oldChainDepartment.Name && configured.Label != newChainDepartment.Name {
-		t.Fatalf("configured node label = %q, want one committed chain generation", configured.Label)
+	gotLabels := make([]string, 0, len(nodes)-1)
+	gotApproverIDs := make([]int, 0, len(nodes)-1)
+	for _, node := range nodes[1:] {
+		approvers := client.QuotaResetRequestNodeApprover.Query().
+			Where(quotaresetrequestnodeapprover.RequestNodeIDEQ(node.ID)).
+			Order(ent.Asc(quotaresetrequestnodeapprover.FieldUserID)).
+			AllX(ctx)
+		if len(approvers) != 1 {
+			t.Fatalf("configured node %q approvers = %#v, want one generation-specific approver", node.Label, approvers)
+		}
+		gotLabels = append(gotLabels, node.Label)
+		gotApproverIDs = append(gotApproverIDs, approvers[0].UserID)
+	}
+	oldSnapshot := reflect.DeepEqual(gotLabels, oldGeneration.labels) && reflect.DeepEqual(gotApproverIDs, oldGeneration.approverIDs)
+	newSnapshot := reflect.DeepEqual(gotLabels, newGeneration.labels) && reflect.DeepEqual(gotApproverIDs, newGeneration.approverIDs)
+	if !oldSnapshot && !newSnapshot {
+		t.Fatalf("workflow mixed approval-chain generations: labels=%#v approver_ids=%#v; old=%#v/%#v new=%#v/%#v",
+			gotLabels, gotApproverIDs,
+			oldGeneration.labels, oldGeneration.approverIDs,
+			newGeneration.labels, newGeneration.approverIDs)
 	}
 }
 
@@ -1218,7 +1265,7 @@ func replaceWorkflowDirectoryGeneration(ctx context.Context, client *ent.Client,
 	return tx.Commit()
 }
 
-func replaceWorkflowApprovalChain(ctx context.Context, client *ent.Client, providerID, sourceID int, department *ent.DirectoryDepartment) error {
+func replaceWorkflowApprovalChain(ctx context.Context, client *ent.Client, providerID, sourceID int, departments ...*ent.DirectoryDepartment) error {
 	tx, err := client.Tx(ctx)
 	if err != nil {
 		return err
@@ -1239,14 +1286,16 @@ func replaceWorkflowApprovalChain(ctx context.Context, client *ent.Client, provi
 	if err != nil {
 		return err
 	}
-	if _, err := tx.QuotaResetApprovalChainNode.Create().
-		SetChainID(chain.ID).
-		SetPosition(0).
-		SetDirectorySourceID(sourceID).
-		SetDepartmentExternalID(department.ExternalID).
-		SetDepartmentDisplayPath(department.Name).
-		Save(ctx); err != nil {
-		return err
+	for position, department := range departments {
+		if _, err := tx.QuotaResetApprovalChainNode.Create().
+			SetChainID(chain.ID).
+			SetPosition(position).
+			SetDirectorySourceID(sourceID).
+			SetDepartmentExternalID(department.ExternalID).
+			SetDepartmentDisplayPath(department.Name).
+			Save(ctx); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
