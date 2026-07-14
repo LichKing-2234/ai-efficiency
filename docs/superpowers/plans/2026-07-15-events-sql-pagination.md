@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Ready for implementation. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
+**Status:** Task 1 complete. Shared authorization/filter SQL, exact historical search semantics, and cloned summary aggregates are implemented and verified; Tasks 2-5 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
 
 ## Global Constraints
 
@@ -63,7 +63,7 @@
 - Consumes: existing `SummaryRequest`, `ListEventsRequest`, `queryFilter`, Ent predicates, and current authorization rules.
 - Produces: `filteredEventsQuery(queryFilter) (*ent.ToolUsageEventQuery, error)`, `eventSearchPredicate(string) predicate.ToolUsageEvent`, and SQL-backed `GetSummary` for Task 2.
 
-- [ ] **Step 1: Add synthetic filter fixtures and failing aggregate/query-shape tests**
+- [x] **Step 1: Add synthetic filter fixtures and failing aggregate/query-shape tests**
 
 Add table-driven tests named `TestEventSummaryAndListShareFilterSemantics` and `TestGetSummaryUsesDatabaseAggregates`. Seed two users, two repositories, bound/unbound checkpoints, three tools, inclusive boundary timestamps, and one match for each `q` field. The filter matrix must be explicit:
 
@@ -81,7 +81,7 @@ Add five more cases with `Q` values `SESSION-NEEDLE`, `EVENT-NEEDLE`, `DEDUPE-NE
 
 Also seed `/private/directory-only-needle/source.jsonl` and assert `q=directory-only-needle` returns no row. Capture Ent SQL and require summary queries to contain `COUNT(` or `GROUP BY`, and never a full entity projection containing `raw_payload`.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -91,7 +91,7 @@ cd backend && go test ./internal/toolusage -run 'TestEventSummaryAndListShareFil
 
 Expected: filter-visible results still pass under the old implementation, but the aggregate query-shape assertion fails because `GetSummary` calls `queryEvents().All()` and counts rows in Go.
 
-- [ ] **Step 3: Implement one authorization/filter query factory and exact SQL search**
+- [x] **Step 3: Implement one authorization/filter query factory and exact SQL search**
 
 Move every predicate out of `queryEvents` into one factory. Keep the PostgreSQL basename expression parameterized and mirror `sourceBasename` fallback order:
 
@@ -106,7 +106,7 @@ The factory validates client and positive actor ID, enforces regular-user self s
 
 `eventSearchPredicate` must OR the three direct string predicates, `HasCommitCheckpointWith(commitcheckpoint.CommitShaContainsFold(q))`, and a PostgreSQL `CASE` expression that strips trailing `/`, takes the final path segment, and then falls back to locator/session. Keep `%` in a bound argument rather than SQL text.
 
-- [ ] **Step 4: Replace Go summary loops with cloned SQL aggregates**
+- [x] **Step 4: Replace Go summary loops with cloned SQL aggregates**
 
 Implement `GetSummary` from the shared query:
 
@@ -120,7 +120,7 @@ err = base.Clone().Order(ent.Asc(toolusageevent.FieldTool)).GroupBy(toolusageeve
 
 Wrap each failure with operation context. Preserve `ToolCounts: []` rather than `null`, alphabetical tool order, and current bound/unbound behavior even when `binding_status` is already present in `base`.
 
-- [ ] **Step 5: Run focused and package tests and verify GREEN**
+- [x] **Step 5: Run focused and package tests and verify GREEN**
 
 Run:
 
@@ -131,7 +131,7 @@ cd backend && go test ./internal/toolusage -count=1
 
 Expected: PASS; captured summary SQL contains only aggregate/count projections, and all five `q` fields retain their visible results.
 
-- [ ] **Step 6: Update the live ledger and commit Task 1**
+- [x] **Step 6: Update the live ledger and commit Task 1**
 
 Mark completed Task 1 steps immediately, then run:
 
