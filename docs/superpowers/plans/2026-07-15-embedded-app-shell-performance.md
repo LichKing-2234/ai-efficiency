@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete and verified. Task 3 implementation and verification are complete; its checkpoint commit is pending. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-3 are complete and verified. Task 4 is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the existing embedded SPA materially faster on cold and repeat visits by serving correct gzip/cache headers and removing inactive locale and chart code from the initial data-loading path, without adding a CDN or a separate frontend release unit.
 
@@ -192,7 +192,7 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 
   Expected: PASS with no untranslated flash, stable pending-switch copy, and existing language controls preserved.
 
-- [ ] **Step 5: Commit Task 3, then record the checkpoint**
+- [x] **Step 5: Commit Task 3, then record the checkpoint**
 
   First check Steps 1-4 and commit the implementation plus those plan updates as `perf(frontend): lazy load locale dictionaries`. Only after that commit succeeds, check Step 5 and create `docs(plan): record embedded delivery task 3`. The task review range includes both commits.
 
