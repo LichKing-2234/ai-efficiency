@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 are complete and task reviews are clean. Task 5 Steps 1-5 are complete; only stacked draft PR delivery remains. This branch is stacked on `docs/performance-contracts-116`.
+**Status:** Complete. Tasks 1-5 are implemented, verified, and review-clean. Draft PR #139 targets `docs/performance-contracts-116`, depends on PR #138, and its backend, frontend, ae-cli, and deploy-static checks pass.
 
 **Goal:** Make the protected-navigation work-item badge and administrator offboarding list fast and bounded while preserving authoritative quota, credential, Directory Sync, Relay disable, and token-revocation behavior.
 
@@ -318,6 +318,6 @@
 
   Commit: `docs(architecture): document work item read model`
 
-- [ ] **Step 6: Push and open the stacked draft PR**
+- [x] **Step 6: Push and open the stacked draft PR**
 
   Push `perf/work-items-119` and create a draft PR whose base is `docs/performance-contracts-116`, body links `#119`, states the stacked dependency on PR #138, and reports exact test evidence. Confirm the PR head/base/state and CI checks from GitHub after creation.
