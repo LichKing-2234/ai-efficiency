@@ -8,7 +8,10 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL, Vue 3 `<script setup lang="ts">`, Pinia, Vite, Vitest, TailwindCSS, Python Playwright role checks.
 
-**Status:** In progress
+**Status:** Verification in progress
+
+**Known Remaining Gaps:** Task 12 completion commits and the final clean-status
+verification are still pending.
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -4405,7 +4408,7 @@ remain intentionally deferred to Task 12.
 - Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
 - Modify: `docs/superpowers/plans/2026-07-10-multi-stage-quota-reset-approval.md`
 
-- [ ] **Step 1: Add deterministic browser workflow coverage**
+- [x] **Step 1: Add deterministic browser workflow coverage**
 
 Create `frontend/e2e_quota_reset_workflow.py` using the existing
 `e2e_role_test.py` Playwright style. It must:
@@ -4448,7 +4451,19 @@ def decision_payload(route):
 Exit non-zero on any assertion and write screenshots only under
 `/tmp/ae-e2e-quota-reset`.
 
-- [ ] **Step 2: Run all focused backend suites**
+Completion evidence (2026-07-14): `frontend/e2e_quota_reset_workflow.py`
+uses only synthetic `example.com` identities and Group Alpha/Beta data, blocks
+all `/api/v1/**` traffic behind deterministic mocks, and passed 5/5 browser
+cases. It covers requester, active approver, future queued approver, and admin
+sessions; exact decision payload validation; two later prior-approval-satisfied
+nodes; keyboard-opened details with focus trap, Escape close, and trigger focus
+restoration; chain reorder; explicit `wecom_group_robot` save; horizontal
+overflow; and control-overlap assertions. The script applies 8-second locator
+and navigation timeouts plus a 60-second process watchdog. With no Vite
+listener it exited non-zero in 1.45s; with Vite it exited zero in 5.96s, and no
+script or Vite process remained afterward.
+
+- [x] **Step 2: Run all focused backend suites**
 
 Run:
 
@@ -4459,7 +4474,12 @@ cd backend && go test -race ./internal/quotareset -run 'TestWorkflowDecisionReje
 
 Expected: PASS.
 
-- [ ] **Step 3: Run the full backend suite**
+Completion evidence (2026-07-14): the focused command passed all three target
+packages (`internal/quotareset` 48.565s, `internal/workitems` 4.105s,
+`internal/handler` 49.355s). The focused race command passed
+`TestWorkflowDecisionRejectsStaleNode` in 3.769s.
+
+- [x] **Step 3: Run the full backend suite**
 
 Run:
 
@@ -4469,19 +4489,28 @@ cd backend && go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 4: Run focused and full frontend suites**
+Completion evidence (2026-07-14): `cd backend && go test ./...` exited 0
+across 73 packages: 32 packages with tests passed and 41 packages reported no
+test files.
+
+- [x] **Step 4: Run focused and full frontend suites**
 
 Run:
 
 ```bash
-cd frontend && npm test -- quota-reset-api quota-reset-approval-settings quota-reset-view work-items-store work-items-view settings-view
+cd frontend && npm test -- quota-reset-api quota-reset-approval-settings quota-reset-view work-items-store work-items-view settings-view use-modal-focus
 cd frontend && npm test
 cd frontend && npm run build
 ```
 
 Expected: all Vitest files pass and the production build succeeds.
 
-- [ ] **Step 5: Run role and quota-reset browser checks**
+Completion evidence (2026-07-14): the focused command, including
+`use-modal-focus`, passed 95 tests across 7 files. `cd frontend && npm test`
+passed 482 tests across 40 files. `cd frontend && npm run build` passed
+`vue-tsc -b` and Vite production compilation with 1,955 modules transformed.
+
+- [x] **Step 5: Run role and quota-reset browser checks**
 
 Start Vite in a persistent terminal:
 
@@ -4500,7 +4529,18 @@ Expected: both scripts exit 0. Inspect desktop and mobile screenshots for
 clipped text, incoherent overlap, empty dialogs, and unstable control sizing.
 Stop the Vite session after verification.
 
-- [ ] **Step 6: Rebuild the source-based development stack**
+Completion evidence (2026-07-14): Vite ran explicitly at
+`http://127.0.0.1:5173`; `npm run test:e2e:role` passed 16/16 assertions and
+`BASE=http://127.0.0.1:5173 python3 e2e_quota_reset_workflow.py` passed 5/5
+cases. Vite was then stopped. Six inspected viewport screenshots are under
+`/tmp/ae-e2e-quota-reset`: three desktop workflow views at 1280x800, one
+requester detail view at 390x844, and admin settings views at both 1280x800 and
+390x844. No clipped decision controls, incoherent overlap, horizontal overflow,
+empty dialog, or unstable control sizing was observed. The existing role
+script emitted non-fatal Vite proxy `ECONNREFUSED` noise for dashboard helper
+requests it does not mock while all role assertions still passed.
+
+- [x] **Step 6: Rebuild the source-based development stack**
 
 Run from the repository root:
 
@@ -4521,7 +4561,15 @@ docker compose -p ai-efficiency --env-file /Users/admin/ai-efficiency/deploy/.en
 Report environment or proxy failures separately; do not mark this step complete
 unless the stack was actually rebuilt and readiness succeeded.
 
-- [ ] **Step 7: Update current architecture and spec status**
+Completion evidence (2026-07-14): the exact source-based Compose command built
+the frontend (1,955 modules), compiled the backend, recreated PostgreSQL,
+Redis, and backend containers, and exited 0. `curl -fsS
+http://localhost:18081/api/v1/health/ready` returned `status: ready` with
+database, Redis, and relay checks all `up`. Compose `ps` showed all three
+containers `Up` and `healthy`, with backend on `127.0.0.1:18081`, PostgreSQL on
+`127.0.0.1:15432`, and Redis on `127.0.0.1:16379`.
+
+- [x] **Step 7: Update current architecture and spec status**
 
 Update `docs/architecture.md`:
 
@@ -4543,7 +4591,17 @@ Change the new spec header to:
 Add an implementation note with the final commit and verification date. Do not
 rewrite the 2026-07-07 historical spec.
 
-- [ ] **Step 8: Record verification progress in this live plan**
+Completion evidence (2026-07-14): `docs/architecture.md` now names the
+2026-07-10 spec as current, keeps the 2026-07-07 design in historical context,
+and documents exact-department initial resolution, provider/group chains,
+normalized workflow ownership, reusable approvals, durable comments,
+current-node Work Items counts, explicit notification adapters, Enterprise
+WeChat Markdown mentions, and the `relay.UserSubscriptionQuotaResetter`
+boundary. The new spec is marked `Current implemented contract` with
+implementation commit `42948d5` and verification date 2026-07-14. The
+2026-07-07 spec was not modified.
+
+- [x] **Step 8: Record verification progress in this live plan**
 
 Check only steps actually completed. Set:
 
@@ -4554,7 +4612,12 @@ Check only steps actually completed. Set:
 Keep browser and compose boxes unchecked until they have real evidence. List any
 remaining gap in English at the top.
 
-- [ ] **Step 9: Run final hygiene checks**
+Completion evidence (2026-07-14): this English live ledger was updated after
+each completed browser, backend, frontend, Compose, and documentation step.
+Browser and Compose boxes were checked only after their commands and evidence
+succeeded; remaining gaps stay explicit at the top.
+
+- [x] **Step 9: Run final hygiene checks**
 
 Run:
 
@@ -4569,6 +4632,16 @@ git status --short
 
 Expected: no whitespace errors, placeholders, real webhook key, or unrelated
 files.
+
+Completion evidence (2026-07-14): `git diff --check` passed. The exact scoped
+`rg` command was run and its matches were reviewed: historical plan prose that
+mentions prior TODO/FIXME scans and existing test fixtures whose query values
+are explicitly prefixed `synthetic-`; no active placeholder or real webhook
+key was present. A changed-line scan for TODO/FIXME, `b1dab`, and robot webhook
+keys returned no matches, and a negative-lookahead scan for non-synthetic robot
+keys returned no matches. The new E2E file contains only `example.com` email
+addresses and Group Alpha/Beta names. `git status --short` listed only the four
+Task 12-owned files.
 
 - [ ] **Step 10: Commit browser coverage and current docs**
 

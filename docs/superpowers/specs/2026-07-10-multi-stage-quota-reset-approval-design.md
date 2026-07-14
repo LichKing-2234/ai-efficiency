@@ -1,7 +1,10 @@
 # Multi-Stage Quota Reset Approval Design
 
 **Date:** 2026-07-10
-**Status:** Approved design; not yet implemented
+**Status:** Current implemented contract
+**Implementation:** Implemented through commit `42948d5` and fully verified on
+2026-07-14. Task 12 browser, Compose, documentation, and final verification
+evidence is recorded in the linked live plan.
 **Scope:** `backend/ent/schema/`, `backend/internal/quotareset/`, `backend/internal/workitems/`, `backend/internal/handler/`, `backend/internal/directorysync/`, `frontend/src/api/`, `frontend/src/components/settings/`, `frontend/src/components/quota-reset/`, `frontend/src/views/QuotaResetView.vue`
 **Related:**
 
@@ -12,9 +15,9 @@
 
 ## Spec Relationship
 
-The 2026-07-07 quota reset approval spec remains the current implemented
-contract until this design is implemented. This design defines the next
-contract and, once implemented, supersedes these parts of the earlier spec:
+The 2026-07-07 quota reset approval spec is the historical predecessor to this
+current implemented contract. This design supersedes these parts of the earlier
+spec:
 
 1. Single-node approval and immediate reset after the first approval.
 2. Upward nearest-configured-department approver resolution.
@@ -27,9 +30,8 @@ continues to own approval orchestration and calls
 `relay.UserSubscriptionQuotaResetter` only after every required node is
 satisfied.
 
-Because this design is not implemented yet, `docs/architecture.md` must continue
-to describe the 2026-07-07 runtime. The implementation change must update
-`docs/architecture.md` and the active execution plan in the same delivery.
+`docs/architecture.md` describes this implemented runtime. The 2026-07-07 spec
+remains unchanged as a point-in-time record of the earlier single-stage design.
 
 ## Data Hygiene
 
@@ -50,19 +52,19 @@ Use synthetic values such as:
 Webhook URLs are credentials when they contain a robot key. Logs, API
 responses, audit metadata, and test failures must redact query-string secrets.
 
-## Current-State Findings
+## Pre-Implementation Findings
 
-The implemented workflow has one snapshotted
+Before this contract was implemented, the workflow had one snapshotted
 `resolved_approver_user_ids` array. Any one resolved approver or an admin can
 approve, and approval immediately starts the quota reset. Approval comments are
 optional, while rejection comments are required.
 
-The implemented department approver settings only allow local users matched to
+The earlier department approver settings only allowed local users matched to
 organization representatives for the selected department. The resolver walks
 each requester department path upward and selects the nearest configured
 department.
 
-The implemented notifier:
+The earlier notifier:
 
 1. Stores one global URL and optional bearer credential.
 2. Infers Enterprise WeChat from the URL host and path.
