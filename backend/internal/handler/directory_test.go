@@ -19,6 +19,7 @@ type fakeDirectoryService struct {
 	disableReq        directorysync.DisableCandidateRequest
 	offboardingParams directorysync.OffboardingCandidateListParams
 	offboardingPage   *directorysync.OffboardingCandidatePage
+	countCall         int
 }
 
 func (f *fakeDirectoryService) ListSources(context.Context) ([]*ent.DirectorySource, error) {
@@ -78,6 +79,7 @@ func (f *fakeDirectoryService) ListOffboardingCandidates(_ context.Context, para
 }
 
 func (f *fakeDirectoryService) CountOffboardingCandidates(context.Context, int) (int, error) {
+	f.countCall++
 	if f.offboardingPage != nil {
 		return f.offboardingPage.Total, nil
 	}

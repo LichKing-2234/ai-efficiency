@@ -1,0 +1,453 @@
+package workitems
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math/rand/v2"
+	"regexp"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	redis "github.com/redis/go-redis/v9"
+)
+
+const countsCacheSchemaVersion = 1
+
+var (
+	ErrCountsCacheMiss = errors.New("work item counts cache miss")
+	cacheNamespaceRE   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
+	releaseLeaseScript = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+end
+return 0`)
+)
+
+type CountsLoadResult struct {
+	Counts    *CountsResponse
+	Cacheable bool
+}
+
+type CountsLoader func(context.Context) (CountsLoadResult, error)
+
+type CountsStore interface {
+	Get(ctx context.Context, key string) ([]byte, error)
+	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
+	TryAcquireLease(ctx context.Context, key, token string, ttl time.Duration) (bool, error)
+	LeaseTTL(ctx context.Context, key string) (time.Duration, error)
+	ReleaseLease(ctx context.Context, key, token string) (bool, error)
+}
+
+type RevisionReader interface {
+	Current(ctx context.Context) (string, error)
+}
+
+type RedisCountsStore struct {
+	client redis.UniversalClient
+}
+
+func NewRedisCountsStore(client redis.UniversalClient) *RedisCountsStore {
+	return &RedisCountsStore{client: client}
+}
+
+func (s *RedisCountsStore) Get(ctx context.Context, key string) ([]byte, error) {
+	value, err := s.client.Get(ctx, key).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return nil, ErrCountsCacheMiss
+	}
+	return value, err
+}
+
+func (s *RedisCountsStore) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return s.client.Set(ctx, key, value, ttl).Err()
+}
+
+func (s *RedisCountsStore) TryAcquireLease(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
+	return s.client.SetNX(ctx, key, token, ttl).Result()
+}
+
+func (s *RedisCountsStore) LeaseTTL(ctx context.Context, key string) (time.Duration, error) {
+	ttl, err := s.client.PTTL(ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	if ttl <= 0 {
+		return 0, ErrCountsCacheMiss
+	}
+	return ttl, nil
+}
+
+func (s *RedisCountsStore) ReleaseLease(ctx context.Context, key, token string) (bool, error) {
+	result, err := releaseLeaseScript.Run(ctx, s.client, []string{key}, token).Int64()
+	if err != nil {
+		return false, err
+	}
+	return result == 1, nil
+}
+
+type CountsCacheOptions struct {
+	Namespace      string
+	CommandTimeout time.Duration
+	RefreshTimeout time.Duration
+	LeaseTTL       time.Duration
+	PollInterval   time.Duration
+	ReleaseTimeout time.Duration
+	RandFloat64    func() float64
+	NewToken       func() string
+	Sleep          func(context.Context, time.Duration) error
+}
+
+type CountsCache struct {
+	store     CountsStore
+	revisions RevisionReader
+	options   CountsCacheOptions
+	flights   countsFlightGroup
+}
+
+type countsValueEnvelope struct {
+	SchemaVersion int             `json:"schema_version"`
+	Counts        *CountsResponse `json:"counts"`
+}
+
+func NewCountsCache(store CountsStore, revisions RevisionReader, options CountsCacheOptions) (*CountsCache, error) {
+	if store == nil {
+		return nil, fmt.Errorf("work item counts store is required")
+	}
+	if revisions == nil {
+		return nil, fmt.Errorf("work item counts revision reader is required")
+	}
+	if !cacheNamespaceRE.MatchString(options.Namespace) {
+		return nil, fmt.Errorf("invalid Redis namespace %q", options.Namespace)
+	}
+	applyCountsCacheDefaults(&options)
+	return &CountsCache{store: store, revisions: revisions, options: options}, nil
+}
+
+func applyCountsCacheDefaults(options *CountsCacheOptions) {
+	if options.CommandTimeout <= 0 {
+		options.CommandTimeout = 100 * time.Millisecond
+	}
+	if options.RefreshTimeout <= 0 {
+		options.RefreshTimeout = 15 * time.Second
+	}
+	if options.LeaseTTL <= 0 {
+		options.LeaseTTL = 20 * time.Second
+	}
+	if options.PollInterval <= 0 {
+		options.PollInterval = 25 * time.Millisecond
+	}
+	if options.ReleaseTimeout <= 0 {
+		options.ReleaseTimeout = 100 * time.Millisecond
+	}
+	if options.RandFloat64 == nil {
+		options.RandFloat64 = rand.Float64
+	}
+	if options.NewToken == nil {
+		options.NewToken = uuid.NewString
+	}
+	if options.Sleep == nil {
+		options.Sleep = sleepWithContext
+	}
+}
+
+func (c *CountsCache) GetOrLoad(ctx context.Context, actorID int, effectiveRole string, loader CountsLoader) (*CountsResponse, error) {
+	if c == nil || c.store == nil || c.revisions == nil {
+		return nil, fmt.Errorf("work item counts cache is not configured")
+	}
+	if actorID <= 0 {
+		return nil, fmt.Errorf("work item counts actor ID must be positive")
+	}
+	if effectiveRole != "user" && effectiveRole != "admin" {
+		return nil, fmt.Errorf("invalid work item counts role %q", effectiveRole)
+	}
+	if loader == nil {
+		return nil, fmt.Errorf("work item counts loader is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	revision, err := c.currentRevision(ctx)
+	if err != nil {
+		return nil, err
+	}
+	key := countsCacheKey(c.options.Namespace, revision, actorID, effectiveRole)
+	counts, hit, readErr := c.read(ctx, key)
+	if hit {
+		return counts, nil
+	}
+
+	return c.flights.Do(ctx, key, c.options.RefreshTimeout, func(sharedCtx context.Context) (*CountsResponse, error) {
+		if readErr != nil {
+			return c.loadAuthoritative(sharedCtx, loader)
+		}
+		return c.loadWithLease(sharedCtx, key, revision, loader)
+	})
+}
+
+func (c *CountsCache) loadWithLease(ctx context.Context, key, revision string, loader CountsLoader) (*CountsResponse, error) {
+	if counts, hit, err := c.read(ctx, key); hit {
+		return counts, nil
+	} else if err != nil {
+		return c.loadAuthoritative(ctx, loader)
+	}
+
+	leaseKey := key + ":lease"
+	for {
+		token := c.options.NewToken()
+		acquired, err := c.acquireLease(ctx, leaseKey, token)
+		if err != nil {
+			return c.loadAuthoritative(ctx, loader)
+		}
+		if acquired {
+			return c.loadAsLeaseHolder(ctx, key, leaseKey, token, revision, loader)
+		}
+
+		for {
+			if counts, hit, err := c.read(ctx, key); hit {
+				return counts, nil
+			} else if err != nil {
+				return c.loadAuthoritative(ctx, loader)
+			}
+			ttl, err := c.leaseTTL(ctx, leaseKey)
+			if errors.Is(err, ErrCountsCacheMiss) || ttl <= 0 {
+				break
+			}
+			if err != nil {
+				return c.loadAuthoritative(ctx, loader)
+			}
+			wait := c.options.PollInterval
+			if ttl < wait {
+				wait = ttl
+			}
+			if err := c.options.Sleep(ctx, wait); err != nil {
+				return nil, err
+			}
+		}
+	}
+}
+
+func (c *CountsCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, token, revision string, loader CountsLoader) (*CountsResponse, error) {
+	defer c.releaseLease(leaseKey, token)
+
+	if counts, hit, err := c.read(ctx, key); hit {
+		return counts, nil
+	} else if err != nil {
+		return c.loadAuthoritative(ctx, loader)
+	}
+
+	result, err := loader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if result.Counts == nil {
+		return nil, fmt.Errorf("work item counts loader returned nil counts")
+	}
+	if !result.Cacheable {
+		return result.Counts, nil
+	}
+
+	currentRevision, err := c.currentRevision(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if currentRevision != revision {
+		return result.Counts, nil
+	}
+	value, err := json.Marshal(countsValueEnvelope{SchemaVersion: countsCacheSchemaVersion, Counts: result.Counts})
+	if err != nil {
+		return nil, fmt.Errorf("encode work item counts cache value: %w", err)
+	}
+	_ = c.set(ctx, key, value, c.valueTTL())
+	return result.Counts, nil
+}
+
+func (c *CountsCache) loadAuthoritative(ctx context.Context, loader CountsLoader) (*CountsResponse, error) {
+	result, err := loader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if result.Counts == nil {
+		return nil, fmt.Errorf("work item counts loader returned nil counts")
+	}
+	return result.Counts, nil
+}
+
+func (c *CountsCache) currentRevision(ctx context.Context) (string, error) {
+	revision, err := c.revisions.Current(ctx)
+	if err != nil {
+		return "", fmt.Errorf("read work item counts revision: %w", err)
+	}
+	parsed, err := uuid.Parse(revision)
+	if err != nil || parsed.String() != revision {
+		return "", fmt.Errorf("read work item counts revision: invalid UUID")
+	}
+	return revision, nil
+}
+
+func (c *CountsCache) read(ctx context.Context, key string) (*CountsResponse, bool, error) {
+	commandCtx, cancel := context.WithTimeout(ctx, c.options.CommandTimeout)
+	defer cancel()
+	value, err := c.store.Get(commandCtx, key)
+	if errors.Is(err, ErrCountsCacheMiss) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	decoder.DisallowUnknownFields()
+	var envelope countsValueEnvelope
+	if err := decoder.Decode(&envelope); err != nil || envelope.SchemaVersion != countsCacheSchemaVersion || !validCounts(envelope.Counts) {
+		return nil, false, nil
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, false, nil
+	}
+	return envelope.Counts, true, nil
+}
+
+func validCounts(counts *CountsResponse) bool {
+	return counts != nil &&
+		counts.QuotaResetApprovalCount >= 0 &&
+		counts.QuotaResetAdminCount >= 0 &&
+		counts.AIAccessSetupCount >= 0 &&
+		counts.OffboardingCount >= 0 &&
+		counts.TotalCount >= 0
+}
+
+func (c *CountsCache) acquireLease(ctx context.Context, key, token string) (bool, error) {
+	commandCtx, cancel := context.WithTimeout(ctx, c.options.CommandTimeout)
+	defer cancel()
+	return c.store.TryAcquireLease(commandCtx, key, token, c.options.LeaseTTL)
+}
+
+func (c *CountsCache) leaseTTL(ctx context.Context, key string) (time.Duration, error) {
+	commandCtx, cancel := context.WithTimeout(ctx, c.options.CommandTimeout)
+	defer cancel()
+	return c.store.LeaseTTL(commandCtx, key)
+}
+
+func (c *CountsCache) set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	commandCtx, cancel := context.WithTimeout(ctx, c.options.CommandTimeout)
+	defer cancel()
+	return c.store.Set(commandCtx, key, value, ttl)
+}
+
+func (c *CountsCache) releaseLease(key, token string) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.options.ReleaseTimeout)
+	defer cancel()
+	_, _ = c.store.ReleaseLease(ctx, key, token)
+}
+
+func (c *CountsCache) valueTTL() time.Duration {
+	random := c.options.RandFloat64()
+	if random < 0 {
+		random = 0
+	} else if random > 1 {
+		random = 1
+	}
+	return 30*time.Second - time.Duration((0.1+0.1*random)*float64(30*time.Second))
+}
+
+func countsCacheKey(namespace, revision string, actorID int, effectiveRole string) string {
+	return fmt.Sprintf("ae:%s:work-items:counts:v1:rev:%s:actor:%d:role:%s", namespace, revision, actorID, effectiveRole)
+}
+
+func sleepWithContext(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+type countsFlightGroup struct {
+	mu    sync.Mutex
+	calls map[string]*countsFlightCall
+}
+
+type countsFlightCall struct {
+	done      chan struct{}
+	cancel    context.CancelFunc
+	waiters   int
+	completed bool
+	counts    *CountsResponse
+	err       error
+}
+
+func (g *countsFlightGroup) Do(ctx context.Context, key string, timeout time.Duration, load func(context.Context) (*CountsResponse, error)) (*CountsResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	g.mu.Lock()
+	if g.calls == nil {
+		g.calls = make(map[string]*countsFlightCall)
+	}
+	if call := g.calls[key]; call != nil {
+		call.waiters++
+		g.mu.Unlock()
+		return g.wait(ctx, key, call)
+	}
+
+	sharedCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	call := &countsFlightCall{done: make(chan struct{}), cancel: cancel, waiters: 1}
+	g.calls[key] = call
+	g.mu.Unlock()
+
+	go func() {
+		counts, err := load(sharedCtx)
+		cancel()
+		g.mu.Lock()
+		call.counts = counts
+		call.err = err
+		call.completed = true
+		if g.calls[key] == call {
+			delete(g.calls, key)
+		}
+		close(call.done)
+		g.mu.Unlock()
+	}()
+
+	return g.wait(ctx, key, call)
+}
+
+func (g *countsFlightGroup) wait(ctx context.Context, key string, call *countsFlightCall) (*CountsResponse, error) {
+	select {
+	case <-call.done:
+		return call.counts, call.err
+	case <-ctx.Done():
+		select {
+		case <-call.done:
+			return call.counts, call.err
+		default:
+		}
+		g.leave(key, call)
+		return nil, ctx.Err()
+	}
+}
+
+func (g *countsFlightGroup) leave(key string, call *countsFlightCall) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if call.completed {
+		return
+	}
+	call.waiters--
+	if call.waiters > 0 {
+		return
+	}
+	if g.calls[key] == call {
+		delete(g.calls, key)
+	}
+	call.cancel()
+}

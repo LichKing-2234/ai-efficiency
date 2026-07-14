@@ -71,9 +71,10 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"conn_max_lifetime": cfg.DB.ConnMaxLifetime,
 		},
 		"redis": map[string]any{
-			"addr":     cfg.Redis.Addr,
-			"password": cfg.Redis.Password,
-			"db":       cfg.Redis.DB,
+			"addr":      cfg.Redis.Addr,
+			"password":  cfg.Redis.Password,
+			"db":        cfg.Redis.DB,
+			"namespace": cfg.Redis.Namespace,
 		},
 		"relay": map[string]any{
 			"provider":         cfg.Relay.Provider,

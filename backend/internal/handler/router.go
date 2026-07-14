@@ -20,6 +20,11 @@ import (
 var prAttributionService prAttributionSettler
 var prUsageService prUsageRefresher
 
+type RouterRuntimeOptions struct {
+	DirectoryService DirectoryAdminService
+	WorkItemsCache   *workitems.CountsCache
+}
+
 func SetPRAttributionService(service prAttributionSettler) {
 	prAttributionService = service
 }
@@ -45,8 +50,12 @@ func SetupRouter(
 	adminSettingsHandler *AdminSettingsHandler,
 	checkpointHandler *CheckpointHandler,
 	healthHandler *HealthHandler,
-	directoryServices ...DirectoryAdminService,
+	runtimeOptions ...RouterRuntimeOptions,
 ) *gin.Engine {
+	var runtime RouterRuntimeOptions
+	if len(runtimeOptions) > 0 {
+		runtime = runtimeOptions[0]
+	}
 	r := gin.New()
 	r.RemoveExtraSlash = true
 	r.Use(gin.Recovery())
@@ -84,13 +93,14 @@ func SetupRouter(
 	var offboardingCounter interface {
 		CountOffboardingCandidates(context.Context, int) (int, error)
 	}
-	if len(directoryServices) > 0 && directoryServices[0] != nil {
-		offboardingCounter = directoryServices[0]
+	if runtime.DirectoryService != nil {
+		offboardingCounter = runtime.DirectoryService
 	}
 	workItemsService := workitems.NewService(entClient, offboardingCounter)
 	if providerHandler != nil {
 		workItemsService = workitems.NewService(entClient, offboardingCounter, userSetupService)
 	}
+	workItemsService.WithCountsCache(runtime.WorkItemsCache)
 	workItemsHandler := NewWorkItemsHandler(workItemsService)
 	var quotaResetHandler *QuotaResetHandler
 	if providerHandler != nil {
@@ -330,10 +340,10 @@ func SetupRouter(
 		}
 	}
 
-	if len(directoryServices) > 0 && directoryServices[0] != nil {
+	if runtime.DirectoryService != nil {
 		directoryGroup := protected.Group("/admin/directory")
 		directoryGroup.Use(auth.RequireAdmin())
-		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(directoryServices[0]))
+		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(runtime.DirectoryService))
 	}
 
 	// Settings — admin only
