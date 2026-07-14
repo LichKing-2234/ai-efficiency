@@ -724,6 +724,98 @@ func TestWorkflowAdminFallbackPreservesMissingRecipientCoverage(t *testing.T) {
 	}
 }
 
+func TestWorkflowNotificationsRevalidateSnapshottedApprovers(t *testing.T) {
+	tests := []struct {
+		name               string
+		configureDirectory func(t *testing.T, fixture *workflowDecisionFixture, source *ent.DirectorySource, department *ent.DirectoryDepartment)
+		wantRecipient      func(fixture *workflowDecisionFixture) *ent.User
+		wantDisplayName    string
+		wantWeComRecipient string
+	}{
+		{
+			name: "all snapshotted approvers unusable routes only current admins",
+			configureDirectory: func(t *testing.T, fixture *workflowDecisionFixture, source *ent.DirectorySource, department *ent.DirectoryDepartment) {
+				inactive := createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "live-approver-alpha", fixture.actorA.Email, department.ExternalID, &fixture.actorA.ID)
+				fixture.client.DirectoryMember.UpdateOneID(inactive.ID).SetStatus("inactive").SaveX(fixture.ctx)
+				createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "live-approver-beta", fixture.actorB.Email, department.ExternalID, &fixture.actorB.ID)
+				fixture.client.User.UpdateOneID(fixture.actorB.ID).SetTokenValidAfter(time.Now().UTC()).SaveX(fixture.ctx)
+			},
+			wantRecipient:      func(fixture *workflowDecisionFixture) *ent.User { return fixture.admin },
+			wantDisplayName:    "live-admin",
+			wantWeComRecipient: "live-admin",
+		},
+		{
+			name: "one snapshotted approver usable routes only that approver",
+			configureDirectory: func(t *testing.T, fixture *workflowDecisionFixture, source *ent.DirectorySource, department *ent.DirectoryDepartment) {
+				createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "live-approver-alpha", fixture.actorA.Email, department.ExternalID, &fixture.actorA.ID)
+				inactive := createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "live-approver-beta", fixture.actorB.Email, department.ExternalID, &fixture.actorB.ID)
+				fixture.client.DirectoryMember.UpdateOneID(inactive.ID).SetStatus("inactive").SaveX(fixture.ctx)
+			},
+			wantRecipient:      func(fixture *workflowDecisionFixture) *ent.User { return fixture.actorA },
+			wantDisplayName:    "live-approver-alpha",
+			wantWeComRecipient: "live-approver-alpha",
+		},
+		{
+			name: "usable approver without WeCom id does not trigger admin fallback",
+			configureDirectory: func(t *testing.T, fixture *workflowDecisionFixture, source *ent.DirectorySource, department *ent.DirectoryDepartment) {
+				member := createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "", fixture.actorA.Email, department.ExternalID, &fixture.actorA.ID)
+				fixture.client.DirectoryMember.UpdateOneID(member.ID).SetDisplayName("Live Approver Alpha").SaveX(fixture.ctx)
+				inactive := createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "live-approver-beta", fixture.actorB.Email, department.ExternalID, &fixture.actorB.ID)
+				fixture.client.DirectoryMember.UpdateOneID(inactive.ID).SetStatus("inactive").SaveX(fixture.ctx)
+			},
+			wantRecipient:   func(fixture *workflowDecisionFixture) *ent.User { return fixture.actorA },
+			wantDisplayName: "Live Approver Alpha",
+		},
+	}
+
+	for _, event := range []NotificationEvent{NotificationNodeActivated, NotificationCancelled} {
+		for _, tt := range tests {
+			t.Run(string(event)+"/"+tt.name, func(t *testing.T) {
+				fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+				fixture.replaceApproverIDs(t, 0, fixture.actorA.ID, fixture.actorB.ID)
+
+				source := createQuotaResetDirectorySource(t, fixture.ctx, fixture.client)
+				department := createQuotaResetDepartment(t, fixture.ctx, fixture.client, source.ID, "department-live", "Department Live", nil)
+				createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "live-admin", fixture.admin.Email, department.ExternalID, &fixture.admin.ID)
+				tt.configureDirectory(t, fixture, source, department)
+
+				notificationContext, err := fixture.service.notificationContextForRequest(
+					fixture.ctx,
+					fixture.request.ID,
+					fixture.nodes[0].ID,
+					event,
+				)
+				if err != nil {
+					t.Fatalf("notificationContextForRequest() error = %v", err)
+				}
+				wantRecipient := tt.wantRecipient(fixture)
+				if len(notificationContext.Recipients) != 1 || notificationContext.Recipients[0].UserID != wantRecipient.ID {
+					t.Fatalf("recipients = %#v, want only user %d", notificationContext.Recipients, wantRecipient.ID)
+				}
+				recipient := notificationContext.Recipients[0]
+				if recipient.DisplayName != tt.wantDisplayName || recipient.NotificationIDs["wecom"] != tt.wantWeComRecipient {
+					t.Fatalf("live recipient = %#v, want display name %q and WeCom id %q", recipient, tt.wantDisplayName, tt.wantWeComRecipient)
+				}
+				if notificationContext.CurrentNode == nil || notificationContext.CurrentNode.AdminFallback {
+					t.Fatalf("current node = %#v, want immutable non-fallback snapshot", notificationContext.CurrentNode)
+				}
+				if len(notificationContext.CurrentNode.Approvers) != 2 {
+					t.Fatalf("current node approvers = %#v, want two immutable snapshots", notificationContext.CurrentNode.Approvers)
+				}
+				wantSnapshotNames := map[int]string{
+					fixture.actorA.ID: fixture.actorA.Username,
+					fixture.actorB.ID: fixture.actorB.Username,
+				}
+				for _, approver := range notificationContext.CurrentNode.Approvers {
+					if approver.DisplayName != wantSnapshotNames[approver.UserID] || len(approver.NotificationIDs) != 0 {
+						t.Fatalf("current node approver = %#v, want unchanged audit snapshot", approver)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestCurrentNotificationPeopleQueriesOnlyPotentialDirectoryMatches(t *testing.T) {
 	ctx := context.Background()
 	client, dsn := testdb.OpenWithDSN(t)
@@ -1066,6 +1158,10 @@ func TestNotificationFailurePreservesRenderedRecipientCoverage(t *testing.T) {
 			SetNotificationIds(notificationIDs).
 			SaveX(fixture.ctx)
 	}
+	source := createQuotaResetDirectorySource(t, fixture.ctx, fixture.client)
+	department := createQuotaResetDepartment(t, fixture.ctx, fixture.client, source.ID, "department-coverage", "Department Coverage", nil)
+	createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "approver-alpha-wecom-id", fixture.actorA.Email, department.ExternalID, &fixture.actorA.ID)
+	createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "all", fixture.actorB.Email, department.ExternalID, &fixture.actorB.ID)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

@@ -109,8 +109,9 @@ execution:
    contains that actor.
 9. Require a comment for every manual approval and rejection.
 10. Preserve immutable request, node, approver, decision, and identity snapshots
-    for future audit tooling.
-11. Notify only the currently active node and mention its responsible users.
+    for authorization, UI, and future audit tooling.
+11. Notify only the currently active node and resolve its delivery recipients
+    from current directory and access facts without mutating those snapshots.
 12. Provide explicit, preset notification channel adapters, beginning with
     Enterprise WeChat group robot and generic JSON webhook.
 13. Preserve admin visibility and current-node fallback without allowing an
@@ -149,11 +150,11 @@ execution:
 | Approval reuse | A manual approval satisfies every later node containing the same actor |
 | Decision comment | Required for approve and reject |
 | Admin behavior | Admin may act on the current node only and cannot skip the chain |
-| Snapshot timing | Entire workflow and notification identities snapshot when the request is created |
-| Config changes | Affect new requests only |
+| Snapshot timing | Entire workflow and notification identities snapshot when the request is created for authorization, UI, and audit |
+| Config and directory changes | Approval configuration changes affect new workflow snapshots only; current directory identity and access changes are re-evaluated for node-activation and cancellation delivery |
 | Notification templates | Code-owned preset per channel |
 | Enterprise WeChat format | Preset `markdown` with `<@userid>` mentions |
-| Notification routing | Current active node only; skipped and pre-satisfied nodes produce no delivery |
+| Notification routing | Current active node only; activation and cancellation use currently usable snapshotted users or current admins exclusively; skipped and pre-satisfied nodes produce no delivery |
 | Audit | Normalized current state plus append-only request events |
 
 ## Approaches Considered
@@ -398,7 +399,7 @@ Fields:
 | `label` | string | Readable snapshot |
 | `department_snapshots` | JSON array | Non-null, defaults to `[]`; explicit nil containers and nil element maps fail Ent schema validation |
 | `status` | enum | See node state model |
-| `admin_fallback_required` | bool | No currently usable normal candidate |
+| `admin_fallback_required` | bool | Immutable creation-time fact that no normal candidate was usable when the workflow was resolved |
 | `satisfied_by_decision_id` | nullable int | Manual decision satisfying this node |
 | `activated_at` | nullable time | |
 | `completed_at` | nullable time | |
@@ -441,6 +442,11 @@ Fields:
 | `created_at` | time | |
 
 Every field is immutable after insert.
+
+These rows, including their display names, emails, and notification ids, remain
+the authorization, UI-summary, and audit snapshots. Notification delivery does
+not rewrite them. Node activation and cancellation use their immutable user ids
+as the candidate set, then resolve current delivery people separately.
 
 Omitted setters receive fresh empty defaults for each create. Explicit nil
 containers are rejected before create, while empty non-nil arrays and objects
@@ -570,8 +576,10 @@ For each enabled chain node in position order:
    `admin_fallback_required=true`.
 
 The full chain and all normal candidate identities are immutable after request
-creation. Later admin configuration and Directory Sync changes affect only new
-requests.
+creation. Later admin configuration changes affect only new requests. Directory
+Sync and local access changes do not alter existing workflow authorization or
+UI/audit snapshots, but they are re-evaluated when resolving activation and
+cancellation delivery recipients.
 
 Admin authorization is evaluated at decision time because admin roles may
 legitimately change. Admins are not inserted into every node's normal approver
@@ -671,8 +679,11 @@ Rules:
    later node's normal approver snapshot.
 4. `admin_override=true` is recorded when the actor was not a normal candidate
    for the current node.
-5. When a node has no currently usable normal approver, notification targets
-   current admins with resolvable recipient ids.
+5. For node activation and cancellation, re-evaluate the immutable snapshotted
+   normal user ids against the current successful directory snapshot and local
+   access state. If any remain usable, target only those current people. If none
+   remain usable, target current admins exclusively, regardless of the node's
+   immutable creation-time `admin_fallback_required` value.
 6. Normal nodes with usable candidates do not proactively mention admins.
 
 ## Notification Architecture
@@ -771,11 +782,24 @@ Rendering rules:
    and action URL.
 8. Never send a separate mention-only message.
 
-The recipient resolver uses channel-specific notification identities captured
-from the current directory member. The Enterprise WeChat adapter supports the
-current deployment's member external-id mapping and may prefer an explicit
-allowlisted `member.metadata.wecom_userid` mapping when present. Future channel
-adapters add their own resolver without changing workflow state.
+For node activation and cancellation, the recipient resolver starts from the
+immutable current-node approver user ids but derives delivery people from the
+current successful directory snapshot and current local access state. It uses
+the same usability predicate as workflow creation: the user must have an active
+current directory member, must not be the requester, and must have neither
+`relay_disabled_at` nor `token_valid_after` set. A usable approver remains the
+normal recipient even when no channel recipient id is available; missing ids
+produce coverage output rather than admin fallback. If no snapshotted user is
+currently usable, delivery switches to current admins only and never combines
+stale normal users with admins. Duplicate user ids are removed.
+
+Live delivery people receive their current display name, email, and
+channel-specific notification identities. The immutable approver rows continue
+to provide authorization, UI, and audit summaries. The Enterprise WeChat
+adapter supports the current deployment's member external-id mapping and may
+prefer an explicit allowlisted `member.metadata.wecom_userid` mapping when
+present. Future channel adapters add their own resolver without changing
+workflow state.
 
 ### Generic Webhook Preset
 
@@ -986,6 +1010,8 @@ Legacy v1 requests retain current count semantics.
 | Actor already approved an active earlier node | Later matching nodes are pre-satisfied |
 | Stale node decision | Return `409 workflow_advanced` with latest summary |
 | Concurrent decisions | First committed decision wins |
+| Some snapshotted node approvers become unusable before activation/cancellation delivery | Notify only the snapshotted approvers that remain currently usable |
+| Every snapshotted node approver becomes unusable before activation/cancellation delivery | Notify current admins exclusively without changing workflow snapshots or authorization |
 | Notification recipient id missing | Send without that mention and return/log coverage warning |
 | Notification delivery fails | Record event; do not change workflow |
 | Reset fails | Preserve completed approvals and allow authorized retry |
@@ -1102,8 +1128,10 @@ separately from deterministic unit tests.
 8. Existing requests keep their original behavior.
 9. Notifications identify requester, teams, subscription group, reason,
    current node, progress, and action URL.
-10. Enterprise WeChat notifications mention current approvers using synchronized
-    recipient ids.
+10. Enterprise WeChat activation and cancellation notifications revalidate
+    snapshotted approvers and mention currently usable recipients using current
+    synchronized ids, falling back exclusively to current admins only when no
+    normal approver remains usable.
 11. Automatically satisfied nodes do not produce duplicate notifications.
 12. Admins explicitly choose a preset notification channel type.
 13. Work Items counts represent only actionable current work.

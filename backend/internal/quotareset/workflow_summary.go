@@ -466,20 +466,14 @@ func (s *Service) notificationRequester(ctx context.Context, request *ent.QuotaR
 func (s *Service) notificationRecipients(ctx context.Context, request *ent.QuotaResetRequest, event NotificationEvent, currentNode *NotificationNode, completionDecision *ent.QuotaResetRequestDecision, approversByUser map[int]NotificationPerson, requester NotificationPerson) ([]NotificationPerson, error) {
 	switch event {
 	case NotificationNodeActivated:
-		if currentNode != nil && currentNode.AdminFallback {
-			return s.currentAdminNotificationPeople(ctx)
-		}
 		if currentNode != nil {
-			return append([]NotificationPerson(nil), currentNode.Approvers...), nil
+			return s.currentNodeNotificationPeople(ctx, request.RequesterUserID, currentNode)
 		}
 	case NotificationRejected, NotificationResetSucceeded:
 		return []NotificationPerson{requester}, nil
 	case NotificationCancelled:
-		if currentNode != nil && currentNode.AdminFallback {
-			return s.currentAdminNotificationPeople(ctx)
-		}
 		if currentNode != nil {
-			return append([]NotificationPerson(nil), currentNode.Approvers...), nil
+			return s.currentNodeNotificationPeople(ctx, request.RequesterUserID, currentNode)
 		}
 		return s.currentNotificationPeopleForUserIDs(ctx, request.ResolvedApproverUserIds)
 	case NotificationResetFailed:
@@ -510,6 +504,21 @@ func (s *Service) notificationRecipients(ctx context.Context, request *ent.Quota
 		return nil, nil
 	}
 	return []NotificationPerson{}, nil
+}
+
+func (s *Service) currentNodeNotificationPeople(ctx context.Context, requesterUserID int, node *NotificationNode) ([]NotificationPerson, error) {
+	userIDs := make([]int, 0, len(node.Approvers))
+	for _, approver := range node.Approvers {
+		userIDs = append(userIDs, approver.UserID)
+	}
+	approvers, err := s.currentUsableNotificationPeopleForUserIDs(ctx, userIDs, requesterUserID)
+	if err != nil {
+		return nil, err
+	}
+	if len(approvers) > 0 {
+		return approvers, nil
+	}
+	return s.currentAdminNotificationPeople(ctx)
 }
 
 func workflowCompletionDecision(request *ent.QuotaResetRequest, decisions []*ent.QuotaResetRequestDecision) *ent.QuotaResetRequestDecision {
@@ -545,6 +554,37 @@ func (s *Service) currentAdminNotificationPeople(ctx context.Context) ([]Notific
 }
 
 func (s *Service) currentNotificationPeopleForUserIDs(ctx context.Context, userIDs []int) ([]NotificationPerson, error) {
+	users, err := s.currentNotificationUsersForUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	return s.currentNotificationPeople(ctx, users)
+}
+
+func (s *Service) currentUsableNotificationPeopleForUserIDs(ctx context.Context, userIDs []int, requesterUserID int) ([]NotificationPerson, error) {
+	users, err := s.currentNotificationUsersForUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	membersByUserID, err := s.currentDirectoryMembersForUsers(ctx, users)
+	if err != nil {
+		return nil, err
+	}
+	people := make([]NotificationPerson, 0, len(users))
+	for _, user := range users {
+		if user == nil || user.ID == requesterUserID {
+			continue
+		}
+		member := membersByUserID[user.ID]
+		if !workflowApproverIsCurrentlyUsable(user, member) {
+			continue
+		}
+		people = append(people, notificationPersonFromCurrentUser(user, member))
+	}
+	return people, nil
+}
+
+func (s *Service) currentNotificationUsersForUserIDs(ctx context.Context, userIDs []int) ([]*ent.User, error) {
 	orderedIDs := make([]int, 0, len(userIDs))
 	seen := make(map[int]struct{}, len(userIDs))
 	for _, userID := range userIDs {
@@ -558,7 +598,7 @@ func (s *Service) currentNotificationPeopleForUserIDs(ctx context.Context, userI
 		orderedIDs = append(orderedIDs, userID)
 	}
 	if len(orderedIDs) == 0 {
-		return []NotificationPerson{}, nil
+		return []*ent.User{}, nil
 	}
 	users, err := s.client.User.Query().Where(entuser.IDIn(orderedIDs...)).All(ctx)
 	if err != nil {
@@ -574,11 +614,25 @@ func (s *Service) currentNotificationPeopleForUserIDs(ctx context.Context, userI
 			orderedUsers = append(orderedUsers, user)
 		}
 	}
-	return s.currentNotificationPeople(ctx, orderedUsers)
+	return orderedUsers, nil
 }
 
 func (s *Service) currentNotificationPeople(ctx context.Context, users []*ent.User) ([]NotificationPerson, error) {
+	membersByUserID, err := s.currentDirectoryMembersForUsers(ctx, users)
+	if err != nil {
+		return nil, err
+	}
 	people := make([]NotificationPerson, 0, len(users))
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		people = append(people, notificationPersonFromCurrentUser(user, membersByUserID[user.ID]))
+	}
+	return people, nil
+}
+
+func (s *Service) currentDirectoryMembersForUsers(ctx context.Context, users []*ent.User) (map[int]*ent.DirectoryMember, error) {
 	usersByID := make(map[int]*ent.User, len(users))
 	usersByEmail := make(map[string]*ent.User, len(users))
 	requestedUserIDs := make([]int, 0, len(users))
@@ -632,19 +686,16 @@ func (s *Service) currentNotificationPeople(ctx context.Context, users []*ent.Us
 			membersByUserID[user.ID] = member
 		}
 	}
-	for _, user := range users {
-		if user == nil {
-			continue
-		}
-		member := membersByUserID[user.ID]
-		people = append(people, NotificationPerson{
-			UserID:          user.ID,
-			DisplayName:     firstNonEmptyQuotaReset(requesterMemberDisplayName(member), user.Username),
-			Email:           user.Email,
-			NotificationIDs: notificationIDsForMember(member),
-		})
+	return membersByUserID, nil
+}
+
+func notificationPersonFromCurrentUser(user *ent.User, member *ent.DirectoryMember) NotificationPerson {
+	return NotificationPerson{
+		UserID:          user.ID,
+		DisplayName:     firstNonEmptyQuotaReset(requesterMemberDisplayName(member), user.Username),
+		Email:           user.Email,
+		NotificationIDs: notificationIDsForMember(member),
 	}
-	return people, nil
 }
 
 func (s *Service) notificationActionURL(requestID int) string {

@@ -155,10 +155,7 @@ func (r *WorkflowResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 			membersByExternalID[externalID] = member
 		}
 		user := workflowMemberUser(member, usersByID, usersByEmail)
-		if user == nil {
-			continue
-		}
-		if !workflowMemberIsActive(member) || user.RelayDisabledAt != nil || user.TokenValidAfter != nil {
+		if !workflowApproverIsCurrentlyUsable(user, member) {
 			continue
 		}
 		if existing := activeMembersByUserID[user.ID]; existing == nil || member.ID < existing.ID {
@@ -362,7 +359,7 @@ func usableConfiguredApprovers(userIDs []int, facts *workflowDirectoryFacts, req
 		}
 		user := facts.usersByID[userID]
 		member := facts.activeMembersByUserID[userID]
-		if user == nil || member == nil || user.RelayDisabledAt != nil || user.TokenValidAfter != nil {
+		if !workflowApproverIsCurrentlyUsable(user, member) {
 			continue
 		}
 		candidates = append(candidates, workflowApproverCandidate{user: user, member: member})
@@ -378,7 +375,7 @@ func usableRepresentativeApprovers(members []*ent.DirectoryMember, facts *workfl
 			continue
 		}
 		user := workflowMemberUser(member, facts.usersByID, facts.usersByEmail)
-		if user == nil || user.ID == requesterUserID || user.RelayDisabledAt != nil || user.TokenValidAfter != nil {
+		if user == nil || user.ID == requesterUserID || !workflowApproverIsCurrentlyUsable(user, member) {
 			continue
 		}
 		if _, ok := seen[user.ID]; ok {
@@ -430,6 +427,13 @@ func mergeResolvedApprovers(approvers *[]ResolvedNodeApprover, candidates []work
 
 func workflowMemberIsActive(member *ent.DirectoryMember) bool {
 	return member != nil && strings.EqualFold(strings.TrimSpace(member.Status), "active")
+}
+
+func workflowApproverIsCurrentlyUsable(user *ent.User, member *ent.DirectoryMember) bool {
+	return user != nil &&
+		workflowMemberIsActive(member) &&
+		user.RelayDisabledAt == nil &&
+		user.TokenValidAfter == nil
 }
 
 func workflowMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) *ent.User {
