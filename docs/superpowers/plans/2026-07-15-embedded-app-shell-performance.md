@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 are complete and verified. Task 5 Steps 1-3 are complete; Step 4 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 are complete and verified. Task 5 Steps 1-4 are complete; Step 5 is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the existing embedded SPA materially faster on cold and repeat visits by serving correct gzip/cache headers and removing inactive locale and chart code from the initial data-loading path, without adding a CDN or a separate frontend release unit.
 
@@ -310,7 +310,7 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 
   **Review evidence:** final SPEC review passed with 0 Critical, 0 Important, and 0 Minor findings. Final standards review approved delivery with 0 Critical, 0 Important, and 3 non-blocking Minor follow-ups; no required fix or re-review remained under this step's gate.
 
-- [ ] **Step 4: Commit documentation, then record the checkpoint**
+- [x] **Step 4: Commit documentation, then record the checkpoint**
 
   First check Steps 1-3 and commit architecture plus review evidence as `docs(architecture): document embedded app delivery`. Only after that commit succeeds, check Step 4 and create `docs(plan): record embedded delivery verification`.
 
