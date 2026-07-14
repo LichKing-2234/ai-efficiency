@@ -4095,6 +4095,34 @@ scope scans were clean. The final candidate call remains exactly
 SPEC review fix commit evidence: `c4265c7` (`fix(frontend): resolve current
 quota reset directory source`).
 
+Task 10 SPEC re-review follow-up (2026-07-14): **Complete.**
+
+- [x] Add interaction coverage for candidate-error versus destructive-save
+  priority, in-flight candidate invalidation, and successful-save cleanup.
+- [x] Capture focused RED before changing production code.
+- [x] Prioritize operation-level save errors and invalidate candidate feedback
+  and requests when a save starts.
+- [x] Run focused settings tests, project typecheck, full frontend tests, and
+  hygiene scans.
+- [x] Commit the SPEC re-review fix separately.
+
+SPEC re-review RED evidence: `cd frontend && npm test --
+quota-reset-approval-settings settings-view` exited 1 with 2 expected failures
+and 43 passing tests. A prior synthetic candidate 503 hid the later
+chain-reference 409 detail, and an in-flight candidate dropdown/request stayed
+active after destructive save began. The successful-save cleanup regression
+already passed through the existing form reset path.
+
+SPEC re-review GREEN evidence: the same focused command passed both files and
+all 45 tests, preserving the 42 prior Task 10 interactions. `cd frontend && npx
+vue-tsc -b` exited 0 with no diagnostics, and `cd frontend && npm test` passed
+all 39 files / 456 tests. `git diff --check` and changed-file TODO/FIXME,
+real-data, raw-secret, legacy unmatched-representative, and Task 11 scope scans
+were clean.
+
+SPEC re-review fix commit evidence: `70c89d3` (`fix(frontend): prioritize quota
+reset save errors`).
+
 ---
 
 ### Task 11: Add Node Timeline and Mandatory Decision Comments
