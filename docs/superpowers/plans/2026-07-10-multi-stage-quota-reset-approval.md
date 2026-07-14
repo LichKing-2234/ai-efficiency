@@ -4840,6 +4840,27 @@ unused service field was removed. Production, test, and current-spec changes are
 commit `7a7e012` (`fix(backend): snapshot quota reset requester
 transactionally`); this ledger update is committed separately.
 
+Final quality-review evidence (2026-07-15): the fake relay provider now records
+and varies subscription results by relay user id. Before the compare-and-retry
+fix, changing binding from `1001` to `2002` persisted the old account's group
+snapshot, a new binding without group `42` still created and reset a request,
+and repeated binding churn created a request on its first attempt (`go test
+./internal/quotareset -run
+'TestCreateRequest(RevalidatesRequesterRelayBindingInsideWorkflowSnapshot|StopsAfterRepeatedRequesterRelayBindingChurn)'
+-count=1 -v`, exit 1, `4.504s`). Creation now compares the relay id used for
+subscription preflight with the repeatable-read transaction user, rolls back on
+mismatch, and retries the complete preflight at most three times through a
+private sentinel. The focused relay retry tests passed (`1.418s`); all Task 13
+directory, chain, relay, and churn tests passed (`1.949s`); the complete
+quotareset package passed (`40.418s`); and full backend tests passed, including
+`internal/quotareset 66.439s`. `go vet ./internal/quotareset` and `git diff
+--check` exited 0. The missing-group retry returned `ErrInactiveSubscription`
+with zero request/reset, missing mapping retained `ErrNoRelayMapping`, and the
+bounded churn case made exactly three subscription lookups before returning an
+explicit wrapped error. Code, tests, and current-spec changes are commit
+`f2d2769` (`fix(backend): align relay preflight with workflow snapshot`); this
+ledger update is committed separately.
+
 ### Task 14: Revalidate Notification Recipients When a Node Activates
 
 **Files:**
