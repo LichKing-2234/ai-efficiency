@@ -8,10 +8,14 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL, Vue 3 `<script setup lang="ts">`, Pinia, Vite, Vitest, TailwindCSS, Python Playwright role checks.
 
-**Status:** Verification in progress
+**Status:** Complete
 
-**Known Remaining Gaps:** Task 12 completion commits and the final clean-status
-verification are still pending.
+**Known Remaining Gaps:** None.
+
+**Accepted Residual:** The existing role E2E script passed all assertions but
+logged non-fatal Vite proxy `ECONNREFUSED` messages for dashboard helper
+requests outside its mock set. The quota-reset browser suite intercepts every
+`/api/v1/**` request and has no equivalent live-backend dependency.
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -4635,15 +4639,16 @@ files.
 
 Completion evidence (2026-07-14): `git diff --check` passed. The exact scoped
 `rg` command was run and its matches were reviewed: historical plan prose that
-mentions prior TODO/FIXME scans and existing test fixtures whose query values
+mentions prior task-marker scans and existing test fixtures whose query values
 are explicitly prefixed `synthetic-`; no active placeholder or real webhook
-key was present. A changed-line scan for TODO/FIXME, `b1dab`, and robot webhook
-keys returned no matches, and a negative-lookahead scan for non-synthetic robot
-keys returned no matches. The new E2E file contains only `example.com` email
+key was present. A changed-line scan for task markers, the known placeholder
+identifier, and robot webhook keys returned no matches, and a negative-lookahead
+scan for non-synthetic robot keys returned no matches. The new E2E file contains
+only `example.com` email
 addresses and Group Alpha/Beta names. `git status --short` listed only the four
 Task 12-owned files.
 
-- [ ] **Step 10: Commit browser coverage and current docs**
+- [x] **Step 10: Commit browser coverage and current docs**
 
 ```bash
 git add frontend/e2e_quota_reset_workflow.py
@@ -4655,7 +4660,12 @@ git add docs/architecture.md \
 git commit -m "docs(architecture): document multi-stage quota reset approvals"
 ```
 
-- [ ] **Step 11: Mark the plan complete only after every step has evidence**
+Completion evidence (2026-07-14): browser coverage was committed as `f628483`
+(`test(frontend): cover quota reset workflow in browser`). Current architecture,
+spec status, and the in-progress verification ledger were committed as
+`a37e5aa` (`docs(architecture): document multi-stage quota reset approvals`).
+
+- [x] **Step 11: Mark the plan complete only after every step has evidence**
 
 Record final test counts, browser screenshots, compose health result, and commit
 ids in the plan's completion note. Check every completed step, set:
@@ -4670,3 +4680,34 @@ Then commit only the live ledger update:
 git add docs/superpowers/plans/2026-07-10-multi-stage-quota-reset-approval.md
 git commit -m "docs(plan): complete quota reset workflow implementation"
 ```
+
+Final completion evidence (2026-07-14):
+
+- Focused backend: 3/3 packages passed; the stale-node race regression passed.
+- Full backend: 73 packages completed, with 32 tested packages passing and 41
+  packages reporting no test files.
+- Focused frontend: 7/7 files and 95/95 tests passed, including
+  `use-modal-focus`.
+- Full frontend: 40/40 files and 482/482 tests passed; `vue-tsc -b` and the
+  1,955-module Vite production build passed.
+- Browser: role E2E passed 16/16 assertions and quota-reset E2E passed 5/5
+  cases. The quota-reset script's no-server path exited non-zero in 1.45s and
+  its healthy path exited zero in 5.96s; stale PID 60330 was terminated and no
+  script or Vite process remained.
+- Screenshots: `/tmp/ae-e2e-quota-reset/01-active-approver-desktop-1280x800.png`,
+  `02-required-comment-desktop-1280x800.png`,
+  `03-reused-approval-desktop-1280x800.png`,
+  `04-requester-detail-mobile-390x844.png`,
+  `05-admin-settings-desktop-1280x800.png`, and
+  `06-admin-settings-mobile-390x844.png` were inspected with no horizontal
+  overflow, incoherent control overlap, clipped decision controls, empty
+  dialogs, or unstable control sizing.
+- Compose: the source image rebuilt and recreated all services; readiness
+  returned `ready` with database, Redis, and relay checks `up`; backend,
+  PostgreSQL, and Redis all reported `healthy` in Compose `ps`.
+- Hygiene: `git diff --check`, changed-line marker/secret checks, synthetic-only
+  webhook classification, example-data review, and owned-file status review
+  passed.
+- Implementation baseline `42948d5`, browser commit `f628483`, and current-docs
+  commit `a37e5aa` capture the implementation and Task 12 deliverables. This
+  completion note is committed separately as required.
