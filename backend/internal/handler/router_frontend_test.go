@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/web"
+	"github.com/gin-gonic/gin"
 )
 
 func TestSetupRouterServesEmbeddedFrontendAtRoot(t *testing.T) {
@@ -105,28 +107,54 @@ func TestSetupRouterOAuthProtocolAndAPICacheIsolation(t *testing.T) {
 	oauthServer := oauth.NewServer()
 	oauthHandler := oauth.NewHandler(oauthServer, "http://localhost:18081", nil)
 	env := setupTestEnvWithOAuth(t, oauthHandler)
+	env.router.GET("/api/v1/frontend-policy-sentinel", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.JSON(http.StatusOK, gin.H{"policy": "handler"})
+	})
 	cases := []struct {
-		name        string
-		method      string
-		target      string
-		body        string
-		contentType string
-		token       string
+		name             string
+		method           string
+		target           string
+		body             string
+		contentType      string
+		token            string
+		wantStatus       int
+		wantContentType  string
+		wantBodyContains []string
+		wantCacheControl string
 	}{
-		{name: "invalid authorize", method: http.MethodGet, target: "/oauth/authorize?response_type=token"},
-		{name: "token", method: http.MethodPost, target: "/oauth/token", body: "grant_type=unsupported", contentType: "application/x-www-form-urlencoded"},
-		{name: "device code", method: http.MethodPost, target: "/oauth/device/code", body: "client_id=unknown", contentType: "application/x-www-form-urlencoded"},
-		{name: "authorize approval", method: http.MethodPost, target: "/oauth/authorize/approve", body: `{}`, contentType: "application/json", token: env.token},
-		{name: "device approval", method: http.MethodPost, target: "/oauth/device/verify", body: `{}`, contentType: "application/json", token: env.token},
-		{name: "public API", method: http.MethodGet, target: "/api/v1/health"},
-		{name: "authenticated API", method: http.MethodGet, target: "/api/v1/auth/me", token: env.token},
+		{name: "invalid authorize GET", method: http.MethodGet, target: "/oauth/authorize?response_type=token", wantStatus: http.StatusBadRequest, wantContentType: "application/json", wantBodyContains: []string{`"error"`, `"unsupported_response_type"`}},
+		{name: "invalid authorize HEAD", method: http.MethodHead, target: "/oauth/authorize?response_type=token", wantStatus: http.StatusBadRequest, wantContentType: "application/json", wantBodyContains: []string{`"error"`, `"unsupported_response_type"`}},
+		{name: "token", method: http.MethodPost, target: "/oauth/token", body: "grant_type=unsupported", contentType: "application/x-www-form-urlencoded", wantStatus: http.StatusBadRequest, wantContentType: "application/json", wantBodyContains: []string{`"error"`, `"unsupported_grant_type"`}},
+		{name: "device code", method: http.MethodPost, target: "/oauth/device/code", body: "client_id=unknown", contentType: "application/x-www-form-urlencoded", wantStatus: http.StatusBadRequest, wantContentType: "application/json", wantBodyContains: []string{`"error"`, `"invalid_client"`}},
+		{name: "authorize approval", method: http.MethodPost, target: "/oauth/authorize/approve", body: `{}`, contentType: "application/json", token: env.token, wantStatus: http.StatusBadRequest, wantContentType: "application/json", wantBodyContains: []string{`"error"`, "required"}},
+		{name: "device approval", method: http.MethodPost, target: "/oauth/device/verify", body: `{}`, contentType: "application/json", token: env.token, wantStatus: http.StatusBadRequest, wantContentType: "application/json", wantBodyContains: []string{`"error"`, `"invalid_request"`}},
+		{name: "public API", method: http.MethodGet, target: "/api/v1/health", wantStatus: http.StatusOK, wantContentType: "application/json", wantBodyContains: []string{`"status"`, `"ok"`}},
+		{name: "authenticated API", method: http.MethodGet, target: "/api/v1/auth/me", token: env.token, wantStatus: http.StatusOK, wantContentType: "application/json", wantBodyContains: []string{`"code":200`, `"data"`}},
+		{name: "handler cache policy", method: http.MethodGet, target: "/api/v1/frontend-policy-sentinel", wantStatus: http.StatusOK, wantContentType: "application/json", wantBodyContains: []string{`"policy":"handler"`}, wantCacheControl: "no-store"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			response := performRouterFrontendRequest(env.router, tc.method, tc.target, strings.NewReader(tc.body), tc.contentType, tc.token)
-			if response.Code == http.StatusNotFound {
-				t.Fatalf("status = 404, route was not exercised; body=%s", response.Body.String())
+			if response.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", response.Code, tc.wantStatus, response.Body.String())
+			}
+			if got := response.Header().Get("Content-Type"); !strings.Contains(got, tc.wantContentType) {
+				t.Fatalf("Content-Type = %q, want %q; body=%s", got, tc.wantContentType, response.Body.String())
+			}
+			if !json.Valid(response.Body.Bytes()) {
+				t.Fatalf("body = %q, want valid JSON", response.Body.String())
+			}
+			for _, want := range tc.wantBodyContains {
+				if !strings.Contains(response.Body.String(), want) {
+					t.Fatalf("body = %q, want substring %q", response.Body.String(), want)
+				}
+			}
+			if tc.wantCacheControl != "" {
+				if got := response.Header().Get("Cache-Control"); got != tc.wantCacheControl {
+					t.Fatalf("Cache-Control = %q, want preserved handler policy %q", got, tc.wantCacheControl)
+				}
 			}
 			assertNoEmbeddedFrontendPolicy(t, response)
 		})
@@ -205,8 +233,8 @@ func assertNoEmbeddedFrontendPolicy(t *testing.T, response *httptest.ResponseRec
 	if got := response.Header().Get("Content-Encoding"); got != "" {
 		t.Fatalf("Content-Encoding = %q, want empty", got)
 	}
-	if got := response.Header().Get("Cache-Control"); got != "" {
-		t.Fatalf("Cache-Control = %q, want empty", got)
+	if routerHeaderHasToken(response.Header().Values("Cache-Control"), "no-cache") || routerHeaderHasToken(response.Header().Values("Cache-Control"), "immutable") {
+		t.Fatalf("Cache-Control = %q, must not contain embedded frontend policy", response.Header().Values("Cache-Control"))
 	}
 	if routerHeaderHasToken(response.Header().Values("Vary"), "Accept-Encoding") {
 		t.Fatalf("Vary = %q, must not contain Accept-Encoding", response.Header().Values("Vary"))
