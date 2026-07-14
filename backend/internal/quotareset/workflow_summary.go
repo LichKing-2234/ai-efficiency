@@ -54,9 +54,6 @@ func (s *Service) authorizeRequestSummaryViewer(ctx context.Context, request *en
 		UserID:    viewerUserID,
 		Requester: request.RequesterUserID == viewerUserID,
 	}
-	if viewer.Requester {
-		return viewer, nil
-	}
 	if adminRoute {
 		actor, err := s.client.User.Get(ctx, viewerUserID)
 		if err != nil && !ent.IsNotFound(err) {
@@ -64,8 +61,10 @@ func (s *Service) authorizeRequestSummaryViewer(ctx context.Context, request *en
 		}
 		if err == nil && actor.Role == entuser.RoleAdmin {
 			viewer.Admin = true
-			return viewer, nil
 		}
+	}
+	if viewer.Requester || viewer.Admin {
+		return viewer, nil
 	}
 	if request.WorkflowVersion >= WorkflowVersionV2 {
 		visible, err := s.v2RequestSummaryVisible(ctx, request, viewerUserID)

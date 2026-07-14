@@ -318,6 +318,50 @@ func TestGetRequestSummaryUsesViewerPermissions(t *testing.T) {
 	}
 }
 
+func TestGetRequestSummaryRequesterAdminRoutePreservesRetryCapability(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	adminRequester := createQuotaResetUser(t, ctx, client, "admin-requester", "admin-requester@example.com", nil, "admin")
+	regularRequester := createQuotaResetUser(t, ctx, client, "regular-requester", "regular-requester@example.org", nil, "user")
+	completionActor := createQuotaResetUser(t, ctx, client, "completion-actor", "completion-actor@example.net", nil, "user")
+	service := NewService(client, nil, nil, nil)
+
+	failed, _, _ := createV2WorkItemRequest(t, ctx, client, adminRequester.ID, "admin-retry", quotaresetrequest.StatusApprovedResetFailed, nil, nil, &completionActor.ID)
+	adminSummary, err := service.GetRequestSummary(ctx, failed.ID, adminRequester.ID, true)
+	if err != nil {
+		t.Fatalf("GetRequestSummary(admin requester route) error = %v", err)
+	}
+	if adminSummary.Workflow == nil || !adminSummary.Workflow.CanRetry {
+		t.Fatalf("admin requester workflow = %+v, want admin retry capability", adminSummary.Workflow)
+	}
+
+	userSummary, err := service.GetRequestSummary(ctx, failed.ID, adminRequester.ID, false)
+	if err != nil {
+		t.Fatalf("GetRequestSummary(admin requester user route) error = %v", err)
+	}
+	if userSummary.Workflow == nil || userSummary.Workflow.CanRetry {
+		t.Fatalf("admin requester user-route workflow = %+v, want no retry capability", userSummary.Workflow)
+	}
+
+	regularFailed, _, _ := createV2WorkItemRequest(t, ctx, client, regularRequester.ID, "forged-admin-retry", quotaresetrequest.StatusApprovedResetFailed, nil, nil, &completionActor.ID)
+	regularSummary, err := service.GetRequestSummary(ctx, regularFailed.ID, regularRequester.ID, true)
+	if err != nil {
+		t.Fatalf("GetRequestSummary(non-admin requester admin flag) error = %v", err)
+	}
+	if regularSummary.Workflow == nil || regularSummary.Workflow.CanRetry {
+		t.Fatalf("non-admin requester workflow = %+v, want no admin retry capability", regularSummary.Workflow)
+	}
+
+	pending, _, _ := createV2WorkItemRequest(t, ctx, client, adminRequester.ID, "admin-self-approval", quotaresetrequest.StatusPending, []int{completionActor.ID}, nil, nil)
+	pendingSummary, err := service.GetRequestSummary(ctx, pending.ID, adminRequester.ID, true)
+	if err != nil {
+		t.Fatalf("GetRequestSummary(admin requester pending) error = %v", err)
+	}
+	if pendingSummary.Workflow == nil || pendingSummary.Workflow.CanApprove || pendingSummary.Workflow.CanReject {
+		t.Fatalf("admin requester pending workflow = %+v, want self-approval forbidden", pendingSummary.Workflow)
+	}
+}
+
 func TestWorkflowSummaryHidesFutureQueueFromUnrelatedApprover(t *testing.T) {
 	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}, {}})
 	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
