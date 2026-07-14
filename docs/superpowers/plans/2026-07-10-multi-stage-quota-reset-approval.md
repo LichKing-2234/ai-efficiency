@@ -3318,6 +3318,73 @@ git commit -m "feat(backend): expose quota reset workflow APIs"
 
 Commit evidence: `a28a460` (`feat(backend): expose quota reset workflow APIs`).
 
+#### SPEC-review follow-up (2026-07-14)
+
+- [x] Type authorized stale and racing V2 retries as `workflow_advanced` without
+  exposing latest workflow state to unauthorized callers.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestWorkflowRetry(StaleAuthorizesBeforeReturningWorkflowAdvanced|CASRaceReturnsWorkflowAdvanced)$'
+-count=1` failed because stale completion-actor, admin, unauthorized, and CAS
+paths all returned `invalid_status`. `cd backend && go test ./internal/handler
+-run '^TestQuotaResetRetryWorkflowAdvancedReturnsLatestSummaryDetails$' -count=1`
+failed with HTTP `400` and `{"message":"invalid_status"}` instead of the typed
+`409` latest-summary envelope.
+
+GREEN evidence: the focused quotareset command passed (`ok`, 2.809s), and the
+focused real-service handler command passed (`ok`, 1.004s). `cd backend && go
+test ./internal/quotareset -run
+'^(TestWorkflowRetryAllowsCompletionActorAndAdminOnly|TestRetryResetRejectsRequestAlreadyResettingBeforeCallingProvider)$'
+-count=1` also passed (`ok`, 1.866s), preserving successful V2 retries and
+legacy `ErrInvalidStatus` behavior.
+
+- [x] Preserve latest workflow visibility for a stale historical co-approver
+  without granting permissions on the newly active node.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestWorkflowStaleCoApproverSeesLatestWithoutCurrentPermissions$' -count=1`
+failed because the stale co-approver's `Latest.Workflow` was `nil` after node 2
+became active.
+
+GREEN evidence: the focused co-approver command passed (`ok`, 1.773s).
+`cd backend && go test ./internal/quotareset -run
+'^TestWorkflowSummary(ReturnsOrderedNodesDecisionsAndPermissions|HidesFutureQueueFromUnrelatedApprover)$'
+-count=1` passed (`ok`, 1.122s), preserving current permission computation,
+future-node privacy, and unrelated-viewer privacy.
+
+- [x] Require approver-candidate `source_id` to equal the current successful
+  synchronized directory source.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestListApproverCandidatesRequiresCurrentSourceID$' -count=1` failed because
+stale, nonexistent, and no-current positive source ids all returned nil errors.
+`cd backend && go test ./internal/handler -run
+'^TestQuotaResetStaleApproverCandidateSourceMapsToServiceUnavailable$' -count=1`
+failed because stale source `1` returned HTTP `200` with an empty paginated
+response instead of `503`.
+
+GREEN evidence: the focused service matrix passed (`ok`, 2.397s), and the real
+HTTP mapping command passed (`ok`, 1.133s). `cd backend && go test
+./internal/quotareset -run
+'^TestListApproverCandidates(IncludesMatchedNonRepresentative|ExcludesInactiveMembers|MaxIntPageReturnsEmpty)$'
+-count=1` passed (`ok`, 1.173s), preserving current-source search and pagination.
+
+- [x] Run final Task 8 SPEC-review verification and commit the fixes.
+
+Pre-commit verification evidence: `cd backend && go test ./internal/handler
+-run TestQuotaReset -count=1` passed (`ok`, 8.411s). The focused retry,
+co-approver/privacy, and current-source quotareset command passed (`ok`,
+4.507s). `cd backend && go test ./internal/handler ./internal/quotareset
+-count=1` passed (`handler` 43.521s, `quotareset` 43.423s); `cd backend && go
+test ./cmd/server -count=1` passed (`ok`, 3.036s); and `cd backend && go test
+./... -count=1` passed, including `handler` (67.167s) and `quotareset`
+(68.209s). `cd backend && go vet ./...`, `git diff --check`, changed-Go-file
+gofmt inspection, added-line credential-pattern scan, synthetic email-domain
+scan, and unfinished-marker scan all completed cleanly.
+
+Commit evidence: `606c2f0` (`fix(backend): harden quota reset workflow HTTP
+contracts`).
+
 ---
 
 ### Task 9: Add Frontend Workflow Types and API Clients
