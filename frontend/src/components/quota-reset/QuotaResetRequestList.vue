@@ -6,6 +6,7 @@ import type { QuotaResetRequestSummary, QuotaResetStatus } from '@/types'
 const props = defineProps<{
   items: QuotaResetRequestSummary[]
   loading?: boolean
+  busy?: boolean
   mode: 'mine' | 'approvals' | 'admin'
 }>()
 
@@ -51,15 +52,25 @@ function statusClass(status: QuotaResetStatus) {
 }
 
 function canCancel(item: QuotaResetRequestSummary) {
-  return props.mode === 'mine' && item.status === 'pending'
+  return item.workflow?.can_cancel ?? (props.mode === 'mine' && item.status === 'pending')
 }
 
-function canDecide(item: QuotaResetRequestSummary) {
-  return (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'pending'
+function canApprove(item: QuotaResetRequestSummary) {
+  return item.workflow?.can_approve ?? (
+    (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'pending'
+  )
+}
+
+function canReject(item: QuotaResetRequestSummary) {
+  return item.workflow?.can_reject ?? (
+    (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'pending'
+  )
 }
 
 function canRetry(item: QuotaResetRequestSummary) {
-  return (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'approved_reset_failed'
+  return item.workflow?.can_retry ?? (
+    (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'approved_reset_failed'
+  )
 }
 </script>
 
@@ -71,7 +82,7 @@ function canRetry(item: QuotaResetRequestSummary) {
       <article
         v-for="item in props.items"
         :key="item.id"
-        class="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto]"
+        class="grid min-w-0 cursor-pointer gap-3 p-4 focus-within:bg-slate-50 hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_auto]"
         :data-testid="`quota-reset-row-${item.id}`"
         @click="emit('select', item)"
       >
@@ -93,26 +104,29 @@ function canRetry(item: QuotaResetRequestSummary) {
           <button
             v-if="canCancel(item)"
             type="button"
-            class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
             :data-testid="`quota-reset-cancel-${item.id}`"
+            :disabled="props.busy"
             @click.stop="emit('cancel', item)"
           >
             {{ t('quotaReset.cancelRequest') }}
           </button>
           <button
-            v-if="canDecide(item)"
+            v-if="canApprove(item)"
             type="button"
-            class="rounded-md bg-cyan-700 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-800"
+            class="rounded-md bg-cyan-700 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50"
             :data-testid="`quota-reset-approve-${item.id}`"
+            :disabled="props.busy"
             @click.stop="emit('approve', item)"
           >
             {{ t('quotaReset.approve') }}
           </button>
           <button
-            v-if="canDecide(item)"
+            v-if="canReject(item)"
             type="button"
-            class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+            class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
             :data-testid="`quota-reset-reject-${item.id}`"
+            :disabled="props.busy"
             @click.stop="emit('reject', item)"
           >
             {{ t('quotaReset.reject') }}
@@ -120,8 +134,9 @@ function canRetry(item: QuotaResetRequestSummary) {
           <button
             v-if="canRetry(item)"
             type="button"
-            class="rounded-md border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+            class="rounded-md border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
             :data-testid="`quota-reset-retry-${item.id}`"
+            :disabled="props.busy"
             @click.stop="emit('retry', item)"
           >
             {{ t('quotaReset.retryReset') }}

@@ -3,8 +3,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import QuotaResetView from '@/views/QuotaResetView.vue'
+import { resetToastsForTest, useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
 import { setLocale } from '@/i18n'
+import type { QuotaResetRequestSummary, QuotaResetWorkflowNode } from '@/types'
 
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
@@ -29,11 +31,12 @@ vi.mock('@/api/workItems', () => ({
   getWorkItemCounts: vi.fn(),
 }))
 
-const mineRequest = {
+const mineRequest: QuotaResetRequestSummary = {
   id: 1,
   requester_user_id: 10,
-  requester_display_name: 'alice',
+  requester_display_name: 'Alice Example',
   requester_email: 'alice@example.com',
+  requester_department_paths: ['Engineering / Developer Experience'],
   provider_id: 1,
   group_id: '42',
   group_name: 'Group Alpha',
@@ -46,13 +49,105 @@ const mineRequest = {
   updated_at: '2026-07-07T01:00:00Z',
 }
 
-const approvalRequest = {
+const approvalRequest: QuotaResetRequestSummary = {
   ...mineRequest,
   id: 2,
-  requester_display_name: 'bob',
+  requester_display_name: 'Bob Example',
   requester_email: 'bob@example.org',
+  requester_department_paths: ['Engineering / Runtime'],
   group_name: 'Group Beta',
   reason: 'Need reset for release validation',
+}
+
+const workflowNodes: QuotaResetWorkflowNode[] = [
+  {
+    id: 451,
+    position: 0,
+    node_type: 'requester_departments',
+    label: 'Requester teams',
+    departments: [
+      { external_id: 'dept-platform', display_path: 'Engineering / Platform', resolution: 'configured' },
+      { external_id: 'dept-release', display_path: 'Quality / Release', resolution: 'configured' },
+    ],
+    status: 'approved',
+    admin_fallback_required: false,
+    approvers: [
+      { user_id: 20, display_name: 'Alex Approver', email: 'alex@example.com', source: 'configured' },
+      { user_id: 21, display_name: 'Avery Reviewer', email: 'avery@example.org', source: 'configured' },
+    ],
+  },
+  {
+    id: 452,
+    position: 1,
+    node_type: 'configured_department',
+    label: 'Security review',
+    departments: [
+      { external_id: 'dept-security', display_path: 'Security / Product', resolution: 'configured' },
+    ],
+    status: 'satisfied_by_prior_approval',
+    admin_fallback_required: false,
+    approvers: [
+      { user_id: 20, display_name: 'Alex Approver', email: 'alex@example.com', source: 'configured' },
+    ],
+    satisfied_by_decision_id: 901,
+  },
+  {
+    id: 456,
+    position: 2,
+    node_type: 'configured_department',
+    label: 'Release approval',
+    departments: [
+      { external_id: 'dept-operations', display_path: 'Operations / Release', resolution: 'directory_representative' },
+    ],
+    status: 'active',
+    admin_fallback_required: true,
+    approvers: [
+      { user_id: 22, display_name: 'Casey Reviewer', email: 'casey@example.com', source: 'directory_representative' },
+    ],
+  },
+  {
+    id: 457,
+    position: 3,
+    node_type: 'configured_department',
+    label: 'Operations follow-up',
+    departments: [
+      { external_id: 'dept-operations', display_path: 'Operations / Follow-up', resolution: 'configured' },
+    ],
+    status: 'queued',
+    admin_fallback_required: false,
+    approvers: [
+      { user_id: 20, display_name: 'Alex Approver', email: 'alex@example.com', source: 'configured' },
+    ],
+  },
+]
+
+const workflowRequest: QuotaResetRequestSummary = {
+  ...approvalRequest,
+  id: 3,
+  requester_display_name: 'Bob Builder',
+  requester_email: 'bob.builder@example.org',
+  requester_department_paths: ['Engineering / Platform', 'Quality / Release'],
+  workflow: {
+    version: 2,
+    current_node: workflowNodes[2],
+    nodes: workflowNodes,
+    decisions: [
+      {
+        id: 901,
+        node_id: 451,
+        actor_user_id: 20,
+        actor_display_name: 'Alex Approver',
+        decision: 'approve',
+        comment: 'Approved after reviewing the release evidence.',
+        admin_override: true,
+        created_at: '2026-07-14T02:00:00Z',
+      },
+    ],
+    can_approve: true,
+    can_reject: true,
+    can_cancel: false,
+    can_retry: false,
+  },
 }
 
 function deferred<T>() {
@@ -91,6 +186,7 @@ async function mountQuotaResetView(role: 'user' | 'admin' = 'user') {
 
 beforeEach(async () => {
   setLocale('en-US')
+  resetToastsForTest()
   vi.clearAllMocks()
   const api = await import('@/api/quotaReset') as any
   const workItemsApi = await import('@/api/workItems') as any
@@ -275,5 +371,232 @@ describe('QuotaResetView', () => {
     const statusFilters = wrapper.get('[data-testid="quota-reset-status-filters"]')
     expect(statusFilters.classes()).toContain('rounded-full')
     expect(statusFilters.find('[data-testid="quota-reset-filter-all"]').classes()).toContain('text-xs')
+  })
+
+  it('renders ordered node status and prior-approval attribution', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listMyQuotaResetRequests.mockResolvedValue({
+      data: { data: { items: [workflowRequest], page: 1, page_size: 20, total: 1 } },
+    })
+
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-row-3"]').trigger('click')
+
+    const timeline = wrapper.get('[data-testid="quota-reset-workflow-timeline"]')
+    const nodes = timeline.findAll('li')
+    expect(nodes).toHaveLength(4)
+    expect(nodes[0].text()).toContain('Requester teams')
+    expect(nodes[1].text()).toContain('Security review')
+    expect(nodes[2].text()).toContain('Release approval')
+    expect(nodes[3].text()).toContain('Operations follow-up')
+    expect(nodes[0].text()).toContain('Approved')
+    expect(nodes[0].text()).toContain('Alex Approver')
+    expect(nodes[0].text()).toContain('Avery Reviewer')
+    expect(nodes[0].text()).toContain('Approved after reviewing the release evidence.')
+    expect(nodes[0].text()).toContain('Admin override')
+    expect(nodes[1].text()).toContain('Satisfied by prior approval')
+    expect(nodes[1].text()).toContain('Alex Approver')
+    expect(nodes[1].text()).toContain('Approved after reviewing the release evidence.')
+    expect(nodes[2].text()).toContain('Active')
+    expect(nodes[2].text()).toContain('Admin fallback')
+    expect(nodes[3].text()).toContain('Queued')
+  })
+
+  it('uses backend can_approve instead of queue mode', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const approveOnly = {
+      ...workflowRequest,
+      id: 31,
+      workflow: {
+        ...workflowRequest.workflow!,
+        can_approve: true,
+        can_reject: false,
+        can_cancel: true,
+        can_retry: true,
+      },
+    }
+    const rejectOnly = {
+      ...workflowRequest,
+      id: 32,
+      workflow: {
+        ...workflowRequest.workflow!,
+        can_approve: false,
+        can_reject: true,
+        can_cancel: false,
+        can_retry: false,
+      },
+    }
+    api.listQuotaResetApprovals.mockResolvedValue({
+      data: { data: { items: [approveOnly, rejectOnly], page: 1, page_size: 20, total: 2 } },
+    })
+
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="quota-reset-approve-31"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="quota-reset-reject-31"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-cancel-31"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="quota-reset-retry-31"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="quota-reset-approve-32"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-reject-32"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="quota-reset-cancel-32"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-retry-32"]').exists()).toBe(false)
+  })
+
+  it('requires a comment for approve and reject', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listQuotaResetApprovals.mockResolvedValue({
+      data: { data: { items: [workflowRequest], page: 1, page_size: 20, total: 1 } },
+    })
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+
+    await wrapper.get('[data-testid="quota-reset-approve-3"]').trigger('click')
+    let dialog = wrapper.get('[data-testid="quota-reset-decision-dialog"]')
+    await dialog.get('[data-testid="quota-reset-decision-submit"]').trigger('click')
+    expect(dialog.text()).toContain('Comment is required')
+    expect(api.approveQuotaResetRequest).not.toHaveBeenCalled()
+
+    await dialog.get('textarea').setValue('This must not survive reopening.')
+    await dialog.get('[data-testid="quota-reset-decision-cancel"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-reject-3"]').trigger('click')
+    dialog = wrapper.get('[data-testid="quota-reset-decision-dialog"]')
+    expect((dialog.get('textarea').element as HTMLTextAreaElement).value).toBe('')
+    expect(dialog.text()).not.toContain('Comment is required')
+    await dialog.get('[data-testid="quota-reset-decision-submit"]').trigger('click')
+    expect(dialog.text()).toContain('Comment is required')
+    expect(api.rejectQuotaResetRequest).not.toHaveBeenCalled()
+  })
+
+  it('submits the current request_node_id', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const pendingApproval = deferred<any>()
+    api.listQuotaResetApprovals.mockResolvedValue({
+      data: { data: { items: [workflowRequest], page: 1, page_size: 20, total: 1 } },
+    })
+    api.approveQuotaResetRequest.mockReturnValue(pendingApproval.promise)
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-approve-3"]').trigger('click')
+
+    const dialog = wrapper.get('[data-testid="quota-reset-decision-dialog"]')
+    await dialog.get('textarea').setValue('  Approved for the release investigation.  ')
+    await dialog.get('[data-testid="quota-reset-decision-submit"]').trigger('click')
+    await dialog.get('[data-testid="quota-reset-decision-submit"]').trigger('click')
+
+    expect(api.approveQuotaResetRequest).toHaveBeenCalledTimes(1)
+    expect(api.approveQuotaResetRequest).toHaveBeenCalledWith(3, {
+      request_node_id: 456,
+      decision_reason: 'Approved for the release investigation.',
+    })
+
+    pendingApproval.resolve({ data: { data: workflowRequest } })
+    await flushPromises()
+  })
+
+  it('refreshes from workflow_advanced details', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const workItemsApi = await import('@/api/workItems') as any
+    const unrelatedRequest = { ...workflowRequest, id: 4, reason: 'Keep this newer row unchanged' }
+    const advancedRequest = {
+      ...workflowRequest,
+      reason: 'Authoritative workflow state',
+      workflow: {
+        ...workflowRequest.workflow!,
+        current_node: workflowNodes[3],
+        can_approve: false,
+        can_reject: false,
+      },
+    }
+    api.listQuotaResetApprovals.mockResolvedValue({
+      data: { data: { items: [workflowRequest, unrelatedRequest], page: 1, page_size: 20, total: 2 } },
+    })
+    api.approveQuotaResetRequest.mockRejectedValue({
+      response: {
+        status: 409,
+        data: {
+          message: 'workflow_advanced',
+          details: { request: advancedRequest },
+        },
+      },
+    })
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-approve-3"]').trigger('click')
+    const dialog = wrapper.get('[data-testid="quota-reset-decision-dialog"]')
+    await dialog.get('textarea').setValue('Approved from stale state.')
+    await dialog.get('[data-testid="quota-reset-decision-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="quota-reset-decision-dialog"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="quota-reset-row-3"]').text()).toContain('Authoritative workflow state')
+    expect(wrapper.get('[data-testid="quota-reset-row-4"]').text()).toContain('Keep this newer row unchanged')
+    expect(useToast().toast.message).toContain('The workflow advanced while this request was open')
+    expect(useToast().toast.tone).toBe('info')
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(1)
+    expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not render queued future work as actionable', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const queuedAssignment = {
+      ...workflowRequest,
+      id: 33,
+      workflow: {
+        ...workflowRequest.workflow!,
+        can_approve: false,
+        can_reject: false,
+        can_cancel: false,
+        can_retry: false,
+      },
+    }
+    api.listQuotaResetApprovals.mockResolvedValue({
+      data: { data: { items: [queuedAssignment], page: 1, page_size: 20, total: 1 } },
+    })
+
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    expect(wrapper.find('[data-testid="quota-reset-approve-33"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-reject-33"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="quota-reset-row-33"]').trigger('click')
+    const timeline = wrapper.get('[data-testid="quota-reset-workflow-timeline"]')
+    expect(timeline.text()).toContain('Operations follow-up')
+    expect(timeline.findAll('button')).toHaveLength(0)
+  })
+
+  it('shows requester display name and every direct team path', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listMyQuotaResetRequests.mockResolvedValue({
+      data: { data: { items: [workflowRequest], page: 1, page_size: 20, total: 1 } },
+    })
+
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-row-3"]').trigger('click')
+    const detail = wrapper.get('[data-testid="quota-reset-detail-dialog"]')
+    expect(detail.text()).toContain('Bob Builder')
+    expect(detail.text()).toContain('bob.builder@example.org')
+    expect(detail.text()).toContain('Engineering / Platform')
+    expect(detail.text()).toContain('Quality / Release')
+  })
+
+  it('keeps legacy v1 approve and reject actions usable without request_node_id', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+
+    await wrapper.get('[data-testid="quota-reset-approve-2"]').trigger('click')
+    await flushPromises()
+    expect(api.approveQuotaResetRequest).toHaveBeenCalledWith(2, {})
+    expect(wrapper.find('[data-testid="quota-reset-decision-dialog"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="quota-reset-reject-2"]').trigger('click')
+    const dialog = wrapper.get('[data-testid="quota-reset-decision-dialog"]')
+    await dialog.get('textarea').setValue('Legacy rejection still requires context.')
+    await dialog.get('[data-testid="quota-reset-decision-submit"]').trigger('click')
+    await flushPromises()
+    expect(api.rejectQuotaResetRequest).toHaveBeenCalledWith(2, {
+      decision_reason: 'Legacy rejection still requires context.',
+    })
   })
 })
