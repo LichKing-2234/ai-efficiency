@@ -169,7 +169,7 @@ function createTestRouter() {
   })
 }
 
-async function mountQuotaResetView(role: 'user' | 'admin' = 'user') {
+async function mountQuotaResetView(role: 'user' | 'admin' = 'user', attachTo?: HTMLElement) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
@@ -178,6 +178,7 @@ async function mountQuotaResetView(role: 'user' | 'admin' = 'user') {
   await router.push('/usage/quota-reset')
   await router.isReady()
   const wrapper = mount(QuotaResetView, {
+    ...(attachTo ? { attachTo } : {}),
     global: { plugins: [pinia, router] },
   })
   await flushPromises()
@@ -373,6 +374,47 @@ describe('QuotaResetView', () => {
     expect(statusFilters.find('[data-testid="quota-reset-filter-all"]').classes()).toContain('text-xs')
   })
 
+  it('opens request details from a semantic trigger and manages dialog focus', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listMyQuotaResetRequests.mockResolvedValue({
+      data: { data: { items: [workflowRequest], page: 1, page_size: 20, total: 1 } },
+    })
+    const wrapper = await mountQuotaResetView('user', document.body)
+
+    try {
+      const row = wrapper.get('[data-testid="quota-reset-row-3"]')
+      expect(row.element.tagName).toBe('ARTICLE')
+      expect(row.attributes('role')).toBeUndefined()
+
+      const trigger = wrapper.get('[data-testid="quota-reset-view-details-3"]')
+      expect(trigger.element.tagName).toBe('BUTTON')
+      expect(trigger.attributes('type')).toBe('button')
+      expect(trigger.attributes('aria-label')).toBe('View details for Group Beta')
+      expect(trigger.attributes('title')).toBe('View details for Group Beta')
+
+      ;(trigger.element as HTMLButtonElement).focus()
+      expect(document.activeElement).toBe(trigger.element)
+      await trigger.trigger('click')
+      await flushPromises()
+
+      const dialog = wrapper.get('[data-testid="quota-reset-detail-dialog"]')
+      const closeButton = dialog.get('[data-testid="quota-reset-detail-close"]')
+      expect(document.activeElement).toBe(closeButton.element)
+
+      const tabEvent = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+      closeButton.element.dispatchEvent(tabEvent)
+      expect(tabEvent.defaultPrevented).toBe(true)
+      expect(document.activeElement).toBe(closeButton.element)
+
+      dialog.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
+      expect(wrapper.find('[data-testid="quota-reset-detail-dialog"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(trigger.element)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('renders ordered node status and prior-approval attribution', async () => {
     const api = await import('@/api/quotaReset') as any
     api.listMyQuotaResetRequests.mockResolvedValue({
@@ -380,7 +422,7 @@ describe('QuotaResetView', () => {
     })
 
     const wrapper = await mountQuotaResetView()
-    await wrapper.get('[data-testid="quota-reset-row-3"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-view-details-3"]').trigger('click')
 
     const timeline = wrapper.get('[data-testid="quota-reset-workflow-timeline"]')
     const nodes = timeline.findAll('li')
@@ -559,7 +601,7 @@ describe('QuotaResetView', () => {
     expect(wrapper.find('[data-testid="quota-reset-approve-33"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="quota-reset-reject-33"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="quota-reset-row-33"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-view-details-33"]').trigger('click')
     const timeline = wrapper.get('[data-testid="quota-reset-workflow-timeline"]')
     expect(timeline.text()).toContain('Operations follow-up')
     expect(timeline.findAll('button')).toHaveLength(0)
@@ -572,7 +614,7 @@ describe('QuotaResetView', () => {
     })
 
     const wrapper = await mountQuotaResetView()
-    await wrapper.get('[data-testid="quota-reset-row-3"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-view-details-3"]').trigger('click')
     const detail = wrapper.get('[data-testid="quota-reset-detail-dialog"]')
     expect(detail.text()).toContain('Bob Builder')
     expect(detail.text()).toContain('bob.builder@example.org')

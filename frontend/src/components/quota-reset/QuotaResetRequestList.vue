@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Eye } from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from '@/i18n'
 import type { QuotaResetRequestSummary, QuotaResetStatus } from '@/types'
@@ -72,6 +73,10 @@ function canRetry(item: QuotaResetRequestSummary) {
     (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'approved_reset_failed'
   )
 }
+
+function viewDetailsLabel(item: QuotaResetRequestSummary) {
+  return t('quotaReset.viewDetails', { group: item.group_name || item.group_id })
+}
 </script>
 
 <template>
@@ -82,9 +87,8 @@ function canRetry(item: QuotaResetRequestSummary) {
       <article
         v-for="item in props.items"
         :key="item.id"
-        class="grid min-w-0 cursor-pointer gap-3 p-4 focus-within:bg-slate-50 hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_auto]"
+        class="grid min-w-0 gap-3 p-4 focus-within:bg-slate-50 hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_auto]"
         :data-testid="`quota-reset-row-${item.id}`"
-        @click="emit('select', item)"
       >
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2">
@@ -101,6 +105,17 @@ function canRetry(item: QuotaResetRequestSummary) {
           <p v-if="item.reset_error" class="mt-2 break-words text-xs font-medium text-red-600">{{ item.reset_error }}</p>
         </div>
         <div class="flex flex-wrap items-start gap-2 md:justify-end">
+          <button
+            type="button"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+            :data-testid="`quota-reset-view-details-${item.id}`"
+            :aria-label="viewDetailsLabel(item)"
+            :title="viewDetailsLabel(item)"
+            :disabled="props.busy"
+            @click="emit('select', item)"
+          >
+            <Eye class="h-4 w-4" aria-hidden="true" />
+          </button>
           <button
             v-if="canCancel(item)"
             type="button"
