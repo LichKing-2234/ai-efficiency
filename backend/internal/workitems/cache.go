@@ -172,22 +172,29 @@ func (c *CountsCache) GetOrLoad(ctx context.Context, actorID int, effectiveRole 
 		return nil, err
 	}
 
-	revision, err := c.currentRevision(ctx)
-	if err != nil {
-		return nil, err
-	}
-	key := countsCacheKey(c.options.Namespace, revision, actorID, effectiveRole)
-	counts, hit, readErr := c.read(ctx, key)
-	if hit {
-		return counts, nil
-	}
-
-	return c.flights.Do(ctx, key, c.options.RefreshTimeout, func(sharedCtx context.Context) (*CountsResponse, error) {
-		if readErr != nil {
-			return c.loadAuthoritative(sharedCtx, loader)
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		return c.loadWithLease(sharedCtx, key, revision, loader)
-	})
+		revision, err := c.currentRevision(ctx)
+		if err != nil {
+			return nil, err
+		}
+		key := countsCacheKey(c.options.Namespace, revision, actorID, effectiveRole)
+		counts, err := c.flights.Do(ctx, key, c.options.RefreshTimeout, func(sharedCtx context.Context) (*CountsResponse, error) {
+			return c.loadWithLease(sharedCtx, key, revision, loader)
+		})
+		if err != nil {
+			return nil, err
+		}
+		currentRevision, err := c.currentRevision(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if currentRevision == revision {
+			return counts, nil
+		}
+	}
 }
 
 func (c *CountsCache) loadWithLease(ctx context.Context, key, revision string, loader CountsLoader) (*CountsResponse, error) {

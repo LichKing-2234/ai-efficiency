@@ -61,6 +61,65 @@ type fakeCountsStore struct {
 	onAcquire       func(*fakeCountsStore, string)
 }
 
+type blockingHitStore struct {
+	*fakeCountsStore
+	key     string
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (s *blockingHitStore) Get(ctx context.Context, key string) ([]byte, error) {
+	value, err := s.fakeCountsStore.Get(ctx, key)
+	if key == s.key && err == nil {
+		s.once.Do(func() {
+			close(s.started)
+			select {
+			case <-s.release:
+			case <-ctx.Done():
+			}
+		})
+	}
+	return value, err
+}
+
+type staggeredReadErrorStore struct {
+	*fakeCountsStore
+	mu       sync.Mutex
+	gates    []chan struct{}
+	getCalls int
+}
+
+func newStaggeredReadErrorStore(callers int) *staggeredReadErrorStore {
+	gates := make([]chan struct{}, callers)
+	for i := range gates {
+		gates[i] = make(chan struct{})
+	}
+	return &staggeredReadErrorStore{fakeCountsStore: newFakeCountsStore(), gates: gates}
+}
+
+func (s *staggeredReadErrorStore) Get(ctx context.Context, _ string) ([]byte, error) {
+	s.mu.Lock()
+	index := s.getCalls
+	s.getCalls++
+	s.mu.Unlock()
+	if index >= len(s.gates) {
+		return nil, errors.New("redis read unavailable")
+	}
+	select {
+	case <-s.gates[index]:
+		return nil, errors.New("redis read unavailable")
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (s *staggeredReadErrorStore) calls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.getCalls
+}
+
 func newFakeCountsStore() *fakeCountsStore {
 	return &fakeCountsStore{
 		now:    time.Unix(1_700_000_000, 0),
@@ -452,6 +511,157 @@ func TestCountsCacheIsolatesActorRoleDeploymentAndRevision(t *testing.T) {
 	}
 }
 
+func TestCountsCacheRetriesOldRevisionRedisHitUnderNewRevision(t *testing.T) {
+	const (
+		oldRevision = "11111111-1111-4111-8111-111111111111"
+		newRevision = "22222222-2222-4222-8222-222222222222"
+	)
+	oldKey := countsCacheKey("test", oldRevision, 7, "user")
+	newKey := countsCacheKey("test", newRevision, 7, "user")
+	base := newFakeCountsStore()
+	base.values[oldKey] = fakeCountsStoreValue{value: []byte(`{"schema_version":1,"counts":{"total_count":1}}`), ttl: time.Minute}
+	base.values[newKey] = fakeCountsStoreValue{value: []byte(`{"schema_version":1,"counts":{"total_count":2}}`), ttl: time.Minute}
+	store := &blockingHitStore{
+		fakeCountsStore: base,
+		key:             oldKey,
+		started:         make(chan struct{}),
+		release:         make(chan struct{}),
+	}
+	revisions := &fakeRevisionReader{revision: oldRevision}
+	cache := testCountsCache(t, store, revisions, "test", nil)
+	var loads atomic.Int32
+
+	type loadResult struct {
+		counts *CountsResponse
+		err    error
+	}
+	resultCh := make(chan loadResult, 1)
+	go func() {
+		counts, err := cache.GetOrLoad(context.Background(), 7, "user", func(context.Context) (CountsLoadResult, error) {
+			loads.Add(1)
+			return CountsLoadResult{Counts: &CountsResponse{TotalCount: 99}, Cacheable: true}, nil
+		})
+		resultCh <- loadResult{counts: counts, err: err}
+	}()
+	<-store.started
+	revisions.set(newRevision)
+	close(store.release)
+
+	got := <-resultCh
+	if got.err != nil {
+		t.Fatalf("GetOrLoad() error = %v", got.err)
+	}
+	if got.counts == nil || got.counts.TotalCount != 2 {
+		t.Fatalf("counts = %+v, want new-revision cached total 2", got.counts)
+	}
+	if got := loads.Load(); got != 0 {
+		t.Fatalf("loader calls = %d, want 0 with both revisions cached", got)
+	}
+}
+
+func TestCountsCacheRetriesOriginResultWhenRevisionChangesDuringLoad(t *testing.T) {
+	const (
+		oldRevision = "11111111-1111-4111-8111-111111111111"
+		newRevision = "22222222-2222-4222-8222-222222222222"
+	)
+	store := newFakeCountsStore()
+	revisions := &fakeRevisionReader{revision: oldRevision}
+	cache := testCountsCache(t, store, revisions, "test", nil)
+	var loads atomic.Int32
+
+	counts, err := cache.GetOrLoad(context.Background(), 7, "user", func(context.Context) (CountsLoadResult, error) {
+		call := loads.Add(1)
+		if call == 1 {
+			revisions.set(newRevision)
+			return CountsLoadResult{Counts: &CountsResponse{TotalCount: 1}, Cacheable: true}, nil
+		}
+		return CountsLoadResult{Counts: &CountsResponse{TotalCount: 2}, Cacheable: true}, nil
+	})
+	if err != nil {
+		t.Fatalf("GetOrLoad() error = %v", err)
+	}
+	if counts == nil || counts.TotalCount != 2 {
+		t.Fatalf("counts = %+v, want new-revision origin total 2", counts)
+	}
+	if got := loads.Load(); got != 2 {
+		t.Fatalf("loader calls = %d, want old and new revision loads", got)
+	}
+	store.mu.Lock()
+	_, oldWritten := store.values[countsCacheKey("test", oldRevision, 7, "user")]
+	_, newWritten := store.values[countsCacheKey("test", newRevision, 7, "user")]
+	store.mu.Unlock()
+	if oldWritten || !newWritten {
+		t.Fatalf("cache writes old=%v new=%v, want old=false new=true", oldWritten, newWritten)
+	}
+}
+
+func TestCountsCacheCollapsesStaggeredRedisReadErrorsWithFastLoader(t *testing.T) {
+	const callers = 12
+	store := newStaggeredReadErrorStore(callers)
+	revisions := &fakeRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
+	cache := testCountsCache(t, store, revisions, "test", func(options *CountsCacheOptions) {
+		options.CommandTimeout = 2 * time.Second
+	})
+	key := countsCacheKey("test", "11111111-1111-4111-8111-111111111111", 7, "user")
+	var loads atomic.Int32
+	start := make(chan struct{})
+	results := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			<-start
+			counts, err := cache.GetOrLoad(context.Background(), 7, "user", func(context.Context) (CountsLoadResult, error) {
+				loads.Add(1)
+				return CountsLoadResult{Counts: &CountsResponse{TotalCount: 1}, Cacheable: true}, nil
+			})
+			if err == nil && (counts == nil || counts.TotalCount != 1) {
+				err = fmt.Errorf("counts = %+v, want total 1", counts)
+			}
+			results <- err
+		}()
+	}
+	close(start)
+
+	mode := ""
+	deadline := time.Now().Add(time.Second)
+	for mode == "" && time.Now().Before(deadline) {
+		cache.flights.mu.Lock()
+		waiters := 0
+		if call := cache.flights.calls[key]; call != nil {
+			waiters = call.waiters
+		}
+		cache.flights.mu.Unlock()
+		if waiters == callers {
+			mode = "inside-flight"
+		} else if store.calls() == callers {
+			mode = "outside-flight"
+		} else {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if mode == "" {
+		t.Fatalf("callers did not converge inside or outside flight; Redis gets=%d", store.calls())
+	}
+
+	if mode == "inside-flight" {
+		close(store.gates[0])
+		for i := 0; i < callers; i++ {
+			if err := <-results; err != nil {
+				t.Fatalf("GetOrLoad() error = %v", err)
+			}
+		}
+	} else {
+		for i := 0; i < callers; i++ {
+			close(store.gates[i])
+			if err := <-results; err != nil {
+				t.Fatalf("GetOrLoad() error = %v", err)
+			}
+		}
+	}
+	if got := loads.Load(); got != 1 {
+		t.Fatalf("loader calls = %d, want 1 across staggered Redis read errors", got)
+	}
+}
+
 func TestCountsCacheUsesDeterministicTwentyFourToTwentySevenSecondTTL(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -634,42 +844,21 @@ func TestCountsCacheLeaseHolderTimeoutRecoversByRecompeting(t *testing.T) {
 	}
 }
 
-func TestCountsCacheRevisionChangeSkipsWriteAndDegradedResultIsNotCached(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		loader func(*fakeRevisionReader) CountsLoadResult
-	}{
-		{
-			name: "revision changed",
-			loader: func(revisions *fakeRevisionReader) CountsLoadResult {
-				revisions.set("22222222-2222-4222-8222-222222222222")
-				return CountsLoadResult{Counts: &CountsResponse{TotalCount: 1}, Cacheable: true}
-			},
-		},
-		{
-			name: "not cacheable",
-			loader: func(*fakeRevisionReader) CountsLoadResult {
-				return CountsLoadResult{Counts: &CountsResponse{TotalCount: 1}, Cacheable: false}
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			store := newFakeCountsStore()
-			revisions := &fakeRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
-			cache := testCountsCache(t, store, revisions, "test", nil)
-			counts, err := cache.GetOrLoad(context.Background(), 7, "user", func(context.Context) (CountsLoadResult, error) {
-				return test.loader(revisions), nil
-			})
-			if err != nil || counts == nil || counts.TotalCount != 1 {
-				t.Fatalf("GetOrLoad() counts = %+v, error = %v", counts, err)
-			}
-			store.mu.Lock()
-			setCalls := store.setCalls
-			store.mu.Unlock()
-			if setCalls != 0 {
-				t.Fatalf("cache writes = %d, want 0", setCalls)
-			}
-		})
+func TestCountsCacheDegradedResultIsNotCached(t *testing.T) {
+	store := newFakeCountsStore()
+	revisions := &fakeRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
+	cache := testCountsCache(t, store, revisions, "test", nil)
+	counts, err := cache.GetOrLoad(context.Background(), 7, "user", func(context.Context) (CountsLoadResult, error) {
+		return CountsLoadResult{Counts: &CountsResponse{TotalCount: 1}, Cacheable: false}, nil
+	})
+	if err != nil || counts == nil || counts.TotalCount != 1 {
+		t.Fatalf("GetOrLoad() counts = %+v, error = %v", counts, err)
+	}
+	store.mu.Lock()
+	setCalls := store.setCalls
+	store.mu.Unlock()
+	if setCalls != 0 {
+		t.Fatalf("cache writes = %d, want 0", setCalls)
 	}
 }
 
