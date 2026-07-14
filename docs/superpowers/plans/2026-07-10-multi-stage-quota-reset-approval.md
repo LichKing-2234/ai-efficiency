@@ -3385,6 +3385,58 @@ scan, and unfinished-marker scan all completed cleanly.
 Commit evidence: `606c2f0` (`fix(backend): harden quota reset workflow HTTP
 contracts`).
 
+#### Quality-review follow-up (2026-07-14)
+
+- [x] Enforce request-level summary visibility and downgrade unauthorized stale
+  transitions to `ErrNotApprover` without response details.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestGetRequestSummaryUsesViewerPermissions$' -count=1` failed because an
+unrelated viewer received a summary with no error. `cd backend && go test
+./internal/handler -run
+'^(TestQuotaResetStaleDecisionRejectsUnrelatedViewerWithoutDetails|TestQuotaResetLegacyResolvedApproverMutationReturnsSummary)$'
+-count=1` failed because stale approve returned HTTP `409` with requester email,
+department, group, reason, status, and `details.request`; the V1 compatibility
+case remained green.
+
+GREEN evidence: the direct summary gate command passed (`ok`, 1.341s), and the
+real HTTP leak plus V1 compatibility command passed (`ok`, 1.233s). `cd backend
+&& go test ./internal/quotareset -run
+'^(TestWorkflowStaleCoApproverSeesLatestWithoutCurrentPermissions|TestWorkflowRetryStaleAuthorizesBeforeReturningWorkflowAdvanced|TestCancelReturnsVersionedStaleError|TestWorkflowDecisionRejectsStaleNode)$'
+-count=1` passed (`ok`, 2.405s), preserving historical co-approver, requester,
+admin/authorized retry, and concurrent stale summaries without current-node
+permission escalation.
+
+- [x] Read approver candidates from one captured directory generation and retry
+  when the current generation changes during the read.
+
+RED evidence: `cd backend && go test ./internal/quotareset -run
+'^TestListApproverCandidates(RetriesConsistentCurrentSnapshot|ReturnsUnavailableWhenSnapshotKeepsChanging)$'
+-count=1` failed (`exit 1`, 1.609s): the racing read returned the old member
+with empty organization facts, and continuously changing snapshots returned a
+nil error instead of `ErrDirectoryUnavailable`.
+
+GREEN evidence: the same focused command passed (`ok`, 1.250s) after filtering
+members, memberships, and departments by the captured source/run identity,
+revalidating it after all directory reads, and bounding the full-read retry to
+two attempts.
+
+- [x] Run final Task 8 quality-review verification and commit the fixes.
+
+Final verification evidence: `cd backend && go test ./internal/handler -run
+TestQuotaReset -count=1` passed (`ok`, 8.085s). The focused summary visibility,
+stale workflow, current-source, and candidate snapshot command passed (`ok`,
+4.232s). `cd backend && go test ./internal/handler ./internal/quotareset
+-count=1` passed (`handler` 47.770s, `quotareset` 48.270s); `cd backend && go
+test ./cmd/server -count=1` passed (`ok`, 1.106s); and `cd backend && go test
+./... -count=1` passed, including `handler` (66.851s) and `quotareset`
+(66.306s). `cd backend && go vet ./...`, `git diff --check`, changed-Go-file
+`gofmt -d`, and added-line credential, non-example email-domain, and
+TODO/FIXME scans completed cleanly.
+
+Commit evidence: `8f07550` (`fix(backend): harden quota reset authorization and
+snapshots`).
+
 ---
 
 ### Task 9: Add Frontend Workflow Types and API Clients
