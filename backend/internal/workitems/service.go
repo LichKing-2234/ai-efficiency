@@ -8,7 +8,6 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
-	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 )
 
@@ -24,17 +23,22 @@ type providerLister interface {
 	ListProviders(ctx context.Context, req usersetup.ListProvidersRequest) (*usersetup.ListProvidersResponse, error)
 }
 
-type Service struct {
-	client         *ent.Client
-	providerLister providerLister
+type offboardingCounter interface {
+	CountOffboardingCandidates(ctx context.Context, sourceID int) (int, error)
 }
 
-func NewService(client *ent.Client, providerListers ...providerLister) *Service {
+type Service struct {
+	client             *ent.Client
+	providerLister     providerLister
+	offboardingCounter offboardingCounter
+}
+
+func NewService(client *ent.Client, offboardingCounter offboardingCounter, providerListers ...providerLister) *Service {
 	var lister providerLister
 	if len(providerListers) > 0 {
 		lister = providerListers[0]
 	}
-	return &Service{client: client, providerLister: lister}
+	return &Service{client: client, providerLister: lister, offboardingCounter: offboardingCounter}
 }
 
 func (s *Service) Counts(ctx context.Context, userID int, admin bool) (*CountsResponse, error) {
@@ -149,9 +153,12 @@ func actionableQuotaResetStatuses() []quotaresetrequest.Status {
 }
 
 func (s *Service) countOffboardingCandidates(ctx context.Context) (int, error) {
-	candidates, err := directorysync.NewService(s.client, directorysync.ServiceOptions{}).ListOffboardingCandidates(ctx, 0, "")
+	if s.offboardingCounter == nil {
+		return 0, nil
+	}
+	count, err := s.offboardingCounter.CountOffboardingCandidates(ctx, 0)
 	if err != nil {
 		return 0, fmt.Errorf("count directory offboarding candidates: %w", err)
 	}
-	return len(candidates), nil
+	return count, nil
 }

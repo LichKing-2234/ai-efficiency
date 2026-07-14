@@ -51,6 +51,8 @@ func (QuotaResetRequest) Indexes() []ent.Index {
 		index.Fields("requester_user_id", "created_at"),
 		index.Fields("status", "created_at"),
 		index.Fields("provider_id", "group_id", "status"),
+		index.Fields("resolved_approver_user_ids").
+			Annotations(entsql.IndexType("GIN"), entsql.OpClass("jsonb_path_ops")),
 		// Keep the original index stable so older binaries do not rewrite it
 		// during a rolling rollback. The second index spans both workflow versions.
 		index.Fields("requester_user_id", "provider_id", "group_id").
