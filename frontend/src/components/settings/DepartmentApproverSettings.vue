@@ -57,7 +57,7 @@ const selectedDepartmentLabel = computed(() => (
 const selectedDirectorySource = computed(() => (
   directorySources.value.find(source => source.id === selectedDirectorySourceID.value)
 ))
-const visibleError = computed(() => candidateError.value || directoryError.value || error.value)
+const visibleError = computed(() => error.value || candidateError.value || directoryError.value)
 
 onMounted(() => {
   void loadConfigs()
@@ -184,7 +184,7 @@ async function searchDepartments() {
 }
 
 function toggleDepartmentDropdown() {
-  if (selectedDirectorySourceID.value === null) return
+  if (saving.value || selectedDirectorySourceID.value === null) return
   if (departmentDropdownOpen.value) {
     closeDepartmentDropdown()
     return
@@ -257,7 +257,7 @@ async function searchCandidates() {
 }
 
 function toggleApproverDropdown() {
-  if (!form.value.department_external_id || selectedDirectorySourceID.value === null) return
+  if (saving.value || !form.value.department_external_id || selectedDirectorySourceID.value === null) return
   if (approverDropdownOpen.value) {
     closeApproverDropdown()
     return
@@ -314,6 +314,11 @@ async function saveConfigs() {
   saving.value = true
   message.value = ''
   error.value = ''
+  closeDepartmentDropdown()
+  closeApproverDropdown()
+  candidateSearch.value = ''
+  candidates.value = []
+  candidateError.value = ''
   try {
     const response = await saveQuotaResetApproverConfigs(rowsForSave(), 'replace_all')
     configs.value = response.data.data?.items ?? []
@@ -408,7 +413,7 @@ async function saveConfigs() {
             class="flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-60"
             aria-haspopup="listbox"
             :aria-expanded="departmentDropdownOpen ? 'true' : 'false'"
-            :disabled="selectedDirectorySourceID === null"
+            :disabled="saving || selectedDirectorySourceID === null"
             @click="toggleDepartmentDropdown"
           >
             <span class="min-w-0 truncate">
@@ -470,7 +475,7 @@ async function saveConfigs() {
             class="flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-60"
             aria-haspopup="listbox"
             :aria-expanded="approverDropdownOpen ? 'true' : 'false'"
-            :disabled="!form.department_external_id || selectedDirectorySourceID === null"
+            :disabled="saving || !form.department_external_id || selectedDirectorySourceID === null"
             @click="toggleApproverDropdown"
           >
             <span class="min-w-0 truncate">

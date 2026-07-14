@@ -520,6 +520,102 @@ describe('QuotaResetApprovalSettings', () => {
     expect(api.getQuotaResetApprovalChains).toHaveBeenCalledTimes(1)
   })
 
+  it('prioritizes a destructive save conflict over an earlier candidate error', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.getQuotaResetApproverConfigs.mockResolvedValueOnce({
+      data: { data: { items: [configuredAliceApprover] } },
+    })
+    api.listQuotaResetApproverCandidates.mockRejectedValueOnce({
+      response: {
+        status: 503,
+        data: { message: 'Synthetic candidate source is unavailable.' },
+      },
+    })
+    api.saveQuotaResetApproverConfigs.mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { message: 'Group Alpha still references Department Alpha.' },
+      },
+    })
+    const wrapper = await mountSettings()
+    await selectApproverDepartment(wrapper)
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Synthetic candidate source is unavailable.')
+
+    await wrapper.get('[data-testid="quota-reset-config-remove-7"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-save-approvers"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Group Alpha still references Department Alpha.')
+    expect(wrapper.text()).not.toContain('Synthetic candidate source is unavailable.')
+  })
+
+  it('invalidates an in-flight candidate request before destructive save feedback', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const candidateRequest = deferred<any>()
+    const saveRequest = deferred<any>()
+    api.getQuotaResetApproverConfigs.mockResolvedValueOnce({
+      data: { data: { items: [configuredAliceApprover] } },
+    })
+    api.listQuotaResetApproverCandidates.mockReturnValueOnce(candidateRequest.promise)
+    api.saveQuotaResetApproverConfigs.mockReturnValueOnce(saveRequest.promise)
+    const wrapper = await mountSettings()
+    await selectApproverDepartment(wrapper)
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="quota-reset-config-remove-7"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-save-approvers"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-approver-loading"]').exists()).toBe(false)
+
+    saveRequest.reject({
+      response: {
+        status: 409,
+        data: { message: 'Group Beta still references Department Alpha.' },
+      },
+    })
+    await flushPromises()
+    candidateRequest.reject({
+      response: {
+        status: 503,
+        data: { message: 'Late candidate failure must remain stale.' },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Group Beta still references Department Alpha.')
+    expect(wrapper.text()).not.toContain('Late candidate failure must remain stale.')
+  })
+
+  it('clears an earlier candidate error when full replacement succeeds', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.getQuotaResetApproverConfigs.mockResolvedValueOnce({
+      data: { data: { items: [configuredAliceApprover] } },
+    })
+    api.listQuotaResetApproverCandidates.mockRejectedValueOnce({
+      response: {
+        status: 503,
+        data: { message: 'Synthetic candidate lookup failed.' },
+      },
+    })
+    api.saveQuotaResetApproverConfigs.mockResolvedValueOnce({ data: { data: { items: [] } } })
+    const wrapper = await mountSettings()
+    await selectApproverDepartment(wrapper)
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Synthetic candidate lookup failed.')
+
+    await wrapper.get('[data-testid="quota-reset-config-remove-7"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-save-approvers"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Approver configs saved')
+    expect(wrapper.text()).not.toContain('Synthetic candidate lookup failed.')
+  })
+
   it('emits saved after full replacement and reloads chains through the parent', async () => {
     const api = await import('@/api/quotaReset') as any
     api.getQuotaResetApproverConfigs.mockResolvedValueOnce({
