@@ -4809,6 +4809,20 @@ repeatable-read resolution-and-persistence boundary. Code and spec were
 committed as `56783e6` (`fix(backend): make quota reset workflow snapshots
 consistent`); this Task 13 ledger update is committed separately.
 
+Spec-review follow-up evidence (2026-07-15): the approval-chain replacement
+regression now commits three ordered departments with three distinct approvers
+in both the old and new generations, then compares the persisted ordered node
+labels and approver user ids with one complete generation. A temporary mutation
+that restored pre-fix transaction-outside-resolution behavior made the stronger
+test fail by persisting only the initial node (`go test ./internal/quotareset
+-run TestCreateRequestApprovalChainReplacementUsesOneSnapshot -count=1 -v`,
+exit 1, `0.712s`), proving the coverage without timeout-based timing. After
+restoring the production implementation, both concurrency regressions passed
+(`0.982s`), the complete quotareset package passed (`41.244s`), and
+`go vet ./internal/quotareset` plus `git diff --check` exited 0. No production
+behavior changed; the test-only fix is commit `2a793bf` (`test(backend):
+strengthen quota reset snapshot coverage`).
+
 ### Task 14: Revalidate Notification Recipients When a Node Activates
 
 **Files:**
