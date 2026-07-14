@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete and verified. Task 3 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-2 are complete and verified. Task 3 implementation and verification are complete; its checkpoint commit is pending. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the existing embedded SPA materially faster on cold and repeat visits by serving correct gzip/cache headers and removing inactive locale and chart code from the initial data-loading path, without adding a CDN or a separate frontend release unit.
 
@@ -159,7 +159,7 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 - Produces: loaded-dictionary and in-flight-promise caches plus latest-request-wins switching.
 - Produces: a test setup helper that preloads both real dictionaries after memory storage is installed, without adding either dictionary to the production entry's static imports.
 
-- [ ] **Step 1: Add failing locale loading-state tests**
+- [x] **Step 1: Add failing locale loading-state tests**
 
   Add deferred-loader tests that assert:
 
@@ -171,19 +171,19 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
   - when two different switches race, only the latest requested locale commits;
   - English and Chinese compile as complete 1,002-key dictionaries.
 
-- [ ] **Step 2: Run the locale tests and record RED**
+- [x] **Step 2: Run the locale tests and record RED**
 
   Run: `cd frontend && npm test -- src/__tests__/i18n.test.ts src/__tests__/login-view.test.ts src/__tests__/app-sidebar.test.ts`
 
   Expected: compilation/test failure because both dictionaries are inline, no async bootstrap/cache exists, and switching is currently immediate and synchronous.
 
-- [ ] **Step 3: Split dictionaries and implement atomic dynamic loading**
+- [x] **Step 3: Split dictionaries and implement atomic dynamic loading**
 
   Move the two existing dictionary objects byte-for-byte into the locale modules. Keep only loader/state logic in `i18n.ts`, using static dynamic-import functions for `./locales/en-US` and `./locales/zh-CN`. Cache both resolved dictionaries and pending promises. Do not change `locale`, storage, document language, or active messages until the latest requested loader succeeds; on failure keep the old state. Before first mount, choose the saved/browser locale and await its loader.
 
   In Vitest setup, install memory storage first, then dynamically import the i18n test preload helper and await both real dictionaries. This keeps existing `setLocale(...)` calls synchronous once cached while production still has no static locale import.
 
-- [ ] **Step 4: Run focused and full locale verification**
+- [x] **Step 4: Run focused and full locale verification**
 
   Run separately:
 
