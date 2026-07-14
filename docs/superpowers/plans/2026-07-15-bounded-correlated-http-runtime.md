@@ -135,7 +135,7 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   Evidence (2026-07-15): the environment-sensitive slow-header listener command passed in 0.363s; the combined config/httpclient/server command passed in 0.193s, 0.427s, and 0.781s respectively; `git diff --check` passed.
 
-- [ ] **Step 6: Commit Task 1 and record the checkpoint**
+- [x] **Step 6: Commit Task 1 and record the checkpoint**
 
   Commit implementation plus checked Steps 1-5:
 
@@ -144,6 +144,8 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
   After the commit succeeds, check Step 6 and commit:
 
   `docs(plan): record runtime budget task 1`
+
+  Checkpoint (2026-07-15): implementation commit `ef2b044d3508261994612fca730507809600d6db`.
 
 ---
 
