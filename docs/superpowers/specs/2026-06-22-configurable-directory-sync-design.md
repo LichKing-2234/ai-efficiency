@@ -440,6 +440,8 @@ DELETE /api/v1/admin/directory/sources/:id
 
 Delete is a soft delete. A deleted or disabled source must not run scheduled sync. Historical runs remain queryable for admin audit.
 
+Source update and soft delete can change which Directory facts contribute to Work Items. Each successful update/delete therefore commits the source mutation and the shared PostgreSQL work-item counts revision in one transaction. Validation failure or another rejected mutation changes neither source state nor revision.
+
 ### Validation
 
 ```text
@@ -602,6 +604,10 @@ It performs:
 
 It must not remove subscriptions automatically.
 
+The upstream Relay disable remains outside the local database transaction. After Relay reports success, the backend synchronously derives `context.WithTimeout(context.WithoutCancel(requestContext), 5*time.Second)` and commits `users.token_valid_after`, the succeeded offboarding action, and the shared PostgreSQL work-item counts revision in one transaction. This finalization is independent from client cancellation but remains bounded.
+
+If finalization fails, the backend rolls that transaction back before recording `partial_failed`. The failure record uses a second independent `context.WithTimeout(context.WithoutCancel(requestContext), 5*time.Second)` so an expired finalization deadline cannot leave an already-disabled Relay user with a permanently `running` local action. Exact-email confirmation, current snapshot resolution, and current-membership recheck still occur before Relay disable and never consult cached work-item counts.
+
 ## Relay Capability
 
 Add an optional relay interface, for example:
@@ -625,7 +631,7 @@ To make offboarding effective:
 1. Token generation continues to include `iat`.
 2. Access-token validation loads the user's `token_valid_after` and rejects tokens issued before it.
 3. Refresh-token validation also loads `token_valid_after` before issuing a new pair.
-4. Offboarding disable sets `token_valid_after = now`.
+4. Successful offboarding finalization sets `token_valid_after = now` in the same transaction as its succeeded action and work-item revision change.
 5. Existing clients receive `401` on the next API call or refresh attempt.
 
 This is not a full session-management feature. It is a per-user revocation floor.
@@ -765,8 +771,9 @@ Runs the DSL asynchronously against the external API and records a preview run. 
 ### Apply
 
 Runs the DSL and normalizes the complete result. Only after all required steps
-succeed does it update current directory facts, run completion fields, and
-`last_successful_run_id` in one transaction.
+succeed does it update current directory facts, run completion fields,
+`last_successful_run_id`, and the shared PostgreSQL work-item counts revision in
+one transaction.
 
 Apply behavior:
 
@@ -779,9 +786,11 @@ Apply behavior:
 6. Compute diff.
 7. In a transaction, replace current facts for the source, mark the run
    `completed` or `completed_with_warnings`, and set source `last_run_id` /
-   `last_successful_run_id`.
+   `last_successful_run_id`, then advance the work-item counts revision before
+   commit.
 
-Failed apply runs do not change current directory facts or offboarding candidates.
+Failed apply runs do not change current directory facts, offboarding candidates,
+or the revision. Validate and preview runs also leave the revision unchanged.
 
 ### Schedule
 
@@ -830,6 +839,7 @@ Offboarding errors:
 - relay provider lacks disable capability: `422`
 - upstream disable fails: `502`
 - local token revocation fails after upstream disable: `500` plus audit row marked partial failure
+- bounded local finalization expires after upstream disable: roll back token/action/revision state, then record `partial_failed` under a new independent bounded context
 
 Partial offboarding failure must be visible in the UI so admins can retry or investigate.
 
@@ -856,11 +866,13 @@ Backend tests:
 - Preview run does not update `directory_members`.
 - Failed apply run does not change current facts or offboarding candidates.
 - Successful full-company apply updates departments, members, and `last_successful_run_id`.
+- Source update/delete and successful apply advance the shared work-item revision atomically with their local state; validation, preview, conflict, and failed apply paths do not.
 - Email matching is case-insensitive and trims whitespace.
 - Invalid emails are warnings and excluded.
 - Duplicate emails are deterministic and warning-backed.
 - Offboarding candidate query uses latest successful full-company apply only.
 - Confirmed offboarding calls relay disable and sets token revocation floor.
+- Successful offboarding finalization commits token revocation, succeeded action, and revision atomically under an independent five-second context; deadline/finalization failure rolls back and records `partial_failed` under a new independent bounded context.
 - Access and refresh tokens issued before the revocation floor are rejected.
 - Tokens issued after the revocation floor are accepted.
 - Providers without disable capability return `422`.

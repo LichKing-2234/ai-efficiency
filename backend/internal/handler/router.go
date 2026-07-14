@@ -21,8 +21,9 @@ var prAttributionService prAttributionSettler
 var prUsageService prUsageRefresher
 
 type RouterRuntimeOptions struct {
-	DirectoryService DirectoryAdminService
-	WorkItemsCache   *workitems.CountsCache
+	DirectoryService       DirectoryAdminService
+	WorkItemsCache         *workitems.CountsCache
+	WorkItemsRevisionStore *workitems.RevisionStore
 }
 
 func SetPRAttributionService(service prAttributionSettler) {
@@ -111,6 +112,7 @@ func SetupRouter(
 			providerHandler,
 			quotareset.NewApproverResolver(entClient),
 			quotareset.NewWebhookNotifier(entClient, encryptionKey, publicURL),
+			runtime.WorkItemsRevisionStore,
 		)
 		quotaResetHandler = NewQuotaResetHandler(quotaResetService)
 	}

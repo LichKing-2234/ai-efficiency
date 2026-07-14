@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1 and 2 are complete. Task 3 is next; this branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-3 are complete. Task 4 is next; this branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the protected-navigation work-item badge and administrator offboarding list fast and bounded while preserving authoritative quota, credential, Directory Sync, Relay disable, and token-revocation behavior.
 
@@ -185,31 +185,31 @@
 - Produces: Directory source update/delete, successful apply, and successful offboarding finalization whose local state and revision change atomically.
 - Produces: a tx-aware token revocation seam so production offboarding commits `users.token_valid_after`, succeeded action, and revision together.
 
-- [ ] **Step 1: Add failing mutation invalidation tests**
+- [x] **Step 1: Add failing mutation invalidation tests**
 
   Use the real PostgreSQL revision store and failure hooks rather than fixed mock call counts. Cover quota create, cancel, reject, pending-to-resetting approve, failed-to-resetting retry, and resetting-to-failed recovery; assert every actionable-membership transition and its required event commit with the revision in one transaction, including rollback on revision failure. Cover Directory source update/delete, successful apply, and successful offboarding finalization. After fake Relay success, cancel the request context and prove a synchronous independent five-second finalization context still commits token revocation, succeeded action, and revision; validation/conflict paths must keep both state and revision unchanged.
 
-- [ ] **Step 2: Run mutation tests and record the expected RED result**
+- [x] **Step 2: Run mutation tests and record the expected RED result**
 
   Run: `cd backend && go test ./internal/quotareset ./internal/directorysync ./internal/auth ./internal/handler -run 'Revision|Invalidat|Apply|Offboarding|Actionable|Finaliz' -count=1`
 
   Expected: failures because these services do not accept or invoke the invalidator.
 
-- [ ] **Step 3: Inject local invalidator interfaces and invalidate before success**
+- [x] **Step 3: Inject local invalidator interfaces and invalidate before success**
 
   Keep each service's dependency narrow. Make quota request/event/actionable-status changes and their revision atomic; Approve/Retry may legitimately advance revision once when leaving actionable and again if reset failure re-enters actionable. Keep reset-succeeded event handling consistent with the current quota spec so an event failure cannot erase succeeded state. Make Directory source update/delete and apply revision changes transactional. After Relay disable succeeds, use `context.WithoutCancel` plus a five-second timeout to finalize tx-aware token revocation, succeeded action, and revision in one transaction. Preserve decision checks, exact-email confirmation, current membership recheck, Relay disable, and token revocation; none may consult cached counts.
 
-- [ ] **Step 4: Add and pass an immediate post-mutation integration test**
+- [x] **Step 4: Add and pass an immediate post-mutation integration test**
 
   Warm actor/admin work-item caches, execute representative quota, Directory source/apply, and offboarding mutations, then call counts and assert the new authoritative value is visible immediately while the old Redis key remains unreachable by revision. Stop Redis during a mutation, prove the PostgreSQL state and revision still commit, restart Redis, and prove the old cached value cannot resurrect.
 
-- [ ] **Step 5: Run focused Task 3 verification**
+- [x] **Step 5: Run focused Task 3 verification**
 
   Run: `cd backend && go test ./internal/quotareset ./internal/directorysync ./internal/auth ./internal/workitems ./internal/handler ./cmd/server -count=1`
 
   Expected: PASS with no mutation path using cache state for authorization or decisions.
 
-- [ ] **Step 6: Commit Task 3 and update this ledger immediately**
+- [x] **Step 6: Commit Task 3 and update this ledger immediately**
 
   Commit: `perf(backend): invalidate work item counts on mutations`
 

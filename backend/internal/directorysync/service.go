@@ -57,7 +57,11 @@ func (e *UpstreamError) Error() string {
 func (e *UpstreamError) Unwrap() error { return e.Err }
 
 type TokenRevoker interface {
-	RevokeUserTokens(ctx context.Context, userID int, revokedAt time.Time) error
+	RevokeUserTokensTx(ctx context.Context, tx *ent.Tx, userID int, revokedAt time.Time) error
+}
+
+type workItemCountsInvalidator interface {
+	InvalidateWorkItemCountsTx(ctx context.Context, tx *ent.Tx) error
 }
 
 type RelayDisablerResolver interface {
@@ -65,11 +69,12 @@ type RelayDisablerResolver interface {
 }
 
 type ServiceOptions struct {
-	Executor       *Executor
-	Credentials    CredentialResolver
-	RelayDisablers RelayDisablerResolver
-	TokenRevoker   TokenRevoker
-	Now            func() time.Time
+	Executor                  *Executor
+	Credentials               CredentialResolver
+	RelayDisablers            RelayDisablerResolver
+	TokenRevoker              TokenRevoker
+	WorkItemCountsInvalidator workItemCountsInvalidator
+	Now                       func() time.Time
 }
 
 type Service struct {
@@ -78,6 +83,7 @@ type Service struct {
 	credentials    CredentialResolver
 	relayDisablers RelayDisablerResolver
 	tokenRevoker   TokenRevoker
+	invalidator    workItemCountsInvalidator
 	now            func() time.Time
 	runningMu      sync.Mutex
 	runningSources map[int]struct{}
@@ -112,6 +118,7 @@ func NewService(client *ent.Client, options ServiceOptions) *Service {
 		credentials:    options.Credentials,
 		relayDisablers: options.RelayDisablers,
 		tokenRevoker:   options.TokenRevoker,
+		invalidator:    options.WorkItemCountsInvalidator,
 		now:            now,
 		runningSources: make(map[int]struct{}),
 	}
@@ -165,7 +172,12 @@ func (s *Service) UpdateSource(ctx context.Context, id int, input SourceInput) (
 	if issues := s.validateConfig(ctx, cfg); len(issues) > 0 {
 		return nil, &ValidationError{Message: validationIssuesMessage(issues)}
 	}
-	return s.client.DirectorySource.UpdateOneID(id).
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin directory source update tx: %w", err)
+	}
+	defer tx.Rollback()
+	updated, err := tx.DirectorySource.UpdateOneID(id).
 		SetName(input.Name).
 		SetDescription(input.Description).
 		SetScope(directorysource.Scope(input.Scope)).
@@ -175,15 +187,39 @@ func (s *Service) UpdateSource(ctx context.Context, id int, input SourceInput) (
 		SetScheduleInterval(directorysource.ScheduleInterval(input.ScheduleInterval)).
 		SetScheduleTimezone(input.ScheduleTimezone).
 		Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit directory source update: %w", err)
+	}
+	updated.Unwrap()
+	return updated, nil
 }
 
 func (s *Service) DeleteSource(ctx context.Context, id int) error {
-	_, err := s.client.DirectorySource.UpdateOneID(id).
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin directory source delete tx: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.DirectorySource.UpdateOneID(id).
 		SetDeleted(true).
 		SetEnabled(false).
 		SetScheduleEnabled(false).
-		Save(ctx)
-	return err
+		Save(ctx); err != nil {
+		return err
+	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit directory source delete: %w", err)
+	}
+	return nil
 }
 
 func normalizeSourceInput(input SourceInput) SourceInput {
@@ -462,10 +498,24 @@ func (s *Service) completeApplyRun(ctx context.Context, runID, sourceID int, res
 		Save(ctx); err != nil {
 		return nil, err
 	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
+	run.Unwrap()
 	return run, nil
+}
+
+func (s *Service) invalidateWorkItemCountsTx(ctx context.Context, tx *ent.Tx) error {
+	if s.invalidator == nil {
+		return nil
+	}
+	if err := s.invalidator.InvalidateWorkItemCountsTx(ctx, tx); err != nil {
+		return fmt.Errorf("invalidate work item counts: %w", err)
+	}
+	return nil
 }
 
 func warningsToMaps(warnings []ExecutionWarning) []map[string]any {
@@ -963,15 +1013,49 @@ func (s *Service) DisableRelayUserForCandidate(ctx context.Context, req DisableC
 		}
 		return failed, &UpstreamError{Message: "disable relay user", Err: err}
 	}
-	revokedAt := s.now()
-	if err := s.tokenRevoker.RevokeUserTokens(ctx, u.ID, revokedAt); err != nil {
-		partial, saveErr := s.upsertOffboardingAction(ctx, req, *u.RelayUserID, *source.LastSuccessfulRunID, directoryoffboardingaction.StatusPartialFailed, err)
-		if saveErr != nil {
-			return nil, saveErr
-		}
-		return partial, err
+	return s.finalizeOffboarding(ctx, req, u.ID, *u.RelayUserID, *source.LastSuccessfulRunID, s.now())
+}
+
+func (s *Service) finalizeOffboarding(ctx context.Context, req DisableCandidateRequest, userID, relayUserID, runID int, revokedAt time.Time) (*ent.DirectoryOffboardingAction, error) {
+	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	recordPartialFailure := func(cause error) (*ent.DirectoryOffboardingAction, error) {
+		failureCtx, failureCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer failureCancel()
+		return s.recordPartialOffboardingFailure(failureCtx, req, relayUserID, runID, cause)
 	}
-	return s.upsertOffboardingAction(ctx, req, *u.RelayUserID, *source.LastSuccessfulRunID, directoryoffboardingaction.StatusSucceeded, nil)
+
+	tx, err := s.client.Tx(finalizeCtx)
+	if err != nil {
+		return recordPartialFailure(fmt.Errorf("begin offboarding finalization tx: %w", err))
+	}
+	fail := func(cause error) (*ent.DirectoryOffboardingAction, error) {
+		_ = tx.Rollback()
+		return recordPartialFailure(cause)
+	}
+	if err := s.tokenRevoker.RevokeUserTokensTx(finalizeCtx, tx, userID, revokedAt); err != nil {
+		return fail(err)
+	}
+	action, err := s.upsertOffboardingActionTx(finalizeCtx, tx, req, relayUserID, runID, directoryoffboardingaction.StatusSucceeded, nil)
+	if err != nil {
+		return fail(err)
+	}
+	if err := s.invalidateWorkItemCountsTx(finalizeCtx, tx); err != nil {
+		return fail(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fail(fmt.Errorf("commit offboarding finalization: %w", err))
+	}
+	action.Unwrap()
+	return action, nil
+}
+
+func (s *Service) recordPartialOffboardingFailure(ctx context.Context, req DisableCandidateRequest, relayUserID, runID int, cause error) (*ent.DirectoryOffboardingAction, error) {
+	partial, saveErr := s.upsertOffboardingAction(ctx, req, relayUserID, runID, directoryoffboardingaction.StatusPartialFailed, cause)
+	if saveErr != nil {
+		return nil, fmt.Errorf("record partial offboarding failure after %v: %w", cause, saveErr)
+	}
+	return partial, cause
 }
 
 func (s *Service) primaryRelayProviderID(ctx context.Context) (int, error) {
@@ -1002,7 +1086,15 @@ func (s *Service) primaryRelayProviderID(ctx context.Context) (int, error) {
 }
 
 func (s *Service) upsertOffboardingAction(ctx context.Context, req DisableCandidateRequest, relayUserID, runID int, status directoryoffboardingaction.Status, cause error) (*ent.DirectoryOffboardingAction, error) {
-	action, err := s.client.DirectoryOffboardingAction.Query().
+	return upsertOffboardingAction(ctx, s.client.DirectoryOffboardingAction, req, relayUserID, runID, status, cause)
+}
+
+func (s *Service) upsertOffboardingActionTx(ctx context.Context, tx *ent.Tx, req DisableCandidateRequest, relayUserID, runID int, status directoryoffboardingaction.Status, cause error) (*ent.DirectoryOffboardingAction, error) {
+	return upsertOffboardingAction(ctx, tx.DirectoryOffboardingAction, req, relayUserID, runID, status, cause)
+}
+
+func upsertOffboardingAction(ctx context.Context, actions *ent.DirectoryOffboardingActionClient, req DisableCandidateRequest, relayUserID, runID int, status directoryoffboardingaction.Status, cause error) (*ent.DirectoryOffboardingAction, error) {
+	action, err := actions.Query().
 		Where(
 			directoryoffboardingaction.SourceIDEQ(req.SourceID),
 			directoryoffboardingaction.UserIDEQ(req.UserID),
@@ -1017,7 +1109,7 @@ func (s *Service) upsertOffboardingAction(ctx context.Context, req DisableCandid
 		errorMessage = cause.Error()
 	}
 	if ent.IsNotFound(err) {
-		create := s.client.DirectoryOffboardingAction.Create().
+		create := actions.Create().
 			SetSourceID(req.SourceID).
 			SetUserID(req.UserID).
 			SetRelayUserID(relayUserID).
@@ -1031,7 +1123,7 @@ func (s *Service) upsertOffboardingAction(ctx context.Context, req DisableCandid
 		}
 		return create.Save(ctx)
 	}
-	update := s.client.DirectoryOffboardingAction.UpdateOne(action).
+	update := actions.UpdateOne(action).
 		SetRelayUserID(relayUserID).
 		SetDirectoryRunID(runID).
 		SetStatus(status).
