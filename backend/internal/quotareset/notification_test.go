@@ -845,6 +845,55 @@ func TestWorkflowNotificationsRevalidateSnapshottedApprovers(t *testing.T) {
 	}
 }
 
+func TestWorkflowNotificationAdminFallbackExcludesRequester(t *testing.T) {
+	for _, event := range []NotificationEvent{NotificationNodeActivated, NotificationCancelled} {
+		t.Run(string(event), func(t *testing.T) {
+			fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+			fixture.replaceApproverIDs(t, 0, fixture.actorA.ID, fixture.actorB.ID)
+			fixture.client.User.UpdateOneID(fixture.requester.ID).SetRole("admin").SaveX(fixture.ctx)
+
+			source := createQuotaResetDirectorySource(t, fixture.ctx, fixture.client)
+			department := createQuotaResetDepartment(t, fixture.ctx, fixture.client, source.ID, "department-admin-requester", "Department Admin Requester", nil)
+			createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "requester-wecom-id", fixture.requester.Email, department.ExternalID, &fixture.requester.ID)
+			createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "other-admin-wecom-id", fixture.admin.Email, department.ExternalID, &fixture.admin.ID)
+			inactiveA := createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "inactive-approver-alpha", fixture.actorA.Email, department.ExternalID, &fixture.actorA.ID)
+			inactiveB := createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "inactive-approver-beta", fixture.actorB.Email, department.ExternalID, &fixture.actorB.ID)
+			fixture.client.DirectoryMember.UpdateOneID(inactiveA.ID).SetStatus("inactive").SaveX(fixture.ctx)
+			fixture.client.DirectoryMember.UpdateOneID(inactiveB.ID).SetStatus("inactive").SaveX(fixture.ctx)
+
+			notificationContext, err := fixture.service.notificationContextForRequest(
+				fixture.ctx,
+				fixture.request.ID,
+				fixture.nodes[0].ID,
+				event,
+			)
+			if err != nil {
+				t.Fatalf("notificationContextForRequest() error = %v", err)
+			}
+			if len(notificationContext.Recipients) != 1 || notificationContext.Recipients[0].UserID != fixture.admin.ID {
+				t.Fatalf("fallback recipients = %#v, want only current admin %d", notificationContext.Recipients, fixture.admin.ID)
+			}
+			if got := notificationContext.Recipients[0].NotificationIDs["wecom"]; got != "other-admin-wecom-id" {
+				t.Fatalf("fallback recipient WeCom id = %q, want other-admin-wecom-id", got)
+			}
+			rendered, err := (weComGroupRobotAdapter{maxBytes: 4096}).Render(notificationContext)
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+			_, content := decodeWeComNotification(t, rendered.Body)
+			if strings.Contains(content, "<@requester-wecom-id>") {
+				t.Fatalf("notification content mentioned requester: %s", content)
+			}
+			if !strings.Contains(content, "<@other-admin-wecom-id>") {
+				t.Fatalf("notification content omitted other current admin: %s", content)
+			}
+			if notificationContext.CurrentNode == nil || notificationContext.CurrentNode.AdminFallback || len(notificationContext.CurrentNode.Approvers) != 2 {
+				t.Fatalf("current node = %#v, want unchanged non-fallback snapshot with two approvers", notificationContext.CurrentNode)
+			}
+		})
+	}
+}
+
 func TestCurrentNotificationPeopleQueriesOnlyPotentialDirectoryMatches(t *testing.T) {
 	ctx := context.Background()
 	client, dsn := testdb.OpenWithDSN(t)

@@ -699,7 +699,10 @@ Rules:
    normal user ids against the current successful directory snapshot and local
    access state. If any remain usable, target only those current people. If none
    remain usable, target current admins exclusively, regardless of the node's
-   immutable creation-time `admin_fallback_required` value.
+   immutable creation-time `admin_fallback_required` value. Exclude the
+   request's requester from this fallback recipient set even when that user is
+   currently an admin; retain every other current admin under the existing
+   admin policy.
 6. Normal nodes with usable candidates do not proactively mention admins.
 
 ## Notification Architecture
@@ -807,7 +810,10 @@ current directory member, must not be the requester, and must have neither
 normal recipient even when no channel recipient id is available; missing ids
 produce coverage output rather than admin fallback. If no snapshotted user is
 currently usable, delivery switches to current admins only and never combines
-stale normal users with admins. Duplicate user ids are removed.
+stale normal users with admins. The requester is removed from this node-fallback
+admin set even when currently an admin, preventing self-notification without
+changing global admin eligibility or other event routing. Duplicate user ids
+are removed.
 
 Live delivery people receive their current display name, email, and
 channel-specific notification identities. The immutable approver rows continue

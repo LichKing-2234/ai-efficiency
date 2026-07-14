@@ -518,7 +518,17 @@ func (s *Service) currentNodeNotificationPeople(ctx context.Context, requesterUs
 	if len(approvers) > 0 {
 		return approvers, nil
 	}
-	return s.currentAdminNotificationPeople(ctx)
+	admins, err := s.currentAdminNotificationPeople(ctx)
+	if err != nil {
+		return nil, err
+	}
+	recipients := make([]NotificationPerson, 0, len(admins))
+	for _, admin := range admins {
+		if admin.UserID != requesterUserID {
+			recipients = append(recipients, admin)
+		}
+	}
+	return recipients, nil
 }
 
 func workflowCompletionDecision(request *ent.QuotaResetRequest, decisions []*ent.QuotaResetRequestDecision) *ent.QuotaResetRequestDecision {
