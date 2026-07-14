@@ -754,15 +754,15 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	if err := resetter.ResetSubscriptionQuotaForUser(ctx, running.RequesterRelayUserID, groupID); err != nil {
 		return s.storeResetFailure(ctx, requestID, actorUserID, err)
 	}
-	succeeded, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
-		SetStatus(quotaresetrequest.StatusApprovedResetSucceeded).
-		SetResetError("").
-		SetResetCompletedAt(time.Now()).
-		Save(ctx)
+	succeeded, err := s.persistResetOutcome(
+		ctx,
+		requestID,
+		actorUserID,
+		quotaresetrequest.StatusApprovedResetSucceeded,
+		quotaresetrequestevent.EventTypeResetSucceeded,
+		"",
+	)
 	if err != nil {
-		return nil, fmt.Errorf("store reset success: %w", err)
-	}
-	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetSucceeded, nil, ""); err != nil {
 		return nil, err
 	}
 	_ = s.notify(ctx, NotificationResetSucceeded, succeeded)
@@ -781,24 +781,80 @@ func (s *Service) storeResetFailure(ctx context.Context, requestID int, actorUse
 	if resetErr != nil {
 		errorMessage = resetErr.Error()
 	}
-	failed, saveErr := s.client.QuotaResetRequest.UpdateOneID(requestID).
-		SetStatus(quotaresetrequest.StatusApprovedResetFailed).
-		SetResetError(errorMessage).
-		SetResetCompletedAt(time.Now()).
-		Save(ctx)
-	if saveErr != nil {
-		return nil, fmt.Errorf("store reset failure: %w", saveErr)
+	failed, err := s.persistResetOutcome(
+		ctx,
+		requestID,
+		actorUserID,
+		quotaresetrequest.StatusApprovedResetFailed,
+		quotaresetrequestevent.EventTypeResetFailed,
+		errorMessage,
+	)
+	if err != nil {
+		return nil, err
 	}
-	_ = s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetFailed, nil, errorMessage)
 	_ = s.notify(ctx, NotificationResetFailed, failed)
 	return failed, nil
 }
 
+func (s *Service) persistResetOutcome(
+	ctx context.Context,
+	requestID int,
+	actorUserID int,
+	status quotaresetrequest.Status,
+	eventType quotaresetrequestevent.EventType,
+	errorMessage string,
+) (*ent.QuotaResetRequest, error) {
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("persist reset outcome: begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	request, err := tx.QuotaResetRequest.Query().
+		Where(
+			quotaresetrequest.IDEQ(requestID),
+			func(selector *sql.Selector) { selector.ForUpdate() },
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("persist reset outcome: lock request: %w", err)
+	}
+	if request.Status != quotaresetrequest.StatusApprovedResetting {
+		return nil, fmt.Errorf(
+			"persist reset outcome: request %d status is %s, want %s",
+			requestID,
+			request.Status,
+			quotaresetrequest.StatusApprovedResetting,
+		)
+	}
+
+	updated, err := tx.QuotaResetRequest.UpdateOneID(requestID).
+		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusApprovedResetting)).
+		SetStatus(status).
+		SetResetError(errorMessage).
+		SetResetCompletedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("persist reset outcome: update request: %w", err)
+	}
+	if err := writeQuotaResetEvent(ctx, tx.QuotaResetRequestEvent, requestID, &actorUserID, eventType, nil, errorMessage); err != nil {
+		return nil, fmt.Errorf("persist reset outcome: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("persist reset outcome: commit transaction: %w", err)
+	}
+	return updated, nil
+}
+
 func (s *Service) writeEvent(ctx context.Context, requestID int, actorUserID *int, eventType quotaresetrequestevent.EventType, metadata map[string]any, errorMessage string) error {
+	return writeQuotaResetEvent(ctx, s.client.QuotaResetRequestEvent, requestID, actorUserID, eventType, metadata, errorMessage)
+}
+
+func writeQuotaResetEvent(ctx context.Context, eventClient *ent.QuotaResetRequestEventClient, requestID int, actorUserID *int, eventType quotaresetrequestevent.EventType, metadata map[string]any, errorMessage string) error {
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
-	create := s.client.QuotaResetRequestEvent.Create().
+	create := eventClient.Create().
 		SetRequestID(requestID).
 		SetEventType(eventType).
 		SetMetadata(metadata).

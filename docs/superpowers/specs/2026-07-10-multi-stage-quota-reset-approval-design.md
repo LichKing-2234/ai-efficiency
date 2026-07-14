@@ -673,8 +673,24 @@ After the approval transaction commits:
 
 1. Execute the existing provider-scoped quota reset once.
 2. Preserve daily, weekly, and monthly reset semantics.
-3. Write existing reset-started, succeeded, or failed events.
-4. Do not reopen approval nodes after a reset failure.
+3. After the provider returns, begin a database transaction, lock the request
+   `FOR UPDATE`, and require it to remain `approved_resetting`.
+4. In that transaction, write the terminal success or failure status,
+   completion time, error text, and matching `reset_succeeded` or
+   `reset_failed` event, then commit before sending the result notification.
+5. If the terminal update, audit event, or commit fails, roll back and return a
+   persistence error without a terminal request summary or result notification.
+6. A provider failure returns an `approved_reset_failed` request with a nil
+   service error only after the terminal transaction commits.
+7. Do not reopen approval nodes after a reset failure.
+
+This local transaction does not make the provider call idempotent.
+`UserSubscriptionQuotaResetter` has neither an idempotency key nor an outcome
+lookup. A process crash around that unkeyed call can therefore leave an
+`approved_resetting` request with an ambiguous provider outcome, including an
+unrecorded provider success. AI Efficiency must not automatically replay that
+call; resolving the crash window requires a future provider idempotency and
+recovery contract outside this design.
 
 For v2 requests, reset retry is allowed to:
 
@@ -1160,3 +1176,6 @@ separately from deterministic unit tests.
 13. Work Items counts represent only actionable current work.
 14. Request nodes, approvers, decisions, reset events, and notification events
     provide sufficient durable facts for the future audit module.
+15. A returned provider outcome and its matching terminal audit event commit
+    atomically before result notification; local persistence failure leaves the
+    request `approved_resetting` and returns no terminal summary.

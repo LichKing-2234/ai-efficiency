@@ -169,6 +169,66 @@ func TestApproveStoresUnsupportedResetterAsResetFailed(t *testing.T) {
 	}
 }
 
+func TestResetSuccessAuditFailureRollsBackTerminalOutcome(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	actor := createQuotaResetUser(t, ctx, client, "approver", "approver@example.com", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{actor.ID})
+	client.QuotaResetRequest.UpdateOneID(request.ID).
+		SetStatus(quotaresetrequest.StatusApprovedResetting).
+		SaveX(ctx)
+	createEnabledQuotaResetNotificationSetting(t, ctx, client)
+	notifier := &countingQuotaResetNotifier{}
+	fake := &fakeQuotaResetProvider{}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), notifier)
+	injectedErr := errors.New("injected reset_succeeded event failure")
+	injectQuotaResetEventFailure(client, quotaresetrequestevent.EventTypeResetSucceeded, injectedErr)
+
+	updated, err := svc.executeReset(ctx, request.ID, actor.ID, false, false)
+	if updated != nil || !errors.Is(err, injectedErr) || !strings.Contains(err.Error(), "persist reset outcome") {
+		t.Fatalf("executeReset() = %+v, %v, want nil summary with injected persistence error", updated, err)
+	}
+	assertQuotaResetOutcomeRolledBack(t, ctx, client, request.ID, quotaresetrequestevent.EventTypeResetSucceeded)
+	if fake.resetCalls != 1 {
+		t.Fatalf("reset calls = %d, want 1", fake.resetCalls)
+	}
+	if notifier.calls != 0 {
+		t.Fatalf("result notification calls = %d, want 0", notifier.calls)
+	}
+}
+
+func TestResetFailureAuditFailureRollsBackTerminalOutcome(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	actor := createQuotaResetUser(t, ctx, client, "approver", "approver@example.com", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{actor.ID})
+	client.QuotaResetRequest.UpdateOneID(request.ID).
+		SetStatus(quotaresetrequest.StatusApprovedResetting).
+		SaveX(ctx)
+	createEnabledQuotaResetNotificationSetting(t, ctx, client)
+	notifier := &countingQuotaResetNotifier{}
+	fake := &fakeQuotaResetProvider{resetErr: errors.New("relay timeout")}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), notifier)
+	injectedErr := errors.New("injected reset_failed event failure")
+	injectQuotaResetEventFailure(client, quotaresetrequestevent.EventTypeResetFailed, injectedErr)
+
+	updated, err := svc.executeReset(ctx, request.ID, actor.ID, false, false)
+	if updated != nil || !errors.Is(err, injectedErr) || !strings.Contains(err.Error(), "persist reset outcome") {
+		t.Fatalf("executeReset() = %+v, %v, want nil summary with injected persistence error", updated, err)
+	}
+	assertQuotaResetOutcomeRolledBack(t, ctx, client, request.ID, quotaresetrequestevent.EventTypeResetFailed)
+	if fake.resetCalls != 1 {
+		t.Fatalf("reset calls = %d, want 1", fake.resetCalls)
+	}
+	if notifier.calls != 0 {
+		t.Fatalf("result notification calls = %d, want 0", notifier.calls)
+	}
+}
+
 func TestAdminCanApproveOwnRequestThroughAdminFallback(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -609,6 +669,58 @@ type providerResolverFunc func(context.Context, int) (relay.Provider, error)
 
 func (f providerResolverFunc) Resolve(ctx context.Context, providerID int) (relay.Provider, error) {
 	return f(ctx, providerID)
+}
+
+type countingQuotaResetNotifier struct {
+	calls int
+}
+
+func (n *countingQuotaResetNotifier) Notify(context.Context, NotificationContext) (*NotificationDeliveryResult, error) {
+	n.calls++
+	return &NotificationDeliveryResult{Delivered: true}, nil
+}
+
+func injectQuotaResetEventFailure(client *ent.Client, eventType quotaresetrequestevent.EventType, injectedErr error) {
+	client.QuotaResetRequestEvent.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+			eventMutation, ok := mutation.(*ent.QuotaResetRequestEventMutation)
+			if ok && mutation.Op().Is(ent.OpCreate) {
+				if got, exists := eventMutation.EventType(); exists && got == eventType {
+					return nil, injectedErr
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+}
+
+func assertQuotaResetOutcomeRolledBack(t *testing.T, ctx context.Context, client *ent.Client, requestID int, eventType quotaresetrequestevent.EventType) {
+	t.Helper()
+	request := client.QuotaResetRequest.GetX(ctx, requestID)
+	if request.Status != quotaresetrequest.StatusApprovedResetting || request.ResetCompletedAt != nil || request.ResetError != "" {
+		t.Fatalf("request after failed terminal persistence = %s/%v/%q, want approved_resetting/nil/empty", request.Status, request.ResetCompletedAt, request.ResetError)
+	}
+	if count := client.QuotaResetRequestEvent.Query().
+		Where(
+			quotaresetrequestevent.RequestIDEQ(requestID),
+			quotaresetrequestevent.EventTypeEQ(eventType),
+		).
+		CountX(ctx); count != 0 {
+		t.Fatalf("%s event count after rollback = %d, want 0", eventType, count)
+	}
+}
+
+func createEnabledQuotaResetNotificationSetting(t *testing.T, ctx context.Context, client *ent.Client) {
+	t.Helper()
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetChannelType("generic_webhook").
+		SetChannelTypeConfigured(true).
+		SetURL("https://hooks.example.com/quota-reset").
+		SetAuthType("none").
+		SetCreatedByUserID(1).
+		SetUpdatedByUserID(1).
+		SaveX(ctx)
 }
 
 func fakeProviderResolver(wantID int, provider relay.Provider) ProviderResolver {
