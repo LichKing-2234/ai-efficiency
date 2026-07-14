@@ -13,8 +13,14 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
+)
+
+const (
+	DefaultEventPageSize = 20
+	MaxEventPageSize     = 100
 )
 
 type QueryService struct {
@@ -265,29 +271,75 @@ func (s *QueryService) GetSummary(ctx context.Context, req SummaryRequest) (*Sum
 }
 
 func (s *QueryService) ListEvents(ctx context.Context, req ListEventsRequest) ([]EventListRow, int, error) {
-	events, err := s.queryEvents(ctx, filterFromList(req))
+	base, err := s.filteredEventsQuery(filterFromList(req))
 	if err != nil {
 		return nil, 0, err
+	}
+	total, err := base.Clone().Count(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list events: count filtered events: %w", err)
+	}
+
+	limit, offset := normalizeEventPage(req.Limit, req.Offset)
+	page := base.
+		Order(
+			ent.Desc(toolusageevent.FieldObservedEndAt),
+			ent.Desc(toolusageevent.FieldID),
+		).
+		Offset(offset).
+		Limit(limit)
+	page.WithRepoConfig(func(query *ent.RepoConfigQuery) {
+		query.Select(
+			repoconfig.FieldName,
+			repoconfig.FieldFullName,
+		)
+	}).
+		WithUser(func(query *ent.UserQuery) {
+			query.Select(user.FieldUsername)
+		}).
+		WithCommitCheckpoint(func(query *ent.CommitCheckpointQuery) {
+			query.Select(commitcheckpoint.FieldCommitSha)
+		})
+	events, err := page.Select(
+		toolusageevent.FieldID,
+		toolusageevent.FieldTool,
+		toolusageevent.FieldRepoConfigID,
+		toolusageevent.FieldUserID,
+		toolusageevent.FieldToolSessionID,
+		toolusageevent.FieldToolEventID,
+		toolusageevent.FieldObservedEndAt,
+		toolusageevent.FieldRequestCount,
+		toolusageevent.FieldInputTokens,
+		toolusageevent.FieldOutputTokens,
+		toolusageevent.FieldCachedInputTokens,
+		toolusageevent.FieldReasoningTokens,
+		toolusageevent.FieldCreditUsage,
+		toolusageevent.FieldCommitCheckpointID,
+		toolusageevent.FieldDedupeKey,
+		toolusageevent.FieldRawSourcePath,
+		toolusageevent.FieldRawSourceLocator,
+	).All(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list events: load page: %w", err)
 	}
 
 	rows := make([]EventListRow, 0, len(events))
 	for _, item := range events {
 		rows = append(rows, toEventListRow(item))
 	}
+	return rows, total, nil
+}
 
-	total := len(rows)
-	start := req.Offset
-	if start < 0 {
-		start = 0
+func normalizeEventPage(limit, offset int) (normalizedLimit, normalizedOffset int) {
+	if limit <= 0 {
+		limit = DefaultEventPageSize
+	} else if limit > MaxEventPageSize {
+		limit = MaxEventPageSize
 	}
-	if start > total {
-		start = total
+	if offset < 0 {
+		offset = 0
 	}
-	end := total
-	if req.Limit > 0 && start+req.Limit < end {
-		end = start + req.Limit
-	}
-	return rows[start:end], total, nil
+	return limit, offset
 }
 
 func (s *QueryService) GetEventDetail(ctx context.Context, req GetEventDetailRequest) (*EventDetail, error) {
@@ -481,23 +533,6 @@ func eventSearchPattern(q string) string {
 	}
 	pattern.WriteByte('%')
 	return pattern.String()
-}
-
-func (s *QueryService) queryEvents(ctx context.Context, filter queryFilter) ([]*ent.ToolUsageEvent, error) {
-	query, err := s.filteredEventsQuery(filter)
-	if err != nil {
-		return nil, err
-	}
-	query.WithRepoConfig().
-		WithCommitCheckpoint().
-		WithUser().
-		Order(ent.Desc(toolusageevent.FieldObservedEndAt))
-
-	items, err := query.All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query events: %w", err)
-	}
-	return items, nil
 }
 
 func (s *QueryService) findMatchedPRs(ctx context.Context, commitSHA string) ([]MatchedPR, error) {

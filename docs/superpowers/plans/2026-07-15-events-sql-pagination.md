@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Task 1 complete. Shared authorization/filter SQL, exact historical search semantics, and cloned summary aggregates are implemented and verified; Tasks 2-5 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
+**Status:** Tasks 1-2 are complete. Task 2 bounded SQL pagination, lightweight projections, stable tie ordering, and generated indexes are implemented, verified, reviewed, and committed; Tasks 3-5 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
 
 ## Global Constraints
 
@@ -157,7 +157,7 @@ Expected: one Task 1 commit; no frontend, handler, or architecture changes yet.
 - Consumes: Task 1 `filteredEventsQuery` and existing `EventListRow`/edge display helpers.
 - Produces: `DefaultEventPageSize`, `MaxEventPageSize`, `normalizeEventPage`, a raw-payload-free projected page, and stable indexes used by Task 3.
 
-- [ ] **Step 1: Write failing service tests for bounds, ties, projection, and compatibility**
+- [x] **Step 1: Write failing service tests for bounds, ties, projection, and compatibility**
 
 Add these tests:
 
@@ -173,7 +173,7 @@ TestListEventsKeepsAdminDetailRawPayloadComplete
 
 Seed 125 events with the same `observed_end_at`, deterministic IDs, and a 16 KiB synthetic raw JSON string. Request limits `0`, `101`, and `1000`; expect 20, 100, and 100 rows respectively. Request offsets `0`, `20`, and `-5`; expect deterministic descending IDs and no overlap between valid pages. Capture the primary list SQL and assert it contains `LIMIT`, contains both descending order fields, and does not contain `raw_payload` in the selected column list.
 
-- [ ] **Step 2: Run the bounded-list tests and verify RED**
+- [x] **Step 2: Run the bounded-list tests and verify RED**
 
 Run:
 
@@ -183,7 +183,7 @@ cd backend && go test ./internal/toolusage -run 'TestListEvents(Default|Clamp|No
 
 Expected: FAIL because the current service treats limit `0` as unbounded, accepts values above 100, selects full entities including `raw_payload`, and orders ties only by `observed_end_at`.
 
-- [ ] **Step 3: Add defensive page normalization and stable database pagination**
+- [x] **Step 3: Add defensive page normalization and stable database pagination**
 
 Add exported constants for the handler and normalize again inside the service:
 
@@ -197,7 +197,7 @@ The function maps nonpositive limit to 20, values above 100 to 100, negative off
 
 In `ListEvents`, count `base.Clone()` before paging, then apply `Order(ent.Desc(observed_end_at), ent.Desc(id))`, `Offset`, and `Limit` before `All`. Explicitly select only ID, foreign keys, row metrics, session/event/dedupe fields, observed end, and raw source path/locator needed to derive `source_basename`; do not select `raw_payload`, workspace, observed start, context percentage, or created time. Eager-load repo/user/checkpoint edges only after the page is bounded, and restrict each edge to its display fields.
 
-- [ ] **Step 4: Add stable-order indexes and regenerate Ent**
+- [x] **Step 4: Add stable-order indexes and regenerate Ent**
 
 Keep existing indexes and add:
 
@@ -218,7 +218,7 @@ git diff --check
 
 Expected: Ent generated migration metadata contains the four indexes, all descending annotations target valid columns, and formatting is clean.
 
-- [ ] **Step 5: Run focused, schema, and package tests and verify GREEN**
+- [x] **Step 5: Run focused, schema, and package tests and verify GREEN**
 
 Run:
 
@@ -229,7 +229,7 @@ cd backend && go test ./internal/attribution ./internal/toolusage -count=1
 
 Expected: PASS; list length never exceeds 100, total remains the complete filtered count, tie pages are repeatable, and admin detail still contains the selected raw payload.
 
-- [ ] **Step 6: Update the live ledger and commit Task 2**
+- [x] **Step 6: Update the live ledger and commit Task 2**
 
 ```bash
 git add backend/ent backend/internal/toolusage/query.go backend/internal/toolusage/query_test.go docs/superpowers/plans/2026-07-15-events-sql-pagination.md
