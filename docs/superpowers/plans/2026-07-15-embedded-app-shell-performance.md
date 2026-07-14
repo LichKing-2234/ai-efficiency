@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Task 1 is complete and verified. Task 2 Steps 1-5 are complete; Step 6 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-2 are complete and verified. Task 3 is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the existing embedded SPA materially faster on cold and repeat visits by serving correct gzip/cache headers and removing inactive locale and chart code from the initial data-loading path, without adding a CDN or a separate frontend release unit.
 
@@ -135,7 +135,7 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 
   Expected: PASS; the release test proves a freshly built real asset is embedded, compressed on transfer, exactly decompressible, and classified independently from HTML.
 
-- [ ] **Step 6: Commit Task 2, then record the checkpoint**
+- [x] **Step 6: Commit Task 2, then record the checkpoint**
 
   First check Steps 1-5 and commit the implementation plus those plan updates as `perf(web): apply embedded browser policy`. Only after that commit succeeds, check Step 6 and create `docs(plan): record embedded delivery task 2`. The task review range includes both commits.
 
