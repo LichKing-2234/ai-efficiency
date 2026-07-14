@@ -553,12 +553,16 @@ user-row department text must use `display_path` or `name`, not the source
 ### Offboarding Review
 
 ```text
-GET /api/v1/admin/directory/offboarding-candidates?q=alice
+GET /api/v1/admin/directory/offboarding-candidates?q=alice&page=1&page_size=20
 POST /api/v1/admin/directory/offboarding-candidates/:user_id/disable-relay-user
 ```
 
 `source_id` may be accepted as an internal compatibility parameter, but the
 normal product flow omits it and resolves the current snapshot server-side.
+Candidate listing defaults to 20 rows per page, caps `page_size` at 100, orders
+by username and then local user id, and returns `items`, `page`, `page_size`,
+and `total`. The badge count uses the same database anti-join without loading
+candidate rows or per-user action records.
 Disable actions must also resolve and recheck against the current snapshot
 server-side; a supplied older `source_id` must not be trusted for the final
 missing-email decision.

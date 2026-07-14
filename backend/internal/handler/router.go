@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -80,9 +81,15 @@ func SetupRouter(
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
-	workItemsService := workitems.NewService(entClient)
+	var offboardingCounter interface {
+		CountOffboardingCandidates(context.Context, int) (int, error)
+	}
+	if len(directoryServices) > 0 && directoryServices[0] != nil {
+		offboardingCounter = directoryServices[0]
+	}
+	workItemsService := workitems.NewService(entClient, offboardingCounter)
 	if providerHandler != nil {
-		workItemsService = workitems.NewService(entClient, userSetupService)
+		workItemsService = workitems.NewService(entClient, offboardingCounter, userSetupService)
 	}
 	workItemsHandler := NewWorkItemsHandler(workItemsService)
 	var quotaResetHandler *QuotaResetHandler

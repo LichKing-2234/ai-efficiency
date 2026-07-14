@@ -15,9 +15,10 @@ import (
 )
 
 type fakeDirectoryService struct {
-	validateIssues      []directorysync.ValidationIssue
-	disableReq          directorysync.DisableCandidateRequest
-	offboardingSourceID int
+	validateIssues    []directorysync.ValidationIssue
+	disableReq        directorysync.DisableCandidateRequest
+	offboardingParams directorysync.OffboardingCandidateListParams
+	offboardingPage   *directorysync.OffboardingCandidatePage
 }
 
 func (f *fakeDirectoryService) ListSources(context.Context) ([]*ent.DirectorySource, error) {
@@ -62,15 +63,25 @@ func (f *fakeDirectoryService) ListMembers(context.Context, int, string) ([]*ent
 	return []*ent.DirectoryMember{{ID: 5, SourceID: 1, EmailNormalized: "alice@example.com"}}, nil
 }
 
-func (f *fakeDirectoryService) ListOffboardingCandidates(_ context.Context, sourceID int, _ string) ([]directorysync.OffboardingCandidate, error) {
-	f.offboardingSourceID = sourceID
-	return []directorysync.OffboardingCandidate{{
+func (f *fakeDirectoryService) ListOffboardingCandidates(_ context.Context, params directorysync.OffboardingCandidateListParams) (*directorysync.OffboardingCandidatePage, error) {
+	f.offboardingParams = params
+	if f.offboardingPage != nil {
+		return f.offboardingPage, nil
+	}
+	return &directorysync.OffboardingCandidatePage{Items: []directorysync.OffboardingCandidate{{
 		UserID:      7,
 		Username:    "bob",
 		Email:       "bob@example.org",
 		RelayUserID: 99,
 		Reason:      "missing_from_latest_full_company_directory",
-	}}, nil
+	}}, Page: 1, PageSize: 20, Total: 1}, nil
+}
+
+func (f *fakeDirectoryService) CountOffboardingCandidates(context.Context, int) (int, error) {
+	if f.offboardingPage != nil {
+		return f.offboardingPage.Total, nil
+	}
+	return 1, nil
 }
 
 func (f *fakeDirectoryService) DisableRelayUserForCandidate(_ context.Context, req directorysync.DisableCandidateRequest) (*ent.DirectoryOffboardingAction, error) {
@@ -182,8 +193,80 @@ func TestDirectoryHandlerListOffboardingCandidatesUsesCurrentSourceByDefault(t *
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
 	}
-	if svc.offboardingSourceID != 0 {
-		t.Fatalf("source id = %d, want 0 for current source fallback", svc.offboardingSourceID)
+	if svc.offboardingParams.SourceID != 0 {
+		t.Fatalf("source id = %d, want 0 for current source fallback", svc.offboardingParams.SourceID)
+	}
+}
+
+func TestDirectoryHandlerListOffboardingCandidatesReturnsRequestedPage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &fakeDirectoryService{offboardingPage: &directorysync.OffboardingCandidatePage{
+		Items: []directorysync.OffboardingCandidate{{UserID: 7, Username: "bob", Email: "bob@example.org"}},
+		Page:  2, PageSize: 25, Total: 51,
+	}}
+	router := gin.New()
+	router.GET("/api/v1/admin/directory/offboarding-candidates", NewDirectoryHandler(svc).ListOffboardingCandidates)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/directory/offboarding-candidates?page=2&page_size=25&q=bob", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if svc.offboardingParams.Page != 2 || svc.offboardingParams.PageSize != 25 || svc.offboardingParams.Query != "bob" {
+		t.Fatalf("list params = %+v, want page=2 page_size=25 query=bob", svc.offboardingParams)
+	}
+	var body struct {
+		Data directorysync.OffboardingCandidatePage `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Data.Page != 2 || body.Data.PageSize != 25 || body.Data.Total != 51 || len(body.Data.Items) != 1 {
+		t.Fatalf("response page = %+v, want items/page/page_size/total", body.Data)
+	}
+}
+
+func TestDirectoryHandlerListOffboardingCandidatesRejectsNonPositivePagination(t *testing.T) {
+	tests := []string{
+		"page=0",
+		"page=-1",
+		"page_size=0",
+		"page_size=-1",
+	}
+	for _, query := range tests {
+		t.Run(query, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			router := gin.New()
+			router.GET("/api/v1/admin/directory/offboarding-candidates", NewDirectoryHandler(&fakeDirectoryService{}).ListOffboardingCandidates)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/directory/offboarding-candidates?"+query, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 for %s, body = %s", rec.Code, query, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestDirectoryHandlerListOffboardingCandidatesClampsPageSize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := &fakeDirectoryService{}
+	router := gin.New()
+	router.GET("/api/v1/admin/directory/offboarding-candidates", NewDirectoryHandler(svc).ListOffboardingCandidates)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/directory/offboarding-candidates?page_size=1000", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if svc.offboardingParams.PageSize != 100 {
+		t.Fatalf("page size = %d, want clamp to 100", svc.offboardingParams.PageSize)
 	}
 }
 
