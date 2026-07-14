@@ -3,9 +3,10 @@
 import copy
 import json
 import os
+import signal
 import shutil
+import subprocess
 import sys
-import threading
 from urllib.parse import urlparse
 
 from playwright.sync_api import Route, sync_playwright
@@ -15,6 +16,8 @@ BASE = os.environ.get("BASE", "http://127.0.0.1:5173").rstrip("/")
 SCREENSHOT_DIR = "/tmp/ae-e2e-quota-reset"
 COMMENT = "Approved for the release investigation."
 MAX_RUNTIME_SECONDS = 60
+TIMEOUT_EXIT_STATUS = 124
+WORKER_FLAG = "--worker"
 
 USERS = {
     "requester": {
@@ -411,11 +414,30 @@ def assert_no_control_overlap(page, root_selector="body"):
         """(rootSelector) => {
             const root = document.querySelector(rootSelector);
             if (!root) return [`missing root ${rootSelector}`];
-            const controls = [...root.querySelectorAll('button, input, select, textarea, a[href]')]
+            const selector = [
+              'button',
+              'input',
+              'select',
+              'textarea',
+              'a[href]',
+              '[role="button"]',
+              '[role="link"]',
+              '[tabindex]',
+            ].join(',');
+            const controls = [...new Set(root.querySelectorAll(selector))]
               .filter((element) => {
                 const rect = element.getBoundingClientRect();
                 const style = getComputedStyle(element);
-                return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+                const selectedByTabIndex = element.hasAttribute('tabindex') && element.tabIndex >= 0;
+                const selectedBySemantics = element.matches(
+                  'button, input, select, textarea, a[href], [role="button"], [role="link"]'
+                );
+                return (selectedBySemantics || selectedByTabIndex)
+                  && !element.hasAttribute('disabled')
+                  && rect.width > 0
+                  && rect.height > 0
+                  && style.visibility !== 'hidden'
+                  && style.display !== 'none';
               });
             const failures = [];
             for (let leftIndex = 0; leftIndex < controls.length; leftIndex += 1) {
@@ -452,10 +474,22 @@ def test_active_approver(browser):
 
         badge = page.get_by_test_id("quota-reset-tab-approvals-count")
         assert badge.inner_text().strip() == "1"
-        assert page.get_by_test_id("quota-reset-row-321").count() == 1
+        row = page.get_by_test_id("quota-reset-row-321")
+        assert row.count() == 1
         approve = page.get_by_test_id("quota-reset-approve-321")
         assert approve.is_enabled()
-        assert page.locator("[data-testid^='quota-reset-approve-']:enabled").count() == 1
+        enabled_actions = row.locator(
+            "[data-testid^='quota-reset-approve-']:enabled, "
+            "[data-testid^='quota-reset-reject-']:enabled, "
+            "[data-testid^='quota-reset-cancel-']:enabled, "
+            "[data-testid^='quota-reset-retry-']:enabled"
+        )
+        action_ids = enabled_actions.evaluate_all(
+            "elements => elements.map(element => element.getAttribute('data-testid'))"
+        )
+        assert action_ids == ["quota-reset-approve-321"], (
+            f"enabled workflow actions = {action_ids}, want only quota-reset-approve-321"
+        )
         assert_no_horizontal_overflow(page)
         assert_no_control_overlap(page)
         screenshot(page, "01-active-approver-desktop-1280x800.png")
@@ -506,14 +540,21 @@ def test_requester_keyboard_and_mobile(browser):
     try:
         page.goto(f"{BASE}/usage/quota-reset")
         wait_for_page(page)
-        opener = page.get_by_test_id("quota-reset-view-details-321")
+        opener = page.get_by_role("button", name="View details for Group Alpha", exact=True)
+        assert opener.count() == 1
+        assert opener.evaluate("element => element.tagName === 'BUTTON'")
+        assert opener.get_attribute("data-testid") == "quota-reset-view-details-321"
         opener.focus()
         opener.press("Enter")
         detail = page.get_by_test_id("quota-reset-detail-dialog")
         detail.wait_for(state="visible")
         close_button = page.get_by_test_id("quota-reset-detail-close")
         assert close_button.evaluate("element => document.activeElement === element")
+        close_button.press("Tab")
+        assert detail.evaluate("element => element.contains(document.activeElement)")
+        assert close_button.evaluate("element => document.activeElement === element")
         close_button.press("Shift+Tab")
+        assert detail.evaluate("element => element.contains(document.activeElement)")
         assert close_button.evaluate("element => document.activeElement === element")
         assert_no_horizontal_overflow(page)
         assert_no_control_overlap(page, "[data-testid='quota-reset-detail-dialog']")
@@ -569,53 +610,39 @@ def test_admin_settings(browser, viewport, screenshot_name):
 
 
 def run_all():
-    def force_timeout():
-        print(
-            f"FAIL: browser workflow exceeded {MAX_RUNTIME_SECONDS} seconds",
-            file=sys.stderr,
-            flush=True,
-        )
-        os._exit(2)
-
-    timeout_guard = threading.Timer(MAX_RUNTIME_SECONDS, force_timeout)
-    timeout_guard.daemon = True
-    timeout_guard.start()
     shutil.rmtree(SCREENSHOT_DIR, ignore_errors=True)
     os.makedirs(SCREENSHOT_DIR, exist_ok=True)
     tests = []
 
-    try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
-            cases = [
-                ("active approver workflow", lambda: test_active_approver(browser)),
-                ("future approver invisibility", lambda: test_future_approver(browser)),
-                ("requester keyboard detail and mobile layout", lambda: test_requester_keyboard_and_mobile(browser)),
-                ("admin settings desktop", lambda: test_admin_settings(
-                    browser,
-                    {"width": 1280, "height": 800},
-                    "05-admin-settings-desktop-1280x800.png",
-                )),
-                ("admin settings mobile", lambda: test_admin_settings(
-                    browser,
-                    {"width": 390, "height": 844},
-                    "06-admin-settings-mobile-390x844.png",
-                )),
-            ]
-            for name, case in cases:
-                try:
-                    case()
-                    tests.append((name, True, ""))
-                    print(f"PASS: {name}")
-                except Exception as error:
-                    import traceback
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        cases = [
+            ("active approver workflow", lambda: test_active_approver(browser)),
+            ("future approver invisibility", lambda: test_future_approver(browser)),
+            ("requester keyboard detail and mobile layout", lambda: test_requester_keyboard_and_mobile(browser)),
+            ("admin settings desktop", lambda: test_admin_settings(
+                browser,
+                {"width": 1280, "height": 800},
+                "05-admin-settings-desktop-1280x800.png",
+            )),
+            ("admin settings mobile", lambda: test_admin_settings(
+                browser,
+                {"width": 390, "height": 844},
+                "06-admin-settings-mobile-390x844.png",
+            )),
+        ]
+        for name, case in cases:
+            try:
+                case()
+                tests.append((name, True, ""))
+                print(f"PASS: {name}")
+            except Exception as error:
+                import traceback
 
-                    tests.append((name, False, str(error)))
-                    print(f"FAIL: {name}: {error}")
-                    traceback.print_exc()
-            browser.close()
-    finally:
-        timeout_guard.cancel()
+                tests.append((name, False, str(error)))
+                print(f"FAIL: {name}: {error}")
+                traceback.print_exc()
+        browser.close()
 
     failures = [result for result in tests if not result[1]]
     print(f"Results: {len(tests) - len(failures)}/{len(tests)} passed")
@@ -623,5 +650,70 @@ def run_all():
     return not failures
 
 
+def _write_worker_output(stdout, stderr):
+    if stdout:
+        sys.stdout.write(stdout)
+        sys.stdout.flush()
+    if stderr:
+        sys.stderr.write(stderr)
+        sys.stderr.flush()
+
+
+def _terminate_worker(process):
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+    try:
+        return process.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        return process.communicate()
+
+
+def run_supervised(command, timeout_seconds=MAX_RUNTIME_SECONDS):
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        stdout, stderr = _terminate_worker(process)
+        _write_worker_output(stdout, stderr)
+        print(
+            f"FAIL: browser workflow worker exceeded {timeout_seconds} seconds",
+            file=sys.stderr,
+            flush=True,
+        )
+        return TIMEOUT_EXIT_STATUS
+    except KeyboardInterrupt:
+        stdout, stderr = _terminate_worker(process)
+        _write_worker_output(stdout, stderr)
+        return 130
+
+    _write_worker_output(stdout, stderr)
+    return process.returncode
+
+
+def main(argv):
+    if argv == [WORKER_FLAG]:
+        return 0 if run_all() else 1
+    if argv:
+        print(f"Usage: {os.path.basename(__file__)}", file=sys.stderr)
+        return 2
+
+    worker_command = [sys.executable, "-u", os.path.abspath(__file__), WORKER_FLAG]
+    return run_supervised(worker_command)
+
+
 if __name__ == "__main__":
-    sys.exit(0 if run_all() else 1)
+    sys.exit(main(sys.argv[1:]))
