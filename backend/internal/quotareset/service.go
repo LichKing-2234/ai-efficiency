@@ -38,6 +38,8 @@ const (
 	ApproverConfigSaveModeReplaceAll         = "replace_all"
 
 	quotaResetNotificationSettingsLockKey = "quota_reset_notification_settings"
+	quotaResetExecutionTimeout            = 30 * time.Second
+	quotaResetFinalizationTimeout         = 5 * time.Second
 )
 
 type Service struct {
@@ -649,6 +651,10 @@ func isResolvedApprover(request *ent.QuotaResetRequest, actorUserID int) bool {
 }
 
 func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID int, retry bool, admin bool) (*ent.QuotaResetRequest, error) {
+	executionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), quotaResetExecutionTimeout)
+	defer cancel()
+	ctx = executionCtx
+
 	req, err := s.client.QuotaResetRequest.Get(ctx, requestID)
 	if err != nil {
 		return nil, err
@@ -682,22 +688,24 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	if err := resetter.ResetSubscriptionQuotaForUser(ctx, running.RequesterRelayUserID, groupID); err != nil {
 		return s.storeResetFailure(ctx, requestID, actorUserID, err)
 	}
+	finalizeCtx, finalizeCancel := context.WithTimeout(context.WithoutCancel(ctx), quotaResetFinalizationTimeout)
+	defer finalizeCancel()
 	succeeded, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
 		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusApprovedResetting)).
 		SetStatus(quotaresetrequest.StatusApprovedResetSucceeded).
 		SetResetError("").
 		SetResetCompletedAt(time.Now()).
-		Save(ctx)
+		Save(finalizeCtx)
 	if ent.IsNotFound(err) {
 		return nil, ErrInvalidStatus
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store reset success: %w", err)
 	}
-	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetSucceeded, nil, ""); err != nil {
+	if err := s.writeEvent(finalizeCtx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetSucceeded, nil, ""); err != nil {
 		return nil, err
 	}
-	_ = s.notify(ctx, "quota_reset_request_reset_succeeded", succeeded)
+	_ = s.notify(finalizeCtx, "quota_reset_request_reset_succeeded", succeeded)
 	return succeeded, nil
 }
 
@@ -744,11 +752,14 @@ func (s *Service) markResetStarted(ctx context.Context, requestID int, actorUser
 }
 
 func (s *Service) storeResetFailure(ctx context.Context, requestID int, actorUserID int, resetErr error) (*ent.QuotaResetRequest, error) {
+	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), quotaResetFinalizationTimeout)
+	defer cancel()
+
 	errorMessage := ""
 	if resetErr != nil {
 		errorMessage = resetErr.Error()
 	}
-	tx, err := s.client.Tx(ctx)
+	tx, err := s.client.Tx(finalizeCtx)
 	if err != nil {
 		return nil, fmt.Errorf("begin store quota reset failure tx: %w", err)
 	}
@@ -758,23 +769,23 @@ func (s *Service) storeResetFailure(ctx context.Context, requestID int, actorUse
 		SetStatus(quotaresetrequest.StatusApprovedResetFailed).
 		SetResetError(errorMessage).
 		SetResetCompletedAt(time.Now()).
-		Save(ctx)
+		Save(finalizeCtx)
 	if ent.IsNotFound(saveErr) {
 		return nil, ErrInvalidStatus
 	}
 	if saveErr != nil {
 		return nil, fmt.Errorf("store reset failure: %w", saveErr)
 	}
-	if err := writeEventTx(ctx, tx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetFailed, nil, errorMessage); err != nil {
+	if err := writeEventTx(finalizeCtx, tx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetFailed, nil, errorMessage); err != nil {
 		return nil, err
 	}
-	if err := s.invalidateWorkItemCountsTx(ctx, tx, "storing quota reset failure"); err != nil {
+	if err := s.invalidateWorkItemCountsTx(finalizeCtx, tx, "storing quota reset failure"); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit quota reset failure: %w", err)
 	}
-	_ = s.notify(ctx, "quota_reset_request_reset_failed", failed)
+	_ = s.notify(finalizeCtx, "quota_reset_request_reset_failed", failed)
 	return failed, nil
 }
 
