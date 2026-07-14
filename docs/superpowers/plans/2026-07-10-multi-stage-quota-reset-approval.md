@@ -4666,6 +4666,16 @@ deduplication, assertion-preservation, and timeout-status self-checks passed.
 watchdog, and process-leak scans passed. Only the E2E file and this ledger were
 changed by the follow-up.
 
+Final spec re-review evidence (2026-07-14): a focused probe first failed because
+a visible disabled native button overlapping an input was excluded. After
+removing only that exclusion, the disabled-native probe passed. The full matrix
+then passed for disabled native controls, ARIA button/link roles, non-negative
+tabindex custom controls, and selector deduplication; visibility-hidden,
+display-none, and zero-size controls remained filtered. `python3 -m py_compile`
+passed. The final Compose-backed browser run passed 5/5 in 5.10s, the no-server
+path retained five connection-refused tracebacks and exited `1` in 0.72s, and
+final diff, placeholder, webhook, email-domain, and process-leak checks passed.
+
 - [x] **Step 10: Commit browser coverage and current docs**
 
 ```bash
@@ -4684,6 +4694,8 @@ spec status, and the in-progress verification ledger were committed as
 `a37e5aa` (`docs(architecture): document multi-stage quota reset approvals`).
 The spec-gate browser hardening was committed separately as `e1d2a06`
 (`test(frontend): harden quota reset browser coverage`).
+Visible disabled-control overlap coverage was committed as `bc60d29`
+(`test(frontend): include disabled controls in overlap checks`).
 
 - [x] **Step 11: Mark the plan complete only after every step has evidence**
 
@@ -4715,7 +4727,10 @@ Final completion evidence (2026-07-14):
   exited `1` in 0.71s, its healthy Compose-backed path exited `0` in 5.23s, a
   deliberate browser assertion retained traceback/status `1`, and a hung
   worker retained stdout and exited with timeout status `124`. No worker,
-  script, or Vite process remained.
+  script, or Vite process remained. Final re-review also verified visible
+  disabled native controls participate in overlap detection while hidden,
+  display-none, and zero-size controls remain excluded; the final healthy run
+  passed 5/5 in 5.10s and the no-server path exited `1` in 0.72s.
 - Screenshots: `/tmp/ae-e2e-quota-reset/01-active-approver-desktop-1280x800.png`,
   `02-required-comment-desktop-1280x800.png`,
   `03-reused-approval-desktop-1280x800.png`,
@@ -4732,5 +4747,6 @@ Final completion evidence (2026-07-14):
   passed.
 - Implementation baseline `42948d5`; original Task 12 commits `f628483`,
   `a37e5aa`, and `fcb922f`; and browser-hardening commit `e1d2a06` capture the
-  implementation, original verification, and spec-gate follow-up. This updated
-  completion note is committed separately as required.
+  implementation, original verification, and first spec-gate follow-up.
+  Disabled-control review fix `bc60d29` completes the browser overlap contract.
+  This updated completion note is committed separately as required.
