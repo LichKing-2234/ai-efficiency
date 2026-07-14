@@ -4462,10 +4462,13 @@ cases. It covers requester, active approver, future queued approver, and admin
 sessions; exact decision payload validation; two later prior-approval-satisfied
 nodes; keyboard-opened details with focus trap, Escape close, and trigger focus
 restoration; chain reorder; explicit `wecom_group_robot` save; horizontal
-overflow; and control-overlap assertions. The script applies 8-second locator
-and navigation timeouts plus a 60-second process watchdog. With no Vite
-listener it exited non-zero in 1.45s; with Vite it exited zero in 5.96s, and no
-script or Vite process remained afterward.
+overflow; and control-overlap assertions. The spec-gate follow-up now requires
+the active row to expose exactly one enabled workflow action across approve,
+reject, cancel, and retry, with approve as that action. The requester opener is
+located by semantic button role/name and asserted to be a native button; Enter,
+forward Tab, Shift+Tab, Escape, and opener focus restoration are all covered.
+Overlap detection includes deduplicated native controls, ARIA button/link roles,
+and custom elements with non-negative tabindex.
 
 - [x] **Step 2: Run all focused backend suites**
 
@@ -4543,6 +4546,13 @@ requester detail view at 390x844, and admin settings views at both 1280x800 and
 empty dialog, or unstable control sizing was observed. The existing role
 script emitted non-fatal Vite proxy `ECONNREFUSED` noise for dashboard helper
 requests it does not mock while all role assertions still passed.
+
+Spec-gate follow-up evidence (2026-07-14): the Compose-backed quota-reset run
+passed 5/5 cases and exited zero in 5.23s. The no-server run preserved five
+connection-refused tracebacks, reported 0/5, exited `1`, and completed in 0.71s.
+The parent supervisor preserved a deliberate browser AssertionError traceback
+and exit `1`; a synthetic hung worker preserved its pre-hang stdout, terminated
+only the worker process group, and returned distinct timeout status `124`.
 
 - [x] **Step 6: Rebuild the source-based development stack**
 
@@ -4648,6 +4658,14 @@ only `example.com` email
 addresses and Group Alpha/Beta names. `git status --short` listed only the four
 Task 12-owned files.
 
+Spec-gate follow-up hygiene (2026-07-14): `python3 -m py_compile` passed;
+`npm test -- quota-reset-view use-modal-focus` passed 19/19 tests across 2
+files; action-mutation, semantic keyboard, native/ARIA/tabindex overlap,
+deduplication, assertion-preservation, and timeout-status self-checks passed.
+`git diff --check` and changed-file placeholder, webhook, email-domain, stale
+watchdog, and process-leak scans passed. Only the E2E file and this ledger were
+changed by the follow-up.
+
 - [x] **Step 10: Commit browser coverage and current docs**
 
 ```bash
@@ -4664,6 +4682,8 @@ Completion evidence (2026-07-14): browser coverage was committed as `f628483`
 (`test(frontend): cover quota reset workflow in browser`). Current architecture,
 spec status, and the in-progress verification ledger were committed as
 `a37e5aa` (`docs(architecture): document multi-stage quota reset approvals`).
+The spec-gate browser hardening was committed separately as `e1d2a06`
+(`test(frontend): harden quota reset browser coverage`).
 
 - [x] **Step 11: Mark the plan complete only after every step has evidence**
 
@@ -4691,9 +4711,11 @@ Final completion evidence (2026-07-14):
 - Full frontend: 40/40 files and 482/482 tests passed; `vue-tsc -b` and the
   1,955-module Vite production build passed.
 - Browser: role E2E passed 16/16 assertions and quota-reset E2E passed 5/5
-  cases. The quota-reset script's no-server path exited non-zero in 1.45s and
-  its healthy path exited zero in 5.96s; stale PID 60330 was terminated and no
-  script or Vite process remained.
+  cases. After spec-gate hardening, the quota-reset script's no-server path
+  exited `1` in 0.71s, its healthy Compose-backed path exited `0` in 5.23s, a
+  deliberate browser assertion retained traceback/status `1`, and a hung
+  worker retained stdout and exited with timeout status `124`. No worker,
+  script, or Vite process remained.
 - Screenshots: `/tmp/ae-e2e-quota-reset/01-active-approver-desktop-1280x800.png`,
   `02-required-comment-desktop-1280x800.png`,
   `03-reused-approval-desktop-1280x800.png`,
@@ -4708,6 +4730,7 @@ Final completion evidence (2026-07-14):
 - Hygiene: `git diff --check`, changed-line marker/secret checks, synthetic-only
   webhook classification, example-data review, and owned-file status review
   passed.
-- Implementation baseline `42948d5`, browser commit `f628483`, and current-docs
-  commit `a37e5aa` capture the implementation and Task 12 deliverables. This
+- Implementation baseline `42948d5`; original Task 12 commits `f628483`,
+  `a37e5aa`, and `fcb922f`; and browser-hardening commit `e1d2a06` capture the
+  implementation, original verification, and spec-gate follow-up. This updated
   completion note is committed separately as required.
