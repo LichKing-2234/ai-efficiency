@@ -5345,19 +5345,70 @@ delegation wrappers. Task 17 is complete.
 - Modify: `backend/internal/quotareset/notification_test.go`
 - Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
 
-- [ ] **Step 1: Add failing context and adapter progress regressions**
+- [x] **Step 1: Add failing context and adapter progress regressions**
 
 Cover activated, reused/skipped, cancelled/rejected, and terminal reset events.
 Progress must count satisfied workflow nodes separately from current-node
 position and remain bounded in both adapters.
 
-- [ ] **Step 2: Derive and render channel-neutral progress**
+Corrected RED evidence (2026-07-15):
+
+```text
+$ cd backend && go test ./internal/quotareset -run 'Test(GenericWebhookAdapterRendersVersionedWorkflowPayload|NotificationAdaptersBoundWorkflowProgress|WorkflowNotificationContextCountsOnlyDurablySatisfiedNodes)$' -count=1
+# github.com/ai-efficiency/backend/internal/quotareset [github.com/ai-efficiency/backend/internal/quotareset.test]
+internal/quotareset/notification_test.go:198:8: ctx.WorkflowCompletedNodes undefined (type NotificationContext has no field or method WorkflowCompletedNodes)
+internal/quotareset/notification_test.go:199:8: ctx.WorkflowTotalNodes undefined (type NotificationContext has no field or method WorkflowTotalNodes)
+internal/quotareset/notification_test.go:1182:27: notificationContext.WorkflowCompletedNodes undefined (type NotificationContext has no field or method WorkflowCompletedNodes)
+internal/quotareset/notification_test.go:1182:93: notificationContext.WorkflowTotalNodes undefined (type NotificationContext has no field or method WorkflowTotalNodes)
+internal/quotareset/notification_test.go:1183:75: notificationContext.WorkflowCompletedNodes undefined (type NotificationContext has no field or method WorkflowCompletedNodes)
+internal/quotareset/notification_test.go:1183:119: notificationContext.WorkflowTotalNodes undefined (type NotificationContext has no field or method WorkflowTotalNodes)
+FAIL	github.com/ai-efficiency/backend/internal/quotareset [build failed]
+FAIL
+```
+
+The corrected expectations count `approved`, `satisfied_by_prior_approval`,
+and `skipped_no_approver` as completed and explicitly exclude `active`,
+`queued`, and `rejected`.
+
+- [x] **Step 2: Derive and render channel-neutral progress**
 
 Add completed/total node progress to `NotificationContext`, generic JSON, and
 the Enterprise WeChat preset without exposing credentials or weakening payload
 limits.
 
+GREEN evidence (2026-07-15):
+
+```text
+$ cd backend && go test ./internal/quotareset -run 'Test(GenericWebhookAdapterRendersVersionedWorkflowPayload|NotificationAdaptersBoundWorkflowProgress|WorkflowNotificationContextCountsOnlyDurablySatisfiedNodes)$' -count=1
+ok  github.com/ai-efficiency/backend/internal/quotareset  1.585s
+```
+
+The context now derives durable completed/total node counts for activation,
+cancellation, rejection, and terminal reset success/failure. Generic webhook
+schema v2 renders `workflow_progress.completed` and `workflow_progress.total`;
+the Enterprise WeChat preset renders `审批进度：completed/total`. Both adapters
+bound malformed or synthetic input to `0 <= completed <= total`.
+
 - [ ] **Step 3: Run focused/full verification, update the current spec, commit, and pass task reviews**
+
+Implementation and verification evidence (2026-07-15):
+
+- Added channel-neutral `WorkflowCompletedNodes` and `WorkflowTotalNodes` to
+  `NotificationContext`; durable progress reads the snapshotted
+  `QuotaResetRequestNode` rows and counts only `approved`,
+  `satisfied_by_prior_approval`, and `skipped_no_approver`.
+- Updated `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
+  with the exact durable progress semantics, generic v2 shape, and Enterprise
+  WeChat rule.
+- `cd backend && go test ./internal/quotareset -count=1` exited 0.
+- `cd backend && go test ./...` exited 0.
+- `cd backend && go vet ./...` exited 0.
+- `git diff --check` exited 0 and `gofmt -d` over all changed Go files produced
+  no output.
+- Implementation commit: `dd17c3d feat(quotareset): include workflow progress in notifications`.
+
+Step 3 remains unchecked pending controller-managed independent reviews. No
+Task 19 behavior is included in the Task 18 implementation.
 
 ### Task 19: Keep Approval Queues and Counts Actionable by Default
 
