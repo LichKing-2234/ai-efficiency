@@ -4771,18 +4771,43 @@ Final completion evidence (2026-07-14):
 - Modify: `backend/internal/quotareset/workflow_service_test.go`
 - Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
 
-- [ ] **Step 1: Add failing directory-apply and chain-replacement concurrency regressions**
+- [x] **Step 1: Add failing directory-apply and chain-replacement concurrency regressions**
 
 Prove that a request cannot combine directory or approval-chain facts from two
 committed generations.
 
-- [ ] **Step 2: Resolve and persist under one repeatable-read transaction**
+Evidence (2026-07-15): `cd backend && go test ./internal/quotareset -run
+'TestCreateRequest(DirectoryGeneration|ApprovalChain)ReplacementUsesOneSnapshot'
+-count=1 -v` failed deterministically on the pre-fix implementation. The
+directory case persisted the new requester and approver identities with the old
+department path, while the chain case persisted only the initial node after the
+old chain header was read and the chain was replaced. Both failures were content
+assertions rather than timeout failures.
+
+- [x] **Step 2: Resolve and persist under one repeatable-read transaction**
 
 Begin the transaction before resolution, resolve through `tx.Client()`, and
 persist the request, nodes, approvers, and creation events through the same
 transaction. Do not serialize request creation on the admin configuration lock.
 
-- [ ] **Step 3: Run focused and full backend verification, update the current spec, and commit**
+Evidence (2026-07-15): `createWorkflowRequest` now begins an Ent transaction
+with `database/sql.LevelRepeatableRead` before resolution, resolves through
+`NewWorkflowResolver(tx.Client())`, and persists every workflow creation row and
+event through that transaction without taking the approval-configuration
+`SystemSetting` lock. Re-running the two focused concurrency regressions passed:
+`ok github.com/ai-efficiency/backend/internal/quotareset 0.948s`.
+
+- [x] **Step 3: Run focused and full backend verification, update the current spec, and commit**
+
+Evidence (2026-07-15): focused workflow tests passed with
+`ok github.com/ai-efficiency/backend/internal/quotareset 14.439s`; the complete
+quotareset package passed with `ok .../internal/quotareset 40.323s`; and
+`cd backend && go test ./... -count=1` passed, including
+`internal/quotareset 67.125s`. `cd backend && go vet ./internal/quotareset` and
+`git diff --check` both exited 0. The current design now documents the single
+repeatable-read resolution-and-persistence boundary. Code and spec were
+committed as `56783e6` (`fix(backend): make quota reset workflow snapshots
+consistent`); this Task 13 ledger update is committed separately.
 
 ### Task 14: Revalidate Notification Recipients When a Node Activates
 
