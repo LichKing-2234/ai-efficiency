@@ -4823,6 +4823,23 @@ restoring the production implementation, both concurrency regressions passed
 behavior changed; the test-only fix is commit `2a793bf` (`test(backend):
 strengthen quota reset snapshot coverage`).
 
+Quality-review follow-up evidence (2026-07-15): a deterministic interceptor
+barrier after the final preflight request query allowed a second Ent client to
+change requester identity and relay binding before the workflow transaction.
+The new regression failed on the pre-fix code with stale relay id `1001` instead
+of `2002`, and clearing the binding incorrectly returned no error instead of
+`ErrNoRelayMapping` (`0.849s`, content assertions rather than timeouts). The
+workflow transaction now re-reads and validates the requester before resolution
+and persistence. The focused relay regression passed (`0.894s`); all Task 13
+directory, multi-node chain, and relay-binding concurrency regressions passed
+(`1.459s`); the complete quotareset package passed (`39.706s`); and full backend
+tests passed, including `internal/quotareset 72.680s`. `go vet
+./internal/quotareset` and `git diff --check` exited 0, while `rg -n
+'workflowResolver' backend/internal/quotareset` returned no matches after the
+unused service field was removed. Production, test, and current-spec changes are
+commit `7a7e012` (`fix(backend): snapshot quota reset requester
+transactionally`); this ledger update is committed separately.
+
 ### Task 14: Revalidate Notification Recipients When a Node Activates
 
 **Files:**
