@@ -4993,6 +4993,22 @@ changed. Code, tests, and the current design were committed as `fa7665f`
 and this plan continue to state that the unkeyed provider call and its crash
 window remain outside the local transaction and are not solved by Task 15.
 
+Spec-review failure-path follow-up evidence (2026-07-15): deterministic tests
+now reject the terminal `QuotaResetRequest` update before event creation and
+cancel the transaction context only after the terminal event mutation succeeds,
+forcing the subsequent commit to fail without sleeps, races, or production test
+hooks. Both injections cover success and provider-failure outcomes and prove one
+provider call, retained `approved_resetting` state, absent completion/error
+fields and terminal event, no result notification, no terminal summary, and a
+wrapped persistence error. The commit-failure test, including
+`errors.Is(context.Canceled)`, passed 20 repetitions (`9.369s`). The final Task
+15 outcome set passed (`3.089s`), the complete quotareset package passed
+(`44.210s`), and `go vet ./...` plus `git diff --check` exited 0. The existing
+implementation passed the new tests without production changes, so full backend
+was not rerun. Tests are commit `33ac940` (`test(backend): cover quota reset
+outcome transaction failures`); the spec/header implementation-note refresh
+remains assigned to Task 16.
+
 ### Task 16: Reconcile Final Review Evidence and Reverify
 
 **Files:**
