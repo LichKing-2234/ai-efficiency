@@ -374,6 +374,143 @@ func TestCreateRequestApprovalChainReplacementUsesOneSnapshot(t *testing.T) {
 	}
 }
 
+func TestCreateRequestRevalidatesRequesterRelayBindingInsideWorkflowSnapshot(t *testing.T) {
+	tests := []struct {
+		name            string
+		relayUserID     *int
+		username        string
+		email           string
+		wantNoMapping   bool
+		wantRelayUserID int64
+	}{
+		{
+			name:            "changed binding and identity",
+			relayUserID:     intPtr(2002),
+			username:        "alice-new",
+			email:           "alice-new@example.org",
+			wantRelayUserID: 2002,
+		},
+		{
+			name:          "removed binding",
+			username:      "alice-unmapped",
+			email:         "alice-unmapped@example.net",
+			wantNoMapping: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			client, dsn := testdb.OpenWithDSN(t)
+			secondClient, err := ent.Open("postgres", dsn)
+			if err != nil {
+				t.Fatalf("open second Ent client: %v", err)
+			}
+			t.Cleanup(func() {
+				if err := secondClient.Close(); err != nil {
+					t.Errorf("close second Ent client: %v", err)
+				}
+			})
+
+			source := createQuotaResetDirectorySource(t, ctx, client)
+			chainDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-chain", "Department Chain", nil)
+			requester := createQuotaResetUser(t, ctx, client, "alice-old", "alice-old@example.com", intPtr(1001), "user")
+			approver := createQuotaResetUser(t, ctx, client, "chain-approver", "chain-approver@example.org", nil, "user")
+			approverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-chain-approver", approver.Email, chainDepartment.ExternalID, &approver.ID)
+			createQuotaResetMemberDepartment(t, ctx, client, source.ID, approverMember, chainDepartment.ExternalID)
+			createQuotaResetApproverConfig(t, ctx, client, source.ID, chainDepartment.ExternalID, chainDepartment.Path, approver.ID)
+			providerRow := createQuotaResetRelayProvider(t, ctx, client)
+			createWorkflowChain(t, ctx, client, providerRow.ID, "42", source.ID, chainDepartment)
+			provider := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
+			service := NewService(client, fakeProviderResolver(providerRow.ID, provider), NewApproverResolver(client), nil)
+
+			preflightComplete := make(chan struct{})
+			releaseWorkflowCreate := make(chan struct{})
+			var interceptOnce sync.Once
+			client.QuotaResetRequest.Intercept(ent.InterceptFunc(func(next ent.Querier) ent.Querier {
+				return ent.QuerierFunc(func(queryCtx context.Context, query ent.Query) (ent.Value, error) {
+					value, queryErr := next.Query(queryCtx, query)
+					if queryErr != nil {
+						return value, queryErr
+					}
+					blocked := false
+					interceptOnce.Do(func() { blocked = true })
+					if !blocked {
+						return value, nil
+					}
+					close(preflightComplete)
+					select {
+					case <-releaseWorkflowCreate:
+						return value, nil
+					case <-queryCtx.Done():
+						return nil, queryCtx.Err()
+					}
+				})
+			}))
+
+			type createResult struct {
+				request *ent.QuotaResetRequest
+				err     error
+			}
+			result := make(chan createResult, 1)
+			go func() {
+				request, createErr := service.CreateRequest(ctx, CreateRequestInput{
+					RequesterUserID: requester.ID,
+					GroupID:         "42",
+					Reason:          "Need a transaction-scoped requester snapshot",
+				})
+				result <- createResult{request: request, err: createErr}
+			}()
+
+			select {
+			case <-preflightComplete:
+			case <-ctx.Done():
+				t.Fatalf("wait for request preflight: %v", ctx.Err())
+			}
+			update := secondClient.User.UpdateOneID(requester.ID).
+				SetUsername(tt.username).
+				SetEmail(tt.email)
+			if tt.relayUserID == nil {
+				update.ClearRelayUserID()
+			} else {
+				update.SetRelayUserID(*tt.relayUserID)
+			}
+			if _, err := update.Save(ctx); err != nil {
+				close(releaseWorkflowCreate)
+				t.Fatalf("update requester after preflight: %v", err)
+			}
+			close(releaseWorkflowCreate)
+
+			var created createResult
+			select {
+			case created = <-result:
+			case <-ctx.Done():
+				t.Fatalf("wait for workflow creation: %v", ctx.Err())
+			}
+			if tt.wantNoMapping {
+				if !errors.Is(created.err, ErrNoRelayMapping) {
+					t.Fatalf("CreateRequest() error = %v, want ErrNoRelayMapping", created.err)
+				}
+				if count := client.QuotaResetRequest.Query().CountX(ctx); count != 0 {
+					t.Fatalf("quota reset request count = %d, want 0", count)
+				}
+				return
+			}
+			if created.err != nil {
+				t.Fatalf("CreateRequest() error = %v", created.err)
+			}
+			request := client.QuotaResetRequest.GetX(ctx, created.request.ID)
+			if request.RequesterRelayUserID != tt.wantRelayUserID ||
+				request.RequesterDisplayNameSnapshot != tt.username ||
+				request.RequesterEmailSnapshot != tt.email {
+				t.Fatalf("requester snapshot = relay:%d display:%q email:%q, want relay:%d display:%q email:%q",
+					request.RequesterRelayUserID, request.RequesterDisplayNameSnapshot, request.RequesterEmailSnapshot,
+					tt.wantRelayUserID, tt.username, tt.email)
+			}
+		})
+	}
+}
+
 func TestCreateWorkflowRequestRollsBackBeforeDuplicateLookup(t *testing.T) {
 	ctx := context.Background()
 	setupClient, dsn := testdb.OpenWithDSN(t)

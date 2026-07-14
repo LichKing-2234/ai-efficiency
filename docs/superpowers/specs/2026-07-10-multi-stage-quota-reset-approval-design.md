@@ -506,6 +506,14 @@ request from facts that never coexisted in a committed database snapshot.
 Request creation does not take the admin approval-configuration `SystemSetting`
 lock; repeatable-read isolation is the consistency boundary.
 
+Relay subscription preflight may occur before this transaction. After the
+transaction begins, request creation re-reads the requester and revalidates the
+relay binding through the transaction client. The immutable requester relay id,
+display name, and email snapshots come from that transaction view and its
+directory resolution, not from the earlier preflight user object. If the relay
+binding disappeared after preflight, creation returns `ErrNoRelayMapping` and
+persists no workflow request.
+
 Within that transaction, the resolver uses the current successful full-company
 directory snapshot.
 

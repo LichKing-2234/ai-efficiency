@@ -37,7 +37,14 @@ func (s *Service) createWorkflowRequest(
 			_ = tx.Rollback()
 		}
 	}()
-	snapshot, err := NewWorkflowResolver(tx.Client()).Resolve(ctx, requester.ID, providerRow.ID, input.GroupID)
+	transactionRequester, err := tx.Client().User.Get(ctx, requester.ID)
+	if err != nil {
+		return nil, fmt.Errorf("get workflow requester: %w", err)
+	}
+	if transactionRequester.RelayUserID == nil {
+		return nil, ErrNoRelayMapping
+	}
+	snapshot, err := NewWorkflowResolver(tx.Client()).Resolve(ctx, transactionRequester.ID, providerRow.ID, input.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -46,8 +53,8 @@ func (s *Service) createWorkflowRequest(
 	now := time.Now()
 
 	request, err := tx.QuotaResetRequest.Create().
-		SetRequesterUserID(requester.ID).
-		SetRequesterRelayUserID(int64(*requester.RelayUserID)).
+		SetRequesterUserID(transactionRequester.ID).
+		SetRequesterRelayUserID(int64(*transactionRequester.RelayUserID)).
 		SetProviderID(providerRow.ID).
 		SetGroupID(input.GroupID).
 		SetGroupName(subscriptionGroupName(subscription)).
