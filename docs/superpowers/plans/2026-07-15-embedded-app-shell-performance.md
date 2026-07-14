@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Task 1 is complete and verified. Task 2 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Task 1 is complete and verified. Task 2 Steps 1-5 are complete; Step 6 is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the existing embedded SPA materially faster on cold and repeat visits by serving correct gzip/cache headers and removing inactive locale and chart code from the initial data-loading path, without adding a CDN or a separate frontend release unit.
 
@@ -108,25 +108,25 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 - Produces: a release-only embedded HTTP assertion under `AE_ASSERT_EMBEDDED_FRONTEND=1` that finds a real built hashed asset, negotiates gzip, checks immutable/no-cache classification, and verifies decompression byte-for-byte.
 - Removes: the invalid `/vite.svg` request without adding a replacement asset.
 
-- [ ] **Step 1: Add failing assembled-router and OAuth isolation tests**
+- [x] **Step 1: Add failing assembled-router and OAuth isolation tests**
 
   Through the assembled router, assert valid GET and HEAD OAuth authorize/device browser entries return HTML with `Cache-Control: no-cache`, correct gzip/Vary headers, and empty HEAD bodies. Assert invalid authorize JSON, `/oauth/token`, device-code, approval, `/api/*`, and authenticated API responses do not receive `Content-Encoding`, static `Cache-Control`, or static `Vary: Accept-Encoding`.
 
-- [ ] **Step 2: Run OAuth/router tests and record RED**
+- [x] **Step 2: Run OAuth/router tests and record RED**
 
   Run: `cd backend && go test ./internal/oauth ./internal/handler -run 'Embedded|OAuth.*(Head|Cache|Gzip)|Frontend' -count=1`
 
   Expected: FAIL because OAuth browser HEAD routes do not exist. Task 1 already makes valid GET browser entries pass the shared policy assertions; protocol/API isolation must remain green.
 
-- [ ] **Step 3: Wire browser HEAD routes and remove the stale icon reference**
+- [x] **Step 3: Wire browser HEAD routes and remove the stale icon reference**
 
   Register HEAD alongside GET for only the authorize and device browser entry handlers. Keep all protocol POST routes unchanged. Remove the `/vite.svg` link from `frontend/index.html`; do not add a generic replacement icon.
 
-- [ ] **Step 4: Extend the clean release embed assertion**
+- [x] **Step 4: Extend the clean release embed assertion**
 
   Expand the environment-gated web test to scan the real embedded `dist/assets/*.js`, select the largest hashed JavaScript asset, request identity and gzip through `ServeEmbeddedFrontend`, and assert immutable policy, exact decompression, and `gzip_bytes < identity_bytes`. Request root HTML and assert `no-cache` plus gzip. Log the two selected transfer lengths as release evidence. Update `deploy/test/release-frontend-embed-test.sh` so the guarded test regex runs both presence and HTTP-policy assertions after its clean frontend build/staging step.
 
-- [ ] **Step 5: Run focused Task 2 verification**
+- [x] **Step 5: Run focused Task 2 verification**
 
   Run separately:
 

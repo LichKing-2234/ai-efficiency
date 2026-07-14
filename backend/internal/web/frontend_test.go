@@ -428,6 +428,88 @@ func TestHasEmbeddedFrontendForReleaseBuilds(t *testing.T) {
 	}
 }
 
+func TestEmbeddedFrontendReleaseBuildHTTPPolicy(t *testing.T) {
+	if os.Getenv("AE_ASSERT_EMBEDDED_FRONTEND") != "1" {
+		t.Skip("set AE_ASSERT_EMBEDDED_FRONTEND=1 to assert embedded frontend HTTP policy")
+	}
+
+	dist, err := distFS()
+	if err != nil {
+		t.Fatalf("distFS: %v", err)
+	}
+	assetNames, err := fs.Glob(dist, "assets/*.js")
+	if err != nil {
+		t.Fatalf("Glob assets: %v", err)
+	}
+	var assetName string
+	var assetBytes []byte
+	for _, candidate := range assetNames {
+		if !hashedFrontendAssetRE.MatchString(candidate) {
+			continue
+		}
+		body, readErr := fs.ReadFile(dist, candidate)
+		if readErr != nil {
+			t.Fatalf("ReadFile %s: %v", candidate, readErr)
+		}
+		if len(body) > len(assetBytes) {
+			assetName = candidate
+			assetBytes = body
+		}
+	}
+	if assetName == "" {
+		t.Fatalf("no hashed JavaScript asset found in %q", assetNames)
+	}
+	indexBytes, err := fs.ReadFile(dist, "index.html")
+	if err != nil {
+		t.Fatalf("ReadFile index.html: %v", err)
+	}
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Header("Vary", "Origin")
+		c.Next()
+	})
+	router.Use(ServeEmbeddedFrontend())
+
+	assetPath := "/" + assetName
+	assetIdentity := performFrontendRequest(router, http.MethodGet, assetPath, "gzip;q=0")
+	assertFrontendResponseHeaders(t, assetIdentity, "javascript", "public, max-age=31536000, immutable", "", len(assetBytes))
+	if !bytes.Equal(assetIdentity.Body.Bytes(), assetBytes) {
+		t.Fatalf("asset identity bytes differ: got %d want %d", assetIdentity.Body.Len(), len(assetBytes))
+	}
+	assetGzip := performFrontendRequest(router, http.MethodGet, assetPath, "gzip")
+	assertFrontendResponseHeaders(t, assetGzip, "javascript", "public, max-age=31536000, immutable", "gzip", assetGzip.Body.Len())
+	if decompressed := gunzipResponse(t, assetGzip); !bytes.Equal(decompressed, assetBytes) {
+		t.Fatalf("asset gzip bytes differ after decompression: got %d want %d", len(decompressed), len(assetBytes))
+	}
+	if assetGzip.Body.Len() >= assetIdentity.Body.Len() {
+		t.Fatalf("asset gzip length = %d, want smaller than identity %d", assetGzip.Body.Len(), assetIdentity.Body.Len())
+	}
+
+	rootIdentity := performFrontendRequest(router, http.MethodGet, "/", "gzip;q=0")
+	assertFrontendResponseHeaders(t, rootIdentity, "text/html", "no-cache", "", len(indexBytes))
+	if !bytes.Equal(rootIdentity.Body.Bytes(), indexBytes) {
+		t.Fatalf("root identity bytes differ: got %d want %d", rootIdentity.Body.Len(), len(indexBytes))
+	}
+	if bytes.Contains(indexBytes, []byte("/vite.svg")) {
+		t.Fatal("embedded index still references /vite.svg")
+	}
+	rootGzip := performFrontendRequest(router, http.MethodGet, "/", "gzip")
+	assertFrontendResponseHeaders(t, rootGzip, "text/html", "no-cache", "gzip", rootGzip.Body.Len())
+	if decompressed := gunzipResponse(t, rootGzip); !bytes.Equal(decompressed, indexBytes) {
+		t.Fatalf("root gzip bytes differ after decompression: got %d want %d", len(decompressed), len(indexBytes))
+	}
+
+	t.Logf(
+		"release frontend bytes: asset=%s identity=%d gzip=%d root_identity=%d root_gzip=%d",
+		assetName,
+		assetIdentity.Body.Len(),
+		assetGzip.Body.Len(),
+		rootIdentity.Body.Len(),
+		rootGzip.Body.Len(),
+	)
+}
+
 func TestHasEmbeddedFrontendFalseWithoutIndex(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {
