@@ -9,9 +9,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
+	"github.com/ai-efficiency/backend/ent/quotaresetrequestdecision"
+	"github.com/ai-efficiency/backend/ent/quotaresetrequestnode"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/quotareset"
@@ -330,6 +333,78 @@ func TestQuotaResetWorkflowAdvancedReturnsLatestSummaryDetails(t *testing.T) {
 	}
 }
 
+func TestQuotaResetRetryWorkflowAdvancedReturnsLatestSummaryDetails(t *testing.T) {
+	env := newQuotaResetHandlerTestEnvWithServiceFactory(t, func(client *ent.Client) quotaResetService {
+		return quotareset.NewService(client, nil, nil, nil)
+	})
+	ctx := context.Background()
+	requester := env.client.User.Create().
+		SetUsername("requester").
+		SetEmail("requester@example.com").
+		SetAuthSource("sub2api_sso").
+		SetRole(entuser.RoleUser).
+		SaveX(ctx)
+	request := env.client.QuotaResetRequest.Create().
+		SetRequesterUserID(requester.ID).
+		SetRequesterRelayUserID(1001).
+		SetProviderID(1).
+		SetGroupID("42").
+		SetGroupName("Group Alpha").
+		SetGroupPlatform("openai").
+		SetReason("Investigate a release regression").
+		SetWorkflowVersion(quotareset.WorkflowVersionV2).
+		SetRequesterDisplayNameSnapshot("Requester Example").
+		SetRequesterEmailSnapshot("requester@example.com").
+		SetRequesterDepartmentPaths([]string{"Department Alpha"}).
+		SetRequesterNotificationIds(map[string]string{}).
+		SetStatus(quotaresetrequest.StatusPending).
+		SetResolvedApproverUserIds([]int{}).
+		SetMatchedDepartmentPaths([]map[string]any{}).
+		SaveX(ctx)
+	node := env.client.QuotaResetRequestNode.Create().
+		SetRequestID(request.ID).
+		SetPosition(1).
+		SetNodeType(quotaresetrequestnode.NodeTypeConfiguredDepartment).
+		SetLabel("Department Beta").
+		SetDepartmentSnapshots([]map[string]any{}).
+		SetStatus(quotaresetrequestnode.StatusActive).
+		SaveX(ctx)
+	decision := env.client.QuotaResetRequestDecision.Create().
+		SetRequestID(request.ID).
+		SetRequestNodeID(node.ID).
+		SetActorUserID(env.userID).
+		SetActorDisplayName("Member Example").
+		SetDecision(quotaresetrequestdecision.DecisionApprove).
+		SetComment("Approved before a stale retry attempt").
+		SaveX(ctx)
+	env.client.QuotaResetRequest.UpdateOneID(request.ID).
+		SetCurrentNodeID(node.ID).
+		SetWorkflowCompletedByDecisionID(decision.ID).
+		SaveX(ctx)
+
+	rec := performQuotaResetRequest(env.router, http.MethodPost, fmt.Sprintf("/api/v1/user/quota-reset/approvals/%d/retry-reset", request.ID), env.userToken, `{}`)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+	var body struct {
+		Message string `json:"message"`
+		Details struct {
+			Request *quotareset.RequestSummary `json:"request"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	var workflow *quotareset.WorkflowSummary
+	if body.Details.Request != nil {
+		workflow = body.Details.Request.Workflow
+	}
+	if body.Message != quotareset.ErrWorkflowAdvanced.Error() || body.Details.Request == nil || workflow == nil || workflow.CurrentNode == nil || workflow.CurrentNode.ID != node.ID || workflow.CanApprove || workflow.CanReject || workflow.CanRetry {
+		t.Fatalf("stale retry response = %+v", body)
+	}
+}
+
 func TestQuotaResetMutationResponsesUseViewerAwareSummary(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -638,13 +713,40 @@ func TestQuotaResetDirectoryUnavailableMapsToServiceUnavailable(t *testing.T) {
 	}
 }
 
+func TestQuotaResetStaleApproverCandidateSourceMapsToServiceUnavailable(t *testing.T) {
+	ctx := context.Background()
+	serviceClient := testdb.Open(t)
+	stale := createQuotaResetHandlerDirectorySource(t, ctx, serviceClient, "Stale Directory", time.Date(2026, 7, 14, 8, 0, 0, 0, time.UTC))
+	current := createQuotaResetHandlerDirectorySource(t, ctx, serviceClient, "Current Directory", time.Date(2026, 7, 14, 9, 0, 0, 0, time.UTC))
+	service := quotareset.NewService(serviceClient, nil, nil, nil)
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		listApproverCandidatesFn: service.ListApproverCandidates,
+	})
+
+	for _, sourceID := range []int{stale.ID, current.ID + 1000} {
+		rec := performQuotaResetRequest(env.router, http.MethodGet, fmt.Sprintf("/api/v1/admin/quota-reset/approver-candidates?source_id=%d", sourceID), env.adminToken, "")
+		if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), quotareset.ErrDirectoryUnavailable.Error()) {
+			t.Fatalf("source %d response = %d %s, want 503 directory unavailable", sourceID, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 type quotaResetHandlerTestEnv struct {
 	router     *gin.Engine
+	client     *ent.Client
+	userID     int
 	userToken  string
 	adminToken string
 }
 
 func newQuotaResetHandlerTestEnv(t *testing.T, service *fakeQuotaResetService) *quotaResetHandlerTestEnv {
+	t.Helper()
+	return newQuotaResetHandlerTestEnvWithServiceFactory(t, func(*ent.Client) quotaResetService {
+		return service
+	})
+}
+
+func newQuotaResetHandlerTestEnvWithServiceFactory(t *testing.T, serviceFactory func(*ent.Client) quotaResetService) *quotaResetHandlerTestEnv {
 	t.Helper()
 	client := testdb.Open(t)
 	logger := zap.NewNop()
@@ -673,7 +775,7 @@ func newQuotaResetHandlerTestEnv(t *testing.T, service *fakeQuotaResetService) *
 	}
 
 	router := gin.New()
-	handler := NewQuotaResetHandler(service)
+	handler := NewQuotaResetHandler(serviceFactory(client))
 	userGroup := router.Group("/api/v1/user")
 	userGroup.Use(auth.RequireAuth(authSvc))
 	userGroup.POST("/quota-reset/requests", handler.CreateRequest)
@@ -699,9 +801,32 @@ func newQuotaResetHandlerTestEnv(t *testing.T, service *fakeQuotaResetService) *
 
 	return &quotaResetHandlerTestEnv{
 		router:     router,
+		client:     client,
+		userID:     user.ID,
 		userToken:  userPair.AccessToken,
 		adminToken: adminPair.AccessToken,
 	}
+}
+
+func createQuotaResetHandlerDirectorySource(t *testing.T, ctx context.Context, client *ent.Client, name string, completedAt time.Time) *ent.DirectorySource {
+	t.Helper()
+	source := client.DirectorySource.Create().
+		SetName(name).
+		SetDescription("Synthetic organization directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		SaveX(ctx)
+	run := client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetCompletedAt(completedAt).
+		SaveX(ctx)
+	return client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		SaveX(ctx)
 }
 
 func performQuotaResetRequest(router *gin.Engine, method, path, token string, body string) *httptest.ResponseRecorder {

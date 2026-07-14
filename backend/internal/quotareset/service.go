@@ -699,7 +699,7 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 		requiredStatus = quotaresetrequest.StatusApprovedResetFailed
 	}
 	if req.Status != requiredStatus {
-		return nil, ErrInvalidStatus
+		return nil, resetStatusConflict(req, retry)
 	}
 	groupID, err := strconv.ParseInt(req.GroupID, 10, 64)
 	if err != nil || groupID <= 0 {
@@ -714,7 +714,7 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 		ClearResetCompletedAt().
 		Save(ctx)
 	if ent.IsNotFound(err) {
-		return nil, ErrInvalidStatus
+		return nil, resetStatusConflict(req, retry)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mark reset started: %w", err)
@@ -755,6 +755,13 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	}
 	_ = s.notify(ctx, NotificationResetSucceeded, succeeded)
 	return succeeded, nil
+}
+
+func resetStatusConflict(request *ent.QuotaResetRequest, retry bool) error {
+	if retry && request.WorkflowVersion >= WorkflowVersionV2 {
+		return &WorkflowAdvancedError{RequestID: request.ID}
+	}
+	return ErrInvalidStatus
 }
 
 func (s *Service) storeResetFailure(ctx context.Context, requestID int, actorUserID int, resetErr error) (*ent.QuotaResetRequest, error) {

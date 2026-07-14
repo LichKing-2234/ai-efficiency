@@ -135,13 +135,18 @@ func (s *Service) loadWorkflowSummaries(ctx context.Context, requests []*ent.Quo
 func buildWorkflowSummary(request *ent.QuotaResetRequest, viewer summaryViewer, nodes []*ent.QuotaResetRequestNode, approversByNode map[int][]*ent.QuotaResetRequestNodeApprover, decisions []*ent.QuotaResetRequestDecision) (*WorkflowSummary, error) {
 	nodeSummaries := make([]WorkflowNodeSummary, 0, len(nodes))
 	nodeIndexes := make(map[int]int, len(nodes))
+	viewerWasApprover := false
 	for _, node := range nodes {
 		departments, err := workflowDepartmentSnapshots(node.DepartmentSnapshots)
 		if err != nil {
 			return nil, fmt.Errorf("decode quota reset workflow node %d departments: %w", node.ID, err)
 		}
 		approverSummaries := make([]WorkflowNodeApproverSummary, 0, len(approversByNode[node.ID]))
+		historicalNode := node.Status != quotaresetrequestnode.StatusQueued && node.Status != quotaresetrequestnode.StatusActive
 		for _, approver := range approversByNode[node.ID] {
+			if historicalNode && approver.UserID == viewer.UserID {
+				viewerWasApprover = true
+			}
 			approverSummaries = append(approverSummaries, WorkflowNodeApproverSummary{
 				UserID:      approver.UserID,
 				DisplayName: approver.DisplayName,
@@ -193,7 +198,7 @@ func buildWorkflowSummary(request *ent.QuotaResetRequest, viewer summaryViewer, 
 	}
 	requester := request.RequesterUserID == viewer.UserID
 	activeCandidate := currentNode != nil && currentNode.Status == quotaresetrequestnode.StatusActive.String() && workflowNodeHasApprover(*currentNode, viewer.UserID)
-	if !requester && !viewer.Admin && !activeCandidate && !viewerHasDecision {
+	if !requester && !viewer.Admin && !activeCandidate && !viewerHasDecision && !viewerWasApprover {
 		return nil, nil
 	}
 	canDecide := request.Status == quotaresetrequest.StatusPending &&

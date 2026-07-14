@@ -318,9 +318,6 @@ func (s *Service) rejectWorkflow(ctx context.Context, input DecisionInput) (*ent
 }
 
 func (s *Service) retryResetWorkflow(ctx context.Context, input DecisionInput, request *ent.QuotaResetRequest) (*ent.QuotaResetRequest, error) {
-	if request.Status != quotaresetrequest.StatusApprovedResetFailed {
-		return nil, ErrInvalidStatus
-	}
 	actor, err := s.client.User.Get(ctx, input.ActorUserID)
 	if err != nil {
 		return nil, err
@@ -341,6 +338,9 @@ func (s *Service) retryResetWorkflow(ctx context.Context, input DecisionInput, r
 		if decision.ActorUserID != input.ActorUserID {
 			return nil, ErrNotApprover
 		}
+	}
+	if request.Status != quotaresetrequest.StatusApprovedResetFailed {
+		return nil, &WorkflowAdvancedError{RequestID: request.ID}
 	}
 	return s.executeReset(ctx, request.ID, input.ActorUserID, true, input.Admin)
 }

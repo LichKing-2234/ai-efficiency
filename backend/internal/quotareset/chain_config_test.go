@@ -57,6 +57,70 @@ func TestListApproverCandidatesRequiresSourceID(t *testing.T) {
 	}
 }
 
+func TestListApproverCandidatesRequiresCurrentSourceID(t *testing.T) {
+	t.Run("current source", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+		current := createQuotaResetDirectorySource(t, ctx, client)
+		svc := NewService(client, nil, nil, nil)
+
+		resp, err := svc.ListApproverCandidates(ctx, ApproverCandidateParams{SourceID: current.ID, Page: 1, PageSize: 20})
+		if err != nil {
+			t.Fatalf("ListApproverCandidates(current source) error = %v", err)
+		}
+		if resp == nil || resp.Page != 1 || resp.PageSize != 20 || resp.Total != 0 || len(resp.Items) != 0 {
+			t.Fatalf("ListApproverCandidates(current source) = %#v, want empty paginated response", resp)
+		}
+	})
+
+	t.Run("stale source", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+		stale := createQuotaResetDirectorySource(t, ctx, client)
+		createQuotaResetDirectorySource(t, ctx, client)
+		svc := NewService(client, nil, nil, nil)
+
+		_, err := svc.ListApproverCandidates(ctx, ApproverCandidateParams{SourceID: stale.ID})
+		if !errors.Is(err, ErrDirectoryUnavailable) {
+			t.Fatalf("ListApproverCandidates(stale source) error = %v, want ErrDirectoryUnavailable", err)
+		}
+	})
+
+	t.Run("nonexistent source", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+		current := createQuotaResetDirectorySource(t, ctx, client)
+		svc := NewService(client, nil, nil, nil)
+
+		_, err := svc.ListApproverCandidates(ctx, ApproverCandidateParams{SourceID: current.ID + 1000})
+		if !errors.Is(err, ErrDirectoryUnavailable) {
+			t.Fatalf("ListApproverCandidates(nonexistent source) error = %v, want ErrDirectoryUnavailable", err)
+		}
+	})
+
+	t.Run("no current source", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+		svc := NewService(client, nil, nil, nil)
+
+		_, err := svc.ListApproverCandidates(ctx, ApproverCandidateParams{SourceID: 1})
+		if !errors.Is(err, ErrDirectoryUnavailable) {
+			t.Fatalf("ListApproverCandidates(no current source) error = %v, want ErrDirectoryUnavailable", err)
+		}
+	})
+
+	t.Run("negative source", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+		svc := NewService(client, nil, nil, nil)
+
+		_, err := svc.ListApproverCandidates(ctx, ApproverCandidateParams{SourceID: -1})
+		if !errors.Is(err, ErrInvalidApproverConfig) {
+			t.Fatalf("ListApproverCandidates(negative source) error = %v, want ErrInvalidApproverConfig", err)
+		}
+	})
+}
+
 func TestListApproverCandidatesExcludesInactiveMembers(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

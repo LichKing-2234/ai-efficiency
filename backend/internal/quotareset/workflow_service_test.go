@@ -496,6 +496,46 @@ func TestWorkflowDecisionRejectsStaleNode(t *testing.T) {
 	}
 }
 
+func TestWorkflowStaleCoApproverSeesLatestWithoutCurrentPermissions(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}, {}})
+	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID, fixture.actorB.ID)
+	fixture.replaceApproverIDs(t, 1, fixture.admin.ID)
+
+	updated, err := fixture.service.Approve(fixture.ctx, DecisionInput{
+		ActorUserID:    fixture.actorA.ID,
+		RequestID:      fixture.request.ID,
+		RequestNodeID:  fixture.nodes[0].ID,
+		DecisionReason: "Approved the first review node",
+	})
+	if err != nil {
+		t.Fatalf("Approve(first co-approver) error = %v", err)
+	}
+	if updated.CurrentNodeID == nil || *updated.CurrentNodeID != fixture.nodes[1].ID {
+		t.Fatalf("current node = %v, want %d", updated.CurrentNodeID, fixture.nodes[1].ID)
+	}
+
+	_, err = fixture.service.Approve(fixture.ctx, DecisionInput{
+		ActorUserID:    fixture.actorB.ID,
+		RequestID:      fixture.request.ID,
+		RequestNodeID:  fixture.nodes[0].ID,
+		DecisionReason: "Stale approval from the other co-approver",
+	})
+	var advanced *WorkflowAdvancedError
+	if !errors.As(err, &advanced) || !errors.Is(err, ErrWorkflowAdvanced) {
+		t.Fatalf("Approve(stale co-approver) error = %v, want WorkflowAdvancedError", err)
+	}
+	latest := requireWorkflowAdvancedLatest(t, advanced)
+	if latest.Workflow == nil || latest.Workflow.CurrentNode == nil || latest.Workflow.CurrentNode.ID != fixture.nodes[1].ID {
+		t.Fatalf("Approve(stale co-approver) latest workflow = %+v, want current node %d", latest.Workflow, fixture.nodes[1].ID)
+	}
+	if latest.Workflow.CanApprove || latest.Workflow.CanReject || latest.Workflow.CanCancel || latest.Workflow.CanRetry {
+		t.Fatalf("Approve(stale co-approver) permissions = %+v, want read-only historical visibility", latest.Workflow)
+	}
+	if fixture.provider.resetCalls != 0 {
+		t.Fatalf("reset calls = %d, want 0", fixture.provider.resetCalls)
+	}
+}
+
 func TestWorkflowSnapshotDoesNotChangeAfterConfigMutation(t *testing.T) {
 	fixture := newWorkflowCreationFixture(t, true, true)
 	request, err := fixture.service.CreateRequest(fixture.ctx, CreateRequestInput{
@@ -552,6 +592,109 @@ func TestWorkflowRetryAllowsCompletionActorAndAdminOnly(t *testing.T) {
 			t.Fatalf("RetryReset(non-admin flag) error/reset calls = %v/%d, want ErrNotApprover/0", err, fixture.provider.resetCalls)
 		}
 	})
+}
+
+func TestWorkflowRetryStaleAuthorizesBeforeReturningWorkflowAdvanced(t *testing.T) {
+	t.Run("completion actor", func(t *testing.T) {
+		fixture := newFailedWorkflowRetryFixture(t)
+		fixture.client.QuotaResetRequest.UpdateOneID(fixture.request.ID).
+			SetStatus(quotaresetrequest.StatusApprovedResetSucceeded).
+			SaveX(fixture.ctx)
+
+		_, err := fixture.service.RetryReset(fixture.ctx, DecisionInput{
+			ActorUserID: fixture.actorA.ID,
+			RequestID:   fixture.request.ID,
+		})
+		var advanced *WorkflowAdvancedError
+		if !errors.As(err, &advanced) || !errors.Is(err, ErrWorkflowAdvanced) {
+			t.Fatalf("RetryReset(stale completion actor) error = %v, want WorkflowAdvancedError", err)
+		}
+		latest := requireWorkflowAdvancedLatest(t, advanced)
+		if latest.ID != fixture.request.ID || latest.Status != quotaresetrequest.StatusApprovedResetSucceeded.String() || latest.Workflow == nil || latest.Workflow.CanRetry {
+			t.Fatalf("RetryReset(stale completion actor) latest = %+v", latest)
+		}
+	})
+
+	t.Run("admin", func(t *testing.T) {
+		fixture := newFailedWorkflowRetryFixture(t)
+		fixture.client.QuotaResetRequest.UpdateOneID(fixture.request.ID).
+			SetStatus(quotaresetrequest.StatusApprovedResetSucceeded).
+			SaveX(fixture.ctx)
+
+		_, err := fixture.service.RetryReset(fixture.ctx, DecisionInput{
+			ActorUserID: fixture.admin.ID,
+			RequestID:   fixture.request.ID,
+			Admin:       true,
+		})
+		var advanced *WorkflowAdvancedError
+		if !errors.As(err, &advanced) || !errors.Is(err, ErrWorkflowAdvanced) {
+			t.Fatalf("RetryReset(stale admin) error = %v, want WorkflowAdvancedError", err)
+		}
+		latest := requireWorkflowAdvancedLatest(t, advanced)
+		if latest.ID != fixture.request.ID || latest.Status != quotaresetrequest.StatusApprovedResetSucceeded.String() || latest.Workflow == nil || latest.Workflow.CanRetry {
+			t.Fatalf("RetryReset(stale admin) latest = %+v", latest)
+		}
+	})
+
+	t.Run("unauthorized actor", func(t *testing.T) {
+		fixture := newFailedWorkflowRetryFixture(t)
+		fixture.client.QuotaResetRequest.UpdateOneID(fixture.request.ID).
+			SetStatus(quotaresetrequest.StatusApprovedResetSucceeded).
+			SaveX(fixture.ctx)
+
+		_, err := fixture.service.RetryReset(fixture.ctx, DecisionInput{
+			ActorUserID: fixture.actorB.ID,
+			RequestID:   fixture.request.ID,
+		})
+		var advanced *WorkflowAdvancedError
+		if !errors.Is(err, ErrNotApprover) || errors.As(err, &advanced) {
+			t.Fatalf("RetryReset(stale unauthorized actor) error = %v, want ErrNotApprover without Latest", err)
+		}
+		if fixture.provider.resetCalls != 0 {
+			t.Fatalf("RetryReset(stale unauthorized actor) reset calls = %d, want 0", fixture.provider.resetCalls)
+		}
+	})
+}
+
+func TestWorkflowRetryCASRaceReturnsWorkflowAdvanced(t *testing.T) {
+	fixture := newFailedWorkflowRetryFixture(t)
+	raced := false
+	fixture.client.QuotaResetRequest.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+			requestMutation, ok := mutation.(*ent.QuotaResetRequestMutation)
+			if !ok || raced || !mutation.Op().Is(ent.OpUpdateOne) {
+				return next.Mutate(ctx, mutation)
+			}
+			status, statusSet := requestMutation.Status()
+			requestID, hasID := requestMutation.ID()
+			if !statusSet || status != quotaresetrequest.StatusApprovedResetting || !hasID || requestID != fixture.request.ID {
+				return next.Mutate(ctx, mutation)
+			}
+			raced = true
+			if _, err := fixture.client.QuotaResetRequest.UpdateOneID(requestID).
+				SetStatus(quotaresetrequest.StatusApprovedResetSucceeded).
+				Save(ctx); err != nil {
+				return nil, err
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+
+	_, err := fixture.service.RetryReset(fixture.ctx, DecisionInput{
+		ActorUserID: fixture.actorA.ID,
+		RequestID:   fixture.request.ID,
+	})
+	var advanced *WorkflowAdvancedError
+	if !raced || !errors.As(err, &advanced) || !errors.Is(err, ErrWorkflowAdvanced) {
+		t.Fatalf("RetryReset(CAS race) raced/error = %t/%v, want WorkflowAdvancedError", raced, err)
+	}
+	latest := requireWorkflowAdvancedLatest(t, advanced)
+	if latest.Status != quotaresetrequest.StatusApprovedResetSucceeded.String() || latest.Workflow == nil || latest.Workflow.CanRetry {
+		t.Fatalf("RetryReset(CAS race) latest = %+v", latest)
+	}
+	if fixture.provider.resetCalls != 0 {
+		t.Fatalf("RetryReset(CAS race) reset calls = %d, want 0", fixture.provider.resetCalls)
+	}
 }
 
 func TestCancelDispatchPreservesV1AndV2Behavior(t *testing.T) {

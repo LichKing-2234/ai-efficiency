@@ -98,7 +98,7 @@ func lockApprovalConfiguration(ctx context.Context, tx *ent.Tx) error {
 
 func (s *Service) ListApproverCandidates(ctx context.Context, params ApproverCandidateParams) (*ApproverCandidateListResponse, error) {
 	page, pageSize := normalizePage(params.Page, params.PageSize)
-	sourceID, err := requireCandidateSourceID(params.SourceID)
+	sourceID, err := requireCandidateSourceID(ctx, s.client, params.SourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -130,14 +130,21 @@ func (s *Service) ListApproverCandidates(ctx context.Context, params ApproverCan
 	return &ApproverCandidateListResponse{Items: items[start:end], Page: page, PageSize: pageSize, Total: total}, nil
 }
 
-func requireCandidateSourceID(requested int) (int, error) {
-	if requested > 0 {
-		return requested, nil
-	}
+func requireCandidateSourceID(ctx context.Context, client *ent.Client, requested int) (int, error) {
 	if requested < 0 {
 		return 0, fmt.Errorf("%w: source_id must not be negative", ErrInvalidApproverConfig)
 	}
-	return 0, fmt.Errorf("%w: source_id is required", ErrInvalidApproverConfig)
+	if requested == 0 {
+		return 0, fmt.Errorf("%w: source_id is required", ErrInvalidApproverConfig)
+	}
+	currentSourceID, ok, err := directorysync.CurrentSourceID(ctx, client)
+	if err != nil {
+		return 0, fmt.Errorf("resolve current approver candidate source: %w", err)
+	}
+	if !ok || currentSourceID != requested {
+		return 0, fmt.Errorf("%w: source_id %d is not the current synchronized source", ErrDirectoryUnavailable, requested)
+	}
+	return currentSourceID, nil
 }
 
 func loadCandidateOrganizationFacts(ctx context.Context, client *ent.Client, sourceID int) ([]*ent.DirectoryMemberDepartment, map[string]*ent.DirectoryDepartment, error) {
