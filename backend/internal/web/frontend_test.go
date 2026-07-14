@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"testing/fstest"
 
 	"github.com/gin-gonic/gin"
 )
@@ -195,6 +198,99 @@ func TestEmbeddedFrontendClassifiesTheResolvedFile(t *testing.T) {
 	}
 	if testHeaderHasToken(api.Header().Values("Vary"), "Accept-Encoding") {
 		t.Fatalf("API Vary = %q, must not include Accept-Encoding", api.Header().Values("Vary"))
+	}
+}
+
+func TestFrontendServerResolveReportsFallback(t *testing.T) {
+	server := newFrontendServer(fstest.MapFS{
+		"index.html":             &fstest.MapFile{Data: []byte("<html>app</html>"), Mode: 0o444},
+		"assets":                 &fstest.MapFile{Mode: fs.ModeDir | 0o555},
+		"assets/app-ABCDEFGH.js": &fstest.MapFile{Data: []byte("console.log('app')"), Mode: 0o444},
+	})
+
+	cases := []struct {
+		name         string
+		requested    string
+		wantFile     string
+		wantFallback bool
+	}{
+		{name: "direct regular file", requested: "assets/app-ABCDEFGH.js", wantFile: "assets/app-ABCDEFGH.js"},
+		{name: "direct index", requested: "index.html", wantFile: "index.html"},
+		{name: "directory", requested: "assets", wantFile: "index.html", wantFallback: true},
+		{name: "missing file", requested: "missing/route", wantFile: "index.html", wantFallback: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			file, fallback, err := server.resolve(tc.requested)
+			if err != nil {
+				t.Fatalf("resolve(%q): %v", tc.requested, err)
+			}
+			if file.name != tc.wantFile {
+				t.Fatalf("resolve(%q) file = %q, want %q", tc.requested, file.name, tc.wantFile)
+			}
+			if fallback != tc.wantFallback {
+				t.Fatalf("resolve(%q) fallback = %v, want %v", tc.requested, fallback, tc.wantFallback)
+			}
+		})
+	}
+}
+
+func TestEmbeddedFrontendIndexRedirectPreservesQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := frontendPolicyTestRouter(t, map[string][]byte{
+		"index.html": []byte("<html><body>app</body></html>"),
+	})
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			response := performFrontendRequest(router, method, "/index.html?source=bookmark&next=%2Frepos", "gzip")
+			if response.Code != http.StatusMovedPermanently {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusMovedPermanently)
+			}
+			if got, want := response.Header().Get("Location"), "./?source=bookmark&next=%2Frepos"; got != want {
+				t.Fatalf("Location = %q, want %q", got, want)
+			}
+			if method == http.MethodHead && response.Body.Len() != 0 {
+				t.Fatalf("HEAD body = %q, want empty", response.Body.String())
+			}
+		})
+	}
+}
+
+func TestEmbeddedFrontendGzipRangeUsesSelectedRepresentation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(strings.Repeat("console.log('range');\n", 64))
+	router := frontendPolicyTestRouter(t, map[string][]byte{
+		"index.html":             []byte("<html><body>app</body></html>"),
+		"assets/app-ABCDEFGH.js": body,
+	})
+
+	full := performFrontendRequest(router, http.MethodGet, "/assets/app-ABCDEFGH.js", "gzip")
+	if full.Code != http.StatusOK || full.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("full response = status %d encoding %q", full.Code, full.Header().Get("Content-Encoding"))
+	}
+	const rangeStart, rangeEnd = 3, 17
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/assets/app-ABCDEFGH.js", nil)
+	request.Header.Set("Accept-Encoding", "gzip")
+	request.Header.Set("Range", "bytes=3-17")
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusPartialContent {
+		t.Fatalf("status = %d, want %d; body=%q", response.Code, http.StatusPartialContent, response.Body.String())
+	}
+	if got := response.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding = %q, want gzip", got)
+	}
+	if got, want := response.Header().Get("Content-Length"), strconv.Itoa(rangeEnd-rangeStart+1); got != want {
+		t.Fatalf("Content-Length = %q, want %q", got, want)
+	}
+	if got, want := response.Header().Get("Content-Range"), "bytes 3-17/"+strconv.Itoa(full.Body.Len()); got != want {
+		t.Fatalf("Content-Range = %q, want %q", got, want)
+	}
+	if got, want := response.Body.Bytes(), full.Body.Bytes()[rangeStart:rangeEnd+1]; !bytes.Equal(got, want) {
+		t.Fatalf("partial body = %x, want %x", got, want)
 	}
 }
 
@@ -385,6 +481,102 @@ func TestServeEmbeddedIndexUsesEmbeddedFrontendRoot(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "index-root") {
 		t.Fatalf("body=%q", w.Body.String())
 	}
+}
+
+func TestServeEmbeddedIndexReusesRepresentationsAcrossRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte("<html><body>" + strings.Repeat("oauth-app-shell ", 32) + "</body></html>")
+	counted := &countingFS{
+		FS: fstest.MapFS{
+			"dist/index.html": &fstest.MapFile{Data: body, Mode: 0o444},
+		},
+		opens: make(map[string]int),
+	}
+	restore := SetFrontendFSForTest(counted)
+	defer restore()
+
+	router := gin.New()
+	router.GET("/oauth/authorize", func(c *gin.Context) {
+		if !ServeEmbeddedIndex(c) {
+			c.String(http.StatusNotFound, "missing")
+		}
+	})
+
+	identity := performFrontendRequest(router, http.MethodGet, "/oauth/authorize", "")
+	if identity.Code != http.StatusOK || !bytes.Equal(identity.Body.Bytes(), body) {
+		t.Fatalf("identity = status %d body %q", identity.Code, identity.Body.String())
+	}
+	if got := identity.Header().Get("Content-Length"); got != strconv.Itoa(len(body)) {
+		t.Fatalf("identity Content-Length = %q, want %d", got, len(body))
+	}
+	firstOpenCount := counted.openCount("dist/index.html")
+	if firstOpenCount == 0 {
+		t.Fatal("expected the first request to open dist/index.html")
+	}
+
+	compressed := performFrontendRequest(router, http.MethodGet, "/oauth/authorize", "gzip")
+	if compressed.Code != http.StatusOK || compressed.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("gzip = status %d encoding %q", compressed.Code, compressed.Header().Get("Content-Encoding"))
+	}
+	if got := gunzipResponse(t, compressed); !bytes.Equal(got, body) {
+		t.Fatalf("gzip body = %q, want %q", got, body)
+	}
+	if got := counted.openCount("dist/index.html"); got != firstOpenCount {
+		t.Fatalf("dist/index.html open count = %d after second request, want cached count %d", got, firstOpenCount)
+	}
+}
+
+func TestServeEmbeddedIndexTracksFrontendFSTestReplacement(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	first := fstest.MapFS{
+		"dist/index.html": &fstest.MapFile{Data: []byte("<html>first</html>"), Mode: 0o444},
+	}
+	second := fstest.MapFS{
+		"dist/index.html": &fstest.MapFile{Data: []byte("<html>second</html>"), Mode: 0o444},
+	}
+	restoreFirst := SetFrontendFSForTest(first)
+	defer restoreFirst()
+
+	serve := func() string {
+		router := gin.New()
+		router.GET("/oauth/device", func(c *gin.Context) {
+			if !ServeEmbeddedIndex(c) {
+				c.String(http.StatusNotFound, "missing")
+			}
+		})
+		return performFrontendRequest(router, http.MethodGet, "/oauth/device", "").Body.String()
+	}
+
+	if got := serve(); got != "<html>first</html>" {
+		t.Fatalf("first body = %q", got)
+	}
+	restoreSecond := SetFrontendFSForTest(second)
+	if got := serve(); got != "<html>second</html>" {
+		t.Fatalf("second body = %q", got)
+	}
+	restoreSecond()
+	if got := serve(); got != "<html>first</html>" {
+		t.Fatalf("restored body = %q", got)
+	}
+}
+
+type countingFS struct {
+	fs.FS
+	mu    sync.Mutex
+	opens map[string]int
+}
+
+func (f *countingFS) Open(name string) (fs.File, error) {
+	f.mu.Lock()
+	f.opens[name]++
+	f.mu.Unlock()
+	return f.FS.Open(name)
+}
+
+func (f *countingFS) openCount(name string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.opens[name]
 }
 
 func TestCanonicalPathRedirectsExtraSlashBrowserRequests(t *testing.T) {

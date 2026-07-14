@@ -20,7 +20,11 @@ import (
 //go:embed all:dist
 var embeddedFrontendFS embed.FS
 
-var frontendFS fs.FS = embeddedFrontendFS
+var frontendState = struct {
+	sync.Mutex
+	fsys   fs.FS
+	server *frontendServer
+}{fsys: embeddedFrontendFS}
 
 var hashedFrontendAssetRE = regexp.MustCompile(`^assets/.+-[A-Za-z0-9_-]{8,}\.[^/]+$`)
 
@@ -41,14 +45,23 @@ type frontendFile struct {
 }
 
 func currentFrontendFS() fs.FS {
-	return frontendFS
+	frontendState.Lock()
+	defer frontendState.Unlock()
+	return frontendState.fsys
 }
 
 func SetFrontendFSForTest(fsys fs.FS) func() {
-	prev := frontendFS
-	frontendFS = fsys
+	frontendState.Lock()
+	prevFS := frontendState.fsys
+	prevServer := frontendState.server
+	frontendState.fsys = fsys
+	frontendState.server = nil
+	frontendState.Unlock()
 	return func() {
-		frontendFS = prev
+		frontendState.Lock()
+		frontendState.fsys = prevFS
+		frontendState.server = prevServer
+		frontendState.Unlock()
 	}
 }
 
@@ -89,13 +102,12 @@ func RedirectCanonicalBrowserPath() gin.HandlerFunc {
 }
 
 func ServeEmbeddedFrontend() gin.HandlerFunc {
-	dist, err := distFS()
+	server, err := currentFrontendServer()
 	if err != nil {
 		return func(c *gin.Context) {
 			c.Next()
 		}
 	}
-	server := newFrontendServer(dist)
 
 	return func(c *gin.Context) {
 		requestPath := canonicalRequestPath(c.Request.URL.Path)
@@ -110,13 +122,17 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 		}
 
 		if requestPath == "/index.html" && (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) {
-			c.Header("Location", "./")
+			location := "./"
+			if c.Request.URL.RawQuery != "" {
+				location += "?" + c.Request.URL.RawQuery
+			}
+			c.Header("Location", location)
 			c.Status(http.StatusMovedPermanently)
 			c.Abort()
 			return
 		}
 
-		file, err := server.resolve(cleanPath)
+		file, _, err := server.resolve(cleanPath)
 		if err == nil {
 			server.serve(c, file)
 			c.Abort()
@@ -127,11 +143,10 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 }
 
 func ServeEmbeddedIndex(c *gin.Context) bool {
-	dist, err := distFS()
+	server, err := currentFrontendServer()
 	if err != nil {
 		return false
 	}
-	server := newFrontendServer(dist)
 	file, err := server.file("index.html")
 	if err != nil {
 		return false
@@ -141,19 +156,34 @@ func ServeEmbeddedIndex(c *gin.Context) bool {
 }
 
 func distFS() (fs.FS, error) {
-	return fs.Sub(frontendFS, "dist")
+	return fs.Sub(currentFrontendFS(), "dist")
+}
+
+func currentFrontendServer() (*frontendServer, error) {
+	frontendState.Lock()
+	defer frontendState.Unlock()
+	if frontendState.server != nil {
+		return frontendState.server, nil
+	}
+	dist, err := fs.Sub(frontendState.fsys, "dist")
+	if err != nil {
+		return nil, err
+	}
+	frontendState.server = newFrontendServer(dist)
+	return frontendState.server, nil
 }
 
 func newFrontendServer(dist fs.FS) *frontendServer {
 	return &frontendServer{dist: dist, files: make(map[string]*frontendFile)}
 }
 
-func (s *frontendServer) resolve(name string) (*frontendFile, error) {
+func (s *frontendServer) resolve(name string) (*frontendFile, bool, error) {
 	file, err := s.file(name)
 	if err == nil {
-		return file, nil
+		return file, false, nil
 	}
-	return s.file("index.html")
+	file, err = s.file("index.html")
+	return file, true, err
 }
 
 func (s *frontendServer) file(name string) (*frontendFile, error) {
