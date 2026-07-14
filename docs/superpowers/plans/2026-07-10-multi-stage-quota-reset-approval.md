@@ -4869,18 +4869,47 @@ ledger update is committed separately.
 - Modify: `backend/internal/quotareset/notification_test.go`
 - Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
 
-- [ ] **Step 1: Add failing approver-drift notification tests**
+- [x] **Step 1: Add failing approver-drift notification tests**
 
 Cover activation and cancellation when every snapshotted approver is now
 unusable, when one usable approver remains, and when a usable approver has no
 Enterprise WeChat notification id.
 
-- [ ] **Step 2: Route from immutable snapshots through current usability**
+RED evidence (2026-07-15): `go test ./internal/quotareset -run
+'^TestWorkflowNotificationsRevalidateSnapshottedApprovers$' -count=1 -v`
+failed all six activation/cancellation subtests (`1.875s`). Each event still
+returned both immutable snapshotted approvers: the all-unusable case did not
+route to the current admin, and the one-usable and usable-without-WeCom-id cases
+did not filter the stale approver.
+
+- [x] **Step 2: Route from immutable snapshots through current usability**
 
 Keep audit snapshots unchanged. Notify only currently usable snapshotted
 approvers; when none remain, notify current admins exclusively.
 
-- [ ] **Step 3: Run focused and full backend verification, update the current spec, and commit**
+GREEN evidence (2026-07-15): the resolver and delivery path now share one
+current-usability predicate covering an active current-directory member and
+non-disabled local access, while requester exclusion remains explicit. Node
+activation and cancellation resolve live names and notification ids for the
+immutable snapshotted user ids, route only usable normal approvers when any
+remain, and otherwise route current admins exclusively. The six-case focused
+test passed (`1.777s`); the combined notification identity, admin fallback, and
+complete workflow-resolver regression selection passed (`5.638s`), including
+requester exclusion and inactive/offboarded candidate coverage.
+
+- [x] **Step 3: Run focused and full backend verification, update the current spec, and commit**
+
+Verification and commit evidence (2026-07-15): focused notification tests
+passed with `go test ./internal/quotareset -run
+'Notification|WorkflowActivation|ApprovalReuseDoesNotNotify' -count=1`
+(`7.034s`). The complete quotareset package passed (`41.023s`), and
+`go test ./... -count=1` passed across the backend, including
+`internal/quotareset 77.184s`. `go vet ./...`, `git diff --check`, and the
+staged diff check all exited 0. The current design now distinguishes immutable
+authorization/UI/audit snapshots from live activation/cancellation delivery
+recipients. Code, tests, and spec are commit `ac2c9af` (`fix(backend):
+revalidate quota reset notification recipients`); this ledger update is
+committed separately.
 
 ### Task 15: Persist Reset Terminal State and Audit Event Atomically
 
