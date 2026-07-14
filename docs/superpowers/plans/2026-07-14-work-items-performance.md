@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-3 are complete. Task 4 is next; this branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 are complete. Task 5 is next; this branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the protected-navigation work-item badge and administrator offboarding list fast and bounded while preserving authoritative quota, credential, Directory Sync, Relay disable, and token-revocation behavior.
 
@@ -235,45 +235,45 @@
 - Produces: `workItems.invalidateCounts()` that preserves the displayed badge but expires freshness and prevents a pre-invalidation response from writing back.
 - Consumes: Task 1's `{items,page,page_size,total}` offboarding response.
 
-- [ ] **Step 1: Write failing store freshness and race tests**
+- [x] **Step 1: Write failing store freshness and race tests**
 
   With fake timers and deferred responses, assert: repeated loads through 19,999 ms make one request; 20,000 ms makes a second; force bypasses freshness; invalidation causes a normal refresh; many force callers during one inflight request queue exactly one forced follow-up; a pre-invalidation response is ignored; a post-invalidation response wins; and auth reset clears values, freshness, queued force state, and generations.
 
-- [ ] **Step 2: Run store tests and record the expected RED result**
+- [x] **Step 2: Run store tests and record the expected RED result**
 
   Run: `cd frontend && npm test -- src/__tests__/work-items-store.test.ts`
 
   Expected: failures because only inflight deduplication exists.
 
-- [ ] **Step 3: Implement generation-safe 20-second Pinia freshness**
+- [x] **Step 3: Implement generation-safe 20-second Pinia freshness**
 
   Start freshness at successful response completion. Return immediately while fresh unless forced; share one active promise per generation; share one queued forced follow-up; compare both request identity and session/freshness generation before writing or clearing state; never mark errors fresh; and keep the existing badge value during invalidation.
 
-- [ ] **Step 4: Add failing protected-navigation and mobile-remount integration tests**
+- [x] **Step 4: Add failing protected-navigation and mobile-remount integration tests**
 
   Mount a real `RouterView` with five distinct view component identities, each containing the real `AppLayout`, and navigate across all five with one Pinia instance; assert one counts call in the freshness window and a second after expiry. Separately resolve the desktop sidebar request, open/close mobile navigation at least five times, and assert the same request bound before and after expiry.
 
-- [ ] **Step 5: Run layout tests and record the expected RED result**
+- [x] **Step 5: Run layout tests and record the expected RED result**
 
   Run: `cd frontend && npm test -- src/__tests__/app-layout.test.ts`
 
   Expected: repeated completed sidebar mounts issue repeated requests before the store implementation is applied.
 
-- [ ] **Step 6: Add failing paginated offboarding and mutation-refresh tests**
+- [x] **Step 6: Add failing paginated offboarding and mutation-refresh tests**
 
   Assert the offboarding view requests page 1 with page size 20, renders total-aware next/previous controls, resets to page 1 on search, and after a successful disable awaits both the page reload and a forced work-item refresh. Add focused tests that quota transitions and current Directory source/apply mutations invalidate then await a badge refresh without allowing an older inflight response to win.
 
-- [ ] **Step 7: Implement the page contract and current-actor mutation refreshes**
+- [x] **Step 7: Implement the page contract and current-actor mutation refreshes**
 
   Update API/type boundaries, add stable pager state without changing the existing exact-email confirmation UX, and call `invalidateCounts()` followed by an awaited `loadCounts({force:true})` after affected quota, offboarding, Directory source, and newly completed apply mutations. Do not trigger an extra request merely by mounting a settings section with an already-completed historical run.
 
-- [ ] **Step 8: Run focused Task 4 verification**
+- [x] **Step 8: Run focused Task 4 verification**
 
   Run: `cd frontend && npm test -- src/__tests__/work-items-store.test.ts src/__tests__/app-layout.test.ts src/__tests__/directory-offboarding-view.test.ts src/__tests__/quota-reset-view.test.ts src/__tests__/directory-sync-settings.test.ts`
 
   Expected: PASS with one request per freshness window and immediate post-mutation refresh.
 
-- [ ] **Step 9: Commit Task 4 and update this ledger immediately**
+- [x] **Step 9: Commit Task 4 and update this ledger immediately**
 
   Commit: `perf(frontend): bound work item badge refreshes`
 
