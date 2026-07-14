@@ -938,6 +938,12 @@ The generic payload includes `workflow_progress` for the same durable,
 bounded `completed/total` semantics as the Enterprise WeChat preset and
 excludes channel recipient ids by default.
 
+`workflow_progress` is a required field of the initial generic webhook v2
+contract. This v2 contract is still in flight before its first release, so
+including the originally required progress field completes that initial shape
+without changing `schema_version`. After v2 is released, future incompatible
+payload-shape changes require a schema version bump.
+
 ### Notification Events and Routing
 
 Send:

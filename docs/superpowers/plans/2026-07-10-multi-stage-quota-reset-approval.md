@@ -5407,8 +5407,25 @@ Implementation and verification evidence (2026-07-15):
   no output.
 - Implementation commit: `dd17c3d feat(quotareset): include workflow progress in notifications`.
 
-Step 3 remains unchecked pending controller-managed independent reviews. No
-Task 19 behavior is included in the Task 18 implementation.
+Quality-review follow-up evidence (2026-07-15):
+
+- Kept generic webhook `schema_version=2` because this branch and the initial
+  v2 contract remain unreleased. The current spec now states that
+  `workflow_progress` is required in that initial v2 shape and that future
+  incompatible post-release shape changes require a version bump.
+- Strengthened activation, cancellation, and rejection regressions so the
+  notification node is at position 0 while durable completed progress is 3/5.
+  Approved, prior-satisfied, and skipped nodes are stored at other positions;
+  active, queued, and rejected remain explicitly excluded.
+- Mutation RED: `cd backend && go test ./internal/quotareset -run '^TestWorkflowNotificationContextCountsOnlyDurablySatisfiedNodes$' -count=1`
+  failed as expected for activation, cancellation, and rejection with
+  `workflow progress = 0/5, want 3/5` after temporarily deriving completed from
+  notification-node position.
+- Restored GREEN: `cd backend && go test ./internal/quotareset -run 'Test(GenericWebhookAdapterRendersVersionedWorkflowPayload|NotificationAdaptersBoundWorkflowProgress|WorkflowNotificationContextCountsOnlyDurablySatisfiedNodes)$' -count=1`
+  exited 0 with `ok github.com/ai-efficiency/backend/internal/quotareset 1.502s`.
+
+Step 3 remains unchecked pending controller-managed independent re-review. No
+Task 19 behavior is included in the Task 18 implementation or this follow-up.
 
 ### Task 19: Keep Approval Queues and Counts Actionable by Default
 
