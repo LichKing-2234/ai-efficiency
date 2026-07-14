@@ -42,20 +42,22 @@ type NotificationNode struct {
 }
 
 type NotificationContext struct {
-	Event           NotificationEvent
-	OccurredAt      time.Time
-	RequestID       int
-	Status          string
-	Requester       NotificationPerson
-	Recipients      []NotificationPerson
-	DepartmentPaths []string
-	GroupID         string
-	GroupName       string
-	GroupPlatform   string
-	Reason          string
-	CurrentNode     *NotificationNode
-	ApprovalHistory []NotificationDecision
-	ActionURL       string
+	Event                  NotificationEvent
+	OccurredAt             time.Time
+	RequestID              int
+	Status                 string
+	Requester              NotificationPerson
+	Recipients             []NotificationPerson
+	DepartmentPaths        []string
+	GroupID                string
+	GroupName              string
+	GroupPlatform          string
+	Reason                 string
+	WorkflowCompletedNodes int
+	WorkflowTotalNodes     int
+	CurrentNode            *NotificationNode
+	ApprovalHistory        []NotificationDecision
+	ActionURL              string
 }
 
 type RenderedNotification struct {
@@ -87,4 +89,17 @@ func marshalNotificationPayload(value any) ([]byte, error) {
 		return nil, fmt.Errorf("marshal notification payload: %w", err)
 	}
 	return body, nil
+}
+
+func boundedNotificationWorkflowProgress(completed, total int) (int, int) {
+	if total < 0 {
+		total = 0
+	}
+	if completed < 0 {
+		completed = 0
+	}
+	if completed > total {
+		completed = total
+	}
+	return completed, total
 }

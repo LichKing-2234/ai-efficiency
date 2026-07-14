@@ -29,6 +29,7 @@ const (
 type genericWebhookAdapter struct{}
 
 func (genericWebhookAdapter) Render(ctx NotificationContext) (RenderedNotification, error) {
+	completedNodes, totalNodes := boundedNotificationWorkflowProgress(ctx.WorkflowCompletedNodes, ctx.WorkflowTotalNodes)
 	payload := genericNotificationPayload{
 		SchemaVersion: 2,
 		Event:         NotificationEvent(truncateUTF8(string(ctx.Event), genericNotificationEventMaxBytes)),
@@ -46,6 +47,10 @@ func (genericWebhookAdapter) Render(ctx NotificationContext) (RenderedNotificati
 				Platform: truncateUTF8(ctx.GroupPlatform, genericNotificationGroupPlatformMaxBytes),
 			},
 			Reason: truncateUTF8(ctx.Reason, genericNotificationReasonMaxBytes),
+		},
+		WorkflowProgress: genericNotificationWorkflowProgress{
+			Completed: completedNodes,
+			Total:     totalNodes,
 		},
 		CurrentNode:     boundedGenericNode(ctx.CurrentNode),
 		ApprovalHistory: boundedGenericApprovalHistory(ctx.ApprovalHistory),
@@ -66,13 +71,19 @@ func (genericWebhookAdapter) Render(ctx NotificationContext) (RenderedNotificati
 }
 
 type genericNotificationPayload struct {
-	SchemaVersion   int                        `json:"schema_version"`
-	Event           NotificationEvent          `json:"event"`
-	Request         genericNotificationRequest `json:"request"`
-	CurrentNode     *NotificationNode          `json:"current_node"`
-	ApprovalHistory []NotificationDecision     `json:"approval_history"`
-	ActionURL       string                     `json:"action_url"`
-	OccurredAt      string                     `json:"occurred_at"`
+	SchemaVersion    int                                 `json:"schema_version"`
+	Event            NotificationEvent                   `json:"event"`
+	Request          genericNotificationRequest          `json:"request"`
+	WorkflowProgress genericNotificationWorkflowProgress `json:"workflow_progress"`
+	CurrentNode      *NotificationNode                   `json:"current_node"`
+	ApprovalHistory  []NotificationDecision              `json:"approval_history"`
+	ActionURL        string                              `json:"action_url"`
+	OccurredAt       string                              `json:"occurred_at"`
+}
+
+type genericNotificationWorkflowProgress struct {
+	Completed int `json:"completed"`
+	Total     int `json:"total"`
 }
 
 type genericNotificationRequest struct {

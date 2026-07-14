@@ -60,6 +60,7 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 	if maxBytes <= 0 {
 		maxBytes = defaultWeComMarkdownMaxBytes
 	}
+	completedNodes, totalNodes := boundedNotificationWorkflowProgress(ctx.WorkflowCompletedNodes, ctx.WorkflowTotalNodes)
 	title, action := weComEventCopy(ctx.Event)
 	requiredHead := []string{
 		"# " + title,
@@ -73,6 +74,7 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 		node := fmt.Sprintf("%d/%d · %s", ctx.CurrentNode.Position+1, ctx.CurrentNode.Total, ctx.CurrentNode.Label)
 		requiredTail = append(requiredTail, boundedWeComLine("> 当前节点：", node, weComNodeMaxBytes))
 	}
+	requiredTail = append(requiredTail, fmt.Sprintf("> 审批进度：%d/%d", completedNodes, totalNodes))
 	actionLine, err := weComActionLink(ctx.ActionURL)
 	if err != nil {
 		return RenderedNotification{}, err

@@ -18,6 +18,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
+	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestnode"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestnodeapprover"
@@ -62,6 +63,10 @@ func TestGenericWebhookAdapterRendersVersionedWorkflowPayload(t *testing.T) {
 	group := notificationJSONMap(t, request["subscription_group"], "request.subscription_group")
 	if group["id"] != "42" || group["name"] != "Group Alpha" || group["platform"] != "openai" {
 		t.Fatalf("subscription group = %#v", group)
+	}
+	progress := notificationJSONMap(t, payload["workflow_progress"], "workflow_progress")
+	if progress["completed"] != float64(1) || progress["total"] != float64(3) {
+		t.Fatalf("workflow_progress = %#v, want 1/3", progress)
 	}
 	node := notificationJSONMap(t, payload["current_node"], "current_node")
 	if node["id"] != float64(456) || node["position"] != float64(1) || node["total"] != float64(3) || node["label"] != "Department Beta" {
@@ -172,6 +177,50 @@ func TestGenericWebhookAdapterBoundsUserControlledPayload(t *testing.T) {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("bounded generic payload exposed channel data %q", forbidden)
 		}
+	}
+}
+
+func TestNotificationAdaptersBoundWorkflowProgress(t *testing.T) {
+	tests := []struct {
+		name          string
+		completed     int
+		total         int
+		wantCompleted int
+		wantTotal     int
+	}{
+		{name: "negative values", completed: -1, total: -2, wantCompleted: 0, wantTotal: 0},
+		{name: "completed exceeds total", completed: 9, total: 3, wantCompleted: 3, wantTotal: 3},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := notificationAdapterTestContext()
+			ctx.WorkflowCompletedNodes = tt.completed
+			ctx.WorkflowTotalNodes = tt.total
+
+			generic, err := (genericWebhookAdapter{}).Render(ctx)
+			if err != nil {
+				t.Fatalf("generic Render() error = %v", err)
+			}
+			var genericPayload map[string]any
+			if err := json.Unmarshal(generic.Body, &genericPayload); err != nil {
+				t.Fatalf("decode generic payload: %v", err)
+			}
+			progress := notificationJSONMap(t, genericPayload["workflow_progress"], "workflow_progress")
+			if progress["completed"] != float64(tt.wantCompleted) || progress["total"] != float64(tt.wantTotal) {
+				t.Fatalf("generic workflow_progress = %#v, want %d/%d", progress, tt.wantCompleted, tt.wantTotal)
+			}
+
+			wecom, err := (weComGroupRobotAdapter{maxBytes: 4096}).Render(ctx)
+			if err != nil {
+				t.Fatalf("WeCom Render() error = %v", err)
+			}
+			_, content := decodeWeComNotification(t, wecom.Body)
+			want := fmt.Sprintf("审批进度：%d/%d", tt.wantCompleted, tt.wantTotal)
+			if !strings.Contains(content, want) {
+				t.Fatalf("WeCom content = %q, want %q", content, want)
+			}
+		})
 	}
 }
 
@@ -1012,6 +1061,131 @@ func TestApprovalReuseDoesNotNotifySatisfiedLaterNodes(t *testing.T) {
 	assertNotificationEventMetadata(t, fixture.ctx, fixture.client, fixture.request.ID, 1)
 }
 
+func TestWorkflowNotificationContextCountsOnlyDurablySatisfiedNodes(t *testing.T) {
+	tests := []struct {
+		name              string
+		event             NotificationEvent
+		requestStatus     quotaresetrequest.Status
+		currentNodeIndex  int
+		notificationIndex int
+		statuses          []quotaresetrequestnode.Status
+		wantCompleted     int
+		wantTotal         int
+	}{
+		{
+			name:              "activation counts approved reused and skipped but excludes active and queued",
+			event:             NotificationNodeActivated,
+			requestStatus:     quotaresetrequest.StatusPending,
+			currentNodeIndex:  3,
+			notificationIndex: 3,
+			statuses: []quotaresetrequestnode.Status{
+				quotaresetrequestnode.StatusApproved,
+				quotaresetrequestnode.StatusSatisfiedByPriorApproval,
+				quotaresetrequestnode.StatusSkippedNoApprover,
+				quotaresetrequestnode.StatusActive,
+				quotaresetrequestnode.StatusQueued,
+			},
+			wantCompleted: 3,
+			wantTotal:     5,
+		},
+		{
+			name:              "cancellation retains durable completed count",
+			event:             NotificationCancelled,
+			requestStatus:     quotaresetrequest.StatusCancelled,
+			currentNodeIndex:  3,
+			notificationIndex: 3,
+			statuses: []quotaresetrequestnode.Status{
+				quotaresetrequestnode.StatusApproved,
+				quotaresetrequestnode.StatusSatisfiedByPriorApproval,
+				quotaresetrequestnode.StatusSkippedNoApprover,
+				quotaresetrequestnode.StatusActive,
+				quotaresetrequestnode.StatusQueued,
+			},
+			wantCompleted: 3,
+			wantTotal:     5,
+		},
+		{
+			name:              "rejection excludes rejected and queued nodes",
+			event:             NotificationRejected,
+			requestStatus:     quotaresetrequest.StatusRejected,
+			currentNodeIndex:  -1,
+			notificationIndex: 3,
+			statuses: []quotaresetrequestnode.Status{
+				quotaresetrequestnode.StatusApproved,
+				quotaresetrequestnode.StatusSatisfiedByPriorApproval,
+				quotaresetrequestnode.StatusSkippedNoApprover,
+				quotaresetrequestnode.StatusRejected,
+				quotaresetrequestnode.StatusQueued,
+			},
+			wantCompleted: 3,
+			wantTotal:     5,
+		},
+		{
+			name:              "reset success retains durable completed count",
+			event:             NotificationResetSucceeded,
+			requestStatus:     quotaresetrequest.StatusApprovedResetSucceeded,
+			currentNodeIndex:  -1,
+			notificationIndex: -1,
+			statuses: []quotaresetrequestnode.Status{
+				quotaresetrequestnode.StatusApproved,
+				quotaresetrequestnode.StatusSatisfiedByPriorApproval,
+				quotaresetrequestnode.StatusSkippedNoApprover,
+				quotaresetrequestnode.StatusApproved,
+				quotaresetrequestnode.StatusQueued,
+			},
+			wantCompleted: 4,
+			wantTotal:     5,
+		},
+		{
+			name:              "reset failure retains durable completed count",
+			event:             NotificationResetFailed,
+			requestStatus:     quotaresetrequest.StatusApprovedResetFailed,
+			currentNodeIndex:  -1,
+			notificationIndex: -1,
+			statuses: []quotaresetrequestnode.Status{
+				quotaresetrequestnode.StatusApproved,
+				quotaresetrequestnode.StatusSatisfiedByPriorApproval,
+				quotaresetrequestnode.StatusSkippedNoApprover,
+				quotaresetrequestnode.StatusApproved,
+				quotaresetrequestnode.StatusQueued,
+			},
+			wantCompleted: 4,
+			wantTotal:     5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}, {}, {}, {}, {}})
+			for index, status := range tt.statuses {
+				fixture.client.QuotaResetRequestNode.UpdateOneID(fixture.nodes[index].ID).
+					SetStatus(status).
+					SaveX(fixture.ctx)
+			}
+			requestUpdate := fixture.client.QuotaResetRequest.UpdateOneID(fixture.request.ID).
+				SetStatus(tt.requestStatus)
+			if tt.currentNodeIndex >= 0 {
+				requestUpdate.SetCurrentNodeID(fixture.nodes[tt.currentNodeIndex].ID)
+			} else {
+				requestUpdate.ClearCurrentNodeID()
+			}
+			requestUpdate.SaveX(fixture.ctx)
+
+			nodeID := 0
+			if tt.notificationIndex >= 0 {
+				nodeID = fixture.nodes[tt.notificationIndex].ID
+			}
+			notificationContext, err := fixture.service.notificationContextForRequest(fixture.ctx, fixture.request.ID, nodeID, tt.event)
+			if err != nil {
+				t.Fatalf("notificationContextForRequest() error = %v", err)
+			}
+			if notificationContext.WorkflowCompletedNodes != tt.wantCompleted || notificationContext.WorkflowTotalNodes != tt.wantTotal {
+				t.Fatalf("workflow progress = %d/%d, want %d/%d", notificationContext.WorkflowCompletedNodes, notificationContext.WorkflowTotalNodes, tt.wantCompleted, tt.wantTotal)
+			}
+		})
+	}
+}
+
 func TestWebhookNotifierReturnsWeComBusinessError(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -1383,11 +1557,13 @@ func notificationAdapterTestContext() NotificationContext {
 			Email:           "bob@example.org",
 			NotificationIDs: map[string]string{"wecom": "bob-wecom-id"},
 		}},
-		DepartmentPaths: []string{"Department Alpha / Team One"},
-		GroupID:         "42",
-		GroupName:       "Group Alpha",
-		GroupPlatform:   "openai",
-		Reason:          "Complete a time-sensitive build investigation.",
+		DepartmentPaths:        []string{"Department Alpha / Team One"},
+		GroupID:                "42",
+		GroupName:              "Group Alpha",
+		GroupPlatform:          "openai",
+		Reason:                 "Complete a time-sensitive build investigation.",
+		WorkflowCompletedNodes: 1,
+		WorkflowTotalNodes:     3,
 		CurrentNode: &NotificationNode{
 			ID:       456,
 			Position: 1,

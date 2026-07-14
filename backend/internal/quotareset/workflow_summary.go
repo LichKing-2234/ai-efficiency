@@ -412,6 +412,7 @@ func (s *Service) notificationContextForRequest(ctx context.Context, requestID, 
 		currentNodeRow.Status != quotaresetrequestnode.StatusActive) {
 		return NotificationContext{}, fmt.Errorf("build node activation notification: node %d is not the active pending request node", nodeID)
 	}
+	completedNodes, totalNodes := workflowNotificationProgress(nodes)
 
 	history := make([]NotificationDecision, 0, len(decisions))
 	for _, decision := range decisions {
@@ -427,21 +428,39 @@ func (s *Service) notificationContextForRequest(ctx context.Context, requestID, 
 		return NotificationContext{}, err
 	}
 	return NotificationContext{
-		Event:           event,
-		OccurredAt:      time.Now().UTC(),
-		RequestID:       request.ID,
-		Status:          request.Status.String(),
-		Requester:       requester,
-		Recipients:      uniqueNotificationPeople(recipients),
-		DepartmentPaths: append([]string(nil), request.RequesterDepartmentPaths...),
-		GroupID:         request.GroupID,
-		GroupName:       request.GroupName,
-		GroupPlatform:   request.GroupPlatform,
-		Reason:          request.Reason,
-		CurrentNode:     currentNode,
-		ApprovalHistory: history,
-		ActionURL:       s.notificationActionURL(request.ID),
+		Event:                  event,
+		OccurredAt:             time.Now().UTC(),
+		RequestID:              request.ID,
+		Status:                 request.Status.String(),
+		Requester:              requester,
+		Recipients:             uniqueNotificationPeople(recipients),
+		DepartmentPaths:        append([]string(nil), request.RequesterDepartmentPaths...),
+		GroupID:                request.GroupID,
+		GroupName:              request.GroupName,
+		GroupPlatform:          request.GroupPlatform,
+		Reason:                 request.Reason,
+		WorkflowCompletedNodes: completedNodes,
+		WorkflowTotalNodes:     totalNodes,
+		CurrentNode:            currentNode,
+		ApprovalHistory:        history,
+		ActionURL:              s.notificationActionURL(request.ID),
 	}, nil
+}
+
+func workflowNotificationProgress(nodes []*ent.QuotaResetRequestNode) (int, int) {
+	completed := 0
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+		switch node.Status {
+		case quotaresetrequestnode.StatusApproved,
+			quotaresetrequestnode.StatusSatisfiedByPriorApproval,
+			quotaresetrequestnode.StatusSkippedNoApprover:
+			completed++
+		}
+	}
+	return boundedNotificationWorkflowProgress(completed, len(nodes))
 }
 
 func (s *Service) notificationRequester(ctx context.Context, request *ent.QuotaResetRequest) (NotificationPerson, error) {

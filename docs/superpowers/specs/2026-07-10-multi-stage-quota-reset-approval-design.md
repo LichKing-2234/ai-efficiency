@@ -786,9 +786,19 @@ The notifier receives a channel-neutral `NotificationContext` containing:
 3. Requester display name, email, direct department paths, and notification ids.
 4. Subscription group name and platform.
 5. Full request reason for rendering, bounded by adapter limits.
-6. Current node label, position, total node count, and approvers.
-7. Completed decision history with actor names and comments.
-8. Action URL.
+6. Durable workflow progress as completed and total snapshotted node counts.
+7. Current node label, position, total node count, and approvers.
+8. Completed decision history with actor names and comments.
+9. Action URL.
+
+`completed` is derived from the persisted `QuotaResetRequestNode` rows, not
+from current-node position. It counts only nodes with status `approved`,
+`satisfied_by_prior_approval`, or `skipped_no_approver`; `active`, `queued`,
+and `rejected` nodes do not count. `total` is the number of snapshotted nodes
+for the request. Context creation derives these values for activation,
+cancellation, rejection, and terminal reset success/failure notifications.
+Every adapter independently bounds rendered values to `0 <= completed <= total`
+so malformed or synthetic contexts cannot produce invalid progress.
 
 No adapter receives relay credentials, webhook credentials, API keys, or reset
 provider secrets in the rendering context.
@@ -846,17 +856,19 @@ Rendering rules:
 
 1. Put action state, requester, team, subscription group, and reason before
    secondary metadata.
-2. Include the latest completed decision actor and comment when activating a
+2. Render the durable workflow progress as `completed/total`; never infer it
+   from the current-node position.
+3. Include the latest completed decision actor and comment when activating a
    later node.
-3. Mention every unique, mentionable current-node approver.
-4. For admin fallback, mention current admins with resolvable Enterprise WeChat
+4. Mention every unique, mentionable current-node approver.
+5. For admin fallback, mention current admins with resolvable Enterprise WeChat
    ids.
-5. If an approver lacks a recipient id, include their display name followed by
+6. If an approver lacks a recipient id, include their display name followed by
    an unavailable-mention marker and record coverage in event metadata.
-6. Missing recipient ids do not fail the whole delivery.
-7. Truncate low-priority fields before requester, group, action, current node,
+7. Missing recipient ids do not fail the whole delivery.
+8. Truncate low-priority fields before requester, group, action, current node,
    and action URL.
-8. Never send a separate mention-only message.
+9. Never send a separate mention-only message.
 
 For node activation and cancellation, the recipient resolver starts from the
 immutable current-node approver user ids but derives delivery people from the
@@ -903,6 +915,10 @@ Send a stable versioned JSON object:
     },
     "reason": "Complete a time-sensitive build investigation."
   },
+  "workflow_progress": {
+    "completed": 1,
+    "total": 3
+  },
   "current_node": {
     "id": 456,
     "position": 2,
@@ -918,7 +934,9 @@ Send a stable versioned JSON object:
 }
 ```
 
-The generic payload excludes channel recipient ids by default.
+The generic payload includes `workflow_progress` for the same durable,
+bounded `completed/total` semantics as the Enterprise WeChat preset and
+excludes channel recipient ids by default.
 
 ### Notification Events and Routing
 
