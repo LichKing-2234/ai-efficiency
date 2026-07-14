@@ -2,9 +2,11 @@
 
 **Date:** 2026-07-10
 **Status:** Current implemented contract
-**Implementation:** Implemented through commit `42948d5` and fully verified on
-2026-07-14. Task 12 browser, Compose, documentation, and final verification
-evidence is recorded in the linked live plan.
+**Implementation:** Production behavior is implemented through commit `fa7665f`,
+with review-driven backend test coverage through `80d2266` as of 2026-07-15.
+Task 16 browser and documentation reconciliation is in progress; the remaining
+full backend/frontend, Compose, and final-review gates are tracked in the linked
+live plan.
 **Scope:** `backend/ent/schema/`, `backend/internal/quotareset/`, `backend/internal/workitems/`, `backend/internal/handler/`, `backend/internal/directorysync/`, `frontend/src/api/`, `frontend/src/components/settings/`, `frontend/src/components/quota-reset/`, `frontend/src/views/QuotaResetView.vue`
 **Related:**
 

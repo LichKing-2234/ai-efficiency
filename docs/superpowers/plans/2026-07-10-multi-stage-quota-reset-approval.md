@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL, Vue 3 `<script setup lang="ts">`, Pinia, Vite, Vitest, TailwindCSS, Python Playwright role checks.
 
-**Status:** Final review fixes in progress
+**Status:** Final verification in progress
 
 **Known Remaining Gaps:**
 
@@ -27,6 +27,9 @@
   verification matrix.
 - The existing role E2E passes all assertions but logs non-fatal Vite proxy
   `ECONNREFUSED` messages for dashboard helper requests outside its mock set.
+- Task 16 still requires focused/full backend and frontend suites, Compose
+  rebuild/readiness, and whole-branch spec and standards review before this plan
+  can be marked complete.
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -4767,6 +4770,8 @@ Final completion evidence (2026-07-14):
 ### Task 13: Make Workflow Creation Use One Consistent Snapshot
 
 **Files:**
+- Modify: `backend/internal/quotareset/service.go`
+- Modify: `backend/internal/quotareset/service_test.go`
 - Modify: `backend/internal/quotareset/workflow_service.go`
 - Modify: `backend/internal/quotareset/workflow_service_test.go`
 - Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
@@ -4861,7 +4866,7 @@ explicit wrapped error. Code, tests, and current-spec changes are commit
 `f2d2769` (`fix(backend): align relay preflight with workflow snapshot`); this
 ledger update is committed separately.
 
-### Task 14: Revalidate Notification Recipients When a Node Activates
+### Task 14: Revalidate Notification Recipients on Node Activation and Cancellation
 
 **Files:**
 - Modify: `backend/internal/quotareset/workflow_resolver.go`
@@ -5012,7 +5017,7 @@ exited 0. The existing implementation passed the new tests without production
 changes, so full backend was not rerun. Tests are commits `33ac940`
 (`test(backend): cover quota reset outcome transaction failures`) and `80d2266`
 (`test(backend): stabilize quota reset commit failure injection`); the
-spec/header implementation-note refresh remains assigned to Task 16.
+spec/header implementation-note refresh is completed under Task 16 Step 2.
 
 ### Task 16: Reconcile Final Review Evidence and Reverify
 
@@ -5022,16 +5027,43 @@ spec/header implementation-note refresh remains assigned to Task 16.
 - Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
 - Modify: `docs/superpowers/plans/2026-07-10-multi-stage-quota-reset-approval.md`
 
-- [ ] **Step 1: Make the Enterprise WeChat browser save match backend validation**
+- [x] **Step 1: Make the Enterprise WeChat browser save match backend validation**
 
 Provide a clearly synthetic replacement robot endpoint and assert the outgoing
 PUT carries it when switching from `generic_webhook` to `wecom_group_robot`.
 
-- [ ] **Step 2: Update agent navigation and browser-verification evidence**
+RED browser evidence (2026-07-15): before the replacement endpoint was filled,
+`BASE=http://127.0.0.1:5173 python3 e2e_quota_reset_workflow.py` reported
+`Results: 3/5 passed`. Both `admin settings desktop` and `admin settings mobile`
+failed at the synthetic PUT assertion because the request omitted `url`.
+
+GREEN browser evidence (2026-07-15): after filling the clearly synthetic,
+backend-valid Enterprise WeChat robot URL in both admin viewport flows and
+asserting the PUT body includes it, the same command exited 0 with
+`Results: 5/5 passed`. The six screenshots, including desktop and mobile admin
+settings, are in `/tmp/ae-e2e-quota-reset`.
+
+- [x] **Step 2: Update agent navigation and browser-verification evidence**
 
 Add the current design to `AGENTS.md` and keep the deferred browser matrix and
 other accepted residuals explicit in this plan.
 
+Evidence (2026-07-15): `AGENTS.md` now lists the current quota reset workflow
+and notification contract in both Source of Truth and Important Files. The
+design header distinguishes production implementation through `fa7665f` from
+review-driven backend test coverage through `80d2266`. The Known Remaining
+Gaps above retain every accepted product and browser residual and explicitly
+keep the unrun full-suite, Compose, and final-review gates open.
+
 - [ ] **Step 3: Run focused/full backend and frontend suites, browser checks, Compose rebuild/readiness, and hygiene scans**
+
+Partial evidence (2026-07-15): the source-server browser command passed 5/5
+and wrote six screenshots to `/tmp/ae-e2e-quota-reset`. `git diff --check`
+exited 0. A changed-line endpoint and credential scan found exactly one added
+Enterprise WeChat robot host/path and its adjacent synthetic browser key
+fragment; a negative scan found no added non-synthetic webhook key. This step
+remains unchecked because the focused/full backend and frontend suites, Compose
+rebuild/readiness, and the complete Step 3 verification matrix have not been
+run.
 
 - [ ] **Step 4: Commit review reconciliation, rerun whole-branch spec and standards review, then mark this plan complete only with evidence**

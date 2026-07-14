@@ -15,6 +15,10 @@ from playwright.sync_api import Route, sync_playwright
 BASE = os.environ.get("BASE", "http://127.0.0.1:5173").rstrip("/")
 SCREENSHOT_DIR = "/tmp/ae-e2e-quota-reset"
 COMMENT = "Approved for the release investigation."
+WECOM_ROBOT_URL = (
+    "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
+    "?key=synthetic-browser-robot-key"
+)
 MAX_RUNTIME_SECONDS = 60
 TIMEOUT_EXIT_STATUS = 124
 WORKER_FLAG = "--worker"
@@ -348,6 +352,7 @@ class SyntheticAPI:
                 "channel_type": "wecom_group_robot",
                 "auth_type": "none",
                 "credential_id": None,
+                "url": WECOM_ROBOT_URL,
             }
             self.notification_payloads.append(body)
             fulfill(route, {
@@ -588,6 +593,9 @@ def test_admin_settings(browser, viewport, screenshot_name):
         channel = page.get_by_test_id("quota-reset-notification-channel")
         channel.select_option("wecom_group_robot")
         assert channel.input_value() == "wecom_group_robot"
+        endpoint = page.get_by_test_id("quota-reset-notification-url")
+        endpoint.fill(WECOM_ROBOT_URL)
+        assert endpoint.input_value() == WECOM_ROBOT_URL
         page.get_by_test_id("quota-reset-save-notification").click()
         page.wait_for_function("() => document.body.innerText.includes('Notification settings saved')")
         assert len(api.notification_payloads) == 1

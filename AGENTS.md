@@ -14,6 +14,7 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 
 1. 当前代码
 2. 最新且最贴近问题域的 spec：
+   - `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
    - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md`
    - `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md`
    - `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md`
@@ -204,6 +205,7 @@ chore(deploy): update Docker Compose configuration
 ## Important Files
 
 - `docs/architecture.md` — 项目级架构总览与图示
+- `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md` — 当前 quota reset 多阶段审批工作流与通知合同
 - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md` — 当前可配置组织架构同步、部门视图、离职禁用与 token 失效主设计
 - `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md` — 当前 `ae-cli discover` / tool config 主设计
 - `docs/superpowers/specs/2026-05-14-legacy-session-staged-cutover-design.md` — 当前 legacy session cutover 主设计
