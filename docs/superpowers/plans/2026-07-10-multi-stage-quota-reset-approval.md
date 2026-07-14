@@ -8,14 +8,25 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL, Vue 3 `<script setup lang="ts">`, Pinia, Vite, Vitest, TailwindCSS, Python Playwright role checks.
 
-**Status:** Complete
+**Status:** Final review fixes in progress
 
-**Known Remaining Gaps:** None.
+**Known Remaining Gaps:**
 
-**Accepted Residual:** The existing role E2E script passed all assertions but
-logged non-fatal Vite proxy `ECONNREFUSED` messages for dashboard helper
-requests outside its mock set. The quota-reset browser suite intercepts every
-`/api/v1/**` request and has no equivalent live-backend dependency.
+- Relay quota reset has no idempotency key or outcome lookup. A process crash
+  after committing `approved_resetting` can leave the provider outcome
+  ambiguous; this cannot be made retry-safe inside AI Efficiency alone.
+- Notification delivery has no durable outbox/retry worker.
+- Workflow resolution still loads a complete current directory snapshot per
+  request; capacity measurement and targeted-query optimization remain.
+- The older configuration-lock regression retains a probabilistic 150 ms
+  negative assertion.
+- The deterministic browser suite does not yet cover representative-fallback
+  and admin-fallback identities, backend request creation/snapshotting, final
+  reset invocation, or captured Enterprise WeChat delivery payloads. Backend
+  tests cover those contracts but do not replace the design's full browser
+  verification matrix.
+- The existing role E2E passes all assertions but logs non-fatal Vite proxy
+  `ECONNREFUSED` messages for dashboard helper requests outside its mock set.
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -4750,3 +4761,88 @@ Final completion evidence (2026-07-14):
   implementation, original verification, and first spec-gate follow-up.
   Disabled-control review fix `bc60d29` completes the browser overlap contract.
   This updated completion note is committed separately as required.
+
+---
+
+### Task 13: Make Workflow Creation Use One Consistent Snapshot
+
+**Files:**
+- Modify: `backend/internal/quotareset/workflow_service.go`
+- Modify: `backend/internal/quotareset/workflow_service_test.go`
+- Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
+
+- [ ] **Step 1: Add failing directory-apply and chain-replacement concurrency regressions**
+
+Prove that a request cannot combine directory or approval-chain facts from two
+committed generations.
+
+- [ ] **Step 2: Resolve and persist under one repeatable-read transaction**
+
+Begin the transaction before resolution, resolve through `tx.Client()`, and
+persist the request, nodes, approvers, and creation events through the same
+transaction. Do not serialize request creation on the admin configuration lock.
+
+- [ ] **Step 3: Run focused and full backend verification, update the current spec, and commit**
+
+### Task 14: Revalidate Notification Recipients When a Node Activates
+
+**Files:**
+- Modify: `backend/internal/quotareset/workflow_resolver.go`
+- Modify: `backend/internal/quotareset/workflow_summary.go`
+- Modify: `backend/internal/quotareset/notification_test.go`
+- Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
+
+- [ ] **Step 1: Add failing approver-drift notification tests**
+
+Cover activation and cancellation when every snapshotted approver is now
+unusable, when one usable approver remains, and when a usable approver has no
+Enterprise WeChat notification id.
+
+- [ ] **Step 2: Route from immutable snapshots through current usability**
+
+Keep audit snapshots unchanged. Notify only currently usable snapshotted
+approvers; when none remain, notify current admins exclusively.
+
+- [ ] **Step 3: Run focused and full backend verification, update the current spec, and commit**
+
+### Task 15: Persist Reset Terminal State and Audit Event Atomically
+
+**Files:**
+- Modify: `backend/internal/quotareset/service.go`
+- Modify: `backend/internal/quotareset/service_test.go`
+- Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
+
+- [ ] **Step 1: Add failing success/failure audit-event rollback tests**
+
+Inject terminal event failures and prove terminal status, completion time,
+error text, and result notifications do not commit independently of the event.
+
+- [ ] **Step 2: Persist each provider outcome in one transaction**
+
+Lock an `approved_resetting` request, write its terminal state and matching
+event, and commit before notification. Preserve the separately documented
+provider-idempotency crash residual.
+
+- [ ] **Step 3: Run focused and full backend verification, update the current spec, and commit**
+
+### Task 16: Reconcile Final Review Evidence and Reverify
+
+**Files:**
+- Modify: `frontend/e2e_quota_reset_workflow.py`
+- Modify: `AGENTS.md`
+- Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
+- Modify: `docs/superpowers/plans/2026-07-10-multi-stage-quota-reset-approval.md`
+
+- [ ] **Step 1: Make the Enterprise WeChat browser save match backend validation**
+
+Provide a clearly synthetic replacement robot endpoint and assert the outgoing
+PUT carries it when switching from `generic_webhook` to `wecom_group_robot`.
+
+- [ ] **Step 2: Update agent navigation and browser-verification evidence**
+
+Add the current design to `AGENTS.md` and keep the deferred browser matrix and
+other accepted residuals explicit in this plan.
+
+- [ ] **Step 3: Run focused/full backend and frontend suites, browser checks, Compose rebuild/readiness, and hygiene scans**
+
+- [ ] **Step 4: Commit review reconciliation, rerun whole-branch spec and standards review, then mark this plan complete only with evidence**
