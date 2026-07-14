@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -112,6 +113,217 @@ func TestCreateRequestWithOnlySkippedInitialNodeExecutesReset(t *testing.T) {
 	}
 	if fixture.provider.resetCalls != 1 {
 		t.Fatalf("reset calls = %d, want 1", fixture.provider.resetCalls)
+	}
+}
+
+func TestCreateRequestDirectoryGenerationReplacementUsesOneSnapshot(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	client, dsn := testdb.OpenWithDSN(t)
+	secondClient, err := ent.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open second Ent client: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := secondClient.Close(); err != nil {
+			t.Errorf("close second Ent client: %v", err)
+		}
+	})
+
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Old", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice-old", requester.Email, department.ExternalID, &requester.ID)
+	approverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-bob-old", approver.Email, department.ExternalID, &approver.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, department.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, approverMember, department.ExternalID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, department.ExternalID, department.Path, approver.ID)
+	providerRow := createQuotaResetRelayProvider(t, ctx, client)
+	provider := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
+	service := NewService(client, fakeProviderResolver(providerRow.ID, provider), NewApproverResolver(client), nil)
+
+	departmentsRead := make(chan struct{})
+	releaseResolution := make(chan struct{})
+	var interceptOnce sync.Once
+	client.DirectoryDepartment.Intercept(ent.InterceptFunc(func(next ent.Querier) ent.Querier {
+		return ent.QuerierFunc(func(queryCtx context.Context, query ent.Query) (ent.Value, error) {
+			value, queryErr := next.Query(queryCtx, query)
+			if queryErr != nil {
+				return value, queryErr
+			}
+			blocked := false
+			interceptOnce.Do(func() { blocked = true })
+			if !blocked {
+				return value, nil
+			}
+			close(departmentsRead)
+			select {
+			case <-releaseResolution:
+				return value, nil
+			case <-queryCtx.Done():
+				return nil, queryCtx.Err()
+			}
+		})
+	}))
+
+	type createResult struct {
+		request *ent.QuotaResetRequest
+		err     error
+	}
+	result := make(chan createResult, 1)
+	go func() {
+		request, createErr := service.CreateRequest(ctx, CreateRequestInput{
+			RequesterUserID: requester.ID,
+			GroupID:         "42",
+			Reason:          "Need a consistent directory snapshot",
+		})
+		result <- createResult{request: request, err: createErr}
+	}()
+
+	select {
+	case <-departmentsRead:
+	case <-ctx.Done():
+		t.Fatalf("wait for workflow department query: %v", ctx.Err())
+	}
+	if err := replaceWorkflowDirectoryGeneration(ctx, secondClient, source.ID, requester, approver); err != nil {
+		close(releaseResolution)
+		t.Fatalf("replace directory generation: %v", err)
+	}
+	close(releaseResolution)
+
+	var created createResult
+	select {
+	case created = <-result:
+	case <-ctx.Done():
+		t.Fatalf("wait for workflow creation: %v", ctx.Err())
+	}
+	if created.err != nil {
+		t.Fatalf("CreateRequest() error = %v", created.err)
+	}
+	request := client.QuotaResetRequest.GetX(ctx, created.request.ID)
+	nodes := workflowRequestNodes(t, ctx, client, request.ID)
+	if len(nodes) != 1 {
+		t.Fatalf("workflow nodes = %#v, want one initial node", nodes)
+	}
+	approverSnapshot := client.QuotaResetRequestNodeApprover.Query().
+		Where(quotaresetrequestnodeapprover.RequestNodeIDEQ(nodes[0].ID)).
+		OnlyX(ctx)
+	oldGeneration := request.RequesterDisplayNameSnapshot == "member-alice-old" &&
+		reflect.DeepEqual(request.RequesterDepartmentPaths, []string{"Department Old"}) &&
+		approverSnapshot.DisplayName == "member-bob-old"
+	newGeneration := request.RequesterDisplayNameSnapshot == "member-alice-new" &&
+		reflect.DeepEqual(request.RequesterDepartmentPaths, []string{"Department New"}) &&
+		approverSnapshot.DisplayName == "member-bob-new"
+	if !oldGeneration && !newGeneration {
+		t.Fatalf("workflow mixed directory generations: requester=%q paths=%#v approver=%q",
+			request.RequesterDisplayNameSnapshot, request.RequesterDepartmentPaths, approverSnapshot.DisplayName)
+	}
+}
+
+func TestCreateRequestApprovalChainReplacementUsesOneSnapshot(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	client, dsn := testdb.OpenWithDSN(t)
+	secondClient, err := ent.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open second Ent client: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := secondClient.Close(); err != nil {
+			t.Errorf("close second Ent client: %v", err)
+		}
+	})
+
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	initialDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-initial", "Department Initial", nil)
+	oldChainDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-old-chain", "Department Old Chain", nil)
+	newChainDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-new-chain", "Department New Chain", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	initialApprover := createQuotaResetUser(t, ctx, client, "initial-approver", "initial-approver@example.com", nil, "user")
+	oldChainApprover := createQuotaResetUser(t, ctx, client, "old-chain-approver", "old-chain-approver@example.org", nil, "user")
+	newChainApprover := createQuotaResetUser(t, ctx, client, "new-chain-approver", "new-chain-approver@example.net", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, initialDepartment.ExternalID, &requester.ID)
+	initialApproverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-initial-approver", initialApprover.Email, initialDepartment.ExternalID, &initialApprover.ID)
+	oldChainMember := createQuotaResetMember(t, ctx, client, source.ID, "member-old-chain-approver", oldChainApprover.Email, oldChainDepartment.ExternalID, &oldChainApprover.ID)
+	newChainMember := createQuotaResetMember(t, ctx, client, source.ID, "member-new-chain-approver", newChainApprover.Email, newChainDepartment.ExternalID, &newChainApprover.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, initialDepartment.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, initialApproverMember, initialDepartment.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, oldChainMember, oldChainDepartment.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, newChainMember, newChainDepartment.ExternalID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, initialDepartment.ExternalID, initialDepartment.Path, initialApprover.ID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, oldChainDepartment.ExternalID, oldChainDepartment.Path, oldChainApprover.ID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, newChainDepartment.ExternalID, newChainDepartment.Path, newChainApprover.ID)
+	providerRow := createQuotaResetRelayProvider(t, ctx, client)
+	createWorkflowChain(t, ctx, client, providerRow.ID, "42", source.ID, oldChainDepartment)
+	provider := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
+	service := NewService(client, fakeProviderResolver(providerRow.ID, provider), NewApproverResolver(client), nil)
+
+	chainRead := make(chan struct{})
+	releaseResolution := make(chan struct{})
+	var interceptOnce sync.Once
+	client.QuotaResetApprovalChain.Intercept(ent.InterceptFunc(func(next ent.Querier) ent.Querier {
+		return ent.QuerierFunc(func(queryCtx context.Context, query ent.Query) (ent.Value, error) {
+			value, queryErr := next.Query(queryCtx, query)
+			if queryErr != nil {
+				return value, queryErr
+			}
+			blocked := false
+			interceptOnce.Do(func() { blocked = true })
+			if !blocked {
+				return value, nil
+			}
+			close(chainRead)
+			select {
+			case <-releaseResolution:
+				return value, nil
+			case <-queryCtx.Done():
+				return nil, queryCtx.Err()
+			}
+		})
+	}))
+
+	type createResult struct {
+		request *ent.QuotaResetRequest
+		err     error
+	}
+	result := make(chan createResult, 1)
+	go func() {
+		request, createErr := service.CreateRequest(ctx, CreateRequestInput{
+			RequesterUserID: requester.ID,
+			GroupID:         "42",
+			Reason:          "Need a consistent approval chain snapshot",
+		})
+		result <- createResult{request: request, err: createErr}
+	}()
+
+	select {
+	case <-chainRead:
+	case <-ctx.Done():
+		t.Fatalf("wait for workflow approval chain query: %v", ctx.Err())
+	}
+	if err := replaceWorkflowApprovalChain(ctx, secondClient, providerRow.ID, source.ID, newChainDepartment); err != nil {
+		close(releaseResolution)
+		t.Fatalf("replace approval chain: %v", err)
+	}
+	close(releaseResolution)
+
+	var created createResult
+	select {
+	case created = <-result:
+	case <-ctx.Done():
+		t.Fatalf("wait for workflow creation: %v", ctx.Err())
+	}
+	if created.err != nil {
+		t.Fatalf("CreateRequest() error = %v", created.err)
+	}
+	nodes := workflowRequestNodes(t, ctx, client, created.request.ID)
+	if len(nodes) != 2 {
+		t.Fatalf("workflow nodes = %#v, want initial node plus one complete configured-chain generation", nodes)
+	}
+	configured := nodes[1]
+	if configured.Label != oldChainDepartment.Name && configured.Label != newChainDepartment.Name {
+		t.Fatalf("configured node label = %q, want one committed chain generation", configured.Label)
 	}
 }
 
@@ -915,6 +1127,128 @@ func newWorkflowCreationFixture(t *testing.T, initialApprover, configuredNode bo
 		actorB:            actorB,
 		initialDepartment: initialDepartment,
 	}
+}
+
+func replaceWorkflowDirectoryGeneration(ctx context.Context, client *ent.Client, sourceID int, requester, approver *ent.User) error {
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	run, err := tx.DirectorySyncRun.Create().
+		SetSourceID(sourceID).
+		SetMode("apply").
+		SetStatus("running").
+		SetPhase("applying").
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.DirectoryMemberDepartment.Delete().Exec(ctx); err != nil {
+		return err
+	}
+	if _, err := tx.DirectoryMember.Delete().Exec(ctx); err != nil {
+		return err
+	}
+	if _, err := tx.DirectoryDepartment.Delete().Exec(ctx); err != nil {
+		return err
+	}
+	department, err := tx.DirectoryDepartment.Create().
+		SetSourceID(sourceID).
+		SetExternalID("department-alpha").
+		SetName("Department New").
+		SetPath("Department New").
+		SetLastSeenRunID(run.ID).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	requesterMember, err := tx.DirectoryMember.Create().
+		SetSourceID(sourceID).
+		SetExternalID("member-alice-new").
+		SetEmailNormalized(requester.Email).
+		SetDisplayName("member-alice-new").
+		SetDepartmentExternalID(department.ExternalID).
+		SetMatchedUserID(requester.ID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	approverMember, err := tx.DirectoryMember.Create().
+		SetSourceID(sourceID).
+		SetExternalID("member-bob-new").
+		SetEmailNormalized(approver.Email).
+		SetDisplayName("member-bob-new").
+		SetDepartmentExternalID(department.ExternalID).
+		SetMatchedUserID(approver.ID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	for _, member := range []*ent.DirectoryMember{requesterMember, approverMember} {
+		if _, err := tx.DirectoryMemberDepartment.Create().
+			SetSourceID(sourceID).
+			SetDirectoryMemberID(member.ID).
+			SetMemberExternalID(member.ExternalID).
+			SetMemberEmailNormalized(member.EmailNormalized).
+			SetDepartmentExternalID(department.ExternalID).
+			SetLastSeenRunID(run.ID).
+			Save(ctx); err != nil {
+			return err
+		}
+	}
+	completedAt := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	if _, err := tx.DirectorySyncRun.UpdateOneID(run.ID).
+		SetStatus("completed").
+		SetPhase("completed").
+		SetDepartmentCount(1).
+		SetMemberCount(2).
+		SetCompletedAt(completedAt).
+		Save(ctx); err != nil {
+		return err
+	}
+	if _, err := tx.DirectorySource.UpdateOneID(sourceID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func replaceWorkflowApprovalChain(ctx context.Context, client *ent.Client, providerID, sourceID int, department *ent.DirectoryDepartment) error {
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.QuotaResetApprovalChainNode.Delete().Exec(ctx); err != nil {
+		return err
+	}
+	if _, err := tx.QuotaResetApprovalChain.Delete().Exec(ctx); err != nil {
+		return err
+	}
+	chain, err := tx.QuotaResetApprovalChain.Create().
+		SetProviderID(providerID).
+		SetGroupID("42").
+		SetGroupName("Group Alpha").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.QuotaResetApprovalChainNode.Create().
+		SetChainID(chain.ID).
+		SetPosition(0).
+		SetDirectorySourceID(sourceID).
+		SetDepartmentExternalID(department.ExternalID).
+		SetDepartmentDisplayPath(department.Name).
+		Save(ctx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 type workflowNodeFixture struct {

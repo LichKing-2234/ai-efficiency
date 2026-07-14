@@ -496,8 +496,18 @@ or channel recipient ids.
 
 ## Initial Node Resolution
 
-The resolver runs inside request creation using the current successful full
-company directory snapshot.
+Workflow resolution and persistence run in one PostgreSQL repeatable-read
+transaction. The transaction begins before the resolver reads the current
+directory source, users, approver configuration, approval chain, or chain nodes;
+the same Ent transaction persists the request, node and approver snapshots, and
+creation events. Consequently, a concurrent atomic directory apply or approval
+chain replacement may affect the next request, but cannot produce one immutable
+request from facts that never coexisted in a committed database snapshot.
+Request creation does not take the admin approval-configuration `SystemSetting`
+lock; repeatable-read isolation is the consistency boundary.
+
+Within that transaction, the resolver uses the current successful full-company
+directory snapshot.
 
 Algorithm:
 

@@ -2,6 +2,7 @@ package quotareset
 
 import (
 	"context"
+	stdsql "database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -26,14 +27,7 @@ func (s *Service) createWorkflowRequest(
 	subscription relay.UserSubscription,
 	input CreateRequestInput,
 ) (*ent.QuotaResetRequest, error) {
-	snapshot, err := s.workflowResolver.Resolve(ctx, requester.ID, providerRow.ID, input.GroupID)
-	if err != nil {
-		return nil, err
-	}
-	departmentPaths := cloneStringSlice(snapshot.Requester.DepartmentPaths)
-	notificationIDs := cloneStringMap(snapshot.Requester.NotificationIDs)
-	now := time.Now()
-	tx, err := s.client.Tx(ctx)
+	tx, err := s.client.BeginTx(ctx, &stdsql.TxOptions{Isolation: stdsql.LevelRepeatableRead})
 	if err != nil {
 		return nil, fmt.Errorf("begin workflow snapshot transaction: %w", err)
 	}
@@ -43,6 +37,13 @@ func (s *Service) createWorkflowRequest(
 			_ = tx.Rollback()
 		}
 	}()
+	snapshot, err := NewWorkflowResolver(tx.Client()).Resolve(ctx, requester.ID, providerRow.ID, input.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	departmentPaths := cloneStringSlice(snapshot.Requester.DepartmentPaths)
+	notificationIDs := cloneStringMap(snapshot.Requester.NotificationIDs)
+	now := time.Now()
 
 	request, err := tx.QuotaResetRequest.Create().
 		SetRequesterUserID(requester.ID).
