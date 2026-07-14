@@ -3764,6 +3764,10 @@ contracts, `cd frontend && npx vue-tsc -b` exited 0 with no diagnostics. This
 completes the deferred project-wide half of Step 5; the API test half had
 already passed all 10 tests in the Task 9 quality follow-up.
 
+Task 10 quality-review revalidation (2026-07-14): `cd frontend && npx
+vue-tsc -b` again exited 0 with no diagnostics after the authoritative-load and
+operation-lock fixes.
+
 Quality-fix commit evidence: `9618f8d` (`fix(frontend): tighten quota reset API
 contracts`).
 
@@ -4122,6 +4126,44 @@ were clean.
 
 SPEC re-review fix commit evidence: `70c89d3` (`fix(frontend): prioritize quota
 reset save errors`).
+
+Task 10 quality-review follow-up (2026-07-14): **Complete.**
+
+- [x] Add interaction coverage for authoritative full-replacement gates, stale
+  chain removal, latest-wins chain loads, bounded current-source resolution,
+  and notification operation locking.
+- [x] Capture focused RED before changing production code.
+- [x] Guard approver and chain full replacement behind the latest successful
+  authoritative snapshots while preserving prior display state on refresh
+  failure.
+- [x] Add stale-chain removal and latest-load ownership to the chain editor.
+- [x] Resolve current directory sources with one bounded exact-run lookup per
+  eligible source.
+- [x] Guard notification mutations behind a valid settings response and lock
+  controls across load, save, and test operations.
+- [x] Run focused settings tests, project typecheck, full frontend tests, and
+  hygiene scans.
+- [x] Commit production/tests and plan evidence separately.
+
+Quality-review RED evidence: `cd frontend && npm test --
+quota-reset-approval-settings settings-view` exited 1 with 18 expected failures
+and 42 passing tests. The failures reproduced unsafe approver/chain/notification
+actions before authoritative loads, destructive state clearing after refresh
+errors, stale chain resubmission, stale overlapping chain load ownership,
+unbounded directory run-history use, and incomplete notification operation
+locking.
+
+Quality-review GREEN evidence: the same focused command passed both files and
+all 60 tests. `cd frontend && npx vue-tsc -b` exited 0 with no diagnostics, and
+`cd frontend && npm test` passed all 39 files / 471 tests. `git diff --check`
+and `git diff --cached --check` passed. `npm run` confirmed there is no
+formatter or lint script. Changed-file TODO/FIXME, real-data, production raw
+endpoint/secret, legacy run-history and unmatched-representative, and Task 11
+scope scans were clean. The only endpoint-secret matches were synthetic test
+fixtures and negative rendering assertions.
+
+Quality-review fix commit evidence: `f3cf72c` (`fix(frontend): guard quota reset
+settings replacements`).
 
 ---
 
