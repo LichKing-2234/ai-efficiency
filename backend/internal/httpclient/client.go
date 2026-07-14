@@ -19,6 +19,20 @@ type Options struct {
 
 type TransportWrapper func(http.RoundTripper) http.RoundTripper
 
+// NewDefault returns a client with the platform's default bounded transport and the supplied overall timeout.
+func NewDefault(overallTimeout time.Duration) *http.Client {
+	return New(Options{
+		ConnectTimeout:        5 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		OverallTimeout:        overallTimeout,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   20,
+		MaxConnsPerHost:       50,
+	})
+}
+
 func New(options Options, wrappers ...TransportWrapper) *http.Client {
 	dialer := &net.Dialer{
 		Timeout:   options.ConnectTimeout,

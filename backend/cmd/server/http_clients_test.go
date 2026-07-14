@@ -1,0 +1,69 @@
+package main
+
+import (
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/ai-efficiency/backend/internal/config"
+)
+
+func TestNewRuntimeHTTPClientsUsesBoundedSharedPoolsAndStrictTimeouts(t *testing.T) {
+	cfg := config.HTTPClientConfig{
+		ConnectTimeoutSeconds:        5,
+		TLSHandshakeTimeoutSeconds:   5,
+		ResponseHeaderTimeoutSeconds: 15,
+		OverallTimeoutSeconds:        30,
+		IdleConnTimeoutSeconds:       90,
+		MaxIdleConns:                 100,
+		MaxIdleConnsPerHost:          20,
+		MaxConnsPerHost:              50,
+	}
+	clients := newRuntimeHTTPClients(cfg)
+
+	shared := map[string]*http.Client{
+		"runtime relay":          clients.runtimeRelay,
+		"provider-created relay": clients.providerRelay,
+		"directory":              clients.directory,
+		"settings":               clients.settings,
+		"scm":                    clients.scm,
+	}
+	for name, client := range shared {
+		if client != clients.runtimeRelay {
+			t.Fatalf("%s client = %p, want shared downstream client %p", name, client, clients.runtimeRelay)
+		}
+		assertBoundedRuntimeClient(t, name, client, 30*time.Second)
+	}
+	if clients.version == clients.runtimeRelay || clients.webhook == clients.runtimeRelay || clients.version == clients.webhook {
+		t.Fatal("version and webhook clients must use separate connection pools")
+	}
+	assertBoundedRuntimeClient(t, "version", clients.version, 10*time.Second)
+	assertBoundedRuntimeClient(t, "webhook", clients.webhook, 5*time.Second)
+
+	t.Cleanup(clients.runtimeRelay.CloseIdleConnections)
+	t.Cleanup(clients.version.CloseIdleConnections)
+	t.Cleanup(clients.webhook.CloseIdleConnections)
+}
+
+func assertBoundedRuntimeClient(t *testing.T, name string, client *http.Client, overallTimeout time.Duration) {
+	t.Helper()
+	if client == nil {
+		t.Fatalf("%s client is nil", name)
+	}
+	if client.Timeout != overallTimeout {
+		t.Fatalf("%s Timeout = %s, want %s", name, client.Timeout, overallTimeout)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("%s transport = %T, want *http.Transport", name, client.Transport)
+	}
+	if transport.DialContext == nil {
+		t.Fatalf("%s DialContext is nil", name)
+	}
+	if transport.TLSHandshakeTimeout != 5*time.Second || transport.ResponseHeaderTimeout != 15*time.Second {
+		t.Fatalf("%s handshake/header timeouts = %s/%s", name, transport.TLSHandshakeTimeout, transport.ResponseHeaderTimeout)
+	}
+	if transport.IdleConnTimeout != 90*time.Second || transport.MaxIdleConns != 100 || transport.MaxIdleConnsPerHost != 20 || transport.MaxConnsPerHost != 50 {
+		t.Fatalf("%s connection pool is not bounded as configured", name)
+	}
+}

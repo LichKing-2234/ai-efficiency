@@ -106,6 +106,28 @@ func TestNewConfiguresBoundedConnectionPool(t *testing.T) {
 	}
 }
 
+func TestNewDefaultUsesBoundedRuntimeConfiguration(t *testing.T) {
+	client := NewDefault(10 * time.Second)
+	t.Cleanup(client.CloseIdleConnections)
+
+	if client.Timeout != 10*time.Second {
+		t.Fatalf("Timeout = %s, want 10s", client.Timeout)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client.Transport type = %T, want *http.Transport", client.Transport)
+	}
+	if transport.DialContext == nil {
+		t.Fatal("transport.DialContext is nil")
+	}
+	if transport.TLSHandshakeTimeout != 5*time.Second || transport.ResponseHeaderTimeout != 15*time.Second {
+		t.Fatalf("handshake/header timeouts = %s/%s, want 5s/15s", transport.TLSHandshakeTimeout, transport.ResponseHeaderTimeout)
+	}
+	if transport.IdleConnTimeout != 90*time.Second || transport.MaxIdleConns != 100 || transport.MaxIdleConnsPerHost != 20 || transport.MaxConnsPerHost != 50 {
+		t.Fatal("default connection pool does not use bounded runtime configuration")
+	}
+}
+
 func TestNewAppliesTransportWrappersInOrder(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
