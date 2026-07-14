@@ -12,6 +12,7 @@ import {
 } from '@/api/directory'
 import { useToast } from '@/composables/useToast'
 import { useI18n, type MessageKey } from '@/i18n'
+import { useWorkItemsStore } from '@/stores/workItems'
 import type { Credential, DirectorySource, DirectorySourceRequest, DirectorySyncRun, DirectoryValidationIssue } from '@/types'
 
 defineProps<{
@@ -20,6 +21,7 @@ defineProps<{
 
 const { t } = useI18n()
 const { showToast } = useToast()
+const workItems = useWorkItemsStore()
 
 const sources = ref<DirectorySource[]>([])
 const selectedSourceId = ref<number | null>(null)
@@ -32,8 +34,12 @@ const aiPromptContext = ref('')
 const runWarningSummaries = ref<Array<{ code: string; count: number; labelKey: MessageKey; helpKey: MessageKey }>>([])
 const activeRun = ref<DirectorySyncRun | null>(null)
 const activeRunAction = ref<'preview' | 'apply' | null>(null)
-let runPollTimer: number | undefined
+let displayRunPollTimer: number | undefined
 let runRecoveryRequest = 0
+let unmounted = false
+const trackedApplyRunIDs = new Set<number>()
+const applyPollTimers = new Map<number, number>()
+const applyPollRequests = new Set<number>()
 const form = ref<DirectorySourceRequest>({
   name: '',
   description: '',
@@ -158,7 +164,14 @@ steps:
 ]
 
 onMounted(loadSources)
-onUnmounted(stopRunPolling)
+onUnmounted(() => {
+  unmounted = true
+  runRecoveryRequest++
+  stopDisplayRunPolling()
+  stopApplyRunPolling()
+  applyPollRequests.clear()
+  trackedApplyRunIDs.clear()
+})
 
 async function loadSources() {
   loading.value = true
@@ -204,7 +217,7 @@ function applyTemplate(dsl: string) {
 
 function clearFeedback() {
   runRecoveryRequest++
-  stopRunPolling()
+  stopDisplayRunPolling()
   message.value = ''
   error.value = ''
   validationIssues.value = []
@@ -281,18 +294,42 @@ function actionForRun(run: DirectorySyncRun | undefined): 'preview' | 'apply' | 
   return null
 }
 
-function stopRunPolling() {
-  if (runPollTimer) {
-    window.clearTimeout(runPollTimer)
-    runPollTimer = undefined
+function stopDisplayRunPolling() {
+  if (displayRunPollTimer !== undefined) {
+    window.clearTimeout(displayRunPollTimer)
+    displayRunPollTimer = undefined
   }
 }
 
-function scheduleRunPolling(runID: number, action: 'preview' | 'apply', sourceID?: number | null) {
-  stopRunPolling()
-  runPollTimer = window.setTimeout(() => {
-    void pollRunUntilDone(runID, action, sourceID)
+function stopApplyRunPolling(runID?: number) {
+  if (runID !== undefined) {
+    const timer = applyPollTimers.get(runID)
+    if (timer !== undefined) window.clearTimeout(timer)
+    applyPollTimers.delete(runID)
+    return
+  }
+  for (const timer of applyPollTimers.values()) {
+    window.clearTimeout(timer)
+  }
+  applyPollTimers.clear()
+}
+
+function scheduleDisplayRunPolling(runID: number, sourceID?: number | null) {
+  stopDisplayRunPolling()
+  if (unmounted) return
+  displayRunPollTimer = window.setTimeout(() => {
+    displayRunPollTimer = undefined
+    void pollDisplayedPreviewUntilDone(runID, sourceID)
   }, 1500)
+}
+
+function scheduleApplyRunPolling(runID: number) {
+  if (unmounted || applyPollTimers.has(runID)) return
+  const timer = window.setTimeout(() => {
+    applyPollTimers.delete(runID)
+    void pollObservedApplyUntilDone(runID)
+  }, 1500)
+  applyPollTimers.set(runID, timer)
 }
 
 function phaseLabel(phase?: string) {
@@ -328,34 +365,82 @@ function showRunResult(run: DirectorySyncRun | undefined, action: 'preview' | 'a
   }
 }
 
-function applyRunProgress(run: DirectorySyncRun | undefined, action: 'preview' | 'apply') {
+async function refreshWorkItemsForCompletedApply(run: DirectorySyncRun, action: 'preview' | 'apply') {
+  if (action !== 'apply' || !isTerminalRun(run)) return
+  const tracked = trackedApplyRunIDs.delete(run.id)
+  if (!tracked || run.status === 'failed') return
+  workItems.invalidateCounts()
+  await workItems.loadCounts({ force: true })
+}
+
+async function applyRunProgress(run: DirectorySyncRun | undefined, action: 'preview' | 'apply') {
   if (!run) return
   activeRun.value = run
   activeRunAction.value = action
   if (isTerminalRun(run)) {
-    stopRunPolling()
+    stopDisplayRunPolling()
     showRunResult(run, action)
     return
   }
   message.value = t(action === 'preview' ? 'directorySync.previewStarted' : 'directorySync.applyStarted')
 }
 
-async function pollRunUntilDone(runID: number, action: 'preview' | 'apply', sourceID?: number | null) {
+async function pollDisplayedPreviewUntilDone(runID: number, sourceID?: number | null) {
   try {
     const res = await getDirectoryRun(runID)
+    if (unmounted) return
     const run = res.data.data
     if ((sourceID && selectedSourceId.value !== sourceID) || (run?.source_id && selectedSourceId.value !== run.source_id)) {
       return
     }
-    applyRunProgress(run, action)
+    await applyRunProgress(run, 'preview')
     if (run && !isTerminalRun(run)) {
-      scheduleRunPolling(runID, action, sourceID ?? run.source_id)
+      scheduleDisplayRunPolling(runID, sourceID ?? run.source_id)
     }
   } catch (e: any) {
-    stopRunPolling()
+    if (unmounted) return
+    stopDisplayRunPolling()
     activeRun.value = null
     activeRunAction.value = null
     error.value = apiErrorMessage(e, t('directorySync.runProgressFailed'))
+  }
+}
+
+async function pollObservedApplyUntilDone(runID: number) {
+  if (unmounted || !trackedApplyRunIDs.has(runID) || applyPollRequests.has(runID)) return
+  applyPollRequests.add(runID)
+  try {
+    const res = await getDirectoryRun(runID)
+    if (unmounted || !trackedApplyRunIDs.has(runID)) return
+    const run = res.data.data
+    if (!run) {
+      stopApplyRunPolling(runID)
+      trackedApplyRunIDs.delete(runID)
+      return
+    }
+    const isDisplayed = activeRunAction.value === 'apply'
+      && activeRun.value?.id === runID
+      && (!run.source_id || selectedSourceId.value === run.source_id)
+    if (isDisplayed) {
+      await applyRunProgress(run, 'apply')
+    }
+    if (isTerminalRun(run)) {
+      stopApplyRunPolling(runID)
+      await refreshWorkItemsForCompletedApply(run, 'apply')
+      return
+    }
+    scheduleApplyRunPolling(runID)
+  } catch (e: any) {
+    if (unmounted) return
+    stopApplyRunPolling(runID)
+    trackedApplyRunIDs.delete(runID)
+    if (activeRunAction.value === 'apply' && activeRun.value?.id === runID) {
+      activeRun.value = null
+      activeRunAction.value = null
+      error.value = apiErrorMessage(e, t('directorySync.runProgressFailed'))
+    }
+  } finally {
+    applyPollRequests.delete(runID)
   }
 }
 
@@ -366,17 +451,22 @@ function startRecoverLatestRun(sourceID: number, expectedAction?: 'preview' | 'a
 async function recoverLatestRun(sourceID: number, expectedAction?: 'preview' | 'apply', requestID = runRecoveryRequest) {
   const res = await listDirectoryRuns(sourceID)
   const runs = res.data.data?.items ?? []
-  if (selectedSourceId.value !== sourceID || requestID !== runRecoveryRequest) return false
+  if (unmounted || selectedSourceId.value !== sourceID || requestID !== runRecoveryRequest) return false
   const candidates = runs.filter((candidate) => {
     const action = actionForRun(candidate)
     return Boolean(action && (!expectedAction || action === expectedAction))
   })
+  const activeApplyRuns = candidates.filter((candidate) => candidate.mode === 'apply' && isActiveRun(candidate))
+  for (const applyRun of activeApplyRuns) {
+    trackedApplyRunIDs.add(applyRun.id)
+    scheduleApplyRunPolling(applyRun.id)
+  }
   const run = candidates.find(isActiveRun) ?? candidates[0]
   const action = actionForRun(run)
   if (!run || !action) return false
-  applyRunProgress(run, action)
-  if (isActiveRun(run)) {
-    scheduleRunPolling(run.id, action, sourceID)
+  await applyRunProgress(run, action)
+  if (isActiveRun(run) && action === 'preview') {
+    scheduleDisplayRunPolling(run.id, sourceID)
   }
   return true
 }
@@ -387,12 +477,17 @@ async function saveSource() {
   try {
     if (selectedSourceId.value) {
       await updateDirectorySource(selectedSourceId.value, form.value)
+      workItems.invalidateCounts()
+      await Promise.all([
+        loadSources(),
+        workItems.loadCounts({ force: true }),
+      ])
     } else {
       const res = await createDirectorySource(form.value)
       selectedSourceId.value = res.data.data?.id ?? null
+      await loadSources()
     }
     message.value = t('directorySync.saved')
-    await loadSources()
   } catch (e: any) {
     error.value = apiErrorMessage(e, t('directorySync.saveFailed'))
   } finally {
@@ -421,9 +516,9 @@ async function previewSource() {
   try {
     const res = await previewDirectorySource(selectedSourceId.value)
     const run = res.data.data
-    applyRunProgress(run, 'preview')
+    await applyRunProgress(run, 'preview')
     if (run && !isTerminalRun(run)) {
-      await pollRunUntilDone(run.id, 'preview', selectedSourceId.value)
+      await pollDisplayedPreviewUntilDone(run.id, selectedSourceId.value)
     }
   } catch (e: any) {
     if (e?.response?.status === 409) {
@@ -444,10 +539,14 @@ async function runNow() {
   message.value = t('directorySync.applyStarted')
   try {
     const res = await startDirectoryRun(selectedSourceId.value, { mode: 'apply' })
+    if (unmounted) return
     const run = res.data.data
-    applyRunProgress(run, 'apply')
-    if (run && !isTerminalRun(run)) {
-      await pollRunUntilDone(run.id, 'apply', selectedSourceId.value)
+    if (run?.id) trackedApplyRunIDs.add(run.id)
+    await applyRunProgress(run, 'apply')
+    if (run?.id && isTerminalRun(run)) {
+      await refreshWorkItemsForCompletedApply(run, 'apply')
+    } else if (run?.id) {
+      await pollObservedApplyUntilDone(run.id)
     }
   } catch (e: any) {
     if (e?.response?.status === 409) {

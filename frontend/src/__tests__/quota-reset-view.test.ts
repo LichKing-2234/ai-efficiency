@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import QuotaResetView from '@/views/QuotaResetView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useWorkItemsStore } from '@/stores/workItems'
 import { setLocale } from '@/i18n'
 
 vi.mock('@/api/auth', () => ({
@@ -55,6 +56,26 @@ const approvalRequest = {
   reason: 'Need reset for release validation',
 }
 
+const failedApprovalRequest = {
+  ...approvalRequest,
+  status: 'approved_reset_failed',
+  reset_error: 'Synthetic reset failure',
+}
+
+function countsResponse(approvalCount: number, adminCount = 0) {
+  return {
+    data: {
+      data: {
+        quota_reset_approval_count: approvalCount,
+        quota_reset_admin_count: adminCount,
+        ai_access_setup_count: 0,
+        offboarding_count: 0,
+        total_count: Math.max(approvalCount, adminCount),
+      },
+    },
+  }
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((res) => {
@@ -97,18 +118,14 @@ beforeEach(async () => {
   api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 1 } } })
   api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 7 } } })
   api.listAdminQuotaResetRequests.mockResolvedValue({ data: { data: { items: [], page: 1, page_size: 20, total: 0 } } })
+  api.cancelQuotaResetRequest.mockResolvedValue({ data: { data: { ...mineRequest, status: 'cancelled' } } })
   api.approveQuotaResetRequest.mockResolvedValue({ data: { data: { ...approvalRequest, status: 'approved_reset_succeeded' } } })
-  workItemsApi.getWorkItemCounts.mockResolvedValue({
-    data: {
-      data: {
-        quota_reset_approval_count: 2,
-        quota_reset_admin_count: 3,
-        ai_access_setup_count: 0,
-        offboarding_count: 0,
-        total_count: 3,
-      },
-    },
-  })
+  api.rejectQuotaResetRequest.mockResolvedValue({ data: { data: { ...approvalRequest, status: 'rejected' } } })
+  api.retryQuotaResetRequest.mockResolvedValue({ data: { data: { ...failedApprovalRequest, status: 'approved_reset_succeeded' } } })
+  api.adminApproveQuotaResetRequest.mockResolvedValue({ data: { data: { ...approvalRequest, status: 'approved_reset_succeeded' } } })
+  api.adminRejectQuotaResetRequest.mockResolvedValue({ data: { data: { ...approvalRequest, status: 'rejected' } } })
+  api.adminRetryQuotaResetRequest.mockResolvedValue({ data: { data: { ...failedApprovalRequest, status: 'approved_reset_succeeded' } } })
+  workItemsApi.getWorkItemCounts.mockResolvedValue(countsResponse(2, 3))
 })
 
 describe('QuotaResetView', () => {
@@ -131,43 +148,123 @@ describe('QuotaResetView', () => {
     expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
   })
 
-  it('forces a fresh actionable-count request when an action finishes during an in-flight load', async () => {
+  it('invalidates an in-flight count request and keeps the action pending for the fresh generation', async () => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any
     const initialCounts = deferred<any>()
+    const freshCounts = deferred<any>()
     workItemsApi.getWorkItemCounts
       .mockReturnValueOnce(initialCounts.promise)
-      .mockResolvedValueOnce({
-        data: {
-          data: {
-            quota_reset_approval_count: 0,
-            quota_reset_admin_count: 0,
-            ai_access_setup_count: 0,
-            offboarding_count: 0,
-            total_count: 0,
-          },
-        },
-      })
+      .mockReturnValueOnce(freshCounts.promise)
     const wrapper = await mountQuotaResetView()
+    const workItems = useWorkItemsStore()
     await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
     await wrapper.get('[data-testid="quota-reset-approve-2"]').trigger('click')
-
-    initialCounts.resolve({
-      data: {
-        data: {
-          quota_reset_approval_count: 1,
-          quota_reset_admin_count: 0,
-          ai_access_setup_count: 0,
-          offboarding_count: 0,
-          total_count: 1,
-        },
-      },
-    })
     await flushPromises()
 
     expect(api.approveQuotaResetRequest).toHaveBeenCalledWith(2, {})
     expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Loading...')
+
+    initialCounts.resolve(countsResponse(9))
+    await flushPromises()
+
+    expect(workItems.totalCount).toBe(0)
+    expect(workItems.loading).toBe(true)
+    expect(wrapper.text()).toContain('Loading...')
+
+    freshCounts.resolve(countsResponse(0))
+    await flushPromises()
+
+    expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
+    expect(workItems.totalCount).toBe(0)
+    expect(workItems.loading).toBe(false)
+    expect(wrapper.text()).not.toContain('Loading...')
     expect(wrapper.find('[data-testid="quota-reset-tab-approvals-count"]').exists()).toBe(false)
+  })
+
+  it.each([
+    {
+      name: 'cancel',
+      role: 'user' as const,
+      queue: 'mine',
+      selector: '[data-testid="quota-reset-cancel-1"]',
+      apiName: 'cancelQuotaResetRequest',
+      expectedArgs: [1],
+      status: 'pending',
+    },
+    {
+      name: 'reject',
+      role: 'user' as const,
+      queue: 'approvals',
+      selector: '[data-testid="quota-reset-reject-2"]',
+      apiName: 'rejectQuotaResetRequest',
+      expectedArgs: [2, { decision_reason: 'Synthetic decision' }],
+      status: 'pending',
+    },
+    {
+      name: 'retry',
+      role: 'user' as const,
+      queue: 'approvals',
+      selector: '[data-testid="quota-reset-retry-2"]',
+      apiName: 'retryQuotaResetRequest',
+      expectedArgs: [2],
+      status: 'approved_reset_failed',
+    },
+    {
+      name: 'admin approve',
+      role: 'admin' as const,
+      queue: 'admin',
+      selector: '[data-testid="quota-reset-approve-2"]',
+      apiName: 'adminApproveQuotaResetRequest',
+      expectedArgs: [2, {}],
+      status: 'pending',
+    },
+    {
+      name: 'admin reject',
+      role: 'admin' as const,
+      queue: 'admin',
+      selector: '[data-testid="quota-reset-reject-2"]',
+      apiName: 'adminRejectQuotaResetRequest',
+      expectedArgs: [2, { decision_reason: 'Synthetic decision' }],
+      status: 'pending',
+    },
+    {
+      name: 'admin retry',
+      role: 'admin' as const,
+      queue: 'admin',
+      selector: '[data-testid="quota-reset-retry-2"]',
+      apiName: 'adminRetryQuotaResetRequest',
+      expectedArgs: [2],
+      status: 'approved_reset_failed',
+    },
+  ])('refreshes queues and counts exactly once after $name succeeds', async ({ role, queue, selector, apiName, expectedArgs, status }) => {
+    const api = await import('@/api/quotaReset') as any
+    const workItemsApi = await import('@/api/workItems') as any
+    const queueItem = { ...approvalRequest, status }
+    api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [queueItem], page: 1, page_size: 20, total: 1 } } })
+    if (role === 'admin') {
+      api.listAdminQuotaResetRequests.mockResolvedValue({ data: { data: { items: [queueItem], page: 1, page_size: 20, total: 1 } } })
+    }
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('Synthetic decision')
+    const wrapper = await mountQuotaResetView(role)
+
+    try {
+      if (queue === 'approvals') {
+        await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+      } else if (queue === 'admin') {
+        await wrapper.get('[data-testid="quota-reset-tab-admin"]').trigger('click')
+      }
+      await wrapper.get(selector).trigger('click')
+      await flushPromises()
+
+      expect(api[apiName]).toHaveBeenCalledWith(...expectedArgs)
+      expect(api.listMyQuotaResetRequests).toHaveBeenCalledTimes(2)
+      expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(2)
+      expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
+    } finally {
+      prompt.mockRestore()
+    }
   })
 
   it('loads admin queue for admins', async () => {
