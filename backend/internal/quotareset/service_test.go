@@ -229,6 +229,71 @@ func TestResetFailureAuditFailureRollsBackTerminalOutcome(t *testing.T) {
 	}
 }
 
+func TestResetTerminalUpdateFailureRollsBackOutcome(t *testing.T) {
+	for _, tc := range quotaResetTerminalFailureCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newQuotaResetTerminalFailureFixture(t, tc.resetErr)
+			injectedErr := errors.New("injected terminal request update failure")
+			fixture.client.QuotaResetRequest.Use(func(next ent.Mutator) ent.Mutator {
+				return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+					requestMutation, ok := mutation.(*ent.QuotaResetRequestMutation)
+					if ok && mutation.Op().Is(ent.OpUpdateOne) {
+						if status, exists := requestMutation.Status(); exists && status == tc.status {
+							return nil, injectedErr
+						}
+					}
+					return next.Mutate(ctx, mutation)
+				})
+			})
+
+			updated, err := fixture.service.executeReset(fixture.ctx, fixture.request.ID, fixture.actor.ID, false, false)
+			if updated != nil || !errors.Is(err, injectedErr) || !strings.Contains(err.Error(), "persist reset outcome: update request") {
+				t.Fatalf("executeReset() = %+v, %v, want nil summary with wrapped update persistence error", updated, err)
+			}
+			assertQuotaResetTerminalFailureRolledBack(t, fixture, tc.eventType)
+		})
+	}
+}
+
+func TestResetCommitFailureRollsBackUpdatedOutcomeAndCreatedEvent(t *testing.T) {
+	for _, tc := range quotaResetTerminalFailureCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newQuotaResetTerminalFailureFixture(t, tc.resetErr)
+			txCtx, cancel := context.WithCancel(fixture.ctx)
+			defer cancel()
+			eventCreated := false
+			fixture.client.QuotaResetRequestEvent.Use(func(next ent.Mutator) ent.Mutator {
+				return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+					eventMutation, ok := mutation.(*ent.QuotaResetRequestEventMutation)
+					if !ok || !mutation.Op().Is(ent.OpCreate) {
+						return next.Mutate(ctx, mutation)
+					}
+					eventType, exists := eventMutation.EventType()
+					if !exists || eventType != tc.eventType {
+						return next.Mutate(ctx, mutation)
+					}
+					value, err := next.Mutate(ctx, mutation)
+					if err != nil {
+						return nil, err
+					}
+					eventCreated = true
+					cancel()
+					return value, nil
+				})
+			})
+
+			updated, err := fixture.service.executeReset(txCtx, fixture.request.ID, fixture.actor.ID, false, false)
+			if !eventCreated {
+				t.Fatal("terminal event mutation did not succeed before commit failure")
+			}
+			if updated != nil || !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "persist reset outcome: commit transaction") {
+				t.Fatalf("executeReset() = %+v, %v, want nil summary with wrapped commit persistence error", updated, err)
+			}
+			assertQuotaResetTerminalFailureRolledBack(t, fixture, tc.eventType)
+		})
+	}
+}
+
 func TestAdminCanApproveOwnRequestThroughAdminFallback(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -678,6 +743,75 @@ type countingQuotaResetNotifier struct {
 func (n *countingQuotaResetNotifier) Notify(context.Context, NotificationContext) (*NotificationDeliveryResult, error) {
 	n.calls++
 	return &NotificationDeliveryResult{Delivered: true}, nil
+}
+
+type quotaResetTerminalFailureCase struct {
+	name      string
+	resetErr  error
+	status    quotaresetrequest.Status
+	eventType quotaresetrequestevent.EventType
+}
+
+func quotaResetTerminalFailureCases() []quotaResetTerminalFailureCase {
+	return []quotaResetTerminalFailureCase{
+		{
+			name:      "success outcome",
+			status:    quotaresetrequest.StatusApprovedResetSucceeded,
+			eventType: quotaresetrequestevent.EventTypeResetSucceeded,
+		},
+		{
+			name:      "provider failure outcome",
+			resetErr:  errors.New("relay timeout"),
+			status:    quotaresetrequest.StatusApprovedResetFailed,
+			eventType: quotaresetrequestevent.EventTypeResetFailed,
+		},
+	}
+}
+
+type quotaResetTerminalFailureFixture struct {
+	ctx      context.Context
+	client   *ent.Client
+	request  *ent.QuotaResetRequest
+	actor    *ent.User
+	provider *fakeQuotaResetProvider
+	notifier *countingQuotaResetNotifier
+	service  *Service
+}
+
+func newQuotaResetTerminalFailureFixture(t *testing.T, resetErr error) quotaResetTerminalFailureFixture {
+	t.Helper()
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	actor := createQuotaResetUser(t, ctx, client, "approver", "approver@example.com", nil, "user")
+	providerRow := createQuotaResetRelayProvider(t, ctx, client)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, providerRow.ID, "42", []int{actor.ID})
+	client.QuotaResetRequest.UpdateOneID(request.ID).
+		SetStatus(quotaresetrequest.StatusApprovedResetting).
+		SaveX(ctx)
+	createEnabledQuotaResetNotificationSetting(t, ctx, client)
+	provider := &fakeQuotaResetProvider{resetErr: resetErr}
+	notifier := &countingQuotaResetNotifier{}
+	return quotaResetTerminalFailureFixture{
+		ctx:      ctx,
+		client:   client,
+		request:  request,
+		actor:    actor,
+		provider: provider,
+		notifier: notifier,
+		service:  NewService(client, fakeProviderResolver(providerRow.ID, provider), NewApproverResolver(client), notifier),
+	}
+}
+
+func assertQuotaResetTerminalFailureRolledBack(t *testing.T, fixture quotaResetTerminalFailureFixture, eventType quotaresetrequestevent.EventType) {
+	t.Helper()
+	assertQuotaResetOutcomeRolledBack(t, fixture.ctx, fixture.client, fixture.request.ID, eventType)
+	if fixture.provider.resetCalls != 1 {
+		t.Fatalf("reset calls = %d, want 1", fixture.provider.resetCalls)
+	}
+	if fixture.notifier.calls != 0 {
+		t.Fatalf("result notification calls = %d, want 0", fixture.notifier.calls)
+	}
 }
 
 func injectQuotaResetEventFailure(client *ent.Client, eventType quotaresetrequestevent.EventType, injectedErr error) {
