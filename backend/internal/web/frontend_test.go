@@ -1,10 +1,14 @@
 package web
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -73,6 +77,249 @@ func TestHasEmbeddedFrontendAndMiddleware(t *testing.T) {
 			t.Fatalf("%s %s: content-type=%q want like %q", tc.method, tc.path, got, tc.wantCTLike)
 		}
 	}
+}
+
+func TestEmbeddedFrontendNegotiatesGzipAndCachePolicy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	indexBody := []byte("<html><body>" + strings.Repeat("embedded-app-shell ", 32) + "</body></html>")
+	files := map[string][]byte{
+		"index.html":                indexBody,
+		"assets/app-ABCDEFGH.js":    []byte(strings.Repeat("console.log('gzip');\n", 32)),
+		"assets/app-IJKLMNOP.css":   []byte(strings.Repeat(".card { display: block; }\n", 32)),
+		"assets/data-QRSTUVWX.json": []byte(`{"items":["alpha","beta","gamma"],"padding":"` + strings.Repeat("x", 256) + `"}`),
+		"assets/icon-YZabcdef.svg":  []byte(`<svg xmlns="http://www.w3.org/2000/svg"><text>` + strings.Repeat("icon", 64) + `</text></svg>`),
+		"assets/plain.js":           []byte(strings.Repeat("console.log('plain');\n", 16)),
+		"assets/image-12345678.png": []byte("synthetic-png-bytes"),
+	}
+	router := frontendPolicyTestRouter(t, files)
+
+	cases := []struct {
+		path        string
+		file        string
+		contentType string
+		cache       string
+	}{
+		{path: "/", file: "index.html", contentType: "text/html", cache: "no-cache"},
+		{path: "/assets/app-ABCDEFGH.js", file: "assets/app-ABCDEFGH.js", contentType: "javascript", cache: "public, max-age=31536000, immutable"},
+		{path: "/assets/app-IJKLMNOP.css", file: "assets/app-IJKLMNOP.css", contentType: "text/css", cache: "public, max-age=31536000, immutable"},
+		{path: "/assets/data-QRSTUVWX.json", file: "assets/data-QRSTUVWX.json", contentType: "application/json", cache: "public, max-age=31536000, immutable"},
+		{path: "/assets/icon-YZabcdef.svg", file: "assets/icon-YZabcdef.svg", contentType: "image/svg+xml", cache: "public, max-age=31536000, immutable"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			identity := performFrontendRequest(router, http.MethodGet, tc.path, "br, *;q=1, gzip;q=0")
+			assertFrontendResponseHeaders(t, identity, tc.contentType, tc.cache, "", len(files[tc.file]))
+			if got := identity.Body.Bytes(); string(got) != string(files[tc.file]) {
+				t.Fatalf("identity body mismatch: got %d bytes want %d", len(got), len(files[tc.file]))
+			}
+
+			compressed := performFrontendRequest(router, http.MethodGet, tc.path, "br, GZip;q=0.8")
+			assertFrontendResponseHeaders(t, compressed, tc.contentType, tc.cache, "gzip", compressed.Body.Len())
+			if got := gunzipResponse(t, compressed); string(got) != string(files[tc.file]) {
+				t.Fatalf("gzip body mismatch: got %d bytes want %d", len(got), len(files[tc.file]))
+			}
+
+			head := performFrontendRequest(router, http.MethodHead, tc.path, "gzip")
+			assertFrontendResponseHeaders(t, head, tc.contentType, tc.cache, "gzip", compressed.Body.Len())
+			if head.Body.Len() != 0 {
+				t.Fatalf("HEAD body = %q, want empty", head.Body.String())
+			}
+		})
+	}
+}
+
+func TestEmbeddedFrontendClassifiesTheResolvedFile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	indexBody := []byte("<html><body>fallback</body></html>")
+	files := map[string][]byte{
+		"index.html":                indexBody,
+		"assets/app-ABCDEFGH.js":    []byte("console.log('hashed')"),
+		"assets/plain.js":           []byte("console.log('plain')"),
+		"assets/image-12345678.png": []byte("synthetic-png-bytes"),
+	}
+	router := frontendPolicyTestRouter(t, files)
+
+	cases := []struct {
+		path        string
+		contentType string
+		cache       string
+		body        []byte
+		varyGzip    bool
+	}{
+		{path: "/assets/app-ABCDEFGH.js", contentType: "javascript", cache: "public, max-age=31536000, immutable", body: files["assets/app-ABCDEFGH.js"], varyGzip: true},
+		{path: "/assets/plain.js", contentType: "javascript", cache: "no-cache", body: files["assets/plain.js"], varyGzip: true},
+		{path: "/nested/route", contentType: "text/html", cache: "no-cache", body: indexBody, varyGzip: true},
+		{path: "/assets/missing-ABCDEFGH.js", contentType: "text/html", cache: "no-cache", body: indexBody, varyGzip: true},
+		{path: "/assets", contentType: "text/html", cache: "no-cache", body: indexBody, varyGzip: true},
+		{path: "/assets/image-12345678.png", contentType: "image/png", cache: "public, max-age=31536000, immutable", body: files["assets/image-12345678.png"], varyGzip: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			response := performFrontendRequest(router, http.MethodGet, tc.path, "gzip")
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body=%s", response.Code, response.Body.String())
+			}
+			if got := response.Header().Get("Content-Type"); !strings.Contains(got, tc.contentType) {
+				t.Fatalf("Content-Type = %q, want like %q", got, tc.contentType)
+			}
+			if got := response.Header().Get("Cache-Control"); got != tc.cache {
+				t.Fatalf("Cache-Control = %q, want %q", got, tc.cache)
+			}
+			if got := testHeaderHasToken(response.Header().Values("Vary"), "Accept-Encoding"); got != tc.varyGzip {
+				t.Fatalf("Vary Accept-Encoding = %v, want %v; values=%q", got, tc.varyGzip, response.Header().Values("Vary"))
+			}
+			body := response.Body.Bytes()
+			if response.Header().Get("Content-Encoding") == "gzip" {
+				body = gunzipResponse(t, response)
+			}
+			if string(body) != string(tc.body) {
+				t.Fatalf("body = %q, want %q", body, tc.body)
+			}
+		})
+	}
+
+	redirect := performFrontendRequest(router, http.MethodGet, "/index.html", "gzip")
+	if redirect.Code != http.StatusMovedPermanently || redirect.Header().Get("Location") != "./" {
+		t.Fatalf("/index.html = status %d location %q, want 301 ./", redirect.Code, redirect.Header().Get("Location"))
+	}
+
+	api := performFrontendRequest(router, http.MethodGet, "/api/v1/health", "gzip")
+	if api.Code != http.StatusOK || api.Body.String() != "ok" {
+		t.Fatalf("API response = status %d body %q", api.Code, api.Body.String())
+	}
+	if got := api.Header().Get("Cache-Control"); got != "" {
+		t.Fatalf("API Cache-Control = %q, want empty", got)
+	}
+	if testHeaderHasToken(api.Header().Values("Vary"), "Accept-Encoding") {
+		t.Fatalf("API Vary = %q, must not include Accept-Encoding", api.Header().Values("Vary"))
+	}
+}
+
+func TestEmbeddedFrontendSelectsGzipOnlyWhenAccepted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(strings.Repeat("console.log('encoding');\n", 32))
+	router := frontendPolicyTestRouter(t, map[string][]byte{
+		"index.html":             []byte("<html><body>app</body></html>"),
+		"assets/app-ABCDEFGH.js": body,
+	})
+
+	cases := []struct {
+		name           string
+		acceptEncoding string
+		wantGzip       bool
+	}{
+		{name: "case insensitive", acceptEncoding: "br, GZip;q=0.8", wantGzip: true},
+		{name: "wildcard", acceptEncoding: "br, *;q=0.5", wantGzip: true},
+		{name: "explicit exclusion beats wildcard", acceptEncoding: "*;q=1, gzip;q=0", wantGzip: false},
+		{name: "no accepted encoding", acceptEncoding: "br", wantGzip: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			response := performFrontendRequest(router, http.MethodGet, "/assets/app-ABCDEFGH.js", tc.acceptEncoding)
+			gotGzip := response.Header().Get("Content-Encoding") == "gzip"
+			if gotGzip != tc.wantGzip {
+				t.Fatalf("Content-Encoding = %q, want gzip=%v", response.Header().Get("Content-Encoding"), tc.wantGzip)
+			}
+			gotBody := response.Body.Bytes()
+			if gotGzip {
+				gotBody = gunzipResponse(t, response)
+			}
+			if string(gotBody) != string(body) {
+				t.Fatalf("body mismatch: got %d bytes want %d", len(gotBody), len(body))
+			}
+		})
+	}
+}
+
+func frontendPolicyTestRouter(t *testing.T, files map[string][]byte) *gin.Engine {
+	t.Helper()
+	root := t.TempDir()
+	for name, body := range files {
+		fullPath := filepath.Join(root, "dist", filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", name, err)
+		}
+		if err := os.WriteFile(fullPath, body, 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", name, err)
+		}
+	}
+
+	restore := SetFrontendFSForTest(os.DirFS(root))
+	t.Cleanup(restore)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Header("Vary", "Origin")
+		c.Next()
+	})
+	router.Use(ServeEmbeddedFrontend())
+	router.GET("/api/v1/health", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+	return router
+}
+
+func performFrontendRequest(router http.Handler, method, target, acceptEncoding string) *httptest.ResponseRecorder {
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(method, target, nil)
+	if acceptEncoding != "" {
+		request.Header.Set("Accept-Encoding", acceptEncoding)
+	}
+	router.ServeHTTP(response, request)
+	return response
+}
+
+func assertFrontendResponseHeaders(t *testing.T, response *httptest.ResponseRecorder, contentType, cache, encoding string, contentLength int) {
+	t.Helper()
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Content-Type"); !strings.Contains(got, contentType) {
+		t.Fatalf("Content-Type = %q, want like %q", got, contentType)
+	}
+	if got := response.Header().Get("Cache-Control"); got != cache {
+		t.Fatalf("Cache-Control = %q, want %q", got, cache)
+	}
+	if got := response.Header().Get("Content-Encoding"); got != encoding {
+		t.Fatalf("Content-Encoding = %q, want %q", got, encoding)
+	}
+	if got := response.Header().Get("Content-Length"); got != strconv.Itoa(contentLength) {
+		t.Fatalf("Content-Length = %q, want %d", got, contentLength)
+	}
+	if got := response.Header().Get("Last-Modified"); got != "" {
+		t.Fatalf("Last-Modified = %q, want empty", got)
+	}
+	if !testHeaderHasToken(response.Header().Values("Vary"), "Origin") || !testHeaderHasToken(response.Header().Values("Vary"), "Accept-Encoding") {
+		t.Fatalf("Vary = %q, want Origin and Accept-Encoding", response.Header().Values("Vary"))
+	}
+}
+
+func gunzipResponse(t *testing.T, response *httptest.ResponseRecorder) []byte {
+	t.Helper()
+	reader, err := gzip.NewReader(bytes.NewReader(response.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("gzip.NewReader: %v", err)
+	}
+	defer reader.Close()
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("ReadAll gzip: %v", err)
+	}
+	return body
+}
+
+func testHeaderHasToken(values []string, token string) bool {
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), token) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestHasEmbeddedFrontendForReleaseBuilds(t *testing.T) {
