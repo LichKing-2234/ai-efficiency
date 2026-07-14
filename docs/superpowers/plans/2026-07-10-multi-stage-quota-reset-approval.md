@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL, Vue 3 `<script setup lang="ts">`, Pinia, Vite, Vitest, TailwindCSS, Python Playwright role checks.
 
-**Status:** Final whole-branch review pending
+**Status:** Final review fixes in progress
 
 **Known Remaining Gaps:**
 
@@ -27,8 +27,8 @@
   verification matrix.
 - The existing role E2E passes all assertions but logs non-fatal Vite proxy
   `ECONNREFUSED` messages for dashboard helper requests outside its mock set.
-- Task 16 still requires final whole-branch spec and standards review and plan
-  closure before this plan can be marked complete.
+- Tasks 17-19 address findings from the first whole-branch spec and standards
+  review. A fresh whole-branch review and plan closure remain required.
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -5090,3 +5090,107 @@ scans found only synthetic Enterprise WeChat robot keys and no real employee or
 company-domain data in added fixtures.
 
 - [ ] **Step 4: Commit review reconciliation, rerun whole-branch spec and standards review, then mark this plan complete only with evidence**
+
+Pre-closure whole-branch review evidence (2026-07-15): the first final review
+found no Critical issues, but it did find contract gaps in notification
+progress, default approval-history visibility, configurable-user eligibility,
+candidate pagination, and actionable admin counts. Standards review also found
+that the frontend duplicated current-directory-source resolution and two retry
+lookups lacked contextual error wrapping. Tasks 17-19 below keep this closure
+step open until those findings are fixed and independently re-reviewed.
+
+### Task 17: Align Approver Configuration with Runtime Eligibility
+
+**Files:**
+- Modify: `backend/internal/quotareset/chain_config.go`
+- Modify: `backend/internal/quotareset/chain_config_test.go`
+- Modify: `backend/internal/quotareset/workflow_resolver.go`
+- Modify: `backend/internal/quotareset/types.go`
+- Modify: `backend/internal/quotareset/service.go`
+- Modify: `backend/internal/handler/quota_reset_test.go`
+- Modify: `frontend/src/types/index.ts`
+- Modify: `frontend/src/components/settings/DepartmentApproverSettings.vue`
+- Modify: `frontend/src/__tests__/quota-reset-approval-settings.test.ts`
+- Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
+
+- [ ] **Step 1: Add failing disabled-user, authoritative-source, and pagination regressions**
+
+Prove that `token_valid_after` users cannot be listed or saved as approvers,
+that the settings UI uses the backend-selected current source, and that more
+than one candidate page remains selectable.
+
+- [ ] **Step 2: Share current-access eligibility and expose the current source**
+
+Use one local-user access predicate for configuration, workflow creation, and
+notification revalidation. Include the authoritative current directory source
+id in the approver-config response, including the empty-config case.
+
+- [ ] **Step 3: Remove client-side source resolution and add incremental candidate loading**
+
+Use the backend source id for department and candidate requests. Keep search
+inside the dropdown and append later candidate pages without stale-response
+replacement or duplicates.
+
+- [ ] **Step 4: Run focused/full verification, update the current spec, commit, and pass task reviews**
+
+### Task 18: Include Durable Workflow Progress in Notifications
+
+**Files:**
+- Modify: `backend/internal/quotareset/notification_channel.go`
+- Modify: `backend/internal/quotareset/notification_generic.go`
+- Modify: `backend/internal/quotareset/notification_wecom.go`
+- Modify: `backend/internal/quotareset/workflow_summary.go`
+- Modify: `backend/internal/quotareset/service.go`
+- Modify: `backend/internal/quotareset/notification_test.go`
+- Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
+
+- [ ] **Step 1: Add failing context and adapter progress regressions**
+
+Cover activated, reused/skipped, cancelled/rejected, and terminal reset events.
+Progress must count satisfied workflow nodes separately from current-node
+position and remain bounded in both adapters.
+
+- [ ] **Step 2: Derive and render channel-neutral progress**
+
+Add completed/total node progress to `NotificationContext`, generic JSON, and
+the Enterprise WeChat preset without exposing credentials or weakening payload
+limits.
+
+- [ ] **Step 3: Run focused/full verification, update the current spec, commit, and pass task reviews**
+
+### Task 19: Keep Approval Queues and Counts Actionable by Default
+
+**Files:**
+- Modify: `backend/internal/quotareset/types.go`
+- Modify: `backend/internal/quotareset/service.go`
+- Modify: `backend/internal/quotareset/workflow_service.go`
+- Modify: `backend/internal/quotareset/work_items.go`
+- Modify: `backend/internal/quotareset/work_items_test.go`
+- Modify: `backend/internal/handler/quota_reset.go`
+- Modify: `backend/internal/handler/quota_reset_test.go`
+- Modify: `frontend/src/api/quotaReset.ts`
+- Modify: `frontend/src/views/QuotaResetView.vue`
+- Modify: `frontend/src/__tests__/quota-reset-api.test.ts`
+- Modify: `frontend/src/__tests__/quota-reset-view.test.ts`
+- Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
+
+- [ ] **Step 1: Add failing default/history, self-count, and error-context regressions**
+
+Default approval queries and the default workbench view must contain only
+current actions and retry assignments. Explicit history may include decisions
+made on earlier nodes. Admin pending counts must exclude the admin's own v2
+request while retaining legitimate failed-reset retry work.
+
+- [ ] **Step 2: Add explicit history scope and actionable frontend filtering**
+
+Keep legacy v1 behavior, expose v2 decision history only when requested, and
+make the existing processed filter show the current user's durable decisions
+without polluting the default queue.
+
+- [ ] **Step 3: Fix admin counts and wrap retry lookup failures**
+
+Exclude requester-owned pending v2 requests from admin work while retaining
+failed-reset semantics, and add contextual `%w` wrapping to retry actor and
+completion-decision lookups.
+
+- [ ] **Step 4: Run full verification, update docs, commit, rerun whole-branch reviews, and close the plan**
