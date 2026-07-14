@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete and verified. Task 3 Steps 1-4 are complete and verified; the implementation commit is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-3 are complete and verified. Task 4 is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -288,7 +288,7 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   Evidence (2026-07-15): the focused health/handler command passed in 0.338s and 1.601s; the broad health/handler/server command passed in 0.344s, 37.532s, and 0.840s; `git diff --check` passed.
 
-- [ ] **Step 5: Commit Task 3 and record the checkpoint**
+- [x] **Step 5: Commit Task 3 and record the checkpoint**
 
   Commit implementation plus checked Steps 1-4:
 
@@ -297,6 +297,8 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
   After the commit succeeds, check Step 5 and commit:
 
   `docs(plan): record readiness task 3`
+
+  Checkpoint (2026-07-15): implementation commit `5846285a97ea822f36c9a829cc41e58ae91a86c8`.
 
 ---
 
