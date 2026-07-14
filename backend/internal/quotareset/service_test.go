@@ -2,6 +2,7 @@ package quotareset
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -286,7 +287,8 @@ func TestResetCommitFailureRollsBackUpdatedOutcomeAndCreatedEvent(t *testing.T) 
 			if !eventCreated {
 				t.Fatal("terminal event mutation did not succeed before commit failure")
 			}
-			if updated != nil || !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "persist reset outcome: commit transaction") {
+			commitFailureWrapped := errors.Is(err, context.Canceled) || errors.Is(err, sql.ErrTxDone)
+			if updated != nil || !commitFailureWrapped || !strings.Contains(err.Error(), "persist reset outcome: commit transaction") {
 				t.Fatalf("executeReset() = %+v, %v, want nil summary with wrapped commit persistence error", updated, err)
 			}
 			assertQuotaResetTerminalFailureRolledBack(t, fixture, tc.eventType)
