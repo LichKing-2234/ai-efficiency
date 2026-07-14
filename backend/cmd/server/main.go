@@ -24,6 +24,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
 	"github.com/ai-efficiency/backend/internal/health"
+	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/prsync"
@@ -51,6 +52,52 @@ func newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *
 		Handler:           handler,
 		ReadHeaderTimeout: time.Duration(cfg.ReadHeaderTimeoutSeconds) * time.Second,
 		IdleTimeout:       time.Duration(cfg.IdleTimeoutSeconds) * time.Second,
+	}
+}
+
+type runtimeHTTPClients struct {
+	runtimeRelay  *http.Client
+	providerRelay *http.Client
+	directory     *http.Client
+	settings      *http.Client
+	scm           *http.Client
+	version       *http.Client
+	webhook       *http.Client
+}
+
+func httpClientOptions(cfg config.HTTPClientConfig) httpclient.Options {
+	return httpclient.Options{
+		ConnectTimeout:        time.Duration(cfg.ConnectTimeoutSeconds) * time.Second,
+		TLSHandshakeTimeout:   time.Duration(cfg.TLSHandshakeTimeoutSeconds) * time.Second,
+		ResponseHeaderTimeout: time.Duration(cfg.ResponseHeaderTimeoutSeconds) * time.Second,
+		OverallTimeout:        time.Duration(cfg.OverallTimeoutSeconds) * time.Second,
+		IdleConnTimeout:       time.Duration(cfg.IdleConnTimeoutSeconds) * time.Second,
+		MaxIdleConns:          cfg.MaxIdleConns,
+		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       cfg.MaxConnsPerHost,
+	}
+}
+
+func newRuntimeHTTPClients(cfg config.HTTPClientConfig) runtimeHTTPClients {
+	downstreamOptions := httpClientOptions(cfg)
+	downstream := httpclient.New(downstreamOptions)
+
+	versionOptions := downstreamOptions
+	versionOptions.OverallTimeout = 10 * time.Second
+	version := httpclient.New(versionOptions)
+
+	webhookOptions := downstreamOptions
+	webhookOptions.OverallTimeout = 5 * time.Second
+	webhook := httpclient.New(webhookOptions)
+
+	return runtimeHTTPClients{
+		runtimeRelay:  downstream,
+		providerRelay: downstream,
+		directory:     downstream,
+		settings:      downstream,
+		scm:           downstream,
+		version:       version,
+		webhook:       webhook,
 	}
 }
 
@@ -110,6 +157,10 @@ func main() {
 	if config.RequireExplicitDBDSN(cfg.DB.DSN) {
 		logger.Fatal("DB.DSN is required and must point to PostgreSQL")
 	}
+	httpClients := newRuntimeHTTPClients(cfg.HTTPClient)
+	defer httpClients.runtimeRelay.CloseIdleConnections()
+	defer httpClients.version.CloseIdleConnections()
+	defer httpClients.webhook.CloseIdleConnections()
 
 	// Set gin mode
 	if cfg.Server.Mode == "release" {
@@ -166,7 +217,7 @@ func main() {
 	var relayProvider relay.Provider
 	if cfg.Relay.URL != "" {
 		relayProvider = relay.NewSub2apiProvider(
-			http.DefaultClient,
+			httpClients.runtimeRelay,
 			cfg.Relay.URL,
 			cfg.Relay.AdminAPIKey,
 			cfg.Relay.Model,
@@ -218,6 +269,7 @@ func main() {
 		WebhookPublicURL: cfg.Server.PublicURL,
 		FrontendURL:      cfg.Server.FrontendURL,
 		ServerMode:       cfg.Server.Mode,
+		HTTPClient:       httpClients.scm,
 	})
 
 	// Init PR labeler (with optional relay usage stats lookup)
@@ -239,16 +291,16 @@ func main() {
 	}); ok {
 		relayRuntimeUpdater = u
 	}
-	settingsHandler := handler.NewSettingsHandler(settingsConfigPath, cfg.Relay, logger, relayRuntimeUpdater)
+	settingsHandler := handler.NewSettingsHandlerWithHTTPClient(settingsConfigPath, cfg.Relay, logger, httpClients.settings, relayRuntimeUpdater)
 
 	// Init OAuth handler
 	oauthServer := oauth.NewServer()
 	oauthHandler := oauth.NewHandler(oauthServer, cfg.Server.FrontendURL, &authTokenAdapter{authService: authService})
 
 	// Init provider handler
-	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger)
+	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger, httpClients.providerRelay)
 	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
-		Executor:       directorysync.NewExecutor(directorysync.ExecutorOptions{}),
+		Executor:       directorysync.NewExecutor(directorysync.ExecutorOptions{HTTPClient: httpClients.directory}),
 		Credentials:    directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
 		RelayDisablers: directorysync.NewProviderRelayDisablerResolver(providerHandler),
 		TokenRevoker:   authService,
@@ -287,15 +339,14 @@ func main() {
 		relayPinger,
 		versionInfo,
 	)
-	versionHTTPClient := &http.Client{Timeout: 10 * time.Second}
 	var releaseSource versioncheck.ReleaseSource
 	if cfg.VersionCheck.Enabled && strings.TrimSpace(cfg.VersionCheck.ReleaseAPIURL) != "" {
-		releaseSource = versioncheck.NewGitHubReleaseSource(versionHTTPClient, cfg.VersionCheck.ReleaseAPIURL)
+		releaseSource = versioncheck.NewGitHubReleaseSource(httpClients.version, cfg.VersionCheck.ReleaseAPIURL)
 	}
 	versionCheckService := versioncheck.NewService(versionInfo, releaseSource)
 	healthHandler := handler.NewHealthHandler(healthService, versionCheckService)
 
-	r := handler.SetupRouter(
+	r := handler.SetupRouterWithOptions(
 		entClient,
 		sqlDB,
 		authService,
@@ -311,7 +362,10 @@ func main() {
 		adminSettingsHandler,
 		checkpointHandler,
 		healthHandler,
-		directoryService,
+		handler.RouterOptions{
+			DirectoryService:  directoryService,
+			WebhookHTTPClient: httpClients.webhook,
+		},
 	)
 
 	// Start server

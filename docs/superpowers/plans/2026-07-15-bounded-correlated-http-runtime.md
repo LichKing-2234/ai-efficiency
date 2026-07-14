@@ -170,12 +170,12 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
 **Interfaces:**
 - `directorysync.NewExecutor` continues consuming `ExecutorOptions.HTTPClient`.
-- `handler.NewProviderHandler(..., clients ...*http.Client)` and `handler.NewSettingsHandler(..., clients ...*http.Client)` preserve existing calls while using the optional bounded client.
+- `handler.NewProviderHandler(..., clients ...*http.Client)` preserves existing calls while using the optional bounded client. `handler.NewSettingsHandler` retains its existing relay-runtime variadic; `handler.NewSettingsHandlerWithHTTPClient` adds typed client injection without weakening that contract.
 - `quotareset.NewWebhookNotifier(..., clients ...*http.Client)` preserves its 5s overall limit.
 - `repo.ServiceOptions.HTTPClient *http.Client` supplies SCM constructors.
-- GitHub and Bitbucket `New(..., clients ...*http.Client)` preserve existing callers and use the supplied client in production.
+- GitHub and Bitbucket retain `New(..., webhookCallbackURL ...string)` and add `NewWithHTTPClient` for typed production injection.
 
-- [ ] **Step 1: Add failing constructor/wiring tests**
+- [x] **Step 1: Add failing constructor/wiring tests**
 
   For each boundary, inject a client whose transport records calls and whose timeout is a sentinel value. Assert the constructor uses that exact client for one synthetic operation. Add a `cmd/server` wiring test or a pure helper test that proves:
 
@@ -185,7 +185,7 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   No test may call a real service.
 
-- [ ] **Step 2: Run Task 2 tests and record RED**
+- [x] **Step 2: Run Task 2 tests and record RED**
 
   Run:
 
@@ -195,17 +195,19 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   Expected: FAIL because several constructors still create or use default clients.
 
-- [ ] **Step 3: Extend constructors without changing provider contracts**
+  Evidence (2026-07-15): the focused command failed as expected. ProviderHandler and WebhookNotifier rejected the injected client argument, SettingsHandler required a relay runtime updater, GitHub and Bitbucket accepted only string variadic arguments, `ServiceOptions.HTTPClient` and `newRuntimeHTTPClients` were undefined, while the existing Directory executor injection test passed.
+
+- [x] **Step 3: Extend constructors without changing provider contracts**
 
   Store an injected client once per long-lived handler/service/provider. When an optional client is absent, retain a non-nil compatibility fallback for tests, but production `main.go` must pass bounded clients explicitly.
 
   GitHub must construct `go-github` with `gh.NewClient(injectedClient)`; Bitbucket must store the injected client. `repo.ServiceOptions.HTTPClient` must flow through `newGitHubProvider` and `newBitbucketProvider`.
 
-- [ ] **Step 4: Wire one reusable pool per boundary**
+- [x] **Step 4: Wire one reusable pool per boundary**
 
   Convert `cfg.HTTPClient` into `httpclient.Options` in a pure helper. Create reusable clients once during startup, inject them into Runtime Relay, ProviderHandler, SettingsHandler, Directory Executor, Repo/SCM, version check, and quota notifier. Do not create a fresh transport per request.
 
-- [ ] **Step 5: Verify focused and broad boundary suites**
+- [x] **Step 5: Verify focused and broad boundary suites**
 
   Run separately:
 
@@ -214,6 +216,8 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
   - `git diff --check`.
 
   Expected: PASS, with no unbounded production `http.DefaultClient` or `&http.Client{}` left at these boundaries.
+
+  Evidence (2026-07-15): the focused command passed for all seven target packages; the broad boundary command passed for Relay, Directory, Handler, Quota Reset, Repo, all SCM packages, Version Check, and server; `go test ./internal/httpclient -count=1` and `git diff --check` passed. A targeted scan found no `http.DefaultClient` or empty `&http.Client{}` at the adopted boundaries. Compatibility tests also passed for the existing Settings relay-runtime and SCM webhook-callback constructor forms.
 
 - [ ] **Step 6: Commit Task 2 and record the checkpoint**
 

@@ -16,6 +16,7 @@ import (
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	credentialpkg "github.com/ai-efficiency/backend/internal/credential"
+	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/pkg"
 )
 
@@ -43,12 +44,19 @@ type WebhookNotifier struct {
 	httpClient    *http.Client
 }
 
-func NewWebhookNotifier(client *ent.Client, encryptionKey string, frontendURL string) *WebhookNotifier {
+func NewWebhookNotifier(client *ent.Client, encryptionKey string, frontendURL string, clients ...*http.Client) *WebhookNotifier {
+	var httpClient *http.Client
+	if len(clients) > 0 && clients[0] != nil {
+		httpClient = clients[0]
+	}
+	if httpClient == nil {
+		httpClient = httpclient.NewDefault(defaultWebhookTimeout)
+	}
 	return &WebhookNotifier{
 		client:        client,
 		encryptionKey: encryptionKey,
 		frontendURL:   strings.TrimRight(frontendURL, "/"),
-		httpClient:    &http.Client{Timeout: defaultWebhookTimeout},
+		httpClient:    httpClient,
 	}
 }
 

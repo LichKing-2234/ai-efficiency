@@ -2,6 +2,7 @@ package handler
 
 import (
 	"database/sql"
+	"net/http"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -18,6 +19,12 @@ import (
 
 var prAttributionService prAttributionSettler
 var prUsageService prUsageRefresher
+
+// RouterOptions supplies production dependencies while SetupRouter preserves its legacy call shape.
+type RouterOptions struct {
+	DirectoryService  DirectoryAdminService
+	WebhookHTTPClient *http.Client
+}
 
 func SetPRAttributionService(service prAttributionSettler) {
 	prAttributionService = service
@@ -45,6 +52,87 @@ func SetupRouter(
 	checkpointHandler *CheckpointHandler,
 	healthHandler *HealthHandler,
 	directoryServices ...DirectoryAdminService,
+) *gin.Engine {
+	var directoryService DirectoryAdminService
+	if len(directoryServices) > 0 {
+		directoryService = directoryServices[0]
+	}
+	return setupRouter(
+		entClient,
+		sqlDB,
+		authService,
+		repoService,
+		webhookHandler,
+		syncService,
+		settingsHandler,
+		encryptionKey,
+		publicURL,
+		corsMiddleware,
+		oauthHandler,
+		providerHandler,
+		adminSettingsHandler,
+		checkpointHandler,
+		healthHandler,
+		RouterOptions{DirectoryService: directoryService},
+	)
+}
+
+// SetupRouterWithOptions configures the router with explicit production dependencies.
+func SetupRouterWithOptions(
+	entClient *ent.Client,
+	sqlDB *sql.DB,
+	authService *auth.Service,
+	repoService *repo.Service,
+	webhookHandler *webhook.Handler,
+	syncService prSyncer,
+	settingsHandler *SettingsHandler,
+	encryptionKey string,
+	publicURL string,
+	corsMiddleware gin.HandlerFunc,
+	oauthHandler *oauth.Handler,
+	providerHandler *ProviderHandler,
+	adminSettingsHandler *AdminSettingsHandler,
+	checkpointHandler *CheckpointHandler,
+	healthHandler *HealthHandler,
+	options RouterOptions,
+) *gin.Engine {
+	return setupRouter(
+		entClient,
+		sqlDB,
+		authService,
+		repoService,
+		webhookHandler,
+		syncService,
+		settingsHandler,
+		encryptionKey,
+		publicURL,
+		corsMiddleware,
+		oauthHandler,
+		providerHandler,
+		adminSettingsHandler,
+		checkpointHandler,
+		healthHandler,
+		options,
+	)
+}
+
+func setupRouter(
+	entClient *ent.Client,
+	sqlDB *sql.DB,
+	authService *auth.Service,
+	repoService *repo.Service,
+	webhookHandler *webhook.Handler,
+	syncService prSyncer,
+	settingsHandler *SettingsHandler,
+	encryptionKey string,
+	publicURL string,
+	corsMiddleware gin.HandlerFunc,
+	oauthHandler *oauth.Handler,
+	providerHandler *ProviderHandler,
+	adminSettingsHandler *AdminSettingsHandler,
+	checkpointHandler *CheckpointHandler,
+	healthHandler *HealthHandler,
+	options RouterOptions,
 ) *gin.Engine {
 	r := gin.New()
 	r.RemoveExtraSlash = true
@@ -93,7 +181,7 @@ func SetupRouter(
 			entClient,
 			providerHandler,
 			quotareset.NewApproverResolver(entClient),
-			quotareset.NewWebhookNotifier(entClient, encryptionKey, publicURL),
+			quotareset.NewWebhookNotifier(entClient, encryptionKey, publicURL, options.WebhookHTTPClient),
 		)
 		quotaResetHandler = NewQuotaResetHandler(quotaResetService)
 	}
@@ -323,10 +411,10 @@ func SetupRouter(
 		}
 	}
 
-	if len(directoryServices) > 0 && directoryServices[0] != nil {
+	if options.DirectoryService != nil {
 		directoryGroup := protected.Group("/admin/directory")
 		directoryGroup.Use(auth.RequireAdmin())
-		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(directoryServices[0]))
+		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(options.DirectoryService))
 	}
 
 	// Settings — admin only
