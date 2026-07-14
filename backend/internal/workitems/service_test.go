@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -18,6 +21,29 @@ import (
 type fakeProviderLister struct {
 	resp *usersetup.ListProvidersResponse
 	err  error
+}
+
+type countingProviderLister struct {
+	calls   atomic.Int32
+	started chan struct{}
+	release chan struct{}
+	err     error
+	once    sync.Once
+}
+
+func (f *countingProviderLister) ListProviders(ctx context.Context, _ usersetup.ListProvidersRequest) (*usersetup.ListProvidersResponse, error) {
+	f.calls.Add(1)
+	if f.started != nil {
+		f.once.Do(func() { close(f.started) })
+	}
+	if f.release != nil {
+		select {
+		case <-f.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return nil, f.err
 }
 
 type fakeOffboardingCounter struct {
@@ -148,6 +174,110 @@ func TestCountsForAdminUsesInjectedOffboardingCounterWithoutListingCandidates(t 
 	}
 	if counter.countCall != 1 || counter.listCall != 0 {
 		t.Fatalf("offboarding dependency calls count=%d list=%d, want count=1 list=0", counter.countCall, counter.listCall)
+	}
+}
+
+func TestCountsCacheServiceReusesWarmResponseAndIsolatesActorRoleAndRevision(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	actor := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	other := createWorkItemsUser(t, ctx, client, "bob", "bob@example.org", intPtr(1002), "user")
+	lister := &countingProviderLister{}
+	revisions := &fakeRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
+	cache := testCountsCache(t, newFakeCountsStore(), revisions, "test", nil)
+	service := NewService(client, nil, lister).WithCountsCache(cache)
+
+	assertTotal := func(userID int, admin bool, want int) {
+		t.Helper()
+		counts, err := service.Counts(ctx, userID, admin)
+		if err != nil {
+			t.Fatalf("Counts(%d, %v) error = %v", userID, admin, err)
+		}
+		if counts == nil || counts.TotalCount != want {
+			t.Fatalf("Counts(%d, %v) = %+v, want total %d", userID, admin, counts, want)
+		}
+	}
+
+	assertTotal(actor.ID, false, 1)
+	assertTotal(actor.ID, false, 1)
+	if got := lister.calls.Load(); got != 1 {
+		t.Fatalf("provider calls after warm hit = %d, want 1", got)
+	}
+	assertTotal(other.ID, false, 1)
+	assertTotal(actor.ID, true, 1)
+	if got := lister.calls.Load(); got != 3 {
+		t.Fatalf("provider calls after actor and role misses = %d, want 3", got)
+	}
+
+	revisions.set("22222222-2222-4222-8222-222222222222")
+	assertTotal(actor.ID, false, 1)
+	if got := lister.calls.Load(); got != 4 {
+		t.Fatalf("provider calls after revision change = %d, want 4", got)
+	}
+}
+
+func TestCountsCacheServiceCollapsesFiftyConcurrentColdCalculations(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	actor := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	lister := &countingProviderLister{started: make(chan struct{}), release: make(chan struct{})}
+	revisions := &fakeRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
+	cache := testCountsCache(t, newFakeCountsStore(), revisions, "test", nil)
+	service := NewService(client, nil, lister).WithCountsCache(cache)
+
+	const callers = 50
+	start := make(chan struct{})
+	errs := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			<-start
+			counts, err := service.Counts(ctx, actor.ID, false)
+			if err == nil && (counts == nil || counts.TotalCount != 1) {
+				err = errors.New("unexpected cached counts")
+			}
+			errs <- err
+		}()
+	}
+	close(start)
+	select {
+	case <-lister.started:
+	case <-time.After(time.Second):
+		t.Fatal("authoritative service calculation did not reach provider")
+	}
+	time.Sleep(10 * time.Millisecond)
+	close(lister.release)
+	for i := 0; i < callers; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("Counts() error = %v", err)
+		}
+	}
+	if got := lister.calls.Load(); got != 1 {
+		t.Fatalf("authoritative provider calls = %d, want 1", got)
+	}
+}
+
+func TestCountsCacheServiceDoesNotCacheSwallowedRelayFailure(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	approver := createWorkItemsUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	requester := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "42", quotaresetrequest.StatusPending, []int{approver.ID})
+	lister := &countingProviderLister{err: errors.New("relay unavailable")}
+	revisions := &fakeRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
+	cache := testCountsCache(t, newFakeCountsStore(), revisions, "test", nil)
+	service := NewService(client, nil, lister).WithCountsCache(cache)
+
+	for i := 0; i < 2; i++ {
+		counts, err := service.Counts(ctx, approver.ID, false)
+		if err != nil {
+			t.Fatalf("Counts() call %d error = %v", i+1, err)
+		}
+		if counts == nil || counts.QuotaResetApprovalCount != 1 || counts.AIAccessSetupCount != 0 || counts.TotalCount != 1 {
+			t.Fatalf("Counts() call %d = %+v, want current local counts", i+1, counts)
+		}
+	}
+	if got := lister.calls.Load(); got != 2 {
+		t.Fatalf("provider calls = %d, want retry after degraded result", got)
 	}
 }
 

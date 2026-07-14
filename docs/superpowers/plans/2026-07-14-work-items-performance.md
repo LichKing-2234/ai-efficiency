@@ -2,22 +2,25 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Task 1 is complete. Task 2 is next; this branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1 and 2 are complete. Task 3 is next; this branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the protected-navigation work-item badge and administrator offboarding list fast and bounded while preserving authoritative quota, credential, Directory Sync, Relay disable, and token-revocation behavior.
 
 **Architecture:** Keep candidate ownership in `directorysync`, where a shared SQL anti-join powers both a count query and a stable paginated page query. Wrap the existing `workitems.Service` authoritative calculation in a workitems-owned Redis read model keyed by deployment namespace, PostgreSQL revision, actor, and effective role; use process singleflight plus a token-protected distributed lease, and make every relevant mutation advance the persisted revision before returning success. Keep browser freshness in the existing Pinia store and make the offboarding view consume the bounded page contract.
 
-**Tech Stack:** Go 1.23+, Gin, Ent/PostgreSQL, go-redis v9, `golang.org/x/sync/singleflight`, Vue 3, Pinia, TypeScript, Vitest.
+**Tech Stack:** Go 1.23+, Gin, Ent/PostgreSQL, go-redis v9, a waiter-counted process-local singleflight coordinator, miniredis adapter tests, Vue 3, Pinia, TypeScript, Vitest.
 
 ## Global Constraints
 
-- Work-item counts have a fresh window of 20-30 seconds, no stale window, and 10-20 percent TTL jitter that never exceeds 30 seconds.
-- Cache isolation includes an explicit deployment namespace, persisted revision, actor ID, and effective role; cache keys and values are never logged.
+- Work-item counts have a fresh window of 20-30 seconds and no stale window. Production TTL is 30 seconds minus 10-20 percent jitter, giving an injected and testable 24-27 second range.
+- Cache isolation includes an explicit deployment namespace matching `[A-Za-z0-9][A-Za-z0-9._-]{0,62}`, persisted revision, actor ID, and effective role; cache keys and values are never logged.
 - Redis failure bypasses Redis cache and lease behavior and falls back to an authoritative load under a bounded context.
-- Identical cold requests collapse in one process and across replicas; distributed lease release uses token compare-and-delete and cancellation cannot deadlock waiters.
+- Identical cold requests collapse in one process and across replicas; distributed lease release uses token compare-and-delete, lease acquisition is followed by a second cache read, and cancellation cannot deadlock waiters.
+- One cancelled waiter does not cancel a refresh still needed by another waiter, but the final waiter leaving cancels the shared authoritative work so no refresh is left running without a caller.
 - Production defaults use a 100 ms Redis command budget, a 15-second authoritative refresh budget, a 20-second lease TTL, and 25 ms waiter polling; tests inject shorter deterministic durations.
 - Mutation invalidation is PostgreSQL-backed so a Redis outage cannot resurrect an old value after Redis recovers.
+- A Relay-derived degraded count response remains usable for the current request but is not cacheable; the next request retries Relay.
+- Explicit #119 invalidation covers quota actionable-state changes, Directory source eligibility/apply changes, and successful offboarding finalization. Credential, provider, and subscription mutation versioning remain outside this ticket and converge through the work-item fresh TTL.
 - Work-item badge reads never materialize offboarding candidates; offboarding count and page use the same anti-join predicate.
 - Offboarding pages default to 20 rows, accept at most 100, and order by username then user ID.
 - Exact normalized-email confirmation, current full-company source resolution, current membership recheck, Relay disable, and token revocation remain authoritative and uncached.
@@ -116,46 +119,47 @@
 - Modify: `deploy/docker-compose.local.yml`
 
 **Interfaces:**
-- Produces: `workitems.CountsCache.GetOrLoad(ctx, actorID, effectiveRole, loader)` with a versioned value envelope.
-- Produces: `workitems.CountsInvalidator.InvalidateWorkItemCounts(ctx) error` and transaction-aware invalidation for local PostgreSQL mutations.
+- Produces: `workitems.CountsLoadResult{Counts, Cacheable}`; a degraded Relay result sets `Cacheable=false`.
+- Produces: `workitems.CountsCache.GetOrLoad(ctx, actorID, effectiveRole, loader)` with a versioned value envelope and waiter-counted process-local flight.
+- Produces: `workitems.RevisionStore.Ensure(ctx)`, `Current(ctx)`, and `InvalidateWorkItemCountsTx(ctx, *ent.Tx)`.
 - Produces: `redis.namespace` / `AE_REDIS_NAMESPACE` as the explicit deployment namespace.
 - Consumes: Task 1's `offboardingCounter` for the authoritative loader.
 
-- [ ] **Step 1: Write failing cache concurrency, isolation, and outage tests**
+- [x] **Step 1: Write failing cache concurrency, isolation, and outage tests**
 
-  With a deterministic fake Redis store and clock, cover: 50 concurrent same-key calls invoking one loader; two cache instances invoking one loader through the distributed lease; actor, role, deployment, and revision isolation; TTLs always between 20 and 30 seconds; malformed/schema-mismatched values causing refresh; Redis read/lease/write errors falling back to authoritative data; cancelled waiters returning promptly; lease-holder timeout recovery; and token-checked release that cannot delete another holder's lease.
+  With deterministic fake stores/clocks plus a miniredis contract test for the production adapter, cover: 50 concurrent same-key calls invoking one loader; two cache instances invoking one loader through the distributed lease; a second cache read after lease acquisition; actor, role, deployment, and revision isolation; deterministic 24/27-second TTL endpoints; malformed/schema-mismatched values causing refresh; Redis read/lease errors falling back to exactly one authoritative load; write/release errors returning the loaded result without a second load; token-checked release; lease-holder timeout recovery; one cancelled waiter while another succeeds; and final-waiter cancellation stopping the loader. The adapter contract must prove `SET NX PX`, TTL, and Lua compare-delete behavior.
 
-- [ ] **Step 2: Run cache tests and record the expected RED result**
+- [x] **Step 2: Run cache tests and record the expected RED result**
 
   Run: `cd backend && go test ./internal/workitems -run 'CountsCache|Revision' -count=1`
 
   Expected: compilation failures because the cache, store adapter, lease, and revision types do not exist.
 
-- [ ] **Step 3: Implement the cache and PostgreSQL UUID revision**
+- [x] **Step 3: Implement the cache and PostgreSQL UUID revision**
 
-  Store revision key `work_items_counts_revision_v1` in `system_settings` and generate a new UUID for every invalidation. Build keys as `ae:<namespace>:work-items:counts:v1:rev:<revision>:actor:<id>:role:<role>`. Use `singleflight.Group.DoChan`, a bounded refresh context independent from a cancelled first waiter, a short Redis command budget, `SET NX` lease acquisition, bounded result polling, token compare-and-delete Lua release, revision recheck before cache write, JSON schema validation, and authoritative fallback on any Redis failure. Do not return stale values.
+  Store revision key `work_items_counts_revision_v1` in `system_settings`. `Ensure` creates one UUID row before serving traffic; a concurrent unique-constraint loser rereads the winner, while later reads reject missing or malformed revisions. Every invalidation writes a new UUID and requires one affected row. Build keys as `ae:<namespace>:work-items:counts:v1:rev:<revision>:actor:<id>:role:<role>`. Implement a waiter-counted process-local flight with a 15-second shared budget and last-waiter cancellation. Inside it, double-check Redis before and after `SET NX` lease acquisition, poll without origin fallback while a healthy lease exists, re-compete after lease disappearance, release by token-checked Lua under a short independent context, recheck revision before writing, validate the JSON schema, and bypass Redis on command errors. Do not return stale values.
 
-- [ ] **Step 4: Add failing service and configuration tests**
+- [x] **Step 4: Add failing service and configuration tests**
 
-  Assert that warm `Service.Counts` reuses a cached response, role and actor changes miss, a revision change refreshes immediately, and 50 concurrent cold calls produce one authoritative calculation. Assert `AE_REDIS_NAMESPACE` loads and writable/example config serialization retains it.
+  Assert that warm `Service.Counts` reuses a cached response, role and actor changes miss, a revision change refreshes immediately, 50 concurrent cold calls produce one authoritative calculation, and a swallowed Relay/usersetup error returns local counts with `Cacheable=false` so the next call retries. Assert concurrent revision initialization chooses one valid UUID, transaction rollback preserves the prior revision, concurrent bumps remain valid, namespace validation rejects empty/unsafe/overlong values, and `AE_REDIS_NAMESPACE` plus every deploy example retains an explicit valid namespace.
 
-- [ ] **Step 5: Run service/configuration tests and record the expected RED result**
+- [x] **Step 5: Run service/configuration tests and record the expected RED result**
 
   Run: `cd backend && go test ./internal/workitems ./internal/config -count=1`
 
   Expected: failures because service and runtime configuration are not wired to the cache.
 
-- [ ] **Step 6: Wire the existing Redis client and cached service**
+- [x] **Step 6: Wire the existing Redis client and cached service**
 
-  Construct one store/cache/invalidator from the existing `*redis.Client` in `main.go`, pass the same directory service from Task 1 into the authoritative workitems service, and inject the cached service into the router. Set go-redis context timeout behavior and bounded command settings so an unavailable Redis cannot add multi-second badge latency. Keep readiness degradation independent from data-plane fallback.
+  After schema migration, construct and eagerly `Ensure` one PostgreSQL revision store, then construct one Redis store/cache from the existing `*redis.Client` in `main.go`. Pass the same directory service from Task 1 into the authoritative workitems service and inject the cache through router runtime options. Set go-redis context timeout behavior and bounded command settings so an unavailable Redis cannot add multi-second badge latency. Keep readiness degradation independent from data-plane fallback.
 
-- [ ] **Step 7: Run focused Task 2 verification**
+- [x] **Step 7: Run focused Task 2 verification**
 
   Run: `cd backend && go test ./internal/workitems ./internal/config ./internal/handler ./cmd/server -count=1`
 
   Expected: PASS, including concurrency, fallback, and runtime wiring tests.
 
-- [ ] **Step 8: Commit Task 2 and update this ledger immediately**
+- [x] **Step 8: Commit Task 2 and update this ledger immediately**
 
   Commit: `perf(backend): cache work item counts across replicas`
 
@@ -168,40 +172,40 @@
 - Modify: `backend/internal/quotareset/service_test.go`
 - Modify: `backend/internal/directorysync/service.go`
 - Modify: `backend/internal/directorysync/service_test.go`
-- Modify: `backend/internal/usersetup/service.go`
-- Modify: `backend/internal/usersetup/service_test.go`
-- Modify: `backend/internal/handler/provider.go`
-- Modify: `backend/internal/handler/provider_test.go`
-- Modify: `backend/internal/handler/admin_users.go`
-- Modify relevant admin subscription job files and tests if the affected add/remove path runs asynchronously.
+- Modify: `backend/internal/auth/auth.go`
+- Modify: `backend/internal/auth/auth_service_test.go`
 - Modify: `backend/internal/handler/router.go`
 - Modify: `backend/cmd/server/main.go`
+- Modify: `docs/superpowers/specs/2026-07-07-quota-reset-approval-design.md` only if the implemented transaction/finalization contract is not already stated.
+- Modify: `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md` for the landed revision/finalization contract.
 
 **Interfaces:**
-- Consumes: Task 2's concrete invalidator through package-local interfaces named `InvalidateWorkItemCounts(context.Context) error` and `InvalidateWorkItemCountsTx(context.Context, *ent.Tx) error`; mutation packages must not import `workitems` solely to name the interface.
-- Produces: successful quota, credential, provider, Directory apply, offboarding, and access-group mutations that advance the persisted revision before returning success.
+- Consumes: Task 2's concrete invalidator through package-local interfaces named `InvalidateWorkItemCountsTx(context.Context, *ent.Tx) error`; mutation packages must not import `workitems` solely to name the interface.
+- Produces: quota request/event/actionable-state commits whose revision changes in the same Ent transaction whenever membership crosses into or out of `{pending, approved_reset_failed}`.
+- Produces: Directory source update/delete, successful apply, and successful offboarding finalization whose local state and revision change atomically.
+- Produces: a tx-aware token revocation seam so production offboarding commits `users.token_valid_after`, succeeded action, and revision together.
 
 - [ ] **Step 1: Add failing mutation invalidation tests**
 
-  Use a recording invalidator to assert exactly one invalidation after each state-changing success and zero invalidations after validation/conflict/upstream failures. Cover quota create, cancel, approve, reject, retry/final reset status; successful Directory apply; successful offboarding disable; group credential creation; provider create/update/delete; and subscription add/remove paths that change available access groups.
+  Use the real PostgreSQL revision store and failure hooks rather than fixed mock call counts. Cover quota create, cancel, reject, pending-to-resetting approve, failed-to-resetting retry, and resetting-to-failed recovery; assert every actionable-membership transition and its required event commit with the revision in one transaction, including rollback on revision failure. Cover Directory source update/delete, successful apply, and successful offboarding finalization. After fake Relay success, cancel the request context and prove a synchronous independent five-second finalization context still commits token revocation, succeeded action, and revision; validation/conflict paths must keep both state and revision unchanged.
 
 - [ ] **Step 2: Run mutation tests and record the expected RED result**
 
-  Run: `cd backend && go test ./internal/quotareset ./internal/directorysync ./internal/usersetup ./internal/handler -run 'Invalidat|Apply|Offboarding|Credential|Provider|Subscription' -count=1`
+  Run: `cd backend && go test ./internal/quotareset ./internal/directorysync ./internal/auth ./internal/handler -run 'Revision|Invalidat|Apply|Offboarding|Actionable|Finaliz' -count=1`
 
   Expected: failures because these services do not accept or invoke the invalidator.
 
 - [ ] **Step 3: Inject local invalidator interfaces and invalidate before success**
 
-  Keep each service's dependency narrow. For mutations already committed in a local Ent transaction, advance the UUID revision in that transaction where feasible. For Relay-backed writes, advance it synchronously after the authoritative write and before returning success. Preserve the current quota decision checks, exact-email confirmation, current membership recheck, Relay disable, and token revocation; none may consult cached counts.
+  Keep each service's dependency narrow. Make quota request/event/actionable-status changes and their revision atomic; Approve/Retry may legitimately advance revision once when leaving actionable and again if reset failure re-enters actionable. Keep reset-succeeded event handling consistent with the current quota spec so an event failure cannot erase succeeded state. Make Directory source update/delete and apply revision changes transactional. After Relay disable succeeds, use `context.WithoutCancel` plus a five-second timeout to finalize tx-aware token revocation, succeeded action, and revision in one transaction. Preserve decision checks, exact-email confirmation, current membership recheck, Relay disable, and token revocation; none may consult cached counts.
 
 - [ ] **Step 4: Add and pass an immediate post-mutation integration test**
 
-  Warm an actor's work-item cache, execute each representative mutation family, then call counts and assert the new authoritative value is visible immediately while the old Redis key remains unreachable by revision. Include a Redis-outage-during-invalidation case followed by Redis recovery to prove no old value resurrects.
+  Warm actor/admin work-item caches, execute representative quota, Directory source/apply, and offboarding mutations, then call counts and assert the new authoritative value is visible immediately while the old Redis key remains unreachable by revision. Stop Redis during a mutation, prove the PostgreSQL state and revision still commit, restart Redis, and prove the old cached value cannot resurrect.
 
 - [ ] **Step 5: Run focused Task 3 verification**
 
-  Run: `cd backend && go test ./internal/quotareset ./internal/directorysync ./internal/usersetup ./internal/workitems ./internal/handler -count=1`
+  Run: `cd backend && go test ./internal/quotareset ./internal/directorysync ./internal/auth ./internal/workitems ./internal/handler ./cmd/server -count=1`
 
   Expected: PASS with no mutation path using cache state for authorization or decisions.
 
@@ -223,9 +227,8 @@
 - Modify: `frontend/src/__tests__/directory-offboarding-view.test.ts`
 - Modify: `frontend/src/views/QuotaResetView.vue`
 - Modify: `frontend/src/__tests__/quota-reset-view.test.ts`
-- Modify: `frontend/src/views/UserView.vue`
-- Modify its existing focused tests.
-- Modify Directory Sync settings/admin subscription views only where a successful mutation needs current-actor badge invalidation.
+- Modify: `frontend/src/components/settings/DirectorySyncSettings.vue`
+- Modify: `frontend/src/__tests__/directory-sync-settings.test.ts`
 
 **Interfaces:**
 - Produces: `workItems.loadCounts({force?})` with a 20-second success freshness window, one queued forced follow-up, and generation-safe response handling.
@@ -258,15 +261,15 @@
 
 - [ ] **Step 6: Add failing paginated offboarding and mutation-refresh tests**
 
-  Assert the offboarding view requests page 1 with page size 20, renders total-aware next/previous controls, resets to page 1 on search, and after a successful disable awaits both the page reload and a forced work-item refresh. Add focused tests that successful quota and credential mutations invalidate then await a badge refresh without allowing an older inflight response to win.
+  Assert the offboarding view requests page 1 with page size 20, renders total-aware next/previous controls, resets to page 1 on search, and after a successful disable awaits both the page reload and a forced work-item refresh. Add focused tests that quota transitions and current Directory source/apply mutations invalidate then await a badge refresh without allowing an older inflight response to win.
 
 - [ ] **Step 7: Implement the page contract and current-actor mutation refreshes**
 
-  Update API/type boundaries, add stable pager state without changing the existing exact-email confirmation UX, and call `invalidateCounts()` followed by an awaited `loadCounts({force:true})` after affected mutations. Do not trigger an extra request merely by mounting a settings section with an already-completed historical run.
+  Update API/type boundaries, add stable pager state without changing the existing exact-email confirmation UX, and call `invalidateCounts()` followed by an awaited `loadCounts({force:true})` after affected quota, offboarding, Directory source, and newly completed apply mutations. Do not trigger an extra request merely by mounting a settings section with an already-completed historical run.
 
 - [ ] **Step 8: Run focused Task 4 verification**
 
-  Run: `cd frontend && npm test -- src/__tests__/work-items-store.test.ts src/__tests__/app-layout.test.ts src/__tests__/directory-offboarding-view.test.ts src/__tests__/quota-reset-view.test.ts`
+  Run: `cd frontend && npm test -- src/__tests__/work-items-store.test.ts src/__tests__/app-layout.test.ts src/__tests__/directory-offboarding-view.test.ts src/__tests__/quota-reset-view.test.ts src/__tests__/directory-sync-settings.test.ts`
 
   Expected: PASS with one request per freshness window and immediate post-mutation refresh.
 
@@ -292,7 +295,7 @@
 
 - [ ] **Step 2: Run formatting and focused race verification**
 
-  Run Go formatting on changed Go files, then run: `cd backend && go test -race ./internal/workitems ./internal/directorysync ./internal/quotareset ./internal/usersetup`
+  Run Go formatting on changed Go files, then run: `cd backend && go test -race ./internal/workitems ./internal/directorysync ./internal/quotareset ./internal/auth`
 
   Expected: PASS with no data race in singleflight, lease, revision, or mutation wiring.
 
