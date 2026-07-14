@@ -4911,6 +4911,24 @@ recipients. Code, tests, and spec are commit `ac2c9af` (`fix(backend):
 revalidate quota reset notification recipients`); this ledger update is
 committed separately.
 
+Quality-review RED evidence (2026-07-15): `go test ./internal/quotareset -run
+'^(TestWorkflowResolverDoesNotEmailFallbackWhenRepresentativeMatchedUserIsUnavailable|TestWorkflowNotificationsRevalidateSnapshottedApprovers)$'
+-count=1 -v` failed (`2.633s`) because a member whose authoritative matched
+user was unavailable still email-fell back to user `2`. Resolver selected that
+email-conflicting user, and both activation and cancellation leaked the former
+member's synthetic `former-user-wecom-id` instead of routing the current admin.
+The other six notification-drift subtests passed.
+
+Quality-review GREEN and verification evidence (2026-07-15): making non-null
+`matched_user_id` authoritative made the same focused RED command pass
+(`2.510s`), including both activation and cancellation leak checks. The broader
+resolver and notification selection passed (`11.557s`), the complete quotareset
+package passed (`41.540s`), and full backend tests passed, including
+`internal/quotareset 70.410s`. `go vet ./...` and `git diff --check` exited 0.
+Code, tests, and current-spec changes are commit `c67f12c` (`fix(backend):
+honor matched quota reset identities`); this ledger update is committed
+separately.
+
 ### Task 15: Persist Reset Terminal State and Audit Event Atomically
 
 **Files:**
