@@ -5001,13 +5001,18 @@ hooks. Both injections cover success and provider-failure outcomes and prove one
 provider call, retained `approved_resetting` state, absent completion/error
 fields and terminal event, no result notification, no terminal summary, and a
 wrapped persistence error. The commit-failure test, including
-`errors.Is(context.Canceled)`, passed 20 repetitions (`9.369s`). The final Task
-15 outcome set passed (`3.089s`), the complete quotareset package passed
-(`44.210s`), and `go vet ./...` plus `git diff --check` exited 0. The existing
-implementation passed the new tests without production changes, so full backend
-was not rerun. Tests are commit `33ac940` (`test(backend): cover quota reset
-outcome transaction failures`); the spec/header implementation-note refresh
-remains assigned to Task 16.
+an underlying standard transaction-cancellation error, initially passed 20
+repetitions. A fresh post-commit run then correctly exposed that `database/sql`
+may return either `context.Canceled` before automatic rollback finishes or
+`sql.ErrTxDone` after it finishes. Accepting those two wrapped standard errors
+while retaining every persistence assertion made 50 repetitions pass
+(`22.985s`). The final Task 15 outcome set passed (`3.317s`), the complete
+quotareset package passed (`45.317s`), and `go vet ./...` plus `git diff --check`
+exited 0. The existing implementation passed the new tests without production
+changes, so full backend was not rerun. Tests are commits `33ac940`
+(`test(backend): cover quota reset outcome transaction failures`) and `80d2266`
+(`test(backend): stabilize quota reset commit failure injection`); the
+spec/header implementation-note refresh remains assigned to Task 16.
 
 ### Task 16: Reconcile Final Review Evidence and Reverify
 
