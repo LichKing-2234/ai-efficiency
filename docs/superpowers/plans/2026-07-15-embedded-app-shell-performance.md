@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Ready for execution. The branch is stacked on `docs/performance-contracts-116`; focused backend tests, 39 frontend files / 429 tests, and the production build pass at the baseline.
+**Status:** Task 1 Steps 1-4 are complete and verified; the implementation commit is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the existing embedded SPA materially faster on cold and repeat visits by serving correct gzip/cache headers and removing inactive locale and chart code from the initial data-loading path, without adding a CDN or a separate frontend release unit.
 
@@ -57,7 +57,7 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 - Produces: `acceptsGzip(string) bool`, hashed-asset classification, compressible-content classification, and append/deduplicate `Vary` helpers.
 - Preserves: `HasEmbeddedFrontend`, `SetFrontendFSForTest`, API/OAuth bypass, `/index.html` canonical redirect, and the public middleware/handler signatures.
 
-- [ ] **Step 1: Add failing negotiation, policy, and fallback tests**
+- [x] **Step 1: Add failing negotiation, policy, and fallback tests**
 
   Build a synthetic `dist` tree containing `index.html`, `assets/app-ABCDEFGH.js`, `assets/app-IJKLMNOP.css`, `assets/data-QRSTUVWX.json`, `assets/icon-YZabcdef.svg`, `assets/plain.js`, and a non-compressible PNG. Add table-driven requests that assert:
 
@@ -68,19 +68,19 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
   - GET and HEAD have matching content type, encoding, and exact selected-representation `Content-Length`, while HEAD has no body;
   - gzip bytes decompress exactly, `Last-Modified` is absent, `/index.html` retains its canonical redirect, and API/OAuth namespaces receive no static policy.
 
-- [ ] **Step 2: Run the embedded frontend tests and record RED**
+- [x] **Step 2: Run the embedded frontend tests and record RED**
 
   Run: `cd backend && go test ./internal/web -run 'Embedded|Frontend|Gzip|Cache|Fallback|Head' -count=1`
 
   Expected: FAIL because the current `http.FileServer` path emits neither gzip/Vary nor application-owned cache policy, and it exposes test filesystem timestamps.
 
-- [ ] **Step 3: Implement the shared representation server**
+- [x] **Step 3: Implement the shared representation server**
 
   Resolve the actual regular file before policy classification, read it from the captured `dist` filesystem, derive content type from the uncompressed file extension, and store a per-file representation whose gzip bytes are produced through `sync.Once` for the five allowed MIME families. Set the exact selected byte length before calling `http.ServeContent` with a zero modification time and a reader over those identity/gzip bytes. Set `Content-Encoding` only for gzip, append/deduplicate `Vary`, and set immutable policy only when the resolved file is a Vite-style hashed asset matching `-[A-Za-z0-9_-]{8,}\.[^/]+$` under `assets/`; all other served files are `no-cache`.
 
   Parse `Accept-Encoding` as case-insensitive comma-separated tokens with optional quality parameters. Explicit `gzip;q=0` overrides wildcard acceptance. Preserve current fallback and bypass rules, and keep direct OAuth index serving on the same representation implementation.
 
-- [ ] **Step 4: Run focused Task 1 verification**
+- [x] **Step 4: Run focused Task 1 verification**
 
   Run: `cd backend && go test ./internal/web -count=1`
 
