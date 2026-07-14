@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Tasks 1-2 are complete. Task 2 bounded SQL pagination, lightweight projections, stable tie ordering, and generated indexes are implemented, verified, reviewed, and committed; Tasks 3-5 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
+**Status:** Tasks 1-3 are complete. Task 3 recording, large-fixture behavior, structural PostgreSQL plan proof, repeated scale verification, package verification, and review are complete and committed; Tasks 4-5 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
 
 ## Global Constraints
 
@@ -253,7 +253,7 @@ Expected: Task 2 is independently reviewable, including schema and generated cod
 - Consumes: Task 1 filter factory, Task 2 bounds/projection/indexes, and `testdb.OpenWithDSN`.
 - Produces: repeatable query-plan and bounded-materialization evidence for every #120 backend acceptance criterion.
 
-- [ ] **Step 1: Add a recording PostgreSQL driver and scale fixture helper**
+- [x] **Step 1: Add a recording PostgreSQL driver and scale fixture helper**
 
 Create a test-only `recordingDriver` that embeds `dialect.Driver`, overrides `Query`, copies SQL plus arguments under a mutex, and delegates unchanged. Open it with the schema DSN returned by `testdb.OpenWithDSN` through `entsql.OpenDB(dialect.Postgres, db)` and `ent.NewClient(ent.Driver(recorder))`.
 
@@ -271,7 +271,7 @@ distinct session/event/dedupe/source values for q coverage
 
 Use Ent bulk creates, fixed UTC timestamps, and generated repeated strings. Run `ANALYZE tool_usage_events` after insertion so the planner has current statistics.
 
-- [ ] **Step 2: Write failing large-fixture behavior and SQL-shape tests**
+- [x] **Step 2: Write failing large-fixture behavior and SQL-shape tests**
 
 Add `TestLargeEventFixturePreservesFiltersAndBounds` with subtests for regular actor scope, admin `user_id`, time, tool, repository, bound/unbound, and all five `q` fields. For each subtest:
 
@@ -283,7 +283,7 @@ Add `TestLargeEventFixturePreservesFiltersAndBounds` with subtests for regular a
 
 Add `TestLargeEventFixtureStablePages` and concatenate every page at limits 20, 50, and 100. Assert no duplicate ID, no omitted ID, and global `(observed_end_at DESC, id DESC)` order.
 
-- [ ] **Step 3: Write exact `EXPLAIN` assertions for list and summary queries**
+- [x] **Step 3: Write exact `EXPLAIN` assertions for list and summary queries**
 
 Identify captured SQL by operation shape rather than call order: list SQL contains `FROM "tool_usage_events"`, `ORDER BY`, and `LIMIT`; summary SQL contains `COUNT(` or `GROUP BY`. Execute the exact captured SQL with its captured bound arguments under:
 
@@ -305,7 +305,7 @@ summary SQL has no LIMIT or OFFSET and returns aggregate rows, not event entitie
 
 Do not assert exact costs, timings, buffer counts, or one complete node tree; those vary by PostgreSQL version and machine.
 
-- [ ] **Step 4: Run the new tests and verify RED, then make the smallest evidence-driven adjustment**
+- [x] **Step 4: Run the new tests and verify RED, then make the smallest evidence-driven adjustment**
 
 Run:
 
@@ -315,7 +315,7 @@ cd backend && go test ./internal/toolusage -run 'TestLargeEventFixture' -count=1
 
 Expected first run: any missing query capture, projection, or index-use assertion fails with the recorded SQL/plan in the test message. Fix only the demonstrated query/index mismatch; do not add speculative indexes for every filter combination. If schema changes, regenerate Ent and rerun Task 2 tests.
 
-- [ ] **Step 5: Run scale tests twice and the package suite and verify GREEN**
+- [x] **Step 5: Run scale tests twice and the package suite and verify GREEN**
 
 Run:
 
@@ -326,7 +326,15 @@ cd backend && go test ./internal/toolusage -count=1
 
 Expected: both scale runs PASS with identical visible ordering and bounds. Record fixture size, payload size, selected indexes, and plan node assertions in this task's ledger notes; do not report elapsed time as a performance budget.
 
-- [ ] **Step 6: Update the live ledger and commit Task 3**
+Task 3 verification evidence (2026-07-15):
+
+- The fixture persists exactly 2,400 events in batches of 200 across two synthetic users, two repositories, and three tools. It contains 1,200 bound and 1,200 unbound events, 64 repeated `observed_end_at` values, unique session/event/dedupe/source fields, and one 16 KiB generated raw payload string per event.
+- The controlled RED mutation removed the `id DESC` tie-breaker and produced SQL-shape failures plus duplicate and out-of-order concatenated pages. Restoring the existing Task 2 tie-breaker returned the suite to GREEN; no query or schema/index adjustment was required in the final Task 3 diff.
+- `go test ./internal/toolusage -run 'TestLargeEventFixture' -count=2 -v` passed twice with identical visible ordering and bounds. `go test ./internal/toolusage -count=1` also passed.
+- PostgreSQL selected `toolusageevent_observed_end_at_id` for the representative global list and `toolusageevent_user_id_observed_end_at_id` for the representative regular-user list in both scale runs.
+- List plans contain `Limit`, materialize at most 100 rows at that node, retain `observed_end_at DESC, id DESC`, and exclude `raw_payload` from the projection. All four summary plans contain `Aggregate`, have no `LIMIT` or `OFFSET`, and return aggregate rows rather than event entities.
+
+- [x] **Step 6: Update the live ledger and commit Task 3**
 
 ```bash
 git add backend/internal/toolusage/query_plan_test.go backend/internal/toolusage/test_helpers_test.go backend/ent docs/superpowers/plans/2026-07-15-events-sql-pagination.md
