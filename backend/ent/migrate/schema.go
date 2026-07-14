@@ -986,6 +986,54 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{ToolUsageEventsColumns[1], ToolUsageEventsColumns[3]},
 			},
+			{
+				Name:    "toolusageevent_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "toolusageevent_user_id_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[22], ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "toolusageevent_repo_config_id_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[21], ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "toolusageevent_tool_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[1], ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
+			},
 		},
 	}
 	// UsersColumns holds the columns for the "users" table.
