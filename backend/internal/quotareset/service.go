@@ -3,6 +3,7 @@ package quotareset
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -40,19 +41,28 @@ const (
 )
 
 type Service struct {
-	client           *ent.Client
-	providerResolver ProviderResolver
-	approverResolver *ApproverResolver
-	notifier         Notifier
+	client            *ent.Client
+	providerResolver  ProviderResolver
+	approverResolver  *ApproverResolver
+	notifier          Notifier
+	countsInvalidator workItemCountsInvalidator
 }
 
-func NewService(client *ent.Client, providerResolver ProviderResolver, approverResolver *ApproverResolver, notifier Notifier) *Service {
-	return &Service{
+type workItemCountsInvalidator interface {
+	InvalidateWorkItemCountsTx(context.Context, *ent.Tx) error
+}
+
+func NewService(client *ent.Client, providerResolver ProviderResolver, approverResolver *ApproverResolver, notifier Notifier, invalidators ...workItemCountsInvalidator) *Service {
+	service := &Service{
 		client:           client,
 		providerResolver: providerResolver,
 		approverResolver: approverResolver,
 		notifier:         notifier,
 	}
+	if len(invalidators) > 0 {
+		service.countsInvalidator = invalidators[0]
+	}
+	return service
 }
 
 func (s *Service) Options(ctx context.Context, userID int) (*OptionsResponse, error) {
@@ -110,7 +120,12 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 		return nil, err
 	}
 	relayUserID := int64(*requester.RelayUserID)
-	req, err := s.client.QuotaResetRequest.Create().
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin create quota reset request tx: %w", err)
+	}
+	defer tx.Rollback()
+	req, err := tx.QuotaResetRequest.Create().
 		SetRequesterUserID(requester.ID).
 		SetRequesterRelayUserID(relayUserID).
 		SetProviderID(providerRow.ID).
@@ -122,21 +137,28 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 		SetMatchedDepartmentPaths(pathMaps).
 		Save(ctx)
 	if err != nil {
+		_ = tx.Rollback()
 		if activeRequestCreateWasDuplicate(ctx, s.client, err, requester.ID, providerRow.ID, input.GroupID) {
 			return nil, ErrActiveRequestExists
 		}
 		return nil, fmt.Errorf("create quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, req.ID, &requester.ID, quotaresetrequestevent.EventTypeCreated, map[string]any{
+	if err := writeEventTx(ctx, tx, req.ID, &requester.ID, quotaresetrequestevent.EventTypeCreated, map[string]any{
 		"group_id": input.GroupID,
 	}, ""); err != nil {
 		return nil, err
 	}
-	if err := s.writeEvent(ctx, req.ID, nil, quotaresetrequestevent.EventTypeApproverResolved, map[string]any{
+	if err := writeEventTx(ctx, tx, req.ID, nil, quotaresetrequestevent.EventTypeApproverResolved, map[string]any{
 		"approver_user_ids": resolution.ApproverUserIDs,
 		"path_count":        len(resolution.Paths),
 	}, ""); err != nil {
 		return nil, err
+	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx, "creating quota reset request"); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create quota reset request: %w", err)
 	}
 	_ = s.notify(ctx, "quota_reset_request_created", req)
 	return req, nil
@@ -153,15 +175,29 @@ func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.
 	if req.Status != quotaresetrequest.StatusPending {
 		return nil, ErrInvalidStatus
 	}
-	updated, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin cancel quota reset request tx: %w", err)
+	}
+	defer tx.Rollback()
+	updated, err := tx.QuotaResetRequest.UpdateOneID(requestID).
 		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending)).
 		SetStatus(quotaresetrequest.StatusCancelled).
 		Save(ctx)
+	if ent.IsNotFound(err) {
+		return nil, ErrInvalidStatus
+	}
 	if err != nil {
 		return nil, fmt.Errorf("cancel quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeCancelled, nil, ""); err != nil {
+	if err := writeEventTx(ctx, tx, requestID, &actorUserID, quotaresetrequestevent.EventTypeCancelled, nil, ""); err != nil {
 		return nil, err
+	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx, "cancelling quota reset request"); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit cancel quota reset request: %w", err)
 	}
 	_ = s.notify(ctx, "quota_reset_request_cancelled", updated)
 	return updated, nil
@@ -173,20 +209,34 @@ func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaR
 		return nil, err
 	}
 	now := time.Now()
-	updated, err := s.client.QuotaResetRequest.UpdateOneID(input.RequestID).
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin approve quota reset request tx: %w", err)
+	}
+	defer tx.Rollback()
+	updated, err := tx.QuotaResetRequest.UpdateOneID(input.RequestID).
 		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending)).
 		SetApprovedByUserID(input.ActorUserID).
 		SetDecisionReason(strings.TrimSpace(input.DecisionReason)).
 		SetDecidedAt(now).
 		SetStatus(quotaresetrequest.StatusApprovedResetting).
 		Save(ctx)
+	if ent.IsNotFound(err) {
+		return nil, ErrInvalidStatus
+	}
 	if err != nil {
 		return nil, fmt.Errorf("approve quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, req.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeApproved, map[string]any{
+	if err := writeEventTx(ctx, tx, req.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeApproved, map[string]any{
 		"admin": input.Admin,
 	}, ""); err != nil {
-		return s.storeResetFailure(ctx, updated.ID, input.ActorUserID, err)
+		return nil, err
+	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx, "approving quota reset request"); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit approve quota reset request: %w", err)
 	}
 	return s.executeReset(ctx, updated.ID, input.ActorUserID, false, input.Admin)
 }
@@ -201,20 +251,34 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 		return nil, err
 	}
 	now := time.Now()
-	updated, err := s.client.QuotaResetRequest.UpdateOneID(input.RequestID).
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin reject quota reset request tx: %w", err)
+	}
+	defer tx.Rollback()
+	updated, err := tx.QuotaResetRequest.UpdateOneID(input.RequestID).
 		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending)).
 		SetRejectedByUserID(input.ActorUserID).
 		SetDecisionReason(input.DecisionReason).
 		SetDecidedAt(now).
 		SetStatus(quotaresetrequest.StatusRejected).
 		Save(ctx)
+	if ent.IsNotFound(err) {
+		return nil, ErrInvalidStatus
+	}
 	if err != nil {
 		return nil, fmt.Errorf("reject quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, req.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeRejected, map[string]any{
+	if err := writeEventTx(ctx, tx, req.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeRejected, map[string]any{
 		"admin": input.Admin,
 	}, ""); err != nil {
 		return nil, err
+	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx, "rejecting quota reset request"); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit reject quota reset request: %w", err)
 	}
 	_ = s.notify(ctx, "quota_reset_request_rejected", updated)
 	return updated, nil
@@ -600,30 +664,11 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	if err != nil || groupID <= 0 {
 		return nil, ErrInactiveSubscription
 	}
-	now := time.Now()
-	running, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
-		Where(quotaresetrequest.StatusEQ(requiredStatus)).
-		SetStatus(quotaresetrequest.StatusApprovedResetting).
-		SetResetError("").
-		SetResetStartedAt(now).
-		ClearResetCompletedAt().
-		Save(ctx)
-	if ent.IsNotFound(err) {
-		return nil, ErrInvalidStatus
-	}
+	running, err := s.markResetStarted(ctx, requestID, actorUserID, requiredStatus, retry, admin)
 	if err != nil {
-		return nil, fmt.Errorf("mark reset started: %w", err)
-	}
-	if retry {
-		if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetRetried, map[string]any{
-			"admin": admin,
-		}, ""); err != nil {
-			return s.storeResetFailure(ctx, requestID, actorUserID, err)
+		if retry || errors.Is(err, ErrInvalidStatus) {
+			return nil, err
 		}
-	}
-	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetStarted, map[string]any{
-		"retry": retry,
-	}, ""); err != nil {
 		return s.storeResetFailure(ctx, requestID, actorUserID, err)
 	}
 	provider, err := s.providerResolver.Resolve(ctx, running.ProviderID)
@@ -638,10 +683,14 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 		return s.storeResetFailure(ctx, requestID, actorUserID, err)
 	}
 	succeeded, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
+		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusApprovedResetting)).
 		SetStatus(quotaresetrequest.StatusApprovedResetSucceeded).
 		SetResetError("").
 		SetResetCompletedAt(time.Now()).
 		Save(ctx)
+	if ent.IsNotFound(err) {
+		return nil, ErrInvalidStatus
+	}
 	if err != nil {
 		return nil, fmt.Errorf("store reset success: %w", err)
 	}
@@ -652,29 +701,96 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	return succeeded, nil
 }
 
+func (s *Service) markResetStarted(ctx context.Context, requestID int, actorUserID int, requiredStatus quotaresetrequest.Status, retry bool, admin bool) (*ent.QuotaResetRequest, error) {
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin mark quota reset started tx: %w", err)
+	}
+	defer tx.Rollback()
+	running, err := tx.QuotaResetRequest.UpdateOneID(requestID).
+		Where(quotaresetrequest.StatusEQ(requiredStatus)).
+		SetStatus(quotaresetrequest.StatusApprovedResetting).
+		SetResetError("").
+		SetResetStartedAt(time.Now()).
+		ClearResetCompletedAt().
+		Save(ctx)
+	if ent.IsNotFound(err) {
+		return nil, ErrInvalidStatus
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mark reset started: %w", err)
+	}
+	if retry {
+		if err := writeEventTx(ctx, tx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetRetried, map[string]any{
+			"admin": admin,
+		}, ""); err != nil {
+			return nil, err
+		}
+	}
+	if err := writeEventTx(ctx, tx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetStarted, map[string]any{
+		"retry": retry,
+	}, ""); err != nil {
+		return nil, err
+	}
+	if retry {
+		if err := s.invalidateWorkItemCountsTx(ctx, tx, "retrying quota reset request"); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit mark quota reset started: %w", err)
+	}
+	return running, nil
+}
+
 func (s *Service) storeResetFailure(ctx context.Context, requestID int, actorUserID int, resetErr error) (*ent.QuotaResetRequest, error) {
 	errorMessage := ""
 	if resetErr != nil {
 		errorMessage = resetErr.Error()
 	}
-	failed, saveErr := s.client.QuotaResetRequest.UpdateOneID(requestID).
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin store quota reset failure tx: %w", err)
+	}
+	defer tx.Rollback()
+	failed, saveErr := tx.QuotaResetRequest.UpdateOneID(requestID).
+		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusApprovedResetting)).
 		SetStatus(quotaresetrequest.StatusApprovedResetFailed).
 		SetResetError(errorMessage).
 		SetResetCompletedAt(time.Now()).
 		Save(ctx)
+	if ent.IsNotFound(saveErr) {
+		return nil, ErrInvalidStatus
+	}
 	if saveErr != nil {
 		return nil, fmt.Errorf("store reset failure: %w", saveErr)
 	}
-	_ = s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetFailed, nil, errorMessage)
+	if err := writeEventTx(ctx, tx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetFailed, nil, errorMessage); err != nil {
+		return nil, err
+	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx, "storing quota reset failure"); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit quota reset failure: %w", err)
+	}
 	_ = s.notify(ctx, "quota_reset_request_reset_failed", failed)
 	return failed, nil
 }
 
 func (s *Service) writeEvent(ctx context.Context, requestID int, actorUserID *int, eventType quotaresetrequestevent.EventType, metadata map[string]any, errorMessage string) error {
+	return writeEventCreate(ctx, s.client.QuotaResetRequestEvent.Create(), requestID, actorUserID, eventType, metadata, errorMessage)
+}
+
+func writeEventTx(ctx context.Context, tx *ent.Tx, requestID int, actorUserID *int, eventType quotaresetrequestevent.EventType, metadata map[string]any, errorMessage string) error {
+	return writeEventCreate(ctx, tx.QuotaResetRequestEvent.Create(), requestID, actorUserID, eventType, metadata, errorMessage)
+}
+
+func writeEventCreate(ctx context.Context, create *ent.QuotaResetRequestEventCreate, requestID int, actorUserID *int, eventType quotaresetrequestevent.EventType, metadata map[string]any, errorMessage string) error {
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
-	create := s.client.QuotaResetRequestEvent.Create().
+	create = create.
 		SetRequestID(requestID).
 		SetEventType(eventType).
 		SetMetadata(metadata).
@@ -684,6 +800,16 @@ func (s *Service) writeEvent(ctx context.Context, requestID int, actorUserID *in
 	}
 	if _, err := create.Save(ctx); err != nil {
 		return fmt.Errorf("write quota reset event: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) invalidateWorkItemCountsTx(ctx context.Context, tx *ent.Tx, operation string) error {
+	if s.countsInvalidator == nil {
+		return nil
+	}
+	if err := s.countsInvalidator.InvalidateWorkItemCountsTx(ctx, tx); err != nil {
+		return fmt.Errorf("invalidate work item counts after %s: %w", operation, err)
 	}
 	return nil
 }

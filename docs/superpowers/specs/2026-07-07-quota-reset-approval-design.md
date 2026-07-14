@@ -374,6 +374,12 @@ Rules:
 3. Approval and retry execute reset through a backend service method, not from the browser.
 4. State changes must be protected by a transaction or row-level status predicate so concurrent approvals cannot both execute reset.
 5. If a reset succeeds but a later local event write fails, the service must preserve the request as `approved_reset_succeeded` and log the local write failure.
+6. Work Items treats `{pending, approved_reset_failed}` as the actionable set. Every mutation that enters or leaves that set advances the shared PostgreSQL work-item counts revision in the same transaction as the request status and required audit events.
+7. Request creation commits the request, `created`, `approver_resolved`, and revision together. Cancel and reject commit their terminal status, required event, and revision together.
+8. Approval commits `pending -> approved_resetting`, `approved`, and the revision before Relay is called. Retry commits `approved_reset_failed -> approved_resetting`, `reset_retried`, `reset_started`, and the revision before Relay is called. Relay execution is never held inside either database transaction.
+9. A reset failure commits `approved_resetting -> approved_reset_failed`, `reset_failed`, and a second revision change together. If this transaction fails, the request remains `approved_resetting`; the required failure event is not silently discarded.
+10. Reset success does not advance the work-item revision because `approved_resetting` is already outside the actionable set. The succeeded status is persisted before `reset_succeeded`, so an event-write failure cannot erase the upstream reset result.
+11. Status predicate misses map to `ErrInvalidStatus`. Revision-write failure rolls the corresponding status and events back, and approval/retry must not call Relay unless their actionable-exit transaction committed.
 
 ## Backend API
 
@@ -543,6 +549,7 @@ Queue badge semantics:
 5. The workbench refreshes shared Work Items counts with its queue data, including after approval, rejection, cancellation, or reset retry, so its badges and the sidebar stay aligned. A post-action refresh queues a fresh count request after any already in-flight pre-action request completes.
 6. Work Items count loading is supplemental: slow or failed count requests do not block quota-reset history. The workbench hides approval badges while counts are unavailable instead of reporting stale values as current.
 7. Shared frontend counts reset when the authenticated session changes, and late responses from a previous session are ignored.
+8. Backend counts cache keys include the persisted PostgreSQL revision. A committed actionable-state mutation therefore makes every old Redis value unreachable immediately; Redis availability is not required for the mutation or revision commit.
 
 First-version filters:
 
@@ -710,6 +717,8 @@ Backend tests:
 17. Duplicate active request guard rejects same user/provider/group.
 18. Notification success and failure both write events without changing core status.
 19. Credential-backed webhook settings do not return secret plaintext.
+20. PostgreSQL-backed tests prove every actionable-set crossing commits its status, required events, and revision atomically, including rollback on revision failure and Relay suppression for failed approval/retry commits.
+21. A reset-success event failure preserves `approved_reset_succeeded`, and reset success does not perform another revision change.
 
 Frontend tests:
 

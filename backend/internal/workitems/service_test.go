@@ -291,12 +291,19 @@ func TestResolvedApproverUserIDsGINIndexSupportsContainsPlan(t *testing.T) {
 
 	var indexName, indexDefinition string
 	err = db.QueryRowContext(ctx, `
-		SELECT indexname, indexdef
-		FROM pg_indexes
-		WHERE schemaname = current_schema()
-		  AND tablename = 'quota_reset_requests'
-		  AND indexdef ILIKE '%USING gin%'
-		  AND indexdef ILIKE '%resolved_approver_user_ids%'
+		SELECT DISTINCT index_relation.relname, pg_get_indexdef(index_relation.oid)
+		FROM pg_index AS index_metadata
+		JOIN pg_class AS table_relation ON table_relation.oid = index_metadata.indrelid
+		JOIN pg_class AS index_relation ON index_relation.oid = index_metadata.indexrelid
+		JOIN pg_namespace AS table_namespace ON table_namespace.oid = table_relation.relnamespace
+		JOIN pg_am AS access_method ON access_method.oid = index_relation.relam
+		JOIN pg_attribute AS indexed_attribute
+		  ON indexed_attribute.attrelid = table_relation.oid
+		 AND indexed_attribute.attnum = ANY(index_metadata.indkey)
+		WHERE table_namespace.nspname = current_schema()
+		  AND table_relation.relname = 'quota_reset_requests'
+		  AND access_method.amname = 'gin'
+		  AND indexed_attribute.attname = 'resolved_approver_user_ids'
 	`).Scan(&indexName, &indexDefinition)
 	if err != nil {
 		t.Fatalf("find resolved approver GIN index: %v", err)

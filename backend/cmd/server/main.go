@@ -264,10 +264,11 @@ func main() {
 	// Init provider handler
 	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger)
 	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
-		Executor:       directorysync.NewExecutor(directorysync.ExecutorOptions{}),
-		Credentials:    directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
-		RelayDisablers: directorysync.NewProviderRelayDisablerResolver(providerHandler),
-		TokenRevoker:   authService,
+		Executor:                  directorysync.NewExecutor(directorysync.ExecutorOptions{}),
+		Credentials:               directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
+		RelayDisablers:            directorysync.NewProviderRelayDisablerResolver(providerHandler),
+		TokenRevoker:              authService,
+		WorkItemCountsInvalidator: workItemsRevisionStore,
 	})
 	directorySchedulerCtx, stopDirectoryScheduler := context.WithCancel(context.Background())
 	defer stopDirectoryScheduler()
@@ -328,8 +329,9 @@ func main() {
 		checkpointHandler,
 		healthHandler,
 		handler.RouterRuntimeOptions{
-			DirectoryService: directoryService,
-			WorkItemsCache:   workItemsCache,
+			DirectoryService:       directoryService,
+			WorkItemsCache:         workItemsCache,
+			WorkItemsRevisionStore: workItemsRevisionStore,
 		},
 	)
 
