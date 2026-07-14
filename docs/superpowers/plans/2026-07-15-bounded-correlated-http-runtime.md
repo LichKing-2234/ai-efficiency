@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Task 1 is complete and verified. Task 2 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-2 are complete and verified. Task 3 is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -219,7 +219,7 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   Evidence (2026-07-15): the focused command passed for all seven target packages; the broad boundary command passed for Relay, Directory, Handler, Quota Reset, Repo, all SCM packages, Version Check, and server; `go test ./internal/httpclient -count=1` and `git diff --check` passed. A targeted scan found no `http.DefaultClient` or empty `&http.Client{}` at the adopted boundaries. Compatibility tests also passed for the existing Settings relay-runtime and SCM webhook-callback constructor forms.
 
-- [ ] **Step 6: Commit Task 2 and record the checkpoint**
+- [x] **Step 6: Commit Task 2 and record the checkpoint**
 
   Commit implementation plus checked Steps 1-5:
 
@@ -228,6 +228,8 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
   After the commit succeeds, check Step 6 and commit:
 
   `docs(plan): record bounded clients task 2`
+
+  Checkpoint (2026-07-15): implementation commit `b99f30333de6076e47952645ee8b80d91b6750b5`.
 
 ---
 
