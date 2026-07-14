@@ -405,6 +405,88 @@ func TestQuotaResetRetryWorkflowAdvancedReturnsLatestSummaryDetails(t *testing.T
 	}
 }
 
+func TestQuotaResetStaleDecisionRejectsUnrelatedViewerWithoutDetails(t *testing.T) {
+	env := newQuotaResetHandlerTestEnvWithServiceFactory(t, func(client *ent.Client) quotaResetService {
+		return quotareset.NewService(client, nil, nil, nil)
+	})
+	ctx := context.Background()
+	requester := env.client.User.Create().
+		SetUsername("request-owner").
+		SetEmail("request-owner@example.com").
+		SetAuthSource("sub2api_sso").
+		SetRole(entuser.RoleUser).
+		SaveX(ctx)
+	request := env.client.QuotaResetRequest.Create().
+		SetRequesterUserID(requester.ID).
+		SetRequesterRelayUserID(1001).
+		SetProviderID(1).
+		SetGroupID("42").
+		SetGroupName("Group Confidential").
+		SetGroupPlatform("openai").
+		SetReason("Confidential release investigation").
+		SetWorkflowVersion(quotareset.WorkflowVersionV2).
+		SetRequesterDisplayNameSnapshot("Request Owner").
+		SetRequesterEmailSnapshot("request-owner@example.com").
+		SetRequesterDepartmentPaths([]string{"Department Confidential"}).
+		SetRequesterNotificationIds(map[string]string{}).
+		SetStatus(quotaresetrequest.StatusPending).
+		SetResolvedApproverUserIds([]int{}).
+		SetMatchedDepartmentPaths([]map[string]any{}).
+		SaveX(ctx)
+	node := env.client.QuotaResetRequestNode.Create().
+		SetRequestID(request.ID).
+		SetPosition(0).
+		SetNodeType(quotaresetrequestnode.NodeTypeConfiguredDepartment).
+		SetLabel("Department Confidential").
+		SetDepartmentSnapshots([]map[string]any{}).
+		SetStatus(quotaresetrequestnode.StatusActive).
+		SaveX(ctx)
+	env.client.QuotaResetRequest.UpdateOneID(request.ID).SetCurrentNodeID(node.ID).SaveX(ctx)
+
+	for _, action := range []string{"approve", "reject"} {
+		rec := performQuotaResetRequest(env.router, http.MethodPost, fmt.Sprintf("/api/v1/user/quota-reset/approvals/%d/%s", request.ID, action), env.userToken, `{"request_node_id":9999,"decision_reason":"Unauthorized stale decision"}`)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s status = %d, want %d; body = %s", action, rec.Code, http.StatusForbidden, rec.Body.String())
+		}
+		body := rec.Body.String()
+		for _, forbidden := range []string{"request-owner@example.com", "Group Confidential", "Confidential release investigation", "Department Confidential", `"details"`, `"workflow"`} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s response leaked %q: %s", action, forbidden, body)
+			}
+		}
+	}
+}
+
+func TestQuotaResetLegacyResolvedApproverMutationReturnsSummary(t *testing.T) {
+	env := newQuotaResetHandlerTestEnvWithServiceFactory(t, func(client *ent.Client) quotaResetService {
+		return quotareset.NewService(client, nil, nil, nil)
+	})
+	ctx := context.Background()
+	requester := env.client.User.Create().
+		SetUsername("legacy-requester").
+		SetEmail("legacy-requester@example.com").
+		SetAuthSource("sub2api_sso").
+		SetRole(entuser.RoleUser).
+		SaveX(ctx)
+	request := env.client.QuotaResetRequest.Create().
+		SetRequesterUserID(requester.ID).
+		SetRequesterRelayUserID(1001).
+		SetProviderID(1).
+		SetGroupID("42").
+		SetGroupName("Group Alpha").
+		SetGroupPlatform("openai").
+		SetReason("Legacy approval compatibility").
+		SetStatus(quotaresetrequest.StatusPending).
+		SetResolvedApproverUserIds([]int{env.userID}).
+		SetMatchedDepartmentPaths([]map[string]any{}).
+		SaveX(ctx)
+
+	rec := performQuotaResetRequest(env.router, http.MethodPost, fmt.Sprintf("/api/v1/user/quota-reset/approvals/%d/reject", request.ID), env.userToken, `{"decision_reason":"Rejected through the legacy contract"}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"rejected"`) || !strings.Contains(rec.Body.String(), `"id":`+strconv.Itoa(request.ID)) {
+		t.Fatalf("legacy response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestQuotaResetMutationResponsesUseViewerAwareSummary(t *testing.T) {
 	tests := []struct {
 		name         string

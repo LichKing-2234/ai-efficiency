@@ -32,18 +32,97 @@ func (s *Service) GetRequestSummary(ctx context.Context, requestID, viewerUserID
 	if err != nil {
 		return nil, fmt.Errorf("load quota reset request summary: %w", err)
 	}
-	items, err := s.summaries(ctx, []*ent.QuotaResetRequest{request}, summaryViewer{
-		UserID:    viewerUserID,
-		Admin:     admin,
-		Requester: request.RequesterUserID == viewerUserID,
-	})
+	viewer, err := s.authorizeRequestSummaryViewer(ctx, request, viewerUserID, admin)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.summaries(ctx, []*ent.QuotaResetRequest{request}, viewer)
 	if err != nil {
 		return nil, err
 	}
 	if len(items) != 1 {
 		return nil, fmt.Errorf("load quota reset request summary: request %d produced %d summaries", requestID, len(items))
 	}
+	if request.WorkflowVersion >= WorkflowVersionV2 && items[0].Workflow == nil {
+		return nil, ErrNotApprover
+	}
 	return &items[0], nil
+}
+
+func (s *Service) authorizeRequestSummaryViewer(ctx context.Context, request *ent.QuotaResetRequest, viewerUserID int, adminRoute bool) (summaryViewer, error) {
+	viewer := summaryViewer{
+		UserID:    viewerUserID,
+		Requester: request.RequesterUserID == viewerUserID,
+	}
+	if viewer.Requester {
+		return viewer, nil
+	}
+	if adminRoute {
+		actor, err := s.client.User.Get(ctx, viewerUserID)
+		if err != nil && !ent.IsNotFound(err) {
+			return summaryViewer{}, fmt.Errorf("load quota reset summary viewer: %w", err)
+		}
+		if err == nil && actor.Role == entuser.RoleAdmin {
+			viewer.Admin = true
+			return viewer, nil
+		}
+	}
+	if request.WorkflowVersion >= WorkflowVersionV2 {
+		visible, err := s.v2RequestSummaryVisible(ctx, request, viewerUserID)
+		if err != nil {
+			return summaryViewer{}, err
+		}
+		if visible {
+			return viewer, nil
+		}
+		return summaryViewer{}, ErrNotApprover
+	}
+	if isResolvedApprover(request, viewerUserID) ||
+		(request.ApprovedByUserID != nil && *request.ApprovedByUserID == viewerUserID) ||
+		(request.RejectedByUserID != nil && *request.RejectedByUserID == viewerUserID) {
+		return viewer, nil
+	}
+	return summaryViewer{}, ErrNotApprover
+}
+
+func (s *Service) v2RequestSummaryVisible(ctx context.Context, request *ent.QuotaResetRequest, viewerUserID int) (bool, error) {
+	decisionActor, err := s.client.QuotaResetRequestDecision.Query().
+		Where(
+			quotaresetrequestdecision.RequestIDEQ(request.ID),
+			quotaresetrequestdecision.ActorUserIDEQ(viewerUserID),
+		).
+		Exist(ctx)
+	if err != nil {
+		return false, fmt.Errorf("authorize quota reset decision viewer: %w", err)
+	}
+	if decisionActor {
+		return true, nil
+	}
+	nodes, err := s.client.QuotaResetRequestNode.Query().
+		Where(quotaresetrequestnode.RequestIDEQ(request.ID)).
+		All(ctx)
+	if err != nil {
+		return false, fmt.Errorf("authorize quota reset node viewer: %w", err)
+	}
+	visibleNodeIDs := make([]int, 0, len(nodes))
+	for _, node := range nodes {
+		if workflowNodeIsCurrent(request, node) || workflowNodeIsHistorical(node) {
+			visibleNodeIDs = append(visibleNodeIDs, node.ID)
+		}
+	}
+	if len(visibleNodeIDs) == 0 {
+		return false, nil
+	}
+	visible, err := s.client.QuotaResetRequestNodeApprover.Query().
+		Where(
+			quotaresetrequestnodeapprover.RequestNodeIDIn(visibleNodeIDs...),
+			quotaresetrequestnodeapprover.UserIDEQ(viewerUserID),
+		).
+		Exist(ctx)
+	if err != nil {
+		return false, fmt.Errorf("authorize quota reset approver viewer: %w", err)
+	}
+	return visible, nil
 }
 
 func (s *Service) enrichWorkflowAdvancedError(ctx context.Context, err error, viewerUserID int, admin bool) error {
@@ -54,6 +133,8 @@ func (s *Service) enrichWorkflowAdvancedError(ctx context.Context, err error, vi
 	latest, latestErr := s.GetRequestSummary(ctx, advanced.RequestID, viewerUserID, admin)
 	if latestErr == nil {
 		advanced.Latest = latest
+	} else if errors.Is(latestErr, ErrNotApprover) {
+		return ErrNotApprover
 	}
 	return err
 }
@@ -142,7 +223,7 @@ func buildWorkflowSummary(request *ent.QuotaResetRequest, viewer summaryViewer, 
 			return nil, fmt.Errorf("decode quota reset workflow node %d departments: %w", node.ID, err)
 		}
 		approverSummaries := make([]WorkflowNodeApproverSummary, 0, len(approversByNode[node.ID]))
-		historicalNode := node.Status != quotaresetrequestnode.StatusQueued && node.Status != quotaresetrequestnode.StatusActive
+		historicalNode := workflowNodeIsHistorical(node)
 		for _, approver := range approversByNode[node.ID] {
 			if historicalNode && approver.UserID == viewer.UserID {
 				viewerWasApprover = true
@@ -220,6 +301,14 @@ func buildWorkflowSummary(request *ent.QuotaResetRequest, viewer summaryViewer, 
 		CanCancel:   canCancel,
 		CanRetry:    canRetry,
 	}, nil
+}
+
+func workflowNodeIsCurrent(request *ent.QuotaResetRequest, node *ent.QuotaResetRequestNode) bool {
+	return request.CurrentNodeID != nil && *request.CurrentNodeID == node.ID && node.Status == quotaresetrequestnode.StatusActive
+}
+
+func workflowNodeIsHistorical(node *ent.QuotaResetRequestNode) bool {
+	return node.Status != quotaresetrequestnode.StatusQueued && node.Status != quotaresetrequestnode.StatusActive
 }
 
 func workflowDepartmentSnapshots(raw []map[string]any) ([]DepartmentSnapshot, error) {

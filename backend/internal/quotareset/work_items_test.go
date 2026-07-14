@@ -2,6 +2,7 @@ package quotareset
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -276,6 +277,7 @@ func TestWorkflowSummaryReturnsOrderedNodesDecisionsAndPermissions(t *testing.T)
 func TestGetRequestSummaryUsesViewerPermissions(t *testing.T) {
 	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
 	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
+	unrelated := createQuotaResetUser(t, fixture.ctx, fixture.client, "unrelated-summary", "unrelated-summary@example.org", nil, "user")
 
 	getter, ok := any(fixture.service).(interface {
 		GetRequestSummary(context.Context, int, int, bool) (*RequestSummary, error)
@@ -306,6 +308,13 @@ func TestGetRequestSummaryUsesViewerPermissions(t *testing.T) {
 	}
 	if admin.Workflow == nil || !admin.Workflow.CanApprove || !admin.Workflow.CanReject || admin.Workflow.CanCancel || admin.Workflow.CanRetry {
 		t.Fatalf("admin summary = %+v", admin)
+	}
+
+	for _, adminFlag := range []bool{false, true} {
+		_, err := getter.GetRequestSummary(fixture.ctx, fixture.request.ID, unrelated.ID, adminFlag)
+		if !errors.Is(err, ErrNotApprover) {
+			t.Fatalf("GetRequestSummary(unrelated, admin=%t) error = %v, want ErrNotApprover", adminFlag, err)
+		}
 	}
 }
 

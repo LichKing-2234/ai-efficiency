@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -119,6 +120,157 @@ func TestListApproverCandidatesRequiresCurrentSourceID(t *testing.T) {
 			t.Fatalf("ListApproverCandidates(negative source) error = %v, want ErrInvalidApproverConfig", err)
 		}
 	})
+}
+
+func TestListApproverCandidatesRetriesConsistentCurrentSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	oldDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-old", "Department Old", nil)
+	oldUser := createQuotaResetUser(t, ctx, client, "old-candidate", "old-candidate@example.com", nil, "user")
+	oldMember := createQuotaResetMember(t, ctx, client, source.ID, "member-old", oldUser.Email, oldDepartment.ExternalID, &oldUser.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, oldMember, oldDepartment.ExternalID)
+	newUser := createQuotaResetUser(t, ctx, client, "new-candidate", "new-candidate@example.com", nil, "user")
+
+	replaced := 0
+	client.DirectoryMember.Intercept(ent.InterceptFunc(func(next ent.Querier) ent.Querier {
+		return ent.QuerierFunc(func(ctx context.Context, query ent.Query) (ent.Value, error) {
+			value, err := next.Query(ctx, query)
+			if err != nil || replaced > 0 {
+				return value, err
+			}
+			replaced++
+			if err := replaceCandidateSnapshot(ctx, client, source.ID, newUser, replaced); err != nil {
+				return nil, err
+			}
+			return value, nil
+		})
+	}))
+
+	resp, err := NewService(client, nil, nil, nil).ListApproverCandidates(ctx, ApproverCandidateParams{
+		SourceID: source.ID,
+		Page:     1,
+		PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListApproverCandidates(snapshot replacement) error = %v", err)
+	}
+	if replaced != 1 {
+		t.Fatalf("snapshot replacements = %d, want 1", replaced)
+	}
+	if resp.Total != 1 || len(resp.Items) != 1 || resp.Items[0].UserID != newUser.ID {
+		t.Fatalf("candidates = %#v, want only new snapshot user %d", resp.Items, newUser.ID)
+	}
+	if !reflect.DeepEqual(resp.Items[0].DepartmentPaths, []string{"Department New 1"}) {
+		t.Fatalf("new candidate department paths = %#v", resp.Items[0].DepartmentPaths)
+	}
+}
+
+func TestListApproverCandidatesReturnsUnavailableWhenSnapshotKeepsChanging(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-initial", "Department Initial", nil)
+	user := createQuotaResetUser(t, ctx, client, "candidate", "candidate@example.com", nil, "user")
+	member := createQuotaResetMember(t, ctx, client, source.ID, "member-initial", user.Email, department.ExternalID, &user.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, member, department.ExternalID)
+
+	replacements := 0
+	client.DirectoryMember.Intercept(ent.InterceptFunc(func(next ent.Querier) ent.Querier {
+		return ent.QuerierFunc(func(ctx context.Context, query ent.Query) (ent.Value, error) {
+			value, err := next.Query(ctx, query)
+			if err != nil {
+				return value, err
+			}
+			replacements++
+			if err := replaceCandidateSnapshot(ctx, client, source.ID, user, replacements); err != nil {
+				return nil, err
+			}
+			return value, nil
+		})
+	}))
+
+	_, err := NewService(client, nil, nil, nil).ListApproverCandidates(ctx, ApproverCandidateParams{SourceID: source.ID})
+	if !errors.Is(err, ErrDirectoryUnavailable) {
+		t.Fatalf("ListApproverCandidates(changing snapshot) error = %v, want ErrDirectoryUnavailable", err)
+	}
+	if replacements != 2 {
+		t.Fatalf("snapshot replacements = %d, want bounded 2 attempts", replacements)
+	}
+}
+
+func replaceCandidateSnapshot(ctx context.Context, client *ent.Client, sourceID int, user *ent.User, generation int) error {
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	run, err := tx.DirectorySyncRun.Create().
+		SetSourceID(sourceID).
+		SetMode("apply").
+		SetStatus("running").
+		SetPhase("applying").
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.DirectoryMemberDepartment.Delete().Exec(ctx); err != nil {
+		return err
+	}
+	if _, err := tx.DirectoryMember.Delete().Exec(ctx); err != nil {
+		return err
+	}
+	if _, err := tx.DirectoryDepartment.Delete().Exec(ctx); err != nil {
+		return err
+	}
+	departmentID := fmt.Sprintf("department-new-%d", generation)
+	departmentName := fmt.Sprintf("Department New %d", generation)
+	if _, err := tx.DirectoryDepartment.Create().
+		SetSourceID(sourceID).
+		SetExternalID(departmentID).
+		SetName(departmentName).
+		SetPath(departmentName).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		return err
+	}
+	member, err := tx.DirectoryMember.Create().
+		SetSourceID(sourceID).
+		SetExternalID(fmt.Sprintf("member-new-%d", generation)).
+		SetEmailNormalized(user.Email).
+		SetDisplayName(user.Username).
+		SetDepartmentExternalID(departmentID).
+		SetMatchedUserID(user.ID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.DirectoryMemberDepartment.Create().
+		SetSourceID(sourceID).
+		SetDirectoryMemberID(member.ID).
+		SetMemberExternalID(member.ExternalID).
+		SetMemberEmailNormalized(member.EmailNormalized).
+		SetDepartmentExternalID(departmentID).
+		SetLastSeenRunID(run.ID).
+		Save(ctx); err != nil {
+		return err
+	}
+	completedAt := time.Date(2026, 7, 14, 12, generation, 0, 0, time.UTC)
+	if _, err := tx.DirectorySyncRun.UpdateOneID(run.ID).
+		SetStatus("completed").
+		SetPhase("completed").
+		SetCompletedAt(completedAt).
+		Save(ctx); err != nil {
+		return err
+	}
+	if _, err := tx.DirectorySource.UpdateOneID(sourceID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func TestListApproverCandidatesExcludesInactiveMembers(t *testing.T) {

@@ -25,6 +25,7 @@ import (
 const (
 	quotaResetApprovalConfigurationLockKey = "quota_reset_approval_configuration"
 	approvalChainGroupDiscoveryTimeout     = 10 * time.Second
+	approverCandidateSnapshotReadAttempts  = 2
 )
 
 type approvalConfigurationLockHooksContextKey struct{}
@@ -98,36 +99,73 @@ func lockApprovalConfiguration(ctx context.Context, tx *ent.Tx) error {
 
 func (s *Service) ListApproverCandidates(ctx context.Context, params ApproverCandidateParams) (*ApproverCandidateListResponse, error) {
 	page, pageSize := normalizePage(params.Page, params.PageSize)
-	sourceID, err := requireCandidateSourceID(ctx, s.client, params.SourceID)
+	for attempt := 0; attempt < approverCandidateSnapshotReadAttempts; attempt++ {
+		snapshot, err := requireCandidateSnapshot(ctx, s.client, params.SourceID)
+		if err != nil {
+			return nil, err
+		}
+		members, err := s.client.DirectoryMember.Query().
+			Where(
+				directorymember.SourceIDEQ(snapshot.SourceID),
+				directorymember.LastSeenRunIDEQ(snapshot.RunID),
+			).
+			Order(ent.Asc(directorymember.FieldDisplayName), ent.Asc(directorymember.FieldEmailNormalized)).
+			All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list approver candidate members: %w", err)
+		}
+		users, err := s.client.User.Query().All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list approver candidate users: %w", err)
+		}
+		memberships, departments, err := loadCandidateOrganizationFacts(ctx, s.client, snapshot)
+		if err != nil {
+			return nil, err
+		}
+		latest, err := requireCandidateSnapshot(ctx, s.client, params.SourceID)
+		if err != nil {
+			return nil, err
+		}
+		if latest != snapshot {
+			continue
+		}
+
+		items := matchApproverCandidates(params.Query, members, memberships, departments, users)
+		total := len(items)
+		if total == 0 || (page > 1 && page-1 > (total-1)/pageSize) {
+			return &ApproverCandidateListResponse{Items: []ApproverCandidate{}, Page: page, PageSize: pageSize, Total: total}, nil
+		}
+		start := (page - 1) * pageSize
+		end := total
+		if pageSize < total-start {
+			end = start + pageSize
+		}
+		return &ApproverCandidateListResponse{Items: items[start:end], Page: page, PageSize: pageSize, Total: total}, nil
+	}
+	return nil, fmt.Errorf("%w: current directory snapshot changed during candidate lookup", ErrDirectoryUnavailable)
+}
+
+type approverCandidateSnapshot struct {
+	SourceID int
+	RunID    int
+}
+
+func requireCandidateSnapshot(ctx context.Context, client *ent.Client, requested int) (approverCandidateSnapshot, error) {
+	sourceID, err := requireCandidateSourceID(ctx, client, requested)
 	if err != nil {
-		return nil, err
+		return approverCandidateSnapshot{}, err
 	}
-	members, err := s.client.DirectoryMember.Query().
-		Where(directorymember.SourceIDEQ(sourceID)).
-		Order(ent.Asc(directorymember.FieldDisplayName), ent.Asc(directorymember.FieldEmailNormalized)).
-		All(ctx)
+	source, err := client.DirectorySource.Get(ctx, sourceID)
+	if ent.IsNotFound(err) {
+		return approverCandidateSnapshot{}, fmt.Errorf("%w: current directory source %d is unavailable", ErrDirectoryUnavailable, sourceID)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("list approver candidate members: %w", err)
+		return approverCandidateSnapshot{}, fmt.Errorf("load current approver candidate source: %w", err)
 	}
-	users, err := s.client.User.Query().All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list approver candidate users: %w", err)
+	if source.LastSuccessfulRunID == nil || *source.LastSuccessfulRunID <= 0 {
+		return approverCandidateSnapshot{}, fmt.Errorf("%w: current directory source %d has no successful snapshot", ErrDirectoryUnavailable, sourceID)
 	}
-	memberships, departments, err := loadCandidateOrganizationFacts(ctx, s.client, sourceID)
-	if err != nil {
-		return nil, err
-	}
-	items := matchApproverCandidates(params.Query, members, memberships, departments, users)
-	total := len(items)
-	if total == 0 || (page > 1 && page-1 > (total-1)/pageSize) {
-		return &ApproverCandidateListResponse{Items: []ApproverCandidate{}, Page: page, PageSize: pageSize, Total: total}, nil
-	}
-	start := (page - 1) * pageSize
-	end := total
-	if pageSize < total-start {
-		end = start + pageSize
-	}
-	return &ApproverCandidateListResponse{Items: items[start:end], Page: page, PageSize: pageSize, Total: total}, nil
+	return approverCandidateSnapshot{SourceID: sourceID, RunID: *source.LastSuccessfulRunID}, nil
 }
 
 func requireCandidateSourceID(ctx context.Context, client *ent.Client, requested int) (int, error) {
@@ -147,16 +185,22 @@ func requireCandidateSourceID(ctx context.Context, client *ent.Client, requested
 	return currentSourceID, nil
 }
 
-func loadCandidateOrganizationFacts(ctx context.Context, client *ent.Client, sourceID int) ([]*ent.DirectoryMemberDepartment, map[string]*ent.DirectoryDepartment, error) {
+func loadCandidateOrganizationFacts(ctx context.Context, client *ent.Client, snapshot approverCandidateSnapshot) ([]*ent.DirectoryMemberDepartment, map[string]*ent.DirectoryDepartment, error) {
 	memberships, err := client.DirectoryMemberDepartment.Query().
-		Where(directorymemberdepartment.SourceIDEQ(sourceID)).
+		Where(
+			directorymemberdepartment.SourceIDEQ(snapshot.SourceID),
+			directorymemberdepartment.LastSeenRunIDEQ(snapshot.RunID),
+		).
 		Order(ent.Asc(directorymemberdepartment.FieldDirectoryMemberID), ent.Asc(directorymemberdepartment.FieldDepartmentExternalID)).
 		All(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list approver candidate memberships: %w", err)
 	}
 	departmentRows, err := client.DirectoryDepartment.Query().
-		Where(directorydepartment.SourceIDEQ(sourceID)).
+		Where(
+			directorydepartment.SourceIDEQ(snapshot.SourceID),
+			directorydepartment.LastSeenRunIDEQ(snapshot.RunID),
+		).
 		Order(ent.Asc(directorydepartment.FieldPath), ent.Asc(directorydepartment.FieldName), ent.Asc(directorydepartment.FieldExternalID)).
 		All(ctx)
 	if err != nil {
@@ -295,7 +339,14 @@ func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, ite
 	if len(items) == 0 {
 		return nil
 	}
-	members, err := s.client.DirectoryMember.Query().Where(directorymember.SourceIDEQ(sourceID)).All(ctx)
+	snapshot, err := requireCandidateSnapshot(ctx, s.client, sourceID)
+	if err != nil {
+		return err
+	}
+	members, err := s.client.DirectoryMember.Query().Where(
+		directorymember.SourceIDEQ(snapshot.SourceID),
+		directorymember.LastSeenRunIDEQ(snapshot.RunID),
+	).All(ctx)
 	if err != nil {
 		return fmt.Errorf("list approver config candidate members: %w", err)
 	}
@@ -303,7 +354,7 @@ func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, ite
 	if err != nil {
 		return fmt.Errorf("list approver config candidate users: %w", err)
 	}
-	memberships, departments, err := loadCandidateOrganizationFacts(ctx, s.client, sourceID)
+	memberships, departments, err := loadCandidateOrganizationFacts(ctx, s.client, snapshot)
 	if err != nil {
 		return err
 	}
