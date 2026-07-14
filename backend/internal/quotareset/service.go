@@ -307,7 +307,7 @@ func (s *Service) ListApproverConfigs(ctx context.Context) (*ApproverConfigListR
 		return nil, err
 	}
 	if !ok {
-		return &ApproverConfigListResponse{Items: []ApproverConfig{}}, nil
+		return &ApproverConfigListResponse{DirectorySourceID: nil, Items: []ApproverConfig{}}, nil
 	}
 	rows, err := s.client.QuotaResetApproverConfig.Query().
 		Where(quotaresetapproverconfig.DirectorySourceIDEQ(sourceID)).
@@ -316,7 +316,7 @@ func (s *Service) ListApproverConfigs(ctx context.Context) (*ApproverConfigListR
 	if err != nil {
 		return nil, fmt.Errorf("list quota reset approver configs: %w", err)
 	}
-	return s.approverConfigResponse(ctx, rows)
+	return s.approverConfigResponse(ctx, sourceID, rows)
 }
 
 func (s *Service) SaveApproverConfigs(ctx context.Context, input SaveApproverConfigsInput) (*ApproverConfigListResponse, error) {
@@ -386,7 +386,7 @@ func (s *Service) SaveApproverConfigs(ctx context.Context, input SaveApproverCon
 	if err != nil {
 		return nil, fmt.Errorf("list saved quota reset approver configs: %w", err)
 	}
-	response, err := txService.approverConfigResponse(ctx, rows)
+	response, err := txService.approverConfigResponse(ctx, sourceID, rows)
 	if err != nil {
 		return nil, err
 	}
@@ -1180,7 +1180,7 @@ func approverConfigDepartmentIDs(items []ApproverConfigInput) []string {
 	return out
 }
 
-func (s *Service) approverConfigResponse(ctx context.Context, rows []*ent.QuotaResetApproverConfig) (*ApproverConfigListResponse, error) {
+func (s *Service) approverConfigResponse(ctx context.Context, sourceID int, rows []*ent.QuotaResetApproverConfig) (*ApproverConfigListResponse, error) {
 	userIDs := make([]int, 0, len(rows))
 	seen := map[int]struct{}{}
 	for _, row := range rows {
@@ -1218,7 +1218,7 @@ func (s *Service) approverConfigResponse(ctx context.Context, rows []*ent.QuotaR
 		}
 		items = append(items, item)
 	}
-	return &ApproverConfigListResponse{Items: items}, nil
+	return &ApproverConfigListResponse{DirectorySourceID: &sourceID, Items: items}, nil
 }
 
 func (s *Service) ensureNotificationSettingsLockRow(ctx context.Context) error {

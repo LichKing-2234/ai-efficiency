@@ -6,12 +6,11 @@ import {
   listQuotaResetApproverCandidates,
   saveQuotaResetApproverConfigs,
 } from '@/api/quotaReset'
-import { getDirectoryRun, listDirectoryDepartments, listDirectorySources } from '@/api/directory'
+import { listDirectoryDepartments, listDirectorySources } from '@/api/directory'
 import { useI18n } from '@/i18n'
 import type {
   DirectoryDepartment,
   DirectorySource,
-  DirectorySyncRun,
   QuotaResetApproverCandidate,
   QuotaResetApproverConfig,
   QuotaResetApproverConfigInput,
@@ -43,6 +42,9 @@ const approverDropdownOpen = ref(false)
 const candidateSearch = ref('')
 const candidates = ref<QuotaResetApproverCandidate[]>([])
 const candidateLoading = ref(false)
+const candidatePage = ref(0)
+const candidatePageSize = ref(20)
+const candidateTotal = ref(0)
 let candidateRequestSequence = 0
 
 const form = ref({
@@ -59,7 +61,15 @@ const selectedDepartmentLabel = computed(() => (
 const selectedDirectorySource = computed(() => (
   directorySources.value.find(source => source.id === selectedDirectorySourceID.value)
 ))
-const visibleError = computed(() => error.value || candidateError.value || directoryError.value)
+const currentSourceError = computed(() => (
+  configsAuthoritative.value && selectedDirectorySourceID.value === null
+    ? t('quotaResetSettings.directoryUnavailable')
+    : ''
+))
+const canLoadMoreCandidates = computed(() => candidateTotal.value > candidates.value.length)
+const visibleError = computed(() => (
+  error.value || candidateError.value || directoryError.value || currentSourceError.value
+))
 
 onMounted(() => {
   void loadConfigs()
@@ -78,11 +88,17 @@ async function loadConfigs() {
   message.value = ''
   try {
     const response = await getQuotaResetApproverConfigs()
-    const items = response.data.data?.items
-    if (!Array.isArray(items)) {
+    const data = response.data.data
+    const items = data?.items
+    const sourceID = data?.directory_source_id
+    if (
+      !Array.isArray(items)
+      || (sourceID !== null && (typeof sourceID !== 'number' || !Number.isInteger(sourceID) || sourceID <= 0))
+    ) {
       throw new Error(t('quotaResetSettings.approverLoadFailed'))
     }
     configs.value = items
+    selectedDirectorySourceID.value = sourceID
     configsAuthoritative.value = true
   } catch (err) {
     error.value = errorMessage(err, t('quotaResetSettings.approverLoadFailed'))
@@ -92,59 +108,14 @@ async function loadConfigs() {
 }
 
 async function loadDirectorySources() {
-  selectedDirectorySourceID.value = null
   directoryError.value = ''
   try {
     const response = await listDirectorySources()
     directorySources.value = response.data.data?.items ?? []
-    const sourcesWithRuns = directorySources.value.filter(source => (
-      Number.isInteger(source.last_successful_run_id)
-      && Number(source.last_successful_run_id) > 0
-    ))
-    const resolved = await Promise.all(sourcesWithRuns.map(async (source) => {
-      const runResponse = await getDirectoryRun(Number(source.last_successful_run_id))
-      const run = runResponse.data.data
-      if (!run || run.id !== source.last_successful_run_id || run.source_id !== source.id) {
-        return null
-      }
-      const completedAt = eligibleCompletedApplyRunTime(run)
-      return completedAt === null ? null : { source, run: run!, completedAt }
-    }))
-    const current = resolved
-      .filter((item): item is { source: DirectorySource; run: DirectorySyncRun; completedAt: bigint } => item !== null)
-      .sort((left, right) => {
-        if (left.completedAt !== right.completedAt) {
-          return left.completedAt > right.completedAt ? -1 : 1
-        }
-        return right.run.id - left.run.id
-      })[0]
-    if (!current) {
-      directoryError.value = t('quotaResetSettings.directoryUnavailable')
-      return
-    }
-    selectedDirectorySourceID.value = current.source.id
   } catch (err) {
     directorySources.value = []
-    selectedDirectorySourceID.value = null
     directoryError.value = errorMessage(err, t('quotaResetSettings.directoryLoadFailed'))
   }
-}
-
-function eligibleCompletedApplyRunTime(run: DirectorySyncRun | undefined) {
-  if (
-    !run
-    || run.mode !== 'apply'
-    || (run.status !== 'completed' && run.status !== 'completed_with_warnings')
-    || !run.completed_at
-  ) {
-    return null
-  }
-  const match = run.completed_at.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/)
-  if (!match) return null
-  const wholeSecond = Date.parse(`${match[1]}${match[3]}`)
-  if (!Number.isFinite(wholeSecond)) return null
-  const fractionalNanoseconds = BigInt((match[2] ?? '').padEnd(9, '0'))
-  return BigInt(wholeSecond) * 1_000_000n + fractionalNanoseconds
 }
 
 function departmentDisplayPath(department: DirectoryDepartment) {
@@ -165,6 +136,26 @@ function closeApproverDropdown() {
   candidateRequestSequence += 1
   candidateLoading.value = false
   approverDropdownOpen.value = false
+}
+
+function resetCandidateResults() {
+  candidates.value = []
+  candidatePage.value = 0
+  candidatePageSize.value = 20
+  candidateTotal.value = 0
+}
+
+function mergeUniqueCandidates(
+  existing: QuotaResetApproverCandidate[],
+  incoming: QuotaResetApproverCandidate[],
+) {
+  const merged = new Map<number, QuotaResetApproverCandidate>()
+  for (const candidate of [...existing, ...incoming]) {
+    if (!merged.has(candidate.user_id)) {
+      merged.set(candidate.user_id, candidate)
+    }
+  }
+  return [...merged.values()]
 }
 
 async function searchDepartments() {
@@ -214,7 +205,7 @@ function selectDepartment(department: DirectoryDepartment) {
   departmentSearch.value = ''
   departmentOptions.value = []
   candidateSearch.value = ''
-  candidates.value = []
+  resetCandidateResults()
   candidateError.value = ''
 }
 
@@ -231,15 +222,17 @@ function resetSelectedDepartment() {
   departmentSearch.value = ''
   departmentOptions.value = []
   candidateSearch.value = ''
-  candidates.value = []
+  resetCandidateResults()
   candidateError.value = ''
 }
 
-async function searchCandidates() {
+async function loadCandidatePage(page: number, append: boolean) {
   const sourceID = selectedDirectorySourceID.value
   const sequence = ++candidateRequestSequence
+  if (!append) {
+    resetCandidateResults()
+  }
   if (sourceID === null) {
-    candidates.value = []
     candidateLoading.value = false
     return
   }
@@ -250,21 +243,34 @@ async function searchCandidates() {
     const response = await listQuotaResetApproverCandidates({
       source_id: sourceID,
       q: candidateSearch.value.trim(),
-      page: 1,
-      page_size: 20,
+      page,
+      page_size: candidatePageSize.value,
     })
     if (sequence !== candidateRequestSequence) return
-    candidates.value = response.data.data?.items ?? []
+    const data = response.data.data
+    const pageItems = data?.items ?? []
+    candidates.value = mergeUniqueCandidates(append ? candidates.value : [], pageItems)
+    candidatePage.value = data?.page ?? page
+    candidatePageSize.value = data?.page_size ?? candidatePageSize.value
+    candidateTotal.value = data?.total ?? candidates.value.length
     candidateError.value = ''
   } catch (err) {
     if (sequence !== candidateRequestSequence) return
-    candidates.value = []
     candidateError.value = errorMessage(err, t('quotaResetSettings.approverSearchFailed'))
   } finally {
     if (sequence === candidateRequestSequence) {
       candidateLoading.value = false
     }
   }
+}
+
+function searchCandidates() {
+  return loadCandidatePage(1, false)
+}
+
+function loadMoreCandidates() {
+  if (candidateLoading.value || !canLoadMoreCandidates.value) return
+  return loadCandidatePage(candidatePage.value + 1, true)
 }
 
 function toggleApproverDropdown() {
@@ -282,7 +288,7 @@ function selectApprover(candidate: QuotaResetApproverCandidate) {
   form.value.approver_user_id = candidate.user_id
   form.value.approver_label = candidateDisplayName(candidate)
   candidateSearch.value = ''
-  candidates.value = []
+  resetCandidateResults()
   closeApproverDropdown()
 }
 
@@ -329,11 +335,12 @@ async function saveConfigs() {
   closeDepartmentDropdown()
   closeApproverDropdown()
   candidateSearch.value = ''
-  candidates.value = []
+  resetCandidateResults()
   candidateError.value = ''
   try {
     const response = await saveQuotaResetApproverConfigs(rowsForSave(), 'replace_all')
     configs.value = response.data.data?.items ?? []
+    selectedDirectorySourceID.value = response.data.data?.directory_source_id ?? null
     configsAuthoritative.value = true
     resetSelectedDepartment()
     message.value = t('quotaResetSettings.configSaved')
@@ -523,41 +530,54 @@ async function saveConfigs() {
               @input="searchCandidates"
             />
             <div
-              v-if="candidateLoading"
+              v-if="candidateLoading && candidates.length === 0"
               data-testid="quota-reset-approver-loading"
               class="px-3 py-3 text-sm text-gray-500"
             >
               {{ t('settings.loading') }}
             </div>
-            <div v-else class="mt-2 max-h-72 overflow-y-auto" role="listbox">
-              <button
-                v-for="candidate in candidates"
-                :key="candidate.user_id"
-                type="button"
-                :data-testid="`quota-reset-approver-option-${candidate.user_id}`"
-                class="block w-full min-w-0 rounded px-3 py-2 text-left hover:bg-slate-50"
-                role="option"
-                @click="selectApprover(candidate)"
-              >
-                <span class="block break-words text-sm font-medium text-slate-800">
-                  {{ candidateDisplayName(candidate) }}
-                </span>
-                <span class="block break-all text-xs text-slate-500">{{ candidate.email }}</span>
-                <span v-if="candidate.department_paths.length" class="mt-1 block break-words text-xs text-slate-500">
-                  {{ candidate.department_paths.join(' · ') }}
-                </span>
-                <span
-                  class="mt-1 block text-xs font-medium"
-                  :class="candidate.wecom_mention_available ? 'text-emerald-700' : 'text-amber-700'"
+            <div v-else class="mt-2 max-h-72 overflow-y-auto">
+              <div role="listbox">
+                <button
+                  v-for="candidate in candidates"
+                  :key="candidate.user_id"
+                  type="button"
+                  :data-testid="`quota-reset-approver-option-${candidate.user_id}`"
+                  class="block w-full min-w-0 rounded px-3 py-2 text-left hover:bg-slate-50"
+                  role="option"
+                  @click="selectApprover(candidate)"
                 >
-                  {{ candidate.wecom_mention_available
-                    ? t('quotaResetSettings.weComMentionAvailable')
-                    : t('quotaResetSettings.weComMentionUnavailable') }}
-                </span>
-              </button>
+                  <span class="block break-words text-sm font-medium text-slate-800">
+                    {{ candidateDisplayName(candidate) }}
+                  </span>
+                  <span class="block break-all text-xs text-slate-500">{{ candidate.email }}</span>
+                  <span v-if="candidate.department_paths.length" class="mt-1 block break-words text-xs text-slate-500">
+                    {{ candidate.department_paths.join(' · ') }}
+                  </span>
+                  <span
+                    class="mt-1 block text-xs font-medium"
+                    :class="candidate.wecom_mention_available ? 'text-emerald-700' : 'text-amber-700'"
+                  >
+                    {{ candidate.wecom_mention_available
+                      ? t('quotaResetSettings.weComMentionAvailable')
+                      : t('quotaResetSettings.weComMentionUnavailable') }}
+                  </span>
+                </button>
+              </div>
               <div v-if="candidates.length === 0" class="px-3 py-3 text-sm text-gray-500">
                 {{ t('quotaResetSettings.noApproverCandidates') }}
               </div>
+              <button
+                v-if="canLoadMoreCandidates"
+                type="button"
+                data-testid="quota-reset-approver-load-more"
+                class="mt-2 min-h-9 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                :aria-label="t('quotaResetSettings.loadMoreApprovers')"
+                :disabled="candidateLoading"
+                @click="loadMoreCandidates"
+              >
+                {{ candidateLoading ? t('settings.loading') : t('quotaResetSettings.loadMoreApprovers') }}
+              </button>
             </div>
           </div>
         </div>

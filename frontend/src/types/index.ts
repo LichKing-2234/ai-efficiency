@@ -1207,6 +1207,7 @@ export interface QuotaResetApproverConfigInput {
 }
 
 export interface QuotaResetApproverConfigListResponse {
+  directory_source_id: number | null
   items: QuotaResetApproverConfig[]
 }
 

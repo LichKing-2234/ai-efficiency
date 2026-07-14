@@ -429,11 +429,14 @@ func workflowMemberIsActive(member *ent.DirectoryMember) bool {
 	return member != nil && strings.EqualFold(strings.TrimSpace(member.Status), "active")
 }
 
-func workflowApproverIsCurrentlyUsable(user *ent.User, member *ent.DirectoryMember) bool {
+func localUserHasCurrentAccess(user *ent.User) bool {
 	return user != nil &&
-		workflowMemberIsActive(member) &&
 		user.RelayDisabledAt == nil &&
 		user.TokenValidAfter == nil
+}
+
+func workflowApproverIsCurrentlyUsable(user *ent.User, member *ent.DirectoryMember) bool {
+	return workflowMemberIsActive(member) && localUserHasCurrentAccess(user)
 }
 
 func workflowMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) *ent.User {

@@ -5113,25 +5113,88 @@ step open until those findings are fixed and independently re-reviewed.
 - Modify: `frontend/src/__tests__/quota-reset-approval-settings.test.ts`
 - Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
 
-- [ ] **Step 1: Add failing disabled-user, authoritative-source, and pagination regressions**
+- [x] **Step 1: Add failing disabled-user, authoritative-source, and pagination regressions**
 
 Prove that `token_valid_after` users cannot be listed or saved as approvers,
 that the settings UI uses the backend-selected current source, and that more
 than one candidate page remains selectable.
 
-- [ ] **Step 2: Share current-access eligibility and expose the current source**
+Backend RED evidence (2026-07-15): `cd backend && go test
+./internal/quotareset -run
+'Test(ListApproverCandidatesExcludesTokenRevokedUsers|SaveApproverConfigsRejectsTokenRevokedUser|ListApproverConfigsReturnsAuthoritativeDirectorySourceID)$'
+-count=1` failed for the intended missing behavior. Candidate lookup returned
+both users with `total = 2` instead of only the current-access user; saving the
+`token_valid_after` user returned `<nil>` instead of
+`ErrInvalidApproverConfig`; and both source-response subtests reported the
+`directory_source_id` key missing (`present = false` for the no-source case and
+`<nil>` instead of source `1` for the empty current-source case). `cd backend &&
+go test ./internal/handler -run
+'^TestQuotaResetListApproverConfigsReturnsAuthoritativeDirectorySourceID$'
+-count=1` then failed both HTTP contract subtests with
+`{"code":200,"data":{"items":[]}}`, proving that the nullable field was absent
+both without a current source and with exact current source `1`.
+
+Frontend RED evidence (2026-07-15): `cd frontend && npm test --
+quota-reset-approval-settings` ran 41 tests and failed the five new/updated
+regressions while the other 36 passed. The three authoritative-source cases
+reported that `getDirectoryRun` was still called one or two times, proving that
+the client still ranked runs instead of trusting the config response. Both
+incremental-loading cases failed at the missing
+`[data-testid="quota-reset-approver-load-more"]` control after page 1, proving
+that page 2 was unreachable before implementation.
+
+- [x] **Step 2: Share current-access eligibility and expose the current source**
 
 Use one local-user access predicate for configuration, workflow creation, and
 notification revalidation. Include the authoritative current directory source
 id in the approver-config response, including the empty-config case.
 
-- [ ] **Step 3: Remove client-side source resolution and add incremental candidate loading**
+Backend GREEN evidence (2026-07-15): after adding the shared local-user
+current-access predicate and the nullable response field, `cd backend && go
+test ./internal/quotareset -run
+'Test(ListApproverCandidatesExcludesTokenRevokedUsers|SaveApproverConfigsRejectsTokenRevokedUser|ListApproverConfigsReturnsAuthoritativeDirectorySourceID)$'
+-count=1` passed (`ok`, 1.332s). `cd backend && go test ./internal/handler
+-run '^TestQuotaResetListApproverConfigsReturnsAuthoritativeDirectorySourceID$'
+-count=1` also passed (`ok`, 0.879s).
+
+- [x] **Step 3: Remove client-side source resolution and add incremental candidate loading**
 
 Use the backend source id for department and candidate requests. Keep search
 inside the dropdown and append later candidate pages without stale-response
 replacement or duplicates.
 
+Frontend GREEN evidence (2026-07-15): `cd frontend && npm test --
+quota-reset-approval-settings quota-reset-api` passed both files and all 51
+tests. The focused coverage confirms that no directory-run lookup participates
+in source selection, the backend id drives department and candidate requests,
+page 2 appends and remains selectable with duplicate suppression, and a new
+search resets to page 1 while invalidating an older page-2 response.
+
 - [ ] **Step 4: Run focused/full verification, update the current spec, commit, and pass task reviews**
+
+Implementation verification (2026-07-15): `cd backend && go test
+./internal/quotareset ./internal/handler -count=1` passed uncached
+(`quotareset` 49.591s, `handler` 44.061s). `cd backend && go test ./...
+-count=1` passed the full suite, including `internal/handler` 65.412s and
+`internal/quotareset` 69.733s, and `cd backend && go vet ./...` exited 0.
+`cd frontend && npm test -- quota-reset-approval-settings quota-reset-api`
+passed 51/51 focused tests; `cd frontend && npm test` passed all 40 files and
+483/483 tests; and `cd frontend && npm run build` passed `vue-tsc -b` and the
+Vite production build after transforming 1955 modules.
+
+Documentation and hygiene evidence (2026-07-15): the current spec now records
+backend-owned source selection, shared current-access eligibility, and
+incremental paginated candidate search. `git diff --check` and changed-Go-file
+`gofmt -d` were clean. Scoped TODO/FIXME and case-insensitive non-example email
+scans returned no matches. The credential-shaped scan found only pre-existing
+explicitly synthetic Enterprise WeChat robot keys. `git status --short` and
+`git diff --name-only` contained only Task 17-owned files, the allowed i18n/API
+test additions, and this live plan. A manual self-review found no remaining
+correctness, contract, data-hygiene, or ownership issue.
+
+Step 4 intentionally remains unchecked: the implementation, spec, and
+verification are complete, but the required independent Task 17 spec and
+standards reviews have not run yet.
 
 ### Task 18: Include Durable Workflow Progress in Notifications
 

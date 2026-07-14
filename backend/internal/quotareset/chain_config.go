@@ -229,7 +229,7 @@ func matchApproverCandidates(query string, members []*ent.DirectoryMember, membe
 	usersByID := make(map[int]*ent.User, len(users))
 	usersByEmail := make(map[string]*ent.User, len(users))
 	for _, user := range users {
-		if user == nil || user.RelayDisabledAt != nil {
+		if !localUserHasCurrentAccess(user) {
 			continue
 		}
 		usersByID[user.ID] = user

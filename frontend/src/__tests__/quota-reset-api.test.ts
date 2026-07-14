@@ -38,6 +38,7 @@ import type {
   QuotaResetApprovalChainListResponse,
   QuotaResetApprovalChainOptionsResponse,
   QuotaResetApproverCandidateListResponse,
+  QuotaResetApproverConfigListResponse,
   QuotaResetNotificationSettings,
   QuotaResetNotificationSettingsInput,
   QuotaResetNotificationTestResult,
@@ -119,6 +120,10 @@ describe('quota reset api', () => {
       page_size: 20,
       total: 1,
     }
+    const approverConfigs: QuotaResetApproverConfigListResponse = {
+      directory_source_id: null,
+      items: [],
+    }
     const chains: QuotaResetApprovalChainListResponse = {
       items: [
         {
@@ -158,6 +163,7 @@ describe('quota reset api', () => {
 
     expect(workflow.nodes[0].satisfied_by_decision_id).toBe(9001)
     expect(candidatePage).toMatchObject({ page: 2, page_size: 20, total: 1 })
+    expect(approverConfigs).toEqual({ directory_source_id: null, items: [] })
     expect(chains.items[0]).toMatchObject({ provider_id: 1, group_id: 'group-alpha' })
     expect(options.departments[0].approver_count).toBe(1)
     expectTypeOf<QuotaResetRequestSummary>().toMatchTypeOf<{

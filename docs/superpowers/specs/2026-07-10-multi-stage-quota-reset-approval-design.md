@@ -144,6 +144,9 @@ execution:
 | Multiple departments | Merge candidates into one node; any candidate can approve |
 | Missing first-node candidate | Skip the first node and continue to the configured chain |
 | Configured approver eligibility | Any active directory-matched local user; organization representative status is not required |
+| Local-user current access | One shared predicate requires both `relay_disabled_at` and `token_valid_after` to be null; active-member and requester checks remain additional call-site constraints |
+| Current directory source ownership | The backend resolves the authoritative source and returns its nullable id with approver configs; clients never rank directory runs |
+| Candidate pagination | Opening or changing search loads page 1; admins explicitly load later pages, which append with duplicate and stale-response protection |
 | Later-node source | Ordered department nodes configured per subscription group |
 | Later-node resolution | Configured department approvers only; no organization representative fallback |
 | Empty later node | Current-node admin fallback |
@@ -229,9 +232,17 @@ Use **Option A**. Normalized workflow tables own current state, while
    by the same eligible actor.
 8. **Admin fallback**: admin authorization to decide the current node. It is not
    permission to complete the entire chain in one action.
-9. **Usable normal approver**: a local user matched to a member in the current
-   successful directory snapshot, excluding the requester for that request. A
-   relay mapping and a channel recipient id are not required to approve.
+9. **Usable normal approver**: a local user with current access matched to an
+   active member in the current successful directory snapshot, excluding the
+   requester for that request. A relay mapping and a channel recipient id are
+   not required to approve.
+
+Local-user current access means that the user exists and has neither
+`relay_disabled_at` nor `token_valid_after` set. Candidate listing, approver
+configuration validation, workflow creation, and notification revalidation use
+this one predicate. Active-directory-member checks and request-specific
+requester exclusion are composed separately and are not weakened by sharing
+the local-user predicate.
 
 ### Directory Member Identity Precedence
 
@@ -295,7 +306,17 @@ Change its validation contract:
 
 The admin candidate API must therefore become a paginated searchable
 directory-matched local-user lookup instead of a selected-department
-representative lookup.
+representative lookup. Both candidate matching and save validation exclude
+local users whose relay access is disabled or whose tokens have been revoked
+through `token_valid_after`; they use the same local-user current-access
+predicate as runtime workflow usability.
+
+The backend also owns current-source selection. Approver-config reads and
+writes return the authoritative current `directory_source_id` next to `items`.
+The field is `null` when there is no current source and remains the exact
+backend-selected id when the config list is empty. Clients may list directory
+sources to render a readable label, but they must not fetch or rank sync runs
+to choose a source.
 
 ### Subscription Group Approval Chains
 
@@ -926,6 +947,19 @@ Add:
 Keep existing approver and notification settings routes, with their request and
 response contracts extended as described above.
 
+`GET /api/v1/admin/quota-reset/approver-configs` and the successful approver
+config save response use:
+
+```json
+{
+  "directory_source_id": 7,
+  "items": []
+}
+```
+
+`directory_source_id` is `number | null`; the key is always present, including
+when there is no current source or no configured rows.
+
 ### Decisions
 
 Keep the current approve and reject route shape, but v2 payloads require:
@@ -974,6 +1008,15 @@ feedback only.
    mention coverage.
 4. Preserve readable rows, enable/disable, and delete.
 5. Show chain-reference errors before destructive changes.
+6. Use only the approver-config response's `directory_source_id` for department
+   and candidate requests. Directory-source listing is label-only and does not
+   participate in source resolution.
+7. Opening the candidate dropdown or changing its search loads page 1 and
+   resets prior pagination. Show an explicit accessible load-more command only
+   while API `total` exceeds the number of unique loaded users.
+8. Append later pages in server order, deduplicate by local `user_id`, and use a
+   request generation so stale search or pagination responses cannot replace or
+   append to current results.
 
 ### Subscription Group Chains
 
@@ -1104,6 +1147,10 @@ Cover:
 22. Enterprise WeChat business-error responses.
 23. Generic versioned JSON rendering.
 24. URL and error redaction.
+25. `token_valid_after` users are absent from approver candidates and rejected
+    by approver-config save validation.
+26. Approver-config responses always include the authoritative nullable
+    `directory_source_id`, including empty config lists.
 
 ### Frontend
 
@@ -1119,6 +1166,10 @@ Cover:
 7. Backend-provided action permissions.
 8. Current-node-only approval queues and badges.
 9. Legacy v1 request rendering.
+10. Backend-selected source ownership without client-side directory-run
+    ranking, including a nullable no-source response.
+11. Incremental candidate pagination beyond the first page, duplicate
+    suppression, search reset to page 1, and stale-response isolation.
 
 ### Browser Verification
 

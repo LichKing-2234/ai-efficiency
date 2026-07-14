@@ -2,6 +2,7 @@ package quotareset
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -298,6 +299,110 @@ func TestListApproverCandidatesExcludesInactiveMembers(t *testing.T) {
 	if len(resp.Items) != 1 || resp.Items[0].UserID != activeUser.ID {
 		t.Fatalf("candidates = %#v, want active non-disabled user only", resp.Items)
 	}
+}
+
+func TestListApproverCandidatesExcludesTokenRevokedUsers(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
+	activeUser := createQuotaResetUser(t, ctx, client, "active-alice", "active-alice@example.com", nil, "user")
+	revokedUser := createQuotaResetUser(t, ctx, client, "revoked-alice", "revoked-alice@example.com", nil, "user")
+	client.User.UpdateOneID(revokedUser.ID).
+		SetTokenValidAfter(time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)).
+		SaveX(ctx)
+	activeMember := createQuotaResetMember(t, ctx, client, source.ID, "member-active-alice", activeUser.Email, department.ExternalID, &activeUser.ID)
+	revokedMember := createQuotaResetMember(t, ctx, client, source.ID, "member-revoked-alice", revokedUser.Email, department.ExternalID, &revokedUser.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, activeMember, department.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, revokedMember, department.ExternalID)
+
+	resp, err := NewService(client, nil, nil, nil).ListApproverCandidates(ctx, ApproverCandidateParams{
+		SourceID: source.ID,
+		Query:    "alice",
+		Page:     1,
+		PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListApproverCandidates() error = %v", err)
+	}
+	if resp.Total != 1 || len(resp.Items) != 1 || resp.Items[0].UserID != activeUser.ID {
+		t.Fatalf("candidates = %#v, total = %d; want only current-access user %d", resp.Items, resp.Total, activeUser.ID)
+	}
+}
+
+func TestSaveApproverConfigsRejectsTokenRevokedUser(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
+	admin := createQuotaResetUser(t, ctx, client, "admin", "admin@example.com", nil, "admin")
+	revokedUser := createQuotaResetUser(t, ctx, client, "revoked-alice", "revoked-alice@example.com", nil, "user")
+	client.User.UpdateOneID(revokedUser.ID).
+		SetTokenValidAfter(time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)).
+		SaveX(ctx)
+	revokedMember := createQuotaResetMember(t, ctx, client, source.ID, "member-revoked-alice", revokedUser.Email, department.ExternalID, &revokedUser.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, revokedMember, department.ExternalID)
+
+	_, err := NewService(client, nil, nil, nil).SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+		ActorUserID: admin.ID,
+		Items: []ApproverConfigInput{{
+			DepartmentExternalID:  department.ExternalID,
+			DepartmentDisplayPath: department.Path,
+			ApproverUserID:        revokedUser.ID,
+			Enabled:               true,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidApproverConfig) {
+		t.Fatalf("SaveApproverConfigs(token-revoked user) error = %v, want ErrInvalidApproverConfig", err)
+	}
+}
+
+func TestListApproverConfigsReturnsAuthoritativeDirectorySourceID(t *testing.T) {
+	t.Run("null without current source", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+
+		resp, err := NewService(client, nil, nil, nil).ListApproverConfigs(ctx)
+		if err != nil {
+			t.Fatalf("ListApproverConfigs() error = %v", err)
+		}
+		payload := marshalApproverConfigResponse(t, resp)
+		value, ok := payload["directory_source_id"]
+		if !ok || value != nil {
+			t.Fatalf("directory_source_id = %#v, present = %t; want explicit null", value, ok)
+		}
+	})
+
+	t.Run("exact current source with empty items", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+		source := createQuotaResetDirectorySource(t, ctx, client)
+
+		resp, err := NewService(client, nil, nil, nil).ListApproverConfigs(ctx)
+		if err != nil {
+			t.Fatalf("ListApproverConfigs() error = %v", err)
+		}
+		payload := marshalApproverConfigResponse(t, resp)
+		if got := payload["directory_source_id"]; got != float64(source.ID) {
+			t.Fatalf("directory_source_id = %#v, want %d", got, source.ID)
+		}
+		if items, ok := payload["items"].([]any); !ok || len(items) != 0 {
+			t.Fatalf("items = %#v, want explicit empty array", payload["items"])
+		}
+	})
+}
+
+func marshalApproverConfigResponse(t *testing.T, response *ApproverConfigListResponse) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("marshal approver config response: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("unmarshal approver config response: %v", err)
+	}
+	return payload
 }
 
 func TestListApproverCandidatesMaxIntPageReturnsEmpty(t *testing.T) {

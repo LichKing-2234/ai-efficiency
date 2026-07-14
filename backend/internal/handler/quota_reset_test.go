@@ -566,6 +566,51 @@ func TestQuotaResetSaveApproverConfigsPassesMode(t *testing.T) {
 	}
 }
 
+func TestQuotaResetListApproverConfigsReturnsAuthoritativeDirectorySourceID(t *testing.T) {
+	t.Run("null without current source", func(t *testing.T) {
+		env := newQuotaResetHandlerTestEnvWithServiceFactory(t, func(client *ent.Client) quotaResetService {
+			return quotareset.NewService(client, nil, nil, nil)
+		})
+
+		rec := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/approver-configs", env.adminToken, "")
+		payload := decodeQuotaResetApproverConfigData(t, rec)
+		value, ok := payload["directory_source_id"]
+		if !ok || value != nil {
+			t.Fatalf("directory_source_id = %#v, present = %t; want explicit null; body = %s", value, ok, rec.Body.String())
+		}
+	})
+
+	t.Run("exact current source with empty items", func(t *testing.T) {
+		env := newQuotaResetHandlerTestEnvWithServiceFactory(t, func(client *ent.Client) quotaResetService {
+			return quotareset.NewService(client, nil, nil, nil)
+		})
+		source := createQuotaResetHandlerDirectorySource(t, context.Background(), env.client, "Current Directory", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC))
+
+		rec := performQuotaResetRequest(env.router, http.MethodGet, "/api/v1/admin/quota-reset/approver-configs", env.adminToken, "")
+		payload := decodeQuotaResetApproverConfigData(t, rec)
+		if got := payload["directory_source_id"]; got != float64(source.ID) {
+			t.Fatalf("directory_source_id = %#v, want %d; body = %s", got, source.ID, rec.Body.String())
+		}
+		if items, ok := payload["items"].([]any); !ok || len(items) != 0 {
+			t.Fatalf("items = %#v, want explicit empty array; body = %s", payload["items"], rec.Body.String())
+		}
+	})
+}
+
+func decodeQuotaResetApproverConfigData(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	return body.Data
+}
+
 func TestQuotaResetSaveApproverConfigsMapsReferencedConflict(t *testing.T) {
 	detail := `enabled approval chains reference departments without approver configs: provider_id=1 group_id=42 group_name="Group Alpha"`
 	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
@@ -873,6 +918,7 @@ func newQuotaResetHandlerTestEnvWithServiceFactory(t *testing.T, serviceFactory 
 	adminGroup.POST("/requests/:id/reject", handler.AdminReject)
 	adminGroup.POST("/requests/:id/retry-reset", handler.AdminRetryReset)
 	adminGroup.GET("/approver-candidates", handler.ListApproverCandidates)
+	adminGroup.GET("/approver-configs", handler.ListApproverConfigs)
 	adminGroup.PUT("/approver-configs", handler.SaveApproverConfigs)
 	adminGroup.GET("/notification-settings", handler.GetNotificationSettings)
 	adminGroup.PUT("/notification-settings", handler.UpdateNotificationSettings)
