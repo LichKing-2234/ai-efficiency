@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -543,6 +544,26 @@ func TestServiceListOffboardingCandidatesUsesCurrentSourceWhenSourceIDMissing(t 
 	}
 	if len(page.Items) != 1 || page.Items[0].UserID != bob.ID {
 		t.Fatalf("candidates = %+v, want bob missing from current source", page.Items)
+	}
+}
+
+func TestServiceListOffboardingCandidatesExtremePageReturnsEmpty(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := createDirectorySnapshot(t, ctx, client, "Current Directory", "dept-current", "present@example.com", time.Date(2026, 7, 14, 9, 0, 0, 0, time.UTC))
+	createRelayBoundUsers(t, ctx, client, []offboardingUserFixture{{username: "bob", email: "bob@example.org"}})
+	svc := NewService(client, ServiceOptions{})
+
+	page, err := svc.ListOffboardingCandidates(ctx, OffboardingCandidateListParams{
+		SourceID: source.ID,
+		Page:     math.MaxInt,
+		PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListOffboardingCandidates extreme page: %v", err)
+	}
+	if page.Page != math.MaxInt || page.PageSize != 20 || page.Total != 1 || len(page.Items) != 0 {
+		t.Fatalf("extreme page = %+v, want page=%d page_size=20 total=1 and no items", page, math.MaxInt)
 	}
 }
 

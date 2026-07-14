@@ -747,6 +747,9 @@ func (s *Service) ListOffboardingCandidates(ctx context.Context, params Offboard
 	if total == 0 {
 		return page, nil
 	}
+	if params.Page > (total-1)/params.PageSize+1 {
+		return page, nil
+	}
 
 	offset := (params.Page - 1) * params.PageSize
 	users, err := s.offboardingCandidateUsers(snapshot.SourceID, params.Query).
