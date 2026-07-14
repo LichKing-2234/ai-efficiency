@@ -3727,6 +3727,39 @@ Commit evidence: `546a873` (`feat(frontend): add quota reset workflow
 contracts`). Task 9 Step 5 remains open only for the exact project-wide
 `npx vue-tsc -b` rerun after Task 10 migrates its component to these contracts.
 
+Task 9 quality-review follow-up (2026-07-14):
+
+- [x] Add compile-time coverage for required candidate `source_id` and the
+  backend-valid notification input variants, plus a sentinel response assertion
+  for notification tests.
+- [x] Capture focused RED before changing production contracts. The runtime
+  command `cd frontend && npm test -- quota-reset-api` passed all 10 tests
+  because the notification client already preserves the Axios response. The
+  Task-9-only `vue-tsc --noEmit` command exited 2 with five expected contract
+  diagnostics: optional `source_id`, `{}` matching candidate params, Enterprise
+  WeChat bearer auth, generic bearer auth without a credential, and `none` auth
+  with a numeric credential.
+- [x] Make candidate `source_id` required and model notification writes as a
+  discriminated union.
+- [x] Run focused GREEN, full frontend tests, Task-9-only typecheck, the known
+  project-wide typecheck, and hygiene scans.
+- [x] Commit the quality fix separately from this evidence.
+
+Focused GREEN evidence: `cd frontend && npm test -- quota-reset-api` passed all
+10 tests, and the Task-9-only `vue-tsc --noEmit` command exited 0 after the two
+contract changes.
+
+Full verification evidence: `cd frontend && npm test` passed all 39 files / 437
+tests. `cd frontend && npx vue-tsc -b` exited 2 with 13 diagnostics, all in the
+unchanged Task 10-owned `QuotaResetApprovalSettings.vue`; the stricter write
+union adds the expected invalid-input diagnostic at line 271, and no Task 9
+file failed. `git diff --check` passed, the temporary typecheck project was
+removed, changed-line TODO/FIXME and real-data scans were clean, and `npm run`
+confirmed there is no formatter or lint script.
+
+Quality-fix commit evidence: `9618f8d` (`fix(frontend): tighten quota reset API
+contracts`).
+
 ---
 
 ### Task 10: Split and Upgrade Admin Approval Settings
