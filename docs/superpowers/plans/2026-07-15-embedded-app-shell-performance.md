@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 are complete and verified. Task 5 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 are complete and verified. Task 5 Steps 1-3 are complete; Step 4 is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the existing embedded SPA materially faster on cold and repeat visits by serving correct gzip/cache headers and removing inactive locale and chart code from the initial data-loading path, without adding a CDN or a separate frontend release unit.
 
@@ -284,11 +284,11 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 - Consumes: Tasks 1-4 code, measurement output, and review evidence.
 - Produces: current architecture documentation, full repository verification, independent spec/standards reviews, a pushed branch, and a draft PR targeting `docs/performance-contracts-116` until PR #138 merges.
 
-- [ ] **Step 1: Update current architecture documentation**
+- [x] **Step 1: Update current architecture documentation**
 
   Document runtime gzip negotiation, actual-file cache classification, OAuth browser-entry reuse, active-locale bootstrap, and data-triggered Chart.js canvases. Do not describe CDN, Brotli, ETag, separate frontend deployment, or later performance tickets as implemented.
 
-- [ ] **Step 2: Run full repository and release verification**
+- [x] **Step 2: Run full repository and release verification**
 
   Run separately:
 
@@ -302,9 +302,13 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 
   Expected: all suites and structural build assertions pass. Report listener/browser E2E separately from default unit suites.
 
-- [ ] **Step 3: Perform independent spec and standards reviews**
+  **Verification evidence (2026-07-15):** backend, ae-cli, and all 440 frontend unit tests passed; `build:measure` passed all structural assertions; the clean release embed test passed with exact gzip decompression and cache policy checks. Role E2E passed 16/16 against Vite on port 5174 by overriding only the script's runtime `BASE`, because port 5173 was already occupied by another retained worktree. `git diff --check` passed.
+
+- [x] **Step 3: Perform independent spec and standards reviews**
 
   Generate a complete branch review package from base `5f6c58e6821dfcd95eefff14ea3426d454ae86cd`. Ask independent reviewers to verify every #117 acceptance criterion and repository standard. Resolve every Critical or Important finding, rerun covering tests, and re-review until clean.
+
+  **Review evidence:** final SPEC review passed with 0 Critical, 0 Important, and 0 Minor findings. Final standards review approved delivery with 0 Critical, 0 Important, and 3 non-blocking Minor follow-ups; no required fix or re-review remained under this step's gate.
 
 - [ ] **Step 4: Commit documentation, then record the checkpoint**
 
