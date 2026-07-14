@@ -78,7 +78,7 @@ jobs:
         run: npm test
       - name: Build frontend
         working-directory: frontend
-        run: npm run build
+        run: npm run build:measure
 
   deploy-static:
     runs-on: ubuntu-latest
