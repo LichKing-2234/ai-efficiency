@@ -340,6 +340,7 @@ func main() {
 		}),
 		relayPinger,
 		versionInfo,
+		health.WithReadyTimeout(time.Duration(cfg.Server.ReadinessTimeoutSeconds)*time.Second),
 	)
 	var releaseSource versioncheck.ReleaseSource
 	if cfg.VersionCheck.Enabled && strings.TrimSpace(cfg.VersionCheck.ReleaseAPIURL) != "" {

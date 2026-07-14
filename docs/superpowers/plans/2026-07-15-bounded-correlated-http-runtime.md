@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete and verified. Task 3 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-2 are complete and verified. Task 3 Steps 1-4 are complete and verified; the implementation commit is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -248,7 +248,7 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 - `Service.Ready(ctx)` preserves `ReadyReport` JSON and deterministic check order: database, Redis, Relay.
 - `HealthHandler.Ready` maps only `not_ready` to HTTP 503; `ready` and `degraded` remain HTTP 200.
 
-- [ ] **Step 1: Add failing deadline and HTTP semantic tests**
+- [x] **Step 1: Add failing deadline and HTTP semantic tests**
 
   Add a context-aware blocking DB pinger and assert a 40ms configured readiness budget returns a `not_ready` report well before one second. Add parallel probes whose individual delay would exceed the shared budget if run serially.
 
@@ -262,19 +262,21 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
   live with blockers  => 200 without invoking any pinger
   ```
 
-- [ ] **Step 2: Run readiness tests and record RED**
+- [x] **Step 2: Run readiness tests and record RED**
 
   Run: `cd backend && go test ./internal/health ./internal/handler -run 'Ready|Readiness|Live' -count=1`
 
   Expected: FAIL because readiness is serial, unbounded, and always returns HTTP 200.
 
-- [ ] **Step 3: Implement one parallel readiness budget**
+  Evidence (2026-07-15): the focused command failed as expected. The health package reported undefined `WithReadyTimeout` and an unsupported fifth `NewService` argument; the handler database-down case returned a `not_ready` body with HTTP 200 instead of 503.
+
+- [x] **Step 3: Implement one parallel readiness budget**
 
   Derive one child context with the configured overall timeout, launch the three checks concurrently, and collect into fixed indexes. A pinger that returns after the deadline remains `down/unavailable`; do not expose its raw error. All production pingers already consume the supplied context.
 
   Preserve precedence: database down wins `not_ready`; only when database is up may Redis/Relay yield `degraded`.
 
-- [ ] **Step 4: Wire and verify readiness**
+- [x] **Step 4: Wire and verify readiness**
 
   Pass `cfg.Server.ReadinessTimeoutSeconds` through `health.WithReadyTimeout`. Run separately:
 
@@ -283,6 +285,8 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
   - `git diff --check`.
 
   Expected: PASS. Tests must use context-aware blockers so no goroutine leaks after completion.
+
+  Evidence (2026-07-15): the focused health/handler command passed in 0.338s and 1.601s; the broad health/handler/server command passed in 0.344s, 37.532s, and 0.840s; `git diff --check` passed.
 
 - [ ] **Step 5: Commit Task 3 and record the checkpoint**
 
