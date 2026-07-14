@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-3 are complete and verified. Task 4 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-3 are complete and verified. Task 4 Steps 1-5 are complete; Step 6 is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the existing embedded SPA materially faster on cold and repeat visits by serving correct gzip/cache headers and removing inactive locale and chart code from the initial data-loading path, without adding a CDN or a separate frontend release unit.
 
@@ -219,21 +219,21 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 - Produces: `npm run build:measure`, which runs a manifest build and a Node script over structured Vite manifest JSON.
 - Produces: a report/assertion that the entry static closure contains neither locale dictionary nor Chart.js, Dashboard/Team static closures contain no canvas renderer, `/vite.svg` is absent, and exact raw/gzip shell plus default English `/usage` closure bytes are printed. The `/usage` measurement explicitly seeds the dynamically imported English locale chunk and walks its static imports in addition to the entry and Dashboard static closures.
 
-- [ ] **Step 1: Add failing chart import-timing tests**
+- [x] **Step 1: Add failing chart import-timing tests**
 
   Mock the async canvas modules with deferred imports. Assert Dashboard skeleton/API start, loading data, empty trend/models, and the immediate model table do not load Chart.js canvases; non-empty trend/model data loads each required canvas once. Assert Team Overview summary, unavailable/empty series, metadata, and legends render without the line canvas; the first non-empty label set loads the shared line canvas once even when multiple team chart sections are present.
 
-- [ ] **Step 2: Run the focused chart tests and record RED**
+- [x] **Step 2: Run the focused chart tests and record RED**
 
   Run: `cd frontend && npm test -- src/__tests__/dashboard-view.test.ts src/__tests__/team-overview-view.test.ts`
 
   Expected: FAIL because the three current chart components import and register Chart.js at module evaluation before data resolves.
 
-- [ ] **Step 3: Extract and dynamically import canvas renderers**
+- [x] **Step 3: Extract and dynamically import canvas renderers**
 
   Keep all shells, computed data, tables, unavailable states, and legends in their current components. Replace runtime `Line`/`Doughnut` imports with `defineAsyncComponent` loaders for the two canvas-only modules, and render those children only inside the existing non-empty data branches. Preserve the fixed canvas containers so async resolution cannot shift layout.
 
-- [ ] **Step 4: Add structured build measurement and assertions**
+- [x] **Step 4: Add structured build measurement and assertions**
 
   Add a Vite manifest only for `build:measure`. The Node script must parse `dist/.vite/manifest.json`, walk only each chunk's static `imports`, gzip the exact emitted files with Node `zlib`, and print raw/gzip totals for the HTML+entry+CSS shell and default English `/usage` closure. The `/usage` seed set is the entry, its CSS, the Dashboard route chunk, and the manifest entry for `src/locales/en-US.ts`; recursively include each seed's static `imports`, so the active locale is counted even though bootstrap loads it dynamically. It must fail when:
 
@@ -245,7 +245,7 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 
   Replace the frontend CI build command with `npm run build:measure`; keep release builds on normal `npm run build` so the manifest remains measurement-only.
 
-- [ ] **Step 5: Run focused Task 4 verification and record after evidence**
+- [x] **Step 5: Run focused Task 4 verification and record after evidence**
 
   Run separately:
 
@@ -253,6 +253,20 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
   - `cd frontend && npm run build:measure`
 
   Append the command's exact raw/gzip shell, active-locale `/usage`, locale chunk, and chart chunk values under a dated `After Evidence` table in this plan before checking this step. The measured default `/usage` static closure must exclude the chart runtime and the inactive locale; do not invent a numerical pass threshold beyond those structural requirements.
+
+  **After Evidence (2026-07-15, `npm run build:measure`):**
+
+  | Aggregate | Raw bytes | Gzip bytes |
+  | --- | ---: | ---: |
+  | Initial shell | 185370 | 64468 |
+  | Default English `/usage` | 285922 | 93184 |
+  | `en-US` | 56081 | 15211 |
+  | `zh-CN` | 54926 | 16435 |
+  | Line canvas | 359467 | 125551 |
+  | Doughnut canvas | 359435 | 125538 |
+  | Chart runtime | 174137 | 61103 |
+
+  Structural assertions passed: the default English `/usage` closure includes `en-US`, excludes `zh-CN`, both canvas modules, Chart.js, and vue-chartjs; entry, Dashboard, and Team static closures likewise exclude both canvas modules and the chart runtime.
 
 - [ ] **Step 6: Commit Task 4, then record the checkpoint**
 
