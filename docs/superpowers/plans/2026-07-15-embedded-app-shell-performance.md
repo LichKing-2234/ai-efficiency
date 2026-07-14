@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 are complete and verified. Task 5 Steps 1-4 are complete; Step 5 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Complete. Tasks 1-5 are implemented, verified, independently reviewed, and delivered in draft PR #140, stacked on `docs/performance-contracts-116` while PR #138 remains open.
 
 **Goal:** Make the existing embedded SPA materially faster on cold and repeat visits by serving correct gzip/cache headers and removing inactive locale and chart code from the initial data-loading path, without adding a CDN or a separate frontend release unit.
 
@@ -314,6 +314,8 @@ The initial entry contains both locale dictionaries. The chart/common chunk is a
 
   First check Steps 1-3 and commit architecture plus review evidence as `docs(architecture): document embedded app delivery`. Only after that commit succeeds, check Step 4 and create `docs(plan): record embedded delivery verification`.
 
-- [ ] **Step 5: Push and open the stacked draft PR**
+- [x] **Step 5: Push and open the stacked draft PR**
 
   Push `perf/web-shell-117` and create a draft PR targeting `docs/performance-contracts-116`. Link `#117`, state the dependency on PR #138, include exact before/after raw and gzip evidence, and report all test/review results. Confirm the final PR head/base/draft/merge state and backend/frontend/ae-cli/deploy-static checks. Only then check Step 5, set the top status to complete, commit `docs(plan): record embedded app shell delivery`, push that final ledger commit, and confirm its replacement CI run also passes.
+
+  **Delivery evidence (2026-07-15):** Draft PR #140 is open from `perf/web-shell-117` into `docs/performance-contracts-116`, records the dependency on draft PR #138, and is `MERGEABLE` with merge state `CLEAN`. The first CI run for head `39facbd` passed backend, frontend, ae-cli, and deploy-static. The final ledger commit and its replacement CI are verified after this checkbox commit is pushed.
