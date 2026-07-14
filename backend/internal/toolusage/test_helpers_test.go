@@ -207,12 +207,12 @@ func seedEventFilterFixture(t *testing.T, client *ent.Client) eventFilterFixture
 
 	seed("time-from", alpha, alpha.RepoConfigID, "kiro", "time-from-session", "time-from-event", "time-from-dedupe", from, "", boundaryCheckpoint.ID)
 	seed("time-to", alpha, alpha.RepoConfigID, "claude", "time-to-session", "time-to-event", "time-to-dedupe", to, "", boundaryCheckpoint.ID)
-	seed("q-source", alpha, beta.RepoConfigID, "claude", "q-source-session", "q-source-event", "q-source-dedupe", from.Add(-2*time.Hour), "/synthetic/sources/SOURCE-NEEDLE.JSONL/", 0)
-	seed("q-session", beta, beta.RepoConfigID, "codex", "prefix-SESSION-NEEDLE-suffix", "q-session-event", "q-session-dedupe", to.Add(2*time.Hour), "", 0)
-	seed("q-event", beta, beta.RepoConfigID, "claude", "q-event-session", "prefix-EVENT-NEEDLE-suffix", "q-event-dedupe", to.Add(3*time.Hour), "", 0)
+	seed("q-source", alpha, beta.RepoConfigID, "claude", "q-source-session", "q-source-event", "q-source-dedupe", from.Add(-2*time.Hour), "/synthetic/sources/LITERAL\\BACKSLASH-SOURCE-NEEDLE.JSONL/", 0)
+	seed("q-session", beta, beta.RepoConfigID, "codex", "prefix-SESSION-NEEDLE-suffix", "prefix-LITERAL_UNDERSCORE-suffix", "q-session-dedupe", to.Add(2*time.Hour), "", 0)
+	seed("q-event", beta, beta.RepoConfigID, "claude", "prefix-LITERALXUNDERSCORE-suffix", "prefix-EVENT-NEEDLE-suffix", "prefix-LITERALBACKSLASH-suffix", to.Add(3*time.Hour), "", 0)
 	seed("q-dedupe", beta, alpha.RepoConfigID, "claude", "q-dedupe-session", "q-dedupe-event", "prefix-DEDUPE-NEEDLE-suffix", to.Add(4*time.Hour), "", 0)
 	seed("q-commit", beta, beta.RepoConfigID, "kiro", "q-commit-session", "q-commit-event", "q-commit-dedupe", to.Add(5*time.Hour), "", commitNeedleCheckpoint.ID)
-	seed("directory-decoy", beta, beta.RepoConfigID, "kiro", "directory-decoy-session", "directory-decoy-event", "directory-decoy-dedupe", to.Add(6*time.Hour), "/private/directory-only-needle/source.jsonl", 0)
+	seed("directory-decoy", beta, beta.RepoConfigID, "kiro", "directory-decoy-session", "directory-decoy-event", "directory-decoy-dedupe", to.Add(6*time.Hour), "/private/directory-only-needle/LITERALBACKSLASH-source.jsonl", 0)
 
 	return eventFilterFixture{
 		Alpha:      alpha,

@@ -43,6 +43,8 @@ func TestEventSummaryAndListShareFilterSemantics(t *testing.T) {
 		{"q commit", queryFilter{Q: "COMMIT-NEEDLE"}, []string{"q-commit"}},
 		{"q source", queryFilter{Q: "SOURCE-NEEDLE.JSONL"}, []string{"q-source"}},
 		{"q wildcard is literal", queryFilter{Q: "%"}, nil},
+		{"q underscore is literal", queryFilter{Q: "LITERAL_UNDERSCORE"}, []string{"q-session"}},
+		{"q backslash is literal", queryFilter{Q: "LITERAL\\BACKSLASH"}, []string{"q-source"}},
 	}
 
 	for _, tt := range tests {
