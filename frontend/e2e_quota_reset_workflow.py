@@ -433,7 +433,6 @@ def assert_no_control_overlap(page, root_selector="body"):
                   'button, input, select, textarea, a[href], [role="button"], [role="link"]'
                 );
                 return (selectedBySemantics || selectedByTabIndex)
-                  && !element.hasAttribute('disabled')
                   && rect.width > 0
                   && rect.height > 0
                   && style.visibility !== 'hidden'
