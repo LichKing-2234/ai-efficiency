@@ -3478,7 +3478,7 @@ capability`).
 - Modify: `frontend/src/api/quotaReset.ts`
 - Modify: `frontend/src/__tests__/quota-reset-api.test.ts`
 
-- [ ] **Step 1: Write failing API call-shape tests**
+- [x] **Step 1: Write failing API call-shape tests**
 
 Add assertions:
 
@@ -3511,7 +3511,7 @@ testQuotaResetNotificationSettings()
 expect(client.post).toHaveBeenCalledWith('/admin/quota-reset/notification-settings/test')
 ```
 
-- [ ] **Step 2: Run API tests and verify failure**
+- [x] **Step 2: Run API tests and verify failure**
 
 Run:
 
@@ -3521,7 +3521,14 @@ cd frontend && npm test -- quota-reset-api
 
 Expected: FAIL because v2 types and clients do not exist.
 
-- [ ] **Step 3: Add exact TypeScript contracts**
+RED evidence (2026-07-14): `cd frontend && npm test -- quota-reset-api`
+ran 8 tests and failed in the approval-chain full-replacement case with
+`TypeError: getQuotaResetApprovalChains is not a function` at
+`quota-reset-api.test.ts:289`. The other seven runtime-compatible call shapes
+passed, so the failure was the expected missing Task 9 API client rather than a
+test setup error.
+
+- [x] **Step 3: Add exact TypeScript contracts**
 
 Add:
 
@@ -3622,7 +3629,7 @@ export interface QuotaResetNotificationTestResult {
 }
 ```
 
-- [ ] **Step 4: Implement API clients**
+- [x] **Step 4: Implement API clients**
 
 Add strict v2 input plus legacy-compatible approve/reject inputs:
 
@@ -3688,12 +3695,37 @@ cd frontend && npx vue-tsc -b
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit frontend contracts**
+Interim verification (2026-07-14):
+`cd frontend && npm test -- quota-reset-api` passed all 8 tests.
+`cd frontend && npx vue-tsc -b` then
+reported 12 errors, all in the unchanged Task 10-owned
+`QuotaResetApprovalSettings.vue`: it still imports the removed
+representative-only type, sends the removed `department_external_id` candidate
+filter, reads `unmatched_representatives`, and reads/writes the redacted raw
+notification `url`. Step 5 remains unchecked until the Task 10 component is
+migrated; Task 9 does not retain stale contract fields or modify Task 10 UI to
+hide this dependency.
+
+- [x] **Step 6: Commit frontend contracts**
 
 ```bash
 git add frontend/src/types/index.ts frontend/src/api/quotaReset.ts frontend/src/__tests__/quota-reset-api.test.ts
 git commit -m "feat(frontend): add quota reset workflow contracts"
 ```
+
+Task 9 handoff evidence (2026-07-14): the focused GREEN command passed all 8
+tests, and `cd frontend && npm test` passed all 39 files / 435 tests. A
+Task-9-only temporary `vue-tsc --noEmit` project covering `env.d.ts`,
+`types/index.ts`, `api/quotaReset.ts`, and `quota-reset-api.test.ts` passed;
+the temporary project file was removed after the check. `git diff --check` and
+`git diff --cached --check` passed. `npm run` confirmed that this package has no
+formatter or lint script. Changed-line TODO/FIXME review and changed frontend
+data review were clean; all added identities use `example.com` synthetic data
+and no credential values were added.
+
+Commit evidence: `546a873` (`feat(frontend): add quota reset workflow
+contracts`). Task 9 Step 5 remains open only for the exact project-wide
+`npx vue-tsc -b` rerun after Task 10 migrates its component to these contracts.
 
 ---
 
