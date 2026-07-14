@@ -5171,7 +5171,7 @@ in source selection, the backend id drives department and candidate requests,
 page 2 appends and remains selectable with duplicate suppression, and a new
 search resets to page 1 while invalidating an older page-2 response.
 
-- [ ] **Step 4: Run focused/full verification, update the current spec, commit, and pass task reviews**
+- [x] **Step 4: Run focused/full verification, update the current spec, commit, and pass task reviews**
 
 Implementation verification (2026-07-15): `cd backend && go test
 ./internal/quotareset ./internal/handler -count=1` passed uncached
@@ -5325,8 +5325,14 @@ explicitly requested neutral-helper call-site rename in `workflow_summary.go`;
 manual review found no Task 18/19 behavior change or remaining correctness,
 contract, accessibility, data-hygiene, or scope issue.
 
-Task 17 Step 4 remains unchecked until the independent spec and standards
-re-review passes.
+Independent review evidence (2026-07-15): the final Task 17 spec re-review
+returned PASS with no Critical, Important, or Minor findings after inspecting
+commits `ca77d17`, `1f97743`, and `56567ce`. The independent quality re-review
+also approved the task with no findings. Both reviews confirmed strict shared
+GET/PUT decoding, authoritative nullable source handling, source-generation
+invalidation, raw-page exhaustion and shrinking-total behavior, shared exact
+directory identity/access semantics, and the absence of temporary workflow
+delegation wrappers. Task 17 is complete.
 
 ### Task 18: Include Durable Workflow Progress in Notifications
 
