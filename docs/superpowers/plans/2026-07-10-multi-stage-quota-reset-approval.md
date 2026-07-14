@@ -3107,7 +3107,7 @@ delivery`).
 - Modify: `backend/internal/quotareset/types.go`
 - Modify: `backend/internal/quotareset/workflow_summary.go`
 
-- [ ] **Step 1: Write failing handler contract tests**
+- [x] **Step 1: Write failing handler contract tests**
 
 Add:
 
@@ -3141,7 +3141,7 @@ The stale response must be HTTP 409 with:
 }
 ```
 
-- [ ] **Step 2: Run handler tests and verify failure**
+- [x] **Step 2: Run handler tests and verify failure**
 
 Run:
 
@@ -3151,7 +3151,21 @@ cd backend && go test ./internal/handler -run TestQuotaReset -count=1
 
 Expected: FAIL on missing routes and payload fields.
 
-- [ ] **Step 3: Extend service interface and request payloads**
+Task 8 RED evidence (2026-07-14):
+
+- `cd backend && go test ./internal/handler -run TestQuotaReset -count=1`
+  failed as expected: `request_node_id` was not forwarded, stale workflow errors
+  returned `500`, successful mutations still returned the legacy Ent DTO, invalid
+  `source_id` was rejected in the handler instead of the service, all three
+  approval-chain routes were absent, notification test coverage details were
+  discarded, and directory unavailability returned `422`. The explicit
+  notification channel and redacted URL contract already passed from Tasks 6-7.
+- `cd backend && go test ./internal/quotareset -run
+  'Test(GetRequestSummary|WorkflowDecisionRejectsStaleNode|CancelReturnsVersionedStaleError|WorkflowAdvancedSummaryUsesAdminViewer)'
+  -count=1` failed as expected because `Service.GetRequestSummary` and
+  `WorkflowAdvancedError.Latest` did not yet exist.
+
+- [x] **Step 3: Extend service interface and request payloads**
 
 Add to `quotaResetService`:
 
@@ -3193,7 +3207,7 @@ type quotaResetNotificationSettingsRequest struct {
 
 Pass `RequestNodeID` into `DecisionInput`.
 
-- [ ] **Step 4: Add candidate and chain handlers**
+- [x] **Step 4: Add candidate and chain handlers**
 
 Candidate query:
 
@@ -3221,7 +3235,7 @@ adminQuotaResetGroup.PUT("/approval-chains", quotaResetHandler.SaveApprovalChain
 adminQuotaResetGroup.GET("/approval-chain-options", quotaResetHandler.ListApprovalChainOptions)
 ```
 
-- [ ] **Step 5: Return viewer-aware summaries and typed stale details**
+- [x] **Step 5: Return viewer-aware summaries and typed stale details**
 
 Implement the exact service method below using Task 5's summary loader:
 
@@ -3262,7 +3276,7 @@ Return `NotificationTestResult` directly from the notification test handler so
 the admin UI can distinguish delivered-without-mention from a fully mentioned
 Enterprise WeChat test.
 
-- [ ] **Step 6: Run handler and router tests**
+- [x] **Step 6: Run handler and router tests**
 
 Run:
 
@@ -3273,12 +3287,36 @@ cd backend && go test ./internal/handler ./internal/quotareset -count=1
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit HTTP contracts**
+Task 8 focused GREEN evidence (2026-07-14):
+
+- `cd backend && go test ./internal/handler -run TestQuotaReset -count=1`
+  passed after the test-only RED adapter was replaced with direct handler method
+  references (`ok`, 7.490s).
+- `cd backend && go test ./internal/handler ./internal/quotareset -count=1`
+  passed (`handler` 42.072s, `quotareset` 40.560s).
+
+Task 8 full verification evidence (2026-07-14):
+
+- `cd backend && go test ./cmd/server -count=1` passed (`ok`, 2.100s).
+- `cd backend && go test ./... -count=1` passed, including `handler`
+  (64.380s) and `quotareset` (59.556s).
+- `cd backend && go vet ./...`, `git diff --check`, changed-Go-file gofmt
+  inspection, added-line credential-pattern scan, synthetic email-domain scan,
+  and unfinished-marker scan all completed cleanly.
+- Route/auth review found each chain route exactly once under the existing admin
+  quota-reset group. Summary/stale review found all create, cancel, decision, and
+  retry success responses viewer-aware, and all typed stale constructors enriched
+  only after their transaction method returned. Notification responses expose
+  redacted URL state and aggregate delivery coverage without recipient ids.
+
+- [x] **Step 7: Commit HTTP contracts**
 
 ```bash
 git add backend/internal/handler backend/internal/quotareset
 git commit -m "feat(backend): expose quota reset workflow APIs"
 ```
+
+Commit evidence: `a28a460` (`feat(backend): expose quota reset workflow APIs`).
 
 ---
 
