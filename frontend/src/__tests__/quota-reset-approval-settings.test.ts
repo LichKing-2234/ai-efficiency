@@ -17,6 +17,7 @@ vi.mock('@/api/quotaReset', () => ({
 
 vi.mock('@/api/directory', () => ({
   listDirectorySources: vi.fn(),
+  listDirectoryRuns: vi.fn(),
   listDirectoryDepartments: vi.fn(),
 }))
 
@@ -59,6 +60,31 @@ const configuredAliceApprover = {
   enabled: true,
   created_at: '',
   updated_at: '',
+}
+
+function directorySource(id: number, name: string, lastSuccessfulRunID: number) {
+  return {
+    id,
+    name,
+    description: '',
+    scope: 'full_company',
+    enabled: true,
+    dsl: '',
+    schedule_enabled: false,
+    schedule_interval: 'daily',
+    schedule_timezone: 'UTC',
+    last_successful_run_id: lastSuccessfulRunID,
+  }
+}
+
+function completedApplyRun(id: number, sourceID: number, completedAt: string) {
+  return {
+    id,
+    source_id: sourceID,
+    mode: 'apply',
+    status: 'completed',
+    completed_at: completedAt,
+  }
 }
 
 const chainOptions = {
@@ -176,20 +202,14 @@ beforeEach(async () => {
   directory.listDirectorySources.mockResolvedValue({
     data: {
       data: {
-        items: [
-          {
-            id: 1,
-            name: 'Directory Alpha',
-            description: '',
-            scope: 'full_company',
-            enabled: true,
-            dsl: '',
-            schedule_enabled: false,
-            schedule_interval: 'daily',
-            schedule_timezone: 'UTC',
-            last_successful_run_id: 10,
-          },
-        ],
+        items: [directorySource(1, 'Directory Alpha', 10)],
+      },
+    },
+  })
+  directory.listDirectoryRuns.mockResolvedValue({
+    data: {
+      data: {
+        items: [completedApplyRun(10, 1, '2026-07-14T08:00:00Z')],
       },
     },
   })
@@ -254,6 +274,102 @@ describe('QuotaResetApprovalSettings', () => {
     ], 'replace_all')
   })
 
+  it('uses the source whose exact successful apply run completed most recently', async () => {
+    const directory = await import('@/api/directory') as any
+    const api = await import('@/api/quotaReset') as any
+    directory.listDirectorySources.mockResolvedValueOnce({
+      data: {
+        data: {
+          items: [
+            directorySource(1, 'Older Directory', 10),
+            directorySource(2, 'Current Directory', 20),
+          ],
+        },
+      },
+    })
+    directory.listDirectoryRuns.mockImplementation((sourceID: number) => Promise.resolve({
+      data: {
+        data: {
+          items: sourceID === 1
+            ? [
+                completedApplyRun(11, 1, '2026-07-14T12:00:00Z'),
+                completedApplyRun(10, 1, '2026-07-14T08:00:00Z'),
+              ]
+            : [completedApplyRun(20, 2, '2026-07-14T09:00:00Z')],
+        },
+      },
+    }))
+    const wrapper = await mountSettings()
+
+    await selectApproverDepartment(wrapper)
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    await flushPromises()
+    api.listQuotaResetApproverCandidates.mockClear()
+    await wrapper.get('[data-testid="quota-reset-approver-filter"]').setValue('alice')
+    await flushPromises()
+
+    expect(directory.listDirectoryRuns).toHaveBeenCalledWith(1)
+    expect(directory.listDirectoryRuns).toHaveBeenCalledWith(2)
+    expect(directory.listDirectoryDepartments).toHaveBeenCalledWith({ source_id: 2, q: '' })
+    expect(api.listQuotaResetApproverCandidates).toHaveBeenCalledWith({
+      source_id: 2,
+      q: 'alice',
+      page: 1,
+      page_size: 20,
+    })
+  })
+
+  it('uses the higher successful run id when completed timestamps tie', async () => {
+    const directory = await import('@/api/directory') as any
+    directory.listDirectorySources.mockResolvedValueOnce({
+      data: {
+        data: {
+          items: [
+            directorySource(1, 'Lower Run Directory', 10),
+            directorySource(2, 'Higher Run Directory', 20),
+          ],
+        },
+      },
+    })
+    directory.listDirectoryRuns.mockImplementation((sourceID: number) => Promise.resolve({
+      data: {
+        data: {
+          items: [completedApplyRun(
+            sourceID === 1 ? 10 : 20,
+            sourceID,
+            '2026-07-14T09:00:00Z',
+          )],
+        },
+      },
+    }))
+    const wrapper = await mountSettings()
+
+    await selectApproverDepartment(wrapper)
+
+    expect(directory.listDirectoryDepartments).toHaveBeenCalledWith({ source_id: 2, q: '' })
+  })
+
+  it('keeps source selection disabled when no eligible current apply run exists', async () => {
+    const directory = await import('@/api/directory') as any
+    directory.listDirectoryRuns.mockResolvedValueOnce({
+      data: {
+        data: {
+          items: [
+            {
+              ...completedApplyRun(10, 1, '2026-07-14T08:00:00Z'),
+              mode: 'preview',
+            },
+          ],
+        },
+      },
+    })
+
+    const wrapper = await mountSettings()
+
+    expect(wrapper.get('[data-testid="quota-reset-department-select"]').attributes()).toHaveProperty('disabled')
+    expect(wrapper.text()).toContain('Current directory source is unavailable.')
+  })
+
   it('localizes WeCom mention coverage in Chinese', async () => {
     setLocale('zh-CN')
     const wrapper = await mountSettings()
@@ -298,6 +414,57 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.find('[data-testid="quota-reset-approver-loading"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Alice')
     expect(wrapper.text()).not.toContain('All User')
+  })
+
+  it('shows the latest candidate request error from the backend', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listQuotaResetApproverCandidates.mockRejectedValueOnce({
+      response: {
+        status: 503,
+        data: {
+          message: 'Current directory snapshot is unavailable.',
+        },
+      },
+    })
+    const wrapper = await mountSettings()
+    await selectApproverDepartment(wrapper)
+
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Current directory snapshot is unavailable.')
+    expect(wrapper.find('[data-testid="quota-reset-approver-loading"]').exists()).toBe(false)
+  })
+
+  it('ignores an older candidate rejection after a newer search succeeds', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const unfiltered = deferred<any>()
+    const filtered = deferred<any>()
+    api.listQuotaResetApproverCandidates.mockImplementation(({ q }: { q: string }) => (
+      q === 'alice' ? filtered.promise : unfiltered.promise
+    ))
+    const wrapper = await mountSettings()
+    await selectApproverDepartment(wrapper)
+
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-approver-filter"]').setValue('alice')
+    filtered.resolve({
+      data: { data: { items: [aliceCandidate], page: 1, page_size: 20, total: 1 } },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Alice')
+
+    unfiltered.reject({
+      response: {
+        status: 503,
+        data: { message: 'Stale source should not replace current results.' },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.text()).not.toContain('Stale source should not replace current results.')
+    expect(wrapper.find('[data-testid="quota-reset-approver-loading"]').exists()).toBe(false)
   })
 
   it('shows readable backend names for existing approver rows without raw ids', async () => {

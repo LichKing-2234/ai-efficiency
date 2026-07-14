@@ -5,11 +5,12 @@ import {
   listQuotaResetApproverCandidates,
   saveQuotaResetApproverConfigs,
 } from '@/api/quotaReset'
-import { listDirectoryDepartments, listDirectorySources } from '@/api/directory'
+import { listDirectoryDepartments, listDirectoryRuns, listDirectorySources } from '@/api/directory'
 import { useI18n } from '@/i18n'
 import type {
   DirectoryDepartment,
   DirectorySource,
+  DirectorySyncRun,
   QuotaResetApproverCandidate,
   QuotaResetApproverConfig,
   QuotaResetApproverConfigInput,
@@ -26,6 +27,8 @@ const selectedDirectorySourceID = ref<number | null>(null)
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
+const directoryError = ref('')
+const candidateError = ref('')
 const message = ref('')
 
 const departmentDropdownOpen = ref(false)
@@ -51,6 +54,10 @@ const form = ref({
 const selectedDepartmentLabel = computed(() => (
   form.value.department_display_path || form.value.department_external_id
 ))
+const selectedDirectorySource = computed(() => (
+  directorySources.value.find(source => source.id === selectedDirectorySourceID.value)
+))
+const visibleError = computed(() => candidateError.value || directoryError.value || error.value)
 
 onMounted(() => {
   void loadConfigs()
@@ -75,17 +82,58 @@ async function loadConfigs() {
 }
 
 async function loadDirectorySources() {
+  selectedDirectorySourceID.value = null
+  directoryError.value = ''
   try {
     const response = await listDirectorySources()
     directorySources.value = response.data.data?.items ?? []
-    const current = directorySources.value.find(source => source.last_successful_run_id)
-      ?? directorySources.value[0]
-    selectedDirectorySourceID.value = current?.id ?? null
+    const sourcesWithRuns = directorySources.value.filter(source => (
+      Number.isInteger(source.last_successful_run_id)
+      && Number(source.last_successful_run_id) > 0
+    ))
+    const resolved = await Promise.all(sourcesWithRuns.map(async (source) => {
+      const runsResponse = await listDirectoryRuns(source.id)
+      const run = (runsResponse.data.data?.items ?? []).find(item => (
+        item.id === source.last_successful_run_id
+      ))
+      const completedAt = eligibleCompletedApplyRunTime(run)
+      return completedAt === null ? null : { source, run: run!, completedAt }
+    }))
+    const current = resolved
+      .filter((item): item is { source: DirectorySource; run: DirectorySyncRun; completedAt: bigint } => item !== null)
+      .sort((left, right) => {
+        if (left.completedAt !== right.completedAt) {
+          return left.completedAt > right.completedAt ? -1 : 1
+        }
+        return right.run.id - left.run.id
+      })[0]
+    if (!current) {
+      directoryError.value = t('quotaResetSettings.directoryUnavailable')
+      return
+    }
+    selectedDirectorySourceID.value = current.source.id
   } catch (err) {
     directorySources.value = []
     selectedDirectorySourceID.value = null
-    error.value = errorMessage(err, t('quotaResetSettings.directoryLoadFailed'))
+    directoryError.value = errorMessage(err, t('quotaResetSettings.directoryLoadFailed'))
   }
+}
+
+function eligibleCompletedApplyRunTime(run: DirectorySyncRun | undefined) {
+  if (
+    !run
+    || run.mode !== 'apply'
+    || (run.status !== 'completed' && run.status !== 'completed_with_warnings')
+    || !run.completed_at
+  ) {
+    return null
+  }
+  const match = run.completed_at.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/)
+  if (!match) return null
+  const wholeSecond = Date.parse(`${match[1]}${match[3]}`)
+  if (!Number.isFinite(wholeSecond)) return null
+  const fractionalNanoseconds = BigInt((match[2] ?? '').padEnd(9, '0'))
+  return BigInt(wholeSecond) * 1_000_000n + fractionalNanoseconds
 }
 
 function departmentDisplayPath(department: DirectoryDepartment) {
@@ -156,6 +204,7 @@ function selectDepartment(department: DirectoryDepartment) {
   departmentOptions.value = []
   candidateSearch.value = ''
   candidates.value = []
+  candidateError.value = ''
 }
 
 function resetSelectedDepartment() {
@@ -172,6 +221,7 @@ function resetSelectedDepartment() {
   departmentOptions.value = []
   candidateSearch.value = ''
   candidates.value = []
+  candidateError.value = ''
 }
 
 async function searchCandidates() {
@@ -184,6 +234,7 @@ async function searchCandidates() {
   }
 
   candidateLoading.value = true
+  candidateError.value = ''
   try {
     const response = await listQuotaResetApproverCandidates({
       source_id: sourceID,
@@ -193,9 +244,11 @@ async function searchCandidates() {
     })
     if (sequence !== candidateRequestSequence) return
     candidates.value = response.data.data?.items ?? []
-  } catch {
+    candidateError.value = ''
+  } catch (err) {
     if (sequence !== candidateRequestSequence) return
     candidates.value = []
+    candidateError.value = errorMessage(err, t('quotaResetSettings.approverSearchFailed'))
   } finally {
     if (sequence === candidateRequestSequence) {
       candidateLoading.value = false
@@ -282,8 +335,8 @@ async function saveConfigs() {
   >
     <h4 class="text-sm font-semibold text-gray-900">{{ t('quotaResetSettings.approvers') }}</h4>
 
-    <div v-if="error" class="mt-3 break-words rounded-md bg-red-50 p-3 text-sm text-red-700">
-      {{ error }}
+    <div v-if="visibleError" class="mt-3 break-words rounded-md bg-red-50 p-3 text-sm text-red-700">
+      {{ visibleError }}
     </div>
     <div v-if="message" class="mt-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">
       {{ message }}
@@ -397,18 +450,15 @@ async function saveConfigs() {
             </div>
           </div>
         </div>
-        <label v-if="directorySources.length > 1" class="mt-2 block">
+        <div v-if="directorySources.length > 1 && selectedDirectorySource" class="mt-2 block">
           <span class="text-xs font-medium text-gray-500">{{ t('quotaResetSettings.directorySource') }}</span>
-          <select
-            v-model.number="selectedDirectorySourceID"
-            class="mt-1 w-full min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm"
-            @change="resetSelectedDepartment"
+          <div
+            data-testid="quota-reset-current-directory-source"
+            class="mt-1 break-words text-sm text-gray-700"
           >
-            <option v-for="source in directorySources" :key="source.id" :value="source.id">
-              {{ source.name }}
-            </option>
-          </select>
-        </label>
+            {{ selectedDirectorySource.name }}
+          </div>
+        </div>
       </div>
 
       <div class="min-w-0">

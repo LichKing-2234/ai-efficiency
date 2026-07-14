@@ -597,6 +597,7 @@ export interface DirectorySyncRun {
   warning_count?: number
   warnings?: DirectorySyncWarning[]
   error_message?: string | null
+  completed_at?: string
   created_at?: string
   updated_at?: string
 }
