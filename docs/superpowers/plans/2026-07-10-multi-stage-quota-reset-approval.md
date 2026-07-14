@@ -4177,7 +4177,7 @@ settings replacements`).
 - Modify: `frontend/src/__tests__/quota-reset-view.test.ts`
 - Modify: `frontend/src/i18n.ts`
 
-- [ ] **Step 1: Write failing workflow UI tests**
+- [x] **Step 1: Write failing workflow UI tests**
 
 Add:
 
@@ -4207,7 +4207,7 @@ expect(api.approveQuotaResetRequest).toHaveBeenCalledWith(1, {
 })
 ```
 
-- [ ] **Step 2: Run workflow view tests and verify failure**
+- [x] **Step 2: Run workflow view tests and verify failure**
 
 Run:
 
@@ -4217,7 +4217,14 @@ cd frontend && npm test -- quota-reset-view
 
 Expected: FAIL on missing timeline and dialog.
 
-- [ ] **Step 3: Implement the workflow timeline**
+RED evidence (2026-07-14): the untouched baseline passed with 8 tests. After
+adding the eight Task 11 cases, `cd frontend && npm test -- quota-reset-view`
+failed with exactly those 8 new tests failing and the 8 prior tests still
+passing. Failures were on the missing timeline/detail/decision dialog,
+queue-derived action permissions, queued-node actions, and the existing
+`window.prompt` rejection path.
+
+- [x] **Step 3: Implement the workflow timeline**
 
 Create `QuotaResetWorkflowTimeline.vue` with one ordered list, not nested cards:
 
@@ -4250,7 +4257,7 @@ Create `QuotaResetWorkflowTimeline.vue` with one ordered list, not nested cards:
 
 Use stable dimensions and wrapping. Do not expose notification ids.
 
-- [ ] **Step 4: Implement one mandatory-comment decision dialog**
+- [x] **Step 4: Implement one mandatory-comment decision dialog**
 
 Create `QuotaResetDecisionDialog.vue`:
 
@@ -4293,7 +4300,7 @@ Render a normal modal with title, current-node label, textarea, cancel, and
 mode-specific command button. Reset local state whenever it opens for a new
 request.
 
-- [ ] **Step 5: Make backend permissions authoritative**
+- [x] **Step 5: Make backend permissions authoritative**
 
 In `QuotaResetRequestList.vue`:
 
@@ -4320,7 +4327,7 @@ function canRetry(item: QuotaResetRequestSummary) {
 The fallback is only for legacy v1 summaries. Emit `select` to open a request
 detail dialog containing requester, teams, reason, reset result, and timeline.
 
-- [ ] **Step 6: Replace prompt actions and handle stale workflow**
+- [x] **Step 6: Replace prompt actions and handle stale workflow**
 
 Remove `window.prompt`. Store selected request and decision mode. Submit through
 the user or admin API according to the active queue. V2 approve and reject open
@@ -4335,7 +4342,7 @@ and show a neutral “workflow advanced” toast instead of a generic failure.
 All other successful actions reload queues with forced Work Items counts, using
 the existing queued refresh behavior.
 
-- [ ] **Step 7: Add bilingual workflow copy**
+- [x] **Step 7: Add bilingual workflow copy**
 
 Add keys for:
 
@@ -4356,7 +4363,7 @@ Add keys for:
 'quotaReset.requesterTeams'
 ```
 
-- [ ] **Step 8: Run focused tests and build**
+- [x] **Step 8: Run focused tests and build**
 
 Run:
 
@@ -4367,12 +4374,26 @@ cd frontend && npm run build
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit workflow UI**
+GREEN evidence (2026-07-14):
+`cd frontend && npm test -- quota-reset-view quota-reset-api work-items-store`
+passed 29 tests across 3 files. `cd frontend && npm run build` passed Vue
+type-checking and the Vite production build.
+
+- [x] **Step 9: Commit workflow UI**
 
 ```bash
 git add frontend/src/components/quota-reset frontend/src/views/QuotaResetView.vue frontend/src/__tests__/quota-reset-view.test.ts frontend/src/i18n.ts
 git commit -m "feat(frontend): show multi-stage quota reset approvals"
 ```
+
+Completion evidence (2026-07-14): committed Task 11 as `4796957`
+(`feat(frontend): show multi-stage quota reset approvals`). Fresh final
+verification passed the 29-test focused frontend suite, standalone
+`npx vue-tsc -b`, the Vite production build, all 479 frontend tests, and
+`git diff --check`. The final scoped scan found no TODO/FIXME, real-user email,
+credential-shaped value, `window.prompt`, or notification-identifier exposure
+in the changed quota-reset UI. Browser, Compose, architecture, and spec work
+remain intentionally deferred to Task 12.
 
 ---
 
