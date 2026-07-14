@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowDown, ArrowUp, Trash2 } from '@lucide/vue'
+import { ArrowDown, ArrowUp, RefreshCw, Trash2 } from '@lucide/vue'
 import {
   getQuotaResetApprovalChainOptions,
   getQuotaResetApprovalChains,
@@ -25,8 +25,10 @@ const chains = ref<QuotaResetApprovalChainInput[]>([])
 const selectedGroupKey = ref('')
 const loading = ref(false)
 const saving = ref(false)
+const chainsAuthoritative = ref(false)
 const error = ref('')
 const message = ref('')
+let loadSequence = 0
 
 const groupDropdownOpen = ref(false)
 const groupSearch = ref('')
@@ -116,7 +118,9 @@ function toInputChains(items: Array<QuotaResetApprovalChainInput>) {
 }
 
 async function loadChains() {
+  const sequence = ++loadSequence
   loading.value = true
+  chainsAuthoritative.value = false
   error.value = ''
   message.value = ''
   try {
@@ -124,21 +128,29 @@ async function loadChains() {
       getQuotaResetApprovalChainOptions(),
       getQuotaResetApprovalChains(),
     ])
-    groups.value = optionsResponse.data.data?.groups ?? []
-    departments.value = optionsResponse.data.data?.departments ?? []
-    chains.value = toInputChains(chainsResponse.data.data?.items ?? [])
+    if (sequence !== loadSequence) return
+
+    const options = optionsResponse.data.data
+    const items = chainsResponse.data.data?.items
+    if (!options || !Array.isArray(options.groups) || !Array.isArray(options.departments) || !Array.isArray(items)) {
+      throw new Error(t('quotaResetSettings.chainLoadFailed'))
+    }
+
+    groups.value = options.groups
+    departments.value = options.departments
+    chains.value = toInputChains(items)
 
     if (selectedGroupKey.value && !selectedChain.value) {
       selectedGroupKey.value = ''
     }
+    chainsAuthoritative.value = true
   } catch (err) {
-    groups.value = []
-    departments.value = []
-    chains.value = []
-    selectedGroupKey.value = ''
+    if (sequence !== loadSequence) return
     error.value = errorMessage(err, t('quotaResetSettings.chainLoadFailed'))
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) {
+      loading.value = false
+    }
   }
 }
 
@@ -221,6 +233,21 @@ function removeNode(index: number) {
   chain.nodes = chain.nodes.filter((_, nodeIndex) => nodeIndex !== index)
 }
 
+function removeChain() {
+  const chain = selectedChain.value
+  if (!chain || saving.value) return
+  chains.value = chains.value.filter(item => (
+    item.provider_id !== chain.provider_id || item.group_id !== chain.group_id
+  ))
+  selectedGroupKey.value = ''
+  groupDropdownOpen.value = false
+  groupSearch.value = ''
+  departmentDropdownOpen.value = false
+  departmentSearch.value = ''
+  error.value = ''
+  message.value = ''
+}
+
 function nodeWarning(node: QuotaResetApprovalChainNodeInput) {
   const sameDepartment = departments.value.filter(department => (
     department.department_external_id === node.department_external_id
@@ -241,6 +268,7 @@ function nodeWarning(node: QuotaResetApprovalChainNodeInput) {
 }
 
 async function saveChains() {
+  if (!chainsAuthoritative.value || loading.value || saving.value) return
   saving.value = true
   error.value = ''
   message.value = ''
@@ -248,6 +276,7 @@ async function saveChains() {
     const payload = toInputChains(chains.value)
     const response = await saveQuotaResetApprovalChains(payload)
     chains.value = toInputChains(response.data.data?.items ?? payload)
+    chainsAuthoritative.value = true
     message.value = t('quotaResetSettings.chainsSaved')
   } catch (err) {
     error.value = errorMessage(err, t('quotaResetSettings.chainsSaveFailed'))
@@ -262,7 +291,20 @@ async function saveChains() {
     class="rounded-md border border-gray-200 bg-white p-4 sm:p-5"
     data-testid="subscription-group-approval-chains"
   >
-    <h4 class="text-sm font-semibold text-gray-900">{{ t('quotaResetSettings.chains') }}</h4>
+    <div class="flex min-w-0 items-center justify-between gap-3">
+      <h4 class="min-w-0 text-sm font-semibold text-gray-900">{{ t('quotaResetSettings.chains') }}</h4>
+      <button
+        type="button"
+        data-testid="quota-reset-reload-chains"
+        class="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+        :aria-label="t('quotaResetSettings.reloadChains')"
+        :title="t('quotaResetSettings.reloadChains')"
+        :disabled="loading || saving"
+        @click="loadChains"
+      >
+        <RefreshCw aria-hidden="true" class="h-4 w-4" />
+      </button>
+    </div>
 
     <div v-if="error" class="mt-3 break-words rounded-md bg-red-50 p-3 text-sm text-red-700">
       {{ error }}
@@ -270,7 +312,13 @@ async function saveChains() {
     <div v-if="message" class="mt-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">
       {{ message }}
     </div>
-    <div v-if="loading" class="mt-3 text-sm text-gray-500">{{ t('settings.loading') }}</div>
+    <div
+      v-if="loading"
+      data-testid="quota-reset-chain-loading"
+      class="mt-3 text-sm text-gray-500"
+    >
+      {{ t('settings.loading') }}
+    </div>
 
     <div v-else class="mt-3 min-w-0 space-y-4">
       <div class="max-w-xl min-w-0">
@@ -324,9 +372,20 @@ async function saveChains() {
 
       <div
         v-if="selectedChain && !selectedGroupIsCurrent"
-        class="break-words rounded-md bg-amber-50 p-3 text-sm text-amber-800"
+        class="flex min-w-0 items-center justify-between gap-3 rounded-md bg-amber-50 p-3 text-sm text-amber-800"
       >
-        {{ t('quotaResetSettings.staleGroup') }}
+        <span class="min-w-0 break-words">{{ t('quotaResetSettings.staleGroup') }}</span>
+        <button
+          type="button"
+          data-testid="quota-reset-remove-chain"
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-amber-300 text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+          :aria-label="t('quotaResetSettings.removeChain', { group: selectedChain.group_name })"
+          :title="t('quotaResetSettings.removeChain', { group: selectedChain.group_name })"
+          :disabled="saving"
+          @click="removeChain"
+        >
+          <Trash2 aria-hidden="true" class="h-4 w-4" />
+        </button>
       </div>
 
       <div v-if="selectedChain" class="min-w-0 space-y-3">
@@ -448,7 +507,7 @@ async function saveChains() {
           type="button"
           data-testid="quota-reset-save-chains"
           class="min-h-10 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-          :disabled="saving"
+          :disabled="saving || loading || !chainsAuthoritative"
           @click="saveChains"
         >
           {{ saving ? t('settings.saving') : t('quotaResetSettings.saveChains') }}

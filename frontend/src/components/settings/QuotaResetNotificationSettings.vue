@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { RefreshCw } from '@lucide/vue'
 import {
   getQuotaResetNotificationSettings,
   testQuotaResetNotificationSettings,
@@ -28,11 +29,14 @@ const replacementURL = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)
+const settingsLoaded = ref(false)
 const feedback = ref<{ kind: 'success' | 'warning' | 'error'; text: string } | null>(null)
 
 const bearerCredentials = computed(() => (
   props.credentials.filter(credential => credential.kind === 'secret_text')
 ))
+const operationInProgress = computed(() => loading.value || saving.value || testing.value)
+const formLocked = computed(() => operationInProgress.value || !settingsLoaded.value)
 
 onMounted(() => {
   void loadSettings()
@@ -55,13 +59,39 @@ function applySettings(settings: QuotaResetNotificationSettings) {
   replacementURL.value = ''
 }
 
+function isNotificationSettings(value: unknown): value is QuotaResetNotificationSettings {
+  if (!value || typeof value !== 'object') return false
+  const settings = value as Partial<QuotaResetNotificationSettings>
+  if (
+    typeof settings.enabled !== 'boolean'
+    || (settings.channel_type !== 'wecom_group_robot' && settings.channel_type !== 'generic_webhook')
+    || typeof settings.template_version !== 'number'
+    || typeof settings.url_configured !== 'boolean'
+    || typeof settings.url_preview !== 'string'
+    || (settings.auth_type !== 'none' && settings.auth_type !== 'bearer_token')
+  ) {
+    return false
+  }
+  if (settings.channel_type === 'wecom_group_robot') {
+    return settings.auth_type === 'none'
+  }
+  if (settings.auth_type === 'none') return true
+  return Number.isInteger(settings.credential_id) && Number(settings.credential_id) > 0
+}
+
 async function loadSettings() {
+  if (operationInProgress.value) return
   loading.value = true
+  settingsLoaded.value = false
   feedback.value = null
   try {
     const response = await getQuotaResetNotificationSettings()
     const settings = response.data.data
-    if (settings) applySettings(settings)
+    if (!isNotificationSettings(settings)) {
+      throw new Error(t('quotaResetSettings.notificationLoadFailed'))
+    }
+    applySettings(settings)
+    settingsLoaded.value = true
   } catch (err) {
     feedback.value = {
       kind: 'error',
@@ -132,6 +162,7 @@ function buildPayload(): QuotaResetNotificationSettingsInput | null {
 }
 
 async function saveSettings() {
+  if (!settingsLoaded.value || operationInProgress.value) return
   feedback.value = null
   const payload = buildPayload()
   if (!payload) return
@@ -139,7 +170,12 @@ async function saveSettings() {
   saving.value = true
   try {
     const response = await updateQuotaResetNotificationSettings(payload)
-    if (response.data.data) applySettings(response.data.data)
+    const settings = response.data.data
+    if (!isNotificationSettings(settings)) {
+      throw new Error(t('quotaResetSettings.notificationSaveFailed'))
+    }
+    applySettings(settings)
+    settingsLoaded.value = true
     feedback.value = {
       kind: 'success',
       text: t('quotaResetSettings.notificationSaved'),
@@ -155,6 +191,7 @@ async function saveSettings() {
 }
 
 async function testSettings() {
+  if (!settingsLoaded.value || operationInProgress.value) return
   testing.value = true
   feedback.value = null
   try {
@@ -228,6 +265,7 @@ function credentialOptionLabel(credential: Credential) {
             data-testid="quota-reset-notification-enabled"
             type="checkbox"
             class="h-4 w-4 rounded border-gray-300 text-indigo-600"
+            :disabled="formLocked"
           />
           {{ t('settings.enabled') }}
         </label>
@@ -238,6 +276,7 @@ function credentialOptionLabel(credential: Credential) {
             v-model="channelType"
             data-testid="quota-reset-notification-channel"
             class="mt-1 w-full min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm"
+            :disabled="formLocked"
             @change="onChannelChange"
           >
             <option value="wecom_group_robot">{{ t('quotaResetSettings.channelWeCom') }}</option>
@@ -259,6 +298,7 @@ function credentialOptionLabel(credential: Credential) {
             autocomplete="off"
             placeholder="https://hooks.example.com/quota-reset"
             class="mt-1 w-full min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm"
+            :disabled="formLocked"
           />
         </label>
 
@@ -269,6 +309,7 @@ function credentialOptionLabel(credential: Credential) {
               v-model="authType"
               data-testid="quota-reset-notification-auth"
               class="mt-1 w-full min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm"
+              :disabled="formLocked"
               @change="onAuthChange"
             >
               <option value="none">{{ t('quotaResetSettings.authNone') }}</option>
@@ -282,6 +323,7 @@ function credentialOptionLabel(credential: Credential) {
               v-model.number="credentialID"
               data-testid="quota-reset-notification-credential"
               class="mt-1 w-full min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm"
+              :disabled="formLocked"
             >
               <option :value="null">{{ t('settings.selectApiCredential') }}</option>
               <option v-for="credential in bearerCredentials" :key="credential.id" :value="credential.id">
@@ -326,9 +368,20 @@ function credentialOptionLabel(credential: Credential) {
     <div class="mt-4 flex flex-wrap justify-end gap-2">
       <button
         type="button"
+        data-testid="quota-reset-reload-notification"
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+        :aria-label="t('quotaResetSettings.reloadNotification')"
+        :title="t('quotaResetSettings.reloadNotification')"
+        :disabled="operationInProgress"
+        @click="loadSettings"
+      >
+        <RefreshCw aria-hidden="true" class="h-4 w-4" />
+      </button>
+      <button
+        type="button"
         data-testid="quota-reset-test-notification"
         class="min-h-10 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-        :disabled="testing"
+        :disabled="formLocked"
         @click="testSettings"
       >
         {{ testing ? t('settings.testing') : t('quotaResetSettings.testWebhook') }}
@@ -337,7 +390,7 @@ function credentialOptionLabel(credential: Credential) {
         type="button"
         data-testid="quota-reset-save-notification"
         class="min-h-10 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-        :disabled="saving"
+        :disabled="formLocked"
         @click="saveSettings"
       >
         {{ saving ? t('settings.saving') : t('quotaResetSettings.saveWebhook') }}

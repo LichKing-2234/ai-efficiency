@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { RefreshCw } from '@lucide/vue'
 import {
   getQuotaResetApproverConfigs,
   listQuotaResetApproverCandidates,
   saveQuotaResetApproverConfigs,
 } from '@/api/quotaReset'
-import { listDirectoryDepartments, listDirectoryRuns, listDirectorySources } from '@/api/directory'
+import { getDirectoryRun, listDirectoryDepartments, listDirectorySources } from '@/api/directory'
 import { useI18n } from '@/i18n'
 import type {
   DirectoryDepartment,
@@ -26,6 +27,7 @@ const directorySources = ref<DirectorySource[]>([])
 const selectedDirectorySourceID = ref<number | null>(null)
 const loading = ref(false)
 const saving = ref(false)
+const configsAuthoritative = ref(false)
 const error = ref('')
 const directoryError = ref('')
 const candidateError = ref('')
@@ -69,11 +71,19 @@ function errorMessage(err: any, fallback: string) {
 }
 
 async function loadConfigs() {
+  if (loading.value || saving.value) return
   loading.value = true
+  configsAuthoritative.value = false
   error.value = ''
+  message.value = ''
   try {
     const response = await getQuotaResetApproverConfigs()
-    configs.value = response.data.data?.items ?? []
+    const items = response.data.data?.items
+    if (!Array.isArray(items)) {
+      throw new Error(t('quotaResetSettings.approverLoadFailed'))
+    }
+    configs.value = items
+    configsAuthoritative.value = true
   } catch (err) {
     error.value = errorMessage(err, t('quotaResetSettings.approverLoadFailed'))
   } finally {
@@ -92,10 +102,11 @@ async function loadDirectorySources() {
       && Number(source.last_successful_run_id) > 0
     ))
     const resolved = await Promise.all(sourcesWithRuns.map(async (source) => {
-      const runsResponse = await listDirectoryRuns(source.id)
-      const run = (runsResponse.data.data?.items ?? []).find(item => (
-        item.id === source.last_successful_run_id
-      ))
+      const runResponse = await getDirectoryRun(Number(source.last_successful_run_id))
+      const run = runResponse.data.data
+      if (!run || run.id !== source.last_successful_run_id || run.source_id !== source.id) {
+        return null
+      }
       const completedAt = eligibleCompletedApplyRunTime(run)
       return completedAt === null ? null : { source, run: run!, completedAt }
     }))
@@ -311,6 +322,7 @@ function rowsForSave(): QuotaResetApproverConfigInput[] {
 }
 
 async function saveConfigs() {
+  if (!configsAuthoritative.value || loading.value || saving.value) return
   saving.value = true
   message.value = ''
   error.value = ''
@@ -322,6 +334,7 @@ async function saveConfigs() {
   try {
     const response = await saveQuotaResetApproverConfigs(rowsForSave(), 'replace_all')
     configs.value = response.data.data?.items ?? []
+    configsAuthoritative.value = true
     resetSelectedDepartment()
     message.value = t('quotaResetSettings.configSaved')
     emit('saved')
@@ -338,7 +351,20 @@ async function saveConfigs() {
     class="rounded-md border border-gray-200 bg-white p-4 sm:p-5"
     data-testid="department-approver-settings"
   >
-    <h4 class="text-sm font-semibold text-gray-900">{{ t('quotaResetSettings.approvers') }}</h4>
+    <div class="flex min-w-0 items-center justify-between gap-3">
+      <h4 class="min-w-0 text-sm font-semibold text-gray-900">{{ t('quotaResetSettings.approvers') }}</h4>
+      <button
+        type="button"
+        data-testid="quota-reset-reload-approvers"
+        class="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+        :aria-label="t('quotaResetSettings.reloadApprovers')"
+        :title="t('quotaResetSettings.reloadApprovers')"
+        :disabled="loading || saving"
+        @click="loadConfigs"
+      >
+        <RefreshCw aria-hidden="true" class="h-4 w-4" />
+      </button>
+    </div>
 
     <div v-if="visibleError" class="mt-3 break-words rounded-md bg-red-50 p-3 text-sm text-red-700">
       {{ visibleError }}
@@ -541,7 +567,7 @@ async function saveConfigs() {
         type="button"
         data-testid="quota-reset-save-approvers"
         class="min-h-10 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-60 lg:mt-6"
-        :disabled="saving"
+        :disabled="saving || loading || !configsAuthoritative"
         @click="saveConfigs"
       >
         {{ saving ? t('settings.saving') : t('quotaResetSettings.saveApprovers') }}
