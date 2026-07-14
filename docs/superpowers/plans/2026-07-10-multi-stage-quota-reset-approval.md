@@ -4063,6 +4063,38 @@ Task 10 self-review follow-up (2026-07-14):
 Commit evidence: `207fbb1` (`feat(frontend): configure quota reset approval
 workflows`).
 
+Task 10 SPEC review follow-up (2026-07-14): **Complete.**
+
+- [x] Add current-source ordering, run-id tie-break, unavailable-source,
+  candidate 503, and stale candidate rejection interaction coverage.
+- [x] Capture focused RED before changing production code.
+- [x] Match frontend current-source resolution to backend `CurrentSourceID`.
+- [x] Surface only the latest candidate request error without weakening
+  latest-request-wins behavior.
+- [x] Run focused settings tests, project typecheck, full frontend tests, and
+  hygiene scans.
+- [x] Commit the SPEC review fix separately.
+
+SPEC review RED evidence: `cd frontend && npm test --
+quota-reset-approval-settings settings-view` exited 1 with 4 expected failures
+and 38 passing tests. The failures showed that directory run APIs were never
+called, source 1 was still selected instead of the later source 2, an
+ineligible preview run did not disable source selection, and a current
+candidate 503 was silently reduced to an empty result. The stale older request
+rejection test passed, confirming that the existing request-sequence guard
+already preserves latest-result ownership.
+
+SPEC review GREEN evidence: the same focused command passed both files and all
+42 tests. `cd frontend && npx vue-tsc -b` exited 0 with no diagnostics, and
+`cd frontend && npm test` passed all 39 files / 453 tests. `git diff --check`
+passed. `npm run` confirmed no formatter or lint script exists. Changed-file
+TODO/FIXME, real-data, raw-secret, legacy unmatched-representative, and Task 11
+scope scans were clean. The final candidate call remains exactly
+`source_id/q/page/page_size` with no department filter.
+
+SPEC review fix commit evidence: `c4265c7` (`fix(frontend): resolve current
+quota reset directory source`).
+
 ---
 
 ### Task 11: Add Node Timeline and Mandatory Decision Comments
