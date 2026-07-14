@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 are complete. Task 5 is next; this branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 are complete and task reviews are clean. Task 5 Steps 1-5 are complete; only stacked draft PR delivery remains. This branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Make the protected-navigation work-item badge and administrator offboarding list fast and bounded while preserving authoritative quota, credential, Directory Sync, Relay disable, and token-revocation behavior.
 
@@ -289,17 +289,17 @@
 - Consumes: Tasks 1-4 behavior and test evidence.
 - Produces: current architecture documentation, independent review evidence, a pushed stacked branch, and a draft PR targeting `docs/performance-contracts-116` until PR #138 merges.
 
-- [ ] **Step 1: Update current architecture documentation**
+- [x] **Step 1: Update current architecture documentation**
 
   Document the landed workitems-owned Redis read model, PostgreSQL revision invalidation boundary, shared directorysync count/page anti-join, deployment namespace, and Pinia freshness owner. Do not describe unrelated future performance tickets as implemented.
 
-- [ ] **Step 2: Run formatting and focused race verification**
+- [x] **Step 2: Run formatting and focused race verification**
 
   Run Go formatting on changed Go files, then run: `cd backend && go test -race ./internal/workitems ./internal/directorysync ./internal/quotareset ./internal/auth`
 
   Expected: PASS with no data race in singleflight, lease, revision, or mutation wiring.
 
-- [ ] **Step 3: Run full repository verification**
+- [x] **Step 3: Run full repository verification**
 
   Run separately:
 
@@ -310,11 +310,11 @@
 
   Expected: all suites pass; environment-sensitive role E2E evidence is reported separately.
 
-- [ ] **Step 4: Perform independent spec and code-quality reviews**
+- [x] **Step 4: Perform independent spec and code-quality reviews**
 
   Generate a full branch diff package from base `5f6c58e6821dfcd95eefff14ea3426d454ae86cd`. Ask independent reviewers to verify every #119 acceptance criterion and repository standards. Resolve every Critical or Important finding, rerun covering tests, and re-review until clean.
 
-- [ ] **Step 5: Commit documentation and review fixes**
+- [x] **Step 5: Commit documentation and review fixes**
 
   Commit: `docs(architecture): document work item read model`
 
