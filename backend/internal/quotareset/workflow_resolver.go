@@ -154,8 +154,8 @@ func (r *WorkflowResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 		if externalID != "" {
 			membersByExternalID[externalID] = member
 		}
-		user := workflowMemberUser(member, usersByID, usersByEmail)
-		if !workflowApproverIsCurrentlyUsable(user, member) {
+		user := directoryMemberUser(member, usersByID, usersByEmail)
+		if !directoryApproverIsCurrentlyUsable(user, member) {
 			continue
 		}
 		if existing := activeMembersByUserID[user.ID]; existing == nil || member.ID < existing.ID {
@@ -359,7 +359,7 @@ func usableConfiguredApprovers(userIDs []int, facts *workflowDirectoryFacts, req
 		}
 		user := facts.usersByID[userID]
 		member := facts.activeMembersByUserID[userID]
-		if !workflowApproverIsCurrentlyUsable(user, member) {
+		if !directoryApproverIsCurrentlyUsable(user, member) {
 			continue
 		}
 		candidates = append(candidates, workflowApproverCandidate{user: user, member: member})
@@ -371,11 +371,11 @@ func usableRepresentativeApprovers(members []*ent.DirectoryMember, facts *workfl
 	candidates := make([]workflowApproverCandidate, 0, len(members))
 	seen := make(map[int]struct{}, len(members))
 	for _, member := range members {
-		if member == nil || !workflowMemberIsActive(member) {
+		if member == nil || !directoryMemberIsActive(member) {
 			continue
 		}
-		user := workflowMemberUser(member, facts.usersByID, facts.usersByEmail)
-		if user == nil || user.ID == requesterUserID || !workflowApproverIsCurrentlyUsable(user, member) {
+		user := directoryMemberUser(member, facts.usersByID, facts.usersByEmail)
+		if user == nil || user.ID == requesterUserID || !directoryApproverIsCurrentlyUsable(user, member) {
 			continue
 		}
 		if _, ok := seen[user.ID]; ok {
@@ -423,33 +423,6 @@ func mergeResolvedApprovers(approvers *[]ResolvedNodeApprover, candidates []work
 		}
 	}
 	sort.SliceStable(*approvers, func(i, j int) bool { return (*approvers)[i].UserID < (*approvers)[j].UserID })
-}
-
-func workflowMemberIsActive(member *ent.DirectoryMember) bool {
-	return member != nil && strings.EqualFold(strings.TrimSpace(member.Status), "active")
-}
-
-func localUserHasCurrentAccess(user *ent.User) bool {
-	return user != nil &&
-		user.RelayDisabledAt == nil &&
-		user.TokenValidAfter == nil
-}
-
-func workflowApproverIsCurrentlyUsable(user *ent.User, member *ent.DirectoryMember) bool {
-	return workflowMemberIsActive(member) && localUserHasCurrentAccess(user)
-}
-
-func workflowMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) *ent.User {
-	if member == nil {
-		return nil
-	}
-	if member.MatchedUserID != nil {
-		return usersByID[*member.MatchedUserID]
-	}
-	if usersByEmail == nil {
-		return nil
-	}
-	return usersByEmail[strings.ToLower(strings.TrimSpace(member.EmailNormalized))]
 }
 
 func requesterMemberDisplayName(member *ent.DirectoryMember) string {

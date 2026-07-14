@@ -12,9 +12,13 @@ import type {
   DirectoryDepartment,
   DirectorySource,
   QuotaResetApproverCandidate,
+  QuotaResetApproverCandidateListResponse,
   QuotaResetApproverConfig,
   QuotaResetApproverConfigInput,
+  QuotaResetApproverConfigListResponse,
 } from '@/types'
+
+const defaultCandidatePageSize = 20
 
 const emit = defineEmits<{
   saved: []
@@ -43,7 +47,7 @@ const candidateSearch = ref('')
 const candidates = ref<QuotaResetApproverCandidate[]>([])
 const candidateLoading = ref(false)
 const candidatePage = ref(0)
-const candidatePageSize = ref(20)
+const candidatePageSize = ref(defaultCandidatePageSize)
 const candidateTotal = ref(0)
 let candidateRequestSequence = 0
 
@@ -80,6 +84,90 @@ function errorMessage(err: any, fallback: string) {
   return err?.response?.data?.message || err?.message || fallback
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object'
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function decodeApproverConfigResponse(
+  value: unknown,
+  malformedMessage: string,
+): QuotaResetApproverConfigListResponse {
+  if (!isRecord(value) || !Array.isArray(value.items)) {
+    throw new Error(malformedMessage)
+  }
+  const sourceID = value.directory_source_id
+  if (sourceID !== null && !isPositiveSafeInteger(sourceID)) {
+    throw new Error(malformedMessage)
+  }
+  return {
+    directory_source_id: sourceID,
+    items: value.items as QuotaResetApproverConfig[],
+  }
+}
+
+function isApproverCandidate(value: unknown): value is QuotaResetApproverCandidate {
+  if (!isRecord(value)) return false
+  return isPositiveSafeInteger(value.user_id)
+    && typeof value.username === 'string'
+    && typeof value.email === 'string'
+    && typeof value.display_name === 'string'
+    && typeof value.directory_member_external_id === 'string'
+    && Array.isArray(value.department_paths)
+    && value.department_paths.every(path => typeof path === 'string')
+    && typeof value.wecom_mention_available === 'boolean'
+}
+
+function decodeCandidatePage(
+  value: unknown,
+  requestedPage: number,
+  requestedPageSize: number,
+  malformedMessage: string,
+): QuotaResetApproverCandidateListResponse {
+  if (!isRecord(value) || !Array.isArray(value.items) || !value.items.every(isApproverCandidate)) {
+    throw new Error(malformedMessage)
+  }
+  const page = value.page
+  const pageSize = value.page_size
+  const total = value.total
+  if (
+    !isPositiveSafeInteger(page)
+    || page !== requestedPage
+    || !isPositiveSafeInteger(pageSize)
+    || pageSize !== requestedPageSize
+    || !isNonNegativeSafeInteger(total)
+  ) {
+    throw new Error(malformedMessage)
+  }
+  const offset = (page - 1) * pageSize
+  const returnedEnd = offset + value.items.length
+  const hasMore = returnedEnd < total
+  if (
+    !Number.isSafeInteger(offset)
+    || !Number.isSafeInteger(returnedEnd)
+    || value.items.length > pageSize
+    || returnedEnd > total
+    || (total === 0 && (page !== 1 || value.items.length !== 0))
+    || (total > 0 && offset >= total)
+    || (hasMore && value.items.length !== pageSize)
+  ) {
+    throw new Error(malformedMessage)
+  }
+  return {
+    items: value.items,
+    page,
+    page_size: pageSize,
+    total,
+  }
+}
+
 async function loadConfigs() {
   if (loading.value || saving.value) return
   loading.value = true
@@ -88,17 +176,12 @@ async function loadConfigs() {
   message.value = ''
   try {
     const response = await getQuotaResetApproverConfigs()
-    const data = response.data.data
-    const items = data?.items
-    const sourceID = data?.directory_source_id
-    if (
-      !Array.isArray(items)
-      || (sourceID !== null && (typeof sourceID !== 'number' || !Number.isInteger(sourceID) || sourceID <= 0))
-    ) {
-      throw new Error(t('quotaResetSettings.approverLoadFailed'))
-    }
-    configs.value = items
-    selectedDirectorySourceID.value = sourceID
+    const data = decodeApproverConfigResponse(
+      response?.data?.data,
+      t('quotaResetSettings.approverLoadFailed'),
+    )
+    configs.value = data.items
+    applyAuthoritativeDirectorySource(data.directory_source_id)
     configsAuthoritative.value = true
   } catch (err) {
     error.value = errorMessage(err, t('quotaResetSettings.approverLoadFailed'))
@@ -141,7 +224,7 @@ function closeApproverDropdown() {
 function resetCandidateResults() {
   candidates.value = []
   candidatePage.value = 0
-  candidatePageSize.value = 20
+  candidatePageSize.value = defaultCandidatePageSize
   candidateTotal.value = 0
 }
 
@@ -226,6 +309,13 @@ function resetSelectedDepartment() {
   candidateError.value = ''
 }
 
+function applyAuthoritativeDirectorySource(sourceID: number | null) {
+  if (selectedDirectorySourceID.value === sourceID) return false
+  selectedDirectorySourceID.value = sourceID
+  resetSelectedDepartment()
+  return true
+}
+
 async function loadCandidatePage(page: number, append: boolean) {
   const sourceID = selectedDirectorySourceID.value
   const sequence = ++candidateRequestSequence
@@ -240,19 +330,24 @@ async function loadCandidatePage(page: number, append: boolean) {
   candidateLoading.value = true
   candidateError.value = ''
   try {
+    const requestedPageSize = candidatePageSize.value
     const response = await listQuotaResetApproverCandidates({
       source_id: sourceID,
       q: candidateSearch.value.trim(),
       page,
-      page_size: candidatePageSize.value,
+      page_size: requestedPageSize,
     })
     if (sequence !== candidateRequestSequence) return
-    const data = response.data.data
-    const pageItems = data?.items ?? []
-    candidates.value = mergeUniqueCandidates(append ? candidates.value : [], pageItems)
-    candidatePage.value = data?.page ?? page
-    candidatePageSize.value = data?.page_size ?? candidatePageSize.value
-    candidateTotal.value = data?.total ?? candidates.value.length
+    const data = decodeCandidatePage(
+      response?.data?.data,
+      page,
+      requestedPageSize,
+      t('quotaResetSettings.approverSearchFailed'),
+    )
+    candidates.value = mergeUniqueCandidates(append ? candidates.value : [], data.items)
+    candidatePage.value = data.page
+    candidatePageSize.value = data.page_size
+    candidateTotal.value = data.total
     candidateError.value = ''
   } catch (err) {
     if (sequence !== candidateRequestSequence) return
@@ -339,10 +434,16 @@ async function saveConfigs() {
   candidateError.value = ''
   try {
     const response = await saveQuotaResetApproverConfigs(rowsForSave(), 'replace_all')
-    configs.value = response.data.data?.items ?? []
-    selectedDirectorySourceID.value = response.data.data?.directory_source_id ?? null
+    const data = decodeApproverConfigResponse(
+      response?.data?.data,
+      t('quotaResetSettings.configSaveFailed'),
+    )
+    configs.value = data.items
+    const sourceChanged = applyAuthoritativeDirectorySource(data.directory_source_id)
     configsAuthoritative.value = true
-    resetSelectedDepartment()
+    if (!sourceChanged) {
+      resetSelectedDepartment()
+    }
     message.value = t('quotaResetSettings.configSaved')
     emit('saved')
   } catch (err) {

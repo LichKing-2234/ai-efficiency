@@ -5102,6 +5102,7 @@ step open until those findings are fixed and independently re-reviewed.
 ### Task 17: Align Approver Configuration with Runtime Eligibility
 
 **Files:**
+- Add: `backend/internal/quotareset/directory_identity.go`
 - Modify: `backend/internal/quotareset/chain_config.go`
 - Modify: `backend/internal/quotareset/chain_config_test.go`
 - Modify: `backend/internal/quotareset/workflow_resolver.go`
@@ -5195,6 +5196,73 @@ correctness, contract, data-hygiene, or ownership issue.
 Step 4 intentionally remains unchecked: the implementation, spec, and
 verification are complete, but the required independent Task 17 spec and
 standards reviews have not run yet.
+
+Quality-review follow-up status (2026-07-15): Task 17 was reopened after
+commit `ca77d17` for authoritative-source invalidation, exact non-null
+`matched_user_id` precedence, shared strict response decoding, and defensive
+candidate-pagination validation. Step 4 remains open through implementation
+and the required independent re-review.
+
+Backend review RED evidence (2026-07-15): `cd backend && go test
+./internal/quotareset -run
+'^(TestSaveApproverConfigsRejectsZeroMatchedUserIDEmailFallback|TestSaveApproverConfigsReturnsAuthoritativeDirectorySourceIDForEmptyReplacement|TestMatchApproverCandidatesHonorsNonNullMatchedUserID)$'
+-count=1` failed only the intended zero-pointer regressions. Candidate matching
+returned email-matched user `2` for non-null `matched_user_id = 0`, and save
+validation returned `<nil>` instead of `ErrInvalidApproverConfig`. The
+nonexistent, conflicting-email, token-revoked, and relay-disabled identity
+subtests passed, as did the new characterization proving an empty successful
+replacement already returns the authoritative source id.
+
+Backend review GREEN evidence (2026-07-15): after moving directory-member
+identity, active-member state, and local current-access checks into the shared
+neutral helper module, the same focused command passed all cases (`ok`,
+0.912s). Both candidate matching and workflow resolution now call the same
+non-null `matched_user_id` precedence and usability implementation; Task 18
+files remain untouched.
+
+Frontend review RED evidence (2026-07-15): `cd frontend && npm test --
+quota-reset-approval-settings` ran 53 tests and failed the intended 10 while 43
+passed. After a source-A request began, a source-B config reload left
+`Department Alpha` selected or left the old department dropdown open. All
+seven malformed candidate response cases were accepted: non-array items,
+requested-page mismatch, non-positive page/page-size, page-size mismatch,
+negative total, and an item count incoherent with total. A malformed successful
+PUT displayed `Approver configs saved`, discarded the prior row, and switched
+to Directory B. The new successful-PUT source test and page-2 retain/retry
+characterization passed, along with the existing accessible load-more and stale
+search regressions.
+
+Frontend review GREEN evidence (2026-07-15): after adding one shared strict
+approver-config decoder, source-scoped invalidation, and strict candidate-page
+decoding, the same focused command passed all 53 tests. A source change now
+clears the form/options/results and invalidates both request generations;
+malformed GET/PUT data cannot mutate authoritative state; all pagination
+metadata cases fail closed; and a page-2 failure keeps page 1 plus an enabled
+same-page retry. Existing stale-search, duplicate suppression, later-page
+selection, and accessible load-more coverage remains green.
+
+Quality-review follow-up verification (2026-07-15): `cd backend && go test
+./internal/quotareset ./internal/handler -count=1` passed uncached
+(`quotareset` 51.244s, `handler` 45.399s). `cd frontend && npm test --
+quota-reset-approval-settings quota-reset-api` passed both files and 63/63
+tests. `cd backend && go test ./... -count=1` passed the full suite, including
+`internal/handler` 66.584s and `internal/quotareset` 70.727s; `cd backend && go
+vet ./...` exited 0. `cd frontend && npm test` passed all 40 files and 495/495
+tests, and `cd frontend && npm run build` passed `vue-tsc -b` plus the Vite
+production build after transforming 1955 modules.
+
+Follow-up documentation and hygiene evidence (2026-07-15): the current spec
+uses durable live-plan implementation wording and now records exact non-null
+`matched_user_id` precedence, source-change invalidation, shared strict
+GET/PUT decoding, fail-closed pagination metadata, and later-page retry.
+`git diff --check` and changed-Go-file `gofmt -d` were clean. Scoped
+TODO/FIXME and case-insensitive non-example email scans returned no matches;
+credential-shaped matches were only pre-existing explicitly synthetic robot
+keys. Manual self-review found no remaining correctness, contract, data
+hygiene, scope, or Task 18/19 ownership issue.
+
+Task 17 Step 4 remains unchecked until the independent spec and standards
+re-review passes.
 
 ### Task 18: Include Durable Workflow Progress in Notifications
 

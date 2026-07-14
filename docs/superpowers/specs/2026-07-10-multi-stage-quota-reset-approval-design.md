@@ -2,11 +2,10 @@
 
 **Date:** 2026-07-10
 **Status:** Current implemented contract
-**Implementation:** Production behavior is implemented through commit `fa7665f`,
-with review-driven backend test coverage through `80d2266` as of 2026-07-15.
-Task 16 full backend/frontend, source-server and Compose browser, and rebuilt
-Compose readiness verification completed on 2026-07-15. Final whole-branch spec
-and standards reviews and plan closure remain pending in the linked live plan.
+**Implementation:** Current implementation, verification, review follow-ups, and
+remaining closure gates are tracked in the linked live plan. This header does
+not pin a moving follow-up commit boundary; the plan is the durable execution
+ledger for the current contract.
 **Scope:** `backend/ent/schema/`, `backend/internal/quotareset/`, `backend/internal/workitems/`, `backend/internal/handler/`, `backend/internal/directorysync/`, `frontend/src/api/`, `frontend/src/components/settings/`, `frontend/src/components/quota-reset/`, `frontend/src/views/QuotaResetView.vue`
 **Related:**
 
@@ -253,6 +252,13 @@ unavailable, deleted, or out-of-scope matched user leaves the member unmatched.
 It must not reassign that member by email. Normalized-email fallback is allowed
 only when `matched_user_id` is null.
 
+Non-null includes `0`, a nonexistent id, and an id whose local user is disabled
+or token-revoked. None of those values may trigger email fallback, even when
+the member email matches another current-access local user. Candidate listing,
+save validation, workflow resolution, and notification revalidation share one
+directory-member identity implementation plus one local current-access
+predicate so configuration cannot accept an identity runtime will reject.
+
 This precedence applies both to workflow creation and to live activation or
 cancellation recipient resolution. In particular, notification resolution may
 use a user subset containing only snapshotted candidates; a member still
@@ -317,6 +323,14 @@ The field is `null` when there is no current source and remains the exact
 backend-selected id when the config list is empty. Clients may list directory
 sources to render a readable label, but they must not fetch or rank sync runs
 to choose a source.
+
+The frontend decodes both GET and successful PUT approver-config responses with
+the same strict decoder before mutating state. Malformed data fails the
+operation and preserves the prior authoritative configs and source. When a
+valid response changes `directory_source_id`, the component closes both
+dropdowns, invalidates both request generations, and clears all source-scoped
+department form state, options, candidate results, pagination, and errors
+before any older response can write back.
 
 ### Subscription Group Approval Chains
 
@@ -1017,6 +1031,14 @@ feedback only.
 8. Append later pages in server order, deduplicate by local `user_id`, and use a
    request generation so stale search or pagination responses cannot replace or
    append to current results.
+9. Validate candidate items and pagination metadata before changing state. The
+   response page must equal the requested page; page and page size must be
+   positive safe integers; page size must match the request; total must be a
+   coherent nonnegative safe integer; and returned item count must fit the
+   declared page and total.
+10. A later-page network or decode error preserves all prior pages and leaves
+    load-more enabled to retry the same page. Page/search metadata advances only
+    after a valid response.
 
 ### Subscription Group Chains
 
@@ -1170,6 +1192,12 @@ Cover:
     ranking, including a nullable no-source response.
 11. Incremental candidate pagination beyond the first page, duplicate
     suppression, search reset to page 1, and stale-response isolation.
+12. Source changes invalidate in-flight department and candidate requests and
+    clear all source-scoped form/results state.
+13. GET and PUT approver-config responses share strict decoding; malformed PUT
+    data preserves prior authoritative state and reports save failure.
+14. Candidate page mismatch, invalid metadata, and incoherent totals fail
+    closed, while a page-2 error preserves page 1 and retries page 2.
 
 ### Browser Verification
 

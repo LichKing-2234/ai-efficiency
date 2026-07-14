@@ -357,6 +357,31 @@ func TestSaveApproverConfigsRejectsTokenRevokedUser(t *testing.T) {
 	}
 }
 
+func TestSaveApproverConfigsRejectsZeroMatchedUserIDEmailFallback(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
+	admin := createQuotaResetUser(t, ctx, client, "admin", "admin@example.com", nil, "admin")
+	emailUser := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", nil, "user")
+	zero := 0
+	member := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", emailUser.Email, department.ExternalID, &zero)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, member, department.ExternalID)
+
+	_, err := NewService(client, nil, nil, nil).SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+		ActorUserID: admin.ID,
+		Items: []ApproverConfigInput{{
+			DepartmentExternalID:  department.ExternalID,
+			DepartmentDisplayPath: department.Path,
+			ApproverUserID:        emailUser.ID,
+			Enabled:               true,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidApproverConfig) {
+		t.Fatalf("SaveApproverConfigs(zero matched_user_id email fallback) error = %v, want ErrInvalidApproverConfig", err)
+	}
+}
+
 func TestListApproverConfigsReturnsAuthoritativeDirectorySourceID(t *testing.T) {
 	t.Run("null without current source", func(t *testing.T) {
 		ctx := context.Background()
@@ -390,6 +415,28 @@ func TestListApproverConfigsReturnsAuthoritativeDirectorySourceID(t *testing.T) 
 			t.Fatalf("items = %#v, want explicit empty array", payload["items"])
 		}
 	})
+}
+
+func TestSaveApproverConfigsReturnsAuthoritativeDirectorySourceIDForEmptyReplacement(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	admin := createQuotaResetUser(t, ctx, client, "admin", "admin@example.com", nil, "admin")
+
+	resp, err := NewService(client, nil, nil, nil).SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+		ActorUserID: admin.ID,
+		Mode:        ApproverConfigSaveModeReplaceAll,
+		Items:       []ApproverConfigInput{},
+	})
+	if err != nil {
+		t.Fatalf("SaveApproverConfigs(empty replacement) error = %v", err)
+	}
+	if resp.DirectorySourceID == nil || *resp.DirectorySourceID != source.ID {
+		t.Fatalf("directory_source_id = %#v, want %d", resp.DirectorySourceID, source.ID)
+	}
+	if len(resp.Items) != 0 {
+		t.Fatalf("items = %#v, want empty response", resp.Items)
+	}
 }
 
 func marshalApproverConfigResponse(t *testing.T, response *ApproverConfigListResponse) map[string]any {
@@ -455,6 +502,55 @@ func TestMatchApproverCandidatesMatchesNormalizedEmailAndCollectsPaths(t *testin
 	}
 	if !items[0].WeComMentionAvailable {
 		t.Fatal("WeComMentionAvailable = false, want external_id fallback coverage")
+	}
+}
+
+func TestMatchApproverCandidatesHonorsNonNullMatchedUserID(t *testing.T) {
+	zero := 0
+	missing := 999
+	matchedID := 1
+	revokedID := 3
+	disabledID := 4
+	now := time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC)
+	users := []*ent.User{
+		{ID: matchedID, Username: "matched-user", Email: "matched-user@example.com"},
+		{ID: 2, Username: "email-user", Email: "email-user@example.com"},
+		{ID: revokedID, Username: "revoked-user", Email: "revoked-user@example.com", TokenValidAfter: &now},
+		{ID: disabledID, Username: "disabled-user", Email: "disabled-user@example.com", RelayDisabledAt: &now},
+	}
+	tests := []struct {
+		name          string
+		matchedUserID *int
+		wantUserID    int
+	}{
+		{name: "zero is authoritative", matchedUserID: &zero},
+		{name: "missing user is authoritative", matchedUserID: &missing},
+		{name: "conflicting email keeps matched user", matchedUserID: &matchedID, wantUserID: matchedID},
+		{name: "token revoked matched user does not email fallback", matchedUserID: &revokedID},
+		{name: "relay disabled matched user does not email fallback", matchedUserID: &disabledID},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			member := &ent.DirectoryMember{
+				ID:              11,
+				ExternalID:      "member-alice",
+				EmailNormalized: "email-user@example.com",
+				DisplayName:     "Alice Example",
+				Status:          "active",
+				MatchedUserID:   tt.matchedUserID,
+			}
+
+			items := matchApproverCandidates("", []*ent.DirectoryMember{member}, nil, nil, users)
+			if tt.wantUserID == 0 {
+				if len(items) != 0 {
+					t.Fatalf("candidates = %#v, want no email fallback", items)
+				}
+				return
+			}
+			if len(items) != 1 || items[0].UserID != tt.wantUserID {
+				t.Fatalf("candidates = %#v, want matched user %d", items, tt.wantUserID)
+			}
+		})
 	}
 }
 

@@ -509,6 +509,98 @@ describe('QuotaResetApprovalSettings', () => {
     expect(directory.listDirectoryDepartments).toHaveBeenCalledWith({ source_id: 99, q: '' })
   })
 
+  it('invalidates an in-flight source-A candidate request when configs switch to source B', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const directory = await import('@/api/directory') as any
+    const staleCandidates = deferred<any>()
+    api.getQuotaResetApproverConfigs
+      .mockResolvedValueOnce(approverConfigResponse([], 1))
+      .mockResolvedValueOnce(approverConfigResponse([], 2))
+    api.listQuotaResetApproverCandidates.mockReturnValueOnce(staleCandidates.promise)
+    directory.listDirectorySources.mockResolvedValueOnce({
+      data: {
+        data: {
+          items: [
+            directorySource(1, 'Directory A', 10),
+            directorySource(2, 'Directory B', 20),
+          ],
+        },
+      },
+    })
+    directory.listDirectoryDepartments.mockImplementation(({ source_id }: { source_id: number }) => Promise.resolve({
+      data: {
+        data: {
+          items: source_id === 1
+            ? [departmentAlpha]
+            : [{ ...departmentBeta, id: 22, source_id: 2 }],
+        },
+      },
+    }))
+    const wrapper = await mountDepartmentApprovers()
+    await selectApproverDepartment(wrapper)
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    expect(wrapper.find('[data-testid="quota-reset-approver-loading"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="quota-reset-reload-approvers"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="quota-reset-department-select"]').text()).toContain('Select department')
+    expect(wrapper.get('[data-testid="quota-reset-approver-select"]').attributes()).toHaveProperty('disabled')
+    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(false)
+
+    staleCandidates.resolve({
+      data: {
+        data: {
+          items: [{ ...aliceCandidate, display_name: 'Stale Source A Candidate' }],
+          page: 1,
+          page_size: 20,
+          total: 1,
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Stale Source A Candidate')
+
+    await wrapper.get('[data-testid="quota-reset-department-select"]').trigger('click')
+    await flushPromises()
+    expect(directory.listDirectoryDepartments).toHaveBeenLastCalledWith({ source_id: 2, q: '' })
+    expect(wrapper.find('[data-testid="quota-reset-department-option-dept-alpha"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-department-option-dept-beta"]').exists()).toBe(true)
+  })
+
+  it('invalidates an in-flight source-A department request when configs switch to source B', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const directory = await import('@/api/directory') as any
+    const staleDepartments = deferred<any>()
+    api.getQuotaResetApproverConfigs
+      .mockResolvedValueOnce(approverConfigResponse([], 1))
+      .mockResolvedValueOnce(approverConfigResponse([], 2))
+    directory.listDirectoryDepartments.mockImplementation(({ source_id }: { source_id: number }) => (
+      source_id === 1
+        ? staleDepartments.promise
+        : Promise.resolve({
+            data: { data: { items: [{ ...departmentBeta, id: 22, source_id: 2 }] } },
+          })
+    ))
+    const wrapper = await mountDepartmentApprovers()
+    await wrapper.get('[data-testid="quota-reset-department-select"]').trigger('click')
+    expect(wrapper.find('[data-testid="quota-reset-department-filter"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="quota-reset-reload-approvers"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="quota-reset-department-filter"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="quota-reset-department-select"]').text()).toContain('Select department')
+
+    staleDepartments.resolve({ data: { data: { items: [departmentAlpha] } } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="quota-reset-department-option-dept-alpha"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="quota-reset-department-select"]').trigger('click')
+    await flushPromises()
+    expect(directory.listDirectoryDepartments).toHaveBeenLastCalledWith({ source_id: 2, q: '' })
+    expect(wrapper.find('[data-testid="quota-reset-department-option-dept-beta"]').exists()).toBe(true)
+  })
+
   it('localizes WeCom mention coverage in Chinese', async () => {
     setLocale('zh-CN')
     const wrapper = await mountSettings()
@@ -529,7 +621,7 @@ describe('QuotaResetApprovalSettings', () => {
           items: page === 2 ? [firstPage[19], lastCandidate] : firstPage,
           page,
           page_size: 20,
-          total: 21,
+          total: 22,
         },
       },
     }))
@@ -554,23 +646,106 @@ describe('QuotaResetApprovalSettings', () => {
     })
     expect(wrapper.findAll('[data-testid^="quota-reset-approver-option-"]')).toHaveLength(21)
     expect(wrapper.findAll('[data-testid="quota-reset-approver-option-20"]')).toHaveLength(1)
-    expect(wrapper.find('[data-testid="quota-reset-approver-load-more"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-approver-load-more"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="quota-reset-approver-option-21"]').trigger('click')
     expect(wrapper.get('[data-testid="quota-reset-approver-select"]').text()).toContain('Candidate 21')
+  })
+
+  it.each([
+    {
+      name: 'items are not an array',
+      data: { items: null, page: 1, page_size: 20, total: 0 },
+    },
+    {
+      name: 'requested page does not match',
+      data: { items: [aliceCandidate], page: 2, page_size: 20, total: 21 },
+    },
+    {
+      name: 'page is non-positive',
+      data: { items: [], page: 0, page_size: 20, total: 0 },
+    },
+    {
+      name: 'page size is non-positive',
+      data: { items: [], page: 1, page_size: 0, total: 0 },
+    },
+    {
+      name: 'page size does not match the request',
+      data: { items: [aliceCandidate], page: 1, page_size: 10, total: 1 },
+    },
+    {
+      name: 'total is negative',
+      data: { items: [], page: 1, page_size: 20, total: -1 },
+    },
+    {
+      name: 'total is incoherent with returned items',
+      data: { items: [aliceCandidate], page: 1, page_size: 20, total: 0 },
+    },
+  ])('rejects malformed candidate pagination metadata when $name', async ({ data }) => {
+    const api = await import('@/api/quotaReset') as any
+    api.listQuotaResetApproverCandidates.mockResolvedValueOnce({ data: { data } })
+    const wrapper = await mountDepartmentApprovers()
+    await selectApproverDepartment(wrapper)
+
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Failed to load approver candidates')
+    expect(wrapper.findAll('[data-testid^="quota-reset-approver-option-"]')).toHaveLength(0)
+    expect(wrapper.find('[data-testid="quota-reset-approver-load-more"]').exists()).toBe(false)
+  })
+
+  it('retains page 1 and retries page 2 after a later-page error', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const firstPage = Array.from({ length: 20 }, (_, index) => pagedCandidate(index + 1))
+    const lastCandidate = pagedCandidate(21)
+    let pageTwoCalls = 0
+    api.listQuotaResetApproverCandidates.mockImplementation(({ page }: { page: number }) => {
+      if (page === 1) {
+        return Promise.resolve({
+          data: { data: { items: firstPage, page: 1, page_size: 20, total: 21 } },
+        })
+      }
+      pageTwoCalls += 1
+      if (pageTwoCalls === 1) {
+        return Promise.reject({
+          response: { data: { message: 'Synthetic page 2 failed.' } },
+        })
+      }
+      return Promise.resolve({
+        data: { data: { items: [lastCandidate], page: 2, page_size: 20, total: 21 } },
+      })
+    })
+    const wrapper = await mountDepartmentApprovers()
+    await selectApproverDepartment(wrapper)
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="quota-reset-approver-load-more"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Synthetic page 2 failed.')
+    expect(wrapper.findAll('[data-testid^="quota-reset-approver-option-"]')).toHaveLength(20)
+    expect(wrapper.get('[data-testid="quota-reset-approver-load-more"]').attributes()).not.toHaveProperty('disabled')
+
+    await wrapper.get('[data-testid="quota-reset-approver-load-more"]').trigger('click')
+    await flushPromises()
+    expect(pageTwoCalls).toBe(2)
+    expect(wrapper.text()).not.toContain('Synthetic page 2 failed.')
+    expect(wrapper.findAll('[data-testid^="quota-reset-approver-option-"]')).toHaveLength(21)
+    expect(wrapper.find('[data-testid="quota-reset-approver-load-more"]').exists()).toBe(false)
   })
 
   it('resets pagination for search and ignores a stale later-page response', async () => {
     const api = await import('@/api/quotaReset') as any
     const staleSecondPage = deferred<any>()
     const currentSearch = deferred<any>()
-    const unfilteredCandidate = pagedCandidate(1)
+    const unfilteredCandidates = Array.from({ length: 20 }, (_, index) => pagedCandidate(index + 1))
     const staleCandidate = { ...pagedCandidate(21), display_name: 'Stale Page Candidate' }
     api.listQuotaResetApproverCandidates.mockImplementation(({ q, page }: { q: string, page: number }) => {
       if (q === 'alice') return currentSearch.promise
       if (page === 2) return staleSecondPage.promise
       return Promise.resolve({
-        data: { data: { items: [unfilteredCandidate], page: 1, page_size: 20, total: 21 } },
+        data: { data: { items: unfilteredCandidates, page: 1, page_size: 20, total: 21 } },
       })
     })
     const wrapper = await mountDepartmentApprovers()
@@ -829,6 +1004,62 @@ describe('QuotaResetApprovalSettings', () => {
 
     expect(wrapper.text()).toContain('Approver configs saved')
     expect(wrapper.text()).not.toContain('Synthetic candidate lookup failed.')
+  })
+
+  it('rejects a malformed save response and preserves prior authoritative state', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const directory = await import('@/api/directory') as any
+    api.getQuotaResetApproverConfigs.mockResolvedValueOnce(approverConfigResponse([configuredAliceApprover], 1))
+    api.saveQuotaResetApproverConfigs.mockResolvedValueOnce({
+      data: { data: { directory_source_id: 2, items: null } },
+    })
+    directory.listDirectorySources.mockResolvedValueOnce({
+      data: {
+        data: {
+          items: [
+            directorySource(1, 'Directory A', 10),
+            directorySource(2, 'Directory B', 20),
+          ],
+        },
+      },
+    })
+    const wrapper = await mountDepartmentApprovers()
+    expect(wrapper.get('[data-testid="quota-reset-current-directory-source"]').text()).toBe('Directory A')
+    expect(wrapper.find('[data-testid="quota-reset-config-row-7"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="quota-reset-save-approvers"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Failed to save approver configs')
+    expect(wrapper.text()).not.toContain('Approver configs saved')
+    expect(wrapper.get('[data-testid="quota-reset-current-directory-source"]').text()).toBe('Directory A')
+    expect(wrapper.find('[data-testid="quota-reset-config-row-7"]').exists()).toBe(true)
+  })
+
+  it('uses the authoritative current source returned by a successful save', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const directory = await import('@/api/directory') as any
+    api.getQuotaResetApproverConfigs.mockResolvedValueOnce(approverConfigResponse([], 1))
+    api.saveQuotaResetApproverConfigs.mockResolvedValueOnce(approverConfigResponse([], 2))
+    directory.listDirectorySources.mockResolvedValueOnce({
+      data: {
+        data: {
+          items: [
+            directorySource(1, 'Directory A', 10),
+            directorySource(2, 'Directory B', 20),
+          ],
+        },
+      },
+    })
+    const wrapper = await mountDepartmentApprovers()
+    await selectApproverDepartment(wrapper)
+
+    await wrapper.get('[data-testid="quota-reset-save-approvers"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Approver configs saved')
+    expect(wrapper.get('[data-testid="quota-reset-current-directory-source"]').text()).toBe('Directory B')
+    expect(wrapper.get('[data-testid="quota-reset-department-select"]').text()).toContain('Select department')
   })
 
   it('emits saved after full replacement and reloads chains through the parent', async () => {

@@ -229,7 +229,7 @@ func matchApproverCandidates(query string, members []*ent.DirectoryMember, membe
 	usersByID := make(map[int]*ent.User, len(users))
 	usersByEmail := make(map[string]*ent.User, len(users))
 	for _, user := range users {
-		if !localUserHasCurrentAccess(user) {
+		if user == nil {
 			continue
 		}
 		usersByID[user.ID] = user
@@ -260,16 +260,8 @@ func matchApproverCandidates(query string, members []*ent.DirectoryMember, membe
 
 	matches := make(map[int]*approverCandidateMatch)
 	for _, member := range members {
-		if member == nil || !strings.EqualFold(strings.TrimSpace(member.Status), "active") {
-			continue
-		}
-		var user *ent.User
-		if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-			user = usersByID[*member.MatchedUserID]
-		} else {
-			user = usersByEmail[normalizeCandidateValue(member.EmailNormalized)]
-		}
-		if user == nil {
+		user := directoryMemberUser(member, usersByID, usersByEmail)
+		if !directoryApproverIsCurrentlyUsable(user, member) {
 			continue
 		}
 
