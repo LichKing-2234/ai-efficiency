@@ -5493,10 +5493,9 @@ Current completion (2026-07-15):
 - Completed focused backend/handler/frontend regressions, full backend tests,
   go vet, full frontend tests, frontend build, gofmt, and git diff --check.
 - Committed the implementation with
-  fix(quotareset): scope approval queues to actionable work.
-- Remaining before closure: controller-managed task reviews, final browser and
-  Compose verification, and whole-branch reviews. This task does not run or
-  modify Compose.
+  `6c1c8d2 fix(quotareset): scope approval queues to actionable work`.
+- Remaining before closure: final browser and Compose verification plus
+  whole-branch reviews. This task does not run or modify Compose.
 
 Quality-review follow-up RED evidence (2026-07-15):
 
@@ -5557,4 +5556,14 @@ Minor test follow-up evidence (2026-07-15):
 - Restored GREEN: `cd frontend && npm test -- src/__tests__/quota-reset-view.test.ts`
   exited 0 with 1 file and 23 tests passing; `cd frontend && npm test -- src/__tests__/quota-reset-api.test.ts src/__tests__/quota-reset-view.test.ts`
   exited 0 with 2 files and 34 tests passing.
-- Task 19 Step 4 remains unchecked pending final re-review.
+- Independent task-review evidence (2026-07-15): the initial spec review passed
+  while quality review found two Important history-loading ownership issues and
+  one Minor tracked scratch artifact. Commit `a14fd5f` fixed all three. The
+  first re-review found one remaining Important for actions executed directly
+  from the processed view; commit `274ee22` fixed it. The next spec review found
+  one Minor test gap in proving core refresh independence; commit `01cc130`
+  added mutation-proven pre-resolution assertions. Final spec and quality
+  re-reviews of the complete `f084d77..01cc130` range returned PASS/Approved
+  with no Critical, Important, or Minor findings.
+- Task 19 Step 4 remains unchecked pending final browser/Compose verification
+  and whole-branch reviews.
