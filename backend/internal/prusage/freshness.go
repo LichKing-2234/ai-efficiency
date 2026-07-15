@@ -6,10 +6,12 @@ import (
 	"sort"
 	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
+	"github.com/lib/pq"
 )
 
 type UsageStatus string
@@ -24,6 +26,8 @@ const (
 	UsageStatusRefreshFailed UsageStatus = "refresh_failed"
 	UsageStatusUnknown       UsageStatus = "unknown"
 )
+
+const MaxPRFreshnessPageSize = 100
 
 type CommitFreshness struct {
 	CommitSHA       string      `json:"commit_sha"`
@@ -84,10 +88,10 @@ func (s *Service) EvaluatePRFreshnessPage(
 	if repoConfigID <= 0 {
 		return nil, fmt.Errorf("%s: repo config ID must be positive", op)
 	}
-
-	uniquePRs := make([]*ent.PrRecord, 0, len(prs))
-	prIDs := make([]int, 0, len(prs))
-	seenPRIDs := make(map[int]struct{}, len(prs))
+	initialCapacity := min(len(prs), MaxPRFreshnessPageSize+1)
+	uniquePRs := make([]*ent.PrRecord, 0, initialCapacity)
+	prIDs := make([]int, 0, initialCapacity)
+	seenPRIDs := make(map[int]struct{}, initialCapacity)
 	for i, pr := range prs {
 		if pr == nil {
 			return nil, fmt.Errorf("%s: PR at index %d is nil", op, i)
@@ -98,6 +102,9 @@ func (s *Service) EvaluatePRFreshnessPage(
 		seenPRIDs[pr.ID] = struct{}{}
 		uniquePRs = append(uniquePRs, pr)
 		prIDs = append(prIDs, pr.ID)
+		if len(uniquePRs) > MaxPRFreshnessPageSize {
+			return nil, fmt.Errorf("%s: page size %d exceeds maximum %d", op, len(uniquePRs), MaxPRFreshnessPageSize)
+		}
 	}
 	result := make(map[int]*PRFreshness, len(uniquePRs))
 	if len(uniquePRs) == 0 {
@@ -143,7 +150,15 @@ func (s *Service) EvaluatePRFreshnessPage(
 			LatestObserved     time.Time `json:"latest_observed"`
 		}
 		if err := s.entClient.ToolUsageEvent.Query().
-			Where(toolusageevent.CommitCheckpointIDIn(checkpointIDs...)).
+			Where(func(selector *entsql.Selector) {
+				selector.Where(entsql.P(func(builder *entsql.Builder) {
+					builder.
+						WriteString(selector.C(toolusageevent.FieldCommitCheckpointID)).
+						WriteString(" = ANY(").
+						Arg(pq.Array(checkpointIDs)).
+						WriteByte(')')
+				}))
+			}).
 			GroupBy(toolusageevent.FieldCommitCheckpointID).
 			Aggregate(
 				ent.As(ent.Count(), "event_count"),

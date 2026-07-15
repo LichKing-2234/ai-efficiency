@@ -249,6 +249,65 @@ func TestPRListByRepoIncludesAggregateUsageSummary(t *testing.T) {
 	}
 }
 
+func TestPRListByRepoNormalizesPaginationBounds(t *testing.T) {
+	env := setupTestEnv(t)
+	ctx := context.Background()
+	repoID := createTestRepo(t, env.client)
+	now := time.Date(2026, time.July, 15, 9, 0, 0, 0, time.UTC)
+
+	builders := make([]*ent.PrRecordCreate, 0, 120)
+	for i := 0; i < 120; i++ {
+		builders = append(builders, env.client.PrRecord.Create().
+			SetRepoConfigID(repoID).
+			SetScmPrID(11000+i).
+			SetTitle(fmt.Sprintf("pagination PR %03d", i)).
+			SetAuthor("alice").
+			SetStatus(prrecord.StatusOpen).
+			SetCreatedAt(now.Add(-time.Duration(i)*time.Minute)))
+	}
+	prs := env.client.PrRecord.CreateBulk(builders...).SaveX(ctx)
+	newestID := prs[0].ID
+
+	prHandler := NewPRHandler(env.client, nil, nil, nil)
+	group := env.router.Group("/api/v1/test-pr-pagination")
+	group.GET("/repos/:id/prs", prHandler.ListByRepo)
+
+	tests := []struct {
+		name      string
+		query     string
+		wantItems int
+	}{
+		{name: "default page", query: "months=0", wantItems: 20},
+		{name: "zero limit uses default and negative offset uses zero", query: "months=0&limit=0&offset=-1", wantItems: 20},
+		{name: "negative limit uses default and invalid offset uses zero", query: "months=0&limit=-5&offset=invalid", wantItems: 20},
+		{name: "invalid limit uses default", query: "months=0&limit=invalid&offset=0", wantItems: 20},
+		{name: "limit above maximum is clamped", query: "months=0&limit=1000&offset=0", wantItems: 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := doRequest(
+				env,
+				http.MethodGet,
+				fmt.Sprintf("/api/v1/test-pr-pagination/repos/%d/prs?%s", repoID, tt.query),
+				nil,
+			)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+			}
+
+			data := parseResponse(t, w)["data"].(map[string]interface{})
+			items := data["items"].([]interface{})
+			if len(items) != tt.wantItems {
+				t.Fatalf("items = %d, want %d", len(items), tt.wantItems)
+			}
+			if got := int(items[0].(map[string]interface{})["id"].(float64)); got != newestID {
+				t.Fatalf("first item ID = %d, want offset-zero PR %d", got, newestID)
+			}
+		})
+	}
+}
+
 func TestPRListByRepoBatchesFreshnessForCurrentPage(t *testing.T) {
 	env := setupTestEnv(t)
 	ctx := context.Background()

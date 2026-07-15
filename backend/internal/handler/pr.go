@@ -76,6 +76,26 @@ type prListSummary struct {
 	RefreshFailed int `json:"refresh_failed"`
 }
 
+const (
+	defaultPRListPageSize = 20
+	maxPRListPageSize     = prusage.MaxPRFreshnessPageSize
+)
+
+func normalizePRListPagination(rawLimit, rawOffset string) (limit, offset int) {
+	limit, err := strconv.Atoi(rawLimit)
+	if err != nil || limit <= 0 {
+		limit = defaultPRListPageSize
+	} else if limit > maxPRListPageSize {
+		limit = maxPRListPageSize
+	}
+
+	offset, err = strconv.Atoi(rawOffset)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
 func serializePRSyncJob(job *ent.PRSyncJob) gin.H {
 	if job == nil {
 		return nil
@@ -173,8 +193,10 @@ func (h *PRHandler) ListByRepo(c *gin.Context) {
 	}
 
 	status := c.Query("status")
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, offset := normalizePRListPagination(
+		c.DefaultQuery("limit", strconv.Itoa(defaultPRListPageSize)),
+		c.DefaultQuery("offset", "0"),
+	)
 
 	query := h.entClient.PrRecord.Query().
 		Where(prrecord.HasRepoConfigWith(repoconfig.IDEQ(repoID)))
