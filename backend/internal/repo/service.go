@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"sort"
 	"strings"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -95,6 +94,23 @@ type InventoryProviderSummary struct {
 	ActiveRepos        int                     `json:"active_repos"`
 	WebhookFailedRepos int                     `json:"webhook_failed_repos"`
 	Scopes             []InventoryScopeSummary `json:"scopes"`
+}
+
+type ListSelection struct {
+	ProviderKey  string `json:"provider_key"`
+	ProviderID   *int   `json:"provider_id,omitempty"`
+	ProviderName string `json:"provider_name"`
+	ProviderType string `json:"provider_type"`
+	Scope        string `json:"scope"`
+	BindingState string `json:"binding_state"`
+}
+
+type ListPage struct {
+	Items     []*ent.RepoConfig `json:"items"`
+	Total     int64             `json:"total"`
+	Page      int               `json:"page"`
+	PageSize  int               `json:"page_size"`
+	Selection *ListSelection    `json:"selection,omitempty"`
 }
 
 type scmProviderFactory func(providerType, baseURL string, apiCredential any, callbackURL string) (scm.SCMProvider, error)
@@ -419,13 +435,30 @@ func (s *Service) Get(ctx context.Context, id int) (*ent.RepoConfig, error) {
 		Only(ctx)
 }
 
-// List returns a paginated list of repo configs.
-func (s *Service) List(ctx context.Context, opts ListOpts) ([]*ent.RepoConfig, int64, error) {
+// ListPage returns a paginated list and, for an unfiltered request, the stable
+// provider/scope selection used to produce it.
+func (s *Service) ListPage(ctx context.Context, opts ListOpts) (*ListPage, error) {
 	if opts.Page <= 0 {
 		opts.Page = 1
 	}
 	if opts.PageSize <= 0 {
 		opts.PageSize = 20
+	}
+
+	var selection *ListSelection
+	if !hasExplicitInventorySelection(opts) {
+		inventory, err := s.Inventory(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolve default repo selection: %w", err)
+		}
+		selection = defaultListSelection(inventory)
+		if selection != nil {
+			if selection.ProviderID != nil {
+				opts.SCMProviderID = *selection.ProviderID
+			}
+			opts.Scope = selection.Scope
+			opts.BindingState = selection.BindingState
+		}
 	}
 
 	query := s.entClient.RepoConfig.Query().WithScmProvider()
@@ -454,7 +487,7 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*ent.RepoConfig, i
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("count repos: %w", err)
+		return nil, fmt.Errorf("count repos: %w", err)
 	}
 
 	repos, err := query.
@@ -463,127 +496,29 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*ent.RepoConfig, i
 		Order(ent.Desc(repoconfig.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("list repos: %w", err)
+		return nil, fmt.Errorf("list repos: %w", err)
 	}
 
-	return repos, int64(total), nil
+	return &ListPage{
+		Items:     repos,
+		Total:     int64(total),
+		Page:      opts.Page,
+		PageSize:  opts.PageSize,
+		Selection: selection,
+	}, nil
+}
+
+// List retains the legacy tuple contract for internal callers.
+func (s *Service) List(ctx context.Context, opts ListOpts) ([]*ent.RepoConfig, int64, error) {
+	page, err := s.ListPage(ctx, opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	return page.Items, page.Total, nil
 }
 
 func (s *Service) Inventory(ctx context.Context) ([]InventoryProviderSummary, error) {
-	repos, err := s.entClient.RepoConfig.Query().
-		WithScmProvider().
-		Order(ent.Asc(repoconfig.FieldFullName)).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list repo inventory: %w", err)
-	}
-
-	type providerAccumulator struct {
-		summary InventoryProviderSummary
-		scopes  map[string]*InventoryScopeSummary
-	}
-	providers := make(map[string]*providerAccumulator)
-
-	for _, rc := range repos {
-		key, providerSummary := inventoryProviderForRepo(rc)
-		acc, ok := providers[key]
-		if !ok {
-			acc = &providerAccumulator{
-				summary: providerSummary,
-				scopes:  make(map[string]*InventoryScopeSummary),
-			}
-			providers[key] = acc
-		}
-
-		scopeName := repoInventoryScope(rc.FullName)
-		scope, ok := acc.scopes[scopeName]
-		if !ok {
-			scope = &InventoryScopeSummary{Scope: scopeName}
-			acc.scopes[scopeName] = scope
-		}
-
-		bound := rc.Edges.ScmProvider != nil
-		status := string(rc.Status)
-		acc.summary.TotalRepos++
-		scope.TotalRepos++
-		if bound {
-			acc.summary.BoundRepos++
-			scope.BoundRepos++
-		} else {
-			acc.summary.UnboundRepos++
-			scope.UnboundRepos++
-		}
-		if status == string(repoconfig.StatusActive) {
-			acc.summary.ActiveRepos++
-			scope.ActiveRepos++
-		}
-		if status == string(repoconfig.StatusWebhookFailed) {
-			acc.summary.WebhookFailedRepos++
-			scope.WebhookFailedRepos++
-		}
-	}
-
-	items := make([]InventoryProviderSummary, 0, len(providers))
-	for _, acc := range providers {
-		scopes := make([]InventoryScopeSummary, 0, len(acc.scopes))
-		for _, scope := range acc.scopes {
-			scopes = append(scopes, *scope)
-		}
-		sort.Slice(scopes, func(i, j int) bool {
-			return scopes[i].Scope < scopes[j].Scope
-		})
-		acc.summary.Scopes = scopes
-		items = append(items, acc.summary)
-	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].ProviderKey == "unbound" {
-			return false
-		}
-		if items[j].ProviderKey == "unbound" {
-			return true
-		}
-		if items[i].Name == items[j].Name {
-			return items[i].ProviderKey < items[j].ProviderKey
-		}
-		return items[i].Name < items[j].Name
-	})
-
-	return items, nil
-}
-
-func inventoryProviderForRepo(rc *ent.RepoConfig) (string, InventoryProviderSummary) {
-	provider := rc.Edges.ScmProvider
-	if provider == nil {
-		return "unbound", InventoryProviderSummary{
-			ProviderKey: "unbound",
-			Name:        "Needs platform binding",
-			Type:        "unbound",
-		}
-	}
-	providerID := provider.ID
-	providerKey := inventoryProviderKey(providerID)
-	return providerKey, InventoryProviderSummary{
-		ProviderKey: providerKey,
-		ProviderID:  &providerID,
-		Name:        provider.Name,
-		Type:        string(provider.Type),
-		BaseURL:     provider.BaseURL,
-	}
-}
-
-func inventoryProviderKey(providerID int) string {
-	return fmt.Sprintf("scm_provider:%d", providerID)
-}
-
-func repoInventoryScope(fullName string) string {
-	fullName = strings.TrimSpace(fullName)
-	if fullName == "" {
-		return "unknown"
-	}
-	if idx := strings.Index(fullName, "/"); idx > 0 {
-		return fullName[:idx]
-	}
-	return fullName
+	return s.loadInventory(ctx)
 }
 
 // Update updates a repo config.
