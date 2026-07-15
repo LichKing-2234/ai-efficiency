@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 and Task 5 Steps 1-2 are complete and verified, including the Task 4 review follow-up. The first final standards review returned 6 Important and 3 Minor findings, and later final re-reviews found cross-layer timeout-order, raw refresh timeout, middleware-ledger, trailing-slash correlation, zero-byte telemetry, review-history hygiene, and mutation redirect compatibility gaps. All four remediation passes are implemented with focused RED/GREEN evidence. Task 5 Step 3 remains unchecked until clean final spec and standards re-reviews complete. Task 5 Steps 4-5 also remain pending. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 and Task 5 Steps 1-3 are complete and verified on final implementation head `15d6f6d`. Final independent SPEC and standards reviews both pass with zero findings; the Step 4 documentation checkpoint is current, while Draft PR delivery and CI remain pending. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -488,7 +488,15 @@ The R4 final standards re-review returned one Important finding: disabling Gin's
 
 Focused RED evidence (2026-07-15): `go test ./internal/handler -run 'TestSetupRouterCanonicalMutationTrailingSlashPreservesReplayContract' -count=1 -v` failed with status 404 instead of 307. Focused GREEN evidence: the same real-router test passed in 0.929s after extending the existing middleware. The combined GET/POST/zero-byte router selection passed in 1.744s, complete web and middleware packages passed in 0.521s and 1.016s, and the relevant server selection passed in 1.451s. Clean independent re-reviews are still pending, so Task 5 Step 3 remains unchecked.
 
-- [ ] **Step 3: Perform independent task and whole-branch reviews**
+#### Final Verification And Review Gates (2026-07-15)
+
+Fresh verification was rerun after the last mutation-redirect fix on final implementation head `15d6f6d`: the full backend and `ae-cli` suites passed; frontend Vitest passed 39 files / 430 tests; the production build transformed 188 modules; the release frontend embed harness passed `backend/internal/web`; and `git diff --check` produced no output. The embed harness emitted the known unresolved-hook-queue message plus npm deprecation/audit/install-script warnings without changing its exit status.
+
+The uncached `TestNewHTTPServerClosesSlowHeader` listener regression passed in 0.05s. Role E2E ran against a Vite process owned by this worktree at `http://[::1]:5173/`; its executable and cwd were verified, `localhost:5173` reached that IPv6 process, and all 16/16 checks passed. Expected proxy `ECONNREFUSED` messages appeared for unmocked background APIs. Only the owned IPv6 server was stopped; the unrelated IPv4 `127.0.0.1:5173` listener remained running.
+
+The complete `5f6c58e..15d6f6d` package then received final independent gates: `SPEC PASS` with 0 Critical, 0 Important, and 0 Minor findings; `QUALITY APPROVED` with 0 Critical, 0 Important, and 0 Minor findings. The publishable branch range and HEAD tree contain no tracked `.superpowers/sdd` review artifact.
+
+- [x] **Step 3: Perform independent task and whole-branch reviews**
 
   Every Task 1-4 receives an independent spec/quality review against its recorded base and head. Resolve every Critical or Important finding and rerun covering tests. Then generate a branch package from `5f6c58e` and obtain final SPEC and standards reviews for all #118 acceptance criteria, privacy constraints, timeout ordering, and repository standards.
 
