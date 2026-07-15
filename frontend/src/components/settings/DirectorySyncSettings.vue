@@ -56,6 +56,7 @@ const selectedRunError = ref('')
 const RUN_PAGE_SIZE = 20
 let runPollTimer: number | undefined
 let pageRequestGeneration = 0
+let pendingRunPageActionGeneration: number | null = null
 let detailRequestGeneration = 0
 let actionRequestGeneration = 0
 let pollGeneration = 0
@@ -257,6 +258,7 @@ function resetRunView() {
   runPageSize.value = RUN_PAGE_SIZE
   runOffset.value = 0
   pendingRunOffset.value = null
+  pendingRunPageActionGeneration = null
   runHistoryLoading.value = false
   runHistoryError.value = ''
   selectedRunId.value = null
@@ -272,6 +274,30 @@ function apiErrorMessage(e: any, fallback: string) {
 
 function actionContextMatches(generation: number, sourceID: number) {
   return generation === actionRequestGeneration && selectedSourceId.value === sourceID
+}
+
+function beginActionRequest() {
+  const generation = ++actionRequestGeneration
+  if (pendingRunPageActionGeneration !== null && pendingRunPageActionGeneration !== generation) {
+    pageRequestGeneration++
+    pendingRunOffset.value = null
+    pendingRunPageActionGeneration = null
+    runHistoryLoading.value = false
+  }
+  return generation
+}
+
+interface RunPageRecoveryContext {
+  action: 'preview' | 'apply'
+  generation: number
+}
+
+function pageRequestContextMatches(generation: number, sourceID: number, offset: number, recovery?: RunPageRecoveryContext) {
+  return generation === pageRequestGeneration
+    && selectedSourceId.value === sourceID
+    && pendingRunOffset.value === offset
+    && pendingRunPageActionGeneration === (recovery?.generation ?? null)
+    && (!recovery || actionContextMatches(recovery.generation, sourceID))
 }
 
 type RunDisplay = DirectoryRunSummary | DirectorySyncRun
@@ -487,14 +513,15 @@ function applyPageRecovery(items: DirectoryRunSummary[], latestActive: Directory
   return expectedAction ? false : Boolean(newest && action)
 }
 
-async function loadRunPage(sourceID: number, offset: number, expectedAction?: 'preview' | 'apply') {
+async function loadRunPage(sourceID: number, offset: number, recovery?: RunPageRecoveryContext) {
   const generation = ++pageRequestGeneration
   pendingRunOffset.value = offset
+  pendingRunPageActionGeneration = recovery?.generation ?? null
   runHistoryLoading.value = true
   runHistoryError.value = ''
   try {
     const res = await listDirectoryRuns(sourceID, { limit: RUN_PAGE_SIZE, offset })
-    if (generation !== pageRequestGeneration || selectedSourceId.value !== sourceID || pendingRunOffset.value !== offset) return false
+    if (!pageRequestContextMatches(generation, sourceID, offset, recovery)) return false
     const page = res.data.data ?? {
       items: [],
       total: 0,
@@ -507,15 +534,16 @@ async function loadRunPage(sourceID: number, offset: number, expectedAction?: 'p
     runPage.value = page.page
     runPageSize.value = page.page_size
     runOffset.value = offset
-    return applyPageRecovery(page.items, page.latest_active_run, sourceID, offset, expectedAction)
+    return applyPageRecovery(page.items, page.latest_active_run, sourceID, offset, recovery?.action)
   } catch (e: any) {
-    if (generation === pageRequestGeneration && selectedSourceId.value === sourceID && pendingRunOffset.value === offset) {
+    if (pageRequestContextMatches(generation, sourceID, offset, recovery)) {
       runHistoryError.value = apiErrorMessage(e, t('directorySync.runHistoryLoadFailed'))
     }
     return false
   } finally {
-    if (generation === pageRequestGeneration && selectedSourceId.value === sourceID && pendingRunOffset.value === offset) {
+    if (pageRequestContextMatches(generation, sourceID, offset, recovery)) {
       pendingRunOffset.value = null
+      pendingRunPageActionGeneration = null
       runHistoryLoading.value = false
     }
   }
@@ -651,7 +679,7 @@ async function validateSource() {
 async function previewSource() {
   const sourceID = selectedSourceId.value
   if (!sourceID) return
-  const generation = ++actionRequestGeneration
+  const generation = beginActionRequest()
   clearFeedback()
   activeRunAction.value = 'preview'
   message.value = t('directorySync.previewStarted')
@@ -668,7 +696,7 @@ async function previewSource() {
   } catch (e: any) {
     if (!actionContextMatches(generation, sourceID)) return
     if (e?.response?.status === 409) {
-      const recovered = await loadRunPage(sourceID, 0, 'preview')
+      const recovered = await loadRunPage(sourceID, 0, { action: 'preview', generation })
       if (!actionContextMatches(generation, sourceID)) return
       if (recovered) return
     }
@@ -679,7 +707,7 @@ async function previewSource() {
 async function runNow() {
   const sourceID = selectedSourceId.value
   if (!sourceID) return
-  const generation = ++actionRequestGeneration
+  const generation = beginActionRequest()
   clearFeedback()
   activeRunAction.value = 'apply'
   message.value = t('directorySync.applyStarted')
@@ -696,7 +724,7 @@ async function runNow() {
   } catch (e: any) {
     if (!actionContextMatches(generation, sourceID)) return
     if (e?.response?.status === 409) {
-      const recovered = await loadRunPage(sourceID, 0, 'apply')
+      const recovered = await loadRunPage(sourceID, 0, { action: 'apply', generation })
       if (!actionContextMatches(generation, sourceID)) return
       if (recovered) return
     }
