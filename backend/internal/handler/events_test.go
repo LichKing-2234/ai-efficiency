@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -97,21 +98,107 @@ func seedEventsFixture(t *testing.T, env *fullTestEnv) seededEventActors {
 	}
 }
 
-func TestEventsListScopesNonAdminToOwnRows(t *testing.T) {
+func TestEventsListDefaultsToTwenty(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	createFullNonAdminToken(t, env)
+	seedEventsFixture(t, env)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/events", nil)
+	data := requireEventsListData(t, w)
+	if got := int(data["page_size"].(float64)); got != 20 {
+		t.Fatalf("page_size = %d, want 20", got)
+	}
+	if got := int(data["page"].(float64)); got != 0 {
+		t.Fatalf("page = %d, want 0", got)
+	}
+}
+
+func TestEventsListClampsLimitToOneHundred(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	createFullNonAdminToken(t, env)
+	seedEventsFixture(t, env)
+
+	for _, limit := range []string{"101", "1000"} {
+		t.Run("limit="+limit, func(t *testing.T) {
+			w := doFullRequest(env, http.MethodGet, "/api/v1/events?limit="+limit, nil)
+			data := requireEventsListData(t, w)
+			if got := int(data["page_size"].(float64)); got != 100 {
+				t.Fatalf("page_size = %d, want 100", got)
+			}
+			if got := int(data["page"].(float64)); got != 0 {
+				t.Fatalf("page = %d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestEventsListNormalizesInvalidAndNegativePaging(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	createFullNonAdminToken(t, env)
+	seedEventsFixture(t, env)
+
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "zero limit and negative offset", query: "limit=0&offset=-20"},
+		{name: "invalid limit and offset", query: "limit=invalid&offset=invalid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := doFullRequest(env, http.MethodGet, "/api/v1/events?"+tt.query, nil)
+			data := requireEventsListData(t, w)
+			if got := int(data["page_size"].(float64)); got != 20 {
+				t.Fatalf("page_size = %d, want 20", got)
+			}
+			if got := int(data["page"].(float64)); got != 0 {
+				t.Fatalf("page = %d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestEventsListPreservesZeroBasedPageMetadata(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	createFullNonAdminToken(t, env)
+	seedEventsFixture(t, env)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/events?limit=20&offset=40", nil)
+	data := requireEventsListData(t, w)
+	if got := int(data["page_size"].(float64)); got != 20 {
+		t.Fatalf("page_size = %d, want 20", got)
+	}
+	if got := int(data["page"].(float64)); got != 2 {
+		t.Fatalf("page = %d, want 2", got)
+	}
+}
+
+func TestEventsListOmitsRawPayloadAndRegularUsername(t *testing.T) {
 	t.Parallel()
 
 	env := setupFullTestEnv(t)
 	nonAdminToken := createFullNonAdminToken(t, env)
 	actors := seedEventsFixture(t, env)
 
-	path := fmt.Sprintf("/api/v1/events?from=%s&to=%s&user_id=%d", time.Now().Add(-24*time.Hour).UTC().Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339), actors.adminUserID)
-	w := doFullRequestWithToken(env, http.MethodGet, path, nil, nonAdminToken)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	adminData := requireEventsListData(t, doFullRequest(env, http.MethodGet, "/api/v1/events", nil))
+	for _, raw := range adminData["items"].([]interface{}) {
+		row := raw.(map[string]interface{})
+		if _, ok := row["raw_payload"]; ok {
+			t.Fatalf("admin list unexpectedly exposes raw_payload: %+v", row)
+		}
 	}
 
-	resp := parseFullResponse(t, w)
-	data := resp["data"].(map[string]interface{})
+	path := fmt.Sprintf("/api/v1/events?from=%s&to=%s&user_id=%d", time.Now().Add(-24*time.Hour).UTC().Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339), actors.adminUserID)
+	w := doFullRequestWithToken(env, http.MethodGet, path, nil, nonAdminToken)
+	data := requireEventsListData(t, w)
 	if got := int(data["total"].(float64)); got != 2 {
 		t.Fatalf("total = %d, want 2", got)
 	}
@@ -127,7 +214,19 @@ func TestEventsListScopesNonAdminToOwnRows(t *testing.T) {
 		if _, ok := row["username"]; ok {
 			t.Fatalf("non-admin response unexpectedly exposes username: %+v", row)
 		}
+		if _, ok := row["raw_payload"]; ok {
+			t.Fatalf("non-admin list unexpectedly exposes raw_payload: %+v", row)
+		}
 	}
+}
+
+func requireEventsListData(t *testing.T, w *httptest.ResponseRecorder) map[string]interface{} {
+	t.Helper()
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	return parseFullResponse(t, w)["data"].(map[string]interface{})
 }
 
 func TestEventsUsersSearchAdminOnly(t *testing.T) {
@@ -171,7 +270,7 @@ func TestEventsUsersSearchReturnsUsersWithEventsForAdmin(t *testing.T) {
 	}
 }
 
-func TestEventDetailReturnsRawFieldsOnlyForAdmin(t *testing.T) {
+func TestEventDetailPreservesAdminPayloadAndRegularRedaction(t *testing.T) {
 	t.Parallel()
 
 	env := setupFullTestEnv(t)
