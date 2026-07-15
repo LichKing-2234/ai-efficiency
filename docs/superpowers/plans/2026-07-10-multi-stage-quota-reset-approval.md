@@ -28,8 +28,8 @@
 - The existing role E2E passes all assertions but logs non-fatal Vite proxy
   `ECONNREFUSED` messages for dashboard helper requests outside its mock set.
 - Task 20 addresses findings from the final whole-branch spec and standards
-  review. Implementation, independent re-review, and plan closure remain
-  required.
+  review. Implementation and finding-owner re-reviews are complete; final
+  whole-branch re-review, controller verification, and plan closure remain.
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -5606,8 +5606,52 @@ disconnect from cancelling provider completion and terminal persistence; it
 cannot resolve a process crash around the unkeyed provider call, so that known
 gap remains explicit above.
 
-- [ ] **Step 2: Add failing cancellation, channel-switch, backfill, chain-race, recipient-id, and action-URL regressions**
+- [x] **Step 2: Add failing cancellation, channel-switch, backfill, chain-race, recipient-id, and action-URL regressions**
 
-- [ ] **Step 3: Implement bounded server-owned reset contexts, notification migration/switch guards, save-aware chain refresh, and consistent WeCom budgeting**
+RED evidence (2026-07-15): caller-cancellation tests failed because terminal
+transactions inherited `context canceled`; both channel-switch directions
+accepted an omitted replacement or reached the wrong validator; legacy WeCom
+bearer rows retained incompatible auth; a revision-triggered chain GET started
+during deferred PUT; reserved/malformed recipient ids reported false-positive
+coverage; and a long valid action URL made required WeCom rendering fail.
+
+Whole-branch follow-up reviews then added mutation-proven regressions for
+conflicting duplicate directory members, failed chain PUT plus both successful
+and failed queued reloads, and requester members with conflicting, zero, or
+nonexistent non-null `matched_user_id`. Those tests failed against the prior
+implementation by OR-ing noncanonical mention coverage, clearing failed-save
+feedback, and importing foreign requester directory facts through email
+fallback.
+
+- [x] **Step 3: Implement bounded server-owned reset contexts, notification migration/switch guards, save-aware chain refresh, and consistent WeCom budgeting**
+
+Implementation evidence (2026-07-15): commit `d216856` added bounded
+server-owned provider/persistence contexts, replacement-URL and endpoint
+compatibility validation, legacy WeCom auth normalization, save-aware chain
+reloads, exact recipient-id validation, action-link-first WeCom byte budgeting,
+frontend validation/i18n, and current-spec updates. Commit `806474d` shared one
+lowest-ID canonical directory-member selector across candidates, workflow
+snapshots, requester resolution, representative fallback, and live delivery,
+and preserved failed PUT feedback during queued reloads. Commit `1e60463`
+applied authoritative `directoryMemberUser` semantics before canonicalizing
+requester members and added direct/null-email/conflicting/zero/nonexistent and
+representative-fallback regressions.
+
+GREEN evidence (2026-07-15): after `d216856`, full backend passed, frontend
+passed 41 files and 543 tests, the focused settings file passed 87 tests, the
+production frontend build passed, and gofmt/diff checks were clean. After
+`806474d`, focused regressions, the complete quotareset package, 545 frontend
+tests, production build, formatting, and diff checks passed. After `1e60463`,
+focused resolver tests, the complete quotareset package, and all backend
+packages passed with clean gofmt/diff checks.
+
+Independent finding-owner review evidence (2026-07-15): the original four
+whole-branch Important findings were confirmed fixed. Follow-up reviews found
+and then approved canonical duplicate-member behavior, failed-save feedback,
+authoritative requester identity precedence, and representative fallback
+identity. The final requester follow-up review returned no Critical, Important,
+or Minor findings. The documented unkeyed-provider process-crash ambiguity
+remains intentionally unresolved; bounded contexts only remove HTTP-client
+cancellation as a locally avoidable cause of stuck state.
 
 - [ ] **Step 4: Run focused/full verification, browser and Compose checks, rerun whole-branch reviews, and close Tasks 16, 19, and 20 with evidence**
