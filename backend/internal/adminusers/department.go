@@ -1,6 +1,7 @@
 package adminusers
 
 import (
+	"context"
 	"database/sql/driver"
 	"fmt"
 	"strconv"
@@ -8,11 +9,13 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 
+	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/predicate"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/lib/pq"
 )
 
 func effectiveDepartmentCTEs(sourcePlaceholder string) string {
@@ -256,4 +259,321 @@ func previousPostgresPlaceholder(placeholder string) string {
 		panic(fmt.Sprintf("adminusers: invalid subtree placeholder %q", placeholder))
 	}
 	return fmt.Sprintf("$%d", position-1)
+}
+
+type pageMemberRow struct {
+	ID                   int    `json:"id"`
+	MatchedUserID        *int   `json:"matched_user_id"`
+	EmailNormalized      string `json:"email_normalized"`
+	DepartmentExternalID string `json:"department_external_id"`
+}
+
+type pageMembershipRow struct {
+	ID                   int    `json:"id"`
+	DirectoryMemberID    int    `json:"directory_member_id"`
+	DepartmentExternalID string `json:"department_external_id"`
+}
+
+type pageDepartmentRow struct {
+	ExternalID                string  `json:"external_id"`
+	ParentExternalID          *string `json:"parent_external_id"`
+	EffectiveParentExternalID *string `json:"effective_parent_external_id"`
+	Name                      string  `json:"name"`
+	Path                      string  `json:"path"`
+}
+
+func (s *Service) departmentsForPage(ctx context.Context, source resolvedSource, users []*ent.User) (map[int]*Department, error) {
+	out := make(map[int]*Department, len(users))
+	if !source.found || len(users) == 0 {
+		return out, nil
+	}
+
+	pageUserIDs := make([]int, 0, len(users))
+	pageUserByID := make(map[int]struct{}, len(users))
+	pageUserIDsByEmail := make(map[string][]int, len(users))
+	emails := make([]string, 0, len(users))
+	seenEmails := make(map[string]struct{}, len(users))
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		pageUserIDs = append(pageUserIDs, user.ID)
+		pageUserByID[user.ID] = struct{}{}
+		email := normalizeEmail(user.Email)
+		if email == "" {
+			continue
+		}
+		pageUserIDsByEmail[email] = append(pageUserIDsByEmail[email], user.ID)
+		if _, ok := seenEmails[email]; !ok {
+			seenEmails[email] = struct{}{}
+			emails = append(emails, email)
+		}
+	}
+
+	memberPredicates := []predicate.DirectoryMember{directorymember.MatchedUserIDIn(pageUserIDs...)}
+	if len(emails) > 0 {
+		memberPredicates = append(memberPredicates, directorymember.EmailNormalizedIn(emails...))
+	}
+	var members []pageMemberRow
+	if err := s.client.DirectoryMember.Query().
+		Where(
+			directorymember.SourceIDEQ(source.id),
+			directorymember.Or(memberPredicates...),
+		).
+		Order(ent.Asc(directorymember.FieldID)).
+		Select(
+			directorymember.FieldID,
+			directorymember.FieldMatchedUserID,
+			directorymember.FieldEmailNormalized,
+			directorymember.FieldDepartmentExternalID,
+		).
+		Scan(ctx, &members); err != nil {
+		return nil, fmt.Errorf("list current directory members for admin user page: %w", err)
+	}
+	if len(members) == 0 {
+		return out, nil
+	}
+
+	memberIDs := make([]int, 0, len(members))
+	for _, member := range members {
+		memberIDs = append(memberIDs, member.ID)
+	}
+	var memberships []pageMembershipRow
+	if err := s.client.DirectoryMemberDepartment.Query().
+		Where(
+			directorymemberdepartment.SourceIDEQ(source.id),
+			directorymemberdepartment.DirectoryMemberIDIn(memberIDs...),
+		).
+		Order(
+			ent.Asc(directorymemberdepartment.FieldDirectoryMemberID),
+			ent.Asc(directorymemberdepartment.FieldDepartmentExternalID),
+			ent.Asc(directorymemberdepartment.FieldID),
+		).
+		Select(
+			directorymemberdepartment.FieldID,
+			directorymemberdepartment.FieldDirectoryMemberID,
+			directorymemberdepartment.FieldDepartmentExternalID,
+		).
+		Scan(ctx, &memberships); err != nil {
+		return nil, fmt.Errorf("list current directory memberships for admin user page: %w", err)
+	}
+	membershipsByMemberID := make(map[int][]pageMembershipRow, len(members))
+	for _, membership := range memberships {
+		membershipsByMemberID[membership.DirectoryMemberID] = append(membershipsByMemberID[membership.DirectoryMemberID], membership)
+	}
+
+	candidatesByMemberID := make(map[int][]string, len(members))
+	candidateIDs := make([]string, 0, len(memberships)+len(members))
+	for _, member := range members {
+		candidates := memberDepartmentCandidates(member, membershipsByMemberID[member.ID])
+		candidatesByMemberID[member.ID] = candidates
+		candidateIDs = appendUniqueDepartmentIDs(candidateIDs, candidates...)
+	}
+	departmentsByExternalID, err := s.loadPageDepartments(ctx, source.id, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, member := range members {
+		var chosen *Department
+		for _, candidateID := range candidatesByMemberID[member.ID] {
+			if department := departmentsByExternalID[candidateID]; department != nil {
+				chosen = department
+				break
+			}
+		}
+		if chosen == nil {
+			continue
+		}
+
+		matchingUserIDs := make([]int, 0, 1+len(pageUserIDsByEmail[normalizeEmail(member.EmailNormalized)]))
+		if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
+			matchingUserIDs = append(matchingUserIDs, *member.MatchedUserID)
+		}
+		matchingUserIDs = append(matchingUserIDs, pageUserIDsByEmail[normalizeEmail(member.EmailNormalized)]...)
+		seenUserIDs := make(map[int]struct{}, len(matchingUserIDs))
+		for _, userID := range matchingUserIDs {
+			if _, onPage := pageUserByID[userID]; !onPage {
+				continue
+			}
+			if _, duplicate := seenUserIDs[userID]; duplicate {
+				continue
+			}
+			seenUserIDs[userID] = struct{}{}
+			if out[userID] == nil {
+				out[userID] = chosen
+			}
+		}
+	}
+	return out, nil
+}
+
+func memberDepartmentCandidates(member pageMemberRow, memberships []pageMembershipRow) []string {
+	primaryID := strings.TrimSpace(member.DepartmentExternalID)
+	if len(memberships) == 0 {
+		if primaryID == "" {
+			return nil
+		}
+		return []string{primaryID}
+	}
+
+	candidates := make([]string, 0, len(memberships))
+	if primaryID != "" {
+		for _, membership := range memberships {
+			if strings.TrimSpace(membership.DepartmentExternalID) == primaryID {
+				candidates = append(candidates, primaryID)
+				break
+			}
+		}
+	}
+	for _, membership := range memberships {
+		candidates = appendUniqueDepartmentIDs(candidates, membership.DepartmentExternalID)
+	}
+	return candidates
+}
+
+func appendUniqueDepartmentIDs(current []string, values ...string) []string {
+	seen := make(map[string]struct{}, len(current)+len(values))
+	for _, value := range current {
+		seen[value] = struct{}{}
+	}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		current = append(current, value)
+	}
+	return current
+}
+
+func (s *Service) loadPageDepartments(ctx context.Context, sourceID int, candidateIDs []string) (map[string]*Department, error) {
+	out := make(map[string]*Department, len(candidateIDs))
+	if len(candidateIDs) == 0 {
+		return out, nil
+	}
+	var rows []pageDepartmentRow
+	if err := s.client.DirectoryDepartment.Query().
+		Where(pageDepartmentClosurePredicate(sourceID, candidateIDs)).
+		Select(
+			directorydepartment.FieldExternalID,
+			directorydepartment.FieldParentExternalID,
+			directorydepartment.FieldName,
+			directorydepartment.FieldPath,
+		).
+		Scan(ctx, &rows); err != nil {
+		return nil, fmt.Errorf("load candidate directory departments and ancestors: %w", err)
+	}
+
+	rowsByID := make(map[string]pageDepartmentRow, len(rows))
+	for _, row := range rows {
+		rowsByID[row.ExternalID] = row
+	}
+	displayPaths := make(map[string]string, len(rows))
+	for externalID, row := range rowsByID {
+		displayPath := effectiveDisplayPath(externalID, rowsByID, displayPaths, map[string]bool{})
+		out[externalID] = &Department{
+			ExternalID:  externalID,
+			Name:        row.Name,
+			Path:        row.Path,
+			DisplayPath: displayPath,
+		}
+	}
+	return out, nil
+}
+
+func effectiveDisplayPath(externalID string, rows map[string]pageDepartmentRow, cached map[string]string, visiting map[string]bool) string {
+	if path := cached[externalID]; path != "" {
+		return path
+	}
+	row, ok := rows[externalID]
+	if !ok {
+		return ""
+	}
+	name := strings.TrimSpace(row.Name)
+	if name == "" {
+		name = externalID
+	}
+	if visiting[externalID] {
+		return name
+	}
+	visiting[externalID] = true
+	if row.EffectiveParentExternalID != nil {
+		parentID := strings.TrimSpace(*row.EffectiveParentExternalID)
+		if parentID != "" {
+			if parentPath := effectiveDisplayPath(parentID, rows, cached, visiting); parentPath != "" {
+				name = parentPath + " / " + name
+			}
+		}
+	}
+	delete(visiting, externalID)
+	cached[externalID] = name
+	return name
+}
+
+func normalizeEmail(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func pageDepartmentClosurePredicate(sourceID int, candidateIDs []string) predicate.DirectoryDepartment {
+	return func(selector *sql.Selector) {
+		outerDepartment := sql.Table("navigation_departments").As("outer_department")
+		ancestors := sql.Table("ancestors")
+		selector.Prefix(sql.ExprFunc(func(builder *sql.Builder) {
+			builder.Arg(effectiveDepartmentParameter(sourceID))
+			builder.Arg(pageDepartmentCandidatesParameter(candidateIDs))
+		}))
+		selector.From(outerDepartment)
+		selector.Join(ancestors).On(
+			ancestors.C(directorydepartment.FieldExternalID),
+			outerDepartment.C(directorydepartment.FieldExternalID),
+		)
+		selector.Select(
+			outerDepartment.C(directorydepartment.FieldExternalID),
+			outerDepartment.C(directorydepartment.FieldParentExternalID),
+			outerDepartment.C(directorydepartment.FieldName),
+			outerDepartment.C(directorydepartment.FieldPath),
+			ancestors.C("effective_parent_external_id"),
+		)
+	}
+}
+
+type pageDepartmentCandidatesParameter []string
+
+func (parameter pageDepartmentCandidatesParameter) Value() (driver.Value, error) {
+	return pq.Array([]string(parameter)).Value()
+}
+
+func (parameter pageDepartmentCandidatesParameter) FormatParam(placeholder string, _ *sql.StmtInfo) string {
+	return pageDepartmentAncestorCTEs(placeholder)
+}
+
+func pageDepartmentAncestorCTEs(candidatePlaceholder string) string {
+	return fmt.Sprintf(`, requested_candidates(%s) AS MATERIALIZED (
+  SELECT UNNEST(%s::text[])
+),
+ancestors(%s, effective_parent_external_id) AS MATERIALIZED (
+  SELECT seed.%s, seed.effective_parent_external_id
+  FROM navigation_departments AS seed
+  JOIN requested_candidates
+    ON requested_candidates.%s = seed.%s
+  UNION
+  SELECT parent.%s, parent.effective_parent_external_id
+  FROM navigation_departments AS parent
+  JOIN ancestors AS child
+    ON child.effective_parent_external_id = parent.%s
+)`,
+		directorydepartment.FieldExternalID,
+		candidatePlaceholder,
+		directorydepartment.FieldExternalID,
+		directorydepartment.FieldExternalID,
+		directorydepartment.FieldExternalID,
+		directorydepartment.FieldExternalID,
+		directorydepartment.FieldExternalID,
+		directorydepartment.FieldExternalID,
+	)
 }
