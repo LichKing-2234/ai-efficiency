@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete. Task 3 implementation and first-review remediation are locally complete; independent re-review remains pending. Task 4, delivery, and CI remain pending.
+**Status:** Tasks 1-2 are complete. Task 3 implementation and second-round review remediation are locally complete; final independent re-review remains pending. Task 4, delivery, and CI remain pending.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -424,6 +424,18 @@
   Commit `7e54dff` (`fix(frontend): isolate directory run lifecycles`) added a source/action generation invalidated by new actions, source switches, and unmount; guarded every preview/apply success, error, and conflict-recovery boundary; made a terminal poll invalidate same-ID detail work and synchronize the selected summary/detail; and formatted timestamps with `locale.value`.
 
   Targeted GREEN: I3 6/6, I4 2/2, and M1 1/1. The complete component file passed 39/39. Fresh required verification passed: focused three files 90/90, full frontend 39 files / 452 tests, `npm run build`, and `git diff --check`.
+
+- [x] **Record the independent re-review and add RED coverage for stale same-source recovery**
+
+  The independent re-review of `139cadb..912f6ee` failed with **0 Critical / 1 Important / 0 Minor**. The remaining finding showed that action A could enter a 409 recovery page load, action B could then start on the same source and establish the only active poll, and A's older no-active page response could commit history state and cancel B's timer before A reached its post-await action-generation guard.
+
+  The temporary reviewer probe was promoted to a parameterized preview/apply component test. RED command `cd frontend && npm test -- src/__tests__/directory-sync-settings.test.ts -t "keeps a newer same-source"` failed both cases as expected: each reported zero timers after the stale recovery resolved instead of the newer action's one timer.
+
+- [x] **Reject stale action-scoped recovery pages and verify Task 3 again**
+
+  Commit `54b61d1` (`fix(frontend): reject stale run recovery pages`) bound conflict page recovery to the initiating action generation, required the action/page/source/offset context to match before page commits, recovery application, error state, or finally cleanup, and made a newer action invalidate only an older action-scoped recovery request. Ordinary pagination remains independent, and source-switch invalidation continues through the existing page and action generations.
+
+  Targeted GREEN passed 2/2 and the complete component file passed 41/41. Fresh required verification passed: focused three files 92/92, full frontend 39 files / 454 tests, `npm run build`, and `git diff --check`.
 
 ---
 
