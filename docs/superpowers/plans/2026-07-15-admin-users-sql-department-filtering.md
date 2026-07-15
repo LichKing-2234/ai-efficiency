@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1 and 2 are complete, independently reviewed, and committed. Task 3 Steps 1-5 are complete with recorded RED evidence and passing focused/full backend verification; Task 3 Step 6, Tasks 4-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Tasks 1-3 are complete, independently reviewed, and committed. Tasks 4-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -963,7 +963,7 @@ Expected: exact bounds and summaries pass twice; every department statement cont
 
 GREEN evidence (2026-07-15): the exact Step 5 `gofmt` command exited 0; the focused service/real-HTTP/query-plan command passed twice (`internal/adminusers` and `internal/handler`); the complete two-package regression command passed (`internal/adminusers` and `internal/handler`); and `git diff --check` exited 0. PostgreSQL small/large plan assertions, reverse insertion order, named recursive-loop checks, maximum page bounds, legacy `/departments`, and current-source collision fixtures all ran in those commands.
 
-- [ ] **Step 6: Complete exact-range Task 3 reviews and checkpoint**
+- [x] **Step 6: Complete exact-range Task 3 reviews and checkpoint**
 
 Obtain independent Task 3 SPEC and standards reviews. Require reviewers to confirm Task 3 calls rather than copies `effectiveDepartmentCTEs`, B summary scope equals B List/Targets, supplied-parent validation stays source scoped, representative scalar/array branches and duplicate removal are exercised at service/HTTP seams, and `ListDepartments` remains the only exempt snapshot. Resolve every Critical/Important finding, rerun Step 5, then commit implementation and ledger separately:
 
@@ -973,6 +973,8 @@ git commit -m "perf(admin-users): bound department browsing"
 git add docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
 git commit -m "docs(plan): record admin department read task"
 ```
+
+Task 3 review/checkpoint evidence (2026-07-15): the initial SPEC review passed with Critical/Important/Minor `0/0/0`; the initial standards review approved with `0/0/1` and identified one test-quality Minor where the top-level 100-row assertion also constrained bounded ancestor-closure output. The query-plan test now classifies all seven recursive SQL roles, requires their exact multiplicities, and applies the top-level row cap only to option page, child page, and final summary roles while retaining one-loop ancestor/descendant checks. Fresh focused verification passed after that fix. Final exact-range rereviews reported SPEC PASS `0/0/0` in `.superpowers/sdd/134-task-3-spec-rereview.md` and STANDARDS APPROVED `0/0/0` in `.superpowers/sdd/134-task-3-standards-rereview.md`. The reviewed tree matched snapshot `ee4ebe2f8875fd1040c99f6f9a2660662ad5f177` byte-for-byte and was checkpointed as implementation commit `625ad26`.
 
 ---
 
