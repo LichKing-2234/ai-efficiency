@@ -194,8 +194,14 @@ func (h *DirectoryHandler) ListRuns(c *gin.Context) {
 	if !ok {
 		return
 	}
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	offset, _ := strconv.Atoi(c.Query("offset"))
+	limit, err := strconv.Atoi(c.Query("limit"))
+	if err != nil {
+		limit = 0
+	}
+	offset, err := strconv.Atoi(c.Query("offset"))
+	if err != nil {
+		offset = 0
+	}
 	limit, offset = directorysync.NormalizeRunPage(limit, offset)
 	page, err := h.service.ListRuns(c.Request.Context(), directorysync.RunListRequest{
 		SourceID: id,
