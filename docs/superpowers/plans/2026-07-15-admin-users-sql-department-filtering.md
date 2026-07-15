@@ -14,9 +14,9 @@
 
 - Work from `docs/performance-contracts-116@5f6c58e6821dfcd95eefff14ea3426d454ae86cd`; do not stack on sibling performance branches.
 - Preserve `GET /api/v1/admin/users`, `GET /api/v1/admin/users/departments`, subscription-job routes, query parameter names, response envelopes, one-based `page`, `page_size`, `total`, and stable user `id ASC` ordering.
-- List page size defaults to 20 and never exceeds 100; page defaults to 1. Count and page use the same normalized search, access-status, and department predicate.
+- List page size defaults to 20 and never exceeds 100; page defaults to 1. Count and page use the same normalized search, access-status, and department predicate. After count, a requested page beyond the last result returns an empty page without calculating an overflowing offset; even a maximum-integer page value must not wrap `(page-1)*page_size`.
 - With no department filter, unmatched local users remain visible. A department filter excludes unmatched local users because no current directory member supplies evidence for the selected subtree.
-- Resolve the current directory source through `directorysync.CurrentSourceID`; do not use source edit time or a non-current apply run.
+- Resolve the current directory source through `directorysync.CurrentSourceID`; do not use source edit time or a non-current apply run. One `List` call resolves it at most once and reuses that result for both department filtering and page enrichment.
 - Department scope is the requested department plus all descendants by `parent_external_id`, computed by a recursive PostgreSQL expression. User-provided department values are always bound parameters, never interpolated SQL.
 - Current `directory_member_departments` rows are authoritative when any exist for a member. The legacy `directory_members.department_external_id` is considered only when that member has no current membership rows.
 - A directory member maps to local users by positive `matched_user_id` or normalized email `LOWER(BTRIM(users.email)) = directory_members.email_normalized`; both mappings remain eligible and results are deduplicated by local user ID.
@@ -139,7 +139,7 @@ Expected: FAIL because the `adminusers` package and shared SQL filter module do 
 
 Normalize filters once. Search uses the existing case-insensitive username/email and numeric ID semantics. Validate access status before query composition; wrap exported `ErrInvalidAccessStatus` while preserving the current user-facing message, then delegate the valid predicate to `adminuseraccess.ApplyFilter`.
 
-When `DepartmentID` is non-empty, resolve the current source and add one Ent predicate whose PostgreSQL shape is equivalent to:
+Keep the source result in one private resolved-source value accepted by the shared query builder. `Targets` resolves it once when `DepartmentID` is non-empty; Task 2 `List` resolves it once for both this predicate and enrichment. When `DepartmentID` is non-empty, add one Ent predicate whose PostgreSQL shape is equivalent to:
 
 ```sql
 EXISTS (
@@ -235,7 +235,7 @@ git commit -m "docs(plan): record admin user filter task 1"
 
 - [ ] **Step 1: Add page, enrichment, scale, and SQL recording tests**
 
-Add ordinary page tests for default page 1/size 20, maximum 100, nonpositive values, out-of-range pages, stable `id ASC`, total/page predicate parity, empty results, and cancellation. Assert page enrichment returns the same visible department fields as the current handler for direct, multi-membership, and legacy members.
+Add ordinary page tests for default page 1/size 20, maximum 100, nonpositive values, out-of-range pages including a maximum-integer page that returns empty without offset overflow, stable `id ASC`, total/page predicate parity, empty results, and cancellation. Assert page enrichment returns the same visible department fields as the current handler for direct, multi-membership, and legacy members.
 
 Add a mutex-protected recording PostgreSQL driver and one exact scale fixture:
 
@@ -251,7 +251,7 @@ mixed matched_user_id and normalized-email mappings
 repeated names and mixed-case local emails
 ```
 
-Seed in bounded batches with fixed synthetic UTC timestamps. Compare small and large fixtures by SQL role, not call order. Require constant roles for current-source resolution, count, bounded page, page-member lookup, page memberships, ancestor closure, and page offboarding facts. A filtered query must not issue full-table `.All()` reads for departments, members, or memberships.
+Seed in bounded batches with fixed synthetic UTC timestamps. Compare small and large fixtures by SQL role, not call order. Current-source resolution keeps its existing two SQL roles (candidate sources and latest successful apply) but runs only once per `List`; then require constant roles for count, bounded page, page-member lookup, page memberships, ancestor closure, and page offboarding facts. A filtered query must not issue full-table `.All()` reads for departments, members, or memberships.
 
 - [ ] **Step 2: Record RED against missing page module and indexes**
 
@@ -265,22 +265,23 @@ Expected: FAIL because `List`/page enrichment and the matching composite indexes
 
 - [ ] **Step 3: Implement bounded page and ancestor enrichment**
 
-`List` defensively normalizes page/size, clones the Task 1 query for total, then loads only the ordered bounded page. It calls `adminuseraccess.OffboardingFactsForUsers` only for page IDs.
+`List` defensively normalizes page/size, resolves the current directory source once, and passes the same resolved value to the Task 1 query and page enrichment. It clones that query for total, returns an empty page immediately when the requested one-based page starts beyond `total`, and only then computes the offset and loads the ordered bounded page. This ordering prevents integer overflow for hostile maximum-page inputs. It calls `adminuseraccess.OffboardingFactsForUsers` only for page IDs.
 
 For page departments:
 
-1. Load current directory members whose positive `matched_user_id` is in page IDs or whose normalized email is in page normalized emails.
-2. Load membership rows only for those member IDs, ordered by department external ID and row ID.
+1. Load current directory members whose positive `matched_user_id` is in page IDs or whose normalized email is in page normalized emails. Project only member ID, matched user ID, normalized email, and legacy primary department.
+2. Load membership rows only for those member IDs, ordered by department external ID and row ID. Project only row ID, member ID, and department external ID.
 3. Preserve current membership-over-primary selection and deterministic first visible department behavior: order members by ID, order memberships by department external ID then membership ID, prefer the primary department only when it is one of the current membership rows, and otherwise choose the first current membership.
 4. Load only selected departments plus their ancestors with a bound-parameter recursive predicate equivalent to:
 
 ```sql
 external_id IN (
-  WITH RECURSIVE ancestors AS (
-    SELECT * FROM directory_departments
+  WITH RECURSIVE ancestors(external_id, parent_external_id) AS (
+    SELECT external_id, parent_external_id
+    FROM directory_departments
     WHERE source_id = ? AND external_id = ANY(?)
     UNION
-    SELECT parent.*
+    SELECT parent.external_id, parent.parent_external_id
     FROM directory_departments AS parent
     JOIN ancestors AS child
       ON child.parent_external_id = parent.external_id
@@ -290,7 +291,7 @@ external_id IN (
 )
 ```
 
-Build `display_path` from that page-local ancestor closure. Apply a member's chosen department to every matching page user: its positive `matched_user_id` and any page user whose normalized email equals the member email, with user-ID deduplication. Do not call the existing full-snapshot `departmentsForUsers` helper.
+The outer department query selects only external ID, parent external ID, name, and path; it does not load metadata or other result blobs. Build `display_path` from that page-local ancestor closure. Apply a member's chosen department to every matching page user: its positive `matched_user_id` and any page user whose normalized email equals the member email, with user-ID deduplication. Do not call the existing full-snapshot `departmentsForUsers` helper.
 
 Add Ent indexes:
 
@@ -311,13 +312,17 @@ count and page contain the same recursive department/member predicate
 regular no-department page has no directory subtree predicate and retains unmatched users
 membership lookup is bounded by page member IDs and uses a matching membership index
 matched-user lookup has a matching current-source/matched-user index path
+normalized-email lookup uses the existing current-source/email index path
 ancestor query returns only selected departments and ancestors, never all 120 for a leaf page
+member, membership, and ancestor projections omit metadata and unrelated columns
 no assertion depends on elapsed time, planner cost, exact buffer count, or the entire plan tree
 ```
 
 Run:
 
 ```bash
+(cd backend && go generate ./ent)
+git add backend/ent
 (cd backend && go generate ./ent)
 git diff --exit-code -- backend/ent
 (cd backend && go test ./internal/adminusers -run 'TestList|TestLargeAdminUser' -count=2 -v)
