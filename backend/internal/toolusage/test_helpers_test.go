@@ -351,7 +351,7 @@ func seedLargeEventFixture(t *testing.T, client *ent.Client) largeEventFixture {
 				SetContextUsagePct(float64(i % 100)).
 				SetObservedStartAt(observedEndAt.Add(-time.Second)).
 				SetObservedEndAt(observedEndAt).
-				SetRawSourcePath(fmt.Sprintf("/synthetic/events/source-%04d.jsonl", i)).
+				SetRawSourcePath(fmt.Sprintf("/synthetic/directory-only-fragment/source-%04d.jsonl", i)).
 				SetRawSourceLocator(fmt.Sprintf("line:%04d", i+1)).
 				SetRawPayload(map[string]any{"content": rawPayload})
 			if i%4 < 2 {

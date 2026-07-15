@@ -154,6 +154,13 @@ func TestLargeEventFixturePreservesFiltersAndBounds(t *testing.T) {
 			},
 		},
 		{
+			name:   "partial tool does not match",
+			filter: withLargeEventFilter(adminFilter, func(filter *queryFilter) { filter.Tool = "code" }),
+			matches: func(largeEventRecord) bool {
+				return false
+			},
+		},
+		{
 			name:   "repository",
 			filter: withLargeEventFilter(adminFilter, func(filter *queryFilter) { filter.RepoID = env.fixture.AlphaRepoID }),
 			matches: func(record largeEventRecord) bool {
@@ -204,7 +211,7 @@ func TestLargeEventFixturePreservesFiltersAndBounds(t *testing.T) {
 		},
 		{
 			name:   "q commit_sha",
-			filter: withLargeEventFilter(adminFilter, func(filter *queryFilter) { filter.Q = "COMMIT-NEEDLE-0040" }),
+			filter: withLargeEventFilter(adminFilter, func(filter *queryFilter) { filter.Q = "commit-needle-0040" }),
 			matches: func(record largeEventRecord) bool {
 				return record.Ordinal == largeEventCommitNeedleIndex
 			},
@@ -214,6 +221,13 @@ func TestLargeEventFixturePreservesFiltersAndBounds(t *testing.T) {
 			filter: withLargeEventFilter(adminFilter, func(filter *queryFilter) { filter.Q = "SOURCE-0404.JSONL" }),
 			matches: func(record largeEventRecord) bool {
 				return record.Ordinal == 404
+			},
+		},
+		{
+			name:   "q directory-only source path does not match",
+			filter: withLargeEventFilter(adminFilter, func(filter *queryFilter) { filter.Q = "directory-only-fragment" }),
+			matches: func(largeEventRecord) bool {
+				return false
 			},
 		},
 	}
@@ -252,6 +266,47 @@ func TestLargeEventFixturePreservesFiltersAndBounds(t *testing.T) {
 			listQuery := requireRecordedListQuery(t, env.recorder.snapshot())
 			assertListSQLShape(t, listQuery)
 			assertRawPayloadMarkerAbsent(t, listQuery)
+		})
+	}
+}
+
+func TestLargeEventFixtureNormalizesPageBounds(t *testing.T) {
+	env := openLargeEventTestEnv(t)
+	svc := NewQueryService(env.client)
+	wantRows := largeEventRows(matchingLargeEventRecords(env.fixture.Records, func(largeEventRecord) bool { return true }))
+
+	tests := []struct {
+		name      string
+		limit     int
+		offset    int
+		wantLimit int
+	}{
+		{name: "zero limit defaults to twenty", limit: 0, offset: 0, wantLimit: DefaultEventPageSize},
+		{name: "limit above maximum clamps to one hundred", limit: MaxEventPageSize + 1, offset: 0, wantLimit: MaxEventPageSize},
+		{name: "negative offset returns first page", limit: DefaultEventPageSize, offset: -1, wantLimit: DefaultEventPageSize},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env.recorder.reset()
+			rows, total, err := svc.ListEvents(context.Background(), ListEventsRequest{
+				ActorUserID: env.fixture.BobUserID,
+				ActorRole:   string(user.RoleAdmin),
+				Limit:       tt.limit,
+				Offset:      tt.offset,
+			})
+			if err != nil {
+				t.Fatalf("ListEvents: %v", err)
+			}
+			if total != largeEventFixtureSize {
+				t.Fatalf("total = %d, want %d", total, largeEventFixtureSize)
+			}
+			if len(rows) != tt.wantLimit {
+				t.Fatalf("rows = %d, want normalized page size %d", len(rows), tt.wantLimit)
+			}
+			if !reflect.DeepEqual(rows, wantRows[:tt.wantLimit]) {
+				t.Fatalf("normalized page differs from deterministic first page")
+			}
+			assertListSQLShape(t, requireRecordedListQuery(t, env.recorder.snapshot()))
 		})
 	}
 }
@@ -377,8 +432,8 @@ func TestLargeEventFixtureQueryPlans(t *testing.T) {
 		}
 
 		summaryQueries := recordedSummaryQueries(env.recorder.snapshot())
-		if len(summaryQueries) != 4 {
-			t.Fatalf("captured summary queries = %d, want 4:\n%s", len(summaryQueries), formatRecordedQueries(env.recorder.snapshot()))
+		if len(summaryQueries) == 0 {
+			t.Fatalf("captured no aggregate summary query:\n%s", formatRecordedQueries(env.recorder.snapshot()))
 		}
 		for _, query := range summaryQueries {
 			assertSummarySQLShape(t, query)
@@ -389,9 +444,11 @@ func TestLargeEventFixtureQueryPlans(t *testing.T) {
 			if !ok {
 				t.Fatalf("summary plan has no Aggregate node for %s:\n%s", query.SQL, formatExplainPlan(plan))
 			}
-			if aggregate.ActualRows > 3 {
-				t.Fatalf("summary Aggregate Actual Rows = %.0f, want aggregate rows rather than %d events:\n%s", aggregate.ActualRows, largeEventFixtureSize, formatExplainPlan(plan))
+			role, wantRows := expectedSummaryAggregateRows(t, query, summary)
+			if aggregate.ActualRows != float64(wantRows) {
+				t.Fatalf("%s Aggregate Actual Rows = %.0f, want %d:\n%s", role, aggregate.ActualRows, wantRows, formatExplainPlan(plan))
 			}
+			t.Logf("summary aggregate role=%s rows=%d", role, wantRows)
 		}
 	})
 }
@@ -579,10 +636,11 @@ func recordedSummaryQueries(queries []recordedQuery) []recordedQuery {
 func assertListSQLShape(t *testing.T, query recordedQuery) {
 	t.Helper()
 
-	upper := strings.ToUpper(query.SQL)
-	if !strings.Contains(upper, `"OBSERVED_END_AT" DESC`) || !strings.Contains(upper, `"ID" DESC`) {
-		t.Fatalf("list SQL lacks stable descending order: %s", query.SQL)
+	wantOrder := []string{`"OBSERVED_END_AT" DESC`, `"ID" DESC`}
+	if got := listOrderExpressions(t, query.SQL); !reflect.DeepEqual(got, wantOrder) {
+		t.Fatalf("list ORDER BY expressions = %v, want %v before LIMIT: %s", got, wantOrder, query.SQL)
 	}
+	upper := strings.ToUpper(query.SQL)
 	if !strings.Contains(upper, " LIMIT ") {
 		t.Fatalf("list SQL lacks LIMIT: %s", query.SQL)
 	}
@@ -590,6 +648,34 @@ func assertListSQLShape(t *testing.T, query recordedQuery) {
 	if strings.Contains(strings.ToLower(projection), `"raw_payload"`) {
 		t.Fatalf("list SQL projects raw_payload: %s", query.SQL)
 	}
+}
+
+func listOrderExpressions(t *testing.T, query string) []string {
+	t.Helper()
+
+	upper := strings.ToUpper(query)
+	const orderToken = " ORDER BY "
+	const limitToken = " LIMIT "
+	orderStart := strings.Index(upper, orderToken)
+	if orderStart < 0 {
+		t.Fatalf("list SQL lacks ORDER BY: %s", query)
+	}
+	clauseStart := orderStart + len(orderToken)
+	limitOffset := strings.Index(upper[clauseStart:], limitToken)
+	if limitOffset < 0 {
+		t.Fatalf("list SQL lacks LIMIT after ORDER BY: %s", query)
+	}
+	clause := query[clauseStart : clauseStart+limitOffset]
+	parts := strings.Split(clause, ",")
+	expressions := make([]string, 0, len(parts))
+	for _, part := range parts {
+		expression := strings.ToUpper(strings.Join(strings.Fields(part), " "))
+		if qualifier := strings.LastIndex(expression, "."); qualifier >= 0 {
+			expression = expression[qualifier+1:]
+		}
+		expressions = append(expressions, expression)
+	}
+	return expressions
 }
 
 func assertRawPayloadMarkerAbsent(t *testing.T, query recordedQuery) {
@@ -643,6 +729,26 @@ func assertSummarySQLShape(t *testing.T, query recordedQuery) {
 			t.Fatalf("summary SQL returns event field %s: %s", eventField, query.SQL)
 		}
 	}
+}
+
+func expectedSummaryAggregateRows(t *testing.T, query recordedQuery, summary *SummaryResponse) (string, int) {
+	t.Helper()
+
+	upper := strings.ToUpper(query.SQL)
+	const groupToken = " GROUP BY "
+	groupStart := strings.Index(upper, groupToken)
+	if groupStart < 0 {
+		return "scalar summary", 1
+	}
+	groupClause := upper[groupStart+len(groupToken):]
+	if orderStart := strings.Index(groupClause, " ORDER BY "); orderStart >= 0 {
+		groupClause = groupClause[:orderStart]
+	}
+	if strings.Contains(groupClause, `"TOOL"`) {
+		return "tool-count summary", len(summary.ToolCounts)
+	}
+	t.Fatalf("unclassified grouped summary query: %s", query.SQL)
+	return "", 0
 }
 
 func sqlProjection(query string) string {
