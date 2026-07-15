@@ -202,7 +202,8 @@ async function loadSources() {
     const res = await listDirectorySources()
     sources.value = res.data.data?.items ?? []
     if (sources.value.length > 0) {
-      selectSource(sources.value[0])
+      const source = sources.value.find((candidate) => candidate.id === selectedSourceId.value) ?? sources.value[0]
+      selectSource(source)
     } else {
       applyTemplate(templates[0].dsl)
     }
@@ -214,7 +215,9 @@ async function loadSources() {
 }
 
 function selectSource(source: DirectorySource) {
+  const sourceChanged = selectedSourceId.value !== source.id
   actionRequestGeneration++
+  if (sourceChanged) resetRunLifecycle()
   clearFeedback()
   resetRunView()
   selectedSourceId.value = source.id
@@ -239,11 +242,16 @@ function applyTemplate(dsl: string) {
 }
 
 function clearFeedback() {
-  invalidateRunPolling()
-  message.value = ''
   error.value = ''
   validationIssues.value = []
-  runWarningSummaries.value = []
+  if (!isActiveRun(activeRun.value)) {
+    message.value = ''
+    runWarningSummaries.value = []
+  }
+}
+
+function resetRunLifecycle() {
+  invalidateRunPolling()
   activeRun.value = null
   activeRunAction.value = null
   latestActiveRun.value = null
@@ -678,6 +686,7 @@ async function previewSource() {
   const sourceID = selectedSourceId.value
   if (!sourceID) return
   const generation = beginActionRequest()
+  resetRunLifecycle()
   clearFeedback()
   activeRunAction.value = 'preview'
   message.value = t('directorySync.previewStarted')
@@ -706,6 +715,7 @@ async function runNow() {
   const sourceID = selectedSourceId.value
   if (!sourceID) return
   const generation = beginActionRequest()
+  resetRunLifecycle()
   clearFeedback()
   activeRunAction.value = 'apply'
   message.value = t('directorySync.applyStarted')
