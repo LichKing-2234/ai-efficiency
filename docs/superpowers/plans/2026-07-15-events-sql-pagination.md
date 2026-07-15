@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Tasks 1-4 and Task 5 Steps 1-3 are complete. All implementation and review remediation is committed through `b28f078`; current architecture and the live verification ledger are ready for their Step 4 commit. Ent generation has no drift; full backend/CLI/frontend, production build, embed, PostgreSQL scale/query-plan, and isolated 16/16 role E2E verification pass. Final replacement reviews report `SPEC PASS` and `QUALITY APPROVED`, each with zero findings. Task 5 Steps 4-7 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); the draft PR must target `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 and Task 5 Steps 1-4 are complete. Implementation, review remediation, current architecture, full verification evidence, and zero-finding final reviews are committed through `7b5a3f5`. Ent generation has no drift; full backend/CLI/frontend, production build, embed, PostgreSQL scale/query-plan, and isolated 16/16 role E2E verification pass. Task 5 Steps 5-7 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); the draft PR must target `docs/performance-contracts-116`.
 
 ## Global Constraints
 
@@ -518,7 +518,7 @@ Fix every Critical or Important finding with a focused RED/GREEN cycle, rerun af
 
 **Final review outcome (2026-07-15):** The replacement issue/spec review reports `SPEC PASS` with 0 Critical, 0 Important, and 0 Minor findings. The separate repository-standards review reports `QUALITY APPROVED` with the same zero-finding counts. No review finding is deferred.
 
-- [ ] **Step 4: Record delivery evidence and commit architecture/ledger state**
+- [x] **Step 4: Record delivery evidence and commit architecture/ledger state**
 
 Set `Status` to state that implementation, full verification, and reviews are complete while draft PR CI remains pending. Record test commands, scale fixture facts, selected indexes, review outcomes, and any environment note. Then run:
 
