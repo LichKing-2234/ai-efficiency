@@ -3,7 +3,6 @@ package telemetry
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -54,7 +53,7 @@ func (t *dependencyTransport) RoundTrip(request *http.Request) (*http.Response, 
 	if err != nil {
 		statusClass = "error"
 	} else if response != nil {
-		statusClass = dependencyStatusClass(response.StatusCode)
+		statusClass = HTTPStatusClass(response.StatusCode)
 	}
 
 	fields := []zap.Field{
@@ -81,13 +80,6 @@ func (t *dependencyTransport) CloseIdleConnections() {
 	if closer, ok := t.next.(interface{ CloseIdleConnections() }); ok {
 		closer.CloseIdleConnections()
 	}
-}
-
-func dependencyStatusClass(status int) string {
-	if status < http.StatusContinue || status > 599 {
-		return "unknown"
-	}
-	return fmt.Sprintf("%dxx", status/100)
 }
 
 func classifyDependencyError(ctx context.Context, err error) string {

@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/ai-efficiency/backend/internal/telemetry"
@@ -33,7 +31,7 @@ func RequestTelemetry(logger *zap.Logger, release string) gin.HandlerFunc {
 			zap.String("event", "http_request"),
 			zap.String("route", route),
 			zap.String("method", c.Request.Method),
-			zap.String("status_class", requestStatusClass(c.Writer.Status())),
+			zap.String("status_class", telemetry.HTTPStatusClass(c.Writer.Status())),
 			zap.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
 			zap.Int("response_bytes", c.Writer.Size()),
 			zap.String("release", release),
@@ -64,11 +62,4 @@ func validRequestID(id string) bool {
 		return false
 	}
 	return true
-}
-
-func requestStatusClass(status int) string {
-	if status < http.StatusContinue || status > 599 {
-		return "unknown"
-	}
-	return fmt.Sprintf("%dxx", status/100)
 }
