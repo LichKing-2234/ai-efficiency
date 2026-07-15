@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Tasks 1-3 are complete. Task 3 recording, large-fixture behavior, structural PostgreSQL plan proof, repeated scale verification, package verification, and review are complete and committed; Tasks 4-5 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
+**Status:** Tasks 1-3 implementation and Task 3 review remediation are complete and committed. The 2,400-row fixture now covers every page bound and discriminating filter case, list SQL requires the exact two-expression order, and summary plan evidence is role-specific; Tasks 4-5 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
 
 ## Global Constraints
 
@@ -332,7 +332,9 @@ Task 3 verification evidence (2026-07-15):
 - The controlled RED mutation removed the `id DESC` tie-breaker and produced SQL-shape failures plus duplicate and out-of-order concatenated pages. Restoring the existing Task 2 tie-breaker returned the suite to GREEN; no query or schema/index adjustment was required in the final Task 3 diff.
 - `go test ./internal/toolusage -run 'TestLargeEventFixture' -count=2 -v` passed twice with identical visible ordering and bounds. `go test ./internal/toolusage -count=1` also passed.
 - PostgreSQL selected `toolusageevent_observed_end_at_id` for the representative global list and `toolusageevent_user_id_observed_end_at_id` for the representative regular-user list in both scale runs.
-- List plans contain `Limit`, materialize at most 100 rows at that node, retain `observed_end_at DESC, id DESC`, and exclude `raw_payload` from the projection. All four summary plans contain `Aggregate`, have no `LIMIT` or `OFFSET`, and return aggregate rows rather than event entities.
+- List plans contain `Limit`, materialize at most 100 rows at that node, retain `observed_end_at DESC, id DESC`, and exclude `raw_payload` from the projection. Captured scalar and tool-count summary plans contain `Aggregate`, have no `LIMIT` or `OFFSET`, and return respectively one row or the exact number of visible tool groups rather than event entities.
+- Review remediation added first-page evidence for default/clamped/negative inputs, exact-tool and basename-only negative cases, an opposite-case commit positive, and exact `ORDER BY` expression parsing. A controlled mutation made all new assertions fail before production behavior was restored with no remaining production diff.
+- After restoration, `go test ./internal/toolusage -run 'TestLargeEventFixture' -count=2 -v` and `go test ./internal/toolusage -count=1` passed, and `git diff --check` passed.
 
 - [x] **Step 6: Update the live ledger and commit Task 3**
 
@@ -342,6 +344,15 @@ git commit -m "test(events): prove bounded SQL event reads"
 ```
 
 Expected: the commit contains synthetic test evidence and only evidence-required schema refinements.
+
+#### Task 3 Review Follow-up
+
+- [x] Prove on the 2,400-row fixture that limit `0` defaults to `20`, a limit above `100` clamps to `100`, and a negative offset returns the first page while preserving the complete total.
+- [x] Add discriminating summary/list cases for a partial tool that must not match, an opposite-case commit needle that must match, and a directory-only source-path fragment that must not match.
+- [x] Parse the captured list SQL and require the exact `ORDER BY` expression list `observed_end_at DESC, id DESC` before `LIMIT`, rejecting any extra expression.
+- [x] Replace the exact four-summary-query count and generic three-row cap with at-least-one aggregate capture plus role-specific scalar/tool-group row evidence.
+- [x] Run focused mutation-backed RED checks, restore production behavior, then pass the scale suite twice, the full `toolusage` package, and `git diff --check`.
+- [x] Append review-remediation evidence to `.superpowers/sdd/120-task-3-report.md`, self-review the focused diff, and commit without pushing.
 
 ---
 
