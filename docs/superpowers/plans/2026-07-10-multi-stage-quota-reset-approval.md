@@ -1,449 +1,389 @@
-# Lean Multi-Stage Quota Reset Approval Implementation Plan
+# Quota Reset Sequential Approval Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use
 > `superpowers:subagent-driven-development` or `superpowers:executing-plans` to
 > implement this plan task-by-task. Steps use checkbox syntax for live tracking.
 
-**Status:** In progress. The replacement spec is complete; implementation has
-not started.
+**Status:** The lean implementation is complete on the feature branch. Focused
+post-review tests pass; final full-repository verification, documentation commit,
+and PR push remain unchecked below.
 
-**Goal:** Extend the existing quota reset feature with one exact-department
-approval step, an ordered subscription-group department chain, prior-approver
-reuse, durable comments, and actionable notifications.
+**Goal:** Add an exact-department first approval, an ordered subscription-group
+department chain, prior-approver reuse, actionable notifications, and one final
+quota reset without building a generic workflow system.
 
-**Architecture:** Keep the existing request, event, approver config, Work Items,
-and relay reset paths. Add one JSON-backed chain config table and store each
-request's bounded workflow in the existing request row with a compare-and-swap
-revision. Continue using `resolved_approver_user_ids` as the active-step index.
+**Architecture:** Keep the existing quota reset request, event, approver config,
+Work Items, and relay reset paths. Add one JSON-backed chain configuration table
+and store each request's bounded versioned workflow on the existing request row.
+Use `workflow_revision` for compare-and-swap decisions and
+`resolved_approver_user_ids` as the current-step query index.
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL JSONB, Vue 3, TypeScript, Vitest,
 TailwindCSS.
 
 ## Global Constraints
 
-- The source contract is
+- Source contract:
   `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`.
 - Add exactly one business table: `quota_reset_approval_chains`.
-- Do not add request-node, node-approver, or decision tables.
-- Do not add a generic workflow framework, notification outbox, or template DSL.
-- Do not add a quota reset Pinia store; extend the current view/API flow.
-- Keep version 1 request behavior operational.
-- Use synthetic identities such as `alice@example.com` in tests and docs.
-- If hand-written production additions exceed 4,000 lines, stop and reduce the
-  design before continuing.
+- Add no request-node, node-approver, decision, outbox, or template tables.
+- Add no generic workflow framework, template DSL, or quota reset Pinia store.
+- Resolve only exact departments; never walk to a parent department.
+- Preserve version 1 request behavior and public `pending` status.
+- Use synthetic identities and groups in tests and docs.
+- Generated Ent files are expected and are not counted as hand-written module
+  surface.
 
-## File Map
+## Scope And File Budget
 
-**Create:**
+The branch diff contains 30 files under `backend/ent`: four hand-written schema
+files and 26 generated files. Ent emits entity, mutation, query, predicate, hook,
+and migration code for one new business schema plus three extended schemas.
+Review scope should not treat every generated file as a separate design module.
 
-- `backend/ent/schema/quota_reset_approval_chain.go` - one row per provider/group,
-  with an ordered JSON department list.
-- `backend/internal/quotareset/workflow.go` - bounded version 2 workflow types,
-  validation, authorization, and pure transitions.
-- `backend/internal/quotareset/workflow_test.go` - pure workflow transition tests.
-- `backend/internal/quotareset/workflow_service.go` - version 2 request creation
-  and compare-and-swap decision transactions.
-- `backend/internal/quotareset/workflow_config.go` - chain discovery, validation,
-  replacement, and request-time resolution.
-- `backend/internal/quotareset/workflow_config_test.go` - chain/resolver tests.
-- `frontend/src/components/quota-reset/QuotaResetDecisionDialog.vue` - required
-  decision comment dialog.
-- `frontend/src/components/quota-reset/QuotaResetWorkflowTimeline.vue` - compact
-  workflow progress and comment history.
-- `frontend/src/components/settings/QuotaResetApprovalChainSettings.vue` -
-  focused ordered-chain editor using existing directory search.
+**New hand-written production files:**
 
-**Modify:**
+- `backend/ent/schema/quota_reset_approval_chain.go`
+- `backend/internal/quotareset/workflow.go`
+- `backend/internal/quotareset/workflow_config.go`
+- `backend/internal/quotareset/workflow_service.go`
+- `frontend/src/components/quota-reset/QuotaResetDecisionDialog.vue`
+- `frontend/src/components/quota-reset/QuotaResetWorkflowTimeline.vue`
+- `frontend/src/components/settings/QuotaResetApprovalChainSettings.vue`
+
+**Existing production files extended:**
 
 - `backend/ent/schema/quota_reset_request.go`
 - `backend/ent/schema/quota_reset_request_event.go`
 - `backend/ent/schema/quota_reset_notification_setting.go`
 - generated files under `backend/ent/`
-- `backend/internal/quotareset/types.go`
-- `backend/internal/quotareset/resolver.go`
-- `backend/internal/quotareset/service.go`
-- `backend/internal/quotareset/notification.go`
-- focused tests beside those files
-- `backend/internal/handler/quota_reset.go`
-- `backend/internal/handler/router.go`
+- `backend/internal/quotareset/{errors,types,service,notification}.go`
+- `backend/internal/handler/{quota_reset,router}.go`
+- `backend/internal/workitems/service.go`
 - `frontend/src/api/quotaReset.ts`
 - `frontend/src/types/index.ts`
-- `frontend/src/components/settings/QuotaResetApprovalSettings.vue`
-- `frontend/src/components/quota-reset/QuotaResetRequestList.vue`
-- `frontend/src/views/QuotaResetView.vue`
 - `frontend/src/i18n.ts`
-- existing focused frontend tests
+- `frontend/src/views/QuotaResetView.vue`
+- `frontend/src/components/quota-reset/QuotaResetRequestList.vue`
+- `frontend/src/components/settings/QuotaResetApprovalSettings.vue`
 - `docs/architecture.md`
 
-No Work Items backend change is planned: it already queries
-`resolved_approver_user_ids`, which version 2 keeps synchronized to the active
-step.
+Tests stay beside these modules. No new backend package, frontend route, or
+frontend store is required.
 
 ---
 
-### Task 1: Add The Compact Workflow Model
+### Task 1: Persist A Compact Versioned Workflow
 
-**Interfaces:**
+**Produces:**
 
 ```go
 type Workflow struct {
-    Version     int              `json:"version"`
-    CurrentStep int              `json:"current_step"`
-    Requester   WorkflowPerson   `json:"requester"`
-    Steps       []WorkflowStep   `json:"steps"`
+    Version     int
+    CurrentStep int
+    Requester   WorkflowPerson
+    Steps       []WorkflowStep
 }
 
-type WorkflowStep struct {
-    Kind                  string             `json:"kind"`
-    Label                 string             `json:"label"`
-    DepartmentExternalIDs []string           `json:"department_external_ids"`
-    Approvers             []WorkflowApprover `json:"approvers"`
-    AdminFallback         bool               `json:"admin_fallback"`
-    Status                string             `json:"status"`
-    Decision              *WorkflowDecision  `json:"decision,omitempty"`
-    SatisfiedByStep       *int               `json:"satisfied_by_step,omitempty"`
-}
-
-func DecodeWorkflow(raw map[string]any) (*Workflow, error)
-func (w *Workflow) ActiveApproverUserIDs() []int
-func (w *Workflow) Decide(input WorkflowDecisionInput) (WorkflowTransition, error)
+func EncodeWorkflow(*Workflow) (map[string]any, error)
+func DecodeWorkflow(map[string]any) (*Workflow, error)
+func (*Workflow) Decide(WorkflowDecisionInput) (WorkflowTransition, error)
+func (*Workflow) ActiveApproverUserIDs() []int
 ```
 
 - [x] **Step 1: Add failing pure transition tests**
 
-  Add table-driven tests proving one approval advances one step, rejection ends
-  the workflow, the requester is rejected, a non-candidate is rejected, a prior
-  actor satisfies all matching later steps, and malformed/oversized documents
-  fail closed.
-
-  Run:
+  Cover active-step approval, rejection, self-approval, non-candidates, admin
+  fallback, prior-actor reuse, terminal state, malformed JSON, 21-step limit,
+  and 100-approver limit.
 
   ```bash
-  cd backend && go test ./internal/quotareset -run 'TestWorkflow' -count=1
+  cd backend
+  go test ./internal/quotareset -run '^TestWorkflow' -count=1
   ```
 
-  Expected: compile failure because the workflow API does not exist.
+- [x] **Step 2: Implement the pure workflow state machine**
 
-- [x] **Step 2: Implement the smallest pure workflow state machine**
+  Keep it independent of Ent, Gin, and notification code. A transition returns
+  activated/satisfied step indexes and terminal approval/rejection facts.
 
-  Keep transition code free of Ent and HTTP dependencies. Limit documents to 21
-  steps and 100 unique approvers. Return transition facts needed by the service:
-  activated step, automatically satisfied steps, terminal approval/rejection,
-  and current approver ids.
+- [x] **Step 3: Add request fields, event values, explicit channel, and chain schema**
 
-- [x] **Step 3: Verify the pure tests pass**
-
-  Run the Task 1 test command. Expected: PASS.
-
-- [x] **Step 4: Add the schema fields and generate Ent code**
-
-  Add `workflow_version`, nullable `workflow`, and `workflow_revision` to
-  `QuotaResetRequest`; add the five workflow event enum values; add explicit
-  notification `channel`; create `QuotaResetApprovalChain` with JSON
-  `department_chain`.
-
-  Run:
+  Add `workflow_version`, nullable `workflow`, `workflow_revision`, internal
+  `workflow_pending`, workflow event enum values, notification `channel`, and
+  the one `QuotaResetApprovalChain` schema.
 
   ```bash
-  cd backend && go generate ./ent
-  go test ./ent/... ./internal/quotareset -run 'TestWorkflow|TestSchema' -count=1
+  cd backend
+  go generate ./ent
+  go test ./internal/quotareset -run 'TestWorkflow|TestSchema' -count=1
   ```
 
-  Expected: PASS.
+- [x] **Step 4: Commit the compact model**
 
-- [x] **Step 5: Commit Task 1**
-
-  ```bash
-  git add backend/ent backend/internal/quotareset/workflow.go backend/internal/quotareset/workflow_test.go
-  git commit -m "feat(quotareset): add compact approval workflow state"
-  ```
+  Commit recorded on the branch as `feat(quotareset): add compact approval
+  workflow state`.
 
 ---
 
-### Task 2: Resolve Exact Departments And Group Chains
+### Task 2: Resolve Exact Departments And Ordered Chains
 
-**Interfaces:**
+**Produces:**
 
 ```go
-type ApprovalChainInput struct {
-    ProviderID int                   `json:"provider_id"`
-    GroupID    string                `json:"group_id"`
-    GroupName  string                `json:"group_name"`
-    Enabled    bool                  `json:"enabled"`
-    Departments []ChainDepartmentInput `json:"departments"`
-}
-
-func (s *Service) ListApprovalChains(ctx context.Context) (*ApprovalChainListResponse, error)
-func (s *Service) SaveApprovalChains(ctx context.Context, actorID int, items []ApprovalChainInput) (*ApprovalChainListResponse, error)
-func (s *Service) resolveWorkflow(ctx context.Context, requester *ent.User, providerID int, groupID string) (*Workflow, []DepartmentPathEvidence, error)
+func (s *Service) ListApprovalChains(context.Context) (*ApprovalChainListResponse, error)
+func (s *Service) SaveApprovalChains(context.Context, int, []ApprovalChainInput) (*ApprovalChainListResponse, error)
+func (s *Service) resolveWorkflowSnapshot(context.Context, *ent.User, int, string) (*Workflow, []DepartmentPathEvidence, error)
 ```
 
-- [x] **Step 1: Add failing resolver/config tests**
+- [x] **Step 1: Add failing resolution and validation tests**
 
-  Cover exact-department configured candidates; per-department representative
-  fallback; multiple direct departments merged into one step; no parent walk;
-  configured non-representative members; requester exclusion; ordered chain
-  nodes; missing chain approvers using admin fallback; and no-step synthetic
-  admin fallback.
-
-  Also test replacement validation: current directory source only, active
-  provider/group only, no duplicate group or department, and at most 20 chain
-  departments.
-
-  Run:
+  Cover exact-department config, per-department representative fallback,
+  multi-department merge, no parent walk, configured non-representative members,
+  requester exclusion, ordered chain steps, admin fallback, stale sources,
+  duplicate groups/departments, non-subscription groups, and the 20-department
+  limit.
 
   ```bash
-  cd backend && go test ./internal/quotareset -run 'TestResolveWorkflow|TestApprovalChains|TestApproverCandidates' -count=1
+  cd backend
+  go test ./internal/quotareset -run 'TestResolveWorkflow|TestApprovalChain|TestApproverCandidate' -count=1
   ```
 
-  Expected: FAIL because the lean resolver/config implementation is absent.
+- [x] **Step 2: Implement request-time resolution in one repeatable-read snapshot**
 
-- [x] **Step 2: Implement chain CRUD and request-time resolution**
+  Reuse the current Directory Sync facts, existing approver config, and relay
+  group listing. Snapshot requester and approver display/WeCom identity into the
+  workflow.
 
-  Reuse the current Directory Sync snapshot, `QuotaResetApproverConfig`, relay
-  provider group listing, and existing department tree helpers. Approver picker
-  candidates become active directory-matched members of the chosen department;
-  include representative and `has_wecom_userid` flags in responses.
+- [x] **Step 3: Add admin chain routes and directory-backed candidates**
 
-- [x] **Step 3: Add and test admin HTTP routes**
-
-  Extend the handler interface and router with `GET/PUT approval-chains`. Keep
-  replacement payload semantics and return readable group/department snapshots.
-
-  Run:
+  Add `GET/PUT /api/v1/admin/quota-reset/approval-chains`; return
+  `current_directory_source_id`; allow active matched department members in the
+  approver dropdown while retaining representative flags.
 
   ```bash
-  cd backend && go test ./internal/handler -run 'TestQuotaReset.*ApprovalChain|TestQuotaReset.*ApproverCandidate' -count=1
+  cd backend
+  go test ./internal/handler -run 'TestQuotaReset.*ApprovalChain|TestQuotaReset.*ApproverCandidate' -count=1
   ```
 
-  Expected: PASS after first observing the new handler tests fail.
+- [x] **Step 4: Commit resolver and config work**
 
-- [ ] **Step 4: Commit Task 2**
-
-  ```bash
-  git add backend/internal/quotareset backend/internal/handler backend/internal/handler/router.go
-  git commit -m "feat(quotareset): resolve department approval chains"
-  ```
+  Commit recorded as `feat(quotareset): resolve department approval chains`.
 
 ---
 
-### Task 3: Integrate Version 2 Requests And Decisions
+### Task 3: Execute Decisions, Notifications, And Reset
 
-**Interfaces:** Existing `CreateRequest`, `Approve`, `Reject`, `Cancel`, list,
-retry, and reset methods remain the public service boundary.
+**Consumes:** `Workflow`, request-time snapshot, existing relay resetter, existing
+request event table.
 
-- [x] **Step 1: Add failing service tests**
+- [x] **Step 1: Add failing service transaction tests**
 
-  Prove creation snapshots a version 2 workflow; active approver ids follow the
-  current step; intermediate approval does not reset; final approval starts one
-  reset; comments are mandatory; later matching nodes auto-satisfy; admin acts
-  only on the active node; two decisions at one revision yield one winner;
-  rejection is terminal; and version 1 requests still use the old path.
-
-  Run:
+  Cover V2 creation, active-candidate replacement, required comments, one
+  decision per step, prior-actor reuse, rejection, admin active-step fallback,
+  compare-and-swap conflict, one final reset, retry ownership, and V1 behavior.
 
   ```bash
-  cd backend && go test ./internal/quotareset -run 'TestCreateRequestV2|TestApproveV2|TestRejectV2|TestConcurrentDecision|TestVersion1' -count=1
+  cd backend
+  go test ./internal/quotareset -run 'TestCreateRequestV2|TestApproveV2|TestRejectV2|TestConcurrent|TestRetryReset|TestApproveV1' -count=1
   ```
 
-  Expected: FAIL on missing version 2 behavior.
+- [x] **Step 2: Implement transactional V2 creation and decisions**
 
-- [x] **Step 2: Implement transactional creation and decisions**
+  Write request plus initial events atomically. Update decisions only where
+  `status = workflow_pending` and `workflow_revision` matches; commit before
+  relay or webhook calls.
 
-  Add small transaction helpers local to the quota reset module. Update version
-  2 rows with `WHERE status = pending AND workflow_revision = ?`, increment the
-  revision, update `resolved_approver_user_ids`, and append transition events in
-  the same transaction. Commit before notifications and relay calls.
+- [x] **Step 3: Add explicit generic and WeCom notification rendering**
 
-- [x] **Step 3: Return workflow summaries and current actions**
+  Reuse the existing notifier. Include requester/team/group/reason/progress,
+  mention only snapshotted `wecom_userid` values, skip auto-satisfied steps, and
+  keep test messages synthetic.
 
-  Extend request summaries with workflow version/current step/steps. Approval
-  lists continue using JSON containment on current approver ids. Processed rows
-  remain listable but Work Items counts remain actionable only.
+- [x] **Step 4: Keep current-step lists and Work Items actionable**
 
-- [x] **Step 4: Run quota reset and Work Items regression tests**
+  Publicly map `workflow_pending` to `pending`; include both stored pending
+  statuses in user/admin counts and current approval lists.
 
   ```bash
-  cd backend && go test ./internal/quotareset ./internal/workitems ./internal/handler -count=1
+  cd backend
+  go test ./internal/quotareset ./internal/workitems ./internal/handler -count=1
   ```
 
-  Expected: PASS.
+- [x] **Step 5: Commit service and notification work**
 
-- [x] **Step 5: Commit Task 3**
-
-  ```bash
-  git add backend/internal/quotareset backend/internal/handler backend/internal/workitems
-  git commit -m "feat(quotareset): execute sequential approval decisions"
-  ```
+  Commits recorded as `feat(quotareset): execute sequential approval decisions`
+  and `feat(quotareset): notify active approval steps`.
 
 ---
 
-### Task 4: Make Notifications Actionable Without A Framework
+### Task 4: Extend Existing Frontend Surfaces
 
-**Interfaces:** Keep `WebhookNotifier.NotifyRequestEvent`; internally render one
-of two explicit channels: `generic_webhook` or `wecom_group_robot`.
+**Consumes:** Existing quota reset API/view state plus chain/workflow response
+types. `QuotaResetView` remains the network-state owner.
 
-- [x] **Step 1: Add failing notification tests**
+- [x] **Step 1: Add failing settings tests**
 
-  Test explicit channel selection, generic JSON fields, WeCom markdown requester
-  name/email/team/group/reason/progress, `<@userid>` mentions, missing-id labels,
-  no notification for auto-satisfied steps, synthetic test content, business
-  error decoding, and redacted errors.
+  Cover group selection, department and member filtering inside opened
+  dropdowns, ordered add/remove/move, replacement payloads, disabled-chain
+  preservation, explicit channel save, and API failures.
 
-  Run:
+- [x] **Step 2: Extend settings without a new store or nested card layout**
 
-  ```bash
-  cd backend && go test ./internal/quotareset -run 'TestWebhook|TestWeCom|TestNotificationSettings' -count=1
-  ```
-
-  Expected: FAIL on the new channel/context assertions.
-
-- [x] **Step 2: Extend the existing notifier directly**
-
-  Add two focused render functions in `notification.go`; do not add adapter,
-  registry, outbox, or template packages. Read workflow snapshots for requester,
-  active approvers, progress, and prior decision context. Use only
-  `metadata.wecom_userid` for mentions.
-
-- [x] **Step 3: Add explicit channel settings and legacy URL backfill**
-
-  Validate channel/URL/auth combinations. Existing WeCom robot URLs migrate to
-  `wecom_group_robot`; other rows remain `generic_webhook`. API responses never
-  expose credentials or full secret-bearing error URLs.
-
-- [x] **Step 4: Run focused and full quota reset tests**
-
-  ```bash
-  cd backend && go test ./internal/quotareset -count=1
-  ```
-
-  Expected: PASS.
-
-- [x] **Step 5: Commit Task 4**
-
-  ```bash
-  git add backend/internal/quotareset backend/internal/handler backend/ent
-  git commit -m "feat(quotareset): notify active approval steps"
-  ```
-
----
-
-### Task 5: Extend The Existing Frontend Surfaces
-
-**Interfaces:** API types mirror the backend chain and workflow summaries. The
-existing `QuotaResetView` remains data owner; child components only emit actions.
-
-- [x] **Step 1: Add failing API/settings tests**
-
-  Add focused tests for group dropdowns, department filtering inside an opened
-  dropdown, member candidate filtering, ordered add/remove/move chain rows,
-  replacement payloads, explicit channel save, and backend error display.
-
-  Run:
-
-  ```bash
-  cd frontend && npm test -- src/__tests__/quota-reset-api.test.ts src/__tests__/quota-reset-approval-settings.test.ts
-  ```
-
-  Expected: FAIL on missing chain/channel controls.
-
-- [x] **Step 2: Extend API/types and the existing settings component**
-
-  Keep the three settings subsections in
-  `QuotaResetApprovalSettings.vue`. Reuse existing Directory Sync department
-  search and approver candidate APIs. Do not create nested settings cards or a
-  new state store.
+  Keep department approvers, group chains, and notification channel as three
+  subsections of `QuotaResetApprovalSettings.vue`. Use backend display labels and
+  ids only as submitted values.
 
 - [x] **Step 3: Add failing approval workbench tests**
 
-  Test active step/progress, timeline comments, mandatory decision comment,
-  cancel/action visibility, processed history, and refreshed pending counts.
+  Cover step progress, comments, prior-approval satisfaction, required decision
+  dialog, processed history, and action visibility only for current candidates.
 
-  Run:
+- [x] **Step 4: Add the small decision dialog and timeline components**
 
-  ```bash
-  cd frontend && npm test -- src/__tests__/quota-reset-view.test.ts
-  ```
+  Keep fetching and refresh behavior in `QuotaResetView`; child components emit
+  decisions only.
 
-  Expected: FAIL on missing version 2 presentation.
-
-- [x] **Step 4: Implement the compact timeline and dialog**
-
-  Add the two small child components listed in the file map. Keep network state
-  in `QuotaResetView`; after a decision refresh the active list, mine/admin list
-  as applicable, and Work Items counts without clearing successful UI state on
-  a secondary refresh failure.
-
-- [x] **Step 5: Run focused frontend tests and build**
+- [x] **Step 5: Run focused frontend verification and commit**
 
   ```bash
   cd frontend
-  npm test -- src/__tests__/quota-reset-api.test.ts src/__tests__/quota-reset-approval-settings.test.ts src/__tests__/quota-reset-view.test.ts src/__tests__/work-items-store.test.ts
+  npm test -- src/__tests__/quota-reset-api.test.ts \
+    src/__tests__/quota-reset-approval-settings.test.ts \
+    src/__tests__/quota-reset-view.test.ts
   npm run build
   ```
 
-  Expected: PASS and build exit 0.
-
-- [ ] **Step 6: Commit Task 5**
-
-  ```bash
-  git add frontend
-  git commit -m "feat(frontend): show sequential quota reset approvals"
-  ```
+  Commit recorded as `feat(frontend): show sequential quota reset approvals`.
 
 ---
 
-### Task 6: Documentation, Browser Verification, And Diff Audit
+### Task 5: Harden Failure And Rollout Boundaries
 
-- [ ] **Step 1: Update current architecture documentation**
+- [x] **Step 1: Reject terminal or malformed service-layer workflow cursors**
 
-  Update `docs/architecture.md` to name the one chain config table, request JSON
-  workflow, current approver ids, event audit, and explicit webhook channels.
-  Do not rewrite the historical 2026-07-07 spec.
+  The new test first reproduced an index-out-of-range panic; the service now
+  returns `ErrInvalidStatus` before reading the active step.
 
-- [ ] **Step 2: Run full repository verification**
+- [x] **Step 2: Bound detached relay reset execution**
+
+  A blocking-provider test first failed because caller cancellation was removed
+  with no replacement deadline. The service now applies a 30-second relay-call
+  timeout and persists timeout failure using the detached base context.
+
+- [x] **Step 3: Keep internal status and third-party messages out of webhooks/audit**
+
+  Generic payload tests require public `pending`. Business-error tests require
+  only numeric `errcode`; untrusted third-party `errmsg` is not persisted.
+
+- [x] **Step 4: Preserve rollback-safe active-request uniqueness**
+
+  Keep the original partial unique index predicate unchanged and add the named
+  `quotaresetrequest_workflow_active_unique` index spanning both pending states.
+  A generated-schema test locks both predicates.
+
+- [x] **Step 5: Run focused hardening regression**
 
   ```bash
-  cd backend && go test ./... -count=1 && go vet ./...
-  cd ../frontend && npm test && npm run build && npm run test:e2e:role
-  cd .. && git diff --check origin/main...HEAD
+  cd backend
+  go test ./internal/quotareset ./internal/workitems -count=1
+  ```
+
+  Evidence: both packages passed after the four fixes.
+
+- [x] **Step 6: Re-run handler regression after the final hardening changes**
+
+  ```bash
+  cd backend
+  go test ./internal/handler -run '^TestQuotaReset' -count=1
+  ```
+
+  Evidence: focused quota reset handler tests passed after the final hardening
+  changes; the full handler package remains covered by Task 6's backend run.
+
+---
+
+### Task 6: Documentation, Full Verification, And PR Update
+
+- [x] **Step 1: Synchronize current architecture documentation**
+
+  Update `docs/architecture.md` with the one-table/request-JSON model, exact
+  department rules, dual pending-state indexes, bounded relay reset, and explicit
+  webhook channels. Do not rewrite the historical 2026-07-07 spec.
+
+- [x] **Step 2: Run full backend and CLI verification**
+
+  ```bash
+  cd backend
+  go test ./... -count=1
+  go vet ./...
+  cd ../ae-cli
+  go test ./... -count=1
   ```
 
   Expected: all commands exit 0.
 
-- [ ] **Step 3: Browser-test one complete workflow**
+  Evidence: all backend packages passed, `go vet ./...` exited 0, and all ae-cli
+  packages passed.
 
-  Against local Compose, verify admin chain/channel save, user request creation,
-  initial approver comment, configured-chain comment, prior-actor skip display,
-  terminal reset state, processed history, and pending badge changes. Capture
-  screenshots outside the repository.
-
-- [ ] **Step 4: Audit final scope before push**
-
-  Run:
+- [x] **Step 3: Run full frontend verification**
 
   ```bash
-  git diff --shortstat origin/main...HEAD
-  git diff --numstat origin/main...HEAD | awk '
-    $3 !~ /^backend\/ent\// &&
-    $3 !~ /^docs\/superpowers\/(plans|specs)\// { add += $1; del += $2 }
-    END { print "manual-nondoc", add, del }'
+  cd frontend
+  npm test
+  npm run build
+  npm run test:e2e:role
   ```
 
-  Confirm one new business schema, no runtime node/decision tables, no quota
-  reset store, and no real user/company data. If hand-written production
-  additions exceed the global constraint, reduce before push.
+  Expected: unit tests, production build, and all role E2E scenarios pass.
 
-- [ ] **Step 5: Commit docs and plan evidence**
+  Evidence: Vitest passed 39 files / 434 tests, the production build completed,
+  and role E2E passed 16/16.
+
+- [x] **Step 4: Browser-test one complete built workflow**
+
+  Evidence from the isolated Compose run on `127.0.0.1:28081`: Bob approved the
+  initial step, Bob's later matching step displayed as automatically satisfied,
+  Carol approved the final step, the request reached
+  `approved_reset_succeeded`, the fake relay recorded exactly one reset, and the
+  mobile page had no horizontal overflow. Screenshots are outside the repository
+  under `/tmp/ae-quota-reset-lean-real/`.
+
+- [x] **Step 5: Audit the final diff**
 
   ```bash
-  git add docs/architecture.md docs/superpowers/plans/2026-07-10-multi-stage-quota-reset-approval.md
-  git commit -m "docs(architecture): document lean quota reset approvals"
+  git diff --check
+  git diff --stat origin/main
+  git diff --name-only origin/main | sort
+  rg -n 'request_node|node_approver|decision_table|Pinia' \
+    docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md \
+    backend/internal/quotareset frontend/src
   ```
 
-## Known Deferred Work
+  Confirm one new business schema, expected Ent generation, no generic workflow
+  tables/framework, no quota reset store, and no real identity or secret data.
 
-- Durable notification retries/outbox.
-- Provider-level reset idempotency after a process crash.
+  Evidence: `git diff --check` passed. The branch changes 62 files: four
+  hand-written Ent schemas, 26 generated Ent files, 17 backend files, 12
+  frontend files, and three documents. Hand-written production code is
+  `+2323/-193` across 23 files. The scan found no generic workflow tables/store,
+  real identity data, or committed secret.
+
+- [ ] **Step 6: Commit review fixes and documentation**
+
+  ```bash
+  git add backend frontend docs
+  git commit -m "fix(quotareset): harden sequential approval workflow"
+  ```
+
+- [ ] **Step 7: Push the feature branch and update PR 146**
+
+  Push only after all verification steps pass. Do not merge, release, or run a
+  Helm rollout without a separate explicit request.
+
+## Deferred Work
+
 - General audit browsing UI.
-- Arbitrary admin-authored notification templates.
+- Durable notification delivery retries/outbox.
+- Provider-level exactly-once reset after a process crash.
+- Additional code-owned notification channel presets.
