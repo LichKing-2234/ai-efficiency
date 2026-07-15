@@ -44,7 +44,21 @@ func CountWorkItems(ctx context.Context, client *ent.Client, userID int, admin b
 		return counts, nil
 	}
 	counts.Admin, err = client.QuotaResetRequest.Query().
-		Where(quotaresetrequest.StatusIn(actionableQuotaResetStatuses()...)).
+		Where(quotaresetrequest.Or(
+			quotaresetrequest.And(
+				quotaresetrequest.WorkflowVersionLT(WorkflowVersionV2),
+				quotaresetrequest.StatusIn(actionableQuotaResetStatuses()...),
+			),
+			quotaresetrequest.And(
+				quotaresetrequest.WorkflowVersionGTE(WorkflowVersionV2),
+				quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending),
+				quotaresetrequest.RequesterUserIDNEQ(userID),
+			),
+			quotaresetrequest.And(
+				quotaresetrequest.WorkflowVersionGTE(WorkflowVersionV2),
+				quotaresetrequest.StatusEQ(quotaresetrequest.StatusApprovedResetFailed),
+			),
+		)).
 		Count(ctx)
 	if err != nil {
 		return WorkItemCounts{}, fmt.Errorf("count admin quota reset work items: %w", err)

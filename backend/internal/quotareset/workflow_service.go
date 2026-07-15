@@ -331,7 +331,7 @@ func (s *Service) rejectWorkflow(ctx context.Context, input DecisionInput) (*ent
 func (s *Service) retryResetWorkflow(ctx context.Context, input DecisionInput, request *ent.QuotaResetRequest) (*ent.QuotaResetRequest, error) {
 	actor, err := s.client.User.Get(ctx, input.ActorUserID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load workflow retry actor: %w", err)
 	}
 	if input.Admin {
 		if actor.Role != entuser.RoleAdmin {
@@ -344,7 +344,7 @@ func (s *Service) retryResetWorkflow(ctx context.Context, input DecisionInput, r
 		}
 		decision, err := s.client.QuotaResetRequestDecision.Get(ctx, *decisionID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("load workflow completion decision: %w", err)
 		}
 		if decision.ActorUserID != input.ActorUserID {
 			return nil, ErrNotApprover

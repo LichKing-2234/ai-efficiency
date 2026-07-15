@@ -60,7 +60,10 @@ type ListParams struct {
 	Page     int
 	PageSize int
 	Status   string
+	Scope    string
 }
+
+const ApprovalListScopeHistory = "history"
 
 type NotificationSettings struct {
 	Enabled         bool   `json:"enabled"`

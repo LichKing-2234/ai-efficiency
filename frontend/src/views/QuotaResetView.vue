@@ -37,8 +37,10 @@ const activeQueue = ref<QueueMode>('mine')
 const activeFilter = ref<FilterMode>('all')
 const myRequests = ref<QuotaResetRequestSummary[]>([])
 const approvalRequests = ref<QuotaResetRequestSummary[]>([])
+const approvalHistoryRequests = ref<QuotaResetRequestSummary[]>([])
 const adminRequests = ref<QuotaResetRequestSummary[]>([])
 const myTotal = ref(0)
+const approvalHistoryLoaded = ref(false)
 const loading = ref(false)
 const actionBusy = ref(false)
 const loadError = ref('')
@@ -54,12 +56,14 @@ const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : 
 const adminTotal = computed(() => workItems.loading || workItems.error || !auth.isAdmin ? 0 : workItems.counts.quota_reset_admin_count)
 
 const queueItems = computed(() => {
-  if (activeQueue.value === 'approvals') return approvalRequests.value
+  if (activeQueue.value === 'approvals') {
+    return activeFilter.value === 'processed' ? approvalHistoryRequests.value : approvalRequests.value
+  }
   if (activeQueue.value === 'admin') return adminRequests.value
   return myRequests.value
 })
 
-const visibleItems = computed(() => queueItems.value.filter((item) => filterMatches(item.status, activeFilter.value)))
+const visibleItems = computed(() => queueItems.value.filter((item) => filterMatches(item, activeFilter.value)))
 const requestDetailOpen = computed(() => selectedRequest.value !== null)
 
 const { handleKeydown: handleRequestDetailKeydown } = useModalFocus(
@@ -84,6 +88,7 @@ function findRequest(requestID: number) {
   return queueItems.value.find((item) => item.id === requestID)
     ?? myRequests.value.find((item) => item.id === requestID)
     ?? approvalRequests.value.find((item) => item.id === requestID)
+    ?? approvalHistoryRequests.value.find((item) => item.id === requestID)
     ?? adminRequests.value.find((item) => item.id === requestID)
 }
 
@@ -105,6 +110,10 @@ async function loadQueues(forceCounts = false) {
     myRequests.value = mine.data.data?.items ?? []
     approvalRequests.value = approvals.data.data?.items ?? []
     myTotal.value = mine.data.data?.total ?? myRequests.value.length
+    if (approvalHistoryLoaded.value) {
+      const history = await listQuotaResetApprovals({ scope: 'history' })
+      approvalHistoryRequests.value = history.data.data?.items ?? []
+    }
     if (auth.isAdmin) {
       const admin = await listAdminQuotaResetRequests()
       adminRequests.value = admin.data.data?.items ?? []
@@ -119,11 +128,42 @@ async function loadQueues(forceCounts = false) {
   }
 }
 
-function filterMatches(status: QuotaResetStatus, filter: FilterMode) {
+function filterMatches(item: QuotaResetRequestSummary, filter: FilterMode) {
+  const { status } = item
   if (filter === 'all') return true
   if (filter === 'pending') return status === 'pending' || status === 'approved_resetting'
   if (filter === 'failed') return status === 'approved_reset_failed'
+  if (activeQueue.value === 'approvals' && isWorkflowRequest(item)) return true
   return status === 'approved_reset_succeeded' || status === 'rejected' || status === 'cancelled'
+}
+
+async function loadApprovalHistory() {
+  if (approvalHistoryLoaded.value) return
+  loading.value = true
+  loadError.value = ''
+  try {
+    const history = await listQuotaResetApprovals({ scope: 'history' })
+    approvalHistoryRequests.value = history.data.data?.items ?? []
+    approvalHistoryLoaded.value = true
+  } catch {
+    loadError.value = t('quotaReset.loadFailed')
+  } finally {
+    loading.value = false
+  }
+}
+
+function selectQueue(queue: QueueMode) {
+  activeQueue.value = queue
+  if (queue === 'approvals' && activeFilter.value === 'processed') {
+    void loadApprovalHistory()
+  }
+}
+
+function selectFilter(filter: FilterMode) {
+  activeFilter.value = filter
+  if (filter === 'processed' && activeQueue.value === 'approvals') {
+    void loadApprovalHistory()
+  }
 }
 
 function filterLabel(filter: FilterMode) {
@@ -215,6 +255,7 @@ function replaceMatchingRequest(requestID: number, replacement: QuotaResetReques
   ))
   myRequests.value = replace(myRequests.value)
   approvalRequests.value = replace(approvalRequests.value)
+  approvalHistoryRequests.value = replace(approvalHistoryRequests.value)
   adminRequests.value = replace(adminRequests.value)
   if (selectedRequest.value?.id === requestID) {
     selectedRequest.value = replacement
@@ -336,7 +377,7 @@ onMounted(loadQueues)
             type="button"
             data-testid="quota-reset-tab-mine"
             :class="queueButtonClass(activeQueue === 'mine')"
-            @click="activeQueue = 'mine'"
+            @click="selectQueue('mine')"
           >
             {{ t('quotaReset.myRequests') }}
             <span
@@ -351,7 +392,7 @@ onMounted(loadQueues)
             type="button"
             data-testid="quota-reset-tab-approvals"
             :class="queueButtonClass(activeQueue === 'approvals')"
-            @click="activeQueue = 'approvals'"
+            @click="selectQueue('approvals')"
           >
             {{ t('quotaReset.myApprovals') }}
             <span
@@ -367,7 +408,7 @@ onMounted(loadQueues)
             type="button"
             data-testid="quota-reset-tab-admin"
             :class="queueButtonClass(activeQueue === 'admin')"
-            @click="activeQueue = 'admin'"
+            @click="selectQueue('admin')"
           >
             {{ t('quotaReset.adminQueue') }}
             <span
@@ -387,7 +428,7 @@ onMounted(loadQueues)
             type="button"
             :data-testid="`quota-reset-filter-${filter}`"
             :class="filterButtonClass(activeFilter === filter)"
-            @click="activeFilter = filter"
+            @click="selectFilter(filter)"
           >
             {{ filterLabel(filter) }}
           </button>

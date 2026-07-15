@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,7 +68,7 @@ func TestListApprovalsReturnsOnlyActiveV2Assignments(t *testing.T) {
 	}
 }
 
-func TestListApprovalsKeepsV2DecisionHistoryAfterWorkflowAdvances(t *testing.T) {
+func TestListApprovalsKeepsV2DecisionHistoryBehindExplicitScope(t *testing.T) {
 	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}, {}})
 	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
 	fixture.replaceApproverIDs(t, 1, fixture.actorB.ID)
@@ -94,7 +95,15 @@ func TestListApprovalsKeepsV2DecisionHistoryAfterWorkflowAdvances(t *testing.T) 
 		t.Fatalf("current node = %v, want advanced node %d", updated.CurrentNodeID, fixture.nodes[1].ID)
 	}
 
-	history, err := fixture.service.ListApprovals(fixture.ctx, fixture.actorA.ID, ListParams{})
+	defaultItems, err := fixture.service.ListApprovals(fixture.ctx, fixture.actorA.ID, ListParams{})
+	if err != nil {
+		t.Fatalf("ListApprovals() default decision actor error = %v", err)
+	}
+	if defaultItems.Total != 0 || len(defaultItems.Items) != 0 {
+		t.Fatalf("default decision actor response = %+v, want no stale decision history", defaultItems)
+	}
+
+	history, err := fixture.service.ListApprovals(fixture.ctx, fixture.actorA.ID, ListParams{Scope: "history"})
 	if err != nil {
 		t.Fatalf("ListApprovals() decision actor error = %v", err)
 	}
@@ -121,7 +130,7 @@ func TestListApprovalsKeepsV2DecisionHistoryAfterWorkflowAdvances(t *testing.T) 
 	}
 }
 
-func TestListApprovalsReturnsRejectedV2DecisionHistory(t *testing.T) {
+func TestListApprovalsReturnsRejectedV2DecisionHistoryOnlyWithExplicitScope(t *testing.T) {
 	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
 	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
 	unrelated := createQuotaResetUser(t, fixture.ctx, fixture.client, "unrelated-rejection", "unrelated-rejection@example.org", nil, "user")
@@ -139,7 +148,15 @@ func TestListApprovalsReturnsRejectedV2DecisionHistory(t *testing.T) {
 		t.Fatalf("status = %s, want rejected", updated.Status)
 	}
 
-	history, err := fixture.service.ListApprovals(fixture.ctx, fixture.actorA.ID, ListParams{})
+	defaultItems, err := fixture.service.ListApprovals(fixture.ctx, fixture.actorA.ID, ListParams{})
+	if err != nil {
+		t.Fatalf("ListApprovals() default rejection actor error = %v", err)
+	}
+	if defaultItems.Total != 0 || len(defaultItems.Items) != 0 {
+		t.Fatalf("default rejection actor response = %+v, want no decision history", defaultItems)
+	}
+
+	history, err := fixture.service.ListApprovals(fixture.ctx, fixture.actorA.ID, ListParams{Scope: "history"})
 	if err != nil {
 		t.Fatalf("ListApprovals() rejection actor error = %v", err)
 	}
@@ -411,6 +428,8 @@ func TestCountWorkItemsAdminUsesAllPendingWithoutDoubleCounting(t *testing.T) {
 	createLegacyWorkItemRequest(t, ctx, client, requester.ID, "legacy-failed", quotaresetrequest.StatusApprovedResetFailed, []int{admin.ID})
 	createV2WorkItemRequest(t, ctx, client, requester.ID, "v2-pending", quotaresetrequest.StatusPending, []int{admin.ID}, nil, nil)
 	createV2WorkItemRequest(t, ctx, client, requester.ID, "v2-failed", quotaresetrequest.StatusApprovedResetFailed, nil, nil, &admin.ID)
+	createV2WorkItemRequest(t, ctx, client, admin.ID, "v2-own-pending", quotaresetrequest.StatusPending, []int{requester.ID}, nil, nil)
+	createV2WorkItemRequest(t, ctx, client, admin.ID, "v2-own-failed", quotaresetrequest.StatusApprovedResetFailed, nil, nil, &admin.ID)
 	createV2WorkItemRequest(t, ctx, client, requester.ID, "resetting", quotaresetrequest.StatusApprovedResetting, nil, nil, nil)
 	createV2WorkItemRequest(t, ctx, client, requester.ID, "succeeded", quotaresetrequest.StatusApprovedResetSucceeded, nil, nil, nil)
 
@@ -421,9 +440,62 @@ func TestCountWorkItemsAdminUsesAllPendingWithoutDoubleCounting(t *testing.T) {
 	if counts.Assigned != 4 {
 		t.Fatalf("assigned = %d, want four actor-owned requests", counts.Assigned)
 	}
-	if counts.Admin != 4 {
-		t.Fatalf("admin = %d, want each pending/failed request counted once", counts.Admin)
+	if counts.Admin != 5 {
+		t.Fatalf("admin = %d, want legacy work, non-self v2 pending, and both v2 failed requests", counts.Admin)
 	}
+}
+
+func TestListApprovalsPreservesLegacyV1SemanticsWithHistoryScope(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	actor := createQuotaResetUser(t, ctx, client, "legacy-approver", "legacy-approver@example.com", nil, "user")
+	requester := createQuotaResetUser(t, ctx, client, "legacy-requester", "legacy-requester@example.org", nil, "user")
+	service := NewService(client, nil, nil, nil)
+	createLegacyWorkItemRequest(t, ctx, client, requester.ID, "legacy-pending", quotaresetrequest.StatusPending, []int{actor.ID})
+	createLegacyWorkItemRequest(t, ctx, client, requester.ID, "legacy-rejected", quotaresetrequest.StatusRejected, []int{actor.ID})
+
+	for _, params := range []ListParams{{}, {Scope: "history"}} {
+		got, err := service.ListApprovals(ctx, actor.ID, params)
+		if err != nil {
+			t.Fatalf("ListApprovals(%+v) error = %v", params, err)
+		}
+		if got.Total != 2 || len(got.Items) != 2 {
+			t.Fatalf("ListApprovals(%+v) = %+v, want both legacy requests", params, got)
+		}
+	}
+}
+
+func TestRetryResetWorkflowWrapsLookupErrorsWithoutLosingNotFoundClassification(t *testing.T) {
+	t.Run("actor cancellation preserves errors.Is", func(t *testing.T) {
+		fixture := newFailedWorkflowRetryFixture(t)
+		ctx, cancel := context.WithCancel(fixture.ctx)
+		cancel()
+
+		_, err := fixture.service.retryResetWorkflow(ctx, DecisionInput{ActorUserID: fixture.actorA.ID, RequestID: fixture.request.ID}, fixture.request)
+		if err == nil || !strings.Contains(err.Error(), "load workflow retry actor") || !errors.Is(err, context.Canceled) {
+			t.Fatalf("retryResetWorkflow() error = %v, want contextual context.Canceled error", err)
+		}
+	})
+
+	t.Run("actor", func(t *testing.T) {
+		fixture := newFailedWorkflowRetryFixture(t)
+		_, err := fixture.service.RetryReset(fixture.ctx, DecisionInput{ActorUserID: 999999, RequestID: fixture.request.ID})
+		if err == nil || !strings.Contains(err.Error(), "load workflow retry actor") || !ent.IsNotFound(err) {
+			t.Fatalf("RetryReset() error = %v, want contextual not-found actor error", err)
+		}
+	})
+
+	t.Run("completion decision", func(t *testing.T) {
+		fixture := newFailedWorkflowRetryFixture(t)
+		fixture.client.QuotaResetRequest.UpdateOneID(fixture.request.ID).
+			SetWorkflowCompletedByDecisionID(999999).
+			SaveX(fixture.ctx)
+
+		_, err := fixture.service.RetryReset(fixture.ctx, DecisionInput{ActorUserID: fixture.actorA.ID, RequestID: fixture.request.ID})
+		if err == nil || !strings.Contains(err.Error(), "load workflow completion decision") || !ent.IsNotFound(err) {
+			t.Fatalf("RetryReset() error = %v, want contextual not-found completion-decision error", err)
+		}
+	})
 }
 
 func TestCountWorkItemsKeepsLegacyV1Semantics(t *testing.T) {

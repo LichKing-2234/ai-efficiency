@@ -5449,23 +5449,51 @@ findings. No Task 19 behavior is included in Task 18. Task 18 is complete.
 - Modify: `frontend/src/__tests__/quota-reset-view.test.ts`
 - Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
 
-- [ ] **Step 1: Add failing default/history, self-count, and error-context regressions**
+- [x] **Step 1: Add failing default/history, self-count, and error-context regressions**
 
 Default approval queries and the default workbench view must contain only
 current actions and retry assignments. Explicit history may include decisions
 made on earlier nodes. Admin pending counts must exclude the admin's own v2
 request while retaining legitimate failed-reset retry work.
 
-- [ ] **Step 2: Add explicit history scope and actionable frontend filtering**
+RED evidence (2026-07-15):
+
+- `cd backend && go test ./internal/quotareset -run 'Test(ListApprovalsKeepsV2DecisionHistoryBehindExplicitScope|ListApprovalsReturnsRejectedV2DecisionHistoryOnlyWithExplicitScope|ListApprovalsPreservesLegacyV1SemanticsWithHistoryScope|CountWorkItemsAdminUsesAllPendingWithoutDoubleCounting|RetryResetWorkflowWrapsLookupErrorsWithoutLosingNotFoundClassification)$' -count=1` failed to compile because `ListParams` had no `Scope` field.
+- `cd backend && go test ./internal/handler -run '^TestQuotaResetApprovalListPassesExplicitHistoryScope$' -count=1` failed to compile because `ListParams.Scope` was unavailable to the handler.
+- `cd frontend && npm test -- src/__tests__/quota-reset-api.test.ts src/__tests__/quota-reset-view.test.ts` failed only the new processed-view regression: its last `listQuotaResetApprovals` call received `[]` instead of `[{ scope: 'history' }]`; the API contract test passed.
+
+- [x] **Step 2: Add explicit history scope and actionable frontend filtering**
 
 Keep legacy v1 behavior, expose v2 decision history only when requested, and
 make the existing processed filter show the current user's durable decisions
 without polluting the default queue.
 
-- [ ] **Step 3: Fix admin counts and wrap retry lookup failures**
+GREEN evidence (2026-07-15):
+
+- `cd backend && go test ./internal/quotareset -run 'Test(ListApprovalsReturnsOnlyActiveV2Assignments|ListApprovalsKeepsV2DecisionHistoryBehindExplicitScope|ListApprovalsReturnsRejectedV2DecisionHistoryOnlyWithExplicitScope|ListApprovalsPreservesLegacyV1SemanticsWithHistoryScope)$' -count=1` exited 0.
+- `cd backend && go test ./internal/handler -run '^TestQuotaResetApprovalListPassesExplicitHistoryScope$' -count=1` exited 0.
+- `cd frontend && npm test -- src/__tests__/quota-reset-api.test.ts src/__tests__/quota-reset-view.test.ts` exited 0 with 2 files and 30 tests passing.
+
+- [x] **Step 3: Fix admin counts and wrap retry lookup failures**
 
 Exclude requester-owned pending v2 requests from admin work while retaining
 failed-reset semantics, and add contextual `%w` wrapping to retry actor and
 completion-decision lookups.
 
+GREEN evidence (2026-07-15):
+
+- cd backend && go test ./internal/quotareset -run 'Test(ListApprovalsKeepsV2DecisionHistoryBehindExplicitScope|ListApprovalsReturnsRejectedV2DecisionHistoryOnlyWithExplicitScope|ListApprovalsPreservesLegacyV1SemanticsWithHistoryScope|CountWorkItemsAdminUsesAllPendingWithoutDoubleCounting|RetryResetWorkflowWrapsLookupErrorsWithoutLosingNotFoundClassification)$' -count=1 exited 0.
+
 - [ ] **Step 4: Run full verification, update docs, commit, rerun whole-branch reviews, and close the plan**
+
+Current completion (2026-07-15):
+
+- Updated the current spec with actionable default versus scope=history,
+  processed-view, and v2 admin-count semantics.
+- Completed focused backend/handler/frontend regressions, full backend tests,
+  go vet, full frontend tests, frontend build, gofmt, and git diff --check.
+- Committed the implementation with
+  fix(quotareset): scope approval queues to actionable work.
+- Remaining before closure: controller-managed task reviews, final browser and
+  Compose verification, and whole-branch reviews. This task does not run or
+  modify Compose.

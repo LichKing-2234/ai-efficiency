@@ -273,6 +273,20 @@ func (s *Service) ListMine(ctx context.Context, actorUserID int, params ListPara
 }
 
 func (s *Service) ListApprovals(ctx context.Context, actorUserID int, params ListParams) (*RequestListResponse, error) {
+	if strings.TrimSpace(params.Scope) == ApprovalListScopeHistory {
+		return s.list(ctx, params, summaryViewer{UserID: actorUserID}, func(q *ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery {
+			return q.Where(quotaresetrequest.Or(
+				quotaresetrequest.And(
+					quotaresetrequest.WorkflowVersionLT(WorkflowVersionV2),
+					legacyApproverJSONPredicate(actorUserID),
+				),
+				quotaresetrequest.And(
+					quotaresetrequest.WorkflowVersionGTE(WorkflowVersionV2),
+					v2DecisionActorPredicate(actorUserID),
+				),
+			))
+		})
+	}
 	return s.list(ctx, params, summaryViewer{UserID: actorUserID}, func(q *ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery {
 		return q.Where(quotaresetrequest.Or(
 			quotaresetrequest.And(
@@ -288,10 +302,6 @@ func (s *Service) ListApprovals(ctx context.Context, actorUserID int, params Lis
 				quotaresetrequest.WorkflowVersionGTE(WorkflowVersionV2),
 				quotaresetrequest.StatusEQ(quotaresetrequest.StatusApprovedResetFailed),
 				v2CompletionActorPredicate(actorUserID),
-			),
-			quotaresetrequest.And(
-				quotaresetrequest.WorkflowVersionGTE(WorkflowVersionV2),
-				v2DecisionActorPredicate(actorUserID),
 			),
 		))
 	})

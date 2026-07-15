@@ -411,6 +411,7 @@ func parseQuotaResetListParams(c *gin.Context) quotareset.ListParams {
 		Page:     page,
 		PageSize: pageSize,
 		Status:   strings.TrimSpace(c.Query("status")),
+		Scope:    strings.TrimSpace(c.Query("scope")),
 	}
 }
 

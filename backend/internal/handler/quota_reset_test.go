@@ -30,6 +30,7 @@ type fakeQuotaResetService struct {
 	approveFn                    func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
 	rejectFn                     func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
 	retryResetFn                 func(context.Context, quotareset.DecisionInput) (*ent.QuotaResetRequest, error)
+	listApprovalsFn              func(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
 	listAdminFn                  func(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error)
 	listApproverCandidatesFn     func(context.Context, quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error)
 	listApproverConfigsFn        func(context.Context) (*quotareset.ApproverConfigListResponse, error)
@@ -89,7 +90,10 @@ func (f *fakeQuotaResetService) ListMine(context.Context, int, quotareset.ListPa
 	return &quotareset.RequestListResponse{}, nil
 }
 
-func (f *fakeQuotaResetService) ListApprovals(context.Context, int, quotareset.ListParams) (*quotareset.RequestListResponse, error) {
+func (f *fakeQuotaResetService) ListApprovals(ctx context.Context, actorUserID int, params quotareset.ListParams) (*quotareset.RequestListResponse, error) {
+	if f.listApprovalsFn != nil {
+		return f.listApprovalsFn(ctx, actorUserID, params)
+	}
 	return &quotareset.RequestListResponse{}, nil
 }
 
@@ -98,6 +102,29 @@ func (f *fakeQuotaResetService) ListAdmin(ctx context.Context, actorUserID int, 
 		return f.listAdminFn(ctx, actorUserID, params)
 	}
 	return &quotareset.RequestListResponse{}, nil
+}
+
+func TestQuotaResetApprovalListPassesExplicitHistoryScope(t *testing.T) {
+	var received []quotareset.ListParams
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		listApprovalsFn: func(_ context.Context, _ int, params quotareset.ListParams) (*quotareset.RequestListResponse, error) {
+			received = append(received, params)
+			return &quotareset.RequestListResponse{}, nil
+		},
+	})
+
+	for _, path := range []string{
+		"/api/v1/user/quota-reset/approvals",
+		"/api/v1/user/quota-reset/approvals?scope=history",
+	} {
+		rec := performQuotaResetRequest(env.router, http.MethodGet, path, env.userToken, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+	if len(received) != 2 || received[0].Scope != "" || received[1].Scope != "history" {
+		t.Fatalf("ListApprovals params = %+v, want omitted and history scopes", received)
+	}
 }
 
 func (f *fakeQuotaResetService) ListApproverCandidates(ctx context.Context, params quotareset.ApproverCandidateParams) (*quotareset.ApproverCandidateListResponse, error) {
@@ -906,7 +933,9 @@ func newQuotaResetHandlerTestEnvWithServiceFactory(t *testing.T, serviceFactory 
 	userGroup := router.Group("/api/v1/user")
 	userGroup.Use(auth.RequireAuth(authSvc))
 	userGroup.POST("/quota-reset/requests", handler.CreateRequest)
+	userGroup.GET("/quota-reset/requests", handler.ListMine)
 	userGroup.POST("/quota-reset/requests/:id/cancel", handler.Cancel)
+	userGroup.GET("/quota-reset/approvals", handler.ListApprovals)
 	userGroup.POST("/quota-reset/approvals/:id/approve", handler.Approve)
 	userGroup.POST("/quota-reset/approvals/:id/reject", handler.Reject)
 	userGroup.POST("/quota-reset/approvals/:id/retry-reset", handler.RetryReset)

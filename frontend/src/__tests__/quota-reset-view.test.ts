@@ -291,6 +291,36 @@ describe('QuotaResetView', () => {
     expect(wrapper.get('[data-testid="quota-reset-tab-admin-count"]').text()).toBe('3')
   })
 
+  it('loads v2 decision history only for the processed approval view and keeps pending history visible', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const priorDecisionOnPendingRequest: QuotaResetRequestSummary = {
+      ...workflowRequest,
+      id: 44,
+      group_name: 'Group History',
+      status: 'pending',
+      workflow: {
+        ...workflowRequest.workflow!,
+        can_approve: false,
+        can_reject: false,
+      },
+    }
+    api.listQuotaResetApprovals
+      .mockResolvedValueOnce({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
+      .mockResolvedValueOnce({ data: { data: { items: [priorDecisionOnPendingRequest], page: 1, page_size: 20, total: 1 } } })
+
+    const wrapper = await mountQuotaResetView()
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(1)
+    expect(api.listQuotaResetApprovals).toHaveBeenLastCalledWith()
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-filter-processed"]').trigger('click')
+    await flushPromises()
+
+    expect(api.listQuotaResetApprovals).toHaveBeenLastCalledWith({ scope: 'history' })
+    expect(wrapper.text()).toContain('Group History')
+    expect(wrapper.find('[data-testid="quota-reset-approve-44"]').exists()).toBe(false)
+  })
+
   it('does not show approval badges for completed history when actionable counts are zero', async () => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any

@@ -1124,15 +1124,38 @@ For v2 requests:
    the current user as a normal candidate, excluding the user's own requests.
 2. It also counts `approved_reset_failed` when the user is the workflow
    completion decision actor and may retry.
-3. `quota_reset_admin_count` counts all `pending` and
-   `approved_reset_failed` requests because admins can act on the current node or
-   retry.
+3. quota_reset_admin_count preserves v1 behavior. For v2 it counts pending
+   requests only when the requester is not the current admin, because requester
+   self-approval is forbidden, and counts every approved_reset_failed request
+   because an admin may retry it, including the admin's own failed request.
 4. Admin `total_count` keeps the current deduplication rule and uses the admin
    quota count rather than adding personal assignment count again.
 5. Automatically satisfied, skipped, queued, completed, rejected, and cancelled
    nodes do not create separate work-item counts.
 
 Legacy v1 requests retain current count semantics.
+
+## Approval List Scopes
+
+ListApprovals defaults to the actionable scope when scope is omitted. The
+default v2 result contains only pending requests assigned to the viewer at the
+current active node and approved_reset_failed requests whose workflow
+completion decision names the viewer as retry actor. A prior decision alone
+does not place a v2 request in this default queue. Legacy v1 list semantics
+remain unchanged for both scopes.
+
+scope=history is the explicit v2 decision-history scope. It returns durable
+requests on which the current viewer made a manual workflow decision, including
+requests that remain overall pending because the workflow advanced to a later
+node. It does not widen the default actionable queue or work-item counts.
+
+The frontend keeps history separate from the default approval response. Its
+default all, pending, and failed approval views use only the actionable
+response. The existing processed approval filter requests scope=history; for
+v2 rows it shows the viewer's durable decision regardless of overall request
+status, while mine/admin views and legacy v1 rows retain their status-based
+processed behavior. History rows never drive badges, default queue actions, or
+visibility for unrelated actors.
 
 ## Error Handling
 

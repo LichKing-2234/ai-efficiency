@@ -19,6 +19,7 @@ export interface QuotaResetListParams {
   page?: number
   page_size?: number
   status?: string
+  scope?: 'history'
 }
 
 export type QuotaResetApproverConfigSaveMode = 'replace_departments' | 'replace_all'

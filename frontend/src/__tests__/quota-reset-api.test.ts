@@ -243,6 +243,14 @@ describe('quota reset api', () => {
     })
   })
 
+  it('uses the explicit history scope only for approval decision history', () => {
+    listQuotaResetApprovals({ scope: 'history' })
+
+    expect(mockClient.get).toHaveBeenCalledWith('/user/quota-reset/approvals', {
+      params: { scope: 'history' },
+    })
+  })
+
   it('posts v2 and legacy user decision bodies', () => {
     approveQuotaResetRequest(123, {
       request_node_id: 456,
