@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review and Tasks 1-3 are complete. Task 4 Step 1 is current. The full-repository evidence recorded for Step 2 at `6386824` is retained below but was superseded by final-standards remediation, so a fresh Step 2 run and Steps 3-7 remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
+**Status:** Plan review, Tasks 1-3, and Task 4 Steps 1-4 are complete. Fresh full-repository verification and final independent SPEC/standards reviews passed on `04025e5`; draft PR creation is current, while both CI rounds remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -387,7 +387,7 @@
 
   Do not rewrite `2026-05-28-pr-sync-job-progress-usage-freshness-design.md` or `2026-06-03-pr-sync-large-repo-recovery-design.md`; they remain historical design records.
 
-- [ ] **Step 2: Run formatting, generation drift, and full repository verification**
+- [x] **Step 2: Run formatting, generation drift, and full repository verification**
 
   Run separately:
 
@@ -404,13 +404,17 @@
 
   Expected: PASS. Report the PostgreSQL scale/query-count tests and role E2E separately as environment-sensitive evidence. Do not check an unrun command.
 
+  Fresh post-remediation verification evidence (2026-07-15, HEAD `04025e5`): every prescribed command was run separately and exited 0. `gofmt` produced no tracked diff. `go test ./...` passed the full backend suite, including `internal/handler` in 33.656s and `internal/prusage` in 8.154s; the full `ae-cli` suite passed. Frontend Vitest passed 39 files / 429 tests, the production build transformed 188 modules, and the release frontend embed harness passed `backend/internal/web`. The embed harness emitted the known unresolved-hook-queue message plus npm deprecation/audit/install-script warnings; none changed its exit status. `git diff --check` produced no output.
+
+  Fresh role E2E evidence: the current worktree Vite process was started at `http://[::1]:5173/` because the unrelated IPv4 `127.0.0.1:5173` listener belongs to another worktree. Both the executable path and cwd were verified under `.worktrees/perf-pr-freshness-133/frontend`; `localhost:5173` reached the IPv6 server. `npm run test:e2e:role` passed 16/16 checks. Expected proxy `ECONNREFUSED` messages appeared for unmocked background APIs without affecting assertions. Only the owned IPv6 server was stopped, and the unrelated IPv4 listener remained running.
+
   Superseded verification evidence (2026-07-15, HEAD `6386824`): all prescribed commands were run separately and exited 0 after installing the lockfile-defined frontend dependencies with `npm ci`. The first `npm test` attempt exited 127 because this fresh worktree had no `node_modules`/`vitest`; the exact command was rerun after the environment bootstrap and passed 39 test files / 429 tests. `gofmt` produced no backend diff; full backend, full CLI, frontend build, release frontend embed, and final `git diff --check` passed. The embed harness exited 0 after `backend/internal/web` passed, while emitting a hook-queue warning plus npm deprecation/audit/install-script warnings. This evidence predates the final-standards remediation and does not satisfy the fresh Step 2 gate for the remediated tree.
 
   PostgreSQL scale/query-count evidence (fresh uncached focused run): `go test ./internal/prusage -run '^TestEvaluatePRFreshnessPageQueryCountIsConstant$' -count=1 -v` exited 0. The `5 PRs / 5 snapshots / 5 checkpoints / 5 events` fixture and the `100 PRs / 2,000 snapshots / 2,000 checkpoints / 2,000 events` fixture each issued exactly 3 fact queries with roles `snapshots`, `pending_events`, and `checkpoint_facts`.
 
   Role E2E evidence: IPv4 `127.0.0.1:5173` was occupied by a Vite process from another worktree, so the current-worktree harness was temporarily pointed at `127.0.0.1:15173`. The serving process was verified as `/Users/admin/ai-efficiency/.worktrees/perf-pr-freshness-133/frontend/node_modules/.bin/vite` with that frontend directory as its cwd. `npm run test:e2e:role` exited 0 with 16/16 checks passing. Only that temporary server was stopped; the harness was restored byte-for-byte (`git hash-object` worktree and HEAD both `ac226f15acdb811ea492eebb26747406632ef5bd`), and the unrelated `5173` listener remained running. Unmocked background dashboard/work-item requests logged proxy `ECONNREFUSED` messages, but no role assertion failed.
 
-- [ ] **Step 3: Complete per-task and whole-branch reviews**
+- [x] **Step 3: Complete per-task and whole-branch reviews**
 
   Obtain independent spec/quality review for Tasks 1-3 against their recorded base/head ranges. Resolve every Critical or Important finding with a focused RED/GREEN cycle and re-review.
 
@@ -428,11 +432,11 @@
 
   Pre-remediation final review evidence (2026-07-15): the spec reviewer returned `SPEC PASS` with one Minor for the missing non-empty all-snapshots-without-checkpoints branch regression. The standards reviewer returned `QUALITY NEEDS FIXES` with one Important for unbounded HTTP/service page cardinality plus expanded checkpoint bind parameters, the same coverage Minor, and one Conventional Commit classification Minor.
 
-  Remediation evidence (2026-07-15): focused HTTP RED showed zero/negative pagination returning HTTP 500, invalid limit returning 120 items, and `limit=1000` returning 120 instead of 100. Focused service/SQL RED showed 101 distinct PRs accepted and the 2,100-checkpoint aggregate expanding 2,100 placeholders. GREEN coverage now proves default 20/max 100 pagination normalization, zero-SQL rejection of 101 distinct PR IDs, successful collapse of 101 duplicate references to one distinct ID, a valid real-PostgreSQL `= ANY($1)` aggregate with one `pq.Array` argument for 2,100 checkpoint IDs, and the exact two-query `snapshots` plus `pending_events` branch when every non-empty snapshot lacks a checkpoint. `gofmt` completed for all four touched Go files; the focused handler and `prusage` commands passed; `go test ./internal/prusage ./internal/handler -count=1` passed with `prusage` at 5.944s and `handler` at 31.361s. Fresh full-repository verification and independent spec/standards re-reviews remain required before this step can be checked.
+  Remediation evidence (2026-07-15): focused HTTP RED showed zero/negative pagination returning HTTP 500, invalid limit returning 120 items, and `limit=1000` returning 120 instead of 100. Focused service/SQL RED showed 101 distinct PRs accepted and the 2,100-checkpoint aggregate expanding 2,100 placeholders. GREEN coverage now proves default 20/max 100 pagination normalization, zero-SQL rejection of 101 distinct PR IDs, successful collapse of 101 duplicate references to one distinct ID, a valid real-PostgreSQL `= ANY($1)` aggregate with one `pq.Array` argument for 2,100 checkpoint IDs, and the exact two-query `snapshots` plus `pending_events` branch when every non-empty snapshot lacks a checkpoint. `gofmt` completed for all four touched Go files; the focused handler and `prusage` commands passed; `go test ./internal/prusage ./internal/handler -count=1` passed with `prusage` at 5.944s and `handler` at 31.361s. At that checkpoint, fresh full-repository verification and re-reviews were still pending; the checked Step 2 evidence and final paragraph below record their later completion.
 
-  The `7659d82 test(prs): lock freshness status precedence` classification Minor is explicitly deferred; this remediation does not rewrite existing branch history. All production and coverage findings are addressed in the current tree.
+  Final post-remediation re-reviews (2026-07-15, complete package `5f6c58e..04025e5`): SPEC returned `PASS` with 0 Critical, 0 Important, and 1 Minor; standards returned `QUALITY APPROVED` with 0 Critical, 0 Important, and 2 Minor. Both reviewers independently confirmed the package matched the branch diff. The shared live-status Minor is resolved by this ledger update. The remaining `7659d82 test(prs): lock freshness status precedence` classification Minor is explicitly deferred because rewriting established branch history adds delivery risk without changing runtime behavior. All production, coverage, and contract findings are addressed in the current tree.
 
-- [ ] **Step 4: Commit documentation and verification evidence**
+- [x] **Step 4: Commit documentation and verification evidence**
 
   Set the top status to state implementation, full verification, and reviews are complete while draft PR CI remains pending. Record exact commands, scale shapes/query counts, review verdicts, and environment notes. Then run:
 
