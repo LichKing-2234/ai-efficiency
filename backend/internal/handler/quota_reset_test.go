@@ -218,6 +218,26 @@ func TestQuotaResetSaveApprovalChainsPassesAdminActorAndOrderedDepartments(t *te
 	}
 }
 
+func TestQuotaResetUpdateNotificationPassesExplicitChannel(t *testing.T) {
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		updateNotificationSettingsFn: func(_ context.Context, input quotareset.UpdateNotificationSettingsInput) (*quotareset.NotificationSettings, error) {
+			if input.ActorUserID != 2 || input.Channel != "wecom_group_robot" || input.URL != "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=redacted-test-key" {
+				t.Fatalf("input = %+v", input)
+			}
+			return &quotareset.NotificationSettings{Enabled: true, Channel: input.Channel, URL: input.URL, AuthType: "none"}, nil
+		},
+	})
+	rec := performQuotaResetRequest(env.router, http.MethodPut, "/api/v1/admin/quota-reset/notification-settings", env.adminToken, `{
+		"enabled":true,
+		"channel":"wecom_group_robot",
+		"url":"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=redacted-test-key",
+		"auth_type":"none"
+	}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"channel":"wecom_group_robot"`) {
+		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 type quotaResetHandlerTestEnv struct {
 	router     *gin.Engine
 	userToken  string
@@ -266,6 +286,7 @@ func newQuotaResetHandlerTestEnv(t *testing.T, service *fakeQuotaResetService) *
 	adminGroup.PUT("/approver-configs", handler.SaveApproverConfigs)
 	adminGroup.GET("/approval-chains", handler.ListApprovalChains)
 	adminGroup.PUT("/approval-chains", handler.SaveApprovalChains)
+	adminGroup.PUT("/notification-settings", handler.UpdateNotificationSettings)
 
 	return &quotaResetHandlerTestEnv{
 		router:     router,

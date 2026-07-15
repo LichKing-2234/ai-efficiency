@@ -195,7 +195,8 @@ func TestApproveV2ReusesPriorActorAndResetsWithoutDuplicateDecision(t *testing.T
 	provider := createQuotaResetRelayProvider(t, ctx, client)
 	request := createPendingWorkflowRequest(t, ctx, client, requester, provider, workflowFixtureForUsers(requester.ID, approver.ID, other.ID, true))
 	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
-	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil)
+	recorder := &recordingQuotaResetNotifier{}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, recorder)
 
 	completed, err := svc.Approve(ctx, DecisionInput{ActorUserID: approver.ID, RequestID: request.ID, DecisionReason: "同意全部匹配节点"})
 	if err != nil {
@@ -211,6 +212,9 @@ func TestApproveV2ReusesPriorActorAndResetsWithoutDuplicateDecision(t *testing.T
 	}
 	if workflow.Steps[1].Status != WorkflowStepSatisfied || workflow.Steps[1].Decision != nil {
 		t.Fatalf("reused step = %+v", workflow.Steps[1])
+	}
+	if containsString(recorder.events, "quota_reset_step_activated") {
+		t.Fatalf("notification events = %v, auto-satisfied step must not activate", recorder.events)
 	}
 }
 
@@ -437,8 +441,18 @@ func TestUpdateNotificationSettingsValidatesEnabledURLAndBearerCredential(t *tes
 	ctx := context.Background()
 	client := testdb.Open(t)
 	svc := NewService(client, nil, nil, nil)
-
 	_, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+		ActorUserID: 1,
+		Enabled:     true,
+		Channel:     "legacy_auto",
+		URL:         "https://hooks.example.com/quota-reset",
+		AuthType:    "none",
+	})
+	if !errors.Is(err, ErrInvalidNotification) {
+		t.Fatalf("legacy channel error = %v, want ErrInvalidNotification", err)
+	}
+
+	_, err = svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
 		ActorUserID: 1,
 		Enabled:     true,
 		URL:         "ftp://hooks.example.com/quota-reset",
@@ -497,20 +511,21 @@ func TestUpdateNotificationSettingsCollapsesDuplicateRows(t *testing.T) {
 	updated, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
 		ActorUserID: 7,
 		Enabled:     true,
+		Channel:     "wecom_group_robot",
 		URL:         "https://hooks.example.com/quota-reset",
 		AuthType:    "none",
 	})
 	if err != nil {
 		t.Fatalf("UpdateNotificationSettings() error = %v", err)
 	}
-	if updated.URL != "https://hooks.example.com/quota-reset" || !updated.Enabled {
+	if updated.URL != "https://hooks.example.com/quota-reset" || updated.Channel != "wecom_group_robot" || !updated.Enabled {
 		t.Fatalf("updated settings = %+v, want new enabled URL", updated)
 	}
 	rows := client.QuotaResetNotificationSetting.Query().AllX(ctx)
 	if len(rows) != 1 {
 		t.Fatalf("notification setting row count = %d, want 1", len(rows))
 	}
-	if rows[0].URL != "https://hooks.example.com/quota-reset" || rows[0].UpdatedByUserID != 7 {
+	if rows[0].URL != "https://hooks.example.com/quota-reset" || rows[0].Channel.String() != "wecom_group_robot" || rows[0].UpdatedByUserID != 7 {
 		t.Fatalf("remaining row = %+v, want updated canonical row", rows[0])
 	}
 }
@@ -535,6 +550,30 @@ func TestNotificationSettingsTestRequiresEnabledSavedWebhook(t *testing.T) {
 	err = svc.TestNotificationSettings(ctx, 7)
 	if !errors.Is(err, ErrInvalidNotification) {
 		t.Fatalf("TestNotificationSettings(disabled setting) error = %v, want ErrInvalidNotification", err)
+	}
+}
+
+func TestNotificationSettingsBackfillsLegacyWeComChannel(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	row := client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetChannel("legacy_auto").
+		SetURL("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=redacted-test-key").
+		SetAuthType("none").
+		SaveX(ctx)
+	svc := NewService(client, nil, nil, nil)
+
+	settings, err := svc.GetNotificationSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetNotificationSettings() error = %v", err)
+	}
+	if settings.Channel != "wecom_group_robot" {
+		t.Fatalf("channel = %q, want wecom_group_robot", settings.Channel)
+	}
+	stored := client.QuotaResetNotificationSetting.GetX(ctx, row.ID)
+	if stored.Channel.String() != "wecom_group_robot" {
+		t.Fatalf("stored channel = %q, want backfilled wecom_group_robot", stored.Channel)
 	}
 }
 
@@ -686,6 +725,24 @@ type fakeQuotaResetProvider struct {
 	resetUserID   int64
 	resetGroupID  int64
 	resetCalls    int
+}
+
+type recordingQuotaResetNotifier struct {
+	events []string
+}
+
+func (n *recordingQuotaResetNotifier) NotifyRequestEvent(_ context.Context, event string, _ *ent.QuotaResetRequest) error {
+	n.events = append(n.events, event)
+	return nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeQuotaResetProvider) ListUserSubscriptions(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {

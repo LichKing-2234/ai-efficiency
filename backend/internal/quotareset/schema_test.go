@@ -71,7 +71,7 @@ func TestSchemaDefaultsHistoricalRequestAndNotificationChannel(t *testing.T) {
 	}
 
 	setting := client.QuotaResetNotificationSetting.Create().SaveX(ctx)
-	if setting.Channel != quotaresetnotificationsetting.ChannelGenericWebhook {
-		t.Fatalf("notification channel = %q, want generic_webhook", setting.Channel)
+	if setting.Channel != quotaresetnotificationsetting.ChannelLegacyAuto {
+		t.Fatalf("notification channel = %q, want legacy_auto migration default", setting.Channel)
 	}
 }

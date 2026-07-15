@@ -13,6 +13,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
+	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
@@ -61,6 +62,14 @@ func TestWebhookNotifierSendsBearerTokenAndWritesNoSecretToPayload(t *testing.T)
 	}
 	if strings.Contains(fmt.Sprint(gotPayload), "test-token") {
 		t.Fatalf("payload leaked token: %#v", gotPayload)
+	}
+	requester, ok := gotPayload["requester"].(map[string]any)
+	if !ok || requester["display_name"] != "Alice Example" || requester["email"] != "alice@example.com" {
+		t.Fatalf("requester context = %#v", gotPayload["requester"])
+	}
+	workflow, ok := gotPayload["workflow"].(map[string]any)
+	if !ok || workflow["step_label"] != "Company / Group Alpha" || workflow["step_number"] != float64(1) || workflow["step_count"] != float64(2) {
+		t.Fatalf("workflow context = %#v", gotPayload["workflow"])
 	}
 }
 
@@ -116,7 +125,7 @@ func TestWebhookNotifierReturnsErrorForWebhookErrcode(t *testing.T) {
 	}
 }
 
-func TestWebhookNotifierSendsWeComRobotTextPayload(t *testing.T) {
+func TestWebhookNotifierSendsWeComMarkdownWithRequesterAndMentions(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	var gotPayload map[string]any
@@ -131,6 +140,7 @@ func TestWebhookNotifierSendsWeComRobotTextPayload(t *testing.T) {
 
 	client.QuotaResetNotificationSetting.Create().
 		SetEnabled(true).
+		SetChannel(quotaresetnotificationsetting.ChannelWecomGroupRobot).
 		SetURL("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=redacted-test-key").
 		SetAuthType("none").
 		SetCreatedByUserID(1).
@@ -143,15 +153,25 @@ func TestWebhookNotifierSendsWeComRobotTextPayload(t *testing.T) {
 	if err := notifier.NotifyRequestEvent(ctx, "quota_reset_notification_test", request); err != nil {
 		t.Fatalf("NotifyRequestEvent() error = %v", err)
 	}
-	if gotPayload["msgtype"] != "text" {
-		t.Fatalf("msgtype = %#v, want text payload: %#v", gotPayload["msgtype"], gotPayload)
+	if gotPayload["msgtype"] != "markdown" {
+		t.Fatalf("msgtype = %#v, want markdown payload: %#v", gotPayload["msgtype"], gotPayload)
 	}
-	text, ok := gotPayload["text"].(map[string]any)
+	markdown, ok := gotPayload["markdown"].(map[string]any)
 	if !ok {
-		t.Fatalf("text payload missing: %#v", gotPayload)
+		t.Fatalf("markdown payload missing: %#v", gotPayload)
 	}
-	content, _ := text["content"].(string)
-	for _, want := range []string{"AI Efficiency", "额度重置", "Group Alpha", "https://ai-efficiency.example.com/usage/quota-reset?request_id="} {
+	content, _ := markdown["content"].(string)
+	for _, want := range []string{
+		"额度重置待审批",
+		"Alice Example",
+		"alice@example.com",
+		"Company / Group Alpha",
+		"Group Alpha",
+		"Need reset for a build investigation",
+		"1/2",
+		"<@bob-wecom>",
+		"https://ai-efficiency.example.com/usage/quota-reset?request_id=",
+	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("content = %q, want substring %q", content, want)
 		}
@@ -161,11 +181,83 @@ func TestWebhookNotifierSendsWeComRobotTextPayload(t *testing.T) {
 	}
 }
 
+func TestWebhookNotifierHonorsExplicitGenericChannelForWeComURL(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	var gotPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"errcode":0}`))
+	}))
+	defer server.Close()
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetChannel(quotaresetnotificationsetting.ChannelGenericWebhook).
+		SetURL("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=redacted-test-key").
+		SetAuthType("none").
+		SaveX(ctx)
+
+	notifier := NewWebhookNotifier(client, "", "https://ai-efficiency.example.com")
+	notifier.httpClient = &http.Client{Transport: rewriteURLTransport(t, server.URL)}
+	if err := notifier.NotifyRequestEvent(ctx, "quota_reset_request_created", createNotificationQuotaResetRequest(t, ctx, client)); err != nil {
+		t.Fatalf("NotifyRequestEvent() error = %v", err)
+	}
+	if gotPayload["event"] != "quota_reset_request_created" || gotPayload["msgtype"] != nil {
+		t.Fatalf("generic payload = %#v", gotPayload)
+	}
+}
+
+func TestWebhookNotifierRedactsSecretURLFromTransportErrors(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetChannel(quotaresetnotificationsetting.ChannelGenericWebhook).
+		SetURL("https://hooks.example.com/send?key=secret-value").
+		SetAuthType("none").
+		SaveX(ctx)
+	notifier := NewWebhookNotifier(client, "", "")
+	notifier.httpClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("dial https://hooks.example.com/send?key=secret-value: connection refused")
+	})}
+	err := notifier.NotifyRequestEvent(ctx, "quota_reset_request_created", createNotificationQuotaResetRequest(t, ctx, client))
+	if err == nil || strings.Contains(err.Error(), "secret-value") || strings.Contains(err.Error(), "hooks.example.com") {
+		t.Fatalf("NotifyRequestEvent() error = %v, want redacted transport error", err)
+	}
+}
+
+func TestWeComMarkdownLabelsApproverWithoutMentionID(t *testing.T) {
+	notifier := NewWebhookNotifier(nil, "", "")
+	content := notifier.weComRobotMarkdown("quota_reset_request_created", &ent.QuotaResetRequest{
+		ID:        7,
+		GroupID:   "42",
+		GroupName: "Group Alpha",
+		Reason:    "Need reset",
+	}, quotaResetNotificationContext{
+		Requester:       WorkflowPerson{DisplayName: "Alice Example", Email: "alice@example.com", DepartmentPaths: []string{"Company / Group Alpha"}},
+		ActiveApprovers: []WorkflowApprover{{UserID: 2, DisplayName: "Bob Example", Email: "bob@example.org", NotificationIDs: map[string]string{}}},
+		StepIndex:       0,
+		StepCount:       1,
+		StepLabel:       "Company / Group Alpha",
+	})
+	if !strings.Contains(content, "Bob Example（无法@）") {
+		t.Fatalf("content = %q, want missing mention label", content)
+	}
+}
+
 func createNotificationQuotaResetRequest(t *testing.T, ctx context.Context, client *ent.Client) *ent.QuotaResetRequest {
 	t.Helper()
 	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	finalApprover := createQuotaResetUser(t, ctx, client, "carol", "carol@example.org", nil, "user")
 	provider := createQuotaResetRelayProvider(t, ctx, client)
-	return createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{2})
+	workflow := workflowFixtureForUsers(requester.ID, approver.ID, finalApprover.ID, false)
+	workflow.Requester.DisplayName = "Alice Example"
+	workflow.Requester.DepartmentPaths = []string{"Company / Group Alpha"}
+	workflow.Steps[0].Approvers[0].NotificationIDs = map[string]string{"wecom": "bob-wecom"}
+	return createPendingWorkflowRequest(t, ctx, client, requester, provider, workflow)
 }
 
 func rewriteURLTransport(t *testing.T, target string) http.RoundTripper {

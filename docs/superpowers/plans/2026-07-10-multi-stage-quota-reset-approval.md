@@ -267,7 +267,7 @@ retry, and reset methods remain the public service boundary.
 
   Expected: PASS.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
   ```bash
   git add backend/internal/quotareset backend/internal/handler backend/internal/workitems
@@ -281,7 +281,7 @@ retry, and reset methods remain the public service boundary.
 **Interfaces:** Keep `WebhookNotifier.NotifyRequestEvent`; internally render one
 of two explicit channels: `generic_webhook` or `wecom_group_robot`.
 
-- [ ] **Step 1: Add failing notification tests**
+- [x] **Step 1: Add failing notification tests**
 
   Test explicit channel selection, generic JSON fields, WeCom markdown requester
   name/email/team/group/reason/progress, `<@userid>` mentions, missing-id labels,
@@ -296,20 +296,20 @@ of two explicit channels: `generic_webhook` or `wecom_group_robot`.
 
   Expected: FAIL on the new channel/context assertions.
 
-- [ ] **Step 2: Extend the existing notifier directly**
+- [x] **Step 2: Extend the existing notifier directly**
 
   Add two focused render functions in `notification.go`; do not add adapter,
   registry, outbox, or template packages. Read workflow snapshots for requester,
   active approvers, progress, and prior decision context. Use only
   `metadata.wecom_userid` for mentions.
 
-- [ ] **Step 3: Add explicit channel settings and legacy URL backfill**
+- [x] **Step 3: Add explicit channel settings and legacy URL backfill**
 
   Validate channel/URL/auth combinations. Existing WeCom robot URLs migrate to
   `wecom_group_robot`; other rows remain `generic_webhook`. API responses never
   expose credentials or full secret-bearing error URLs.
 
-- [ ] **Step 4: Run focused and full quota reset tests**
+- [x] **Step 4: Run focused and full quota reset tests**
 
   ```bash
   cd backend && go test ./internal/quotareset -count=1

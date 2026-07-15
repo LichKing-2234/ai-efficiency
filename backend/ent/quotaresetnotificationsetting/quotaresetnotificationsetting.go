@@ -80,11 +80,12 @@ var (
 // Channel defines the type for the "channel" enum field.
 type Channel string
 
-// ChannelGenericWebhook is the default value of the Channel enum.
-const DefaultChannel = ChannelGenericWebhook
+// ChannelLegacyAuto is the default value of the Channel enum.
+const DefaultChannel = ChannelLegacyAuto
 
 // Channel values.
 const (
+	ChannelLegacyAuto      Channel = "legacy_auto"
 	ChannelGenericWebhook  Channel = "generic_webhook"
 	ChannelWecomGroupRobot Channel = "wecom_group_robot"
 )
@@ -96,7 +97,7 @@ func (c Channel) String() string {
 // ChannelValidator is a validator for the "channel" field enum values. It is called by the builders before save.
 func ChannelValidator(c Channel) error {
 	switch c {
-	case ChannelGenericWebhook, ChannelWecomGroupRobot:
+	case ChannelLegacyAuto, ChannelGenericWebhook, ChannelWecomGroupRobot:
 		return nil
 	default:
 		return fmt.Errorf("quotaresetnotificationsetting: invalid enum value for channel field: %q", c)

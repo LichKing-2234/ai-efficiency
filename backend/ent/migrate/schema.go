@@ -661,7 +661,7 @@ var (
 	QuotaResetNotificationSettingsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "enabled", Type: field.TypeBool, Default: false},
-		{Name: "channel", Type: field.TypeEnum, Enums: []string{"generic_webhook", "wecom_group_robot"}, Default: "generic_webhook"},
+		{Name: "channel", Type: field.TypeEnum, Enums: []string{"legacy_auto", "generic_webhook", "wecom_group_robot"}, Default: "legacy_auto"},
 		{Name: "url", Type: field.TypeString, Default: ""},
 		{Name: "auth_type", Type: field.TypeEnum, Enums: []string{"none", "bearer_token"}, Default: "none"},
 		{Name: "credential_id", Type: field.TypeInt, Nullable: true},

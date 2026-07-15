@@ -64,6 +64,7 @@ type ListParams struct {
 
 type NotificationSettings struct {
 	Enabled      bool   `json:"enabled"`
+	Channel      string `json:"channel"`
 	URL          string `json:"url"`
 	AuthType     string `json:"auth_type"`
 	CredentialID *int   `json:"credential_id,omitempty"`
@@ -161,6 +162,7 @@ type ApprovalChainListResponse struct {
 type UpdateNotificationSettingsInput struct {
 	ActorUserID  int
 	Enabled      bool
+	Channel      string
 	URL          string
 	AuthType     string
 	CredentialID *int

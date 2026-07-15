@@ -327,16 +327,31 @@ func (s *Service) GetNotificationSettings(ctx context.Context) (*NotificationSet
 		Order(ent.Asc(quotaresetnotificationsetting.FieldID)).
 		First(ctx)
 	if ent.IsNotFound(err) {
-		return &NotificationSettings{AuthType: quotaresetnotificationsetting.AuthTypeNone.String()}, nil
+		return &NotificationSettings{
+			Channel:  quotaresetnotificationsetting.ChannelGenericWebhook.String(),
+			AuthType: quotaresetnotificationsetting.AuthTypeNone.String(),
+		}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load quota reset notification settings: %w", err)
+	}
+	row, err = s.backfillLegacyNotificationChannel(ctx, row)
+	if err != nil {
+		return nil, err
 	}
 	return notificationSettingsResponse(row), nil
 }
 
 func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNotificationSettingsInput) (*NotificationSettings, error) {
 	input.URL = strings.TrimSpace(input.URL)
+	input.Channel = strings.TrimSpace(input.Channel)
+	if input.Channel == "" {
+		input.Channel = quotaresetnotificationsetting.ChannelGenericWebhook.String()
+	}
+	channel := quotaresetnotificationsetting.Channel(input.Channel)
+	if channel != quotaresetnotificationsetting.ChannelGenericWebhook && channel != quotaresetnotificationsetting.ChannelWecomGroupRobot {
+		return nil, fmt.Errorf("%w: invalid notification channel", ErrInvalidNotification)
+	}
 	input.AuthType = strings.TrimSpace(input.AuthType)
 	if input.AuthType == "" {
 		input.AuthType = quotaresetnotificationsetting.AuthTypeNone.String()
@@ -372,6 +387,7 @@ func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNo
 	if len(rows) == 0 {
 		create := tx.QuotaResetNotificationSetting.Create().
 			SetEnabled(input.Enabled).
+			SetChannel(channel).
 			SetURL(input.URL).
 			SetAuthType(authType).
 			SetCreatedByUserID(input.ActorUserID).
@@ -383,6 +399,7 @@ func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNo
 	} else {
 		update := tx.QuotaResetNotificationSetting.UpdateOneID(rows[0].ID).
 			SetEnabled(input.Enabled).
+			SetChannel(channel).
 			SetURL(input.URL).
 			SetAuthType(authType).
 			SetUpdatedByUserID(input.ActorUserID)
@@ -429,6 +446,34 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 	if !setting.Enabled || strings.TrimSpace(setting.URL) == "" {
 		return fmt.Errorf("%w: enabled webhook url is required before sending test notification", ErrInvalidNotification)
 	}
+	workflow := &Workflow{
+		Version:     workflowVersionV2,
+		CurrentStep: 0,
+		Requester: WorkflowPerson{
+			UserID:          actorUserID,
+			DisplayName:     "Alice Example",
+			Email:           "alice@example.com",
+			DepartmentPaths: []string{"Company / Group Alpha"},
+			NotificationIDs: map[string]string{"wecom": "alice"},
+		},
+		Steps: []WorkflowStep{{
+			Kind:                  WorkflowStepRequesterDepartments,
+			Label:                 "Company / Group Alpha",
+			DepartmentExternalIDs: []string{"dept-alpha"},
+			Approvers: []WorkflowApprover{{
+				UserID:          actorUserID,
+				DisplayName:     "Bob Example",
+				Email:           "bob@example.org",
+				Source:          "configured",
+				NotificationIDs: map[string]string{"wecom": "bob"},
+			}},
+			Status: WorkflowStepActive,
+		}},
+	}
+	rawWorkflow, err := EncodeWorkflow(workflow)
+	if err != nil {
+		return err
+	}
 	return s.notifier.NotifyRequestEvent(ctx, "quota_reset_notification_test", &ent.QuotaResetRequest{
 		ID:                      0,
 		RequesterUserID:         actorUserID,
@@ -436,7 +481,9 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 		GroupID:                 "0",
 		GroupName:               "Group Alpha",
 		GroupPlatform:           "openai",
-		Reason:                  "Notification test",
+		Reason:                  "Synthetic quota reset notification test",
+		WorkflowVersion:         workflowVersionV2,
+		Workflow:                rawWorkflow,
 		Status:                  quotaresetrequest.StatusPending,
 		ResolvedApproverUserIds: []int{actorUserID},
 	})
@@ -1335,13 +1382,32 @@ func (s *Service) validateNotificationSettings(ctx context.Context, input Update
 
 func notificationSettingsResponse(row *ent.QuotaResetNotificationSetting) *NotificationSettings {
 	if row == nil {
-		return &NotificationSettings{AuthType: quotaresetnotificationsetting.AuthTypeNone.String()}
+		return &NotificationSettings{
+			Channel:  quotaresetnotificationsetting.ChannelGenericWebhook.String(),
+			AuthType: quotaresetnotificationsetting.AuthTypeNone.String(),
+		}
 	}
 	return &NotificationSettings{
 		Enabled:      row.Enabled,
+		Channel:      row.Channel.String(),
 		URL:          row.URL,
 		AuthType:     row.AuthType.String(),
 		CredentialID: row.CredentialID,
 		UpdatedAt:    row.UpdatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+func (s *Service) backfillLegacyNotificationChannel(ctx context.Context, row *ent.QuotaResetNotificationSetting) (*ent.QuotaResetNotificationSetting, error) {
+	if row == nil || row.Channel != quotaresetnotificationsetting.ChannelLegacyAuto {
+		return row, nil
+	}
+	channel := quotaresetnotificationsetting.ChannelGenericWebhook
+	if parsed, err := url.Parse(strings.TrimSpace(row.URL)); err == nil && isWeComRobotWebhookURL(parsed) {
+		channel = quotaresetnotificationsetting.ChannelWecomGroupRobot
+	}
+	updated, err := s.client.QuotaResetNotificationSetting.UpdateOneID(row.ID).SetChannel(channel).Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("backfill quota reset notification channel: %w", err)
+	}
+	return updated, nil
 }
