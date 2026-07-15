@@ -167,9 +167,11 @@ func parseEventsListRequest(c *gin.Context, uc *auth.UserContext) (toolusage.Lis
 	if err != nil {
 		return toolusage.ListEventsRequest{}, err
 	}
-	limit := parseOptionalInt(c.DefaultQuery("limit", "20"))
+	limit := parseOptionalInt(c.DefaultQuery("limit", strconv.Itoa(toolusage.DefaultEventPageSize)))
 	if limit <= 0 {
-		limit = 20
+		limit = toolusage.DefaultEventPageSize
+	} else if limit > toolusage.MaxEventPageSize {
+		limit = toolusage.MaxEventPageSize
 	}
 	offset := parseOptionalInt(c.DefaultQuery("offset", "0"))
 	if offset < 0 {

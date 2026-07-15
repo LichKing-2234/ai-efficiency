@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Tasks 1-3 implementation and Task 3 review remediation are complete and committed. The 2,400-row fixture now covers every page bound and discriminating filter case, list SQL requires the exact two-expression order, and summary plan evidence is role-specific; Tasks 4-5 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
+**Status:** Tasks 1-3 and their review remediation are complete and committed. Task 4 implementation and verification are complete: handler metadata now shares the 20/100 service bounds, the frontend mounts one active responsive row tree, and admin raw JSON formatting waits for advanced-detail expansion. Task 5 architecture, final review, repository-wide verification, and draft PR delivery remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
 
 ## Global Constraints
 
@@ -369,7 +369,7 @@ Expected: the commit contains synthetic test evidence and only evidence-required
 - Consumes: Task 2 exported page constants and unchanged API DTOs from `frontend/src/types/index.ts`.
 - Produces: bounded HTTP metadata, one responsive row subtree per event, and lazy raw-payload formatting without API/type changes.
 
-- [ ] **Step 1: Write failing handler compatibility and boundary tests**
+- [x] **Step 1: Write failing handler compatibility and boundary tests**
 
 Add tests named:
 
@@ -384,7 +384,7 @@ TestEventDetailPreservesAdminPayloadAndRegularRedaction
 
 Exercise no limit, `limit=0`, `limit=101`, `limit=1000`, `offset=-20`, and `limit=20&offset=40`. Assert `page_size` is 20 or 100 after normalization, `page` is 0 or 2, no list item contains `raw_payload`, and current admin/regular detail behavior is unchanged.
 
-- [ ] **Step 2: Run handler tests and verify RED, then share service limits**
+- [x] **Step 2: Run handler tests and verify RED, then share service limits**
 
 Run:
 
@@ -394,7 +394,7 @@ cd backend && go test ./internal/handler -run 'TestEventsList|TestEventDetail' -
 
 Expected: requests above 100 initially report the unbounded requested `page_size`. Update `parseEventsListRequest` to clamp with `toolusage.DefaultEventPageSize` and `toolusage.MaxEventPageSize`; keep the service's defensive clamp and existing zero-based response calculation. Rerun the command and expect PASS.
 
-- [ ] **Step 3: Write failing viewport and formatting tests**
+- [x] **Step 3: Write failing viewport and formatting tests**
 
 In Vitest, install a controllable `window.matchMedia` mock before mounting. Seed three rows and add stable selectors `data-event-row="mobile"` and `data-event-row="desktop"`. Add tests:
 
@@ -409,7 +409,7 @@ resets formatting state when the detail drawer closes
 
 Spy on `JSON.stringify` only around drawer interaction, restore it in `finally`, and assert the large payload marker is absent before the `<details>` toggle event.
 
-- [ ] **Step 4: Run frontend tests and verify RED**
+- [x] **Step 4: Run frontend tests and verify RED**
 
 Run:
 
@@ -419,7 +419,7 @@ cd frontend && npm test -- src/__tests__/events-view.test.ts
 
 Expected: row count is doubled because both responsive branches are mounted, and `JSON.stringify` runs while the native details element is closed.
 
-- [ ] **Step 5: Implement active viewport rendering and expansion-gated formatting**
+- [x] **Step 5: Implement active viewport rendering and expansion-gated formatting**
 
 Import `onUnmounted`, create one `MediaQueryList` for `(min-width: 768px)`, mirror `.matches` into `desktopEventRows`, and add/remove the `change` listener with component lifecycle. Replace CSS-only row branches with:
 
@@ -432,7 +432,7 @@ Use `v-if="showMobileEventRows"` on the existing mobile container and `v-if="sho
 
 Track `advancedDetailsOpen`, reset it in `openDetail` and `closeDetail`, update it from `<details @toggle>`, and render the `<pre>` only when true. Put `JSON.stringify` in a lazy computed value referenced only by that `v-if`. Preserve existing visible card/table fields, keyboard behavior, drawer fetch timing, and admin guards.
 
-- [ ] **Step 6: Run focused tests, frontend suite, and build and verify GREEN**
+- [x] **Step 6: Run focused tests, frontend suite, and build and verify GREEN**
 
 Run:
 
@@ -444,7 +444,7 @@ cd frontend && npm run build
 
 Expected: focused and full tests PASS, TypeScript/build PASS, exactly one row subtree exists per event in either viewport, and no API/type/i18n change is required.
 
-- [ ] **Step 7: Update the live ledger and commit Task 4**
+- [x] **Step 7: Update the live ledger and commit Task 4**
 
 ```bash
 git add backend/internal/handler/events.go backend/internal/handler/events_test.go frontend/src/views/events/EventsView.vue frontend/src/__tests__/events-view.test.ts docs/superpowers/plans/2026-07-15-events-sql-pagination.md

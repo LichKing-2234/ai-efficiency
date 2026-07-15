@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { getEventDetail, getEventSummary, listEvents, searchEventUsers } from '@/api/events'
@@ -17,6 +17,7 @@ const auth = useAuthStore()
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const eventRowsMediaQuery = window.matchMedia('(min-width: 768px)')
 
 const loading = ref(true)
 const summary = ref<ToolUsageEventSummary | null>(null)
@@ -27,6 +28,8 @@ const selectedEvent = ref<ToolUsageEventDetail | null>(null)
 const selectedEventId = ref<number | null>(null)
 const eventDetailDialog = ref<HTMLElement | null>(null)
 const mobileFiltersOpen = ref(false)
+const desktopEventRows = ref(eventRowsMediaQuery.matches)
+const advancedDetailsOpen = ref(false)
 const userSearch = ref('')
 const userOptions = ref<ToolUsageEventUserOption[]>([])
 const selectedUser = ref<ToolUsageEventUserOption | null>(null)
@@ -52,6 +55,9 @@ const currentPage = computed(() => Math.floor(filters.offset / filters.limit) + 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / filters.limit)))
 const canGoPrev = computed(() => filters.offset > 0)
 const canGoNext = computed(() => filters.offset + filters.limit < total.value)
+const showMobileEventRows = computed(() => rows.value.length > 0 && !desktopEventRows.value)
+const showDesktopEventRows = computed(() => rows.value.length > 0 && desktopEventRows.value)
+const formattedRawPayload = computed(() => JSON.stringify(selectedEvent.value?.raw_payload, null, 2))
 const filterSummaryBadges = computed(() => {
   const badges = [timeFilterSummary()]
   badges.push(filters.tool ? t('events.toolSummary', { tool: filters.tool }) : t('events.allTools'))
@@ -232,6 +238,7 @@ async function changePageSize() {
 }
 
 async function openDetail(row: ToolUsageEventRow) {
+  advancedDetailsOpen.value = false
   selectedEventId.value = row.id
   detailLoading.value = true
   try {
@@ -243,8 +250,17 @@ async function openDetail(row: ToolUsageEventRow) {
 }
 
 function closeDetail() {
+  advancedDetailsOpen.value = false
   selectedEventId.value = null
   selectedEvent.value = null
+}
+
+function handleAdvancedDetailsToggle(event: Event) {
+  advancedDetailsOpen.value = (event.currentTarget as HTMLDetailsElement).open
+}
+
+function handleEventRowsMediaChange(event: MediaQueryListEvent) {
+  desktopEventRows.value = event.matches
 }
 
 function formatDate(value?: string | null) {
@@ -280,7 +296,13 @@ function shortSha(value?: string | null) {
   return value.slice(0, 8)
 }
 
-onMounted(loadPage)
+onMounted(() => {
+  eventRowsMediaQuery.addEventListener('change', handleEventRowsMediaChange)
+  void loadPage()
+})
+onUnmounted(() => {
+  eventRowsMediaQuery.removeEventListener('change', handleEventRowsMediaChange)
+})
 </script>
 
 <template>
@@ -477,10 +499,11 @@ onMounted(loadPage)
           </div>
         </div>
 
-        <div v-if="rows.length > 0" class="mt-3 space-y-3 md:hidden">
+        <div v-if="showMobileEventRows" class="mt-3 space-y-3 md:hidden" data-event-list="mobile">
           <button
             v-for="row in rows"
             :key="row.id"
+            data-event-row="mobile"
             class="block w-full rounded-lg border border-gray-100 bg-white p-4 text-left shadow-sm transition hover:border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             type="button"
             @click="openDetail(row)"
@@ -529,7 +552,7 @@ onMounted(loadPage)
           </button>
         </div>
 
-        <div v-if="rows.length > 0" class="mt-3 hidden overflow-x-auto md:block">
+        <div v-if="showDesktopEventRows" class="mt-3 hidden overflow-x-auto md:block" data-event-list="desktop">
           <table class="min-w-full divide-y divide-gray-100 text-sm">
             <thead>
               <tr class="text-xs uppercase text-gray-400">
@@ -547,6 +570,7 @@ onMounted(loadPage)
               <tr
                 v-for="row in rows"
                 :key="row.id"
+                data-event-row="desktop"
                 class="cursor-pointer hover:bg-gray-50"
                 role="button"
                 tabindex="0"
@@ -571,7 +595,7 @@ onMounted(loadPage)
             </tbody>
           </table>
         </div>
-        <div v-else class="mt-3 text-sm text-gray-400">{{ t('events.empty') }}</div>
+        <div v-if="rows.length === 0" class="mt-3 text-sm text-gray-400">{{ t('events.empty') }}</div>
       </div>
     </div>
 
@@ -642,7 +666,7 @@ onMounted(loadPage)
           </div>
         </div>
 
-        <details class="rounded-md border border-gray-200 p-4">
+        <details class="rounded-md border border-gray-200 p-4" @toggle="handleAdvancedDetailsToggle">
           <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('events.advancedData') }}</summary>
           <dl class="mt-3 space-y-2">
             <div class="flex justify-between gap-4"><dt>{{ t('events.workspace') }}</dt><dd class="font-mono">{{ selectedEvent.workspace_id }}</dd></div>
@@ -656,7 +680,7 @@ onMounted(loadPage)
 
           <div v-if="isAdmin && selectedEvent.raw_payload" class="mt-4">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">{{ t('events.rawPayload') }}</h3>
-            <pre class="mt-2 overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100">{{ JSON.stringify(selectedEvent.raw_payload, null, 2) }}</pre>
+            <pre v-if="advancedDetailsOpen" class="mt-2 overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs text-gray-100">{{ formattedRawPayload }}</pre>
           </div>
         </details>
       </div>
