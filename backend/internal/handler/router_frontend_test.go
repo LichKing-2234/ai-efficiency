@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -249,6 +250,128 @@ func TestSetupRouterCanonicalTrailingSlashRunsThroughRequestMiddleware(t *testin
 			t.Fatalf("request event contains private value %q: %s", privateValue, serialized)
 		}
 	}
+}
+
+func TestSetupRouterCanonicalMutationTrailingSlashPreservesReplayContract(t *testing.T) {
+	const (
+		origin    = "https://app.example.com"
+		requestID = "canonical-mutation-request"
+		payload   = "private-mutation-body"
+	)
+
+	core, observed := observer.New(zap.InfoLevel)
+	router := setupRouterWithRequestLogger(t, middleware.CORS([]string{origin}), zap.New(core))
+	var (
+		handledMethod string
+		handledQuery  string
+		handledBody   string
+		handledErr    error
+	)
+	router.POST("/api/v1/test-mutation", func(c *gin.Context) {
+		handledMethod = c.Request.Method
+		handledQuery = c.Query("email")
+		body, err := io.ReadAll(c.Request.Body)
+		handledErr = err
+		handledBody = string(body)
+		c.String(http.StatusOK, "mutation-handled")
+	})
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/test-mutation/?email=alice@example.com",
+		strings.NewReader(payload),
+	)
+	request.Header.Set("Content-Type", "text/plain")
+	request.Header.Set("Origin", origin)
+	request.Header.Set(telemetry.HeaderRequestID, requestID)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusTemporaryRedirect)
+	}
+	location := response.Header().Get("Location")
+	if want := "/api/v1/test-mutation?email=alice@example.com"; location != want {
+		t.Fatalf("Location = %q, want %q", location, want)
+	}
+	if got := response.Header().Get(telemetry.HeaderRequestID); got != requestID {
+		t.Fatalf("%s = %q, want %q", telemetry.HeaderRequestID, got, requestID)
+	}
+	if got := response.Header().Get("Access-Control-Allow-Origin"); got != origin {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want %q", got, origin)
+	}
+	if got := response.Header().Get("Access-Control-Expose-Headers"); !strings.Contains(got, telemetry.HeaderRequestID) {
+		t.Fatalf("Access-Control-Expose-Headers = %q, want it to include %s", got, telemetry.HeaderRequestID)
+	}
+	if handledMethod != "" || handledQuery != "" || handledBody != "" || handledErr != nil {
+		t.Fatalf("canonical handler ran before redirect: method=%q query=%q body=%q err=%v", handledMethod, handledQuery, handledBody, handledErr)
+	}
+
+	entries := observed.All()
+	if len(entries) != 1 {
+		t.Fatalf("redirect request events = %d, want 1", len(entries))
+	}
+	redirectEntry := entries[0]
+	if redirectEntry.Message != "http_request" {
+		t.Fatalf("redirect event message = %q, want %q", redirectEntry.Message, "http_request")
+	}
+	redirectFields := redirectEntry.ContextMap()
+	if len(redirectFields) != 8 {
+		t.Fatalf("redirect request fields = %#v, want exactly 8 normalized fields", redirectFields)
+	}
+	assertRouterRequestField(t, redirectFields, "event", "http_request")
+	assertRouterRequestField(t, redirectFields, "route", "unmatched")
+	assertRouterRequestField(t, redirectFields, "method", http.MethodPost)
+	assertRouterRequestField(t, redirectFields, "status_class", "3xx")
+	assertRouterRequestField(t, redirectFields, "release", "test-release")
+	assertRouterRequestField(t, redirectFields, "request_id", requestID)
+	if got, ok := redirectFields["response_bytes"].(int64); !ok || got < 0 || got != int64(response.Body.Len()) {
+		t.Fatalf("redirect response_bytes = %#v, want exact non-negative body length %d", redirectFields["response_bytes"], response.Body.Len())
+	}
+	if got, ok := redirectFields["duration_ms"].(int64); !ok || got < 0 {
+		t.Fatalf("redirect duration_ms = %#v, want non-negative int64", redirectFields["duration_ms"])
+	}
+	serialized := fmt.Sprint(redirectEntry.Message, redirectFields)
+	for _, privateValue := range []string{"/api/v1/test-mutation/", "alice@example.com", payload} {
+		if strings.Contains(serialized, privateValue) {
+			t.Fatalf("redirect request event contains private value %q: %s", privateValue, serialized)
+		}
+	}
+
+	replay := httptest.NewRequest(http.MethodPost, location, strings.NewReader(payload))
+	replay.Header.Set("Content-Type", "text/plain")
+	replay.Header.Set("Origin", origin)
+	replay.Header.Set(telemetry.HeaderRequestID, requestID)
+	replayResponse := httptest.NewRecorder()
+	router.ServeHTTP(replayResponse, replay)
+
+	if replayResponse.Code != http.StatusOK {
+		t.Fatalf("replay status = %d, want %d body=%q", replayResponse.Code, http.StatusOK, replayResponse.Body.String())
+	}
+	if got, want := replayResponse.Body.String(), "mutation-handled"; got != want {
+		t.Fatalf("replay body = %q, want %q", got, want)
+	}
+	if handledErr != nil {
+		t.Fatalf("canonical handler body read: %v", handledErr)
+	}
+	if handledMethod != http.MethodPost {
+		t.Fatalf("canonical handler method = %q, want %q", handledMethod, http.MethodPost)
+	}
+	if handledQuery != "alice@example.com" {
+		t.Fatalf("canonical handler query = %q, want %q", handledQuery, "alice@example.com")
+	}
+	if handledBody != payload {
+		t.Fatalf("canonical handler body = %q, want %q", handledBody, payload)
+	}
+	replayEntries := observed.All()
+	if len(replayEntries) != 2 {
+		t.Fatalf("total request events after replay = %d, want 2", len(replayEntries))
+	}
+	replayFields := replayEntries[1].ContextMap()
+	assertRouterRequestField(t, replayFields, "route", "/api/v1/test-mutation")
+	assertRouterRequestField(t, replayFields, "method", http.MethodPost)
+	assertRouterRequestField(t, replayFields, "status_class", "2xx")
+	assertRouterRequestField(t, replayFields, "request_id", requestID)
 }
 
 func TestSetupRouterTelemetryReportsZeroBytesForStatusOnlyResponse(t *testing.T) {

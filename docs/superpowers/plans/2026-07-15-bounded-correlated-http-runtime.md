@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 and Task 5 Steps 1-2 are complete and verified, including the Task 4 review follow-up. The first final standards review returned 6 Important and 3 Minor findings, and later final re-reviews found cross-layer timeout-order, raw refresh timeout, middleware-ledger, trailing-slash correlation, zero-byte telemetry, and review-history hygiene gaps. All three remediation passes are implemented with focused RED/GREEN evidence. Task 5 Step 3 remains unchecked until clean final spec and standards re-reviews complete. Task 5 Steps 4-5 also remain pending. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 and Task 5 Steps 1-2 are complete and verified, including the Task 4 review follow-up. The first final standards review returned 6 Important and 3 Minor findings, and later final re-reviews found cross-layer timeout-order, raw refresh timeout, middleware-ledger, trailing-slash correlation, zero-byte telemetry, review-history hygiene, and mutation redirect compatibility gaps. All four remediation passes are implemented with focused RED/GREEN evidence. Task 5 Step 3 remains unchecked until clean final spec and standards re-reviews complete. Task 5 Steps 4-5 also remain pending. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -477,6 +477,16 @@ The R3 final standards re-review returned 2 Important and 1 Minor findings. This
 - Real `SetupRouter` regressions cover `/api/v1/health/` correlation/CORS/privacy/exact-once telemetry, a status-only handler, and embedded frontend HEAD serving.
 
 Focused RED evidence (2026-07-15): the three-router regression command failed independently with trailing-slash status `301` instead of the in-chain canonical `307`, status-only `response_bytes = -1`, and embedded HEAD `response_bytes = -1`. Focused GREEN evidence: the same command passed all three regressions after the two minimal runtime changes. The related router/health/recovery handler selection passed in 4.660s, the server selection passed in 0.794s, and the complete middleware and web packages passed in 0.593s and 0.817s. Clean independent re-reviews are still pending, so Task 5 Step 3 remains unchecked.
+
+#### Final Mutation-Redirect Standards Re-review Remediation (2026-07-15)
+
+The R4 final standards re-review returned one Important finding: disabling Gin's out-of-chain redirect had moved POST trailing-slash routes from the prior method-preserving 307 behavior to the in-chain 404 because canonicalization still allowed only GET/HEAD.
+
+- The in-chain canonical middleware now redirects non-canonical paths for every HTTP method with 307 while retaining the original query in `Location`.
+- A real `SetupRouter` POST regression asserts the first redirect's request ID, CORS headers, normalized private-data-safe exact-once event, and canonical location. It then follows that location with the same POST body and proves the canonical downstream handler receives the original method, query, and body.
+- Existing GET canonical redirect, status-only zero-byte, and embedded HEAD zero-byte regressions remain unchanged and passing.
+
+Focused RED evidence (2026-07-15): `go test ./internal/handler -run 'TestSetupRouterCanonicalMutationTrailingSlashPreservesReplayContract' -count=1 -v` failed with status 404 instead of 307. Focused GREEN evidence: the same real-router test passed in 0.929s after extending the existing middleware. The combined GET/POST/zero-byte router selection passed in 1.744s, complete web and middleware packages passed in 0.521s and 1.016s, and the relevant server selection passed in 1.451s. Clean independent re-reviews are still pending, so Task 5 Step 3 remains unchecked.
 
 - [ ] **Step 3: Perform independent task and whole-branch reviews**
 
