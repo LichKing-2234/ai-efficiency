@@ -463,7 +463,7 @@ auth:
     }
   })
 
-  it('keeps the later same-source page when an earlier page response resolves last', async () => {
+  it('serializes same-source page navigation while a request is pending', async () => {
     const slowPageZero = deferred<any>()
     const initialPage = runPage([runSummary({ id: 260 })], { total: 41, page: 0 })
     const pageOne = runPage([runSummary({ id: 240 })], { total: 41, page: 1 })
@@ -480,13 +480,21 @@ auth:
     expect(wrapper.text()).toContain('#240')
 
     await wrapper.get('[data-testid="directory-run-prev"]').trigger('click')
+    expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
     await flushPromises()
-    expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(4, 1, { limit: 20, offset: 20 })
+    expect(api.listDirectoryRuns).toHaveBeenCalledTimes(3)
 
     slowPageZero.resolve(apiResponse(runPage([runSummary({ id: 259 })], { total: 41, page: 0 })))
     await flushPromises()
 
+    expect(wrapper.text()).toContain('#259')
+    expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 1 of 3')
+
+    await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+    await flushPromises()
+
+    expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(4, 1, { limit: 20, offset: 20 })
     expect(wrapper.text()).toContain('#240')
     expect(wrapper.text()).not.toContain('#259')
     expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
@@ -563,6 +571,118 @@ auth:
       wrapper.unmount()
       vi.useRealTimers()
     }
+  })
+
+  it('keeps the committed non-first page coherent when active A completes beside selected terminal B', async () => {
+    vi.useFakeTimers()
+    const activeA = runSummary({
+      id: 285,
+      mode: 'apply',
+      status: 'running',
+      phase: 'applying',
+      completed_at: null,
+      department_count: 12,
+      member_count: 24,
+    })
+    const terminalB = runSummary({ id: 264, mode: 'preview', department_count: 4, member_count: 8 })
+    const oldTerminal = runSummary({ id: 284, mode: 'apply', department_count: 2, member_count: 3 })
+    const pageZero = runPage([oldTerminal], { total: 41, page: 0, latest_active_run: activeA })
+    const pageOne = runPage([terminalB], { total: 41, page: 1, latest_active_run: activeA })
+    const refreshedPageOne = runPage([terminalB], { total: 41, page: 1 })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockImplementation((_sourceID: number, params: { offset: number }) => {
+        if (api.listDirectoryRuns.mock.calls.length === 1) return Promise.resolve(apiResponse(pageZero))
+        if (params.offset === 20) {
+          return Promise.resolve(apiResponse(
+            api.listDirectoryRuns.mock.calls.length === 2 ? pageOne : refreshedPageOne,
+          ))
+        }
+        return Promise.resolve(apiResponse(runPage([oldTerminal], { total: 41, page: 0 })))
+      })
+      api.getDirectoryRun.mockImplementation((id: number) => {
+        if (id === terminalB.id) {
+          return Promise.resolve(apiResponse({ ...terminalB, summary: { marker: 'terminal-b-page-detail' } }))
+        }
+        return Promise.resolve(apiResponse({
+          ...activeA,
+          status: 'completed',
+          phase: 'completed',
+          completed_at: '2026-07-15T01:02:00Z',
+          department_count: 15,
+          member_count: 31,
+        }))
+      })
+    })
+
+    try {
+      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      await flushPromises()
+      await wrapper.get(`[data-testid="directory-run-row-${terminalB.id}"]`).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('terminal-b-page-detail')
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.listDirectoryRuns).toHaveBeenLastCalledWith(1, { limit: 20, offset: 20 })
+      expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
+      expect(wrapper.find(`[data-testid="directory-run-row-${terminalB.id}"]`).exists()).toBe(true)
+      expect(wrapper.find(`[data-testid="directory-run-row-${oldTerminal.id}"]`).exists()).toBe(false)
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('terminal-b-page-detail')
+      expect(wrapper.text()).toContain('Run completed: kept 31 valid members; 15 departments.')
+      expect(wrapper.text()).not.toContain('Run completed: kept 8 valid members; 4 departments.')
+      expect(wrapper.text()).not.toContain('Run completed: kept 3 valid members; 2 departments.')
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps committed pagination atomic while a failed next page is pending and retryable', async () => {
+    const failedPageOne = deferred<any>()
+    const retryPageOne = deferred<any>()
+    const pageZeroRun = runSummary({ id: 286, member_count: 20 })
+    const pageOneRun = runSummary({ id: 266, member_count: 10 })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockImplementation((_sourceID: number, params: { offset: number }) => {
+        if (params.offset === 0) {
+          return Promise.resolve(apiResponse(runPage([pageZeroRun], { total: 61, page: 0 })))
+        }
+        if (params.offset === 20 && api.listDirectoryRuns.mock.calls.filter((call: any[]) => call[1].offset === 20).length === 1) {
+          return failedPageOne.promise
+        }
+        if (params.offset === 20) return retryPageOne.promise
+        return Promise.resolve(apiResponse(runPage([runSummary({ id: 246 })], { total: 61, page: 2 })))
+      })
+    })
+
+    const next = wrapper.get('[data-testid="directory-run-next"]')
+    await next.trigger('click')
+    expect(next.attributes('disabled')).toBeDefined()
+    await next.trigger('click')
+    expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
+
+    failedPageOne.reject(new Error('synthetic page one failure'))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 1 of 4')
+    expect(wrapper.find(`[data-testid="directory-run-row-${pageZeroRun.id}"]`).exists()).toBe(true)
+    expect(wrapper.get('[data-testid="directory-run-prev"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeUndefined()
+
+    await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+    expect(api.listDirectoryRuns).toHaveBeenLastCalledWith(1, { limit: 20, offset: 20 })
+    expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeDefined()
+
+    retryPageOne.resolve(apiResponse(runPage([pageOneRun], { total: 61, page: 1 })))
+    await flushPromises()
+
+    expect(api.listDirectoryRuns.mock.calls.map((call: any[]) => call[1].offset)).toEqual([0, 20, 20])
+    expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 4')
+    expect(wrapper.find(`[data-testid="directory-run-row-${pageOneRun.id}"]`).exists()).toBe(true)
+    expect(wrapper.find(`[data-testid="directory-run-row-${pageZeroRun.id}"]`).exists()).toBe(false)
   })
 
   it('invalidates an in-flight active poll when switching sources', async () => {

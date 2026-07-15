@@ -44,6 +44,7 @@ const runTotal = ref(0)
 const runPage = ref(0)
 const runPageSize = ref(20)
 const runOffset = ref(0)
+const pendingRunOffset = ref<number | null>(null)
 const runHistoryLoading = ref(false)
 const runHistoryError = ref('')
 const latestActiveRun = ref<DirectoryRunSummary | null>(null)
@@ -72,8 +73,8 @@ const form = ref<DirectorySourceRequest>({
 
 const selectedSource = computed(() => sources.value.find((source) => source.id === selectedSourceId.value) || null)
 const runPageCount = computed(() => Math.max(1, Math.ceil(runTotal.value / Math.max(runPageSize.value, 1))))
-const canLoadPreviousRuns = computed(() => runOffset.value > 0)
-const canLoadNextRuns = computed(() => runOffset.value + runPageSize.value < runTotal.value)
+const canLoadPreviousRuns = computed(() => !runHistoryLoading.value && runOffset.value > 0)
+const canLoadNextRuns = computed(() => !runHistoryLoading.value && runOffset.value + runPageSize.value < runTotal.value)
 const currentCredentialRef = computed(() => {
   const match = form.value.dsl.match(/^\s*credential_ref:\s*["']?([^"'\s#]+)["']?\s*$/m)
   return match?.[1] || 'directory_api_key'
@@ -252,6 +253,7 @@ function resetRunView() {
   runPage.value = 0
   runPageSize.value = RUN_PAGE_SIZE
   runOffset.value = 0
+  pendingRunOffset.value = null
   runHistoryLoading.value = false
   runHistoryError.value = ''
   selectedRunId.value = null
@@ -460,7 +462,7 @@ function adoptLatestActiveRun(run: DirectoryRunSummary, sourceID: number) {
   return true
 }
 
-function applyPageRecovery(items: DirectoryRunSummary[], latestActive: DirectoryRunSummary | null, sourceID: number, expectedAction?: 'preview' | 'apply') {
+function applyPageRecovery(items: DirectoryRunSummary[], latestActive: DirectoryRunSummary | null, sourceID: number, offset: number, expectedAction?: 'preview' | 'apply') {
   if (latestActive) {
     const action = actionForRun(latestActive)
     const recovered = adoptLatestActiveRun(latestActive, sourceID)
@@ -469,6 +471,7 @@ function applyPageRecovery(items: DirectoryRunSummary[], latestActive: Directory
 
   latestActiveRun.value = null
   if (activePollRunId !== null) invalidateRunPolling()
+  if (offset !== 0) return false
   const newest = items.find((candidate) => Boolean(actionForRun(candidate)))
   const action = actionForRun(newest)
   if (newest && action && !(activeRun.value?.id === newest.id && isTerminalRun(activeRun.value))) {
@@ -479,12 +482,12 @@ function applyPageRecovery(items: DirectoryRunSummary[], latestActive: Directory
 
 async function loadRunPage(sourceID: number, offset: number, expectedAction?: 'preview' | 'apply') {
   const generation = ++pageRequestGeneration
-  runOffset.value = offset
+  pendingRunOffset.value = offset
   runHistoryLoading.value = true
   runHistoryError.value = ''
   try {
     const res = await listDirectoryRuns(sourceID, { limit: RUN_PAGE_SIZE, offset })
-    if (generation !== pageRequestGeneration || selectedSourceId.value !== sourceID || runOffset.value !== offset) return false
+    if (generation !== pageRequestGeneration || selectedSourceId.value !== sourceID || pendingRunOffset.value !== offset) return false
     const page = res.data.data ?? {
       items: [],
       total: 0,
@@ -496,14 +499,16 @@ async function loadRunPage(sourceID: number, offset: number, expectedAction?: 'p
     runTotal.value = page.total
     runPage.value = page.page
     runPageSize.value = page.page_size
-    return applyPageRecovery(page.items, page.latest_active_run, sourceID, expectedAction)
+    runOffset.value = offset
+    return applyPageRecovery(page.items, page.latest_active_run, sourceID, offset, expectedAction)
   } catch (e: any) {
-    if (generation === pageRequestGeneration && selectedSourceId.value === sourceID && runOffset.value === offset) {
+    if (generation === pageRequestGeneration && selectedSourceId.value === sourceID && pendingRunOffset.value === offset) {
       runHistoryError.value = apiErrorMessage(e, t('directorySync.runHistoryLoadFailed'))
     }
     return false
   } finally {
-    if (generation === pageRequestGeneration && selectedSourceId.value === sourceID && runOffset.value === offset) {
+    if (generation === pageRequestGeneration && selectedSourceId.value === sourceID && pendingRunOffset.value === offset) {
+      pendingRunOffset.value = null
       runHistoryLoading.value = false
     }
   }
@@ -584,7 +589,8 @@ async function pollRunUntilDone(runID: number, action: 'preview' | 'apply', sour
       selectedRunLoading.value = false
     }
     if (selectedSourceId.value === sourceID) {
-      await loadRunPage(sourceID, 0)
+      const completedPageOffset = runOffset.value
+      await loadRunPage(sourceID, completedPageOffset)
     }
   } catch (e: any) {
     if (!pollContextMatches(generation, sourceID, runID)) return
@@ -921,9 +927,9 @@ steps:
           </div>
 
           <p v-if="runHistoryError" class="mt-3 text-sm text-red-700">{{ runHistoryError }}</p>
-          <p v-else-if="runHistoryLoading && runSummaries.length === 0" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runHistoryLoading') }}</p>
-          <p v-else-if="runSummaries.length === 0" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runHistoryEmpty') }}</p>
-          <div v-else class="mt-3 divide-y divide-gray-200 border-y border-gray-200" role="list">
+          <p v-if="runHistoryLoading && runSummaries.length === 0" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runHistoryLoading') }}</p>
+          <p v-else-if="!runHistoryError && runSummaries.length === 0" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runHistoryEmpty') }}</p>
+          <div v-if="runSummaries.length > 0" class="mt-3 divide-y divide-gray-200 border-y border-gray-200" role="list">
             <button
               v-for="run in runSummaries"
               :key="run.id"
