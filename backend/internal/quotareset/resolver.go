@@ -89,23 +89,19 @@ func findRequesterDirectoryMember(requester *ent.User, members []*ent.DirectoryM
 	if requester == nil {
 		return nil
 	}
-	var matched *ent.DirectoryMember
+	usersByID := map[int]*ent.User{requester.ID: requester}
+	usersByEmail := make(map[string]*ent.User, 1)
+	if email := strings.ToLower(strings.TrimSpace(requester.Email)); email != "" {
+		usersByEmail[email] = requester
+	}
+	var selected *ent.DirectoryMember
 	for _, member := range members {
-		if member != nil && member.MatchedUserID != nil && *member.MatchedUserID == requester.ID {
-			matched = canonicalDirectoryMember(matched, member)
+		user := directoryMemberUser(member, usersByID, usersByEmail)
+		if user != nil && user.ID == requester.ID {
+			selected = canonicalDirectoryMember(selected, member)
 		}
 	}
-	if matched != nil {
-		return matched
-	}
-	requesterEmail := strings.ToLower(strings.TrimSpace(requester.Email))
-	var emailMatch *ent.DirectoryMember
-	for _, member := range members {
-		if member != nil && strings.ToLower(strings.TrimSpace(member.EmailNormalized)) == requesterEmail {
-			emailMatch = canonicalDirectoryMember(emailMatch, member)
-		}
-	}
-	return emailMatch
+	return selected
 }
 
 func requesterDepartmentIDs(member *ent.DirectoryMember, memberships []*ent.DirectoryMemberDepartment) []string {

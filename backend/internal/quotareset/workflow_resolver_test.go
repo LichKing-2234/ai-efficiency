@@ -53,6 +53,133 @@ func TestWorkflowResolverFallsBackToRepresentativeOfSameDepartment(t *testing.T)
 	}
 }
 
+func TestWorkflowResolverUsesAuthoritativeCanonicalRequesterMember(t *testing.T) {
+	tests := []struct {
+		name string
+		kind string
+	}{
+		{name: "conflicting non-null matched user", kind: "conflicting"},
+		{name: "zero matched user", kind: "zero"},
+		{name: "nonexistent matched user", kind: "nonexistent"},
+		{name: "direct matched user", kind: "direct"},
+		{name: "null matched user email fallback", kind: "email"},
+		{name: "multiple legitimate members", kind: "multiple"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			source := createQuotaResetDirectorySource(t, ctx, client)
+			legitimateDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-legitimate", "Legitimate", nil)
+			alternateDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alternate", "Alternate", nil)
+			foreignDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "department-foreign", "Foreign", nil)
+			requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+			otherUser := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", intPtr(1002), "user")
+
+			createMember := func(externalID, email string, department *ent.DirectoryDepartment, matchedUserID *int) *ent.DirectoryMember {
+				member := createQuotaResetMember(t, ctx, client, source.ID, externalID, email, department.ExternalID, matchedUserID)
+				member = client.DirectoryMember.UpdateOneID(member.ID).
+					SetDisplayName(externalID + " display").
+					SetMetadata(map[string]any{"wecom_userid": externalID + "-recipient"}).
+					SaveX(ctx)
+				createQuotaResetMemberDepartment(t, ctx, client, source.ID, member, department.ExternalID)
+				return member
+			}
+
+			var expectedMember *ent.DirectoryMember
+			var expectedDepartment *ent.DirectoryDepartment
+			switch tt.kind {
+			case "conflicting":
+				createMember("conflicting-member", requester.Email, foreignDepartment, &otherUser.ID)
+			case "zero":
+				zero := 0
+				createMember("zero-member", requester.Email, foreignDepartment, &zero)
+			case "nonexistent":
+				missing := 999999
+				createMember("missing-member", requester.Email, foreignDepartment, &missing)
+			case "direct":
+				expectedMember = createMember("direct-member", "direct-member@example.net", legitimateDepartment, &requester.ID)
+				expectedDepartment = legitimateDepartment
+			case "email":
+				expectedMember = createMember("email-member", requester.Email, legitimateDepartment, nil)
+				expectedDepartment = legitimateDepartment
+			case "multiple":
+				expectedMember = createMember("canonical-email-member", requester.Email, legitimateDepartment, nil)
+				direct := createMember("noncanonical-direct-member", "direct-member@example.net", alternateDepartment, &requester.ID)
+				if expectedMember.ID >= direct.ID {
+					t.Fatalf("member ids = %d/%d, want email-fallback member canonical", expectedMember.ID, direct.ID)
+				}
+				expectedDepartment = legitimateDepartment
+			default:
+				t.Fatalf("unknown test kind %q", tt.kind)
+			}
+
+			snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 1, "group-alpha")
+			if len(snapshot.Nodes) == 0 {
+				t.Fatal("workflow has no initial node")
+			}
+			if expectedMember == nil {
+				if snapshot.Requester.DisplayName != requester.Username || len(snapshot.Requester.DepartmentPaths) != 0 || len(snapshot.Requester.NotificationIDs) != 0 {
+					t.Fatalf("requester = %#v, want local identity without foreign directory facts", snapshot.Requester)
+				}
+				if len(snapshot.Nodes[0].Departments) != 0 {
+					t.Fatalf("initial departments = %#v, want none", snapshot.Nodes[0].Departments)
+				}
+				return
+			}
+
+			if snapshot.Requester.DisplayName != expectedMember.DisplayName {
+				t.Fatalf("requester display = %q, want %q", snapshot.Requester.DisplayName, expectedMember.DisplayName)
+			}
+			if got, want := snapshot.Requester.NotificationIDs["wecom"], expectedMember.Metadata["wecom_userid"]; got != want {
+				t.Fatalf("requester recipient = %#v, want %#v", got, want)
+			}
+			if !reflect.DeepEqual(snapshot.Requester.DepartmentPaths, []string{expectedDepartment.Name}) {
+				t.Fatalf("requester department paths = %#v, want only %q", snapshot.Requester.DepartmentPaths, expectedDepartment.Name)
+			}
+			if len(snapshot.Nodes[0].Departments) != 1 || snapshot.Nodes[0].Departments[0].ExternalID != expectedDepartment.ExternalID {
+				t.Fatalf("initial departments = %#v, want only %q", snapshot.Nodes[0].Departments, expectedDepartment.ExternalID)
+			}
+		})
+	}
+}
+
+func TestWorkflowResolverRepresentativeEligibilityUsesCanonicalMemberIdentity(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Alpha", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	representative := createQuotaResetUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, department.ExternalID, &requester.ID)
+	canonical := createQuotaResetMember(t, ctx, client, source.ID, "canonical-recipient-id", "canonical-member@example.org", department.ExternalID, &representative.ID)
+	canonical = client.DirectoryMember.UpdateOneID(canonical.ID).
+		SetDisplayName("Canonical Representative").
+		SaveX(ctx)
+	eligibilityMember := createQuotaResetMember(t, ctx, client, source.ID, "eligibility-recipient-id", "eligibility-member@example.net", department.ExternalID, &representative.ID)
+	eligibilityMember = client.DirectoryMember.UpdateOneID(eligibilityMember.ID).
+		SetDisplayName("Eligibility Representative").
+		SaveX(ctx)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, department.ExternalID)
+	client.DirectoryDepartment.UpdateOneID(department.ID).
+		SetMetadata(map[string]any{"representative_external_ids": []string{eligibilityMember.ExternalID}}).
+		SaveX(ctx)
+
+	snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 1, "group-alpha")
+	assertResolvedNodeApproverIDs(t, snapshot.Nodes[0], representative.ID)
+	if canonical.ID >= eligibilityMember.ID {
+		t.Fatalf("member ids = %d/%d, want canonical member lower", canonical.ID, eligibilityMember.ID)
+	}
+	resolved := snapshot.Nodes[0].Approvers[0]
+	if resolved.Source != "directory_representative" {
+		t.Fatalf("source = %q, want directory_representative", resolved.Source)
+	}
+	if resolved.DisplayName != canonical.DisplayName || resolved.NotificationIDs["wecom"] != canonical.ExternalID {
+		t.Fatalf("resolved approver = %#v, want eligibility from %q with canonical identity %q/%q", resolved, eligibilityMember.ExternalID, canonical.DisplayName, canonical.ExternalID)
+	}
+}
+
 func TestWorkflowResolverUsesCanonicalDuplicateMemberIdentity(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
