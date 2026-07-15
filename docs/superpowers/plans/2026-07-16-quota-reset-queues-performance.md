@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use superpowers:executing-plans and superpowers:test-driven-development. Update this ledger immediately after each verified step.
 
-**Status:** Implementation and post-review verification are complete. Delivery remains pending on the final commit, branch publish, and draft PR creation.
+**Status:** Complete. The implementation and review follow-ups are locally verified, branch `perf/quota-reset-131` is published, and draft PR #150 targets `docs/performance-contracts-116`. GitHub CI is pending.
 
 **Goal:** Open `/usage/quota-reset` with only the active requester queue on the critical path, while preserving authoritative quota-reset mutations and immediately refreshed Work Items counts.
 
@@ -128,6 +128,8 @@
 
   Evidence: focused route tests passed 20/20; the full suite passed 39 files and 457 tests; `vue-tsc -b && vite build` passed; role regression passed 16/16 with Vite running; final diff/status checks are run immediately before commit.
 
-- [ ] **Step 6: Commit, publish, and open a draft PR**
+- [x] **Step 6: Commit, publish, and open a draft PR**
 
   Commit with Conventional Commits, push `perf/quota-reset-131`, and create a draft PR targeting `docs/performance-contracts-116` with issue, test, dependency, and no-release notes. Keep this worktree alive for review.
+
+  Evidence: implementation commit `683cfbb` is published and draft PR #150 is open with the required base, issue, verification, dependency, and no-release notes.
