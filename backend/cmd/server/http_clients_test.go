@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/internal/config"
+	"github.com/ai-efficiency/backend/internal/httpclient"
 )
 
 func TestNewRuntimeHTTPClientsUsesBoundedIsolatedPoolsAndStrictTimeouts(t *testing.T) {
@@ -62,6 +63,54 @@ func TestNewRuntimeHTTPClientsUsesBoundedIsolatedPoolsAndStrictTimeouts(t *testi
 	t.Cleanup(clients.directory.CloseIdleConnections)
 	t.Cleanup(clients.version.CloseIdleConnections)
 	t.Cleanup(clients.webhook.CloseIdleConnections)
+}
+
+func TestNewRuntimeHTTPClientsWrapsOnlyRelayPool(t *testing.T) {
+	cfg := config.HTTPClientConfig{
+		ConnectTimeoutSeconds:        5,
+		TLSHandshakeTimeoutSeconds:   5,
+		ResponseHeaderTimeoutSeconds: 15,
+		OverallTimeoutSeconds:        30,
+		IdleConnTimeoutSeconds:       90,
+		MaxIdleConns:                 100,
+		MaxIdleConnsPerHost:          20,
+		MaxConnsPerHost:              50,
+	}
+	wrapper := func(next http.RoundTripper) http.RoundTripper {
+		return &runtimeRelayTestTransport{next: next}
+	}
+
+	clients := newRuntimeHTTPClients(cfg, httpclient.TransportWrapper(wrapper))
+
+	if _, ok := clients.runtimeRelay.Transport.(*runtimeRelayTestTransport); !ok {
+		t.Fatalf("runtime Relay transport = %T, want telemetry wrapper", clients.runtimeRelay.Transport)
+	}
+	if clients.providerRelay != clients.runtimeRelay || clients.settings != clients.runtimeRelay {
+		t.Fatal("all Relay consumers must share the wrapped Relay client")
+	}
+	for name, client := range map[string]*http.Client{
+		"directory": clients.directory,
+		"scm":       clients.scm,
+		"version":   clients.version,
+		"webhook":   clients.webhook,
+	} {
+		if _, ok := client.Transport.(*runtimeRelayTestTransport); ok {
+			t.Fatalf("%s transport was incorrectly classified as Relay", name)
+		}
+	}
+
+	t.Cleanup(clients.runtimeRelay.CloseIdleConnections)
+	t.Cleanup(clients.directory.CloseIdleConnections)
+	t.Cleanup(clients.version.CloseIdleConnections)
+	t.Cleanup(clients.webhook.CloseIdleConnections)
+}
+
+type runtimeRelayTestTransport struct {
+	next http.RoundTripper
+}
+
+func (t *runtimeRelayTestTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return t.next.RoundTrip(request)
 }
 
 func assertBoundedRuntimeClient(t *testing.T, name string, client *http.Client, overallTimeout time.Duration) {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/repo"
@@ -15,6 +16,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/ai-efficiency/backend/internal/workitems"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 var prAttributionService prAttributionSettler
@@ -24,6 +26,8 @@ var prUsageService prUsageRefresher
 type RouterOptions struct {
 	DirectoryService  DirectoryAdminService
 	WebhookHTTPClient *http.Client
+	RequestLogger     *zap.Logger
+	Release           string
 }
 
 func SetPRAttributionService(service prAttributionSettler) {
@@ -136,6 +140,7 @@ func setupRouter(
 ) *gin.Engine {
 	r := gin.New()
 	r.RemoveExtraSlash = true
+	r.Use(middleware.RequestTelemetry(options.RequestLogger, options.Release))
 	r.Use(gin.Recovery())
 	r.Use(corsMiddleware)
 	r.Use(web.RedirectCanonicalBrowserPath())

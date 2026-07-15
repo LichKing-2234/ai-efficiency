@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/web"
 )
 
@@ -27,6 +28,7 @@ func TestSetupRouterServesEmbeddedFrontendAtRoot(t *testing.T) {
 	env := setupTestEnv(t)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set(telemetry.HeaderRequestID, "embedded-request")
 	env.router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -34,6 +36,9 @@ func TestSetupRouterServesEmbeddedFrontendAtRoot(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "router-app") {
 		t.Fatalf("body=%q", w.Body.String())
+	}
+	if got := w.Header().Get(telemetry.HeaderRequestID); got != "embedded-request" {
+		t.Fatalf("%s = %q, want %q", telemetry.HeaderRequestID, got, "embedded-request")
 	}
 }
 

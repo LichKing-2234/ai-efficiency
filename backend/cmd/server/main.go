@@ -31,6 +31,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/gin-gonic/gin"
@@ -78,9 +79,9 @@ func httpClientOptions(cfg config.HTTPClientConfig) httpclient.Options {
 	}
 }
 
-func newRuntimeHTTPClients(cfg config.HTTPClientConfig) runtimeHTTPClients {
+func newRuntimeHTTPClients(cfg config.HTTPClientConfig, relayWrappers ...httpclient.TransportWrapper) runtimeHTTPClients {
 	downstreamOptions := httpClientOptions(cfg)
-	relayClient := httpclient.New(downstreamOptions)
+	relayClient := httpclient.New(downstreamOptions, relayWrappers...)
 	generalClient := httpclient.New(downstreamOptions)
 
 	versionOptions := downstreamOptions
@@ -158,7 +159,10 @@ func main() {
 	if config.RequireExplicitDBDSN(cfg.DB.DSN) {
 		logger.Fatal("DB.DSN is required and must point to PostgreSQL")
 	}
-	httpClients := newRuntimeHTTPClients(cfg.HTTPClient)
+	httpClients := newRuntimeHTTPClients(
+		cfg.HTTPClient,
+		telemetry.WrapDependency(logger, versionInfo.Version, "relay", "http_request"),
+	)
 	defer httpClients.runtimeRelay.CloseIdleConnections()
 	defer httpClients.directory.CloseIdleConnections()
 	defer httpClients.version.CloseIdleConnections()
@@ -368,6 +372,8 @@ func main() {
 		handler.RouterOptions{
 			DirectoryService:  directoryService,
 			WebhookHTTPClient: httpClients.webhook,
+			RequestLogger:     logger,
+			Release:           versionInfo.Version,
 		},
 	)
 
