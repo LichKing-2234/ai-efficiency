@@ -414,7 +414,7 @@ Spy on `JSON.stringify` only around drawer interaction, restore it in `finally`,
 Run:
 
 ```bash
-cd frontend && npm test -- --run src/__tests__/events-view.test.ts
+cd frontend && npm test -- src/__tests__/events-view.test.ts
 ```
 
 Expected: row count is doubled because both responsive branches are mounted, and `JSON.stringify` runs while the native details element is closed.
@@ -437,7 +437,7 @@ Track `advancedDetailsOpen`, reset it in `openDetail` and `closeDetail`, update 
 Run:
 
 ```bash
-cd frontend && npm test -- --run src/__tests__/events-view.test.ts src/__tests__/api-events.test.ts
+cd frontend && npm test -- src/__tests__/events-view.test.ts src/__tests__/api-events.test.ts
 cd frontend && npm test
 cd frontend && npm run build
 ```
