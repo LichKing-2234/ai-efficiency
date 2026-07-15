@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Draft revision 4 prepared from `docs/performance-contracts-116@5f6c58e`; independent revision-4 plan review, implementation, task reviews, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Task 1 Steps 1-4, focused RED/GREEN, PostgreSQL plan verification, adjacent tests, and independent review are complete. The Task 1 checkpoint commit, Tasks 2-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -400,7 +400,7 @@ The same effective relation is the HTTP filter contract. In cycle `a -> b -> c`,
 - Consumes: `directorysync.CurrentSourceID`, `adminuseraccess.ApplyFilter`, Ent user predicates, and current directory tables.
 - Produces: `NewService`, `Filters`, private `resolvedSource`, private `effectiveDepartmentCTEs`, private `effectiveSubtreeCTE`, private `filteredUsersQuery`, and `Targets(ctx, filters, limit)` from the Deep Module Interface.
 
-- [ ] **Step 1: Add the semantic fixture and failing target tests**
+- [x] **Step 1: Add the semantic fixture and failing target tests**
 
 Create one current successful full-company snapshot with this exact shape:
 
@@ -431,7 +431,7 @@ both: 10% unmatched users, mixed ID/email mappings, multi-membership rows, legac
 
 Capture the filtered target SQL and bound arguments for both sizes. Add `assertNamedRecursiveUnionLoopsOnce(plan, cteName)` and require exactly one node with `Subplan Name == "CTE cycle_walk"` plus exactly one with `Subplan Name == "CTE subtree"`; both require `Actual Loops == 1`. Capture the effective prefix and prove it equals the exact `effectiveDepartmentCTEs` return for that statement's builder-assigned source placeholder.
 
-- [ ] **Step 2: Run the focused tests and record RED**
+- [x] **Step 2: Run the focused tests and record RED**
 
 Run:
 
@@ -441,7 +441,7 @@ Run:
 
 Expected: FAIL because `backend/internal/adminusers` and the shared target predicate do not exist.
 
-- [ ] **Step 3: Implement the uncorrelated relation and target reader**
+- [x] **Step 3: Implement the uncorrelated relation and target reader**
 
 Normalize `Query`, `DepartmentID`, and `AccessStatus` once. Validate access status before composing SQL, wrap `ErrInvalidAccessStatus`, and retain the current user-facing validation message. Resolve the source once only when a department predicate needs it. Implement `effectiveDepartmentCTEs` and `effectiveSubtreeCTE` exactly as defined in the Deep Module Interface before building any user predicate.
 
@@ -490,7 +490,7 @@ Wrap the complete shared-prefix/subtree/suffix statement in `users.id IN (...)`.
 
 When no current source exists, use an always-false user predicate. `Targets` applies the exact normalized search/access/department predicates, orders by `users.id ASC`, requires a positive `limit`, and returns no more than that limit.
 
-- [ ] **Step 4: Prove target semantics and recursive structural bounds GREEN**
+- [x] **Step 4: Prove target semantics and recursive structural bounds GREEN**
 
 Run:
 
@@ -506,6 +506,8 @@ Expected: all semantic cases pass twice; A/B/C target IDs are stable at `{a,b,c}
 - [ ] **Step 5: Complete exact-range Task 1 reviews and checkpoint**
 
 Generate an ignored base-to-working-tree package. Obtain independent SPEC and standards reviews for Task 1; require explicit confirmation that `effectiveDepartmentCTEs` is defined once, `effectiveSubtreeCTE` follows only `effective_parent_external_id`, and non-anchor `b` excludes `a`. Resolve every Critical/Important finding, rerun Step 4, then commit:
+
+**Task 1 review evidence (2026-07-15):** Independent review returned `TASK REVIEW PASS` with 0 Critical, 0 Important, and 0 Minor findings. The reviewer confirmed one shared `effectiveDepartmentCTEs`, an `effectiveSubtreeCTE` that follows only `effective_parent_external_id`, exact cycle targets `{a,b,c}` / `{b,c}` / `{c}`, current-membership authority with zero-row legacy fallback, positive-ID plus normalized-email deduplication, and an outer-user-uncorrelated target relation. The exact semantic/plan suite passed twice, adjacent packages passed, and both PostgreSQL fixture sizes reported one-loop cycle/subtree recursive unions. Step 5 remains unchecked until the implementation commit exists.
 
 ```bash
 git add backend/internal/adminusers docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
