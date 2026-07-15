@@ -27,9 +27,14 @@
   verification matrix.
 - The existing role E2E passes all assertions but logs non-fatal Vite proxy
   `ECONNREFUSED` messages for dashboard helper requests outside its mock set.
+- `.superpowers/sdd/task-19-report.md` is absent from the final tree but remains
+  reachable between commits `6c1c8d2` and `a14fd5f`; final integration must use
+  a squash merge (or an equivalent history rewrite) so the ignored report is
+  not retained in repository history.
 - Task 20 addresses findings from the final whole-branch spec and standards
-  review. Implementation and finding-owner re-reviews are complete; final
-  whole-branch re-review, controller verification, and plan closure remain.
+  review. Final whole-branch re-review reopened frontend chain authority and
+  settings edit-lifecycle fixes; implementation, re-review, controller
+  verification, and plan closure remain.
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -5653,5 +5658,15 @@ identity. The final requester follow-up review returned no Critical, Important,
 or Minor findings. The documented unkeyed-provider process-crash ambiguity
 remains intentionally unresolved; bounded contexts only remove HTTP-client
 cancellation as a locally avoidable cause of stuck state.
+
+Final whole-branch re-review status (2026-07-15): Task 20 was reopened because
+approval-chain GET/PUT responses were not strictly decoded before becoming
+authoritative, PUT could fall back to the submitted payload, approver/chain
+mutators remained active during saves, and approver-revision reloads could
+discard dirty chain edits. The same review also required a stable decision-
+dialog focus fallback, coherent browser fixtures, and current-spec wording for
+canonical duplicate-member selection. Step 4 remains unchecked while these
+findings are implemented and re-reviewed. The explicitly accepted complete
+provider/browser matrix and 150 ms lock-test residuals remain listed above.
 
 - [ ] **Step 4: Run focused/full verification, browser and Compose checks, rerun whole-branch reviews, and close Tasks 16, 19, and 20 with evidence**
