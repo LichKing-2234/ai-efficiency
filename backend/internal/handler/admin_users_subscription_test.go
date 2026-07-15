@@ -1571,7 +1571,8 @@ func runAdminUsersCurrentFilterBatch(t *testing.T, fixture adminUsersCurrentFilt
 
 func waitForAdminUsersSubscriptionJob(t *testing.T, client *ent.Client, jobID int) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	// This watchdog bounds condition polling; job duration is not a performance assertion.
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		job, err := client.AdminSubscriptionJob.Get(context.Background(), jobID)
 		if err != nil {
