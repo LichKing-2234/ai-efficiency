@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Planned from `docs/performance-contracts-116@5f6c58e`; implementation, review, delivery, and CI remain pending.
+**Status:** Plan review remediation is implemented and re-review is pending on `docs/performance-contracts-116@5f6c58e`; implementation, task review, delivery, and CI remain pending.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -14,7 +14,7 @@
 
 - Work from `docs/performance-contracts-116@5f6c58e6821dfcd95eefff14ea3426d454ae86cd`; do not stack on sibling performance branches.
 - Preserve `POST /api/v1/admin/directory/sources/:id/preview`, `POST /api/v1/admin/directory/sources/:id/runs`, `GET /api/v1/admin/directory/sources/:id/runs`, and `GET /api/v1/admin/directory/runs/:id` paths and the existing preview/apply state machine.
-- List pagination is `limit + offset`: default 20, maximum 100, nonpositive limit defaults to 20, negative or invalid offset becomes 0, and response metadata is zero-based `page`, `page_size`, `total`, and `items`.
+- List pagination is `limit + offset`: default 20, maximum 100, nonpositive limit defaults to 20, negative or invalid offset becomes 0, and response metadata is zero-based `page = floor(normalized_offset / normalized_limit)`, `page_size`, `total`, and `items`. A positive unaligned offset is not rounded.
 - Run summaries order by `started_at DESC NULLS FIRST, id DESC`. Queued rows have null `started_at`, so they sort before started rows and tie by descending run ID. Do not substitute `created_at` or `updated_at`.
 - Summary rows contain only bounded display/progress fields. They omit `warnings`, `summary`, `preview_diff`, `error_message`, and every other complete diagnostic or source/result blob.
 - `GET /api/v1/admin/directory/runs/:id` remains the complete selected-run contract, including warnings, summary, preview diff, and error message.
@@ -24,6 +24,7 @@
 - Repository and GitHub-organization code search found only the current Vue consumer. Migrate it in the same platform release and do not retain an old unpaginated/full-entity compatibility path. If a consumer appears during delivery verification, stop and document a bounded temporary compatibility contract before changing behavior.
 - Keep query composition in `backend/internal/directorysync`, handlers thin, API calls in `frontend/src/api`, and view state in the current component boundary. Do not introduce Redis, CDN work, a new service, direct `sub2api` coupling, or background work outside the existing run executor.
 - Ent schema changes require `cd backend && go generate ./ent`; commit every generated change and verify generation drift is clean.
+- The primary history query and the page-independent latest-active query each require matching ordered indexes and separate PostgreSQL plan evidence. A top-level `Limit` alone is not proof of bounded filtering/sorting.
 - Use only synthetic identities, URLs, source names, warnings, and payload markers in tests and docs.
 - PostgreSQL query-plan/large-history tests and browser role E2E are environment-sensitive and must be reported separately from ordinary unit tests.
 - Update `docs/architecture.md` and the current `2026-06-22-configurable-directory-sync-design.md` only after behavior lands. Do not rewrite older historical specs; the 2026-07-14 performance design already records the governing bounds.
@@ -86,11 +87,11 @@
 
   Seed 125 runs for one synthetic source, including equal `started_at` values, queued null-start rows, completed preview/apply rows, validate rows, and two active rows whose IDs make the expected latest row explicit. Put unique markers in `warnings`, `summary`, `preview_diff`, and `error_message`.
 
-  Assert default/maximum/negative bounds, full `total`, exact ordered IDs across page 0/page 1, no overlap under ties, and latest active independence from offset. Marshal each `RunSummary` and require every diagnostic key/marker to be absent; marshal selected detail and require every marker to be present.
+  Assert default/maximum/negative bounds, `limit=-1`, `limit=20&offset=21` yielding page 1 without rounding the offset, full `total`, exact ordered IDs across page 0/page 1, no overlap under ties, and latest active independence from offset. Marshal each `RunSummary` and require every diagnostic key/marker to be absent; marshal selected detail and require every marker to be present.
 
 - [ ] **Step 2: Add failing handler compatibility tests and record RED**
 
-  Cover absent/zero/invalid limit, `limit=101`, `limit=1000`, negative/invalid offset, and `limit=20&offset=40`. Assert page size 20/100, page 0/2, total, items, and nullable latest active. Assert list items omit all diagnostic keys, while `GET /runs/:id` returns complete diagnostics.
+  Cover absent/zero/invalid/negative limit, `limit=101`, `limit=1000`, negative/invalid offset, `limit=20&offset=21`, and `limit=20&offset=40`. Assert page size 20/100, floor-derived page 0/1/2 without offset rounding, total, items, and nullable latest active. Assert list items omit all diagnostic keys, while `GET /runs/:id` returns complete diagnostics.
 
   Run:
 
@@ -108,14 +109,19 @@
   type RunListRequest struct { SourceID, Limit, Offset int }
 
   type RunSummary struct {
-      ID, SourceID int
-      Mode directorysyncrun.Mode
-      Trigger directorysyncrun.Trigger
-      Status directorysyncrun.Status
-      Phase directorysyncrun.Phase
-      StartedAt, CompletedAt *time.Time
-      HTTPRequestCount, DepartmentCount, MemberCount int
-      InvalidMemberCount, WarningCount int
+      ID                 int                      `json:"id"`
+      SourceID           int                      `json:"source_id"`
+      Mode               directorysyncrun.Mode    `json:"mode"`
+      Trigger            directorysyncrun.Trigger `json:"trigger"`
+      Status             directorysyncrun.Status  `json:"status"`
+      Phase              directorysyncrun.Phase   `json:"phase"`
+      StartedAt          *time.Time               `json:"started_at"`
+      CompletedAt        *time.Time               `json:"completed_at"`
+      HTTPRequestCount   int                      `json:"http_request_count"`
+      DepartmentCount    int                      `json:"department_count"`
+      MemberCount        int                      `json:"member_count"`
+      InvalidMemberCount int                      `json:"invalid_member_count"`
+      WarningCount       int                      `json:"warning_count"`
   }
 
   type RunPage struct {
@@ -127,17 +133,23 @@
   }
   ```
 
-  Give every `RunSummary` field the existing snake-case JSON tag. `ListRuns` validates positive source ID, normalizes twice defensively through the shared helper, counts the complete source result, then selects only summary fields before ordering/offset/limit. Use a second projected `Limit(1)` query for preview/apply statuses queued/running, independent of history offset. Return `Items: []`, not null.
+  `ListRuns` validates positive source ID, normalizes twice defensively through the shared helper, counts the complete source result, then selects only summary fields before ordering/offset/limit. `Page` is integer floor division of the unchanged normalized offset by normalized limit. Use a second projected `Limit(1)` query for preview/apply statuses queued/running, independent of history offset. Return `Items: []`, not null.
 
   Keep `GetRun` unchanged. In the handler, parse query integers, call `NormalizeRunPage`, pass a `RunListRequest`, and return the page directly through `pkg.Success`. Do not expose an old query switch that restores full rows.
 
 - [ ] **Step 4: Add the stable descending index and regenerate Ent**
 
-  Add:
+  Add both indexes:
 
   ```go
   index.Fields("source_id", "started_at", "id").
-      Annotations(entsql.DescColumns("started_at", "id"))
+      Annotations(entsql.DescColumns("started_at", "id")),
+  index.Fields("source_id", "started_at", "id").
+      StorageKey("directory_sync_runs_active_started_id").
+      Annotations(
+          entsql.DescColumns("started_at", "id"),
+          entsql.IndexWhere("mode IN ('preview', 'apply') AND status IN ('queued', 'running')"),
+      )
   ```
 
   Keep existing indexes. Run:
@@ -188,11 +200,12 @@
 
   Wrap `dialect.Driver.Query` under a mutex, copying SQL and arguments before delegation. Open a second Ent client from `testdb.OpenWithDSN` through `entsql.OpenDB`.
 
-  Insert exactly 2,400 runs in batches of 200 for one synthetic source:
+  Insert exactly 2,400 runs in batches of 200 for one synthetic source, and create a second synthetic source with no runs for the no-active plan case:
 
   ```text
   preview/apply/validate modes with deterministic distribution
-  queued/running/completed/completed_with_warnings/failed statuses
+  queued/running/completed/completed_with_warnings/failed statuses;
+  all apply rows are terminal and active rows are preview-only so a real apply can still start
   64 repeated non-null started_at values plus bounded queued nulls
   4 KiB generated markers in each of warnings, summary, and preview_diff
   unique error_message markers
@@ -208,17 +221,22 @@
   ```text
   TestLargeRunHistoryBoundsBytesAndProjection
   TestLargeRunHistoryStablePages
-  TestLargeRunHistoryQueryPlan
+  TestLargeRunHistoryQueryPlans
   TestLargeRunHistoryDetailRemainsComplete
+  TestLargeRunHistoryPreservesPreviewAndApplyStateSemantics
   ```
 
   Assert default page 20, maximum page 100, total 2,400, stable `(started_at DESC NULLS FIRST, id DESC)` pages at limits 20/50/100, no duplicate/omitted IDs for the traversed result, and page-independent latest active.
 
-  Marshal a 100-row `RunPage` and require less than 128 KiB plus absence of all large markers/diagnostic keys. Fetch one selected detail and require its full 4 KiB markers and error message.
+  Marshal a 100-row `RunPage` and require less than 128 KiB plus absence of all large markers/diagnostic keys. Also serve the real list handler with the same 100-row database page and require the complete `pkg.Success` wire body to remain below 128 KiB while retaining `items`, `total`, `page`, `page_size`, and `latest_active_run`. Fetch one selected detail through the real detail handler and require its full 4 KiB markers and error message.
 
-  Capture the primary list SQL and require `LIMIT`, exact two-field order after the source predicate, and no selected `warnings`, `summary`, `preview_diff`, or `error_message`. Replay exact SQL/arguments under `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and assert a Limit node, at most 100 actual rows, and use of the source/started-time/ID index for the representative first page. Do not assert costs, elapsed time, buffers, or a complete node tree.
+  Classify captured SQL by shape rather than call order: source count, primary page, and latest-active page. Require the count query to aggregate without entity projection; require the primary page to have `LIMIT`, exact two-field order, and no diagnostic fields; require the active query to have the exact preview/apply and queued/running predicates, the same order, `LIMIT 1`, and the same lightweight projection.
 
-- [ ] **Step 3: Run the scale tests and record controlled RED if production is already correct**
+  Replay all three exact SQL/argument sets under `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`. Assert the count has an Aggregate node, the primary page has a Limit with at most 100 actual rows and uses the general source/started-time/ID index, and active-present plus an empty second source both use `directory_sync_runs_active_started_id` with at most one actual row. Do not assert costs, elapsed time, buffers, or a complete node tree.
+
+  For `TestLargeRunHistoryPreservesPreviewAndApplyStateSemantics`, keep the 2,400 historical rows present, create known current departments/members/memberships, source run pointers, offboarding actions/candidate state, and a deterministic executor sequence. Prove a preview leaves every current fact/pointer/offboarding value unchanged; an injected failed apply also leaves them unchanged; and a successful apply transactionally replaces facts and updates `last_run_id`/`last_successful_run_id` exactly as the existing ordinary contract specifies.
+
+- [ ] **Step 3: Run post-implementation characterization without mutating production**
 
   Run:
 
@@ -226,7 +244,7 @@
   cd backend && go test ./internal/directorysync -run 'TestLargeRunHistory' -count=1 -v
   ```
 
-  If Task 1 already makes the correct test green, temporarily remove the ID tie-breaker or add one diagnostic field to the list projection, record the resulting ordering/projection/byte failure, restore production exactly, and leave no mutation in the final diff.
+  Expected: GREEN because Task 2 is explicit post-implementation scale/plan characterization of Task 1. Do not edit correct production code to manufacture RED. Instead, table-test the SQL-role/parser assertion helpers with synthetic bad SQL strings containing an extra sort expression, a selected diagnostic column, missing active predicates, and missing limit; require deterministic validation errors before using those helpers against recorded production SQL.
 
 - [ ] **Step 4: Verify repeated scale and package GREEN**
 
@@ -238,7 +256,7 @@
   git diff --check
   ```
 
-  Record exact fixture/blob/page byte counts, selected index, and structural nodes; elapsed time is diagnostic only, not a budget.
+  Record exact fixture/blob/DTO/wire byte counts, the general and partial-active selected indexes, active-present/no-active plans, state-semantic outcomes, and structural nodes; elapsed time is diagnostic only, not a budget.
 
 - [ ] **Step 5: Commit Task 2 and record the checkpoint**
 
@@ -259,7 +277,7 @@
 
 **Interfaces:**
 - Consumes Task 1 `RunPage` JSON and unchanged complete `DirectorySyncRun` detail.
-- Produces `DirectoryRunSummary`, `DirectoryRunPage`, `listDirectoryRuns(id, {limit, offset})`, paginated history state, and selected detail state.
+- Produces exact lightweight `DirectoryRunSummary`, expanded full-detail `DirectorySyncRun`, `DirectoryRunPage`, `listDirectoryRuns(id, {limit, offset})`, paginated history state, and selected detail state.
 
 - [ ] **Step 1: Add failing API/type and component tests**
 
@@ -275,12 +293,16 @@
   ```text
   first page requests limit=20 offset=0 and renders only returned summaries
   next/previous pages use offset and preserve total/page metadata
-  selecting a terminal summary fetches getDirectoryRun once and renders complete warning/diff/error detail
+  selecting a terminal summary fetches getDirectoryRun once and renders complete warning/summary/diff/error detail
   selecting terminal/history rows never starts polling
   latest_active_run outside items is recovered and is the only ID polled
   a newer terminal summary never displaces an active run for recovery
   conflict recovery reloads the page and uses latest_active_run
   source switching prevents stale page/detail responses from overwriting current state
+  slow same-source page 0 cannot overwrite a later page 1 response
+  slow detail A cannot overwrite later selected detail B
+  active A remains the only polled ID while terminal B is fetched once and displayed
+  source switch, unmount, and recovery of a newer active ID invalidate old poll responses/timers
   just-created preview/apply remains visible and polling completion refreshes only current source/page
   ```
 
@@ -298,13 +320,55 @@
 
 - [ ] **Step 3: Implement typed page/detail state without duplicate requests**
 
-  Define `DirectoryRunSummary` with only Task 1 fields and `DirectoryRunPage` with items/total/page/page_size/latest_active_run. Keep `DirectorySyncRun` as the full detail type.
+  Define the exact lightweight and full types:
 
-  Change `listDirectoryRuns` to require/accept typed limit/offset params. In the component, keep one page request generation and one detail request generation; invalidate both on source switch. Track summaries, total/page/page size, latest active ID, selected summary ID, and selected full detail separately.
+  ```ts
+  export interface DirectoryRunSummary {
+    id: number
+    source_id: number
+    mode: 'validate' | 'preview' | 'apply'
+    trigger: 'manual' | 'schedule'
+    status: 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed'
+    phase: 'validating' | 'executing' | 'normalizing' | 'applying' | 'completed' | 'failed'
+    started_at: string | null
+    completed_at: string | null
+    http_request_count: number
+    department_count: number
+    member_count: number
+    invalid_member_count: number
+    warning_count: number
+  }
+
+  export interface DirectorySyncRun
+    extends Omit<DirectoryRunSummary, 'started_at' | 'completed_at'> {
+    started_at?: string | null
+    completed_at?: string | null
+    warnings?: DirectorySyncWarning[]
+    summary?: Record<string, unknown>
+    preview_diff?: Record<string, unknown>
+    error_message?: string | null
+    created_at?: string
+    updated_at?: string
+  }
+
+  export interface DirectoryRunPage {
+    items: DirectoryRunSummary[]
+    total: number
+    page: number
+    page_size: number
+    latest_active_run: DirectoryRunSummary | null
+  }
+  ```
+
+  API tests must prove list typing/fixtures contain no diagnostic fields. Selected-detail component tests must render distinct markers from `warnings`, `summary`, `preview_diff`, and `error_message`, so the expanded type cannot silently omit the complete contract.
+
+  Change `listDirectoryRuns` to require/accept typed limit/offset params. Increment the page request generation for every page load, including same-source navigation, and increment the detail request generation for every selection; a response applies only when its captured generation, source, offset, and selected ID still match. Source switch invalidates both generations. Track summaries, total/page/page size, latest active ID, selected summary ID, and selected full detail separately.
 
   Render an unframed run-history section consistent with the current settings task-zone styling: stable summary rows, page controls, one selected detail region, loading/empty/error states, and existing localized mode/status/progress values. Do not render diagnostic JSON from summary data.
 
-  Selecting any row calls `getDirectoryRun(id)` once. A terminal/older selection never schedules a timer. Recovery and conflict handling use only `latest_active_run`; when absent, the newest preview/apply summary may update the existing status message but must not be polled. A just-created nonterminal run becomes the current latest active locally and uses the existing polling loop. On terminal completion, stop polling and refresh the current page; update selected detail only when it is the same run and the source/request generation is still current.
+  Selecting any row calls `getDirectoryRun(id)` once. A terminal/older selection never schedules or cancels the independent latest-active timer. Recovery and conflict handling use only `latest_active_run`; when absent, the newest preview/apply summary may update the existing status message but must not be polled. A just-created nonterminal run becomes the current latest active locally and uses the existing polling loop.
+
+  Maintain a separate poll generation. Increment it and clear the timer on source switch, unmount, and whenever recovery selects a different latest-active ID. Every poll captures generation/source/run ID and may apply/reschedule only when all three still match. Selecting terminal B changes only detail generation, so active A remains the sole polled ID. On A's terminal completion, stop polling and refresh the current page; update selected detail only when the selected ID is A and its detail generation is still current.
 
 - [ ] **Step 4: Verify focused, full frontend, and build GREEN**
 
@@ -378,9 +442,10 @@
   Can any list exceed 100 or select a diagnostic blob?
   Is order exactly started_at DESC NULLS FIRST, id DESC across ties/pages?
   Is latest_active_run page-independent and restricted to queued/running preview/apply?
+  Do count, primary-page, active-present, and no-active plans use the intended aggregate/ordered indexes?
   Does selected detail remain complete?
-  Can selecting a terminal or old row start polling?
-  Are apply/preview/current-fact semantics unchanged?
+  Can same-source page/detail races overwrite newer state, or can terminal selection disturb active polling?
+  Are apply/preview/current-fact/offboarding semantics unchanged with 2,400 historical rows present?
   Do scale bytes and query-plan evidence prove bounded work without timing brittleness?
   ```
 
@@ -413,7 +478,7 @@
 
 ## Self-Review Record
 
-- Issue coverage: Task 1 covers bounds/order/projection/detail/latest active; Task 2 covers long-history bytes/pages/SQL plans; Task 3 covers same-release consumer migration, selection, and polling; Task 4 covers docs/reviews/delivery.
+- Issue coverage: Task 1 covers bounds/order/projection/detail/latest active; Task 2 covers long-history DTO/wire bytes, primary/active/count plans, stable pages, complete detail, and apply/preview state semantics; Task 3 covers same-release consumer migration, same-source races, selection, and independent active polling; Task 4 covers docs/reviews/delivery.
 - Consumer decision: current repository and organization searches found only the Vue consumer, so no deprecated unbounded compatibility path is planned.
 - Type consistency: Task 1 produces `RunSummary`/`RunPage`; Task 3 mirrors them as `DirectoryRunSummary`/`DirectoryRunPage` while preserving full `DirectorySyncRun` detail.
 - Ordering consistency: every backend, scale, frontend recovery, index, and review step uses `started_at DESC NULLS FIRST, id DESC`.
