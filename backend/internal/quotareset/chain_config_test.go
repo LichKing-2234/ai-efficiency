@@ -532,6 +532,58 @@ func TestCandidateHasWeComMentionUsesRendererIdentityContract(t *testing.T) {
 	}
 }
 
+func TestMatchApproverCandidatesUsesCanonicalDuplicateMemberIdentityAndCoverage(t *testing.T) {
+	user := &ent.User{ID: 7, Username: "alice", Email: "alice@example.com"}
+	canonical := &ent.DirectoryMember{
+		ID:              11,
+		ExternalID:      "canonical-member",
+		EmailNormalized: "canonical-member@example.com",
+		DisplayName:     "Zulu Canonical",
+		Status:          "active",
+		MatchedUserID:   &user.ID,
+		Metadata:        map[string]any{"wecom_userid": "all"},
+	}
+	noncanonical := &ent.DirectoryMember{
+		ID:              12,
+		ExternalID:      "noncanonical-member",
+		EmailNormalized: "noncanonical-member@example.org",
+		DisplayName:     "Alpha Noncanonical",
+		Status:          "active",
+		MatchedUserID:   &user.ID,
+		Metadata:        map[string]any{"wecom_userid": "valid-noncanonical-id"},
+	}
+	memberships := []*ent.DirectoryMemberDepartment{
+		{DirectoryMemberID: canonical.ID, DepartmentExternalID: "department-alpha"},
+		{DirectoryMemberID: noncanonical.ID, DepartmentExternalID: "department-beta"},
+	}
+	departments := map[string]*ent.DirectoryDepartment{
+		"department-alpha": {ExternalID: "department-alpha", Name: "Department Alpha", Path: "1"},
+		"department-beta":  {ExternalID: "department-beta", Name: "Department Beta", Path: "2"},
+	}
+
+	items := matchApproverCandidates(
+		"Alpha Noncanonical",
+		[]*ent.DirectoryMember{noncanonical, canonical},
+		memberships,
+		departments,
+		[]*ent.User{user},
+	)
+
+	if len(items) != 1 {
+		t.Fatalf("candidates = %#v, want one aggregated user", items)
+	}
+	candidate := items[0]
+	if candidate.DisplayName != canonical.DisplayName || candidate.DirectoryMemberExternalID != canonical.ExternalID {
+		t.Fatalf("candidate identity = %q/%q, want canonical %q/%q", candidate.DisplayName, candidate.DirectoryMemberExternalID, canonical.DisplayName, canonical.ExternalID)
+	}
+	if candidate.WeComMentionAvailable {
+		t.Fatal("WeComMentionAvailable = true, want canonical reserved id reported unavailable")
+	}
+	if !reflect.DeepEqual(candidate.DepartmentPaths, []string{"Department Alpha", "Department Beta"}) {
+		t.Fatalf("department paths = %#v, want paths aggregated across both members", candidate.DepartmentPaths)
+	}
+}
+
 func TestMatchApproverCandidatesHonorsNonNullMatchedUserID(t *testing.T) {
 	zero := 0
 	missing := 999

@@ -220,7 +220,8 @@ func loadCandidateOrganizationFacts(ctx context.Context, client *ent.Client, sna
 }
 
 type approverCandidateMatch struct {
-	candidate   ApproverCandidate
+	user        *ent.User
+	member      *ent.DirectoryMember
 	paths       map[string]struct{}
 	searchTerms map[string]struct{}
 }
@@ -265,28 +266,16 @@ func matchApproverCandidates(query string, members []*ent.DirectoryMember, membe
 			continue
 		}
 
-		candidate := ApproverCandidate{
-			UserID:                    user.ID,
-			Username:                  strings.TrimSpace(user.Username),
-			Email:                     strings.TrimSpace(user.Email),
-			DisplayName:               strings.TrimSpace(member.DisplayName),
-			DirectoryMemberExternalID: strings.TrimSpace(member.ExternalID),
-			WeComMentionAvailable:     candidateHasWeComMention(member),
-		}
 		match := matches[user.ID]
 		if match == nil {
 			match = &approverCandidateMatch{
-				candidate:   candidate,
+				user:        user,
 				paths:       map[string]struct{}{},
 				searchTerms: map[string]struct{}{},
 			}
 			matches[user.ID] = match
-		} else if candidateIdentityLess(candidate, match.candidate) {
-			candidate.WeComMentionAvailable = candidate.WeComMentionAvailable || match.candidate.WeComMentionAvailable
-			match.candidate = candidate
-		} else if candidate.WeComMentionAvailable {
-			match.candidate.WeComMentionAvailable = true
 		}
+		match.member = canonicalDirectoryMember(match.member, member)
 
 		for _, value := range []string{member.DisplayName, member.EmailNormalized, user.Username, user.Email} {
 			if normalized := normalizeCandidateValue(value); normalized != "" {
@@ -309,12 +298,23 @@ func matchApproverCandidates(query string, members []*ent.DirectoryMember, membe
 		if normalizedQuery != "" && !candidateSearchMatches(match.searchTerms, normalizedQuery) {
 			continue
 		}
-		match.candidate.DepartmentPaths = make([]string, 0, len(match.paths))
-		for path := range match.paths {
-			match.candidate.DepartmentPaths = append(match.candidate.DepartmentPaths, path)
+		if match.user == nil || match.member == nil {
+			continue
 		}
-		sort.Strings(match.candidate.DepartmentPaths)
-		items = append(items, match.candidate)
+		candidate := ApproverCandidate{
+			UserID:                    match.user.ID,
+			Username:                  strings.TrimSpace(match.user.Username),
+			Email:                     strings.TrimSpace(match.user.Email),
+			DisplayName:               strings.TrimSpace(match.member.DisplayName),
+			DirectoryMemberExternalID: strings.TrimSpace(match.member.ExternalID),
+			DepartmentPaths:           make([]string, 0, len(match.paths)),
+			WeComMentionAvailable:     candidateHasWeComMention(match.member),
+		}
+		for path := range match.paths {
+			candidate.DepartmentPaths = append(candidate.DepartmentPaths, path)
+		}
+		sort.Strings(candidate.DepartmentPaths)
+		items = append(items, candidate)
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		left := candidateSortKey(items[i])
@@ -379,19 +379,6 @@ func candidateDepartmentPath(tree *directorytree.Tree, department *ent.Directory
 
 func candidateHasWeComMention(member *ent.DirectoryMember) bool {
 	return validWeComMentionUserID(notificationIDsForMember(member)["wecom"])
-}
-
-func candidateIdentityLess(left, right ApproverCandidate) bool {
-	return candidateIdentityKey(left) < candidateIdentityKey(right)
-}
-
-func candidateIdentityKey(candidate ApproverCandidate) string {
-	return strings.Join([]string{
-		normalizeCandidateValue(candidate.DisplayName),
-		normalizeCandidateValue(candidate.DirectoryMemberExternalID),
-		normalizeCandidateValue(candidate.Username),
-		normalizeCandidateValue(candidate.Email),
-	}, "\x00")
 }
 
 func candidateSortKey(candidate ApproverCandidate) string {

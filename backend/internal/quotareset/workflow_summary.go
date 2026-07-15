@@ -709,10 +709,10 @@ func (s *Service) currentDirectoryMembersForUsers(ctx context.Context, users []*
 				continue
 			}
 			user := directoryMemberUser(member, usersByID, usersByEmail)
-			if user == nil || membersByUserID[user.ID] != nil {
+			if user == nil {
 				continue
 			}
-			membersByUserID[user.ID] = member
+			membersByUserID[user.ID] = canonicalDirectoryMember(membersByUserID[user.ID], member)
 		}
 	}
 	return membersByUserID, nil

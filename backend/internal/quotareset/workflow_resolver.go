@@ -158,9 +158,7 @@ func (r *WorkflowResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 		if !directoryApproverIsCurrentlyUsable(user, member) {
 			continue
 		}
-		if existing := activeMembersByUserID[user.ID]; existing == nil || member.ID < existing.ID {
-			activeMembersByUserID[user.ID] = member
-		}
+		activeMembersByUserID[user.ID] = canonicalDirectoryMember(activeMembersByUserID[user.ID], member)
 	}
 
 	configsByDepartment := make(map[string][]int)
@@ -368,8 +366,7 @@ func usableConfiguredApprovers(userIDs []int, facts *workflowDirectoryFacts, req
 }
 
 func usableRepresentativeApprovers(members []*ent.DirectoryMember, facts *workflowDirectoryFacts, requesterUserID int) []workflowApproverCandidate {
-	candidates := make([]workflowApproverCandidate, 0, len(members))
-	seen := make(map[int]struct{}, len(members))
+	candidatesByUserID := make(map[int]workflowApproverCandidate, len(members))
 	for _, member := range members {
 		if member == nil || !directoryMemberIsActive(member) {
 			continue
@@ -378,11 +375,15 @@ func usableRepresentativeApprovers(members []*ent.DirectoryMember, facts *workfl
 		if user == nil || user.ID == requesterUserID || !directoryApproverIsCurrentlyUsable(user, member) {
 			continue
 		}
-		if _, ok := seen[user.ID]; ok {
+		canonical := facts.activeMembersByUserID[user.ID]
+		if !directoryApproverIsCurrentlyUsable(user, canonical) {
 			continue
 		}
-		seen[user.ID] = struct{}{}
-		candidates = append(candidates, workflowApproverCandidate{user: user, member: member})
+		candidatesByUserID[user.ID] = workflowApproverCandidate{user: user, member: canonical}
+	}
+	candidates := make([]workflowApproverCandidate, 0, len(candidatesByUserID))
+	for _, candidate := range candidatesByUserID {
+		candidates = append(candidates, candidate)
 	}
 	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].user.ID < candidates[j].user.ID })
 	return candidates

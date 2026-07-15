@@ -53,6 +53,40 @@ func TestWorkflowResolverFallsBackToRepresentativeOfSameDepartment(t *testing.T)
 	}
 }
 
+func TestWorkflowResolverUsesCanonicalDuplicateMemberIdentity(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Alpha", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, department.ExternalID, &requester.ID)
+	canonical := createQuotaResetMember(t, ctx, client, source.ID, "canonical-member", "canonical-member@example.com", department.ExternalID, &approver.ID)
+	canonical = client.DirectoryMember.UpdateOneID(canonical.ID).
+		SetDisplayName("Canonical Approver").
+		SetMetadata(map[string]any{"wecom_userid": "all"}).
+		SaveX(ctx)
+	noncanonical := createQuotaResetMember(t, ctx, client, source.ID, "noncanonical-member", "noncanonical-member@example.org", department.ExternalID, &approver.ID)
+	noncanonical = client.DirectoryMember.UpdateOneID(noncanonical.ID).
+		SetDisplayName("Noncanonical Approver").
+		SetMetadata(map[string]any{"wecom_userid": "valid-noncanonical-id"}).
+		SaveX(ctx)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, department.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, canonical, department.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, noncanonical, department.ExternalID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, department.ExternalID, department.Name, approver.ID)
+
+	snapshot := resolveWorkflowSnapshot(t, ctx, client, requester.ID, 1, "group-alpha")
+	assertResolvedNodeApproverIDs(t, snapshot.Nodes[0], approver.ID)
+	resolved := snapshot.Nodes[0].Approvers[0]
+	if canonical.ID >= noncanonical.ID {
+		t.Fatalf("member ids = %d/%d, want canonical lower", canonical.ID, noncanonical.ID)
+	}
+	if resolved.DisplayName != canonical.DisplayName || resolved.NotificationIDs["wecom"] != "all" {
+		t.Fatalf("resolved approver = %#v, want canonical identity and reserved recipient id", resolved)
+	}
+}
+
 func TestWorkflowResolverAcceptsCommaSeparatedDepartmentRepresentativeMetadata(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

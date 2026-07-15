@@ -1403,6 +1403,76 @@ describe('QuotaResetApprovalSettings', () => {
     }])
   })
 
+  it.each([
+    { name: 'successful follow-up GET', followUpFails: false },
+    { name: 'failed follow-up GET', followUpFails: true },
+  ])('preserves a failed chain save across a queued $name', async ({ followUpFails }) => {
+    const api = await import('@/api/quotaReset') as any
+    const saveRequest = deferred<any>()
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    api.saveQuotaResetApprovalChains
+      .mockReturnValueOnce(saveRequest.promise)
+      .mockImplementationOnce(async (items: any[]) => ({ data: { data: { items } } }))
+    const wrapper = await mountChains()
+    await selectChainGroup(wrapper, 'group-alpha')
+    await addChainDepartment(wrapper, 'dept-beta')
+    expect(wrapper.text()).toContain('Department Beta')
+
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await wrapper.setProps({ approverRevision: 1 })
+    await wrapper.vm.$nextTick()
+    expect(api.getQuotaResetApprovalChainOptions).toHaveBeenCalledTimes(1)
+    expect(api.getQuotaResetApprovalChains).toHaveBeenCalledTimes(1)
+
+    if (followUpFails) {
+      api.getQuotaResetApprovalChainOptions.mockRejectedValueOnce({
+        response: { data: { message: 'Synthetic queued chain reload failed.' } },
+      })
+      api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+        data: { data: { items: [configuredAlphaChain] } },
+      })
+    } else {
+      api.getQuotaResetApprovalChainOptions.mockResolvedValueOnce({ data: { data: chainOptions } })
+      api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+        data: { data: { items: [configuredAlphaChain] } },
+      })
+    }
+    saveRequest.reject({
+      response: { data: { message: 'Group Alpha still references a stale approver.' } },
+    })
+    await flushPromises()
+
+    expect(api.getQuotaResetApprovalChainOptions).toHaveBeenCalledTimes(2)
+    expect(api.getQuotaResetApprovalChains).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Group Alpha still references a stale approver.')
+    expect(wrapper.text()).toContain('Department Beta')
+    expect(wrapper.text()).not.toContain('Synthetic queued chain reload failed.')
+    expect(wrapper.get('[data-testid="quota-reset-save-chains"]').attributes()).not.toHaveProperty('disabled')
+
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await flushPromises()
+    expect(api.saveQuotaResetApprovalChains.mock.calls[1][0]).toEqual([{
+      provider_id: 1,
+      group_id: 'group-alpha',
+      group_name: 'Group Alpha',
+      enabled: true,
+      nodes: [
+        {
+          directory_source_id: 1,
+          department_external_id: 'dept-alpha',
+          department_display_path: 'Department Alpha',
+        },
+        {
+          directory_source_id: 1,
+          department_external_id: 'dept-beta',
+          department_display_path: 'Department Beta',
+        },
+      ],
+    }])
+  })
+
   it('ignores a stale successful chain load after a newer revision succeeds', async () => {
     const api = await import('@/api/quotaReset') as any
     const staleOptions = deferred<any>()

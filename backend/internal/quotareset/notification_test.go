@@ -963,6 +963,54 @@ func TestWorkflowNotificationsRevalidateSnapshottedApprovers(t *testing.T) {
 	}
 }
 
+func TestWorkflowNotificationsUseCanonicalDuplicateMemberIdentity(t *testing.T) {
+	fixture := newWorkflowDecisionFixture(t, []workflowNodeFixture{{}})
+	fixture.replaceApproverIDs(t, 0, fixture.actorA.ID)
+	source := createQuotaResetDirectorySource(t, fixture.ctx, fixture.client)
+	department := createQuotaResetDepartment(t, fixture.ctx, fixture.client, source.ID, "department-live", "Department Live", nil)
+	canonical := createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "canonical-member", "canonical-member@example.com", department.ExternalID, &fixture.actorA.ID)
+	canonical = fixture.client.DirectoryMember.UpdateOneID(canonical.ID).
+		SetDisplayName("Canonical Approver").
+		SetMetadata(map[string]any{"wecom_userid": "all"}).
+		SaveX(fixture.ctx)
+	noncanonical := createQuotaResetMember(t, fixture.ctx, fixture.client, source.ID, "noncanonical-member", "noncanonical-member@example.org", department.ExternalID, &fixture.actorA.ID)
+	noncanonical = fixture.client.DirectoryMember.UpdateOneID(noncanonical.ID).
+		SetDisplayName("Noncanonical Approver").
+		SetMetadata(map[string]any{"wecom_userid": "valid-noncanonical-id"}).
+		SaveX(fixture.ctx)
+
+	notificationContext, err := fixture.service.notificationContextForRequest(
+		fixture.ctx,
+		fixture.request.ID,
+		fixture.nodes[0].ID,
+		NotificationNodeActivated,
+	)
+	if err != nil {
+		t.Fatalf("notificationContextForRequest() error = %v", err)
+	}
+	if canonical.ID >= noncanonical.ID {
+		t.Fatalf("member ids = %d/%d, want canonical lower", canonical.ID, noncanonical.ID)
+	}
+	if len(notificationContext.Recipients) != 1 {
+		t.Fatalf("recipients = %#v, want one canonical user", notificationContext.Recipients)
+	}
+	recipient := notificationContext.Recipients[0]
+	if recipient.DisplayName != canonical.DisplayName || recipient.NotificationIDs["wecom"] != "all" {
+		t.Fatalf("recipient = %#v, want canonical identity and reserved recipient id", recipient)
+	}
+	rendered, err := (weComGroupRobotAdapter{maxBytes: 4096}).Render(notificationContext)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	_, content := decodeWeComNotification(t, rendered.Body)
+	if rendered.RecipientCount != 0 || !reflect.DeepEqual(rendered.MissingRecipientUserIDs, []int{fixture.actorA.ID}) {
+		t.Fatalf("recipient coverage = %d/%v, want 0/%v", rendered.RecipientCount, rendered.MissingRecipientUserIDs, []int{fixture.actorA.ID})
+	}
+	if !strings.Contains(content, "Canonical Approver（无法 @）") || strings.Contains(content, "valid-noncanonical-id") {
+		t.Fatalf("content = %q, want canonical unavailable marker without noncanonical mention", content)
+	}
+}
+
 func TestWorkflowNotificationAdminFallbackExcludesRequester(t *testing.T) {
 	for _, event := range []NotificationEvent{NotificationNodeActivated, NotificationCancelled} {
 		t.Run(string(event), func(t *testing.T) {

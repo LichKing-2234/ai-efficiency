@@ -20,6 +20,19 @@ func directoryApproverIsCurrentlyUsable(user *ent.User, member *ent.DirectoryMem
 	return directoryMemberIsActive(member) && localUserHasCurrentAccess(user)
 }
 
+func canonicalDirectoryMember(members ...*ent.DirectoryMember) *ent.DirectoryMember {
+	var selected *ent.DirectoryMember
+	for _, member := range members {
+		if member == nil || member.ID <= 0 {
+			continue
+		}
+		if selected == nil || member.ID < selected.ID {
+			selected = member
+		}
+	}
+	return selected
+}
+
 func directoryMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) *ent.User {
 	if member == nil {
 		return nil

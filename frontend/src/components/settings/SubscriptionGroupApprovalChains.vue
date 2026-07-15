@@ -123,11 +123,18 @@ function toInputChains(items: Array<QuotaResetApprovalChainInput>) {
 }
 
 async function loadChains() {
+  return loadChainsWithOptions()
+}
+
+async function loadChainsWithOptions(options: { preserveFailedSave?: boolean } = {}) {
+  const preserveFailedSave = options.preserveFailedSave === true
   const sequence = ++loadSequence
   loading.value = true
-  chainsAuthoritative.value = false
-  error.value = ''
-  message.value = ''
+  if (!preserveFailedSave) {
+    chainsAuthoritative.value = false
+    error.value = ''
+    message.value = ''
+  }
   try {
     const [optionsResponse, chainsResponse] = await Promise.all([
       getQuotaResetApprovalChainOptions(),
@@ -143,15 +150,18 @@ async function loadChains() {
 
     groups.value = options.groups
     departments.value = options.departments
-    chains.value = toInputChains(items)
-
-    if (selectedGroupKey.value && !selectedChain.value) {
-      selectedGroupKey.value = ''
+    if (!preserveFailedSave) {
+      chains.value = toInputChains(items)
+      if (selectedGroupKey.value && !selectedChain.value) {
+        selectedGroupKey.value = ''
+      }
+      chainsAuthoritative.value = true
     }
-    chainsAuthoritative.value = true
   } catch (err) {
     if (sequence !== loadSequence) return
-    error.value = errorMessage(err, t('quotaResetSettings.chainLoadFailed'))
+    if (!preserveFailedSave) {
+      error.value = errorMessage(err, t('quotaResetSettings.chainLoadFailed'))
+    }
   } finally {
     if (sequence === loadSequence) {
       loading.value = false
@@ -276,6 +286,7 @@ async function saveChains() {
   if (!chainsAuthoritative.value || loading.value || saving.value) return
   loadSequence += 1
   saving.value = true
+  let saveFailed = false
   error.value = ''
   message.value = ''
   try {
@@ -285,12 +296,17 @@ async function saveChains() {
     chainsAuthoritative.value = true
     message.value = t('quotaResetSettings.chainsSaved')
   } catch (err) {
+    saveFailed = true
     error.value = errorMessage(err, t('quotaResetSettings.chainsSaveFailed'))
   } finally {
     saving.value = false
     if (reloadQueuedAfterSave) {
       reloadQueuedAfterSave = false
-      void loadChains()
+      if (saveFailed) {
+        void loadChainsWithOptions({ preserveFailedSave: true })
+      } else {
+        void loadChains()
+      }
     }
   }
 }
