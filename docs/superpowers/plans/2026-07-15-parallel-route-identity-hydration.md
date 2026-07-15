@@ -2,286 +2,534 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Draft implementation plan prepared from `docs/performance-contracts-116@5f6c58e`; independent plan review, implementation, task review, delivery, and CI remain pending.
+**Status:** Draft revised after independent plan review. Implementation, task reviews, full verification, draft PR delivery, and every CI gate remain pending.
 
-**Goal:** Start public and authenticated non-admin route chunks without waiting for current-user hydration while keeping administrator routes fail-closed and issuing at most one current-user request for a navigation.
+**Goal:** Start public and authenticated non-admin route chunks without waiting for current-user hydration while keeping administrator routes fail-closed and making every login, logout, refresh, and delayed redirect safe across browser-session and navigation races.
 
-**Architecture:** Add a token-aware single-flight identity hydrator to the existing Pinia auth store, then move navigation policy into one testable router guard module. Public and ordinary protected routes start hydration without awaiting it, route confirmation attaches a generation-safe redirect follow-up, and administrator routes await the same shared promise before their lazy component can resolve.
+**Architecture:** Add one generation-aware browser-session owner below both Pinia and Axios. Normal login, Dev Login, logout, and same-session access-token rotation all use that owner; Axios stamps the originating session generation on requests, never writes or retries after that generation is invalidated, and emits a shared auth-expiry signal instead of navigating. A production router guard starts identity hydration without awaiting it for public and ordinary protected routes, awaits it for administrators, and gates every delayed redirect by both session and monotonic navigation generations.
 
-**Tech Stack:** Vue 3, Vue Router 4, Pinia, TypeScript, Vite, Vitest, Vue Test Utils.
+**Tech Stack:** Vue 3, Vue Router 4.5, Pinia 2, TypeScript 5.6, Axios 1.7, Vite 6, Vitest 4, Vue Test Utils, Python 3, Playwright.
 
 ## Global Constraints
 
 - Work from `docs/performance-contracts-116@5f6c58e6821dfcd95eefff14ea3426d454ae86cd`; do not stack on sibling performance branches.
-- Preserve every current route path, route name, redirect target, OAuth query parameter, and lazy view import.
-- A public route with no token issues no `/api/v1/auth/me` request. A public route with a token may start identity hydration, but its lazy chunk and visible shell must not wait for that request.
+- Preserve every current route path, route name, safe redirect target, OAuth query parameter, and lazy view import.
+- A public route with no access token issues no `/api/v1/auth/me` request. A public route with a token may start identity hydration, but its lazy chunk and visible shell do not wait for that request.
 - An authenticated non-admin route starts its lazy chunk and identity hydration concurrently. It may render its existing page-owned loading state while identity is pending.
-- A route with `meta.requireAdmin` must not invoke its lazy component loader or render administrator content until current identity resolves to `role=admin`.
-- Invalid-token `401` behavior remains authoritative: access and refresh tokens are cleared; protected navigation converges to `/login` with the original safe redirect; administrator navigation never falls through to protected content.
-- Login redirects an already verified user synchronously. When only a token exists, Login renders immediately and redirects to the existing safe target only after hydration verifies the user.
-- OAuth authorize and device route chunks render immediately. Device login retains its existing unauthenticated redirect behavior after an invalid stored token is discovered.
-- Current-user hydration is single-flight per current token and session generation. Concurrent callers share one promise; a settled request is cleared; a new token/generation does not join an older request; a response from a logged-out or replaced session cannot repopulate user state even if the later session reuses the same token string.
-- A superseded navigation cannot apply a delayed hydration redirect to the newer route, including when the newer route has the same `fullPath`; delayed effects are gated by a monotonic navigation generation, not path equality alone.
-- Keep authentication authority in the backend and existing Axios authentication/refresh path. Do not add identity caching in Redis, browser persistence for user objects, backend changes, route prefetch libraries, or a second auth store.
-- Keep `frontend/src/router/index.ts` responsible for route composition and `frontend/src/router/authGuard.ts` responsible for hydration/navigation policy. Keep API calls in the existing auth store/API modules.
-- Tests, docs, route fixtures, usernames, and emails use only synthetic values such as `alice@example.com` and `bob@example.org`.
-- Update `docs/architecture.md` only after behavior lands. The active 2026-07-14 performance contract already governs this scheduling change; edit it only if implementation changes that contract, and do not rewrite older auth/OAuth specs.
-- Browser role E2E is environment-sensitive and must be reported separately from ordinary Vitest/build results.
-- The draft PR targets `docs/performance-contracts-116`, links issue #122 and draft PR #138, remains open for review, and is not merged, released, deployed, or used for Helm work in this plan.
-- Maintain this plan as a live ledger: check a step only after it actually runs, and keep the top `Status` consistent with the remaining unchecked work.
+- A route with `meta.requireAdmin` never invokes its lazy component loader or renders administrator content until current identity resolves to `role=admin` for the still-current navigation.
+- Browser credentials have one owner. Normal login, Dev Login, logout, Axios refresh, request Authorization headers, Pinia token state, and `localStorage` must not write credentials through independent paths.
+- A credential replacement always advances the logical session generation, even if the replacement reuses the same access-token string. Logout and final refresh failure also advance it. A successful access-token refresh within the same logical session rotates credentials without advancing it.
+- An HTTP request is bound to the session generation that supplied its Authorization header. After that generation is replaced, cleared, or expired, its response cannot refresh credentials, clear a newer session, retry under a newer session, or update Pinia identity.
+- Same-session A-to-A2 refresh updates Pinia and `localStorage`, retries the original request at most once under A2, and lets the original current-user flight resolve without starting a duplicate `/auth/me` request.
+- Current-user hydration is single-flight per logical session generation. Concurrent callers share one promise; a settled request is cleared; a replacement generation starts a new request even when it reuses the same token string.
+- Final refresh failure clears only the matching session generation and emits one shared auth-expiry signal. Axios must not set `window.location`, call the router, or independently choose a redirect.
+- The current router destination owns auth-expiry policy: protected routes go to Login with their original safe `fullPath`; Login and OAuth Authorize remain visible; OAuth Device redirects to Login with its own safe `fullPath`.
+- Every navigation receives a monotonic generation. After every awaited administrator hydration, the guard rejects a superseded generation before returning any non-admin or invalid-session redirect. Path equality is never sufficient, including Login A -> OAuth -> Login A.
+- Keep backend authentication authoritative and preserve the existing one-refresh/one-retry HTTP contract. Do not add Redis identity caching, persisted browser user objects, backend changes, route-prefetch libraries, or a second auth store.
+- Keep API calls in `frontend/src/api`, route composition in `frontend/src/router/index.ts`, route/session policy in `frontend/src/router/authGuard.ts`, and current-user state in the existing Pinia auth store.
+- Use only synthetic identities and secrets such as `alice@example.com`, `bob@example.org`, `test-password`, `token-a`, `token-a2`, and `token-b` in tests and documentation.
+- Update `docs/architecture.md` only after behavior lands. The active 2026-07-14 performance contract already governs this scheduling change; edit it only if implementation changes that contract, and do not rewrite historical OAuth specs.
+- Browser role E2E is environment-sensitive and must be reported separately. It must run against a strict-port Vite process started from this worktree and selected through `AE_E2E_BASE_URL`; never use an already-running server as evidence.
+- The draft PR targets `docs/performance-contracts-116`, links issue #122 and draft PR #138, remains open for review, and is not merged, released, deployed, or used for Helm work.
+- Maintain this file as a live ledger. Check a box only after that action succeeds, update it in the same working turn, and keep `Status` aligned with every unchecked local, review, environment, and CI action.
+- Never set `Status: Complete` before the final current-head CI succeeds. The final current-head CI and PR-state check remain an external GitHub delivery gate after the final ledger commit, so they are intentionally not represented by a pre-checked ledger box.
 
-## Route Scheduling Matrix
+## Browser Session Interfaces
 
-| Destination state | Identity action | Chunk action | Follow-up |
+Create `frontend/src/auth/browserSession.ts` as the only persistence and generation boundary:
+
+```ts
+export interface BrowserTokenPair {
+  accessToken: string
+  refreshToken: string | null
+}
+
+export interface BrowserSessionSnapshot {
+  generation: number
+  accessToken: string | null
+  refreshToken: string | null
+}
+
+export type BrowserSessionTransitionKind = 'replace' | 'rotate' | 'clear' | 'expire'
+
+export interface BrowserSessionTransition {
+  kind: BrowserSessionTransitionKind
+  previous: BrowserSessionSnapshot
+  current: BrowserSessionSnapshot
+}
+
+export interface AuthExpiryEvent {
+  expiredGeneration: number
+  clearedGeneration: number
+}
+
+export function readBrowserSession(): BrowserSessionSnapshot
+export function replaceBrowserSession(tokens: BrowserTokenPair): BrowserSessionSnapshot
+export function rotateBrowserSession(expectedGeneration: number, tokens: BrowserTokenPair): BrowserSessionSnapshot | null
+export function clearBrowserSession(): BrowserSessionSnapshot
+export function expireBrowserSession(expectedGeneration: number): AuthExpiryEvent | null
+export function readLatestAuthExpiry(): AuthExpiryEvent | null
+export function onBrowserSessionTransition(listener: (event: BrowserSessionTransition) => void): () => void
+export function onAuthExpiry(listener: (event: AuthExpiryEvent) => void): () => void
+```
+
+`replaceBrowserSession`, `clearBrowserSession`, and `expireBrowserSession` increment the generation. `rotateBrowserSession` compares `expectedGeneration`, preserves that generation on success, and returns `null` without writing on mismatch. Every transition persists access and refresh tokens atomically from the caller's perspective, removes absent values rather than inheriting a previous login's refresh token, then synchronously notifies listeners. `expireBrowserSession` publishes exactly one expiry event only when it clears the expected current generation.
+
+The auth store continues to expose its existing `token`, `user`, `isAuthenticated`, `isAdmin`, `login`, `logout`, and `fetchMe` members, and adds:
+
+```ts
+function ensureUser(): Promise<User | null>
+function devLogin(): Promise<User | null>
+```
+
+The returned Pinia `token` remains writable for existing test/setup compatibility, but its setter delegates to `replaceBrowserSession` or `clearBrowserSession`; production views do not assign it. `login()` and `devLogin()` parse `AuthTokenPayload`, replace the session even when the token string is unchanged, and await the new generation's shared identity request.
+
+The router exports one installable production policy with test cleanup:
+
+```ts
+export function installAuthNavigationGuards(router: Router): () => void
+```
+
+The returned disposer removes both Vue Router guards and the auth-expiry subscription. `router/index.ts` installs it once and ignores the production-lifetime disposer.
+
+## Route And Session Matrix
+
+| Destination / transition | Identity and session action | Chunk action | Redirect / stale-work rule |
 | --- | --- | --- | --- |
 | Public, no token | none | start immediately | none |
-| OAuth public, token and no user | start shared hydration | start immediately | device redirects only if hydration invalidates the token |
-| Login, verified user | none | do not load Login | redirect synchronously to the existing safe target |
-| Login, token and no user | start shared hydration | start immediately | redirect only after verified success and only if navigation is still current |
-| Ordinary protected, no token | none | do not load protected chunk | redirect to Login with `to.fullPath` |
-| Ordinary protected, token and no user | start shared hydration | start immediately | redirect to Login after `401` only if navigation is still current |
-| Admin, token and no user | await shared hydration | start only after verified admin | invalid token goes to Login; non-admin goes to `/` |
+| OAuth Authorize, token/no user | start shared hydration | start immediately | remain on OAuth after success or expiry |
+| OAuth Device, token/no user | start shared hydration | start immediately | remain after success; expiry goes to Login with `redirect=/oauth/device...` |
+| Login, verified user | none | do not load Login | synchronously use existing safe redirect |
+| Login, token/no user | start shared hydration | start immediately | verified success redirects only for the current navigation generation; expiry leaves Login visible |
+| Ordinary protected, no token | none | do not load protected chunk | Login with captured safe `to.fullPath` |
+| Ordinary protected, token/no user | start shared hydration | start immediately | expiry goes to Login only for the current confirmed navigation |
+| Admin, token/no user | await shared hydration | start only after verified admin | after await, a superseded navigation returns no redirect; current invalid goes to Login and current non-admin goes to `/` |
 | Admin, verified admin | none | start immediately | none |
+| Logout during refresh A | invalidate A | unrelated current chunk unchanged | A refresh cannot write, expire again, or retry |
+| Login B during refresh A | replace A with B | B identity request starts | A refresh cannot write, clear B, retry under B, or replace B user |
+| Same-token replacement | advance generation despite equal token text | new identity request starts | older response cannot join or update replacement |
+| Same-session refresh A -> A2 | rotate within the captured generation | current route continues | Pinia/storage become A2; original request retries once; one current-user flight resolves |
+| Final current-session refresh failure | clear matching generation and emit expiry | destination already allowed by route policy may stay visible | router applies the current destination's policy; Axios never hard-navigates |
+| Admin pending -> OAuth -> admin resolves non-admin/401 | newer OAuth navigation advances navigation generation | admin loader stays uncalled; OAuth loader remains current | old admin guard returns no redirect before Vue Router cancels it |
 
 ## File Map
 
-- `frontend/src/stores/auth.ts`: own current-user single-flight, token/session-generation isolation, stale-response protection, login/logout state transitions, and `ensureUser()`.
-- `frontend/src/router/authGuard.ts`: own public/protected/admin scheduling plus post-confirmation hydration redirects.
-- `frontend/src/router/index.ts`: retain route definitions and install the shared guard; mark only the OAuth device route for delayed invalid-token redirect.
-- `frontend/src/__tests__/auth-store.test.ts`: prove one current-user request, retry, token replacement, and stale-response safety.
-- `frontend/src/__tests__/router-hydration.test.ts`: prove observable chunk/request ordering, immediate route skeletons, public behavior, admin fail-closed behavior, and navigation-race safety.
-- `frontend/src/__tests__/router.test.ts`: retain route registry, safe redirect, and existing authorization regression coverage against the installed production guard.
-- `docs/architecture.md`: record the landed frontend routing/identity critical path.
-- `docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md`: live execution ledger and delivery evidence.
+- Create `frontend/src/auth/browserSession.ts`: own browser token persistence, logical session generations, compare-and-rotate semantics, transition notifications, and the auth-expiry signal.
+- Modify `frontend/src/api/client.ts`: stamp requests with their originating generation, key refresh single-flight by generation, use compare-and-rotate, reject stale retries, publish expiry, and remove hard navigation.
+- Modify `frontend/src/stores/auth.ts`: mirror session-owner transitions into Pinia, own login/Dev Login/logout transitions, and provide generation-keyed current-user single-flight.
+- Modify `frontend/src/views/LoginView.vue`: call `auth.devLogin()` and stop writing Pinia/localStorage credentials directly.
+- Modify `frontend/src/__tests__/auth-store.test.ts`: prove identity single-flight, same-token replacement, stale response rejection, and all store-owned credential transitions.
+- Modify `frontend/src/__tests__/client.test.ts`: exercise the real registered Axios interceptor with deferred refresh/logout/login races, coherent A-to-A2 rotation, no hard navigation, and route-level expiry policy.
+- Modify `frontend/src/__tests__/login-view.test.ts`: prove Dev Login enters through the store transition rather than view-owned credential writes.
+- Create `frontend/src/router/authGuard.ts`: own safe redirect resolution, parallel hydration scheduling, admin fail-closed awaits, navigation generations, delayed follow-ups, and current-route expiry policy.
+- Modify `frontend/src/router/index.ts`: retain routes/imports/error handling, add the OAuth Device expiry meta policy, and install the shared guard exactly once.
+- Create `frontend/src/__tests__/router-hydration.test.ts`: prove lazy-loader/request ordering, visible shells, single-flight, admin gating, and superseded-navigation behavior with the production guard.
+- Modify `frontend/src/__tests__/router.test.ts`: replace simplified duplicate guards with the production installer while retaining route registry and authorization regressions.
+- Modify `frontend/e2e_role_test.py`: read an optional `AE_E2E_BASE_URL`, preserving `http://localhost:5173` as the direct-invocation default.
+- Modify `docs/architecture.md`: record only the landed session/refresh/routing critical path and the new guard/session module responsibilities.
+- Maintain `docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md`: record only completed steps and earned evidence.
 
 ---
 
-### Task 1: Make Current-User Hydration Token-Aware And Single-Flight
+### Task 1: Unify Browser Session Ownership And Current-User Hydration
 
 **Files:**
+- Create: `frontend/src/auth/browserSession.ts`
+- Modify: `frontend/src/api/client.ts`
 - Modify: `frontend/src/stores/auth.ts`
+- Modify: `frontend/src/views/LoginView.vue`
 - Modify: `frontend/src/__tests__/auth-store.test.ts`
+- Modify: `frontend/src/__tests__/client.test.ts`
+- Modify: `frontend/src/__tests__/login-view.test.ts`
 - Maintain: `docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md`
 
 **Interfaces:**
-- Consumes: existing `getMe()`, `token`, `user`, `fetchMe()`, `login()`, and `logout()` behavior.
-- Produces: `ensureUser(): Promise<User | null>` and a token-keyed in-flight request shared by `ensureUser()` and `fetchMe()`.
+- Consumes: existing `AuthTokenPayload`, `login()`, `devLogin()`, `getMe()`, Axios request/response interceptors, Pinia auth state, and work-item count reset.
+- Produces: every `Browser Session Interface` above plus store `ensureUser(): Promise<User | null>` and `devLogin(): Promise<User | null>`.
+- Invariant for Task 2: an expiry is published only after the matching generation is cleared; `readLatestAuthExpiry()` returns that event so a navigation that confirms after publication can still apply it.
 
-- [ ] **Step 1: Add deferred single-flight and token-isolation tests**
+- [ ] **Step 1: Write failing store/session tests before implementation**
 
-Add a typed deferred helper to `auth-store.test.ts`, then add these exact cases:
+Extend `auth-store.test.ts` with a typed deferred helper and these exact cases. Use `readBrowserSession()` for generation assertions and assert `getMe` call counts before resolving deferred promises:
 
 ```text
-two concurrent ensureUser calls with token-a in one session generation issue one getMe and resolve to the same alice user
-ensureUser with an already loaded user issues zero getMe calls
-a transient getMe rejection settles the flight and the next ensureUser retries once
-logout while token-a getMe is pending clears tokens and the later token-a response cannot restore user
-changing from token-a to token-b starts a separate token-b request and token-a cannot overwrite token-b user
-logout followed by a new session that reuses token-a starts a new request and rejects the older generation's response
-two concurrent fetchMe calls for the same token also share the same request
+two concurrent ensureUser/fetchMe callers in generation A issue one getMe and resolve to alice
+ensureUser with an already loaded user issues no getMe
+a transient getMe rejection settles the flight and the next call retries
+logout while generation A getMe is pending clears both tokens and A cannot restore user
+normal login B while generation A getMe is pending starts a B request and A cannot overwrite bob
+two normal logins that both return token-a create distinct generations and distinct getMe requests
+the older same-token response cannot update the newer generation
+login with no refresh token removes a refresh token left by the previous generation
+mocked current-generation 401 expires the session once; stale-generation 401 does not clear the replacement
 ```
 
-Use only `alice@example.com`, `bob@example.org`, `token-a`, and `token-b`. Assert API call counts before resolving each deferred promise, not only after completion.
+Preserve the existing missing-token, missing-response-data, work-item reset, and non-401 behavior tests. Replace direct production-style localStorage writes in this file with session-owner setup except the one explicit startup-persistence test.
 
-- [ ] **Step 2: Run the auth-store tests and record RED**
+- [ ] **Step 2: Write failing real-interceptor and Dev Login tests**
+
+Enhance the hoisted Axios harness in `client.test.ts` so `client.get('/auth/me')` executes the registered request interceptor, returns a controlled 401 through the registered response interceptor, and lets the retried callable client resolve a synthetic `/auth/me` response. Add deferred cases that use the real auth store and real registered client interceptor:
+
+```text
+logout during refresh A leaves access/refresh absent; the late refresh cannot write, retry, or emit a second expiry
+normal login B during refresh A preserves B tokens and bob user; A cannot retry under B
+Dev Login during refresh A installs the synthetic admin session through auth.devLogin; A cannot write or retry afterward
+a 401 from a request stamped with old generation A after login B neither refreshes nor expires B
+successful same-session A-to-A2 refresh retries /auth/me exactly once and leaves auth.token, localStorage, and alice user on A2
+two same-generation 401 responses share one refresh request
+final refresh failure clears the matching session and emits once without changing window.location
+credential auth endpoint 401 and uncredentialed request 401 do not refresh or expire a session
+```
+
+Update `login-view.test.ts` so its Dev Login case calls the real store path over the mocked auth API and proves `auth.devLogin()` installs `dev-token`/`dev-refresh`, loads the synthetic admin, and redirects. Add a component-level spy on `auth.devLogin` and assert it is the credential transition invoked by the button; remove the view's direct `apiDevLogin` import so there is no second production writer.
+
+- [ ] **Step 3: Run focused tests and record RED**
 
 Run:
 
 ```bash
-(cd frontend && npm test -- src/__tests__/auth-store.test.ts)
+(cd frontend && npm test -- src/__tests__/auth-store.test.ts src/__tests__/client.test.ts src/__tests__/login-view.test.ts)
 ```
 
-Expected: FAIL because `ensureUser` does not exist and current `fetchMe` starts one request per caller without token-generation protection.
+Expected: FAIL because `browserSession.ts`, `ensureUser`, store-owned `devLogin`, request generation stamps, compare-and-rotate refresh, and the expiry signal do not exist; current client tests also observe the forbidden hard redirect.
 
-- [ ] **Step 3: Implement the shared current-user request**
+- [ ] **Step 4: Implement the session owner and Pinia adapter minimally**
 
-In `auth.ts`, keep one closure-owned request record:
+Create the focused module directory, then create `browserSession.ts` with the exact interfaces above:
+
+```bash
+mkdir -p frontend/src/auth
+```
+
+Keep `generation` module-local, read both token keys from `localStorage` in `readBrowserSession()`, persist both keys before synchronous listeners run, and copy snapshots into events so later writes cannot mutate prior evidence.
+
+In `auth.ts`, subscribe to `onBrowserSessionTransition` for the store's lifetime and dispose the listener with the store scope. Use a writable computed `token` adapter so existing setup code delegates into the owner. On `replace`, `clear`, or `expire`, synchronously clear `user`, clear the current-user request record, and reset previous-user work-item counts; on `rotate`, update the exposed token without discarding a verified same-session user.
+
+Use this request record and no token-string-only reuse:
 
 ```ts
 type CurrentUserRequest = {
-  token: string | null
   generation: number
   promise: Promise<User | null>
 }
 
 let currentUserRequest: CurrentUserRequest | null = null
-let sessionGeneration = 0
 ```
 
-Implement these rules without changing the backend API contract:
+`ensureUser()` returns the loaded user, returns `null` without a token, or delegates to `fetchMe()`. `fetchMe()` captures `readBrowserSession().generation`, reuses only that generation's record, and applies success/non-401/401 results only while the captured generation is current. A current mocked 401 calls `expireBrowserSession(capturedGeneration)`; a real client expiry has already advanced the generation, so the store does not clear or emit again. The `finally` block clears only its own request record.
+
+Factor one private `installLoginPayload(payload: AuthTokenPayload): Promise<User | null>` that validates the access token, calls `replaceBrowserSession`, then calls `ensureUser`. Both `login(req)` and `devLogin()` use it. `LoginView.handleDevLogin()` becomes:
 
 ```ts
-function ensureUser(): Promise<User | null> {
-  if (user.value) return Promise.resolve(user.value)
-  return fetchMe()
+const user = await auth.devLogin()
+if (user) {
+  router.push('/')
 }
 ```
 
-`fetchMe()` captures the current token and `sessionGeneration`, reuses only a request with that exact pair, and clears only its own request record in `finally`. It applies a success or error to store state only when both the current token and generation still equal the captured values. A current-session `401` calls the existing `logout()` path; a stale request does not clear or replace the newer session. `logout()` increments the generation and clears the request record before clearing credentials. Successful login increments the generation and clears the previous user/request before storing the new token and calling `fetchMe()`.
+Keep the existing null-data behavior by remaining on Login without installing a session or redirecting.
 
-Return `User | null` from both success and handled-error paths so background router hydration never creates an unhandled rejected promise. Preserve the existing non-401 behavior of clearing the current user without clearing the token.
+- [ ] **Step 5: Make Axios generation-aware and remove hard navigation**
 
-- [ ] **Step 4: Verify focused and store-adjacent GREEN**
+In `client.ts`, replace `refreshPromise` with an identity-bearing flight:
+
+```ts
+type AuthenticatedRequestConfig = InternalAxiosRequestConfig & {
+  _authGeneration?: number
+  _retry?: boolean
+}
+
+type RefreshFlight = {
+  generation: number
+  promise: Promise<string | null>
+}
+```
+
+The request interceptor reads one `BrowserSessionSnapshot`, installs its access token, and stamps `_authGeneration`. The response interceptor refreshes only when that stamp still equals the current generation, shares a flight only for that generation, and clears only the same flight object in `finally`.
+
+`refreshAccessToken(captured)` posts the captured refresh token, parses the current response variants, throws on a malformed response with no access token, and calls `rotateBrowserSession(captured.generation, nextTokens)`. A `null` rotation therefore means only that the session was replaced while refresh was pending: reject the original error without writing, retrying, expiring, or joining the replacement. Before retry, recheck generation and use the rotated access token. On a final failure or missing refresh token, call `expireBrowserSession(capturedGeneration)` only if it is still current, then reject the original error. Delete `clearAuthAndRedirect` and every `window.location` write.
+
+- [ ] **Step 6: Verify focused GREEN, adjacent regressions, and build**
 
 Run:
 
 ```bash
-(cd frontend && npm test -- src/__tests__/auth-store.test.ts src/__tests__/app-sidebar.test.ts)
+(cd frontend && npm test -- src/__tests__/auth-store.test.ts src/__tests__/client.test.ts src/__tests__/login-view.test.ts src/__tests__/app-sidebar.test.ts src/__tests__/oauth-authorize-page.test.ts src/__tests__/oauth-device-page.test.ts)
 (cd frontend && npm run build)
 git diff --check
 ```
 
-Expected: all tests PASS, TypeScript/build PASS, concurrent same-session calls record one `getMe`, new token/session generations remain isolated including same-token reuse, and existing login/logout/sidebar behavior remains unchanged.
+Expected: all selected tests PASS; build/type-check PASS; no old refresh writes/retries after logout or B login; same-token replacement starts a new identity flight; A-to-A2 refresh keeps one identity flight and synchronizes store/storage; Dev Login uses the store transition; no hard navigation remains.
 
-- [ ] **Step 5: Commit Task 1 and record the checkpoint**
+- [ ] **Step 7: Obtain Task 1 review and commit only after fixes are green**
 
-Commit implementation plus completed Steps 1-4:
+Generate the ignored review diff and `.superpowers/sdd/task-1-brief.md` with the test evidence, interfaces, and five required race scenarios:
 
 ```bash
-git add frontend/src/stores/auth.ts frontend/src/__tests__/auth-store.test.ts docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
-git commit -m "perf(frontend): collapse current user hydration"
+git add -N frontend/src/auth/browserSession.ts
+git diff --binary HEAD > .superpowers/sdd/task-1-review.diff
 ```
 
-After the commit succeeds, check Step 5 and commit the ledger checkpoint:
+Obtain an independent task-level spec/quality review over that package. Fix every Critical or Important finding with a new focused RED/GREEN cycle.
+
+After review passes, check Steps 1-6 and record their actual evidence, then commit:
+
+```bash
+git add frontend/src/auth/browserSession.ts frontend/src/api/client.ts frontend/src/stores/auth.ts frontend/src/views/LoginView.vue frontend/src/__tests__/auth-store.test.ts frontend/src/__tests__/client.test.ts frontend/src/__tests__/login-view.test.ts docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
+git commit -m "perf(frontend): isolate browser auth generations"
+```
+
+Only after that commit succeeds, check Step 7, stage this ledger, and amend the still-unpushed Task 1 commit so the successful commit checkbox is not pre-checked:
 
 ```bash
 git add docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
-git commit -m "docs(plan): record identity hydration task 1"
+git commit --amend --no-edit
+git status --short
 ```
+
+Expected: Task 1 review passes and the tracked worktree is clean.
 
 ---
 
-### Task 2: Schedule Public, Ordinary, And Admin Routes Independently
+### Task 2: Schedule Routes Safely And Make Role E2E Worktree-Selectable
 
 **Files:**
 - Create: `frontend/src/router/authGuard.ts`
 - Modify: `frontend/src/router/index.ts`
 - Create: `frontend/src/__tests__/router-hydration.test.ts`
 - Modify: `frontend/src/__tests__/router.test.ts`
+- Modify: `frontend/src/__tests__/client.test.ts`
+- Modify: `frontend/e2e_role_test.py`
 - Maintain: `docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md`
 
 **Interfaces:**
-- Consumes: Task 1 `ensureUser(): Promise<User | null>`, `auth.isAuthenticated`, `auth.user`, and `auth.isAdmin`.
-- Produces: `installAuthNavigationGuards(router: Router): void`; `router/index.ts` installs it exactly once.
+- Consumes: Task 1 `ensureUser()`, browser-session snapshots, `readLatestAuthExpiry()`, `onAuthExpiry()`, and existing route meta.
+- Produces: `installAuthNavigationGuards(router: Router): () => void` and `AE_E2E_BASE_URL` with default `http://localhost:5173`.
+- Admin rule: capture `navigationGeneration` before `await auth.ensureUser()` and compare it immediately afterward, before returning Login, `/`, or any other redirect.
 
-- [ ] **Step 1: Add a production-guard route harness with delayed component loaders**
+- [ ] **Step 1: Add failing production-guard ordering and navigation-race tests**
 
-Create `router-hydration.test.ts` with a memory router, a Pinia instance, deferred `getMe`, and lazy component loaders that return components containing stable skeleton markers. Install the real exported guard rather than duplicating guard logic in the test.
-
-Add these exact observable cases:
+Create `router-hydration.test.ts` with a fresh Pinia, memory router, deferred mocked `getMe`, and lazy component loaders returning components with stable `data-route-skeleton` markers. Install the exported production guard and dispose it after each test. Add these observable cases without elapsed-time assertions:
 
 ```text
-ordinary /usage: getMe starts, the usage loader runs, navigation resolves, and data-route-skeleton="usage" renders before getMe resolves
-public /login with a token: Login loader and shell render before getMe resolves; verified identity then redirects to the safe query target
-public /oauth/authorize with a token: OAuth loader renders before getMe resolves and remains on OAuth after success
-public routes without a token: loader renders and getMe call count remains zero
-protected /usage invalid token: chunk may render its loading state, then 401 clears tokens and redirects to Login with redirect=/usage
-admin /settings: getMe starts but the settings loader remains uncalled until an admin identity resolves
-admin /settings with non-admin identity: settings loader is never called and navigation redirects through `/` to `/usage`
-admin /settings with invalid token: settings loader is never called and navigation redirects to Login
-one navigation: before-guard hydration plus after-confirmation follow-up still records exactly one getMe
-superseded Login navigation: delayed successful hydration cannot redirect a later OAuth navigation
-same-path Login A -> OAuth -> Login A: the shared hydration can redirect only the newest Login generation and calls router.replace once
-OAuth device with an invalid stored token: its chunk renders first, then the delayed invalidation redirects to Login
+/usage with token: getMe starts, usage loader runs, navigation confirms, and usage skeleton renders before identity resolves
+/login with token: Login loader/shell renders first; verified identity redirects to the safe query target
+/oauth/authorize with token: OAuth loader/shell renders first and remains after verified identity
+public routes without token: loader renders and getMe count stays zero
+/settings with pending identity: settings loader stays uncalled until an admin resolves
+/settings non-admin and 401: settings loader stays uncalled; current navigation redirects to / or Login respectively
+one navigation: before/after follow-up paths still issue one getMe
+pending Login -> OAuth: old successful hydration cannot redirect OAuth
+Login A -> OAuth -> Login A: only the newest Login generation may replace, exactly once
+pending Admin -> OAuth Authorize then non-admin resolves: OAuth remains current and admin loader stays uncalled
+pending Admin -> OAuth Authorize then current-session 401 resolves: OAuth remains current and admin loader stays uncalled
+OAuth Device invalid identity: its chunk/shell renders before delayed redirect to Login
 ```
 
-Use deferred-promise assertions and `flushPromises`; do not use elapsed-time thresholds.
+For both pending Admin -> OAuth cases, assert the OAuth loader has run before resolving identity and assert `settingsLoader` remains at zero after all promises settle. The old admin guard must return no redirect when its captured generation is no longer current.
 
-- [ ] **Step 2: Run the route ordering tests and record RED**
+- [ ] **Step 2: Add failing real-interceptor route-expiry tests and harness selection probe**
+
+Extend the real Axios harness in `client.test.ts` with memory routes that use `installAuthNavigationGuards`. Drive `/auth/me` through the registered response interceptor and a failed deferred refresh, rather than mocking `getMe`, then prove:
+
+```text
+confirmed protected /usage -> /login?redirect=/usage
+confirmed Login stays on Login and preserves its safe redirect query
+confirmed OAuth Authorize stays on OAuth Authorize
+confirmed OAuth Device -> /login?redirect=/oauth/device
+no case changes window.location
+an expiry published while navigation is pending is applied after the destination confirms, not to the previous route
+```
+
+Run this pre-implementation environment-variable probe:
+
+```bash
+(cd frontend && AE_E2E_BASE_URL=http://127.0.0.1:41732 python3 -c "import os, e2e_role_test; assert e2e_role_test.BASE == os.environ['AE_E2E_BASE_URL']")
+```
+
+Expected: FAIL because the harness still hard-codes `http://localhost:5173`.
+
+- [ ] **Step 3: Run focused route tests and record RED**
 
 Run:
 
 ```bash
-(cd frontend && npm test -- src/__tests__/router-hydration.test.ts src/__tests__/router.test.ts)
+(cd frontend && npm test -- src/__tests__/router-hydration.test.ts src/__tests__/router.test.ts src/__tests__/client.test.ts)
 ```
 
-Expected: FAIL because the current global guard awaits `fetchMe()` before every lazy route, has no installable scheduling module, and cannot attach navigation-safe background follow-ups.
+Expected: FAIL because the inline global guard serializes every lazy route, no installable generation-aware guard exists, admin redirects are not supersession-safe, and the client expiry has no destination-owned policy.
 
-- [ ] **Step 3: Implement one installable auth navigation policy**
+- [ ] **Step 4: Implement the production navigation policy**
 
-Create `authGuard.ts` with the current safe-redirect validation and one exported installer:
+Create `authGuard.ts` with safe redirect validation and one `installAuthNavigationGuards` implementation. Maintain these closure-owned monotonic records:
 
 ```ts
-export function installAuthNavigationGuards(router: Router): void
+type PendingHydration = {
+  navigationGeneration: number
+  fullPath: string
+  routeName: RouteRecordName | null | undefined
+  kind: 'login' | 'protected' | 'oauth-device'
+  safeRedirect: string | null
+  promise: Promise<User | null>
+}
+
+type NavigationAttempt = {
+  navigationGeneration: number
+  fullPath: string
+  routeName: RouteRecordName | null | undefined
+}
+
+let navigationGeneration = 0
+let activeNavigation: NavigationAttempt | null = null
+let confirmedNavigation: NavigationAttempt | null = null
+let pendingHydration: PendingHydration | null = null
 ```
 
-The installer registers one `beforeEach` and one `afterEach`. Every before guard increments a monotonic navigation generation, invalidates the previous pending follow-up, and applies the Route Scheduling Matrix:
+Each `beforeEach` increments `navigationGeneration` before any branch and stores the resulting destination identity in `activeNavigation`. Apply the Route And Session Matrix:
 
 ```text
-public: start ensureUser without await when token exists and user is absent
-Login + verified user: return the existing safe redirect immediately
-ordinary protected: reject no-token navigation immediately; otherwise start ensureUser without await
-admin: reject no token; await ensureUser when needed; recheck token; then require isAdmin before returning
+public: when token exists and user is absent, call ensureUser without await
+Login + verified user: return the existing safe redirect synchronously
+ordinary protected: reject no-token immediately; otherwise call ensureUser without await
+admin: reject no-token; when identity is absent await the shared ensureUser promise
 ```
 
-For Login, ordinary protected routes, and the OAuth device route, store at most one pending follow-up containing the captured navigation generation, destination route identity and `fullPath`, follow-up kind, safe redirect, and the Task 1 promise. The after guard attaches to that promise only when its confirmed destination matches that exact pending generation. Before calling `router.replace`, it must recheck both that the captured generation is still current and that `router.currentRoute.value.fullPath` still equals the captured destination. A later navigation increments the generation even when it returns to the same `fullPath`, so an older follow-up cannot redirect or duplicate a redirect for the newer navigation.
+The administrator branch captures its generation before the await. Immediately after the await, compare it to the latest `navigationGeneration`. On mismatch, return `undefined` and let Vue Router cancel the superseded navigation. Only a matching generation may recheck token/user and return Login for invalid identity, `/` for non-admin, or allow the lazy admin loader.
 
-Mark the existing OAuth device route with one explicit meta flag used only for post-hydration invalid-token redirect; keep `meta.public=true`. Move no route and change no lazy import.
+Store at most one `PendingHydration` for Login, ordinary protected, or OAuth Device. `afterEach` ignores failed/cancelled navigations and updates `confirmedNavigation` only when `to.name` and `to.fullPath` still match `activeNavigation`; this also covers OAuth Authorize, which has no redirect follow-up. Before any `router.replace`, recheck active and confirmed navigation generations, route name, `fullPath`, and current browser-session state. A same-path later navigation has a different generation and invalidates the older follow-up.
 
-Replace the inline guard in `router/index.ts` with exactly one `installAuthNavigationGuards(router)` call. Keep `handleRouterError`, chunk reload recovery, and all route definitions otherwise unchanged.
+Subscribe to `onAuthExpiry`. If a navigation is pending, retain the event and let successful `afterEach` apply it to the confirmed destination via `readLatestAuthExpiry`; do not redirect the previous route. If no navigation is pending, schedule one microtask and recheck confirmed generation, route identity/fullPath, cleared generation, and absence of a token before applying:
 
-- [ ] **Step 4: Migrate existing router tests to the production guard**
+```text
+Login -> no redirect
+OAuthAuthorize -> no redirect
+meta.redirectOnAuthExpiry -> Login with safe current fullPath
+non-public route -> Login with safe current fullPath
+other public route -> no redirect
+```
 
-Remove hand-written simplified guards from `router.test.ts`. Use `installAuthNavigationGuards` on its local routers and retain existing assertions for unauthenticated redirects, protected routes, safe Login redirects, invalid-token cleanup, admin role rejection, route registry, and chunk error handling.
+Return a disposer that unregisters `beforeEach`, `afterEach`, and the expiry listener. In `router/index.ts`, mark only OAuth Device with `meta.redirectOnAuthExpiry = true`, remove the inline guard, and call `installAuthNavigationGuards(router)` once. Preserve all route records, lazy imports, `handleRouterError`, and chunk reload behavior.
 
-Ensure each test creates a fresh router and Pinia or uses a unique path/query; no test may depend on a previous global-router navigation.
+- [ ] **Step 5: Make the role harness select an explicit worktree server**
 
-- [ ] **Step 5: Verify focused, full frontend, build, and role behavior**
+In `e2e_role_test.py`, retain the current direct-run default and normalize only trailing slashes:
+
+```py
+BASE = os.environ.get("AE_E2E_BASE_URL", "http://localhost:5173").rstrip("/")
+```
+
+Update the usage docstring with both the default command and `AE_E2E_BASE_URL=http://127.0.0.1:PORT npm run test:e2e:role`. Do not change mocked role behavior, test counts, screenshots, API route patterns, or `API` unless a failing test proves it is needed.
+
+Re-run the probe from Step 2. Expected: PASS with `BASE == http://127.0.0.1:41732`.
+
+- [ ] **Step 6: Migrate existing router regressions to the production guard**
+
+In `router.test.ts`, remove simplified hand-written guards. Install and dispose `installAuthNavigationGuards` on fresh local routers and Pinia instances. Retain route registry, unauthenticated safe redirect, authenticated route access, Login safe redirect, invalid-token cleanup, admin role rejection, OAuth device meta, and chunk-error assertions. Use a unique navigation or fresh router for every case; no test may depend on singleton-router state from a prior case.
+
+- [ ] **Step 7: Verify focused/full frontend, build, and isolated role E2E**
 
 Run:
 
 ```bash
-(cd frontend && npm test -- src/__tests__/auth-store.test.ts src/__tests__/router-hydration.test.ts src/__tests__/router.test.ts src/__tests__/oauth-authorize-page.test.ts src/__tests__/oauth-device-page.test.ts)
+(cd frontend && npm test -- src/__tests__/auth-store.test.ts src/__tests__/client.test.ts src/__tests__/login-view.test.ts src/__tests__/router-hydration.test.ts src/__tests__/router.test.ts src/__tests__/oauth-authorize-page.test.ts src/__tests__/oauth-device-page.test.ts)
 (cd frontend && npm test)
 (cd frontend && npm run build)
-(cd frontend && npm run test:e2e:role)
 git diff --check
 ```
 
-Expected: focused and full Vitest PASS, TypeScript/build PASS, role E2E reports 16/16 when run against this worktree, ordinary/public loaders precede delayed identity completion, admin loaders remain fail-closed, and every navigation records at most one `getMe` request.
-
-Report role E2E separately with the exact worktree server URL and process cleanup. If port 5173 is occupied by another worktree, do not treat that other server as evidence; use an isolated current-worktree port, restore any temporary harness edit byte-for-byte, and stop only the server started for this check.
-
-- [ ] **Step 6: Commit Task 2 and record the checkpoint**
-
-Commit implementation plus completed Steps 1-5:
+Then run this self-contained command from the worktree root. It chooses an available loopback port, requires this Vite PID to remain alive, waits for this server, passes the exact URL to Playwright, and kills only the owned process through `trap`:
 
 ```bash
-git add frontend/src/router/authGuard.ts frontend/src/router/index.ts frontend/src/__tests__/router-hydration.test.ts frontend/src/__tests__/router.test.ts docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
+(
+  set -eu
+  cd frontend
+  worktree=$(git rev-parse --show-toplevel)
+  port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+  base_url="http://127.0.0.1:${port}"
+  vite_log=$(mktemp -t ae-route-hydration-vite.XXXXXX)
+  npm run dev -- --host 127.0.0.1 --port "$port" --strictPort >"$vite_log" 2>&1 &
+  vite_pid=$!
+  cleanup() {
+    kill "$vite_pid" 2>/dev/null || true
+    wait "$vite_pid" 2>/dev/null || true
+    rm -f "$vite_log"
+  }
+  trap cleanup EXIT INT TERM
+  ready=0
+  for _ in $(seq 1 80); do
+    if ! kill -0 "$vite_pid" 2>/dev/null; then
+      cat "$vite_log"
+      exit 1
+    fi
+    if curl --fail --silent --show-error "$base_url/login" >/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 0.25
+  done
+  if [ "$ready" -ne 1 ]; then
+    cat "$vite_log"
+    exit 1
+  fi
+  printf 'role-e2e worktree=%s pid=%s base=%s\n' "$worktree" "$vite_pid" "$base_url"
+  AE_E2E_BASE_URL="$base_url" npm run test:e2e:role
+)
+```
+
+Expected: focused/full Vitest and build PASS; role E2E reports all current checks passing against the printed current-worktree URL; the trap stops the printed PID. Report E2E separately from normal unit/build results.
+
+- [ ] **Step 8: Obtain Task 2 review and commit only after fixes are green**
+
+Generate the ignored review diff and `.superpowers/sdd/task-2-brief.md` with the exact server URL/PID cleanup evidence, route/session matrix, admin supersession cases, and real-interceptor outcomes:
+
+```bash
+git add -N frontend/src/router/authGuard.ts frontend/src/__tests__/router-hydration.test.ts
+git diff --binary HEAD > .superpowers/sdd/task-2-review.diff
+```
+
+Obtain an independent task-level spec/quality review over that package. Fix every Critical or Important finding with focused RED/GREEN evidence and rerun Step 7 after the last production change.
+
+After review passes, check Steps 1-7 and record earned evidence, then commit:
+
+```bash
+git add frontend/src/router/authGuard.ts frontend/src/router/index.ts frontend/src/__tests__/router-hydration.test.ts frontend/src/__tests__/router.test.ts frontend/src/__tests__/client.test.ts frontend/e2e_role_test.py docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
 git commit -m "perf(frontend): parallelize safe route hydration"
 ```
 
-After the commit succeeds, check Step 6 and commit the ledger checkpoint:
+Only after that commit succeeds, check Step 8 and amend the still-unpushed Task 2 commit:
 
 ```bash
 git add docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
-git commit -m "docs(plan): record route hydration task 2"
+git commit --amend --no-edit
+git status --short
 ```
+
+Expected: Task 2 review passes and the tracked worktree is clean.
 
 ---
 
-### Task 3: Architecture, Full Verification, Reviews, And Draft PR Delivery
+### Task 3: Architecture, Full Verification, Final Reviews, And Three-Round CI Delivery
 
 **Files:**
 - Modify: `docs/architecture.md`
 - Maintain: `docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md`
-- Review only: every file changed since `5f6c58e`
+- Review only: every file changed from `5f6c58e6821dfcd95eefff14ea3426d454ae86cd`
 
 **Interfaces:**
-- Consumes: Tasks 1-2, issue #122, the active performance contract, and repository agent rules.
-- Produces: current architecture truth, complete verification evidence, independent review gates, and a draft PR against the contract branch.
+- Consumes: Tasks 1-2, issue #122, the active performance contract, task-review evidence, and repository agent rules.
+- Produces: current architecture truth, complete local verification, independent final SPEC/standards gates, an open draft PR, two evidence-bearing CI rounds, and a third final-current-head CI gate whose source of truth is GitHub.
 
 - [ ] **Step 1: Update current architecture after behavior lands**
 
-Update the frontend route/runtime paragraphs in `docs/architecture.md` to state only the landed behavior:
+Update the frontend runtime/auth paragraphs and module table in `docs/architecture.md` with only landed behavior:
 
 ```text
-Current-user hydration is single-flight per token. Public and ordinary authenticated route chunks start without waiting for identity; ordinary protected routes converge to Login after invalid-token hydration. Administrator lazy chunks remain blocked until the current role is verified. Login/OAuth shells can render while identity is pending, and delayed redirects are scoped to the navigation that started them.
+Browser access/refresh credentials are owned by one generation-aware frontend session boundary used by Pinia and Axios. Login, Dev Login, logout, and refresh cannot accept work from an invalidated generation; same-session refresh synchronizes the store and browser persistence. Public and ordinary authenticated route chunks start without waiting for identity, administrator loaders remain blocked until the current role is verified, and delayed redirects are scoped to monotonic navigation generations. Final refresh failure emits a shared expiry event; the current route chooses Login/OAuth behavior.
 ```
 
-Add `frontend/src/router/authGuard.ts` to the frontend module responsibility row. Do not change backend authentication/token contracts or rewrite historical OAuth specs.
+Add `frontend/src/auth/browserSession.ts` and `frontend/src/router/authGuard.ts` to the existing frontend module responsibilities. Do not change backend token contracts or rewrite historical OAuth specs.
 
-- [ ] **Step 2: Run formatting and full repository verification**
+- [ ] **Step 2: Run complete repository verification with the same isolated role command**
 
 Run exactly:
 
@@ -290,89 +538,190 @@ Run exactly:
 (cd ae-cli && go test ./...)
 (cd frontend && npm test)
 (cd frontend && npm run build)
-(cd frontend && npm run test:e2e:role)
 bash deploy/test/release-frontend-embed-test.sh
 git diff --check
 ```
 
-Expected: all commands PASS. Report browser role E2E and the embedded frontend build separately as environment-sensitive evidence, including current-worktree server identity and cleanup. Do not check this step if any command is skipped.
+Then run the same self-contained role command used by Task 2:
 
-- [ ] **Step 3: Perform task reviews and separate final SPEC/standards reviews**
-
-After each Task 1-2 commit range, obtain an independent spec/quality review and resolve every Critical or Important finding with focused RED/GREEN evidence. Then generate one complete base-to-working-tree package from `5f6c58e` and obtain:
-
-```text
-SPEC review: issue #122 plus the 2026-07-14 routing/identity and frontend-route test contracts
-standards review: AGENTS.md, Vue/Pinia/router conventions, security, navigation races, test quality, and architecture accuracy
+```bash
+(
+  set -eu
+  cd frontend
+  worktree=$(git rev-parse --show-toplevel)
+  port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+  base_url="http://127.0.0.1:${port}"
+  vite_log=$(mktemp -t ae-route-hydration-vite.XXXXXX)
+  npm run dev -- --host 127.0.0.1 --port "$port" --strictPort >"$vite_log" 2>&1 &
+  vite_pid=$!
+  cleanup() {
+    kill "$vite_pid" 2>/dev/null || true
+    wait "$vite_pid" 2>/dev/null || true
+    rm -f "$vite_log"
+  }
+  trap cleanup EXIT INT TERM
+  ready=0
+  for _ in $(seq 1 80); do
+    if ! kill -0 "$vite_pid" 2>/dev/null; then
+      cat "$vite_log"
+      exit 1
+    fi
+    if curl --fail --silent --show-error "$base_url/login" >/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 0.25
+  done
+  if [ "$ready" -ne 1 ]; then
+    cat "$vite_log"
+    exit 1
+  fi
+  printf 'role-e2e worktree=%s pid=%s base=%s\n' "$worktree" "$vite_pid" "$base_url"
+  AE_E2E_BASE_URL="$base_url" npm run test:e2e:role
+)
 ```
 
-The final reviews must explicitly answer:
+Expected: all commands PASS. Record exact Go/Vitest/E2E counts, frontend module count, embed result, printed worktree/base/PID, and cleanup. Do not check this step if any command is skipped; keep environment-sensitive E2E evidence separate.
+
+- [ ] **Step 3: Run independent final SPEC and standards reviews**
+
+Generate the ignored complete base-to-working-tree package:
+
+```bash
+git diff --binary 5f6c58e6821dfcd95eefff14ea3426d454ae86cd > .superpowers/sdd/final-review-5f6c58e..HEAD-route-hydration.diff
+```
+
+Obtain two independent reviews over that exact package:
 
 ```text
-Can a public or ordinary route chunk still be serialized behind /auth/me?
+SPEC: issue #122 plus routing/identity and frontend-route tests in the 2026-07-14 performance contract
+STANDARDS: AGENTS.md, Vue/Pinia/Axios/router conventions, credential security, session/navigation races, test quality, architecture accuracy, and live-ledger compliance
+```
+
+Both reviewers must explicitly answer:
+
+```text
+Can a public or ordinary chunk still be serialized behind /auth/me?
 Can an admin loader run before role verification or after non-admin/401 resolution?
+Can a superseded admin guard redirect a newer OAuth navigation?
 Can one navigation issue duplicate current-user requests?
-Can logout/token replacement accept a stale identity response?
-Can a superseded navigation be redirected by an older hydration promise?
-Do Login, OAuth authorize, and OAuth device preserve their visible redirect contracts?
+Can logout, normal login B, same-token replacement, or Dev Login accept stale A work?
+Can same-session A-to-A2 refresh retry once and keep Pinia/storage/user coherent?
+Can Axios choose a hard redirect or lose the protected safe redirect?
+Do protected, Login, OAuth Authorize, and OAuth Device handle real-interceptor expiry correctly?
+Does role E2E prove this worktree's strict-port server and cleanup?
 ```
 
-Fix all Critical/Important findings and record any intentionally deferred Minor item before checking this step.
+Complete every item in `Self-Review Checklist For The Implementer` and check it only after its evidence exists. Fix every Critical or Important finding. After the last production change, rerun the affected focused RED/GREEN test, all of Step 2, regenerate the package, and obtain fresh PASS/APPROVED verdicts. Record intentionally deferred Minor findings before checking this step.
 
-- [ ] **Step 4: Commit architecture and verified review evidence**
+- [ ] **Step 4: Commit architecture and earned verification/review evidence**
 
-Set the top status to state that implementation, full verification, and reviews are complete while draft PR CI remains pending. Record exact test counts, role E2E server isolation, review verdicts, and any non-fatal environment warnings. Then run:
+After Steps 1-3 are actually complete, check them and set `Status` to state: implementation, local verification, and final reviews complete; draft PR and CI pending. Commit current architecture plus earned evidence:
 
 ```bash
 git add docs/architecture.md docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
 git commit -m "docs(architecture): document parallel route hydration"
+```
+
+Only after the commit succeeds, check Step 4 and amend this still-unpushed documentation commit:
+
+```bash
+git add docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
+git commit --amend --no-edit
 git status --short
 ```
 
-Expected: clean worktree after commit.
+Expected: tracked worktree clean; ignored review packages/reports may remain.
 
-- [ ] **Step 5: Push and open the correctly based draft PR**
+- [ ] **Step 5: Push, open the draft PR, and require first-round CI**
 
-Create ignored `.superpowers/sdd/pr-122.md` with `Closes #122`, dependency on draft PR #138, route scheduling summary, invalid-token/admin safety notes, test/review evidence, and rollback notes. Then run:
+Create ignored `.superpowers/sdd/pr-122.md` with `Closes #122`, dependency on draft PR #138, session/route scheduling summary, invalid-token/admin safety, exact local test/review evidence, rollback notes, and no merge/deploy claim. Run:
 
 ```bash
 git push -u origin perf/route-hydration-122
 gh pr create --draft --base docs/performance-contracts-116 --head perf/route-hydration-122 --title "perf(frontend): parallelize route hydration safely" --body-file .superpowers/sdd/pr-122.md
-gh pr view --json number,state,isDraft,baseRefName,headRefName,mergeable,mergeStateStatus,url
+gh pr view --json number,state,isDraft,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,url
+gh pr checks --watch --fail-fast
 ```
 
-Expected: open draft PR, exact base/head, mergeable or clean state, no merge/release/deploy action.
+Expected: open draft, exact base/head, mergeable/clean or non-conflicting state, and first-round `backend`, `frontend`, `ae-cli`, and `deploy-static` checks green for the displayed `headRefOid`. Only after all four checks succeed, check Step 5 and record the head OID, check names, conclusions, run IDs/URLs, and timestamp. Do not yet claim replacement or final-current-head CI.
 
-- [ ] **Step 6: Require first-round CI, finalize the ledger, and require replacement CI**
+- [ ] **Step 6: Commit first-round evidence, then require and verify replacement CI**
 
-Wait for `backend`, `frontend`, `ae-cli`, and `deploy-static` to succeed. Only then check all completed delivery steps, set `Status: Complete`, and commit/push the final ledger:
+Commit only the already-earned first-round evidence and push it:
 
 ```bash
 git add docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
-git commit -m "docs(plan): record route hydration delivery"
+git commit -m "docs(plan): record first route hydration CI"
 git push
-gh pr checks --watch
+gh pr checks --watch --fail-fast
 ```
 
-Expected: replacement CI is green for all four jobs.
-
-- [ ] **Step 7: Verify final branch and PR state**
-
-Run:
+After replacement CI is green, verify it belongs to the current evidence commit and verify PR state:
 
 ```bash
-git status --short --branch
+head_oid=$(git rev-parse HEAD)
+test "$(git status --short)" = ""
+test "$(gh pr view --json headRefOid --jq .headRefOid)" = "$head_oid"
 gh pr view --json number,state,isDraft,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,statusCheckRollup,url
 ```
 
-Expected: clean `perf/route-hydration-122`, local HEAD equals PR head OID, draft PR remains open against `docs/performance-contracts-116`, and both CI rounds are green. Keep the worktree for review iteration; do not merge, tag, release, deploy, or run Helm.
+Expected: all four replacement checks green on `head_oid`, tracked worktree clean, draft PR still open with exact base/head, and no merge/release/deploy action. Only now check Step 6 and record the replacement head/check/run evidence. Set `Status` to: implementation/reviews/local verification/first and replacement CI complete; final ledger commit and final-current-head CI pending. Never set Complete.
 
-## Self-Review Record
+- [ ] **Step 7: Create the final ledger-only commit without pre-checking its own success**
 
-- Spec coverage: Task 1 supplies single-flight/token-safe identity; Task 2 supplies public/non-admin concurrency, admin gating, delayed redirect safety, and route-level evidence; Task 3 supplies current docs, full verification, reviews, and two CI rounds.
-- Placeholder scan: no TBD/TODO/unspecified code or test step remains.
-- Type consistency: Task 1 produces `ensureUser(): Promise<User | null>`; Task 2 consumes it and produces `installAuthNavigationGuards(router: Router): void`; Task 3 reviews those exact interfaces.
-- Route consistency: every existing path/name/import remains; only OAuth device receives an explicit delayed invalid-token meta policy.
-- Security consistency: admin chunks await verified identity; 401 remains authoritative; token plus session generation reject stale user responses across replacement/logout/same-token reuse; no user object is persisted.
-- Test consistency: all ordering/race assertions use deferred promises and call counts, never timing thresholds; every identity and redirect fixture is synthetic.
-- Scope control: no backend, Redis, Relay, sub2api, CDN, static-cache, release, deployment, or Helm behavior is added.
+Create the final ledger commit from evidence already earned in Steps 5-6:
+
+```bash
+git add docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
+git commit -m "docs(plan): finalize route hydration evidence"
+```
+
+Only after that commit succeeds, check Step 7, keep `Status` explicitly at final-current-head CI pending, and amend the unpushed commit so its own successful creation is recorded without inventing CI evidence:
+
+```bash
+git add docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
+git commit --amend --no-edit
+git status --short
+git push
+```
+
+Expected: final ledger-only commit pushed and tracked worktree clean. The push starts CI round three. Do not edit this plan, make another commit, or set Complete after this point.
+
+#### External Final-Current-Head Delivery Gate (GitHub Is The Source Of Truth)
+
+This gate deliberately has no ledger checkbox: checking it would create a newer unverified commit. After Step 7's final push, run:
+
+```bash
+final_head=$(git rev-parse HEAD)
+gh pr checks --watch --fail-fast
+test "$(git status --short)" = ""
+test "$(gh pr view --json headRefOid --jq .headRefOid)" = "$final_head"
+gh pr view --json number,state,isDraft,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,statusCheckRollup,url
+```
+
+Delivery passes only when all four third-round jobs are green for `final_head`, the worktree is clean, the PR is still open/draft with base `docs/performance-contracts-116` and head `perf/route-hydration-122`, and it is non-conflicting. GitHub checks/PR state record this mutable final gate; the committed ledger honestly records that the gate was pending when its own commit was created. Keep the worktree for review iteration; do not merge, tag, release, deploy, or run Helm.
+
+## Self-Review Checklist For The Implementer
+
+- [ ] Every browser credential writer/import found by `rg` is either the new session owner or an explicit test fixture; normal login, Dev Login, logout, and refresh use the owner.
+- [ ] Request generation is captured when Authorization is attached, not when the 401 happens.
+- [ ] Logout and login-B races prove old refresh cannot write, retry, expire, or clear the newer state.
+- [ ] Same-token replacement advances generation, while A-to-A2 refresh preserves generation and synchronizes store/storage.
+- [ ] Admin guards check navigation generation after await and before every redirect; non-admin and 401 Admin -> OAuth races are covered.
+- [ ] Axios contains no `window.location` navigation; real response-interceptor tests cover protected, Login, OAuth Authorize, and OAuth Device.
+- [ ] Delayed route work checks monotonic navigation generation plus route identity/fullPath; same-path reuse cannot fool it.
+- [ ] `AE_E2E_BASE_URL` is covered by a failing/passing probe and both Task 2 and Task 3 use the exact same strict-port/start/readiness/trap command.
+- [ ] No checkbox, status, test count, review verdict, PR state, or CI result is recorded before it exists.
+- [ ] Final current-head CI is left to the explicit external GitHub gate after the final ledger-only commit; the plan never claims Complete in advance.
+
+## Plan Self-Review Record
+
+- Spec coverage: Tasks 1-2 cover all four routing/identity contract clauses and the browser-session safety needed to make background hydration correct; Task 3 covers current architecture, full verification, independent gates, and delivery.
+- Critical review closure: Task 1 gives normal login, Dev Login, logout, and Axios one generation owner; request stamps and compare-and-rotate stop stale refresh write/retry; A-to-A2 stays coherent.
+- Admin-race closure: Task 2 requires a post-await navigation-generation check before every admin redirect and exact non-admin/401 Admin -> OAuth cases.
+- Redirect-policy closure: Axios emits expiry without navigating; the production guard applies protected/Login/OAuth Authorize/OAuth Device policy through real-interceptor tests.
+- E2E closure: the harness accepts `AE_E2E_BASE_URL`; Tasks 2 and 3 repeat one self-contained dynamic-port, strict-PID, readiness, trap-cleanup command.
+- Ledger closure: three CI rounds are explicit; no replacement/final evidence is pre-checked; the final mutable gate remains in GitHub after a clean final ledger commit.
+- Type consistency: session functions, event fields, store return types, request stamp, pending route record, guard installer/disposer, and E2E variable use the same names in File Map, tasks, tests, and review gates.
+- Scope control: no backend, Redis, Relay, sub2api, CDN, asset-serving, release, deployment, or Helm implementation is included.
