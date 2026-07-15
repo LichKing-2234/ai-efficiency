@@ -8,7 +8,6 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
-	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 )
 
@@ -24,31 +23,61 @@ type providerLister interface {
 	ListProviders(ctx context.Context, req usersetup.ListProvidersRequest) (*usersetup.ListProvidersResponse, error)
 }
 
-type Service struct {
-	client         *ent.Client
-	providerLister providerLister
+type offboardingCounter interface {
+	CountOffboardingCandidates(ctx context.Context, sourceID int) (int, error)
 }
 
-func NewService(client *ent.Client, providerListers ...providerLister) *Service {
+type Service struct {
+	client             *ent.Client
+	providerLister     providerLister
+	offboardingCounter offboardingCounter
+	countsCache        *CountsCache
+}
+
+func NewService(client *ent.Client, offboardingCounter offboardingCounter, providerListers ...providerLister) *Service {
 	var lister providerLister
 	if len(providerListers) > 0 {
 		lister = providerListers[0]
 	}
-	return &Service{client: client, providerLister: lister}
+	return &Service{client: client, providerLister: lister, offboardingCounter: offboardingCounter}
+}
+
+func (s *Service) WithCountsCache(cache *CountsCache) *Service {
+	if s != nil {
+		s.countsCache = cache
+	}
+	return s
 }
 
 func (s *Service) Counts(ctx context.Context, userID int, admin bool) (*CountsResponse, error) {
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("work items service is not configured")
 	}
+	if s.countsCache == nil {
+		result, err := s.loadCounts(ctx, userID, admin)
+		return result.Counts, err
+	}
+	role := "user"
+	if admin {
+		role = "admin"
+	}
+	return s.countsCache.GetOrLoad(ctx, userID, role, func(loadCtx context.Context) (CountsLoadResult, error) {
+		return s.loadCounts(loadCtx, userID, admin)
+	})
+}
+
+func (s *Service) loadCounts(ctx context.Context, userID int, admin bool) (CountsLoadResult, error) {
 	approvalCount, err := s.countAssignedQuotaApprovals(ctx, userID)
 	if err != nil {
-		return nil, err
+		return CountsLoadResult{}, err
 	}
 	// AI access is remote-derived; an unavailable relay must not hide local approval queues.
 	aiAccessSetupCount := 0
+	cacheable := true
 	if count, accessErr := s.countAIAccessSetup(ctx, userID); accessErr == nil {
 		aiAccessSetupCount = count
+	} else {
+		cacheable = false
 	}
 	counts := &CountsResponse{
 		QuotaResetApprovalCount: approvalCount,
@@ -57,19 +86,19 @@ func (s *Service) Counts(ctx context.Context, userID int, admin bool) (*CountsRe
 	if admin {
 		adminQuotaCount, err := s.countAdminQuotaApprovals(ctx)
 		if err != nil {
-			return nil, err
+			return CountsLoadResult{}, err
 		}
 		offboardingCount, err := s.countOffboardingCandidates(ctx)
 		if err != nil {
-			return nil, err
+			return CountsLoadResult{}, err
 		}
 		counts.QuotaResetAdminCount = adminQuotaCount
 		counts.OffboardingCount = offboardingCount
 		counts.TotalCount = aiAccessSetupCount + adminQuotaCount + offboardingCount
-		return counts, nil
+		return CountsLoadResult{Counts: counts, Cacheable: cacheable}, nil
 	}
 	counts.TotalCount = aiAccessSetupCount + approvalCount
-	return counts, nil
+	return CountsLoadResult{Counts: counts, Cacheable: cacheable}, nil
 }
 
 func (s *Service) countAIAccessSetup(ctx context.Context, userID int) (int, error) {
@@ -135,9 +164,12 @@ func actionableQuotaResetStatuses() []quotaresetrequest.Status {
 }
 
 func (s *Service) countOffboardingCandidates(ctx context.Context) (int, error) {
-	candidates, err := directorysync.NewService(s.client, directorysync.ServiceOptions{}).ListOffboardingCandidates(ctx, 0, "")
+	if s.offboardingCounter == nil {
+		return 0, nil
+	}
+	count, err := s.offboardingCounter.CountOffboardingCandidates(ctx, 0)
 	if err != nil {
 		return 0, fmt.Errorf("count directory offboarding candidates: %w", err)
 	}
-	return len(candidates), nil
+	return count, nil
 }

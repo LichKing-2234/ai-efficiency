@@ -32,6 +32,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
+	"github.com/ai-efficiency/backend/internal/workitems"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	redis "github.com/redis/go-redis/v9"
@@ -43,6 +44,22 @@ import (
 // authTokenAdapter adapts auth.Service to the oauth.TokenGenerator interface.
 type authTokenAdapter struct {
 	authService *auth.Service
+}
+
+func redisClientOptions(cfg config.RedisConfig) *redis.Options {
+	const timeout = 100 * time.Millisecond
+	return &redis.Options{
+		Addr:                  cfg.Addr,
+		Password:              cfg.Password,
+		DB:                    cfg.DB,
+		MaxRetries:            -1,
+		DialTimeout:           timeout,
+		DialerRetries:         1,
+		ReadTimeout:           timeout,
+		WriteTimeout:          timeout,
+		PoolTimeout:           timeout,
+		ContextTimeoutEnabled: true,
+	}
 }
 
 func (a *authTokenAdapter) GenerateAccessToken(userID int, username, role string) (string, string, int, error) {
@@ -134,6 +151,10 @@ func main() {
 		logger.Fatal("drop legacy relay provider admin_url", zap.Error(err))
 	}
 	logger.Info("database schema migrated")
+	workItemsRevisionStore := workitems.NewRevisionStore(entClient)
+	if err := workItemsRevisionStore.Ensure(context.Background()); err != nil {
+		logger.Fatal("initialize work item counts revision", zap.Error(err))
+	}
 	if err := ensurePrimaryRelayProviderFromConfig(context.Background(), entClient, cfg.Relay, cfg.Encryption.Key); err != nil {
 		logger.Fatal("bootstrap primary relay provider from config", zap.Error(err))
 	}
@@ -170,12 +191,16 @@ func main() {
 		)
 	}
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.Redis.Addr,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
-	})
+	redisClient := redis.NewClient(redisClientOptions(cfg.Redis))
 	defer redisClient.Close()
+	workItemsCache, err := workitems.NewCountsCache(
+		workitems.NewRedisCountsStore(redisClient),
+		workItemsRevisionStore,
+		workitems.CountsCacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize work item counts cache", zap.Error(err))
+	}
 
 	// Init LDAP config (shared between auth service and admin settings handler)
 	var ldapConfig atomic.Pointer[config.LDAPConfig]
@@ -239,10 +264,11 @@ func main() {
 	// Init provider handler
 	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger)
 	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
-		Executor:       directorysync.NewExecutor(directorysync.ExecutorOptions{}),
-		Credentials:    directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
-		RelayDisablers: directorysync.NewProviderRelayDisablerResolver(providerHandler),
-		TokenRevoker:   authService,
+		Executor:                  directorysync.NewExecutor(directorysync.ExecutorOptions{}),
+		Credentials:               directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
+		RelayDisablers:            directorysync.NewProviderRelayDisablerResolver(providerHandler),
+		TokenRevoker:              authService,
+		WorkItemCountsInvalidator: workItemsRevisionStore,
 	})
 	directorySchedulerCtx, stopDirectoryScheduler := context.WithCancel(context.Background())
 	defer stopDirectoryScheduler()
@@ -302,7 +328,11 @@ func main() {
 		adminSettingsHandler,
 		checkpointHandler,
 		healthHandler,
-		directoryService,
+		handler.RouterRuntimeOptions{
+			DirectoryService:       directoryService,
+			WorkItemsCache:         workItemsCache,
+			WorkItemsRevisionStore: workItemsRevisionStore,
+		},
 	)
 
 	// Start server
