@@ -27,8 +27,9 @@
   verification matrix.
 - The existing role E2E passes all assertions but logs non-fatal Vite proxy
   `ECONNREFUSED` messages for dashboard helper requests outside its mock set.
-- Tasks 17-19 address findings from the first whole-branch spec and standards
-  review. A fresh whole-branch review and plan closure remain required.
+- Task 20 addresses findings from the final whole-branch spec and standards
+  review. Implementation, independent re-review, and plan closure remain
+  required.
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -5567,3 +5568,46 @@ Minor test follow-up evidence (2026-07-15):
   with no Critical, Important, or Minor findings.
 - Task 19 Step 4 remains unchecked pending final browser/Compose verification
   and whole-branch reviews.
+
+### Task 20: Close Final Whole-Branch Review Findings
+
+**Files:**
+- Modify: `backend/internal/quotareset/service.go`
+- Modify: `backend/internal/quotareset/service_test.go`
+- Modify: `backend/internal/quotareset/notification_backfill.go`
+- Modify: `backend/internal/quotareset/notification_backfill_test.go`
+- Modify: `backend/internal/quotareset/chain_config.go`
+- Modify: `backend/internal/quotareset/chain_config_test.go`
+- Modify: `backend/internal/quotareset/notification_wecom.go`
+- Modify: `backend/internal/quotareset/notification_test.go`
+- Modify: `frontend/src/components/settings/QuotaResetNotificationSettings.vue`
+- Modify: `frontend/src/components/settings/SubscriptionGroupApprovalChains.vue`
+- Modify: `frontend/src/__tests__/quota-reset-approval-settings.test.ts`
+- Modify: this live plan
+
+- [x] **Step 1: Run the final whole-branch standards and spec reviews and record every finding**
+
+Review evidence (2026-07-15): independent reviewers inspected the complete
+`70eb6eb..925547b` package. Both found no Critical issues. The blocking
+findings were: request cancellation can prevent post-provider terminal reset
+persistence; changing notification channel type can silently reuse an
+incompatible secret URL; legacy WeCom rows can retain now-invalid bearer auth;
+and an approver-revision reload can race an in-flight approval-chain save.
+
+The spec reviewer also found two bounded WeCom consistency gaps: approver
+candidate coverage did not use the renderer's exact recipient-id predicate,
+and a long valid action URL was not reserved before lower-priority field
+budgeting. Both reviewers required this live ledger to record final-review
+fixes before closure.
+
+The request-cancellation finding is distinct from the accepted provider
+idempotency residual. A bounded server-owned context can prevent an HTTP client
+disconnect from cancelling provider completion and terminal persistence; it
+cannot resolve a process crash around the unkeyed provider call, so that known
+gap remains explicit above.
+
+- [ ] **Step 2: Add failing cancellation, channel-switch, backfill, chain-race, recipient-id, and action-URL regressions**
+
+- [ ] **Step 3: Implement bounded server-owned reset contexts, notification migration/switch guards, save-aware chain refresh, and consistent WeCom budgeting**
+
+- [ ] **Step 4: Run focused/full verification, browser and Compose checks, rerun whole-branch reviews, and close Tasks 16, 19, and 20 with evidence**
