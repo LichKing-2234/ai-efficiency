@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete. Task 3 implementation and fifth-round review remediation are locally complete; final independent re-review remains pending. Task 4, delivery, and CI remain pending.
+**Status:** Implementation, final action-ownership remediation, current documentation, full local verification, consumer audit, and final reviews are complete and committed. Draft PR delivery and CI remain pending; one non-blocking Minor progress-display follow-up is recorded below.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -473,6 +473,18 @@
 
   Targeted GREEN passed 3/3 and the complete component lifecycle file passed 49/49. Fresh required verification passed: focused three files 100/100, full frontend 39 files / 462 tests, `npm run build`, and `git diff --check`.
 
+- [x] **Record the final review findings and promote all pending-action probes to RED coverage**
+
+  The first whole-branch final issue/spec review of `5f6c58e..821423f` failed with **0 Critical / 2 Important / 0 Minor**. I1 showed that a page request started during a pending action POST could capture older active run `430`, then replace the just-created run `431` poll after the action response established it. I2 showed that Preview and Apply were not single-flight during the POST-creation window, so a second action could invalidate the first successfully created run. The separate final standards review failed with **0 Critical / 1 Important / 0 Minor** because successful Save reload selected the same source but still advanced the action generation, discarding a pending Preview/Apply response for run `501`.
+
+  All reviewer probes were promoted to permanent parameterized Preview/Apply tests before production changes. I1 RED command `cd frontend && npm test -- src/__tests__/directory-sync-settings.test.ts -t "older-active page started during its POST"` failed 2/2 with observed poll IDs `[431, 430]` instead of `[431, 431]`. I2 RED command with `-t "serializes .* first action POST is pending"` failed both Preview-then-Apply and Apply-then-Preview: both buttons remained enabled, the second API was called, and run `441` received no detail call or timer. The standards RED command with `-t "pending .* owned when Save reloads"` failed Preview and Apply because run `501` received no detail call or timer.
+
+- [x] **Bind page recovery and action creation to explicit owners, then verify the final remediation**
+
+  Each page request now captures `pollGeneration` plus `activePollRunId`; a response may adopt or replace a non-null active run only while that exact poll epoch and owner still match, while a null active response preserves any independently established poll. Preview/Apply POSTs now share a generation-owned pending state that disables both controls immediately, rejects a second submission, and clears only when that same POST settles. Same-source source reload no longer advances the action generation; actual source changes and unmount still invalidate pending ownership.
+
+  The three targeted GREEN commands each passed 2/2, and the complete component lifecycle file passed 55/55. Fresh local verification passed the focused three files at 106/106, the full frontend at 39 files / 468 tests, `npm run build`, and `git diff --check 5f6c58e`. The environment-sensitive role E2E was rerun against this worktree's strict `[::1]:5173` listener (PID 88558) and passed 16/16; cleanup removed only that listener and left the pre-existing IPv4 PID 648 intact. Backend, `ae-cli`, release-embed, Ent drift, and PostgreSQL scale/plan commands were not rerun because this remediation changes only the Vue component, its tests, and this ledger; their fresh Task 4 Step 2 results remain recorded above.
+
 ---
 
 ### Task 4: Architecture, Full Verification, Reviews, And Draft PR
@@ -487,11 +499,11 @@
 - Consumes Tasks 1-3 and all task-review evidence.
 - Produces current architecture/contract truth, full verification, final reviews, draft PR, and two green CI rounds.
 
-- [ ] **Step 1: Update current architecture and Directory Sync contract**
+- [x] **Step 1: Update current architecture and Directory Sync contract**
 
   Document summary pagination/projection/order, complete selected detail, page-independent latest-active recovery, and active-only polling. Update the current 2026-06-22 Runs section with the exact query/response contract and same-release frontend migration/no verified compatibility consumer. Do not rewrite earlier historical design rationale or claim unrelated #115 slices are complete.
 
-- [ ] **Step 2: Run generation drift and full repository verification**
+- [x] **Step 2: Run generation drift and full repository verification**
 
   Run exactly:
 
@@ -510,7 +522,28 @@
 
   Separately rerun and report the PostgreSQL scale/plan test and role E2E. Keep any unrun environment-sensitive item unchecked.
 
-- [ ] **Step 3: Verify consumers and complete independent reviews**
+  Fresh local verification on 2026-07-15 ran every command above. The specified
+  `gofmt`, Ent generation, and `git diff --exit-code -- backend/ent` passed;
+  backend and `ae-cli` full `go test ./...` suites passed; frontend passed 39
+  files / 462 tests and the production build; the release frontend embed test
+  and final `git diff --check` passed. The separate 2,400-row PostgreSQL run
+  reported 29,630,400 fixture diagnostic bytes, a 28,855-byte 100-row DTO, a
+  12,771-byte populated detail, stable 2,400-ID traversal at page sizes 20/50/100,
+  `directorysyncrun_source_id_started_at_id` for the primary page, and
+  `directory_sync_runs_active_started_id` with no Sort for both active-present
+  and no-active plans. Handler evidence was 28,935 wire bytes for 100 summaries,
+  12,788 populated-detail wire bytes, and 192 queued-detail wire bytes.
+
+  Role E2E was isolated from the other worktree already listening on
+  `127.0.0.1:5173` as PID 648. This worktree started strict-port Vite on
+  `[::1]:5173` as PID 47181 using
+  `/opt/homebrew/Cellar/node/26.3.0/bin/node` with cwd at this worktree's
+  `frontend`; `curl http://localhost:5173` connected to `::1`. Exact
+  `npm run test:e2e:role` passed 16/16. Vite logged expected `ECONNREFUSED`
+  proxy noise for unmocked APIs because no backend was started. Cleanup stopped
+  only the owned IPv6 listener and confirmed PID 648 still listening on IPv4.
+
+- [x] **Step 3: Verify consumers and complete independent reviews**
 
   Rerun repository and GitHub-organization searches for the run-history route/client:
 
@@ -521,6 +554,33 @@
   ```
 
   Expected: only the migrated Vue API/component/tests plus this backend route/service; no non-frontend consumer requiring compatibility.
+
+  Fresh consumer verification on 2026-07-15 ran all three commands exactly.
+  Repository search found only the backend route/service/tests and the migrated
+  Vue API/component/tests. Both GitHub organization searches returned only
+  `LichKing-2234/ai-efficiency`, with the same Vue API/component/tests, backend
+  route tests, and current spec; no non-frontend consumer or compatibility
+  requirement was found. This consumer-audit portion is complete, but Step 3
+  remains unchecked until the independent review gates below are green.
+
+  The first final issue/spec gate reported **0 Critical / 2 Important / 0 Minor**
+  and the first final standards gate reported **0 Critical / 1 Important / 0
+  Minor**. Their three action-creation lifecycle findings and the completed
+  remediation are recorded under Task 3 above. Both final gates must now rerun
+  against the regenerated full working-tree package.
+
+  Fresh final review evidence (2026-07-15): the regenerated package was 5,847
+  lines / 272,419 bytes with SHA-256
+  `60f99c921f064de872ebf17c62193bab9af6044879808abb7bf6b55979931ac8`
+  and matched a fresh base-to-working-tree diff byte-for-byte. Fresh SPEC
+  re-review returned **0 Critical / 0 Important / 0 Minor** after the six
+  permanent remediation cases, 106/106 focused tests, 468/468 full frontend
+  tests, build, 2,400-row scale/plan tests, handler wire tests, and adjacent
+  custom probes passed. Fresh standards re-review returned **0 Critical / 0
+  Important / 1 Minor**. The deferred Minor allows an older same-ID history
+  summary to regress displayed progress briefly; it does not change the poll
+  ID, timer, action controls, or terminal convergence, and the next detail poll
+  repairs the display. No Critical or Important finding remains.
 
   Obtain independent spec/quality review for Tasks 1-3, resolving every Critical/Important finding. Then package the full `5f6c58e..HEAD` diff and obtain separate final issue/spec and `AGENTS.md`/standards gates. Review questions:
 
@@ -535,9 +595,16 @@
   Do scale bytes and query-plan evidence prove bounded work without timing brittleness?
   ```
 
-- [ ] **Step 4: Commit docs and verified delivery state**
+- [x] **Step 4: Commit docs and verified delivery state**
 
-  Record exact commands, scale bytes/index, consumer audit, reviews, and environment notes. Set status to implementation/review complete with PR CI pending, then commit:
+  Record exact commands, scale bytes/index, consumer audit, reviews, and environment notes. Set status to implementation/review complete with PR CI pending. First commit the final reviewed Vue remediation:
+
+  ```bash
+  git add frontend/src/components/settings/DirectorySyncSettings.vue frontend/src/__tests__/directory-sync-settings.test.ts
+  git commit -m "fix(frontend): isolate directory run action ownership"
+  ```
+
+  Then commit current documentation and verified delivery state:
 
   ```bash
   git add docs/architecture.md docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md docs/superpowers/plans/2026-07-15-directory-sync-run-pagination.md

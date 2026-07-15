@@ -473,15 +473,66 @@ Starts an asynchronous apply run and returns the persisted run row. The frontend
 ### Runs
 
 ```text
-GET /api/v1/admin/directory/sources/:id/runs
+GET /api/v1/admin/directory/sources/:id/runs?limit=20&offset=0
 GET /api/v1/admin/directory/runs/:id
 ```
 
-The settings UI must treat run state as backend-owned. When the page opens or an
-admin selects a source, it fetches recent runs for that source, applies the
-latest preview/apply run status, and continues polling the run detail endpoint
-when that run is queued or running instead of requiring the browser tab that
-started the run to stay open.
+The source run-history endpoint returns one bounded summary page. `limit`
+defaults to 20 when absent, invalid, zero, or negative and is capped at 100.
+`offset` defaults to 0 when absent, invalid, or negative; a positive unaligned
+offset is preserved. The response has this shape:
+
+```json
+{
+  "items": [
+    {
+      "id": 42,
+      "source_id": 7,
+      "mode": "apply",
+      "trigger": "manual",
+      "status": "completed",
+      "phase": "completed",
+      "started_at": "2026-06-22T01:00:00Z",
+      "completed_at": "2026-06-22T01:02:00Z",
+      "http_request_count": 3,
+      "department_count": 12,
+      "member_count": 240,
+      "invalid_member_count": 0,
+      "warning_count": 0
+    }
+  ],
+  "total": 2400,
+  "page": 0,
+  "page_size": 20,
+  "latest_active_run": null
+}
+```
+
+`page` is zero-based `floor(normalized_offset / normalized_limit)`, `page_size`
+is the normalized limit, and `total` counts all runs for the source. Summary
+rows use stable `started_at DESC NULLS FIRST, id DESC` ordering; queued rows with
+no start time therefore sort before started rows, with descending run ID as the
+tie-breaker. Each item is a lightweight projection containing only the fields
+shown above. It does not select or return `warnings`, `summary`, `preview_diff`,
+`error_message`, timestamps unrelated to progress, or other diagnostic/result
+blobs.
+
+`latest_active_run` is either null or the same lightweight summary shape. It is
+selected independently of the requested history page using the same ordering
+and is restricted to the newest `preview` or `apply` run whose status is
+`queued` or `running`. `GET /api/v1/admin/directory/runs/:id` remains the
+complete selected-run contract and returns the persisted diagnostic fields,
+including warnings, summary, preview diff, and error message when present.
+
+The settings UI treats run state as backend-owned. The current Vue consumer was
+migrated in the same platform release to request summary pages and fetch
+complete detail on selection; repository and organization consumer searches
+found no non-frontend caller that requires an unpaginated full-entity
+compatibility response. On page open, source selection, or conflict recovery,
+the UI uses only page-independent `latest_active_run` for active recovery. It
+polls that run, or a just-created active preview/apply run, until terminal.
+Selecting a terminal or older history row performs one detail fetch and never
+starts, replaces, or cancels the independent active-run polling loop.
 
 ### Directory Facts
 
