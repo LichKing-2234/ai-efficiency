@@ -18,7 +18,7 @@
 - Tests and examples use only synthetic users, domains, credentials, and group names.
 - Every completed step updates this file in the same execution turn.
 
-**Status:** Implementation and local verification complete. Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/149. Required CI checks are pending.
+**Status:** Complete for issue #124. Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/149. Local verification and all required CI checks passed.
 
 ---
 
@@ -122,7 +122,8 @@
   - Review result: no unresolved findings. Shared `readcache` files are byte-identical to PR #148, and the issue's guard, isolation, version, Redis outage, scale, and no-stale requirements are covered.
 - [x] **Step 6: Commit with Conventional Commits, push the branch, and open a Draft PR against `docs/performance-contracts-116`**
   - Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/149
-- [ ] **Step 7: Wait for all required PR checks and record their final state**
+- [x] **Step 7: Wait for all required PR checks and record their final state**
+  - CI run https://github.com/LichKing-2234/ai-efficiency/actions/runs/29433743303 passed: `ae-cli`, `backend`, `frontend`, and `deploy-static`.
 
 ## Verification Notes
 
