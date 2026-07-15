@@ -308,11 +308,13 @@
 - Consumes Tasks 1-4.
 - Produces current architecture truth, complete repository evidence, review-clean commits, and a draft PR for #123.
 
-- [ ] **Step 1: Update current documentation only**
+- [x] **Step 1: Update current documentation only**
 
   Add the active performance spec to architecture source-of-truth order. Document the `personalusage` module, provider configuration version used by the cache key, usage-only/quota-only browser requests, usage-only Redis payload, 24-27 second fresh window, no-more-than-two-minute stale deadline, fresh-only quota, one-login concurrent Relay origin read, optional Redis fallback, and independent usage/quota/scope frontend lifecycles. In the active performance spec, mark only the #123 personal usage clauses as landed and record the exact implementation choices; do not rewrite historical specs.
 
-- [ ] **Step 2: Run full generation and repository verification**
+  Documentation evidence (2026-07-15): `docs/architecture.md` now records the implemented module, API/origin/cache/browser boundaries and includes the active performance spec in source-of-truth order; the active spec has a #123-only implementation-status section and continues to mark unrelated rollout slices as pending. Historical specs were not modified.
+
+- [x] **Step 2: Run full generation and repository verification**
 
   Run:
 
@@ -332,13 +334,19 @@
   git diff --check
   ```
 
-- [ ] **Step 3: Run environment-sensitive role E2E separately**
+  Verification evidence (2026-07-15): the complete command was rerun after review fixes and returned zero. Ent generation produced no diff; `go test ./...` passed for backend and ae-cli; frontend passed 39 files and 457 tests; TypeScript/Vite production build and `deploy/test/release-frontend-embed-test.sh` passed; final `git diff --check` returned no findings. The existing npm audit output still reports 9 findings, and the embed fixture emitted one non-fatal temporary hook-queue warning.
+
+- [x] **Step 3: Run environment-sensitive role E2E separately**
 
   Start this worktree's Vite server on an owned IPv6 loopback port with a trap, run `npm run test:e2e:role`, and clean the listener. Record proxy/backend warnings separately from unit results.
 
-- [ ] **Step 4: Review exact spec and standards coverage**
+  E2E evidence (2026-07-15): this worktree's Vite server ran on `[::1]:5173`, `npm run test:e2e:role` passed 16/16 role assertions, the trap removed the IPv6 listener, and the unrelated pre-existing IPv4 listener remained untouched. Because no local backend was started, Vite logged expected `ECONNREFUSED` proxy warnings for work-items, personal usage/quota, and scope requests; the role suite mocks its asserted auth/settings endpoints and still completed with zero failures.
+
+- [x] **Step 4: Review exact spec and standards coverage**
 
   Inspect the complete base-to-HEAD diff against issue #123, the active performance spec, `AGENTS.md`, and current code. Resolve all Critical/Important findings. Explicitly verify: one login; branch concurrency/deadline; usage atomicity; cache dimensions/windows; Redis outage and lease cancellation; no quota in Redis; invalid credentials never stale; combined compatibility; usage/quota/scope independence; abort of superseded ranges; member-route isolation; provider version increment; docs truth.
+
+  Review evidence (2026-07-15): exact base-to-worktree review covered all 44 changed files and every listed contract. Two Important findings were fixed with RED/GREEN tests: configured snapshots now preserve empty `trend`/`models` as JSON arrays rather than `null`, and deployment namespace now participates in the canonical cache digest as well as the visible prefix. New service errors wrap their underlying causes with `%w`. Targeted `go vet`, cache/service/handler regression tests, `git diff --check`, and changed-content synthetic-data scans passed. No Critical or Important findings remain.
 
 - [ ] **Step 5: Commit final docs/ledger and prepare PR body**
 
