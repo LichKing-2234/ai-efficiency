@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -1146,6 +1148,266 @@ func TestInventorySeparatesProvidersWithDuplicateNames(t *testing.T) {
 	if secondSummary.Name != "Shared Platform" || secondSummary.ProviderID == nil || *secondSummary.ProviderID != secondProvider.ID || secondSummary.TotalRepos != 1 {
 		t.Fatalf("second summary = %#v, want name Shared Platform, provider id %d, one repo", secondSummary, secondProvider.ID)
 	}
+}
+
+func TestInventoryAggregateQueryStaysBoundedAtScale(t *testing.T) {
+	client, dsn := testdb.OpenWithDSN(t)
+	ctx := context.Background()
+	github := createSCMProvider(t, client)
+	bitbucket, err := client.ScmProvider.Create().
+		SetName("Bitbucket Server").
+		SetType("bitbucket_server").
+		SetBaseURL("https://bitbucket.example.com").
+		SetCredentials("encrypted-creds").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create bitbucket provider: %v", err)
+	}
+
+	builders := make([]*ent.RepoConfigCreate, 0, 1000)
+	for index := 0; index < 1000; index++ {
+		scope := "alpha"
+		if index%3 == 1 {
+			scope = "beta"
+		} else if index%3 == 2 {
+			scope = "gamma"
+		}
+		status := repoconfig.StatusActive
+		if index%11 == 0 {
+			status = repoconfig.StatusWebhookFailed
+		}
+		builder := client.RepoConfig.Create().
+			SetRepoKey(fmt.Sprintf("example.com/%s/repo-%04d", scope, index)).
+			SetName(fmt.Sprintf("repo-%04d", index)).
+			SetFullName(fmt.Sprintf("%s/repo-%04d", scope, index)).
+			SetCloneURL(fmt.Sprintf("https://example.com/%s/repo-%04d.git", scope, index)).
+			SetDefaultBranch("main").
+			SetStatus(status)
+		switch index % 5 {
+		case 0:
+		default:
+			if index%2 == 0 {
+				builder.SetScmProviderID(github.ID)
+			} else {
+				builder.SetScmProviderID(bitbucket.ID)
+			}
+		}
+		builders = append(builders, builder)
+	}
+	if _, err := client.RepoConfig.CreateBulk(builders...).Save(ctx); err != nil {
+		t.Fatalf("create scale repo fixtures: %v", err)
+	}
+
+	recorder := &repoQueryRecorder{}
+	loggedClient, err := ent.Open("postgres", dsn, ent.Debug(), ent.Log(recorder.Log))
+	if err != nil {
+		t.Fatalf("open logged ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = loggedClient.Close() })
+	svc := NewService(loggedClient, "test-key", zap.NewNop())
+
+	inventory, err := svc.Inventory(ctx)
+	if err != nil {
+		t.Fatalf("Inventory scale aggregate: %v", err)
+	}
+	if recorder.Count() != 1 || !recorder.Contains("group by") {
+		t.Fatalf("inventory queries = %d, want one GROUP BY aggregate; queries:\n%s", recorder.Count(), recorder.Joined())
+	}
+	total := 0
+	scopeRows := 0
+	for _, provider := range inventory {
+		total += provider.TotalRepos
+		scopeRows += len(provider.Scopes)
+	}
+	if total != 1000 {
+		t.Fatalf("inventory total = %d, want 1000", total)
+	}
+	if scopeRows > 9 {
+		t.Fatalf("inventory scope rows = %d, want bounded provider/scope groups", scopeRows)
+	}
+}
+
+func TestRepoListPageSelectsDeterministicBoundDefault(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+
+	bitbucket, err := client.ScmProvider.Create().
+		SetName("A Bitbucket").
+		SetType("bitbucket_server").
+		SetBaseURL("https://bitbucket.example.com").
+		SetCredentials("encrypted-creds").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create bitbucket provider: %v", err)
+	}
+	githubZ, err := client.ScmProvider.Create().
+		SetName("Z GitHub").
+		SetType("github").
+		SetBaseURL("https://github-z.example.com").
+		SetCredentials("encrypted-creds").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create github Z provider: %v", err)
+	}
+	githubA, err := client.ScmProvider.Create().
+		SetName("A GitHub").
+		SetType("github").
+		SetBaseURL("https://github-a.example.com").
+		SetCredentials("encrypted-creds").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create github A provider: %v", err)
+	}
+
+	fixtures := []CreateDirectRequest{
+		{SCMProviderID: bitbucket.ID, Name: "repo-bitbucket", FullName: "alpha/repo-bitbucket", CloneURL: "https://bitbucket.example.com/alpha/repo-bitbucket.git", DefaultBranch: "main"},
+		{SCMProviderID: githubZ.ID, Name: "repo-zeta", FullName: "zeta/repo-zeta", CloneURL: "https://github-z.example.com/zeta/repo-zeta.git", DefaultBranch: "main"},
+		{SCMProviderID: githubZ.ID, Name: "repo-alpha", FullName: "alpha/repo-alpha", CloneURL: "https://github-z.example.com/alpha/repo-alpha.git", DefaultBranch: "main"},
+		{SCMProviderID: githubA.ID, Name: "repo-gamma", FullName: "gamma/repo-gamma", CloneURL: "https://github-a.example.com/gamma/repo-gamma.git", DefaultBranch: "main"},
+		{Name: "repo-unbound", FullName: "aardvark/repo-unbound", CloneURL: "https://unknown.example.com/aardvark/repo-unbound.git", DefaultBranch: "main"},
+	}
+	for _, fixture := range fixtures {
+		if _, err := svc.CreateDirect(ctx, fixture); err != nil {
+			t.Fatalf("create %s: %v", fixture.FullName, err)
+		}
+	}
+
+	page, err := svc.ListPage(ctx, ListOpts{Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("ListPage default: %v", err)
+	}
+	if page.Selection == nil {
+		t.Fatal("ListPage selection = nil, want stable default")
+	}
+	if page.Selection.ProviderID == nil || *page.Selection.ProviderID != githubA.ID || page.Selection.ProviderKey != inventoryProviderKey(githubA.ID) {
+		t.Fatalf("default provider = %#v, want GitHub provider %d", page.Selection, githubA.ID)
+	}
+	if page.Selection.Scope != "gamma" || page.Selection.BindingState != "bound" {
+		t.Fatalf("default scope/binding = %q/%q, want gamma/bound", page.Selection.Scope, page.Selection.BindingState)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].FullName != "gamma/repo-gamma" {
+		t.Fatalf("default page = total %d items %#v, want only gamma/repo-gamma", page.Total, page.Items)
+	}
+
+	legacyItems, legacyTotal, err := svc.List(ctx, ListOpts{Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("List compatibility wrapper: %v", err)
+	}
+	if legacyTotal != page.Total || len(legacyItems) != len(page.Items) || legacyItems[0].ID != page.Items[0].ID {
+		t.Fatalf("List wrapper = total %d items %#v, want ListPage result", legacyTotal, legacyItems)
+	}
+}
+
+func TestRepoListPageExplicitFiltersOverrideDefault(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+	github := createSCMProvider(t, client)
+	bitbucket, err := client.ScmProvider.Create().
+		SetName("Bitbucket Server").
+		SetType("bitbucket_server").
+		SetBaseURL("https://bitbucket.example.com").
+		SetCredentials("encrypted-creds").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create bitbucket provider: %v", err)
+	}
+	for _, fixture := range []CreateDirectRequest{
+		{SCMProviderID: github.ID, Name: "repo-github", FullName: "alpha/repo-github", CloneURL: "https://github.com/alpha/repo-github.git", DefaultBranch: "main"},
+		{SCMProviderID: bitbucket.ID, Name: "repo-bitbucket", FullName: "beta/repo-bitbucket", CloneURL: "https://bitbucket.example.com/beta/repo-bitbucket.git", DefaultBranch: "main"},
+		{Name: "repo-unbound", FullName: "beta/repo-unbound", CloneURL: "https://unknown.example.com/beta/repo-unbound.git", DefaultBranch: "main"},
+	} {
+		if _, err := svc.CreateDirect(ctx, fixture); err != nil {
+			t.Fatalf("create %s: %v", fixture.FullName, err)
+		}
+	}
+
+	page, err := svc.ListPage(ctx, ListOpts{
+		Page:          1,
+		PageSize:      20,
+		SCMProviderID: bitbucket.ID,
+		Scope:         "beta",
+		BindingState:  "bound",
+	})
+	if err != nil {
+		t.Fatalf("ListPage explicit: %v", err)
+	}
+	if page.Selection != nil {
+		t.Fatalf("explicit page selection = %#v, want no server default", page.Selection)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].FullName != "beta/repo-bitbucket" {
+		t.Fatalf("explicit page = total %d items %#v, want only beta/repo-bitbucket", page.Total, page.Items)
+	}
+}
+
+func TestRepoListPageSelectsUnboundDefault(t *testing.T) {
+	_, svc := setupTest(t)
+	ctx := context.Background()
+	for _, fixture := range []CreateDirectRequest{
+		{Name: "repo-zeta", FullName: "zeta/repo-zeta", CloneURL: "https://unknown.example.com/zeta/repo-zeta.git", DefaultBranch: "main"},
+		{Name: "repo-alpha", FullName: "alpha/repo-alpha", CloneURL: "https://unknown.example.com/alpha/repo-alpha.git", DefaultBranch: "main"},
+	} {
+		if _, err := svc.CreateDirect(ctx, fixture); err != nil {
+			t.Fatalf("create %s: %v", fixture.FullName, err)
+		}
+	}
+
+	page, err := svc.ListPage(ctx, ListOpts{Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("ListPage unbound default: %v", err)
+	}
+	if page.Selection == nil || page.Selection.ProviderKey != "unbound" || page.Selection.ProviderID != nil || page.Selection.Scope != "alpha" || page.Selection.BindingState != "unbound" {
+		t.Fatalf("unbound default selection = %#v, want unbound/alpha", page.Selection)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].FullName != "alpha/repo-alpha" {
+		t.Fatalf("unbound default page = total %d items %#v, want only alpha/repo-alpha", page.Total, page.Items)
+	}
+}
+
+func TestRepoListPageEmptyDefaultHasNoSelection(t *testing.T) {
+	_, svc := setupTest(t)
+
+	page, err := svc.ListPage(context.Background(), ListOpts{Page: 0, PageSize: 0})
+	if err != nil {
+		t.Fatalf("ListPage empty default: %v", err)
+	}
+	if page.Selection != nil || page.Total != 0 || len(page.Items) != 0 || page.Page != 1 || page.PageSize != 20 {
+		t.Fatalf("empty page = %#v, want empty default page without selection", page)
+	}
+}
+
+type repoQueryRecorder struct {
+	mu      sync.Mutex
+	queries []string
+}
+
+func (r *repoQueryRecorder) Log(values ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.queries = append(r.queries, fmt.Sprint(values...))
+}
+
+func (r *repoQueryRecorder) Count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.queries)
+}
+
+func (r *repoQueryRecorder) Contains(fragment string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	fragment = strings.ToLower(fragment)
+	for _, query := range r.queries {
+		if strings.Contains(strings.ToLower(query), fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *repoQueryRecorder) Joined() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return strings.Join(r.queries, "\n")
 }
 
 func findInventoryProvider(items []InventoryProviderSummary, key string) *InventoryProviderSummary {
