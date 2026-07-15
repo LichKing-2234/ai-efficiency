@@ -137,35 +137,43 @@
 - Produces `personalusage.NewService(*ent.Client, ProviderResolver, string, *Cache) *Service`, where `ProviderResolver.Resolve(context.Context, int) (relay.Provider, error)` reuses the existing handler/provider seam.
 - Produces `personalusage.Cache.GetOrLoad(ctx context.Context, key CacheKey, includeQuota bool, loader OriginLoader) (*CacheResult, error)`; only atomic usage payload is serialized.
 
-- [ ] **Step 1: Add RED shared primitive tests**
+- [x] **Step 1: Add RED shared primitive tests**
 
   Move the production Redis adapter and waiter-counted generic flight expectations to `readcache` tests: Redis miss mapping, TTL, token compare-delete, one cancelled waiter while another succeeds, last-waiter cancellation, and no goroutine left after completion. Add compatibility assertions in workitems tests so extraction cannot change #119 key/TTL/fallback behavior.
 
-- [ ] **Step 2: Run shared primitive tests and record RED**
+- [x] **Step 2: Run shared primitive tests and record RED**
 
   Run: `cd backend && go test ./internal/readcache ./internal/workitems -run 'RedisStore|Flight|CountsCache' -count=1`
 
   Expected: package/compile failures because `readcache` does not exist.
 
-- [ ] **Step 3: Extract the narrow shared primitives**
+  RED evidence (2026-07-15): `internal/workitems` remained GREEN while `internal/readcache` failed only on the intended missing `FlightGroup`, `NewRedisStore`, and `ErrMiss` contracts.
+
+- [x] **Step 3: Extract the narrow shared primitives**
 
   Move only the Redis command adapter, `ErrMiss`, context sleep, and generic waiter-counted flight into `readcache`. Keep workitems revision, key, JSON validation, lease policy, and no-stale semantics inside `workitems`; use aliases/wrappers where necessary so existing call sites remain stable.
 
-- [ ] **Step 4: Add RED personal cache/service tests**
+  GREEN evidence (2026-07-15): the new Redis/flight contract tests passed, and every focused #119 `CountsCache` test remained GREEN after extraction, including 50-call local collapse, two-instance lease collapse, cancellation, revision isolation, Redis errors, deterministic TTL, and Lua release.
+
+- [x] **Step 4: Add RED personal cache/service tests**
 
   With injected clock/random/token/sleep and miniredis, cover cold miss, warm hit, both jitter endpoints, soft refresh, eligible stale fallback, hard expiry, invalid-credential rejection, caller-cancellation rejection, malformed/schema-mismatch refresh, Redis outage fallback, set/release failure tolerance, actor/provider-version/Relay-subject/binding/range/granularity/timezone isolation, 50-call local collapse, two-cache distributed collapse, second read after lease acquisition, holder cancellation, and no quota fields/values in serialized Redis bytes. Service tests cover configured=false, one primary provider resolution, decryption/configuration errors, combined cold read using one origin call, warm usage plus a fresh quota-only origin call, usage-only projection, quota-only response, `ok/empty/unavailable` quota states, and current daily/weekly/monthly presentation rules.
 
-- [ ] **Step 5: Run personal usage module tests and record RED**
+- [x] **Step 5: Run personal usage module tests and record RED**
 
   Run: `cd backend && go test ./internal/personalusage -count=1 -v`
 
   Expected: package/compile failure because the module does not exist.
 
-- [ ] **Step 6: Implement the personal usage read model and module**
+  RED evidence (2026-07-15): the exact command failed only on the intended missing personalusage cache/options/key/load-result/service contracts; the new tests formatted successfully first.
+
+- [x] **Step 6: Implement the personal usage read model and module**
 
   Build a SHA-256 key from a canonical JSON dimensions struct and format it as `ae:<namespace>:personal-usage:v1:<hex>`. Validate cached JSON with `DisallowUnknownFields`, schema version, non-nil stats, and non-nil trend/models. Use 100ms Redis commands, a 12-second shared refresh budget, a 15-second lease, 25ms polling, 100ms release, and test-injected time/randomness. Query the current user and enabled primary provider on every request, include `user.updated_at` as the binding version, decrypt only inside the module, and call `ReadUserUsageOrigin` with the minimum branches selected after the cache read.
 
-- [ ] **Step 7: Verify Task 2 GREEN and checkpoint**
+  GREEN evidence (2026-07-15): the module now stores only atomic usage generations under hashed actor/provider/binding/range dimensions, bounds fresh/stale windows to 24-27 and 96-108 seconds, treats quota as uncached request data, and preserves configuration, credential, and cancellation errors without stale fallback.
+
+- [x] **Step 7: Verify Task 2 GREEN and checkpoint**
 
   Run:
 
@@ -177,6 +185,8 @@
   ```
 
   Commit: `perf(backend): cache personal usage snapshots safely`
+
+  GREEN evidence (2026-07-15): the exact focused command passed twice for `internal/readcache`, `internal/workitems`, and `internal/personalusage`; race-enabled tests for all three packages passed; malformed/schema values, Redis failures, set/release errors, both jitter endpoints, 50-call local collapse, two-instance lease collapse, lease-holder cancellation, quota-only service reads, and daily/weekly/monthly quota presentation all passed; `git diff --check` returned no findings.
 
 ---
 
