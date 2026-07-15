@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review, Tasks 1-3, and Task 4 Steps 1-5 are complete. Draft PR #142 is open against `docs/performance-contracts-116`; first-round CI passed and replacement CI is current.
+**Status:** Complete. Tasks 1-3 and all Task 4 steps are complete. Draft PR #142 is open, mergeable, and clean against `docs/performance-contracts-116`. Full local verification and final reviews pass. First-round CI on `7053926` and replacement CI on `37509a6` both passed backend, frontend, ae-cli, and deploy-static. The final ledger-only head must also remain green; no merge, release, deploy, or Helm action is part of this plan.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -460,7 +460,7 @@
 
   Expected: OPEN draft, base `docs/performance-contracts-116`, head `perf/pr-freshness-133`.
 
-- [ ] **Step 6: Wait for first CI, finalize the ledger, and verify replacement CI**
+- [x] **Step 6: Wait for first CI, finalize the ledger, and verify replacement CI**
 
   Wait for `backend`, `frontend`, `ae-cli`, and `deploy-static` to succeed. Only then check completed delivery steps, set `Status: Complete`, and commit/push the final ledger:
 
@@ -473,9 +473,13 @@
 
   Expected: the replacement run is green for all four jobs.
 
-  First-round CI evidence (2026-07-15): Actions run `29385900378` passed `backend` (2m41s), `frontend` (52s), `ae-cli` (29s), and `deploy-static` (15s) on PR head `7053926`. This checkpoint records that evidence before the replacement run; Step 6 remains unchecked until replacement CI actually passes.
+  First-round CI evidence (2026-07-15): Actions run `29385900378` passed `backend` (2m41s), `frontend` (52s), `ae-cli` (29s), and `deploy-static` (15s) on PR head `7053926`.
 
-- [ ] **Step 7: Verify final branch and PR state**
+  Replacement CI evidence (2026-07-15): Actions run `29386043837` passed `backend` (2m58s), `frontend` (59s), `ae-cli` (25s), and `deploy-static` (19s) on PR head `37509a6`. No job was skipped or neutral.
+
+- [x] **Step 7: Verify final branch and PR state**
+
+  Verified before this ledger commit: the worktree was clean; local and PR head were both `37509a6`; PR #142 was open and draft with base `docs/performance-contracts-116`, head `perf/pr-freshness-133`, and `MERGEABLE` / `CLEAN`; all four replacement checks reported success.
 
   Run:
 
