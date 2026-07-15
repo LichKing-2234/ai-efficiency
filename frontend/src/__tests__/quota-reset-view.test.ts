@@ -434,6 +434,64 @@ describe('QuotaResetView', () => {
     expect(wrapper.text()).not.toContain('Stale History')
   })
 
+  it('reloads displayed processed history independently after retry succeeds', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const freshHistory = deferred<any>()
+    const failedHistoryRequest: QuotaResetRequestSummary = {
+      ...workflowRequest,
+      id: 48,
+      group_name: 'Failed History',
+      status: 'approved_reset_failed',
+      workflow: {
+        ...workflowRequest.workflow!,
+        current_node: null,
+        can_approve: false,
+        can_reject: false,
+        can_cancel: false,
+        can_retry: true,
+      },
+    }
+    let historyCalls = 0
+    api.listQuotaResetApprovals.mockImplementation((params?: { scope?: string }) => {
+      if (params?.scope !== 'history') {
+        return Promise.resolve({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
+      }
+      historyCalls += 1
+      if (historyCalls === 1) {
+        return Promise.resolve({ data: { data: { items: [failedHistoryRequest], page: 1, page_size: 20, total: 1 } } })
+      }
+      return freshHistory.promise
+    })
+    api.retryQuotaResetRequest.mockResolvedValue({
+      data: { data: { ...failedHistoryRequest, status: 'approved_reset_succeeded' } },
+    })
+
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-filter-processed"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-retry-48"]').trigger('click')
+    await flushPromises()
+
+    expect(api.retryQuotaResetRequest).toHaveBeenCalledWith(48)
+    expect.soft(historyCalls).toBe(2)
+    expect.soft(wrapper.text()).toContain('Loading...')
+
+    const refreshedHistory = {
+      ...failedHistoryRequest,
+      group_name: 'Refreshed History',
+      status: 'approved_reset_succeeded' as const,
+      workflow: { ...failedHistoryRequest.workflow!, can_retry: false },
+    }
+    freshHistory.resolve({ data: { data: { items: [refreshedHistory], page: 1, page_size: 20, total: 1 } } })
+    await flushPromises()
+
+    expect(historyCalls).toBe(2)
+    expect(wrapper.text()).toContain('Refreshed History')
+    expect(wrapper.text()).not.toContain('Loading...')
+    expect(wrapper.find('[data-testid="quota-reset-retry-48"]').exists()).toBe(false)
+  })
+
   it('does not show approval badges for completed history when actionable counts are zero', async () => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any

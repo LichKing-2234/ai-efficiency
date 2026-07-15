@@ -300,7 +300,11 @@ async function withAction(
   actionBusy.value = true
   try {
     await action()
+    const refreshDisplayedHistory = displayingApprovalHistory.value
     invalidateApprovalHistory()
+    if (refreshDisplayedHistory) {
+      void loadApprovalHistory()
+    }
     if (options.closeDecisionOnSuccess) closeDecisionDialog()
     await loadQueues(true)
     showToast({ message: t('quotaReset.actionSucceeded'), tone: 'success' })

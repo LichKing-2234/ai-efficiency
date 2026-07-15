@@ -5523,3 +5523,23 @@ Quality-review follow-up GREEN evidence (2026-07-15):
   `.gitignore:31`.
 - Step 4 remains unchecked pending task re-review, final browser/Compose
   verification, and whole-branch reviews.
+
+Quality re-review follow-up RED evidence (2026-07-15):
+
+- `cd frontend && npm test -- src/__tests__/quota-reset-view.test.ts` exited 1
+  with 1 failed and 22 passed tests. Retrying a displayed v2
+  `approved_reset_failed` history row left history calls at 1 instead of 2 and
+  showed neither the history loading state nor refreshed processed content.
+
+Quality re-review follow-up GREEN evidence (2026-07-15):
+
+- `cd frontend && npm test -- src/__tests__/quota-reset-view.test.ts` exited 0
+  with 1 file and 23 tests passing.
+- `cd frontend && npm test -- src/__tests__/quota-reset-api.test.ts src/__tests__/quota-reset-view.test.ts` exited 0 with 2 files and 34 tests passing.
+- `cd frontend && npm run build` exited 0 after `vue-tsc -b` and Vite built
+  1,955 modules.
+- A successful action now captures whether approvals/processed remains
+  displayed, invalidates the stale history generation, starts the independent
+  history reload immediately, and then refreshes core queues without awaiting
+  history. Task 19 Step 4 remains unchecked pending re-review and the existing
+  controller-managed verification.
