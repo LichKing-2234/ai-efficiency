@@ -897,6 +897,201 @@ auth:
     }
   })
 
+  it.each([
+    'preview' as const,
+    'apply' as const,
+  ])('keeps the just-created $action poll when an older-active page started during its POST resolves', async (action) => {
+    vi.useFakeTimers()
+    const actionResponse = deferred<any>()
+    const stalePage = deferred<any>()
+    const initialRun = runSummary({ id: 450, member_count: 19 })
+    const olderActiveRun = runSummary({
+      id: 430,
+      mode: 'apply',
+      status: 'running',
+      phase: 'applying',
+      completed_at: null,
+      department_count: 4,
+      member_count: 8,
+    })
+    const createdRun = runSummary({
+      id: 431,
+      mode: action,
+      status: 'queued',
+      phase: 'validating',
+      started_at: null,
+      completed_at: null,
+      department_count: 0,
+      member_count: 0,
+    })
+    const runningCreatedRun = {
+      ...createdRun,
+      status: 'running',
+      phase: 'executing',
+      department_count: 7,
+      member_count: 13,
+    }
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(runPage([initialRun], { total: 41 })))
+        .mockImplementationOnce(() => stalePage.promise)
+      const actionAPI = action === 'preview' ? api.previewDirectorySource : api.startDirectoryRun
+      actionAPI.mockImplementationOnce(() => actionResponse.promise)
+      api.getDirectoryRun.mockImplementation((id: number) => Promise.resolve(apiResponse(
+        id === createdRun.id ? runningCreatedRun : olderActiveRun,
+      )))
+    })
+
+    try {
+      const actionSelector = action === 'preview' ? '[data-testid="directory-preview"]' : '[data-testid="directory-run-now"]'
+      await wrapper.get(actionSelector).trigger('click')
+      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+
+      expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
+
+      actionResponse.resolve(apiResponse(createdRun))
+      await flushPromises()
+
+      expect(api.getDirectoryRun.mock.calls.map((call: any[]) => call[0])).toEqual([createdRun.id])
+      expect(vi.getTimerCount()).toBe(1)
+
+      stalePage.resolve(apiResponse(runPage([initialRun], {
+        total: 41,
+        page: 1,
+        latest_active_run: olderActiveRun,
+      })))
+      await flushPromises()
+
+      expect(vi.getTimerCount()).toBe(1)
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun.mock.calls.map((call: any[]) => call[0])).toEqual([createdRun.id, createdRun.id])
+      expect(wrapper.text()).toContain('Reading directory API')
+      expect(wrapper.text()).toContain('7 departments · 13 members')
+      expect(vi.getTimerCount()).toBe(1)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    { first: 'preview' as const, second: 'apply' as const },
+    { first: 'apply' as const, second: 'preview' as const },
+  ])('serializes $first then $second while the first action POST is pending', async ({ first, second }) => {
+    vi.useFakeTimers()
+    const actionResponse = deferred<any>()
+    const createdRun = runSummary({
+      id: 441,
+      mode: first,
+      status: 'queued',
+      phase: 'validating',
+      started_at: null,
+      completed_at: null,
+      department_count: 0,
+      member_count: 0,
+    })
+    const runningCreatedRun = {
+      ...createdRun,
+      status: 'running',
+      phase: 'executing',
+      department_count: 7,
+      member_count: 13,
+    }
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      const firstAPI = first === 'preview' ? api.previewDirectorySource : api.startDirectoryRun
+      firstAPI.mockImplementationOnce(() => actionResponse.promise)
+      api.getDirectoryRun.mockResolvedValue(apiResponse(runningCreatedRun))
+    })
+
+    try {
+      const firstSelector = first === 'preview' ? '[data-testid="directory-preview"]' : '[data-testid="directory-run-now"]'
+      const secondSelector = second === 'preview' ? '[data-testid="directory-preview"]' : '[data-testid="directory-run-now"]'
+      const firstAPI = first === 'preview' ? api.previewDirectorySource : api.startDirectoryRun
+      const secondAPI = second === 'preview' ? api.previewDirectorySource : api.startDirectoryRun
+
+      await wrapper.get(firstSelector).trigger('click')
+
+      expect.soft(wrapper.get('[data-testid="directory-preview"]').attributes('disabled')).toBeDefined()
+      expect.soft(wrapper.get('[data-testid="directory-run-now"]').attributes('disabled')).toBeDefined()
+
+      await wrapper.get(secondSelector).trigger('click')
+      await flushPromises()
+
+      expect.soft(firstAPI).toHaveBeenCalledTimes(1)
+      expect.soft(secondAPI).not.toHaveBeenCalled()
+
+      actionResponse.resolve(apiResponse(createdRun))
+      await flushPromises()
+
+      expect.soft(api.getDirectoryRun.mock.calls.map((call: any[]) => call[0])).toEqual([createdRun.id])
+      expect.soft(vi.getTimerCount()).toBe(1)
+      expect.soft(wrapper.text()).toContain('Reading directory API')
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    'preview' as const,
+    'apply' as const,
+  ])('keeps a pending $action owned when Save reloads the same source first', async (action) => {
+    vi.useFakeTimers()
+    const actionResponse = deferred<any>()
+    const createdRun = runSummary({
+      id: 501,
+      mode: action,
+      status: 'queued',
+      phase: 'validating',
+      started_at: null,
+      completed_at: null,
+      department_count: 0,
+      member_count: 0,
+    })
+    const runningCreatedRun = {
+      ...createdRun,
+      status: 'running',
+      phase: 'executing',
+      department_count: 7,
+      member_count: 13,
+    }
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(runPage()))
+        .mockResolvedValueOnce(apiResponse(runPage()))
+      const actionAPI = action === 'preview' ? api.previewDirectorySource : api.startDirectoryRun
+      actionAPI.mockImplementationOnce(() => actionResponse.promise)
+      api.getDirectoryRun.mockResolvedValue(apiResponse(runningCreatedRun))
+    })
+
+    try {
+      const actionSelector = action === 'preview' ? '[data-testid="directory-preview"]' : '[data-testid="directory-run-now"]'
+      await wrapper.get(actionSelector).trigger('click')
+      await wrapper.get('[data-testid="directory-save"]').trigger('click')
+      await flushPromises()
+
+      expect(api.updateDirectorySource).toHaveBeenCalledTimes(1)
+      expect(api.listDirectorySources).toHaveBeenCalledTimes(2)
+      expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
+      expect(api.getDirectoryRun).not.toHaveBeenCalled()
+
+      actionResponse.resolve(apiResponse(createdRun))
+      await flushPromises()
+
+      expect(api.getDirectoryRun.mock.calls.map((call: any[]) => call[0])).toEqual([createdRun.id])
+      expect(vi.getTimerCount()).toBe(1)
+      expect(wrapper.text()).toContain('Reading directory API')
+      expect(wrapper.get('[data-testid="directory-preview"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.get('[data-testid="directory-run-now"]').attributes('disabled')).toBeDefined()
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps polling authoritative while a no-active non-first page commits', async () => {
     vi.useFakeTimers()
     const activeA = runSummary({

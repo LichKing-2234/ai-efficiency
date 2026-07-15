@@ -32,6 +32,7 @@ const sources = ref<DirectorySource[]>([])
 const selectedSourceId = ref<number | null>(null)
 const loading = ref(false)
 const saving = ref(false)
+const actionRequestPending = ref<number | null>(null)
 const message = ref('')
 const error = ref('')
 const validationIssues = ref<DirectoryValidationIssue[]>([])
@@ -193,6 +194,7 @@ onUnmounted(() => {
   pageRequestGeneration++
   detailRequestGeneration++
   actionRequestGeneration++
+  actionRequestPending.value = null
   invalidateRunPolling()
 })
 
@@ -216,8 +218,11 @@ async function loadSources() {
 
 function selectSource(source: DirectorySource) {
   const sourceChanged = selectedSourceId.value !== source.id
-  actionRequestGeneration++
-  if (sourceChanged) resetRunLifecycle()
+  if (sourceChanged) {
+    actionRequestGeneration++
+    actionRequestPending.value = null
+    resetRunLifecycle()
+  }
   clearFeedback()
   resetRunView()
   selectedSourceId.value = source.id
@@ -285,7 +290,9 @@ function actionContextMatches(generation: number, sourceID: number) {
 }
 
 function beginActionRequest() {
+  if (actionRequestPending.value !== null) return null
   const generation = ++actionRequestGeneration
+  actionRequestPending.value = generation
   pageRequestGeneration++
   pendingRunOffset.value = null
   pendingRunPageActionGeneration = null
@@ -293,9 +300,22 @@ function beginActionRequest() {
   return generation
 }
 
+async function performActionRequest<T>(generation: number, request: () => Promise<T>) {
+  try {
+    return await request()
+  } finally {
+    if (actionRequestPending.value === generation) actionRequestPending.value = null
+  }
+}
+
 interface RunPageRecoveryContext {
   action: 'preview' | 'apply'
   generation: number
+}
+
+interface RunPollOwnership {
+  generation: number
+  runID: number | null
 }
 
 function pageRequestContextMatches(generation: number, sourceID: number, offset: number, recovery?: RunPageRecoveryContext) {
@@ -386,6 +406,10 @@ function pollContextMatches(generation: number, sourceID: number, runID: number)
   return generation === pollGeneration
     && selectedSourceId.value === sourceID
     && activePollRunId === runID
+}
+
+function pollOwnershipMatches(ownership: RunPollOwnership) {
+  return ownership.generation === pollGeneration && ownership.runID === activePollRunId
 }
 
 function scheduleRunPolling(runID: number, action: 'preview' | 'apply', sourceID: number, generation: number) {
@@ -501,14 +525,16 @@ function adoptLatestActiveRun(run: DirectoryRunSummary, sourceID: number) {
   return true
 }
 
-function applyPageRecovery(items: DirectoryRunSummary[], latestActive: DirectoryRunSummary | null, sourceID: number, offset: number, expectedAction?: 'preview' | 'apply') {
+function applyPageRecovery(items: DirectoryRunSummary[], latestActive: DirectoryRunSummary | null, sourceID: number, offset: number, pollOwnership: RunPollOwnership, expectedAction?: 'preview' | 'apply') {
   if (latestActive) {
+    if (!pollOwnershipMatches(pollOwnership)) return false
     const action = actionForRun(latestActive)
     const recovered = adoptLatestActiveRun(latestActive, sourceID)
     return recovered && (!expectedAction || action === expectedAction)
   }
 
   if (activePollRunId !== null) return false
+  if (!pollOwnershipMatches(pollOwnership)) return false
   latestActiveRun.value = null
   if (offset !== 0) return false
   const newest = items.find((candidate) => Boolean(actionForRun(candidate)))
@@ -521,6 +547,7 @@ function applyPageRecovery(items: DirectoryRunSummary[], latestActive: Directory
 
 async function loadRunPage(sourceID: number, offset: number, recovery?: RunPageRecoveryContext) {
   const generation = ++pageRequestGeneration
+  const pollOwnership = { generation: pollGeneration, runID: activePollRunId }
   pendingRunOffset.value = offset
   pendingRunPageActionGeneration = recovery?.generation ?? null
   runHistoryLoading.value = true
@@ -540,7 +567,7 @@ async function loadRunPage(sourceID: number, offset: number, recovery?: RunPageR
     runPage.value = page.page
     runPageSize.value = page.page_size
     runOffset.value = offset
-    return applyPageRecovery(page.items, page.latest_active_run, sourceID, offset, recovery?.action)
+    return applyPageRecovery(page.items, page.latest_active_run, sourceID, offset, pollOwnership, recovery?.action)
   } catch (e: any) {
     if (pageRequestContextMatches(generation, sourceID, offset, recovery)) {
       runHistoryError.value = apiErrorMessage(e, t('directorySync.runHistoryLoadFailed'))
@@ -686,12 +713,13 @@ async function previewSource() {
   const sourceID = selectedSourceId.value
   if (!sourceID) return
   const generation = beginActionRequest()
+  if (generation === null) return
   resetRunLifecycle()
   clearFeedback()
   activeRunAction.value = 'preview'
   message.value = t('directorySync.previewStarted')
   try {
-    const res = await previewDirectorySource(sourceID)
+    const res = await performActionRequest(generation, () => previewDirectorySource(sourceID))
     if (!actionContextMatches(generation, sourceID)) return
     const run = res.data.data
     applyRunProgress(run, 'preview')
@@ -715,12 +743,13 @@ async function runNow() {
   const sourceID = selectedSourceId.value
   if (!sourceID) return
   const generation = beginActionRequest()
+  if (generation === null) return
   resetRunLifecycle()
   clearFeedback()
   activeRunAction.value = 'apply'
   message.value = t('directorySync.applyStarted')
   try {
-    const res = await startDirectoryRun(sourceID, { mode: 'apply' })
+    const res = await performActionRequest(generation, () => startDirectoryRun(sourceID, { mode: 'apply' }))
     if (!actionContextMatches(generation, sourceID)) return
     const run = res.data.data
     applyRunProgress(run, 'apply')
@@ -958,10 +987,10 @@ steps:
           <button data-testid="directory-validate" type="button" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="validateSource">
             {{ t('directorySync.validate') }}
           </button>
-          <button data-testid="directory-preview" type="button" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="previewSource">
+          <button data-testid="directory-preview" type="button" :disabled="!selectedSourceId || actionRequestPending !== null || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="previewSource">
             {{ activeRunAction === 'preview' && activeRun && !isTerminalRun(activeRun) ? t('directorySync.previewing') : t('directorySync.preview') }}
           </button>
-          <button data-testid="directory-run-now" type="button" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="runNow">
+          <button data-testid="directory-run-now" type="button" :disabled="!selectedSourceId || actionRequestPending !== null || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="runNow">
             {{ activeRunAction === 'apply' && activeRun && !isTerminalRun(activeRun) ? t('directorySync.running') : t('directorySync.runNow') }}
           </button>
           <button data-testid="directory-save" type="button" :disabled="saving" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50" @click="saveSource">
