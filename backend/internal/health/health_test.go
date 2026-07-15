@@ -24,20 +24,25 @@ func (blockingPinger) Ping(ctx context.Context) error {
 	return nil
 }
 
-type delayedPinger struct {
-	delay time.Duration
+type barrierPinger struct {
+	started chan<- struct{}
+	release <-chan struct{}
 }
 
-func (p delayedPinger) Ping(ctx context.Context) error {
-	timer := time.NewTimer(p.delay)
-	defer timer.Stop()
-
+func (p barrierPinger) Ping(ctx context.Context) error {
+	p.started <- struct{}{}
 	select {
-	case <-timer.C:
+	case <-p.release:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+type panicPinger struct{}
+
+func (panicPinger) Ping(context.Context) error {
+	panic("private panic from alice@example.com")
 }
 
 func TestServiceReadyAndDegradedStates(t *testing.T) {
@@ -116,19 +121,37 @@ func TestServiceReadyHonorsOverallDeadline(t *testing.T) {
 }
 
 func TestServiceReadyChecksDependenciesInParallel(t *testing.T) {
-	const (
-		probeDelay = 150 * time.Millisecond
-		budget     = 250 * time.Millisecond
-	)
+	started := make(chan struct{}, 3)
+	release := make(chan struct{})
+	pinger := barrierPinger{started: started, release: release}
 	svc := NewService(
-		delayedPinger{delay: probeDelay},
-		delayedPinger{delay: probeDelay},
-		delayedPinger{delay: probeDelay},
+		pinger,
+		pinger,
+		pinger,
 		buildinfo.CurrentVersion(),
-		WithReadyTimeout(budget),
+		WithReadyTimeout(5*time.Second),
 	)
 
-	report := svc.Ready(context.Background())
+	reportDone := make(chan ReadyReport, 1)
+	go func() {
+		reportDone <- svc.Ready(context.Background())
+	}()
+
+	for index := 0; index < 3; index++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatalf("only %d probes started before release; checks are not concurrent", index)
+		}
+	}
+	close(release)
+
+	var report ReadyReport
+	select {
+	case report = <-reportDone:
+	case <-time.After(time.Second):
+		t.Fatal("Ready() did not return after all probes were released")
+	}
 
 	if report.Status != "ready" {
 		t.Fatalf("status = %q, want ready; checks: %+v", report.Status, report.Checks)
@@ -141,5 +164,23 @@ func TestServiceReadyChecksDependenciesInParallel(t *testing.T) {
 		if got := report.Checks[i]; got.Name != wantName || got.Status != "up" {
 			t.Fatalf("check[%d] = %+v, want %s/up", i, got, wantName)
 		}
+	}
+}
+
+func TestServiceReadyContainsPingerPanicAndSanitizesResult(t *testing.T) {
+	svc := NewService(
+		pingStub{},
+		pingStub{},
+		panicPinger{},
+		buildinfo.CurrentVersion(),
+	)
+
+	report := svc.Ready(context.Background())
+
+	if report.Status != "degraded" {
+		t.Fatalf("status = %q, want degraded", report.Status)
+	}
+	if got := report.Checks[2]; got.Status != "down" || got.Message != "unavailable" {
+		t.Fatalf("relay check = %+v, want down/unavailable", got)
 	}
 }

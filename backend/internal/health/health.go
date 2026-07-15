@@ -124,7 +124,14 @@ type indexedCheckResult struct {
 	check CheckResult
 }
 
-func runCheck(ctx context.Context, name string, pinger Pinger) CheckResult {
+func runCheck(ctx context.Context, name string, pinger Pinger) (result CheckResult) {
+	result = unavailableCheck(name)
+	defer func() {
+		if recover() != nil {
+			result = unavailableCheck(name)
+		}
+	}()
+
 	if pinger == nil {
 		return CheckResult{Name: name, Status: "not_configured", Message: "not configured"}
 	}

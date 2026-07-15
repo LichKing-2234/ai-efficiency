@@ -65,6 +65,70 @@ func TestNewRuntimeHTTPClientsUsesBoundedIsolatedPoolsAndStrictTimeouts(t *testi
 	t.Cleanup(clients.webhook.CloseIdleConnections)
 }
 
+func TestNewRuntimeHTTPClientsPreservesTimeoutOrderAtLowestValidConfiguration(t *testing.T) {
+	for key, value := range map[string]string{
+		"AE_SERVER_READ_HEADER_TIMEOUT_SECONDS":          "1",
+		"AE_SERVER_IDLE_TIMEOUT_SECONDS":                 "1",
+		"AE_SERVER_READINESS_TIMEOUT_SECONDS":            "1",
+		"AE_SERVER_REQUEST_TIMEOUT_SECONDS":              "12",
+		"AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS":         "1",
+		"AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS":   "1",
+		"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "1",
+		"AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS":         "11",
+		"AE_HTTP_CLIENT_IDLE_CONN_TIMEOUT_SECONDS":       "1",
+		"AE_HTTP_CLIENT_MAX_IDLE_CONNS":                  "1",
+		"AE_HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST":         "1",
+		"AE_HTTP_CLIENT_MAX_CONNS_PER_HOST":              "1",
+	} {
+		t.Setenv(key, value)
+	}
+
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v, want lowest valid runtime configuration", err)
+	}
+	clients := newRuntimeHTTPClients(cfg.HTTPClient)
+
+	for name, client := range map[string]*http.Client{
+		"runtime relay":          clients.runtimeRelay,
+		"provider-created relay": clients.providerRelay,
+		"settings":               clients.settings,
+		"directory":              clients.directory,
+		"scm":                    clients.scm,
+		"version":                clients.version,
+		"webhook":                clients.webhook,
+	} {
+		if client == nil {
+			t.Fatalf("%s client is nil", name)
+		}
+	}
+
+	browserTimeout := 45 * time.Second
+	requestTimeout := time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second
+	sharedDownstreamTimeout := clients.runtimeRelay.Timeout
+	if clients.directory.Timeout != sharedDownstreamTimeout {
+		t.Fatalf("general downstream timeout = %s, want shared timeout %s", clients.directory.Timeout, sharedDownstreamTimeout)
+	}
+	if !(browserTimeout > requestTimeout &&
+		requestTimeout > sharedDownstreamTimeout &&
+		sharedDownstreamTimeout > clients.version.Timeout &&
+		clients.version.Timeout > clients.webhook.Timeout) {
+		t.Fatalf(
+			"timeout order = browser %s, request %s, shared %s, version %s, webhook %s; want strictly descending",
+			browserTimeout,
+			requestTimeout,
+			sharedDownstreamTimeout,
+			clients.version.Timeout,
+			clients.webhook.Timeout,
+		)
+	}
+
+	t.Cleanup(clients.runtimeRelay.CloseIdleConnections)
+	t.Cleanup(clients.directory.CloseIdleConnections)
+	t.Cleanup(clients.version.CloseIdleConnections)
+	t.Cleanup(clients.webhook.CloseIdleConnections)
+}
+
 func TestNewRuntimeHTTPClientsWrapsOnlyRelayPool(t *testing.T) {
 	cfg := config.HTTPClientConfig{
 		ConnectTimeoutSeconds:        5,

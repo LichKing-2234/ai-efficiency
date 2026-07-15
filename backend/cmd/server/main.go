@@ -85,11 +85,11 @@ func newRuntimeHTTPClients(cfg config.HTTPClientConfig, relayWrappers ...httpcli
 	generalClient := httpclient.New(downstreamOptions)
 
 	versionOptions := downstreamOptions
-	versionOptions.OverallTimeout = 10 * time.Second
+	versionOptions.OverallTimeout = config.VersionCheckTimeoutSeconds * time.Second
 	version := httpclient.New(versionOptions)
 
 	webhookOptions := downstreamOptions
-	webhookOptions.OverallTimeout = 5 * time.Second
+	webhookOptions.OverallTimeout = config.QuotaNotificationWebhookTimeoutSeconds * time.Second
 	webhook := httpclient.New(webhookOptions)
 
 	return runtimeHTTPClients{
@@ -374,6 +374,7 @@ func main() {
 			WebhookHTTPClient: httpClients.webhook,
 			RequestLogger:     logger,
 			Release:           versionInfo.Version,
+			RequestTimeout:    time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
 	)
 

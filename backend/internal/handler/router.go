@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"net/http"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -29,6 +30,7 @@ type RouterOptions struct {
 	WebhookHTTPClient *http.Client
 	RequestLogger     *zap.Logger
 	Release           string
+	RequestTimeout    time.Duration
 }
 
 func SetPRAttributionService(service prAttributionSettler) {
@@ -140,9 +142,14 @@ func setupRouter(
 	options RouterOptions,
 ) *gin.Engine {
 	r := gin.New()
+	// Keep canonical redirects inside the correlation and telemetry chain.
+	r.RedirectTrailingSlash = false
 	r.RemoveExtraSlash = true
 	r.Use(middleware.RequestTelemetry(options.RequestLogger, options.Release))
-	r.Use(gin.Recovery())
+	r.Use(middleware.Recovery(options.RequestLogger, options.Release))
+	if options.RequestTimeout > 0 {
+		r.Use(middleware.RequestTimeout(options.RequestTimeout))
+	}
 	r.Use(corsMiddleware)
 	r.Use(web.RedirectCanonicalBrowserPath())
 	if web.HasEmbeddedFrontend() {

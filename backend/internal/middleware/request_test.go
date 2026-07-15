@@ -199,6 +199,27 @@ func TestRequestTelemetryUsesFixedUnmatchedRoute(t *testing.T) {
 	assertRequestPrivacy(t, entries[0], fields, "/private/raw-path", "alice@example.com")
 }
 
+func TestRequestTelemetryNormalizesUnknownMethod(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	core, observed := observer.New(zap.InfoLevel)
+	router := gin.New()
+	router.Use(RequestTelemetry(zap.New(core), "test-release"))
+	method := strings.Repeat("CUSTOM", 64)
+	router.Handle(method, "/method", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	request := httptest.NewRequest(method, "/method", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNoContent)
+	}
+	fields := observed.All()[0].ContextMap()
+	assertRequestField(t, fields, "method", "OTHER")
+}
+
 func assertRequestField(t *testing.T, fields map[string]interface{}, key, want string) {
 	t.Helper()
 	if got, ok := fields[key].(string); !ok || got != want {

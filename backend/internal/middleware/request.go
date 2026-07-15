@@ -26,14 +26,18 @@ func RequestTelemetry(logger *zap.Logger, release string) gin.HandlerFunc {
 		if route == "" {
 			route = "unmatched"
 		}
+		responseBytes := c.Writer.Size()
+		if responseBytes < 0 {
+			responseBytes = 0
+		}
 		logger.Info(
 			"http_request",
 			zap.String("event", "http_request"),
 			zap.String("route", route),
-			zap.String("method", c.Request.Method),
+			zap.String("method", telemetry.HTTPMethod(c.Request.Method)),
 			zap.String("status_class", telemetry.HTTPStatusClass(c.Writer.Status())),
 			zap.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
-			zap.Int("response_bytes", c.Writer.Size()),
+			zap.Int("response_bytes", responseBytes),
 			zap.String("release", release),
 			zap.String("request_id", requestID),
 		)

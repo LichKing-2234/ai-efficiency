@@ -12,6 +12,7 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ## Source-of-Truth Order
 
 1. Topic-specific current specs:
+   - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`
    - `docs/superpowers/specs/2026-07-07-quota-reset-approval-design.md`
    - `docs/superpowers/specs/2026-06-26-team-usage-representative-quota-design.md`
    - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md`
@@ -148,6 +149,41 @@ flowchart TD
 - `deploy/.env.example` is the operator-facing configuration template.
 - Admin settings can display the current backend version and manually check the latest backend GitHub release through `/api/v1/system/version` and `/api/v1/system/version/check`. These endpoints are read-only and never replace binaries, restart services, or mutate deployment state.
 - In-app deployment status, update, rollback, and restart APIs are no longer part of the runtime surface. Operators upgrade Docker deployments by refreshing the image and recreating the service, and upgrade systemd deployments through install/release tooling.
+
+## Bounded HTTP Runtime
+
+The backend owns one bounded inbound server and four reusable outbound HTTP connection pools. The server reads these startup defaults from writable runtime configuration:
+
+- `server.read_header_timeout_seconds: 5` limits receipt of request headers, including slow-header connections.
+- `server.idle_timeout_seconds: 120` limits keep-alive idle time.
+- `server.request_timeout_seconds: 35` gives every Gin request context a common deadline; downstream requests derived from that context are cancelled with it.
+- `server.readiness_timeout_seconds: 2` remains a smaller shared readiness budget.
+- `ReadTimeout` and `WriteTimeout` intentionally remain unset while long synchronous Team Overview requests still exist. The browser and request context supply the temporary synchronous caller budgets instead.
+
+During the monolithic Team Overview migration, the complete default caller ordering is: reverse proxy upstream timeout at least 60 seconds, browser Axios timeout 45 seconds (including the explicit Team Overview override and the raw token-refresh request), request context 35 seconds, shared downstream overall timeout 30 seconds, fixed version check timeout 10 seconds, and fixed quota notification webhook timeout 5 seconds. A proxy timeout below 60 seconds is unsupported deployment configuration for this migration window and must be corrected before rollout. The project does not own proxy configuration, so deployment verification must confirm that prerequisite explicitly.
+
+Every outbound pool uses a 5-second connect timeout, 5-second TLS handshake timeout, 15-second response-header timeout, 90-second idle-connection timeout, at most 100 total idle connections, 20 idle connections per host, and 50 total connections per host. The pools differ by consumer and overall deadline:
+
+| Pool | Consumers | Overall deadline | Additional behavior |
+| --- | --- | --- | --- |
+| Relay | Runtime Relay provider, DB-created Relay providers, Relay settings probes | 30 seconds | Carries request correlation and fixed Relay dependency timing |
+| General downstream | Directory Sync and SCM providers | 30 seconds | Isolated from Relay telemetry and connections |
+| Version check | Explicit GitHub release checks | 10 seconds | Preserves the stricter existing version-check budget |
+| Quota notification webhook | Quota-reset outbound notifications | 5 seconds | Preserves the stricter existing webhook budget |
+
+These four clients and their private transports are created once during startup rather than per request. Compatibility constructors outside production injection return distinct deadline-bearing clients over one documented package-level bounded fallback transport, so repeated compatibility construction does not leak private pools. Request contexts flow into downstream calls so cancellation and deadlines stop in-flight work instead of detaching background HTTP requests.
+
+Config load rejects non-positive or excessive runtime durations and pool sizes before conversion to `time.Duration`. The supported operator ranges are 1-60 seconds for request headers, 1-3600 seconds for server and connection idle time, 1-30 seconds for readiness/connect/TLS handshake, 12-44 seconds for request context, 11-43 seconds for shared downstream overall, 1-60 seconds for response headers, and 1-10,000 for each HTTP pool field. Ordering further requires connect, TLS, and response-header phases below shared downstream overall, shared downstream overall below request context, and readiness below request context. The phase rule makes 42 seconds the effective maximum response-header value. The shared overall lower bound preserves the strict `shared > version 10s > webhook 5s` order, while the request upper bound preserves fixed browser 45s > request. Startup errors name the invalid configuration field.
+
+Liveness performs no dependency calls. Readiness runs database, Redis, and Relay probes concurrently under one shared two-second budget and preserves deterministic result order. A probe panic is contained inside its child goroutine and becomes only the sanitized result `down/unavailable`. Only database failure or timeout produces body status `not_ready` and HTTP 503. Redis or Relay failure/not-configured produces body status `degraded` and HTTP 200 when the database is up; all dependencies up produces `ready` and HTTP 200.
+
+Request telemetry is the first Gin middleware. Production middleware order is request telemetry, privacy-safe recovery, request timeout, CORS, canonical browser-path redirect, embedded frontend, then route/group handlers. Gin's engine-level trailing-slash redirect is disabled so GET/HEAD canonical redirects, including registered API-route redirects, remain inside that middleware chain and retain correlation, CORS, and exact-once telemetry. Request telemetry accepts an incoming `X-Request-ID` only when the value is 1-128 ASCII characters from `[A-Za-z0-9._-]`; otherwise it generates a UUID. The selected ID is stored in the request context, returned on every response, allowed and exposed by CORS, and forwarded by the Relay transport on correlated downstream requests.
+
+Each completed inbound request emits one `http_request` structured log with only the Gin route template (or the fixed value `unmatched`), canonical HTTP method, status class, duration in milliseconds, response bytes, release, and request ID. Gin's pre-finalization `Size() == -1` sentinel is recorded as zero for real zero-byte responses such as status-only handlers and embedded HEAD serving; telemetry does not fabricate a response body. Standard methods retain their uppercase fixed values; every other method is `OTHER`. Panic recovery discards Gin's raw request/panic dump and emits one zap `http_recovery` event with only fixed route, canonical method, `5xx`, release, request ID, and `error_class=panic` fields.
+
+Each Relay round trip emits exactly one `dependency_request` after response-body EOF, close, or read error, rather than treating response headers as successful completion. A body timeout is therefore classified as `status_class=error` and `error_class=timeout`. Dependency labels remain fixed as `dependency=relay` and `operation=http_request`; methods use the same canonical classifier. Raw paths, queries, request/response bodies, route parameters, actors, panic values, credentials, and downstream response text are never logged. Relay readiness probes drain only a small bounded body, allowing normal health responses to reuse their connection without accepting an unbounded payload.
+
+This runtime currently emits structured zap events only. Prometheus pool/cache metrics and sampled browser Web Vitals remain future #135 work. Cold/warm production evidence and final route-specific budget ratification remain future #136 work; the current defaults are not a substitute for that production measurement.
 
 ## Current Runtime Flow
 
@@ -306,6 +342,7 @@ flowchart LR
 | Directory sync | `backend/internal/directorysync` | Configurable HTTP directory DSL validation/execution, current department/member/membership facts, scheduled apply runs, offboarding candidate derivation, and confirmed relay-user disable plus token revocation orchestration |
 | Quota reset approvals | `backend/internal/quotareset` | Local subscription-group quota reset request workflow, department approver candidate resolution from Directory Sync representative metadata with local-user email fallback and unmatched-representative diagnostics, validated approver configuration, approval/rejection/reset state transitions, audit-ready request events, and outbound webhook notification settings |
 | Work items | `backend/internal/workitems` | Auth-scoped pending work counters for sidebar and `/work-items`, including best-effort relay-derived personal AI access setup plus locally derived quota reset and directory offboarding counts that remain available when the relay lookup fails |
+| HTTP runtime and telemetry | `backend/internal/httpclient`, `backend/internal/health`, `backend/internal/telemetry`, `backend/internal/middleware` | Bounded reusable downstream transports, parallel deadline-bounded readiness, validated request IDs, normalized request logs, and fixed Relay dependency timing |
 | Representative scope and team usage | `backend/internal/representativescope`, `backend/internal/teamusage` | Resolve representative subtree scope from current directory metadata and member-department memberships, enforce delegated subject visibility and ancestor-only multiplier policy, orchestrate selected-member detail and team-overview usage reads, and persist local `team_usage_rate_multiplier_audits` |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
 | Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, PR labeling, and dashboard-facing summary inputs |

@@ -81,6 +81,123 @@ func TestDependencyTelemetryForwardsRequestIDAndUsesFixedLabels(t *testing.T) {
 	)
 }
 
+func TestDependencyTelemetryWaitsForBodyCompletionAndEmitsOnce(t *testing.T) {
+	core, observed := observer.New(zap.InfoLevel)
+	next := &fakeDependencyTransport{roundTrip: func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("complete body")),
+			Request:    request,
+		}, nil
+	}}
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://relay.example.com/data", nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	response, err := WrapDependency(zap.New(core), "test-release", "relay", "http_request")(next).RoundTrip(request)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	if got := observed.Len(); got != 0 {
+		t.Fatalf("dependency events after headers = %d, want 0 before body completion", got)
+	}
+	if _, err := io.ReadAll(response.Body); err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if got := observed.Len(); got != 1 {
+		t.Fatalf("dependency events after EOF = %d, want 1", got)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if got := observed.Len(); got != 1 {
+		t.Fatalf("dependency events after EOF and Close = %d, want exactly 1", got)
+	}
+}
+
+func TestDependencyTelemetryCloseWithoutEOFEmitsOnce(t *testing.T) {
+	core, observed := observer.New(zap.InfoLevel)
+	next := &fakeDependencyTransport{roundTrip: func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("body is deliberately not read")),
+			Request:    request,
+		}, nil
+	}}
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://relay.example.com/data", nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	response, err := WrapDependency(zap.New(core), "test-release", "relay", "http_request")(next).RoundTrip(request)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	if got := observed.Len(); got != 0 {
+		t.Fatalf("dependency events after headers = %d, want 0 before Close", got)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	if got := observed.Len(); got != 1 {
+		t.Fatalf("dependency events after repeated Close = %d, want exactly 1", got)
+	}
+}
+
+func TestDependencyTelemetryClassifiesWithheldBodyTimeout(t *testing.T) {
+	core, observed := observer.New(zap.InfoLevel)
+	next := &fakeDependencyTransport{roundTrip: func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			Header:        make(http.Header),
+			Body:          &contextBlockingBody{ctx: request.Context()},
+			ContentLength: 1,
+			Request:       request,
+		}, nil
+	}}
+	client := &http.Client{
+		Transport: WrapDependency(zap.New(core), "test-release", "relay", "http_request")(next),
+		Timeout:   40 * time.Millisecond,
+	}
+	request, err := http.NewRequestWithContext(
+		WithRequestID(context.Background(), "request-body-timeout"),
+		http.MethodGet,
+		"https://relay.example.com/private?email=alice@example.com",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("Do() before body read error = %v", err)
+	}
+	if got := observed.Len(); got != 0 {
+		t.Fatalf("dependency events after headers = %d, want 0 before body timeout", got)
+	}
+	_, readErr := io.ReadAll(response.Body)
+	if readErr == nil {
+		t.Fatal("ReadAll() error = nil, want body timeout")
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	entry := requireSingleDependencyEvent(t, observed)
+	fields := entry.ContextMap()
+	assertDependencyField(t, fields, "status_class", "error")
+	assertDependencyField(t, fields, "error_class", "timeout")
+	assertDependencyField(t, fields, "request_id", "request-body-timeout")
+	assertDependencyPrivacy(t, entry, fields, "relay.example.com", "alice@example.com")
+}
+
 func TestDependencyTelemetryClassifiesErrorsWithoutSensitiveDetails(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -159,6 +276,32 @@ func TestDependencyTelemetryDoesNotFabricateRequestID(t *testing.T) {
 	}
 }
 
+func TestDependencyTelemetryNormalizesUnknownMethod(t *testing.T) {
+	core, observed := observer.New(zap.InfoLevel)
+	next := &fakeDependencyTransport{roundTrip: func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Header:     make(http.Header),
+			Body:       http.NoBody,
+			Request:    request,
+		}, nil
+	}}
+	method := strings.Repeat("CUSTOM", 64)
+	request, err := http.NewRequestWithContext(context.Background(), method, "https://relay.example.com/health", nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+
+	response, err := WrapDependency(zap.New(core), "test-release", "relay", "http_request")(next).RoundTrip(request)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	response.Body.Close()
+
+	fields := requireSingleDependencyEvent(t, observed).ContextMap()
+	assertDependencyField(t, fields, "method", "OTHER")
+}
+
 func TestDependencyTelemetryPreservesCancellation(t *testing.T) {
 	core, observed := observer.New(zap.InfoLevel)
 	started := make(chan struct{})
@@ -225,6 +368,17 @@ type dependencyTimeoutError struct{}
 func (dependencyTimeoutError) Error() string   { return "private timeout detail" }
 func (dependencyTimeoutError) Timeout() bool   { return true }
 func (dependencyTimeoutError) Temporary() bool { return true }
+
+type contextBlockingBody struct {
+	ctx context.Context
+}
+
+func (b *contextBlockingBody) Read([]byte) (int, error) {
+	<-b.ctx.Done()
+	return 0, b.ctx.Err()
+}
+
+func (*contextBlockingBody) Close() error { return nil }
 
 func requireSingleDependencyEvent(t *testing.T, observed *observer.ObservedLogs) observer.LoggedEntry {
 	t.Helper()

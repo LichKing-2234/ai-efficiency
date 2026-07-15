@@ -3,8 +3,10 @@ package telemetry
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/ai-efficiency/backend/internal/httpclient"
@@ -49,18 +51,39 @@ func (t *dependencyTransport) RoundTrip(request *http.Request) (*http.Response, 
 
 	startedAt := time.Now()
 	response, err := t.next.RoundTrip(outbound)
-	statusClass := "unknown"
 	if err != nil {
-		statusClass = "error"
-	} else if response != nil {
-		statusClass = HTTPStatusClass(response.StatusCode)
+		t.logEvent(request.Context(), requestID, request.Method, "error", startedAt, err)
+		return response, err
+	}
+	if response == nil {
+		t.logEvent(request.Context(), requestID, request.Method, "unknown", startedAt, nil)
+		return nil, nil
+	}
+	statusClass := HTTPStatusClass(response.StatusCode)
+	if response.Body == nil {
+		t.logEvent(request.Context(), requestID, request.Method, statusClass, startedAt, nil)
+		return response, nil
 	}
 
+	response.Body = &dependencyBody{
+		body: response.Body,
+		finish: func(bodyErr error) {
+			terminalStatus := statusClass
+			if bodyErr != nil {
+				terminalStatus = "error"
+			}
+			t.logEvent(request.Context(), requestID, request.Method, terminalStatus, startedAt, bodyErr)
+		},
+	}
+	return response, nil
+}
+
+func (t *dependencyTransport) logEvent(ctx context.Context, requestID, method, statusClass string, startedAt time.Time, err error) {
 	fields := []zap.Field{
 		zap.String("event", "dependency_request"),
 		zap.String("dependency", t.dependency),
 		zap.String("operation", t.operation),
-		zap.String("method", request.Method),
+		zap.String("method", HTTPMethod(method)),
 		zap.String("status_class", statusClass),
 		zap.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
 		zap.String("release", t.release),
@@ -69,11 +92,39 @@ func (t *dependencyTransport) RoundTrip(request *http.Request) (*http.Response, 
 		fields = append(fields, zap.String("request_id", requestID))
 	}
 	if err != nil {
-		fields = append(fields, zap.String("error_class", classifyDependencyError(request.Context(), err)))
+		fields = append(fields, zap.String("error_class", classifyDependencyError(ctx, err)))
 	}
 	t.logger.Info("dependency_request", fields...)
+}
 
-	return response, err
+type dependencyBody struct {
+	body   io.ReadCloser
+	finish func(error)
+	once   sync.Once
+}
+
+func (b *dependencyBody) Read(buffer []byte) (int, error) {
+	read, err := b.body.Read(buffer)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			b.complete(nil)
+		} else {
+			b.complete(err)
+		}
+	}
+	return read, err
+}
+
+func (b *dependencyBody) Close() error {
+	err := b.body.Close()
+	b.complete(err)
+	return err
+}
+
+func (b *dependencyBody) complete(err error) {
+	b.once.Do(func() {
+		b.finish(err)
+	})
 }
 
 func (t *dependencyTransport) CloseIdleConnections() {
