@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Task 1 implementation and its independent-review fixes (three Important and one Minor) are complete. Tasks 2-4, subsequent task reviews, delivery, and CI remain pending.
+**Status:** Task 1 implementation and its independent-review fixes (three Important and one Minor) are complete. Task 2 Steps 1-4 are complete; Task 2 Step 5, Tasks 3-4, subsequent task reviews, delivery, and CI remain pending.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -197,7 +197,7 @@
 - Consumes Task 1 `RunListRequest`, `RunPage`, summary projection, ordering, and index.
 - Produces repeatable 2,400-row response-byte, stable-page, projection, and PostgreSQL structural-plan evidence.
 
-- [ ] **Step 1: Add the recording driver and exact scale fixture**
+- [x] **Step 1: Add the recording driver and exact scale fixture**
 
   Wrap `dialect.Driver.Query` under a mutex, copying SQL and arguments before delegation. Open a second Ent client from `testdb.OpenWithDSN` through `entsql.OpenDB`.
 
@@ -215,7 +215,7 @@
 
   Run `ANALYZE directory_sync_runs` after seeding. The active-present plan uses this fixture unchanged. For the no-active case in the same query-plan test, transition the bounded active preview rows to terminal status, rerun `ANALYZE`, and execute the exact active query again while all 2,400 historical rows remain; do not substitute an empty source.
 
-- [ ] **Step 2: Write scale behavior, bytes, and exact SQL-shape tests**
+- [x] **Step 2: Write scale behavior, bytes, and exact SQL-shape tests**
 
   Add:
 
@@ -238,7 +238,7 @@
 
   For `TestLargeRunHistoryPreservesPreviewAndApplyStateSemantics`, keep the 2,400 historical rows present, create known current departments/members/memberships, source run pointers, offboarding actions/candidate state, and a deterministic executor sequence. Prove a preview leaves facts, memberships, offboarding state, and `last_successful_run_id` unchanged while advancing `last_run_id` to the completed preview ID; an injected failed apply leaves facts, offboarding state, `last_run_id`, and `last_successful_run_id` unchanged; and a successful apply transactionally replaces facts and updates both pointers to the successful apply ID exactly as the existing ordinary contract specifies.
 
-- [ ] **Step 3: Run post-implementation characterization without mutating production**
+- [x] **Step 3: Run post-implementation characterization without mutating production**
 
   Run:
 
@@ -249,7 +249,7 @@
 
   Expected: GREEN because Task 2 is explicit post-implementation scale/plan characterization of Task 1. Do not edit correct production code to manufacture RED. Instead, table-test the SQL-role/parser assertion helpers with synthetic bad SQL strings containing an extra sort expression, a selected diagnostic column, missing active predicates, and missing limit; require deterministic validation errors before using those helpers against recorded production SQL.
 
-- [ ] **Step 4: Verify repeated scale and package GREEN**
+- [x] **Step 4: Verify repeated scale and package GREEN**
 
   Run:
 
