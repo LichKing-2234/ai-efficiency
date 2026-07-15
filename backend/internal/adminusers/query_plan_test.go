@@ -342,9 +342,10 @@ func TestCountPlanAndPagePlanReuseEffectivePredicatesAcrossScales(t *testing.T) 
 			ancestorQuery := requireOneCapturedQuery(t, queries, "requested_candidates")
 			ancestorSourcePlaceholder := placeholderForBoundValue(t, ancestorQuery.args, int64(sourceID))
 			prefixes = append(prefixes, canonicalEffectivePrefix(t, ancestorQuery.query, ancestorSourcePlaceholder))
+			storedParentJoin := "child.parent_external_id" + " = parent.external_id"
 			if strings.Count(ancestorQuery.query, "WITH RECURSIVE") != 1 ||
 				strings.Count(ancestorQuery.query, "ancestors(") != 1 ||
-				strings.Contains(ancestorQuery.query, "child.parent_external_id = parent.external_id") ||
+				strings.Contains(ancestorQuery.query, storedParentJoin) ||
 				!strings.Contains(ancestorQuery.query, "child.effective_parent_external_id = parent.external_id") {
 				t.Fatalf("ancestor query does not use one shared effective closure:\n%s", ancestorQuery.query)
 			}
