@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Task 1 Steps 1-4, focused RED/GREEN, PostgreSQL plan verification, adjacent tests, and independent review are complete. The Task 1 checkpoint commit, Tasks 2-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Task 1 is complete, independently reviewed, and committed. Tasks 2-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -503,7 +503,7 @@ git diff --check
 
 Expected: all semantic cases pass twice; A/B/C target IDs are stable at `{a,b,c}` / `{b,c}` / `{c}`; both small and large filtered target plans contain the one shared cycle walk and one effective subtree recursive union with one actual loop each; no test depends on duration, cost, or exact buffers.
 
-- [ ] **Step 5: Complete exact-range Task 1 reviews and checkpoint**
+- [x] **Step 5: Complete exact-range Task 1 reviews and checkpoint**
 
 Generate an ignored base-to-working-tree package. Obtain independent SPEC and standards reviews for Task 1; require explicit confirmation that `effectiveDepartmentCTEs` is defined once, `effectiveSubtreeCTE` follows only `effective_parent_external_id`, and non-anchor `b` excludes `a`. Resolve every Critical/Important finding, rerun Step 4, then commit:
 
