@@ -78,6 +78,72 @@ func TestWorkflowSchemasRoundTrip(t *testing.T) {
 	}
 }
 
+func TestQuotaResetRequestEventsAreAppendOnly(t *testing.T) {
+	ctx := context.Background()
+
+	newEvent := func(t *testing.T) (*ent.Client, int) {
+		t.Helper()
+		client := testdb.Open(t)
+		event := client.QuotaResetRequestEvent.Create().
+			SetRequestID(101).
+			SetEventType(quotaresetrequestevent.EventTypeCreated).
+			SetErrorMessage("original event").
+			SaveX(ctx)
+		return client, event.ID
+	}
+
+	tests := []struct {
+		name string
+		run  func(*ent.Client, int) error
+	}{
+		{
+			name: "direct update",
+			run: func(client *ent.Client, id int) error {
+				update := client.QuotaResetRequestEvent.UpdateOneID(id)
+				if err := update.Mutation().SetField("error_message", "tampered"); err != nil {
+					return err
+				}
+				_, err := update.Save(ctx)
+				return err
+			},
+		},
+		{
+			name: "relabeled update",
+			run: func(client *ent.Client, id int) error {
+				update := client.QuotaResetRequestEvent.UpdateOneID(id)
+				if err := update.Mutation().SetField("error_message", "tampered"); err != nil {
+					return err
+				}
+				update.Mutation().SetOp(ent.OpCreate)
+				_, err := update.Save(ctx)
+				return err
+			},
+		},
+		{
+			name: "direct delete",
+			run: func(client *ent.Client, id int) error {
+				return client.QuotaResetRequestEvent.DeleteOneID(id).Exec(ctx)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, id := newEvent(t)
+			if err := tt.run(client, id); err == nil {
+				t.Fatal("append-only mutation succeeded")
+			}
+			stored, err := client.QuotaResetRequestEvent.Get(ctx, id)
+			if err != nil {
+				t.Fatalf("stored event after rejected mutation: %v", err)
+			}
+			if stored.ErrorMessage != "original event" {
+				t.Fatalf("stored event error = %q, want original event", stored.ErrorMessage)
+			}
+		})
+	}
+}
+
 func TestQuotaResetRequestCreationFactsAreImmutable(t *testing.T) {
 	updateTypes := []reflect.Type{
 		reflect.TypeOf((*ent.QuotaResetRequestUpdate)(nil)),

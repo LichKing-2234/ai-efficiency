@@ -1,51 +1,37 @@
 <script setup lang="ts">
 import { X } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import AppLayout from '@/components/AppLayout.vue'
 import QuotaResetDecisionDialog from '@/components/quota-reset/QuotaResetDecisionDialog.vue'
 import QuotaResetRequestList from '@/components/quota-reset/QuotaResetRequestList.vue'
 import QuotaResetWorkflowTimeline from '@/components/quota-reset/QuotaResetWorkflowTimeline.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
-import {
-  adminApproveQuotaResetRequest,
-  adminRejectQuotaResetRequest,
-  adminRetryQuotaResetRequest,
-  approveQuotaResetRequest,
-  cancelQuotaResetRequest,
-  listAdminQuotaResetRequests,
-  listMyQuotaResetRequests,
-  listQuotaResetApprovals,
-  rejectQuotaResetRequest,
-  retryQuotaResetRequest,
-} from '@/api/quotaReset'
 import { useModalFocus } from '@/composables/useModalFocus'
 import { useToast } from '@/composables/useToast'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
+import { useQuotaResetStore, type FilterMode, type QueueMode, type QuotaResetActionResult } from '@/stores/quotaReset'
 import { useWorkItemsStore } from '@/stores/workItems'
-import type { QuotaResetRequestSummary, QuotaResetStatus } from '@/types'
+import { quotaResetStatusClass, quotaResetStatusLabel } from '@/utils/quotaResetRequestStatus'
+import type { QuotaResetRequestSummary } from '@/types'
 
 const { t } = useI18n()
 const { showToast } = useToast()
 const auth = useAuthStore()
 const workItems = useWorkItemsStore()
+const quotaReset = useQuotaResetStore()
+const {
+  activeQueue,
+  activeFilter,
+  myTotal,
+  actionBusy,
+  dataRevision,
+  loading,
+  loadError,
+  visibleItems,
+} = storeToRefs(quotaReset)
 
-type QueueMode = 'mine' | 'approvals' | 'admin'
-type FilterMode = 'all' | 'pending' | 'processed' | 'failed'
-
-const activeQueue = ref<QueueMode>('mine')
-const activeFilter = ref<FilterMode>('all')
-const myRequests = ref<QuotaResetRequestSummary[]>([])
-const approvalRequests = ref<QuotaResetRequestSummary[]>([])
-const approvalHistoryRequests = ref<QuotaResetRequestSummary[]>([])
-const adminRequests = ref<QuotaResetRequestSummary[]>([])
-const myTotal = ref(0)
-const approvalHistoryLoaded = ref(false)
-const coreLoading = ref(false)
-const approvalHistoryLoading = ref(false)
-const actionBusy = ref(false)
-const coreLoadError = ref('')
-const approvalHistoryError = ref('')
 const selectedRequest = ref<QuotaResetRequestSummary | null>(null)
 const requestDetailDialog = ref<HTMLElement | null>(null)
 const requestDetailCloseButton = ref<HTMLElement | null>(null)
@@ -54,23 +40,8 @@ const decisionRequest = ref<QuotaResetRequestSummary | null>(null)
 const decisionMode = ref<'approve' | 'reject'>('approve')
 const decisionQueue = ref<QueueMode>('approvals')
 const filters: FilterMode[] = ['all', 'pending', 'processed', 'failed']
-let approvalHistoryGeneration = 0
-let approvalHistoryLoadPromise: Promise<void> | null = null
 const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : workItems.counts.quota_reset_approval_count)
 const adminTotal = computed(() => workItems.loading || workItems.error || !auth.isAdmin ? 0 : workItems.counts.quota_reset_admin_count)
-const displayingApprovalHistory = computed(() => activeQueue.value === 'approvals' && activeFilter.value === 'processed')
-const loading = computed(() => displayingApprovalHistory.value ? approvalHistoryLoading.value : coreLoading.value)
-const loadError = computed(() => displayingApprovalHistory.value ? approvalHistoryError.value : coreLoadError.value)
-
-const queueItems = computed(() => {
-  if (activeQueue.value === 'approvals') {
-    return activeFilter.value === 'processed' ? approvalHistoryRequests.value : approvalRequests.value
-  }
-  if (activeQueue.value === 'admin') return adminRequests.value
-  return myRequests.value
-})
-
-const visibleItems = computed(() => queueItems.value.filter((item) => filterMatches(item, activeFilter.value)))
 const requestDetailOpen = computed(() => selectedRequest.value !== null)
 
 const { handleKeydown: handleRequestDetailKeydown } = useModalFocus(
@@ -92,11 +63,7 @@ function closeRequestDetails() {
 }
 
 function findRequest(requestID: number) {
-  return queueItems.value.find((item) => item.id === requestID)
-    ?? myRequests.value.find((item) => item.id === requestID)
-    ?? approvalRequests.value.find((item) => item.id === requestID)
-    ?? approvalHistoryRequests.value.find((item) => item.id === requestID)
-    ?? adminRequests.value.find((item) => item.id === requestID)
+  return quotaReset.findRequest(requestID)
 }
 
 function syncSelectedRequest() {
@@ -104,90 +71,14 @@ function syncSelectedRequest() {
   selectedRequest.value = findRequest(selectedRequest.value.id) ?? null
 }
 
-async function loadQueues(forceCounts = false) {
-  coreLoading.value = true
-  coreLoadError.value = ''
-  void workItems.loadCounts({ force: forceCounts })
-  try {
-    const requests = [
-      listMyQuotaResetRequests(),
-      listQuotaResetApprovals(),
-    ] as const
-    const [mine, approvals] = await Promise.all(requests)
-    myRequests.value = mine.data.data?.items ?? []
-    approvalRequests.value = approvals.data.data?.items ?? []
-    myTotal.value = mine.data.data?.total ?? myRequests.value.length
-    if (auth.isAdmin) {
-      const admin = await listAdminQuotaResetRequests()
-      adminRequests.value = admin.data.data?.items ?? []
-    } else {
-      adminRequests.value = []
-    }
-    syncSelectedRequest()
-  } catch {
-    coreLoadError.value = t('quotaReset.loadFailed')
-  } finally {
-    coreLoading.value = false
-  }
-}
-
-function filterMatches(item: QuotaResetRequestSummary, filter: FilterMode) {
-  const { status } = item
-  if (filter === 'all') return true
-  if (filter === 'pending') return status === 'pending' || status === 'approved_resetting'
-  if (filter === 'failed') return status === 'approved_reset_failed'
-  if (activeQueue.value === 'approvals' && isWorkflowRequest(item)) return true
-  return status === 'approved_reset_succeeded' || status === 'rejected' || status === 'cancelled'
-}
-
-function loadApprovalHistory(): Promise<void> {
-  if (approvalHistoryLoaded.value) return Promise.resolve()
-  if (approvalHistoryLoadPromise) return approvalHistoryLoadPromise
-
-  approvalHistoryLoading.value = true
-  approvalHistoryError.value = ''
-  const requestGeneration = approvalHistoryGeneration
-  const request = (async () => {
-    try {
-      const history = await listQuotaResetApprovals({ scope: 'history' })
-      if (requestGeneration !== approvalHistoryGeneration) return
-      approvalHistoryRequests.value = history.data.data?.items ?? []
-      approvalHistoryLoaded.value = true
-    } catch {
-      if (requestGeneration !== approvalHistoryGeneration) return
-      approvalHistoryError.value = t('quotaReset.loadFailed')
-    } finally {
-      if (requestGeneration === approvalHistoryGeneration) {
-        approvalHistoryLoading.value = false
-        approvalHistoryLoadPromise = null
-      }
-    }
-  })()
-  approvalHistoryLoadPromise = request
-  return request
-}
-
-function invalidateApprovalHistory() {
-  approvalHistoryGeneration += 1
-  approvalHistoryLoadPromise = null
-  approvalHistoryLoaded.value = false
-  approvalHistoryLoading.value = false
-  approvalHistoryError.value = ''
-  approvalHistoryRequests.value = []
-}
+watch(dataRevision, syncSelectedRequest)
 
 function selectQueue(queue: QueueMode) {
-  activeQueue.value = queue
-  if (queue === 'approvals' && activeFilter.value === 'processed') {
-    void loadApprovalHistory()
-  }
+  quotaReset.selectQueue(queue)
 }
 
 function selectFilter(filter: FilterMode) {
-  activeFilter.value = filter
-  if (filter === 'processed' && activeQueue.value === 'approvals') {
-    void loadApprovalHistory()
-  }
+  quotaReset.selectFilter(filter)
 }
 
 function filterLabel(filter: FilterMode) {
@@ -197,30 +88,11 @@ function filterLabel(filter: FilterMode) {
   return t('quotaReset.filter.all')
 }
 
-function statusLabel(status: QuotaResetStatus) {
-  switch (status) {
-    case 'approved_resetting':
-      return t('quotaReset.status.approved_resetting')
-    case 'approved_reset_succeeded':
-      return t('quotaReset.status.approved_reset_succeeded')
-    case 'approved_reset_failed':
-      return t('quotaReset.status.approved_reset_failed')
-    case 'rejected':
-      return t('quotaReset.status.rejected')
-    case 'cancelled':
-      return t('quotaReset.status.cancelled')
-    default:
-      return t('quotaReset.status.pending')
-  }
+function statusLabel(status: QuotaResetRequestSummary['status']) {
+  return quotaResetStatusLabel(t, status)
 }
 
-function statusClass(status: QuotaResetStatus) {
-  if (status === 'approved_reset_succeeded') return 'bg-emerald-50 text-emerald-700'
-  if (status === 'approved_reset_failed') return 'bg-red-50 text-red-700'
-  if (status === 'rejected' || status === 'cancelled') return 'bg-slate-100 text-slate-600'
-  if (status === 'approved_resetting') return 'bg-blue-50 text-blue-700'
-  return 'bg-amber-50 text-amber-700'
-}
+const statusClass = quotaResetStatusClass
 
 function countBadge(count: number) {
   return count > 99 ? '99+' : String(count)
@@ -251,79 +123,26 @@ function filterButtonClass(active: boolean) {
   ]
 }
 
-interface WorkflowAdvancedDetails {
-  request: QuotaResetRequestSummary | null
-}
-
-function workflowAdvancedDetails(error: unknown): WorkflowAdvancedDetails | null {
-  const response = (error as {
-    response?: {
-      status?: number
-      data?: { message?: string; details?: { request?: unknown } }
-    }
-  })?.response
-  if (response?.status !== 409 || response.data?.message !== 'workflow_advanced') return null
-
-  const request = response.data.details?.request
-  if (!request || typeof request !== 'object' || typeof (request as { id?: unknown }).id !== 'number') {
-    return { request: null }
-  }
-  return { request: request as QuotaResetRequestSummary }
-}
-
-function replaceMatchingRequest(requestID: number, replacement: QuotaResetRequestSummary) {
-  if (replacement.id !== requestID) return false
-
-  const replace = (items: QuotaResetRequestSummary[]) => items.map((item) => (
-    item.id === requestID ? replacement : item
-  ))
-  myRequests.value = replace(myRequests.value)
-  approvalRequests.value = replace(approvalRequests.value)
-  approvalHistoryRequests.value = replace(approvalHistoryRequests.value)
-  adminRequests.value = replace(adminRequests.value)
-  if (selectedRequest.value?.id === requestID) {
-    selectedRequest.value = replacement
-  }
-  return true
-}
-
 function closeDecisionDialog() {
   decisionRequest.value = null
 }
 
-async function withAction(
-  requestID: number,
-  action: () => Promise<unknown>,
+async function handleAction(
+  action: Promise<QuotaResetActionResult>,
   options: { closeDecisionOnSuccess?: boolean } = {},
 ) {
-  if (actionBusy.value) return
-  actionBusy.value = true
-  try {
-    await action()
-    const refreshDisplayedHistory = displayingApprovalHistory.value
-    invalidateApprovalHistory()
-    if (refreshDisplayedHistory) {
-      void loadApprovalHistory()
-    }
+  const result = await action
+  if (result === 'success') {
     if (options.closeDecisionOnSuccess) closeDecisionDialog()
-    await loadQueues(true)
     showToast({ message: t('quotaReset.actionSucceeded'), tone: 'success' })
-  } catch (error) {
-    const advanced = workflowAdvancedDetails(error)
-    if (advanced) {
-      closeDecisionDialog()
-      if (advanced.request && replaceMatchingRequest(requestID, advanced.request)) {
-        void workItems.loadCounts({ force: true })
-      } else {
-        await loadQueues(true)
-      }
-      showToast({ message: t('quotaReset.workflowAdvanced'), tone: 'info' })
-      return
-    }
-    showToast({ message: t('quotaReset.actionFailed'), tone: 'error' })
-  } finally {
-    actionBusy.value = false
+    return
   }
+  if (result === 'workflow_advanced') {
+    closeDecisionDialog()
+    showToast({ message: t('quotaReset.workflowAdvanced'), tone: 'info' })
+    return
+  }
+  if (result === 'failed') showToast({ message: t('quotaReset.actionFailed'), tone: 'error' })
 }
 
 function isWorkflowRequest(item: QuotaResetRequestSummary) {
@@ -338,7 +157,7 @@ function openDecisionDialog(item: QuotaResetRequestSummary, mode: 'approve' | 'r
 }
 
 function handleCancel(item: QuotaResetRequestSummary) {
-  void withAction(item.id, () => cancelQuotaResetRequest(item.id))
+  void handleAction(quotaReset.cancel(item.id))
 }
 
 function handleApprove(item: QuotaResetRequestSummary) {
@@ -347,10 +166,10 @@ function handleApprove(item: QuotaResetRequestSummary) {
     return
   }
   if (activeQueue.value === 'admin') {
-    void withAction(item.id, () => adminApproveQuotaResetRequest(item.id, {}))
+    void handleAction(quotaReset.approve(item.id, true))
     return
   }
-  void withAction(item.id, () => approveQuotaResetRequest(item.id, {}))
+  void handleAction(quotaReset.approve(item.id, false))
 }
 
 function handleReject(item: QuotaResetRequestSummary) {
@@ -361,30 +180,26 @@ function handleDecisionSubmit(payload: { request_node_id?: number; decision_reas
   const item = decisionRequest.value
   if (!item || actionBusy.value) return
 
-  const body = payload.request_node_id
+  const body = payload.request_node_id !== undefined
     ? { request_node_id: payload.request_node_id, decision_reason: payload.decision_reason }
     : { decision_reason: payload.decision_reason }
   const isAdminQueue = decisionQueue.value === 'admin'
   const action = decisionMode.value === 'approve'
-    ? () => isAdminQueue
-      ? adminApproveQuotaResetRequest(item.id, body)
-      : approveQuotaResetRequest(item.id, body)
-    : () => isAdminQueue
-      ? adminRejectQuotaResetRequest(item.id, body)
-      : rejectQuotaResetRequest(item.id, body)
+    ? quotaReset.approve(item.id, isAdminQueue, body)
+    : quotaReset.reject(item.id, isAdminQueue, body)
 
-  void withAction(item.id, action, { closeDecisionOnSuccess: true })
+  void handleAction(action, { closeDecisionOnSuccess: true })
 }
 
 function handleRetry(item: QuotaResetRequestSummary) {
   if (activeQueue.value === 'admin') {
-    void withAction(item.id, () => adminRetryQuotaResetRequest(item.id))
+    void handleAction(quotaReset.retry(item, true))
     return
   }
-  void withAction(item.id, () => retryQuotaResetRequest(item.id))
+  void handleAction(quotaReset.retry(item, false))
 }
 
-onMounted(loadQueues)
+onMounted(() => quotaReset.loadQueues())
 </script>
 
 <template>

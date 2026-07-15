@@ -69,12 +69,23 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 		boundedWeComLine("> 所属团队：", strings.Join(ctx.DepartmentPaths, "、"), weComTeamMaxBytes),
 		boundedWeComLine("> 订阅组：", ctx.GroupName, weComGroupMaxBytes),
 	}
-	requiredTail := make([]string, 0, 3)
+	requiredTail := make([]string, 0, 5)
 	if ctx.CurrentNode != nil {
 		node := fmt.Sprintf("%d/%d · %s", ctx.CurrentNode.Position+1, ctx.CurrentNode.Total, ctx.CurrentNode.Label)
 		requiredTail = append(requiredTail, boundedWeComLine("> 当前节点：", node, weComNodeMaxBytes))
 	}
 	requiredTail = append(requiredTail, fmt.Sprintf("> 审批进度：%d/%d", completedNodes, totalNodes))
+	if reason := escapeWeComUserText(ctx.Reason); reason != "" {
+		requiredTail = append(requiredTail, truncateUTF8("> 申请原因："+reason, weComOptionalMaxBytes))
+	}
+	if len(ctx.ApprovalHistory) > 0 {
+		latest := ctx.ApprovalHistory[len(ctx.ApprovalHistory)-1]
+		decision := "> 上一审批：" + escapeWeComUserText(latest.ActorDisplayName)
+		if comment := escapeWeComUserText(latest.Comment); comment != "" {
+			decision += "：" + comment
+		}
+		requiredTail = append(requiredTail, truncateUTF8(decision, weComOptionalMaxBytes))
+	}
 	actionLine, err := weComActionLink(ctx.ActionURL)
 	if err != nil {
 		return RenderedNotification{}, err
@@ -108,19 +119,7 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 	}
 	requiredTail = append(requiredTail, actionLine)
 
-	optional := make([]string, 0, 2)
-	if reason := escapeWeComUserText(ctx.Reason); reason != "" {
-		optional = append(optional, truncateUTF8("> 申请原因："+reason, weComOptionalMaxBytes))
-	}
-	if len(ctx.ApprovalHistory) > 0 {
-		latest := ctx.ApprovalHistory[len(ctx.ApprovalHistory)-1]
-		decision := "> 上一审批：" + escapeWeComUserText(latest.ActorDisplayName)
-		if comment := escapeWeComUserText(latest.Comment); comment != "" {
-			decision += "：" + comment
-		}
-		optional = append(optional, truncateUTF8(decision, weComOptionalMaxBytes))
-	}
-	content := fitWeComMarkdown(requiredHead, optional, requiredTail, maxBytes)
+	content := fitWeComMarkdown(requiredHead, nil, requiredTail, maxBytes)
 	if strings.TrimSpace(content) == "" {
 		return RenderedNotification{}, fmt.Errorf("render WeCom notification: required content exceeds %d bytes", maxBytes)
 	}

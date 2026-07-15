@@ -387,6 +387,9 @@ func TestWeComAdapterKeepsRequiredFieldsWithinByteLimit(t *testing.T) {
 		"所属团队：Department Alpha / Team One-",
 		"订阅组：Group Alpha-",
 		"当前节点：2/3 · Department Beta-",
+		"申请原因：Reason-",
+		"上一审批：Dana",
+		"Approved the initial review.",
 		"[进入待处理](https://ai-efficiency.example.com/usage/quota-reset?request_id=123)",
 	} {
 		if !strings.Contains(content, required) {

@@ -709,6 +709,8 @@ func init() {
 	quotaresetrequestdecisionDescCreatedAt := quotaresetrequestdecisionFields[7].Descriptor()
 	// quotaresetrequestdecision.DefaultCreatedAt holds the default value on creation for the created_at field.
 	quotaresetrequestdecision.DefaultCreatedAt = quotaresetrequestdecisionDescCreatedAt.Default.(func() time.Time)
+	quotaresetrequesteventHooks := schema.QuotaResetRequestEvent{}.Hooks()
+	quotaresetrequestevent.Hooks[0] = quotaresetrequesteventHooks[0]
 	quotaresetrequesteventFields := schema.QuotaResetRequestEvent{}.Fields()
 	_ = quotaresetrequesteventFields
 	// quotaresetrequesteventDescErrorMessage is the schema descriptor for error_message field.

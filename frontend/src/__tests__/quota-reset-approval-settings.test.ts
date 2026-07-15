@@ -1206,6 +1206,8 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.get('[data-testid="quota-reset-current-directory-source"]').text()).toBe('Directory A')
     expect(wrapper.find('[data-testid="quota-reset-config-row-7"]').exists()).toBe(true)
 
+    await wrapper.get('[data-testid="quota-reset-config-remove-7"]').trigger('click')
+    expect(wrapper.find('[data-testid="quota-reset-config-row-7"]').exists()).toBe(false)
     await wrapper.get('[data-testid="quota-reset-save-approvers"]').trigger('click')
     await flushPromises()
 

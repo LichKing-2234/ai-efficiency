@@ -26,8 +26,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const configs = ref<QuotaResetApproverConfig[]>([])
+const authoritativeConfigs = ref<QuotaResetApproverConfig[]>([])
 const directorySources = ref<DirectorySource[]>([])
 const selectedDirectorySourceID = ref<number | null>(null)
+const authoritativeDirectorySourceID = ref<number | null>(null)
 const loading = ref(false)
 const saving = ref(false)
 const configsAuthoritative = ref(false)
@@ -222,9 +224,7 @@ async function loadConfigs() {
       response?.data?.data,
       t('quotaResetSettings.approverLoadFailed'),
     )
-    configs.value = data.items
-    applyAuthoritativeDirectorySource(data.directory_source_id)
-    configsAuthoritative.value = true
+    acceptAuthoritativeConfigs(data)
   } catch (err) {
     error.value = errorMessage(err, t('quotaResetSettings.approverLoadFailed'))
   } finally {
@@ -358,6 +358,26 @@ function applyAuthoritativeDirectorySource(sourceID: number | null) {
   return true
 }
 
+function cloneConfigs(items: QuotaResetApproverConfig[]) {
+  return items.map(item => ({ ...item }))
+}
+
+function acceptAuthoritativeConfigs(data: QuotaResetApproverConfigListResponse) {
+  const sourceChanged = applyAuthoritativeDirectorySource(data.directory_source_id)
+  configs.value = cloneConfigs(data.items)
+  authoritativeConfigs.value = cloneConfigs(data.items)
+  authoritativeDirectorySourceID.value = data.directory_source_id
+  configsAuthoritative.value = true
+  return sourceChanged
+}
+
+function restoreAuthoritativeConfigs() {
+  configs.value = cloneConfigs(authoritativeConfigs.value)
+  if (selectedDirectorySourceID.value !== authoritativeDirectorySourceID.value) {
+    applyAuthoritativeDirectorySource(authoritativeDirectorySourceID.value)
+  }
+}
+
 async function loadCandidatePage(page: number, append: boolean) {
   const sourceID = selectedDirectorySourceID.value
   const sequence = ++candidateRequestSequence
@@ -480,15 +500,14 @@ async function saveConfigs() {
       response?.data?.data,
       t('quotaResetSettings.configSaveFailed'),
     )
-    configs.value = data.items
-    const sourceChanged = applyAuthoritativeDirectorySource(data.directory_source_id)
-    configsAuthoritative.value = true
+    const sourceChanged = acceptAuthoritativeConfigs(data)
     if (!sourceChanged) {
       resetSelectedDepartment()
     }
     message.value = t('quotaResetSettings.configSaved')
     emit('saved')
   } catch (err) {
+    restoreAuthoritativeConfigs()
     error.value = errorMessage(err, t('quotaResetSettings.configSaveFailed'))
   } finally {
     saving.value = false
