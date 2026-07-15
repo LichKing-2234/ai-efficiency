@@ -21,7 +21,7 @@
 - Login redirects an already verified user synchronously. When only a token exists, Login renders immediately and redirects to the existing safe target only after hydration verifies the user.
 - OAuth authorize and device route chunks render immediately. Device login retains its existing unauthenticated redirect behavior after an invalid stored token is discovered.
 - Current-user hydration is single-flight per current token and session generation. Concurrent callers share one promise; a settled request is cleared; a new token/generation does not join an older request; a response from a logged-out or replaced session cannot repopulate user state even if the later session reuses the same token string.
-- A superseded navigation cannot apply a delayed hydration redirect to the newer route.
+- A superseded navigation cannot apply a delayed hydration redirect to the newer route, including when the newer route has the same `fullPath`; delayed effects are gated by a monotonic navigation generation, not path equality alone.
 - Keep authentication authority in the backend and existing Axios authentication/refresh path. Do not add identity caching in Redis, browser persistence for user objects, backend changes, route prefetch libraries, or a second auth store.
 - Keep `frontend/src/router/index.ts` responsible for route composition and `frontend/src/router/authGuard.ts` responsible for hydration/navigation policy. Keep API calls in the existing auth store/API modules.
 - Tests, docs, route fixtures, usernames, and emails use only synthetic values such as `alice@example.com` and `bob@example.org`.
@@ -88,7 +88,7 @@ Use only `alice@example.com`, `bob@example.org`, `token-a`, and `token-b`. Asser
 Run:
 
 ```bash
-cd frontend && npm test -- src/__tests__/auth-store.test.ts
+(cd frontend && npm test -- src/__tests__/auth-store.test.ts)
 ```
 
 Expected: FAIL because `ensureUser` does not exist and current `fetchMe` starts one request per caller without token-generation protection.
@@ -126,8 +126,8 @@ Return `User | null` from both success and handled-error paths so background rou
 Run:
 
 ```bash
-cd frontend && npm test -- src/__tests__/auth-store.test.ts src/__tests__/app-sidebar.test.ts
-cd frontend && npm run build
+(cd frontend && npm test -- src/__tests__/auth-store.test.ts src/__tests__/app-sidebar.test.ts)
+(cd frontend && npm run build)
 git diff --check
 ```
 
@@ -181,6 +181,7 @@ admin /settings with non-admin identity: settings loader is never called and nav
 admin /settings with invalid token: settings loader is never called and navigation redirects to Login
 one navigation: before-guard hydration plus after-confirmation follow-up still records exactly one getMe
 superseded Login navigation: delayed successful hydration cannot redirect a later OAuth navigation
+same-path Login A -> OAuth -> Login A: the shared hydration can redirect only the newest Login generation and calls router.replace once
 OAuth device with an invalid stored token: its chunk renders first, then the delayed invalidation redirects to Login
 ```
 
@@ -191,7 +192,7 @@ Use deferred-promise assertions and `flushPromises`; do not use elapsed-time thr
 Run:
 
 ```bash
-cd frontend && npm test -- src/__tests__/router-hydration.test.ts src/__tests__/router.test.ts
+(cd frontend && npm test -- src/__tests__/router-hydration.test.ts src/__tests__/router.test.ts)
 ```
 
 Expected: FAIL because the current global guard awaits `fetchMe()` before every lazy route, has no installable scheduling module, and cannot attach navigation-safe background follow-ups.
@@ -204,7 +205,7 @@ Create `authGuard.ts` with the current safe-redirect validation and one exported
 export function installAuthNavigationGuards(router: Router): void
 ```
 
-The installer registers one `beforeEach` and one `afterEach`. The before guard resets the previous pending follow-up and applies the Route Scheduling Matrix:
+The installer registers one `beforeEach` and one `afterEach`. Every before guard increments a monotonic navigation generation, invalidates the previous pending follow-up, and applies the Route Scheduling Matrix:
 
 ```text
 public: start ensureUser without await when token exists and user is absent
@@ -213,7 +214,7 @@ ordinary protected: reject no-token navigation immediately; otherwise start ensu
 admin: reject no token; await ensureUser when needed; recheck token; then require isAdmin before returning
 ```
 
-For Login, ordinary protected routes, and the OAuth device route, store at most one pending follow-up containing the destination `fullPath`, follow-up kind, safe redirect, and the Task 1 promise. The after guard attaches to that promise only for the route just confirmed. Before calling `router.replace`, it must recheck that `router.currentRoute.value.fullPath` still equals the captured destination. A later navigation overwrites the pending follow-up, so a superseded request cannot redirect it.
+For Login, ordinary protected routes, and the OAuth device route, store at most one pending follow-up containing the captured navigation generation, destination route identity and `fullPath`, follow-up kind, safe redirect, and the Task 1 promise. The after guard attaches to that promise only when its confirmed destination matches that exact pending generation. Before calling `router.replace`, it must recheck both that the captured generation is still current and that `router.currentRoute.value.fullPath` still equals the captured destination. A later navigation increments the generation even when it returns to the same `fullPath`, so an older follow-up cannot redirect or duplicate a redirect for the newer navigation.
 
 Mark the existing OAuth device route with one explicit meta flag used only for post-hydration invalid-token redirect; keep `meta.public=true`. Move no route and change no lazy import.
 
@@ -230,10 +231,10 @@ Ensure each test creates a fresh router and Pinia or uses a unique path/query; n
 Run:
 
 ```bash
-cd frontend && npm test -- src/__tests__/auth-store.test.ts src/__tests__/router-hydration.test.ts src/__tests__/router.test.ts src/__tests__/oauth-authorize-page.test.ts src/__tests__/oauth-device-page.test.ts
-cd frontend && npm test
-cd frontend && npm run build
-cd frontend && npm run test:e2e:role
+(cd frontend && npm test -- src/__tests__/auth-store.test.ts src/__tests__/router-hydration.test.ts src/__tests__/router.test.ts src/__tests__/oauth-authorize-page.test.ts src/__tests__/oauth-device-page.test.ts)
+(cd frontend && npm test)
+(cd frontend && npm run build)
+(cd frontend && npm run test:e2e:role)
 git diff --check
 ```
 
@@ -285,11 +286,11 @@ Add `frontend/src/router/authGuard.ts` to the frontend module responsibility row
 Run exactly:
 
 ```bash
-cd backend && go test ./...
-cd ae-cli && go test ./...
-cd frontend && npm test
-cd frontend && npm run build
-cd frontend && npm run test:e2e:role
+(cd backend && go test ./...)
+(cd ae-cli && go test ./...)
+(cd frontend && npm test)
+(cd frontend && npm run build)
+(cd frontend && npm run test:e2e:role)
 bash deploy/test/release-frontend-embed-test.sh
 git diff --check
 ```
