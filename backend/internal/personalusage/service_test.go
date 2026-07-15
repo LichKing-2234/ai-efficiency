@@ -1,0 +1,339 @@
+package personalusage
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/testdb"
+)
+
+const personalUsageTestEncryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
+
+type originProviderStub struct {
+	relay.Provider
+	mu       sync.Mutex
+	requests []relay.UserUsageOriginRequest
+	read     func(relay.UserUsageOriginRequest) (*relay.UserUsageOriginResult, error)
+}
+
+func (s *originProviderStub) ReadUserUsageOrigin(_ context.Context, request relay.UserUsageOriginRequest) (*relay.UserUsageOriginResult, error) {
+	s.mu.Lock()
+	s.requests = append(s.requests, request)
+	s.mu.Unlock()
+	return s.read(request)
+}
+
+func (s *originProviderStub) requestSnapshot() []relay.UserUsageOriginRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]relay.UserUsageOriginRequest(nil), s.requests...)
+}
+
+type providerResolverStub struct {
+	provider relay.Provider
+	err      error
+	ids      []int
+}
+
+func (r *providerResolverStub) Resolve(_ context.Context, providerID int) (relay.Provider, error) {
+	r.ids = append(r.ids, providerID)
+	return r.provider, r.err
+}
+
+func createPersonalUsageFixture(t *testing.T, withPassword bool) (*Service, *originProviderStub, int, func() time.Time) {
+	t.Helper()
+	client := testdb.Open(t)
+	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	create := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource("relay_sso").
+		SetRelayUserID(7).
+		SetRole("user")
+	if withPassword {
+		ciphertext, err := pkg.Encrypt("test-password", personalUsageTestEncryptionKey)
+		if err != nil {
+			t.Fatalf("encrypt password: %v", err)
+		}
+		create.SetRelayAuthPassword(ciphertext)
+	}
+	user, err := create.Save(context.Background())
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	providerRow, err := client.RelayProvider.Create().
+		SetName("primary").
+		SetDisplayName("Primary").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("encrypted-test-key").
+		SetDefaultModel("example-model").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		Save(context.Background())
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	monthlyLimit := 100.0
+	origin := &originProviderStub{}
+	origin.read = func(request relay.UserUsageOriginRequest) (*relay.UserUsageOriginResult, error) {
+		result := &relay.UserUsageOriginResult{}
+		if request.Branches.Usage {
+			result.Usage = testUsageSnapshot(10)
+		}
+		if request.Branches.Quota {
+			result.APIKeys = []relay.APIKey{{
+				ID: 11, UserID: 7, Status: "active", Quota: 0,
+				Group: &relay.Group{
+					ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription", MonthlyLimitUSD: &monthlyLimit,
+				},
+			}}
+			result.Subscriptions = []relay.UserSubscription{{
+				ID: 12, UserID: 7, GroupID: 42, Status: "active", MonthlyUsageUSD: 25,
+			}}
+		}
+		return result, nil
+	}
+	resolver := &providerResolverStub{provider: origin}
+	store := newFakeUsageStore(func() time.Time { return now })
+	cache := testCache(t, store, func() time.Time { return now }, 0)
+	service := NewService(client, resolver, personalUsageTestEncryptionKey, cache)
+	if providerRow.ConfigurationVersion != 1 {
+		t.Fatalf("provider configuration version = %d", providerRow.ConfigurationVersion)
+	}
+	return service, origin, user.ID, func() time.Time { return now }
+}
+
+func TestServiceCombinedColdReadThenWarmReadFetchesQuotaFreshOnly(t *testing.T) {
+	service, origin, userID, _ := createPersonalUsageFixture(t, true)
+	resolver := service.resolver.(*providerResolverStub)
+	request := Request{
+		UserID: userID,
+		Params: relay.UserUsageDashboardParams{
+			StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day", Timezone: "Asia/Shanghai",
+		},
+		IncludeGroupQuotas: true,
+	}
+
+	cold, err := service.Dashboard(context.Background(), request)
+	if err != nil {
+		t.Fatalf("cold Dashboard() error = %v", err)
+	}
+	if cold == nil || cold.UsageFreshness == nil || cold.UsageFreshness.CacheStatus != "miss" {
+		t.Fatalf("cold snapshot = %+v", cold)
+	}
+	if cold.GroupQuotas == nil || cold.GroupQuotas.Status != "ok" || len(cold.GroupQuotas.Groups) != 1 {
+		t.Fatalf("cold quotas = %+v", cold.GroupQuotas)
+	}
+	if cold.QuotaFreshness == nil || cold.QuotaFreshness.CacheStatus != "uncached" || cold.QuotaFreshness.SourceStatus != "ok" {
+		t.Fatalf("cold quota freshness = %+v", cold.QuotaFreshness)
+	}
+
+	warm, err := service.Dashboard(context.Background(), request)
+	if err != nil {
+		t.Fatalf("warm Dashboard() error = %v", err)
+	}
+	if warm.UsageFreshness == nil || warm.UsageFreshness.CacheStatus != "fresh" {
+		t.Fatalf("warm usage freshness = %+v", warm.UsageFreshness)
+	}
+	requests := origin.requestSnapshot()
+	if len(requests) != 2 {
+		t.Fatalf("origin requests = %d, want 2", len(requests))
+	}
+	if !requests[0].Branches.Usage || !requests[0].Branches.Quota {
+		t.Fatalf("cold branches = %+v, want combined", requests[0].Branches)
+	}
+	if requests[1].Branches.Usage || !requests[1].Branches.Quota {
+		t.Fatalf("warm branches = %+v, want quota-only", requests[1].Branches)
+	}
+	if requests[0].Login != "alice@example.com" || requests[0].Password != "test-password" || requests[0].RelayUserID != 7 {
+		t.Fatalf("origin identity = %+v", requests[0])
+	}
+	if len(resolver.ids) != 2 {
+		t.Fatalf("provider resolutions = %d, want one per request", len(resolver.ids))
+	}
+}
+
+func TestServiceUsageOnlyProjectionNeverReadsQuota(t *testing.T) {
+	service, origin, userID, _ := createPersonalUsageFixture(t, true)
+	snapshot, err := service.Dashboard(context.Background(), Request{
+		UserID: userID,
+		Params: relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"},
+	})
+	if err != nil {
+		t.Fatalf("Dashboard() error = %v", err)
+	}
+	if snapshot.GroupQuotas != nil || snapshot.QuotaFreshness != nil {
+		t.Fatalf("usage-only response contains quota: %+v", snapshot)
+	}
+	requests := origin.requestSnapshot()
+	if len(requests) != 1 || !requests[0].Branches.Usage || requests[0].Branches.Quota {
+		t.Fatalf("origin requests = %+v", requests)
+	}
+}
+
+func TestServiceMissingCredentialsReturnsUnconfiguredWithoutOrigin(t *testing.T) {
+	service, origin, userID, _ := createPersonalUsageFixture(t, false)
+	snapshot, err := service.Dashboard(context.Background(), Request{
+		UserID:             userID,
+		Params:             relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"},
+		IncludeGroupQuotas: true,
+	})
+	if err != nil {
+		t.Fatalf("Dashboard() error = %v", err)
+	}
+	if snapshot == nil || snapshot.Configured || snapshot.UsageFreshness != nil || snapshot.QuotaFreshness != nil {
+		t.Fatalf("unconfigured snapshot = %+v", snapshot)
+	}
+	if len(origin.requestSnapshot()) != 0 {
+		t.Fatalf("origin called without credentials: %+v", origin.requestSnapshot())
+	}
+}
+
+func TestServiceQuotaFailureIsSectionLocalAndUncached(t *testing.T) {
+	service, origin, userID, _ := createPersonalUsageFixture(t, true)
+	origin.read = func(request relay.UserUsageOriginRequest) (*relay.UserUsageOriginResult, error) {
+		result := &relay.UserUsageOriginResult{}
+		if request.Branches.Usage {
+			result.Usage = testUsageSnapshot(10)
+		}
+		if request.Branches.Quota {
+			result.QuotaErr = errors.New("synthetic quota outage")
+		}
+		return result, nil
+	}
+	snapshot, err := service.Dashboard(context.Background(), Request{
+		UserID:             userID,
+		Params:             relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"},
+		IncludeGroupQuotas: true,
+	})
+	if err != nil {
+		t.Fatalf("Dashboard() error = %v", err)
+	}
+	if snapshot.Stats == nil || snapshot.Stats.TotalRequests != 10 {
+		t.Fatalf("usage missing after quota failure: %+v", snapshot)
+	}
+	if snapshot.GroupQuotas == nil || snapshot.GroupQuotas.Status != "unavailable" {
+		t.Fatalf("quota state = %+v", snapshot.GroupQuotas)
+	}
+	if snapshot.QuotaFreshness == nil || snapshot.QuotaFreshness.SourceStatus != "error" || snapshot.QuotaFreshness.AsOf != nil {
+		t.Fatalf("quota freshness = %+v", snapshot.QuotaFreshness)
+	}
+}
+
+func TestServiceGroupQuotasUsesQuotaOnlyOrigin(t *testing.T) {
+	service, origin, userID, _ := createPersonalUsageFixture(t, true)
+	response, err := service.GroupQuotas(context.Background(), Request{
+		UserID: userID,
+		Params: relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"},
+	})
+	if err != nil {
+		t.Fatalf("GroupQuotas() error = %v", err)
+	}
+	if response.GroupQuotas.Status != "ok" || response.QuotaFreshness.SourceStatus != "ok" || response.QuotaFreshness.AsOf == nil {
+		t.Fatalf("GroupQuotas() response = %+v", response)
+	}
+	requests := origin.requestSnapshot()
+	if len(requests) != 1 || requests[0].Branches.Usage || !requests[0].Branches.Quota {
+		t.Fatalf("origin requests = %+v, want one quota-only read", requests)
+	}
+}
+
+func TestServicePreservesCredentialAndConfigurationErrors(t *testing.T) {
+	request := Request{
+		Params: relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"},
+	}
+	t.Run("invalid credentials", func(t *testing.T) {
+		service, origin, userID, _ := createPersonalUsageFixture(t, true)
+		request.UserID = userID
+		origin.read = func(relay.UserUsageOriginRequest) (*relay.UserUsageOriginResult, error) {
+			return nil, relay.ErrInvalidCredentials
+		}
+		if _, err := service.Dashboard(context.Background(), request); !errors.Is(err, relay.ErrInvalidCredentials) {
+			t.Fatalf("Dashboard() error = %v, want invalid credentials", err)
+		}
+	})
+	t.Run("decryption", func(t *testing.T) {
+		service, origin, userID, _ := createPersonalUsageFixture(t, true)
+		request.UserID = userID
+		service.encryptionKey = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+		if _, err := service.Dashboard(context.Background(), request); !errors.Is(err, ErrConfiguration) {
+			t.Fatalf("Dashboard() error = %v, want configuration error", err)
+		}
+		if len(origin.requestSnapshot()) != 0 {
+			t.Fatalf("origin called after decryption failure: %+v", origin.requestSnapshot())
+		}
+	})
+	t.Run("provider resolution", func(t *testing.T) {
+		service, _, userID, _ := createPersonalUsageFixture(t, true)
+		request.UserID = userID
+		service.resolver = &providerResolverStub{err: errors.New("synthetic resolver failure")}
+		if _, err := service.Dashboard(context.Background(), request); !errors.Is(err, ErrConfiguration) {
+			t.Fatalf("Dashboard() error = %v, want configuration error", err)
+		}
+	})
+}
+
+func TestServiceReturnsEmptyQuotaState(t *testing.T) {
+	service, origin, userID, _ := createPersonalUsageFixture(t, true)
+	origin.read = func(request relay.UserUsageOriginRequest) (*relay.UserUsageOriginResult, error) {
+		result := &relay.UserUsageOriginResult{}
+		if request.Branches.Usage {
+			result.Usage = testUsageSnapshot(10)
+		}
+		return result, nil
+	}
+	response, err := service.GroupQuotas(context.Background(), Request{
+		UserID: userID,
+		Params: relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"},
+	})
+	if err != nil {
+		t.Fatalf("GroupQuotas() error = %v", err)
+	}
+	if response.GroupQuotas.Status != "empty" || response.GroupQuotas.Groups == nil || response.QuotaFreshness.SourceStatus != "ok" {
+		t.Fatalf("GroupQuotas() response = %+v", response)
+	}
+}
+
+func TestQuotaPresentationUsesCurrentDailyWeeklyAndMonthlyWindows(t *testing.T) {
+	dailyLimit, weeklyLimit, monthlyLimit := 10.0, 50.0, 200.0
+	keys := []relay.APIKey{{
+		ID: 11, UserID: 7, Status: "active",
+		Group: &relay.Group{
+			ID: 42, Name: "Group Alpha", Platform: "example", SubscriptionType: "subscription",
+			DailyLimitUSD: &dailyLimit, WeeklyLimitUSD: &weeklyLimit, MonthlyLimitUSD: &monthlyLimit,
+		},
+	}}
+	subscriptions := []relay.UserSubscription{{
+		ID: 12, UserID: 7, GroupID: 42, Status: "active",
+		DailyUsageUSD: 1.5, WeeklyUsageUSD: 7.5, MonthlyUsageUSD: 25,
+	}}
+	tests := []struct {
+		name       string
+		params     relay.UserUsageDashboardParams
+		wantUsed   float64
+		wantQuota  float64
+		wantSource string
+	}{
+		{name: "daily by hour", params: relay.UserUsageDashboardParams{StartDate: "2026-07-15", EndDate: "2026-07-15", Granularity: "hour"}, wantUsed: 1.5, wantQuota: 10, wantSource: "group_daily_subscription"},
+		{name: "weekly by seven days", params: relay.UserUsageDashboardParams{StartDate: "2026-07-09", EndDate: "2026-07-15", Granularity: "day"}, wantUsed: 7.5, wantQuota: 50, wantSource: "group_weekly_subscription"},
+		{name: "monthly by longer range", params: relay.UserUsageDashboardParams{StartDate: "2026-07-01", EndDate: "2026-07-15", Granularity: "day"}, wantUsed: 25, wantQuota: 200, wantSource: "group_monthly_subscription"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state := mergeGroupQuotas(keys, subscriptions, quotaWindow(tt.params))
+			if state.Status != "ok" || len(state.Groups) != 1 {
+				t.Fatalf("quota state = %+v", state)
+			}
+			group := state.Groups[0]
+			if group.UsedAmount == nil || *group.UsedAmount != tt.wantUsed || group.QuotaAmount == nil || *group.QuotaAmount != tt.wantQuota || group.QuotaSource != tt.wantSource {
+				t.Fatalf("quota group = %+v", group)
+			}
+		})
+	}
+}
