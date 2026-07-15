@@ -389,9 +389,6 @@ func (s *QueryService) GetEventDetail(ctx context.Context, req GetEventDetailReq
 		BindingStatus:     bindingStatus(item.CommitCheckpointID),
 		MatchedPRs:        []MatchedPR{},
 	}
-	if userEdge := item.Edges.User; userEdge != nil {
-		detail.Username = userEdge.Username
-	}
 	if cp := item.Edges.CommitCheckpoint; cp != nil {
 		detail.CommitCheckpointID = &cp.ID
 		detail.CommitSHA = cp.CommitSha
@@ -399,6 +396,9 @@ func (s *QueryService) GetEventDetail(ctx context.Context, req GetEventDetailReq
 		detail.CheckpointCapturedAt = &capturedAt
 	}
 	if isAdminRole(req.ActorRole) {
+		if userEdge := item.Edges.User; userEdge != nil {
+			detail.Username = userEdge.Username
+		}
 		detail.RawSourcePath = valueOrEmpty(item.RawSourcePath)
 		detail.RawSourceLocator = valueOrEmpty(item.RawSourceLocator)
 		if len(item.RawPayload) > 0 {

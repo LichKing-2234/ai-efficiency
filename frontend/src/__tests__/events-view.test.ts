@@ -98,10 +98,14 @@ const sampleDetail = {
   matched_prs: [{ pr_record_id: 1769, scm_pr_id: 38, title: 'Events page', status: 'open', scm_pr_url: 'https://example.com/pr/38' }],
 }
 
-async function mountEvents(isAdmin = false, path = '/events') {
+async function mountEvents(
+  isAdmin = false,
+  path = '/events',
+  listData = { items: sampleRows, total: 45, page: 0, page_size: 20 },
+) {
   const { getEventSummary, listEvents, getEventDetail, searchEventUsers } = await import('@/api/events')
   ;(getEventSummary as any).mockResolvedValue({ data: { data: sampleSummary } })
-  ;(listEvents as any).mockResolvedValue({ data: { data: { items: sampleRows, total: 45, page: 0, page_size: 20 } } })
+  ;(listEvents as any).mockResolvedValue({ data: { data: listData } })
   ;(getEventDetail as any).mockResolvedValue({ data: { data: isAdmin ? sampleDetail : { ...sampleDetail, raw_source_path: undefined, raw_source_locator: undefined, raw_payload: undefined } } })
   ;(searchEventUsers as any).mockResolvedValue({
     data: {
@@ -459,6 +463,26 @@ describe('EventsView', () => {
     const latestParams = (listEvents as any).mock.calls.at(-1)[0]
     expect(latestParams.limit).toBe(50)
     expect(latestParams.offset).toBe(0)
+  })
+
+  it('clamps a restored page size above 100 and advances without a gap', async () => {
+    const { wrapper, router, listEvents } = await mountEvents(
+      false,
+      '/events?limit=101&offset=0',
+      { items: sampleRows, total: 205, page: 0, page_size: 100 },
+    )
+
+    await wrapper.get('[data-testid="events-next-page"]').trigger('click')
+    await flushPromises()
+
+    expect((listEvents as any).mock.calls.slice(-2).map(([params]: [{ limit: number; offset: number }]) => ({
+      limit: params.limit,
+      offset: params.offset,
+    }))).toEqual([
+      { limit: 100, offset: 0 },
+      { limit: 100, offset: 100 },
+    ])
+    expect(router.currentRoute.value.query).toMatchObject({ limit: '100', offset: '100' })
   })
 
   it('restores filters and pagination from the URL query', async () => {

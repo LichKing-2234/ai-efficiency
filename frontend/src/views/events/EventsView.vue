@@ -18,6 +18,7 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const eventRowsMediaQuery = window.matchMedia('(min-width: 768px)')
+const maxEventPageSize = 100
 
 const loading = ref(true)
 const summary = ref<ToolUsageEventSummary | null>(null)
@@ -79,7 +80,7 @@ function queryString(key: string) {
 function queryNumber(key: string, fallback: number) {
   const value = Number(queryString(key))
   if (key === 'limit') {
-    return Number.isFinite(value) && value > 0 ? value : fallback
+    return Number.isFinite(value) && value > 0 ? Math.min(value, maxEventPageSize) : fallback
   }
   return Number.isFinite(value) && value >= 0 ? value : fallback
 }
