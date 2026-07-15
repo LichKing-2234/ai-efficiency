@@ -1604,6 +1604,53 @@ describe('QuotaResetApprovalSettings', () => {
     }])
   })
 
+  it('clears successful save feedback on the next edit and preserves that draft through a rejected revision refresh', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const saved = {
+      ...configuredAlphaChain,
+      id: 48,
+      nodes: [
+        configuredAlphaChain.nodes[0],
+        {
+          directory_source_id: 1,
+          department_external_id: 'dept-beta',
+          department_display_path: 'Department Beta',
+        },
+      ],
+    }
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    api.saveQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [saved] } },
+    })
+    const wrapper = await mountChains()
+    await selectChainGroup(wrapper, 'group-alpha')
+    await addChainDepartment(wrapper, 'dept-beta')
+
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Approval chains saved')
+
+    await wrapper.get('[data-testid="quota-reset-chain-enabled"]').setValue(false)
+    expect((wrapper.get('[data-testid="quota-reset-chain-enabled"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.text()).not.toContain('Approval chains saved')
+
+    api.getQuotaResetApprovalChainOptions.mockRejectedValueOnce({
+      response: { data: { message: 'Synthetic post-save revision refresh failed.' } },
+    })
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [saved] } },
+    })
+    await wrapper.setProps({ approverRevision: 1 })
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="quota-reset-chain-enabled"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.text()).toContain('Department Beta')
+    expect(wrapper.text()).not.toContain('Approval chains saved')
+    expect(wrapper.text()).toContain('Synthetic post-save revision refresh failed.')
+  })
+
   it('locks every chain domain mutator while a save is pending and accepts the valid response', async () => {
     const api = await import('@/api/quotaReset') as any
     const saveRequest = deferred<any>()

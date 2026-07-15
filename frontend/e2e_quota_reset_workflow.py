@@ -622,7 +622,7 @@ def test_admin_settings(browser, viewport, screenshot_name):
         assert "Quota reset approval pending" in preview.inner_text()
         assert "@Bob" in preview.inner_text()
         settings_text = settings.inner_text()
-        assert WECOM_REDACTED_PREVIEW in settings_text
+        assert WECOM_URL_PREVIEW in settings_text
         assert "synthetic-browser-robot-key" not in settings_text
 
         chains = page.get_by_test_id("subscription-group-approval-chains")
