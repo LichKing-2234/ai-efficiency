@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete. Task 3 implementation and second-round review remediation are locally complete; final independent re-review remains pending. Task 4, delivery, and CI remain pending.
+**Status:** Tasks 1-2 are complete. Task 3 implementation and third-round review remediation are locally complete; final independent re-review remains pending. Task 4, delivery, and CI remain pending.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -436,6 +436,18 @@
   Commit `54b61d1` (`fix(frontend): reject stale run recovery pages`) bound conflict page recovery to the initiating action generation, required the action/page/source/offset context to match before page commits, recovery application, error state, or finally cleanup, and made a newer action invalidate only an older action-scoped recovery request. Ordinary pagination remains independent, and source-switch invalidation continues through the existing page and action generations.
 
   Targeted GREEN passed 2/2 and the complete component file passed 41/41. Fresh required verification passed: focused three files 92/92, full frontend 39 files / 454 tests, `npm run build`, and `git diff --check`.
+
+- [x] **Record the third review and add RED coverage for stale ordinary pages**
+
+  The independent third review of `139cadb..ef50fcb` failed with **0 Critical / 1 Important / 0 Minor**. The remaining finding showed that an ordinary same-source page request started before action B was not action-generation-bound: after B established its preview/apply poll, the older page could return `latest_active_run: null`, commit stale history, and cancel B's only timer.
+
+  The temporary reviewer probe was promoted to a permanent parameterized preview/apply component test. RED command `cd frontend && npm test -- src/__tests__/directory-sync-settings.test.ts -t "keeps a newer same-source .* ordinary page"` failed both cases at the intended assertion: each expected one timer after the stale page resolved and received zero.
+
+- [x] **Invalidate every pending page before a new run action and verify Task 3 again**
+
+  Commit `1c264e7` (`fix(frontend): invalidate stale run page requests`) makes every new preview/apply action advance the page generation and consistently clear only pending offset, recovery ownership, and history-loading state. It preserves the committed rows/page/offset; stale page success, catch, and finally paths fail their existing context guard before they can overwrite a newer request or poll lifecycle. Existing ordinary pagination and action-scoped 409 recovery behavior remain covered.
+
+  Targeted GREEN passed 2/2; the expanded pagination/409 lifecycle target passed 6/6; and the complete component file passed 43/43. Fresh required verification passed: focused three files 94/94, full frontend 39 files / 456 tests, `npm run build`, and `git diff --check`.
 
 ---
 
