@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete, independently reviewed, and committed. Task 3, final verification, draft PR delivery, and every CI gate remain pending.
+**Status:** Implementation, remediation, architecture documentation, full local verification, task reviews, and fresh final SPEC/standards reviews are complete and committed. Draft PR delivery and every CI gate remain pending.
 
 **Goal:** Start public and authenticated non-admin route chunks without waiting for current-user hydration while keeping administrator routes fail-closed and making every login, logout, refresh, and delayed redirect safe across browser-session and navigation races.
 
@@ -121,6 +121,7 @@ The returned disposer removes both Vue Router guards and the auth-expiry subscri
 - Modify `frontend/src/views/LoginView.vue`: call `auth.devLogin()` and stop writing Pinia/localStorage credentials directly.
 - Modify `frontend/src/__tests__/auth-store.test.ts`: prove identity single-flight, same-token replacement, stale requests resolving `null`, stale response rejection, and all store-owned credential transitions.
 - Modify `frontend/src/__tests__/client.test.ts`: exercise the real registered Axios interceptor with deferred refresh/logout/login races, coherent A-to-A2 rotation including a legitimate pending Login follow-up, no hard navigation, and route-level expiry policy.
+- Create `frontend/src/__tests__/client-real-axios.test.ts`: exercise the real Axios request pipeline and custom-adapter dispatch boundary after retry-interceptor validation.
 - Modify `frontend/src/__tests__/login-view.test.ts`: prove Dev Login enters through the store transition rather than view-owned credential writes.
 - Create `frontend/src/router/authGuard.ts`: own safe redirect resolution, parallel hydration scheduling, admin fail-closed awaits, navigation generations, delayed follow-ups, and current-route expiry policy.
 - Modify `frontend/src/router/index.ts`: retain routes/imports/error handling, add the OAuth Device expiry meta policy, and install the shared guard exactly once.
@@ -560,6 +561,10 @@ Expected: Task 2 review passes and the tracked worktree is clean.
 ### Task 3: Architecture, Full Verification, Final Reviews, And Three-Round CI Delivery
 
 **Files:**
+- Modify: `frontend/src/api/client.ts`
+- Modify: `frontend/src/router/authGuard.ts`
+- Modify: `frontend/src/__tests__/client.test.ts`
+- Create: `frontend/src/__tests__/client-real-axios.test.ts`
 - Modify: `docs/architecture.md`
 - Maintain: `docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md`
 - Review only: every file changed from `5f6c58e6821dfcd95eefff14ea3426d454ae86cd`
@@ -568,7 +573,7 @@ Expected: Task 2 review passes and the tracked worktree is clean.
 - Consumes: Tasks 1-2, issue #122, the active performance contract, task-review evidence, and repository agent rules.
 - Produces: current architecture truth, complete local verification, independent final SPEC/standards gates, an open draft PR, two evidence-bearing CI rounds, and a third final-current-head CI gate whose source of truth is GitHub.
 
-- [ ] **Step 1: Update current architecture after behavior lands**
+- [x] **Step 1: Update current architecture after behavior lands**
 
 Update the frontend runtime/auth paragraphs and module table in `docs/architecture.md` with only landed behavior:
 
@@ -578,7 +583,9 @@ Browser access/refresh credentials are owned by one generation-aware frontend se
 
 Add `frontend/src/auth/browserSession.ts` and `frontend/src/router/authGuard.ts` to the existing frontend module responsibilities. Do not change backend token contracts or rewrite historical OAuth specs.
 
-- [ ] **Step 2: Run complete repository verification with the same isolated role command**
+**Step 1 architecture evidence (2026-07-15):** Updated only current `docs/architecture.md` with the landed generation-aware browser-session owner shared by Pinia and Axios, generation-safe login/logout/refresh and current-user hydration, parallel public/ordinary route chunks, fail-closed administrator loaders, monotonic navigation-generation follow-ups, and confirmed-destination expiry policy. Added explicit browser-session/identity and route/session-policy module responsibilities. Historical OAuth specs, the active performance contract, and backend token contracts were not changed.
+
+- [x] **Step 2: Run complete repository verification with the same isolated role command**
 
 Run exactly:
 
@@ -632,7 +639,15 @@ Then run the same self-contained role command used by Task 2:
 
 Expected: all commands PASS. Record exact Go/Vitest/E2E counts, frontend module count, embed result, printed worktree/base/PID, and cleanup. Do not check this step if any command is skipped; keep environment-sensitive E2E evidence separate.
 
-- [ ] **Step 3: Run independent final SPEC and standards reviews**
+**Step 2 repository verification evidence (2026-07-15):** Every exact command above exited 0. Backend `go test ./...` passed all 68 packages (32 packages with tests and 36 without test files); ae-cli `go test ./...` passed all 19 packages (17 packages with tests and 2 without test files). Frontend Vitest passed 40/40 files and 467/467 tests. `vue-tsc -b` plus the Vite production build passed with 190 modules transformed. The frontend-embed harness rebuilt 190 modules and ended with `ok github.com/ai-efficiency/backend/internal/web`. `git diff --check` passed.
+
+**Step 2 environment-sensitive role evidence (2026-07-15):** The exact self-contained dynamic-port/strictPort/readiness/trap command printed `worktree=/Users/admin/ai-efficiency/.worktrees/perf-route-hydration-122`, `pid=5478`, and `base=http://127.0.0.1:54344`, then passed 16/16 Playwright role checks with 0 failures. After the command exited, separate `kill -0` and loopback `/login` probes confirmed PID `5478` was cleaned and port `54344` was closed.
+
+**Final-review remediation verification (2026-07-15):** After the last production change, the affected real-Axios/router command passed 64/64 tests across 4 files, the exact Task 2 seven-file command passed 105/105, and the full frontend suite passed 475/475 across 41 files. Backend passed all 68 packages (32 with tests), ae-cli passed all 19 packages (17 with tests), `vue-tsc -b` and Vite passed with 190 modules, the embed harness rebuilt 190 modules and passed `backend/internal/web`, and `git diff --check 5f6c58e` passed. The embed harness emitted only its existing dependency-install/audit warnings.
+
+**Final-review remediation role evidence (2026-07-15):** The exact strict-port command printed `worktree=/Users/admin/ai-efficiency/.worktrees/perf-route-hydration-122`, `pid=48095`, and `base=http://127.0.0.1:51954`, then passed 16/16 role checks. Independent post-exit probes reported `pid_alive=false` and `serving=false` for that PID and loopback port.
+
+- [x] **Step 3: Run independent final SPEC and standards reviews**
 
 Generate the ignored complete base-to-working-tree package:
 
@@ -665,9 +680,26 @@ Does role E2E prove this worktree's strict-port server and cleanup?
 
 Complete every item in `Self-Review Checklist For The Implementer` and check it only after its evidence exists. Fix every Critical or Important finding. After the last production change, rerun the affected focused RED/GREEN test, all of Step 2, regenerate the package, and obtain fresh PASS/APPROVED verdicts. Record intentionally deferred Minor findings before checking this step.
 
-- [ ] **Step 4: Commit architecture and earned verification/review evidence**
+**First final-review remediation (2026-07-15):** The first SPEC review returned 0 Critical / 1 Important / 0 Minor, and the first standards review returned 1 Critical / 1 Important / 0 Minor. The shared Important proved that a failed lazy or aborted navigation stranded `activeNavigation`, and that an expiry-driven Login failure was marked consumed before confirmation. The standards Critical proved with real Axios that replacement B or logout could land after retry-interceptor validation but before custom-adapter dispatch, allowing one stale A2 dispatch.
+
+The clean focused RED run failed 4/29 targeted tests: both real-Axios replacement/logout cases resolved through a forbidden second adapter call, the failed lazy attempt left `Usage` instead of `Login`, and the aborted expiry redirect left the later confirmed `OAuthDevice` route instead of replaying to Login. The legal same-generation A-to-A2 custom-adapter retry and the cancelled-old/newer-pending destination case were already green. The minimal fix resolves the configured adapter through `axios.getAdapter`, wraps it once through a `WeakSet`, and synchronously rechecks generation/token immediately before directly delegating. The router now restores only the still-active failed attempt to the last confirmed route, preserves a newer pending attempt, retains failed redirect expiry, and consumes redirecting expiry only after the matching Login navigation confirms. The affected 4-file GREEN passed 63/63; exact/full/build/repository/E2E results are recorded in Step 2. The final package must be regenerated and fresh independent SPEC and standards PASS verdicts are still required, so Step 3 remains unchecked.
+
+**Same-path SPEC re-review remediation (2026-07-15):** The next independent SPEC re-review found one Important: failure settlement still compared only route name/fullPath, so an older `/repos` A1 failure could settle a newer pending `/repos` A2 attempt after an intervening OAuth navigation. The formal reviewer sequence failed RED 1/1 with `redirect=/usage` instead of `/repos`. The guard now binds every normalized `to` object to its exact `NavigationAttempt` in a `WeakMap`; successful `afterEach`, failed `afterEach`, and `onError` settle or confirm only when that object's generation still equals the active generation. The targeted test passed GREEN 1/1, and the affected/exact/full/repository/E2E rerun is recorded above. At that remediation checkpoint, fresh independent verdicts were still required and Step 3 remained unchecked.
+
+**Fresh final-review evidence (2026-07-15):** The regenerated 4,289-line / 204,226-byte package with SHA-256 `f0450588fb20dc1ebc8d2c226599fc77c134c75d7ffba23ff9619edde096b5b2` matched a fresh base-to-working-tree diff byte-for-byte. Fresh independent SPEC review returned `SPEC PASS` with 0 Critical, 0 Important, and 0 Minor findings after 108/108 focused tests and an additional same-path `onError` probe. Fresh independent standards review returned `QUALITY APPROVED` with 0 Critical, 0 Important, and 0 Minor findings after 6/6 adapter/router probes, the same 108/108 focused tests, the production build, and package/diff integrity checks. No Minor finding was deferred.
+
+- [x] **Step 4: Commit architecture and earned verification/review evidence**
 
 After Steps 1-3 are actually complete, check them and set `Status` to state: implementation, local verification, and final reviews complete; draft PR and CI pending. Commit current architecture plus earned evidence:
+
+First commit the final-review production/test remediation that was reviewed with Steps 1-3:
+
+```bash
+git add frontend/src/api/client.ts frontend/src/router/authGuard.ts frontend/src/__tests__/client.test.ts frontend/src/__tests__/client-real-axios.test.ts
+git commit -m "fix(frontend): close auth generation race windows"
+```
+
+Then commit current architecture plus earned evidence:
 
 ```bash
 git add docs/architecture.md docs/superpowers/plans/2026-07-15-parallel-route-identity-hydration.md
@@ -755,27 +787,29 @@ Delivery passes only when all four third-round jobs are green for `final_head`, 
 
 ## Self-Review Checklist For The Implementer
 
-- [ ] Every browser credential writer/import found by `rg` is either the new session owner or an explicit test fixture; normal login, Dev Login, logout, and refresh use the owner.
-- [ ] Request generation is captured when Authorization is attached, not when the 401 happens.
-- [ ] Logout and login-B races prove old refresh cannot write, retry, expire, or clear the newer state.
-- [ ] Same-token replacement advances generation, while A-to-A2 refresh preserves generation and synchronizes store/storage.
-- [ ] `fetchMe()` resolves stale-generation success to `null`; `PendingHydration` captures its starting session generation and never substitutes a newer store user.
-- [ ] Deferred Login tests keep navigation unchanged and prove both different-token and same-token replacement suppress A's `router.replace`, while a same-generation A-to-A2 rotation permits the legitimate follow-up.
-- [ ] Admin guards check navigation generation after await and before every redirect; non-admin and 401 Admin -> OAuth races are covered.
-- [ ] Axios contains no `window.location` navigation; real response-interceptor tests cover protected, Login, OAuth Authorize, and OAuth Device.
-- [ ] Delayed route work checks monotonic navigation generation plus route identity/fullPath; same-path reuse cannot fool it.
-- [ ] `AE_E2E_BASE_URL` is covered by a failing/passing probe and both Task 2 and Task 3 use the exact same strict-port/start/readiness/trap command.
-- [ ] No checkbox, status, test count, review verdict, PR state, or CI result is recorded before it exists.
-- [ ] Final current-head CI is left to the explicit external GitHub gate after the final ledger-only commit; the plan never claims Complete in advance.
+- [x] Every browser credential writer/import found by `rg` is either the new session owner or an explicit test fixture; normal login, Dev Login, logout, and refresh use the owner.
+- [x] Request generation is captured when Authorization is attached, not when the 401 happens; retries recheck generation and token synchronously at the final configured-adapter invocation boundary.
+- [x] Logout and login-B races prove old refresh cannot write, retry, reach either default/custom adapter, expire, or clear the newer state.
+- [x] Same-token replacement advances generation, while A-to-A2 refresh preserves generation and synchronizes store/storage.
+- [x] `fetchMe()` resolves stale-generation success to `null`; `PendingHydration` captures its starting session generation and never substitutes a newer store user.
+- [x] Deferred Login tests keep navigation unchanged and prove both different-token and same-token replacement suppress A's `router.replace`, while a same-generation A-to-A2 rotation permits the legitimate follow-up.
+- [x] Admin guards check navigation generation after await and before every redirect; non-admin and 401 Admin -> OAuth races are covered.
+- [x] Axios contains no `window.location` navigation; real response-interceptor tests cover protected, Login, OAuth Authorize, and OAuth Device, and real-Axios tests cover the post-interceptor adapter window.
+- [x] Delayed route work checks monotonic navigation generation plus route identity/fullPath; each lifecycle callback resolves the exact attempt generation from its normalized route object, same-path reuse cannot fool it, failed active attempts restore confirmed state, and stale cancelled attempts cannot replace a genuinely pending destination.
+- [x] `AE_E2E_BASE_URL` is covered by a failing/passing probe and both Task 2 and Task 3 use the exact same strict-port/start/readiness/trap command.
+- [x] No checkbox, status, test count, review verdict, PR state, or CI result is recorded before it exists.
+- [x] Final current-head CI is left to the explicit external GitHub gate after the final ledger-only commit; the plan never claims Complete in advance.
+
+**Task 3 implementer self-review evidence (2026-07-15):** Production credential-write `rg` results resolve to `browserSession.ts`; the other access/refresh writes are explicit test/E2E fixtures, while login, Dev Login, logout, refresh rotation, request stamping, and expiry call the session boundary. Code inspection and real-Axios tests confirmed request-time `_authGeneration`, generation-checked rotation/expiry, a synchronous adapter-boundary generation/token check with direct configured-adapter delegation, stale `fetchMe()` returning `null`, exact pending session/navigation/route checks, exact normalized-route-object to attempt-generation lifecycle settlement, failed-attempt restoration that does not supersede a newer pending destination, post-await administrator supersession checks, and no `window.location` reference in Axios. Regressions cover logout, login B, Dev Login, same-token replacement, A-to-A2 rotation, unchanged-navigation Login follow-ups, Admin-to-OAuth races, same-path concurrent attempts, failed/cancelled navigation, failed expiry redirect replay, and destination policy for protected, Login, OAuth Authorize, and OAuth Device routes. The current `AE_E2E_BASE_URL` probe exited 0, and an exact command-template comparison found the self-contained role command exactly twice in this plan. Steps 3-7 and the external final-current-head gate remain unearned and pending.
 
 ## Plan Self-Review Record
 
 - Spec coverage: Tasks 1-2 cover all four routing/identity contract clauses and the browser-session safety needed to make background hydration correct; Task 3 covers current architecture, full verification, independent gates, and delivery.
-- Critical review closure: Task 1 gives normal login, Dev Login, logout, and Axios one generation owner; request stamps and compare-and-rotate stop stale refresh write/retry; stale identity promises resolve `null`; A-to-A2 stays coherent.
+- Critical review closure: Task 1 gives normal login, Dev Login, logout, and Axios one generation owner; request stamps, compare-and-rotate, and the synchronous final adapter-boundary check stop stale refresh write/retry/dispatch; stale identity promises resolve `null`; A-to-A2 stays coherent.
 - Session-follow-up closure: `PendingHydration.sessionGeneration` is captured with its promise and checked exactly before redirect; different-token/same-token replacement without navigation invalidates A, while same-generation rotation remains valid.
 - Admin-race closure: Task 2 requires a post-await navigation-generation check before every admin redirect and exact non-admin/401 Admin -> OAuth cases.
 - Redirect-policy closure: Axios emits expiry without navigating; the production guard applies protected/Login/OAuth Authorize/OAuth Device policy through real-interceptor tests.
-- Expiry-consumption closure: each matching expiry is consumed once by the still-current confirmed destination; a pending destination retains the event until confirmation, later tokenless public navigation cannot replay it, and an older queued callback cannot discard a concurrently published newer expiry.
+- Expiry-consumption closure: each matching expiry is consumed once by the still-current confirmed destination; exact per-navigation object/generation identity prevents older same-path failures from clobbering newer pending work, redirecting expiry is consumed only after Login confirms, failed redirects remain replayable, later tokenless public navigation cannot replay a handled event, and an older queued callback cannot discard a concurrently published newer expiry.
 - E2E closure: the harness accepts `AE_E2E_BASE_URL`; Tasks 2 and 3 repeat one self-contained dynamic-port, strict-PID, readiness, trap-cleanup command.
 - Ledger closure: three CI rounds are explicit; no replacement/final evidence is pre-checked; the final mutable gate remains in GitHub after a clean final ledger commit.
 - Type consistency: session functions, event fields, store return types, request stamp, `PendingHydration.sessionGeneration`, pending route record, guard installer/disposer, and E2E variable use the same names in File Map, tasks, tests, and review gates.
