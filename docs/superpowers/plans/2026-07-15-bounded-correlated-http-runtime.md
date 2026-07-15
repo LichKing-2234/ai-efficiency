@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 and Task 5 Steps 1-4 are complete and verified. Draft PR #143 is open against `docs/performance-contracts-116`; first-round CI passed and replacement CI is current.
+**Status:** Complete. Tasks 1-5, full local verification, independent reviews, and the first two CI rounds are complete. Draft PR #143 is open against `docs/performance-contracts-116`; the final ledger-head CI remains an explicit post-commit confirmation gate.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -510,10 +510,12 @@ The complete `5f6c58e..15d6f6d` package then received final independent gates: `
 
   `docs(plan): record runtime delivery verification`
 
-- [ ] **Step 5: Push and open the stacked draft PR**
+- [x] **Step 5: Push and open the stacked draft PR**
 
   Push `perf/runtime-118` and create a draft PR targeting `docs/performance-contracts-116`. Link #118 and PR #138, list exact defaults, readiness semantics, telemetry privacy/cardinality, tests, and review results. Confirm head/base/draft/merge state plus backend/frontend/ae-cli/deploy-static checks.
 
   Only after the first CI run passes, check Step 5, set the top status to complete, commit `docs(plan): record bounded runtime delivery`, push it, and confirm the replacement CI run also passes.
 
-  First-round CI evidence (2026-07-15): Actions run `29389013676` passed `backend` (2m51s), `frontend` (51s), `ae-cli` (25s), and `deploy-static` (12s) on PR head `be6b67b`. This checkpoint records earned evidence only; Step 5 remains unchecked until replacement CI and final PR-state verification succeed.
+  First-round CI evidence (2026-07-15): Actions run `29389013676` passed `backend` (2m51s), `frontend` (51s), `ae-cli` (25s), and `deploy-static` (12s) on PR head `be6b67b`.
+
+  Replacement CI evidence (2026-07-15): Actions run `29389174599` passed `backend` (2m41s), `frontend` (54s), `ae-cli` (25s), and `deploy-static` (19s) on PR head `e2e94d6`. GitHub reported draft PR #143 as open, mergeable/clean, based on `docs/performance-contracts-116`, and headed by `perf/runtime-118`; the local branch and PR head matched before this final ledger commit.
