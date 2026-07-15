@@ -117,22 +117,26 @@ type scmProviderFactory func(providerType, baseURL string, apiCredential any, ca
 
 // ServiceOptions configures repo service behavior that depends on deployment context.
 type ServiceOptions struct {
-	WebhookPublicURL string
-	FrontendURL      string
-	ServerMode       string
-	SCMFactory       scmProviderFactory
+	WebhookPublicURL       string
+	FrontendURL            string
+	ServerMode             string
+	SCMFactory             scmProviderFactory
+	InventoryCache         *InventoryCache
+	InventoryRevisionStore InventoryRevisionInvalidator
 }
 
 // Service handles repo configuration business logic.
 type Service struct {
-	entClient        *ent.Client
-	encryptionKey    string
-	logger           *zap.Logger
-	autoBindPostBind autoBindPostBindFunc
-	webhookPublicURL string
-	frontendURL      string
-	serverMode       string
-	scmFactory       scmProviderFactory
+	entClient         *ent.Client
+	encryptionKey     string
+	logger            *zap.Logger
+	autoBindPostBind  autoBindPostBindFunc
+	webhookPublicURL  string
+	frontendURL       string
+	serverMode        string
+	scmFactory        scmProviderFactory
+	inventoryCache    *InventoryCache
+	inventoryRevision InventoryRevisionInvalidator
 }
 
 // NewService creates a new repo service.
@@ -142,13 +146,15 @@ func NewService(entClient *ent.Client, encryptionKey string, logger *zap.Logger,
 		opt = options[0]
 	}
 	return &Service{
-		entClient:        entClient,
-		encryptionKey:    encryptionKey,
-		logger:           logger,
-		webhookPublicURL: strings.TrimSpace(opt.WebhookPublicURL),
-		frontendURL:      strings.TrimSpace(opt.FrontendURL),
-		serverMode:       strings.TrimSpace(opt.ServerMode),
-		scmFactory:       opt.SCMFactory,
+		entClient:         entClient,
+		encryptionKey:     encryptionKey,
+		logger:            logger,
+		webhookPublicURL:  strings.TrimSpace(opt.WebhookPublicURL),
+		frontendURL:       strings.TrimSpace(opt.FrontendURL),
+		serverMode:        strings.TrimSpace(opt.ServerMode),
+		scmFactory:        opt.SCMFactory,
+		inventoryCache:    opt.InventoryCache,
+		inventoryRevision: opt.InventoryRevisionStore,
 	}
 }
 
@@ -214,29 +220,32 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*ent.RepoConfi
 		return nil, fmt.Errorf("derive repo key: %w", err)
 	}
 
-	create := s.entClient.RepoConfig.Create().
-		SetRepoKey(repoKey).
-		SetScmProviderID(req.SCMProviderID).
-		SetName(repoInfo.Name).
-		SetFullName(repoInfo.FullName).
-		SetCloneURL(repoInfo.CloneURL).
-		SetDefaultBranch(repoInfo.DefaultBranch).
-		SetStatus(status)
-
-	if webhookID != "" {
-		create.SetWebhookID(webhookID).SetWebhookSecret(webhookSecret)
-	}
-	if req.GroupID != "" {
-		create.SetGroupID(req.GroupID)
-	}
-	if req.RelayProviderName != "" {
-		create.SetRelayProviderName(req.RelayProviderName)
-	}
-	if req.RelayGroupID != "" {
-		create.SetRelayGroupID(req.RelayGroupID)
-	}
-
-	rc, err := create.Save(ctx)
+	var rc *ent.RepoConfig
+	err = s.mutateInventory(ctx, "create repository", func(tx *ent.Tx) error {
+		create := tx.RepoConfig.Create().
+			SetRepoKey(repoKey).
+			SetScmProviderID(req.SCMProviderID).
+			SetName(repoInfo.Name).
+			SetFullName(repoInfo.FullName).
+			SetCloneURL(repoInfo.CloneURL).
+			SetDefaultBranch(repoInfo.DefaultBranch).
+			SetStatus(status)
+		if webhookID != "" {
+			create.SetWebhookID(webhookID).SetWebhookSecret(webhookSecret)
+		}
+		if req.GroupID != "" {
+			create.SetGroupID(req.GroupID)
+		}
+		if req.RelayProviderName != "" {
+			create.SetRelayProviderName(req.RelayProviderName)
+		}
+		if req.RelayGroupID != "" {
+			create.SetRelayGroupID(req.RelayGroupID)
+		}
+		var saveErr error
+		rc, saveErr = create.Save(ctx)
+		return saveErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("save repo config: %w", err)
 	}
@@ -255,29 +264,31 @@ func (s *Service) CreateDirect(ctx context.Context, req CreateDirectRequest) (*e
 		repoKey = derivedRepoKey
 	}
 
-	create := s.entClient.RepoConfig.Create().
-		SetRepoKey(repoKey).
-		SetName(req.Name).
-		SetFullName(req.FullName).
-		SetCloneURL(req.CloneURL).
-		SetDefaultBranch(req.DefaultBranch).
-		SetStatus(repoconfig.StatusActive)
-
-	if req.SCMProviderID > 0 {
-		create.SetScmProviderID(req.SCMProviderID)
-	}
-
-	if req.GroupID != "" {
-		create.SetGroupID(req.GroupID)
-	}
-	if req.RelayProviderName != "" {
-		create.SetRelayProviderName(req.RelayProviderName)
-	}
-	if req.RelayGroupID != "" {
-		create.SetRelayGroupID(req.RelayGroupID)
-	}
-
-	rc, err := create.Save(ctx)
+	var rc *ent.RepoConfig
+	err := s.mutateInventory(ctx, "create repository directly", func(tx *ent.Tx) error {
+		create := tx.RepoConfig.Create().
+			SetRepoKey(repoKey).
+			SetName(req.Name).
+			SetFullName(req.FullName).
+			SetCloneURL(req.CloneURL).
+			SetDefaultBranch(req.DefaultBranch).
+			SetStatus(repoconfig.StatusActive)
+		if req.SCMProviderID > 0 {
+			create.SetScmProviderID(req.SCMProviderID)
+		}
+		if req.GroupID != "" {
+			create.SetGroupID(req.GroupID)
+		}
+		if req.RelayProviderName != "" {
+			create.SetRelayProviderName(req.RelayProviderName)
+		}
+		if req.RelayGroupID != "" {
+			create.SetRelayGroupID(req.RelayGroupID)
+		}
+		var saveErr error
+		rc, saveErr = create.Save(ctx)
+		return saveErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("save repo config: %w", err)
 	}
@@ -323,14 +334,19 @@ func (s *Service) FindOrCreateFromRemote(ctx context.Context, remoteURL, branch 
 		defaultBranch = "main"
 	}
 
-	rc, err := s.entClient.RepoConfig.Create().
-		SetRepoKey(identity.RepoKey).
-		SetName(identity.Name).
-		SetFullName(identity.FullName).
-		SetCloneURL(identity.CloneURL).
-		SetDefaultBranch(defaultBranch).
-		SetStatus(repoconfig.StatusActive).
-		Save(ctx)
+	var rc *ent.RepoConfig
+	err = s.mutateInventory(ctx, "create repository from remote", func(tx *ent.Tx) error {
+		var saveErr error
+		rc, saveErr = tx.RepoConfig.Create().
+			SetRepoKey(identity.RepoKey).
+			SetName(identity.Name).
+			SetFullName(identity.FullName).
+			SetCloneURL(identity.CloneURL).
+			SetDefaultBranch(defaultBranch).
+			SetStatus(repoconfig.StatusActive).
+			Save(ctx)
+		return saveErr
+	})
 	if err != nil {
 		if ent.IsConstraintError(err) {
 			if existing, findErr := s.findExistingRepoByIdentity(ctx, identity, remoteURL); findErr == nil && existing != nil {
@@ -409,15 +425,20 @@ func (s *Service) findExistingRepoByExactLookup(ctx context.Context, candidate s
 }
 
 func (s *Service) refreshRepoMetadata(ctx context.Context, repoID int, identity RepoIdentity, branch string) (*ent.RepoConfig, error) {
-	update := s.entClient.RepoConfig.UpdateOneID(repoID).
-		SetRepoKey(identity.RepoKey).
-		SetName(identity.Name).
-		SetFullName(identity.FullName).
-		SetCloneURL(identity.CloneURL)
-	if strings.TrimSpace(branch) != "" {
-		update.SetDefaultBranch(strings.TrimSpace(branch))
-	}
-	rc, err := update.Save(ctx)
+	var rc *ent.RepoConfig
+	err := s.mutateInventory(ctx, "refresh repository metadata", func(tx *ent.Tx) error {
+		update := tx.RepoConfig.UpdateOneID(repoID).
+			SetRepoKey(identity.RepoKey).
+			SetName(identity.Name).
+			SetFullName(identity.FullName).
+			SetCloneURL(identity.CloneURL)
+		if strings.TrimSpace(branch) != "" {
+			update.SetDefaultBranch(strings.TrimSpace(branch))
+		}
+		var saveErr error
+		rc, saveErr = update.Save(ctx)
+		return saveErr
+	})
 	if err != nil {
 		return nil, fmt.Errorf("refresh repo metadata: %w", err)
 	}
@@ -518,47 +539,58 @@ func (s *Service) List(ctx context.Context, opts ListOpts) ([]*ent.RepoConfig, i
 }
 
 func (s *Service) Inventory(ctx context.Context) ([]InventoryProviderSummary, error) {
+	if s.inventoryCache != nil {
+		return s.inventoryCache.GetOrLoad(ctx, s.loadInventory)
+	}
 	return s.loadInventory(ctx)
 }
 
 // Update updates a repo config.
 func (s *Service) Update(ctx context.Context, id int, req UpdateRequest) (*ent.RepoConfig, error) {
-	update := s.entClient.RepoConfig.UpdateOneID(id)
-	if req.Name != "" {
-		update.SetName(req.Name)
-	}
-	if req.GroupID != "" {
-		update.SetGroupID(req.GroupID)
-	}
-	if req.Status != "" {
-		update.SetStatus(repoconfig.Status(req.Status))
-	}
-	if req.ClearSCMProvider {
-		update.ClearScmProvider()
-	} else if req.SCMProviderID != nil {
+	if !req.ClearSCMProvider && req.SCMProviderID != nil {
 		if _, err := s.entClient.ScmProvider.Get(ctx, *req.SCMProviderID); err != nil {
 			if ent.IsNotFound(err) {
 				return nil, ErrSCMProviderNotFound
 			}
 			return nil, fmt.Errorf("load scm provider: %w", err)
 		}
-		update.SetScmProviderID(*req.SCMProviderID)
 	}
-	if req.RelayProviderName != nil {
-		if *req.RelayProviderName == "" {
-			update.ClearRelayProviderName()
-		} else {
-			update.SetRelayProviderName(*req.RelayProviderName)
+
+	var rc *ent.RepoConfig
+	err := s.mutateInventory(ctx, "update repository", func(tx *ent.Tx) error {
+		update := tx.RepoConfig.UpdateOneID(id)
+		if req.Name != "" {
+			update.SetName(req.Name)
 		}
-	}
-	if req.RelayGroupID != nil {
-		if *req.RelayGroupID == "" {
-			update.ClearRelayGroupID()
-		} else {
-			update.SetRelayGroupID(*req.RelayGroupID)
+		if req.GroupID != "" {
+			update.SetGroupID(req.GroupID)
 		}
-	}
-	rc, err := update.Save(ctx)
+		if req.Status != "" {
+			update.SetStatus(repoconfig.Status(req.Status))
+		}
+		if req.ClearSCMProvider {
+			update.ClearScmProvider()
+		} else if req.SCMProviderID != nil {
+			update.SetScmProviderID(*req.SCMProviderID)
+		}
+		if req.RelayProviderName != nil {
+			if *req.RelayProviderName == "" {
+				update.ClearRelayProviderName()
+			} else {
+				update.SetRelayProviderName(*req.RelayProviderName)
+			}
+		}
+		if req.RelayGroupID != nil {
+			if *req.RelayGroupID == "" {
+				update.ClearRelayGroupID()
+			} else {
+				update.SetRelayGroupID(*req.RelayGroupID)
+			}
+		}
+		var saveErr error
+		rc, saveErr = update.Save(ctx)
+		return saveErr
+	})
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil, fmt.Errorf("repo not found")
@@ -596,40 +628,32 @@ func (s *Service) Delete(ctx context.Context, id int) error {
 		}
 	}
 
-	// Delete related records to avoid FK constraint violations
-	tx, err := s.entClient.Tx(ctx)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	// Delete child records
-	if _, err := tx.ToolUsageEvent.Delete().Where(toolusageevent.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
-		return fmt.Errorf("delete tool usage events: %w", err)
-	}
-	if _, err := tx.CommitRewrite.Delete().Where(commitrewrite.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
-		return fmt.Errorf("delete commit rewrites: %w", err)
-	}
-	if _, err := tx.CommitCheckpoint.Delete().Where(commitcheckpoint.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
-		return fmt.Errorf("delete commit checkpoints: %w", err)
-	}
-	if _, err := tx.PrAttributionRun.Delete().
-		Where(prattributionrun.HasPrRecordWith(prrecord.HasRepoConfigWith(repoconfig.IDEQ(id)))).
-		Exec(ctx); err != nil {
-		return fmt.Errorf("delete pr attribution runs: %w", err)
-	}
-	if _, err := tx.PrRecord.Delete().Where(prrecord.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
-		return fmt.Errorf("delete pr records: %w", err)
-	}
-	if _, err := tx.WebhookDeadLetter.Delete().Where(webhookdeadletter.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
-		return fmt.Errorf("delete webhook dead letters: %w", err)
-	}
-
-	if err := tx.RepoConfig.DeleteOneID(id).Exec(ctx); err != nil {
-		return fmt.Errorf("delete repo: %w", err)
-	}
-
-	return tx.Commit()
+	return s.mutateInventory(ctx, "delete repository", func(tx *ent.Tx) error {
+		if _, err := tx.ToolUsageEvent.Delete().Where(toolusageevent.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+			return fmt.Errorf("delete tool usage events: %w", err)
+		}
+		if _, err := tx.CommitRewrite.Delete().Where(commitrewrite.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+			return fmt.Errorf("delete commit rewrites: %w", err)
+		}
+		if _, err := tx.CommitCheckpoint.Delete().Where(commitcheckpoint.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+			return fmt.Errorf("delete commit checkpoints: %w", err)
+		}
+		if _, err := tx.PrAttributionRun.Delete().
+			Where(prattributionrun.HasPrRecordWith(prrecord.HasRepoConfigWith(repoconfig.IDEQ(id)))).
+			Exec(ctx); err != nil {
+			return fmt.Errorf("delete pr attribution runs: %w", err)
+		}
+		if _, err := tx.PrRecord.Delete().Where(prrecord.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+			return fmt.Errorf("delete pr records: %w", err)
+		}
+		if _, err := tx.WebhookDeadLetter.Delete().Where(webhookdeadletter.HasRepoConfigWith(repoconfig.IDEQ(id))).Exec(ctx); err != nil {
+			return fmt.Errorf("delete webhook dead letters: %w", err)
+		}
+		if err := tx.RepoConfig.DeleteOneID(id).Exec(ctx); err != nil {
+			return fmt.Errorf("delete repo: %w", err)
+		}
+		return nil
+	})
 }
 
 // GetSCMProvider returns an SCM provider instance for the given repo config ID.

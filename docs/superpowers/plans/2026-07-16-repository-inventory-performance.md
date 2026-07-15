@@ -144,43 +144,53 @@
 - Extends: `repo.ServiceOptions{InventoryCache, InventoryRevisionStore}`.
 - Consumes: Task 1's `loadInventory` as the only authoritative cache loader.
 
-- [ ] **Step 1: Write failing cache and revision tests**
+- [x] **Step 1: Write failing cache and revision tests**
 
   Cover fresh hit, miss, 48/54-second jitter endpoints, namespace/revision isolation, malformed/schema-mismatched JSON, Redis GET/SET/lease/release failure, 50 same-process callers, two cache instances sharing a distributed lease, lease expiry recovery, one cancelled waiter while another succeeds, final-waiter cancellation, and token-checked release. Revision tests cover concurrent `Ensure`, malformed/missing values, transaction rollback, and one UUID change per successful invalidation.
 
-- [ ] **Step 2: Run cache/revision tests and record RED**
+- [x] **Step 2: Run cache/revision tests and record RED**
 
   Run: `cd backend && go test ./internal/repo -run 'Inventory(Cache|Revision)' -count=1`
 
   Expected RED: cache, lease, revision, and Redis adapter types do not exist.
 
-- [ ] **Step 3: Implement cache and revision store**
+  RED evidence: the focused package build fails on the intentionally absent `InventoryCache`, store/reader/options contracts, `ErrInventoryCacheMiss`, Redis adapter, and revision store APIs.
+
+- [x] **Step 3: Implement cache and revision store**
 
   Mirror the proven work-items freshness mechanics without importing its business DTOs: strict JSON decode, UUID revision validation before read and before write, process-local waiter-counted flight, Redis `SET NX PX` lease, bounded polling, independent token-checked release, 100 ms command/release budgets, 15-second refresh budget, and no stale fallback.
 
-- [ ] **Step 4: Write failing mutation invalidation tests**
+  GREEN evidence: focused cache/revision tests pass for strict envelopes, 48-54 second fresh TTL, namespace/revision isolation, Redis failure fallback, 50 same-process callers, distributed lease contention/expiry, revision changes, token-checked release, and waiter cancellation.
+
+- [x] **Step 4: Write failing mutation invalidation tests**
 
   Inject a real revision store and assert create/direct-create, remote create/metadata refresh, update, delete, auto-bind provider assignment/post-bind status, and webhook repair status/metadata writes make the old cache key unreachable immediately. Inject revision-update failure and assert the paired local repo mutation rolls back and does not report success. Assert Redis outage never blocks those mutations.
 
-- [ ] **Step 5: Run mutation tests and record RED**
+- [x] **Step 5: Run mutation tests and record RED**
 
   Run: `cd backend && go test ./internal/repo -run 'Inventory.*(Create|Update|Delete|Bind|Webhook|Mutation|Rollback)' -count=1`
 
   Expected RED: current repository writes do not own an inventory revision and are not transactionally coupled to invalidation.
 
-- [ ] **Step 6: Transactionally version every repository mutation**
+  RED evidence: create/metadata/update/delete, auto-bind, webhook success/failure, and Redis-outage mutation tests all observe an unchanged PostgreSQL revision; an injected revision failure still lets `CreateDirect` succeed instead of rolling the row back.
+
+- [x] **Step 6: Transactionally version every repository mutation**
 
   Add one service helper that begins an Ent transaction, executes a repository-row mutation through the transaction, calls `InventoryRevisionStore.InvalidateTx`, then commits. Apply it to every local row write listed in Global Constraints; keep SCM verification/webhook network calls outside the local transaction. Existing no-op paths return without bumping the revision.
 
-- [ ] **Step 7: Wire the existing Redis client in server startup**
+  GREEN evidence: focused mutation tests and the full `internal/repo` suite pass. Create/direct/remote metadata, update, delete, auto-bind assignment/post-bind, and webhook repair writes advance the UUID; injected revision failures roll local writes back, while Redis outage does not enter or block mutation transactions.
+
+- [x] **Step 7: Wire the existing Redis client in server startup**
 
   After migrations, `Ensure` the repository inventory revision. Construct `InventoryCache` from the existing `*redis.Client` and `redis.namespace`, inject both cache and revision store into the existing `repo.NewService`, and keep readiness semantics unchanged because authoritative SQL remains the fallback.
 
-- [ ] **Step 8: Run Task 2 verification and commit**
+- [x] **Step 8: Run Task 2 verification and commit**
 
   Run: `cd backend && go test ./internal/repo ./internal/handler ./cmd/server -count=1`
 
   Run: `cd backend && go test -race ./internal/repo -count=1`
+
+  Verification: repo/handler/server packages pass, the server wiring test initializes one canonical revision and writes the namespaced Redis value, and `go test -race ./internal/repo -count=1` passes.
 
   Commit: `perf(repo): cache versioned inventory across replicas`
 
