@@ -33,6 +33,194 @@ type targetPlanScale struct {
 	memberships int
 }
 
+type departmentReadPlanRole string
+
+const (
+	departmentOptionCountRole          departmentReadPlanRole = "option count"
+	departmentOptionPageRole           departmentReadPlanRole = "option page"
+	departmentChildCountRole           departmentReadPlanRole = "child count"
+	departmentChildPageRole            departmentReadPlanRole = "child page"
+	departmentAncestorPresentationRole departmentReadPlanRole = "ancestor presentation"
+	departmentFinalSummaryRole         departmentReadPlanRole = "final summary"
+)
+
+func TestDepartmentReadPlanCycleWalkBoundsAcrossScales(t *testing.T) {
+	scales := []targetPlanScale{
+		{name: "small", users: 24, members: 22, departments: 12, memberships: 36},
+		{name: "large", users: 2400, members: 2200, departments: 120, memberships: 3600},
+	}
+	for _, scale := range scales {
+		var wantAnchor string
+		for _, reverse := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/reverse=%v", scale.name, reverse), func(t *testing.T) {
+				client, dsn := testdb.OpenWithDSN(t)
+				sourceID := seedTargetPlanFixtureOrdered(t, client, scale, reverse)
+				db, err := stdsql.Open("postgres", dsn)
+				if err != nil {
+					t.Fatalf("open diagnostic database: %v", err)
+				}
+				t.Cleanup(func() { _ = db.Close() })
+				query := effectiveDepartmentCTEs("$1") + `
+SELECT source_cardinality.row_count AS source_rows,
+       (SELECT COUNT(*) FROM cycle_walk) AS cycle_walk_rows,
+       COALESCE((SELECT MAX(CARDINALITY(cycle_walk.path_ids)) FROM cycle_walk), 0) AS max_cycle_walk_path,
+       (SELECT COUNT(*) FROM cycle_anchors) AS cycle_anchor_rows
+FROM source_cardinality`
+				var sourceRows, cycleWalkRows, maxCycleWalkPath, cycleAnchorRows int
+				if err := db.QueryRowContext(context.Background(), query, sourceID).Scan(&sourceRows, &cycleWalkRows, &maxCycleWalkPath, &cycleAnchorRows); err != nil {
+					t.Fatalf("run department diagnostic: %v", err)
+				}
+				if sourceRows != scale.departments || cycleWalkRows > scale.departments*scale.departments || maxCycleWalkPath > scale.departments || cycleAnchorRows != 1 {
+					t.Fatalf("diagnostic = source %d walk %d max_path %d anchors %d, want source %d/walk <= %d/max_path <= %d/anchors 1", sourceRows, cycleWalkRows, maxCycleWalkPath, cycleAnchorRows, scale.departments, scale.departments*scale.departments, scale.departments)
+				}
+				anchorQuery := effectiveDepartmentCTEs("$1") + ` SELECT external_id FROM cycle_anchors ORDER BY external_id`
+				var anchor string
+				if err := db.QueryRowContext(context.Background(), anchorQuery, sourceID).Scan(&anchor); err != nil {
+					t.Fatalf("load cycle anchor: %v", err)
+				}
+				if anchor != "dept-cycle-a" {
+					t.Fatalf("anchor = %q, want dept-cycle-a", anchor)
+				}
+				if wantAnchor == "" {
+					wantAnchor = anchor
+				} else if anchor != wantAnchor {
+					t.Fatalf("anchor changed with insertion order: first=%q reverse=%q", wantAnchor, anchor)
+				}
+			})
+		}
+	}
+}
+
+func TestDepartmentReadPlanBoundedRolesAcrossScales(t *testing.T) {
+	scales := []targetPlanScale{
+		{name: "small", users: 24, members: 22, departments: 12, memberships: 36},
+		{name: "large", users: 2400, members: 2200, departments: 120, memberships: 3600},
+	}
+	var optionRoleCount, childRoleCount int
+	for _, scale := range scales {
+		t.Run(scale.name, func(t *testing.T) {
+			client, dsn := testdb.OpenWithDSN(t)
+			sourceID := seedTargetPlanFixture(t, client, scale)
+			assertTargetPlanFixtureCounts(t, client, scale)
+			analyzeTargetPlanTables(t, dsn)
+
+			optionClient, optionRecorder := newTargetQueryCaptureClient(t, dsn)
+			options, err := NewService(optionClient).DepartmentOptions(context.Background(), DepartmentOptionRequest{PageSize: 100})
+			if err != nil {
+				t.Fatalf("DepartmentOptions: %v", err)
+			}
+			if len(options.Items) > 100 || (scale.departments == 120 && len(options.Items) != 100) {
+				t.Fatalf("option items = %d, want bounded at 100 and full maximum for large fixture", len(options.Items))
+			}
+			optionQueries := optionRecorder.recordedQueries()
+			if optionRoleCount == 0 {
+				optionRoleCount = len(optionQueries)
+			} else if len(optionQueries) != optionRoleCount {
+				t.Fatalf("option SQL roles changed across scale: got %d want %d", len(optionQueries), optionRoleCount)
+			}
+
+			childClient, childRecorder := newTargetQueryCaptureClient(t, dsn)
+			children, err := NewService(childClient).DepartmentChildren(context.Background(), DepartmentChildrenRequest{PageSize: 100})
+			if err != nil {
+				t.Fatalf("DepartmentChildren: %v", err)
+			}
+			if len(children.Items) > 100 || (scale.departments == 120 && len(children.Items) != 100) {
+				t.Fatalf("child items = %d, want bounded at 100 and full maximum for large fixture", len(children.Items))
+			}
+			childQueries := childRecorder.recordedQueries()
+			if childRoleCount == 0 {
+				childRoleCount = len(childQueries)
+			} else if len(childQueries) != childRoleCount {
+				t.Fatalf("child SQL roles changed across scale: got %d want %d", len(childQueries), childRoleCount)
+			}
+
+			roles := append(capturedQueriesContaining(optionQueries, "WITH RECURSIVE"), capturedQueriesContaining(childQueries, "WITH RECURSIVE")...)
+			if len(roles) == 0 {
+				t.Fatal("no bounded department SQL roles captured")
+			}
+			var canonical string
+			roleCounts := make(map[departmentReadPlanRole]int)
+			for _, role := range roles {
+				planRole := classifyDepartmentReadPlanRole(t, role.query)
+				roleCounts[planRole]++
+				sourcePlaceholder := placeholderForBoundValue(t, role.args, int64(sourceID))
+				prefix := canonicalEffectivePrefix(t, role.query, sourcePlaceholder)
+				if canonical == "" {
+					canonical = prefix
+				} else if prefix != canonical {
+					t.Fatalf("department role shared prefix drifted\n--- got ---\n%s\n--- want ---\n%s", prefix, canonical)
+				}
+				if strings.Contains(role.query, `SELECT "directory_departments"."id", "directory_departments"."source_id"`) {
+					t.Fatalf("bounded role selected full department entities:\n%s", role.query)
+				}
+				plan := explainTargetPlan(t, dsn, role.query, role.args)
+				assertNamedRecursiveUnionLoopsOnce(t, plan, "cycle_walk")
+				switch planRole {
+				case departmentOptionPageRole, departmentChildPageRole, departmentFinalSummaryRole:
+					if rows := planActualRows(t, plan); rows > 100 {
+						t.Fatalf("%s top-level rows = %.0f, want <= 100; query=%s", planRole, rows, role.query)
+					}
+				}
+				if planRole == departmentAncestorPresentationRole {
+					assertNamedRecursiveUnionLoopsOnce(t, plan, "ancestors")
+				}
+				if planRole == departmentFinalSummaryRole {
+					assertNamedRecursiveUnionLoopsOnce(t, plan, "descendants")
+				}
+			}
+			wantRoleCounts := map[departmentReadPlanRole]int{
+				departmentOptionCountRole:          1,
+				departmentOptionPageRole:           1,
+				departmentChildCountRole:           1,
+				departmentChildPageRole:            1,
+				departmentAncestorPresentationRole: 2,
+				departmentFinalSummaryRole:         1,
+			}
+			if !reflect.DeepEqual(roleCounts, wantRoleCounts) {
+				t.Fatalf("department SQL role counts = %v, want %v", roleCounts, wantRoleCounts)
+			}
+
+			if scale.departments == 120 {
+				leafClient, leafRecorder := newTargetQueryCaptureClient(t, dsn)
+				leafPage, err := NewService(leafClient).DepartmentChildren(context.Background(), DepartmentChildrenRequest{ParentDepartmentID: "dept-118", PageSize: 100})
+				if err != nil {
+					t.Fatalf("DepartmentChildren leaf parent: %v", err)
+				}
+				if got := departmentSummaryIDs(leafPage.Items); !reflect.DeepEqual(got, []string{"dept-119"}) {
+					t.Fatalf("leaf child ids = %v, want dept-119", got)
+				}
+				summary := requireOneCapturedQuery(t, leafRecorder.recordedQueries(), "descendants(")
+				plan := explainTargetPlan(t, dsn, summary.query, summary.args)
+				assertNamedRecursiveUnionLoopsOnce(t, plan, "descendants")
+				assertNamedPlanActualRowsBelow(t, plan, "CTE descendants", float64(scale.departments))
+			}
+		})
+	}
+}
+
+func classifyDepartmentReadPlanRole(t *testing.T, query string) departmentReadPlanRole {
+	t.Helper()
+	switch {
+	case strings.Contains(query, "ancestors("):
+		return departmentAncestorPresentationRole
+	case strings.Contains(query, "descendants("):
+		return departmentFinalSummaryRole
+	case strings.Contains(query, "filtered_departments AS MATERIALIZED"):
+		if strings.Contains(query, " LIMIT ") {
+			return departmentOptionPageRole
+		}
+		return departmentOptionCountRole
+	case strings.Contains(query, "candidate_departments AS MATERIALIZED"):
+		if strings.Contains(query, " LIMIT ") {
+			return departmentChildPageRole
+		}
+		return departmentChildCountRole
+	default:
+		t.Fatalf("unclassified recursive department SQL role: %s", query)
+		return ""
+	}
+}
+
 func TestTargetPlanRecursiveRelationsRunOnceAcrossScales(t *testing.T) {
 	scales := []targetPlanScale{
 		{name: "small", users: 24, members: 22, departments: 12, memberships: 36},
@@ -248,6 +436,23 @@ func assertNamedRecursiveUnionLoopsOnce(t *testing.T, plan any, cteName string) 
 	}
 	if got := node["Actual Loops"]; got != float64(1) {
 		t.Fatalf("%s actual loops = %v, want 1", wantName, got)
+	}
+}
+
+func assertNamedPlanActualRowsBelow(t *testing.T, plan any, subplanName string, maximum float64) {
+	t.Helper()
+	matches := make([]map[string]any, 0, 1)
+	walkPlanJSON(plan, func(node map[string]any) {
+		if node["Subplan Name"] == subplanName {
+			matches = append(matches, node)
+		}
+	})
+	if len(matches) != 1 {
+		t.Fatalf("plan nodes named %q = %d, want exactly 1", subplanName, len(matches))
+	}
+	rows, ok := matches[0]["Actual Rows"].(float64)
+	if !ok || rows >= maximum {
+		t.Fatalf("%s actual rows = %v, want < %.0f", subplanName, matches[0]["Actual Rows"], maximum)
 	}
 }
 
@@ -514,8 +719,14 @@ func placeholderForBoundValue(t *testing.T, args []any, want any) string {
 }
 
 func seedTargetPlanFixture(t *testing.T, client *ent.Client, scale targetPlanScale) int {
+	return seedTargetPlanFixtureOrdered(t, client, scale, false)
+}
+
+func seedTargetPlanFixtureOrdered(t *testing.T, client *ent.Client, scale targetPlanScale, reverse bool) int {
 	t.Helper()
 	ctx := context.Background()
+	staleSource, staleRun := createTargetSourceSnapshot(t, client, "Stale Plan Directory "+scale.name, time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC))
+	createTargetDepartment(t, client, staleSource.ID, staleRun.ID, "dept-missing", "", "Stale Missing Parent")
 	source, run := createTargetSourceSnapshot(t, client, "Plan Directory "+scale.name, time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC))
 	if _, err := client.DirectorySyncRun.UpdateOneID(run.ID).
 		SetDepartmentCount(scale.departments).
@@ -551,8 +762,10 @@ func seedTargetPlanFixture(t *testing.T, client *ent.Client, scale targetPlanSca
 			externalID, parentID, name = "dept-cycle-b", "dept-cycle-a", "Cycle Beta"
 		case 2:
 			externalID, parentID, name = "dept-cycle-c", "dept-cycle-b", "Cycle Gamma"
+		case 3:
+			externalID, parentID, name = "dept-orphan", "dept-missing", "Current Orphan"
 		default:
-			if i > 3 && i%3 != 0 {
+			if i == scale.departments-1 {
 				parentID = fmt.Sprintf("dept-%03d", i-1)
 			}
 		}
@@ -567,6 +780,11 @@ func seedTargetPlanFixture(t *testing.T, client *ent.Client, scale targetPlanSca
 			builder.SetParentExternalID(parentID)
 		}
 		departmentBuilders = append(departmentBuilders, builder)
+	}
+	if reverse {
+		for left, right := 0, len(departmentBuilders)-1; left < right; left, right = left+1, right-1 {
+			departmentBuilders[left], departmentBuilders[right] = departmentBuilders[right], departmentBuilders[left]
+		}
 	}
 	if _, err := client.DirectoryDepartment.CreateBulk(departmentBuilders...).Save(ctx); err != nil {
 		t.Fatalf("create plan departments: %v", err)
@@ -648,8 +866,10 @@ func assertTargetPlanFixtureCounts(t *testing.T, client *ent.Client, scale targe
 		departments: client.DirectoryDepartment.Query().CountX(ctx),
 		memberships: client.DirectoryMemberDepartment.Query().CountX(ctx),
 	}
-	if got != scale {
-		t.Fatalf("fixture counts = %s, want %s", describeTargetCounts(got.users, got.members, got.departments, got.memberships), describeTargetCounts(scale.users, scale.members, scale.departments, scale.memberships))
+	want := scale
+	want.departments++ // The non-current source owns only the missing parent collision.
+	if got != want {
+		t.Fatalf("fixture counts = %s, want %s", describeTargetCounts(got.users, got.members, got.departments, got.memberships), describeTargetCounts(want.users, want.members, want.departments, want.memberships))
 	}
 }
 

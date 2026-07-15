@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1 and 2 are complete, independently reviewed, and committed. Tasks 3-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Tasks 1 and 2 are complete, independently reviewed, and committed. Task 3 Steps 1-5 are complete with recorded RED evidence and passing focused/full backend verification; Task 3 Step 6, Tasks 4-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -687,7 +687,7 @@ git commit -m "docs(plan): record admin user page task"
 - Consumes: Task 1 `effectiveDepartmentCTEs`/`effectiveSubtreeCTE` and Task 2 source resolution/current membership/ancestor helpers.
 - Produces: `DepartmentOptions`, `DepartmentChildren`, and the two HTTP contracts above.
 
-- [ ] **Step 1: Add failing option, child-page, summary, and scale tests**
+- [x] **Step 1: Add failing option, child-page, summary, and scale tests**
 
 At service and real HTTP seams, cover:
 
@@ -727,7 +727,7 @@ Reuse Task 1's exact three cycle rows inside each 12/120-department plan fixture
 
 Name the focused service cases `TestDepartmentChildrenRequiresCurrentSourceParent`, `TestDepartmentChildrenClosedCycleNavigation`, `TestDepartmentChildrenEffectiveSubtreeParity`, and `TestDepartmentChildrenRepresentativeJSONShapes`; name their real-HTTP counterparts with the `TestAdminUsersDepartmentChildren` prefix so Step 2/5 executes every seam. Reuse `assertNamedRecursiveUnionLoopsOnce` for `cycle_walk`, `ancestors`, and `descendants`.
 
-- [ ] **Step 2: Run Task 3 tests and record RED**
+- [x] **Step 2: Run Task 3 tests and record RED**
 
 Run:
 
@@ -737,13 +737,15 @@ Run:
 
 Expected: FAIL because the bounded department service methods and routes do not exist.
 
-- [ ] **Step 3: Implement the lightweight selector page**
+RED evidence (2026-07-15): the exact command failed as intended. `internal/adminusers` could not compile because `DepartmentOptionRequest`, `DepartmentSummary`, `Service.DepartmentOptions`, and `Service.DepartmentChildren` did not exist; every focused real-HTTP option/child test reached the authenticated router and received `404 page not found` because neither route was registered.
+
+- [x] **Step 3: Implement the lightweight selector page**
 
 `DepartmentOptions` resolves one source, composes Task 1 `effectiveDepartmentCTEs`, normalizes page values, and applies `q` to trimmed department name or external ID. It counts and pages by `LOWER(BTRIM(name)) ASC, external_id ASC`, selects only external ID/name/parent ID, and loads effective ancestors for at most 100 option rows plus the optional exact `selected_id` row. Closed-cycle labels therefore agree with List enrichment and lazy navigation.
 
 The selected exact lookup is source-scoped and independent from the option query. Build option display paths from the bounded ancestor closure. A page beyond total returns empty before offset calculation; current-source absence returns an empty page and `Selected == nil`.
 
-- [ ] **Step 4: Implement child-at-a-time summaries with SQL aggregates**
+- [x] **Step 4: Implement child-at-a-time summaries with SQL aggregates**
 
 `DepartmentChildren` trims the parent request and binds SQL `$2` as nullable text: omitted/blank becomes `NULL` for a root request; a nonblank value is a supplied parent. Candidate count and page statements call Task 1 `effectiveDepartmentCTEs` and append only this child-specific suffix:
 
@@ -946,7 +948,7 @@ adminUsersGroup.GET("/department-children", adminUsersHandler.ListDepartmentChil
 
 Leave `adminUsersGroup.GET("/departments", adminUsersHandler.ListDepartments)` and its response untouched for compatibility.
 
-- [ ] **Step 5: Verify backend department reads GREEN**
+- [x] **Step 5: Verify backend department reads GREEN**
 
 Run:
 
@@ -958,6 +960,8 @@ git diff --check
 ```
 
 Expected: exact bounds and summaries pass twice; every department statement contains its exact Task 1 composer return and canonical shared prefix; missing/colliding supplied parents return empty; each closed cycle has one stable root anchor and duplicate-free expansion; B summary is exactly `{b,c}` and equals List/Targets; representative scalar/array fixtures report exact 5/3 and 1/0 totals with all duplicates removed; no active bounded route materializes the full snapshot; source collisions cannot alter parents, representatives, or display paths; legacy `/departments` tests still pass unchanged.
+
+GREEN evidence (2026-07-15): the exact Step 5 `gofmt` command exited 0; the focused service/real-HTTP/query-plan command passed twice (`internal/adminusers` and `internal/handler`); the complete two-package regression command passed (`internal/adminusers` and `internal/handler`); and `git diff --check` exited 0. PostgreSQL small/large plan assertions, reverse insertion order, named recursive-loop checks, maximum page bounds, legacy `/departments`, and current-source collision fixtures all ran in those commands.
 
 - [ ] **Step 6: Complete exact-range Task 3 reviews and checkpoint**
 

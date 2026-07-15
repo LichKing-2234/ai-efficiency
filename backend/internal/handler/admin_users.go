@@ -116,6 +116,29 @@ type adminDirectoryDepartmentSummaryRow struct {
 	MatchedRepresentativeCount int     `json:"matched_representative_count"`
 }
 
+type adminDepartmentOptionRow struct {
+	ExternalID  string `json:"external_id"`
+	Name        string `json:"name"`
+	DisplayPath string `json:"display_path"`
+}
+
+type adminDepartmentChildRow struct {
+	ExternalID                 string  `json:"external_id"`
+	ParentExternalID           *string `json:"parent_external_id,omitempty"`
+	Name                       string  `json:"name"`
+	Path                       string  `json:"path"`
+	DisplayPath                string  `json:"display_path"`
+	Depth                      int     `json:"depth"`
+	ChildCount                 int     `json:"child_count"`
+	HasChildren                bool    `json:"has_children"`
+	MemberCount                int     `json:"member_count"`
+	MatchedUserCount           int     `json:"matched_user_count"`
+	SubtreeMemberCount         int     `json:"subtree_member_count"`
+	SubtreeMatchedUserCount    int     `json:"subtree_matched_user_count"`
+	RepresentativeCount        int     `json:"representative_count"`
+	MatchedRepresentativeCount int     `json:"matched_representative_count"`
+}
+
 type adminSubscriptionProviderRow struct {
 	ID          int                         `json:"id"`
 	Name        string                      `json:"name"`
@@ -284,6 +307,80 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 		"total":     page.Total,
 		"page":      page.Page,
 		"page_size": page.PageSize,
+	})
+}
+
+func (h *AdminUsersHandler) ListDepartmentOptions(c *gin.Context) {
+	page, err := h.users.DepartmentOptions(c.Request.Context(), adminusers.DepartmentOptionRequest{
+		Query:      strings.TrimSpace(c.Query("q")),
+		SelectedID: strings.TrimSpace(c.Query("selected_id")),
+		Page:       parseOptionalInt(c.Query("page")),
+		PageSize:   parseOptionalInt(c.Query("page_size")),
+	})
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items := make([]adminDepartmentOptionRow, 0, len(page.Items))
+	for _, item := range page.Items {
+		items = append(items, adminDepartmentOptionRow{
+			ExternalID:  item.ExternalID,
+			Name:        item.Name,
+			DisplayPath: item.DisplayPath,
+		})
+	}
+	var selected *adminDepartmentOptionRow
+	if page.Selected != nil {
+		selected = &adminDepartmentOptionRow{
+			ExternalID:  page.Selected.ExternalID,
+			Name:        page.Selected.Name,
+			DisplayPath: page.Selected.DisplayPath,
+		}
+	}
+	pkg.Success(c, gin.H{
+		"items":     items,
+		"selected":  selected,
+		"total":     page.Total,
+		"page":      page.Page,
+		"page_size": page.PageSize,
+	})
+}
+
+func (h *AdminUsersHandler) ListDepartmentChildren(c *gin.Context) {
+	page, err := h.users.DepartmentChildren(c.Request.Context(), adminusers.DepartmentChildrenRequest{
+		ParentDepartmentID: strings.TrimSpace(c.Query("parent_department_id")),
+		Page:               parseOptionalInt(c.Query("page")),
+		PageSize:           parseOptionalInt(c.Query("page_size")),
+	})
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items := make([]adminDepartmentChildRow, 0, len(page.Items))
+	for _, item := range page.Items {
+		items = append(items, adminDepartmentChildRow{
+			ExternalID:                 item.ExternalID,
+			ParentExternalID:           item.ParentExternalID,
+			Name:                       item.Name,
+			Path:                       item.Path,
+			DisplayPath:                item.DisplayPath,
+			Depth:                      item.Depth,
+			ChildCount:                 item.ChildCount,
+			HasChildren:                item.HasChildren,
+			MemberCount:                item.MemberCount,
+			MatchedUserCount:           item.MatchedUserCount,
+			SubtreeMemberCount:         item.SubtreeMemberCount,
+			SubtreeMatchedUserCount:    item.SubtreeMatchedUserCount,
+			RepresentativeCount:        item.RepresentativeCount,
+			MatchedRepresentativeCount: item.MatchedRepresentativeCount,
+		})
+	}
+	pkg.Success(c, gin.H{
+		"items":                items,
+		"parent_department_id": page.ParentDepartmentID,
+		"total":                page.Total,
+		"page":                 page.Page,
+		"page_size":            page.PageSize,
 	})
 }
 
