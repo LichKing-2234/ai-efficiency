@@ -50,6 +50,8 @@ TailwindCSS.
   decision comment dialog.
 - `frontend/src/components/quota-reset/QuotaResetWorkflowTimeline.vue` - compact
   workflow progress and comment history.
+- `frontend/src/components/settings/QuotaResetApprovalChainSettings.vue` -
+  focused ordered-chain editor using existing directory search.
 
 **Modify:**
 
@@ -317,7 +319,7 @@ of two explicit channels: `generic_webhook` or `wecom_group_robot`.
 
   Expected: PASS.
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4**
 
   ```bash
   git add backend/internal/quotareset backend/internal/handler backend/ent
@@ -331,7 +333,7 @@ of two explicit channels: `generic_webhook` or `wecom_group_robot`.
 **Interfaces:** API types mirror the backend chain and workflow summaries. The
 existing `QuotaResetView` remains data owner; child components only emit actions.
 
-- [ ] **Step 1: Add failing API/settings tests**
+- [x] **Step 1: Add failing API/settings tests**
 
   Add focused tests for group dropdowns, department filtering inside an opened
   dropdown, member candidate filtering, ordered add/remove/move chain rows,
@@ -345,14 +347,14 @@ existing `QuotaResetView` remains data owner; child components only emit actions
 
   Expected: FAIL on missing chain/channel controls.
 
-- [ ] **Step 2: Extend API/types and the existing settings component**
+- [x] **Step 2: Extend API/types and the existing settings component**
 
   Keep the three settings subsections in
   `QuotaResetApprovalSettings.vue`. Reuse existing Directory Sync department
   search and approver candidate APIs. Do not create nested settings cards or a
   new state store.
 
-- [ ] **Step 3: Add failing approval workbench tests**
+- [x] **Step 3: Add failing approval workbench tests**
 
   Test active step/progress, timeline comments, mandatory decision comment,
   cancel/action visibility, processed history, and refreshed pending counts.
@@ -365,14 +367,14 @@ existing `QuotaResetView` remains data owner; child components only emit actions
 
   Expected: FAIL on missing version 2 presentation.
 
-- [ ] **Step 4: Implement the compact timeline and dialog**
+- [x] **Step 4: Implement the compact timeline and dialog**
 
   Add the two small child components listed in the file map. Keep network state
   in `QuotaResetView`; after a decision refresh the active list, mine/admin list
   as applicable, and Work Items counts without clearing successful UI state on
   a secondary refresh failure.
 
-- [ ] **Step 5: Run focused frontend tests and build**
+- [x] **Step 5: Run focused frontend tests and build**
 
   ```bash
   cd frontend

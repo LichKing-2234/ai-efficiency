@@ -1,6 +1,8 @@
 import client from './client'
 import type {
   ApiResponse,
+  QuotaResetApprovalChainInput,
+  QuotaResetApprovalChainListResponse,
   QuotaResetApproverCandidateListResponse,
   QuotaResetApproverConfigInput,
   QuotaResetApproverConfigListResponse,
@@ -43,8 +45,8 @@ export function listQuotaResetApprovals(params?: QuotaResetListParams) {
   return client.get<ApiResponse<QuotaResetRequestListResponse>>('/user/quota-reset/approvals', { params })
 }
 
-export function approveQuotaResetRequest(id: number, data?: { decision_reason?: string }) {
-  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/user/quota-reset/approvals/${id}/approve`, data ?? {})
+export function approveQuotaResetRequest(id: number, data: { decision_reason: string }) {
+  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/user/quota-reset/approvals/${id}/approve`, data)
 }
 
 export function rejectQuotaResetRequest(id: number, data: { decision_reason: string }) {
@@ -59,8 +61,8 @@ export function listAdminQuotaResetRequests(params?: QuotaResetListParams) {
   return client.get<ApiResponse<QuotaResetRequestListResponse>>('/admin/quota-reset/requests', { params })
 }
 
-export function adminApproveQuotaResetRequest(id: number, data?: { decision_reason?: string }) {
-  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/admin/quota-reset/requests/${id}/approve`, data ?? {})
+export function adminApproveQuotaResetRequest(id: number, data: { decision_reason: string }) {
+  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/admin/quota-reset/requests/${id}/approve`, data)
 }
 
 export function adminRejectQuotaResetRequest(id: number, data: { decision_reason: string }) {
@@ -73,6 +75,14 @@ export function adminRetryQuotaResetRequest(id: number) {
 
 export function getQuotaResetApproverConfigs() {
   return client.get<ApiResponse<QuotaResetApproverConfigListResponse>>('/admin/quota-reset/approver-configs')
+}
+
+export function getQuotaResetApprovalChains() {
+  return client.get<ApiResponse<QuotaResetApprovalChainListResponse>>('/admin/quota-reset/approval-chains')
+}
+
+export function saveQuotaResetApprovalChains(items: QuotaResetApprovalChainInput[]) {
+  return client.put<ApiResponse<QuotaResetApprovalChainListResponse>>('/admin/quota-reset/approval-chains', { items })
 }
 
 export function listQuotaResetApproverCandidates(params: QuotaResetApproverCandidateParams) {

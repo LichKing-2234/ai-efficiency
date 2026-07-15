@@ -10,6 +10,7 @@ import {
 } from '@/api/quotaReset'
 import { listDirectoryDepartments, listDirectorySources } from '@/api/directory'
 import { useI18n } from '@/i18n'
+import QuotaResetApprovalChainSettings from '@/components/settings/QuotaResetApprovalChainSettings.vue'
 import type {
   Credential,
   DirectoryDepartment,
@@ -53,6 +54,7 @@ const configForm = ref({
 
 const notification = ref<QuotaResetNotificationSettings>({
   enabled: false,
+  channel: 'generic_webhook',
   url: '',
   auth_type: 'none',
   credential_id: null,
@@ -77,6 +79,7 @@ async function loadSettings() {
     configs.value = configsRes.data.data?.items ?? []
     notification.value = {
       enabled: notificationRes.data.data?.enabled ?? false,
+      channel: notificationRes.data.data?.channel ?? 'generic_webhook',
       url: notificationRes.data.data?.url ?? '',
       auth_type: notificationRes.data.data?.auth_type ?? 'none',
       credential_id: notificationRes.data.data?.credential_id ?? null,
@@ -264,6 +267,7 @@ async function saveNotification() {
   try {
     const payload: QuotaResetNotificationSettings = {
       enabled: notification.value.enabled,
+      channel: notification.value.channel,
       url: notification.value.url.trim(),
       auth_type: notification.value.auth_type,
       credential_id: notification.value.auth_type === 'bearer_token' ? notification.value.credential_id ?? null : null,
@@ -271,6 +275,7 @@ async function saveNotification() {
     const res = await updateQuotaResetNotificationSettings(payload)
     notification.value = {
       enabled: res.data.data?.enabled ?? payload.enabled,
+      channel: res.data.data?.channel ?? payload.channel,
       url: res.data.data?.url ?? payload.url,
       auth_type: res.data.data?.auth_type ?? payload.auth_type,
       credential_id: res.data.data?.credential_id ?? payload.credential_id,
@@ -490,6 +495,10 @@ function credentialOptionLabel(credential: Credential) {
     </div>
 
     <div class="mt-6 border-t border-gray-200 pt-5">
+      <QuotaResetApprovalChainSettings :source-id="selectedDirectorySourceID" />
+    </div>
+
+    <div class="mt-6 border-t border-gray-200 pt-5">
       <h4 class="text-sm font-semibold text-gray-900">{{ t('quotaResetSettings.webhook') }}</h4>
       <div class="mt-3 grid gap-3 md:grid-cols-2">
         <label class="flex items-center gap-2 text-sm text-gray-700">
@@ -500,6 +509,13 @@ function credentialOptionLabel(credential: Credential) {
             class="h-4 w-4 rounded border-gray-300 text-indigo-600"
           />
           {{ t('settings.enabled') }}
+        </label>
+        <label class="block">
+          <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.channel') }}</span>
+          <select v-model="notification.channel" data-testid="quota-reset-webhook-channel" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+            <option value="generic_webhook">{{ t('quotaResetSettings.channelGeneric') }}</option>
+            <option value="wecom_group_robot">{{ t('quotaResetSettings.channelWeCom') }}</option>
+          </select>
         </label>
         <label class="block md:col-span-2">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.webhookURL') }}</span>

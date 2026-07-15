@@ -5,8 +5,10 @@ import { setLocale } from '@/i18n'
 
 vi.mock('@/api/quotaReset', () => ({
   getQuotaResetApproverConfigs: vi.fn(),
+  getQuotaResetApprovalChains: vi.fn(),
   listQuotaResetApproverCandidates: vi.fn(),
   saveQuotaResetApproverConfigs: vi.fn(),
+  saveQuotaResetApprovalChains: vi.fn(),
   getQuotaResetNotificationSettings: vi.fn(),
   updateQuotaResetNotificationSettings: vi.fn(),
   testQuotaResetNotificationSettings: vi.fn(),
@@ -32,6 +34,16 @@ beforeEach(async () => {
   vi.clearAllMocks()
   const api = await import('@/api/quotaReset') as any
   api.getQuotaResetApproverConfigs.mockResolvedValue({ data: { data: { items: [] } } })
+  api.getQuotaResetApprovalChains.mockResolvedValue({
+    data: {
+      data: {
+        items: [],
+        groups: [
+          { provider_id: 1, provider_name: 'Relay Alpha', group_id: '42', group_name: 'Group Alpha', platform: 'openai' },
+        ],
+      },
+    },
+  })
   api.listQuotaResetApproverCandidates.mockResolvedValue({
     data: {
       data: {
@@ -48,9 +60,10 @@ beforeEach(async () => {
     },
   })
   api.saveQuotaResetApproverConfigs.mockResolvedValue({ data: { data: { items: [] } } })
-  api.getQuotaResetNotificationSettings.mockResolvedValue({ data: { data: { enabled: false, url: '', auth_type: 'none' } } })
+  api.saveQuotaResetApprovalChains.mockResolvedValue({ data: { data: { items: [], groups: [] } } })
+  api.getQuotaResetNotificationSettings.mockResolvedValue({ data: { data: { enabled: false, channel: 'generic_webhook', url: '', auth_type: 'none' } } })
   api.updateQuotaResetNotificationSettings.mockResolvedValue({
-    data: { data: { enabled: true, url: 'https://hooks.example.com/ai-efficiency', auth_type: 'none' } },
+    data: { data: { enabled: true, channel: 'wecom_group_robot', url: 'https://hooks.example.com/ai-efficiency', auth_type: 'none' } },
   })
   api.testQuotaResetNotificationSettings.mockResolvedValue({ data: { data: { message: 'ok' } } })
   const directory = await import('@/api/directory') as any
@@ -155,11 +168,53 @@ describe('QuotaResetApprovalSettings', () => {
     const api = await import('@/api/quotaReset')
     expect(api.updateQuotaResetNotificationSettings).toHaveBeenCalledWith(expect.objectContaining({
       enabled: true,
+      channel: 'generic_webhook',
       url: 'https://hooks.example.com/ai-efficiency',
     }))
     expect(wrapper.text()).toContain('Webhook token')
     expect(wrapper.text()).toContain('tes****oken')
     expect(wrapper.text()).not.toContain('test-token')
+  })
+
+  it('builds and saves an ordered subscription group approval chain with dropdowns', async () => {
+    const directory = await import('@/api/directory') as any
+    directory.listDirectoryDepartments.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: 11, source_id: 1, external_id: 'dept-alpha', name: 'Alpha', path: '1.2', display_path: 'Company / Alpha' },
+            { id: 12, source_id: 1, external_id: 'dept-beta', name: 'Beta', path: '1.3', display_path: 'Company / Beta' },
+          ],
+        },
+      },
+    })
+    const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="quota-reset-chain-group"]').setValue('1/42')
+    await wrapper.get('[data-testid="quota-reset-chain-department-select"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-chain-department-option-dept-alpha"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-chain-department-select"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-chain-department-option-dept-beta"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-chain-move-up-1"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-chain-save"]').trigger('click')
+    await flushPromises()
+
+    const quotaReset = await import('@/api/quotaReset') as any
+    expect(quotaReset.saveQuotaResetApprovalChains).toHaveBeenCalledWith([
+      {
+        provider_id: 1,
+        group_id: '42',
+        group_name: 'Group Alpha',
+        enabled: true,
+        departments: [
+          { directory_source_id: 1, department_external_id: 'dept-beta', department_display_path: 'Company / Beta' },
+          { directory_source_id: 1, department_external_id: 'dept-alpha', department_display_path: 'Company / Alpha' },
+        ],
+      },
+    ])
   })
 
   it('shows backend webhook test failure reason', async () => {

@@ -1099,6 +1099,36 @@ export interface QuotaResetRequestEvent {
   created_at: string
 }
 
+export type QuotaResetWorkflowStepStatus = 'queued' | 'active' | 'approved' | 'satisfied_by_prior_approval' | 'rejected'
+
+export interface QuotaResetWorkflowApprover {
+  user_id: number
+  display_name: string
+  email: string
+  source: 'configured' | 'directory_representative'
+  notification_ids?: Record<string, string>
+}
+
+export interface QuotaResetWorkflowDecision {
+  actor_user_id: number
+  actor_display_name: string
+  comment: string
+  approve: boolean
+  admin: boolean
+  decided_at: string
+}
+
+export interface QuotaResetWorkflowStep {
+  kind: 'requester_departments' | 'configured_department'
+  label: string
+  department_external_ids: string[]
+  approvers: QuotaResetWorkflowApprover[]
+  admin_fallback: boolean
+  status: QuotaResetWorkflowStepStatus
+  decision?: QuotaResetWorkflowDecision | null
+  satisfied_by_step?: number | null
+}
+
 export interface QuotaResetRequestSummary {
   id: number
   requester_user_id: number
@@ -1110,6 +1140,9 @@ export interface QuotaResetRequestSummary {
   group_platform: string
   reason: string
   status: QuotaResetStatus
+  workflow_version?: number
+  current_step?: number
+  workflow_steps?: QuotaResetWorkflowStep[]
   resolved_approver_user_ids: number[]
   matched_department_paths?: QuotaResetDepartmentPathEvidence[]
   approved_by_user_id?: number | null
@@ -1158,6 +1191,8 @@ export interface QuotaResetApproverCandidate {
   email: string
   display_name: string
   directory_member_external_id: string
+  representative: boolean
+  has_wecom_userid: boolean
 }
 
 export interface QuotaResetUnmatchedApproverRepresentative {
@@ -1171,8 +1206,43 @@ export interface QuotaResetApproverCandidateListResponse {
   unmatched_representatives?: QuotaResetUnmatchedApproverRepresentative[]
 }
 
+export interface QuotaResetApprovalChainDepartment {
+  directory_source_id: number
+  department_external_id: string
+  department_display_path: string
+}
+
+export interface QuotaResetApprovalChainInput {
+  provider_id: number
+  group_id: string
+  group_name: string
+  enabled: boolean
+  departments: QuotaResetApprovalChainDepartment[]
+}
+
+export interface QuotaResetApprovalChain extends QuotaResetApprovalChainInput {
+  id: number
+  updated_at: string
+}
+
+export interface QuotaResetApprovalChainGroupOption {
+  provider_id: number
+  provider_name: string
+  group_id: string
+  group_name: string
+  platform: string
+}
+
+export interface QuotaResetApprovalChainListResponse {
+  items: QuotaResetApprovalChain[]
+  groups: QuotaResetApprovalChainGroupOption[]
+}
+
+export type QuotaResetNotificationChannel = 'generic_webhook' | 'wecom_group_robot'
+
 export interface QuotaResetNotificationSettings {
   enabled: boolean
+  channel: QuotaResetNotificationChannel
   url: string
   auth_type: 'none' | 'bearer_token'
   credential_id?: number | null

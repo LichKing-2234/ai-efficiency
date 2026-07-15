@@ -61,6 +61,14 @@ function canDecide(item: QuotaResetRequestSummary) {
 function canRetry(item: QuotaResetRequestSummary) {
   return (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'approved_reset_failed'
 }
+
+function workflowProgress(item: QuotaResetRequestSummary) {
+  const steps = item.workflow_steps ?? []
+  if (item.workflow_version !== 2 || steps.length === 0) return ''
+  const current = Math.min((item.current_step ?? 0) + 1, steps.length)
+  const active = steps[item.current_step ?? 0]
+  return `${current}/${steps.length}${active?.label ? ` · ${active.label}` : ''}`
+}
 </script>
 
 <template>
@@ -87,6 +95,7 @@ function canRetry(item: QuotaResetRequestSummary) {
             <span v-if="item.requester_email"> · {{ item.requester_display_name || item.requester_email }}</span>
           </p>
           <p class="mt-2 line-clamp-2 break-words text-sm text-slate-700">{{ item.reason }}</p>
+		  <p v-if="workflowProgress(item)" class="mt-2 break-words text-xs font-medium text-cyan-800">{{ workflowProgress(item) }}</p>
           <p v-if="item.reset_error" class="mt-2 break-words text-xs font-medium text-red-600">{{ item.reset_error }}</p>
         </div>
         <div class="flex flex-wrap items-start gap-2 md:justify-end">

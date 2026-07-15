@@ -2,6 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import QuotaResetRequestList from '@/components/quota-reset/QuotaResetRequestList.vue'
+import QuotaResetDecisionDialog from '@/components/quota-reset/QuotaResetDecisionDialog.vue'
+import QuotaResetWorkflowTimeline from '@/components/quota-reset/QuotaResetWorkflowTimeline.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
 import {
   adminApproveQuotaResetRequest,
@@ -37,6 +39,9 @@ const adminRequests = ref<QuotaResetRequestSummary[]>([])
 const myTotal = ref(0)
 const loading = ref(false)
 const actionBusy = ref(false)
+const selectedRequest = ref<QuotaResetRequestSummary | null>(null)
+const decisionRequest = ref<QuotaResetRequestSummary | null>(null)
+const decisionAction = ref<'approve' | 'reject'>('approve')
 const loadError = ref('')
 const filters: FilterMode[] = ['all', 'pending', 'processed', 'failed']
 const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : workItems.counts.quota_reset_approval_count)
@@ -125,15 +130,13 @@ async function withAction(action: () => Promise<unknown>) {
     await action()
     await loadQueues(true)
     showToast({ message: t('quotaReset.actionSucceeded'), tone: 'success' })
+    return true
   } catch {
     showToast({ message: t('quotaReset.actionFailed'), tone: 'error' })
+    return false
   } finally {
     actionBusy.value = false
   }
-}
-
-function rejectReason() {
-  return window.prompt(t('quotaReset.rejectPrompt'))?.trim() ?? ''
 }
 
 function handleCancel(item: QuotaResetRequestSummary) {
@@ -141,21 +144,30 @@ function handleCancel(item: QuotaResetRequestSummary) {
 }
 
 function handleApprove(item: QuotaResetRequestSummary) {
-  if (activeQueue.value === 'admin') {
-    void withAction(() => adminApproveQuotaResetRequest(item.id, {}))
-    return
-  }
-  void withAction(() => approveQuotaResetRequest(item.id, {}))
+	decisionRequest.value = item
+	decisionAction.value = 'approve'
 }
 
 function handleReject(item: QuotaResetRequestSummary) {
-  const decisionReason = rejectReason()
-  if (!decisionReason) return
-  if (activeQueue.value === 'admin') {
-    void withAction(() => adminRejectQuotaResetRequest(item.id, { decision_reason: decisionReason }))
-    return
-  }
-  void withAction(() => rejectQuotaResetRequest(item.id, { decision_reason: decisionReason }))
+	decisionRequest.value = item
+	decisionAction.value = 'reject'
+}
+
+async function confirmDecision(comment: string) {
+	const item = decisionRequest.value
+	if (!item) return
+	const admin = activeQueue.value === 'admin'
+	const action = decisionAction.value === 'approve'
+		? () => admin ? adminApproveQuotaResetRequest(item.id, { decision_reason: comment }) : approveQuotaResetRequest(item.id, { decision_reason: comment })
+		: () => admin ? adminRejectQuotaResetRequest(item.id, { decision_reason: comment }) : rejectQuotaResetRequest(item.id, { decision_reason: comment })
+	if (await withAction(action)) {
+		decisionRequest.value = null
+		selectedRequest.value = [...myRequests.value, ...approvalRequests.value, ...adminRequests.value].find((request) => request.id === item.id) ?? null
+	}
+}
+
+function handleSelect(item: QuotaResetRequestSummary) {
+	selectedRequest.value = selectedRequest.value?.id === item.id ? null : item
 }
 
 function handleRetry(item: QuotaResetRequestSummary) {
@@ -257,7 +269,24 @@ onMounted(loadQueues)
         @approve="handleApprove"
         @reject="handleReject"
         @retry="handleRetry"
+		@select="handleSelect"
       />
+
+	  <section v-if="selectedRequest?.workflow_version === 2 && selectedRequest.workflow_steps?.length" class="space-y-3" aria-label="Quota reset workflow details">
+		<div>
+		  <h2 class="text-base font-semibold text-slate-950">{{ t('quotaReset.workflow') }}</h2>
+		  <p class="mt-1 text-sm text-slate-600">{{ selectedRequest.group_name || selectedRequest.group_id }}</p>
+		</div>
+		<QuotaResetWorkflowTimeline :steps="selectedRequest.workflow_steps" :current-step="selectedRequest.current_step" />
+	  </section>
     </div>
+
+	<QuotaResetDecisionDialog
+	  :open="Boolean(decisionRequest)"
+	  :action="decisionAction"
+	  :busy="actionBusy"
+	  @confirm="confirmDecision"
+	  @cancel="decisionRequest = null"
+	/>
   </AppLayout>
 </template>
