@@ -19,6 +19,10 @@ WECOM_ROBOT_URL = (
     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
     "?key=synthetic-browser-robot-key"
 )
+WECOM_REDACTED_PREVIEW = (
+    "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
+    "?key=synthetic...redacted"
+)
 MAX_RUNTIME_SECONDS = 60
 TIMEOUT_EXIT_STATUS = 124
 WORKER_FLAG = "--worker"
@@ -52,6 +56,20 @@ USERS = {
         "role": "admin",
         "auth_source": "dev",
     },
+}
+
+DIRECTORY_SOURCE = {
+    "id": 11,
+    "name": "Synthetic Directory",
+    "description": "Synthetic full-company directory for browser coverage",
+    "scope": "full_company",
+    "enabled": True,
+    "dsl": "version: 1\nscope: full_company\nsteps: []\n",
+    "schedule_enabled": False,
+    "schedule_interval": "daily",
+    "schedule_timezone": "UTC",
+    "last_successful_run_id": 111,
+    "last_run_id": 111,
 }
 
 
@@ -303,10 +321,10 @@ class SyntheticAPI:
             fulfill(route, {"url": "", "base_dn": "", "bind_dn": "", "user_filter": "", "tls": False})
             return
         if path == "/api/v1/admin/directory/sources" and method == "GET":
-            fulfill(route, {"items": []})
+            fulfill(route, {"items": [DIRECTORY_SOURCE]})
             return
         if path == "/api/v1/admin/quota-reset/approver-configs" and method == "GET":
-            fulfill(route, {"items": []})
+            fulfill(route, {"directory_source_id": 11, "items": []})
             return
         if path == "/api/v1/admin/quota-reset/approval-chain-options" and method == "GET":
             fulfill(route, {
@@ -360,7 +378,7 @@ class SyntheticAPI:
                 "channel_type": "wecom_group_robot",
                 "template_version": 1,
                 "url_configured": True,
-                "url_preview": "https://hooks.example.com/.../quota-reset",
+                "url_preview": WECOM_REDACTED_PREVIEW,
                 "auth_type": "none",
                 "credential_id": None,
             })
@@ -579,6 +597,10 @@ def test_admin_settings(browser, viewport, screenshot_name):
         wait_for_page(page)
         settings = page.get_by_test_id("quota-reset-approval-settings")
         settings.wait_for(state="visible")
+        settings_text = settings.inner_text()
+        assert "Failed to load department approvers" not in settings_text
+        assert "Failed to load approval chains" not in settings_text
+        assert "Failed to load notification settings" not in settings_text
 
         page.get_by_test_id("quota-reset-chain-group-select").click()
         page.get_by_test_id("quota-reset-chain-group-option-7-group-alpha").click()
@@ -599,6 +621,12 @@ def test_admin_settings(browser, viewport, screenshot_name):
         page.get_by_test_id("quota-reset-save-notification").click()
         page.wait_for_function("() => document.body.innerText.includes('Notification settings saved')")
         assert len(api.notification_payloads) == 1
+        preview = page.get_by_test_id("quota-reset-notification-preview")
+        assert "Quota reset approval pending" in preview.inner_text()
+        assert "@Bob" in preview.inner_text()
+        settings_text = settings.inner_text()
+        assert WECOM_REDACTED_PREVIEW in settings_text
+        assert "synthetic-browser-robot-key" not in settings_text
 
         chains = page.get_by_test_id("subscription-group-approval-chains")
         chains.scroll_into_view_if_needed()

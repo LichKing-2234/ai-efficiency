@@ -8,10 +8,13 @@ import {
 } from '@/api/quotaReset'
 import { useI18n } from '@/i18n'
 import type {
+  QuotaResetApprovalChain,
   QuotaResetApprovalChainDepartmentOption,
   QuotaResetApprovalChainGroupOption,
   QuotaResetApprovalChainInput,
+  QuotaResetApprovalChainListResponse,
   QuotaResetApprovalChainNodeInput,
+  QuotaResetApprovalChainOptionsResponse,
 } from '@/types'
 
 const props = defineProps<{
@@ -26,6 +29,7 @@ const selectedGroupKey = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const chainsAuthoritative = ref(false)
+const chainsDirty = ref(false)
 const error = ref('')
 const message = ref('')
 let loadSequence = 0
@@ -95,13 +99,134 @@ watch(
       reloadQueuedAfterSave = true
       return
     }
-    void loadChains()
+    void loadChainsWithOptions({ preserveLocalState: chainsDirty.value })
   },
   { immediate: true },
 )
 
 function errorMessage(err: any, fallback: string) {
   return err?.response?.data?.message || err?.message || fallback
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function decodeChainNode(value: unknown, malformedMessage: string): QuotaResetApprovalChainNodeInput {
+  if (
+    !isRecord(value)
+    || !isPositiveSafeInteger(value.directory_source_id)
+    || typeof value.department_external_id !== 'string'
+    || value.department_external_id.trim() === ''
+    || typeof value.department_display_path !== 'string'
+  ) {
+    throw new Error(malformedMessage)
+  }
+  return {
+    directory_source_id: value.directory_source_id,
+    department_external_id: value.department_external_id,
+    department_display_path: value.department_display_path,
+  }
+}
+
+function decodeChain(value: unknown, malformedMessage: string): QuotaResetApprovalChain {
+  if (
+    !isRecord(value)
+    || !isPositiveSafeInteger(value.id)
+    || !isPositiveSafeInteger(value.provider_id)
+    || typeof value.group_id !== 'string'
+    || value.group_id.trim() === ''
+    || typeof value.group_name !== 'string'
+    || typeof value.enabled !== 'boolean'
+    || !Array.isArray(value.nodes)
+  ) {
+    throw new Error(malformedMessage)
+  }
+  return {
+    id: value.id,
+    provider_id: value.provider_id,
+    group_id: value.group_id,
+    group_name: value.group_name,
+    enabled: value.enabled,
+    nodes: value.nodes.map(node => decodeChainNode(node, malformedMessage)),
+  }
+}
+
+function decodeChainListResponse(
+  value: unknown,
+  malformedMessage: string,
+): QuotaResetApprovalChainListResponse {
+  if (!isRecord(value) || !Array.isArray(value.items)) {
+    throw new Error(malformedMessage)
+  }
+  return {
+    items: value.items.map(item => decodeChain(item, malformedMessage)),
+  }
+}
+
+function decodeChainGroupOption(
+  value: unknown,
+  malformedMessage: string,
+): QuotaResetApprovalChainGroupOption {
+  if (
+    !isRecord(value)
+    || !isPositiveSafeInteger(value.provider_id)
+    || typeof value.group_id !== 'string'
+    || value.group_id.trim() === ''
+    || typeof value.group_name !== 'string'
+    || typeof value.platform !== 'string'
+  ) {
+    throw new Error(malformedMessage)
+  }
+  return {
+    provider_id: value.provider_id,
+    group_id: value.group_id,
+    group_name: value.group_name,
+    platform: value.platform,
+  }
+}
+
+function decodeChainDepartmentOption(
+  value: unknown,
+  malformedMessage: string,
+): QuotaResetApprovalChainDepartmentOption {
+  if (
+    !isRecord(value)
+    || !isPositiveSafeInteger(value.directory_source_id)
+    || typeof value.department_external_id !== 'string'
+    || value.department_external_id.trim() === ''
+    || typeof value.department_display_path !== 'string'
+    || !isNonNegativeSafeInteger(value.approver_count)
+  ) {
+    throw new Error(malformedMessage)
+  }
+  return {
+    directory_source_id: value.directory_source_id,
+    department_external_id: value.department_external_id,
+    department_display_path: value.department_display_path,
+    approver_count: value.approver_count,
+  }
+}
+
+function decodeChainOptionsResponse(
+  value: unknown,
+  malformedMessage: string,
+): QuotaResetApprovalChainOptionsResponse {
+  if (!isRecord(value) || !Array.isArray(value.groups) || !Array.isArray(value.departments)) {
+    throw new Error(malformedMessage)
+  }
+  return {
+    groups: value.groups.map(group => decodeChainGroupOption(group, malformedMessage)),
+    departments: value.departments.map(department => decodeChainDepartmentOption(department, malformedMessage)),
+  }
 }
 
 function groupKey(providerID: number, groupID: string) {
@@ -126,11 +251,11 @@ async function loadChains() {
   return loadChainsWithOptions()
 }
 
-async function loadChainsWithOptions(options: { preserveFailedSave?: boolean } = {}) {
-  const preserveFailedSave = options.preserveFailedSave === true
+async function loadChainsWithOptions(options: { preserveLocalState?: boolean } = {}) {
+  const preserveLocalState = options.preserveLocalState === true
   const sequence = ++loadSequence
   loading.value = true
-  if (!preserveFailedSave) {
+  if (!preserveLocalState) {
     chainsAuthoritative.value = false
     error.value = ''
     message.value = ''
@@ -142,16 +267,15 @@ async function loadChainsWithOptions(options: { preserveFailedSave?: boolean } =
     ])
     if (sequence !== loadSequence) return
 
-    const options = optionsResponse.data.data
-    const items = chainsResponse.data.data?.items
-    if (!options || !Array.isArray(options.groups) || !Array.isArray(options.departments) || !Array.isArray(items)) {
-      throw new Error(t('quotaResetSettings.chainLoadFailed'))
-    }
+    const malformedMessage = t('quotaResetSettings.chainLoadFailed')
+    const options = decodeChainOptionsResponse(optionsResponse?.data?.data, malformedMessage)
+    const decodedChains = decodeChainListResponse(chainsResponse?.data?.data, malformedMessage)
 
     groups.value = options.groups
     departments.value = options.departments
-    if (!preserveFailedSave) {
-      chains.value = toInputChains(items)
+    if (!preserveLocalState) {
+      chains.value = toInputChains(decodedChains.items)
+      chainsDirty.value = false
       if (selectedGroupKey.value && !selectedChain.value) {
         selectedGroupKey.value = ''
       }
@@ -159,7 +283,7 @@ async function loadChainsWithOptions(options: { preserveFailedSave?: boolean } =
     }
   } catch (err) {
     if (sequence !== loadSequence) return
-    if (!preserveFailedSave) {
+    if (!preserveLocalState) {
       error.value = errorMessage(err, t('quotaResetSettings.chainLoadFailed'))
     }
   } finally {
@@ -169,7 +293,14 @@ async function loadChainsWithOptions(options: { preserveFailedSave?: boolean } =
   }
 }
 
+function markChainsDirty() {
+  chainsDirty.value = true
+  error.value = ''
+  message.value = ''
+}
+
 function toggleGroupDropdown() {
+  if (saving.value) return
   groupDropdownOpen.value = !groupDropdownOpen.value
   if (groupDropdownOpen.value) {
     departmentDropdownOpen.value = false
@@ -179,6 +310,7 @@ function toggleGroupDropdown() {
 }
 
 function selectGroup(group: QuotaResetApprovalChainGroupOption) {
+  if (saving.value) return
   let chain = chains.value.find(item => (
     item.provider_id === group.provider_id && item.group_id === group.group_id
   ))
@@ -191,6 +323,7 @@ function selectGroup(group: QuotaResetApprovalChainGroupOption) {
       nodes: [],
     }
     chains.value = [...chains.value, chain]
+    markChainsDirty()
   }
   selectedGroupKey.value = groupKey(group.provider_id, group.group_id)
   groupDropdownOpen.value = false
@@ -202,13 +335,26 @@ function selectGroup(group: QuotaResetApprovalChainGroupOption) {
 }
 
 function toggleDepartmentDropdown() {
-  if (!selectedChain.value) return
+  if (saving.value || !selectedChain.value) return
   departmentDropdownOpen.value = !departmentDropdownOpen.value
   if (departmentDropdownOpen.value) {
     groupDropdownOpen.value = false
   } else {
     departmentSearch.value = ''
   }
+}
+
+function updateChainEnabled(event: Event) {
+  const chain = selectedChain.value
+  const target = event.target as HTMLInputElement | null
+  if (!chain || !target) return
+  if (saving.value) {
+    target.checked = chain.enabled
+    return
+  }
+  if (chain.enabled === target.checked) return
+  chain.enabled = target.checked
+  markChainsDirty()
 }
 
 function isDepartmentConfigured(department: QuotaResetApprovalChainDepartmentOption) {
@@ -219,7 +365,7 @@ function isDepartmentConfigured(department: QuotaResetApprovalChainDepartmentOpt
 
 function addDepartment(department: QuotaResetApprovalChainDepartmentOption) {
   const chain = selectedChain.value
-  if (!chain || isDepartmentConfigured(department)) return
+  if (saving.value || !chain || isDepartmentConfigured(department)) return
   chain.nodes = [
     ...chain.nodes,
     {
@@ -228,11 +374,13 @@ function addDepartment(department: QuotaResetApprovalChainDepartmentOption) {
       department_display_path: department.department_display_path,
     },
   ]
+  markChainsDirty()
   departmentDropdownOpen.value = false
   departmentSearch.value = ''
 }
 
 function moveNode(index: number, offset: -1 | 1) {
+  if (saving.value) return
   const nodes = selectedChain.value?.nodes
   if (!nodes) return
   const target = index + offset
@@ -240,12 +388,15 @@ function moveNode(index: number, offset: -1 | 1) {
   const next = [...nodes]
   ;[next[index], next[target]] = [next[target], next[index]]
   selectedChain.value!.nodes = next
+  markChainsDirty()
 }
 
 function removeNode(index: number) {
+  if (saving.value) return
   const chain = selectedChain.value
   if (!chain) return
   chain.nodes = chain.nodes.filter((_, nodeIndex) => nodeIndex !== index)
+  markChainsDirty()
 }
 
 function removeChain() {
@@ -259,8 +410,7 @@ function removeChain() {
   groupSearch.value = ''
   departmentDropdownOpen.value = false
   departmentSearch.value = ''
-  error.value = ''
-  message.value = ''
+  markChainsDirty()
 }
 
 function nodeWarning(node: QuotaResetApprovalChainNodeInput) {
@@ -286,13 +436,22 @@ async function saveChains() {
   if (!chainsAuthoritative.value || loading.value || saving.value) return
   loadSequence += 1
   saving.value = true
+  groupDropdownOpen.value = false
+  groupSearch.value = ''
+  departmentDropdownOpen.value = false
+  departmentSearch.value = ''
   let saveFailed = false
   error.value = ''
   message.value = ''
   try {
     const payload = toInputChains(chains.value)
     const response = await saveQuotaResetApprovalChains(payload)
-    chains.value = toInputChains(response.data.data?.items ?? payload)
+    const decoded = decodeChainListResponse(
+      response?.data?.data,
+      t('quotaResetSettings.chainsSaveFailed'),
+    )
+    chains.value = toInputChains(decoded.items)
+    chainsDirty.value = false
     chainsAuthoritative.value = true
     message.value = t('quotaResetSettings.chainsSaved')
   } catch (err) {
@@ -303,7 +462,7 @@ async function saveChains() {
     if (reloadQueuedAfterSave) {
       reloadQueuedAfterSave = false
       if (saveFailed) {
-        void loadChainsWithOptions({ preserveFailedSave: true })
+        void loadChainsWithOptions({ preserveLocalState: true })
       } else {
         void loadChains()
       }
@@ -356,6 +515,7 @@ async function saveChains() {
             class="flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
             aria-haspopup="listbox"
             :aria-expanded="groupDropdownOpen ? 'true' : 'false'"
+            :disabled="saving"
             @click="toggleGroupDropdown"
           >
             <span class="min-w-0 truncate">
@@ -374,6 +534,7 @@ async function saveChains() {
               :placeholder="t('quotaResetSettings.chainGroupSearch')"
               :aria-label="t('quotaResetSettings.chainGroupSearch')"
               class="w-full min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm"
+              :disabled="saving"
             />
             <div class="mt-2 max-h-52 overflow-y-auto" role="listbox">
               <button
@@ -383,6 +544,7 @@ async function saveChains() {
                 :data-testid="`quota-reset-chain-group-option-${group.provider_id}-${group.group_id}`"
                 class="block w-full min-w-0 rounded px-3 py-2 text-left hover:bg-slate-50"
                 role="option"
+                :disabled="saving"
                 @click="selectGroup(group)"
               >
                 <span class="block break-words text-sm font-medium text-slate-800">{{ group.group_name }}</span>
@@ -418,9 +580,12 @@ async function saveChains() {
         <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <label class="flex items-center gap-2 text-sm text-gray-700">
             <input
-              v-model="selectedChain.enabled"
+              :checked="selectedChain.enabled"
+              data-testid="quota-reset-chain-enabled"
               type="checkbox"
               class="h-4 w-4 rounded border-gray-300 text-indigo-600"
+              :disabled="saving"
+              @change="updateChainEnabled"
             />
             {{ t('settings.enabled') }}
           </label>
@@ -432,6 +597,7 @@ async function saveChains() {
               class="flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
               aria-haspopup="listbox"
               :aria-expanded="departmentDropdownOpen ? 'true' : 'false'"
+              :disabled="saving"
               @click="toggleDepartmentDropdown"
             >
               <span class="min-w-0 truncate">{{ t('quotaResetSettings.addNode') }}</span>
@@ -448,6 +614,7 @@ async function saveChains() {
                 :placeholder="t('quotaResetSettings.departmentSearchPlaceholder')"
                 :aria-label="t('quotaResetSettings.departmentSearchPlaceholder')"
                 class="w-full min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                :disabled="saving"
               />
               <div class="mt-2 max-h-52 overflow-y-auto" role="listbox">
                 <button
@@ -457,7 +624,7 @@ async function saveChains() {
                   :data-testid="`quota-reset-chain-department-option-${department.department_external_id}`"
                   class="block w-full min-w-0 rounded px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
                   role="option"
-                  :disabled="isDepartmentConfigured(department)"
+                  :disabled="saving || isDepartmentConfigured(department)"
                   @click="addDepartment(department)"
                 >
                   <span class="block break-words text-sm font-medium">{{ department.department_display_path }}</span>
@@ -494,7 +661,7 @@ async function saveChains() {
                 class="flex h-9 w-9 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
                 :aria-label="t('quotaResetSettings.moveUp', { department: node.department_display_path })"
                 :title="t('quotaResetSettings.moveUp', { department: node.department_display_path })"
-                :disabled="index === 0"
+                :disabled="saving || index === 0"
                 @click="moveNode(index, -1)"
               >
                 <ArrowUp aria-hidden="true" class="h-4 w-4" />
@@ -505,7 +672,7 @@ async function saveChains() {
                 class="flex h-9 w-9 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
                 :aria-label="t('quotaResetSettings.moveDown', { department: node.department_display_path })"
                 :title="t('quotaResetSettings.moveDown', { department: node.department_display_path })"
-                :disabled="index === selectedChain.nodes.length - 1"
+                :disabled="saving || index === selectedChain.nodes.length - 1"
                 @click="moveNode(index, 1)"
               >
                 <ArrowDown aria-hidden="true" class="h-4 w-4" />
@@ -513,9 +680,10 @@ async function saveChains() {
               <button
                 type="button"
                 :data-testid="`quota-reset-chain-remove-${node.department_external_id}`"
-                class="flex h-9 w-9 items-center justify-center rounded border border-red-200 text-red-600 hover:bg-red-50"
+                class="flex h-9 w-9 items-center justify-center rounded border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40"
                 :aria-label="t('quotaResetSettings.removeNode', { department: node.department_display_path })"
                 :title="t('quotaResetSettings.removeNode', { department: node.department_display_path })"
+                :disabled="saving"
                 @click="removeNode(index)"
               >
                 <Trash2 aria-hidden="true" class="h-4 w-4" />

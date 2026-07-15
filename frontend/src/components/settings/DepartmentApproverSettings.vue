@@ -449,7 +449,22 @@ function selectApprover(candidate: QuotaResetApproverCandidate) {
   closeApproverDropdown()
 }
 
+function updateConfigEnabled(index: number, event: Event) {
+  const config = configs.value[index]
+  const target = event.target as HTMLInputElement | null
+  if (!config || !target) return
+  if (saving.value) {
+    target.checked = config.enabled
+    return
+  }
+  if (config.enabled === target.checked) return
+  configs.value = configs.value.map((item, currentIndex) => (
+    currentIndex === index ? { ...item, enabled: target.checked } : item
+  ))
+}
+
 function removeConfig(index: number) {
+  if (saving.value) return
   configs.value = configs.value.filter((_, currentIndex) => currentIndex !== index)
 }
 
@@ -574,10 +589,13 @@ async function saveConfigs() {
             </td>
             <td class="px-3 py-2">
               <input
-                v-model="config.enabled"
+                :checked="config.enabled"
+                :data-testid="`quota-reset-config-enabled-${config.id}`"
                 type="checkbox"
                 class="h-4 w-4 rounded border-gray-300 text-indigo-600"
                 :aria-label="t('quotaResetSettings.approverEnabled', { department: config.department_display_path })"
+                :disabled="saving"
+                @change="updateConfigEnabled(index, $event)"
               />
             </td>
             <td class="px-3 py-2 text-right">
@@ -585,6 +603,7 @@ async function saveConfigs() {
                 type="button"
                 :data-testid="`quota-reset-config-remove-${config.id}`"
                 class="text-sm font-medium text-red-600 hover:text-red-700"
+                :disabled="saving"
                 @click="removeConfig(index)"
               >
                 {{ t('settings.delete') }}

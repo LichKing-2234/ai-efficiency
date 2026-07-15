@@ -244,6 +244,145 @@ const configuredAlphaChain = {
   ],
 }
 
+const malformedChainListResponses = [
+  { name: 'a null response', data: null },
+  { name: 'an array response', data: [] },
+  { name: 'missing items', data: {} },
+  { name: 'non-array items', data: { items: null } },
+  { name: 'a null chain', data: { items: [null] } },
+  { name: 'an array chain', data: { items: [[]] } },
+  { name: 'an empty chain object', data: { items: [{}] } },
+  { name: 'a non-positive chain id', data: { items: [{ ...configuredAlphaChain, id: 0 }] } },
+  { name: 'a non-number chain id', data: { items: [{ ...configuredAlphaChain, id: '20' }] } },
+  {
+    name: 'an unsafe chain id',
+    data: { items: [{ ...configuredAlphaChain, id: Number.MAX_SAFE_INTEGER + 1 }] },
+  },
+  { name: 'a non-positive provider id', data: { items: [{ ...configuredAlphaChain, provider_id: 0 }] } },
+  {
+    name: 'an unsafe provider id',
+    data: { items: [{ ...configuredAlphaChain, provider_id: Number.MAX_SAFE_INTEGER + 1 }] },
+  },
+  { name: 'a non-string group id', data: { items: [{ ...configuredAlphaChain, group_id: 17 }] } },
+  { name: 'an empty group id', data: { items: [{ ...configuredAlphaChain, group_id: '  ' }] } },
+  { name: 'a non-string group name', data: { items: [{ ...configuredAlphaChain, group_name: null }] } },
+  { name: 'a non-boolean enabled value', data: { items: [{ ...configuredAlphaChain, enabled: 'true' }] } },
+  { name: 'non-array nodes', data: { items: [{ ...configuredAlphaChain, nodes: null }] } },
+  { name: 'a null node', data: { items: [{ ...configuredAlphaChain, nodes: [null] }] } },
+  { name: 'an array node', data: { items: [{ ...configuredAlphaChain, nodes: [[]] }] } },
+  { name: 'an empty node object', data: { items: [{ ...configuredAlphaChain, nodes: [{}] }] } },
+  {
+    name: 'a non-positive node source id',
+    data: { items: [{ ...configuredAlphaChain, nodes: [{ ...configuredAlphaChain.nodes[0], directory_source_id: 0 }] }] },
+  },
+  {
+    name: 'a non-number node source id',
+    data: { items: [{ ...configuredAlphaChain, nodes: [{ ...configuredAlphaChain.nodes[0], directory_source_id: '1' }] }] },
+  },
+  {
+    name: 'an unsafe node source id',
+    data: {
+      items: [{
+        ...configuredAlphaChain,
+        nodes: [{ ...configuredAlphaChain.nodes[0], directory_source_id: Number.MAX_SAFE_INTEGER + 1 }],
+      }],
+    },
+  },
+  {
+    name: 'a non-string department id',
+    data: { items: [{ ...configuredAlphaChain, nodes: [{ ...configuredAlphaChain.nodes[0], department_external_id: 17 }] }] },
+  },
+  {
+    name: 'an empty department id',
+    data: { items: [{ ...configuredAlphaChain, nodes: [{ ...configuredAlphaChain.nodes[0], department_external_id: ' ' }] }] },
+  },
+  {
+    name: 'a non-string department path',
+    data: { items: [{ ...configuredAlphaChain, nodes: [{ ...configuredAlphaChain.nodes[0], department_display_path: false }] }] },
+  },
+]
+
+const malformedChainOptionsResponses = [
+  { name: 'a null response', data: null },
+  { name: 'an array response', data: [] },
+  { name: 'missing groups', data: { departments: [] } },
+  { name: 'missing departments', data: { groups: [] } },
+  { name: 'non-array groups', data: { groups: null, departments: [] } },
+  { name: 'non-array departments', data: { groups: [], departments: null } },
+  { name: 'a null group', data: { ...chainOptions, groups: [null] } },
+  { name: 'an array group', data: { ...chainOptions, groups: [[]] } },
+  { name: 'an empty group object', data: { ...chainOptions, groups: [{}] } },
+  {
+    name: 'a non-positive group provider id',
+    data: { ...chainOptions, groups: [{ ...chainOptions.groups[0], provider_id: 0 }] },
+  },
+  {
+    name: 'an unsafe group provider id',
+    data: { ...chainOptions, groups: [{ ...chainOptions.groups[0], provider_id: Number.MAX_SAFE_INTEGER + 1 }] },
+  },
+  {
+    name: 'a non-string option group id',
+    data: { ...chainOptions, groups: [{ ...chainOptions.groups[0], group_id: 17 }] },
+  },
+  {
+    name: 'an empty option group id',
+    data: { ...chainOptions, groups: [{ ...chainOptions.groups[0], group_id: '' }] },
+  },
+  {
+    name: 'a non-string option group name',
+    data: { ...chainOptions, groups: [{ ...chainOptions.groups[0], group_name: false }] },
+  },
+  {
+    name: 'a non-string platform',
+    data: { ...chainOptions, groups: [{ ...chainOptions.groups[0], platform: null }] },
+  },
+  { name: 'a null department', data: { ...chainOptions, departments: [null] } },
+  { name: 'an array department', data: { ...chainOptions, departments: [[]] } },
+  { name: 'an empty department object', data: { ...chainOptions, departments: [{}] } },
+  {
+    name: 'a non-positive department source id',
+    data: { ...chainOptions, departments: [{ ...chainOptions.departments[0], directory_source_id: 0 }] },
+  },
+  {
+    name: 'an unsafe department source id',
+    data: {
+      ...chainOptions,
+      departments: [{ ...chainOptions.departments[0], directory_source_id: Number.MAX_SAFE_INTEGER + 1 }],
+    },
+  },
+  {
+    name: 'a non-string option department id',
+    data: { ...chainOptions, departments: [{ ...chainOptions.departments[0], department_external_id: 17 }] },
+  },
+  {
+    name: 'an empty option department id',
+    data: { ...chainOptions, departments: [{ ...chainOptions.departments[0], department_external_id: ' ' }] },
+  },
+  {
+    name: 'a non-string option department path',
+    data: { ...chainOptions, departments: [{ ...chainOptions.departments[0], department_display_path: null }] },
+  },
+  {
+    name: 'a negative approver count',
+    data: { ...chainOptions, departments: [{ ...chainOptions.departments[0], approver_count: -1 }] },
+  },
+  {
+    name: 'a fractional approver count',
+    data: { ...chainOptions, departments: [{ ...chainOptions.departments[0], approver_count: 1.5 }] },
+  },
+  {
+    name: 'a non-number approver count',
+    data: { ...chainOptions, departments: [{ ...chainOptions.departments[0], approver_count: '1' }] },
+  },
+  {
+    name: 'an unsafe approver count',
+    data: {
+      ...chainOptions,
+      departments: [{ ...chainOptions.departments[0], approver_count: Number.MAX_SAFE_INTEGER + 1 }],
+    },
+  },
+]
+
 function chainOptionSet(groupID: string, groupName: string, departmentID: string, departmentName: string) {
   return {
     groups: [{ provider_id: 1, group_id: groupID, group_name: groupName, platform: 'openai' }],
@@ -1274,6 +1413,42 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.get('[data-testid="quota-reset-department-select"]').text()).toContain('Select department')
   })
 
+  it('locks existing approver row mutations while a full replacement save is pending', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const saveRequest = deferred<any>()
+    const authoritative = { ...configuredAliceApprover, enabled: false }
+    api.getQuotaResetApproverConfigs.mockResolvedValueOnce(
+      approverConfigResponse([configuredAliceApprover]),
+    )
+    api.saveQuotaResetApproverConfigs.mockReturnValueOnce(saveRequest.promise)
+    const wrapper = await mountDepartmentApprovers()
+
+    await wrapper.get('[data-testid="quota-reset-save-approvers"]').trigger('click')
+    const enabledToggle = wrapper.get('[data-testid="quota-reset-config-enabled-7"]')
+    const removeButton = wrapper.get('[data-testid="quota-reset-config-remove-7"]')
+    expect(enabledToggle.attributes()).toHaveProperty('disabled')
+    expect(removeButton.attributes()).toHaveProperty('disabled')
+
+    ;(enabledToggle.element as HTMLInputElement).disabled = false
+    await enabledToggle.setValue(false)
+    await forceClick(removeButton)
+    expect((enabledToggle.element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.find('[data-testid="quota-reset-config-row-7"]').exists()).toBe(true)
+    expect(api.saveQuotaResetApproverConfigs).toHaveBeenCalledWith([
+      {
+        department_external_id: 'dept-alpha',
+        department_display_path: 'Department Alpha',
+        approver_user_id: 12,
+        enabled: true,
+      },
+    ], 'replace_all')
+
+    saveRequest.resolve(approverConfigResponse([authoritative]))
+    await flushPromises()
+    expect((wrapper.get('[data-testid="quota-reset-config-enabled-7"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-config-row-7"]').exists()).toBe(true)
+  })
+
   it('emits saved after full replacement and reloads chains through the parent', async () => {
     const api = await import('@/api/quotaReset') as any
     api.getQuotaResetApproverConfigs.mockResolvedValueOnce(approverConfigResponse([configuredAliceApprover]))
@@ -1285,6 +1460,265 @@ describe('QuotaResetApprovalSettings', () => {
     await flushPromises()
     expect(api.saveQuotaResetApproverConfigs).toHaveBeenCalledWith([], 'replace_all')
     expect(api.getQuotaResetApprovalChains).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(malformedChainListResponses)(
+    'rejects malformed approval-chain GET responses with $name',
+    async ({ data }) => {
+      const api = await import('@/api/quotaReset') as any
+      api.getQuotaResetApprovalChains.mockResolvedValueOnce({ data: { data } })
+      const wrapper = await mountChains()
+
+      expect(wrapper.text()).toContain('Failed to load approval chains')
+      const saveButton = wrapper.get('[data-testid="quota-reset-save-chains"]')
+      expect(saveButton.attributes()).toHaveProperty('disabled')
+      await forceClick(saveButton)
+      await flushPromises()
+      expect(api.saveQuotaResetApprovalChains).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(malformedChainOptionsResponses)(
+    'rejects malformed approval-chain option GET responses with $name',
+    async ({ data }) => {
+      const api = await import('@/api/quotaReset') as any
+      api.getQuotaResetApprovalChainOptions.mockResolvedValueOnce({ data: { data } })
+      const wrapper = await mountChains()
+
+      expect(wrapper.text()).toContain('Failed to load approval chains')
+      const saveButton = wrapper.get('[data-testid="quota-reset-save-chains"]')
+      expect(saveButton.attributes()).toHaveProperty('disabled')
+      await forceClick(saveButton)
+      await flushPromises()
+      expect(api.saveQuotaResetApprovalChains).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(malformedChainListResponses)(
+    'rejects malformed approval-chain PUT responses with $name',
+    async ({ data }) => {
+      const api = await import('@/api/quotaReset') as any
+      api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+        data: { data: { items: [configuredAlphaChain] } },
+      })
+      api.saveQuotaResetApprovalChains.mockResolvedValueOnce({ data: { data } })
+      const wrapper = await mountChains()
+      await selectChainGroup(wrapper, 'group-alpha')
+      await addChainDepartment(wrapper, 'dept-beta')
+
+      await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('Failed to save approval chains')
+      expect(wrapper.text()).not.toContain('Approval chains saved')
+      expect(wrapper.text()).toContain('Department Alpha')
+      expect(wrapper.text()).toContain('Department Beta')
+      expect(wrapper.get('[data-testid="quota-reset-save-chains"]').attributes()).not.toHaveProperty('disabled')
+    },
+  )
+
+  it('keeps edited chains retryable after a malformed PUT response', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const corrected = {
+      ...configuredAlphaChain,
+      id: 44,
+      nodes: [
+        configuredAlphaChain.nodes[0],
+        {
+          directory_source_id: 1,
+          department_external_id: 'dept-beta',
+          department_display_path: 'Department Beta',
+        },
+      ],
+    }
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    api.saveQuotaResetApprovalChains
+      .mockResolvedValueOnce({ data: { data: {} } })
+      .mockResolvedValueOnce({ data: { data: { items: [corrected] } } })
+    const wrapper = await mountChains()
+    await selectChainGroup(wrapper, 'group-alpha')
+    await addChainDepartment(wrapper, 'dept-beta')
+
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Failed to save approval chains')
+    expect(wrapper.text()).toContain('Department Beta')
+
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await flushPromises()
+    expect(api.saveQuotaResetApprovalChains.mock.calls[1][0][0].nodes).toEqual([
+      configuredAlphaChain.nodes[0],
+      {
+        directory_source_id: 1,
+        department_external_id: 'dept-beta',
+        department_display_path: 'Department Beta',
+      },
+    ])
+    expect(wrapper.text()).toContain('Approval chains saved')
+  })
+
+  it('accepts a valid chain PUT roundtrip as the next authoritative payload', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const authoritative = {
+      ...configuredAlphaChain,
+      id: 45,
+      enabled: false,
+      nodes: [
+        {
+          directory_source_id: 1,
+          department_external_id: 'dept-beta',
+          department_display_path: 'Department Beta',
+        },
+        configuredAlphaChain.nodes[0],
+      ],
+    }
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    api.saveQuotaResetApprovalChains.mockResolvedValue({
+      data: { data: { items: [authoritative] } },
+    })
+    const wrapper = await mountChains()
+    await selectChainGroup(wrapper, 'group-alpha')
+    await addChainDepartment(wrapper, 'dept-beta')
+
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Approval chains saved')
+    expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.findAll('[data-testid^="quota-reset-chain-node-"]').map(node => node.attributes('data-testid'))).toEqual([
+      'quota-reset-chain-node-dept-beta',
+      'quota-reset-chain-node-dept-alpha',
+    ])
+
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await flushPromises()
+    expect(api.saveQuotaResetApprovalChains.mock.calls[1][0]).toEqual([{
+      provider_id: 1,
+      group_id: 'group-alpha',
+      group_name: 'Group Alpha',
+      enabled: false,
+      nodes: authoritative.nodes,
+    }])
+  })
+
+  it('locks every chain domain mutator while a save is pending and accepts the valid response', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const saveRequest = deferred<any>()
+    const authoritative = {
+      ...configuredAlphaChain,
+      id: 46,
+      enabled: false,
+      nodes: [{
+        directory_source_id: 1,
+        department_external_id: 'dept-beta',
+        department_display_path: 'Department Beta',
+      }],
+    }
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    api.saveQuotaResetApprovalChains.mockReturnValueOnce(saveRequest.promise)
+    const wrapper = await mountChains()
+    await selectChainGroup(wrapper, 'group-alpha')
+    await addChainDepartment(wrapper, 'dept-beta')
+
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    const groupSelect = wrapper.get('[data-testid="quota-reset-chain-group-select"]')
+    const enabledToggle = wrapper.get('[data-testid="quota-reset-chain-enabled"]')
+    const departmentSelect = wrapper.get('[data-testid="quota-reset-chain-department-select"]')
+    const moveBetaUp = wrapper.get('[data-testid="quota-reset-chain-move-up-dept-beta"]')
+    const removeAlpha = wrapper.get('[data-testid="quota-reset-chain-remove-dept-alpha"]')
+    for (const control of [groupSelect, enabledToggle, departmentSelect, moveBetaUp, removeAlpha]) {
+      expect(control.attributes()).toHaveProperty('disabled')
+    }
+
+    await forceClick(groupSelect)
+    await forceClick(departmentSelect)
+    ;(enabledToggle.element as HTMLInputElement).disabled = false
+    await enabledToggle.setValue(false)
+    await forceClick(moveBetaUp)
+    await forceClick(removeAlpha)
+    expect(wrapper.find('[data-testid="quota-reset-chain-group-filter"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-chain-department-filter"]').exists()).toBe(false)
+    expect((enabledToggle.element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.findAll('[data-testid^="quota-reset-chain-node-"]').map(node => node.attributes('data-testid'))).toEqual([
+      'quota-reset-chain-node-dept-alpha',
+      'quota-reset-chain-node-dept-beta',
+    ])
+    expect(api.saveQuotaResetApprovalChains).toHaveBeenCalledWith([{
+      provider_id: 1,
+      group_id: 'group-alpha',
+      group_name: 'Group Alpha',
+      enabled: true,
+      nodes: [
+        configuredAlphaChain.nodes[0],
+        {
+          directory_source_id: 1,
+          department_external_id: 'dept-beta',
+          department_display_path: 'Department Beta',
+        },
+      ],
+    }])
+
+    saveRequest.resolve({ data: { data: { items: [authoritative] } } })
+    await flushPromises()
+    expect((wrapper.get('[data-testid="quota-reset-chain-enabled"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.findAll('[data-testid^="quota-reset-chain-node-"]').map(node => node.attributes('data-testid'))).toEqual([
+      'quota-reset-chain-node-dept-beta',
+    ])
+  })
+
+  it('preserves dirty chain edits across an approver revision and submits them next', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const authoritative = {
+      ...configuredAlphaChain,
+      id: 47,
+      enabled: false,
+      nodes: [
+        {
+          directory_source_id: 1,
+          department_external_id: 'dept-beta',
+          department_display_path: 'Department Beta',
+        },
+        configuredAlphaChain.nodes[0],
+      ],
+    }
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    api.saveQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [authoritative] } },
+    })
+    const wrapper = await mountChains()
+    await selectChainGroup(wrapper, 'group-alpha')
+    await addChainDepartment(wrapper, 'dept-beta')
+    await wrapper.get('[data-testid="quota-reset-chain-move-up-dept-beta"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-chain-enabled"]').setValue(false)
+
+    api.getQuotaResetApprovalChainOptions.mockResolvedValueOnce({ data: { data: chainOptions } })
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    await wrapper.setProps({ approverRevision: 1 })
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="quota-reset-chain-enabled"]').element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.findAll('[data-testid^="quota-reset-chain-node-"]').map(node => node.attributes('data-testid'))).toEqual([
+      'quota-reset-chain-node-dept-beta',
+      'quota-reset-chain-node-dept-alpha',
+    ])
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await flushPromises()
+    expect(api.saveQuotaResetApprovalChains).toHaveBeenCalledWith([{
+      provider_id: 1,
+      group_id: 'group-alpha',
+      group_name: 'Group Alpha',
+      enabled: false,
+      nodes: authoritative.nodes,
+    }])
   })
 
   it.each(['options', 'chains'] as const)(

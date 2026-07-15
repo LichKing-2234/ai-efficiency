@@ -10,6 +10,7 @@ const props = defineProps<{
   mode: 'approve' | 'reject'
   request: QuotaResetRequestSummary | null
   busy?: boolean
+  restoreFocusFallback?: HTMLElement | null
 }>()
 
 const emit = defineEmits<{
@@ -31,6 +32,7 @@ const placeholder = computed(() => props.mode === 'approve'
   ? t('quotaReset.approveCommentPlaceholder')
   : t('quotaReset.rejectCommentPlaceholder'))
 const currentNodeLabel = computed(() => props.request?.workflow?.current_node?.label || t('quotaReset.legacyRequest'))
+const restoreFocusFallback = computed(() => props.restoreFocusFallback ?? null)
 
 watch(
   () => [props.open, props.request?.id, props.mode] as const,
@@ -80,7 +82,10 @@ function submit() {
   })
 }
 
-const { handleKeydown } = useModalFocus(toRef(props, 'open'), dialogRef, { onClose: close })
+const { handleKeydown } = useModalFocus(toRef(props, 'open'), dialogRef, {
+  restoreFocusFallback,
+  onClose: close,
+})
 </script>
 
 <template>

@@ -36,7 +36,9 @@ const {
 const selectedRequest = ref<QuotaResetRequestSummary | null>(null)
 const requestDetailDialog = ref<HTMLElement | null>(null)
 const requestDetailCloseButton = ref<HTMLElement | null>(null)
-const requestDetailRestoreFocusButton = ref<HTMLElement | null>(null)
+const mineQueueButton = ref<HTMLButtonElement | null>(null)
+const approvalsQueueButton = ref<HTMLButtonElement | null>(null)
+const adminQueueButton = ref<HTMLButtonElement | null>(null)
 const decisionRequest = ref<QuotaResetRequestSummary | null>(null)
 const decisionMode = ref<'approve' | 'reject'>('approve')
 const decisionQueue = ref<QueueMode>('approvals')
@@ -44,13 +46,18 @@ const filters: FilterMode[] = ['all', 'pending', 'processed', 'failed']
 const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : workItems.counts.quota_reset_approval_count)
 const adminTotal = computed(() => workItems.loading || workItems.error || !auth.isAdmin ? 0 : workItems.counts.quota_reset_admin_count)
 const requestDetailOpen = computed(() => selectedRequest.value !== null)
+const decisionRestoreFocusFallback = computed(() => {
+  if (decisionQueue.value === 'admin') return adminQueueButton.value
+  if (decisionQueue.value === 'approvals') return approvalsQueueButton.value
+  return mineQueueButton.value
+})
 
 const { handleKeydown: handleRequestDetailKeydown } = useModalFocus(
   requestDetailOpen,
   requestDetailDialog,
   {
     initialFocus: requestDetailCloseButton,
-    restoreFocusFallback: requestDetailRestoreFocusButton,
+    restoreFocusFallback: mineQueueButton,
     onClose: closeRequestDetails,
   },
 )
@@ -218,7 +225,7 @@ onMounted(() => quotaReset.loadQueues())
           :class="['grid w-full gap-1 rounded-lg bg-slate-100 p-1 sm:w-auto', auth.isAdmin ? 'grid-cols-3' : 'grid-cols-2']"
         >
           <button
-            ref="requestDetailRestoreFocusButton"
+            ref="mineQueueButton"
             type="button"
             data-testid="quota-reset-tab-mine"
             :class="queueButtonClass(activeQueue === 'mine')"
@@ -234,6 +241,7 @@ onMounted(() => quotaReset.loadQueues())
             </span>
           </button>
           <button
+            ref="approvalsQueueButton"
             type="button"
             data-testid="quota-reset-tab-approvals"
             :class="queueButtonClass(activeQueue === 'approvals')"
@@ -250,6 +258,7 @@ onMounted(() => quotaReset.loadQueues())
           </button>
           <button
             v-if="auth.isAdmin"
+            ref="adminQueueButton"
             type="button"
             data-testid="quota-reset-tab-admin"
             :class="queueButtonClass(activeQueue === 'admin')"
@@ -400,6 +409,7 @@ onMounted(() => quotaReset.loadQueues())
         :mode="decisionMode"
         :request="decisionRequest"
         :busy="actionBusy"
+        :restore-focus-fallback="decisionRestoreFocusFallback"
         @close="closeDecisionDialog"
         @submit="handleDecisionSubmit"
       />

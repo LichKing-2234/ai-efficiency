@@ -653,6 +653,72 @@ describe('QuotaResetView', () => {
     }
   })
 
+  it.each(['cancel', 'escape'] as const)(
+    'restores decision focus to the connected opener on %s',
+    async (closeMode) => {
+      const api = await import('@/api/quotaReset') as any
+      api.listQuotaResetApprovals.mockResolvedValue({
+        data: { data: { items: [workflowRequest], page: 1, page_size: 20, total: 1 } },
+      })
+      const wrapper = await mountQuotaResetView('user', document.body)
+
+      try {
+        await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+        const opener = wrapper.get('[data-testid="quota-reset-approve-3"]')
+        ;(opener.element as HTMLButtonElement).focus()
+        await opener.trigger('click')
+        await flushPromises()
+        const dialog = wrapper.get('[data-testid="quota-reset-decision-dialog"]')
+
+        if (closeMode === 'cancel') {
+          await dialog.get('[data-testid="quota-reset-decision-cancel"]').trigger('click')
+        } else {
+          dialog.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        }
+        await flushPromises()
+
+        expect(wrapper.find('[data-testid="quota-reset-decision-dialog"]').exists()).toBe(false)
+        expect(document.activeElement).toBe(opener.element)
+      } finally {
+        wrapper.unmount()
+      }
+    },
+  )
+
+  it('restores decision focus to the originating queue when success removes the opener row', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listQuotaResetApprovals
+      .mockResolvedValueOnce({
+        data: { data: { items: [workflowRequest], page: 1, page_size: 20, total: 1 } },
+      })
+      .mockResolvedValueOnce({
+        data: { data: { items: [], page: 1, page_size: 20, total: 0 } },
+      })
+    api.approveQuotaResetRequest.mockResolvedValue({
+      data: { data: { ...workflowRequest, status: 'approved_reset_succeeded' } },
+    })
+    const wrapper = await mountQuotaResetView('user', document.body)
+
+    try {
+      const queueButton = wrapper.get('[data-testid="quota-reset-tab-approvals"]')
+      await queueButton.trigger('click')
+      const opener = wrapper.get('[data-testid="quota-reset-approve-3"]')
+      ;(opener.element as HTMLButtonElement).focus()
+      await opener.trigger('click')
+      const dialog = wrapper.get('[data-testid="quota-reset-decision-dialog"]')
+      await dialog.get('textarea').setValue('Approved after reviewing the synthetic evidence.')
+      await dialog.get('[data-testid="quota-reset-decision-submit"]').trigger('click')
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="quota-reset-decision-dialog"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="quota-reset-approve-3"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(queueButton.element)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('renders ordered node status and prior-approval attribution', async () => {
     const api = await import('@/api/quotaReset') as any
     api.listMyQuotaResetRequests.mockResolvedValue({

@@ -263,8 +263,20 @@ This precedence applies both to workflow creation and to live activation or
 cancellation recipient resolution. In particular, notification resolution may
 use a user subset containing only snapshotted candidates; a member still
 matched to another user cannot contribute its display identity or notification
-ids to a candidate that later acquired the same email address. Requester
-user-to-member lookup remains the separate algorithm documented below.
+ids to a candidate that later acquired the same email address. Requester lookup
+uses requester-scoped id and normalized-email maps, but keeps the same
+per-member authoritative mapping rule.
+
+After per-member identity resolution and any applicability-specific active or
+current-access filtering, duplicate members that resolve to one local user use
+the lowest positive Ent `directory_members.id` as the canonical identity. This
+rule applies to candidate display/external identity and mention coverage,
+requester workflow identity and departments, representative snapshots even
+when a noncanonical member establishes representative eligibility, and current
+delivery identity. Candidate search terms and department paths may aggregate
+across usable duplicate members where this spec already requires aggregation;
+snapshotted identity, delivery identity, and mention coverage always come from
+the canonical member.
 
 ## Architecture
 
