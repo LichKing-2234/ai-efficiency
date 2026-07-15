@@ -283,7 +283,7 @@
 - Consumes Task 1 `RunPage` JSON and unchanged complete `DirectorySyncRun` detail.
 - Produces exact lightweight `DirectoryRunSummary`, expanded full-detail `DirectorySyncRun`, `DirectoryRunPage`, `listDirectoryRuns(id, {limit, offset})`, paginated history state, and selected detail state.
 
-- [ ] **Step 1: Add failing API/type and component tests**
+- [x] **Step 1: Add failing API/type and component tests**
 
   Change API tests to require:
 
@@ -312,7 +312,7 @@
 
   Update default mocks to return `{items: [], total: 0, page: 0, page_size: 20, latest_active_run: null}`. Keep fake timers bounded and restore them in `finally`.
 
-- [ ] **Step 2: Run frontend tests and record RED**
+- [x] **Step 2: Run frontend tests and record RED**
 
   Run:
 
@@ -322,7 +322,7 @@
 
   Expected: FAIL because the API accepts no params, the component scans an unbounded entity list, has no history/detail state, and derives polling from whichever row it finds.
 
-- [ ] **Step 3: Implement typed page/detail state without duplicate requests**
+- [x] **Step 3: Implement typed page/detail state without duplicate requests**
 
   Define the exact lightweight and full types:
 
@@ -386,7 +386,7 @@
 
   Maintain a separate poll generation. Increment it and clear the timer on source switch, unmount, and whenever recovery selects a different latest-active ID. Every poll captures generation/source/run ID and may apply/reschedule only when all three still match. Selecting terminal B changes only detail generation, so active A remains the sole polled ID. On A's terminal completion, stop polling and refresh the current page; update selected detail only when the selected ID is A and its detail generation is still current.
 
-- [ ] **Step 4: Verify focused, full frontend, and build GREEN**
+- [x] **Step 4: Verify focused, full frontend, and build GREEN**
 
   Run separately:
 

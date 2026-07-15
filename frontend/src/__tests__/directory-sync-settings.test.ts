@@ -35,6 +35,40 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+function runSummary(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 100,
+    source_id: 1,
+    mode: 'apply',
+    trigger: 'manual',
+    status: 'completed',
+    phase: 'completed',
+    started_at: '2026-07-15T01:00:00Z',
+    completed_at: '2026-07-15T01:01:00Z',
+    http_request_count: 2,
+    department_count: 4,
+    member_count: 9,
+    invalid_member_count: 0,
+    warning_count: 0,
+    ...overrides,
+  }
+}
+
+function runPage(items: any[] = [], overrides: Record<string, unknown> = {}) {
+  return {
+    items,
+    total: items.length,
+    page: 0,
+    page_size: 20,
+    latest_active_run: null,
+    ...overrides,
+  }
+}
+
+function apiResponse(data: unknown) {
+  return { data: { data } }
+}
+
 async function mountDirectorySyncSettings(configureMocks?: (api: any) => void) {
   const api = await import('@/api/directory') as any
   api.listDirectorySources.mockResolvedValue({
@@ -58,7 +92,7 @@ async function mountDirectorySyncSettings(configureMocks?: (api: any) => void) {
   })
   api.updateDirectorySource.mockResolvedValue({ data: { data: { id: 1, name: 'Example Directory' } } })
   api.validateDirectorySource.mockResolvedValue({ data: { data: { valid: true, issues: [] } } })
-  api.listDirectoryRuns.mockResolvedValue({ data: { data: { items: [] } } })
+  api.listDirectoryRuns.mockResolvedValue(apiResponse(runPage()))
   api.previewDirectorySource.mockResolvedValue({ data: { data: { id: 10, mode: 'preview', status: 'completed' } } })
   api.startDirectoryRun.mockResolvedValue({ data: { data: { id: 11, mode: 'apply', status: 'completed' } } })
   api.getDirectoryRun.mockResolvedValue({ data: { data: { id: 10, mode: 'preview', status: 'completed' } } })
@@ -289,6 +323,375 @@ auth:
     expect(wrapper.text()).toContain('重复邮箱：3758 条')
   })
 
+  it('loads bounded run summaries and navigates with limit and offset metadata', async () => {
+    const firstPage = runPage([
+      runSummary({ id: 220, member_count: 20 }),
+      runSummary({ id: 219, mode: 'preview', member_count: 19 }),
+    ], { total: 41, page: 0 })
+    const secondPage = runPage([
+      runSummary({ id: 200, member_count: 8 }),
+    ], { total: 41, page: 1 })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(firstPage))
+        .mockResolvedValueOnce(apiResponse(secondPage))
+        .mockResolvedValueOnce(apiResponse(firstPage))
+    })
+
+    expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(1, 1, { limit: 20, offset: 0 })
+    expect(wrapper.get('[data-testid="directory-run-row-220"]').text()).toContain('#220')
+    expect(wrapper.get('[data-testid="directory-run-row-219"]').text()).toContain('#219')
+    expect(wrapper.text()).not.toContain('#200')
+    expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 1 of 3')
+
+    await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+    await flushPromises()
+
+    expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(2, 1, { limit: 20, offset: 20 })
+    expect(wrapper.get('[data-testid="directory-run-row-200"]').text()).toContain('#200')
+    expect(wrapper.text()).not.toContain('#220')
+    expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
+
+    await wrapper.get('[data-testid="directory-run-prev"]').trigger('click')
+    await flushPromises()
+
+    expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(3, 1, { limit: 20, offset: 0 })
+    expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 1 of 3')
+  })
+
+  it('loads complete diagnostics once for a selected terminal summary without polling it', async () => {
+    vi.useFakeTimers()
+    const selected = runSummary({ id: 230, mode: 'preview', status: 'failed', phase: 'failed', warning_count: 1 })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockResolvedValueOnce(apiResponse(runPage([selected])))
+      api.getDirectoryRun.mockResolvedValueOnce(apiResponse({
+        ...selected,
+        warnings: [{ code: 'synthetic_warning', message: 'warning-detail-marker', step_id: 'members' }],
+        summary: { marker: 'summary-detail-marker' },
+        preview_diff: { marker: 'diff-detail-marker' },
+        error_message: 'error-detail-marker',
+      }))
+    })
+
+    try {
+      await wrapper.get('[data-testid="directory-run-row-230"]').trigger('click')
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(1)
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(230)
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('warning-detail-marker')
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('summary-detail-marker')
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('diff-detail-marker')
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('error-detail-marker')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('loads an older queued detail with omitted counts once and never polls that history selection', async () => {
+    vi.useFakeTimers()
+    const queued = runSummary({
+      id: 231,
+      status: 'queued',
+      phase: 'validating',
+      started_at: null,
+      completed_at: null,
+      http_request_count: 0,
+      department_count: 0,
+      member_count: 0,
+      invalid_member_count: 0,
+      warning_count: 0,
+    })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockResolvedValueOnce(apiResponse(runPage([queued])))
+      api.getDirectoryRun.mockResolvedValueOnce(apiResponse({
+        id: 231,
+        source_id: 1,
+        mode: 'apply',
+        trigger: 'manual',
+        status: 'queued',
+        phase: 'validating',
+      }))
+    })
+
+    try {
+      await wrapper.get('[data-testid="directory-run-row-231"]').trigger('click')
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(1)
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('#231')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('uses latest_active_run outside the page as the only recovery poll target', async () => {
+    vi.useFakeTimers()
+    const newerTerminal = runSummary({ id: 240, mode: 'preview', member_count: 40 })
+    const active = runSummary({
+      id: 239,
+      mode: 'apply',
+      status: 'running',
+      phase: 'applying',
+      completed_at: null,
+      member_count: 39,
+    })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(runPage([newerTerminal], { latest_active_run: active })))
+        .mockResolvedValueOnce(apiResponse(runPage([runSummary({ id: 239, member_count: 39 })])))
+      api.getDirectoryRun.mockResolvedValueOnce(apiResponse({ ...active, status: 'completed', phase: 'completed' }))
+    })
+
+    try {
+      expect(wrapper.text()).toContain('Applying directory facts')
+      expect(wrapper.text()).not.toContain('Preview completed: kept 40 valid members')
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(1)
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(239)
+      expect(api.getDirectoryRun).not.toHaveBeenCalledWith(240)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the later same-source page when an earlier page response resolves last', async () => {
+    const slowPageZero = deferred<any>()
+    const initialPage = runPage([runSummary({ id: 260 })], { total: 41, page: 0 })
+    const pageOne = runPage([runSummary({ id: 240 })], { total: 41, page: 1 })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(initialPage))
+        .mockResolvedValueOnce(apiResponse(pageOne))
+        .mockImplementationOnce(() => slowPageZero.promise)
+        .mockResolvedValueOnce(apiResponse(pageOne))
+    })
+
+    await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('#240')
+
+    await wrapper.get('[data-testid="directory-run-prev"]').trigger('click')
+    await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+    await flushPromises()
+    expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(4, 1, { limit: 20, offset: 20 })
+
+    slowPageZero.resolve(apiResponse(runPage([runSummary({ id: 259 })], { total: 41, page: 0 })))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('#240')
+    expect(wrapper.text()).not.toContain('#259')
+    expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
+  })
+
+  it('keeps detail B when a slower detail A resolves last', async () => {
+    const detailA = deferred<any>()
+    const detailB = deferred<any>()
+    const runA = runSummary({ id: 270, mode: 'preview' })
+    const runB = runSummary({ id: 269, mode: 'apply' })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockResolvedValueOnce(apiResponse(runPage([runA, runB])))
+      api.getDirectoryRun
+        .mockImplementationOnce(() => detailA.promise)
+        .mockImplementationOnce(() => detailB.promise)
+    })
+
+    await wrapper.get('[data-testid="directory-run-row-270"]').trigger('click')
+    await wrapper.get('[data-testid="directory-run-row-269"]').trigger('click')
+
+    detailB.resolve(apiResponse({ ...runB, summary: { marker: 'detail-b-marker' } }))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('detail-b-marker')
+
+    detailA.resolve(apiResponse({ ...runA, summary: { marker: 'detail-a-marker' } }))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('detail-b-marker')
+    expect(wrapper.get('[data-testid="directory-run-detail"]').text()).not.toContain('detail-a-marker')
+  })
+
+  it('keeps active A as the only poll target while terminal B is selected and displayed', async () => {
+    vi.useFakeTimers()
+    const activeA = runSummary({
+      id: 280,
+      mode: 'apply',
+      status: 'running',
+      phase: 'applying',
+      completed_at: null,
+    })
+    const terminalB = runSummary({ id: 279, mode: 'preview', status: 'completed_with_warnings', warning_count: 1 })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(runPage([terminalB], { latest_active_run: activeA })))
+        .mockResolvedValueOnce(apiResponse(runPage([
+          runSummary({ id: 280 }),
+          terminalB,
+        ])))
+      api.getDirectoryRun.mockImplementation((id: number) => {
+        if (id === 279) {
+          return Promise.resolve(apiResponse({ ...terminalB, summary: { marker: 'terminal-b-detail' } }))
+        }
+        return Promise.resolve(apiResponse({
+          ...activeA,
+          status: 'completed',
+          phase: 'completed',
+          summary: { marker: 'active-a-detail' },
+        }))
+      })
+    })
+
+    try {
+      await wrapper.get('[data-testid="directory-run-row-279"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('terminal-b-detail')
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun.mock.calls.map((call: any[]) => call[0])).toEqual([279, 280])
+      expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(2, 1, { limit: 20, offset: 0 })
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('terminal-b-detail')
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).not.toContain('active-a-detail')
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('invalidates an in-flight active poll when switching sources', async () => {
+    vi.useFakeTimers()
+    const pollA = deferred<any>()
+    const sourceA = {
+      id: 1,
+      name: 'First Directory',
+      description: 'First source',
+      scope: 'full_company',
+      enabled: true,
+      dsl: 'version: 1\nscope: full_company\n',
+      schedule_enabled: false,
+      schedule_interval: 'daily',
+      schedule_timezone: 'UTC',
+    }
+    const sourceB = { ...sourceA, id: 2, name: 'Second Directory', description: 'Second source' }
+    const activeA = runSummary({ id: 290, status: 'running', phase: 'executing', completed_at: null })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectorySources.mockResolvedValue(apiResponse({ items: [sourceA, sourceB] }))
+      api.listDirectoryRuns.mockImplementation((sourceID: number) => Promise.resolve(apiResponse(
+        sourceID === 1 ? runPage([], { latest_active_run: activeA }) : runPage(),
+      )))
+      api.getDirectoryRun.mockImplementationOnce(() => pollA.promise)
+    })
+
+    try {
+      await vi.runOnlyPendingTimersAsync()
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(290)
+
+      const secondSourceButton = wrapper.findAll('button').find((button) => button.text().includes('Second Directory'))
+      await secondSourceButton!.trigger('click')
+      await flushPromises()
+
+      pollA.resolve(apiResponse({
+        ...activeA,
+        status: 'failed',
+        phase: 'failed',
+        error_message: 'stale-source-poll-marker',
+      }))
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('stale-source-poll-marker')
+      expect(wrapper.text()).toContain('Second Directory')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('invalidates stale detail when switching sources', async () => {
+    const detailA = deferred<any>()
+    const sourceA = {
+      id: 1,
+      name: 'First Directory',
+      description: 'First source',
+      scope: 'full_company',
+      enabled: true,
+      dsl: 'version: 1\nscope: full_company\n',
+      schedule_enabled: false,
+      schedule_interval: 'daily',
+      schedule_timezone: 'UTC',
+    }
+    const sourceB = { ...sourceA, id: 2, name: 'Second Directory', description: 'Second source' }
+    const summaryA = runSummary({ id: 300, source_id: 1 })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectorySources.mockResolvedValue(apiResponse({ items: [sourceA, sourceB] }))
+      api.listDirectoryRuns.mockImplementation((sourceID: number) => Promise.resolve(apiResponse(
+        sourceID === 1 ? runPage([summaryA]) : runPage(),
+      )))
+      api.getDirectoryRun.mockImplementationOnce(() => detailA.promise)
+    })
+
+    await wrapper.get('[data-testid="directory-run-row-300"]').trigger('click')
+    const secondSourceButton = wrapper.findAll('button').find((button) => button.text().includes('Second Directory'))
+    await secondSourceButton!.trigger('click')
+    await flushPromises()
+
+    detailA.resolve(apiResponse({ ...summaryA, summary: { marker: 'stale-source-detail-marker' } }))
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('stale-source-detail-marker')
+    expect(wrapper.find('[data-testid="directory-run-detail"]').exists()).toBe(false)
+  })
+
+  it('switches recovery to a newer active ID and invalidates the older timer', async () => {
+    vi.useFakeTimers()
+    const activeA = runSummary({ id: 310, status: 'running', phase: 'executing', completed_at: null })
+    const activeC = runSummary({ id: 311, status: 'running', phase: 'normalizing', completed_at: null })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(runPage([runSummary({ id: 309 })], { total: 41, latest_active_run: activeA })))
+        .mockResolvedValueOnce(apiResponse(runPage([runSummary({ id: 289 })], { total: 41, page: 1, latest_active_run: activeC })))
+      api.getDirectoryRun.mockResolvedValueOnce(apiResponse(activeC))
+    })
+
+    try {
+      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      await flushPromises()
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(1)
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(311)
+      expect(api.getDirectoryRun).not.toHaveBeenCalledWith(310)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears active polling timers on unmount', async () => {
+    vi.useFakeTimers()
+    const active = runSummary({ id: 320, status: 'running', phase: 'executing', completed_at: null })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockResolvedValueOnce(apiResponse(runPage([], { latest_active_run: active })))
+    })
+
+    try {
+      expect(vi.getTimerCount()).toBe(1)
+      wrapper.unmount()
+      await vi.runOnlyPendingTimersAsync()
+      expect(api.getDirectoryRun).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('polls preview progress until the run completes', async () => {
     vi.useFakeTimers()
     const { wrapper, api } = await mountDirectorySyncSettings()
@@ -310,7 +713,10 @@ auth:
       await flushPromises()
       expect(wrapper.text()).toContain('Preview completed: kept 3 valid members; 2 departments.')
       expect(wrapper.text()).not.toContain('Reading directory API')
+      expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
+      expect(api.listDirectoryRuns).toHaveBeenLastCalledWith(1, { limit: 20, offset: 0 })
     } finally {
+      wrapper.unmount()
       vi.useRealTimers()
     }
   })
@@ -351,7 +757,10 @@ auth:
       expect(wrapper.text()).toContain('运行已完成：已保留 633 个有效成员，跳过 3769 条记录；部门 184 个。')
       expect(wrapper.text()).toContain('重复邮箱：3769 条')
       expect(wrapper.text()).not.toContain('正在读取组织架构接口')
+      expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
+      expect(api.listDirectoryRuns).toHaveBeenLastCalledWith(1, { limit: 20, offset: 0 })
     } finally {
+      wrapper.unmount()
       vi.useRealTimers()
     }
   })
@@ -359,15 +768,18 @@ auth:
   it('recovers the latest active directory apply run on mount and keeps polling it', async () => {
     vi.useFakeTimers()
     const { wrapper, api } = await mountDirectorySyncSettings((api) => {
-      api.listDirectoryRuns.mockResolvedValueOnce({
-        data: {
-          data: {
-            items: [
-              { id: 50, source_id: 1, mode: 'apply', status: 'running', phase: 'applying', department_count: 12, member_count: 34, warning_count: 5 },
-            ],
-          },
-        },
-      })
+      api.listDirectoryRuns.mockResolvedValueOnce(apiResponse(runPage([], {
+        latest_active_run: runSummary({
+          id: 50,
+          mode: 'apply',
+          status: 'running',
+          phase: 'applying',
+          completed_at: null,
+          department_count: 12,
+          member_count: 34,
+          warning_count: 5,
+        }),
+      })))
       api.getDirectoryRun.mockResolvedValueOnce({
         data: {
           data: { id: 50, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 12, member_count: 34, warning_count: 0 },
@@ -379,7 +791,7 @@ auth:
       await wrapper.vm.$nextTick()
       await flushPromises()
 
-      expect(api.listDirectoryRuns).toHaveBeenCalledWith(1)
+      expect(api.listDirectoryRuns).toHaveBeenCalledWith(1, { limit: 20, offset: 0 })
       expect(wrapper.text()).toContain('Applying directory facts')
       expect(wrapper.text()).toContain('12 departments · 34 members · 5 skipped records')
 
@@ -389,6 +801,7 @@ auth:
       expect(api.getDirectoryRun).toHaveBeenCalledWith(50)
       expect(wrapper.text()).toContain('Run completed: kept 34 valid members; 12 departments.')
     } finally {
+      wrapper.unmount()
       vi.useRealTimers()
     }
   })
@@ -403,16 +816,18 @@ auth:
         },
       })
       api.listDirectoryRuns
-        .mockResolvedValueOnce({ data: { data: { items: [] } } })
-        .mockResolvedValueOnce({
-          data: {
-            data: {
-              items: [
-                { id: 51, source_id: 1, mode: 'apply', status: 'running', phase: 'executing', department_count: 0, member_count: 0, warning_count: 0 },
-              ],
-            },
-          },
-        })
+        .mockResolvedValueOnce(apiResponse(runPage()))
+        .mockResolvedValueOnce(apiResponse(runPage([], {
+          latest_active_run: runSummary({
+            id: 51,
+            status: 'running',
+            phase: 'executing',
+            completed_at: null,
+            department_count: 0,
+            member_count: 0,
+            warning_count: 0,
+          }),
+        })))
       api.getDirectoryRun.mockResolvedValueOnce({
         data: {
           data: { id: 51, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 2, member_count: 3, warning_count: 0 },
@@ -424,7 +839,9 @@ auth:
       await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
       await flushPromises()
 
-      expect(api.listDirectoryRuns).toHaveBeenCalledWith(1)
+      expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
+      expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(1, 1, { limit: 20, offset: 0 })
+      expect(api.listDirectoryRuns).toHaveBeenNthCalledWith(2, 1, { limit: 20, offset: 0 })
       expect(wrapper.text()).toContain('Reading directory API')
       expect(wrapper.text()).not.toContain('another full-company apply sync')
 
@@ -434,6 +851,7 @@ auth:
       expect(api.getDirectoryRun).toHaveBeenCalledWith(51)
       expect(wrapper.text()).toContain('Run completed: kept 3 valid members; 2 departments.')
     } finally {
+      wrapper.unmount()
       vi.useRealTimers()
     }
   })
@@ -441,22 +859,16 @@ auth:
   it('shows the latest completed directory apply run on mount without polling', async () => {
     vi.useFakeTimers()
     const { wrapper, api } = await mountDirectorySyncSettings((api) => {
-      api.listDirectoryRuns.mockResolvedValueOnce({
-        data: {
-          data: {
-            items: [
-              { id: 52, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 4, member_count: 9, warning_count: 0 },
-            ],
-          },
-        },
-      })
+      api.listDirectoryRuns.mockResolvedValueOnce(apiResponse(runPage([
+        runSummary({ id: 52, department_count: 4, member_count: 9 }),
+      ])))
     })
 
     try {
       await wrapper.vm.$nextTick()
       await flushPromises()
 
-      expect(api.listDirectoryRuns).toHaveBeenCalledWith(1)
+      expect(api.listDirectoryRuns).toHaveBeenCalledWith(1, { limit: 20, offset: 0 })
       expect(wrapper.text()).toContain('Run completed: kept 9 valid members; 4 departments.')
 
       await vi.runOnlyPendingTimersAsync()
@@ -464,6 +876,7 @@ auth:
 
       expect(api.getDirectoryRun).not.toHaveBeenCalledWith(52)
     } finally {
+      wrapper.unmount()
       vi.useRealTimers()
     }
   })
@@ -511,32 +924,20 @@ auth:
     expect(secondSourceButton).toBeTruthy()
     await secondSourceButton!.trigger('click')
 
-    secondRun.resolve({
-      data: {
-        data: {
-          items: [
-            { id: 62, source_id: 2, mode: 'apply', status: 'completed', phase: 'completed', department_count: 2, member_count: 8, warning_count: 0 },
-          ],
-        },
-      },
-    })
+    secondRun.resolve(apiResponse(runPage([
+      runSummary({ id: 62, source_id: 2, department_count: 2, member_count: 8 }),
+    ])))
     await flushPromises()
 
     expect(wrapper.text()).toContain('Run completed: kept 8 valid members; 2 departments.')
 
-    firstRun.resolve({
-      data: {
-        data: {
-          items: [
-            { id: 61, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 9, member_count: 99, warning_count: 0 },
-          ],
-        },
-      },
-    })
+    firstRun.resolve(apiResponse(runPage([
+      runSummary({ id: 61, source_id: 1, department_count: 9, member_count: 99 }),
+    ])))
     await flushPromises()
 
-    expect(api.listDirectoryRuns).toHaveBeenCalledWith(1)
-    expect(api.listDirectoryRuns).toHaveBeenCalledWith(2)
+    expect(api.listDirectoryRuns).toHaveBeenCalledWith(1, { limit: 20, offset: 0 })
+    expect(api.listDirectoryRuns).toHaveBeenCalledWith(2, { limit: 20, offset: 0 })
     expect(wrapper.text()).toContain('Run completed: kept 8 valid members; 2 departments.')
     expect(wrapper.text()).not.toContain('Run completed: kept 99 valid members; 9 departments.')
   })
@@ -544,16 +945,19 @@ auth:
   it('prefers an active directory run over a newer terminal preview on mount', async () => {
     vi.useFakeTimers()
     const { wrapper, api } = await mountDirectorySyncSettings((api) => {
-      api.listDirectoryRuns.mockResolvedValueOnce({
-        data: {
-          data: {
-            items: [
-              { id: 63, source_id: 1, mode: 'preview', status: 'completed', phase: 'completed', department_count: 1, member_count: 5, warning_count: 0 },
-              { id: 64, source_id: 1, mode: 'apply', status: 'running', phase: 'applying', department_count: 7, member_count: 11, warning_count: 0 },
-            ],
-          },
-        },
-      })
+      api.listDirectoryRuns.mockResolvedValueOnce(apiResponse(runPage([
+        runSummary({ id: 63, mode: 'preview', department_count: 1, member_count: 5 }),
+      ], {
+        latest_active_run: runSummary({
+          id: 64,
+          mode: 'apply',
+          status: 'running',
+          phase: 'applying',
+          completed_at: null,
+          department_count: 7,
+          member_count: 11,
+        }),
+      })))
       api.getDirectoryRun.mockResolvedValueOnce({
         data: {
           data: { id: 64, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 7, member_count: 11, warning_count: 0 },
@@ -575,6 +979,7 @@ auth:
       expect(api.getDirectoryRun).toHaveBeenCalledWith(64)
       expect(wrapper.text()).toContain('Run completed: kept 11 valid members; 7 departments.')
     } finally {
+      wrapper.unmount()
       vi.useRealTimers()
     }
   })
