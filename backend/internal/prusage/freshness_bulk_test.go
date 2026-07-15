@@ -3,6 +3,7 @@ package prusage
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"reflect"
@@ -151,7 +152,7 @@ func classifyFreshnessFactQuery(query string) freshnessFactQueryRole {
 		strings.Contains(normalized, "count(") &&
 		strings.Contains(normalized, "max(") &&
 		strings.Contains(normalized, `"observed_end_at"`) &&
-		strings.Contains(normalized, `"commit_checkpoint_id" in (`) &&
+		strings.Contains(normalized, `"commit_checkpoint_id" = any(`) &&
 		strings.Contains(normalized, "group by"):
 		return freshnessQueryCheckpointFacts
 	default:
@@ -584,7 +585,7 @@ func TestEvaluatePRFreshnessPageQueryCountIsConstant(t *testing.T) {
 			fixture := seedScaleFreshnessFixture(t, tc.prCount, tc.snapshotsPerPR)
 			got, err := NewService(fixture.client).EvaluatePRFreshnessPage(context.Background(), fixture.repo.ID, fixture.prs)
 			if err != nil {
-				t.Fatalf("EvaluatePRFreshnessPage error: %v", err)
+				t.Fatalf("EvaluatePRFreshnessPage error: %v; statements = %+v", err, fixture.recorder.recordedStatements())
 			}
 			if len(got) != tc.prCount {
 				t.Fatalf("result count = %d, want %d", len(got), tc.prCount)
@@ -626,6 +627,80 @@ func TestEvaluatePRFreshnessPageQueryCountIsConstant(t *testing.T) {
 
 	if len(observedRoles) != 2 || !reflect.DeepEqual(observedRoles[0], observedRoles[1]) {
 		t.Fatalf("small/large fact query roles differ: %v", observedRoles)
+	}
+}
+
+func TestEvaluatePRFreshnessPageUsesOneArrayArgumentAboveTwoThousandCheckpoints(t *testing.T) {
+	fixture := seedScaleFreshnessFixture(t, 100, 21)
+	got, err := NewService(fixture.client).EvaluatePRFreshnessPage(context.Background(), fixture.repo.ID, fixture.prs)
+	if err != nil {
+		t.Fatalf("EvaluatePRFreshnessPage error: %v; statements = %+v", err, fixture.recorder.recordedStatements())
+	}
+	if len(got) != 100 {
+		t.Fatalf("result count = %d, want 100", len(got))
+	}
+
+	statements := fixture.recorder.recordedStatements()
+	if len(statements) != 3 {
+		t.Fatalf("SQL statement count = %d, want exactly 3; statements = %+v", len(statements), statements)
+	}
+	var checkpointStatement *recordedFreshnessSQL
+	for i := range statements {
+		if classifyFreshnessFactQuery(statements[i].Query) == freshnessQueryCheckpointFacts {
+			checkpointStatement = &statements[i]
+			break
+		}
+	}
+	if checkpointStatement == nil {
+		t.Fatalf("checkpoint aggregate query not found; statements = %+v", statements)
+	}
+	assertFreshnessCheckpointArrayArgument(t, *checkpointStatement, 2100)
+	if got := strings.Count(checkpointStatement.Query, "$"); got != 1 {
+		t.Fatalf("checkpoint aggregate placeholder count = %d, want 1; query = %s", got, checkpointStatement.Query)
+	}
+	if strings.Contains(strings.ToLower(checkpointStatement.Query), `"commit_checkpoint_id" in (`) {
+		t.Fatalf("checkpoint aggregate expands IN placeholders: %s", checkpointStatement.Query)
+	}
+}
+
+func TestEvaluatePRFreshnessPageSkipsCheckpointFactsWhenAllSnapshotsLackCheckpoints(t *testing.T) {
+	fixture := newRecordingFreshnessFixture(t)
+	ctx := context.Background()
+	refreshedAt := freshnessFixtureTime.Add(30 * time.Minute)
+	fixture.prs = createFreshnessFixturePRs(ctx, fixture.client, fixture.repo.ID, 3, refreshedAt)
+	builders := make([]*ent.PRCommitUsageSnapshotCreate, 0, len(fixture.prs))
+	for i, pr := range fixture.prs {
+		builders = append(builders, fixture.client.PRCommitUsageSnapshot.Create().
+			SetPrRecordID(pr.ID).
+			SetCommitSha(fmt.Sprintf("%040x", i+1)).
+			SetSortOrder(i).
+			SetCreatedAt(freshnessFixtureTime).
+			SetUpdatedAt(freshnessFixtureTime))
+	}
+	saveFreshnessFixtureSnapshots(ctx, fixture.client, builders)
+	fixture.snapshotCount = len(builders)
+	assertAndResetFreshnessFixture(t, fixture)
+
+	got, err := NewService(fixture.client).EvaluatePRFreshnessPage(ctx, fixture.repo.ID, fixture.prs)
+	if err != nil {
+		t.Fatalf("EvaluatePRFreshnessPage error: %v", err)
+	}
+	for _, pr := range fixture.prs {
+		freshness := got[pr.ID]
+		if freshness == nil || freshness.Status != UsageStatusNoCheckpoint {
+			t.Fatalf("PR %d freshness = %+v, want no_checkpoint", pr.ID, freshness)
+		}
+	}
+
+	statements := fixture.recorder.recordedStatements()
+	wantRoles := []freshnessFactQueryRole{freshnessQueryPendingEvents, freshnessQuerySnapshots}
+	if roles := sortedFreshnessFactRoles(statements); !reflect.DeepEqual(roles, wantRoles) {
+		t.Fatalf("fact query roles = %v, want exactly %v", roles, wantRoles)
+	}
+	for _, statement := range statements {
+		if classifyFreshnessFactQuery(statement.Query) == freshnessQueryCheckpointFacts {
+			t.Fatalf("unexpected checkpoint aggregate query: %s", statement.Query)
+		}
 	}
 }
 
@@ -722,13 +797,33 @@ func TestEvaluatePRFreshnessPageValidatesInputsAndDeduplicatesIDs(t *testing.T) 
 		}
 	})
 
+	t.Run("page exceeds maximum", func(t *testing.T) {
+		fixture := newRecordingFreshnessFixture(t)
+		fixture.recorder.reset()
+		prs := make([]*ent.PrRecord, 101)
+		for i := range prs {
+			prs[i] = &ent.PrRecord{ID: i + 1}
+		}
+		_, err := NewService(fixture.client).EvaluatePRFreshnessPage(context.Background(), fixture.repo.ID, prs)
+		if err == nil || !strings.Contains(err.Error(), "evaluate PR freshness page: page size 101 exceeds maximum 100") {
+			t.Fatalf("error = %v, want operation-wrapped page maximum error", err)
+		}
+		if got := len(fixture.recorder.recordedStatements()); got != 0 {
+			t.Fatalf("SQL statement count = %d, want 0", got)
+		}
+	})
+
 	t.Run("duplicate IDs", func(t *testing.T) {
 		fixture := seedScaleFreshnessFixture(t, 1, 1)
 		pr := fixture.prs[0]
+		duplicatePage := make([]*ent.PrRecord, 101)
+		for i := range duplicatePage {
+			duplicatePage[i] = pr
+		}
 		got, err := NewService(fixture.client).EvaluatePRFreshnessPage(
 			context.Background(),
 			fixture.repo.ID,
-			[]*ent.PrRecord{pr, pr},
+			duplicatePage,
 		)
 		if err != nil {
 			t.Fatalf("EvaluatePRFreshnessPage error: %v", err)
@@ -763,9 +858,7 @@ func assertFreshnessFactQueryArguments(
 				t.Errorf("pending-event query arguments = %v, want explicit repo_config_id %d", statement.Args, repoConfigID)
 			}
 		case freshnessQueryCheckpointFacts:
-			if len(statement.Args) != checkpointCount {
-				t.Errorf("checkpoint aggregate argument count = %d, want %d", len(statement.Args), checkpointCount)
-			}
+			assertFreshnessCheckpointArrayArgument(t, statement, checkpointCount)
 		default:
 			t.Errorf("unexpected SQL shape: %s", statement.Query)
 		}
@@ -778,6 +871,36 @@ func assertFreshnessFactQueryArguments(
 		if seen[role] != 1 {
 			t.Errorf("fact query role %q count = %d, want 1", role, seen[role])
 		}
+	}
+}
+
+func assertFreshnessCheckpointArrayArgument(t *testing.T, statement recordedFreshnessSQL, wantCardinality int) {
+	t.Helper()
+	if len(statement.Args) != 1 {
+		t.Errorf("checkpoint aggregate argument count = %d, want one array argument", len(statement.Args))
+		return
+	}
+	valuer, ok := statement.Args[0].(driver.Valuer)
+	if !ok {
+		t.Errorf("checkpoint aggregate argument type = %T, want driver.Valuer array", statement.Args[0])
+		return
+	}
+	raw, err := valuer.Value()
+	if err != nil {
+		t.Errorf("encode checkpoint array argument: %v", err)
+		return
+	}
+	encoded, ok := raw.(string)
+	if !ok {
+		t.Errorf("checkpoint array encoded type = %T, want string", raw)
+		return
+	}
+	cardinality := 0
+	if encoded != "{}" {
+		cardinality = strings.Count(encoded, ",") + 1
+	}
+	if cardinality != wantCardinality {
+		t.Errorf("checkpoint array cardinality = %d, want %d", cardinality, wantCardinality)
 	}
 }
 

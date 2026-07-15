@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review is complete with no findings. Tasks 1-3 are complete at implementation commits `7659d82`, `34fb70c`, and `c697f3b`; Task 4 architecture, full verification, review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
+**Status:** Plan review and Tasks 1-3 are complete. Task 4 Step 1 is current. The full-repository evidence recorded for Step 2 at `6386824` is retained below but was superseded by final-standards remediation, so a fresh Step 2 run and Steps 3-7 remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -18,7 +18,9 @@
 - Preserve list fields `usage_status`, `usage_status_reason`, and optional `usage_status_checked_at`; list rows continue omitting `commit_freshness`, while detail continues returning it.
 - Preserve current visible precedence deterministically: snapshots are evaluated by `sort_order ASC, id ASC`, and the first non-`fresh` commit supplies the PR-level status and reason. When there are no snapshots, repo-level unbound usage evidence selects `pending_upload` before either `no_checkpoint` reason.
 - Preserve the exact current status and reason strings. Do not invent durable `refresh_failed` or `unbound` facts in this ticket; those statuses remain reserved because the current schema has no per-PR marker for them.
+- PR list pagination defaults to 20 and caps at 100. Invalid or nonpositive limits use 20; invalid or negative offsets use zero. `EvaluatePRFreshnessPage` independently rejects more than 100 distinct PR IDs before SQL.
 - A page freshness read uses a constant number of SQL statements as PR count and commit count grow within supported list bounds. It must not call `EvaluatePRFreshness` in a loop.
+- The checkpoint aggregate uses one `pq.Array` argument with PostgreSQL `= ANY(...)`; checkpoint count must not expand SQL placeholder or bind-argument cardinality.
 - Bulk reads must remain request-context-bound. Do not detach cancellation, create background work, introduce Redis, or add a maintained cache/read model when three bounded SQL fact queries suffice.
 - Keep `prusage.Service` and current handler/provider boundaries. Do not modify `sub2api`, SCM provider interfaces, authentication, relay behavior, or frontend code.
 - PostgreSQL scale/query-count evidence is environment-sensitive and must be reported separately from ordinary unit tests.
@@ -30,7 +32,7 @@
 
 | Surface | Preserved request | Preserved response and behavior |
 | --- | --- | --- |
-| PR list | `status`, `months`, `limit`, `offset` | Existing `items`, `summary`, and `total`; same row fields and ordering; freshness evaluated once for the returned page |
+| PR list | `status`, `months`, `limit`, `offset`; `limit` defaults to 20 and caps at 100; invalid/nonpositive limit uses 20; invalid/negative offset uses zero | Existing `items`, `summary`, and `total`; same row fields and ordering; freshness evaluated once for the returned page |
 | PR detail | Path `id` | Existing PR entity edges plus complete `commit_freshness`; one selected PR uses the shared classifier |
 | Usage refresh | Path `id` | Existing authoritative refresh, reload, and detail response; no SCM/provider behavior change |
 | Summary | List filters | Existing database counts; `refresh_failed` remains zero and `pending_upload` remains conservative |
@@ -198,7 +200,7 @@
   no per-PR or per-commit SELECT
   ```
 
-  Exact argument counts may grow; SQL statement count must not. Compare the exact three fact-query roles for count-small and count-large, and record the exact fixture totals above. Empty input returns an empty non-nil map and records zero SQL statements.
+  Snapshot-query argument count may grow only to the 100-PR page maximum. The checkpoint aggregate must use exactly one PostgreSQL array argument rather than expanded `IN` placeholders, while SQL statement count remains constant. Compare the exact three fact-query roles for count-small and count-large, and record the exact fixture totals above. Empty input returns an empty non-nil map and records zero SQL statements.
 
   For cancellation, configure the recording driver to block the snapshot fact query until `ctx.Done()`. Start the page evaluation, wait until that query is in flight, cancel the context, and assert `errors.Is(err, context.Canceled)`. Assert the driver returns from the blocked call, records no pending-event or checkpoint-event query afterward, and has no in-flight test goroutine when the method returns.
 
@@ -228,7 +230,7 @@
 
   Validate the service/client and positive `repoConfigID`, reject nil PR elements with an operation-wrapped error, and deduplicate PR IDs. Use the supplied context for all reads. The page API is intentionally one-repository-shaped because `ListByRepo` already owns that path parameter and `PrRecord` does not expose its required repo edge as a scalar field.
 
-  Load all page snapshots with one query bounded by the deduplicated PR IDs. Count pending unbound events for the explicit repository with one query. Collect non-nil checkpoint IDs from the snapshots, then load `COUNT(*)` and `MAX(observed_end_at)` by checkpoint with one grouped query. If no checkpoint IDs exist, skip only that third query; never replace it with a loop. Task 1's classifier, not unspecified database row order, owns final snapshot ordering.
+  Reject more than 100 deduplicated PR IDs before issuing SQL, while allowing repeated references that collapse within the bound. Load all page snapshots with one query bounded by those deduplicated PR IDs. Count pending unbound events for the explicit repository with one query. Collect non-nil checkpoint IDs from the snapshots, then load `COUNT(*)` and `MAX(observed_end_at)` by checkpoint with one grouped query using one `pq.Array` argument and PostgreSQL `= ANY(...)`. If no checkpoint IDs exist, skip only that third query; never replace it with a loop. Task 1's classifier, not unspecified database row order, owns final snapshot ordering.
 
   Use one `checkedAt := time.Now().UTC()` for the page, group facts in Go by IDs, and call Task 1's classifier once per requested PR. Return operation-specific wrapped errors without embedding SQL or fixture values.
 
@@ -247,7 +249,7 @@
 
   Expected: PASS twice with identical visible results and exactly the same three fact-query roles for the 5/5/5 and 100/2,000/2,000 fixtures. Record PR, snapshot, checkpoint, event, and query totals plus skipped-empty-query and cancellation behavior in the plan; do not report elapsed time as a budget.
 
-  GREEN evidence (2026-07-15): the repeated page command passed both runs with `5 PRs / 5 snapshots / 5 checkpoints / 5 events / 3 fact queries` and `100 PRs / 2,000 snapshots / 2,000 checkpoints / 2,000 events / 3 fact queries`. Both runs recorded exactly `snapshots`, `pending_events`, and `checkpoint_facts`; empty input returned a non-nil empty map with zero SQL, and cancellation returned `context.Canceled` after the blocked snapshot query with no later fact query and zero driver calls left in flight. The focused single-detail command, full `internal/prusage` package command, and `git diff --check` also passed.
+  Initial GREEN evidence (2026-07-15, before final-standards remediation): the repeated page command passed both runs with `5 PRs / 5 snapshots / 5 checkpoints / 5 events / 3 fact queries` and `100 PRs / 2,000 snapshots / 2,000 checkpoints / 2,000 events / 3 fact queries`. Both runs recorded exactly `snapshots`, `pending_events`, and `checkpoint_facts`; empty input returned a non-nil empty map with zero SQL, and cancellation returned `context.Canceled` after the blocked snapshot query with no later fact query and zero driver calls left in flight. The focused single-detail command, full `internal/prusage` package command, and `git diff --check` also passed. The later standards review correctly found that this evidence did not yet fix checkpoint bind-parameter cardinality.
 
 - [x] **Step 6: Commit Task 2 and record the checkpoint**
 
@@ -373,7 +375,7 @@
 - Consumes: Tasks 1-3 and their test/review evidence.
 - Produces: current architecture/contract truth, full verification, independent reviews, and a draft PR targeting `docs/performance-contracts-116` with two green CI rounds.
 
-- [ ] **Step 1: Update current architecture and active contract**
+- [x] **Step 1: Update current architecture and active contract**
 
   Update the current PR list paragraph in `docs/architecture.md` to state that page freshness uses three bulk fact shapes rather than per-PR/per-commit reads, selected detail uses the same classifier, and list status fields/order remain compatible.
 
@@ -402,6 +404,12 @@
 
   Expected: PASS. Report the PostgreSQL scale/query-count tests and role E2E separately as environment-sensitive evidence. Do not check an unrun command.
 
+  Superseded verification evidence (2026-07-15, HEAD `6386824`): all prescribed commands were run separately and exited 0 after installing the lockfile-defined frontend dependencies with `npm ci`. The first `npm test` attempt exited 127 because this fresh worktree had no `node_modules`/`vitest`; the exact command was rerun after the environment bootstrap and passed 39 test files / 429 tests. `gofmt` produced no backend diff; full backend, full CLI, frontend build, release frontend embed, and final `git diff --check` passed. The embed harness exited 0 after `backend/internal/web` passed, while emitting a hook-queue warning plus npm deprecation/audit/install-script warnings. This evidence predates the final-standards remediation and does not satisfy the fresh Step 2 gate for the remediated tree.
+
+  PostgreSQL scale/query-count evidence (fresh uncached focused run): `go test ./internal/prusage -run '^TestEvaluatePRFreshnessPageQueryCountIsConstant$' -count=1 -v` exited 0. The `5 PRs / 5 snapshots / 5 checkpoints / 5 events` fixture and the `100 PRs / 2,000 snapshots / 2,000 checkpoints / 2,000 events` fixture each issued exactly 3 fact queries with roles `snapshots`, `pending_events`, and `checkpoint_facts`.
+
+  Role E2E evidence: IPv4 `127.0.0.1:5173` was occupied by a Vite process from another worktree, so the current-worktree harness was temporarily pointed at `127.0.0.1:15173`. The serving process was verified as `/Users/admin/ai-efficiency/.worktrees/perf-pr-freshness-133/frontend/node_modules/.bin/vite` with that frontend directory as its cwd. `npm run test:e2e:role` exited 0 with 16/16 checks passing. Only that temporary server was stopped; the harness was restored byte-for-byte (`git hash-object` worktree and HEAD both `ac226f15acdb811ea492eebb26747406632ef5bd`), and the unrelated `5173` listener remained running. Unmocked background dashboard/work-item requests logged proxy `ECONNREFUSED` messages, but no role assertion failed.
+
 - [ ] **Step 3: Complete per-task and whole-branch reviews**
 
   Obtain independent spec/quality review for Tasks 1-3 against their recorded base/head ranges. Resolve every Critical or Important finding with a focused RED/GREEN cycle and re-review.
@@ -417,6 +425,12 @@
   Do detail and refresh still return complete commit diagnostics?
   Are tests synthetic, non-timing-based, and free of external services?
   ```
+
+  Pre-remediation final review evidence (2026-07-15): the spec reviewer returned `SPEC PASS` with one Minor for the missing non-empty all-snapshots-without-checkpoints branch regression. The standards reviewer returned `QUALITY NEEDS FIXES` with one Important for unbounded HTTP/service page cardinality plus expanded checkpoint bind parameters, the same coverage Minor, and one Conventional Commit classification Minor.
+
+  Remediation evidence (2026-07-15): focused HTTP RED showed zero/negative pagination returning HTTP 500, invalid limit returning 120 items, and `limit=1000` returning 120 instead of 100. Focused service/SQL RED showed 101 distinct PRs accepted and the 2,100-checkpoint aggregate expanding 2,100 placeholders. GREEN coverage now proves default 20/max 100 pagination normalization, zero-SQL rejection of 101 distinct PR IDs, successful collapse of 101 duplicate references to one distinct ID, a valid real-PostgreSQL `= ANY($1)` aggregate with one `pq.Array` argument for 2,100 checkpoint IDs, and the exact two-query `snapshots` plus `pending_events` branch when every non-empty snapshot lacks a checkpoint. `gofmt` completed for all four touched Go files; the focused handler and `prusage` commands passed; `go test ./internal/prusage ./internal/handler -count=1` passed with `prusage` at 5.944s and `handler` at 31.361s. Fresh full-repository verification and independent spec/standards re-reviews remain required before this step can be checked.
+
+  The `7659d82 test(prs): lock freshness status precedence` classification Minor is explicitly deferred; this remediation does not rewrite existing branch history. All production and coverage findings are addressed in the current tree.
 
 - [ ] **Step 4: Commit documentation and verification evidence**
 
@@ -471,7 +485,7 @@
 - Spec coverage: Task 1 locks exact visible precedence; Task 2 proves constant bulk SQL and scale parity; Task 3 removes list-time per-row evaluation while preserving response behavior; Task 4 covers current docs, review, verification, and delivery.
 - Placeholder scan: no TBD/TODO or unspecified implementation/testing step remains.
 - Type consistency: Task 1 produces the pure classifier; Task 2 produces `EvaluatePRFreshnessPage(ctx, repoConfigID, prs)`; Task 3 passes the route repository ID through that exact internal handler interface.
-- Query-bound consistency: the plan permits one PR-ID-bounded snapshot query, one explicit-repository pending count, and one checkpoint-event aggregate; the separate 5/5/5 and 100/2,000/2,000 fixtures change only bound argument/result counts, not SQL statement count.
+- Query-bound consistency: the plan permits one at-most-100-PR-ID snapshot query, one explicit-repository pending count, and one checkpoint-event aggregate with exactly one PostgreSQL array argument; the separate 5/5/5, 100/2,000/2,000, and 100/2,100/2,100 fixtures change result/array contents, not SQL statement or checkpoint bind-argument count.
 - Contract consistency: existing routes, fields, summary, filters, list ordering, detail diagnostics, and exact reason strings are preserved.
 - Scope control: no frontend, Redis, relay, SCM, auth, `sub2api`, CDN, release, or Helm behavior enters this ticket.
 - Data hygiene: all planned identities, repositories, SHAs, and events are synthetic.
