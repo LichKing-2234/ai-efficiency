@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Task 1 is complete, including the Critical C1 remediation, fresh local verification, independent re-review, and commit. Tasks 2-3, final verification, draft PR delivery, and every CI gate remain pending.
+**Status:** Tasks 1-2 are complete, independently reviewed, and committed. Task 3, final verification, draft PR delivery, and every CI gate remain pending.
 
 **Goal:** Start public and authenticated non-admin route chunks without waiting for current-user hydration while keeping administrator routes fail-closed and making every login, logout, refresh, and delayed redirect safe across browser-session and navigation races.
 
@@ -323,7 +323,7 @@ Expected: Task 1 review passes and the tracked worktree is clean.
 - Follow-up contract: each `PendingHydration` owns the exact `sessionGeneration` read before its `ensureUser()` call; its callback compares that value to `readBrowserSession().generation` and uses only the promise's `User | null` result.
 - Admin rule: capture `navigationGeneration` before `await auth.ensureUser()` and compare it immediately afterward, before returning Login, `/`, or any other redirect.
 
-- [ ] **Step 1: Add failing production-guard ordering and navigation-race tests**
+- [x] **Step 1: Add failing production-guard ordering and navigation-race tests**
 
 Create `router-hydration.test.ts` with a fresh Pinia, memory router, deferred mocked `getMe`, and lazy component loaders returning components with stable `data-route-skeleton` markers. Install the exported production guard and dispose it after each test. Add these observable cases without elapsed-time assertions:
 
@@ -346,7 +346,9 @@ OAuth Device invalid identity: its chunk/shell renders before delayed redirect t
 
 For both pending Login replacement cases, mount the real `LoginView` over mocked auth APIs, keep the Login navigation unchanged while A and B are independently deferred, and spy separately on `router.replace` (guard-owned) and `router.push` (component-owned). Resolve A after `replaceBrowserSession` has installed B, assert A's promise value is `null`, then resolve B and prove exactly the component redirect occurs. For both pending Admin -> OAuth cases, assert the OAuth loader has run before resolving identity and assert `settingsLoader` remains at zero after all promises settle. The old admin guard must return no redirect when its captured generation is no longer current.
 
-- [ ] **Step 2: Add failing real-interceptor route-expiry tests and harness selection probe**
+**Step 1 RED test coverage (2026-07-15):** Added `router-hydration.test.ts` with stable route-shell markers and the complete ordering/session/navigation matrix above, including real `LoginView` different-token and same-token replacement without navigation, repeated Login generations, administrator supersession, and OAuth Device expiry behavior. A direct run failed at the intended missing production seam, `@/router/authGuard`, before any production file existed.
+
+- [x] **Step 2: Add failing real-interceptor route-expiry tests and harness selection probe**
 
 Extend the real Axios harness in `client.test.ts` with memory routes that use `installAuthNavigationGuards`. Drive `/auth/me` through the registered response interceptor and a failed deferred refresh, rather than mocking `getMe`, then prove:
 
@@ -368,7 +370,9 @@ Run this pre-implementation environment-variable probe:
 
 Expected: FAIL because the harness still hard-codes `http://localhost:5173`.
 
-- [ ] **Step 3: Run focused route tests and record RED**
+**Step 2 RED evidence (2026-07-15):** Extended the registered Axios interceptor harness with confirmed-destination expiry policy, pending-navigation destination ownership, and legitimate same-generation A-to-A2 Login follow-up cases. The exact environment probe exited 1 with `AssertionError`, because `e2e_role_test.BASE` still ignored `AE_E2E_BASE_URL` as expected.
+
+- [x] **Step 3: Run focused route tests and record RED**
 
 Run:
 
@@ -378,7 +382,9 @@ Run:
 
 Expected: FAIL because the inline global guard serializes every lazy route, no installable generation-aware guard exists, admin redirects are not supersession-safe, and the client expiry has no destination-owned policy.
 
-- [ ] **Step 4: Implement the production navigation policy**
+**Exact RED evidence (2026-07-15):** The exact focused command exited 1. Existing `router.test.ts` remained green at 18/18, while both new/extended suites failed during import because `@/router/authGuard` did not exist: 2 failed files, 1 passed file, and 18 existing tests passed. This is the expected pre-production failure for the missing installable route/session policy.
+
+- [x] **Step 4: Implement the production navigation policy**
 
 Create `authGuard.ts` with safe redirect validation and one `installAuthNavigationGuards` implementation. Maintain these closure-owned monotonic records:
 
@@ -441,7 +447,9 @@ other public route -> no redirect
 
 Return a disposer that unregisters `beforeEach`, `afterEach`, and the expiry listener. In `router/index.ts`, mark only OAuth Device with `meta.redirectOnAuthExpiry = true`, remove the inline guard, and call `installAuthNavigationGuards(router)` once. Preserve all route records, lazy imports, `handleRouterError`, and chunk reload behavior.
 
-- [ ] **Step 5: Make the role harness select an explicit worktree server**
+**Step 4 GREEN evidence (2026-07-15):** Added the generation-aware installable guard and production wiring, including parallel public/ordinary hydration, fail-closed administrator awaits, exact session/navigation follow-up checks, confirmed-destination expiry policy, and the OAuth Device meta marker. The first focused production run passed 37/37 tests across `router-hydration.test.ts` and the real-interceptor `client.test.ts`.
+
+- [x] **Step 5: Make the role harness select an explicit worktree server**
 
 In `e2e_role_test.py`, retain the current direct-run default and normalize only trailing slashes:
 
@@ -453,11 +461,15 @@ Update the usage docstring with both the default command and `AE_E2E_BASE_URL=ht
 
 Re-run the probe from Step 2. Expected: PASS with `BASE == http://127.0.0.1:41732`.
 
-- [ ] **Step 6: Migrate existing router regressions to the production guard**
+**Step 5 GREEN evidence (2026-07-15):** `e2e_role_test.py` now reads `AE_E2E_BASE_URL`, preserves the localhost direct-run default, and strips only trailing slashes. The exact environment probe exited 0 with the selected `http://127.0.0.1:41732` base.
+
+- [x] **Step 6: Migrate existing router regressions to the production guard**
 
 In `router.test.ts`, remove simplified hand-written guards. Install and dispose `installAuthNavigationGuards` on fresh local routers and Pinia instances. Retain route registry, unauthenticated safe redirect, authenticated route access, Login safe redirect, invalid-token cleanup, admin role rejection, OAuth device meta, and chunk-error assertions. Use a unique navigation or fresh router for every case; no test may depend on singleton-router state from a prior case.
 
-- [ ] **Step 7: Verify focused/full frontend, build, and isolated role E2E**
+**Step 6 GREEN evidence (2026-07-15):** Replaced every hand-written regression guard with the production installer on fresh memory routers and Pinia instances, retained the route registry and chunk-error assertions, and added the OAuth Device expiry meta assertion plus administrator-loader rejection. The exact three-file route/interceptor command passed 54/54 tests.
+
+- [x] **Step 7: Verify focused/full frontend, build, and isolated role E2E**
 
 Run:
 
@@ -509,7 +521,11 @@ Then run this self-contained command from the worktree root. It chooses an avail
 
 Expected: focused/full Vitest and build PASS; different-token and same-token Login replacement invalidate A's route follow-up without a navigation change; legitimate same-generation A-to-A2 rotation preserves it; role E2E reports all current checks passing against the printed current-worktree URL; the trap stops the printed PID. Report E2E separately from normal unit/build results.
 
-- [ ] **Step 8: Obtain Task 2 review and commit only after fixes are green**
+**Step 7 local verification evidence (2026-07-15):** The exact focused command passed 98/98 tests across 7 files; the full frontend suite passed 465/465 tests across 40 files; `vue-tsc -b` and the Vite production build completed successfully; and `git diff --check` passed. The self-contained strict-port role run printed `worktree=/Users/admin/ai-efficiency/.worktrees/perf-route-hydration-122`, `pid=64312`, and `base=http://127.0.0.1:65274`, then passed 16/16 Playwright checks. After the command exited, separate `kill -0` and loopback probes confirmed PID `64312` was cleaned and port `65274` was closed. This environment-sensitive result is recorded separately from Vitest/build evidence.
+
+**Step 7 self-review remediation evidence (2026-07-15):** Self-review found that an already handled `readLatestAuthExpiry()` event could be replayed by a later tokenless OAuth Device navigation. The focused real-interceptor/router regression, `npm test -- src/__tests__/client.test.ts -t 'does not replay a handled expiry'`, failed 1/1 because the later route returned to Login instead of remaining on OAuth Device. The pending-destination replay extension failed for the same reason, while the concurrent-newer-expiry case already passed. The guard now advances a closure-owned monotonic consumed-expiry generation only after the latest event, cleared session, and confirmed destination all still match; no-op Login/OAuth Authorize/public policy also consumes the event, and a stale queued callback cannot consume a newer event. `PendingHydration.sessionGeneration` is now read on the line immediately before its `ensureUser()` call. The expiry-focused run passed 8/8, the three-file route/interceptor run passed 56/56, the exact 7-file command passed 100/100, the full frontend suite passed 467/467 across 40 files, the production build and `git diff --check` passed, and a fresh self-contained role E2E passed 16/16 at `pid=3761`, `base=http://127.0.0.1:60699`. Post-exit probes confirmed PID `3761` was not alive and the loopback URL no longer served `/login`.
+
+- [x] **Step 8: Obtain Task 2 review and commit only after fixes are green**
 
 Generate the ignored review diff and `.superpowers/sdd/task-2-brief.md` with the exact server URL/PID cleanup evidence, route/session matrix, admin supersession cases, and real-interceptor outcomes:
 
@@ -519,6 +535,8 @@ git diff --binary HEAD > .superpowers/sdd/task-2-review.diff
 ```
 
 Obtain an independent task-level spec/quality review over that package. Fix every Critical or Important finding with focused RED/GREEN evidence and rerun Step 7 after the last production change.
+
+**Task 2 review evidence (2026-07-15):** Independent review returned `TASK REVIEW PASS` with 0 Critical, 0 Important, and 0 Minor findings. The reviewer independently passed the exact 7-file suite at 100/100, the full frontend suite at 467/467, the production build, `git diff --check`, the `AE_E2E_BASE_URL` normalization probe, and all 16/16 role checks against an owned strict-port Vite process at `http://127.0.0.1:57513`; PID `87963` and the selected port were confirmed cleaned afterward. Step 8 remains unchecked until the Task 2 commit succeeds.
 
 After review passes, check Steps 1-7 and record earned evidence, then commit:
 
@@ -757,6 +775,7 @@ Delivery passes only when all four third-round jobs are green for `final_head`, 
 - Session-follow-up closure: `PendingHydration.sessionGeneration` is captured with its promise and checked exactly before redirect; different-token/same-token replacement without navigation invalidates A, while same-generation rotation remains valid.
 - Admin-race closure: Task 2 requires a post-await navigation-generation check before every admin redirect and exact non-admin/401 Admin -> OAuth cases.
 - Redirect-policy closure: Axios emits expiry without navigating; the production guard applies protected/Login/OAuth Authorize/OAuth Device policy through real-interceptor tests.
+- Expiry-consumption closure: each matching expiry is consumed once by the still-current confirmed destination; a pending destination retains the event until confirmation, later tokenless public navigation cannot replay it, and an older queued callback cannot discard a concurrently published newer expiry.
 - E2E closure: the harness accepts `AE_E2E_BASE_URL`; Tasks 2 and 3 repeat one self-contained dynamic-port, strict-PID, readiness, trap-cleanup command.
 - Ledger closure: three CI rounds are explicit; no replacement/final evidence is pre-checked; the final mutable gate remains in GitHub after a clean final ledger commit.
 - Type consistency: session functions, event fields, store return types, request stamp, `PendingHydration.sessionGeneration`, pending route record, guard installer/disposer, and E2E variable use the same names in File Map, tasks, tests, and review gates.
