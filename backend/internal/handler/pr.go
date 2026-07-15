@@ -28,6 +28,7 @@ type PRHandler struct {
 	attributionService prAttributionSettler
 	usageRefresher     prUsageRefresher
 	usageFreshness     prUsageFreshnessEvaluator
+	usagePageFreshness prUsagePageFreshnessEvaluator
 }
 
 // NewPRHandler creates a new PR handler.
@@ -44,6 +45,10 @@ func NewPRHandler(entClient *ent.Client, repoService repoSCMProvider, syncServic
 	if evaluator, ok := usageSvc.(prUsageFreshnessEvaluator); ok {
 		freshnessSvc = evaluator
 	}
+	var pageFreshnessSvc prUsagePageFreshnessEvaluator
+	if evaluator, ok := usageSvc.(prUsagePageFreshnessEvaluator); ok {
+		pageFreshnessSvc = evaluator
+	}
 	return &PRHandler{
 		entClient:          entClient,
 		repoService:        repoService,
@@ -51,6 +56,7 @@ func NewPRHandler(entClient *ent.Client, repoService repoSCMProvider, syncServic
 		attributionService: attrSvc,
 		usageRefresher:     usageSvc,
 		usageFreshness:     freshnessSvc,
+		usagePageFreshness: pageFreshnessSvc,
 	}
 }
 
@@ -95,17 +101,13 @@ func serializePRSyncJob(job *ent.PRSyncJob) gin.H {
 	}
 }
 
-func (h *PRHandler) buildPRResponse(ctx context.Context, pr *ent.PrRecord, includeCommits bool) any {
+func buildPRResponseFromFreshness(pr *ent.PrRecord, freshness *prusage.PRFreshness, includeCommits bool) any {
 	resp := &prResponse{
 		PrRecord:          pr,
 		UsageStatus:       string(prusage.UsageStatusUnknown),
 		UsageStatusReason: "Usage freshness has not been evaluated.",
 	}
-	if h.usageFreshness == nil || pr == nil {
-		return resp
-	}
-	freshness, err := h.usageFreshness.EvaluatePRFreshness(ctx, pr.ID)
-	if err == nil && freshness != nil {
+	if freshness != nil {
 		resp.UsageStatus = string(freshness.Status)
 		resp.UsageStatusReason = freshness.Reason
 		resp.UsageStatusCheckedAt = &freshness.CheckedAt
@@ -114,6 +116,17 @@ func (h *PRHandler) buildPRResponse(ctx context.Context, pr *ent.PrRecord, inclu
 		}
 	}
 	return resp
+}
+
+func (h *PRHandler) buildPRResponse(ctx context.Context, pr *ent.PrRecord, includeCommits bool) any {
+	if h.usageFreshness == nil || pr == nil {
+		return buildPRResponseFromFreshness(pr, nil, includeCommits)
+	}
+	freshness, err := h.usageFreshness.EvaluatePRFreshness(ctx, pr.ID)
+	if err != nil {
+		freshness = nil
+	}
+	return buildPRResponseFromFreshness(pr, freshness, includeCommits)
 }
 
 func (h *PRHandler) buildPRListSummary(ctx context.Context, query *ent.PrRecordQuery, total int) (prListSummary, error) {
@@ -213,9 +226,17 @@ func (h *PRHandler) ListByRepo(c *gin.Context) {
 		return
 	}
 
+	var freshnessByPR map[int]*prusage.PRFreshness
+	if h.usagePageFreshness != nil {
+		evaluated, err := h.usagePageFreshness.EvaluatePRFreshnessPage(c.Request.Context(), repoID, prs)
+		if err == nil {
+			freshnessByPR = evaluated
+		}
+	}
+
 	items := make([]any, 0, len(prs))
 	for _, pr := range prs {
-		items = append(items, h.buildPRResponse(c.Request.Context(), pr, false))
+		items = append(items, buildPRResponseFromFreshness(pr, freshnessByPR[pr.ID], false))
 	}
 
 	pkg.Success(c, gin.H{

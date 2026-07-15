@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review is complete with no findings. Tasks 1-2 are complete at implementation commits `7659d82` and `34fb70c`; Task 3 is next, while later task review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
+**Status:** Plan review is complete with no findings. Tasks 1-2 are complete at implementation commits `7659d82` and `34fb70c`; Task 3 implementation, self-review, and fresh prescribed regression verification are complete, and the two checkpoint commits are next. Later task review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -282,7 +282,7 @@
 - Consumes: Task 2 `EvaluatePRFreshnessPage` and existing single/detail evaluator.
 - Produces: internal `prUsagePageFreshnessEvaluator` capability and one list-time page evaluation without any per-row evaluator loop.
 
-- [ ] **Step 1: Add failing handler batching and compatibility tests**
+- [x] **Step 1: Add failing handler batching and compatibility tests**
 
   Add a spy implementing both single and page evaluation. For a five-row response assert:
 
@@ -299,7 +299,7 @@
 
   Preserve and strengthen list ordering coverage for open/merged/other plus `created_at DESC`. Keep the current summary counts unchanged. Extend selected-detail and refresh-response tests to assert the single evaluator still runs once and complete commit diagnostics remain present.
 
-- [ ] **Step 2: Run handler tests and record RED**
+- [x] **Step 2: Run handler tests and record RED**
 
   Run:
 
@@ -309,7 +309,9 @@
 
   Expected: FAIL because the list currently calls `EvaluatePRFreshness` once per returned PR and has no page capability.
 
-- [ ] **Step 3: Add the page capability and serialize precomputed facts**
+  RED evidence (2026-07-15): the command exited 1 with the expected behavioral failures. The five-row list recorded zero page calls instead of one; page-error, missing-map-item, and single-only capability cases returned the spy's single-evaluator `fresh` result instead of the bounded `unknown` fallback. The focused detail and refresh compatibility tests did not fail.
+
+- [x] **Step 3: Add the page capability and serialize precomputed facts**
 
   Add the internal interface:
 
@@ -325,7 +327,7 @@
 
   Keep `Get` and `RefreshUsage` on the selected single evaluator path, including `includeCommits=true`. Do not change summary queries or public DTO tags.
 
-- [ ] **Step 4: Verify handler, prusage, and response regression suites**
+- [x] **Step 4: Verify handler, prusage, and response regression suites**
 
   Run separately:
 
@@ -336,6 +338,8 @@
   ```
 
   Expected: PASS; one page call produces list freshness, list order and summary are unchanged, and detail/refresh still include commit diagnostics.
+
+  GREEN evidence (2026-07-15): after self-review strengthened the page fixture to five returned rows over 25 matching rows, the focused handler regression command passed (`internal/handler`, 2.073s). The combined package command passed both `internal/prusage` (4.180s) and `internal/handler` (29.693s) with exit 0. `git diff --check` exited 0. The handler tests proved one page call with response-ordered IDs and the route repository ID, zero list-time single calls, request-context cancellation binding, exact bounded fallbacks, unchanged list fields/order/summary, omitted list commit details, and complete selected detail/refresh commit diagnostics.
 
 - [ ] **Step 5: Commit Task 3 and record the checkpoint**
 
