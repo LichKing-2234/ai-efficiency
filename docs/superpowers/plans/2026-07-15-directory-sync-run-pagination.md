@@ -172,7 +172,7 @@
 
   Expected: PASS; start/execute/apply/preview tests remain unchanged, list is bounded/projected, detail stays complete, and source/active order is exact.
 
-- [ ] **Step 6: Commit Task 1 and record the checkpoint**
+- [x] **Step 6: Commit Task 1 and record the checkpoint**
 
   Commit implementation plus checked Steps 1-5:
 
