@@ -474,8 +474,15 @@ describe('QuotaResetView', () => {
     await flushPromises()
 
     expect(api.retryQuotaResetRequest).toHaveBeenCalledWith(48)
-    expect.soft(historyCalls).toBe(2)
-    expect.soft(wrapper.text()).toContain('Loading...')
+    expect(historyCalls).toBe(2)
+    expect(api.listMyQuotaResetRequests).toHaveBeenCalledTimes(2)
+    const actionableApprovalCalls = api.listQuotaResetApprovals.mock.calls.filter(
+      ([params]: [{ scope?: string }?]) => params === undefined,
+    )
+    expect(actionableApprovalCalls).toHaveLength(2)
+    expect(useToast().toast.tone).toBe('success')
+    expect(useToast().toast.message).toContain('Quota reset request updated')
+    expect(wrapper.text()).toContain('Loading...')
 
     const refreshedHistory = {
       ...failedHistoryRequest,

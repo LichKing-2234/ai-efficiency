@@ -5543,3 +5543,18 @@ Quality re-review follow-up GREEN evidence (2026-07-15):
   history reload immediately, and then refreshes core queues without awaiting
   history. Task 19 Step 4 remains unchecked pending re-review and the existing
   controller-managed verification.
+
+Minor test follow-up evidence (2026-07-15):
+
+- Strengthened the displayed processed-history retry regression before the
+  pending fresh history promise resolves: the second mine load and second
+  omitted-scope actionable approval load have completed, the success toast is
+  present, and the independent history spinner remains visible.
+- Mutation RED: after temporarily awaiting history before `loadQueues`,
+  `cd frontend && npm test -- src/__tests__/quota-reset-view.test.ts -t "reloads displayed processed history independently after retry succeeds"`
+  exited 1 with the expected `listMyQuotaResetRequests` count of 1 instead of
+  2. The production file was then restored with no diff.
+- Restored GREEN: `cd frontend && npm test -- src/__tests__/quota-reset-view.test.ts`
+  exited 0 with 1 file and 23 tests passing; `cd frontend && npm test -- src/__tests__/quota-reset-api.test.ts src/__tests__/quota-reset-view.test.ts`
+  exited 0 with 2 files and 34 tests passing.
+- Task 19 Step 4 remains unchecked pending final re-review.
