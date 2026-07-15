@@ -278,12 +278,10 @@ function actionContextMatches(generation: number, sourceID: number) {
 
 function beginActionRequest() {
   const generation = ++actionRequestGeneration
-  if (pendingRunPageActionGeneration !== null && pendingRunPageActionGeneration !== generation) {
-    pageRequestGeneration++
-    pendingRunOffset.value = null
-    pendingRunPageActionGeneration = null
-    runHistoryLoading.value = false
-  }
+  pageRequestGeneration++
+  pendingRunOffset.value = null
+  pendingRunPageActionGeneration = null
+  runHistoryLoading.value = false
   return generation
 }
 
