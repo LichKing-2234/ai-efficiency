@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, final action-ownership remediation, current documentation, full local verification, consumer audit, and final reviews are complete and committed. Draft PR #145 is open and its first CI round is green; final ledger delivery, replacement CI, and final PR verification remain pending. One non-blocking Minor progress-display follow-up is recorded below.
+**Status:** Implementation, final action-ownership remediation, current documentation, full local verification, consumer audit, final reviews, draft PR delivery, first and replacement CI, and the final branch/PR verification are complete. This ledger-only commit's final-current-head CI remains an external GitHub gate below. One non-blocking Minor progress-display follow-up is recorded below.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -629,19 +629,38 @@
   `perf/directory-runs-121`, and local/remote OID
   `fc992e74f707486f63333f0add55eee1bf9eab8f`.
 
-- [ ] **Step 6: Require first CI, commit final ledger, and require replacement CI**
+- [x] **Step 6: Require first CI, commit final ledger, and require replacement CI**
 
   Wait for backend/frontend/ae-cli/deploy-static success. Only then mark complete and commit/push `docs(plan): record directory run pagination delivery`; wait for replacement CI to pass all four jobs.
 
   First CI evidence: run `29401353370` completed successfully on
   `fc992e74f707486f63333f0add55eee1bf9eab8f`; backend job `87306395319`,
   frontend job `87306395374`, ae-cli job `87306395376`, and deploy-static job
-  `87306395358` all passed. The final ledger commit and replacement CI remain
-  pending, so this step is intentionally unchecked.
+  `87306395358` all passed. The evidence commit
+  `2081921275f31e30e6b24011153e60c0f11a98c2` was then pushed. Replacement
+  run `29401677880` passed backend job `87307434561` in 2m48s, frontend job
+  `87307434518` in 39s, ae-cli job `87307434531` in 30s, and deploy-static job
+  `87307434501` in 14s on that exact commit.
 
-- [ ] **Step 7: Verify final branch and PR state**
+- [x] **Step 7: Verify final branch and PR state**
 
   Require clean worktree, OPEN draft, exact base/head, local HEAD equal remote OID, mergeable/clean state, and all status checks successful. Keep the worktree; do not merge, tag, release, deploy, or run Helm.
+
+  Final branch/PR evidence before this ledger-only commit: the tracked worktree
+  was clean; local HEAD, `origin/perf/directory-runs-121`, and PR head all
+  equaled `2081921275f31e30e6b24011153e60c0f11a98c2`; PR #145 was OPEN, draft,
+  MERGEABLE/CLEAN, based on `docs/performance-contracts-116`, and all four
+  replacement checks were successful. The worktree remains retained, and no
+  merge, tag, release, deploy, or Helm action was performed.
+
+#### External Final-Current-Head Delivery Gate
+
+This gate deliberately has no ledger checkbox because checking it would create
+another unverified commit. After pushing this final ledger-only commit, require
+backend, frontend, ae-cli, and deploy-static to pass on its exact OID; then
+recheck the clean worktree, local/remote/PR OID equality, OPEN draft state,
+exact base/head, and MERGEABLE/CLEAN status. GitHub is the source of truth for
+this mutable final gate. Do not edit this plan after that final push.
 
 ## Self-Review Record
 
