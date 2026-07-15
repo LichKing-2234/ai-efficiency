@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-3 are complete, independently reviewed, and committed. Task 4 implementation and local verification (Steps 1-4) are complete; Task 4 independent review/checkpoint (Step 5), Tasks 5-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Tasks 1-4 are complete, independently reviewed, and committed. Tasks 5-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -1084,9 +1084,9 @@ git diff --check
 
 Expected: both current-filter routes share exact normalized target IDs for the complete matrix and call `adminusers.Service.Targets`; for cycle B, paged List IDs, direct Targets, persisted snapshots, and compatibility-batch relay IDs are exactly `{b,c}` and never include A; 501 targets are rejected before mutation/persistence; the `adminsubscription.Service.StartJob` `ScopeCurrentFilter` branch and `AdminUsersHandler.subscriptionTargetsForScope` `current_filter` branch contain no second directory snapshot/filter implementation. This assertion explicitly excludes the unchanged `AdminUsersHandler.ListDepartments` compatibility snapshot.
 
-**Task 4 Step 4 GREEN evidence (2026-07-15):** The exact formatting command succeeded. The exact focused suite passed twice for `adminsubscription`, `adminusers`, and `handler`, including trimmed resolver input with limit 501, normalized-email and dual mapping parity, exact cycle scopes A `{a,b,c}` / B `{b,c}` / C `{c}`, 500-target success, 501-target 422 rejection with zero job rows/relay calls, and invalid-access 400 handling. The exact unfiltered three-package suite passed once (`adminsubscription` 4.285s, `adminusers` 8.431s, `handler` 33.613s), and `git diff --check` returned zero findings. Step 5 remains unchecked pending independent review and checkpoint work.
+**Task 4 Step 4 GREEN evidence (2026-07-15):** The exact formatting command succeeded. The exact focused suite passed twice for `adminsubscription`, `adminusers`, and `handler`, including trimmed resolver input with limit 501, normalized-email and dual mapping parity, exact cycle scopes A `{a,b,c}` / B `{b,c}` / C `{c}`, 500-target success, 501-target 422 rejection with zero job rows/relay calls, and invalid-access 400 handling. The exact unfiltered three-package suite passed once (`adminsubscription` 4.285s, `adminusers` 8.431s, `handler` 33.613s), and `git diff --check` returned zero findings. At that verification checkpoint, Step 5 remained unchecked pending independent review; the Task 4 review evidence below records its subsequent completion.
 
-- [ ] **Step 5: Complete exact-range Task 4 reviews and checkpoint**
+- [x] **Step 5: Complete exact-range Task 4 reviews and checkpoint**
 
 Obtain independent Task 4 SPEC and standards reviews. Require reviewers to trace the non-anchor B filter through List -> `Targets` -> persisted resolver and compatibility batch, confirming exact `{b,c}` scope with no raw parent recursion outside `adminusers`. Resolve every Critical/Important finding, rerun Step 4, then commit implementation and ledger separately:
 
@@ -1096,6 +1096,8 @@ git commit -m "refactor(admin-users): share current filter targets"
 git add docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
 git commit -m "docs(plan): record admin target integration task"
 ```
+
+**Task 4 review evidence (2026-07-15):** The initial exact-range SPEC review passed with 0 Critical, 0 Important, and 0 Minor findings. The initial standards review approved the implementation with 0 Critical, 0 Important, and 2 Minor findings: the compatibility `current_filter` branch mixed `adminsubscription.MaxTargets` with a handler-owned rejection constant, and `adminsubscription/job_test.go` retained four unreachable directory snapshot fixtures. The first Minor was closed by using `adminsubscription.MaxTargets` for the current-filter read limit, rejection threshold, and message; selected/all-mapped compatibility still owns its existing local limit. The second Minor was closed by deleting only the four uncalled fixtures while retaining every resolver, selected/all-mapped, runner, timeout, stale-job, failure, quota-reset, and oversize test. The final exact Step 4 gate then passed again: focused count=2 (`adminsubscription` 2.722s, `adminusers` 2.676s, `handler` 12.788s), complete count=1 (`adminsubscription` 4.548s, `adminusers` 8.432s, `handler` 34.181s), and `git diff --check` clean. Final r2 review of the complete corrected range returned `SPEC: PASS` and `STANDARDS: APPROVED`, each with 0 Critical, 0 Important, and 0 Minor findings, as recorded in `.superpowers/sdd/134-task-4-spec-rereview.md` and `.superpowers/sdd/134-task-4-standards-rereview.md`. Implementation commit: `d8a31f1`.
 
 ---
 
