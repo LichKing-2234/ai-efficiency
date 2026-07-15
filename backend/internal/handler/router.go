@@ -289,6 +289,8 @@ func SetupRouter(
 		adminQuotaResetGroup := protected.Group("/admin/quota-reset")
 		adminQuotaResetGroup.Use(auth.RequireAdmin())
 		{
+			adminQuotaResetGroup.GET("/approval-chains", quotaResetHandler.ListApprovalChains)
+			adminQuotaResetGroup.PUT("/approval-chains", quotaResetHandler.SaveApprovalChains)
 			adminQuotaResetGroup.GET("/approver-candidates", quotaResetHandler.ListApproverCandidates)
 			adminQuotaResetGroup.GET("/approver-configs", quotaResetHandler.ListApproverConfigs)
 			adminQuotaResetGroup.PUT("/approver-configs", quotaResetHandler.SaveApproverConfigs)

@@ -357,7 +357,7 @@ func TestNotificationSettingsTestRequiresEnabledSavedWebhook(t *testing.T) {
 	}
 }
 
-func TestListApproverCandidatesReturnsSelectedDepartmentRepresentativesOnly(t *testing.T) {
+func TestListApproverCandidatesReturnsActiveMembersOfSelectedDepartment(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	source := createQuotaResetDirectorySource(t, ctx, client)
@@ -383,8 +383,8 @@ func TestListApproverCandidatesReturnsSelectedDepartmentRepresentativesOnly(t *t
 	if err != nil {
 		t.Fatalf("ListApproverCandidates() error = %v", err)
 	}
-	if got, want := approverCandidateUserIDs(resp.Items), []int{alphaLead.ID, staleMatchedLead.ID}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("alpha candidate ids = %#v, want matched and email-fallback representatives %#v", got, want)
+	if got, want := approverCandidateUserIDs(resp.Items), []int{alphaLead.ID, staleMatchedLead.ID, peer.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("alpha candidate ids = %#v, want all mapped department members %#v", got, want)
 	}
 	if resp.Items[0].Email != alphaLead.Email || resp.Items[0].DirectoryMemberExternalID != "member-alpha-lead" {
 		t.Fatalf("alpha candidate detail = %#v", resp.Items[0])
@@ -434,21 +434,37 @@ func TestListApproverConfigsOnlyReturnsCurrentDirectorySource(t *testing.T) {
 	}
 }
 
-func TestSaveApproverConfigsRejectsApproverOutsideDepartmentRepresentatives(t *testing.T) {
+func TestSaveApproverConfigsAllowsDepartmentMemberAndRejectsOutsider(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	source := createQuotaResetDirectorySource(t, ctx, client)
 	department := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
 	lead := createQuotaResetUser(t, ctx, client, "lead-alpha", "lead-alpha@example.com", nil, "user")
 	peer := createQuotaResetUser(t, ctx, client, "peer-alpha", "peer-alpha@example.com", nil, "user")
+	outsider := createQuotaResetUser(t, ctx, client, "outsider", "outsider@example.com", nil, "user")
 	client.DirectoryDepartment.UpdateOneID(department.ID).
 		SetMetadata(map[string]any{"representative_external_ids": []any{"member-alpha-lead"}}).
 		SaveX(ctx)
 	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-lead", lead.Email, department.ExternalID, &lead.ID)
 	createQuotaResetMember(t, ctx, client, source.ID, "member-alpha-peer", peer.Email, department.ExternalID, &peer.ID)
+	createQuotaResetMember(t, ctx, client, source.ID, "member-outsider", outsider.Email, "department-other", &outsider.ID)
 	svc := NewService(client, nil, nil, nil)
 
 	_, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+		ActorUserID: 1,
+		Mode:        ApproverConfigSaveModeReplaceAll,
+		Items: []ApproverConfigInput{{
+			DepartmentExternalID:  department.ExternalID,
+			DepartmentDisplayPath: department.Name,
+			ApproverUserID:        outsider.ID,
+			Enabled:               true,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidApproverConfig) {
+		t.Fatalf("SaveApproverConfigs(outsider) error = %v, want ErrInvalidApproverConfig", err)
+	}
+
+	resp, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
 		ActorUserID: 1,
 		Mode:        ApproverConfigSaveModeReplaceAll,
 		Items: []ApproverConfigInput{{
@@ -458,25 +474,11 @@ func TestSaveApproverConfigsRejectsApproverOutsideDepartmentRepresentatives(t *t
 			Enabled:               true,
 		}},
 	})
-	if !errors.Is(err, ErrInvalidApproverConfig) {
-		t.Fatalf("SaveApproverConfigs(non representative) error = %v, want ErrInvalidApproverConfig", err)
-	}
-
-	resp, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
-		ActorUserID: 1,
-		Mode:        ApproverConfigSaveModeReplaceAll,
-		Items: []ApproverConfigInput{{
-			DepartmentExternalID:  department.ExternalID,
-			DepartmentDisplayPath: department.Name,
-			ApproverUserID:        lead.ID,
-			Enabled:               true,
-		}},
-	})
 	if err != nil {
 		t.Fatalf("SaveApproverConfigs(representative) error = %v", err)
 	}
-	if len(resp.Items) != 1 || resp.Items[0].ApproverUserID != lead.ID {
-		t.Fatalf("saved configs = %#v, want lead only", resp.Items)
+	if len(resp.Items) != 1 || resp.Items[0].ApproverUserID != peer.ID {
+		t.Fatalf("saved configs = %#v, want non-representative department member", resp.Items)
 	}
 }
 

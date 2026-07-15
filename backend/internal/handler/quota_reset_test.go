@@ -25,6 +25,8 @@ type fakeQuotaResetService struct {
 	listApproverCandidatesFn     func(context.Context, int, string) (*quotareset.ApproverCandidateListResponse, error)
 	listApproverConfigsFn        func(context.Context) (*quotareset.ApproverConfigListResponse, error)
 	saveApproverConfigsFn        func(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error)
+	listApprovalChainsFn         func(context.Context) (*quotareset.ApprovalChainListResponse, error)
+	saveApprovalChainsFn         func(context.Context, int, []quotareset.ApprovalChainInput) (*quotareset.ApprovalChainListResponse, error)
 	getNotificationSettingsFn    func(context.Context) (*quotareset.NotificationSettings, error)
 	updateNotificationSettingsFn func(context.Context, quotareset.UpdateNotificationSettingsInput) (*quotareset.NotificationSettings, error)
 }
@@ -87,6 +89,20 @@ func (f *fakeQuotaResetService) SaveApproverConfigs(ctx context.Context, input q
 		return f.saveApproverConfigsFn(ctx, input)
 	}
 	return &quotareset.ApproverConfigListResponse{}, nil
+}
+
+func (f *fakeQuotaResetService) ListApprovalChains(ctx context.Context) (*quotareset.ApprovalChainListResponse, error) {
+	if f.listApprovalChainsFn != nil {
+		return f.listApprovalChainsFn(ctx)
+	}
+	return &quotareset.ApprovalChainListResponse{}, nil
+}
+
+func (f *fakeQuotaResetService) SaveApprovalChains(ctx context.Context, actorID int, items []quotareset.ApprovalChainInput) (*quotareset.ApprovalChainListResponse, error) {
+	if f.saveApprovalChainsFn != nil {
+		return f.saveApprovalChainsFn(ctx, actorID, items)
+	}
+	return &quotareset.ApprovalChainListResponse{}, nil
 }
 
 func (f *fakeQuotaResetService) GetNotificationSettings(ctx context.Context) (*quotareset.NotificationSettings, error) {
@@ -173,6 +189,35 @@ func TestQuotaResetListApproverCandidatesPassesDepartmentSelection(t *testing.T)
 	}
 }
 
+func TestQuotaResetSaveApprovalChainsPassesAdminActorAndOrderedDepartments(t *testing.T) {
+	env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+		saveApprovalChainsFn: func(_ context.Context, actorID int, items []quotareset.ApprovalChainInput) (*quotareset.ApprovalChainListResponse, error) {
+			if actorID != 2 || len(items) != 1 || items[0].GroupID != "42" || len(items[0].Departments) != 2 {
+				t.Fatalf("actor/items = %d/%+v", actorID, items)
+			}
+			if items[0].Departments[0].DepartmentExternalID != "dept-alpha" || items[0].Departments[1].DepartmentExternalID != "dept-beta" {
+				t.Fatalf("department order = %+v", items[0].Departments)
+			}
+			return &quotareset.ApprovalChainListResponse{Items: []quotareset.ApprovalChain{{GroupID: "42"}}}, nil
+		},
+	})
+	rec := performQuotaResetRequest(env.router, http.MethodPut, "/api/v1/admin/quota-reset/approval-chains", env.adminToken, `{
+		"items":[{
+			"provider_id":1,
+			"group_id":"42",
+			"group_name":"Group Alpha",
+			"enabled":true,
+			"departments":[
+				{"directory_source_id":3,"department_external_id":"dept-alpha","department_display_path":"Company / Group Alpha"},
+				{"directory_source_id":3,"department_external_id":"dept-beta","department_display_path":"Company / Group Beta"}
+			]
+		}]
+	}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"group_id":"42"`) {
+		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 type quotaResetHandlerTestEnv struct {
 	router     *gin.Engine
 	userToken  string
@@ -219,6 +264,8 @@ func newQuotaResetHandlerTestEnv(t *testing.T, service *fakeQuotaResetService) *
 	adminGroup.POST("/requests/:id/approve", handler.AdminApprove)
 	adminGroup.GET("/approver-candidates", handler.ListApproverCandidates)
 	adminGroup.PUT("/approver-configs", handler.SaveApproverConfigs)
+	adminGroup.GET("/approval-chains", handler.ListApprovalChains)
+	adminGroup.PUT("/approval-chains", handler.SaveApprovalChains)
 
 	return &quotaResetHandlerTestEnv{
 		router:     router,

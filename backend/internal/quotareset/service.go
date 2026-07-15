@@ -894,35 +894,32 @@ func subscriptionGroupPlatform(subscription relay.UserSubscription) string {
 }
 
 func (s *Service) approverCandidates(ctx context.Context, sourceID int, departmentExternalID string) ([]ApproverCandidate, []UnmatchedApproverRepresentative, error) {
-	userIDsByDepartment, memberByUserID, unmatchedByDepartment, err := s.approverCandidateUserIDsByDepartment(ctx, sourceID)
+	currentSourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
+	if err != nil {
+		return nil, nil, fmt.Errorf("current directory source: %w", err)
+	}
+	if !ok || sourceID != currentSourceID {
+		return nil, nil, ErrDirectoryUnavailable
+	}
+	facts, err := s.loadWorkflowDirectoryFacts(ctx, sourceID)
 	if err != nil {
 		return nil, nil, err
 	}
 	departmentExternalID = strings.TrimSpace(departmentExternalID)
-	unmatched := unmatchedByDepartment[departmentExternalID]
-	userIDSet := userIDsByDepartment[departmentExternalID]
-	if len(userIDSet) == 0 {
-		return []ApproverCandidate{}, unmatched, nil
-	}
-	userIDs := make([]int, 0, len(userIDSet))
-	for userID := range userIDSet {
-		userIDs = append(userIDs, userID)
-	}
-	sort.Ints(userIDs)
-	users, err := s.client.User.Query().Where(entuser.IDIn(userIDs...)).All(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("load quota reset approver candidate users: %w", err)
-	}
-	usersByID := make(map[int]*ent.User, len(users))
-	for _, user := range users {
-		usersByID[user.ID] = user
-	}
-	candidates := make([]ApproverCandidate, 0, len(userIDs))
-	for _, userID := range userIDs {
-		user := usersByID[userID]
-		member := memberByUserID[userID]
-		if user == nil || member == nil {
+	representativeIDs := facts.representativesByDept[departmentExternalID]
+	mappedRepresentativeIDs := map[string]struct{}{}
+	candidates := make([]ApproverCandidate, 0)
+	for userID, member := range facts.membersByUserID {
+		if _, belongs := facts.departmentIDsByMember[member.ID][departmentExternalID]; !belongs {
 			continue
+		}
+		user := facts.usersByID[userID]
+		if !workflowCandidateUsable(user, member) {
+			continue
+		}
+		_, representative := representativeIDs[member.ExternalID]
+		if representative {
+			mappedRepresentativeIDs[member.ExternalID] = struct{}{}
 		}
 		candidates = append(candidates, ApproverCandidate{
 			UserID:                    user.ID,
@@ -930,6 +927,8 @@ func (s *Service) approverCandidates(ctx context.Context, sourceID int, departme
 			Email:                     user.Email,
 			DisplayName:               strings.TrimSpace(member.DisplayName),
 			DirectoryMemberExternalID: strings.TrimSpace(member.ExternalID),
+			Representative:            representative,
+			HasWeComUserID:            strings.TrimSpace(notificationIDsForWorkflowMember(member)["wecom"]) != "",
 		})
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -946,6 +945,19 @@ func (s *Service) approverCandidates(ctx context.Context, sourceID int, departme
 		}
 		return candidates[i].UserID < candidates[j].UserID
 	})
+	unmatched := make([]UnmatchedApproverRepresentative, 0)
+	for externalID := range representativeIDs {
+		if _, mapped := mappedRepresentativeIDs[externalID]; mapped {
+			continue
+		}
+		member := facts.membersByExternalID[externalID]
+		item := UnmatchedApproverRepresentative{DirectoryMemberExternalID: externalID}
+		if member != nil {
+			item.DisplayName = strings.TrimSpace(member.DisplayName)
+			item.Email = strings.TrimSpace(member.EmailNormalized)
+		}
+		unmatched = append(unmatched, item)
+	}
 	sort.SliceStable(unmatched, func(i, j int) bool {
 		left := strings.ToLower(strings.TrimSpace(unmatched[i].DisplayName))
 		if left == "" {
@@ -967,7 +979,14 @@ func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, ite
 	if len(items) == 0 {
 		return nil
 	}
-	userIDsByDepartment, _, _, err := s.approverCandidateUserIDsByDepartment(ctx, sourceID)
+	currentSourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
+	if err != nil {
+		return fmt.Errorf("current directory source: %w", err)
+	}
+	if !ok || sourceID != currentSourceID {
+		return ErrDirectoryUnavailable
+	}
+	facts, err := s.loadWorkflowDirectoryFacts(ctx, sourceID)
 	if err != nil {
 		return err
 	}
@@ -976,8 +995,14 @@ func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, ite
 		if departmentID == "" || item.ApproverUserID <= 0 {
 			continue
 		}
-		if _, ok := userIDsByDepartment[departmentID][item.ApproverUserID]; !ok {
-			return fmt.Errorf("%w: approver_user_id %d is not a representative for department %s", ErrInvalidApproverConfig, item.ApproverUserID, departmentID)
+		member := facts.membersByUserID[item.ApproverUserID]
+		user := facts.usersByID[item.ApproverUserID]
+		belongs := false
+		if member != nil {
+			_, belongs = facts.departmentIDsByMember[member.ID][departmentID]
+		}
+		if !belongs || !workflowCandidateUsable(user, member) {
+			return fmt.Errorf("%w: approver_user_id %d is not an active member of department %s", ErrInvalidApproverConfig, item.ApproverUserID, departmentID)
 		}
 	}
 	return nil

@@ -147,7 +147,7 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) (WorkflowTransition, erro
 
   Expected: PASS.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
   ```bash
   git add backend/ent backend/internal/quotareset/workflow.go backend/internal/quotareset/workflow_test.go
@@ -174,7 +174,7 @@ func (s *Service) SaveApprovalChains(ctx context.Context, actorID int, items []A
 func (s *Service) resolveWorkflow(ctx context.Context, requester *ent.User, providerID int, groupID string) (*Workflow, []DepartmentPathEvidence, error)
 ```
 
-- [ ] **Step 1: Add failing resolver/config tests**
+- [x] **Step 1: Add failing resolver/config tests**
 
   Cover exact-department configured candidates; per-department representative
   fallback; multiple direct departments merged into one step; no parent walk;
@@ -194,14 +194,14 @@ func (s *Service) resolveWorkflow(ctx context.Context, requester *ent.User, prov
 
   Expected: FAIL because the lean resolver/config implementation is absent.
 
-- [ ] **Step 2: Implement chain CRUD and request-time resolution**
+- [x] **Step 2: Implement chain CRUD and request-time resolution**
 
   Reuse the current Directory Sync snapshot, `QuotaResetApproverConfig`, relay
   provider group listing, and existing department tree helpers. Approver picker
   candidates become active directory-matched members of the chosen department;
   include representative and `has_wecom_userid` flags in responses.
 
-- [ ] **Step 3: Add and test admin HTTP routes**
+- [x] **Step 3: Add and test admin HTTP routes**
 
   Extend the handler interface and router with `GET/PUT approval-chains`. Keep
   replacement payload semantics and return readable group/department snapshots.
