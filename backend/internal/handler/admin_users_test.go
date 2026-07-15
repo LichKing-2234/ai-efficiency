@@ -509,6 +509,54 @@ func TestAdminUsersListSearchPaginationAndCiphertext(t *testing.T) {
 	}
 }
 
+func TestAdminUsersListHundredRowWireBound(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	ctx := context.Background()
+	fixedTime := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	for i := 1; i <= 100; i++ {
+		username := fmt.Sprintf("wire-user-%03d", i)
+		if _, err := env.client.User.Create().
+			SetUsername(username).
+			SetEmail(username + "@example.com").
+			SetAuthSource("ldap").
+			SetRole("user").
+			SetRelayUserID(1000 + i).
+			SetRelayAuthPassword("synthetic-ciphertext").
+			SetCreatedAt(fixedTime).
+			SetUpdatedAt(fixedTime).
+			Save(ctx); err != nil {
+			t.Fatalf("create synthetic wire user %d: %v", i, err)
+		}
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=wire-user&page=1&page_size=100", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 100 {
+		t.Fatalf("total = %d, want 100", got)
+	}
+	if got := int(data["page"].(float64)); got != 1 {
+		t.Fatalf("page = %d, want 1", got)
+	}
+	if got := int(data["page_size"].(float64)); got != 100 {
+		t.Fatalf("page_size = %d, want 100", got)
+	}
+	if got := len(data["items"].([]interface{})); got != 100 {
+		t.Fatalf("items = %d, want 100", got)
+	}
+
+	const syntheticFixtureWireRegressionBudgetBytes = 256 * 1024
+	wireBytes := w.Body.Len()
+	t.Logf("admin users synthetic fixture 100-row response bytes=%d regression_budget_bytes=%d", wireBytes, syntheticFixtureWireRegressionBudgetBytes)
+	if wireBytes >= syntheticFixtureWireRegressionBudgetBytes {
+		t.Fatalf("100-row response bytes = %d, want below test-owned synthetic-fixture regression budget %d", wireBytes, syntheticFixtureWireRegressionBudgetBytes)
+	}
+}
+
 func TestAdminUsersListPageBounds(t *testing.T) {
 	t.Parallel()
 
