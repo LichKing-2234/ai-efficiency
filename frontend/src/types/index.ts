@@ -490,20 +490,47 @@ export interface AdminDirectoryDepartmentSummary {
   external_id: string
   parent_external_id?: string | null
   name: string
-  path?: string
-  display_path?: string
-  depth?: number
-  child_count?: number
+  path: string
+  display_path: string
+  depth: number
+  child_count: number
+  has_children: boolean
   member_count: number
   matched_user_count: number
-  subtree_member_count?: number
-  subtree_matched_user_count?: number
-  representative_count?: number
-  matched_representative_count?: number
+  subtree_member_count: number
+  subtree_matched_user_count: number
+  representative_count: number
+  matched_representative_count: number
+}
+
+export interface AdminDepartmentOption {
+  external_id: string
+  name: string
+  display_path: string
+}
+
+export interface AdminDepartmentOptionsResponse {
+  items: AdminDepartmentOption[]
+  selected: AdminDepartmentOption | null
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface AdminDepartmentChildrenResponse {
+  items: AdminDirectoryDepartmentSummary[]
+  parent_department_id: string
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface AdminLegacyDirectoryDepartmentSummary extends Omit<AdminDirectoryDepartmentSummary, 'has_children'> {
+  has_children?: boolean
 }
 
 export interface AdminUserDepartmentsResponse {
-  items: AdminDirectoryDepartmentSummary[]
+  items: AdminLegacyDirectoryDepartmentSummary[]
 }
 
 export interface AdminRelayPasswordRevealResponse {

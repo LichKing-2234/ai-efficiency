@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 are complete, independently reviewed, and committed. Tasks 5-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Tasks 1-4 are complete, independently reviewed, and committed. Task 5 implementation and local verification are complete; its exact-range review/checkpoint, Task 6, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -1116,7 +1116,7 @@ git commit -m "docs(plan): record admin target integration task"
 - Consumes: Task 3 option/child HTTP contracts and the unchanged list contract.
 - Produces: a bounded searchable filter, lazy immediate-child navigation, and one viewport-active user-row subtree.
 
-- [ ] **Step 1: Add failing API, picker, mount, navigation, and DOM tests**
+- [x] **Step 1: Add failing API, picker, mount, navigation, and DOM tests**
 
 Add API/type assertions for exact paths/parameters and these frontend regressions:
 
@@ -1138,7 +1138,7 @@ Provide a controllable `matchMedia('(min-width: 768px)')` fake. With 100 users a
 
 Retain regression coverage for search debounce, URL filters, page size, paging, selection, dialogs, password reveal, disable access, subscription scopes/jobs, keyboard activation, and Chinese/English labels.
 
-- [ ] **Step 2: Run focused frontend tests and record RED**
+- [x] **Step 2: Run focused frontend tests and record RED**
 
 Run:
 
@@ -1148,7 +1148,9 @@ Run:
 
 Expected: FAIL because the active view still loads `/departments`, uses a complete `<select>`/tree, and mounts both responsive user representations.
 
-- [ ] **Step 3: Add exact API wrappers and picker DTOs**
+**Task 5 Step 2 RED evidence (2026-07-15):** The exact focused command exited 1. The picker suite could not resolve the not-yet-created `AdminDepartmentPicker.vue`; the view suite ran 37 tests with 13 expected failures and 24 retained regressions passing. The failures proved default mount still called the 120-row legacy department fake, the bounded picker/root/child controls did not exist, lazy navigation and cycle-B drill-in were absent, and the 100-user page did not expose one viewport-owned row tree or a `matchMedia` listener.
+
+- [x] **Step 3: Add exact API wrappers and picker DTOs**
 
 In `frontend/src/api/adminUsers.ts`, add:
 
@@ -1179,7 +1181,7 @@ Add TypeScript DTOs matching the HTTP Contracts exactly. Keep `listAdminUserDepa
 
 Implement `AdminDepartmentPicker` with `modelValue: string`, `update:modelValue`, and `change` interfaces. It owns dropdown/search/page state, uses a monotonically increasing request generation, loads no options for an empty closed picker, resolves an initial nonempty selection through `selected_id`, and exposes explicit all-departments, previous, and next controls.
 
-- [ ] **Step 4: Replace full-tree state with lazy child pages**
+- [x] **Step 4: Replace full-tree state with lazy child pages**
 
 In `AdminUsersView.vue`, replace the complete `departments` array and `visibleDepartments` scan with:
 
@@ -1210,7 +1212,7 @@ Implement `flattenLoadedDepartmentRows` as a depth-first walk over only the root
 
 On default mount, do not start any department request. If the route initially selects department view, start root page 1/25. If only `department_id` is present, let the picker resolve that one selected label without loading roots.
 
-- [ ] **Step 5: Mount exactly one responsive user representation**
+- [x] **Step 5: Mount exactly one responsive user representation**
 
 Create one `MediaQueryList` per component instance, mirror `.matches` into a ref, and add/remove the same `change` callback in lifecycle. Gate the existing card/table branches with stable computed values:
 
@@ -1221,7 +1223,7 @@ const showDesktopUserRows = computed(() => filters.view === 'users' && rows.valu
 
 Add stable `data-admin-user-list` and `data-admin-user-row` selectors. Keep the existing row/card contents, selection bindings, dialogs, and 768px visual breakpoint.
 
-- [ ] **Step 6: Verify focused/full frontend and production build GREEN**
+- [x] **Step 6: Verify focused/full frontend and production build GREEN**
 
 Run:
 
@@ -1234,6 +1236,8 @@ git diff --check
 ```
 
 Expected: focused/full Vitest and build pass; default mount has zero complete-snapshot requests; option/child collections honor their pages; B drill-in preserves the effective `{b,c}` scope; one viewport mounts one row per user; all retained workflows pass.
+
+**Task 5 Step 6 GREEN evidence (2026-07-15):** The exact focused command passed 44 tests across both files. The exact full frontend command passed 443 tests across 40 files. The exact production build completed `vue-tsc -b` and Vite with 190 transformed modules. The exact active-import scan and `git diff --check` both exited 0 with no output. Step 7 remains unchecked pending independent exact-range review and checkpoint work.
 
 - [ ] **Step 7: Complete exact-range Task 5 reviews and checkpoint**
 
