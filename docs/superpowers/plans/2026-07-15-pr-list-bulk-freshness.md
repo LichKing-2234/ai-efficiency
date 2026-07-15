@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review, Tasks 1-3, and Task 4 Steps 1-4 are complete. Fresh full-repository verification and final independent SPEC/standards reviews passed on `04025e5`; draft PR creation is current, while both CI rounds remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
+**Status:** Plan review, Tasks 1-3, and Task 4 Steps 1-5 are complete. Draft PR #142 is open against `docs/performance-contracts-116`; first-round CI passed and replacement CI is current.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -448,7 +448,7 @@
 
   Expected: clean worktree after the commit.
 
-- [ ] **Step 5: Push and open the correctly based draft PR**
+- [x] **Step 5: Push and open the correctly based draft PR**
 
   Create ignored `.superpowers/sdd/pr-133.md` with `Closes #133`, dependency on draft PR #138, compatibility summary, scale/query-count evidence, verification, review results, and rollback notes. Then run:
 
@@ -472,6 +472,8 @@
   ```
 
   Expected: the replacement run is green for all four jobs.
+
+  First-round CI evidence (2026-07-15): Actions run `29385900378` passed `backend` (2m41s), `frontend` (52s), `ae-cli` (29s), and `deploy-static` (15s) on PR head `7053926`. This checkpoint records that evidence before the replacement run; Step 6 remains unchecked until replacement CI actually passes.
 
 - [ ] **Step 7: Verify final branch and PR state**
 
