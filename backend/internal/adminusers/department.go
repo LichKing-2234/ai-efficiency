@@ -18,6 +18,58 @@ import (
 	"github.com/lib/pq"
 )
 
+type DepartmentOptionRequest struct {
+	Query      string
+	SelectedID string
+	Page       int
+	PageSize   int
+}
+
+type DepartmentOption struct {
+	ExternalID  string `json:"external_id"`
+	Name        string `json:"name"`
+	DisplayPath string `json:"display_path"`
+}
+
+type DepartmentOptionPage struct {
+	Items    []DepartmentOption
+	Selected *DepartmentOption
+	Total    int
+	Page     int
+	PageSize int
+}
+
+type DepartmentChildrenRequest struct {
+	ParentDepartmentID string
+	Page               int
+	PageSize           int
+}
+
+type DepartmentSummary struct {
+	ExternalID                 string
+	ParentExternalID           *string
+	Name                       string
+	Path                       string
+	DisplayPath                string
+	Depth                      int
+	ChildCount                 int
+	HasChildren                bool
+	MemberCount                int
+	MatchedUserCount           int
+	SubtreeMemberCount         int
+	SubtreeMatchedUserCount    int
+	RepresentativeCount        int
+	MatchedRepresentativeCount int
+}
+
+type DepartmentChildrenPage struct {
+	Items              []DepartmentSummary
+	ParentDepartmentID string
+	Total              int
+	Page               int
+	PageSize           int
+}
+
 func effectiveDepartmentCTEs(sourcePlaceholder string) string {
 	return fmt.Sprintf(`WITH RECURSIVE
 source_departments(
@@ -451,8 +503,25 @@ func appendUniqueDepartmentIDs(current []string, values ...string) []string {
 	return current
 }
 
+type departmentPresentation struct {
+	department *Department
+	depth      int
+}
+
 func (s *Service) loadPageDepartments(ctx context.Context, sourceID int, candidateIDs []string) (map[string]*Department, error) {
-	out := make(map[string]*Department, len(candidateIDs))
+	presentations, err := s.loadDepartmentPresentations(ctx, sourceID, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]*Department, len(presentations))
+	for externalID, presentation := range presentations {
+		out[externalID] = presentation.department
+	}
+	return out, nil
+}
+
+func (s *Service) loadDepartmentPresentations(ctx context.Context, sourceID int, candidateIDs []string) (map[string]*departmentPresentation, error) {
+	out := make(map[string]*departmentPresentation, len(candidateIDs))
 	if len(candidateIDs) == 0 {
 		return out, nil
 	}
@@ -474,13 +543,17 @@ func (s *Service) loadPageDepartments(ctx context.Context, sourceID int, candida
 		rowsByID[row.ExternalID] = row
 	}
 	displayPaths := make(map[string]string, len(rows))
+	depths := make(map[string]int, len(rows))
 	for externalID, row := range rowsByID {
 		displayPath := effectiveDisplayPath(externalID, rowsByID, displayPaths, map[string]bool{})
-		out[externalID] = &Department{
-			ExternalID:  externalID,
-			Name:        row.Name,
-			Path:        row.Path,
-			DisplayPath: displayPath,
+		out[externalID] = &departmentPresentation{
+			department: &Department{
+				ExternalID:  externalID,
+				Name:        row.Name,
+				Path:        row.Path,
+				DisplayPath: displayPath,
+			},
+			depth: effectiveDepartmentDepth(externalID, rowsByID, depths, map[string]bool{}),
 		}
 	}
 	return out, nil
@@ -513,6 +586,29 @@ func effectiveDisplayPath(externalID string, rows map[string]pageDepartmentRow, 
 	delete(visiting, externalID)
 	cached[externalID] = name
 	return name
+}
+
+func effectiveDepartmentDepth(externalID string, rows map[string]pageDepartmentRow, cached map[string]int, visiting map[string]bool) int {
+	if depth, ok := cached[externalID]; ok {
+		return depth
+	}
+	row, ok := rows[externalID]
+	if !ok || visiting[externalID] {
+		return 0
+	}
+	visiting[externalID] = true
+	depth := 0
+	if row.EffectiveParentExternalID != nil {
+		parentID := strings.TrimSpace(*row.EffectiveParentExternalID)
+		if parentID != "" {
+			if _, exists := rows[parentID]; exists {
+				depth = effectiveDepartmentDepth(parentID, rows, cached, visiting) + 1
+			}
+		}
+	}
+	delete(visiting, externalID)
+	cached[externalID] = depth
+	return depth
 }
 
 func normalizeEmail(value string) string {
@@ -576,4 +672,543 @@ ancestors(%s, effective_parent_external_id) AS MATERIALIZED (
 		directorydepartment.FieldExternalID,
 		directorydepartment.FieldExternalID,
 	)
+}
+
+type departmentOptionRow struct {
+	ExternalID       string  `json:"external_id"`
+	ParentExternalID *string `json:"parent_external_id"`
+	Name             string  `json:"name"`
+}
+
+type departmentCandidateRow struct {
+	ExternalID       string  `json:"external_id"`
+	ParentExternalID *string `json:"parent_external_id"`
+	Name             string  `json:"name"`
+	Path             string  `json:"path"`
+}
+
+type departmentAggregateRow struct {
+	ExternalID                 string `json:"external_id"`
+	ChildCount                 int    `json:"child_count"`
+	MemberCount                int    `json:"member_count"`
+	MatchedUserCount           int    `json:"matched_user_count"`
+	SubtreeMemberCount         int    `json:"subtree_member_count"`
+	SubtreeMatchedUserCount    int    `json:"subtree_matched_user_count"`
+	RepresentativeCount        int    `json:"representative_count"`
+	MatchedRepresentativeCount int    `json:"matched_representative_count"`
+}
+
+type departmentCountRow struct {
+	Count int `json:"count"`
+}
+
+func (s *Service) DepartmentOptions(ctx context.Context, request DepartmentOptionRequest) (*DepartmentOptionPage, error) {
+	request = normalizeDepartmentOptionRequest(request)
+	page := &DepartmentOptionPage{
+		Items:    []DepartmentOption{},
+		Page:     request.Page,
+		PageSize: request.PageSize,
+	}
+	source, err := s.currentSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !source.found {
+		return page, nil
+	}
+
+	total, err := s.countDepartmentOptions(ctx, source.id, request.Query)
+	if err != nil {
+		return nil, err
+	}
+	page.Total = total
+	var rows []departmentOptionRow
+	if !pageStartsBeyondTotal(total, request.Page, request.PageSize) {
+		offset := (request.Page - 1) * request.PageSize
+		if err := s.client.DirectoryDepartment.Query().
+			Where(departmentOptionsPredicate(source.id, request.Query, true)).
+			Limit(request.PageSize).
+			Offset(offset).
+			Select(
+				directorydepartment.FieldExternalID,
+				directorydepartment.FieldParentExternalID,
+				directorydepartment.FieldName,
+			).
+			Scan(ctx, &rows); err != nil {
+			return nil, fmt.Errorf("list bounded department options: %w", err)
+		}
+	}
+
+	candidateIDs := make([]string, 0, len(rows)+1)
+	for _, row := range rows {
+		candidateIDs = append(candidateIDs, row.ExternalID)
+	}
+	if request.SelectedID != "" {
+		candidateIDs = appendUniqueDepartmentIDs(candidateIDs, request.SelectedID)
+	}
+	presentations, err := s.loadDepartmentPresentations(ctx, source.id, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		presentation := presentations[row.ExternalID]
+		if presentation == nil {
+			continue
+		}
+		page.Items = append(page.Items, DepartmentOption{
+			ExternalID:  row.ExternalID,
+			Name:        row.Name,
+			DisplayPath: presentation.department.DisplayPath,
+		})
+	}
+	if request.SelectedID != "" {
+		if presentation := presentations[request.SelectedID]; presentation != nil {
+			page.Selected = &DepartmentOption{
+				ExternalID:  presentation.department.ExternalID,
+				Name:        presentation.department.Name,
+				DisplayPath: presentation.department.DisplayPath,
+			}
+		}
+	}
+	return page, nil
+}
+
+func (s *Service) DepartmentChildren(ctx context.Context, request DepartmentChildrenRequest) (*DepartmentChildrenPage, error) {
+	request = normalizeDepartmentChildrenRequest(request)
+	page := &DepartmentChildrenPage{
+		Items:              []DepartmentSummary{},
+		ParentDepartmentID: request.ParentDepartmentID,
+		Page:               request.Page,
+		PageSize:           request.PageSize,
+	}
+	source, err := s.currentSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !source.found {
+		return page, nil
+	}
+
+	total, err := s.countDepartmentChildren(ctx, source.id, request.ParentDepartmentID)
+	if err != nil {
+		return nil, err
+	}
+	page.Total = total
+	if pageStartsBeyondTotal(total, request.Page, request.PageSize) {
+		return page, nil
+	}
+
+	offset := (request.Page - 1) * request.PageSize
+	var candidates []departmentCandidateRow
+	if err := s.client.DirectoryDepartment.Query().
+		Where(departmentChildrenPredicate(source.id, request.ParentDepartmentID, true)).
+		Limit(request.PageSize).
+		Offset(offset).
+		Select(
+			directorydepartment.FieldExternalID,
+			directorydepartment.FieldParentExternalID,
+			directorydepartment.FieldName,
+			directorydepartment.FieldPath,
+		).
+		Scan(ctx, &candidates); err != nil {
+		return nil, fmt.Errorf("list bounded department children: %w", err)
+	}
+	if len(candidates) == 0 {
+		return page, nil
+	}
+
+	candidateIDs := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidateIDs = append(candidateIDs, candidate.ExternalID)
+	}
+	presentations, err := s.loadDepartmentPresentations(ctx, source.id, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+	aggregates, err := s.departmentAggregates(ctx, source.id, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range candidates {
+		presentation := presentations[candidate.ExternalID]
+		if presentation == nil {
+			continue
+		}
+		aggregate := aggregates[candidate.ExternalID]
+		page.Items = append(page.Items, DepartmentSummary{
+			ExternalID:                 candidate.ExternalID,
+			ParentExternalID:           candidate.ParentExternalID,
+			Name:                       candidate.Name,
+			Path:                       candidate.Path,
+			DisplayPath:                presentation.department.DisplayPath,
+			Depth:                      presentation.depth,
+			ChildCount:                 aggregate.ChildCount,
+			HasChildren:                aggregate.ChildCount > 0,
+			MemberCount:                aggregate.MemberCount,
+			MatchedUserCount:           aggregate.MatchedUserCount,
+			SubtreeMemberCount:         aggregate.SubtreeMemberCount,
+			SubtreeMatchedUserCount:    aggregate.SubtreeMatchedUserCount,
+			RepresentativeCount:        aggregate.RepresentativeCount,
+			MatchedRepresentativeCount: aggregate.MatchedRepresentativeCount,
+		})
+	}
+	return page, nil
+}
+
+func normalizeDepartmentOptionRequest(request DepartmentOptionRequest) DepartmentOptionRequest {
+	request.Query = strings.TrimSpace(request.Query)
+	request.SelectedID = strings.TrimSpace(request.SelectedID)
+	request.Page, request.PageSize = normalizeDepartmentPage(request.Page, request.PageSize, 20)
+	return request
+}
+
+func normalizeDepartmentChildrenRequest(request DepartmentChildrenRequest) DepartmentChildrenRequest {
+	request.ParentDepartmentID = strings.TrimSpace(request.ParentDepartmentID)
+	request.Page, request.PageSize = normalizeDepartmentPage(request.Page, request.PageSize, 25)
+	return request
+}
+
+func normalizeDepartmentPage(page, pageSize, defaultPageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	switch {
+	case pageSize <= 0:
+		pageSize = defaultPageSize
+	case pageSize > 100:
+		pageSize = 100
+	}
+	return page, pageSize
+}
+
+func pageStartsBeyondTotal(total, page, pageSize int) bool {
+	if total == 0 {
+		return true
+	}
+	pageCount := total / pageSize
+	if total%pageSize != 0 {
+		pageCount++
+	}
+	return page-1 >= pageCount
+}
+
+func (s *Service) countDepartmentOptions(ctx context.Context, sourceID int, query string) (int, error) {
+	var rows []departmentCountRow
+	if err := s.client.DirectoryDepartment.Query().
+		Where(departmentOptionsPredicate(sourceID, query, false)).
+		Select().
+		Aggregate(ent.As(ent.Count(), "count")).
+		Scan(ctx, &rows); err != nil {
+		return 0, fmt.Errorf("count bounded department options: %w", err)
+	}
+	if len(rows) != 1 {
+		return 0, fmt.Errorf("count bounded department options: expected one row, got %d", len(rows))
+	}
+	return rows[0].Count, nil
+}
+
+func (s *Service) countDepartmentChildren(ctx context.Context, sourceID int, parentDepartmentID string) (int, error) {
+	var rows []departmentCountRow
+	if err := s.client.DirectoryDepartment.Query().
+		Where(departmentChildrenPredicate(sourceID, parentDepartmentID, false)).
+		Select().
+		Aggregate(ent.As(ent.Count(), "count")).
+		Scan(ctx, &rows); err != nil {
+		return 0, fmt.Errorf("count bounded department children: %w", err)
+	}
+	if len(rows) != 1 {
+		return 0, fmt.Errorf("count bounded department children: expected one row, got %d", len(rows))
+	}
+	return rows[0].Count, nil
+}
+
+func (s *Service) departmentAggregates(ctx context.Context, sourceID int, candidateIDs []string) (map[string]departmentAggregateRow, error) {
+	rows := make([]departmentAggregateRow, 0, len(candidateIDs))
+	if err := s.client.DirectoryDepartment.Query().
+		Where(departmentSummaryPredicate(sourceID, candidateIDs)).
+		Select(directorydepartment.FieldExternalID).
+		Scan(ctx, &rows); err != nil {
+		return nil, fmt.Errorf("summarize bounded department children: %w", err)
+	}
+	out := make(map[string]departmentAggregateRow, len(rows))
+	for _, row := range rows {
+		out[row.ExternalID] = row
+	}
+	return out, nil
+}
+
+type departmentOptionQueryParameter string
+
+func (parameter departmentOptionQueryParameter) Value() (driver.Value, error) {
+	return string(parameter), nil
+}
+
+func (parameter departmentOptionQueryParameter) FormatParam(placeholder string, _ *sql.StmtInfo) string {
+	return departmentOptionCTEs(placeholder)
+}
+
+func departmentOptionCTEs(queryPlaceholder string) string {
+	return fmt.Sprintf(`, filtered_departments AS MATERIALIZED (
+  SELECT candidate.external_id,
+         candidate.parent_external_id,
+         candidate.name
+  FROM navigation_departments AS candidate
+  WHERE BTRIM(%[1]s::text) = ''
+     OR STRPOS(LOWER(BTRIM(candidate.name)), LOWER(BTRIM(%[1]s::text))) > 0
+     OR STRPOS(LOWER(BTRIM(candidate.external_id)), LOWER(BTRIM(%[1]s::text))) > 0
+)`, queryPlaceholder)
+}
+
+func departmentOptionsPredicate(sourceID int, query string, ordered bool) predicate.DirectoryDepartment {
+	return func(selector *sql.Selector) {
+		options := sql.Table("filtered_departments")
+		selector.Prefix(sql.ExprFunc(func(builder *sql.Builder) {
+			builder.Arg(effectiveDepartmentParameter(sourceID))
+			builder.Arg(departmentOptionQueryParameter(query))
+		}))
+		selector.From(options)
+		selector.Select(
+			options.C(directorydepartment.FieldExternalID),
+			options.C(directorydepartment.FieldParentExternalID),
+			options.C(directorydepartment.FieldName),
+		)
+		if ordered {
+			selector.OrderExpr(sql.Expr("LOWER(BTRIM(" + options.C(directorydepartment.FieldName) + "))"))
+			selector.OrderBy(options.C(directorydepartment.FieldExternalID))
+		}
+	}
+}
+
+type departmentChildParentParameter string
+
+func (parameter departmentChildParentParameter) Value() (driver.Value, error) {
+	if strings.TrimSpace(string(parameter)) == "" {
+		return nil, nil
+	}
+	return strings.TrimSpace(string(parameter)), nil
+}
+
+func (parameter departmentChildParentParameter) FormatParam(placeholder string, _ *sql.StmtInfo) string {
+	return departmentChildCandidateCTEs(placeholder)
+}
+
+func departmentChildCandidateCTEs(parentPlaceholder string) string {
+	return fmt.Sprintf(`, supplied_parent(external_id) AS MATERIALIZED (
+  SELECT parent.external_id
+  FROM source_departments AS parent
+  WHERE %[1]s::text IS NOT NULL
+    AND parent.external_id = %[1]s
+),
+candidate_departments AS MATERIALIZED (
+  SELECT candidate.*
+  FROM navigation_departments AS candidate
+  WHERE (
+      %[1]s::text IS NULL
+      AND candidate.effective_parent_external_id IS NULL
+    )
+    OR (
+      %[1]s::text IS NOT NULL
+      AND EXISTS (SELECT 1 FROM supplied_parent)
+      AND candidate.effective_parent_external_id = (
+        SELECT supplied_parent.external_id FROM supplied_parent
+      )
+    )
+)`, parentPlaceholder)
+}
+
+func departmentChildrenPredicate(sourceID int, parentDepartmentID string, ordered bool) predicate.DirectoryDepartment {
+	return func(selector *sql.Selector) {
+		candidates := sql.Table("candidate_departments")
+		selector.Prefix(sql.ExprFunc(func(builder *sql.Builder) {
+			builder.Arg(effectiveDepartmentParameter(sourceID))
+			builder.Arg(departmentChildParentParameter(parentDepartmentID))
+		}))
+		selector.From(candidates)
+		selector.Select(
+			candidates.C(directorydepartment.FieldExternalID),
+			candidates.C(directorydepartment.FieldParentExternalID),
+			candidates.C(directorydepartment.FieldName),
+			candidates.C(directorydepartment.FieldPath),
+		)
+		if ordered {
+			selector.OrderExpr(sql.Expr("LOWER(BTRIM(" + candidates.C(directorydepartment.FieldName) + "))"))
+			selector.OrderBy(candidates.C(directorydepartment.FieldExternalID))
+		}
+	}
+}
+
+type departmentSummaryRootsParameter []string
+
+func (parameter departmentSummaryRootsParameter) Value() (driver.Value, error) {
+	return pq.Array([]string(parameter)).Value()
+}
+
+func (parameter departmentSummaryRootsParameter) FormatParam(placeholder string, _ *sql.StmtInfo) string {
+	return departmentSummaryCTEs(placeholder)
+}
+
+func departmentSummaryPredicate(sourceID int, candidateIDs []string) predicate.DirectoryDepartment {
+	return func(selector *sql.Selector) {
+		summaries := sql.Table("department_summaries")
+		selector.Prefix(sql.ExprFunc(func(builder *sql.Builder) {
+			builder.Arg(effectiveDepartmentParameter(sourceID))
+			builder.Arg(departmentSummaryRootsParameter(candidateIDs))
+		}))
+		selector.From(summaries)
+		selector.Select(
+			summaries.C(directorydepartment.FieldExternalID),
+			summaries.C("child_count"),
+			summaries.C("member_count"),
+			summaries.C("matched_user_count"),
+			summaries.C("subtree_member_count"),
+			summaries.C("subtree_matched_user_count"),
+			summaries.C("representative_count"),
+			summaries.C("matched_representative_count"),
+		)
+	}
+}
+
+func departmentSummaryCTEs(rootsPlaceholder string) string {
+	sourcePlaceholder := previousPostgresPlaceholder(rootsPlaceholder)
+	return fmt.Sprintf(`, requested_roots(root_external_id) AS MATERIALIZED (
+  SELECT UNNEST(%[1]s::text[])
+),
+descendants(root_external_id, external_id) AS MATERIALIZED (
+  SELECT requested_roots.root_external_id, requested_roots.root_external_id
+  FROM requested_roots
+  UNION
+  SELECT descendants.root_external_id, child.external_id
+  FROM descendants
+  JOIN navigation_departments AS child
+    ON child.effective_parent_external_id = descendants.external_id
+),
+effective_assignments(root_external_id, member_id, matched_user_id, department_external_id) AS MATERIALIZED (
+  SELECT descendants.root_external_id,
+         member.id,
+         member.matched_user_id,
+         membership.department_external_id
+  FROM descendants
+  JOIN directory_member_departments AS membership
+    ON membership.source_id = %[2]s
+   AND membership.department_external_id = descendants.external_id
+  JOIN directory_members AS member
+    ON member.source_id = %[2]s
+   AND member.id = membership.directory_member_id
+  UNION ALL
+  SELECT descendants.root_external_id,
+         member.id,
+         member.matched_user_id,
+         member.department_external_id
+  FROM descendants
+  JOIN directory_members AS member
+    ON member.source_id = %[2]s
+   AND member.department_external_id = descendants.external_id
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM directory_member_departments AS current_membership
+    WHERE current_membership.source_id = %[2]s
+      AND current_membership.directory_member_id = member.id
+  )
+),
+department_representatives(root_external_id, representative_external_id) AS MATERIALIZED (
+  SELECT requested_roots.root_external_id,
+         BTRIM(representative_value.external_id)
+  FROM requested_roots
+  JOIN source_departments AS department
+    ON department.external_id = requested_roots.root_external_id
+  CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(
+    CASE
+      WHEN JSONB_TYPEOF(department.metadata -> 'representative_external_ids') = 'array'
+        THEN department.metadata -> 'representative_external_ids'
+      WHEN department.metadata ? 'representative_external_ids'
+        THEN JSONB_BUILD_ARRAY(department.metadata -> 'representative_external_ids')
+      ELSE '[]'::jsonb
+    END
+  ) AS representative_value(external_id)
+  WHERE BTRIM(representative_value.external_id) <> ''
+),
+leader_representatives(root_external_id, representative_external_id) AS MATERIALIZED (
+  SELECT requested_roots.root_external_id,
+         BTRIM(member.external_id)
+  FROM requested_roots
+  JOIN directory_members AS member
+    ON member.source_id = %[2]s
+  CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(
+    CASE
+      WHEN JSONB_TYPEOF(member.metadata -> 'leader_department_ids') = 'array'
+        THEN member.metadata -> 'leader_department_ids'
+      WHEN member.metadata ? 'leader_department_ids'
+        THEN JSONB_BUILD_ARRAY(member.metadata -> 'leader_department_ids')
+      ELSE '[]'::jsonb
+    END
+  ) AS leader_department(department_external_id)
+  WHERE BTRIM(member.external_id) <> ''
+    AND BTRIM(leader_department.department_external_id) = requested_roots.root_external_id
+),
+representatives(root_external_id, representative_external_id) AS MATERIALIZED (
+  SELECT root_external_id, representative_external_id
+  FROM department_representatives
+  UNION
+  SELECT root_external_id, representative_external_id
+  FROM leader_representatives
+),
+matched_representative_ids(representative_external_id) AS MATERIALIZED (
+  SELECT DISTINCT BTRIM(member.external_id)
+  FROM directory_members AS member
+  WHERE member.source_id = %[2]s
+    AND BTRIM(member.external_id) <> ''
+    AND member.matched_user_id > 0
+),
+representative_counts(root_external_id, representative_count, matched_representative_count) AS MATERIALIZED (
+  SELECT requested_roots.root_external_id,
+         COUNT(representatives.representative_external_id),
+         COUNT(matched_representative_ids.representative_external_id)
+  FROM requested_roots
+  LEFT JOIN representatives
+    ON representatives.root_external_id = requested_roots.root_external_id
+  LEFT JOIN matched_representative_ids
+    ON matched_representative_ids.representative_external_id = representatives.representative_external_id
+  GROUP BY requested_roots.root_external_id
+),
+child_counts(root_external_id, child_count) AS MATERIALIZED (
+  SELECT requested_roots.root_external_id, COUNT(child.external_id)
+  FROM requested_roots
+  LEFT JOIN navigation_departments AS child
+    ON child.effective_parent_external_id = requested_roots.root_external_id
+  GROUP BY requested_roots.root_external_id
+),
+department_summaries(
+  external_id,
+  child_count,
+  member_count,
+  matched_user_count,
+  subtree_member_count,
+  subtree_matched_user_count,
+  representative_count,
+  matched_representative_count
+) AS MATERIALIZED (
+  SELECT requested_roots.root_external_id,
+         child_counts.child_count,
+         COUNT(DISTINCT effective_assignments.member_id)
+           FILTER (WHERE effective_assignments.department_external_id = requested_roots.root_external_id),
+         COUNT(DISTINCT effective_assignments.matched_user_id)
+           FILTER (WHERE effective_assignments.department_external_id = requested_roots.root_external_id
+                     AND effective_assignments.matched_user_id > 0),
+         COUNT(DISTINCT effective_assignments.member_id),
+         COUNT(DISTINCT effective_assignments.matched_user_id)
+           FILTER (WHERE effective_assignments.matched_user_id > 0),
+         representative_counts.representative_count,
+         representative_counts.matched_representative_count
+  FROM requested_roots
+  LEFT JOIN effective_assignments
+    ON effective_assignments.root_external_id = requested_roots.root_external_id
+  JOIN child_counts
+    ON child_counts.root_external_id = requested_roots.root_external_id
+  JOIN representative_counts
+    ON representative_counts.root_external_id = requested_roots.root_external_id
+  GROUP BY requested_roots.root_external_id,
+           child_counts.child_count,
+           representative_counts.representative_count,
+           representative_counts.matched_representative_count
+)`, rootsPlaceholder, sourcePlaceholder)
 }
