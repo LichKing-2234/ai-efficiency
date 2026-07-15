@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review is complete with no findings. Task 1 is complete at implementation commit `7659d82`; Task 2 is next, while later task review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
+**Status:** Plan review is complete with no findings. Task 1 is complete at implementation commit `7659d82`; Task 2 implementation and verification are complete through Step 5 and the Task 2 commit checkpoint is next, while later task review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -157,7 +157,7 @@
 - Consumes: Task 1 `evaluateLoadedPRFreshness`, the repository ID already known by the list route, and loaded page `[]*ent.PrRecord` values containing ID and `usage_refreshed_at`.
 - Produces: `Service.EvaluatePRFreshnessPage(context.Context, int, []*ent.PrRecord) (map[int]*PRFreshness, error)`, where the integer is `repoConfigID`; existing `EvaluatePRFreshness(context.Context, int)` loads its selected PR plus repo edge and delegates through the same method.
 
-- [ ] **Step 1: Add a recording PostgreSQL driver and bounded scale fixture**
+- [x] **Step 1: Add a recording PostgreSQL driver and bounded scale fixture**
 
   In `freshness_bulk_test.go`, add a test-only driver that embeds `dialect.Driver`, records copied SQL/arguments under a mutex, and delegates unchanged. Open it against the per-test schema DSN from `testdb.OpenWithDSN` via `entsql.OpenDB(dialect.Postgres, db)` and `ent.NewClient(ent.Driver(recorder))`.
 
@@ -176,7 +176,7 @@
 
   Use fixed UTC timestamps, Ent bulk creates in bounded batches, and generated synthetic SHAs/dedupe keys. Do not use a real SCM or Relay service.
 
-- [ ] **Step 2: Write failing page parity, scale, and query-count tests**
+- [x] **Step 2: Write failing page parity, scale, and query-count tests**
 
   Add:
 
@@ -202,7 +202,7 @@
 
   For cancellation, configure the recording driver to block the snapshot fact query until `ctx.Done()`. Start the page evaluation, wait until that query is in flight, cancel the context, and assert `errors.Is(err, context.Canceled)`. Assert the driver returns from the blocked call, records no pending-event or checkpoint-event query afterward, and has no in-flight test goroutine when the method returns.
 
-- [ ] **Step 3: Run Task 2 tests and record RED**
+- [x] **Step 3: Run Task 2 tests and record RED**
 
   Run:
 
@@ -212,7 +212,9 @@
 
   Expected: FAIL because `EvaluatePRFreshnessPage` does not exist and the current single evaluator issues per-PR/per-checkpoint queries.
 
-- [ ] **Step 4: Implement the three-query page fact loader**
+  RED evidence (2026-07-15): the command exited 1 with only the expected compile errors that `Service.EvaluatePRFreshnessPage` was undefined at each new page-contract call site.
+
+- [x] **Step 4: Implement the three-query page fact loader**
 
   Add:
 
@@ -232,7 +234,7 @@
 
   Change `EvaluatePRFreshness(ctx, prID)` to load the selected PR with `WithRepoConfig`, resolve that edge once, and delegate to `EvaluatePRFreshnessPage(ctx, repo.ID, []*ent.PrRecord{pr})`. Preserve selected-detail `CommitFreshness` and all existing errors at the public method boundary. The selected-detail repo-edge load is outside the page query-count assertion.
 
-- [ ] **Step 5: Verify repeated scale GREEN and single-detail compatibility**
+- [x] **Step 5: Verify repeated scale GREEN and single-detail compatibility**
 
   Run separately:
 
@@ -244,6 +246,8 @@
   ```
 
   Expected: PASS twice with identical visible results and exactly the same three fact-query roles for the 5/5/5 and 100/2,000/2,000 fixtures. Record PR, snapshot, checkpoint, event, and query totals plus skipped-empty-query and cancellation behavior in the plan; do not report elapsed time as a budget.
+
+  GREEN evidence (2026-07-15): the repeated page command passed both runs with `5 PRs / 5 snapshots / 5 checkpoints / 5 events / 3 fact queries` and `100 PRs / 2,000 snapshots / 2,000 checkpoints / 2,000 events / 3 fact queries`. Both runs recorded exactly `snapshots`, `pending_events`, and `checkpoint_facts`; empty input returned a non-nil empty map with zero SQL, and cancellation returned `context.Canceled` after the blocked snapshot query with no later fact query and zero driver calls left in flight. The focused single-detail command, full `internal/prusage` package command, and `git diff --check` also passed.
 
 - [ ] **Step 6: Commit Task 2 and record the checkpoint**
 
