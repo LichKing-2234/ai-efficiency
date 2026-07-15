@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, final reviews, local repository verification, draft PR creation, and CI round one are complete. CI rounds two and three remain pending.
+**Status:** Implementation, reviews, repository verification, and CI rounds one and two are complete. Final-ledger round three remains pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -1426,9 +1426,11 @@ git push
 gh pr view --json headRefOid,statusCheckRollup
 ```
 
-- [ ] **Step 7: Verify round two, then create the final-ledger head for round three**
+- [x] **Step 7: Verify round two, then create the final-ledger head for round three**
 
 Wait for all four jobs on `round2_oid`, verify the live PR head equals `round2_oid`, and only then record round-two OID/run IDs/conclusions. Set the top status to this exact truthful boundary: implementation, reviews, repository verification, and CI rounds one/two complete; final-ledger round three pending. Do not claim complete and do not mark round three green.
+
+**Task 6 Step 7 round-two evidence (2026-07-15):** CI run `29421999214` completed on exact `round2_oid` `519bfb42b5e47ffb239966800faa5ebecf951ea3`: `backend` job `87374553861` SUCCESS, `frontend` job `87374554027` SUCCESS, `ae-cli` job `87374553970` SUCCESS, and `deploy-static` job `87374553890` SUCCESS. After all four completed, local HEAD, `origin/perf/admin-users-134`, and the live PR head all matched `round2_oid`; PR #147 remained OPEN/draft against `docs/performance-contracts-116` with MERGEABLE/CLEAN state. The following plan-only commit creates `round3_oid`; final-ledger round three is pending and is not pre-recorded as green.
 
 Commit the final ledger and push it to create `round3_oid`:
 
