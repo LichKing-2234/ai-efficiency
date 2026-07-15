@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 and Task 5 Steps 1-4 are complete and verified. Final independent SPEC and standards reviews both pass with zero findings; Draft PR delivery and CI are current. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 and Task 5 Steps 1-4 are complete and verified. Draft PR #143 is open against `docs/performance-contracts-116`; first-round CI passed and replacement CI is current.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -515,3 +515,5 @@ The complete `5f6c58e..15d6f6d` package then received final independent gates: `
   Push `perf/runtime-118` and create a draft PR targeting `docs/performance-contracts-116`. Link #118 and PR #138, list exact defaults, readiness semantics, telemetry privacy/cardinality, tests, and review results. Confirm head/base/draft/merge state plus backend/frontend/ae-cli/deploy-static checks.
 
   Only after the first CI run passes, check Step 5, set the top status to complete, commit `docs(plan): record bounded runtime delivery`, push it, and confirm the replacement CI run also passes.
+
+  First-round CI evidence (2026-07-15): Actions run `29389013676` passed `backend` (2m51s), `frontend` (51s), `ae-cli` (25s), and `deploy-static` (12s) on PR head `be6b67b`. This checkpoint records earned evidence only; Step 5 remains unchecked until replacement CI and final PR-state verification succeed.
