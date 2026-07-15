@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-3 are complete and verified. Task 4 Steps 1-5 are complete and verified; the Task 4 checkpoint remains. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 are complete and verified. Task 5 is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -390,7 +390,7 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   Evidence (2026-07-15): telemetry/middleware/Relay passed in 0.168s, 0.421s, and 0.292s; the focused handler/server router command passed in 1.562s and 0.327s; `git diff --check` passed. The production client wiring test also passed in 0.323s and confirmed only the shared Relay pool is wrapped.
 
-- [ ] **Step 6: Commit Task 4 and record the checkpoint**
+- [x] **Step 6: Commit Task 4 and record the checkpoint**
 
   Commit implementation plus checked Steps 1-5:
 
@@ -399,6 +399,8 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
   After the commit succeeds, check Step 6 and commit:
 
   `docs(plan): record request telemetry task 4`
+
+  Checkpoint (2026-07-15): implementation commit `a89e4f6c4ee539eab6c59ccf5995eea49d65eb91`.
 
 ---
 
