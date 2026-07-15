@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
@@ -80,27 +81,33 @@ func TestWorkflowSchemasRoundTrip(t *testing.T) {
 
 func TestQuotaResetRequestEventsAreAppendOnly(t *testing.T) {
 	ctx := context.Background()
+	originalCreatedAt := time.Date(2026, time.July, 15, 1, 2, 3, 0, time.UTC)
+	tamperedCreatedAt := originalCreatedAt.Add(time.Hour)
 
-	newEvent := func(t *testing.T) (*ent.Client, int) {
+	newEvent := func(t *testing.T) (*ent.Client, *ent.QuotaResetRequestEvent) {
 		t.Helper()
 		client := testdb.Open(t)
 		event := client.QuotaResetRequestEvent.Create().
 			SetRequestID(101).
+			SetActorUserID(202).
 			SetEventType(quotaresetrequestevent.EventTypeCreated).
+			SetMetadata(map[string]any{"source": "original"}).
 			SetErrorMessage("original event").
+			SetCreatedAt(originalCreatedAt).
 			SaveX(ctx)
-		return client, event.ID
+		return client, event
 	}
 
 	tests := []struct {
-		name string
-		run  func(*ent.Client, int) error
+		name    string
+		relabel bool
+		run     func(*ent.Client, int) error
 	}{
 		{
-			name: "direct update",
+			name: "direct update-one",
 			run: func(client *ent.Client, id int) error {
 				update := client.QuotaResetRequestEvent.UpdateOneID(id)
-				if err := update.Mutation().SetField("error_message", "tampered"); err != nil {
+				if err := update.Mutation().SetField(quotaresetrequestevent.FieldCreatedAt, tamperedCreatedAt); err != nil {
 					return err
 				}
 				_, err := update.Save(ctx)
@@ -108,37 +115,95 @@ func TestQuotaResetRequestEventsAreAppendOnly(t *testing.T) {
 			},
 		},
 		{
-			name: "relabeled update",
+			name:    "relabeled update-one",
+			relabel: true,
 			run: func(client *ent.Client, id int) error {
 				update := client.QuotaResetRequestEvent.UpdateOneID(id)
-				if err := update.Mutation().SetField("error_message", "tampered"); err != nil {
+				if err := update.Mutation().SetField(quotaresetrequestevent.FieldCreatedAt, tamperedCreatedAt); err != nil {
 					return err
 				}
-				update.Mutation().SetOp(ent.OpCreate)
 				_, err := update.Save(ctx)
 				return err
 			},
 		},
 		{
-			name: "direct delete",
+			name: "direct bulk update",
+			run: func(client *ent.Client, id int) error {
+				update := client.QuotaResetRequestEvent.Update().Where(quotaresetrequestevent.IDEQ(id))
+				if err := update.Mutation().SetField(quotaresetrequestevent.FieldCreatedAt, tamperedCreatedAt); err != nil {
+					return err
+				}
+				_, err := update.Save(ctx)
+				return err
+			},
+		},
+		{
+			name:    "relabeled bulk update",
+			relabel: true,
+			run: func(client *ent.Client, id int) error {
+				update := client.QuotaResetRequestEvent.Update().Where(quotaresetrequestevent.IDEQ(id))
+				if err := update.Mutation().SetField(quotaresetrequestevent.FieldCreatedAt, tamperedCreatedAt); err != nil {
+					return err
+				}
+				_, err := update.Save(ctx)
+				return err
+			},
+		},
+		{
+			name: "direct delete-one",
 			run: func(client *ent.Client, id int) error {
 				return client.QuotaResetRequestEvent.DeleteOneID(id).Exec(ctx)
+			},
+		},
+		{
+			name:    "relabeled delete-one",
+			relabel: true,
+			run: func(client *ent.Client, id int) error {
+				return client.QuotaResetRequestEvent.DeleteOneID(id).Exec(ctx)
+			},
+		},
+		{
+			name: "direct bulk delete",
+			run: func(client *ent.Client, id int) error {
+				_, err := client.QuotaResetRequestEvent.Delete().Where(quotaresetrequestevent.IDEQ(id)).Exec(ctx)
+				return err
+			},
+		},
+		{
+			name:    "relabeled bulk delete",
+			relabel: true,
+			run: func(client *ent.Client, id int) error {
+				_, err := client.QuotaResetRequestEvent.Delete().Where(quotaresetrequestevent.IDEQ(id)).Exec(ctx)
+				return err
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, id := newEvent(t)
-			if err := tt.run(client, id); err == nil {
+			client, original := newEvent(t)
+			if tt.relabel {
+				client.QuotaResetRequestEvent.Use(func(next ent.Mutator) ent.Mutator {
+					return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+						mutation.(interface{ SetOp(ent.Op) }).SetOp(ent.OpCreate)
+						return next.Mutate(ctx, mutation)
+					})
+				})
+			}
+			if err := tt.run(client, original.ID); err == nil {
 				t.Fatal("append-only mutation succeeded")
 			}
-			stored, err := client.QuotaResetRequestEvent.Get(ctx, id)
+			stored, err := client.QuotaResetRequestEvent.Get(ctx, original.ID)
 			if err != nil {
 				t.Fatalf("stored event after rejected mutation: %v", err)
 			}
-			if stored.ErrorMessage != "original event" {
-				t.Fatalf("stored event error = %q, want original event", stored.ErrorMessage)
+			if stored.RequestID != original.RequestID ||
+				!reflect.DeepEqual(stored.ActorUserID, original.ActorUserID) ||
+				stored.EventType != original.EventType ||
+				!reflect.DeepEqual(stored.Metadata, original.Metadata) ||
+				stored.ErrorMessage != original.ErrorMessage ||
+				!stored.CreatedAt.Equal(original.CreatedAt) {
+				t.Fatalf("stored event changed: got %#v, want %#v", stored, original)
 			}
 		})
 	}

@@ -17,7 +17,12 @@ const (
 	weComTeamMaxBytes            = 640
 	weComGroupMaxBytes           = 512
 	weComNodeMaxBytes            = 512
-	weComOptionalMaxBytes        = 768
+	weComReasonMaxBytes          = 768
+	weComDecisionMaxBytes        = 768
+	weComDecisionActorMaxBytes   = 256
+	weComDecisionPrefix          = "> 上一审批："
+	weComDecisionSeparator       = "："
+	weComDecisionCommentMaxBytes = weComDecisionMaxBytes - len(weComDecisionPrefix) - len(weComDecisionSeparator) - weComDecisionActorMaxBytes
 	weComUnavailableMaxBytes     = 192
 )
 
@@ -76,15 +81,10 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 	}
 	requiredTail = append(requiredTail, fmt.Sprintf("> 审批进度：%d/%d", completedNodes, totalNodes))
 	if reason := escapeWeComUserText(ctx.Reason); reason != "" {
-		requiredTail = append(requiredTail, truncateUTF8("> 申请原因："+reason, weComOptionalMaxBytes))
+		requiredTail = append(requiredTail, truncateUTF8("> 申请原因："+reason, weComReasonMaxBytes))
 	}
 	if len(ctx.ApprovalHistory) > 0 {
-		latest := ctx.ApprovalHistory[len(ctx.ApprovalHistory)-1]
-		decision := "> 上一审批：" + escapeWeComUserText(latest.ActorDisplayName)
-		if comment := escapeWeComUserText(latest.Comment); comment != "" {
-			decision += "：" + comment
-		}
-		requiredTail = append(requiredTail, truncateUTF8(decision, weComOptionalMaxBytes))
+		requiredTail = append(requiredTail, boundedWeComDecisionLine(ctx.ApprovalHistory[len(ctx.ApprovalHistory)-1]))
 	}
 	actionLine, err := weComActionLink(ctx.ActionURL)
 	if err != nil {
@@ -139,6 +139,15 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 		RecipientCount:          mentioned,
 		MissingRecipientUserIDs: missing,
 	}, nil
+}
+
+func boundedWeComDecisionLine(decision NotificationDecision) string {
+	actor := truncateUTF8(escapeWeComUserText(decision.ActorDisplayName), weComDecisionActorMaxBytes)
+	line := weComDecisionPrefix + actor
+	if comment := escapeWeComUserText(decision.Comment); comment != "" {
+		line += weComDecisionSeparator + truncateUTF8(comment, weComDecisionCommentMaxBytes)
+	}
+	return line
 }
 
 func weComRecipientLabel(event NotificationEvent) string {

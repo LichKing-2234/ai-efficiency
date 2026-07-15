@@ -21,6 +21,7 @@ const { showToast } = useToast()
 const auth = useAuthStore()
 const workItems = useWorkItemsStore()
 const quotaReset = useQuotaResetStore()
+quotaReset.initialize()
 const {
   activeQueue,
   activeFilter,

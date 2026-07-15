@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -25,20 +24,6 @@ type QuotaResetRequestEventUpdate struct {
 // Where appends a list predicates to the QuotaResetRequestEventUpdate builder.
 func (qrreu *QuotaResetRequestEventUpdate) Where(ps ...predicate.QuotaResetRequestEvent) *QuotaResetRequestEventUpdate {
 	qrreu.mutation.Where(ps...)
-	return qrreu
-}
-
-// SetCreatedAt sets the "created_at" field.
-func (qrreu *QuotaResetRequestEventUpdate) SetCreatedAt(t time.Time) *QuotaResetRequestEventUpdate {
-	qrreu.mutation.SetCreatedAt(t)
-	return qrreu
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (qrreu *QuotaResetRequestEventUpdate) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestEventUpdate {
-	if t != nil {
-		qrreu.SetCreatedAt(*t)
-	}
 	return qrreu
 }
 
@@ -89,9 +74,6 @@ func (qrreu *QuotaResetRequestEventUpdate) sqlSave(ctx context.Context) (n int, 
 	if qrreu.mutation.MetadataCleared() {
 		_spec.ClearField(quotaresetrequestevent.FieldMetadata, field.TypeJSON)
 	}
-	if value, ok := qrreu.mutation.CreatedAt(); ok {
-		_spec.SetField(quotaresetrequestevent.FieldCreatedAt, field.TypeTime, value)
-	}
 	if n, err = sqlgraph.UpdateNodes(ctx, qrreu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{quotaresetrequestevent.Label}
@@ -110,20 +92,6 @@ type QuotaResetRequestEventUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *QuotaResetRequestEventMutation
-}
-
-// SetCreatedAt sets the "created_at" field.
-func (qrreuo *QuotaResetRequestEventUpdateOne) SetCreatedAt(t time.Time) *QuotaResetRequestEventUpdateOne {
-	qrreuo.mutation.SetCreatedAt(t)
-	return qrreuo
-}
-
-// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
-func (qrreuo *QuotaResetRequestEventUpdateOne) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestEventUpdateOne {
-	if t != nil {
-		qrreuo.SetCreatedAt(*t)
-	}
-	return qrreuo
 }
 
 // Mutation returns the QuotaResetRequestEventMutation object of the builder.
@@ -202,9 +170,6 @@ func (qrreuo *QuotaResetRequestEventUpdateOne) sqlSave(ctx context.Context) (_no
 	}
 	if qrreuo.mutation.MetadataCleared() {
 		_spec.ClearField(quotaresetrequestevent.FieldMetadata, field.TypeJSON)
-	}
-	if value, ok := qrreuo.mutation.CreatedAt(); ok {
-		_spec.SetField(quotaresetrequestevent.FieldCreatedAt, field.TypeTime, value)
 	}
 	_node = &QuotaResetRequestEvent{config: qrreuo.config}
 	_spec.Assign = _node.assignValues

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { createRouter, createMemoryHistory, RouterView } from 'vue-router'
 import QuotaResetView from '@/views/QuotaResetView.vue'
 import { resetToastsForTest, useToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
@@ -165,6 +165,10 @@ function createTestRouter() {
       { path: '/usage/quota-reset', component: QuotaResetView },
       { path: '/usage', component: { template: '<div>Usage</div>' } },
       { path: '/usage/team', component: { template: '<div>Team</div>' } },
+      { path: '/user', component: { template: '<div>User</div>' } },
+      { path: '/work-items', component: { template: '<div>Work Items</div>' } },
+      { path: '/events', component: { template: '<div>Events</div>' } },
+      { path: '/repos', component: { template: '<div>Repos</div>' } },
     ],
   })
 }
@@ -874,5 +878,69 @@ describe('QuotaResetView', () => {
     expect(api.rejectQuotaResetRequest).toHaveBeenCalledWith(2, {
       decision_reason: 'Legacy rejection still requires context.',
     })
+  })
+
+  it('reinitializes the same Pinia store before same-user route re-entry renders', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const auth = useAuthStore()
+    auth.token = 'same-user-token'
+    auth.user = { id: 20, username: 'user', email: 'user@example.com', role: 'user', auth_source: 'ldap' }
+    const secondMine = deferred<any>()
+    const secondApprovals = deferred<any>()
+    let mineCalls = 0
+    let approvalCoreCalls = 0
+    let historyCalls = 0
+    const staleHistory = { ...workflowRequest, id: 401, group_name: 'Stale Route History' }
+    const freshHistory = { ...workflowRequest, id: 402, group_name: 'Fresh Route History' }
+    api.listMyQuotaResetRequests.mockImplementation(() => {
+      mineCalls += 1
+      return mineCalls === 1
+        ? Promise.resolve({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 1 } } })
+        : secondMine.promise
+    })
+    api.listQuotaResetApprovals.mockImplementation((params?: { scope?: string }) => {
+      if (params?.scope === 'history') {
+        historyCalls += 1
+        return Promise.resolve({
+          data: { data: { items: [historyCalls === 1 ? staleHistory : freshHistory], page: 1, page_size: 20, total: 1 } },
+        })
+      }
+      approvalCoreCalls += 1
+      return approvalCoreCalls === 1
+        ? Promise.resolve({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
+        : secondApprovals.promise
+    })
+    const router = createTestRouter()
+    await router.push('/usage/quota-reset')
+    await router.isReady()
+    const wrapper = mount(RouterView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-filter-processed"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Stale Route History')
+
+    await router.push('/usage')
+    await flushPromises()
+    await router.push('/usage/quota-reset')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="quota-reset-tab-mine"]').classes()).toContain('bg-white')
+    expect(wrapper.get('[data-testid="quota-reset-filter-all"]').classes()).toContain('bg-white')
+    expect(wrapper.text()).not.toContain('Stale Route History')
+
+    secondMine.resolve({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 1 } } })
+    secondApprovals.resolve({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-filter-processed"]').trigger('click')
+    await flushPromises()
+
+    expect(historyCalls).toBe(2)
+    expect(wrapper.text()).toContain('Fresh Route History')
+    wrapper.unmount()
   })
 })

@@ -361,6 +361,10 @@ func TestWeComAdapterKeepsRequiredFieldsWithinByteLimit(t *testing.T) {
 	ctx.GroupName = "Group Alpha-" + strings.Repeat("组", 3000)
 	ctx.CurrentNode.Label = "Department Beta-" + strings.Repeat("节", 3000)
 	ctx.Reason = "Reason-" + strings.Repeat("理", 5000) + "-reason-tail"
+	ctx.ApprovalHistory = []NotificationDecision{{
+		ActorDisplayName: "Decision Actor-" + strings.Repeat("审", 3000) + "-actor-tail",
+		Comment:          "Decision Comment-" + strings.Repeat("评", 3000) + "-comment-tail",
+	}}
 	ctx.Recipients = make([]NotificationPerson, 0, 40)
 	for i := 0; i < 40; i++ {
 		ctx.Recipients = append(ctx.Recipients, NotificationPerson{
@@ -388,8 +392,8 @@ func TestWeComAdapterKeepsRequiredFieldsWithinByteLimit(t *testing.T) {
 		"订阅组：Group Alpha-",
 		"当前节点：2/3 · Department Beta-",
 		"申请原因：Reason-",
-		"上一审批：Dana",
-		"Approved the initial review.",
+		"上一审批：Decision Actor-",
+		"Decision Comment-",
 		"[进入待处理](https://ai-efficiency.example.com/usage/quota-reset?request_id=123)",
 	} {
 		if !strings.Contains(content, required) {

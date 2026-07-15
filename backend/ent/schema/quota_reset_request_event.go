@@ -40,21 +40,33 @@ func (QuotaResetRequestEvent) Fields() []ent.Field {
 		).Immutable(),
 		field.JSON("metadata", map[string]any{}).Optional().Immutable(),
 		field.String("error_message").Default("").Immutable(),
-		field.Time("created_at").Default(timeNow),
+		field.Time("created_at").Default(timeNow).Immutable(),
 	}
+}
+
+func quotaResetRequestEventCreateShape(mutation ent.Mutation) bool {
+	if !mutation.Op().Is(ent.OpCreate) {
+		return false
+	}
+	if idMutation, ok := mutation.(interface{ ID() (int, bool) }); ok {
+		if _, exists := idMutation.ID(); exists {
+			return false
+		}
+	}
+	for _, fieldName := range [...]string{"request_id", "event_type", "error_message", "created_at"} {
+		if _, exists := mutation.Field(fieldName); !exists {
+			return false
+		}
+	}
+	return true
 }
 
 func (QuotaResetRequestEvent) Hooks() []ent.Hook {
 	return []ent.Hook{
 		func(next ent.Mutator) ent.Mutator {
 			return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
-				if mutation.Op().Is(ent.OpUpdate | ent.OpUpdateOne | ent.OpDelete | ent.OpDeleteOne) {
+				if !quotaResetRequestEventCreateShape(mutation) {
 					return nil, errQuotaResetRequestEventAppendOnly
-				}
-				if idMutation, ok := mutation.(interface{ ID() (int, bool) }); ok {
-					if _, exists := idMutation.ID(); exists {
-						return nil, errQuotaResetRequestEventAppendOnly
-					}
 				}
 				return next.Mutate(ctx, mutation)
 			})
