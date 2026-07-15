@@ -247,6 +247,34 @@ describe('QuotaResetView', () => {
     expect(wrapper.text()).toContain('Approved first step')
   })
 
+  it('loads processed approval history beyond the first API page', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      ...approvalRequest,
+      id: 1000 + index,
+    }))
+    const archivedRequest = {
+      ...approvalRequest,
+      id: 1100,
+      group_name: 'Archived Group',
+      status: 'approved_reset_succeeded',
+    }
+    api.listQuotaResetApprovals.mockImplementation((params?: { page?: number }) => Promise.resolve({
+      data: {
+        data: params?.page === 2
+          ? { items: [archivedRequest], page: 2, page_size: 100, total: 101 }
+          : { items: firstPage, page: 1, page_size: 100, total: 101 },
+      },
+    }))
+
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-filter-processed"]').trigger('click')
+
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledWith({ page: 2, page_size: 100 })
+    expect(wrapper.text()).toContain('Archived Group')
+  })
+
   it('uses historical totals for my requests and actionable counts for approval queues', async () => {
     const api = await import('@/api/quotaReset') as any
     api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 4 } } })

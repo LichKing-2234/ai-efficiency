@@ -16,6 +16,7 @@ import {
   listQuotaResetApprovals,
   rejectQuotaResetRequest,
   retryQuotaResetRequest,
+  type QuotaResetListParams,
 } from '@/api/quotaReset'
 import { useToast } from '@/composables/useToast'
 import { useI18n } from '@/i18n'
@@ -44,8 +45,11 @@ const decisionRequest = ref<QuotaResetRequestSummary | null>(null)
 const decisionAction = ref<'approve' | 'reject'>('approve')
 const loadError = ref('')
 const filters: FilterMode[] = ['all', 'pending', 'processed', 'failed']
+const queuePageSize = 100
 const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : workItems.counts.quota_reset_approval_count)
 const adminTotal = computed(() => workItems.loading || workItems.error || !auth.isAdmin ? 0 : workItems.counts.quota_reset_admin_count)
+
+type QueuePageLoader = (params: QuotaResetListParams) => ReturnType<typeof listMyQuotaResetRequests>
 
 const queueItems = computed(() => {
   if (activeQueue.value === 'approvals') return approvalRequests.value
@@ -55,22 +59,39 @@ const queueItems = computed(() => {
 
 const visibleItems = computed(() => queueItems.value.filter((item) => filterMatches(item.status, activeFilter.value)))
 
+async function loadAllQueuePages(loader: QueuePageLoader) {
+  const items: QuotaResetRequestSummary[] = []
+  let page = 1
+  let total = 0
+  let pageItemCount = 0
+  do {
+    const response = await loader({ page, page_size: queuePageSize })
+    const data = response.data.data
+    const pageItems = data?.items ?? []
+    items.push(...pageItems)
+    total = data?.total ?? items.length
+    pageItemCount = pageItems.length
+    page += 1
+  } while (items.length < total && pageItemCount === queuePageSize)
+  return { items, total }
+}
+
 async function loadQueues(forceCounts = false) {
   loading.value = true
   loadError.value = ''
   void workItems.loadCounts({ force: forceCounts })
   try {
     const requests = [
-      listMyQuotaResetRequests(),
-      listQuotaResetApprovals(),
+      loadAllQueuePages(listMyQuotaResetRequests),
+      loadAllQueuePages(listQuotaResetApprovals),
     ] as const
     const [mine, approvals] = await Promise.all(requests)
-    myRequests.value = mine.data.data?.items ?? []
-    approvalRequests.value = approvals.data.data?.items ?? []
-    myTotal.value = mine.data.data?.total ?? myRequests.value.length
+    myRequests.value = mine.items
+    approvalRequests.value = approvals.items
+    myTotal.value = mine.total
     if (auth.isAdmin) {
-      const admin = await listAdminQuotaResetRequests()
-      adminRequests.value = admin.data.data?.items ?? []
+      const admin = await loadAllQueuePages(listAdminQuotaResetRequests)
+      adminRequests.value = admin.items
     } else {
       adminRequests.value = []
     }

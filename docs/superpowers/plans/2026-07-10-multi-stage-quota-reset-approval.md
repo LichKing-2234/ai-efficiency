@@ -300,6 +300,25 @@ types. `QuotaResetView` remains the network-state owner.
   Evidence: focused quota reset handler tests passed after the final hardening
   changes; the full handler package remains covered by Task 6's backend run.
 
+- [x] **Step 7: Keep processed history readable beyond the first API page**
+
+  A frontend test first proved that the 101st processed approval was hidden.
+  `QuotaResetView` now reuses the existing `page` / `page_size` contract in
+  100-row chunks for each queue before applying local status filters. No API,
+  component, route, or store was added.
+
+  ```bash
+  cd frontend
+  npm test -- src/__tests__/quota-reset-view.test.ts
+  npm test
+  npm run build
+  npm run test:e2e:role
+  ```
+
+  Evidence: the focused view tests passed 11/11, Vitest passed 39 files / 435
+  tests, the production build passed, and role E2E passed 16/16 with Vite
+  running on `127.0.0.1:5173`.
+
 ---
 
 ### Task 6: Documentation, Full Verification, And PR Update
@@ -336,7 +355,7 @@ types. `QuotaResetView` remains the network-state owner.
 
   Expected: unit tests, production build, and all role E2E scenarios pass.
 
-  Evidence: Vitest passed 39 files / 434 tests, the production build completed,
+  Evidence: Vitest passed 39 files / 435 tests, the production build completed,
   and role E2E passed 16/16.
 
 - [x] **Step 4: Browser-test one complete built workflow**
@@ -365,7 +384,7 @@ types. `QuotaResetView` remains the network-state owner.
   Evidence: `git diff --check` passed. The branch changes 62 files: four
   hand-written Ent schemas, 26 generated Ent files, 17 backend files, 12
   frontend files, and three documents. Hand-written production code is
-  `+2323/-193` across 23 files. The scan found no generic workflow tables/store,
+  `+2351/-200` across 23 files. The scan found no generic workflow tables/store,
   real identity data, or committed secret.
 
 - [x] **Step 6: Commit review fixes and documentation**
