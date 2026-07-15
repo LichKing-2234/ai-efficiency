@@ -79,10 +79,29 @@ function queryString(key: string) {
 
 function queryNumber(key: string, fallback: number) {
   const value = Number(queryString(key))
+  if (!Number.isSafeInteger(value)) return fallback
   if (key === 'limit') {
-    return Number.isFinite(value) && value > 0 ? Math.min(value, maxEventPageSize) : fallback
+    return value > 0 ? Math.min(value, maxEventPageSize) : fallback
   }
-  return Number.isFinite(value) && value >= 0 ? value : fallback
+  return value >= 0 ? value : fallback
+}
+
+function normalizeRestoredPaginationQuery() {
+  const next = { ...route.query }
+  let changed = false
+  const normalize = (key: 'limit' | 'offset', value: number, fallback: number) => {
+    const raw = route.query[key]
+    if (raw == null) return
+    const normalized = value === fallback ? undefined : String(value)
+    if (typeof raw === 'string' && raw === normalized) return
+    changed = true
+    if (normalized == null) delete next[key]
+    else next[key] = normalized
+  }
+
+  normalize('limit', filters.limit, 20)
+  normalize('offset', filters.offset, 0)
+  if (changed) void router.replace({ query: next })
 }
 
 function replaceEventQuery() {
@@ -299,6 +318,7 @@ function shortSha(value?: string | null) {
 
 onMounted(() => {
   eventRowsMediaQuery.addEventListener('change', handleEventRowsMediaChange)
+  normalizeRestoredPaginationQuery()
   void loadPage()
 })
 onUnmounted(() => {

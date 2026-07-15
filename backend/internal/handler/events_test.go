@@ -71,7 +71,7 @@ func seedEventsFixture(t *testing.T, env *fullTestEnv) seededEventActors {
 		SetCreditUsage(1.2).
 		SetObservedStartAt(time.Now().Add(-20 * time.Minute).UTC()).
 		SetObservedEndAt(time.Now().Add(-20 * time.Minute).UTC()).
-		SetRawSourcePath("/Users/admin/Library/Application Support/kiro-cli/data.sqlite3").
+		SetRawSourcePath("/synthetic/users/alice/Library/Application Support/kiro-cli/data.sqlite3").
 		SetRawSourceLocator("conversation:1").
 		SetRawPayload(map[string]any{"kind": "turn", "scope": "user-unbound"}).
 		SaveX(ctx)
@@ -89,7 +89,7 @@ func seedEventsFixture(t *testing.T, env *fullTestEnv) seededEventActors {
 		SetOutputTokens(11).
 		SetObservedStartAt(time.Now().Add(-10 * time.Minute).UTC()).
 		SetObservedEndAt(time.Now().Add(-10 * time.Minute).UTC()).
-		SetRawSourcePath("/Users/admin/.codex/sessions/admin.jsonl").
+		SetRawSourcePath("/synthetic/users/bob/.codex/sessions/admin.jsonl").
 		SaveX(ctx)
 
 	return seededEventActors{
