@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 const axiosHarness = vi.hoisted(() => ({
   requestFn: null as ((config: any) => any) | null,
@@ -79,6 +80,7 @@ vi.mock('axios', () => {
 })
 
 import client from '@/api/client'
+import { installAuthNavigationGuards } from '@/router/authGuard'
 import { useAuthStore } from '@/stores/auth'
 import {
   clearBrowserSession,
@@ -153,8 +155,46 @@ function rejectWith401(config: any) {
   return axiosHarness.responseErrFn!(error)
 }
 
+function routeComponent(name: string) {
+  return { template: `<div data-route-skeleton="${name}">${name}</div>` }
+}
+
+function createRouteHarness(options: { oauthDeviceComponent?: Promise<any> } = {}) {
+  const loaders = {
+    login: vi.fn(() => Promise.resolve(routeComponent('login'))),
+    oauthAuthorize: vi.fn(() => Promise.resolve(routeComponent('oauth-authorize'))),
+    oauthDevice: vi.fn(() => options.oauthDeviceComponent ?? Promise.resolve(routeComponent('oauth-device'))),
+    usage: vi.fn(() => Promise.resolve(routeComponent('usage'))),
+    repos: vi.fn(() => Promise.resolve(routeComponent('repos'))),
+  }
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/login', name: 'Login', component: loaders.login, meta: { public: true } },
+      {
+        path: '/oauth/authorize',
+        name: 'OAuthAuthorize',
+        component: loaders.oauthAuthorize,
+        meta: { public: true },
+      },
+      {
+        path: '/oauth/device',
+        name: 'OAuthDevice',
+        component: loaders.oauthDevice,
+        meta: { public: true, redirectOnAuthExpiry: true },
+      },
+      { path: '/', name: 'Dashboard', component: routeComponent('dashboard') },
+      { path: '/usage', name: 'Usage', component: loaders.usage },
+      { path: '/repos', name: 'RepoList', component: loaders.repos },
+    ],
+  })
+  const dispose = installAuthNavigationGuards(router)
+  return { router, loaders, dispose }
+}
+
 describe('Axios client interceptors', () => {
   let pinia: ReturnType<typeof createPinia>
+  const routeDisposers: Array<() => void> = []
 
   beforeEach(() => {
     localStorage.clear()
@@ -173,6 +213,9 @@ describe('Axios client interceptors', () => {
   })
 
   afterEach(() => {
+    while (routeDisposers.length) {
+      routeDisposers.pop()!()
+    }
     disposePinia(pinia)
   })
 
@@ -470,6 +513,169 @@ describe('Axios client interceptors', () => {
 
       expect(readBrowserSession().accessToken).toBe('token-a')
       expect(axiosHarness.axiosPost).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('route-owned auth expiry policy', () => {
+    it.each([
+      {
+        path: '/usage',
+        expectedName: 'Login',
+        expectedRedirect: '/usage',
+      },
+      {
+        path: '/login?redirect=/repos',
+        expectedName: 'Login',
+        expectedRedirect: '/repos',
+      },
+      {
+        path: '/oauth/authorize?client_id=client-test',
+        expectedName: 'OAuthAuthorize',
+        expectedRedirect: undefined,
+      },
+      {
+        path: '/oauth/device',
+        expectedName: 'Login',
+        expectedRedirect: '/oauth/device',
+      },
+    ])('applies failed-refresh expiry to confirmed destination $path without hard navigation', async ({
+      path,
+      expectedName,
+      expectedRedirect,
+    }) => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const initialHref = window.location.href
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      const harness = createRouteHarness()
+      routeDisposers.push(harness.dispose)
+
+      await harness.router.push(path)
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+      refresh.reject(new Error('refresh failed'))
+
+      await vi.waitFor(() => expect(readBrowserSession().accessToken).toBeNull())
+      await vi.waitFor(() => expect(harness.router.currentRoute.value.name).toBe(expectedName))
+
+      expect(harness.router.currentRoute.value.query.redirect).toBe(expectedRedirect)
+      expect(window.location.href).toBe(initialHref)
+    })
+
+    it('does not replay a handled expiry on a later tokenless OAuth Device navigation', async () => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      const harness = createRouteHarness()
+      routeDisposers.push(harness.dispose)
+      const replaceSpy = vi.spyOn(harness.router, 'replace')
+
+      await harness.router.push('/oauth/device')
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+      refresh.reject(new Error('refresh failed'))
+      await vi.waitFor(() => expect(harness.router.currentRoute.value.name).toBe('Login'))
+      expect(harness.router.currentRoute.value.query.redirect).toBe('/oauth/device')
+      replaceSpy.mockClear()
+
+      await harness.router.push('/oauth/device')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(readBrowserSession().accessToken).toBeNull()
+      expect(harness.router.currentRoute.value.name).toBe('OAuthDevice')
+      expect(replaceSpy).not.toHaveBeenCalled()
+    })
+
+    it('does not lose a newer expiry while an older expiry callback is queued', async () => {
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: null })
+      const auth = useAuthStore(pinia)
+      auth.user = alice
+      const harness = createRouteHarness()
+      routeDisposers.push(harness.dispose)
+      const replaceSpy = vi.spyOn(harness.router, 'replace')
+      await harness.router.push('/oauth/device')
+
+      const requestA = axiosHarness.requestFn!({ url: '/repos', headers: {} })
+      const errorA = { response: { status: 401 }, config: requestA }
+      const failureA = axiosHarness.responseErrFn!(errorA).catch((error) => error)
+
+      replaceBrowserSession({ accessToken: 'token-b', refreshToken: null })
+      const requestB = axiosHarness.requestFn!({ url: '/repos', headers: {} })
+      const errorB = { response: { status: 401 }, config: requestB }
+      const failureB = axiosHarness.responseErrFn!(errorB).catch((error) => error)
+
+      await expect(Promise.all([failureA, failureB])).resolves.toEqual([errorA, errorB])
+      await vi.waitFor(() => expect(harness.router.currentRoute.value.name).toBe('Login'))
+
+      expect(harness.router.currentRoute.value.query.redirect).toBe('/oauth/device')
+      expect(replaceSpy).toHaveBeenCalledTimes(1)
+      expect(readBrowserSession().accessToken).toBeNull()
+    })
+
+    it('holds an expiry published during navigation for the destination that eventually confirms', async () => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      const oauthDeviceComponent = deferred<any>()
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const auth = useAuthStore(pinia)
+      auth.user = alice
+      const harness = createRouteHarness({ oauthDeviceComponent: oauthDeviceComponent.promise })
+      routeDisposers.push(harness.dispose)
+
+      await harness.router.push('/usage')
+      expect(harness.router.currentRoute.value.fullPath).toBe('/usage')
+
+      replaceBrowserSession({ accessToken: 'token-b', refreshToken: 'refresh-b' })
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      const deviceNavigation = harness.router.push('/oauth/device')
+      await vi.waitFor(() => expect(harness.loaders.oauthDevice).toHaveBeenCalledTimes(1))
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+
+      refresh.reject(new Error('refresh failed'))
+      await vi.waitFor(() => expect(readBrowserSession().accessToken).toBeNull())
+      expect(harness.router.currentRoute.value.fullPath).toBe('/usage')
+
+      oauthDeviceComponent.resolve(routeComponent('oauth-device'))
+      await deviceNavigation
+      await vi.waitFor(() => expect(harness.router.currentRoute.value.name).toBe('Login'))
+      expect(harness.router.currentRoute.value.query.redirect).toBe('/oauth/device')
+
+      await harness.router.push('/oauth/device')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(harness.router.currentRoute.value.name).toBe('OAuthDevice')
+    })
+
+    it('keeps a pending Login follow-up valid across same-generation A to A2 refresh', async () => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const generationA = readBrowserSession().generation
+      const auth = useAuthStore(pinia)
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      axiosHarness.retryHandler = (config) => {
+        expect(config.url).toBe('/auth/me')
+        expect(config._authGeneration).toBe(generationA)
+        return userResponse(alice)
+      }
+      const harness = createRouteHarness()
+      routeDisposers.push(harness.dispose)
+      const replaceSpy = vi.spyOn(harness.router, 'replace')
+
+      await harness.router.push('/login?redirect=/repos')
+      expect(harness.router.currentRoute.value.name).toBe('Login')
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+
+      refresh.resolve(refreshResponse('token-a2', 'refresh-a2'))
+
+      await vi.waitFor(() => expect(harness.router.currentRoute.value.fullPath).toBe('/repos'))
+      expect(replaceSpy).toHaveBeenCalledTimes(1)
+      expect(readBrowserSession()).toEqual({
+        generation: generationA,
+        accessToken: 'token-a2',
+        refreshToken: 'refresh-a2',
+      })
+      expect(auth.user).toEqual(alice)
+      expect(window.location.href).not.toContain('/repos')
     })
   })
 })
