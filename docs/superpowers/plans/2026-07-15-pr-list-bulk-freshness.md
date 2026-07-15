@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review is complete with no findings. Task 1 is next; implementation, task review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
+**Status:** Plan review is complete with no findings. Task 1 Steps 1-4 are complete with deterministic RED/GREEN and package verification evidence; the implementation commit and Task 1 checkpoint remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -60,7 +60,7 @@
 - Consumes: existing `Service.EvaluatePRFreshness`, `PRFreshness`, `CommitFreshness`, and persisted `PRCommitUsageSnapshot.SortOrder`.
 - Produces: deterministic in-memory snapshot ordering and a pure `evaluateLoadedPRFreshness` classifier that Task 2 reuses.
 
-- [ ] **Step 1: Add exact golden tests for competing anomaly states**
+- [x] **Step 1: Add exact golden tests for competing anomaly states**
 
   Add table-driven tests that call the not-yet-existing pure classifier with deliberately unsorted in-memory snapshot slices. Include equal-`sort_order` rows whose IDs and input positions disagree, so `sort_order ASC, id ASC` is proved without relying on PostgreSQL's unspecified order. Cover these exact outcomes:
 
@@ -76,7 +76,7 @@
 
   Assert `Commits` is returned by `sort_order ASC, id ASC`, `CheckedAt` is UTC, and the exact current status/reason strings do not change. Keep public `EvaluatePRFreshness` database cases for the three no-snapshot outcomes, but the competing-anomaly RED must come from the pure classifier input.
 
-- [ ] **Step 2: Run the precedence tests and record genuine RED**
+- [x] **Step 2: Run the precedence tests and record genuine RED**
 
   Run:
 
@@ -86,7 +86,9 @@
 
   Expected: FAIL deterministically because `evaluateLoadedPRFreshness` does not exist. This RED does not depend on a database planner returning an unordered query in one particular order.
 
-- [ ] **Step 3: Extract the pure classifier and order the existing single read**
+  RED evidence (2026-07-15): the command exited 1 with only the expected compile errors for undefined `checkpointUsageFact` and `evaluateLoadedPRFreshness`.
+
+- [x] **Step 3: Extract the pure classifier and order the existing single read**
 
   Introduce private fact types and a pure function with no database access:
 
@@ -109,7 +111,7 @@
 
   Keep the current database calls in `EvaluatePRFreshness` for Task 1, but route the final decision through this classifier. Do not add page/bulk behavior yet.
 
-- [ ] **Step 4: Verify focused and package GREEN**
+- [x] **Step 4: Verify focused and package GREEN**
 
   Run separately:
 
@@ -120,6 +122,8 @@
   ```
 
   Expected: PASS; the single-PR method returns the same public fields and exact reasons, with deterministic commit ordering.
+
+  GREEN evidence (2026-07-15): the focused `TestEvaluatePRFreshness` command and full `internal/prusage` package command passed; `git diff --check` exited 0.
 
 - [ ] **Step 5: Commit Task 1 and record the checkpoint**
 
