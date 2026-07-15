@@ -22,13 +22,19 @@ const (
 	weComDecisionActorMaxBytes   = 256
 	weComDecisionPrefix          = "> 上一审批："
 	weComDecisionSeparator       = "："
-	weComDecisionCommentMaxBytes = weComDecisionMaxBytes - len(weComDecisionPrefix) - len(weComDecisionSeparator) - weComDecisionActorMaxBytes
+	weComMinimumFieldValueBytes  = 32
 	weComUnavailableMaxBytes     = 192
 )
 
 var safeWeComUserID = regexp.MustCompile(`^[A-Za-z0-9_.@-]{1,128}$`)
 
 type weComGroupRobotAdapter struct{ maxBytes int }
+
+type weComBudgetedLine struct {
+	budget   int
+	maxBytes int
+	render   func(int) string
+}
 
 func escapeWeComUserText(value string) string {
 	value = strings.TrimSpace(value)
@@ -65,30 +71,22 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 	if maxBytes <= 0 {
 		maxBytes = defaultWeComMarkdownMaxBytes
 	}
-	completedNodes, totalNodes := boundedNotificationWorkflowProgress(ctx.WorkflowCompletedNodes, ctx.WorkflowTotalNodes)
-	title, action := weComEventCopy(ctx.Event)
-	requiredHead := []string{
-		"# " + title,
-		truncateUTF8(`<font color="warning">`+escapeWeComUserText(action)+`</font>`, weComActionMaxBytes),
-		boundedWeComLine("> 申请人：", ctx.Requester.DisplayName, weComRequesterMaxBytes),
-		boundedWeComLine("> 所属团队：", strings.Join(ctx.DepartmentPaths, "、"), weComTeamMaxBytes),
-		boundedWeComLine("> 订阅组：", ctx.GroupName, weComGroupMaxBytes),
-	}
-	requiredTail := make([]string, 0, 5)
-	if ctx.CurrentNode != nil {
-		node := fmt.Sprintf("%d/%d · %s", ctx.CurrentNode.Position+1, ctx.CurrentNode.Total, ctx.CurrentNode.Label)
-		requiredTail = append(requiredTail, boundedWeComLine("> 当前节点：", node, weComNodeMaxBytes))
-	}
-	requiredTail = append(requiredTail, fmt.Sprintf("> 审批进度：%d/%d", completedNodes, totalNodes))
-	if reason := escapeWeComUserText(ctx.Reason); reason != "" {
-		requiredTail = append(requiredTail, truncateUTF8("> 申请原因："+reason, weComReasonMaxBytes))
-	}
-	if len(ctx.ApprovalHistory) > 0 {
-		requiredTail = append(requiredTail, boundedWeComDecisionLine(ctx.ApprovalHistory[len(ctx.ApprovalHistory)-1]))
-	}
 	actionLine, err := weComActionLink(ctx.ActionURL)
 	if err != nil {
 		return RenderedNotification{}, err
+	}
+	completedNodes, totalNodes := boundedNotificationWorkflowProgress(ctx.WorkflowCompletedNodes, ctx.WorkflowTotalNodes)
+	title, action := weComEventCopy(ctx.Event)
+	requiredHead, requiredTail, ok := fitRequiredWeComContext(
+		ctx,
+		title,
+		action,
+		fmt.Sprintf("> 审批进度：%d/%d", completedNodes, totalNodes),
+		actionLine,
+		maxBytes,
+	)
+	if !ok {
+		return RenderedNotification{}, fmt.Errorf("render WeCom notification: required content exceeds %d bytes", maxBytes)
 	}
 
 	missing := make([]int, 0)
@@ -141,13 +139,159 @@ func (a weComGroupRobotAdapter) Render(ctx NotificationContext) (RenderedNotific
 	}, nil
 }
 
-func boundedWeComDecisionLine(decision NotificationDecision) string {
-	actor := truncateUTF8(escapeWeComUserText(decision.ActorDisplayName), weComDecisionActorMaxBytes)
-	line := weComDecisionPrefix + actor
-	if comment := escapeWeComUserText(decision.Comment); comment != "" {
-		line += weComDecisionSeparator + truncateUTF8(comment, weComDecisionCommentMaxBytes)
+func boundedWeComDecisionLineToBytes(decision NotificationDecision, maxBytes int) string {
+	actor := escapeWeComUserText(decision.ActorDisplayName)
+	if actor == "" {
+		actor = "-"
 	}
-	return line
+	comment := escapeWeComUserText(decision.Comment)
+	if comment == "" {
+		return truncateUTF8(weComDecisionPrefix+actor, maxBytes)
+	}
+	available := maxBytes - len(weComDecisionPrefix) - len(weComDecisionSeparator)
+	if available <= 0 {
+		return truncateUTF8(weComDecisionPrefix, maxBytes)
+	}
+	actorBudget := available
+	if available >= 2*weComMinimumFieldValueBytes {
+		actorBudget = min(weComDecisionActorMaxBytes, available-weComMinimumFieldValueBytes)
+	} else if available > 1 {
+		actorBudget = available / 2
+	}
+	commentBudget := available - actorBudget
+	return weComDecisionPrefix + truncateUTF8(actor, actorBudget) + weComDecisionSeparator + truncateUTF8(comment, commentBudget)
+}
+
+func fitRequiredWeComContext(ctx NotificationContext, title, action, progressLine, actionLine string, maxBytes int) ([]string, []string, bool) {
+	budgetedLine := func(minBytes, maxLineBytes int, render func(int) string) *weComBudgetedLine {
+		if minBytes > maxLineBytes {
+			minBytes = maxLineBytes
+		}
+		return &weComBudgetedLine{budget: minBytes, maxBytes: maxLineBytes, render: render}
+	}
+	lineWithValueMinimum := func(prefix string) int {
+		return len(prefix) + weComMinimumFieldValueBytes
+	}
+
+	actionStatePrefix := `<font color="warning">`
+	actionStateSuffix := `</font>`
+	actionState := budgetedLine(
+		len(actionStatePrefix)+len(actionStateSuffix)+weComMinimumFieldValueBytes,
+		weComActionMaxBytes,
+		func(maxLineBytes int) string {
+			valueBytes := maxLineBytes - len(actionStatePrefix) - len(actionStateSuffix)
+			return actionStatePrefix + truncateUTF8(escapeWeComUserText(action), valueBytes) + actionStateSuffix
+		},
+	)
+	requester := budgetedLine(
+		lineWithValueMinimum("> 申请人："),
+		weComRequesterMaxBytes,
+		func(maxLineBytes int) string {
+			return boundedWeComLine("> 申请人：", ctx.Requester.DisplayName, maxLineBytes)
+		},
+	)
+	team := budgetedLine(
+		lineWithValueMinimum("> 所属团队："),
+		weComTeamMaxBytes,
+		func(maxLineBytes int) string {
+			return boundedWeComLine("> 所属团队：", strings.Join(ctx.DepartmentPaths, "、"), maxLineBytes)
+		},
+	)
+	group := budgetedLine(
+		lineWithValueMinimum("> 订阅组："),
+		weComGroupMaxBytes,
+		func(maxLineBytes int) string { return boundedWeComLine("> 订阅组：", ctx.GroupName, maxLineBytes) },
+	)
+
+	var node *weComBudgetedLine
+	if ctx.CurrentNode != nil {
+		nodeValue := fmt.Sprintf("%d/%d · %s", ctx.CurrentNode.Position+1, ctx.CurrentNode.Total, ctx.CurrentNode.Label)
+		node = budgetedLine(
+			lineWithValueMinimum("> 当前节点："),
+			weComNodeMaxBytes,
+			func(maxLineBytes int) string { return boundedWeComLine("> 当前节点：", nodeValue, maxLineBytes) },
+		)
+	}
+
+	var reason *weComBudgetedLine
+	if escapeWeComUserText(ctx.Reason) != "" {
+		reason = budgetedLine(
+			lineWithValueMinimum("> 申请原因："),
+			weComReasonMaxBytes,
+			func(maxLineBytes int) string { return boundedWeComLine("> 申请原因：", ctx.Reason, maxLineBytes) },
+		)
+	}
+
+	var decision *weComBudgetedLine
+	if len(ctx.ApprovalHistory) > 0 {
+		latest := ctx.ApprovalHistory[len(ctx.ApprovalHistory)-1]
+		minimum := len(weComDecisionPrefix) + weComMinimumFieldValueBytes
+		if escapeWeComUserText(latest.Comment) != "" {
+			minimum += len(weComDecisionSeparator) + weComMinimumFieldValueBytes
+		}
+		decision = budgetedLine(
+			minimum,
+			weComDecisionMaxBytes,
+			func(maxLineBytes int) string { return boundedWeComDecisionLineToBytes(latest, maxLineBytes) },
+		)
+	}
+
+	renderLines := func() ([]string, []string) {
+		head := []string{
+			"# " + title,
+			actionState.render(actionState.budget),
+			requester.render(requester.budget),
+			team.render(team.budget),
+			group.render(group.budget),
+		}
+		tail := make([]string, 0, 4)
+		if node != nil {
+			tail = append(tail, node.render(node.budget))
+		}
+		tail = append(tail, progressLine)
+		if reason != nil {
+			tail = append(tail, reason.render(reason.budget))
+		}
+		if decision != nil {
+			tail = append(tail, decision.render(decision.budget))
+		}
+		return head, tail
+	}
+	requiredBytes := func() int {
+		head, tail := renderLines()
+		return joinedWeComMarkdownBytes(head, tail, []string{actionLine})
+	}
+	if requiredBytes() > maxBytes {
+		return nil, nil, false
+	}
+
+	priority := []*weComBudgetedLine{actionState, requester, group}
+	if node != nil {
+		priority = append(priority, node)
+	}
+	priority = append(priority, team)
+	if reason != nil {
+		priority = append(priority, reason)
+	}
+	if decision != nil {
+		priority = append(priority, decision)
+	}
+	for _, line := range priority {
+		low, high := line.budget, line.maxBytes
+		for low < high {
+			candidate := low + (high-low+1)/2
+			line.budget = candidate
+			if requiredBytes() <= maxBytes {
+				low = candidate
+			} else {
+				high = candidate - 1
+			}
+		}
+		line.budget = low
+	}
+
+	head, tail := renderLines()
+	return head, tail, true
 }
 
 func weComRecipientLabel(event NotificationEvent) string {

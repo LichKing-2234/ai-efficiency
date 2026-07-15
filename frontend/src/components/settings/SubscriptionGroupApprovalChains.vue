@@ -29,6 +29,7 @@ const chainsAuthoritative = ref(false)
 const error = ref('')
 const message = ref('')
 let loadSequence = 0
+let reloadQueuedAfterSave = false
 
 const groupDropdownOpen = ref(false)
 const groupSearch = ref('')
@@ -90,6 +91,10 @@ const selectedGroupIsCurrent = computed(() => {
 watch(
   () => props.approverRevision,
   () => {
+    if (saving.value) {
+      reloadQueuedAfterSave = true
+      return
+    }
     void loadChains()
   },
   { immediate: true },
@@ -269,6 +274,7 @@ function nodeWarning(node: QuotaResetApprovalChainNodeInput) {
 
 async function saveChains() {
   if (!chainsAuthoritative.value || loading.value || saving.value) return
+  loadSequence += 1
   saving.value = true
   error.value = ''
   message.value = ''
@@ -282,6 +288,10 @@ async function saveChains() {
     error.value = errorMessage(err, t('quotaResetSettings.chainsSaveFailed'))
   } finally {
     saving.value = false
+    if (reloadQueuedAfterSave) {
+      reloadQueuedAfterSave = false
+      void loadChains()
+    }
   }
 }
 </script>

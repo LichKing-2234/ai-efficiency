@@ -310,6 +310,14 @@ Change its validation contract:
 6. An approver without an Enterprise WeChat recipient id may be configured, but
    the settings UI must show a notification-coverage warning.
 
+Candidate notification coverage uses the same channel identity selected by
+runtime delivery: an allowlisted non-empty `member.metadata.wecom_userid` takes
+precedence over the member external id fallback. The selected value is
+mentionable only when it satisfies the Enterprise WeChat renderer's exact user
+id predicate, including its length and character restrictions and rejection of
+the reserved `all` id. Malformed or reserved metadata remains authoritative and
+must not be hidden by a valid external-id fallback.
+
 The admin candidate API must therefore become a paginated searchable
 directory-matched local-user lookup instead of a selected-department
 representative lookup. Both candidate matching and save validation exclude
@@ -712,18 +720,28 @@ remain immutable. Cancellation is not allowed after reset execution starts.
 
 After the approval transaction commits:
 
-1. Execute the existing provider-scoped quota reset once.
-2. Preserve daily, weekly, and monthly reset semantics.
-3. After the provider returns, begin a database transaction, lock the request
+1. Once `approved_resetting` is committed, detach post-transition work from
+   HTTP cancellation with `context.WithoutCancel`, preserving parent context
+   values but not using an unbounded background context.
+2. Apply a 30-second server-owned provider context to provider resolution and
+   the existing provider-scoped quota reset call. Preserve daily, weekly, and
+   monthly reset semantics.
+3. Use fresh, separate 10-second server-owned persistence contexts for
+   reset-start audit writes and terminal outcome persistence. A provider
+   deadline or error must not cancel or poison the terminal transaction.
+4. After the provider returns, begin a database transaction, lock the request
    `FOR UPDATE`, and require it to remain `approved_resetting`.
-4. In that transaction, write the terminal success or failure status,
+5. In that transaction, write the terminal success or failure status,
    completion time, error text, and matching `reset_succeeded` or
    `reset_failed` event, then commit before sending the result notification.
-5. If the terminal update, audit event, or commit fails, roll back and return a
+6. If the terminal update, audit event, or commit fails, roll back and return a
    persistence error without a terminal request summary or result notification.
-6. A provider failure returns an `approved_reset_failed` request with a nil
-   service error only after the terminal transaction commits.
-7. Do not reopen approval nodes after a reset failure.
+7. A provider failure or timeout returns an `approved_reset_failed` request
+   with a nil service error only after the terminal transaction commits.
+8. Client cancellation after the running transition does not cancel the
+   provider operation or terminal persistence and cannot by itself leave the
+   request stuck in `approved_resetting`.
+9. Do not reopen approval nodes after a reset failure.
 
 This local transaction does not make the provider call idempotent.
 `UserSubscriptionQuotaResetter` has neither an idempotency key nor an outcome
@@ -823,11 +841,19 @@ Rules:
 4. `generic_webhook` supports existing none or bearer-token auth.
 5. Settings reads return a redacted URL preview and `url_configured` rather than
    exposing a robot key.
-6. An update may omit the URL to retain the existing secret value.
-7. Delivery and error messages redact URL query strings.
-8. A one-time migration may classify an existing saved setting by URL so the
-   currently configured channel keeps working. After backfill, channel type is
-   explicit.
+6. A same-type update may omit the URL to retain the existing secret value. A
+   channel-type change requires an explicit non-empty replacement URL before
+   the stored secret may be reused, and the frontend applies the same rule
+   against its last authoritative loaded or saved channel type.
+7. An explicitly saved `generic_webhook` URL that matches the known Enterprise
+   WeChat group-robot host and path is rejected with guidance to use the WeCom
+   preset. Runtime delivery still never infers a channel from URL shape.
+8. Delivery and error messages redact URL query strings.
+9. A one-time migration may classify an existing saved setting by URL so the
+   currently configured channel keeps working. Every classified WeCom row,
+   including a disabled legacy HTTP row, is atomically normalized to
+   `auth_type=none` with `credential_id=NULL`; generic webhook auth and
+   credential values are preserved. After backfill, channel type is explicit.
 
 ### Enterprise WeChat Preset
 
@@ -866,9 +892,20 @@ Rendering rules:
 6. If an approver lacks a recipient id, include their display name followed by
    an unavailable-mention marker and record coverage in event metadata.
 7. Missing recipient ids do not fail the whole delivery.
-8. Truncate low-priority fields before requester, group, action, current node,
-   and action URL.
-9. Never send a separate mention-only message.
+8. Build and validate the exact action link first. Reserve its bytes and all
+   required line separators before allocating bytes to variable context.
+9. Dynamically fit requester, team, group, current node, reason, and latest
+   decision fields, preserving action state, requester, group, current node,
+   and the unmodified action URL before lower-priority detail. Reason and the
+   latest completed decision remain present when supplied, with bounded visible
+   content for both decision actor and comment.
+10. Admit a mention only when the already-required fitted message plus that
+    mention remains within the channel limit; report every omitted person as
+    missing coverage.
+11. If the exact action link plus minimum required labeled context cannot fit,
+    fail with the required-content error instead of emitting a truncated or
+    broken link.
+12. Never send a separate mention-only message.
 
 For node activation and cancellation, the recipient resolver starts from the
 immutable current-node approver user ids but derives delivery people from the
@@ -1083,6 +1120,11 @@ feedback only.
 5. Prevent duplicate departments.
 6. Show stale group, source, department, and approver configuration warnings.
 7. Save all chains atomically.
+8. Starting a save invalidates older load generations. Approver-revision
+   changes during the PUT queue exactly one reload instead of starting a GET;
+   the queued reload runs once after the save settles, so an older response
+   cannot overwrite the saved authoritative response or seed a later
+   replace-all payload.
 
 ### Notification Settings
 
@@ -1188,8 +1230,10 @@ visibility for unrelated actors.
    existing behavior.
 5. Keep legacy fields until a later, separately designed data migration.
 6. Keep all existing department approver rows.
-7. Backfill the existing notification channel type once, preserving the current
-   delivery behavior.
+7. Backfill the existing notification channel type once. Normalize every row
+   classified as Enterprise WeChat to no auth and no credential while
+   preserving enabled HTTPS delivery and disabling legacy HTTP delivery;
+   preserve generic webhook auth and credentials.
 8. Do not auto-create subscription group chains. Their absence has explicit
    zero-node semantics.
 9. Update `docs/architecture.md` only when v2 code becomes the current runtime.

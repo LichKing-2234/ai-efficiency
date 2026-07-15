@@ -1343,6 +1343,66 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.get('[data-testid="quota-reset-save-chains"]').attributes()).not.toHaveProperty('disabled')
   })
 
+  it('queues one approver-revision reload until an in-flight chain save settles', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const saveRequest = deferred<any>()
+    const staleOptions = deferred<any>()
+    const staleChains = deferred<any>()
+    const saved = savedChain(303, 'group-saved', 'Group Saved', 'dept-saved', 'Department Saved')
+    const freshOptions = chainOptionSet('group-saved', 'Group Saved', 'dept-saved', 'Department Saved')
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    api.saveQuotaResetApprovalChains
+      .mockReturnValueOnce(saveRequest.promise)
+      .mockResolvedValueOnce({ data: { data: { items: [saved] } } })
+    const wrapper = await mountChains()
+
+    api.getQuotaResetApprovalChainOptions.mockReturnValueOnce(staleOptions.promise)
+    api.getQuotaResetApprovalChains.mockReturnValueOnce(staleChains.promise)
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await wrapper.setProps({ approverRevision: 1 })
+    await wrapper.vm.$nextTick()
+
+    expect(api.getQuotaResetApprovalChainOptions).toHaveBeenCalledTimes(1)
+    expect(api.getQuotaResetApprovalChains).toHaveBeenCalledTimes(1)
+
+    api.getQuotaResetApprovalChainOptions.mockReset()
+    api.getQuotaResetApprovalChainOptions.mockResolvedValue({ data: { data: freshOptions } })
+    api.getQuotaResetApprovalChains.mockReset()
+    api.getQuotaResetApprovalChains.mockResolvedValue({ data: { data: { items: [saved] } } })
+    saveRequest.resolve({ data: { data: { items: [saved] } } })
+    await flushPromises()
+
+    expect(api.getQuotaResetApprovalChainOptions).toHaveBeenCalledTimes(1)
+    expect(api.getQuotaResetApprovalChains).toHaveBeenCalledTimes(1)
+
+    staleOptions.resolve({
+      data: { data: chainOptionSet('group-old', 'Group Old', 'dept-old', 'Department Old') },
+    })
+    staleChains.resolve({
+      data: { data: { items: [savedChain(101, 'group-old', 'Group Old', 'dept-old', 'Department Old')] } },
+    })
+    await flushPromises()
+
+    await selectChainGroup(wrapper, 'group-saved')
+    expect(wrapper.text()).toContain('Department Saved')
+    expect(wrapper.text()).not.toContain('Department Old')
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await flushPromises()
+    expect(api.saveQuotaResetApprovalChains.mock.calls[1][0]).toEqual([{
+      provider_id: 1,
+      group_id: 'group-saved',
+      group_name: 'Group Saved',
+      enabled: true,
+      nodes: [{
+        directory_source_id: 1,
+        department_external_id: 'dept-saved',
+        department_display_path: 'Department Saved',
+      }],
+    }])
+  })
+
   it('ignores a stale successful chain load after a newer revision succeeds', async () => {
     const api = await import('@/api/quotaReset') as any
     const staleOptions = deferred<any>()
@@ -1899,6 +1959,64 @@ describe('QuotaResetApprovalSettings', () => {
     expect(feedback.text()).toContain('Delivered without an @ mention')
   })
 
+  it.each([
+    {
+      name: 'Enterprise WeChat to generic webhook',
+      initial: notificationSettings(),
+      nextChannel: 'generic_webhook',
+    },
+    {
+      name: 'generic webhook to Enterprise WeChat',
+      initial: notificationSettings({
+        channel_type: 'generic_webhook',
+        url_preview: 'https://hooks.example.com',
+        auth_type: 'none',
+      }),
+      nextChannel: 'wecom_group_robot',
+    },
+  ])('requires a replacement URL locally when switching $name', async ({ initial, nextChannel }) => {
+    const api = await import('@/api/quotaReset') as any
+    api.getQuotaResetNotificationSettings.mockResolvedValueOnce({ data: { data: initial } })
+    const wrapper = await mountNotification()
+
+    await wrapper.get('[data-testid="quota-reset-notification-channel"]').setValue(nextChannel)
+    await wrapper.get('[data-testid="quota-reset-save-notification"]').trigger('click')
+    await flushPromises()
+
+    expect(api.updateQuotaResetNotificationSettings).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="quota-reset-notification-feedback"]').text())
+      .toContain('Replace the endpoint when changing notification channels.')
+  })
+
+  it('refreshes the authoritative notification channel after a valid switch response', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const genericSettings = notificationSettings({
+      channel_type: 'generic_webhook',
+      url_preview: 'https://hooks.example.com',
+      auth_type: 'none',
+    })
+    api.updateQuotaResetNotificationSettings
+      .mockResolvedValueOnce({ data: { data: genericSettings } })
+      .mockResolvedValueOnce({ data: { data: genericSettings } })
+    const wrapper = await mountNotification()
+
+    await wrapper.get('[data-testid="quota-reset-notification-channel"]').setValue('generic_webhook')
+    await wrapper.get('[data-testid="quota-reset-notification-url"]').setValue('https://hooks.example.com/quota-reset')
+    await wrapper.get('[data-testid="quota-reset-save-notification"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="quota-reset-save-notification"]').trigger('click')
+    await flushPromises()
+
+    expect(api.updateQuotaResetNotificationSettings).toHaveBeenCalledTimes(2)
+    expect(api.updateQuotaResetNotificationSettings.mock.calls[1][0]).toEqual({
+      enabled: true,
+      channel_type: 'generic_webhook',
+      auth_type: 'none',
+      credential_id: null,
+    })
+  })
+
   it('preserves an existing URL when the admin does not replace it', async () => {
     const api = await import('@/api/quotaReset') as any
     api.getQuotaResetNotificationSettings.mockResolvedValueOnce({
@@ -1934,6 +2052,7 @@ describe('QuotaResetApprovalSettings', () => {
     const wrapper = await mountSettings()
 
     await wrapper.get('[data-testid="quota-reset-notification-channel"]').setValue('generic_webhook')
+    await wrapper.get('[data-testid="quota-reset-notification-url"]').setValue('https://hooks.example.com/quota-reset')
     await wrapper.get('[data-testid="quota-reset-notification-auth"]').setValue('bearer_token')
     await wrapper.get('[data-testid="quota-reset-save-notification"]').trigger('click')
     await flushPromises()

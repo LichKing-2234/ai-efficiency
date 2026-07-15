@@ -378,13 +378,7 @@ func candidateDepartmentPath(tree *directorytree.Tree, department *ent.Directory
 }
 
 func candidateHasWeComMention(member *ent.DirectoryMember) bool {
-	if member == nil {
-		return false
-	}
-	if value, ok := member.Metadata["wecom_userid"].(string); ok && strings.TrimSpace(value) != "" {
-		return true
-	}
-	return strings.TrimSpace(member.ExternalID) != ""
+	return validWeComMentionUserID(notificationIDsForMember(member)["wecom"])
 }
 
 func candidateIdentityLess(left, right ApproverCandidate) bool {

@@ -32,6 +32,8 @@ const (
 	maxPageSize     = 100
 
 	maxCreateRequestAttempts = 3
+	resetProviderTimeout     = 30 * time.Second
+	resetPersistenceTimeout  = 10 * time.Second
 
 	ApproverConfigSaveModeReplaceDepartments = "replace_departments"
 	ApproverConfigSaveModeReplaceAll         = "replace_all"
@@ -456,9 +458,22 @@ func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNo
 	if err != nil {
 		return nil, fmt.Errorf("load quota reset notification settings: %w", err)
 	}
+	replacementURL := ""
+	if input.URL != nil {
+		replacementURL = strings.TrimSpace(*input.URL)
+	}
+	if input.URL != nil && replacementURL != "" && channelType == quotaresetnotificationsetting.ChannelTypeGenericWebhook {
+		parsed, _ := url.Parse(replacementURL)
+		if isEnterpriseWeChatGroupRobotEndpoint(parsed) {
+			return nil, fmt.Errorf("%w: use the Enterprise WeChat group robot preset for this webhook URL", ErrInvalidNotification)
+		}
+	}
+	if len(rows) > 0 && rows[0].ChannelType != channelType && replacementURL == "" {
+		return nil, fmt.Errorf("%w: replacement webhook URL is required when channel_type changes", ErrInvalidNotification)
+	}
 	effectiveURL := ""
 	if input.URL != nil {
-		effectiveURL = strings.TrimSpace(*input.URL)
+		effectiveURL = replacementURL
 	} else if len(rows) > 0 {
 		effectiveURL = strings.TrimSpace(rows[0].URL)
 	}
@@ -714,7 +729,13 @@ func isResolvedApprover(request *ent.QuotaResetRequest, actorUserID int) bool {
 }
 
 func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID int, retry bool, admin bool) (*ent.QuotaResetRequest, error) {
-	req, err := s.client.QuotaResetRequest.Get(ctx, requestID)
+	runningCtx := ctx
+	cancelRunning := context.CancelFunc(func() {})
+	if !retry {
+		runningCtx, cancelRunning = context.WithTimeout(context.WithoutCancel(ctx), resetPersistenceTimeout)
+	}
+	defer cancelRunning()
+	req, err := s.client.QuotaResetRequest.Get(runningCtx, requestID)
 	if err != nil {
 		return nil, err
 	}
@@ -736,48 +757,64 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 		SetResetError("").
 		SetResetStartedAt(now).
 		ClearResetCompletedAt().
-		Save(ctx)
+		Save(runningCtx)
 	if ent.IsNotFound(err) {
 		return nil, resetStatusConflict(req, retry)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("mark reset started: %w", err)
 	}
+	cancelRunning()
+	postTransitionCtx := context.WithoutCancel(ctx)
+	startPersistenceCtx, cancelStartPersistence := context.WithTimeout(postTransitionCtx, resetPersistenceTimeout)
 	if retry {
-		if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetRetried, map[string]any{
+		if err := s.writeEvent(startPersistenceCtx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetRetried, map[string]any{
 			"admin": admin,
 		}, ""); err != nil {
-			return s.storeResetFailure(ctx, requestID, actorUserID, err)
+			cancelStartPersistence()
+			return s.storeResetFailure(postTransitionCtx, requestID, actorUserID, err)
 		}
 	}
-	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetStarted, map[string]any{
+	if err := s.writeEvent(startPersistenceCtx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetStarted, map[string]any{
 		"retry": retry,
 	}, ""); err != nil {
-		return s.storeResetFailure(ctx, requestID, actorUserID, err)
+		cancelStartPersistence()
+		return s.storeResetFailure(postTransitionCtx, requestID, actorUserID, err)
 	}
-	provider, err := s.providerResolver.Resolve(ctx, running.ProviderID)
+	cancelStartPersistence()
+
+	providerCtx, cancelProvider := context.WithTimeout(postTransitionCtx, resetProviderTimeout)
+	provider, err := s.providerResolver.Resolve(providerCtx, running.ProviderID)
 	if err != nil {
-		return s.storeResetFailure(ctx, requestID, actorUserID, err)
+		cancelProvider()
+		return s.storeResetFailure(postTransitionCtx, requestID, actorUserID, err)
 	}
 	resetter, ok := provider.(relay.UserSubscriptionQuotaResetter)
 	if !ok {
-		return s.storeResetFailure(ctx, requestID, actorUserID, ErrProviderUnsupported)
+		cancelProvider()
+		return s.storeResetFailure(postTransitionCtx, requestID, actorUserID, ErrProviderUnsupported)
 	}
-	if err := resetter.ResetSubscriptionQuotaForUser(ctx, running.RequesterRelayUserID, groupID); err != nil {
-		return s.storeResetFailure(ctx, requestID, actorUserID, err)
+	if err := resetter.ResetSubscriptionQuotaForUser(providerCtx, running.RequesterRelayUserID, groupID); err != nil {
+		cancelProvider()
+		return s.storeResetFailure(postTransitionCtx, requestID, actorUserID, err)
 	}
+	cancelProvider()
+	outcomeCtx, cancelOutcome := context.WithTimeout(postTransitionCtx, resetPersistenceTimeout)
 	succeeded, err := s.persistResetOutcome(
-		ctx,
+		outcomeCtx,
 		requestID,
 		actorUserID,
 		quotaresetrequest.StatusApprovedResetSucceeded,
 		quotaresetrequestevent.EventTypeResetSucceeded,
 		"",
 	)
+	cancelOutcome()
 	if err != nil {
 		return nil, err
 	}
-	_ = s.notify(ctx, NotificationResetSucceeded, succeeded)
+	notifyCtx, cancelNotify := context.WithTimeout(postTransitionCtx, resetPersistenceTimeout)
+	_ = s.notify(notifyCtx, NotificationResetSucceeded, succeeded)
+	cancelNotify()
 	return succeeded, nil
 }
 
@@ -793,18 +830,23 @@ func (s *Service) storeResetFailure(ctx context.Context, requestID int, actorUse
 	if resetErr != nil {
 		errorMessage = resetErr.Error()
 	}
+	postTransitionCtx := context.WithoutCancel(ctx)
+	outcomeCtx, cancelOutcome := context.WithTimeout(postTransitionCtx, resetPersistenceTimeout)
 	failed, err := s.persistResetOutcome(
-		ctx,
+		outcomeCtx,
 		requestID,
 		actorUserID,
 		quotaresetrequest.StatusApprovedResetFailed,
 		quotaresetrequestevent.EventTypeResetFailed,
 		errorMessage,
 	)
+	cancelOutcome()
 	if err != nil {
 		return nil, err
 	}
-	_ = s.notify(ctx, NotificationResetFailed, failed)
+	notifyCtx, cancelNotify := context.WithTimeout(postTransitionCtx, resetPersistenceTimeout)
+	_ = s.notify(notifyCtx, NotificationResetFailed, failed)
+	cancelNotify()
 	return failed, nil
 }
 
@@ -1300,7 +1342,7 @@ func validateNotificationSettings(ctx context.Context, client *ent.Client, enabl
 func validateNotificationEndpoint(channelType quotaresetnotificationsetting.ChannelType, parsed *url.URL, authType quotaresetnotificationsetting.AuthType) error {
 	switch channelType {
 	case quotaresetnotificationsetting.ChannelTypeWecomGroupRobot:
-		if !strings.EqualFold(parsed.Scheme, "https") || !strings.EqualFold(parsed.Hostname(), "qyapi.weixin.qq.com") || parsed.Path != "/cgi-bin/webhook/send" || strings.TrimSpace(parsed.Query().Get("key")) == "" {
+		if !strings.EqualFold(parsed.Scheme, "https") || !isEnterpriseWeChatGroupRobotEndpoint(parsed) || strings.TrimSpace(parsed.Query().Get("key")) == "" {
 			return fmt.Errorf("%w: invalid Enterprise WeChat group robot URL", ErrInvalidNotification)
 		}
 		if authType != quotaresetnotificationsetting.AuthTypeNone {
@@ -1314,6 +1356,10 @@ func validateNotificationEndpoint(channelType quotaresetnotificationsetting.Chan
 		return fmt.Errorf("%w: channel_type is required", ErrInvalidNotification)
 	}
 	return nil
+}
+
+func isEnterpriseWeChatGroupRobotEndpoint(parsed *url.URL) bool {
+	return parsed != nil && strings.EqualFold(parsed.Hostname(), "qyapi.weixin.qq.com") && parsed.Path == "/cgi-bin/webhook/send"
 }
 
 func webhookURLPreview(channelType quotaresetnotificationsetting.ChannelType, raw string) string {

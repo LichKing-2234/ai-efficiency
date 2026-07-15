@@ -34,6 +34,10 @@ func BackfillNotificationChannelTypes(ctx context.Context, client *ent.Client) (
 			).
 			SetChannelType(channelType).
 			SetChannelTypeConfigured(true)
+		if channelType == quotaresetnotificationsetting.ChannelTypeWecomGroupRobot {
+			update.SetAuthType(quotaresetnotificationsetting.AuthTypeNone).
+				ClearCredentialID()
+		}
 		if disable {
 			update.SetEnabled(false)
 		}

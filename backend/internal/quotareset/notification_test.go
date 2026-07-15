@@ -408,6 +408,68 @@ func TestWeComAdapterKeepsRequiredFieldsWithinByteLimit(t *testing.T) {
 	}
 }
 
+func TestWeComAdapterReservesLongActionLinkBeforeVariableFields(t *testing.T) {
+	ctx := notificationAdapterTestContext()
+	ctx.Requester.DisplayName = "Requester-" + strings.Repeat("申", 3000)
+	ctx.DepartmentPaths = []string{"Department Alpha-" + strings.Repeat("团", 3000)}
+	ctx.GroupName = "Group Alpha-" + strings.Repeat("组", 3000)
+	ctx.CurrentNode.Label = "Node Alpha-" + strings.Repeat("节", 3000)
+	ctx.Reason = "Reason-" + strings.Repeat("理", 5000)
+	ctx.ApprovalHistory = []NotificationDecision{{
+		ActorDisplayName: "Decision Actor-" + strings.Repeat("审", 3000),
+		Comment:          "Decision Comment-" + strings.Repeat("评", 3000),
+	}}
+	ctx.ActionURL = "https://ai-efficiency.example.com/usage/quota-reset?request_id=123&context=" + strings.Repeat("a", 1800)
+	ctx.Recipients = make([]NotificationPerson, 0, 40)
+	for i := 0; i < 40; i++ {
+		ctx.Recipients = append(ctx.Recipients, NotificationPerson{
+			UserID:          i + 1,
+			DisplayName:     fmt.Sprintf("Approver %02d", i+1),
+			NotificationIDs: map[string]string{"wecom": fmt.Sprintf("approver-%02d", i+1)},
+		})
+	}
+
+	rendered, err := (weComGroupRobotAdapter{maxBytes: 4096}).Render(ctx)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	_, content := decodeWeComNotification(t, rendered.Body)
+	if got := len([]byte(content)); got > 4096 {
+		t.Fatalf("content bytes = %d, want <= 4096", got)
+	}
+	if content == "" || !utf8.ValidString(content) {
+		t.Fatalf("content is blank or invalid UTF-8: %q", content)
+	}
+	for _, required := range []string{
+		"申请人：Requester-",
+		"所属团队：Department Alpha-",
+		"订阅组：Group Alpha-",
+		"当前节点：2/3 · Node Alpha-",
+		"申请原因：Reason-",
+		"上一审批：Decision Actor-",
+		"Decision Comment-",
+		"审批进度：1/3",
+		"[进入待处理](" + ctx.ActionURL + ")",
+	} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("bounded content = %q, want required %q", content, required)
+		}
+	}
+	if len(rendered.MissingRecipientUserIDs) == 0 {
+		t.Fatalf("missing recipient ids = %v, want recipients omitted after required content", rendered.MissingRecipientUserIDs)
+	}
+}
+
+func TestWeComAdapterRejectsActionLinkLargerThanRequiredContentBudget(t *testing.T) {
+	ctx := notificationAdapterTestContext()
+	ctx.ActionURL = "https://ai-efficiency.example.com/usage/quota-reset?request_id=123&context=" + strings.Repeat("a", 600)
+
+	rendered, err := (weComGroupRobotAdapter{maxBytes: 512}).Render(ctx)
+	if err == nil || !strings.Contains(err.Error(), "required content exceeds 512 bytes") {
+		t.Fatalf("Render() = %+v, %v, want required-content error", rendered, err)
+	}
+}
+
 func TestWebhookNotifierUsesExplicitChannelInsteadOfURLShape(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

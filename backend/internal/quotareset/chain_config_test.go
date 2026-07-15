@@ -505,6 +505,33 @@ func TestMatchApproverCandidatesMatchesNormalizedEmailAndCollectsPaths(t *testin
 	}
 }
 
+func TestCandidateHasWeComMentionUsesRendererIdentityContract(t *testing.T) {
+	tests := []struct {
+		name       string
+		metadataID any
+		externalID string
+		want       bool
+	}{
+		{name: "valid metadata id", metadataID: "metadata-user", externalID: "fallback-user", want: true},
+		{name: "valid external id fallback", externalID: "fallback-user", want: true},
+		{name: "reserved all", metadataID: " ALL ", want: false},
+		{name: "malformed id", metadataID: "invalid user id", want: false},
+		{name: "metadata precedence over valid fallback", metadataID: "<@all>", externalID: "fallback-user", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := map[string]any{}
+			if tt.metadataID != nil {
+				metadata["wecom_userid"] = tt.metadataID
+			}
+			member := &ent.DirectoryMember{ExternalID: tt.externalID, Metadata: metadata}
+			if got := candidateHasWeComMention(member); got != tt.want {
+				t.Fatalf("candidateHasWeComMention() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMatchApproverCandidatesHonorsNonNullMatchedUserID(t *testing.T) {
 	zero := 0
 	missing := 999

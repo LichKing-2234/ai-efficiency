@@ -10,6 +10,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
+	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
@@ -170,6 +171,105 @@ func TestApproveStoresUnsupportedResetterAsResetFailed(t *testing.T) {
 	}
 }
 
+func TestResetTerminalOutcomeSurvivesCallerCancellation(t *testing.T) {
+	type contextKey string
+	const resetContextValue contextKey = "reset-context-value"
+
+	for _, tc := range quotaResetTerminalFailureCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newQuotaResetTerminalFailureFixture(t, tc.resetErr)
+			providerStarted := make(chan context.Context, 1)
+			providerRelease := make(chan struct{})
+			fixture.provider.resetFn = func(ctx context.Context, _, _ int64) error {
+				providerStarted <- ctx
+				<-providerRelease
+				return tc.resetErr
+			}
+
+			callerCtx, cancel := context.WithCancel(context.WithValue(fixture.ctx, resetContextValue, "preserved"))
+			defer cancel()
+			type resetResult struct {
+				request *ent.QuotaResetRequest
+				err     error
+			}
+			resultCh := make(chan resetResult, 1)
+			go func() {
+				request, err := fixture.service.executeReset(callerCtx, fixture.request.ID, fixture.actor.ID, false, false)
+				resultCh <- resetResult{request: request, err: err}
+			}()
+
+			providerCtx := <-providerStarted
+			_, hasDeadline := providerCtx.Deadline()
+			preservedValue := providerCtx.Value(resetContextValue)
+			cancel()
+			<-callerCtx.Done()
+			providerCancelled := false
+			select {
+			case <-providerCtx.Done():
+				providerCancelled = true
+			default:
+			}
+			close(providerRelease)
+			result := <-resultCh
+
+			if result.err != nil {
+				t.Fatalf("executeReset() error = %v, want terminal outcome persisted", result.err)
+			}
+			if !hasDeadline {
+				t.Fatal("provider context has no deadline")
+			}
+			if preservedValue != "preserved" {
+				t.Fatalf("provider context value = %v, want preserved", preservedValue)
+			}
+			if providerCancelled {
+				t.Fatal("provider context was cancelled with the original caller")
+			}
+			if !errors.Is(callerCtx.Err(), context.Canceled) {
+				t.Fatalf("caller context error = %v, want context.Canceled", callerCtx.Err())
+			}
+			if result.request == nil || result.request.Status != tc.status || result.request.ResetCompletedAt == nil {
+				t.Fatalf("terminal request = %+v, want status %s with completion time", result.request, tc.status)
+			}
+			if tc.resetErr != nil && !strings.Contains(result.request.ResetError, tc.resetErr.Error()) {
+				t.Fatalf("reset error = %q, want %q", result.request.ResetError, tc.resetErr)
+			}
+			if count := fixture.client.QuotaResetRequestEvent.Query().
+				Where(
+					quotaresetrequestevent.RequestIDEQ(fixture.request.ID),
+					quotaresetrequestevent.EventTypeEQ(tc.eventType),
+				).
+				CountX(fixture.ctx); count != 1 {
+				t.Fatalf("%s event count = %d, want 1", tc.eventType, count)
+			}
+		})
+	}
+}
+
+func TestAlreadyRunningResetSurvivesCallerCancellationBeforeProvider(t *testing.T) {
+	fixture := newQuotaResetTerminalFailureFixture(t, nil)
+	callerCtx, cancel := context.WithCancel(fixture.ctx)
+	cancel()
+
+	updated, err := fixture.service.executeReset(callerCtx, fixture.request.ID, fixture.actor.ID, false, false)
+	if err != nil {
+		t.Fatalf("executeReset() error = %v, want already-running reset to complete", err)
+	}
+	if updated.Status != quotaresetrequest.StatusApprovedResetSucceeded || updated.ResetCompletedAt == nil {
+		t.Fatalf("terminal request = %+v, want succeeded with completion time", updated)
+	}
+	if fixture.provider.resetCalls != 1 {
+		t.Fatalf("reset calls = %d, want 1", fixture.provider.resetCalls)
+	}
+	if count := fixture.client.QuotaResetRequestEvent.Query().
+		Where(
+			quotaresetrequestevent.RequestIDEQ(fixture.request.ID),
+			quotaresetrequestevent.EventTypeEQ(quotaresetrequestevent.EventTypeResetSucceeded),
+		).
+		CountX(fixture.ctx); count != 1 {
+		t.Fatalf("reset_succeeded event count = %d, want 1", count)
+	}
+}
+
 func TestResetSuccessAuditFailureRollsBackTerminalOutcome(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -283,7 +383,18 @@ func TestResetCommitFailureRollsBackUpdatedOutcomeAndCreatedEvent(t *testing.T) 
 				})
 			})
 
-			updated, err := fixture.service.executeReset(txCtx, fixture.request.ID, fixture.actor.ID, false, false)
+			errorMessage := ""
+			if tc.resetErr != nil {
+				errorMessage = tc.resetErr.Error()
+			}
+			updated, err := fixture.service.persistResetOutcome(
+				txCtx,
+				fixture.request.ID,
+				fixture.actor.ID,
+				tc.status,
+				tc.eventType,
+				errorMessage,
+			)
 			if !eventCreated {
 				t.Fatal("terminal event mutation did not succeed before commit failure")
 			}
@@ -291,7 +402,13 @@ func TestResetCommitFailureRollsBackUpdatedOutcomeAndCreatedEvent(t *testing.T) 
 			if updated != nil || !commitFailureWrapped || !strings.Contains(err.Error(), "persist reset outcome: commit transaction") {
 				t.Fatalf("executeReset() = %+v, %v, want nil summary with wrapped commit persistence error", updated, err)
 			}
-			assertQuotaResetTerminalFailureRolledBack(t, fixture, tc.eventType)
+			assertQuotaResetOutcomeRolledBack(t, fixture.ctx, fixture.client, fixture.request.ID, tc.eventType)
+			if fixture.provider.resetCalls != 0 {
+				t.Fatalf("reset calls = %d, want 0 for direct persistence test", fixture.provider.resetCalls)
+			}
+			if fixture.notifier.calls != 0 {
+				t.Fatalf("result notification calls = %d, want 0", fixture.notifier.calls)
+			}
 		})
 	}
 }
@@ -491,6 +608,24 @@ func TestNotificationSettingsRejectsHTTPWeComRobotEndpoint(t *testing.T) {
 	}
 }
 
+func TestNotificationSettingsRejectsWeComRobotEndpointForGenericWebhook(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	svc := NewService(client, nil, nil, nil)
+	robotURL := "https://qyapi.weixin.qq.com/cgi-bin/webhook/send" + "?" + "key=test-secret"
+
+	_, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+		ActorUserID: 1,
+		Enabled:     true,
+		ChannelType: "generic_webhook",
+		URL:         &robotURL,
+		AuthType:    "none",
+	})
+	if !errors.Is(err, ErrInvalidNotification) || !strings.Contains(err.Error(), "use the Enterprise WeChat group robot preset") {
+		t.Fatalf("generic WeCom endpoint error = %v, want WeCom preset guidance", err)
+	}
+}
+
 func TestNotificationSettingsReadRedactsRobotKey(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -543,37 +678,191 @@ func TestNotificationSettingsReadRedactsGenericWebhookPath(t *testing.T) {
 	}
 }
 
+func TestNotificationSettingsChannelSwitchRequiresReplacementURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		fromChannel string
+		fromURL     string
+		toChannel   string
+	}{
+		{
+			name:        "Enterprise WeChat to generic",
+			fromChannel: "wecom_group_robot",
+			fromURL:     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-old-key",
+			toChannel:   "generic_webhook",
+		},
+		{
+			name:        "generic to Enterprise WeChat",
+			fromChannel: "generic_webhook",
+			fromURL:     "https://hooks.example.com/quota-reset?token=synthetic-old-token",
+			toChannel:   "wecom_group_robot",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			svc := NewService(client, nil, nil, nil)
+			if _, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+				ActorUserID: 1,
+				Enabled:     true,
+				ChannelType: tt.fromChannel,
+				URL:         &tt.fromURL,
+				AuthType:    "none",
+			}); err != nil {
+				t.Fatalf("initial UpdateNotificationSettings() error = %v", err)
+			}
+
+			_, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+				ActorUserID: 2,
+				Enabled:     true,
+				ChannelType: tt.toChannel,
+				AuthType:    "none",
+			})
+			if !errors.Is(err, ErrInvalidNotification) || !strings.Contains(err.Error(), "replacement webhook URL is required when channel_type changes") {
+				t.Fatalf("UpdateNotificationSettings(channel switch) error = %v, want replacement URL requirement", err)
+			}
+			row := client.QuotaResetNotificationSetting.Query().OnlyX(ctx)
+			if row.ChannelType.String() != tt.fromChannel || row.URL != tt.fromURL {
+				t.Fatalf("stored settings after rejected switch = %s/%q, want %s/%q", row.ChannelType, row.URL, tt.fromChannel, tt.fromURL)
+			}
+		})
+	}
+}
+
+func TestNotificationSettingsChannelSwitchAcceptsReplacementURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		fromChannel string
+		fromURL     string
+		toChannel   string
+		toURL       string
+	}{
+		{
+			name:        "Enterprise WeChat to generic",
+			fromChannel: "wecom_group_robot",
+			fromURL:     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-old-key",
+			toChannel:   "generic_webhook",
+			toURL:       "https://hooks.example.com/quota-reset?token=synthetic-new-token",
+		},
+		{
+			name:        "generic to Enterprise WeChat",
+			fromChannel: "generic_webhook",
+			fromURL:     "https://hooks.example.com/quota-reset?token=synthetic-old-token",
+			toChannel:   "wecom_group_robot",
+			toURL:       "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-new-key",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			svc := NewService(client, nil, nil, nil)
+			if _, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+				ActorUserID: 1,
+				Enabled:     true,
+				ChannelType: tt.fromChannel,
+				URL:         &tt.fromURL,
+				AuthType:    "none",
+			}); err != nil {
+				t.Fatalf("initial UpdateNotificationSettings() error = %v", err)
+			}
+
+			settings, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+				ActorUserID: 2,
+				Enabled:     true,
+				ChannelType: tt.toChannel,
+				URL:         &tt.toURL,
+				AuthType:    "none",
+			})
+			if err != nil {
+				t.Fatalf("UpdateNotificationSettings(channel switch) error = %v", err)
+			}
+			row := client.QuotaResetNotificationSetting.Query().OnlyX(ctx)
+			if settings.ChannelType != tt.toChannel || row.ChannelType.String() != tt.toChannel || row.URL != tt.toURL {
+				t.Fatalf("saved switched settings = %+v/%s/%q, want %s/%q", settings, row.ChannelType, row.URL, tt.toChannel, tt.toURL)
+			}
+		})
+	}
+}
+
 func TestNotificationSettingsOmittedURLPreservesExistingSecret(t *testing.T) {
+	tests := []struct {
+		name    string
+		channel string
+		url     string
+	}{
+		{
+			name:    "generic webhook",
+			channel: "generic_webhook",
+			url:     "https://hooks.example.com/quota-reset?token=synthetic-secret",
+		},
+		{
+			name:    "Enterprise WeChat",
+			channel: "wecom_group_robot",
+			url:     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-secret",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			svc := NewService(client, nil, nil, nil)
+			if _, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+				ActorUserID: 1,
+				Enabled:     true,
+				ChannelType: tt.channel,
+				URL:         &tt.url,
+				AuthType:    "none",
+			}); err != nil {
+				t.Fatalf("initial UpdateNotificationSettings() error = %v", err)
+			}
+			settings, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+				ActorUserID: 2,
+				Enabled:     true,
+				ChannelType: tt.channel,
+				AuthType:    "none",
+			})
+			if err != nil {
+				t.Fatalf("UpdateNotificationSettings(omitted URL) error = %v", err)
+			}
+			if !settings.URLConfigured {
+				t.Fatalf("settings = %+v, want configured URL", settings)
+			}
+			row := client.QuotaResetNotificationSetting.Query().OnlyX(ctx)
+			if row.URL != tt.url {
+				t.Fatalf("stored URL = %q, want preserved secret URL", row.URL)
+			}
+		})
+	}
+}
+
+func TestNotificationSettingsOmittedURLPreservesExplicitGenericChannelOnWeComEndpoint(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
-	svc := NewService(client, nil, nil, nil)
-	endpoint := "https://hooks.example.com/quota-reset?token=synthetic-secret"
+	robotURL := "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-existing-key"
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetChannelType(quotaresetnotificationsetting.ChannelTypeGenericWebhook).
+		SetChannelTypeConfigured(true).
+		SetURL(robotURL).
+		SetAuthType(quotaresetnotificationsetting.AuthTypeNone).
+		SetCreatedByUserID(1).
+		SetUpdatedByUserID(1).
+		SaveX(ctx)
 
-	if _, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
-		ActorUserID: 1,
-		Enabled:     true,
-		ChannelType: "generic_webhook",
-		URL:         &endpoint,
-		AuthType:    "none",
-	}); err != nil {
-		t.Fatalf("initial UpdateNotificationSettings() error = %v", err)
-	}
-	settings, err := svc.UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
+	settings, err := NewService(client, nil, nil, nil).UpdateNotificationSettings(ctx, UpdateNotificationSettingsInput{
 		ActorUserID: 2,
 		Enabled:     true,
-		ChannelType: "generic_webhook",
-		URL:         nil,
-		AuthType:    "none",
+		ChannelType: quotaresetnotificationsetting.ChannelTypeGenericWebhook.String(),
+		AuthType:    quotaresetnotificationsetting.AuthTypeNone.String(),
 	})
 	if err != nil {
-		t.Fatalf("UpdateNotificationSettings(omitted URL) error = %v", err)
-	}
-	if !settings.URLConfigured || settings.URLPreview != "https://hooks.example.com" {
-		t.Fatalf("settings = %+v, want preserved redacted URL", settings)
+		t.Fatalf("UpdateNotificationSettings(omitted compatibility URL) error = %v", err)
 	}
 	row := client.QuotaResetNotificationSetting.Query().OnlyX(ctx)
-	if row.URL != endpoint {
-		t.Fatalf("stored URL = %q, want preserved secret URL", row.URL)
+	if settings.ChannelType != quotaresetnotificationsetting.ChannelTypeGenericWebhook.String() || row.URL != robotURL {
+		t.Fatalf("preserved explicit generic settings = %+v/%q, want generic/%q", settings, row.URL, robotURL)
 	}
 }
 
@@ -876,6 +1165,7 @@ type fakeQuotaResetProvider struct {
 	groups                  []relay.Group
 	listPlatformGroupsFn    func(context.Context) ([]relay.Group, error)
 	resetErr                error
+	resetFn                 func(context.Context, int64, int64) error
 	resetUserID             int64
 	resetGroupID            int64
 	resetCalls              int
@@ -896,10 +1186,13 @@ func (f *fakeQuotaResetProvider) ListUserSubscriptions(ctx context.Context, rela
 	return append([]relay.UserSubscription(nil), f.subscriptions...), nil
 }
 
-func (f *fakeQuotaResetProvider) ResetSubscriptionQuotaForUser(_ context.Context, relayUserID, groupID int64) error {
+func (f *fakeQuotaResetProvider) ResetSubscriptionQuotaForUser(ctx context.Context, relayUserID, groupID int64) error {
 	f.resetCalls++
 	f.resetUserID = relayUserID
 	f.resetGroupID = groupID
+	if f.resetFn != nil {
+		return f.resetFn(ctx, relayUserID, groupID)
+	}
 	return f.resetErr
 }
 

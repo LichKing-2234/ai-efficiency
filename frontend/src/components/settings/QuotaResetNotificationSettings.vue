@@ -30,6 +30,7 @@ const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)
 const settingsLoaded = ref(false)
+const authoritativeChannelType = ref<QuotaResetNotificationChannel | null>(null)
 const feedback = ref<{ kind: 'success' | 'warning' | 'error'; text: string } | null>(null)
 
 const bearerCredentials = computed(() => (
@@ -49,6 +50,7 @@ function errorMessage(err: any, fallback: string) {
 function applySettings(settings: QuotaResetNotificationSettings) {
   enabled.value = settings.enabled
   channelType.value = settings.channel_type
+  authoritativeChannelType.value = settings.channel_type
   authType.value = settings.channel_type === 'generic_webhook' ? settings.auth_type : 'none'
   credentialID.value = settings.channel_type === 'generic_webhook'
     && settings.auth_type === 'bearer_token'
@@ -123,6 +125,18 @@ function replacementPart() {
 }
 
 function buildPayload(): QuotaResetNotificationSettingsInput | null {
+  if (
+    authoritativeChannelType.value !== null
+    && channelType.value !== authoritativeChannelType.value
+    && replacementURL.value.trim() === ''
+  ) {
+    feedback.value = {
+      kind: 'error',
+      text: t('quotaResetSettings.channelChangeURLRequired'),
+    }
+    return null
+  }
+
   if (channelType.value === 'wecom_group_robot') {
     return {
       enabled: enabled.value,
