@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, remediation, architecture documentation, full local verification, task reviews, and fresh final SPEC/standards reviews are complete and committed. Draft PR delivery and every CI gate remain pending.
+**Status:** Implementation, remediation, architecture documentation, full local verification, task/final reviews, draft PR delivery, and first-round CI are complete. Replacement CI, the final ledger head, and final-current-head CI remain pending.
 
 **Goal:** Start public and authenticated non-admin route chunks without waiting for current-user hydration while keeping administrator routes fail-closed and making every login, logout, refresh, and delayed redirect safe across browser-session and navigation races.
 
@@ -716,7 +716,7 @@ git status --short
 
 Expected: tracked worktree clean; ignored review packages/reports may remain.
 
-- [ ] **Step 5: Push, open the draft PR, and require first-round CI**
+- [x] **Step 5: Push, open the draft PR, and require first-round CI**
 
 Create ignored `.superpowers/sdd/pr-122.md` with `Closes #122`, dependency on draft PR #138, session/route scheduling summary, invalid-token/admin safety, exact local test/review evidence, rollback notes, and no merge/deploy claim. Run:
 
@@ -728,6 +728,8 @@ gh pr checks --watch --fail-fast
 ```
 
 Expected: open draft, exact base/head, mergeable/clean or non-conflicting state, and first-round `backend`, `frontend`, `ae-cli`, and `deploy-static` checks green for the displayed `headRefOid`. Only after all four checks succeed, check Step 5 and record the head OID, check names, conclusions, run IDs/URLs, and timestamp. Do not yet claim replacement or final-current-head CI.
+
+**First-round CI evidence (2026-07-15):** Draft PR #144 was open and mergeable/clean with base `docs/performance-contracts-116`, head `perf/route-hydration-122`, and head OID `d64451c01432bc13e20529951235c4be2eed93c8`. Actions run [`29397422663`](https://github.com/LichKing-2234/ai-efficiency/actions/runs/29397422663) completed successfully: `backend` 2m44s, `frontend` 54s, `ae-cli` 29s, and `deploy-static` 9s. This records first-round evidence only; replacement and final-current-head CI remain pending.
 
 - [ ] **Step 6: Commit first-round evidence, then require and verify replacement CI**
 
