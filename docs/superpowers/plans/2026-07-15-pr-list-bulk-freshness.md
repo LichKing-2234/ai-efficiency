@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Planned from `docs/performance-contracts-116@5f6c58e`; implementation, review, delivery, and CI remain pending.
+**Status:** Planned from `docs/performance-contracts-116@5f6c58e`; plan-review remediation is implemented and re-review is pending. Implementation, task review, delivery, and CI remain pending.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -58,11 +58,11 @@
 
 **Interfaces:**
 - Consumes: existing `Service.EvaluatePRFreshness`, `PRFreshness`, `CommitFreshness`, and persisted `PRCommitUsageSnapshot.SortOrder`.
-- Produces: deterministic snapshot ordering and a pure `evaluateLoadedPRFreshness` classifier that Task 2 reuses.
+- Produces: deterministic in-memory snapshot ordering and a pure `evaluateLoadedPRFreshness` classifier that Task 2 reuses.
 
 - [ ] **Step 1: Add exact golden tests for competing anomaly states**
 
-  Add table-driven tests that create snapshot rows in reverse insertion order while assigning explicit `sort_order` values. Cover these exact outcomes:
+  Add table-driven tests that call the not-yet-existing pure classifier with deliberately unsorted in-memory snapshot slices. Include equal-`sort_order` rows whose IDs and input positions disagree, so `sort_order ASC, id ASC` is proved without relying on PostgreSQL's unspecified order. Cover these exact outcomes:
 
   ```text
   first commit no_checkpoint, later no_usage_events => no_checkpoint / "No checkpoint matched this PR commit."
@@ -74,17 +74,17 @@
   no snapshots, no pending event, refreshed => no_checkpoint / "Snapshot refresh ran but no PR commit rows were recorded."
   ```
 
-  Assert `Commits` is returned by `sort_order ASC, id ASC`, `CheckedAt` is UTC, and the exact current status/reason strings do not change.
+  Assert `Commits` is returned by `sort_order ASC, id ASC`, `CheckedAt` is UTC, and the exact current status/reason strings do not change. Keep public `EvaluatePRFreshness` database cases for the three no-snapshot outcomes, but the competing-anomaly RED must come from the pure classifier input.
 
 - [ ] **Step 2: Run the precedence tests and record genuine RED**
 
   Run:
 
   ```bash
-  cd backend && go test ./internal/prusage -run 'TestEvaluatePRFreshness(Precedence|Orders|NoSnapshots)' -count=1
+  cd backend && go test ./internal/prusage -run 'TestEvaluate(LoadedPRFreshness|PRFreshnessNoSnapshots)' -count=1
   ```
 
-  Expected: FAIL because the existing eager-loaded snapshot edge has no explicit order, so reverse insertion order can select a different first anomaly than `sort_order`.
+  Expected: FAIL deterministically because `evaluateLoadedPRFreshness` does not exist. This RED does not depend on a database planner returning an unordered query in one particular order.
 
 - [ ] **Step 3: Extract the pure classifier and order the existing single read**
 
@@ -105,7 +105,7 @@
   ) *PRFreshness
   ```
 
-  The function must preserve the exact branch order and strings currently in `EvaluatePRFreshness`. Sort/load snapshots by `prcommitusagesnapshot.FieldSortOrder` and then ID. For commit rows, classify checkpoint missing, no events, and newer-event stale in that order; the first non-fresh item in sorted order supplies the overall status and reason.
+  The function must preserve the exact branch order and strings currently in `EvaluatePRFreshness`. Sort a copy of the supplied snapshot slice in memory by `SortOrder` and then ID; do not mutate caller-owned ordering. For commit rows, classify checkpoint missing, no events, and newer-event stale in that order; the first non-fresh item in sorted order supplies the overall status and reason.
 
   Keep the current database calls in `EvaluatePRFreshness` for Task 1, but route the final decision through this classifier. Do not add page/bulk behavior yet.
 
@@ -148,22 +148,24 @@
 - Maintain: `docs/superpowers/plans/2026-07-15-pr-list-bulk-freshness.md`
 
 **Interfaces:**
-- Consumes: Task 1 `evaluateLoadedPRFreshness` and loaded page `[]*ent.PrRecord` values containing ID, repo ID, and `usage_refreshed_at`.
-- Produces: `Service.EvaluatePRFreshnessPage(context.Context, []*ent.PrRecord) (map[int]*PRFreshness, error)`; existing `EvaluatePRFreshness(context.Context, int)` delegates through it after loading one PR.
+- Consumes: Task 1 `evaluateLoadedPRFreshness`, the repository ID already known by the list route, and loaded page `[]*ent.PrRecord` values containing ID and `usage_refreshed_at`.
+- Produces: `Service.EvaluatePRFreshnessPage(context.Context, int, []*ent.PrRecord) (map[int]*PRFreshness, error)`, where the integer is `repoConfigID`; existing `EvaluatePRFreshness(context.Context, int)` loads its selected PR plus repo edge and delegates through the same method.
 
 - [ ] **Step 1: Add a recording PostgreSQL driver and bounded scale fixture**
 
   In `freshness_bulk_test.go`, add a test-only driver that embeds `dialect.Driver`, records copied SQL/arguments under a mutex, and delegates unchanged. Open it against the per-test schema DSN from `testdb.OpenWithDSN` via `entsql.OpenDB(dialect.Postgres, db)` and `ent.NewClient(ent.Driver(recorder))`.
 
-  Seed two fixtures, resetting the recorder after setup:
+  Seed one mixed-state parity fixture and two separate all-snapshot query-count fixtures, resetting the recorder after setup:
 
   ```text
-  small: 5 PRs, 1 snapshot per PR
-  large: 100 PRs, 20 snapshots per PR
+  parity: 5 PRs, 4 snapshots, 3 checkpoints, and 3 events
+          (fresh, snapshot-without-checkpoint, checkpoint-without-event,
+           stale snapshot, and one no-snapshot pending-upload PR)
+  count-small: 5 PRs x 1 fresh snapshot = 5 snapshots/checkpoints/events
+  count-large: 100 PRs x 20 fresh snapshots = 2,000 snapshots/checkpoints/events
   repository: org/alpha
   identities: alice@example.com and bob@example.org
-  states: fresh, no_checkpoint, no_usage_events, stale_snapshot, no-snapshot pending_upload
-  creation order deliberately differs from sort_order
+  parity creation/input order deliberately differs from sort_order and ID
   ```
 
   Use fixed UTC timestamps, Ent bulk creates in bounded batches, and generated synthetic SHAs/dedupe keys. Do not use a real SCM or Relay service.
@@ -179,18 +181,20 @@
   TestEvaluatePRFreshnessPageHonorsCancellation
   ```
 
-  For every mixed-state row, compare page status, exact reason, checked-at presence, and ordered commit diagnostics against Task 1's golden outcomes. Assert all requested PR IDs appear exactly once in the result.
+  For every mixed-state parity row, compare page status, exact reason, checked-at presence, and ordered commit diagnostics against Task 1's golden outcomes. Assert all five requested PR IDs appear exactly once in the result.
 
   Identify relevant SQL by table/shape rather than call order and assert the small and large fixture execute the same fact-query shapes:
 
   ```text
   one snapshot SELECT bounded by pr_record_id IN (...)
-  one repo pending-event aggregate grouped by repo_config_id
+  one repo pending-event count scoped by the explicit repo_config_id
   one checkpoint-event aggregate grouped by commit_checkpoint_id with COUNT and MAX(observed_end_at)
   no per-PR or per-commit SELECT
   ```
 
-  Exact argument counts may grow; SQL statement count must not. Empty input returns an empty non-nil map and records zero SQL statements.
+  Exact argument counts may grow; SQL statement count must not. Compare the exact three fact-query roles for count-small and count-large, and record the exact fixture totals above. Empty input returns an empty non-nil map and records zero SQL statements.
+
+  For cancellation, configure the recording driver to block the snapshot fact query until `ctx.Done()`. Start the page evaluation, wait until that query is in flight, cancel the context, and assert `errors.Is(err, context.Canceled)`. Assert the driver returns from the blocked call, records no pending-event or checkpoint-event query afterward, and has no in-flight test goroutine when the method returns.
 
 - [ ] **Step 3: Run Task 2 tests and record RED**
 
@@ -209,17 +213,18 @@
   ```go
   func (s *Service) EvaluatePRFreshnessPage(
       ctx context.Context,
+      repoConfigID int,
       prs []*ent.PrRecord,
   ) (map[int]*PRFreshness, error)
   ```
 
-  Validate the service/client, reject nil PR elements with an operation-wrapped error, deduplicate PR IDs, and collect positive repo IDs. Use the supplied context for all reads.
+  Validate the service/client and positive `repoConfigID`, reject nil PR elements with an operation-wrapped error, and deduplicate PR IDs. Use the supplied context for all reads. The page API is intentionally one-repository-shaped because `ListByRepo` already owns that path parameter and `PrRecord` does not expose its required repo edge as a scalar field.
 
-  Load all page snapshots with one query ordered by PR ID, sort order, and snapshot ID. Load pending unbound event counts for the page's repo IDs with one grouped query. Collect non-nil checkpoint IDs from the snapshots, then load `COUNT(*)` and `MAX(observed_end_at)` by checkpoint with one grouped query. If no checkpoint IDs exist, skip only that third query; never replace it with a loop.
+  Load all page snapshots with one query bounded by the deduplicated PR IDs. Count pending unbound events for the explicit repository with one query. Collect non-nil checkpoint IDs from the snapshots, then load `COUNT(*)` and `MAX(observed_end_at)` by checkpoint with one grouped query. If no checkpoint IDs exist, skip only that third query; never replace it with a loop. Task 1's classifier, not unspecified database row order, owns final snapshot ordering.
 
   Use one `checkedAt := time.Now().UTC()` for the page, group facts in Go by IDs, and call Task 1's classifier once per requested PR. Return operation-specific wrapped errors without embedding SQL or fixture values.
 
-  Change `EvaluatePRFreshness(ctx, prID)` to load only the selected PR record and delegate to `EvaluatePRFreshnessPage(ctx, []*ent.PrRecord{pr})`. Preserve selected-detail `CommitFreshness` and all existing errors at the public method boundary.
+  Change `EvaluatePRFreshness(ctx, prID)` to load the selected PR with `WithRepoConfig`, resolve that edge once, and delegate to `EvaluatePRFreshnessPage(ctx, repo.ID, []*ent.PrRecord{pr})`. Preserve selected-detail `CommitFreshness` and all existing errors at the public method boundary. The selected-detail repo-edge load is outside the page query-count assertion.
 
 - [ ] **Step 5: Verify repeated scale GREEN and single-detail compatibility**
 
@@ -232,7 +237,7 @@
   git diff --check
   ```
 
-  Expected: PASS twice with identical visible results and equal fact-query counts for 5x1 and 100x20 fixtures. Record the counts, fixture sizes, and skipped-empty-query behavior in the plan; do not report elapsed time as a budget.
+  Expected: PASS twice with identical visible results and exactly the same three fact-query roles for the 5/5/5 and 100/2,000/2,000 fixtures. Record PR, snapshot, checkpoint, event, and query totals plus skipped-empty-query and cancellation behavior in the plan; do not report elapsed time as a budget.
 
 - [ ] **Step 6: Commit Task 2 and record the checkpoint**
 
@@ -271,13 +276,14 @@
 
   ```text
   page evaluator calls = 1
+  page evaluator repo_config_id = route repository ID
   page evaluator receives the five returned PR IDs in response order
   single evaluator calls during list = 0
   list rows preserve title/status/usage counters and supplied freshness fields
   commit_freshness is absent from list rows
   ```
 
-  Add failure coverage: when page freshness returns an error, the list remains HTTP 200 and every row uses the existing `unknown` / `Usage freshness has not been evaluated.` fallback, matching the current per-row error behavior.
+  Add four bounded fallback cases: page success; page evaluator error; a successful map missing one requested PR ID; and an injected single evaluator that has no page capability. The latter three remain HTTP 200 and use the exact existing `unknown` / `Usage freshness has not been evaluated.` fallback for affected rows, with absent checked-at/commit details and zero single-evaluator calls during list handling.
 
   Preserve and strengthen list ordering coverage for open/merged/other plus `created_at DESC`. Keep the current summary counts unchanged. Extend selected-detail and refresh-response tests to assert the single evaluator still runs once and complete commit diagnostics remain present.
 
@@ -297,13 +303,13 @@
 
   ```go
   type prUsagePageFreshnessEvaluator interface {
-      EvaluatePRFreshnessPage(context.Context, []*ent.PrRecord) (map[int]*prusage.PRFreshness, error)
+      EvaluatePRFreshnessPage(context.Context, int, []*ent.PrRecord) (map[int]*prusage.PRFreshness, error)
   }
   ```
 
   During `NewPRHandler`, type-assert the injected long-lived `prusage.Service` once and store both single/detail and page evaluators. Split response construction so list serialization accepts an already-computed `*PRFreshness`; do not let it call the single evaluator.
 
-  In `ListByRepo`, after the ordered, offset, limited PR query, call the page evaluator once. On an evaluator error or missing map item, retain the existing unknown fallback for that row. When no page capability is configured, also use the bounded unknown fallback; do not fall back to a per-row loop.
+  In `ListByRepo`, after the ordered, offset, limited PR query, call the page evaluator once with the already parsed `repoID`. On an evaluator error or missing map item, retain the existing unknown fallback for that row. When no page capability is configured, also use the bounded unknown fallback; do not fall back to a per-row loop.
 
   Keep `Get` and `RefreshUsage` on the selected single evaluator path, including `includeCommits=true`. Do not change summary queries or public DTO tags.
 
@@ -387,7 +393,7 @@
   ```text
   Is visible status/reason precedence exact and deterministic?
   Can list execution call the single evaluator in a loop?
-  Does SQL statement count remain constant across 5x1 and 100x20 fixtures?
+  Does SQL statement count remain constant across the exact 5/5/5 and 100/2,000/2,000 fixtures?
   Are all fact reads request-context-bound and grouped by stable IDs?
   Are list fields, summary, filtering, and ordering unchanged?
   Do detail and refresh still return complete commit diagnostics?
@@ -446,8 +452,8 @@
 
 - Spec coverage: Task 1 locks exact visible precedence; Task 2 proves constant bulk SQL and scale parity; Task 3 removes list-time per-row evaluation while preserving response behavior; Task 4 covers current docs, review, verification, and delivery.
 - Placeholder scan: no TBD/TODO or unspecified implementation/testing step remains.
-- Type consistency: Task 1 produces the pure classifier; Task 2 produces `EvaluatePRFreshnessPage`; Task 3 consumes that exact signature through an internal handler interface.
-- Query-bound consistency: the plan permits one snapshot query, one repo-pending aggregate, and one checkpoint-event aggregate; page size and commits change only bound argument/result counts, not SQL statement count.
+- Type consistency: Task 1 produces the pure classifier; Task 2 produces `EvaluatePRFreshnessPage(ctx, repoConfigID, prs)`; Task 3 passes the route repository ID through that exact internal handler interface.
+- Query-bound consistency: the plan permits one PR-ID-bounded snapshot query, one explicit-repository pending count, and one checkpoint-event aggregate; the separate 5/5/5 and 100/2,000/2,000 fixtures change only bound argument/result counts, not SQL statement count.
 - Contract consistency: existing routes, fields, summary, filters, list ordering, detail diagnostics, and exact reason strings are preserved.
 - Scope control: no frontend, Redis, relay, SCM, auth, `sub2api`, CDN, release, or Helm behavior enters this ticket.
 - Data hygiene: all planned identities, repositories, SHAs, and events are synthetic.
