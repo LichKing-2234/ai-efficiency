@@ -328,6 +328,17 @@ func TestCacheRedisFailureStillCollapsesAuthoritativeLoad(t *testing.T) {
 
 func TestCacheKeyIsolatesAllDimensionsAndNeverSerializesQuota(t *testing.T) {
 	base := testCacheKey()
+	blueKey, err := cacheKey("test-blue", base)
+	if err != nil {
+		t.Fatalf("cacheKey(test-blue) error = %v", err)
+	}
+	greenKey, err := cacheKey("test-green", base)
+	if err != nil {
+		t.Fatalf("cacheKey(test-green) error = %v", err)
+	}
+	if blueKey[strings.LastIndex(blueKey, ":"):] == greenKey[strings.LastIndex(greenKey, ":"):] {
+		t.Fatalf("deployment namespaces produced the same cache digest: %q / %q", blueKey, greenKey)
+	}
 	keys := map[string]struct{}{}
 	add := func(key CacheKey) {
 		encoded, err := cacheKey("test-blue", key)
