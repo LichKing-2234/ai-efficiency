@@ -398,6 +398,31 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{DirectorySyncRunsColumns[4], DirectorySyncRunsColumns[17]},
 			},
+			{
+				Name:    "directorysyncrun_source_id_started_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncRunsColumns[1], DirectorySyncRunsColumns[6], DirectorySyncRunsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						DirectorySyncRunsColumns[0].Name: true,
+
+						DirectorySyncRunsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "directory_sync_runs_active_started_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncRunsColumns[1], DirectorySyncRunsColumns[6], DirectorySyncRunsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						DirectorySyncRunsColumns[0].Name: true,
+
+						DirectorySyncRunsColumns[6].Name: true,
+					},
+					Where: "mode IN ('preview', 'apply') AND status IN ('queued', 'running')",
+				},
+			},
 		},
 	}
 	// PrCommitUsageSnapshotsColumns holds the columns for the "pr_commit_usage_snapshots" table.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorymember"
+	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/testdb"
@@ -47,6 +49,335 @@ type fakeRelayDisabler struct {
 func (f *fakeRelayDisabler) DisableUser(_ context.Context, userID int64) error {
 	f.disabled = append(f.disabled, userID)
 	return nil
+}
+
+type runListTestFixture struct {
+	client         *ent.Client
+	service        *Service
+	sourceID       int
+	expectedIDs    []int
+	latestActiveID int
+	detailRunID    int
+}
+
+func newRunListTestFixture(t *testing.T) runListTestFixture {
+	t.Helper()
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := client.DirectorySource.Create().
+		SetName("Example Directory").
+		SetDescription("Synthetic run history").
+		SetScope("full_company").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		SetScheduleEnabled(false).
+		SetScheduleInterval("daily").
+		SetScheduleTimezone("UTC").
+		SaveX(ctx)
+
+	base := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	creates := make([]*ent.DirectorySyncRunCreate, 0, 125)
+	for i := 0; i < 125; i++ {
+		mode := []directorysyncrun.Mode{
+			directorysyncrun.ModeValidate,
+			directorysyncrun.ModePreview,
+			directorysyncrun.ModeApply,
+		}[i%3]
+		create := client.DirectorySyncRun.Create().
+			SetSourceID(source.ID).
+			SetMode(mode).
+			SetTrigger(directorysyncrun.TriggerManual).
+			SetHTTPRequestCount(i + 1).
+			SetDepartmentCount(i + 2).
+			SetMemberCount(i + 3).
+			SetInvalidMemberCount(i % 4).
+			SetWarningCount((i % 5) + 1).
+			SetWarnings([]map[string]any{{"message": fmt.Sprintf("warning-marker-%03d", i)}}).
+			SetSummary(map[string]any{"summary_marker": fmt.Sprintf("summary-marker-%03d", i)}).
+			SetPreviewDiff(map[string]any{"diff_marker": fmt.Sprintf("diff-marker-%03d", i)}).
+			SetErrorMessage(fmt.Sprintf("error-marker-%03d", i))
+
+		switch i {
+		case 0:
+			create.SetStatus(directorysyncrun.StatusQueued).
+				SetPhase(directorysyncrun.PhaseValidating)
+		case 1:
+			create.SetMode(directorysyncrun.ModePreview).
+				SetStatus(directorysyncrun.StatusQueued).
+				SetPhase(directorysyncrun.PhaseValidating)
+		case 2:
+			create.SetMode(directorysyncrun.ModeApply).
+				SetStatus(directorysyncrun.StatusQueued).
+				SetPhase(directorysyncrun.PhaseValidating)
+		default:
+			startedAt := base.Add(time.Duration((i-3)/4) * time.Minute)
+			status := directorysyncrun.StatusCompleted
+			phase := directorysyncrun.PhaseCompleted
+			if i%11 == 0 {
+				status = directorysyncrun.StatusFailed
+				phase = directorysyncrun.PhaseFailed
+			} else if i%7 == 0 {
+				status = directorysyncrun.StatusCompletedWithWarnings
+			}
+			create.SetStatus(status).
+				SetPhase(phase).
+				SetStartedAt(startedAt).
+				SetCompletedAt(startedAt.Add(30 * time.Second))
+		}
+		creates = append(creates, create)
+	}
+
+	runs := client.DirectorySyncRun.CreateBulk(creates...).SaveX(ctx)
+	sorted := append([]*ent.DirectorySyncRun(nil), runs...)
+	sort.Slice(sorted, func(i, j int) bool {
+		left, right := sorted[i], sorted[j]
+		if left.StartedAt == nil || right.StartedAt == nil {
+			if left.StartedAt == nil && right.StartedAt == nil {
+				return left.ID > right.ID
+			}
+			return left.StartedAt == nil
+		}
+		if left.StartedAt.Equal(*right.StartedAt) {
+			return left.ID > right.ID
+		}
+		return left.StartedAt.After(*right.StartedAt)
+	})
+	expectedIDs := make([]int, len(sorted))
+	for i, run := range sorted {
+		expectedIDs[i] = run.ID
+	}
+
+	return runListTestFixture{
+		client:         client,
+		service:        NewService(client, ServiceOptions{}),
+		sourceID:       source.ID,
+		expectedIDs:    expectedIDs,
+		latestActiveID: runs[2].ID,
+		detailRunID:    runs[64].ID,
+	}
+}
+
+func requireRunSummaryIDs(t *testing.T, items []RunSummary, want []int) {
+	t.Helper()
+	if len(items) != len(want) {
+		t.Fatalf("items = %d, want %d", len(items), len(want))
+	}
+	for i := range want {
+		if items[i].ID != want[i] {
+			t.Fatalf("items[%d].id = %d, want %d", i, items[i].ID, want[i])
+		}
+	}
+}
+
+func TestListRunsDefaultsToTwenty(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	for _, request := range []RunListRequest{
+		{SourceID: fixture.sourceID},
+		{SourceID: fixture.sourceID, Limit: -1},
+	} {
+		page, err := fixture.service.ListRuns(context.Background(), request)
+		if err != nil {
+			t.Fatalf("ListRuns(%+v): %v", request, err)
+		}
+		if page.PageSize != DefaultRunPageSize || page.Page != 0 || page.Total != 125 {
+			t.Fatalf("page = %+v, want page_size=%d page=0 total=125", page, DefaultRunPageSize)
+		}
+		requireRunSummaryIDs(t, page.Items, fixture.expectedIDs[:DefaultRunPageSize])
+	}
+}
+
+func TestListRunsClampsLimitToOneHundred(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	for _, limit := range []int{101, 1000} {
+		page, err := fixture.service.ListRuns(context.Background(), RunListRequest{
+			SourceID: fixture.sourceID,
+			Limit:    limit,
+		})
+		if err != nil {
+			t.Fatalf("ListRuns(limit=%d): %v", limit, err)
+		}
+		if page.PageSize != MaxRunPageSize || len(page.Items) != MaxRunPageSize {
+			t.Fatalf("limit %d returned page_size/items = %d/%d, want %d", limit, page.PageSize, len(page.Items), MaxRunPageSize)
+		}
+	}
+}
+
+func TestListRunsNormalizesNegativeOffset(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{
+		SourceID: fixture.sourceID,
+		Limit:    20,
+		Offset:   -7,
+	})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if page.Page != 0 {
+		t.Fatalf("page = %d, want 0", page.Page)
+	}
+	requireRunSummaryIDs(t, page.Items, fixture.expectedIDs[:20])
+}
+
+func TestListRunsOrdersStartedAtThenIDDescending(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{
+		SourceID: fixture.sourceID,
+		Limit:    100,
+		Offset:   3,
+	})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	requireRunSummaryIDs(t, page.Items, fixture.expectedIDs[3:103])
+	for i := 1; i < len(page.Items); i++ {
+		previous, current := page.Items[i-1], page.Items[i]
+		if previous.StartedAt != nil && current.StartedAt != nil && previous.StartedAt.Equal(*current.StartedAt) && previous.ID <= current.ID {
+			t.Fatalf("equal started_at tie ordered ids %d then %d, want descending ids", previous.ID, current.ID)
+		}
+	}
+}
+
+func TestListRunsOrdersQueuedNullStartedAtFirst(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	requireRunSummaryIDs(t, page.Items[:3], fixture.expectedIDs[:3])
+	for i := 0; i < 3; i++ {
+		if page.Items[i].StartedAt != nil {
+			t.Fatalf("items[%d].started_at = %v, want nil", i, page.Items[i].StartedAt)
+		}
+	}
+}
+
+func TestListRunsPagesTiesWithoutDuplicates(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	first, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListRuns first page: %v", err)
+	}
+	second, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID, Limit: 20, Offset: 20})
+	if err != nil {
+		t.Fatalf("ListRuns second page: %v", err)
+	}
+	unaligned, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID, Limit: 20, Offset: 21})
+	if err != nil {
+		t.Fatalf("ListRuns unaligned page: %v", err)
+	}
+	requireRunSummaryIDs(t, first.Items, fixture.expectedIDs[:20])
+	requireRunSummaryIDs(t, second.Items, fixture.expectedIDs[20:40])
+	requireRunSummaryIDs(t, unaligned.Items, fixture.expectedIDs[21:41])
+	if unaligned.Page != 1 {
+		t.Fatalf("unaligned page = %d, want floor(21/20)=1", unaligned.Page)
+	}
+	seen := make(map[int]struct{}, len(first.Items))
+	for _, item := range first.Items {
+		seen[item.ID] = struct{}{}
+	}
+	for _, item := range second.Items {
+		if _, ok := seen[item.ID]; ok {
+			t.Fatalf("run %d appears on adjacent pages", item.ID)
+		}
+	}
+}
+
+func TestListRunsSummaryOmitsDiagnosticBlobs(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID, Limit: 100})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	for _, item := range page.Items {
+		encoded, err := json.Marshal(item)
+		if err != nil {
+			t.Fatalf("marshal summary %d: %v", item.ID, err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &fields); err != nil {
+			t.Fatalf("decode summary %d: %v", item.ID, err)
+		}
+		for _, key := range []string{"warnings", "summary", "preview_diff", "error_message"} {
+			if _, ok := fields[key]; ok {
+				t.Fatalf("summary %d contains diagnostic key %q: %s", item.ID, key, encoded)
+			}
+		}
+		for _, marker := range []string{"warning-marker-", "summary-marker-", "diff-marker-", "error-marker-"} {
+			if strings.Contains(string(encoded), marker) {
+				t.Fatalf("summary %d contains diagnostic marker %q: %s", item.ID, marker, encoded)
+			}
+		}
+	}
+}
+
+func TestListRunsReturnsLatestActiveOutsideRequestedPage(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{
+		SourceID: fixture.sourceID,
+		Limit:    20,
+		Offset:   100,
+	})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if page.LatestActiveRun == nil || page.LatestActiveRun.ID != fixture.latestActiveID {
+		t.Fatalf("latest_active_run = %+v, want id %d", page.LatestActiveRun, fixture.latestActiveID)
+	}
+	for _, item := range page.Items {
+		if item.ID == fixture.latestActiveID {
+			t.Fatalf("latest active run %d unexpectedly appears on requested history page", item.ID)
+		}
+	}
+}
+
+func TestListRunsReturnsEmptyItemsNotNull(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID + 1000})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if page.Items == nil || len(page.Items) != 0 {
+		t.Fatalf("items = %#v, want non-nil empty slice", page.Items)
+	}
+	if page.LatestActiveRun != nil || page.Total != 0 {
+		t.Fatalf("empty page = %+v, want total=0 latest_active_run=nil", page)
+	}
+}
+
+func TestListRunsRejectsInvalidSourceID(t *testing.T) {
+	client := testdb.Open(t)
+	service := NewService(client, ServiceOptions{})
+	if _, err := service.ListRuns(context.Background(), RunListRequest{}); err == nil {
+		t.Fatal("ListRuns succeeded with source_id=0")
+	} else if _, ok := err.(*ValidationError); !ok {
+		t.Fatalf("ListRuns error = %T %v, want ValidationError", err, err)
+	}
+}
+
+func TestGetRunKeepsCompleteDiagnostics(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	run, err := fixture.service.GetRun(context.Background(), fixture.detailRunID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	encoded, err := json.Marshal(run)
+	if err != nil {
+		t.Fatalf("marshal run detail: %v", err)
+	}
+	for _, key := range []string{"warnings", "summary", "preview_diff", "error_message"} {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &fields); err != nil {
+			t.Fatalf("decode run detail: %v", err)
+		}
+		if _, ok := fields[key]; !ok {
+			t.Fatalf("run detail missing diagnostic key %q: %s", key, encoded)
+		}
+	}
+	for _, marker := range []string{"warning-marker-064", "summary-marker-064", "diff-marker-064", "error-marker-064"} {
+		if !strings.Contains(string(encoded), marker) {
+			t.Fatalf("run detail missing marker %q: %s", marker, encoded)
+		}
+	}
 }
 
 func TestServicePreviewDoesNotUpdateFactsAndApplyDoes(t *testing.T) {
