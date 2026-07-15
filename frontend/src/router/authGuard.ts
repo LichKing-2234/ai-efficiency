@@ -24,6 +24,12 @@ type NavigationAttempt = {
   routeName: RouteRecordName | null | undefined
 }
 
+type PendingExpiryRedirect = {
+  event: AuthExpiryEvent
+  navigationGeneration: number | null
+  targetFullPath: string
+}
+
 function resolveSafeRedirect(raw: unknown, fallback = '/') {
   if (typeof raw !== 'string') {
     return fallback
@@ -46,9 +52,11 @@ function sameRoute(
 
 export function installAuthNavigationGuards(router: Router): () => void {
   let navigationGeneration = 0
+  const navigationAttempts = new WeakMap<object, NavigationAttempt>()
   let activeNavigation: NavigationAttempt | null = null
   let confirmedNavigation: NavigationAttempt | null = null
   let pendingHydration: PendingHydration | null = null
+  let pendingExpiryRedirect: PendingExpiryRedirect | null = null
   let consumedAuthExpiryGeneration = -1
   let disposed = false
 
@@ -92,19 +100,37 @@ export function installAuthNavigationGuards(router: Router): () => void {
         return
       }
 
-      consumedAuthExpiryGeneration = event.clearedGeneration
+      if (pendingExpiryRedirect) {
+        if (
+          pendingExpiryRedirect.navigationGeneration !== null
+          && activeNavigation?.navigationGeneration === pendingExpiryRedirect.navigationGeneration
+        ) {
+          return
+        }
+        pendingExpiryRedirect = null
+      }
+
       const route = router.currentRoute.value
       if (route.name === 'Login' || route.name === 'OAuthAuthorize') {
+        consumedAuthExpiryGeneration = event.clearedGeneration
         return
       }
       if (!route.meta.redirectOnAuthExpiry && route.meta.public) {
+        consumedAuthExpiryGeneration = event.clearedGeneration
         return
       }
 
-      void router.replace({
+      const target = router.resolve({
         path: '/login',
         query: { redirect: resolveSafeRedirect(route.fullPath) },
       })
+      const redirect: PendingExpiryRedirect = {
+        event,
+        navigationGeneration: null,
+        targetFullPath: target.fullPath,
+      }
+      pendingExpiryRedirect = redirect
+      void router.replace(target).catch(() => undefined)
     })
   }
 
@@ -152,6 +178,14 @@ export function installAuthNavigationGuards(router: Router): () => void {
       routeName: to.name,
     }
     activeNavigation = attempt
+    navigationAttempts.set(to, attempt)
+    if (
+      pendingExpiryRedirect
+      && pendingExpiryRedirect.navigationGeneration === null
+      && pendingExpiryRedirect.targetFullPath === attempt.fullPath
+    ) {
+      pendingExpiryRedirect.navigationGeneration = attempt.navigationGeneration
+    }
 
     const auth = useAuthStore()
 
@@ -212,12 +246,64 @@ export function installAuthNavigationGuards(router: Router): () => void {
     return undefined
   })
 
-  const removeAfterEach = router.afterEach((to, _from, failure) => {
-    if (failure || !activeNavigation || !sameRoute(to, activeNavigation)) {
+  const settleFailedNavigation = (to: object) => {
+    const failedAttempt = navigationAttempts.get(to)
+    if (
+      !failedAttempt
+      || activeNavigation?.navigationGeneration !== failedAttempt.navigationGeneration
+    ) {
       return
     }
 
-    confirmedNavigation = { ...activeNavigation }
+    const failedExpiryGeneration = (
+      pendingExpiryRedirect?.navigationGeneration === failedAttempt.navigationGeneration
+        ? pendingExpiryRedirect.event.clearedGeneration
+        : null
+    )
+    if (failedExpiryGeneration !== null) {
+      pendingExpiryRedirect = null
+    }
+    if (pendingHydration?.navigationGeneration === failedAttempt.navigationGeneration) {
+      pendingHydration = null
+    }
+    activeNavigation = (
+      confirmedNavigation && sameRoute(router.currentRoute.value, confirmedNavigation)
+        ? { ...confirmedNavigation }
+        : null
+    )
+
+    const latestExpiry = readLatestAuthExpiry()
+    if (
+      latestExpiry
+      && latestExpiry.clearedGeneration !== failedExpiryGeneration
+    ) {
+      scheduleExpiryPolicy(latestExpiry, confirmedNavigation)
+    }
+  }
+
+  const removeAfterEach = router.afterEach((to, _from, failure) => {
+    if (failure) {
+      settleFailedNavigation(to)
+      return
+    }
+    const completedAttempt = navigationAttempts.get(to)
+    if (
+      !completedAttempt
+      || activeNavigation?.navigationGeneration !== completedAttempt.navigationGeneration
+    ) {
+      return
+    }
+
+    confirmedNavigation = { ...completedAttempt }
+    if (
+      pendingExpiryRedirect?.navigationGeneration === confirmedNavigation.navigationGeneration
+    ) {
+      consumedAuthExpiryGeneration = Math.max(
+        consumedAuthExpiryGeneration,
+        pendingExpiryRedirect.event.clearedGeneration,
+      )
+      pendingExpiryRedirect = null
+    }
     const latestExpiry = readLatestAuthExpiry()
     if (latestExpiry) {
       scheduleExpiryPolicy(latestExpiry, confirmedNavigation)
@@ -226,6 +312,10 @@ export function installAuthNavigationGuards(router: Router): () => void {
       const pending = pendingHydration
       void pending.promise.then((user) => followHydration(pending, user))
     }
+  })
+
+  const removeNavigationError = router.onError((_error, to) => {
+    settleFailedNavigation(to)
   })
 
   const removeExpiryListener = onAuthExpiry((event) => {
@@ -238,8 +328,10 @@ export function installAuthNavigationGuards(router: Router): () => void {
   return () => {
     disposed = true
     pendingHydration = null
+    pendingExpiryRedirect = null
     removeBeforeEach()
     removeAfterEach()
+    removeNavigationError()
     removeExpiryListener()
   }
 }

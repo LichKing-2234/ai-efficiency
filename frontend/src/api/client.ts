@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { InternalAxiosRequestConfig } from 'axios'
+import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import {
   expireBrowserSession,
   readBrowserSession,
@@ -28,12 +28,36 @@ type RefreshFlight = {
 }
 
 let refreshFlight: RefreshFlight | null = null
+const guardedRetryAdapters = new WeakSet<AxiosAdapter>()
 
 function isCredentialAuthEndpoint(url?: string) {
   if (!url) {
     return false
   }
   return url.startsWith('/auth/login') || url.startsWith('/auth/refresh') || url.startsWith('/auth/dev-login')
+}
+
+function guardRetryAdapter(config: AuthenticatedRequestConfig) {
+  if (typeof config.adapter === 'function' && guardedRetryAdapters.has(config.adapter)) {
+    return
+  }
+
+  const expectedGeneration = config._authGeneration
+  const adapter = axios.getAdapter(config.adapter)
+  const guardedAdapter: AxiosAdapter = (adapterConfig) => {
+    const session = readBrowserSession()
+    if (
+      expectedGeneration === undefined
+      || session.generation !== expectedGeneration
+      || !session.accessToken
+    ) {
+      throw new Error('authenticated retry session is no longer current')
+    }
+    adapterConfig.headers.Authorization = `Bearer ${session.accessToken}`
+    return adapter(adapterConfig)
+  }
+  guardedRetryAdapters.add(guardedAdapter)
+  config.adapter = guardedAdapter
 }
 
 async function refreshAccessToken(captured: BrowserSessionSnapshot): Promise<string | null> {
@@ -66,6 +90,7 @@ client.interceptors.request.use((config) => {
       throw new Error('authenticated retry session is no longer current')
     }
     authenticatedConfig.headers.Authorization = `Bearer ${session.accessToken}`
+    guardRetryAdapter(authenticatedConfig)
     return authenticatedConfig
   }
   if (session.accessToken) {
