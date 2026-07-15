@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use superpowers:executing-plans and superpowers:test-driven-development. Update this ledger immediately after each verified step.
 
-**Status:** Complete. The implementation and review follow-ups are locally verified, branch `perf/quota-reset-131` is published, and draft PR #150 targets `docs/performance-contracts-116`. GitHub CI is pending.
+**Status:** Complete. The implementation and review follow-ups are locally verified, branch `perf/quota-reset-131` is published, and draft PR #150 targets `docs/performance-contracts-116`. GitHub CI run `29436147058` passed `deploy-static`, `frontend`, `ae-cli`, and `backend` for delivery head `eafda2c`.
 
 **Goal:** Open `/usage/quota-reset` with only the active requester queue on the critical path, while preserving authoritative quota-reset mutations and immediately refreshed Work Items counts.
 
@@ -132,4 +132,4 @@
 
   Commit with Conventional Commits, push `perf/quota-reset-131`, and create a draft PR targeting `docs/performance-contracts-116` with issue, test, dependency, and no-release notes. Keep this worktree alive for review.
 
-  Evidence: implementation commit `683cfbb` is published and draft PR #150 is open with the required base, issue, verification, dependency, and no-release notes.
+  Evidence: implementation commit `683cfbb` is published and draft PR #150 is open with the required base, issue, verification, dependency, and no-release notes. CI run `29436147058` passed all four jobs for delivery head `eafda2c`; this final ledger update changes documentation only.
