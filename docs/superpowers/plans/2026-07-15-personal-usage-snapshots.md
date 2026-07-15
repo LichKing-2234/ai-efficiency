@@ -259,21 +259,25 @@
 - Produces TypeScript `UserUsageFreshness` and `UserQuotaFreshness` matching backend JSON.
 - Preserves member-route use of `getTeamUsageSubjectDashboard` without personal caching or quota split.
 
-- [ ] **Step 1: Add RED API and route-lifecycle tests**
+- [x] **Step 1: Add RED API and route-lifecycle tests**
 
   Assert API functions pass both projection params and AbortSignal. Mount `/usage` with delayed scope and quota promises, resolve usage first, and assert stats render while scope/quota remain pending. Reject quota and assert usage stays visible with only quota unavailable. Return stale usage and assert a localized stale marker. Trigger two range changes, assert both first-request signals are aborted, resolve responses out of order, and assert only the newest range/data renders. Assert the member route makes no personal quota request.
 
-- [ ] **Step 2: Run focused frontend tests and record RED**
+- [x] **Step 2: Run focused frontend tests and record RED**
 
   Run: `cd frontend && npm test -- src/__tests__/user-usage-api.test.ts src/__tests__/dashboard-view.test.ts`
 
   Expected: failures because personal usage, quota, and scope still share lifecycle and API calls have no abort contract.
 
-- [ ] **Step 3: Implement independent lifecycles**
+  RED evidence (2026-07-15): the exact focused command reported the missing quota API export and missing signal/projection options, while lifecycle tests remained behind the `DashboardView` page-level loading gate; stale marker and abort-generation assertions failed for the intended absent behavior.
+
+- [x] **Step 3: Implement independent lifecycles**
 
   Always mount `UserUsageDashboard` immediately on personal routes. Start representative scope without controlling the usage loading gate. Inside the dashboard, create separate `usageLoading`, `quotaLoading`, `usageError`, and generation state; start usage/quota promises together; use two AbortControllers per generation; abort them before each range/refresh; apply results only when the generation remains current. Keep the previous usage visible during refresh, make quota failure section-local, render stale copy only for `cache_status=stale`, and load chart components asynchronously only after usable usage data exists.
 
-- [ ] **Step 4: Verify Task 4 GREEN and checkpoint**
+  GREEN evidence (2026-07-15): the personal component now owns independent usage/quota requests and state, clears fresh-only quota on each generation, keeps prior usage while refreshing, aborts both superseded personal requests, ignores older generations, and lazy-loads chart modules only after a configured snapshot with stats exists; member routes still call only the selected-subject endpoint.
+
+- [x] **Step 4: Verify Task 4 GREEN and checkpoint**
 
   Run:
 
@@ -287,6 +291,8 @@
   Expected: focused tests pass; full suite reports at least the baseline 39 files/451 tests plus new cases; production build succeeds.
 
   Commit: `perf(frontend): render personal usage independently`
+
+  GREEN evidence (2026-07-15): the exact focused suite passed 36 tests; the full frontend suite passed 39 files and 457 tests; `vue-tsc -b` and Vite production build succeeded; chart code emitted as separate 2.15 kB and 2.69 kB chunks; `git diff --check` returned no findings.
 
 ---
 
