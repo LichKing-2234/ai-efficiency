@@ -826,6 +826,78 @@ auth:
   })
 
   it.each([
+    'preview' as const,
+    'apply' as const,
+  ])('keeps a newer same-source $action poll when an older conflict recovery page resolves', async (action) => {
+    vi.useFakeTimers()
+    const staleRecoveryPage = deferred<any>()
+    const initialRun = runSummary({ id: 401, member_count: 19 })
+    const staleRecoveryRun = runSummary({ id: 400, member_count: 99 })
+    const newerRun = runSummary({
+      id: 402,
+      mode: action,
+      status: 'queued',
+      phase: 'validating',
+      started_at: null,
+      completed_at: null,
+      department_count: 0,
+      member_count: 0,
+    })
+    const runningNewerRun = {
+      ...newerRun,
+      status: 'running',
+      phase: 'executing',
+      department_count: 7,
+      member_count: 13,
+    }
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(runPage([initialRun], { total: 41 })))
+        .mockImplementationOnce(() => staleRecoveryPage.promise)
+      const actionAPI = action === 'preview' ? api.previewDirectorySource : api.startDirectoryRun
+      actionAPI
+        .mockRejectedValueOnce({ response: { status: 409, data: { message: 'synthetic conflict' } } })
+        .mockResolvedValueOnce(apiResponse(newerRun))
+      api.getDirectoryRun.mockResolvedValue(apiResponse(runningNewerRun))
+    })
+
+    try {
+      const actionSelector = action === 'preview' ? '[data-testid="directory-preview"]' : '[data-testid="directory-run-now"]'
+      await wrapper.get(actionSelector).trigger('click')
+      await flushPromises()
+
+      expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
+
+      await wrapper.get(actionSelector).trigger('click')
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(1)
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(newerRun.id)
+      expect(vi.getTimerCount()).toBe(1)
+
+      staleRecoveryPage.resolve(apiResponse(runPage([staleRecoveryRun], { total: 1 })))
+      await flushPromises()
+
+      expect(vi.getTimerCount()).toBe(1)
+      expect(wrapper.find(`[data-testid="directory-run-row-${initialRun.id}"]`).exists()).toBe(true)
+      expect(wrapper.find(`[data-testid="directory-run-row-${staleRecoveryRun.id}"]`).exists()).toBe(false)
+      expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 1 of 3')
+      expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeUndefined()
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun.mock.calls.map((call: any[]) => call[0])).toEqual([newerRun.id, newerRun.id])
+      expect(wrapper.text()).toContain('Reading directory API')
+      expect(wrapper.text()).toContain('7 departments · 13 members')
+      expect(vi.getTimerCount()).toBe(1)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
     { action: 'preview' as const, outcome: 'success' as const },
     { action: 'preview' as const, outcome: 'conflict' as const },
     { action: 'preview' as const, outcome: 'error' as const },
