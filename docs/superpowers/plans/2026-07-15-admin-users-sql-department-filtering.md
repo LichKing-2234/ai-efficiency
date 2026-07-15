@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 are complete, independently reviewed, and committed. Task 5 implementation and local verification are complete; its exact-range review/checkpoint, Task 6, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Tasks 1-5 are complete, independently reviewed, and committed. Task 6, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -1237,9 +1237,11 @@ git diff --check
 
 Expected: focused/full Vitest and build pass; default mount has zero complete-snapshot requests; option/child collections honor their pages; B drill-in preserves the effective `{b,c}` scope; one viewport mounts one row per user; all retained workflows pass.
 
-**Task 5 Step 6 GREEN evidence (2026-07-15):** The exact focused command passed 44 tests across both files. The exact full frontend command passed 443 tests across 40 files. The exact production build completed `vue-tsc -b` and Vite with 190 transformed modules. The exact active-import scan and `git diff --check` both exited 0 with no output. Step 7 remains unchecked pending independent exact-range review and checkpoint work.
+**Task 5 Step 6 GREEN evidence (2026-07-15):** After all review remediation, the exact focused command passed 64 tests across both files and the exact full frontend command passed 463 tests across 40 files. The exact production build completed `vue-tsc -b` and Vite with 190 transformed modules. The exact active-import scan and `git diff --check` both exited 0 with no output. All five commands were rerun with the same result immediately before the implementation checkpoint.
 
-- [ ] **Step 7: Complete exact-range Task 5 reviews and checkpoint**
+- [x] **Step 7: Complete exact-range Task 5 reviews and checkpoint**
+
+**Task 5 Step 7 review/checkpoint evidence (2026-07-15):** The initial exact-range SPEC gate reported `0 Critical / 1 Important / 2 Minor`, and the initial standards gate reported `0 / 3 / 3`. The first remediation wave added user/root request generations, retryable root loading and active-view refresh, atomic picker failure recovery and close cancellation, accessible picker labeling/keyboard behavior, responsive checkbox remount state, and centralized wrapper cleanup. The r2 standards gate (`0 / 1 / 2`) drove synchronous pre-debounce user invalidation, independent selected-label generation/retry, Enter focus restoration, and Tab/focusout lifecycle fixes. The r3 standards gate was approved with one residual Minor (`0 / 0 / 1`), which drove the controlled A-to-B stale-label guard. The r4 standards gate (`0 / 1 / 0`) drove explicit department-refresh invalidation for cached and in-flight child pages while preserving ordinary collapse and root-page caches. Final r5 review passed with no findings: SPEC `PASS 0 / 0 / 0` and standards `APPROVED 0 / 0 / 0`. Final local evidence is 64 focused tests, 463 full frontend tests across 40 files, a passing production build with 190 transformed modules, and clean active-import and diff checks. The implementation and Steps 1-6 ledger were committed as `3ceb81e5740aa560d932148330484ec93d9005bb`.
 
 Obtain independent Task 5 SPEC and standards reviews, resolve every Critical/Important finding, rerun Step 6, then commit implementation and ledger separately:
 
