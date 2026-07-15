@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -53,7 +54,7 @@ func seedEventsFixture(t *testing.T, env *fullTestEnv) seededEventActors {
 		SetObservedStartAt(time.Now().Add(-29 * time.Minute).UTC()).
 		SetObservedEndAt(time.Now().Add(-29 * time.Minute).UTC()).
 		SetCommitCheckpointID(cp.ID).
-		SetRawSourcePath("/Users/admin/.claude/projects/user-bound.jsonl").
+		SetRawSourcePath("/synthetic/users/alice/.claude/projects/user-bound.jsonl").
 		SetRawSourceLocator("line:10").
 		SetRawPayload(map[string]any{"kind": "assistant", "scope": "user-bound"}).
 		SaveX(ctx)
@@ -286,12 +287,6 @@ func TestEventDetailPreservesAdminPayloadAndRegularRedaction(t *testing.T) {
 		t.Fatalf("user status = %d, want 200, body=%s", userResp.Code, userResp.Body.String())
 	}
 	userData := parseFullResponse(t, userResp)["data"].(map[string]interface{})
-	if _, ok := userData["raw_source_path"]; ok {
-		t.Fatalf("regular user detail unexpectedly exposes raw_source_path: %+v", userData)
-	}
-	if _, ok := userData["raw_payload"]; ok {
-		t.Fatalf("regular user detail unexpectedly exposes raw_payload: %+v", userData)
-	}
 	matchedPRs := userData["matched_prs"].([]interface{})
 	if len(matchedPRs) != 0 {
 		t.Fatalf("matched_prs = %d, want 0 for fixture without PR snapshot", len(matchedPRs))
@@ -302,12 +297,28 @@ func TestEventDetailPreservesAdminPayloadAndRegularRedaction(t *testing.T) {
 		t.Fatalf("admin status = %d, want 200, body=%s", adminResp.Code, adminResp.Body.String())
 	}
 	adminData := parseFullResponse(t, adminResp)["data"].(map[string]interface{})
-	if adminData["raw_source_path"] != "/Users/admin/.claude/projects/user-bound.jsonl" {
-		t.Fatalf("raw_source_path = %v, want full path", adminData["raw_source_path"])
+
+	adminOnlyFields := []struct {
+		name string
+		want interface{}
+	}{
+		{name: "username", want: "covuser"},
+		{name: "raw_source_path", want: "/synthetic/users/alice/.claude/projects/user-bound.jsonl"},
+		{name: "raw_source_locator", want: "line:10"},
+		{name: "raw_payload", want: map[string]interface{}{"kind": "assistant", "scope": "user-bound"}},
 	}
-	rawPayload := adminData["raw_payload"].(map[string]interface{})
-	if rawPayload["scope"] != "user-bound" {
-		t.Fatalf("raw_payload.scope = %v, want user-bound", rawPayload["scope"])
+	for _, field := range adminOnlyFields {
+		if _, ok := userData[field.name]; ok {
+			t.Errorf("regular user detail unexpectedly exposes %s: %+v", field.name, userData)
+		}
+		got, ok := adminData[field.name]
+		if !ok {
+			t.Errorf("admin detail omits %s: %+v", field.name, adminData)
+			continue
+		}
+		if !reflect.DeepEqual(got, field.want) {
+			t.Errorf("admin detail %s = %#v, want %#v", field.name, got, field.want)
+		}
 	}
 }
 

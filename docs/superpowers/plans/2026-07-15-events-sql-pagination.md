@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Tasks 1-3 and their review remediation are complete and committed. Task 4 implementation and verification are complete: handler metadata now shares the 20/100 service bounds, the frontend mounts one active responsive row tree, and admin raw JSON formatting waits for advanced-detail expansion. Task 5 architecture, final review, repository-wide verification, and draft PR delivery remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 and their review remediation are complete and committed. Task 5 Steps 1-2 are complete in the worktree: current architecture records bounded SQL event delivery and single active row-tree behavior, and the prescribed formatting, Ent generation-drift, full backend/CLI/frontend, production build, role E2E, and diff checks all pass, including PostgreSQL scale/query-plan evidence. Because another worktree already owned port 5173, role E2E was isolated onto a temporary current-worktree Vite port and its fixed test base was restored afterward. Remediation for the final SPEC review's two Important findings is complete: restored page sizes above 100 now normalize before paginator calculations, and regular-user detail omits username plus all three raw diagnostic fields; focused and affected-package tests and the frontend production build pass. Task 5 Steps 3-7 remain pending, and Step 3 must stay unchecked until fresh clean SPEC and separate standards reviews complete. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
 
 ## Global Constraints
 
@@ -466,7 +466,7 @@ Expected: one full-stack compatibility commit with handler and frontend evidence
 - Consumes: Tasks 1-4 and the active performance contract.
 - Produces: current architecture truth, complete verification evidence, two review gates, and draft PR delivery against the contract branch.
 
-- [ ] **Step 1: Update current architecture without rewriting historical specs**
+- [x] **Step 1: Update current architecture without rewriting historical specs**
 
 Update the `/events` paragraph in `docs/architecture.md` to state:
 
@@ -476,7 +476,7 @@ Summary and list share database-side authorization/filter predicates. Summary va
 
 Do not mark unrelated #115 targets as implemented and do not rewrite `2026-05-21-global-tool-usage-events-page-design.md`.
 
-- [ ] **Step 2: Run formatting, generation-drift, and full repository verification**
+- [x] **Step 2: Run formatting, generation-drift, and full repository verification**
 
 Run exactly:
 
@@ -509,6 +509,8 @@ Does the frontend mount one row subtree and defer JSON formatting until expansio
 ```
 
 Fix every Critical or Important finding with a focused RED/GREEN cycle, rerun affected suites, and record Minor findings explicitly if intentionally deferred.
+
+**Remediation status (2026-07-15):** The initial final SPEC review reported two Important findings and no Critical or Minor findings. Focused RED/GREEN cycles now cover a `limit=101` deep link advancing from offset 0 to 100 without a gap, and the complete regular/admin detail response matrix for `username`, `raw_source_path`, `raw_source_locator`, and `raw_payload`. The affected backend packages, focused frontend tests, and frontend production build pass. This step remains unchecked until the controller obtains a clean replacement SPEC review and a separate standards review.
 
 - [ ] **Step 4: Record delivery evidence and commit architecture/ledger state**
 
