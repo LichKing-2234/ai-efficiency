@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete, including Task 1 independent-review fixes and Task 2 repeated scale/plan evidence. Tasks 3-4, subsequent task reviews, delivery, and CI remain pending.
+**Status:** Tasks 1-3 are complete, including Task 1 independent-review fixes, Task 2 repeated scale/plan evidence, and Task 3 frontend pagination/detail/polling verification. Task 4, subsequent task reviews, delivery, and CI remain pending.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -399,9 +399,9 @@
 
   Expected: PASS; all existing validate/preview/apply/conflict/source-race behavior remains green, history is bounded, and selected detail/polling lifecycles are isolated.
 
-- [ ] **Step 5: Commit Task 3 and record the checkpoint**
+- [x] **Step 5: Commit Task 3 and record the checkpoint**
 
-  Commit `perf(frontend): load directory run detail on demand`, then check Step 5 and commit `docs(plan): record directory run frontend task 3`.
+  Commit `perf(frontend): page directory run history`, then check Step 5 and commit `docs(plan): record directory run frontend task 3`.
 
 ---
 
