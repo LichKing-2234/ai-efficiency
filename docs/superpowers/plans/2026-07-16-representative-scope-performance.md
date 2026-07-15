@@ -18,7 +18,7 @@
 - Tests and examples use only synthetic users, domains, credentials, and group names.
 - Every completed step updates this file in the same execution turn.
 
-**Status:** Implementation and local verification complete. Baseline and final backend suites passed on the branch; commit, Draft PR, and required CI checks remain.
+**Status:** Implementation and local verification complete. Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/149. Required CI checks are pending.
 
 ---
 
@@ -120,7 +120,8 @@
   - GREEN: `go test -race ./internal/readcache ./internal/representativescope -count=1` and changed-package `go vet` passed.
 - [x] **Step 5: Review the exact diff against issue #124 and the active performance spec**
   - Review result: no unresolved findings. Shared `readcache` files are byte-identical to PR #148, and the issue's guard, isolation, version, Redis outage, scale, and no-stale requirements are covered.
-- [ ] **Step 6: Commit with Conventional Commits, push the branch, and open a Draft PR against `docs/performance-contracts-116`**
+- [x] **Step 6: Commit with Conventional Commits, push the branch, and open a Draft PR against `docs/performance-contracts-116`**
+  - Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/149
 - [ ] **Step 7: Wait for all required PR checks and record their final state**
 
 ## Verification Notes
