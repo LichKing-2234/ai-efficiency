@@ -1,4 +1,11 @@
 import axios from 'axios'
+import type { InternalAxiosRequestConfig } from 'axios'
+import {
+  expireBrowserSession,
+  readBrowserSession,
+  rotateBrowserSession,
+} from '@/auth/browserSession'
+import type { BrowserSessionSnapshot } from '@/auth/browserSession'
 
 const apiBaseURL = import.meta.env.VITE_API_URL || '/api/v1'
 
@@ -10,13 +17,17 @@ const client = axios.create({
   },
 })
 
-let refreshPromise: Promise<string | null> | null = null
-
-function clearAuthAndRedirect() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('refresh_token')
-  window.location.href = '/login'
+type AuthenticatedRequestConfig = InternalAxiosRequestConfig & {
+  _authGeneration?: number
+  _retry?: boolean
 }
+
+type RefreshFlight = {
+  generation: number
+  promise: Promise<string | null>
+}
+
+let refreshFlight: RefreshFlight | null = null
 
 function isCredentialAuthEndpoint(url?: string) {
   if (!url) {
@@ -25,60 +36,97 @@ function isCredentialAuthEndpoint(url?: string) {
   return url.startsWith('/auth/login') || url.startsWith('/auth/refresh') || url.startsWith('/auth/dev-login')
 }
 
-async function refreshAccessToken(): Promise<string | null> {
-  const currentRefreshToken = localStorage.getItem('refresh_token')
-  if (!currentRefreshToken) {
+async function refreshAccessToken(captured: BrowserSessionSnapshot): Promise<string | null> {
+  if (!captured.refreshToken) {
     return null
   }
 
   const res = await axios.post(`${apiBaseURL}/auth/refresh`, {
-    refresh_token: currentRefreshToken,
+    refresh_token: captured.refreshToken,
   })
   const data = res.data?.data
   const accessToken = data?.tokens?.access_token || data?.token
-  const nextRefreshToken = data?.tokens?.refresh_token || data?.refresh_token || currentRefreshToken
   if (!accessToken) {
-    return null
+    throw new Error('refresh response missing access token')
   }
-
-  localStorage.setItem('token', accessToken)
-  localStorage.setItem('refresh_token', nextRefreshToken)
-  return accessToken
+  const refreshToken = data?.tokens?.refresh_token || data?.refresh_token || captured.refreshToken
+  const rotated = rotateBrowserSession(captured.generation, { accessToken, refreshToken })
+  return rotated?.accessToken ?? null
 }
 
 client.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  const session = readBrowserSession()
+  const authenticatedConfig = config as AuthenticatedRequestConfig
+  if (authenticatedConfig._retry) {
+    if (
+      authenticatedConfig._authGeneration === undefined
+      || authenticatedConfig._authGeneration !== session.generation
+      || !session.accessToken
+    ) {
+      throw new Error('authenticated retry session is no longer current')
+    }
+    authenticatedConfig.headers.Authorization = `Bearer ${session.accessToken}`
+    return authenticatedConfig
   }
-  return config
+  if (session.accessToken) {
+    authenticatedConfig.headers.Authorization = `Bearer ${session.accessToken}`
+    authenticatedConfig._authGeneration = session.generation
+  }
+  return authenticatedConfig
 })
 
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config as any
-    if (error.response?.status === 401 && !isCredentialAuthEndpoint(originalRequest?.url) && !originalRequest?._retry) {
-      originalRequest._retry = true
-      try {
-        if (!refreshPromise) {
-          refreshPromise = refreshAccessToken().finally(() => {
-            refreshPromise = null
-          })
-        }
-        const accessToken = await refreshPromise
-        if (accessToken) {
-          originalRequest.headers = originalRequest.headers || {}
-          originalRequest.headers.Authorization = `Bearer ${accessToken}`
-          return client(originalRequest)
-        }
-      } catch {
-        // Fall through to logout + redirect below.
-      }
-      clearAuthAndRedirect()
+    const originalRequest = error.config as AuthenticatedRequestConfig | undefined
+    const capturedGeneration = originalRequest?._authGeneration
+    if (
+      error.response?.status !== 401
+      || !originalRequest
+      || capturedGeneration === undefined
+      || isCredentialAuthEndpoint(originalRequest.url)
+      || originalRequest._retry
+    ) {
+      return Promise.reject(error)
     }
-    return Promise.reject(error)
-  }
+
+    const captured = readBrowserSession()
+    if (captured.generation !== capturedGeneration || !captured.accessToken) {
+      return Promise.reject(error)
+    }
+    if (!captured.refreshToken) {
+      expireBrowserSession(capturedGeneration)
+      return Promise.reject(error)
+    }
+
+    let flight = refreshFlight
+    if (!flight || flight.generation !== capturedGeneration) {
+      flight = {
+        generation: capturedGeneration,
+        promise: refreshAccessToken(captured),
+      }
+      refreshFlight = flight
+    }
+
+    try {
+      const accessToken = await flight.promise
+      if (!accessToken || readBrowserSession().generation !== capturedGeneration) {
+        return Promise.reject(error)
+      }
+
+      originalRequest._retry = true
+      originalRequest.headers = originalRequest.headers || {} as AuthenticatedRequestConfig['headers']
+      originalRequest.headers.Authorization = `Bearer ${accessToken}`
+      return client(originalRequest)
+    } catch {
+      expireBrowserSession(capturedGeneration)
+      return Promise.reject(error)
+    } finally {
+      if (refreshFlight === flight) {
+        refreshFlight = null
+      }
+    }
+  },
 )
 
 export default client

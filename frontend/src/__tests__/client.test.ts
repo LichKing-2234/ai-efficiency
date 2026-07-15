@@ -1,214 +1,475 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, disposePinia, setActivePinia } from 'pinia'
 
-// Use a mutable container object so assignments inside vi.mock work
-const interceptors = vi.hoisted(() => ({
+const axiosHarness = vi.hoisted(() => ({
   requestFn: null as ((config: any) => any) | null,
-  responseFn: null as ((res: any) => any) | null,
-  responseErrFn: null as ((err: any) => any) | null,
+  responseFn: null as ((response: any) => any) | null,
+  responseErrFn: null as ((error: any) => Promise<any>) | null,
   axiosPost: vi.fn(),
   clientInstance: null as any,
+  getHandler: null as ((config: any) => any) | null,
+  postHandler: null as ((url: string, data?: unknown, config?: any) => any) | null,
+  retryHandler: null as ((config: any) => any) | null,
+  retryRequestGate: null as Promise<void> | null,
 }))
 
 vi.mock('axios', () => {
-  const mockInstance: any = vi.fn()
+  const mockInstance: any = vi.fn(async (config: any) => {
+    await (axiosHarness.retryRequestGate ?? Promise.resolve())
+    const request = await axiosHarness.requestFn!(config)
+    if (!axiosHarness.retryHandler) {
+      throw new Error(`No retry handler installed for ${request?.url ?? 'unknown request'}`)
+    }
+    return axiosHarness.retryHandler(request)
+  })
+
   mockInstance.interceptors = {
     request: {
       use: vi.fn((onFulfilled: any) => {
-        interceptors.requestFn = onFulfilled
+        axiosHarness.requestFn = onFulfilled
       }),
     },
     response: {
       use: vi.fn((onFulfilled: any, onRejected: any) => {
-        interceptors.responseFn = onFulfilled
-        interceptors.responseErrFn = onRejected
+        axiosHarness.responseFn = onFulfilled
+        axiosHarness.responseErrFn = onRejected
       }),
     },
   }
-  mockInstance.get = vi.fn()
-  mockInstance.post = vi.fn()
+
+  mockInstance.get = vi.fn(async (url: string, config: any = {}) => {
+    let request = {
+      ...config,
+      url,
+      method: 'get',
+      headers: config.headers ?? {},
+    }
+    request = await axiosHarness.requestFn!(request)
+    if (!axiosHarness.getHandler) {
+      throw new Error(`No GET handler installed for ${url}`)
+    }
+    return axiosHarness.getHandler(request)
+  })
+
+  mockInstance.post = vi.fn(async (url: string, data?: unknown, config: any = {}) => {
+    let request = {
+      ...config,
+      url,
+      method: 'post',
+      data,
+      headers: config.headers ?? {},
+    }
+    request = await axiosHarness.requestFn!(request)
+    if (!axiosHarness.postHandler) {
+      throw new Error(`No POST handler installed for ${url}`)
+    }
+    return axiosHarness.postHandler(url, data, request)
+  })
+
   mockInstance.put = vi.fn()
   mockInstance.delete = vi.fn()
-  interceptors.clientInstance = mockInstance
+  axiosHarness.clientInstance = mockInstance
 
   return {
     default: {
       create: vi.fn(() => mockInstance),
-      post: interceptors.axiosPost,
+      post: axiosHarness.axiosPost,
     },
   }
 })
 
-// Import client to trigger the interceptor registration
-import '@/api/client'
+import client from '@/api/client'
+import { useAuthStore } from '@/stores/auth'
+import {
+  clearBrowserSession,
+  onAuthExpiry,
+  readBrowserSession,
+  replaceBrowserSession,
+} from '@/auth/browserSession'
+import type { User } from '@/types'
+
+type Deferred<T> = {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (reason?: unknown) => void
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+const alice: User = {
+  id: 1,
+  username: 'alice',
+  email: 'alice@example.com',
+  role: 'admin',
+  auth_source: 'sso',
+}
+
+const bob: User = {
+  id: 2,
+  username: 'bob',
+  email: 'bob@example.org',
+  role: 'viewer',
+  auth_source: 'ldap',
+}
+
+function userResponse(user: User) {
+  return { data: { data: user } }
+}
+
+function tokenResponse(accessToken: string, refreshToken?: string) {
+  return {
+    data: {
+      data: {
+        token: accessToken,
+        ...(refreshToken ? { refresh_token: refreshToken } : {}),
+      },
+    },
+  }
+}
+
+function refreshResponse(accessToken: string, refreshToken?: string) {
+  return {
+    data: {
+      data: {
+        tokens: {
+          access_token: accessToken,
+          ...(refreshToken ? { refresh_token: refreshToken } : {}),
+        },
+      },
+    },
+  }
+}
+
+function rejectWith401(config: any) {
+  const error = { response: { status: 401 }, config }
+  return axiosHarness.responseErrFn!(error)
+}
 
 describe('Axios client interceptors', () => {
+  let pinia: ReturnType<typeof createPinia>
+
   beforeEach(() => {
     localStorage.clear()
-    vi.clearAllMocks()
+    pinia = createPinia()
+    setActivePinia(pinia)
+    axiosHarness.getHandler = null
+    axiosHarness.postHandler = null
+    axiosHarness.retryHandler = null
+    axiosHarness.retryRequestGate = null
+    axiosHarness.axiosPost.mockReset()
+    axiosHarness.clientInstance.mockClear()
+    axiosHarness.clientInstance.get.mockClear()
+    axiosHarness.clientInstance.post.mockClear()
+    axiosHarness.clientInstance.put.mockClear()
+    axiosHarness.clientInstance.delete.mockClear()
+  })
+
+  afterEach(() => {
+    disposePinia(pinia)
   })
 
   describe('request interceptor', () => {
-    it('adds Bearer token from localStorage when token exists', () => {
-      localStorage.setItem('token', 'my-jwt-token')
-      const config = { headers: {} as Record<string, string> }
-      const result = interceptors.requestFn!(config)
-      expect(result.headers.Authorization).toBe('Bearer my-jwt-token')
+    it('stamps the browser generation and bearer token on authenticated requests', () => {
+      const session = replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const config = { url: '/repos', headers: {} as Record<string, string> }
+
+      const result = axiosHarness.requestFn!(config)
+
+      expect(result.headers.Authorization).toBe('Bearer token-a')
+      expect(result._authGeneration).toBe(session.generation)
     })
 
-    it('does not add Authorization header when no token', () => {
-      const config = { headers: {} as Record<string, string> }
-      const result = interceptors.requestFn!(config)
+    it('does not stamp or authorize an uncredentialed request', () => {
+      const config = { url: '/auth/options', headers: {} as Record<string, string> }
+
+      const result = axiosHarness.requestFn!(config)
+
       expect(result.headers.Authorization).toBeUndefined()
+      expect(result._authGeneration).toBeUndefined()
     })
   })
 
   describe('response interceptor', () => {
     it('passes through successful responses', () => {
       const response = { status: 200, data: { message: 'ok' } }
-      const result = interceptors.responseFn!(response)
-      expect(result).toBe(response)
+
+      expect(axiosHarness.responseFn!(response)).toBe(response)
     })
 
-    it('refreshes token and retries the original request on 401 response', async () => {
-      localStorage.setItem('token', 'old-token')
-      localStorage.setItem('refresh_token', 'refresh-token')
+    it('keeps logout authoritative while a generation A refresh is pending', async () => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      const expiryEvents: unknown[] = []
+      const stop = onAuthExpiry((event) => expiryEvents.push(event))
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const auth = useAuthStore()
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      axiosHarness.getHandler = rejectWith401
 
-      interceptors.axiosPost.mockResolvedValue({
-        data: {
-          data: {
-            tokens: {
-              access_token: 'new-token',
-              refresh_token: 'new-refresh-token',
-            },
-          },
-        },
-      })
-      const retriedResponse = { status: 200, data: { ok: true } }
-      interceptors.clientInstance.mockResolvedValue(retriedResponse)
+      const requestA = auth.ensureUser()
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
 
-      const result = await interceptors.responseErrFn!({
-        response: { status: 401 },
-        config: { url: '/repos', headers: {} },
-      })
+      auth.logout()
+      refresh.resolve(refreshResponse('token-a2', 'refresh-a2'))
 
-      expect(interceptors.axiosPost).toHaveBeenCalledWith('/api/v1/auth/refresh', {
-        refresh_token: 'refresh-token',
-      })
-      expect(interceptors.clientInstance).toHaveBeenCalledWith(
-        expect.objectContaining({
-          url: '/repos',
-          headers: expect.objectContaining({
-            Authorization: 'Bearer new-token',
-          }),
-          _retry: true,
+      await expect(requestA).resolves.toBeNull()
+      expect(readBrowserSession().accessToken).toBeNull()
+      expect(readBrowserSession().refreshToken).toBeNull()
+      expect(axiosHarness.clientInstance).not.toHaveBeenCalled()
+      expect(expiryEvents).toHaveLength(0)
+      stop()
+    })
+
+    it('keeps normal login B authoritative while refresh A is pending', async () => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const auth = useAuthStore()
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      axiosHarness.getHandler = rejectWith401
+
+      const requestA = auth.ensureUser()
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+
+      axiosHarness.postHandler = (url) => {
+        expect(url).toBe('/auth/login')
+        return tokenResponse('token-b', 'refresh-b')
+      }
+      axiosHarness.getHandler = () => userResponse(bob)
+      await expect(auth.login({ username: 'bob', password: 'test-password', source: 'LDAP' })).resolves.toEqual(bob)
+
+      refresh.resolve(refreshResponse('token-a2', 'refresh-a2'))
+      await expect(requestA).resolves.toBeNull()
+
+      expect(auth.token).toBe('token-b')
+      expect(auth.user).toEqual(bob)
+      expect(localStorage.getItem('refresh_token')).toBe('refresh-b')
+      expect(axiosHarness.clientInstance).not.toHaveBeenCalled()
+    })
+
+    it('keeps Dev Login authoritative while refresh A is pending', async () => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const auth = useAuthStore()
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      axiosHarness.getHandler = rejectWith401
+
+      const requestA = auth.ensureUser()
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+
+      axiosHarness.postHandler = (url) => {
+        expect(url).toBe('/auth/dev-login')
+        return tokenResponse('dev-token', 'dev-refresh')
+      }
+      axiosHarness.getHandler = () => userResponse(alice)
+      await expect(auth.devLogin()).resolves.toEqual(alice)
+
+      refresh.resolve(refreshResponse('token-a2', 'refresh-a2'))
+      await expect(requestA).resolves.toBeNull()
+
+      expect(auth.token).toBe('dev-token')
+      expect(auth.user).toEqual(alice)
+      expect(localStorage.getItem('refresh_token')).toBe('dev-refresh')
+      expect(axiosHarness.clientInstance).not.toHaveBeenCalled()
+    })
+
+    it('ignores a 401 stamped by generation A after login B replaces it', async () => {
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const requestA = axiosHarness.requestFn!({ url: '/repos', headers: {} })
+      const expiryEvents: unknown[] = []
+      const stop = onAuthExpiry((event) => expiryEvents.push(event))
+
+      replaceBrowserSession({ accessToken: 'token-b', refreshToken: 'refresh-b' })
+      const error = { response: { status: 401 }, config: requestA }
+
+      await expect(axiosHarness.responseErrFn!(error)).rejects.toBe(error)
+      expect(axiosHarness.axiosPost).not.toHaveBeenCalled()
+      expect(readBrowserSession().accessToken).toBe('token-b')
+      expect(readBrowserSession().refreshToken).toBe('refresh-b')
+      expect(expiryEvents).toHaveLength(0)
+      stop()
+    })
+
+    it('rotates A to A2, retries auth me once, and preserves its identity flight', async () => {
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const generationA = readBrowserSession().generation
+      const auth = useAuthStore()
+      axiosHarness.axiosPost.mockResolvedValue(refreshResponse('token-a2', 'refresh-a2'))
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.retryHandler = (config) => {
+        expect(config.url).toBe('/auth/me')
+        expect(config._authGeneration).toBe(generationA)
+        return userResponse(alice)
+      }
+
+      const first = auth.ensureUser()
+      const second = auth.fetchMe()
+
+      await expect(first).resolves.toEqual(alice)
+      await expect(second).resolves.toEqual(alice)
+      expect(axiosHarness.clientInstance.get).toHaveBeenCalledTimes(1)
+      expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1)
+      expect(axiosHarness.clientInstance).toHaveBeenCalledTimes(1)
+      expect(auth.token).toBe('token-a2')
+      expect(localStorage.getItem('token')).toBe('token-a2')
+      expect(localStorage.getItem('refresh_token')).toBe('refresh-a2')
+      expect(readBrowserSession().generation).toBe(generationA)
+      expect(auth.user).toEqual(alice)
+    })
+
+    it('rejects retry A if replacement B lands after A2 rotation but before retry dispatch', async () => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      const retryGate = deferred<void>()
+      const retryAdapter = vi.fn(() => ({ status: 200, data: { ok: true } }))
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const generationA = readBrowserSession().generation
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.retryRequestGate = retryGate.promise
+      axiosHarness.retryHandler = retryAdapter
+
+      const requestA = client.get('/repos')
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+
+      refresh.resolve(refreshResponse('token-a2', 'refresh-a2'))
+      await vi.waitFor(() => {
+        expect(readBrowserSession()).toEqual({
+          generation: generationA,
+          accessToken: 'token-a2',
+          refreshToken: 'refresh-a2',
         })
-      )
-      expect(localStorage.getItem('token')).toBe('new-token')
-      expect(localStorage.getItem('refresh_token')).toBe('new-refresh-token')
-      expect(result).toBe(retriedResponse)
+        expect(axiosHarness.clientInstance).toHaveBeenCalledTimes(1)
+      })
+
+      const sessionB = replaceBrowserSession({ accessToken: 'token-b', refreshToken: 'refresh-b' })
+      retryGate.resolve(undefined)
+
+      await expect(requestA).rejects.toBeDefined()
+      expect(retryAdapter).not.toHaveBeenCalled()
+      expect(readBrowserSession()).toEqual(sessionB)
     })
 
-    it('clears tokens and redirects when refresh fails', async () => {
-      localStorage.setItem('token', 'old-token')
-      localStorage.setItem('refresh_token', 'refresh-token')
+    it('rejects retry A if logout clears A2 after rotation but before retry dispatch', async () => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      const retryGate = deferred<void>()
+      const retryAdapter = vi.fn(() => ({ status: 200, data: { ok: true } }))
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const generationA = readBrowserSession().generation
+      const auth = useAuthStore()
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.retryRequestGate = retryGate.promise
+      axiosHarness.retryHandler = retryAdapter
 
-      const originalLocation = window.location
-      Object.defineProperty(window, 'location', {
-        writable: true,
-        value: { ...originalLocation, href: '' },
-      })
+      const requestA = client.get('/repos')
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
 
-      interceptors.axiosPost.mockRejectedValue(new Error('refresh failed'))
-
-      const error = { response: { status: 401 }, config: { url: '/repos', headers: {} } }
-      await expect(interceptors.responseErrFn!(error)).rejects.toEqual(error)
-
-      expect(localStorage.getItem('token')).toBeNull()
-      expect(localStorage.getItem('refresh_token')).toBeNull()
-      expect(window.location.href).toBe('/login')
-
-      Object.defineProperty(window, 'location', {
-        writable: true,
-        value: originalLocation,
-      })
-    })
-
-    it('does not clear token on non-401 errors', async () => {
-      localStorage.setItem('token', 'valid-token')
-
-      const error = { response: { status: 500 } }
-      await expect(interceptors.responseErrFn!(error)).rejects.toEqual(error)
-
-      expect(localStorage.getItem('token')).toBe('valid-token')
-    })
-
-    it('does not redirect on 401 for credential auth endpoints', async () => {
-      localStorage.setItem('token', 'old-token')
-      localStorage.setItem('refresh_token', 'old-refresh-token')
-
-      const originalLocation = window.location
-      Object.defineProperty(window, 'location', {
-        writable: true,
-        value: { ...originalLocation, href: '/current' },
-      })
-
-      const error = { response: { status: 401 }, config: { url: '/auth/login' } }
-      await expect(interceptors.responseErrFn!(error)).rejects.toEqual(error)
-
-      // Token should NOT be cleared for auth endpoints
-      expect(localStorage.getItem('token')).toBe('old-token')
-      expect(localStorage.getItem('refresh_token')).toBe('old-refresh-token')
-      expect(window.location.href).toBe('/current')
-      expect(interceptors.axiosPost).not.toHaveBeenCalled()
-
-      Object.defineProperty(window, 'location', {
-        writable: true,
-        value: originalLocation,
-      })
-    })
-
-    it('refreshes token and retries auth me on 401 response', async () => {
-      localStorage.setItem('token', 'old-token')
-      localStorage.setItem('refresh_token', 'refresh-token')
-
-      interceptors.axiosPost.mockResolvedValue({
-        data: {
-          data: {
-            tokens: {
-              access_token: 'new-token',
-              refresh_token: 'new-refresh-token',
-            },
-          },
-        },
-      })
-      const retriedResponse = { status: 200, data: { data: { username: 'admin' } } }
-      interceptors.clientInstance.mockResolvedValue(retriedResponse)
-
-      const result = await interceptors.responseErrFn!({
-        response: { status: 401 },
-        config: { url: '/auth/me', headers: {} },
-      })
-
-      expect(interceptors.axiosPost).toHaveBeenCalledWith('/api/v1/auth/refresh', {
-        refresh_token: 'refresh-token',
-      })
-      expect(interceptors.clientInstance).toHaveBeenCalledWith(
-        expect.objectContaining({
-          url: '/auth/me',
-          headers: expect.objectContaining({
-            Authorization: 'Bearer new-token',
-          }),
-          _retry: true,
+      refresh.resolve(refreshResponse('token-a2', 'refresh-a2'))
+      await vi.waitFor(() => {
+        expect(readBrowserSession()).toEqual({
+          generation: generationA,
+          accessToken: 'token-a2',
+          refreshToken: 'refresh-a2',
         })
-      )
-      expect(localStorage.getItem('token')).toBe('new-token')
-      expect(localStorage.getItem('refresh_token')).toBe('new-refresh-token')
-      expect(result).toBe(retriedResponse)
+        expect(axiosHarness.clientInstance).toHaveBeenCalledTimes(1)
+      })
+
+      auth.logout()
+      retryGate.resolve(undefined)
+
+      await expect(requestA).rejects.toBeDefined()
+      expect(retryAdapter).not.toHaveBeenCalled()
+      expect(readBrowserSession().accessToken).toBeNull()
+      expect(readBrowserSession().refreshToken).toBeNull()
     })
 
-    it('handles error without response object', async () => {
-      const error = { message: 'Network Error' }
-      await expect(interceptors.responseErrFn!(error)).rejects.toEqual(error)
+    it('shares one refresh flight between two 401 responses in the same generation', async () => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.retryHandler = (config) => ({ status: 200, data: { url: config.url } })
+
+      const first = client.get('/repos')
+      const second = client.get('/events')
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+
+      refresh.resolve(refreshResponse('token-a2', 'refresh-a2'))
+
+      await expect(first).resolves.toEqual({ status: 200, data: { url: '/repos' } })
+      await expect(second).resolves.toEqual({ status: 200, data: { url: '/events' } })
+      expect(axiosHarness.clientInstance).toHaveBeenCalledTimes(2)
+      expect(axiosHarness.axiosPost).toHaveBeenCalledWith('/api/v1/auth/refresh', {
+        refresh_token: 'refresh-a',
+      })
+    })
+
+    it('expires a matching session once after final refresh failure without navigating', async () => {
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const generationA = readBrowserSession().generation
+      const auth = useAuthStore()
+      const expiryEvents: Array<{ expiredGeneration: number; clearedGeneration: number }> = []
+      const stop = onAuthExpiry((event) => expiryEvents.push(event))
+      const initialHref = window.location.href
+      axiosHarness.axiosPost.mockRejectedValue(new Error('refresh failed'))
+      axiosHarness.getHandler = rejectWith401
+
+      await expect(auth.ensureUser()).resolves.toBeNull()
+
+      expect(expiryEvents).toHaveLength(1)
+      expect(expiryEvents[0].expiredGeneration).toBe(generationA)
+      expect(readBrowserSession().generation).toBe(expiryEvents[0].clearedGeneration)
+      expect(readBrowserSession().accessToken).toBeNull()
+      expect(readBrowserSession().refreshToken).toBeNull()
+      expect(window.location.href).toBe(initialHref)
+      stop()
+    })
+
+    it('does not refresh or expire credential endpoints or requests sent without credentials', async () => {
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const credentialRequest = axiosHarness.requestFn!({ url: '/auth/login', headers: {} })
+      const credentialError = { response: { status: 401 }, config: credentialRequest }
+
+      await expect(axiosHarness.responseErrFn!(credentialError)).rejects.toBe(credentialError)
+
+      clearBrowserSession()
+      const uncredentialedRequest = axiosHarness.requestFn!({ url: '/repos', headers: {} })
+      replaceBrowserSession({ accessToken: 'token-b', refreshToken: 'refresh-b' })
+      const uncredentialedError = { response: { status: 401 }, config: uncredentialedRequest }
+
+      await expect(axiosHarness.responseErrFn!(uncredentialedError)).rejects.toBe(uncredentialedError)
+      expect(axiosHarness.axiosPost).not.toHaveBeenCalled()
+      expect(readBrowserSession().accessToken).toBe('token-b')
+      expect(readBrowserSession().refreshToken).toBe('refresh-b')
+    })
+
+    it('expires a matching credentialed session when no refresh token exists', async () => {
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: null })
+      const request = axiosHarness.requestFn!({ url: '/repos', headers: {} })
+      const error = { response: { status: 401 }, config: request }
+
+      await expect(axiosHarness.responseErrFn!(error)).rejects.toBe(error)
+
+      expect(axiosHarness.axiosPost).not.toHaveBeenCalled()
+      expect(readBrowserSession().accessToken).toBeNull()
+    })
+
+    it('does not change a valid session for non-401 or network errors', async () => {
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const serverError = { response: { status: 500 }, config: { url: '/repos' } }
+      const networkError = { message: 'Network Error' }
+
+      await expect(axiosHarness.responseErrFn!(serverError)).rejects.toBe(serverError)
+      await expect(axiosHarness.responseErrFn!(networkError)).rejects.toBe(networkError)
+
+      expect(readBrowserSession().accessToken).toBe('token-a')
+      expect(axiosHarness.axiosPost).not.toHaveBeenCalled()
     })
   })
 })
