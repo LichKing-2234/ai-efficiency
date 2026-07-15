@@ -485,6 +485,31 @@ describe('EventsView', () => {
     expect(router.currentRoute.value.query).toMatchObject({ limit: '100', offset: '100' })
   })
 
+  it('normalizes decimal pagination before the first request and next page', async () => {
+    const { wrapper, router, listEvents } = await mountEvents(
+      false,
+      '/events?limit=20.5&offset=10.5',
+      { items: sampleRows, total: 45, page: 0, page_size: 20 },
+    )
+
+    expect((wrapper.get('[data-testid="events-page-size"]').element as HTMLSelectElement).value).toBe('20')
+    expect(router.currentRoute.value.query.limit).toBeUndefined()
+    expect(router.currentRoute.value.query.offset).toBeUndefined()
+
+    await wrapper.get('[data-testid="events-next-page"]').trigger('click')
+    await flushPromises()
+
+    expect((listEvents as any).mock.calls.slice(-2).map(([params]: [{ limit: number; offset: number }]) => ({
+      limit: params.limit,
+      offset: params.offset,
+    }))).toEqual([
+      { limit: 20, offset: 0 },
+      { limit: 20, offset: 20 },
+    ])
+    expect(router.currentRoute.value.query.limit).toBeUndefined()
+    expect(router.currentRoute.value.query.offset).toBe('20')
+  })
+
   it('restores filters and pagination from the URL query', async () => {
     const from = '2026-05-20T10:00'
     const to = '2026-05-30T18:30'

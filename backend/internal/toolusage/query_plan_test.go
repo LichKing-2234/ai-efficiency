@@ -104,6 +104,73 @@ func openLargeEventTestEnv(t *testing.T) largeEventTestEnv {
 	}
 }
 
+func TestListEventsRegularActorOmitsUsernameAndUserEdgeQuery(t *testing.T) {
+	seedClient, dsn := testdb.OpenWithDSN(t)
+	fixture := seedBoundedEventFixture(t, seedClient)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open recorded list database: %v", err)
+	}
+	driver := entsql.OpenDB(dialect.Postgres, db)
+	recorder := &recordingDriver{Driver: driver}
+	client := ent.NewClient(ent.Driver(recorder))
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close recorded list client: %v", err)
+		}
+	})
+	svc := NewQueryService(client)
+
+	hasUserQuery := func(queries []recordedQuery) bool {
+		for _, query := range queries {
+			if strings.Contains(strings.ToUpper(query.SQL), `FROM "USERS"`) {
+				return true
+			}
+		}
+		return false
+	}
+
+	recorder.reset()
+	regularRows, regularTotal, err := svc.ListEvents(context.Background(), ListEventsRequest{
+		ActorUserID: fixture.ActorUserID,
+		ActorRole:   string(user.RoleUser),
+		Limit:       1,
+	})
+	if err != nil {
+		t.Fatalf("ListEvents regular actor: %v", err)
+	}
+	if regularTotal != len(fixture.EventIDs) || len(regularRows) != 1 {
+		t.Fatalf("regular total/rows = %d/%d, want %d/1", regularTotal, len(regularRows), len(fixture.EventIDs))
+	}
+	if regularRows[0].Username != "" {
+		t.Errorf("regular service username = %q, want empty", regularRows[0].Username)
+	}
+	regularQueries := recorder.snapshot()
+	if hasUserQuery(regularQueries) {
+		t.Errorf("regular list queried the users edge:\n%s", formatRecordedQueries(regularQueries))
+	}
+
+	recorder.reset()
+	adminRows, adminTotal, err := svc.ListEvents(context.Background(), ListEventsRequest{
+		ActorUserID: fixture.ActorUserID,
+		ActorRole:   string(user.RoleAdmin),
+		Limit:       1,
+	})
+	if err != nil {
+		t.Fatalf("ListEvents admin actor: %v", err)
+	}
+	if adminTotal != len(fixture.EventIDs) || len(adminRows) != 1 {
+		t.Fatalf("admin total/rows = %d/%d, want %d/1", adminTotal, len(adminRows), len(fixture.EventIDs))
+	}
+	if adminRows[0].Username != "alice" {
+		t.Errorf("admin service username = %q, want alice", adminRows[0].Username)
+	}
+	adminQueries := recorder.snapshot()
+	if !hasUserQuery(adminQueries) {
+		t.Errorf("admin list omitted the users edge query:\n%s", formatRecordedQueries(adminQueries))
+	}
+}
+
 func TestLargeEventFixturePreservesFiltersAndBounds(t *testing.T) {
 	env := openLargeEventTestEnv(t)
 	svc := NewQueryService(env.client)
@@ -256,6 +323,11 @@ func TestLargeEventFixturePreservesFiltersAndBounds(t *testing.T) {
 				t.Fatalf("materialized rows = %d, want at most %d", len(rows), MaxEventPageSize)
 			}
 			wantRows := largeEventRows(expected)
+			if !isAdminRole(tt.filter.ActorRole) {
+				for i := range wantRows {
+					wantRows[i].Username = ""
+				}
+			}
 			if len(wantRows) > MaxEventPageSize {
 				wantRows = wantRows[:MaxEventPageSize]
 			}

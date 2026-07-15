@@ -293,13 +293,15 @@ func (s *QueryService) ListEvents(ctx context.Context, req ListEventsRequest) ([
 			repoconfig.FieldName,
 			repoconfig.FieldFullName,
 		)
-	}).
-		WithUser(func(query *ent.UserQuery) {
+	})
+	if isAdminRole(req.ActorRole) {
+		page.WithUser(func(query *ent.UserQuery) {
 			query.Select(user.FieldUsername)
-		}).
-		WithCommitCheckpoint(func(query *ent.CommitCheckpointQuery) {
-			query.Select(commitcheckpoint.FieldCommitSha)
 		})
+	}
+	page.WithCommitCheckpoint(func(query *ent.CommitCheckpointQuery) {
+		query.Select(commitcheckpoint.FieldCommitSha)
+	})
 	events, err := page.Select(
 		toolusageevent.FieldID,
 		toolusageevent.FieldTool,

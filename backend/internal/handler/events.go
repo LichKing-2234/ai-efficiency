@@ -60,11 +60,6 @@ func (h *EventsHandler) List(c *gin.Context) {
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	if !isAdminRole(uc.Role) {
-		for i := range rows {
-			rows[i].Username = ""
-		}
-	}
 
 	pkg.Success(c, gin.H{
 		"items":     rows,
