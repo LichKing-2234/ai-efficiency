@@ -450,6 +450,33 @@ func TestCurrentSourceIDUsesLatestSuccessfulApplyRun(t *testing.T) {
 	}
 }
 
+func TestCurrentSnapshotReturnsLatestSuccessfulApplyRunVersion(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	oldCompletedAt := time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC)
+	newCompletedAt := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	createDirectorySnapshot(t, ctx, client, "Old Directory", "dept-old", "alice@example.com", oldCompletedAt)
+	newSource := createDirectorySnapshot(t, ctx, client, "New Directory", "dept-new", "bob@example.org", newCompletedAt)
+
+	snapshot, ok, err := CurrentSnapshot(ctx, client)
+	if err != nil {
+		t.Fatalf("CurrentSnapshot: %v", err)
+	}
+	if !ok {
+		t.Fatal("CurrentSnapshot ok = false, want true")
+	}
+	if snapshot.SourceID != newSource.ID {
+		t.Fatalf("snapshot source ID = %d, want %d", snapshot.SourceID, newSource.ID)
+	}
+	persistedSource, err := client.DirectorySource.Get(ctx, newSource.ID)
+	if err != nil {
+		t.Fatalf("reload new source: %v", err)
+	}
+	if persistedSource.LastSuccessfulRunID == nil || snapshot.RunID != *persistedSource.LastSuccessfulRunID {
+		t.Fatalf("snapshot run ID = %d, want %v", snapshot.RunID, persistedSource.LastSuccessfulRunID)
+	}
+}
+
 func TestServiceListDepartmentsReturnsDisplayPathAndFiltersByIt(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()

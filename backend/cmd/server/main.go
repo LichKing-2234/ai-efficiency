@@ -28,8 +28,10 @@ import (
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/ai-efficiency/backend/internal/workitems"
@@ -201,6 +203,13 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize work item counts cache", zap.Error(err))
 	}
+	representativeScopeCache, err := representativescope.NewCache(
+		readcache.NewRedisStore(redisClient),
+		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize representative scope cache", zap.Error(err))
+	}
 
 	// Init LDAP config (shared between auth service and admin settings handler)
 	var ldapConfig atomic.Pointer[config.LDAPConfig]
@@ -329,9 +338,10 @@ func main() {
 		checkpointHandler,
 		healthHandler,
 		handler.RouterRuntimeOptions{
-			DirectoryService:       directoryService,
-			WorkItemsCache:         workItemsCache,
-			WorkItemsRevisionStore: workItemsRevisionStore,
+			DirectoryService:         directoryService,
+			WorkItemsCache:           workItemsCache,
+			WorkItemsRevisionStore:   workItemsRevisionStore,
+			RepresentativeScopeCache: representativeScopeCache,
 		},
 	)
 
