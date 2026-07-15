@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review is complete with no findings. Tasks 1-2 are complete at implementation commits `7659d82` and `34fb70c`; Task 3 implementation, self-review, and fresh prescribed regression verification are complete, and the two checkpoint commits are next. Later task review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
+**Status:** Plan review is complete with no findings. Tasks 1-3 are complete at implementation commits `7659d82`, `34fb70c`, and `c697f3b`; Task 4 architecture, full verification, review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -341,7 +341,7 @@
 
   GREEN evidence (2026-07-15): after self-review strengthened the page fixture to five returned rows over 25 matching rows, the focused handler regression command passed (`internal/handler`, 2.073s). The combined package command passed both `internal/prusage` (4.180s) and `internal/handler` (29.693s) with exit 0. `git diff --check` exited 0. The handler tests proved one page call with response-ordered IDs and the route repository ID, zero list-time single calls, request-context cancellation binding, exact bounded fallbacks, unchanged list fields/order/summary, omitted list commit details, and complete selected detail/refresh commit diagnostics.
 
-- [ ] **Step 5: Commit Task 3 and record the checkpoint**
+- [x] **Step 5: Commit Task 3 and record the checkpoint**
 
   Commit implementation plus checked Steps 1-4:
 
@@ -356,6 +356,8 @@
   git add docs/superpowers/plans/2026-07-15-pr-list-bulk-freshness.md
   git commit -m "docs(plan): record PR list freshness task 3"
   ```
+
+  Checkpoint evidence (2026-07-15): implementation commit `c697f3b` records the list-time page capability, bounded fallback serialization, compatibility tests, self-review correction, and Steps 1-4 verification ledger.
 
 ---
 
