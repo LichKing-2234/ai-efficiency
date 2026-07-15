@@ -513,6 +513,30 @@ describe('AdminDepartmentPicker', () => {
     expect(document.activeElement).toBe(trigger.element)
   })
 
+  it('visibly highlights All departments when keyboard focus moves there from a selection', async () => {
+    mockGet.mockImplementation(() => optionsResponse([alpha, beta], { selected: beta }))
+    const wrapper = mountPicker('dept-beta', { attachToDocument: true })
+
+    await flushPromises()
+    await wrapper.get('[data-testid="admin-department-picker-trigger"]').trigger('click')
+    await flushPromises()
+
+    const search = wrapper.get('[data-testid="admin-department-picker-search"]')
+    const allOption = wrapper.get('[data-testid="admin-department-picker-all"]')
+    const assertAllIsActive = () => {
+      expect(search.attributes('aria-activedescendant')).toBe(allOption.attributes('id'))
+      expect(allOption.classes()).toContain('bg-gray-50')
+      expect(allOption.attributes('aria-selected')).toBe('false')
+    }
+
+    await search.trigger('keydown', { key: 'Home' })
+    assertAllIsActive()
+
+    await search.trigger('keydown', { key: 'ArrowDown' })
+    await search.trigger('keydown', { key: 'ArrowUp' })
+    assertAllIsActive()
+  })
+
   it('closes on Tab without preventing normal focus movement', async () => {
     mockGet.mockImplementation(() => optionsResponse([alpha, beta]))
     const wrapper = mountPicker('', { attachToDocument: true })
