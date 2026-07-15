@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Task 1 implementation and its independent-review fixes (three Important and one Minor) are complete. Task 2 Steps 1-4 are complete; Task 2 Step 5, Tasks 3-4, subsequent task reviews, delivery, and CI remain pending.
+**Status:** Tasks 1-2 are complete, including Task 1 independent-review fixes and Task 2 repeated scale/plan evidence. Tasks 3-4, subsequent task reviews, delivery, and CI remain pending.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -262,7 +262,7 @@
 
   Record exact fixture/blob/DTO/wire byte counts, the general and partial-active selected indexes, active-present/no-active plans, state-semantic outcomes, and structural nodes; elapsed time is diagnostic only, not a budget.
 
-- [ ] **Step 5: Commit Task 2 and record the checkpoint**
+- [x] **Step 5: Commit Task 2 and record the checkpoint**
 
   Commit `test(directory): prove bounded sync run history`, then check Step 5 and commit `docs(plan): record directory run scale task 2`.
 
