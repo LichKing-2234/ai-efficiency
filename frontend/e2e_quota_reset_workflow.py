@@ -7,7 +7,7 @@ import signal
 import shutil
 import subprocess
 import sys
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Route, sync_playwright
 
@@ -171,7 +171,7 @@ ACTIVE_REQUEST = {
         ],
         "decisions": [],
         "can_approve": True,
-        "can_reject": False,
+        "can_reject": True,
         "can_cancel": False,
         "can_retry": False,
     },
@@ -200,6 +200,7 @@ APPROVED_REQUEST["workflow"]["decisions"] = [{
     "created_at": "2026-07-14T01:05:00Z",
 }]
 APPROVED_REQUEST["workflow"]["can_approve"] = False
+APPROVED_REQUEST["workflow"]["can_reject"] = False
 
 CHAIN_ITEMS = [{
     "id": 71,
@@ -238,6 +239,7 @@ class SyntheticAPI:
     def __init__(self, session):
         self.session = session
         self.approver_request = copy.deepcopy(ACTIVE_REQUEST)
+        self.approved_request = None
         self.chain_payloads = []
         self.notification_payloads = []
         self.decision_payloads = []
@@ -249,6 +251,7 @@ class SyntheticAPI:
         request = route.request
         parsed = urlparse(request.url)
         path = parsed.path
+        query = parse_qs(parsed.query)
         method = request.method
 
         if path == "/api/v1/auth/me" and method == "GET":
@@ -264,7 +267,7 @@ class SyntheticAPI:
             fulfill(route, {"token": f"{self.session}-token", "refresh_token": "test-refresh"})
             return
         if path == "/api/v1/work-items/counts" and method == "GET":
-            approval_count = 1 if self.session == "approver" else 0
+            approval_count = 1 if self.session == "approver" and self.approver_request else 0
             admin_count = 1 if self.session == "admin" else 0
             fulfill(route, {
                 "quota_reset_approval_count": approval_count,
@@ -279,7 +282,12 @@ class SyntheticAPI:
             fulfill(route, self.list_response(items))
             return
         if path == "/api/v1/user/quota-reset/approvals" and method == "GET":
-            items = [self.approver_request] if self.session == "approver" else []
+            items = []
+            if self.session == "approver":
+                if query.get("scope") == ["history"]:
+                    items = [self.approved_request] if self.approved_request else []
+                elif self.approver_request:
+                    items = [self.approver_request]
             fulfill(route, self.list_response(items))
             return
         if path == "/api/v1/admin/quota-reset/requests" and method == "GET":
@@ -293,7 +301,8 @@ class SyntheticAPI:
                 "decision_reason": COMMENT,
             }
             self.decision_payloads.append(body)
-            self.approver_request = copy.deepcopy(APPROVED_REQUEST)
+            self.approver_request = None
+            self.approved_request = copy.deepcopy(APPROVED_REQUEST)
             fulfill(route, APPROVED_REQUEST)
             return
 
@@ -496,7 +505,9 @@ def test_active_approver(browser):
         row = page.get_by_test_id("quota-reset-row-321")
         assert row.count() == 1
         approve = page.get_by_test_id("quota-reset-approve-321")
+        reject = page.get_by_test_id("quota-reset-reject-321")
         assert approve.is_enabled()
+        assert reject.is_enabled()
         enabled_actions = row.locator(
             "[data-testid^='quota-reset-approve-']:enabled, "
             "[data-testid^='quota-reset-reject-']:enabled, "
@@ -506,8 +517,9 @@ def test_active_approver(browser):
         action_ids = enabled_actions.evaluate_all(
             "elements => elements.map(element => element.getAttribute('data-testid'))"
         )
-        assert action_ids == ["quota-reset-approve-321"], (
-            f"enabled workflow actions = {action_ids}, want only quota-reset-approve-321"
+        assert action_ids == ["quota-reset-approve-321", "quota-reset-reject-321"], (
+            "enabled workflow actions = "
+            f"{action_ids}, want approve and reject for the active approver"
         )
         assert_no_horizontal_overflow(page)
         assert_no_control_overlap(page)
@@ -526,6 +538,12 @@ def test_active_approver(browser):
         page.get_by_test_id("quota-reset-decision-submit").click()
         page.get_by_test_id("quota-reset-decision-dialog").wait_for(state="detached")
         assert api.decision_payloads == [{"request_node_id": 456, "decision_reason": COMMENT}]
+
+        page.get_by_test_id("quota-reset-row-321").wait_for(state="detached")
+        page.get_by_test_id("quota-reset-tab-approvals-count").wait_for(state="detached")
+        page.get_by_test_id("quota-reset-filter-processed").click()
+        history_row = page.get_by_test_id("quota-reset-row-321")
+        history_row.wait_for(state="visible")
 
         page.get_by_test_id("quota-reset-view-details-321").click()
         detail = page.get_by_test_id("quota-reset-detail-dialog")

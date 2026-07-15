@@ -10,6 +10,30 @@ import (
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
 
+func TestNotificationIDsForMemberTreatsExplicitWeComMetadataAsAuthoritative(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]any
+		want     map[string]string
+	}{
+		{name: "absent metadata falls back", metadata: map[string]any{}, want: map[string]string{"wecom": "alice-external"}},
+		{name: "non-string metadata does not fall back", metadata: map[string]any{"wecom_userid": 123}, want: map[string]string{}},
+		{name: "blank metadata does not fall back", metadata: map[string]any{"wecom_userid": "   "}, want: map[string]string{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := notificationIDsForMember(&ent.DirectoryMember{
+				ExternalID: "alice-external",
+				Metadata:   tt.metadata,
+			})
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("notification ids = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWorkflowResolverUsesExactConfigWithoutWalkingParent(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)

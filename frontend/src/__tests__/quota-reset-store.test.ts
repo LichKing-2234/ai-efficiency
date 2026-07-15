@@ -57,6 +57,37 @@ function response(items: QuotaResetRequestSummary[]) {
   return { data: { data: { items, page: 1, page_size: 20, total: items.length } } }
 }
 
+function requestWithActions(
+  id: number,
+  reason: string,
+  actions: { approve?: boolean; reject?: boolean; retry?: boolean } = {},
+): QuotaResetRequestSummary {
+  return {
+    ...failedRequest,
+    id,
+    reason,
+    status: 'pending',
+    workflow: {
+      ...failedRequest.workflow!,
+      can_approve: actions.approve ?? false,
+      can_reject: actions.reject ?? false,
+      can_retry: actions.retry ?? false,
+    },
+  }
+}
+
+function workflowAdvanced(request: QuotaResetRequestSummary) {
+  return {
+    response: {
+      status: 409,
+      data: {
+        message: 'workflow_advanced',
+        details: { request },
+      },
+    },
+  }
+}
+
 function setSession(userID: number, role: 'user' | 'admin', token: string) {
   const auth = useAuthStore()
   auth.token = token
@@ -73,7 +104,7 @@ function setSession(userID: number, role: 'user' | 'admin', token: string) {
 beforeEach(async () => {
   localStorage.clear()
   setActivePinia(createPinia())
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   const api = await import('@/api/quotaReset') as any
   const workItems = await import('@/api/workItems') as any
   api.listMyQuotaResetRequests.mockResolvedValue(response([]))
@@ -288,5 +319,88 @@ describe('quota reset store', () => {
     expect(result).toBe('success')
     expect(api.retryQuotaResetRequest).toHaveBeenCalledWith(48)
     expect(api.listQuotaResetApprovals.mock.calls.filter(([params]: [{ scope?: string }?]) => params?.scope === 'history')).toHaveLength(2)
+  })
+
+  it('removes a completed ordinary approval when every core refresh request fails', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const pending = requestWithActions(61, 'Ordinary approval', { approve: true, reject: true })
+    const completed = requestWithActions(61, 'Completed ordinary approval')
+    setSession(1, 'admin', 'token-admin-a')
+    api.listQuotaResetApprovals.mockResolvedValueOnce(response([pending]))
+    api.listAdminQuotaResetRequests.mockResolvedValueOnce(response([pending]))
+    api.approveQuotaResetRequest.mockResolvedValueOnce({ data: { data: completed } })
+    const store = useQuotaResetStore()
+    await store.loadQueues()
+    api.listMyQuotaResetRequests.mockRejectedValueOnce(new Error('mine refresh failed'))
+    api.listQuotaResetApprovals.mockRejectedValueOnce(new Error('approval refresh failed'))
+    api.listAdminQuotaResetRequests.mockRejectedValueOnce(new Error('admin refresh failed'))
+
+    const result = await store.approve(61, false)
+
+    expect(result).toBe('success')
+    expect(store.approvalRequests.map(item => item.id)).not.toContain(61)
+    expect(store.adminRequests.map(item => item.id)).not.toContain(61)
+    expect(store.loadError).not.toBe('')
+  })
+
+  it('keeps an ordinary workflow_advanced summary out of the admin cache', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const ordinary = requestWithActions(62, 'Stale ordinary summary', { approve: true, reject: true })
+    const admin = requestWithActions(62, 'Admin-scoped summary', { approve: true, reject: true })
+    const advanced = requestWithActions(62, 'Ordinary authoritative summary', { approve: true })
+    setSession(1, 'admin', 'token-admin-a')
+    api.listQuotaResetApprovals.mockResolvedValueOnce(response([ordinary]))
+    api.listAdminQuotaResetRequests.mockResolvedValueOnce(response([admin]))
+    api.approveQuotaResetRequest.mockRejectedValueOnce(workflowAdvanced(advanced))
+    const store = useQuotaResetStore()
+    await store.loadQueues()
+    api.listMyQuotaResetRequests.mockRejectedValueOnce(new Error('mine refresh failed'))
+    api.listQuotaResetApprovals.mockRejectedValueOnce(new Error('approval refresh failed'))
+    api.listAdminQuotaResetRequests.mockRejectedValueOnce(new Error('admin refresh failed'))
+
+    const result = await store.approve(62, false)
+
+    expect(result).toBe('workflow_advanced')
+    expect(store.approvalRequests.find(item => item.id === 62)?.reason).toBe('Ordinary authoritative summary')
+    expect(store.adminRequests.map(item => item.id)).not.toContain(62)
+  })
+
+  it('keeps an admin-actionable workflow_advanced summary only in the admin cache', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const ordinary = requestWithActions(63, 'Ordinary-scoped summary', { approve: true, reject: true })
+    const admin = requestWithActions(63, 'Stale admin summary', { approve: true, reject: true })
+    const advanced = requestWithActions(63, 'Admin authoritative summary', { approve: true })
+    setSession(1, 'admin', 'token-admin-a')
+    api.listQuotaResetApprovals.mockResolvedValueOnce(response([ordinary]))
+    api.listAdminQuotaResetRequests.mockResolvedValueOnce(response([admin]))
+    api.adminApproveQuotaResetRequest.mockRejectedValueOnce(workflowAdvanced(advanced))
+    const store = useQuotaResetStore()
+    await store.loadQueues()
+    api.listMyQuotaResetRequests.mockRejectedValueOnce(new Error('mine refresh failed'))
+    api.listQuotaResetApprovals.mockRejectedValueOnce(new Error('approval refresh failed'))
+    api.listAdminQuotaResetRequests.mockRejectedValueOnce(new Error('admin refresh failed'))
+
+    const result = await store.approve(63, true)
+
+    expect(result).toBe('workflow_advanced')
+    expect(store.adminRequests.find(item => item.id === 63)?.reason).toBe('Admin authoritative summary')
+    expect(store.approvalRequests.map(item => item.id)).not.toContain(63)
+  })
+
+  it('removes a non-actionable workflow_advanced summary from its source queue', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const pending = requestWithActions(64, 'Stale actionable summary', { approve: true, reject: true })
+    const advanced = requestWithActions(64, 'Advanced to another approver')
+    api.listQuotaResetApprovals.mockResolvedValueOnce(response([pending]))
+    api.approveQuotaResetRequest.mockRejectedValueOnce(workflowAdvanced(advanced))
+    const store = useQuotaResetStore()
+    await store.loadQueues()
+    api.listMyQuotaResetRequests.mockRejectedValueOnce(new Error('mine refresh failed'))
+    api.listQuotaResetApprovals.mockRejectedValueOnce(new Error('approval refresh failed'))
+
+    const result = await store.approve(64, false)
+
+    expect(result).toBe('workflow_advanced')
+    expect(store.approvalRequests.map(item => item.id)).not.toContain(64)
   })
 })

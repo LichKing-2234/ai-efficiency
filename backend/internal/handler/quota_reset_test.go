@@ -593,6 +593,53 @@ func TestQuotaResetSaveApproverConfigsPassesMode(t *testing.T) {
 	}
 }
 
+func TestQuotaResetFullListSaveRequiresPresentNonNullItems(t *testing.T) {
+	tests := []struct {
+		name      string
+		path      string
+		body      string
+		wantCode  int
+		wantCalls int
+	}{
+		{name: "approver configs missing items", path: "/api/v1/admin/quota-reset/approver-configs", body: `{}`, wantCode: http.StatusBadRequest},
+		{name: "approver configs null items", path: "/api/v1/admin/quota-reset/approver-configs", body: `{"items":null}`, wantCode: http.StatusBadRequest},
+		{name: "approver configs explicit empty items", path: "/api/v1/admin/quota-reset/approver-configs", body: `{"mode":"replace_all","items":[]}`, wantCode: http.StatusOK, wantCalls: 1},
+		{name: "approval chains missing items", path: "/api/v1/admin/quota-reset/approval-chains", body: `{}`, wantCode: http.StatusBadRequest},
+		{name: "approval chains null items", path: "/api/v1/admin/quota-reset/approval-chains", body: `{"items":null}`, wantCode: http.StatusBadRequest},
+		{name: "approval chains explicit empty items", path: "/api/v1/admin/quota-reset/approval-chains", body: `{"items":[]}`, wantCode: http.StatusOK, wantCalls: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serviceCalls := 0
+			env := newQuotaResetHandlerTestEnv(t, &fakeQuotaResetService{
+				saveApproverConfigsFn: func(_ context.Context, input quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error) {
+					serviceCalls++
+					if tt.wantCalls == 1 && (input.Mode != quotareset.ApproverConfigSaveModeReplaceAll || len(input.Items) != 0) {
+						t.Fatalf("approver config input = %+v", input)
+					}
+					return &quotareset.ApproverConfigListResponse{}, nil
+				},
+				saveApprovalChainsFn: func(_ context.Context, input quotareset.SaveApprovalChainsInput) (*quotareset.ApprovalChainListResponse, error) {
+					serviceCalls++
+					if tt.wantCalls == 1 && len(input.Items) != 0 {
+						t.Fatalf("approval chain input = %+v", input)
+					}
+					return &quotareset.ApprovalChainListResponse{Items: []quotareset.ApprovalChain{}}, nil
+				},
+			})
+
+			rec := performQuotaResetRequest(env.router, http.MethodPut, tt.path, env.adminToken, tt.body)
+			if rec.Code != tt.wantCode {
+				t.Errorf("status = %d, want %d; body = %s", rec.Code, tt.wantCode, rec.Body.String())
+			}
+			if serviceCalls != tt.wantCalls {
+				t.Errorf("service calls = %d, want %d", serviceCalls, tt.wantCalls)
+			}
+		})
+	}
+}
+
 func TestQuotaResetListApproverConfigsReturnsAuthoritativeDirectorySourceID(t *testing.T) {
 	t.Run("null without current source", func(t *testing.T) {
 		env := newQuotaResetHandlerTestEnvWithServiceFactory(t, func(client *ent.Client) quotaResetService {

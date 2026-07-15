@@ -192,7 +192,7 @@ async function mountQuotaResetView(role: 'user' | 'admin' = 'user', attachTo?: H
 beforeEach(async () => {
   setLocale('en-US')
   resetToastsForTest()
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   const api = await import('@/api/quotaReset') as any
   const workItemsApi = await import('@/api/workItems') as any
   api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 1 } } })
@@ -854,9 +854,13 @@ describe('QuotaResetView', () => {
         can_reject: false,
       },
     }
-    api.listQuotaResetApprovals.mockResolvedValue({
-      data: { data: { items: [workflowRequest, unrelatedRequest], page: 1, page_size: 20, total: 2 } },
-    })
+    api.listQuotaResetApprovals
+      .mockResolvedValueOnce({
+        data: { data: { items: [workflowRequest, unrelatedRequest], page: 1, page_size: 20, total: 2 } },
+      })
+      .mockResolvedValueOnce({
+        data: { data: { items: [unrelatedRequest], page: 1, page_size: 20, total: 1 } },
+      })
     api.approveQuotaResetRequest.mockRejectedValue({
       response: {
         status: 409,
@@ -875,11 +879,11 @@ describe('QuotaResetView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="quota-reset-decision-dialog"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="quota-reset-row-3"]').text()).toContain('Authoritative workflow state')
+    expect(wrapper.find('[data-testid="quota-reset-row-3"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="quota-reset-row-4"]').text()).toContain('Keep this newer row unchanged')
     expect(useToast().toast.message).toContain('The workflow advanced while this request was open')
     expect(useToast().toast.tone).toBe('info')
-    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(1)
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(2)
     expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
   })
 

@@ -447,8 +447,14 @@ func notificationIDsForMember(member *ent.DirectoryMember) map[string]string {
 	if member == nil {
 		return ids
 	}
-	if value, ok := member.Metadata["wecom_userid"].(string); ok && strings.TrimSpace(value) != "" {
-		ids["wecom"] = strings.TrimSpace(value)
+	if rawValue, exists := member.Metadata["wecom_userid"]; exists {
+		value, ok := rawValue.(string)
+		if !ok {
+			return ids
+		}
+		if value = strings.TrimSpace(value); value != "" {
+			ids["wecom"] = value
+		}
 		return ids
 	}
 	if externalID := strings.TrimSpace(member.ExternalID); externalID != "" {

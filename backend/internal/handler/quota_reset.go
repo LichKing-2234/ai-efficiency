@@ -56,12 +56,12 @@ type quotaResetDecisionRequest struct {
 }
 
 type quotaResetSaveApproverConfigsRequest struct {
-	Items []quotareset.ApproverConfigInput `json:"items"`
-	Mode  string                           `json:"mode"`
+	Items *[]quotareset.ApproverConfigInput `json:"items"`
+	Mode  string                            `json:"mode"`
 }
 
 type quotaResetSaveApprovalChainsRequest struct {
-	Items []quotareset.ApprovalChainInput `json:"items"`
+	Items *[]quotareset.ApprovalChainInput `json:"items"`
 }
 
 type quotaResetNotificationSettingsRequest struct {
@@ -225,9 +225,13 @@ func (h *QuotaResetHandler) SaveApprovalChains(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	if req.Items == nil {
+		pkg.Error(c, http.StatusBadRequest, "items is required")
+		return
+	}
 	resp, err := h.service.SaveApprovalChains(c.Request.Context(), quotareset.SaveApprovalChainsInput{
 		ActorUserID: uc.UserID,
-		Items:       req.Items,
+		Items:       *req.Items,
 	})
 	if err != nil {
 		writeQuotaResetError(c, err)
@@ -255,10 +259,14 @@ func (h *QuotaResetHandler) SaveApproverConfigs(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	if req.Items == nil {
+		pkg.Error(c, http.StatusBadRequest, "items is required")
+		return
+	}
 	resp, err := h.service.SaveApproverConfigs(c.Request.Context(), quotareset.SaveApproverConfigsInput{
 		ActorUserID: uc.UserID,
 		Mode:        strings.TrimSpace(req.Mode),
-		Items:       req.Items,
+		Items:       *req.Items,
 	})
 	if err != nil {
 		writeQuotaResetError(c, err)

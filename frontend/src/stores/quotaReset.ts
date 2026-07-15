@@ -27,7 +27,19 @@ interface WorkflowAdvancedDetails {
   request: QuotaResetRequestSummary | null
 }
 
-function workflowAdvancedDetails(error: unknown): WorkflowAdvancedDetails | null {
+function requestSummary(value: unknown, requestID: number): QuotaResetRequestSummary | null {
+  if (!value || typeof value !== 'object') return null
+  const id = (value as { id?: unknown }).id
+  if (typeof id !== 'number' || !Number.isSafeInteger(id) || id !== requestID) return null
+  return value as QuotaResetRequestSummary
+}
+
+function actionResponseSummary(response: unknown, requestID: number) {
+  const payload = (response as { data?: { data?: unknown } })?.data?.data
+  return requestSummary(payload, requestID)
+}
+
+function workflowAdvancedDetails(error: unknown, requestID: number): WorkflowAdvancedDetails | null {
   const response = (error as {
     response?: {
       status?: number
@@ -36,11 +48,7 @@ function workflowAdvancedDetails(error: unknown): WorkflowAdvancedDetails | null
   })?.response
   if (response?.status !== 409 || response.data?.message !== 'workflow_advanced') return null
 
-  const request = response.data.details?.request
-  if (!request || typeof request !== 'object' || typeof (request as { id?: unknown }).id !== 'number') {
-    return { request: null }
-  }
-  return { request: request as QuotaResetRequestSummary }
+  return { request: requestSummary(response.data.details?.request, requestID) }
 }
 
 function isWorkflowRequest(item: QuotaResetRequestSummary) {
@@ -225,42 +233,79 @@ export const useQuotaResetStore = defineStore('quotaReset', () => {
     }
   }
 
-  function replaceMatchingRequest(requestID: number, replacement: QuotaResetRequestSummary) {
-    if (replacement.id !== requestID) return false
+  function isActionableForQueue(item: QuotaResetRequestSummary, source: QueueMode) {
+    if (source === 'mine') {
+      return item.workflow?.can_cancel ?? item.status === 'pending'
+    }
+    if (item.workflow) {
+      return item.workflow.can_approve || item.workflow.can_reject || item.workflow.can_retry
+    }
+    return item.status === 'pending' || item.status === 'approved_reset_failed'
+  }
+
+  function reconcileActionSummary(
+    requestID: number,
+    source: QueueMode,
+    replacement: QuotaResetRequestSummary | null,
+  ) {
+    const remove = (items: QuotaResetRequestSummary[]) => items.filter(item => item.id !== requestID)
     const replace = (items: QuotaResetRequestSummary[]) => items.map(item => (
-      item.id === requestID ? replacement : item
+      item.id === requestID && replacement ? replacement : item
     ))
-    myRequests.value = replace(myRequests.value)
-    approvalRequests.value = replace(approvalRequests.value)
-    approvalHistoryRequests.value = replace(approvalHistoryRequests.value)
-    adminRequests.value = replace(adminRequests.value)
+
+    if (source === 'mine') {
+      myRequests.value = replacement ? replace(myRequests.value) : remove(myRequests.value)
+      approvalRequests.value = remove(approvalRequests.value)
+      adminRequests.value = remove(adminRequests.value)
+    } else if (source === 'approvals') {
+      approvalRequests.value = replacement && isActionableForQueue(replacement, source)
+        ? replace(approvalRequests.value)
+        : remove(approvalRequests.value)
+      adminRequests.value = remove(adminRequests.value)
+    } else {
+      adminRequests.value = replacement && isActionableForQueue(replacement, source)
+        ? replace(adminRequests.value)
+        : remove(adminRequests.value)
+      approvalRequests.value = remove(approvalRequests.value)
+    }
     dataRevision.value += 1
+  }
+
+  async function reconcileAndRefresh(
+    requestID: number,
+    source: QueueMode,
+    replacement: QuotaResetRequestSummary | null,
+    requestGeneration: number,
+  ) {
+    reconcileActionSummary(requestID, source, replacement)
+    const refreshDisplayedHistory = displayingApprovalHistory.value
+    invalidateApprovalHistory()
+    if (refreshDisplayedHistory) void loadApprovalHistory()
+    await loadQueues(true)
+    if (requestGeneration !== lifecycleGeneration) return false
+    if (coreLoadError.value) reconcileActionSummary(requestID, source, replacement)
     return true
   }
 
-  async function runAction(requestID: number, action: () => Promise<unknown>): Promise<QuotaResetActionResult> {
+  async function runAction(
+    requestID: number,
+    source: QueueMode,
+    action: () => Promise<unknown>,
+  ): Promise<QuotaResetActionResult> {
     if (actionBusy.value) return 'busy'
     actionBusy.value = true
     const requestGeneration = lifecycleGeneration
     try {
-      await action()
+      const response = await action()
       if (requestGeneration !== lifecycleGeneration) return 'stale'
-      const refreshDisplayedHistory = displayingApprovalHistory.value
-      invalidateApprovalHistory()
-      if (refreshDisplayedHistory) void loadApprovalHistory()
-      await loadQueues(true)
-      if (requestGeneration !== lifecycleGeneration) return 'stale'
+      const replacement = actionResponseSummary(response, requestID)
+      if (!await reconcileAndRefresh(requestID, source, replacement, requestGeneration)) return 'stale'
       return 'success'
     } catch (error) {
       if (requestGeneration !== lifecycleGeneration) return 'stale'
-      const advanced = workflowAdvancedDetails(error)
+      const advanced = workflowAdvancedDetails(error, requestID)
       if (!advanced) return 'failed'
-      if (advanced.request && replaceMatchingRequest(requestID, advanced.request)) {
-        void workItems.loadCounts({ force: true })
-      } else {
-        await loadQueues(true)
-        if (requestGeneration !== lifecycleGeneration) return 'stale'
-      }
+      if (!await reconcileAndRefresh(requestID, source, advanced.request, requestGeneration)) return 'stale'
       return 'workflow_advanced'
     } finally {
       if (requestGeneration === lifecycleGeneration) actionBusy.value = false
@@ -268,23 +313,23 @@ export const useQuotaResetStore = defineStore('quotaReset', () => {
   }
 
   function cancel(requestID: number) {
-    return runAction(requestID, () => cancelQuotaResetRequest(requestID))
+    return runAction(requestID, 'mine', () => cancelQuotaResetRequest(requestID))
   }
 
   function approve(requestID: number, admin: boolean, data: QuotaResetApproveInput = {}) {
-    return runAction(requestID, () => (
+    return runAction(requestID, admin ? 'admin' : 'approvals', () => (
       admin ? adminApproveQuotaResetRequest(requestID, data) : approveQuotaResetRequest(requestID, data)
     ))
   }
 
   function reject(requestID: number, admin: boolean, data: QuotaResetRejectInput) {
-    return runAction(requestID, () => (
+    return runAction(requestID, admin ? 'admin' : 'approvals', () => (
       admin ? adminRejectQuotaResetRequest(requestID, data) : rejectQuotaResetRequest(requestID, data)
     ))
   }
 
   function retry(item: QuotaResetRequestSummary, admin: boolean) {
-    return runAction(item.id, () => (
+    return runAction(item.id, admin ? 'admin' : 'approvals', () => (
       admin ? adminRetryQuotaResetRequest(item.id) : retryQuotaResetRequest(item.id)
     ))
   }

@@ -1038,6 +1038,15 @@ Add:
 Keep existing approver and notification settings routes, with their request and
 response contracts extended as described above.
 
+Both full-list replacement routes,
+`PUT /api/v1/admin/quota-reset/approver-configs` and
+`PUT /api/v1/admin/quota-reset/approval-chains`, require the JSON body to
+contain a present, non-null `items` array. A missing `items` member or
+`"items": null` returns `400` before the service is called. An explicit
+`"items": []` remains an intentional request to clear the full list; for
+approver configs it is used with `"mode": "replace_all"` and remains subject
+to referenced-chain conflict validation.
+
 `GET /api/v1/admin/quota-reset/approver-configs` and the successful approver
 config save response use:
 
@@ -1318,7 +1327,7 @@ Cover:
 
 ### Browser Verification
 
-Use distinct synthetic authenticated roles:
+The target full browser matrix uses distinct synthetic authenticated roles:
 
 1. Requester with multiple direct departments.
 2. First-node configured approver.
@@ -1327,7 +1336,21 @@ Use distinct synthetic authenticated roles:
 5. Actor appearing in multiple non-adjacent nodes.
 6. Admin fallback.
 
-Verify:
+The full six-role representative/admin/provider/webhook matrix is an accepted
+deferred residual. The current deterministic script does not claim coverage of
+that complete matrix.
+
+The current deterministic subset in `frontend/e2e_quota_reset_workflow.py`
+covers five cases: one active ordinary approver flow, future-approver
+invisibility, requester keyboard and mobile detail behavior, and admin settings
+at desktop and mobile sizes. The active flow verifies both approve and reject
+actions, removes the request and badge from the default actionable queue after
+approval, and then loads the reused-approval detail only from explicit
+`scope=history`. The settings cases exercise synthetic chain and notification
+configuration, but they do not substitute for the deferred full role,
+provider, and webhook delivery matrix.
+
+The target full matrix must verify:
 
 1. Settings save and reload.
 2. Request creation snapshots the intended nodes.
