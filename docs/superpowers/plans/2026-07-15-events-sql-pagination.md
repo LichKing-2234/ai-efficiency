@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Tasks 1-4 and their review remediation are complete and committed. Task 5 Steps 1-2 are complete in the worktree: current architecture records bounded SQL event delivery and single active row-tree behavior, and the prescribed formatting, Ent generation-drift, full backend/CLI/frontend, production build, role E2E, and diff checks all pass, including PostgreSQL scale/query-plan evidence. Because another worktree already owned port 5173, role E2E was isolated onto a temporary current-worktree Vite port and its fixed test base was restored afterward. Remediation for the final SPEC review's two Important findings and the standards review's two Important plus two Minor findings is complete. Regular-list username privacy now belongs to the actor-aware service and skips the user edge for regular actors; restored pagination is canonicalized to safe integers before loading; aggregate tests permit fewer SQL round trips; and all in-scope event paths are synthetic. Focused recorded-SQL, handler, and frontend regressions, the affected backend packages, the frontend tests/build, and diff checks pass. Task 5 Steps 3-7 remain pending, and Step 3 must stay unchecked until fresh clean SPEC and separate standards reviews complete. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); implement from `docs/performance-contracts-116@5f6c58e` on `perf/events-120`, and open the draft PR against `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 and Task 5 Steps 1-3 are complete. All implementation and review remediation is committed through `b28f078`; current architecture and the live verification ledger are ready for their Step 4 commit. Ent generation has no drift; full backend/CLI/frontend, production build, embed, PostgreSQL scale/query-plan, and isolated 16/16 role E2E verification pass. Final replacement reviews report `SPEC PASS` and `QUALITY APPROVED`, each with zero findings. Task 5 Steps 4-7 remain pending. Issue [#120](https://github.com/LichKing-2234/ai-efficiency/issues/120) is blocked only by contract PR [#138](https://github.com/LichKing-2234/ai-efficiency/pull/138); the draft PR must target `docs/performance-contracts-116`.
 
 ## Global Constraints
 
@@ -494,7 +494,7 @@ git diff --check
 
 Expected: all commands PASS. Report PostgreSQL/query-plan and role E2E as environment-sensitive evidence, and keep any unrun command unchecked.
 
-- [ ] **Step 3: Perform spec review and standards review as separate gates**
+- [x] **Step 3: Perform spec review and standards review as separate gates**
 
 Request one review against issue #120 plus the active performance spec and one review against `AGENTS.md` plus repo conventions. Required review questions:
 
@@ -510,9 +510,13 @@ Does the frontend mount one row subtree and defer JSON formatting until expansio
 
 Fix every Critical or Important finding with a focused RED/GREEN cycle, rerun affected suites, and record Minor findings explicitly if intentionally deferred.
 
-**Remediation status (2026-07-15):** The initial final SPEC review reported two Important findings and no Critical or Minor findings. Focused RED/GREEN cycles now cover a `limit=101` deep link advancing from offset 0 to 100 without a gap, and the complete regular/admin detail response matrix for `username`, `raw_source_path`, `raw_source_locator`, and `raw_payload`. The affected backend packages, focused frontend tests, and frontend production build pass. This step remains unchecked until the controller obtains a clean replacement SPEC review and a separate standards review.
+**Remediation status (2026-07-15):** The initial final SPEC review reported two Important findings and no Critical or Minor findings. Focused RED/GREEN cycles now cover a `limit=101` deep link advancing from offset 0 to 100 without a gap, and the complete regular/admin detail response matrix for `username`, `raw_source_path`, `raw_source_locator`, and `raw_payload`. The affected backend packages, focused frontend tests, and frontend production build pass.
 
-**Standards remediation status (2026-07-15):** The initial standards review reported two Important and two Minor findings. All four are remediated with no Minor deferral. Strict RED/GREEN cycles prove that regular service results omit username without a user-edge SQL query while admin results preserve it, and decimal deep-link pagination normalizes to aligned integer requests and route state. The aggregate test now requires at least one aggregate statement without prescribing four round trips, and every `/Users/admin/...` event path in the changed handler/toolusage tests is replaced with synthetic `alice`/`bob` paths. Focused recorded-SQL, handler, and frontend tests, the affected backend packages, the frontend production build, and diff checks pass. Step 3 remains unchecked pending clean replacement reviews.
+**Standards remediation status (2026-07-15):** The initial standards review reported two Important and two Minor findings. All four are remediated with no Minor deferral. Strict RED/GREEN cycles prove that regular service results omit username without a user-edge SQL query while admin results preserve it, and decimal deep-link pagination normalizes to aligned integer requests and route state. The aggregate test now requires at least one aggregate statement without prescribing four round trips, and every real local event path in the changed handler/toolusage tests is replaced with synthetic `alice`/`bob` paths. Focused recorded-SQL, handler, and frontend tests, the affected backend packages, the frontend production build, and diff checks pass.
+
+**Post-remediation controller verification (2026-07-15):** Ent regeneration produced no drift; full backend and ae-cli suites passed; frontend passed 39 files / 437 tests and the production build transformed 188 modules; the release frontend embed test passed; and role E2E passed 16/16 against the current worktree's IPv6 Vite listener. The E2E run emitted expected proxy connection-refused noise because no backend was running. The owned IPv6 listener was stopped afterward, and `git diff --check` passed.
+
+**Final review outcome (2026-07-15):** The replacement issue/spec review reports `SPEC PASS` with 0 Critical, 0 Important, and 0 Minor findings. The separate repository-standards review reports `QUALITY APPROVED` with the same zero-finding counts. No review finding is deferred.
 
 - [ ] **Step 4: Record delivery evidence and commit architecture/ledger state**
 
