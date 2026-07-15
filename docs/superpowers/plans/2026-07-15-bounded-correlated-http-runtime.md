@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-3 are complete and verified. Task 4 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-3 are complete and verified. Task 4 Steps 1-5 are complete and verified; the Task 4 checkpoint remains. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -324,13 +324,13 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 - Produces `telemetry.WrapDependency(logger *zap.Logger, release, dependency, operation string) httpclient.TransportWrapper`.
 - Production Relay uses fixed labels `dependency="relay"` and `operation="http_request"`.
 
-- [ ] **Step 1: Add failing request-ID and CORS tests**
+- [x] **Step 1: Add failing request-ID and CORS tests**
 
   Table-test missing, valid, 129-character, whitespace, slash, control-character, and Unicode incoming IDs. Valid IDs are preserved; all invalid IDs are replaced by a valid UUID. Assert the selected value is in the request context during the handler and in `X-Request-ID` on successful, error, OPTIONS, 404, and embedded/static responses.
 
   Assert CORS includes `X-Request-ID` in both `Access-Control-Allow-Headers` and `Access-Control-Expose-Headers`.
 
-- [ ] **Step 2: Add failing low-cardinality request-log tests and record RED**
+- [x] **Step 2: Add failing low-cardinality request-log tests and record RED**
 
   Use a zap observer and two requests such as `/users/7?email=alice@example.com` and `/users/99?email=bob@example.org` against one Gin route `/users/:id`. Both events must contain:
 
@@ -351,13 +351,17 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   Expected: FAIL because the packages/middleware do not exist.
 
-- [ ] **Step 3: Implement request correlation before every other middleware**
+  Evidence (2026-07-15): the focused command failed as expected because `telemetry.WithRequestID`, `telemetry.RequestID`, and the request telemetry middleware did not exist; the telemetry package had no non-test Go files.
+
+- [x] **Step 3: Implement request correlation before every other middleware**
 
   Validate/generate the ID, replace `c.Request` with a clone carrying the context value, set the response header before `c.Next()`, then log after completion using `c.FullPath()` or exactly `unmatched`. Use `c.Writer.Size()`; do not wrap the writer and risk losing `Flusher` or `Hijacker`.
 
   The production router must order middleware as request telemetry, recovery, CORS, canonical redirect, embedded frontend, then route/group handlers.
 
-- [ ] **Step 4: Add failing Relay dependency transport tests**
+  Evidence (2026-07-15): the focused telemetry/middleware command passed in 1.510s, and the embedded frontend router test passed in 3.359s with the selected request ID returned on the static response.
+
+- [x] **Step 4: Add failing Relay dependency transport tests**
 
   Wrap a synthetic transport and assert:
 
@@ -370,7 +374,9 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
 
   Expected: FAIL because the transport wrapper is not wired.
 
-- [ ] **Step 5: Implement Relay telemetry and full router coverage**
+  Evidence (2026-07-15): the focused command failed as expected at each dependency test call site because `telemetry.WrapDependency` did not exist; the existing Relay package passed with no matching tests to run.
+
+- [x] **Step 5: Implement Relay telemetry and full router coverage**
 
   Wrap only the production Relay client's private bounded transport, so all existing direct `client.Do` calls are covered without changing `relay.Provider`. Do not classify from URL path; `relay/http_request` is the only operation label in this slice.
 
@@ -381,6 +387,8 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
   - `git diff --check`.
 
   Expected: PASS, with exactly one request event per handled request and one dependency event per Relay round trip.
+
+  Evidence (2026-07-15): telemetry/middleware/Relay passed in 0.168s, 0.421s, and 0.292s; the focused handler/server router command passed in 1.562s and 0.327s; `git diff --check` passed. The production client wiring test also passed in 0.323s and confirmed only the shared Relay pool is wrapped.
 
 - [ ] **Step 6: Commit Task 4 and record the checkpoint**
 
