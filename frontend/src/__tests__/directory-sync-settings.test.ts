@@ -1221,6 +1221,165 @@ auth:
     }
   })
 
+  it.each([
+    'preview' as const,
+    'apply' as const,
+  ])('keeps a recovered active $action poll while applying a template', async (action) => {
+    vi.useFakeTimers()
+    const activeRun = runSummary({
+      id: 426,
+      mode: action,
+      status: 'running',
+      phase: action === 'preview' ? 'executing' : 'applying',
+      completed_at: null,
+      department_count: 7,
+      member_count: 13,
+    })
+    const terminalRun = {
+      ...activeRun,
+      status: 'completed',
+      phase: 'completed',
+      completed_at: '2026-07-15T01:02:00Z',
+      department_count: 9,
+      member_count: 17,
+    }
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(runPage([], { latest_active_run: activeRun })))
+        .mockResolvedValueOnce(apiResponse(runPage([terminalRun])))
+      api.getDirectoryRun.mockResolvedValueOnce(apiResponse(terminalRun))
+    })
+
+    try {
+      const startedMessage = action === 'preview' ? 'Starting preview...' : 'Starting run...'
+      const phaseMessage = action === 'preview' ? 'Reading directory API' : 'Applying directory facts'
+      const terminalMessage = action === 'preview'
+        ? 'Preview completed: kept 17 valid members; 9 departments.'
+        : 'Run completed: kept 17 valid members; 9 departments.'
+
+      expect(vi.getTimerCount()).toBe(1)
+      expect(wrapper.text()).toContain(startedMessage)
+      expect(wrapper.text()).toContain(phaseMessage)
+      expect(wrapper.get('[data-testid="directory-preview"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.get('[data-testid="directory-run-now"]').attributes('disabled')).toBeDefined()
+
+      const templateButton = wrapper.findAll('button').find((button) => button.text().includes('Departments then members'))
+      expect(templateButton).toBeTruthy()
+      await templateButton!.trigger('click')
+
+      expect(vi.getTimerCount()).toBe(1)
+      expect(wrapper.text()).toContain(startedMessage)
+      expect(wrapper.text()).toContain(phaseMessage)
+      expect(wrapper.get('[data-testid="directory-preview"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.get('[data-testid="directory-run-now"]').attributes('disabled')).toBeDefined()
+      expect(api.getDirectoryRun).not.toHaveBeenCalled()
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(1)
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(activeRun.id)
+      expect(wrapper.text()).toContain(terminalMessage)
+      expect(wrapper.text()).not.toContain(phaseMessage)
+      expect(wrapper.get('[data-testid="directory-preview"]').attributes('disabled')).toBeUndefined()
+      expect(wrapper.get('[data-testid="directory-run-now"]').attributes('disabled')).toBeUndefined()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a recovered active poll through save and same-source reload', async () => {
+    vi.useFakeTimers()
+    const saveResponse = deferred<any>()
+    const sourceA = {
+      id: 1,
+      name: 'First Directory',
+      description: 'First source',
+      scope: 'full_company',
+      enabled: true,
+      dsl: 'version: 1\nscope: full_company\n',
+      schedule_enabled: false,
+      schedule_interval: 'daily',
+      schedule_timezone: 'UTC',
+    }
+    const sourceB = { ...sourceA, id: 2, name: 'Second Directory', description: 'Second source' }
+    const activeRun = runSummary({
+      id: 427,
+      source_id: 2,
+      status: 'running',
+      phase: 'applying',
+      completed_at: null,
+      department_count: 8,
+      member_count: 14,
+    })
+    const terminalRun = {
+      ...activeRun,
+      status: 'completed',
+      phase: 'completed',
+      completed_at: '2026-07-15T01:03:00Z',
+      department_count: 10,
+      member_count: 19,
+    }
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectorySources.mockResolvedValue(apiResponse({ items: [sourceA, sourceB] }))
+      api.updateDirectorySource.mockImplementationOnce(() => saveResponse.promise)
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(runPage()))
+        .mockResolvedValueOnce(apiResponse(runPage([], { latest_active_run: activeRun })))
+        .mockResolvedValueOnce(apiResponse(runPage([], { latest_active_run: activeRun })))
+        .mockResolvedValueOnce(apiResponse(runPage([terminalRun])))
+      api.getDirectoryRun.mockResolvedValueOnce(apiResponse(terminalRun))
+    })
+
+    try {
+      const secondSourceButton = wrapper.findAll('button').find((button) => button.text().includes('Second Directory'))
+      expect(secondSourceButton).toBeTruthy()
+      await secondSourceButton!.trigger('click')
+      await flushPromises()
+
+      expect(vi.getTimerCount()).toBe(1)
+      expect(wrapper.text()).toContain('Starting run...')
+      expect(wrapper.text()).toContain('Applying directory facts')
+
+      await wrapper.get('[data-testid="directory-save"]').trigger('click')
+      await flushPromises()
+
+      expect(api.updateDirectorySource).toHaveBeenCalledTimes(1)
+      expect(api.updateDirectorySource).toHaveBeenCalledWith(2, expect.any(Object))
+      expect(wrapper.get('[data-testid="directory-save"]').attributes('disabled')).toBeDefined()
+      expect(vi.getTimerCount()).toBe(1)
+      expect(wrapper.text()).toContain('Starting run...')
+      expect(wrapper.text()).toContain('Applying directory facts')
+      expect(api.getDirectoryRun).not.toHaveBeenCalled()
+
+      saveResponse.resolve(apiResponse({ id: 1, name: 'Example Directory' }))
+      await flushPromises()
+
+      expect(api.listDirectorySources).toHaveBeenCalledTimes(2)
+      expect(api.listDirectoryRuns).toHaveBeenCalledTimes(3)
+      expect(api.listDirectoryRuns).toHaveBeenLastCalledWith(2, { limit: 20, offset: 0 })
+      expect(wrapper.get('[data-testid="directory-save"]').attributes('disabled')).toBeUndefined()
+      expect(vi.getTimerCount()).toBe(1)
+      expect(wrapper.text()).toContain('Starting run...')
+      expect(wrapper.text()).toContain('Applying directory facts')
+      expect(api.getDirectoryRun).not.toHaveBeenCalled()
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(1)
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(activeRun.id)
+      expect(wrapper.text()).toContain('Run completed: kept 19 valid members; 10 departments.')
+      expect(wrapper.text()).not.toContain('Applying directory facts')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('invalidates an in-flight active poll when switching sources', async () => {
     vi.useFakeTimers()
     const pollA = deferred<any>()
