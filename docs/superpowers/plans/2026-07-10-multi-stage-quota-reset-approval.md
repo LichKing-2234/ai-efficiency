@@ -5482,7 +5482,7 @@ completion-decision lookups.
 
 GREEN evidence (2026-07-15):
 
-- cd backend && go test ./internal/quotareset -run 'Test(ListApprovalsKeepsV2DecisionHistoryBehindExplicitScope|ListApprovalsReturnsRejectedV2DecisionHistoryOnlyWithExplicitScope|ListApprovalsPreservesLegacyV1SemanticsWithHistoryScope|CountWorkItemsAdminUsesAllPendingWithoutDoubleCounting|RetryResetWorkflowWrapsLookupErrorsWithoutLosingNotFoundClassification)$' -count=1 exited 0.
+- `cd backend && go test ./internal/quotareset -run 'Test(ListApprovalsKeepsV2DecisionHistoryBehindExplicitScope|ListApprovalsReturnsRejectedV2DecisionHistoryOnlyWithExplicitScope|ListApprovalsPreservesLegacyV1SemanticsWithHistoryScope|CountWorkItemsAdminUsesAllPendingWithoutDoubleCounting|RetryResetWorkflowWrapsLookupErrorsWithoutLosingNotFoundClassification)$' -count=1` exited 0.
 
 - [ ] **Step 4: Run full verification, update docs, commit, rerun whole-branch reviews, and close the plan**
 
@@ -5497,3 +5497,29 @@ Current completion (2026-07-15):
 - Remaining before closure: controller-managed task reviews, final browser and
   Compose verification, and whole-branch reviews. This task does not run or
   modify Compose.
+
+Quality-review follow-up RED evidence (2026-07-15):
+
+- `cd frontend && npm test -- src/__tests__/quota-reset-view.test.ts` exited 1
+  with 3 failed and 19 passed tests. Repeated processed selection made 3
+  approval-list calls instead of 2 and cleared the visible loading state while
+  the first history request remained pending. A loaded-history refetch stopped
+  the admin queue at one load instead of two after an action. History loading
+  also leaked into the actionable view, preventing the stale-generation
+  scenario from reaching its action control.
+
+Quality-review follow-up GREEN evidence (2026-07-15):
+
+- `cd frontend && npm test -- src/__tests__/quota-reset-view.test.ts` exited 0
+  with 1 file and 22 tests passing.
+- `cd frontend && npm test -- src/__tests__/quota-reset-api.test.ts src/__tests__/quota-reset-view.test.ts` exited 0 with 2 files and 33 tests passing.
+- `cd frontend && npm run build` exited 0 after `vue-tsc -b` and Vite built
+  1,955 modules.
+- Core queue and history loading now own separate loading/error state. History
+  uses one in-flight promise plus a generation guard, and successful actions
+  invalidate history before refreshing actionable, mine, and admin queues.
+- `git rm --cached .superpowers/sdd/task-19-report.md` removed the ignored
+  report from the index; the local file remains present and is ignored by
+  `.gitignore:31`.
+- Step 4 remains unchecked pending task re-review, final browser/Compose
+  verification, and whole-branch reviews.

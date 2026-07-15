@@ -41,9 +41,11 @@ const approvalHistoryRequests = ref<QuotaResetRequestSummary[]>([])
 const adminRequests = ref<QuotaResetRequestSummary[]>([])
 const myTotal = ref(0)
 const approvalHistoryLoaded = ref(false)
-const loading = ref(false)
+const coreLoading = ref(false)
+const approvalHistoryLoading = ref(false)
 const actionBusy = ref(false)
-const loadError = ref('')
+const coreLoadError = ref('')
+const approvalHistoryError = ref('')
 const selectedRequest = ref<QuotaResetRequestSummary | null>(null)
 const requestDetailDialog = ref<HTMLElement | null>(null)
 const requestDetailCloseButton = ref<HTMLElement | null>(null)
@@ -52,8 +54,13 @@ const decisionRequest = ref<QuotaResetRequestSummary | null>(null)
 const decisionMode = ref<'approve' | 'reject'>('approve')
 const decisionQueue = ref<QueueMode>('approvals')
 const filters: FilterMode[] = ['all', 'pending', 'processed', 'failed']
+let approvalHistoryGeneration = 0
+let approvalHistoryLoadPromise: Promise<void> | null = null
 const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : workItems.counts.quota_reset_approval_count)
 const adminTotal = computed(() => workItems.loading || workItems.error || !auth.isAdmin ? 0 : workItems.counts.quota_reset_admin_count)
+const displayingApprovalHistory = computed(() => activeQueue.value === 'approvals' && activeFilter.value === 'processed')
+const loading = computed(() => displayingApprovalHistory.value ? approvalHistoryLoading.value : coreLoading.value)
+const loadError = computed(() => displayingApprovalHistory.value ? approvalHistoryError.value : coreLoadError.value)
 
 const queueItems = computed(() => {
   if (activeQueue.value === 'approvals') {
@@ -98,8 +105,8 @@ function syncSelectedRequest() {
 }
 
 async function loadQueues(forceCounts = false) {
-  loading.value = true
-  loadError.value = ''
+  coreLoading.value = true
+  coreLoadError.value = ''
   void workItems.loadCounts({ force: forceCounts })
   try {
     const requests = [
@@ -110,10 +117,6 @@ async function loadQueues(forceCounts = false) {
     myRequests.value = mine.data.data?.items ?? []
     approvalRequests.value = approvals.data.data?.items ?? []
     myTotal.value = mine.data.data?.total ?? myRequests.value.length
-    if (approvalHistoryLoaded.value) {
-      const history = await listQuotaResetApprovals({ scope: 'history' })
-      approvalHistoryRequests.value = history.data.data?.items ?? []
-    }
     if (auth.isAdmin) {
       const admin = await listAdminQuotaResetRequests()
       adminRequests.value = admin.data.data?.items ?? []
@@ -122,9 +125,9 @@ async function loadQueues(forceCounts = false) {
     }
     syncSelectedRequest()
   } catch {
-    loadError.value = t('quotaReset.loadFailed')
+    coreLoadError.value = t('quotaReset.loadFailed')
   } finally {
-    loading.value = false
+    coreLoading.value = false
   }
 }
 
@@ -137,19 +140,40 @@ function filterMatches(item: QuotaResetRequestSummary, filter: FilterMode) {
   return status === 'approved_reset_succeeded' || status === 'rejected' || status === 'cancelled'
 }
 
-async function loadApprovalHistory() {
-  if (approvalHistoryLoaded.value) return
-  loading.value = true
-  loadError.value = ''
-  try {
-    const history = await listQuotaResetApprovals({ scope: 'history' })
-    approvalHistoryRequests.value = history.data.data?.items ?? []
-    approvalHistoryLoaded.value = true
-  } catch {
-    loadError.value = t('quotaReset.loadFailed')
-  } finally {
-    loading.value = false
-  }
+function loadApprovalHistory(): Promise<void> {
+  if (approvalHistoryLoaded.value) return Promise.resolve()
+  if (approvalHistoryLoadPromise) return approvalHistoryLoadPromise
+
+  approvalHistoryLoading.value = true
+  approvalHistoryError.value = ''
+  const requestGeneration = approvalHistoryGeneration
+  const request = (async () => {
+    try {
+      const history = await listQuotaResetApprovals({ scope: 'history' })
+      if (requestGeneration !== approvalHistoryGeneration) return
+      approvalHistoryRequests.value = history.data.data?.items ?? []
+      approvalHistoryLoaded.value = true
+    } catch {
+      if (requestGeneration !== approvalHistoryGeneration) return
+      approvalHistoryError.value = t('quotaReset.loadFailed')
+    } finally {
+      if (requestGeneration === approvalHistoryGeneration) {
+        approvalHistoryLoading.value = false
+        approvalHistoryLoadPromise = null
+      }
+    }
+  })()
+  approvalHistoryLoadPromise = request
+  return request
+}
+
+function invalidateApprovalHistory() {
+  approvalHistoryGeneration += 1
+  approvalHistoryLoadPromise = null
+  approvalHistoryLoaded.value = false
+  approvalHistoryLoading.value = false
+  approvalHistoryError.value = ''
+  approvalHistoryRequests.value = []
 }
 
 function selectQueue(queue: QueueMode) {
@@ -276,6 +300,7 @@ async function withAction(
   actionBusy.value = true
   try {
     await action()
+    invalidateApprovalHistory()
     if (options.closeDecisionOnSuccess) closeDecisionDialog()
     await loadQueues(true)
     showToast({ message: t('quotaReset.actionSucceeded'), tone: 'success' })

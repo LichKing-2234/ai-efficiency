@@ -321,6 +321,119 @@ describe('QuotaResetView', () => {
     expect(wrapper.find('[data-testid="quota-reset-approve-44"]').exists()).toBe(false)
   })
 
+  it('deduplicates repeated processed history loads and keeps loading scoped to the displayed dataset', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const pendingHistory = deferred<any>()
+    const historyRequest = {
+      ...workflowRequest,
+      id: 45,
+      group_name: 'Group History Pending',
+      status: 'pending' as const,
+      workflow: {
+        ...workflowRequest.workflow!,
+        can_approve: false,
+        can_reject: false,
+      },
+    }
+    api.listQuotaResetApprovals
+      .mockResolvedValueOnce({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
+      .mockReturnValueOnce(pendingHistory.promise)
+      .mockResolvedValueOnce({ data: { data: { items: [], page: 1, page_size: 20, total: 0 } } })
+
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    const processed = wrapper.get('[data-testid="quota-reset-filter-processed"]')
+    await processed.trigger('click')
+    await processed.trigger('click')
+    await flushPromises()
+
+    expect.soft(api.listQuotaResetApprovals).toHaveBeenCalledTimes(2)
+    expect.soft(wrapper.text()).toContain('Loading...')
+
+    await wrapper.get('[data-testid="quota-reset-filter-all"]').trigger('click')
+    expect(wrapper.text()).not.toContain('Loading...')
+    await processed.trigger('click')
+    expect.soft(wrapper.text()).toContain('Loading...')
+
+    pendingHistory.resolve({ data: { data: { items: [historyRequest], page: 1, page_size: 20, total: 1 } } })
+    await flushPromises()
+
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Group History Pending')
+    expect(wrapper.text()).not.toContain('Loading...')
+  })
+
+  it('refreshes core and admin queues after an action without refetching loaded history', async () => {
+    const api = await import('@/api/quotaReset') as any
+    let historyCalls = 0
+    api.listQuotaResetApprovals.mockImplementation((params?: { scope?: string }) => {
+      if (params?.scope === 'history') {
+        historyCalls += 1
+        if (historyCalls > 1) return Promise.reject(new Error('history unavailable'))
+        return Promise.resolve({ data: { data: { items: [workflowRequest], page: 1, page_size: 20, total: 1 } } })
+      }
+      return Promise.resolve({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
+    })
+    api.listAdminQuotaResetRequests.mockResolvedValue({
+      data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } },
+    })
+    api.adminApproveQuotaResetRequest.mockResolvedValue({
+      data: { data: { ...approvalRequest, status: 'approved_reset_succeeded' } },
+    })
+
+    const wrapper = await mountQuotaResetView('admin')
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-filter-processed"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Bob Builder')
+
+    await wrapper.get('[data-testid="quota-reset-filter-all"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-tab-admin"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-approve-2"]').trigger('click')
+    await flushPromises()
+
+    expect(api.adminApproveQuotaResetRequest).toHaveBeenCalledWith(2, {})
+    expect(api.listMyQuotaResetRequests).toHaveBeenCalledTimes(2)
+    expect(api.listAdminQuotaResetRequests).toHaveBeenCalledTimes(2)
+    expect(historyCalls).toBe(1)
+    expect(useToast().toast.tone).toBe('success')
+  })
+
+  it('ignores stale history after an action invalidates an in-flight request', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const staleHistory = deferred<any>()
+    const freshHistory = deferred<any>()
+    let historyCalls = 0
+    api.listQuotaResetApprovals.mockImplementation((params?: { scope?: string }) => {
+      if (params?.scope !== 'history') {
+        return Promise.resolve({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
+      }
+      historyCalls += 1
+      return historyCalls === 1 ? staleHistory.promise : freshHistory.promise
+    })
+
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-filter-processed"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-filter-all"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-approve-2"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="quota-reset-filter-processed"]').trigger('click')
+    const freshRequest = { ...workflowRequest, id: 46, group_name: 'Fresh History' }
+    freshHistory.resolve({ data: { data: { items: [freshRequest], page: 1, page_size: 20, total: 1 } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Fresh History')
+
+    const staleRequest = { ...workflowRequest, id: 47, group_name: 'Stale History' }
+    staleHistory.resolve({ data: { data: { items: [staleRequest], page: 1, page_size: 20, total: 1 } } })
+    await flushPromises()
+
+    expect(historyCalls).toBe(2)
+    expect(wrapper.text()).toContain('Fresh History')
+    expect(wrapper.text()).not.toContain('Stale History')
+  })
+
   it('does not show approval badges for completed history when actionable counts are zero', async () => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any
