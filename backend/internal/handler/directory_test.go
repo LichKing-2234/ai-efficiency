@@ -190,11 +190,13 @@ func TestDirectoryHandlerListRunsNormalizesPagination(t *testing.T) {
 		{name: "absent", wantLimit: 20},
 		{name: "zero limit", query: "?limit=0", wantLimit: 20},
 		{name: "invalid limit", query: "?limit=invalid", wantLimit: 20},
+		{name: "overflow limit", query: "?limit=999999999999999999999999999999999999", wantLimit: 20},
 		{name: "negative limit", query: "?limit=-1", wantLimit: 20},
 		{name: "limit above max", query: "?limit=101", wantLimit: 100},
 		{name: "large limit", query: "?limit=1000", wantLimit: 100},
 		{name: "negative offset", query: "?limit=20&offset=-5", wantLimit: 20},
 		{name: "invalid offset", query: "?limit=20&offset=invalid", wantLimit: 20},
+		{name: "overflow offset", query: "?limit=20&offset=999999999999999999999999999999999999", wantLimit: 20},
 		{name: "unaligned offset", query: "?limit=20&offset=21", wantLimit: 20, wantOffset: 21, wantPage: 1},
 		{name: "third page", query: "?limit=20&offset=40", wantLimit: 20, wantOffset: 40, wantPage: 2},
 	}

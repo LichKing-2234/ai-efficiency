@@ -52,12 +52,19 @@ func (f *fakeRelayDisabler) DisableUser(_ context.Context, userID int64) error {
 }
 
 type runListTestFixture struct {
-	client         *ent.Client
-	service        *Service
-	sourceID       int
-	expectedIDs    []int
-	latestActiveID int
-	detailRunID    int
+	client            *ent.Client
+	service           *Service
+	sourceID          int
+	expectedIDs       []int
+	latestActiveCases []latestActiveTestCase
+	seededSummary     RunSummary
+	detailRunID       int
+}
+
+type latestActiveTestCase struct {
+	name     string
+	sourceID int
+	want     RunSummary
 }
 
 func newRunListTestFixture(t *testing.T) runListTestFixture {
@@ -76,6 +83,9 @@ func newRunListTestFixture(t *testing.T) runListTestFixture {
 		SaveX(ctx)
 
 	base := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	runningStartedAt := base.Add(48 * time.Hour)
+	terminalPreviewStartedAt := base.Add(50 * time.Hour)
+	terminalApplyStartedAt := base.Add(49 * time.Hour)
 	creates := make([]*ent.DirectorySyncRunCreate, 0, 125)
 	for i := 0; i < 125; i++ {
 		mode := []directorysyncrun.Mode{
@@ -99,14 +109,24 @@ func newRunListTestFixture(t *testing.T) runListTestFixture {
 
 		switch i {
 		case 0:
-			create.SetStatus(directorysyncrun.StatusQueued).
-				SetPhase(directorysyncrun.PhaseValidating)
+			create.SetMode(directorysyncrun.ModeApply).
+				SetStatus(directorysyncrun.StatusRunning).
+				SetPhase(directorysyncrun.PhaseExecuting).
+				SetStartedAt(runningStartedAt)
 		case 1:
 			create.SetMode(directorysyncrun.ModePreview).
-				SetStatus(directorysyncrun.StatusQueued).
-				SetPhase(directorysyncrun.PhaseValidating)
+				SetStatus(directorysyncrun.StatusCompleted).
+				SetPhase(directorysyncrun.PhaseCompleted).
+				SetStartedAt(terminalPreviewStartedAt).
+				SetCompletedAt(terminalPreviewStartedAt.Add(30 * time.Second))
 		case 2:
 			create.SetMode(directorysyncrun.ModeApply).
+				SetStatus(directorysyncrun.StatusFailed).
+				SetPhase(directorysyncrun.PhaseFailed).
+				SetStartedAt(terminalApplyStartedAt).
+				SetCompletedAt(terminalApplyStartedAt.Add(30 * time.Second))
+		case 3, 4, 5:
+			create.SetMode(directorysyncrun.ModeValidate).
 				SetStatus(directorysyncrun.StatusQueued).
 				SetPhase(directorysyncrun.PhaseValidating)
 		default:
@@ -128,6 +148,52 @@ func newRunListTestFixture(t *testing.T) runListTestFixture {
 	}
 
 	runs := client.DirectorySyncRun.CreateBulk(creates...).SaveX(ctx)
+	queuedSource := client.DirectorySource.Create().
+		SetName("Queued Active Example Directory").
+		SetDescription("Synthetic queued active eligibility history").
+		SetScope("full_company").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		SetScheduleEnabled(false).
+		SetScheduleInterval("daily").
+		SetScheduleTimezone("UTC").
+		SaveX(ctx)
+	queuedRunningStartedAt := base.Add(46 * time.Hour)
+	queuedTerminalStartedAt := base.Add(47 * time.Hour)
+	queuedSourceRuns := client.DirectorySyncRun.CreateBulk(
+		client.DirectorySyncRun.Create().
+			SetSourceID(queuedSource.ID).
+			SetMode(directorysyncrun.ModePreview).
+			SetTrigger(directorysyncrun.TriggerSchedule).
+			SetStatus(directorysyncrun.StatusRunning).
+			SetPhase(directorysyncrun.PhaseExecuting).
+			SetStartedAt(queuedRunningStartedAt),
+		client.DirectorySyncRun.Create().
+			SetSourceID(queuedSource.ID).
+			SetMode(directorysyncrun.ModeApply).
+			SetTrigger(directorysyncrun.TriggerSchedule).
+			SetStatus(directorysyncrun.StatusQueued).
+			SetPhase(directorysyncrun.PhaseValidating).
+			SetHTTPRequestCount(211).
+			SetDepartmentCount(212).
+			SetMemberCount(213).
+			SetInvalidMemberCount(214).
+			SetWarningCount(215),
+		client.DirectorySyncRun.Create().
+			SetSourceID(queuedSource.ID).
+			SetMode(directorysyncrun.ModePreview).
+			SetTrigger(directorysyncrun.TriggerSchedule).
+			SetStatus(directorysyncrun.StatusCompleted).
+			SetPhase(directorysyncrun.PhaseCompleted).
+			SetStartedAt(queuedTerminalStartedAt).
+			SetCompletedAt(queuedTerminalStartedAt.Add(30*time.Second)),
+		client.DirectorySyncRun.Create().
+			SetSourceID(queuedSource.ID).
+			SetMode(directorysyncrun.ModeValidate).
+			SetTrigger(directorysyncrun.TriggerSchedule).
+			SetStatus(directorysyncrun.StatusQueued).
+			SetPhase(directorysyncrun.PhaseValidating),
+	).SaveX(ctx)
 	sorted := append([]*ent.DirectorySyncRun(nil), runs...)
 	sort.Slice(sorted, func(i, j int) bool {
 		left, right := sorted[i], sorted[j]
@@ -147,13 +213,66 @@ func newRunListTestFixture(t *testing.T) runListTestFixture {
 		expectedIDs[i] = run.ID
 	}
 
+	seededStartedAt := base.Add(15 * time.Minute)
+	seededCompletedAt := seededStartedAt.Add(30 * time.Second)
 	return runListTestFixture{
-		client:         client,
-		service:        NewService(client, ServiceOptions{}),
-		sourceID:       source.ID,
-		expectedIDs:    expectedIDs,
-		latestActiveID: runs[2].ID,
-		detailRunID:    runs[64].ID,
+		client:      client,
+		service:     NewService(client, ServiceOptions{}),
+		sourceID:    source.ID,
+		expectedIDs: expectedIDs,
+		latestActiveCases: []latestActiveTestCase{
+			{
+				name:     "running apply",
+				sourceID: source.ID,
+				want: RunSummary{
+					ID:                 runs[0].ID,
+					SourceID:           source.ID,
+					Mode:               directorysyncrun.ModeApply,
+					Trigger:            directorysyncrun.TriggerManual,
+					Status:             directorysyncrun.StatusRunning,
+					Phase:              directorysyncrun.PhaseExecuting,
+					StartedAt:          &runningStartedAt,
+					HTTPRequestCount:   1,
+					DepartmentCount:    2,
+					MemberCount:        3,
+					InvalidMemberCount: 0,
+					WarningCount:       1,
+				},
+			},
+			{
+				name:     "queued apply",
+				sourceID: queuedSource.ID,
+				want: RunSummary{
+					ID:                 queuedSourceRuns[1].ID,
+					SourceID:           queuedSource.ID,
+					Mode:               directorysyncrun.ModeApply,
+					Trigger:            directorysyncrun.TriggerSchedule,
+					Status:             directorysyncrun.StatusQueued,
+					Phase:              directorysyncrun.PhaseValidating,
+					HTTPRequestCount:   211,
+					DepartmentCount:    212,
+					MemberCount:        213,
+					InvalidMemberCount: 214,
+					WarningCount:       215,
+				},
+			},
+		},
+		seededSummary: RunSummary{
+			ID:                 runs[65].ID,
+			SourceID:           source.ID,
+			Mode:               directorysyncrun.ModeApply,
+			Trigger:            directorysyncrun.TriggerManual,
+			Status:             directorysyncrun.StatusCompleted,
+			Phase:              directorysyncrun.PhaseCompleted,
+			StartedAt:          &seededStartedAt,
+			CompletedAt:        &seededCompletedAt,
+			HTTPRequestCount:   66,
+			DepartmentCount:    67,
+			MemberCount:        68,
+			InvalidMemberCount: 1,
+			WarningCount:       1,
+		},
+		detailRunID: runs[64].ID,
 	}
 }
 
@@ -167,6 +286,100 @@ func requireRunSummaryIDs(t *testing.T, items []RunSummary, want []int) {
 			t.Fatalf("items[%d].id = %d, want %d", i, items[i].ID, want[i])
 		}
 	}
+}
+
+func requireRunSummary(t *testing.T, got, want RunSummary) {
+	t.Helper()
+	if got.ID != want.ID {
+		t.Errorf("id = %d, want %d", got.ID, want.ID)
+	}
+	if got.SourceID != want.SourceID {
+		t.Errorf("source_id = %d, want %d", got.SourceID, want.SourceID)
+	}
+	if got.Mode != want.Mode {
+		t.Errorf("mode = %q, want %q", got.Mode, want.Mode)
+	}
+	if got.Trigger != want.Trigger {
+		t.Errorf("trigger = %q, want %q", got.Trigger, want.Trigger)
+	}
+	if got.Status != want.Status {
+		t.Errorf("status = %q, want %q", got.Status, want.Status)
+	}
+	if got.Phase != want.Phase {
+		t.Errorf("phase = %q, want %q", got.Phase, want.Phase)
+	}
+	if !optionalTimeEqual(got.StartedAt, want.StartedAt) {
+		t.Errorf("started_at = %v, want %v", got.StartedAt, want.StartedAt)
+	}
+	if !optionalTimeEqual(got.CompletedAt, want.CompletedAt) {
+		t.Errorf("completed_at = %v, want %v", got.CompletedAt, want.CompletedAt)
+	}
+	if got.HTTPRequestCount != want.HTTPRequestCount {
+		t.Errorf("http_request_count = %d, want %d", got.HTTPRequestCount, want.HTTPRequestCount)
+	}
+	if got.DepartmentCount != want.DepartmentCount {
+		t.Errorf("department_count = %d, want %d", got.DepartmentCount, want.DepartmentCount)
+	}
+	if got.MemberCount != want.MemberCount {
+		t.Errorf("member_count = %d, want %d", got.MemberCount, want.MemberCount)
+	}
+	if got.InvalidMemberCount != want.InvalidMemberCount {
+		t.Errorf("invalid_member_count = %d, want %d", got.InvalidMemberCount, want.InvalidMemberCount)
+	}
+	if got.WarningCount != want.WarningCount {
+		t.Errorf("warning_count = %d, want %d", got.WarningCount, want.WarningCount)
+	}
+}
+
+func optionalTimeEqual(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
+}
+
+var runSummaryJSONKeyAllowlist = []string{
+	"id",
+	"source_id",
+	"mode",
+	"trigger",
+	"status",
+	"phase",
+	"started_at",
+	"completed_at",
+	"http_request_count",
+	"department_count",
+	"member_count",
+	"invalid_member_count",
+	"warning_count",
+}
+
+func requireRunSummaryJSONKeys(t *testing.T, summary RunSummary) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("marshal summary %d: %v", summary.ID, err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatalf("decode summary %d: %v", summary.ID, err)
+	}
+	if len(fields) != len(runSummaryJSONKeyAllowlist) {
+		t.Errorf("summary %d key count = %d, want %d: %s", summary.ID, len(fields), len(runSummaryJSONKeyAllowlist), encoded)
+	}
+	allowed := make(map[string]struct{}, len(runSummaryJSONKeyAllowlist))
+	for _, key := range runSummaryJSONKeyAllowlist {
+		allowed[key] = struct{}{}
+		if _, ok := fields[key]; !ok {
+			t.Errorf("summary %d missing key %q: %s", summary.ID, key, encoded)
+		}
+	}
+	for key := range fields {
+		if _, ok := allowed[key]; !ok {
+			t.Errorf("summary %d contains unagreed key %q: %s", summary.ID, key, encoded)
+		}
+	}
+	return encoded
 }
 
 func TestListRunsDefaultsToTwenty(t *testing.T) {
@@ -289,44 +502,45 @@ func TestListRunsSummaryOmitsDiagnosticBlobs(t *testing.T) {
 		t.Fatalf("ListRuns: %v", err)
 	}
 	for _, item := range page.Items {
-		encoded, err := json.Marshal(item)
-		if err != nil {
-			t.Fatalf("marshal summary %d: %v", item.ID, err)
-		}
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(encoded, &fields); err != nil {
-			t.Fatalf("decode summary %d: %v", item.ID, err)
-		}
-		for _, key := range []string{"warnings", "summary", "preview_diff", "error_message"} {
-			if _, ok := fields[key]; ok {
-				t.Fatalf("summary %d contains diagnostic key %q: %s", item.ID, key, encoded)
-			}
-		}
+		encoded := requireRunSummaryJSONKeys(t, item)
 		for _, marker := range []string{"warning-marker-", "summary-marker-", "diff-marker-", "error-marker-"} {
 			if strings.Contains(string(encoded), marker) {
 				t.Fatalf("summary %d contains diagnostic marker %q: %s", item.ID, marker, encoded)
 			}
 		}
 	}
+	for _, item := range page.Items {
+		if item.ID == fixture.seededSummary.ID {
+			requireRunSummary(t, item, fixture.seededSummary)
+			return
+		}
+	}
+	t.Fatalf("seeded summary %d not found in first 100 items", fixture.seededSummary.ID)
 }
 
 func TestListRunsReturnsLatestActiveOutsideRequestedPage(t *testing.T) {
 	fixture := newRunListTestFixture(t)
-	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{
-		SourceID: fixture.sourceID,
-		Limit:    20,
-		Offset:   100,
-	})
-	if err != nil {
-		t.Fatalf("ListRuns: %v", err)
-	}
-	if page.LatestActiveRun == nil || page.LatestActiveRun.ID != fixture.latestActiveID {
-		t.Fatalf("latest_active_run = %+v, want id %d", page.LatestActiveRun, fixture.latestActiveID)
-	}
-	for _, item := range page.Items {
-		if item.ID == fixture.latestActiveID {
-			t.Fatalf("latest active run %d unexpectedly appears on requested history page", item.ID)
-		}
+	for _, tt := range fixture.latestActiveCases {
+		t.Run(tt.name, func(t *testing.T) {
+			page, err := fixture.service.ListRuns(context.Background(), RunListRequest{
+				SourceID: tt.sourceID,
+				Limit:    20,
+				Offset:   100,
+			})
+			if err != nil {
+				t.Fatalf("ListRuns: %v", err)
+			}
+			if page.LatestActiveRun == nil {
+				t.Fatalf("latest_active_run = nil, want id=%d mode=%q status=%q", tt.want.ID, tt.want.Mode, tt.want.Status)
+			}
+			requireRunSummary(t, *page.LatestActiveRun, tt.want)
+			requireRunSummaryJSONKeys(t, *page.LatestActiveRun)
+			for _, item := range page.Items {
+				if item.ID == tt.want.ID {
+					t.Fatalf("latest active run %d unexpectedly appears on requested history page", item.ID)
+				}
+			}
+		})
 	}
 }
 
