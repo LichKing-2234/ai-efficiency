@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Draft revised after independent plan review. Implementation, task reviews, full verification, draft PR delivery, and every CI gate remain pending.
+**Status:** Task 1 is complete, including the Critical C1 remediation, fresh local verification, independent re-review, and commit. Tasks 2-3, final verification, draft PR delivery, and every CI gate remain pending.
 
 **Goal:** Start public and authenticated non-admin route chunks without waiting for current-user hydration while keeping administrator routes fail-closed and making every login, logout, refresh, and delayed redirect safe across browser-session and navigation races.
 
@@ -149,7 +149,7 @@ The returned disposer removes both Vue Router guards and the auth-expiry subscri
 - Produces: every `Browser Session Interface` above plus store `ensureUser(): Promise<User | null>` and `devLogin(): Promise<User | null>`.
 - Invariant for Task 2: an expiry is published only after the matching generation is cleared; `readLatestAuthExpiry()` returns that event so a navigation that confirms after publication can still apply it.
 
-- [ ] **Step 1: Write failing store/session tests before implementation**
+- [x] **Step 1: Write failing store/session tests before implementation**
 
 Extend `auth-store.test.ts` with a typed deferred helper and these exact cases. Use `readBrowserSession()` for generation assertions and assert `getMe` call counts before resolving deferred promises:
 
@@ -167,7 +167,7 @@ mocked current-generation 401 expires the session once; stale-generation 401 doe
 
 Preserve the existing missing-token, missing-response-data, work-item reset, and non-401 behavior tests. Replace direct production-style localStorage writes in this file with session-owner setup except the one explicit startup-persistence test.
 
-- [ ] **Step 2: Write failing real-interceptor and Dev Login tests**
+- [x] **Step 2: Write failing real-interceptor and Dev Login tests**
 
 Enhance the hoisted Axios harness in `client.test.ts` so `client.get('/auth/me')` executes the registered request interceptor, returns a controlled 401 through the registered response interceptor, and lets the retried callable client resolve a synthetic `/auth/me` response. Add deferred cases that use the real auth store and real registered client interceptor:
 
@@ -184,7 +184,7 @@ credential auth endpoint 401 and uncredentialed request 401 do not refresh or ex
 
 Update `login-view.test.ts` so its Dev Login case calls the real store path over the mocked auth API and proves `auth.devLogin()` installs `dev-token`/`dev-refresh`, loads the synthetic admin, and redirects. Add a component-level spy on `auth.devLogin` and assert it is the credential transition invoked by the button; remove the view's direct `apiDevLogin` import so there is no second production writer.
 
-- [ ] **Step 3: Run focused tests and record RED**
+- [x] **Step 3: Run focused tests and record RED**
 
 Run:
 
@@ -194,7 +194,9 @@ Run:
 
 Expected: FAIL because `browserSession.ts`, `ensureUser`, store-owned `devLogin`, request generation stamps, compare-and-rotate refresh, and the expiry signal do not exist; current client tests also observe the forbidden hard redirect.
 
-- [ ] **Step 4: Implement the session owner and Pinia adapter minimally**
+**RED evidence (2026-07-15):** The exact focused command failed as expected: `auth-store.test.ts` and `client.test.ts` could not resolve the missing `@/auth/browserSession` module, while the new LoginView regression failed because the auth store did not yet expose `devLogin` (17 existing LoginView tests still passed).
+
+- [x] **Step 4: Implement the session owner and Pinia adapter minimally**
 
 Create the focused module directory, then create `browserSession.ts` with the exact interfaces above:
 
@@ -230,7 +232,7 @@ if (user) {
 
 Keep the existing null-data behavior by remaining on Login without installing a session or redirecting.
 
-- [ ] **Step 5: Make Axios generation-aware and remove hard navigation**
+- [x] **Step 5: Make Axios generation-aware and remove hard navigation**
 
 In `client.ts`, replace `refreshPromise` with an identity-bearing flight:
 
@@ -250,7 +252,7 @@ The request interceptor reads one `BrowserSessionSnapshot`, installs its access 
 
 `refreshAccessToken(captured)` posts the captured refresh token, parses the current response variants, throws on a malformed response with no access token, and calls `rotateBrowserSession(captured.generation, nextTokens)`. A `null` rotation therefore means only that the session was replaced while refresh was pending: reject the original error without writing, retrying, expiring, or joining the replacement. Before retry, recheck generation and use the rotated access token. On a final failure or missing refresh token, call `expireBrowserSession(capturedGeneration)` only if it is still current, then reject the original error. Delete `clearAuthAndRedirect` and every `window.location` write.
 
-- [ ] **Step 6: Verify focused GREEN, adjacent regressions, and build**
+- [x] **Step 6: Verify focused GREEN, adjacent regressions, and build**
 
 Run:
 
@@ -262,7 +264,9 @@ git diff --check
 
 Expected: all selected tests PASS; build/type-check PASS; no old refresh writes/retries after logout or B login; same-token replacement starts a new identity flight; A-to-A2 refresh keeps one identity flight and synchronizes store/storage; Dev Login uses the store transition; no hard navigation remains.
 
-- [ ] **Step 7: Obtain Task 1 review and commit only after fixes are green**
+**GREEN evidence (2026-07-15):** The initial exact focused plus adjacent command passed 77/77 tests across 6 files. After the C1 review remediation below, the exact command passed 79/79 tests across the same 6 files. `npm run build` completed `vue-tsc -b` and the Vite production build successfully, `git diff --check` passed, and the broader shared-client regression run passed 444/444 tests across all 39 frontend test files.
+
+- [x] **Step 7: Obtain Task 1 review and commit only after fixes are green**
 
 Generate the ignored review diff and `.superpowers/sdd/task-1-brief.md` with the test evidence, interfaces, and five required race scenarios:
 
@@ -272,6 +276,16 @@ git diff --binary HEAD > .superpowers/sdd/task-1-review.diff
 ```
 
 Obtain an independent task-level spec/quality review over that package. Fix every Critical or Important finding with a new focused RED/GREEN cycle.
+
+**Review remediation evidence (2026-07-15):** The first independent review returned `TASK REVIEW FAIL` with Critical C1: after generation A rotated to A2 and scheduled `client(originalRequest)`, the callable Axios retry re-ran the request interceptor, which could restamp the A-originated retry under replacement generation B or retain the A2 header after logout before adapter dispatch. The harness now makes the callable client re-run the registered request interceptor before its synthetic adapter.
+
+The focused remediation command was:
+
+```bash
+(cd frontend && npm test -- src/__tests__/client.test.ts -t 'rejects retry A')
+```
+
+The RED run failed both explicit window cases because each retry incorrectly resolved with the synthetic adapter's HTTP 200 after (1) replacement B and (2) logout/clear. After the minimal production guard, the same command passed 2/2: retry-bound configs retain their originating `_authGeneration`, and the request interceptor rejects a retry before adapter dispatch when that generation no longer matches or the current session has no token. The legitimate same-generation A-to-A2 case still passed within the complete 15/15 `client.test.ts` run. The exact Step 6 suite then passed 79/79, the full frontend suite passed 444/444 across 39 files, the production build passed, and `git diff --check` passed. Independent re-review returned `TASK REVIEW PASS` with 0 Critical, 0 Important, and 0 Minor findings after its own real-Axios custom-adapter probe passed 3/3. Step 7 remains unchecked until the Task 1 commit succeeds.
 
 After review passes, check Steps 1-6 and record their actual evidence, then commit:
 
