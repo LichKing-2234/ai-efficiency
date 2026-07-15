@@ -128,6 +128,21 @@ func TestNewDefaultUsesBoundedRuntimeConfiguration(t *testing.T) {
 	}
 }
 
+func TestNewDefaultSharesPackageCompatibilityTransport(t *testing.T) {
+	first := NewDefault(10 * time.Second)
+	second := NewDefault(5 * time.Second)
+
+	if first == second {
+		t.Fatal("NewDefault() returned one mutable client, want distinct clients for per-caller deadlines")
+	}
+	if first.Transport != second.Transport {
+		t.Fatalf("NewDefault() transports = %p and %p, want one shared compatibility pool", first.Transport, second.Transport)
+	}
+	if first.Timeout != 10*time.Second || second.Timeout != 5*time.Second {
+		t.Fatalf("NewDefault() timeouts = %s and %s, want 10s and 5s", first.Timeout, second.Timeout)
+	}
+}
+
 func TestNewAppliesTransportWrappersInOrder(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

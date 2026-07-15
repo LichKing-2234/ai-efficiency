@@ -66,6 +66,7 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"read_header_timeout_seconds": cfg.Server.ReadHeaderTimeoutSeconds,
 			"idle_timeout_seconds":        cfg.Server.IdleTimeoutSeconds,
 			"readiness_timeout_seconds":   cfg.Server.ReadinessTimeoutSeconds,
+			"request_timeout_seconds":     cfg.Server.RequestTimeoutSeconds,
 		},
 		"http_client": map[string]any{
 			"connect_timeout_seconds":         cfg.HTTPClient.ConnectTimeoutSeconds,

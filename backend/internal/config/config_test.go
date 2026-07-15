@@ -1,9 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +45,7 @@ func TestLoadHTTPRuntimeDefaults(t *testing.T) {
 		ReadHeaderTimeoutSeconds: 5,
 		IdleTimeoutSeconds:       120,
 		ReadinessTimeoutSeconds:  2,
+		RequestTimeoutSeconds:    35,
 	}
 	if !reflect.DeepEqual(cfg.Server, wantServer) {
 		t.Fatalf("Server = %#v, want %#v", cfg.Server, wantServer)
@@ -67,6 +70,7 @@ func TestLoadHTTPRuntimeEnvironmentOverrides(t *testing.T) {
 	t.Setenv("AE_SERVER_READ_HEADER_TIMEOUT_SECONDS", "6")
 	t.Setenv("AE_SERVER_IDLE_TIMEOUT_SECONDS", "121")
 	t.Setenv("AE_SERVER_READINESS_TIMEOUT_SECONDS", "3")
+	t.Setenv("AE_SERVER_REQUEST_TIMEOUT_SECONDS", "36")
 	t.Setenv("AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS", "7")
 	t.Setenv("AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS", "8")
 	t.Setenv("AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS", "16")
@@ -81,11 +85,12 @@ func TestLoadHTTPRuntimeEnvironmentOverrides(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	wantServerTimeouts := []int{6, 121, 3}
+	wantServerTimeouts := []int{6, 121, 3, 36}
 	gotServerTimeouts := []int{
 		cfg.Server.ReadHeaderTimeoutSeconds,
 		cfg.Server.IdleTimeoutSeconds,
 		cfg.Server.ReadinessTimeoutSeconds,
+		cfg.Server.RequestTimeoutSeconds,
 	}
 	if !reflect.DeepEqual(gotServerTimeouts, wantServerTimeouts) {
 		t.Fatalf("server timeout overrides = %v, want %v", gotServerTimeouts, wantServerTimeouts)
@@ -103,6 +108,88 @@ func TestLoadHTTPRuntimeEnvironmentOverrides(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg.HTTPClient, wantHTTPClient) {
 		t.Fatalf("HTTPClient overrides = %#v, want %#v", cfg.HTTPClient, wantHTTPClient)
+	}
+}
+
+func TestLoadRejectsUnsafeHTTPRuntimeValues(t *testing.T) {
+	tests := []struct {
+		name      string
+		env       map[string]string
+		wantField string
+	}{
+		{name: "read header zero", env: map[string]string{"AE_SERVER_READ_HEADER_TIMEOUT_SECONDS": "0"}, wantField: "server.read_header_timeout_seconds"},
+		{name: "idle zero", env: map[string]string{"AE_SERVER_IDLE_TIMEOUT_SECONDS": "0"}, wantField: "server.idle_timeout_seconds"},
+		{name: "readiness zero", env: map[string]string{"AE_SERVER_READINESS_TIMEOUT_SECONDS": "0"}, wantField: "server.readiness_timeout_seconds"},
+		{name: "request zero", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "0"}, wantField: "server.request_timeout_seconds"},
+		{name: "connect zero", env: map[string]string{"AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS": "0"}, wantField: "http_client.connect_timeout_seconds"},
+		{name: "tls zero", env: map[string]string{"AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS": "0"}, wantField: "http_client.tls_handshake_timeout_seconds"},
+		{name: "response header zero", env: map[string]string{"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "0"}, wantField: "http_client.response_header_timeout_seconds"},
+		{name: "overall zero", env: map[string]string{"AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS": "0"}, wantField: "http_client.overall_timeout_seconds"},
+		{name: "idle connection zero", env: map[string]string{"AE_HTTP_CLIENT_IDLE_CONN_TIMEOUT_SECONDS": "0"}, wantField: "http_client.idle_conn_timeout_seconds"},
+		{name: "max idle zero", env: map[string]string{"AE_HTTP_CLIENT_MAX_IDLE_CONNS": "0"}, wantField: "http_client.max_idle_conns"},
+		{name: "max idle per host zero", env: map[string]string{"AE_HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST": "0"}, wantField: "http_client.max_idle_conns_per_host"},
+		{name: "max connections per host zero", env: map[string]string{"AE_HTTP_CLIENT_MAX_CONNS_PER_HOST": "0"}, wantField: "http_client.max_conns_per_host"},
+		{name: "negative", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "-1"}, wantField: "server.request_timeout_seconds"},
+		{name: "duration conversion overflow", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "9223372037"}, wantField: "server.request_timeout_seconds"},
+		{name: "read header upper bound", env: map[string]string{"AE_SERVER_READ_HEADER_TIMEOUT_SECONDS": "61"}, wantField: "server.read_header_timeout_seconds"},
+		{name: "idle upper bound", env: map[string]string{"AE_SERVER_IDLE_TIMEOUT_SECONDS": "3601"}, wantField: "server.idle_timeout_seconds"},
+		{name: "readiness upper bound", env: map[string]string{"AE_SERVER_READINESS_TIMEOUT_SECONDS": "31"}, wantField: "server.readiness_timeout_seconds"},
+		{name: "request reaches browser deadline", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "45"}, wantField: "server.request_timeout_seconds"},
+		{name: "request exceeds browser deadline", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "46"}, wantField: "server.request_timeout_seconds"},
+		{name: "connect upper bound", env: map[string]string{"AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS": "31"}, wantField: "http_client.connect_timeout_seconds"},
+		{name: "tls upper bound", env: map[string]string{"AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS": "31"}, wantField: "http_client.tls_handshake_timeout_seconds"},
+		{name: "response header upper bound", env: map[string]string{"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "61"}, wantField: "http_client.response_header_timeout_seconds"},
+		{name: "overall upper bound", env: map[string]string{"AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS": "301"}, wantField: "http_client.overall_timeout_seconds"},
+		{name: "idle connection upper bound", env: map[string]string{"AE_HTTP_CLIENT_IDLE_CONN_TIMEOUT_SECONDS": "3601"}, wantField: "http_client.idle_conn_timeout_seconds"},
+		{name: "max idle pool upper bound", env: map[string]string{"AE_HTTP_CLIENT_MAX_IDLE_CONNS": "10001"}, wantField: "http_client.max_idle_conns"},
+		{name: "max idle per host upper bound", env: map[string]string{"AE_HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST": "10001"}, wantField: "http_client.max_idle_conns_per_host"},
+		{name: "max connections per host upper bound", env: map[string]string{"AE_HTTP_CLIENT_MAX_CONNS_PER_HOST": "10001"}, wantField: "http_client.max_conns_per_host"},
+		{name: "connect must precede overall", env: map[string]string{"AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS": "30"}, wantField: "http_client.connect_timeout_seconds"},
+		{name: "tls must precede overall", env: map[string]string{"AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS": "30"}, wantField: "http_client.tls_handshake_timeout_seconds"},
+		{name: "response headers must precede overall", env: map[string]string{"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "30"}, wantField: "http_client.response_header_timeout_seconds"},
+		{name: "shared overall equals version timeout", env: map[string]string{"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "9", "AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS": "10"}, wantField: "http_client.overall_timeout_seconds"},
+		{name: "shared overall below version timeout", env: map[string]string{"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "8", "AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS": "9"}, wantField: "http_client.overall_timeout_seconds"},
+		{name: "downstream must precede request", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "30"}, wantField: "http_client.overall_timeout_seconds"},
+		{name: "readiness must precede request", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "30", "AE_SERVER_READINESS_TIMEOUT_SECONDS": "30", "AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS": "29"}, wantField: "server.readiness_timeout_seconds"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+			_, err := Load("")
+			if err == nil {
+				t.Fatalf("Load() error = nil, want field-specific validation for %s", tt.wantField)
+			}
+			if !strings.Contains(err.Error(), tt.wantField) {
+				t.Fatalf("Load() error = %q, want field %q", err, tt.wantField)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsHTTPRuntimeBoundaryValues(t *testing.T) {
+	values := map[string]int{
+		"AE_SERVER_READ_HEADER_TIMEOUT_SECONDS":          60,
+		"AE_SERVER_IDLE_TIMEOUT_SECONDS":                 3600,
+		"AE_SERVER_READINESS_TIMEOUT_SECONDS":            30,
+		"AE_SERVER_REQUEST_TIMEOUT_SECONDS":              44,
+		"AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS":         30,
+		"AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS":   30,
+		"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": 42,
+		"AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS":         43,
+		"AE_HTTP_CLIENT_IDLE_CONN_TIMEOUT_SECONDS":       3600,
+		"AE_HTTP_CLIENT_MAX_IDLE_CONNS":                  10000,
+		"AE_HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST":         10000,
+		"AE_HTTP_CLIENT_MAX_CONNS_PER_HOST":              10000,
+	}
+	for key, value := range values {
+		t.Setenv(key, fmt.Sprint(value))
+	}
+
+	if _, err := Load(""); err != nil {
+		t.Fatalf("Load() error = %v, want configured upper bounds accepted", err)
 	}
 }
 
@@ -538,6 +625,7 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 			ReadHeaderTimeoutSeconds: 7,
 			IdleTimeoutSeconds:       123,
 			ReadinessTimeoutSeconds:  4,
+			RequestTimeoutSeconds:    35,
 		},
 		HTTPClient: HTTPClientConfig{
 			ConnectTimeoutSeconds:        8,
