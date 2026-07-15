@@ -21,6 +21,7 @@ import (
 
 var prAttributionService prAttributionSettler
 var prUsageService prUsageRefresher
+var ginDefaultNotFoundBody = []byte("404 page not found")
 
 // RouterOptions supplies production dependencies while SetupRouter preserves its legacy call shape.
 type RouterOptions struct {
@@ -147,6 +148,10 @@ func setupRouter(
 	if web.HasEmbeddedFrontend() {
 		r.Use(web.ServeEmbeddedFrontend())
 	}
+	// Finalize Gin's default body before request telemetry unwinds.
+	r.NoRoute(func(c *gin.Context) {
+		c.Data(http.StatusNotFound, gin.MIMEPlain, ginDefaultNotFoundBody)
+	})
 
 	// OAuth endpoints — at root /oauth/* (not under /api/v1)
 	if oauthHandler != nil {

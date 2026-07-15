@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 are complete and verified. Task 5 is next. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 are complete and verified, including the Task 4 review follow-up. Task 5 is next. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -401,6 +401,14 @@ At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
   `docs(plan): record request telemetry task 4`
 
   Checkpoint (2026-07-15): implementation commit `a89e4f6c4ee539eab6c59ccf5995eea49d65eb91`.
+
+#### Task 4 Review Follow-Up
+
+- [x] Finalize the pinned Gin default 404 response inside the router chain and add a real-router regression for status, body, request ID, one unmatched event, and exact non-negative response bytes.
+- [x] Replace the duplicate request/dependency HTTP status classification functions with one telemetry helper and focused boundary tests.
+- [x] Run the Task 4 focused and prescribed verification commands, record the evidence, and commit the review fixes.
+
+  Review follow-up evidence (2026-07-15): the real-router 404 regression failed with `response_bytes = -1` while the returned body was 18 bytes, then passed after the default response was finalized in the Gin chain. The status-boundary test failed because `telemetry.HTTPStatusClass` did not exist, then passed after both event paths used the shared helper. The prescribed telemetry/middleware/Relay suite passed in 0.192s, 0.286s, and 0.490s; the focused handler/server suite passed in 1.330s and 0.636s; the combined new regression command passed in 0.172s and 0.843s; `git diff --check` passed.
 
 ---
 
