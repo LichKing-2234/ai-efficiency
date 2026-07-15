@@ -12,11 +12,8 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	_ "github.com/ai-efficiency/backend/ent/runtime"
-	"github.com/ai-efficiency/backend/internal/dbguard"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
-
-	entsql "entgo.io/ent/dialect/sql"
 )
 
 var defaultAdminDSNs = []string{
@@ -58,24 +55,19 @@ func OpenWithDSN(t *testing.T) (*ent.Client, string) {
 
 	dsn := withSearchPath(t, adminDSN, schemaName)
 	schemaInitMu.Lock()
-	db, err := sql.Open("postgres", dsn)
+	client, err := ent.Open("postgres", dsn)
 	if err != nil {
 		schemaInitMu.Unlock()
-		t.Fatalf("open test database: %v", err)
+		t.Fatalf("open ent client: %v", err)
 	}
-	client := ent.NewClient(ent.Driver(entsql.OpenDB("postgres", db)))
-	t.Cleanup(func() {
-		client.Close()
-	})
 	if err := client.Schema.Create(ctx); err != nil {
 		schemaInitMu.Unlock()
 		t.Fatalf("migrate schema: %v", err)
 	}
-	if err := dbguard.InstallQuotaResetRequestEventsAppendOnlyGuard(ctx, db); err != nil {
-		schemaInitMu.Unlock()
-		t.Fatalf("install database guards: %v", err)
-	}
 	schemaInitMu.Unlock()
+	t.Cleanup(func() {
+		client.Close()
+	})
 
 	return client, dsn
 }

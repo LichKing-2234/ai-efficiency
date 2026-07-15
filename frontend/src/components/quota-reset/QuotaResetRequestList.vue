@@ -1,14 +1,11 @@
 <script setup lang="ts">
-import { Eye } from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from '@/i18n'
-import { quotaResetStatusClass, quotaResetStatusLabel } from '@/utils/quotaResetRequestStatus'
-import type { QuotaResetRequestSummary } from '@/types'
+import type { QuotaResetRequestSummary, QuotaResetStatus } from '@/types'
 
 const props = defineProps<{
   items: QuotaResetRequestSummary[]
   loading?: boolean
-  busy?: boolean
   mode: 'mine' | 'approvals' | 'admin'
 }>()
 
@@ -28,36 +25,41 @@ const emptyText = computed(() => {
   return t('quotaReset.noAdminRequests')
 })
 
-function statusLabel(status: QuotaResetRequestSummary['status']) {
-  return quotaResetStatusLabel(t, status)
+function statusLabel(status: QuotaResetStatus) {
+  switch (status) {
+    case 'approved_resetting':
+      return t('quotaReset.status.approved_resetting')
+    case 'approved_reset_succeeded':
+      return t('quotaReset.status.approved_reset_succeeded')
+    case 'approved_reset_failed':
+      return t('quotaReset.status.approved_reset_failed')
+    case 'rejected':
+      return t('quotaReset.status.rejected')
+    case 'cancelled':
+      return t('quotaReset.status.cancelled')
+    default:
+      return t('quotaReset.status.pending')
+  }
 }
 
-const statusClass = quotaResetStatusClass
+function statusClass(status: QuotaResetStatus) {
+  if (status === 'approved_reset_succeeded') return 'bg-emerald-50 text-emerald-700'
+  if (status === 'approved_reset_failed') return 'bg-red-50 text-red-700'
+  if (status === 'rejected' || status === 'cancelled') return 'bg-slate-100 text-slate-600'
+  if (status === 'approved_resetting') return 'bg-blue-50 text-blue-700'
+  return 'bg-amber-50 text-amber-700'
+}
 
 function canCancel(item: QuotaResetRequestSummary) {
-  return item.workflow?.can_cancel ?? (props.mode === 'mine' && item.status === 'pending')
+  return props.mode === 'mine' && item.status === 'pending'
 }
 
-function canApprove(item: QuotaResetRequestSummary) {
-  return item.workflow?.can_approve ?? (
-    (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'pending'
-  )
-}
-
-function canReject(item: QuotaResetRequestSummary) {
-  return item.workflow?.can_reject ?? (
-    (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'pending'
-  )
+function canDecide(item: QuotaResetRequestSummary) {
+  return (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'pending'
 }
 
 function canRetry(item: QuotaResetRequestSummary) {
-  return item.workflow?.can_retry ?? (
-    (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'approved_reset_failed'
-  )
-}
-
-function viewDetailsLabel(item: QuotaResetRequestSummary) {
-  return t('quotaReset.viewDetails', { group: item.group_name || item.group_id })
+  return (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'approved_reset_failed'
 }
 </script>
 
@@ -69,8 +71,9 @@ function viewDetailsLabel(item: QuotaResetRequestSummary) {
       <article
         v-for="item in props.items"
         :key="item.id"
-        class="grid min-w-0 gap-3 p-4 focus-within:bg-slate-50 hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_auto]"
+        class="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto]"
         :data-testid="`quota-reset-row-${item.id}`"
+        @click="emit('select', item)"
       >
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2">
@@ -88,42 +91,28 @@ function viewDetailsLabel(item: QuotaResetRequestSummary) {
         </div>
         <div class="flex flex-wrap items-start gap-2 md:justify-end">
           <button
-            type="button"
-            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-white hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
-            :data-testid="`quota-reset-view-details-${item.id}`"
-            :aria-label="viewDetailsLabel(item)"
-            :title="viewDetailsLabel(item)"
-            :disabled="props.busy"
-            @click="emit('select', item)"
-          >
-            <Eye class="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
             v-if="canCancel(item)"
             type="button"
-            class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             :data-testid="`quota-reset-cancel-${item.id}`"
-            :disabled="props.busy"
             @click.stop="emit('cancel', item)"
           >
             {{ t('quotaReset.cancelRequest') }}
           </button>
           <button
-            v-if="canApprove(item)"
+            v-if="canDecide(item)"
             type="button"
-            class="rounded-md bg-cyan-700 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-50"
+            class="rounded-md bg-cyan-700 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-800"
             :data-testid="`quota-reset-approve-${item.id}`"
-            :disabled="props.busy"
             @click.stop="emit('approve', item)"
           >
             {{ t('quotaReset.approve') }}
           </button>
           <button
-            v-if="canReject(item)"
+            v-if="canDecide(item)"
             type="button"
-            class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
             :data-testid="`quota-reset-reject-${item.id}`"
-            :disabled="props.busy"
             @click.stop="emit('reject', item)"
           >
             {{ t('quotaReset.reject') }}
@@ -131,9 +120,8 @@ function viewDetailsLabel(item: QuotaResetRequestSummary) {
           <button
             v-if="canRetry(item)"
             type="button"
-            class="rounded-md border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+            class="rounded-md border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
             :data-testid="`quota-reset-retry-${item.id}`"
-            :disabled="props.busy"
             @click.stop="emit('retry', item)"
           >
             {{ t('quotaReset.retryReset') }}

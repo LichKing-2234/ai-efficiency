@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
@@ -24,6 +25,108 @@ type QuotaResetRequestEventUpdate struct {
 // Where appends a list predicates to the QuotaResetRequestEventUpdate builder.
 func (qrreu *QuotaResetRequestEventUpdate) Where(ps ...predicate.QuotaResetRequestEvent) *QuotaResetRequestEventUpdate {
 	qrreu.mutation.Where(ps...)
+	return qrreu
+}
+
+// SetRequestID sets the "request_id" field.
+func (qrreu *QuotaResetRequestEventUpdate) SetRequestID(i int) *QuotaResetRequestEventUpdate {
+	qrreu.mutation.ResetRequestID()
+	qrreu.mutation.SetRequestID(i)
+	return qrreu
+}
+
+// SetNillableRequestID sets the "request_id" field if the given value is not nil.
+func (qrreu *QuotaResetRequestEventUpdate) SetNillableRequestID(i *int) *QuotaResetRequestEventUpdate {
+	if i != nil {
+		qrreu.SetRequestID(*i)
+	}
+	return qrreu
+}
+
+// AddRequestID adds i to the "request_id" field.
+func (qrreu *QuotaResetRequestEventUpdate) AddRequestID(i int) *QuotaResetRequestEventUpdate {
+	qrreu.mutation.AddRequestID(i)
+	return qrreu
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (qrreu *QuotaResetRequestEventUpdate) SetActorUserID(i int) *QuotaResetRequestEventUpdate {
+	qrreu.mutation.ResetActorUserID()
+	qrreu.mutation.SetActorUserID(i)
+	return qrreu
+}
+
+// SetNillableActorUserID sets the "actor_user_id" field if the given value is not nil.
+func (qrreu *QuotaResetRequestEventUpdate) SetNillableActorUserID(i *int) *QuotaResetRequestEventUpdate {
+	if i != nil {
+		qrreu.SetActorUserID(*i)
+	}
+	return qrreu
+}
+
+// AddActorUserID adds i to the "actor_user_id" field.
+func (qrreu *QuotaResetRequestEventUpdate) AddActorUserID(i int) *QuotaResetRequestEventUpdate {
+	qrreu.mutation.AddActorUserID(i)
+	return qrreu
+}
+
+// ClearActorUserID clears the value of the "actor_user_id" field.
+func (qrreu *QuotaResetRequestEventUpdate) ClearActorUserID() *QuotaResetRequestEventUpdate {
+	qrreu.mutation.ClearActorUserID()
+	return qrreu
+}
+
+// SetEventType sets the "event_type" field.
+func (qrreu *QuotaResetRequestEventUpdate) SetEventType(qt quotaresetrequestevent.EventType) *QuotaResetRequestEventUpdate {
+	qrreu.mutation.SetEventType(qt)
+	return qrreu
+}
+
+// SetNillableEventType sets the "event_type" field if the given value is not nil.
+func (qrreu *QuotaResetRequestEventUpdate) SetNillableEventType(qt *quotaresetrequestevent.EventType) *QuotaResetRequestEventUpdate {
+	if qt != nil {
+		qrreu.SetEventType(*qt)
+	}
+	return qrreu
+}
+
+// SetMetadata sets the "metadata" field.
+func (qrreu *QuotaResetRequestEventUpdate) SetMetadata(m map[string]interface{}) *QuotaResetRequestEventUpdate {
+	qrreu.mutation.SetMetadata(m)
+	return qrreu
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (qrreu *QuotaResetRequestEventUpdate) ClearMetadata() *QuotaResetRequestEventUpdate {
+	qrreu.mutation.ClearMetadata()
+	return qrreu
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (qrreu *QuotaResetRequestEventUpdate) SetErrorMessage(s string) *QuotaResetRequestEventUpdate {
+	qrreu.mutation.SetErrorMessage(s)
+	return qrreu
+}
+
+// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
+func (qrreu *QuotaResetRequestEventUpdate) SetNillableErrorMessage(s *string) *QuotaResetRequestEventUpdate {
+	if s != nil {
+		qrreu.SetErrorMessage(*s)
+	}
+	return qrreu
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (qrreu *QuotaResetRequestEventUpdate) SetCreatedAt(t time.Time) *QuotaResetRequestEventUpdate {
+	qrreu.mutation.SetCreatedAt(t)
+	return qrreu
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (qrreu *QuotaResetRequestEventUpdate) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestEventUpdate {
+	if t != nil {
+		qrreu.SetCreatedAt(*t)
+	}
 	return qrreu
 }
 
@@ -59,7 +162,20 @@ func (qrreu *QuotaResetRequestEventUpdate) ExecX(ctx context.Context) {
 	}
 }
 
+// check runs all checks and user-defined validators on the builder.
+func (qrreu *QuotaResetRequestEventUpdate) check() error {
+	if v, ok := qrreu.mutation.EventType(); ok {
+		if err := quotaresetrequestevent.EventTypeValidator(v); err != nil {
+			return &ValidationError{Name: "event_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestEvent.event_type": %w`, err)}
+		}
+	}
+	return nil
+}
+
 func (qrreu *QuotaResetRequestEventUpdate) sqlSave(ctx context.Context) (n int, err error) {
+	if err := qrreu.check(); err != nil {
+		return n, err
+	}
 	_spec := sqlgraph.NewUpdateSpec(quotaresetrequestevent.Table, quotaresetrequestevent.Columns, sqlgraph.NewFieldSpec(quotaresetrequestevent.FieldID, field.TypeInt))
 	if ps := qrreu.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
@@ -68,11 +184,35 @@ func (qrreu *QuotaResetRequestEventUpdate) sqlSave(ctx context.Context) (n int, 
 			}
 		}
 	}
+	if value, ok := qrreu.mutation.RequestID(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldRequestID, field.TypeInt, value)
+	}
+	if value, ok := qrreu.mutation.AddedRequestID(); ok {
+		_spec.AddField(quotaresetrequestevent.FieldRequestID, field.TypeInt, value)
+	}
+	if value, ok := qrreu.mutation.ActorUserID(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldActorUserID, field.TypeInt, value)
+	}
+	if value, ok := qrreu.mutation.AddedActorUserID(); ok {
+		_spec.AddField(quotaresetrequestevent.FieldActorUserID, field.TypeInt, value)
+	}
 	if qrreu.mutation.ActorUserIDCleared() {
 		_spec.ClearField(quotaresetrequestevent.FieldActorUserID, field.TypeInt)
 	}
+	if value, ok := qrreu.mutation.EventType(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldEventType, field.TypeEnum, value)
+	}
+	if value, ok := qrreu.mutation.Metadata(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldMetadata, field.TypeJSON, value)
+	}
 	if qrreu.mutation.MetadataCleared() {
 		_spec.ClearField(quotaresetrequestevent.FieldMetadata, field.TypeJSON)
+	}
+	if value, ok := qrreu.mutation.ErrorMessage(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldErrorMessage, field.TypeString, value)
+	}
+	if value, ok := qrreu.mutation.CreatedAt(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldCreatedAt, field.TypeTime, value)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, qrreu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -92,6 +232,108 @@ type QuotaResetRequestEventUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *QuotaResetRequestEventMutation
+}
+
+// SetRequestID sets the "request_id" field.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetRequestID(i int) *QuotaResetRequestEventUpdateOne {
+	qrreuo.mutation.ResetRequestID()
+	qrreuo.mutation.SetRequestID(i)
+	return qrreuo
+}
+
+// SetNillableRequestID sets the "request_id" field if the given value is not nil.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetNillableRequestID(i *int) *QuotaResetRequestEventUpdateOne {
+	if i != nil {
+		qrreuo.SetRequestID(*i)
+	}
+	return qrreuo
+}
+
+// AddRequestID adds i to the "request_id" field.
+func (qrreuo *QuotaResetRequestEventUpdateOne) AddRequestID(i int) *QuotaResetRequestEventUpdateOne {
+	qrreuo.mutation.AddRequestID(i)
+	return qrreuo
+}
+
+// SetActorUserID sets the "actor_user_id" field.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetActorUserID(i int) *QuotaResetRequestEventUpdateOne {
+	qrreuo.mutation.ResetActorUserID()
+	qrreuo.mutation.SetActorUserID(i)
+	return qrreuo
+}
+
+// SetNillableActorUserID sets the "actor_user_id" field if the given value is not nil.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetNillableActorUserID(i *int) *QuotaResetRequestEventUpdateOne {
+	if i != nil {
+		qrreuo.SetActorUserID(*i)
+	}
+	return qrreuo
+}
+
+// AddActorUserID adds i to the "actor_user_id" field.
+func (qrreuo *QuotaResetRequestEventUpdateOne) AddActorUserID(i int) *QuotaResetRequestEventUpdateOne {
+	qrreuo.mutation.AddActorUserID(i)
+	return qrreuo
+}
+
+// ClearActorUserID clears the value of the "actor_user_id" field.
+func (qrreuo *QuotaResetRequestEventUpdateOne) ClearActorUserID() *QuotaResetRequestEventUpdateOne {
+	qrreuo.mutation.ClearActorUserID()
+	return qrreuo
+}
+
+// SetEventType sets the "event_type" field.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetEventType(qt quotaresetrequestevent.EventType) *QuotaResetRequestEventUpdateOne {
+	qrreuo.mutation.SetEventType(qt)
+	return qrreuo
+}
+
+// SetNillableEventType sets the "event_type" field if the given value is not nil.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetNillableEventType(qt *quotaresetrequestevent.EventType) *QuotaResetRequestEventUpdateOne {
+	if qt != nil {
+		qrreuo.SetEventType(*qt)
+	}
+	return qrreuo
+}
+
+// SetMetadata sets the "metadata" field.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetMetadata(m map[string]interface{}) *QuotaResetRequestEventUpdateOne {
+	qrreuo.mutation.SetMetadata(m)
+	return qrreuo
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (qrreuo *QuotaResetRequestEventUpdateOne) ClearMetadata() *QuotaResetRequestEventUpdateOne {
+	qrreuo.mutation.ClearMetadata()
+	return qrreuo
+}
+
+// SetErrorMessage sets the "error_message" field.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetErrorMessage(s string) *QuotaResetRequestEventUpdateOne {
+	qrreuo.mutation.SetErrorMessage(s)
+	return qrreuo
+}
+
+// SetNillableErrorMessage sets the "error_message" field if the given value is not nil.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetNillableErrorMessage(s *string) *QuotaResetRequestEventUpdateOne {
+	if s != nil {
+		qrreuo.SetErrorMessage(*s)
+	}
+	return qrreuo
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetCreatedAt(t time.Time) *QuotaResetRequestEventUpdateOne {
+	qrreuo.mutation.SetCreatedAt(t)
+	return qrreuo
+}
+
+// SetNillableCreatedAt sets the "created_at" field if the given value is not nil.
+func (qrreuo *QuotaResetRequestEventUpdateOne) SetNillableCreatedAt(t *time.Time) *QuotaResetRequestEventUpdateOne {
+	if t != nil {
+		qrreuo.SetCreatedAt(*t)
+	}
+	return qrreuo
 }
 
 // Mutation returns the QuotaResetRequestEventMutation object of the builder.
@@ -139,7 +381,20 @@ func (qrreuo *QuotaResetRequestEventUpdateOne) ExecX(ctx context.Context) {
 	}
 }
 
+// check runs all checks and user-defined validators on the builder.
+func (qrreuo *QuotaResetRequestEventUpdateOne) check() error {
+	if v, ok := qrreuo.mutation.EventType(); ok {
+		if err := quotaresetrequestevent.EventTypeValidator(v); err != nil {
+			return &ValidationError{Name: "event_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequestEvent.event_type": %w`, err)}
+		}
+	}
+	return nil
+}
+
 func (qrreuo *QuotaResetRequestEventUpdateOne) sqlSave(ctx context.Context) (_node *QuotaResetRequestEvent, err error) {
+	if err := qrreuo.check(); err != nil {
+		return _node, err
+	}
 	_spec := sqlgraph.NewUpdateSpec(quotaresetrequestevent.Table, quotaresetrequestevent.Columns, sqlgraph.NewFieldSpec(quotaresetrequestevent.FieldID, field.TypeInt))
 	id, ok := qrreuo.mutation.ID()
 	if !ok {
@@ -165,11 +420,35 @@ func (qrreuo *QuotaResetRequestEventUpdateOne) sqlSave(ctx context.Context) (_no
 			}
 		}
 	}
+	if value, ok := qrreuo.mutation.RequestID(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldRequestID, field.TypeInt, value)
+	}
+	if value, ok := qrreuo.mutation.AddedRequestID(); ok {
+		_spec.AddField(quotaresetrequestevent.FieldRequestID, field.TypeInt, value)
+	}
+	if value, ok := qrreuo.mutation.ActorUserID(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldActorUserID, field.TypeInt, value)
+	}
+	if value, ok := qrreuo.mutation.AddedActorUserID(); ok {
+		_spec.AddField(quotaresetrequestevent.FieldActorUserID, field.TypeInt, value)
+	}
 	if qrreuo.mutation.ActorUserIDCleared() {
 		_spec.ClearField(quotaresetrequestevent.FieldActorUserID, field.TypeInt)
 	}
+	if value, ok := qrreuo.mutation.EventType(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldEventType, field.TypeEnum, value)
+	}
+	if value, ok := qrreuo.mutation.Metadata(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldMetadata, field.TypeJSON, value)
+	}
 	if qrreuo.mutation.MetadataCleared() {
 		_spec.ClearField(quotaresetrequestevent.FieldMetadata, field.TypeJSON)
+	}
+	if value, ok := qrreuo.mutation.ErrorMessage(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldErrorMessage, field.TypeString, value)
+	}
+	if value, ok := qrreuo.mutation.CreatedAt(); ok {
+		_spec.SetField(quotaresetrequestevent.FieldCreatedAt, field.TypeTime, value)
 	}
 	_node = &QuotaResetRequestEvent{config: qrreuo.config}
 	_spec.Assign = _node.assignValues

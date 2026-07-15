@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"entgo.io/ent/dialect/sql"
+
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	"github.com/ai-efficiency/backend/internal/directorysync"
-	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 )
 
@@ -39,9 +41,9 @@ func (s *Service) Counts(ctx context.Context, userID int, admin bool) (*CountsRe
 	if s == nil || s.client == nil {
 		return nil, fmt.Errorf("work items service is not configured")
 	}
-	quotaCounts, err := quotareset.CountWorkItems(ctx, s.client, userID, admin)
+	approvalCount, err := s.countAssignedQuotaApprovals(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("count quota reset work items: %w", err)
+		return nil, err
 	}
 	// AI access is remote-derived; an unavailable relay must not hide local approval queues.
 	aiAccessSetupCount := 0
@@ -49,20 +51,24 @@ func (s *Service) Counts(ctx context.Context, userID int, admin bool) (*CountsRe
 		aiAccessSetupCount = count
 	}
 	counts := &CountsResponse{
-		QuotaResetApprovalCount: quotaCounts.Assigned,
+		QuotaResetApprovalCount: approvalCount,
 		AIAccessSetupCount:      aiAccessSetupCount,
 	}
 	if admin {
+		adminQuotaCount, err := s.countAdminQuotaApprovals(ctx)
+		if err != nil {
+			return nil, err
+		}
 		offboardingCount, err := s.countOffboardingCandidates(ctx)
 		if err != nil {
 			return nil, err
 		}
-		counts.QuotaResetAdminCount = quotaCounts.Admin
+		counts.QuotaResetAdminCount = adminQuotaCount
 		counts.OffboardingCount = offboardingCount
-		counts.TotalCount = aiAccessSetupCount + quotaCounts.Admin + offboardingCount
+		counts.TotalCount = aiAccessSetupCount + adminQuotaCount + offboardingCount
 		return counts, nil
 	}
-	counts.TotalCount = aiAccessSetupCount + quotaCounts.Assigned
+	counts.TotalCount = aiAccessSetupCount + approvalCount
 	return counts, nil
 }
 
@@ -85,6 +91,47 @@ func (s *Service) countAIAccessSetup(ctx context.Context, userID int) (int, erro
 		}
 	}
 	return 1, nil
+}
+
+func (s *Service) countAssignedQuotaApprovals(ctx context.Context, userID int) (int, error) {
+	count, err := s.client.QuotaResetRequest.Query().
+		Where(
+			quotaresetrequest.StatusIn(actionableQuotaResetStatuses()...),
+			quotaresetrequest.RequesterUserIDNEQ(userID),
+			func(selector *sql.Selector) {
+				selector.Where(jsonbContainsInt(selector, quotaresetrequest.FieldResolvedApproverUserIds, userID))
+			},
+		).
+		Count(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count assigned quota reset approvals: %w", err)
+	}
+	return count, nil
+}
+
+func jsonbContainsInt(selector *sql.Selector, field string, value int) *sql.Predicate {
+	return sql.P(func(builder *sql.Builder) {
+		builder.WriteString(selector.C(field)).
+			WriteString("::jsonb @> ").
+			Arg(fmt.Sprintf("[%d]", value))
+	})
+}
+
+func (s *Service) countAdminQuotaApprovals(ctx context.Context) (int, error) {
+	count, err := s.client.QuotaResetRequest.Query().
+		Where(quotaresetrequest.StatusIn(actionableQuotaResetStatuses()...)).
+		Count(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count admin quota reset approvals: %w", err)
+	}
+	return count, nil
+}
+
+func actionableQuotaResetStatuses() []quotaresetrequest.Status {
+	return []quotaresetrequest.Status{
+		quotaresetrequest.StatusPending,
+		quotaresetrequest.StatusApprovedResetFailed,
+	}
 }
 
 func (s *Service) countOffboardingCandidates(ctx context.Context) (int, error) {

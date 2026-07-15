@@ -42,55 +42,6 @@ func (qrnsu *QuotaResetNotificationSettingUpdate) SetNillableEnabled(b *bool) *Q
 	return qrnsu
 }
 
-// SetChannelType sets the "channel_type" field.
-func (qrnsu *QuotaResetNotificationSettingUpdate) SetChannelType(qt quotaresetnotificationsetting.ChannelType) *QuotaResetNotificationSettingUpdate {
-	qrnsu.mutation.SetChannelType(qt)
-	return qrnsu
-}
-
-// SetNillableChannelType sets the "channel_type" field if the given value is not nil.
-func (qrnsu *QuotaResetNotificationSettingUpdate) SetNillableChannelType(qt *quotaresetnotificationsetting.ChannelType) *QuotaResetNotificationSettingUpdate {
-	if qt != nil {
-		qrnsu.SetChannelType(*qt)
-	}
-	return qrnsu
-}
-
-// SetChannelTypeConfigured sets the "channel_type_configured" field.
-func (qrnsu *QuotaResetNotificationSettingUpdate) SetChannelTypeConfigured(b bool) *QuotaResetNotificationSettingUpdate {
-	qrnsu.mutation.SetChannelTypeConfigured(b)
-	return qrnsu
-}
-
-// SetNillableChannelTypeConfigured sets the "channel_type_configured" field if the given value is not nil.
-func (qrnsu *QuotaResetNotificationSettingUpdate) SetNillableChannelTypeConfigured(b *bool) *QuotaResetNotificationSettingUpdate {
-	if b != nil {
-		qrnsu.SetChannelTypeConfigured(*b)
-	}
-	return qrnsu
-}
-
-// SetTemplateVersion sets the "template_version" field.
-func (qrnsu *QuotaResetNotificationSettingUpdate) SetTemplateVersion(i int) *QuotaResetNotificationSettingUpdate {
-	qrnsu.mutation.ResetTemplateVersion()
-	qrnsu.mutation.SetTemplateVersion(i)
-	return qrnsu
-}
-
-// SetNillableTemplateVersion sets the "template_version" field if the given value is not nil.
-func (qrnsu *QuotaResetNotificationSettingUpdate) SetNillableTemplateVersion(i *int) *QuotaResetNotificationSettingUpdate {
-	if i != nil {
-		qrnsu.SetTemplateVersion(*i)
-	}
-	return qrnsu
-}
-
-// AddTemplateVersion adds i to the "template_version" field.
-func (qrnsu *QuotaResetNotificationSettingUpdate) AddTemplateVersion(i int) *QuotaResetNotificationSettingUpdate {
-	qrnsu.mutation.AddTemplateVersion(i)
-	return qrnsu
-}
-
 // SetURL sets the "url" field.
 func (qrnsu *QuotaResetNotificationSettingUpdate) SetURL(s string) *QuotaResetNotificationSettingUpdate {
 	qrnsu.mutation.SetURL(s)
@@ -251,11 +202,6 @@ func (qrnsu *QuotaResetNotificationSettingUpdate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (qrnsu *QuotaResetNotificationSettingUpdate) check() error {
-	if v, ok := qrnsu.mutation.ChannelType(); ok {
-		if err := quotaresetnotificationsetting.ChannelTypeValidator(v); err != nil {
-			return &ValidationError{Name: "channel_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetNotificationSetting.channel_type": %w`, err)}
-		}
-	}
 	if v, ok := qrnsu.mutation.AuthType(); ok {
 		if err := quotaresetnotificationsetting.AuthTypeValidator(v); err != nil {
 			return &ValidationError{Name: "auth_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetNotificationSetting.auth_type": %w`, err)}
@@ -278,18 +224,6 @@ func (qrnsu *QuotaResetNotificationSettingUpdate) sqlSave(ctx context.Context) (
 	}
 	if value, ok := qrnsu.mutation.Enabled(); ok {
 		_spec.SetField(quotaresetnotificationsetting.FieldEnabled, field.TypeBool, value)
-	}
-	if value, ok := qrnsu.mutation.ChannelType(); ok {
-		_spec.SetField(quotaresetnotificationsetting.FieldChannelType, field.TypeEnum, value)
-	}
-	if value, ok := qrnsu.mutation.ChannelTypeConfigured(); ok {
-		_spec.SetField(quotaresetnotificationsetting.FieldChannelTypeConfigured, field.TypeBool, value)
-	}
-	if value, ok := qrnsu.mutation.TemplateVersion(); ok {
-		_spec.SetField(quotaresetnotificationsetting.FieldTemplateVersion, field.TypeInt, value)
-	}
-	if value, ok := qrnsu.mutation.AddedTemplateVersion(); ok {
-		_spec.AddField(quotaresetnotificationsetting.FieldTemplateVersion, field.TypeInt, value)
 	}
 	if value, ok := qrnsu.mutation.URL(); ok {
 		_spec.SetField(quotaresetnotificationsetting.FieldURL, field.TypeString, value)
@@ -355,55 +289,6 @@ func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetNillableEnabled(b *bool
 	if b != nil {
 		qrnsuo.SetEnabled(*b)
 	}
-	return qrnsuo
-}
-
-// SetChannelType sets the "channel_type" field.
-func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetChannelType(qt quotaresetnotificationsetting.ChannelType) *QuotaResetNotificationSettingUpdateOne {
-	qrnsuo.mutation.SetChannelType(qt)
-	return qrnsuo
-}
-
-// SetNillableChannelType sets the "channel_type" field if the given value is not nil.
-func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetNillableChannelType(qt *quotaresetnotificationsetting.ChannelType) *QuotaResetNotificationSettingUpdateOne {
-	if qt != nil {
-		qrnsuo.SetChannelType(*qt)
-	}
-	return qrnsuo
-}
-
-// SetChannelTypeConfigured sets the "channel_type_configured" field.
-func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetChannelTypeConfigured(b bool) *QuotaResetNotificationSettingUpdateOne {
-	qrnsuo.mutation.SetChannelTypeConfigured(b)
-	return qrnsuo
-}
-
-// SetNillableChannelTypeConfigured sets the "channel_type_configured" field if the given value is not nil.
-func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetNillableChannelTypeConfigured(b *bool) *QuotaResetNotificationSettingUpdateOne {
-	if b != nil {
-		qrnsuo.SetChannelTypeConfigured(*b)
-	}
-	return qrnsuo
-}
-
-// SetTemplateVersion sets the "template_version" field.
-func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetTemplateVersion(i int) *QuotaResetNotificationSettingUpdateOne {
-	qrnsuo.mutation.ResetTemplateVersion()
-	qrnsuo.mutation.SetTemplateVersion(i)
-	return qrnsuo
-}
-
-// SetNillableTemplateVersion sets the "template_version" field if the given value is not nil.
-func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetNillableTemplateVersion(i *int) *QuotaResetNotificationSettingUpdateOne {
-	if i != nil {
-		qrnsuo.SetTemplateVersion(*i)
-	}
-	return qrnsuo
-}
-
-// AddTemplateVersion adds i to the "template_version" field.
-func (qrnsuo *QuotaResetNotificationSettingUpdateOne) AddTemplateVersion(i int) *QuotaResetNotificationSettingUpdateOne {
-	qrnsuo.mutation.AddTemplateVersion(i)
 	return qrnsuo
 }
 
@@ -580,11 +465,6 @@ func (qrnsuo *QuotaResetNotificationSettingUpdateOne) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (qrnsuo *QuotaResetNotificationSettingUpdateOne) check() error {
-	if v, ok := qrnsuo.mutation.ChannelType(); ok {
-		if err := quotaresetnotificationsetting.ChannelTypeValidator(v); err != nil {
-			return &ValidationError{Name: "channel_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetNotificationSetting.channel_type": %w`, err)}
-		}
-	}
 	if v, ok := qrnsuo.mutation.AuthType(); ok {
 		if err := quotaresetnotificationsetting.AuthTypeValidator(v); err != nil {
 			return &ValidationError{Name: "auth_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetNotificationSetting.auth_type": %w`, err)}
@@ -624,18 +504,6 @@ func (qrnsuo *QuotaResetNotificationSettingUpdateOne) sqlSave(ctx context.Contex
 	}
 	if value, ok := qrnsuo.mutation.Enabled(); ok {
 		_spec.SetField(quotaresetnotificationsetting.FieldEnabled, field.TypeBool, value)
-	}
-	if value, ok := qrnsuo.mutation.ChannelType(); ok {
-		_spec.SetField(quotaresetnotificationsetting.FieldChannelType, field.TypeEnum, value)
-	}
-	if value, ok := qrnsuo.mutation.ChannelTypeConfigured(); ok {
-		_spec.SetField(quotaresetnotificationsetting.FieldChannelTypeConfigured, field.TypeBool, value)
-	}
-	if value, ok := qrnsuo.mutation.TemplateVersion(); ok {
-		_spec.SetField(quotaresetnotificationsetting.FieldTemplateVersion, field.TypeInt, value)
-	}
-	if value, ok := qrnsuo.mutation.AddedTemplateVersion(); ok {
-		_spec.AddField(quotaresetnotificationsetting.FieldTemplateVersion, field.TypeInt, value)
 	}
 	if value, ok := qrnsuo.mutation.URL(); ok {
 		_spec.SetField(quotaresetnotificationsetting.FieldURL, field.TypeString, value)

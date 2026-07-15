@@ -20,37 +20,22 @@ export function useModalFocus(
   container: Ref<HTMLElement | null>,
   options: {
     initialFocus?: Ref<HTMLElement | null>
-    restoreFocusFallback?: Ref<HTMLElement | null>
     onClose: () => void
   }
 ) {
   let previousFocus: HTMLElement | null = null
 
-  watch(isOpen, async (open, _previousOpen, onCleanup) => {
-    let cancelled = false
-    onCleanup(() => {
-      cancelled = true
-    })
-
+  watch(isOpen, async (open) => {
     if (open) {
-      if (previousFocus === null) {
-        previousFocus = typeof document !== 'undefined' ? document.activeElement as HTMLElement : null
-      }
+      previousFocus = typeof document !== 'undefined' ? document.activeElement as HTMLElement : null
       await nextTick()
-      if (cancelled) return
       const target = options.initialFocus?.value ?? focusableElements(container.value)[0] ?? container.value
       target?.focus()
       return
     }
 
     await nextTick()
-    if (cancelled) return
-    const restoreTarget = previousFocus?.isConnected
-      ? previousFocus
-      : options.restoreFocusFallback?.value
-    if (restoreTarget?.isConnected) {
-      restoreTarget.focus()
-    }
+    previousFocus?.focus()
     previousFocus = null
   })
 

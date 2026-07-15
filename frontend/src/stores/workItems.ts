@@ -38,12 +38,7 @@ export const useWorkItemsStore = defineStore('workItems', () => {
 
   function loadCounts(options: { force?: boolean } = {}): Promise<void> {
     if (loadPromise) {
-      if (!options.force) return loadPromise
-      const followUpGeneration = sessionGeneration
-      return loadPromise.then(() => {
-        if (followUpGeneration !== sessionGeneration) return
-        return loadCounts()
-      })
+      return options.force ? loadPromise.then(() => loadCounts()) : loadPromise
     }
     loading.value = true
     error.value = ''

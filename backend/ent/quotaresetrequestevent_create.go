@@ -87,9 +87,7 @@ func (qrrec *QuotaResetRequestEventCreate) Mutation() *QuotaResetRequestEventMut
 
 // Save creates the QuotaResetRequestEvent in the database.
 func (qrrec *QuotaResetRequestEventCreate) Save(ctx context.Context) (*QuotaResetRequestEvent, error) {
-	if err := qrrec.defaults(); err != nil {
-		return nil, err
-	}
+	qrrec.defaults()
 	return withHooks(ctx, qrrec.sqlSave, qrrec.mutation, qrrec.hooks)
 }
 
@@ -116,19 +114,15 @@ func (qrrec *QuotaResetRequestEventCreate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (qrrec *QuotaResetRequestEventCreate) defaults() error {
+func (qrrec *QuotaResetRequestEventCreate) defaults() {
 	if _, ok := qrrec.mutation.ErrorMessage(); !ok {
 		v := quotaresetrequestevent.DefaultErrorMessage
 		qrrec.mutation.SetErrorMessage(v)
 	}
 	if _, ok := qrrec.mutation.CreatedAt(); !ok {
-		if quotaresetrequestevent.DefaultCreatedAt == nil {
-			return fmt.Errorf("ent: uninitialized quotaresetrequestevent.DefaultCreatedAt (forgotten import ent/runtime?)")
-		}
 		v := quotaresetrequestevent.DefaultCreatedAt()
 		qrrec.mutation.SetCreatedAt(v)
 	}
-	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.

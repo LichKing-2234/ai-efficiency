@@ -16,12 +16,6 @@ const (
 	FieldID = "id"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
-	// FieldChannelType holds the string denoting the channel_type field in the database.
-	FieldChannelType = "channel_type"
-	// FieldChannelTypeConfigured holds the string denoting the channel_type_configured field in the database.
-	FieldChannelTypeConfigured = "channel_type_configured"
-	// FieldTemplateVersion holds the string denoting the template_version field in the database.
-	FieldTemplateVersion = "template_version"
 	// FieldURL holds the string denoting the url field in the database.
 	FieldURL = "url"
 	// FieldAuthType holds the string denoting the auth_type field in the database.
@@ -44,9 +38,6 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldEnabled,
-	FieldChannelType,
-	FieldChannelTypeConfigured,
-	FieldTemplateVersion,
 	FieldURL,
 	FieldAuthType,
 	FieldCredentialID,
@@ -69,10 +60,6 @@ func ValidColumn(column string) bool {
 var (
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
-	// DefaultChannelTypeConfigured holds the default value on creation for the "channel_type_configured" field.
-	DefaultChannelTypeConfigured bool
-	// DefaultTemplateVersion holds the default value on creation for the "template_version" field.
-	DefaultTemplateVersion int
 	// DefaultURL holds the default value on creation for the "url" field.
 	DefaultURL string
 	// DefaultCreatedByUserID holds the default value on creation for the "created_by_user_id" field.
@@ -86,32 +73,6 @@ var (
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
 )
-
-// ChannelType defines the type for the "channel_type" enum field.
-type ChannelType string
-
-// ChannelTypeGenericWebhook is the default value of the ChannelType enum.
-const DefaultChannelType = ChannelTypeGenericWebhook
-
-// ChannelType values.
-const (
-	ChannelTypeGenericWebhook  ChannelType = "generic_webhook"
-	ChannelTypeWecomGroupRobot ChannelType = "wecom_group_robot"
-)
-
-func (ct ChannelType) String() string {
-	return string(ct)
-}
-
-// ChannelTypeValidator is a validator for the "channel_type" field enum values. It is called by the builders before save.
-func ChannelTypeValidator(ct ChannelType) error {
-	switch ct {
-	case ChannelTypeGenericWebhook, ChannelTypeWecomGroupRobot:
-		return nil
-	default:
-		return fmt.Errorf("quotaresetnotificationsetting: invalid enum value for channel_type field: %q", ct)
-	}
-}
 
 // AuthType defines the type for the "auth_type" enum field.
 type AuthType string
@@ -150,21 +111,6 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 // ByEnabled orders the results by the enabled field.
 func ByEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEnabled, opts...).ToFunc()
-}
-
-// ByChannelType orders the results by the channel_type field.
-func ByChannelType(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldChannelType, opts...).ToFunc()
-}
-
-// ByChannelTypeConfigured orders the results by the channel_type_configured field.
-func ByChannelTypeConfigured(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldChannelTypeConfigured, opts...).ToFunc()
-}
-
-// ByTemplateVersion orders the results by the template_version field.
-func ByTemplateVersion(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldTemplateVersion, opts...).ToFunc()
 }
 
 // ByURL orders the results by the url field.

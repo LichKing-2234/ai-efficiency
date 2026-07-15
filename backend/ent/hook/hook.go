@@ -177,30 +177,6 @@ func (f PrRecordFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PrRecordMutation", m)
 }
 
-// The QuotaResetApprovalChainFunc type is an adapter to allow the use of ordinary
-// function as QuotaResetApprovalChain mutator.
-type QuotaResetApprovalChainFunc func(context.Context, *ent.QuotaResetApprovalChainMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f QuotaResetApprovalChainFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.QuotaResetApprovalChainMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetApprovalChainMutation", m)
-}
-
-// The QuotaResetApprovalChainNodeFunc type is an adapter to allow the use of ordinary
-// function as QuotaResetApprovalChainNode mutator.
-type QuotaResetApprovalChainNodeFunc func(context.Context, *ent.QuotaResetApprovalChainNodeMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f QuotaResetApprovalChainNodeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.QuotaResetApprovalChainNodeMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetApprovalChainNodeMutation", m)
-}
-
 // The QuotaResetApproverConfigFunc type is an adapter to allow the use of ordinary
 // function as QuotaResetApproverConfig mutator.
 type QuotaResetApproverConfigFunc func(context.Context, *ent.QuotaResetApproverConfigMutation) (ent.Value, error)
@@ -237,18 +213,6 @@ func (f QuotaResetRequestFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetRequestMutation", m)
 }
 
-// The QuotaResetRequestDecisionFunc type is an adapter to allow the use of ordinary
-// function as QuotaResetRequestDecision mutator.
-type QuotaResetRequestDecisionFunc func(context.Context, *ent.QuotaResetRequestDecisionMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f QuotaResetRequestDecisionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.QuotaResetRequestDecisionMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetRequestDecisionMutation", m)
-}
-
 // The QuotaResetRequestEventFunc type is an adapter to allow the use of ordinary
 // function as QuotaResetRequestEvent mutator.
 type QuotaResetRequestEventFunc func(context.Context, *ent.QuotaResetRequestEventMutation) (ent.Value, error)
@@ -259,30 +223,6 @@ func (f QuotaResetRequestEventFunc) Mutate(ctx context.Context, m ent.Mutation) 
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetRequestEventMutation", m)
-}
-
-// The QuotaResetRequestNodeFunc type is an adapter to allow the use of ordinary
-// function as QuotaResetRequestNode mutator.
-type QuotaResetRequestNodeFunc func(context.Context, *ent.QuotaResetRequestNodeMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f QuotaResetRequestNodeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.QuotaResetRequestNodeMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetRequestNodeMutation", m)
-}
-
-// The QuotaResetRequestNodeApproverFunc type is an adapter to allow the use of ordinary
-// function as QuotaResetRequestNodeApprover mutator.
-type QuotaResetRequestNodeApproverFunc func(context.Context, *ent.QuotaResetRequestNodeApproverMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f QuotaResetRequestNodeApproverFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.QuotaResetRequestNodeApproverMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetRequestNodeApproverMutation", m)
 }
 
 // The RelayProviderFunc type is an adapter to allow the use of ordinary

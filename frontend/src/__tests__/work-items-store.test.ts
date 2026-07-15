@@ -121,39 +121,4 @@ describe('work items store', () => {
     expect(api.getWorkItemCounts).toHaveBeenCalledTimes(2)
     expect(store.totalCount).toBe(0)
   })
-
-  it('drops a queued forced load after the authenticated session resets', async () => {
-    const api = await import('@/api/workItems') as any
-    const previousSession = deferred<any>()
-    api.getWorkItemCounts.mockReturnValueOnce(previousSession.promise)
-    const store = useWorkItemsStore()
-    const previousLoad = store.loadCounts()
-    const forcedLoad = store.loadCounts({ force: true })
-
-    store.resetCounts()
-    previousSession.resolve({
-      data: {
-        data: {
-          quota_reset_approval_count: 9,
-          quota_reset_admin_count: 9,
-          ai_access_setup_count: 9,
-          offboarding_count: 9,
-          total_count: 36,
-        },
-      },
-    })
-
-    await Promise.all([previousLoad, forcedLoad])
-
-    expect(api.getWorkItemCounts).toHaveBeenCalledTimes(1)
-    expect(store.counts).toEqual({
-      quota_reset_approval_count: 0,
-      quota_reset_admin_count: 0,
-      ai_access_setup_count: 0,
-      offboarding_count: 0,
-      total_count: 0,
-    })
-    expect(store.loading).toBe(false)
-    expect(store.error).toBe('')
-  })
 })

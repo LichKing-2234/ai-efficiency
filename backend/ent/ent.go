@@ -26,15 +26,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/prsyncjob"
-	"github.com/ai-efficiency/backend/ent/quotaresetapprovalchain"
-	"github.com/ai-efficiency/backend/ent/quotaresetapprovalchainnode"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
-	"github.com/ai-efficiency/backend/ent/quotaresetrequestdecision"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
-	"github.com/ai-efficiency/backend/ent/quotaresetrequestnode"
-	"github.com/ai-efficiency/backend/ent/quotaresetrequestnodeapprover"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/scmprovider"
@@ -117,15 +112,10 @@ func checkColumn(table, column string) error {
 			prsyncjob.Table:                     prsyncjob.ValidColumn,
 			prattributionrun.Table:              prattributionrun.ValidColumn,
 			prrecord.Table:                      prrecord.ValidColumn,
-			quotaresetapprovalchain.Table:       quotaresetapprovalchain.ValidColumn,
-			quotaresetapprovalchainnode.Table:   quotaresetapprovalchainnode.ValidColumn,
 			quotaresetapproverconfig.Table:      quotaresetapproverconfig.ValidColumn,
 			quotaresetnotificationsetting.Table: quotaresetnotificationsetting.ValidColumn,
 			quotaresetrequest.Table:             quotaresetrequest.ValidColumn,
-			quotaresetrequestdecision.Table:     quotaresetrequestdecision.ValidColumn,
 			quotaresetrequestevent.Table:        quotaresetrequestevent.ValidColumn,
-			quotaresetrequestnode.Table:         quotaresetrequestnode.ValidColumn,
-			quotaresetrequestnodeapprover.Table: quotaresetrequestnodeapprover.ValidColumn,
 			relayprovider.Table:                 relayprovider.ValidColumn,
 			repoconfig.Table:                    repoconfig.ValidColumn,
 			scmprovider.Table:                   scmprovider.ValidColumn,

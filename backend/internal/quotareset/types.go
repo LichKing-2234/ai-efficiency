@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
@@ -51,7 +52,6 @@ type CreateRequestInput struct {
 type DecisionInput struct {
 	ActorUserID    int
 	RequestID      int
-	RequestNodeID  int
 	DecisionReason string
 	Admin          bool
 }
@@ -60,49 +60,37 @@ type ListParams struct {
 	Page     int
 	PageSize int
 	Status   string
-	Scope    string
 }
 
-const ApprovalListScopeHistory = "history"
-
 type NotificationSettings struct {
-	Enabled         bool   `json:"enabled"`
-	ChannelType     string `json:"channel_type"`
-	TemplateVersion int    `json:"template_version"`
-	URLConfigured   bool   `json:"url_configured"`
-	URLPreview      string `json:"url_preview"`
-	AuthType        string `json:"auth_type"`
-	CredentialID    *int   `json:"credential_id,omitempty"`
-	UpdatedAt       string `json:"updated_at,omitempty"`
+	Enabled      bool   `json:"enabled"`
+	URL          string `json:"url"`
+	AuthType     string `json:"auth_type"`
+	CredentialID *int   `json:"credential_id,omitempty"`
+	UpdatedAt    string `json:"updated_at,omitempty"`
 }
 
 type ApproverConfigListResponse struct {
-	DirectorySourceID *int             `json:"directory_source_id"`
-	Items             []ApproverConfig `json:"items"`
-}
-
-type ApproverCandidateParams struct {
-	SourceID int
-	Query    string
-	Page     int
-	PageSize int
-}
-
-type ApproverCandidate struct {
-	UserID                    int      `json:"user_id"`
-	Username                  string   `json:"username"`
-	Email                     string   `json:"email"`
-	DisplayName               string   `json:"display_name"`
-	DirectoryMemberExternalID string   `json:"directory_member_external_id"`
-	DepartmentPaths           []string `json:"department_paths"`
-	WeComMentionAvailable     bool     `json:"wecom_mention_available"`
+	Items []ApproverConfig `json:"items"`
 }
 
 type ApproverCandidateListResponse struct {
-	Items    []ApproverCandidate `json:"items"`
-	Page     int                 `json:"page"`
-	PageSize int                 `json:"page_size"`
-	Total    int                 `json:"total"`
+	Items                    []ApproverCandidate               `json:"items"`
+	UnmatchedRepresentatives []UnmatchedApproverRepresentative `json:"unmatched_representatives,omitempty"`
+}
+
+type ApproverCandidate struct {
+	UserID                    int    `json:"user_id"`
+	Username                  string `json:"username"`
+	Email                     string `json:"email"`
+	DisplayName               string `json:"display_name"`
+	DirectoryMemberExternalID string `json:"directory_member_external_id"`
+}
+
+type UnmatchedApproverRepresentative struct {
+	DirectoryMemberExternalID string `json:"directory_member_external_id"`
+	DisplayName               string `json:"display_name,omitempty"`
+	Email                     string `json:"email,omitempty"`
 }
 
 type ApproverConfig struct {
@@ -131,62 +119,10 @@ type ApproverConfigInput struct {
 	Enabled               bool   `json:"enabled"`
 }
 
-type ApprovalChainNodeInput struct {
-	DirectorySourceID     int    `json:"directory_source_id"`
-	DepartmentExternalID  string `json:"department_external_id"`
-	DepartmentDisplayPath string `json:"department_display_path"`
-}
-
-type ApprovalChainInput struct {
-	ProviderID int                      `json:"provider_id"`
-	GroupID    string                   `json:"group_id"`
-	GroupName  string                   `json:"group_name"`
-	Enabled    bool                     `json:"enabled"`
-	Nodes      []ApprovalChainNodeInput `json:"nodes"`
-}
-
-type SaveApprovalChainsInput struct {
-	ActorUserID int
-	Items       []ApprovalChainInput
-}
-
-type ApprovalChain struct {
-	ID         int                      `json:"id"`
-	ProviderID int                      `json:"provider_id"`
-	GroupID    string                   `json:"group_id"`
-	GroupName  string                   `json:"group_name"`
-	Enabled    bool                     `json:"enabled"`
-	Nodes      []ApprovalChainNodeInput `json:"nodes"`
-}
-
-type ApprovalChainListResponse struct {
-	Items []ApprovalChain `json:"items"`
-}
-
-type ApprovalChainGroupOption struct {
-	ProviderID int    `json:"provider_id"`
-	GroupID    string `json:"group_id"`
-	GroupName  string `json:"group_name"`
-	Platform   string `json:"platform"`
-}
-
-type ApprovalChainDepartmentOption struct {
-	DirectorySourceID     int    `json:"directory_source_id"`
-	DepartmentExternalID  string `json:"department_external_id"`
-	DepartmentDisplayPath string `json:"department_display_path"`
-	ApproverCount         int    `json:"approver_count"`
-}
-
-type ApprovalChainOptionsResponse struct {
-	Groups      []ApprovalChainGroupOption      `json:"groups"`
-	Departments []ApprovalChainDepartmentOption `json:"departments"`
-}
-
 type UpdateNotificationSettingsInput struct {
 	ActorUserID  int
 	Enabled      bool
-	ChannelType  string
-	URL          *string
+	URL          string
 	AuthType     string
 	CredentialID *int
 }
@@ -206,21 +142,7 @@ type ProviderResolver interface {
 }
 
 type Notifier interface {
-	Notify(context.Context, NotificationContext) (*NotificationDeliveryResult, error)
-}
-
-type NotificationDeliveryResult struct {
-	ChannelType             string
-	Delivered               bool
-	RecipientCount          int
-	MissingRecipientUserIDs []int
-}
-
-type NotificationTestResult struct {
-	Delivered             bool   `json:"delivered"`
-	RecipientCount        int    `json:"recipient_count"`
-	MissingRecipientCount int    `json:"missing_recipient_count"`
-	Warning               string `json:"warning,omitempty"`
+	NotifyRequestEvent(ctx context.Context, event string, req *ent.QuotaResetRequest) error
 }
 
 type RequestListResponse struct {
@@ -231,25 +153,23 @@ type RequestListResponse struct {
 }
 
 type RequestSummary struct {
-	ID                       int                      `json:"id"`
-	RequesterUserID          int                      `json:"requester_user_id"`
-	RequesterDisplayName     string                   `json:"requester_display_name"`
-	RequesterEmail           string                   `json:"requester_email"`
-	RequesterDepartmentPaths []string                 `json:"requester_department_paths"`
-	ProviderID               int                      `json:"provider_id"`
-	GroupID                  string                   `json:"group_id"`
-	GroupName                string                   `json:"group_name"`
-	GroupPlatform            string                   `json:"group_platform"`
-	Reason                   string                   `json:"reason"`
-	Status                   string                   `json:"status"`
-	ResolvedApproverUserIDs  []int                    `json:"resolved_approver_user_ids"`
-	MatchedDepartmentPaths   []DepartmentPathEvidence `json:"matched_department_paths"`
-	ApprovedByUserID         *int                     `json:"approved_by_user_id,omitempty"`
-	RejectedByUserID         *int                     `json:"rejected_by_user_id,omitempty"`
-	DecisionReason           string                   `json:"decision_reason,omitempty"`
-	ResetError               string                   `json:"reset_error,omitempty"`
-	CreatedAt                time.Time                `json:"created_at"`
-	UpdatedAt                time.Time                `json:"updated_at"`
-	Events                   []RequestEvent           `json:"events,omitempty"`
-	Workflow                 *WorkflowSummary         `json:"workflow,omitempty"`
+	ID                      int                      `json:"id"`
+	RequesterUserID         int                      `json:"requester_user_id"`
+	RequesterDisplayName    string                   `json:"requester_display_name"`
+	RequesterEmail          string                   `json:"requester_email"`
+	ProviderID              int                      `json:"provider_id"`
+	GroupID                 string                   `json:"group_id"`
+	GroupName               string                   `json:"group_name"`
+	GroupPlatform           string                   `json:"group_platform"`
+	Reason                  string                   `json:"reason"`
+	Status                  string                   `json:"status"`
+	ResolvedApproverUserIDs []int                    `json:"resolved_approver_user_ids"`
+	MatchedDepartmentPaths  []DepartmentPathEvidence `json:"matched_department_paths"`
+	ApprovedByUserID        *int                     `json:"approved_by_user_id,omitempty"`
+	RejectedByUserID        *int                     `json:"rejected_by_user_id,omitempty"`
+	DecisionReason          string                   `json:"decision_reason,omitempty"`
+	ResetError              string                   `json:"reset_error,omitempty"`
+	CreatedAt               time.Time                `json:"created_at"`
+	UpdatedAt               time.Time                `json:"updated_at"`
+	Events                  []RequestEvent           `json:"events,omitempty"`
 }

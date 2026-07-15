@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 )
 
@@ -52,13 +51,7 @@ func ValidColumn(column string) bool {
 	return false
 }
 
-// Note that the variables below are initialized by the runtime
-// package on the initialization of the application. Therefore,
-// it should be imported in the main as follows:
-//
-//	import _ "github.com/ai-efficiency/backend/ent/runtime"
 var (
-	Hooks [1]ent.Hook
 	// DefaultErrorMessage holds the default value on creation for the "error_message" field.
 	DefaultErrorMessage string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
@@ -70,23 +63,17 @@ type EventType string
 
 // EventType values.
 const (
-	EventTypeCreated                      EventType = "created"
-	EventTypeApproverResolved             EventType = "approver_resolved"
-	EventTypeNotificationSent             EventType = "notification_sent"
-	EventTypeNotificationFailed           EventType = "notification_failed"
-	EventTypeApproved                     EventType = "approved"
-	EventTypeResetStarted                 EventType = "reset_started"
-	EventTypeResetSucceeded               EventType = "reset_succeeded"
-	EventTypeResetFailed                  EventType = "reset_failed"
-	EventTypeRejected                     EventType = "rejected"
-	EventTypeCancelled                    EventType = "cancelled"
-	EventTypeResetRetried                 EventType = "reset_retried"
-	EventTypeWorkflowSnapshotted          EventType = "workflow_snapshotted"
-	EventTypeNodeActivated                EventType = "node_activated"
-	EventTypeNodeApproved                 EventType = "node_approved"
-	EventTypeNodeSatisfiedByPriorApproval EventType = "node_satisfied_by_prior_approval"
-	EventTypeNodeSkippedNoApprover        EventType = "node_skipped_no_approver"
-	EventTypeAdminFallbackActivated       EventType = "admin_fallback_activated"
+	EventTypeCreated            EventType = "created"
+	EventTypeApproverResolved   EventType = "approver_resolved"
+	EventTypeNotificationSent   EventType = "notification_sent"
+	EventTypeNotificationFailed EventType = "notification_failed"
+	EventTypeApproved           EventType = "approved"
+	EventTypeResetStarted       EventType = "reset_started"
+	EventTypeResetSucceeded     EventType = "reset_succeeded"
+	EventTypeResetFailed        EventType = "reset_failed"
+	EventTypeRejected           EventType = "rejected"
+	EventTypeCancelled          EventType = "cancelled"
+	EventTypeResetRetried       EventType = "reset_retried"
 )
 
 func (et EventType) String() string {
@@ -96,7 +83,7 @@ func (et EventType) String() string {
 // EventTypeValidator is a validator for the "event_type" field enum values. It is called by the builders before save.
 func EventTypeValidator(et EventType) error {
 	switch et {
-	case EventTypeCreated, EventTypeApproverResolved, EventTypeNotificationSent, EventTypeNotificationFailed, EventTypeApproved, EventTypeResetStarted, EventTypeResetSucceeded, EventTypeResetFailed, EventTypeRejected, EventTypeCancelled, EventTypeResetRetried, EventTypeWorkflowSnapshotted, EventTypeNodeActivated, EventTypeNodeApproved, EventTypeNodeSatisfiedByPriorApproval, EventTypeNodeSkippedNoApprover, EventTypeAdminFallbackActivated:
+	case EventTypeCreated, EventTypeApproverResolved, EventTypeNotificationSent, EventTypeNotificationFailed, EventTypeApproved, EventTypeResetStarted, EventTypeResetSucceeded, EventTypeResetFailed, EventTypeRejected, EventTypeCancelled, EventTypeResetRetried:
 		return nil
 	default:
 		return fmt.Errorf("quotaresetrequestevent: invalid enum value for event_type field: %q", et)

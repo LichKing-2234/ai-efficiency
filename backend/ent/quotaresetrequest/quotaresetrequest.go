@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 )
 
@@ -29,20 +28,6 @@ const (
 	FieldGroupPlatform = "group_platform"
 	// FieldReason holds the string denoting the reason field in the database.
 	FieldReason = "reason"
-	// FieldWorkflowVersion holds the string denoting the workflow_version field in the database.
-	FieldWorkflowVersion = "workflow_version"
-	// FieldCurrentNodeID holds the string denoting the current_node_id field in the database.
-	FieldCurrentNodeID = "current_node_id"
-	// FieldWorkflowCompletedByDecisionID holds the string denoting the workflow_completed_by_decision_id field in the database.
-	FieldWorkflowCompletedByDecisionID = "workflow_completed_by_decision_id"
-	// FieldRequesterDisplayNameSnapshot holds the string denoting the requester_display_name_snapshot field in the database.
-	FieldRequesterDisplayNameSnapshot = "requester_display_name_snapshot"
-	// FieldRequesterEmailSnapshot holds the string denoting the requester_email_snapshot field in the database.
-	FieldRequesterEmailSnapshot = "requester_email_snapshot"
-	// FieldRequesterDepartmentPaths holds the string denoting the requester_department_paths field in the database.
-	FieldRequesterDepartmentPaths = "requester_department_paths"
-	// FieldRequesterNotificationIds holds the string denoting the requester_notification_ids field in the database.
-	FieldRequesterNotificationIds = "requester_notification_ids"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldResolvedApproverUserIds holds the string denoting the resolved_approver_user_ids field in the database.
@@ -81,13 +66,6 @@ var Columns = []string{
 	FieldGroupName,
 	FieldGroupPlatform,
 	FieldReason,
-	FieldWorkflowVersion,
-	FieldCurrentNodeID,
-	FieldWorkflowCompletedByDecisionID,
-	FieldRequesterDisplayNameSnapshot,
-	FieldRequesterEmailSnapshot,
-	FieldRequesterDepartmentPaths,
-	FieldRequesterNotificationIds,
 	FieldStatus,
 	FieldResolvedApproverUserIds,
 	FieldMatchedDepartmentPaths,
@@ -112,13 +90,7 @@ func ValidColumn(column string) bool {
 	return false
 }
 
-// Note that the variables below are initialized by the runtime
-// package on the initialization of the application. Therefore,
-// it should be imported in the main as follows:
-//
-//	import _ "github.com/ai-efficiency/backend/ent/runtime"
 var (
-	Hooks [1]ent.Hook
 	// GroupIDValidator is a validator for the "group_id" field. It is called by the builders before save.
 	GroupIDValidator func(string) error
 	// DefaultGroupName holds the default value on creation for the "group_name" field.
@@ -127,28 +99,6 @@ var (
 	DefaultGroupPlatform string
 	// ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
 	ReasonValidator func(string) error
-	// DefaultWorkflowVersion holds the default value on creation for the "workflow_version" field.
-	DefaultWorkflowVersion int
-	// DefaultRequesterDisplayNameSnapshot holds the default value on creation for the "requester_display_name_snapshot" field.
-	DefaultRequesterDisplayNameSnapshot string
-	// DefaultRequesterEmailSnapshot holds the default value on creation for the "requester_email_snapshot" field.
-	DefaultRequesterEmailSnapshot string
-	// DefaultRequesterDepartmentPaths holds the default value on creation for the "requester_department_paths" field.
-	DefaultRequesterDepartmentPaths func() []string
-	// RequesterDepartmentPathsValidator is a validator for the "requester_department_paths" field. It is called by the builders before save.
-	RequesterDepartmentPathsValidator func([]string) error
-	// DefaultRequesterNotificationIds holds the default value on creation for the "requester_notification_ids" field.
-	DefaultRequesterNotificationIds func() map[string]string
-	// RequesterNotificationIdsValidator is a validator for the "requester_notification_ids" field. It is called by the builders before save.
-	RequesterNotificationIdsValidator func(map[string]string) error
-	// DefaultResolvedApproverUserIds holds the default value on creation for the "resolved_approver_user_ids" field.
-	DefaultResolvedApproverUserIds func() []int
-	// ResolvedApproverUserIdsValidator is a validator for the "resolved_approver_user_ids" field. It is called by the builders before save.
-	ResolvedApproverUserIdsValidator func([]int) error
-	// DefaultMatchedDepartmentPaths holds the default value on creation for the "matched_department_paths" field.
-	DefaultMatchedDepartmentPaths func() []map[string]interface{}
-	// MatchedDepartmentPathsValidator is a validator for the "matched_department_paths" field. It is called by the builders before save.
-	MatchedDepartmentPathsValidator func([]map[string]interface{}) error
 	// DefaultDecisionReason holds the default value on creation for the "decision_reason" field.
 	DefaultDecisionReason string
 	// DefaultResetError holds the default value on creation for the "reset_error" field.
@@ -232,31 +182,6 @@ func ByGroupPlatform(opts ...sql.OrderTermOption) OrderOption {
 // ByReason orders the results by the reason field.
 func ByReason(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReason, opts...).ToFunc()
-}
-
-// ByWorkflowVersion orders the results by the workflow_version field.
-func ByWorkflowVersion(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldWorkflowVersion, opts...).ToFunc()
-}
-
-// ByCurrentNodeID orders the results by the current_node_id field.
-func ByCurrentNodeID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCurrentNodeID, opts...).ToFunc()
-}
-
-// ByWorkflowCompletedByDecisionID orders the results by the workflow_completed_by_decision_id field.
-func ByWorkflowCompletedByDecisionID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldWorkflowCompletedByDecisionID, opts...).ToFunc()
-}
-
-// ByRequesterDisplayNameSnapshot orders the results by the requester_display_name_snapshot field.
-func ByRequesterDisplayNameSnapshot(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRequesterDisplayNameSnapshot, opts...).ToFunc()
-}
-
-// ByRequesterEmailSnapshot orders the results by the requester_email_snapshot field.
-func ByRequesterEmailSnapshot(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRequesterEmailSnapshot, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

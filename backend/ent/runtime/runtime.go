@@ -19,15 +19,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/prsyncjob"
-	"github.com/ai-efficiency/backend/ent/quotaresetapprovalchain"
-	"github.com/ai-efficiency/backend/ent/quotaresetapprovalchainnode"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
-	"github.com/ai-efficiency/backend/ent/quotaresetrequestdecision"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequestevent"
-	"github.com/ai-efficiency/backend/ent/quotaresetrequestnode"
-	"github.com/ai-efficiency/backend/ent/quotaresetrequestnodeapprover"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/schema"
@@ -493,62 +488,6 @@ func init() {
 	prrecord.DefaultUpdatedAt = prrecordDescUpdatedAt.Default.(func() time.Time)
 	// prrecord.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	prrecord.UpdateDefaultUpdatedAt = prrecordDescUpdatedAt.UpdateDefault.(func() time.Time)
-	quotaresetapprovalchainFields := schema.QuotaResetApprovalChain{}.Fields()
-	_ = quotaresetapprovalchainFields
-	// quotaresetapprovalchainDescGroupID is the schema descriptor for group_id field.
-	quotaresetapprovalchainDescGroupID := quotaresetapprovalchainFields[1].Descriptor()
-	// quotaresetapprovalchain.GroupIDValidator is a validator for the "group_id" field. It is called by the builders before save.
-	quotaresetapprovalchain.GroupIDValidator = quotaresetapprovalchainDescGroupID.Validators[0].(func(string) error)
-	// quotaresetapprovalchainDescGroupName is the schema descriptor for group_name field.
-	quotaresetapprovalchainDescGroupName := quotaresetapprovalchainFields[2].Descriptor()
-	// quotaresetapprovalchain.DefaultGroupName holds the default value on creation for the group_name field.
-	quotaresetapprovalchain.DefaultGroupName = quotaresetapprovalchainDescGroupName.Default.(string)
-	// quotaresetapprovalchainDescEnabled is the schema descriptor for enabled field.
-	quotaresetapprovalchainDescEnabled := quotaresetapprovalchainFields[3].Descriptor()
-	// quotaresetapprovalchain.DefaultEnabled holds the default value on creation for the enabled field.
-	quotaresetapprovalchain.DefaultEnabled = quotaresetapprovalchainDescEnabled.Default.(bool)
-	// quotaresetapprovalchainDescCreatedByUserID is the schema descriptor for created_by_user_id field.
-	quotaresetapprovalchainDescCreatedByUserID := quotaresetapprovalchainFields[4].Descriptor()
-	// quotaresetapprovalchain.DefaultCreatedByUserID holds the default value on creation for the created_by_user_id field.
-	quotaresetapprovalchain.DefaultCreatedByUserID = quotaresetapprovalchainDescCreatedByUserID.Default.(int)
-	// quotaresetapprovalchainDescUpdatedByUserID is the schema descriptor for updated_by_user_id field.
-	quotaresetapprovalchainDescUpdatedByUserID := quotaresetapprovalchainFields[5].Descriptor()
-	// quotaresetapprovalchain.DefaultUpdatedByUserID holds the default value on creation for the updated_by_user_id field.
-	quotaresetapprovalchain.DefaultUpdatedByUserID = quotaresetapprovalchainDescUpdatedByUserID.Default.(int)
-	// quotaresetapprovalchainDescCreatedAt is the schema descriptor for created_at field.
-	quotaresetapprovalchainDescCreatedAt := quotaresetapprovalchainFields[6].Descriptor()
-	// quotaresetapprovalchain.DefaultCreatedAt holds the default value on creation for the created_at field.
-	quotaresetapprovalchain.DefaultCreatedAt = quotaresetapprovalchainDescCreatedAt.Default.(func() time.Time)
-	// quotaresetapprovalchainDescUpdatedAt is the schema descriptor for updated_at field.
-	quotaresetapprovalchainDescUpdatedAt := quotaresetapprovalchainFields[7].Descriptor()
-	// quotaresetapprovalchain.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	quotaresetapprovalchain.DefaultUpdatedAt = quotaresetapprovalchainDescUpdatedAt.Default.(func() time.Time)
-	// quotaresetapprovalchain.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	quotaresetapprovalchain.UpdateDefaultUpdatedAt = quotaresetapprovalchainDescUpdatedAt.UpdateDefault.(func() time.Time)
-	quotaresetapprovalchainnodeFields := schema.QuotaResetApprovalChainNode{}.Fields()
-	_ = quotaresetapprovalchainnodeFields
-	// quotaresetapprovalchainnodeDescPosition is the schema descriptor for position field.
-	quotaresetapprovalchainnodeDescPosition := quotaresetapprovalchainnodeFields[1].Descriptor()
-	// quotaresetapprovalchainnode.PositionValidator is a validator for the "position" field. It is called by the builders before save.
-	quotaresetapprovalchainnode.PositionValidator = quotaresetapprovalchainnodeDescPosition.Validators[0].(func(int) error)
-	// quotaresetapprovalchainnodeDescDepartmentExternalID is the schema descriptor for department_external_id field.
-	quotaresetapprovalchainnodeDescDepartmentExternalID := quotaresetapprovalchainnodeFields[3].Descriptor()
-	// quotaresetapprovalchainnode.DepartmentExternalIDValidator is a validator for the "department_external_id" field. It is called by the builders before save.
-	quotaresetapprovalchainnode.DepartmentExternalIDValidator = quotaresetapprovalchainnodeDescDepartmentExternalID.Validators[0].(func(string) error)
-	// quotaresetapprovalchainnodeDescDepartmentDisplayPath is the schema descriptor for department_display_path field.
-	quotaresetapprovalchainnodeDescDepartmentDisplayPath := quotaresetapprovalchainnodeFields[4].Descriptor()
-	// quotaresetapprovalchainnode.DefaultDepartmentDisplayPath holds the default value on creation for the department_display_path field.
-	quotaresetapprovalchainnode.DefaultDepartmentDisplayPath = quotaresetapprovalchainnodeDescDepartmentDisplayPath.Default.(string)
-	// quotaresetapprovalchainnodeDescCreatedAt is the schema descriptor for created_at field.
-	quotaresetapprovalchainnodeDescCreatedAt := quotaresetapprovalchainnodeFields[5].Descriptor()
-	// quotaresetapprovalchainnode.DefaultCreatedAt holds the default value on creation for the created_at field.
-	quotaresetapprovalchainnode.DefaultCreatedAt = quotaresetapprovalchainnodeDescCreatedAt.Default.(func() time.Time)
-	// quotaresetapprovalchainnodeDescUpdatedAt is the schema descriptor for updated_at field.
-	quotaresetapprovalchainnodeDescUpdatedAt := quotaresetapprovalchainnodeFields[6].Descriptor()
-	// quotaresetapprovalchainnode.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	quotaresetapprovalchainnode.DefaultUpdatedAt = quotaresetapprovalchainnodeDescUpdatedAt.Default.(func() time.Time)
-	// quotaresetapprovalchainnode.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	quotaresetapprovalchainnode.UpdateDefaultUpdatedAt = quotaresetapprovalchainnodeDescUpdatedAt.UpdateDefault.(func() time.Time)
 	quotaresetapproverconfigFields := schema.QuotaResetApproverConfig{}.Fields()
 	_ = quotaresetapproverconfigFields
 	// quotaresetapproverconfigDescDepartmentExternalID is the schema descriptor for department_external_id field.
@@ -587,38 +526,28 @@ func init() {
 	quotaresetnotificationsettingDescEnabled := quotaresetnotificationsettingFields[0].Descriptor()
 	// quotaresetnotificationsetting.DefaultEnabled holds the default value on creation for the enabled field.
 	quotaresetnotificationsetting.DefaultEnabled = quotaresetnotificationsettingDescEnabled.Default.(bool)
-	// quotaresetnotificationsettingDescChannelTypeConfigured is the schema descriptor for channel_type_configured field.
-	quotaresetnotificationsettingDescChannelTypeConfigured := quotaresetnotificationsettingFields[2].Descriptor()
-	// quotaresetnotificationsetting.DefaultChannelTypeConfigured holds the default value on creation for the channel_type_configured field.
-	quotaresetnotificationsetting.DefaultChannelTypeConfigured = quotaresetnotificationsettingDescChannelTypeConfigured.Default.(bool)
-	// quotaresetnotificationsettingDescTemplateVersion is the schema descriptor for template_version field.
-	quotaresetnotificationsettingDescTemplateVersion := quotaresetnotificationsettingFields[3].Descriptor()
-	// quotaresetnotificationsetting.DefaultTemplateVersion holds the default value on creation for the template_version field.
-	quotaresetnotificationsetting.DefaultTemplateVersion = quotaresetnotificationsettingDescTemplateVersion.Default.(int)
 	// quotaresetnotificationsettingDescURL is the schema descriptor for url field.
-	quotaresetnotificationsettingDescURL := quotaresetnotificationsettingFields[4].Descriptor()
+	quotaresetnotificationsettingDescURL := quotaresetnotificationsettingFields[1].Descriptor()
 	// quotaresetnotificationsetting.DefaultURL holds the default value on creation for the url field.
 	quotaresetnotificationsetting.DefaultURL = quotaresetnotificationsettingDescURL.Default.(string)
 	// quotaresetnotificationsettingDescCreatedByUserID is the schema descriptor for created_by_user_id field.
-	quotaresetnotificationsettingDescCreatedByUserID := quotaresetnotificationsettingFields[7].Descriptor()
+	quotaresetnotificationsettingDescCreatedByUserID := quotaresetnotificationsettingFields[4].Descriptor()
 	// quotaresetnotificationsetting.DefaultCreatedByUserID holds the default value on creation for the created_by_user_id field.
 	quotaresetnotificationsetting.DefaultCreatedByUserID = quotaresetnotificationsettingDescCreatedByUserID.Default.(int)
 	// quotaresetnotificationsettingDescUpdatedByUserID is the schema descriptor for updated_by_user_id field.
-	quotaresetnotificationsettingDescUpdatedByUserID := quotaresetnotificationsettingFields[8].Descriptor()
+	quotaresetnotificationsettingDescUpdatedByUserID := quotaresetnotificationsettingFields[5].Descriptor()
 	// quotaresetnotificationsetting.DefaultUpdatedByUserID holds the default value on creation for the updated_by_user_id field.
 	quotaresetnotificationsetting.DefaultUpdatedByUserID = quotaresetnotificationsettingDescUpdatedByUserID.Default.(int)
 	// quotaresetnotificationsettingDescCreatedAt is the schema descriptor for created_at field.
-	quotaresetnotificationsettingDescCreatedAt := quotaresetnotificationsettingFields[9].Descriptor()
+	quotaresetnotificationsettingDescCreatedAt := quotaresetnotificationsettingFields[6].Descriptor()
 	// quotaresetnotificationsetting.DefaultCreatedAt holds the default value on creation for the created_at field.
 	quotaresetnotificationsetting.DefaultCreatedAt = quotaresetnotificationsettingDescCreatedAt.Default.(func() time.Time)
 	// quotaresetnotificationsettingDescUpdatedAt is the schema descriptor for updated_at field.
-	quotaresetnotificationsettingDescUpdatedAt := quotaresetnotificationsettingFields[10].Descriptor()
+	quotaresetnotificationsettingDescUpdatedAt := quotaresetnotificationsettingFields[7].Descriptor()
 	// quotaresetnotificationsetting.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	quotaresetnotificationsetting.DefaultUpdatedAt = quotaresetnotificationsettingDescUpdatedAt.Default.(func() time.Time)
 	// quotaresetnotificationsetting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	quotaresetnotificationsetting.UpdateDefaultUpdatedAt = quotaresetnotificationsettingDescUpdatedAt.UpdateDefault.(func() time.Time)
-	quotaresetrequestHooks := schema.QuotaResetRequest{}.Hooks()
-	quotaresetrequest.Hooks[0] = quotaresetrequestHooks[0]
 	quotaresetrequestFields := schema.QuotaResetRequest{}.Fields()
 	_ = quotaresetrequestFields
 	// quotaresetrequestDescGroupID is the schema descriptor for group_id field.
@@ -637,80 +566,24 @@ func init() {
 	quotaresetrequestDescReason := quotaresetrequestFields[6].Descriptor()
 	// quotaresetrequest.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
 	quotaresetrequest.ReasonValidator = quotaresetrequestDescReason.Validators[0].(func(string) error)
-	// quotaresetrequestDescWorkflowVersion is the schema descriptor for workflow_version field.
-	quotaresetrequestDescWorkflowVersion := quotaresetrequestFields[7].Descriptor()
-	// quotaresetrequest.DefaultWorkflowVersion holds the default value on creation for the workflow_version field.
-	quotaresetrequest.DefaultWorkflowVersion = quotaresetrequestDescWorkflowVersion.Default.(int)
-	// quotaresetrequestDescRequesterDisplayNameSnapshot is the schema descriptor for requester_display_name_snapshot field.
-	quotaresetrequestDescRequesterDisplayNameSnapshot := quotaresetrequestFields[10].Descriptor()
-	// quotaresetrequest.DefaultRequesterDisplayNameSnapshot holds the default value on creation for the requester_display_name_snapshot field.
-	quotaresetrequest.DefaultRequesterDisplayNameSnapshot = quotaresetrequestDescRequesterDisplayNameSnapshot.Default.(string)
-	// quotaresetrequestDescRequesterEmailSnapshot is the schema descriptor for requester_email_snapshot field.
-	quotaresetrequestDescRequesterEmailSnapshot := quotaresetrequestFields[11].Descriptor()
-	// quotaresetrequest.DefaultRequesterEmailSnapshot holds the default value on creation for the requester_email_snapshot field.
-	quotaresetrequest.DefaultRequesterEmailSnapshot = quotaresetrequestDescRequesterEmailSnapshot.Default.(string)
-	// quotaresetrequestDescRequesterDepartmentPaths is the schema descriptor for requester_department_paths field.
-	quotaresetrequestDescRequesterDepartmentPaths := quotaresetrequestFields[12].Descriptor()
-	// quotaresetrequest.DefaultRequesterDepartmentPaths holds the default value on creation for the requester_department_paths field.
-	quotaresetrequest.DefaultRequesterDepartmentPaths = quotaresetrequestDescRequesterDepartmentPaths.Default.(func() []string)
-	// quotaresetrequest.RequesterDepartmentPathsValidator is a validator for the "requester_department_paths" field. It is called by the builders before save.
-	quotaresetrequest.RequesterDepartmentPathsValidator = quotaresetrequestDescRequesterDepartmentPaths.Validators[0].(func([]string) error)
-	// quotaresetrequestDescRequesterNotificationIds is the schema descriptor for requester_notification_ids field.
-	quotaresetrequestDescRequesterNotificationIds := quotaresetrequestFields[13].Descriptor()
-	// quotaresetrequest.DefaultRequesterNotificationIds holds the default value on creation for the requester_notification_ids field.
-	quotaresetrequest.DefaultRequesterNotificationIds = quotaresetrequestDescRequesterNotificationIds.Default.(func() map[string]string)
-	// quotaresetrequest.RequesterNotificationIdsValidator is a validator for the "requester_notification_ids" field. It is called by the builders before save.
-	quotaresetrequest.RequesterNotificationIdsValidator = quotaresetrequestDescRequesterNotificationIds.Validators[0].(func(map[string]string) error)
-	// quotaresetrequestDescResolvedApproverUserIds is the schema descriptor for resolved_approver_user_ids field.
-	quotaresetrequestDescResolvedApproverUserIds := quotaresetrequestFields[15].Descriptor()
-	// quotaresetrequest.DefaultResolvedApproverUserIds holds the default value on creation for the resolved_approver_user_ids field.
-	quotaresetrequest.DefaultResolvedApproverUserIds = quotaresetrequestDescResolvedApproverUserIds.Default.(func() []int)
-	// quotaresetrequest.ResolvedApproverUserIdsValidator is a validator for the "resolved_approver_user_ids" field. It is called by the builders before save.
-	quotaresetrequest.ResolvedApproverUserIdsValidator = quotaresetrequestDescResolvedApproverUserIds.Validators[0].(func([]int) error)
-	// quotaresetrequestDescMatchedDepartmentPaths is the schema descriptor for matched_department_paths field.
-	quotaresetrequestDescMatchedDepartmentPaths := quotaresetrequestFields[16].Descriptor()
-	// quotaresetrequest.DefaultMatchedDepartmentPaths holds the default value on creation for the matched_department_paths field.
-	quotaresetrequest.DefaultMatchedDepartmentPaths = quotaresetrequestDescMatchedDepartmentPaths.Default.(func() []map[string]interface{})
-	// quotaresetrequest.MatchedDepartmentPathsValidator is a validator for the "matched_department_paths" field. It is called by the builders before save.
-	quotaresetrequest.MatchedDepartmentPathsValidator = quotaresetrequestDescMatchedDepartmentPaths.Validators[0].(func([]map[string]interface{}) error)
 	// quotaresetrequestDescDecisionReason is the schema descriptor for decision_reason field.
-	quotaresetrequestDescDecisionReason := quotaresetrequestFields[19].Descriptor()
+	quotaresetrequestDescDecisionReason := quotaresetrequestFields[12].Descriptor()
 	// quotaresetrequest.DefaultDecisionReason holds the default value on creation for the decision_reason field.
 	quotaresetrequest.DefaultDecisionReason = quotaresetrequestDescDecisionReason.Default.(string)
 	// quotaresetrequestDescResetError is the schema descriptor for reset_error field.
-	quotaresetrequestDescResetError := quotaresetrequestFields[21].Descriptor()
+	quotaresetrequestDescResetError := quotaresetrequestFields[14].Descriptor()
 	// quotaresetrequest.DefaultResetError holds the default value on creation for the reset_error field.
 	quotaresetrequest.DefaultResetError = quotaresetrequestDescResetError.Default.(string)
 	// quotaresetrequestDescCreatedAt is the schema descriptor for created_at field.
-	quotaresetrequestDescCreatedAt := quotaresetrequestFields[24].Descriptor()
+	quotaresetrequestDescCreatedAt := quotaresetrequestFields[17].Descriptor()
 	// quotaresetrequest.DefaultCreatedAt holds the default value on creation for the created_at field.
 	quotaresetrequest.DefaultCreatedAt = quotaresetrequestDescCreatedAt.Default.(func() time.Time)
 	// quotaresetrequestDescUpdatedAt is the schema descriptor for updated_at field.
-	quotaresetrequestDescUpdatedAt := quotaresetrequestFields[25].Descriptor()
+	quotaresetrequestDescUpdatedAt := quotaresetrequestFields[18].Descriptor()
 	// quotaresetrequest.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	quotaresetrequest.DefaultUpdatedAt = quotaresetrequestDescUpdatedAt.Default.(func() time.Time)
 	// quotaresetrequest.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	quotaresetrequest.UpdateDefaultUpdatedAt = quotaresetrequestDescUpdatedAt.UpdateDefault.(func() time.Time)
-	quotaresetrequestdecisionFields := schema.QuotaResetRequestDecision{}.Fields()
-	_ = quotaresetrequestdecisionFields
-	// quotaresetrequestdecisionDescActorDisplayName is the schema descriptor for actor_display_name field.
-	quotaresetrequestdecisionDescActorDisplayName := quotaresetrequestdecisionFields[3].Descriptor()
-	// quotaresetrequestdecision.DefaultActorDisplayName holds the default value on creation for the actor_display_name field.
-	quotaresetrequestdecision.DefaultActorDisplayName = quotaresetrequestdecisionDescActorDisplayName.Default.(string)
-	// quotaresetrequestdecisionDescComment is the schema descriptor for comment field.
-	quotaresetrequestdecisionDescComment := quotaresetrequestdecisionFields[5].Descriptor()
-	// quotaresetrequestdecision.CommentValidator is a validator for the "comment" field. It is called by the builders before save.
-	quotaresetrequestdecision.CommentValidator = quotaresetrequestdecisionDescComment.Validators[0].(func(string) error)
-	// quotaresetrequestdecisionDescAdminOverride is the schema descriptor for admin_override field.
-	quotaresetrequestdecisionDescAdminOverride := quotaresetrequestdecisionFields[6].Descriptor()
-	// quotaresetrequestdecision.DefaultAdminOverride holds the default value on creation for the admin_override field.
-	quotaresetrequestdecision.DefaultAdminOverride = quotaresetrequestdecisionDescAdminOverride.Default.(bool)
-	// quotaresetrequestdecisionDescCreatedAt is the schema descriptor for created_at field.
-	quotaresetrequestdecisionDescCreatedAt := quotaresetrequestdecisionFields[7].Descriptor()
-	// quotaresetrequestdecision.DefaultCreatedAt holds the default value on creation for the created_at field.
-	quotaresetrequestdecision.DefaultCreatedAt = quotaresetrequestdecisionDescCreatedAt.Default.(func() time.Time)
-	quotaresetrequesteventHooks := schema.QuotaResetRequestEvent{}.Hooks()
-	quotaresetrequestevent.Hooks[0] = quotaresetrequesteventHooks[0]
 	quotaresetrequesteventFields := schema.QuotaResetRequestEvent{}.Fields()
 	_ = quotaresetrequesteventFields
 	// quotaresetrequesteventDescErrorMessage is the schema descriptor for error_message field.
@@ -721,62 +594,6 @@ func init() {
 	quotaresetrequesteventDescCreatedAt := quotaresetrequesteventFields[5].Descriptor()
 	// quotaresetrequestevent.DefaultCreatedAt holds the default value on creation for the created_at field.
 	quotaresetrequestevent.DefaultCreatedAt = quotaresetrequesteventDescCreatedAt.Default.(func() time.Time)
-	quotaresetrequestnodeFields := schema.QuotaResetRequestNode{}.Fields()
-	_ = quotaresetrequestnodeFields
-	// quotaresetrequestnodeDescPosition is the schema descriptor for position field.
-	quotaresetrequestnodeDescPosition := quotaresetrequestnodeFields[1].Descriptor()
-	// quotaresetrequestnode.PositionValidator is a validator for the "position" field. It is called by the builders before save.
-	quotaresetrequestnode.PositionValidator = quotaresetrequestnodeDescPosition.Validators[0].(func(int) error)
-	// quotaresetrequestnodeDescLabel is the schema descriptor for label field.
-	quotaresetrequestnodeDescLabel := quotaresetrequestnodeFields[3].Descriptor()
-	// quotaresetrequestnode.DefaultLabel holds the default value on creation for the label field.
-	quotaresetrequestnode.DefaultLabel = quotaresetrequestnodeDescLabel.Default.(string)
-	// quotaresetrequestnodeDescDepartmentSnapshots is the schema descriptor for department_snapshots field.
-	quotaresetrequestnodeDescDepartmentSnapshots := quotaresetrequestnodeFields[4].Descriptor()
-	// quotaresetrequestnode.DefaultDepartmentSnapshots holds the default value on creation for the department_snapshots field.
-	quotaresetrequestnode.DefaultDepartmentSnapshots = quotaresetrequestnodeDescDepartmentSnapshots.Default.(func() []map[string]interface{})
-	// quotaresetrequestnode.DepartmentSnapshotsValidator is a validator for the "department_snapshots" field. It is called by the builders before save.
-	quotaresetrequestnode.DepartmentSnapshotsValidator = quotaresetrequestnodeDescDepartmentSnapshots.Validators[0].(func([]map[string]interface{}) error)
-	// quotaresetrequestnodeDescAdminFallbackRequired is the schema descriptor for admin_fallback_required field.
-	quotaresetrequestnodeDescAdminFallbackRequired := quotaresetrequestnodeFields[6].Descriptor()
-	// quotaresetrequestnode.DefaultAdminFallbackRequired holds the default value on creation for the admin_fallback_required field.
-	quotaresetrequestnode.DefaultAdminFallbackRequired = quotaresetrequestnodeDescAdminFallbackRequired.Default.(bool)
-	// quotaresetrequestnodeDescCreatedAt is the schema descriptor for created_at field.
-	quotaresetrequestnodeDescCreatedAt := quotaresetrequestnodeFields[10].Descriptor()
-	// quotaresetrequestnode.DefaultCreatedAt holds the default value on creation for the created_at field.
-	quotaresetrequestnode.DefaultCreatedAt = quotaresetrequestnodeDescCreatedAt.Default.(func() time.Time)
-	// quotaresetrequestnodeDescUpdatedAt is the schema descriptor for updated_at field.
-	quotaresetrequestnodeDescUpdatedAt := quotaresetrequestnodeFields[11].Descriptor()
-	// quotaresetrequestnode.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	quotaresetrequestnode.DefaultUpdatedAt = quotaresetrequestnodeDescUpdatedAt.Default.(func() time.Time)
-	// quotaresetrequestnode.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	quotaresetrequestnode.UpdateDefaultUpdatedAt = quotaresetrequestnodeDescUpdatedAt.UpdateDefault.(func() time.Time)
-	quotaresetrequestnodeapproverFields := schema.QuotaResetRequestNodeApprover{}.Fields()
-	_ = quotaresetrequestnodeapproverFields
-	// quotaresetrequestnodeapproverDescDisplayName is the schema descriptor for display_name field.
-	quotaresetrequestnodeapproverDescDisplayName := quotaresetrequestnodeapproverFields[2].Descriptor()
-	// quotaresetrequestnodeapprover.DefaultDisplayName holds the default value on creation for the display_name field.
-	quotaresetrequestnodeapprover.DefaultDisplayName = quotaresetrequestnodeapproverDescDisplayName.Default.(string)
-	// quotaresetrequestnodeapproverDescEmail is the schema descriptor for email field.
-	quotaresetrequestnodeapproverDescEmail := quotaresetrequestnodeapproverFields[3].Descriptor()
-	// quotaresetrequestnodeapprover.DefaultEmail holds the default value on creation for the email field.
-	quotaresetrequestnodeapprover.DefaultEmail = quotaresetrequestnodeapproverDescEmail.Default.(string)
-	// quotaresetrequestnodeapproverDescSourceDepartmentExternalIds is the schema descriptor for source_department_external_ids field.
-	quotaresetrequestnodeapproverDescSourceDepartmentExternalIds := quotaresetrequestnodeapproverFields[5].Descriptor()
-	// quotaresetrequestnodeapprover.DefaultSourceDepartmentExternalIds holds the default value on creation for the source_department_external_ids field.
-	quotaresetrequestnodeapprover.DefaultSourceDepartmentExternalIds = quotaresetrequestnodeapproverDescSourceDepartmentExternalIds.Default.(func() []string)
-	// quotaresetrequestnodeapprover.SourceDepartmentExternalIdsValidator is a validator for the "source_department_external_ids" field. It is called by the builders before save.
-	quotaresetrequestnodeapprover.SourceDepartmentExternalIdsValidator = quotaresetrequestnodeapproverDescSourceDepartmentExternalIds.Validators[0].(func([]string) error)
-	// quotaresetrequestnodeapproverDescNotificationIds is the schema descriptor for notification_ids field.
-	quotaresetrequestnodeapproverDescNotificationIds := quotaresetrequestnodeapproverFields[6].Descriptor()
-	// quotaresetrequestnodeapprover.DefaultNotificationIds holds the default value on creation for the notification_ids field.
-	quotaresetrequestnodeapprover.DefaultNotificationIds = quotaresetrequestnodeapproverDescNotificationIds.Default.(func() map[string]string)
-	// quotaresetrequestnodeapprover.NotificationIdsValidator is a validator for the "notification_ids" field. It is called by the builders before save.
-	quotaresetrequestnodeapprover.NotificationIdsValidator = quotaresetrequestnodeapproverDescNotificationIds.Validators[0].(func(map[string]string) error)
-	// quotaresetrequestnodeapproverDescCreatedAt is the schema descriptor for created_at field.
-	quotaresetrequestnodeapproverDescCreatedAt := quotaresetrequestnodeapproverFields[7].Descriptor()
-	// quotaresetrequestnodeapprover.DefaultCreatedAt holds the default value on creation for the created_at field.
-	quotaresetrequestnodeapprover.DefaultCreatedAt = quotaresetrequestnodeapproverDescCreatedAt.Default.(func() time.Time)
 	relayproviderFields := schema.RelayProvider{}.Fields()
 	_ = relayproviderFields
 	// relayproviderDescName is the schema descriptor for name field.

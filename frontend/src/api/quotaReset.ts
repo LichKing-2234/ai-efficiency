@@ -1,15 +1,10 @@
 import client from './client'
 import type {
   ApiResponse,
-  QuotaResetApprovalChainInput,
-  QuotaResetApprovalChainListResponse,
-  QuotaResetApprovalChainOptionsResponse,
   QuotaResetApproverCandidateListResponse,
   QuotaResetApproverConfigInput,
   QuotaResetApproverConfigListResponse,
   QuotaResetNotificationSettings,
-  QuotaResetNotificationSettingsInput,
-  QuotaResetNotificationTestResult,
   QuotaResetOptionsResponse,
   QuotaResetRequestListResponse,
   QuotaResetRequestSummary,
@@ -19,30 +14,14 @@ export interface QuotaResetListParams {
   page?: number
   page_size?: number
   status?: string
-  scope?: 'history'
 }
 
 export type QuotaResetApproverConfigSaveMode = 'replace_departments' | 'replace_all'
 
 export interface QuotaResetApproverCandidateParams {
   source_id: number
-  q?: string
-  page?: number
-  page_size?: number
+  department_external_id: string
 }
-
-export interface QuotaResetWorkflowDecisionInput {
-  request_node_id: number
-  decision_reason: string
-}
-
-export type QuotaResetApproveInput =
-  | QuotaResetWorkflowDecisionInput
-  | { request_node_id?: never; decision_reason?: string }
-
-export type QuotaResetRejectInput =
-  | QuotaResetWorkflowDecisionInput
-  | { request_node_id?: never; decision_reason: string }
 
 export function getQuotaResetOptions() {
   return client.get<ApiResponse<QuotaResetOptionsResponse>>('/user/quota-reset/options')
@@ -64,11 +43,11 @@ export function listQuotaResetApprovals(params?: QuotaResetListParams) {
   return client.get<ApiResponse<QuotaResetRequestListResponse>>('/user/quota-reset/approvals', { params })
 }
 
-export function approveQuotaResetRequest(id: number, data: QuotaResetApproveInput = {}) {
-  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/user/quota-reset/approvals/${id}/approve`, data)
+export function approveQuotaResetRequest(id: number, data?: { decision_reason?: string }) {
+  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/user/quota-reset/approvals/${id}/approve`, data ?? {})
 }
 
-export function rejectQuotaResetRequest(id: number, data: QuotaResetRejectInput) {
+export function rejectQuotaResetRequest(id: number, data: { decision_reason: string }) {
   return client.post<ApiResponse<QuotaResetRequestSummary>>(`/user/quota-reset/approvals/${id}/reject`, data)
 }
 
@@ -80,11 +59,11 @@ export function listAdminQuotaResetRequests(params?: QuotaResetListParams) {
   return client.get<ApiResponse<QuotaResetRequestListResponse>>('/admin/quota-reset/requests', { params })
 }
 
-export function adminApproveQuotaResetRequest(id: number, data: QuotaResetApproveInput = {}) {
-  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/admin/quota-reset/requests/${id}/approve`, data)
+export function adminApproveQuotaResetRequest(id: number, data?: { decision_reason?: string }) {
+  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/admin/quota-reset/requests/${id}/approve`, data ?? {})
 }
 
-export function adminRejectQuotaResetRequest(id: number, data: QuotaResetRejectInput) {
+export function adminRejectQuotaResetRequest(id: number, data: { decision_reason: string }) {
   return client.post<ApiResponse<QuotaResetRequestSummary>>(`/admin/quota-reset/requests/${id}/reject`, data)
 }
 
@@ -107,26 +86,14 @@ export function saveQuotaResetApproverConfigs(
   return client.put<ApiResponse<QuotaResetApproverConfigListResponse>>('/admin/quota-reset/approver-configs', { items, mode })
 }
 
-export function getQuotaResetApprovalChains() {
-  return client.get<ApiResponse<QuotaResetApprovalChainListResponse>>('/admin/quota-reset/approval-chains')
-}
-
-export function getQuotaResetApprovalChainOptions() {
-  return client.get<ApiResponse<QuotaResetApprovalChainOptionsResponse>>('/admin/quota-reset/approval-chain-options')
-}
-
-export function saveQuotaResetApprovalChains(items: QuotaResetApprovalChainInput[]) {
-  return client.put<ApiResponse<QuotaResetApprovalChainListResponse>>('/admin/quota-reset/approval-chains', { items })
-}
-
 export function getQuotaResetNotificationSettings() {
   return client.get<ApiResponse<QuotaResetNotificationSettings>>('/admin/quota-reset/notification-settings')
 }
 
-export function updateQuotaResetNotificationSettings(data: QuotaResetNotificationSettingsInput) {
+export function updateQuotaResetNotificationSettings(data: QuotaResetNotificationSettings) {
   return client.put<ApiResponse<QuotaResetNotificationSettings>>('/admin/quota-reset/notification-settings', data)
 }
 
 export function testQuotaResetNotificationSettings() {
-  return client.post<ApiResponse<QuotaResetNotificationTestResult>>('/admin/quota-reset/notification-settings/test')
+  return client.post<ApiResponse<{ message: string }>>('/admin/quota-reset/notification-settings/test')
 }
