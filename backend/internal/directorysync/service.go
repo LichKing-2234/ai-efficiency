@@ -23,6 +23,27 @@ import (
 
 const offboardingReasonMissingFromDirectory = "missing_from_latest_full_company_directory"
 
+const (
+	DefaultRunPageSize = 20
+	MaxRunPageSize     = 100
+)
+
+var runSummaryFields = []string{
+	directorysyncrun.FieldID,
+	directorysyncrun.FieldSourceID,
+	directorysyncrun.FieldMode,
+	directorysyncrun.FieldTrigger,
+	directorysyncrun.FieldStatus,
+	directorysyncrun.FieldPhase,
+	directorysyncrun.FieldStartedAt,
+	directorysyncrun.FieldCompletedAt,
+	directorysyncrun.FieldHTTPRequestCount,
+	directorysyncrun.FieldDepartmentCount,
+	directorysyncrun.FieldMemberCount,
+	directorysyncrun.FieldInvalidMemberCount,
+	directorysyncrun.FieldWarningCount,
+}
+
 type ValidationError struct {
 	Message string
 }
@@ -119,6 +140,48 @@ type SourceInput struct {
 	ScheduleEnabled  bool
 	ScheduleInterval string
 	ScheduleTimezone string
+}
+
+type RunListRequest struct {
+	SourceID int
+	Limit    int
+	Offset   int
+}
+
+type RunSummary struct {
+	ID                 int                      `json:"id"`
+	SourceID           int                      `json:"source_id"`
+	Mode               directorysyncrun.Mode    `json:"mode"`
+	Trigger            directorysyncrun.Trigger `json:"trigger"`
+	Status             directorysyncrun.Status  `json:"status"`
+	Phase              directorysyncrun.Phase   `json:"phase"`
+	StartedAt          *time.Time               `json:"started_at"`
+	CompletedAt        *time.Time               `json:"completed_at"`
+	HTTPRequestCount   int                      `json:"http_request_count"`
+	DepartmentCount    int                      `json:"department_count"`
+	MemberCount        int                      `json:"member_count"`
+	InvalidMemberCount int                      `json:"invalid_member_count"`
+	WarningCount       int                      `json:"warning_count"`
+}
+
+type RunPage struct {
+	Items           []RunSummary `json:"items"`
+	Total           int          `json:"total"`
+	Page            int          `json:"page"`
+	PageSize        int          `json:"page_size"`
+	LatestActiveRun *RunSummary  `json:"latest_active_run"`
+}
+
+func NormalizeRunPage(limit, offset int) (int, int) {
+	if limit <= 0 {
+		limit = DefaultRunPageSize
+	} else if limit > MaxRunPageSize {
+		limit = MaxRunPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
 }
 
 func (s *Service) ListSources(ctx context.Context) ([]*ent.DirectorySource, error) {
@@ -554,11 +617,53 @@ func (s *Service) GetRun(ctx context.Context, runID int) (*ent.DirectorySyncRun,
 	return s.client.DirectorySyncRun.Get(ctx, runID)
 }
 
-func (s *Service) ListRuns(ctx context.Context, sourceID int) ([]*ent.DirectorySyncRun, error) {
-	return s.client.DirectorySyncRun.Query().
-		Where(directorysyncrun.SourceIDEQ(sourceID)).
-		Order(ent.Desc(directorysyncrun.FieldCreatedAt)).
-		All(ctx)
+func (s *Service) ListRuns(ctx context.Context, request RunListRequest) (RunPage, error) {
+	if request.SourceID <= 0 {
+		return RunPage{}, &ValidationError{Message: "directory source id must be positive"}
+	}
+	limit, offset := NormalizeRunPage(request.Limit, request.Offset)
+	page := RunPage{
+		Items:    make([]RunSummary, 0, limit),
+		Page:     offset / limit,
+		PageSize: limit,
+	}
+
+	total, err := s.client.DirectorySyncRun.Query().
+		Where(directorysyncrun.SourceIDEQ(request.SourceID)).
+		Count(ctx)
+	if err != nil {
+		return RunPage{}, fmt.Errorf("count directory sync runs: %w", err)
+	}
+	page.Total = total
+
+	if err := s.client.DirectorySyncRun.Query().
+		Where(directorysyncrun.SourceIDEQ(request.SourceID)).
+		Order(ent.Desc(directorysyncrun.FieldStartedAt), ent.Desc(directorysyncrun.FieldID)).
+		Offset(offset).
+		Limit(limit).
+		Select(runSummaryFields...).
+		Scan(ctx, &page.Items); err != nil {
+		return RunPage{}, fmt.Errorf("list directory sync run summaries: %w", err)
+	}
+
+	active := make([]RunSummary, 0, 1)
+	if err := s.client.DirectorySyncRun.Query().
+		Where(
+			directorysyncrun.SourceIDEQ(request.SourceID),
+			directorysyncrun.ModeIn(directorysyncrun.ModePreview, directorysyncrun.ModeApply),
+			directorysyncrun.StatusIn(directorysyncrun.StatusQueued, directorysyncrun.StatusRunning),
+		).
+		Order(ent.Desc(directorysyncrun.FieldStartedAt), ent.Desc(directorysyncrun.FieldID)).
+		Limit(1).
+		Select(runSummaryFields...).
+		Scan(ctx, &active); err != nil {
+		return RunPage{}, fmt.Errorf("get latest active directory sync run: %w", err)
+	}
+	if len(active) > 0 {
+		page.LatestActiveRun = &active[0]
+	}
+
+	return page, nil
 }
 
 func (s *Service) ListDepartments(ctx context.Context, sourceID int, q string) ([]DepartmentOption, error) {

@@ -69,7 +69,7 @@
 - Produces `RunListRequest{SourceID, Limit, Offset int}`, `RunSummary`, and `RunPage{Items, Total, Page, PageSize, LatestActiveRun}`.
 - Changes internal `DirectoryAdminService.ListRuns` to `ListRuns(context.Context, directorysync.RunListRequest) (directorysync.RunPage, error)`; public HTTP paths remain unchanged.
 
-- [ ] **Step 1: Add failing service tests for bounds, ordering, projection, and active recovery**
+- [x] **Step 1: Add failing service tests for bounds, ordering, projection, and active recovery**
 
   Add tests:
 
@@ -89,7 +89,7 @@
 
   Assert default/maximum/negative bounds, `limit=-1`, `limit=20&offset=21` yielding page 1 without rounding the offset, full `total`, exact ordered IDs across page 0/page 1, no overlap under ties, and latest active independence from offset. Marshal each `RunSummary` and require every diagnostic key/marker to be absent; marshal selected detail and require every marker to be present.
 
-- [ ] **Step 2: Add failing handler compatibility tests and record RED**
+- [x] **Step 2: Add failing handler compatibility tests and record RED**
 
   Cover absent/zero/invalid/negative limit, `limit=101`, `limit=1000`, negative/invalid offset, `limit=20&offset=21`, and `limit=20&offset=40`. Assert page size 20/100, floor-derived page 0/1/2 without offset rounding, total, items, and nullable latest active. Assert list items omit all diagnostic keys, while `GET /runs/:id` returns complete diagnostics.
 
@@ -101,7 +101,7 @@
 
   Expected: FAIL because the service returns an unbounded full-entity slice ordered by `created_at`, the handler accepts no pagination, and the response has no metadata/latest-active contract.
 
-- [ ] **Step 3: Implement one normalized projected page contract**
+- [x] **Step 3: Implement one normalized projected page contract**
 
   Add exact DTOs:
 
@@ -137,7 +137,7 @@
 
   Keep `GetRun` unchanged. In the handler, parse query integers, call `NormalizeRunPage`, pass a `RunListRequest`, and return the page directly through `pkg.Success`. Do not expose an old query switch that restores full rows.
 
-- [ ] **Step 4: Add the stable descending index and regenerate Ent**
+- [x] **Step 4: Add the stable descending index and regenerate Ent**
 
   Add both indexes:
 
@@ -160,7 +160,7 @@
   git diff --check
   ```
 
-- [ ] **Step 5: Verify focused and broad backend GREEN**
+- [x] **Step 5: Verify focused and broad backend GREEN**
 
   Run separately:
 
