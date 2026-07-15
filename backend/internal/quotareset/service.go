@@ -98,48 +98,11 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 	if err := activeRequestExists(ctx, s.client, requester.ID, providerRow.ID, input.GroupID); err != nil {
 		return nil, err
 	}
-	resolution := &ApproverResolution{}
-	if s.approverResolver != nil {
-		resolution, err = s.approverResolver.Resolve(ctx, requester.ID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	pathMaps, err := departmentPathEvidenceToMaps(resolution.Paths)
+	workflow, paths, err := s.resolveWorkflow(ctx, requester, providerRow.ID, input.GroupID)
 	if err != nil {
 		return nil, err
 	}
-	relayUserID := int64(*requester.RelayUserID)
-	req, err := s.client.QuotaResetRequest.Create().
-		SetRequesterUserID(requester.ID).
-		SetRequesterRelayUserID(relayUserID).
-		SetProviderID(providerRow.ID).
-		SetGroupID(input.GroupID).
-		SetGroupName(subscriptionGroupName(subscription)).
-		SetGroupPlatform(subscriptionGroupPlatform(subscription)).
-		SetReason(input.Reason).
-		SetResolvedApproverUserIds(resolution.ApproverUserIDs).
-		SetMatchedDepartmentPaths(pathMaps).
-		Save(ctx)
-	if err != nil {
-		if activeRequestCreateWasDuplicate(ctx, s.client, err, requester.ID, providerRow.ID, input.GroupID) {
-			return nil, ErrActiveRequestExists
-		}
-		return nil, fmt.Errorf("create quota reset request: %w", err)
-	}
-	if err := s.writeEvent(ctx, req.ID, &requester.ID, quotaresetrequestevent.EventTypeCreated, map[string]any{
-		"group_id": input.GroupID,
-	}, ""); err != nil {
-		return nil, err
-	}
-	if err := s.writeEvent(ctx, req.ID, nil, quotaresetrequestevent.EventTypeApproverResolved, map[string]any{
-		"approver_user_ids": resolution.ApproverUserIDs,
-		"path_count":        len(resolution.Paths),
-	}, ""); err != nil {
-		return nil, err
-	}
-	_ = s.notify(ctx, "quota_reset_request_created", req)
-	return req, nil
+	return s.createWorkflowRequest(ctx, requester, providerRow, subscription, input, workflow, paths)
 }
 
 func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.QuotaResetRequest, error) {
@@ -168,6 +131,13 @@ func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.
 }
 
 func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
+	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
+	if err != nil {
+		return nil, err
+	}
+	if request.WorkflowVersion == workflowVersionV2 {
+		return s.decideWorkflowRequest(ctx, request, input, true)
+	}
 	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
 		return nil, err
@@ -195,6 +165,13 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 	input.DecisionReason = strings.TrimSpace(input.DecisionReason)
 	if input.DecisionReason == "" {
 		return nil, ErrDecisionRequired
+	}
+	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
+	if err != nil {
+		return nil, err
+	}
+	if request.WorkflowVersion == workflowVersionV2 {
+		return s.decideWorkflowRequest(ctx, request, input, false)
 	}
 	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
@@ -235,13 +212,21 @@ func (s *Service) ListMine(ctx context.Context, actorUserID int, params ListPara
 }
 
 func (s *Service) ListApprovals(ctx context.Context, actorUserID int, params ListParams) (*RequestListResponse, error) {
+	decisionNeedle := fmt.Sprintf(`{"steps":[{"decision":{"actor_user_id":%d}}]}`, actorUserID)
 	return s.list(ctx, params, func(q *ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery {
 		return q.Where(func(selector *sql.Selector) {
-			selector.Where(sql.P(func(builder *sql.Builder) {
-				builder.WriteString(selector.C(quotaresetrequest.FieldResolvedApproverUserIds)).
-					WriteString("::jsonb @> ").
-					Arg(fmt.Sprintf("[%d]", actorUserID))
-			}))
+			selector.Where(sql.Or(
+				sql.P(func(builder *sql.Builder) {
+					builder.WriteString(selector.C(quotaresetrequest.FieldResolvedApproverUserIds)).
+						WriteString("::jsonb @> ").
+						Arg(fmt.Sprintf("[%d]", actorUserID))
+				}),
+				sql.P(func(builder *sql.Builder) {
+					builder.WriteString(selector.C(quotaresetrequest.FieldWorkflow)).
+						WriteString("::jsonb @> ").
+						Arg(decisionNeedle)
+				}),
+			))
 		})
 	})
 }
@@ -804,6 +789,7 @@ func requestSummary(req *ent.QuotaResetRequest, requester *ent.User) (RequestSum
 		GroupPlatform:           req.GroupPlatform,
 		Reason:                  req.Reason,
 		Status:                  req.Status.String(),
+		WorkflowVersion:         req.WorkflowVersion,
 		ResolvedApproverUserIDs: req.ResolvedApproverUserIds,
 		MatchedDepartmentPaths:  paths,
 		ApprovedByUserID:        req.ApprovedByUserID,
@@ -812,6 +798,14 @@ func requestSummary(req *ent.QuotaResetRequest, requester *ent.User) (RequestSum
 		ResetError:              req.ResetError,
 		CreatedAt:               req.CreatedAt,
 		UpdatedAt:               req.UpdatedAt,
+	}
+	if req.WorkflowVersion == workflowVersionV2 {
+		workflow, err := DecodeWorkflow(req.Workflow)
+		if err != nil {
+			return RequestSummary{}, err
+		}
+		item.CurrentStep = workflow.CurrentStep
+		item.WorkflowSteps = append([]WorkflowStep(nil), workflow.Steps...)
 	}
 	if requester != nil {
 		item.RequesterDisplayName = requester.Username

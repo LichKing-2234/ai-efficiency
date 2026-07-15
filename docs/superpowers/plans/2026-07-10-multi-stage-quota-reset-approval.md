@@ -41,6 +41,8 @@ TailwindCSS.
 - `backend/internal/quotareset/workflow.go` - bounded version 2 workflow types,
   validation, authorization, and pure transitions.
 - `backend/internal/quotareset/workflow_test.go` - pure workflow transition tests.
+- `backend/internal/quotareset/workflow_service.go` - version 2 request creation
+  and compare-and-swap decision transactions.
 - `backend/internal/quotareset/workflow_config.go` - chain discovery, validation,
   replacement, and request-time resolution.
 - `backend/internal/quotareset/workflow_config_test.go` - chain/resolver tests.
@@ -228,7 +230,7 @@ func (s *Service) resolveWorkflow(ctx context.Context, requester *ent.User, prov
 **Interfaces:** Existing `CreateRequest`, `Approve`, `Reject`, `Cancel`, list,
 retry, and reset methods remain the public service boundary.
 
-- [ ] **Step 1: Add failing service tests**
+- [x] **Step 1: Add failing service tests**
 
   Prove creation snapshots a version 2 workflow; active approver ids follow the
   current step; intermediate approval does not reset; final approval starts one
@@ -244,20 +246,20 @@ retry, and reset methods remain the public service boundary.
 
   Expected: FAIL on missing version 2 behavior.
 
-- [ ] **Step 2: Implement transactional creation and decisions**
+- [x] **Step 2: Implement transactional creation and decisions**
 
   Add small transaction helpers local to the quota reset module. Update version
   2 rows with `WHERE status = pending AND workflow_revision = ?`, increment the
   revision, update `resolved_approver_user_ids`, and append transition events in
   the same transaction. Commit before notifications and relay calls.
 
-- [ ] **Step 3: Return workflow summaries and current actions**
+- [x] **Step 3: Return workflow summaries and current actions**
 
   Extend request summaries with workflow version/current step/steps. Approval
   lists continue using JSON containment on current approver ids. Processed rows
   remain listable but Work Items counts remain actionable only.
 
-- [ ] **Step 4: Run quota reset and Work Items regression tests**
+- [x] **Step 4: Run quota reset and Work Items regression tests**
 
   ```bash
   cd backend && go test ./internal/quotareset ./internal/workitems ./internal/handler -count=1
