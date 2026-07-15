@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Task 1 is complete, independently reviewed, and committed. Task 2 implementation and verification Steps 1-4 are complete; its independent review and checkpoint Step 5 remain pending. Tasks 3-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Tasks 1 and 2 are complete, independently reviewed, and committed. Tasks 3-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -655,9 +655,9 @@ git diff --check
 
 Expected: semantic and HTTP tests pass twice, generated Ent drift is empty, both fixture scales prove one shared cycle walk plus one effective subtree recursion per filtered count/page statement, enrichment follows one effective ancestor closure, A/B/C pages match Targets exactly, and colliding/dangling fixtures select only valid current-source departments.
 
-**Task 2 GREEN evidence (2026-07-15):** The focused service/HTTP/plan command passed twice. The 24-user/12-department and 2,400-user/120-department fixtures each reported one-loop `cycle_walk` plus `subtree` recursive unions for filtered count and page SQL and one-loop `cycle_walk` plus `ancestors` for enrichment. Candidate/source-collision/dangling/current-authority/legacy/dual-mapping semantics, exact A/B/C totals/pages/display paths, maximum-integer pagination, ciphertext/status compatibility, the generated join indexes, adjacent `adminusers` and full `handler` packages, generation drift, and `git diff --check` all passed. Step 5 remains unchecked; no review or commit has been performed.
+**Task 2 GREEN evidence (2026-07-15):** The focused service/HTTP/plan command passed twice. The 24-user/12-department and 2,400-user/120-department fixtures each reported one-loop `cycle_walk` plus `subtree` recursive unions for filtered count and page SQL and one-loop `cycle_walk` plus `ancestors` for enrichment. Candidate/source-collision/dangling/current-authority/legacy/dual-mapping semantics, exact A/B/C totals/pages/display paths, maximum-integer pagination, ciphertext/status compatibility, the generated join indexes, adjacent `adminusers` and full `handler` packages, generation drift, and `git diff --check` all passed. At the Step 4 gate, Step 5 remained unchecked pending independent review and checkpoint.
 
-- [ ] **Step 5: Complete exact-range Task 2 reviews and checkpoint**
+- [x] **Step 5: Complete exact-range Task 2 reviews and checkpoint**
 
 Obtain independent Task 2 SPEC and standards reviews. Require explicit confirmation that filtered count/page compose Task 1's exact cycle/subtree relation, page enrichment composes the same effective prefix/ancestors, and B list/enrichment excludes the removed A edge. Resolve every Critical/Important finding, rerun Step 4, then commit implementation and ledger separately:
 
@@ -667,6 +667,8 @@ git commit -m "perf(admin-users): page directory-enriched users"
 git add docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
 git commit -m "docs(plan): record admin user page task"
 ```
+
+**Task 2 review evidence (2026-07-15):** Independent exact-range review of snapshot `58f8e00bffe0c65c9cea1599d48a4d13151eadeb` returned `SPEC: PASS`, `STANDARDS: APPROVED`, with 0 Critical, 0 Important, and 0 Minor findings. The reviewer confirmed exact Task 1 count/page predicate reuse, count-before-offset overflow protection, candidate-first page-local enrichment, current-membership authority and legacy fallback, effective ancestor/cycle B isolation, one current-source resolution per `List`, unchanged HTTP compatibility, the two justified generated Ent indexes, bounded read scope, and synthetic test hygiene. The reviewed tree matched the working tree before implementation commit `5c31ede` was created.
 
 ---
 
