@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress. PR #139 has been merged into the performance integration branch; implementation, review, self-test, and PR delivery for #123 remain pending.
+**Status:** In progress. Implementation, review, and self-test are complete; draft PR delivery and CI verification for #123 remain pending.
 
 **Goal:** Make personal usage render from an actor-isolated, versioned, short-lived usage snapshot while quota/subscription facts and representative scope load independently and remain fresh-only.
 
@@ -348,11 +348,13 @@
 
   Review evidence (2026-07-15): exact base-to-worktree review covered all 44 changed files and every listed contract. Two Important findings were fixed with RED/GREEN tests: configured snapshots now preserve empty `trend`/`models` as JSON arrays rather than `null`, and deployment namespace now participates in the canonical cache digest as well as the visible prefix. New service errors wrap their underlying causes with `%w`. Targeted `go vet`, cache/service/handler regression tests, `git diff --check`, and changed-content synthetic-data scans passed. No Critical or Important findings remain.
 
-- [ ] **Step 5: Commit final docs/ledger and prepare PR body**
+- [x] **Step 5: Commit final docs/ledger and prepare PR body**
 
   Commit: `docs(architecture): document personal usage snapshots`
 
   Create ignored `.superpowers/sdd/pr-123.md` with `Closes #123`, parent #115, dependency on PR #138, the #119 merge-base OID, API/cache/Relay/frontend behavior, exact tests, review findings, rollout risk, Redis fallback, and rollback notes.
+
+  Delivery evidence (2026-07-15): current architecture, the active #123 implementation status, and this ledger were committed as `4802cef`; ignored `.superpowers/sdd/pr-123.md` contains the required issue links, merge base, behavior, verification, review, rollout/fallback, and rollback sections.
 
 - [ ] **Step 6: Push and open the draft PR**
 
