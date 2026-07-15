@@ -828,6 +828,148 @@ auth:
   it.each([
     'preview' as const,
     'apply' as const,
+  ])('keeps polling authoritative when a no-active page started during the $action POST resolves', async (action) => {
+    vi.useFakeTimers()
+    const actionResponse = deferred<any>()
+    const ordinaryPage = deferred<any>()
+    const initialRun = runSummary({ id: 421, member_count: 19 })
+    const pageTwoRun = runSummary({ id: 401, member_count: 9 })
+    const createdRun = runSummary({
+      id: 422,
+      mode: action,
+      status: 'queued',
+      phase: 'validating',
+      started_at: null,
+      completed_at: null,
+      department_count: 0,
+      member_count: 0,
+    })
+    const runningCreatedRun = {
+      ...createdRun,
+      status: 'running',
+      phase: 'executing',
+      department_count: 7,
+      member_count: 13,
+    }
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns
+        .mockResolvedValueOnce(apiResponse(runPage([initialRun], { total: 41 })))
+        .mockImplementationOnce(() => ordinaryPage.promise)
+      const actionAPI = action === 'preview' ? api.previewDirectorySource : api.startDirectoryRun
+      actionAPI.mockImplementationOnce(() => actionResponse.promise)
+      api.getDirectoryRun.mockResolvedValue(apiResponse(runningCreatedRun))
+    })
+
+    try {
+      const actionSelector = action === 'preview' ? '[data-testid="directory-preview"]' : '[data-testid="directory-run-now"]'
+      await wrapper.get(actionSelector).trigger('click')
+      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+
+      expect(api.listDirectoryRuns).toHaveBeenCalledTimes(2)
+      expect(wrapper.get('[data-testid="directory-run-next"]').attributes('disabled')).toBeDefined()
+
+      actionResponse.resolve(apiResponse(createdRun))
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(1)
+      expect(api.getDirectoryRun).toHaveBeenCalledWith(createdRun.id)
+      expect(vi.getTimerCount()).toBe(1)
+
+      ordinaryPage.resolve(apiResponse(runPage([pageTwoRun], { total: 41, page: 1 })))
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
+      expect(wrapper.find(`[data-testid="directory-run-row-${pageTwoRun.id}"]`).exists()).toBe(true)
+      expect(vi.getTimerCount()).toBe(1)
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun.mock.calls.map((call: any[]) => call[0])).toEqual([createdRun.id, createdRun.id])
+      expect(wrapper.text()).toContain('Reading directory API')
+      expect(wrapper.text()).toContain('7 departments · 13 members')
+      expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
+      expect(wrapper.find(`[data-testid="directory-run-row-${pageTwoRun.id}"]`).exists()).toBe(true)
+      expect(vi.getTimerCount()).toBe(1)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps polling authoritative while a no-active non-first page commits', async () => {
+    vi.useFakeTimers()
+    const activeA = runSummary({
+      id: 425,
+      mode: 'apply',
+      status: 'running',
+      phase: 'applying',
+      completed_at: null,
+      department_count: 12,
+      member_count: 24,
+    })
+    const terminalB = runSummary({ id: 404, mode: 'preview', department_count: 4, member_count: 8 })
+    const oldTerminal = runSummary({ id: 424, mode: 'apply', department_count: 2, member_count: 3 })
+    const terminalA = {
+      ...activeA,
+      status: 'completed',
+      phase: 'completed',
+      completed_at: '2026-07-15T01:02:00Z',
+      department_count: 15,
+      member_count: 31,
+    }
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockImplementation((_sourceID: number, params: { offset: number }) => {
+        if (params.offset === 0) {
+          return Promise.resolve(apiResponse(runPage([oldTerminal], { total: 41, latest_active_run: activeA })))
+        }
+        return Promise.resolve(apiResponse(runPage([terminalB], { total: 41, page: 1 })))
+      })
+      api.getDirectoryRun.mockImplementation((id: number) => {
+        if (id === terminalB.id) {
+          return Promise.resolve(apiResponse({ ...terminalB, summary: { marker: 'terminal-b-authoritative-poll' } }))
+        }
+        return Promise.resolve(apiResponse(terminalA))
+      })
+    })
+
+    try {
+      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
+      expect(wrapper.find(`[data-testid="directory-run-row-${terminalB.id}"]`).exists()).toBe(true)
+      expect(wrapper.text()).toContain('Applying directory facts')
+      expect(wrapper.get('[data-testid="directory-preview"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.get('[data-testid="directory-run-now"]').attributes('disabled')).toBeDefined()
+      expect(vi.getTimerCount()).toBe(1)
+
+      await wrapper.get(`[data-testid="directory-run-row-${terminalB.id}"]`).trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('terminal-b-authoritative-poll')
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.getDirectoryRun.mock.calls.map((call: any[]) => call[0])).toEqual([terminalB.id, activeA.id])
+      expect(api.listDirectoryRuns).toHaveBeenLastCalledWith(1, { limit: 20, offset: 20 })
+      expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
+      expect(wrapper.find(`[data-testid="directory-run-row-${terminalB.id}"]`).exists()).toBe(true)
+      expect(wrapper.get('[data-testid="directory-run-detail"]').text()).toContain('terminal-b-authoritative-poll')
+      expect(wrapper.text()).toContain('Run completed: kept 31 valid members; 15 departments.')
+      expect(wrapper.text()).not.toContain('Applying directory facts')
+      expect(wrapper.get('[data-testid="directory-preview"]').attributes('disabled')).toBeUndefined()
+      expect(wrapper.get('[data-testid="directory-run-now"]').attributes('disabled')).toBeUndefined()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    'preview' as const,
+    'apply' as const,
   ])('keeps a newer same-source $action poll when an older ordinary page resolves', async (action) => {
     vi.useFakeTimers()
     const staleOrdinaryPage = deferred<any>()

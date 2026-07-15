@@ -500,8 +500,8 @@ function applyPageRecovery(items: DirectoryRunSummary[], latestActive: Directory
     return recovered && (!expectedAction || action === expectedAction)
   }
 
+  if (activePollRunId !== null) return false
   latestActiveRun.value = null
-  if (activePollRunId !== null) invalidateRunPolling()
   if (offset !== 0) return false
   const newest = items.find((candidate) => Boolean(actionForRun(candidate)))
   const action = actionForRun(newest)
