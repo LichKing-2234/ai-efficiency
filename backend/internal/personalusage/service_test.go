@@ -171,6 +171,9 @@ func TestServiceUsageOnlyProjectionNeverReadsQuota(t *testing.T) {
 	if snapshot.GroupQuotas != nil || snapshot.QuotaFreshness != nil {
 		t.Fatalf("usage-only response contains quota: %+v", snapshot)
 	}
+	if snapshot.Trend == nil || snapshot.Models == nil {
+		t.Fatalf("usage-only response must preserve empty arrays: trend=%#v models=%#v", snapshot.Trend, snapshot.Models)
+	}
 	requests := origin.requestSnapshot()
 	if len(requests) != 1 || !requests[0].Branches.Usage || requests[0].Branches.Quota {
 		t.Fatalf("origin requests = %+v", requests)

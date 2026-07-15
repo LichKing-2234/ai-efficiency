@@ -152,7 +152,7 @@ func (s *Service) resolveSubject(ctx context.Context, userID int) (*resolvedSubj
 	}
 	user, err := s.client.User.Get(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: fetch user: %v", ErrConfiguration, err)
+		return nil, fmt.Errorf("%w: fetch user: %w", ErrConfiguration, err)
 	}
 	if user.RelayAuthPassword == nil || strings.TrimSpace(*user.RelayAuthPassword) == "" {
 		return &resolvedSubject{configured: false, actorID: user.ID}, nil
@@ -162,7 +162,7 @@ func (s *Service) resolveSubject(ctx context.Context, userID int) (*resolvedSubj
 	}
 	password, err := pkg.Decrypt(strings.TrimSpace(*user.RelayAuthPassword), s.encryptionKey)
 	if err != nil {
-		return nil, fmt.Errorf("%w: decrypt Relay password: %v", ErrConfiguration, err)
+		return nil, fmt.Errorf("%w: decrypt Relay password: %w", ErrConfiguration, err)
 	}
 	login := firstNonEmpty(user.Email, user.Username)
 	if login == "" {
@@ -173,11 +173,11 @@ func (s *Service) resolveSubject(ctx context.Context, userID int) (*resolvedSubj
 		Order(ent.Asc(relayprovider.FieldID)).
 		First(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%w: resolve primary provider: %v", ErrConfiguration, err)
+		return nil, fmt.Errorf("%w: resolve primary provider: %w", ErrConfiguration, err)
 	}
 	provider, err := s.resolver.Resolve(ctx, providerRow.ID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: resolve Relay provider: %v", ErrConfiguration, err)
+		return nil, fmt.Errorf("%w: resolve Relay provider: %w", ErrConfiguration, err)
 	}
 	origin, ok := provider.(relay.UserUsageOriginReader)
 	if !ok {
@@ -225,8 +225,8 @@ func snapshotFromResult(result *CacheResult, includeQuota bool) *Snapshot {
 	snapshot := &Snapshot{
 		Configured: true,
 		Range:      result.Usage.Range, Stats: result.Usage.Stats,
-		Trend:          append([]relay.UserUsageTrendPoint(nil), result.Usage.Trend...),
-		Models:         append([]relay.UserUsageModelStat(nil), result.Usage.Models...),
+		Trend:          append([]relay.UserUsageTrendPoint{}, result.Usage.Trend...),
+		Models:         append([]relay.UserUsageModelStat{}, result.Usage.Models...),
 		UsageFreshness: &result.UsageFreshness,
 	}
 	if includeQuota {

@@ -43,6 +43,7 @@ type usageValueEnvelope struct {
 }
 
 type cacheKeyDimensions struct {
+	Namespace       string `json:"namespace"`
 	ProviderID      int    `json:"provider_id"`
 	ProviderVersion int64  `json:"provider_version"`
 	ActorID         int    `json:"actor_id"`
@@ -97,6 +98,7 @@ func applyCacheDefaults(options *CacheOptions) {
 
 func cacheKey(namespace string, key CacheKey) (string, error) {
 	dimensions := cacheKeyDimensions{
+		Namespace:       namespace,
 		ProviderID:      key.ProviderID,
 		ProviderVersion: key.ProviderVersion,
 		ActorID:         key.ActorID,
