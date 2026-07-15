@@ -5389,7 +5389,7 @@ schema v2 renders `workflow_progress.completed` and `workflow_progress.total`;
 the Enterprise WeChat preset renders `审批进度：completed/total`. Both adapters
 bound malformed or synthetic input to `0 <= completed <= total`.
 
-- [ ] **Step 3: Run focused/full verification, update the current spec, commit, and pass task reviews**
+- [x] **Step 3: Run focused/full verification, update the current spec, commit, and pass task reviews**
 
 Implementation and verification evidence (2026-07-15):
 
@@ -5424,8 +5424,14 @@ Quality-review follow-up evidence (2026-07-15):
 - Restored GREEN: `cd backend && go test ./internal/quotareset -run 'Test(GenericWebhookAdapterRendersVersionedWorkflowPayload|NotificationAdaptersBoundWorkflowProgress|WorkflowNotificationContextCountsOnlyDurablySatisfiedNodes)$' -count=1`
   exited 0 with `ok github.com/ai-efficiency/backend/internal/quotareset 1.502s`.
 
-Step 3 remains unchecked pending controller-managed independent re-review. No
-Task 19 behavior is included in the Task 18 implementation or this follow-up.
+Independent review evidence (2026-07-15): the initial spec review passed with
+no findings. The initial quality review raised two Important findings: make the
+unreleased v2 schema contract explicit and make the position-independence test
+detect a position-derived implementation. Commit `b424fef` addressed both with
+the spec clarification and mutation-proven regression above. The same spec and
+quality reviewers then re-reviewed the complete `5130078..b424fef` Task 18
+range; both returned PASS/Approved with no Critical, Important, or Minor
+findings. No Task 19 behavior is included in Task 18. Task 18 is complete.
 
 ### Task 19: Keep Approval Queues and Counts Actionable by Default
 
