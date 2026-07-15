@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review is complete with no findings. Task 1 is complete at implementation commit `7659d82`; Task 2 implementation and verification are complete through Step 5 and the Task 2 commit checkpoint is next, while later task review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
+**Status:** Plan review is complete with no findings. Tasks 1-2 are complete at implementation commits `7659d82` and `34fb70c`; Task 3 is next, while later task review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -249,7 +249,7 @@
 
   GREEN evidence (2026-07-15): the repeated page command passed both runs with `5 PRs / 5 snapshots / 5 checkpoints / 5 events / 3 fact queries` and `100 PRs / 2,000 snapshots / 2,000 checkpoints / 2,000 events / 3 fact queries`. Both runs recorded exactly `snapshots`, `pending_events`, and `checkpoint_facts`; empty input returned a non-nil empty map with zero SQL, and cancellation returned `context.Canceled` after the blocked snapshot query with no later fact query and zero driver calls left in flight. The focused single-detail command, full `internal/prusage` package command, and `git diff --check` also passed.
 
-- [ ] **Step 6: Commit Task 2 and record the checkpoint**
+- [x] **Step 6: Commit Task 2 and record the checkpoint**
 
   Commit implementation plus checked Steps 1-5:
 
@@ -264,6 +264,8 @@
   git add docs/superpowers/plans/2026-07-15-pr-list-bulk-freshness.md
   git commit -m "docs(plan): record PR freshness bulk task 2"
   ```
+
+  Checkpoint evidence (2026-07-15): implementation commit `34fb70c` records the three-query page evaluator, bounded PostgreSQL query-count fixtures, cancellation coverage, single-detail delegation, and Steps 1-5 verification ledger.
 
 ---
 
