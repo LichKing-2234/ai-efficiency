@@ -416,7 +416,7 @@ function notificationSettings(overrides: Record<string, unknown> = {}) {
     channel_type: 'wecom_group_robot',
     template_version: 1,
     url_configured: true,
-    url_preview: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic...redacted',
+    url_preview: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send',
     auth_type: 'none',
     credential_id: null,
     ...overrides,
@@ -520,7 +520,7 @@ beforeEach(async () => {
         channel_type: 'wecom_group_robot',
         template_version: 1,
         url_configured: true,
-        url_preview: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic...redacted',
+        url_preview: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send',
         auth_type: 'none',
         credential_id: null,
       },
@@ -1721,6 +1721,59 @@ describe('QuotaResetApprovalSettings', () => {
     }])
   })
 
+  it('keeps dirty chain edits and replaces stale PUT feedback with a rejected revision refresh error', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const refreshOptions = deferred<any>()
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    api.saveQuotaResetApprovalChains.mockRejectedValueOnce({
+      response: { data: { message: 'Synthetic stale chain save feedback.' } },
+    })
+    const wrapper = await mountChains()
+    await selectChainGroup(wrapper, 'group-alpha')
+    await addChainDepartment(wrapper, 'dept-beta')
+
+    await wrapper.get('[data-testid="quota-reset-save-chains"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Synthetic stale chain save feedback.')
+
+    api.getQuotaResetApprovalChainOptions.mockReturnValueOnce(refreshOptions.promise)
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    await wrapper.setProps({ approverRevision: 1 })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('Synthetic stale chain save feedback.')
+
+    refreshOptions.reject({
+      response: { data: { message: 'Synthetic dirty chain revision refresh failed.' } },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Department Beta')
+    expect(wrapper.text()).toContain('Synthetic dirty chain revision refresh failed.')
+  })
+
+  it('keeps dirty chain edits and shows the translated error for a malformed revision refresh', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({
+      data: { data: { items: [configuredAlphaChain] } },
+    })
+    const wrapper = await mountChains()
+    await selectChainGroup(wrapper, 'group-alpha')
+    await addChainDepartment(wrapper, 'dept-beta')
+
+    api.getQuotaResetApprovalChainOptions.mockResolvedValueOnce({ data: { data: chainOptions } })
+    api.getQuotaResetApprovalChains.mockResolvedValueOnce({ data: { data: { items: [{}] } } })
+    await wrapper.setProps({ approverRevision: 1 })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Department Beta')
+    expect(wrapper.text()).toContain('Failed to load approval chains')
+  })
+
   it.each(['options', 'chains'] as const)(
     'guards chain full replacement when the initial %s load fails',
     async (failedRead) => {
@@ -2340,7 +2393,7 @@ describe('QuotaResetApprovalSettings', () => {
   it('preserves redacted notification state but disables actions after a failed reload', async () => {
     const api = await import('@/api/quotaReset') as any
     const wrapper = await mountNotification()
-    expect(wrapper.text()).toContain('synthetic...redacted')
+    expect(wrapper.find('code').text()).toBe('https://qyapi.weixin.qq.com/cgi-bin/webhook/send')
     expect(wrapper.html()).not.toContain('synthetic-saved-robot-key')
 
     api.getQuotaResetNotificationSettings.mockRejectedValueOnce({
@@ -2350,7 +2403,7 @@ describe('QuotaResetApprovalSettings', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Synthetic notification refresh failed.')
-    expect(wrapper.text()).toContain('synthetic...redacted')
+    expect(wrapper.text()).toContain('https://qyapi.weixin.qq.com/cgi-bin/webhook/send')
     expect(wrapper.html()).not.toContain('synthetic-saved-robot-key')
     const saveButton = wrapper.get('[data-testid="quota-reset-save-notification"]')
     const testButton = wrapper.get('[data-testid="quota-reset-test-notification"]')
@@ -2405,7 +2458,7 @@ describe('QuotaResetApprovalSettings', () => {
     const wrapper = await mountSettings(credentials)
 
     expect(wrapper.get('[data-testid="quota-reset-notification-channel"]').element).toHaveProperty('value', 'wecom_group_robot')
-    expect(wrapper.text()).toContain('synthetic...redacted')
+    expect(wrapper.text()).toContain('https://qyapi.weixin.qq.com/cgi-bin/webhook/send')
     expect(wrapper.html()).not.toContain('synthetic-saved-robot-key')
     expect((wrapper.get('[data-testid="quota-reset-notification-url"]').element as HTMLInputElement).value).toBe('')
 

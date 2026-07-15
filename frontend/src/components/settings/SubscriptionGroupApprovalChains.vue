@@ -251,12 +251,15 @@ async function loadChains() {
   return loadChainsWithOptions()
 }
 
-async function loadChainsWithOptions(options: { preserveLocalState?: boolean } = {}) {
+async function loadChainsWithOptions(options: { preserveLocalState?: boolean; preserveFeedback?: boolean } = {}) {
   const preserveLocalState = options.preserveLocalState === true
+  const preserveFeedback = options.preserveFeedback === true
   const sequence = ++loadSequence
   loading.value = true
   if (!preserveLocalState) {
     chainsAuthoritative.value = false
+  }
+  if (!preserveFeedback) {
     error.value = ''
     message.value = ''
   }
@@ -283,7 +286,7 @@ async function loadChainsWithOptions(options: { preserveLocalState?: boolean } =
     }
   } catch (err) {
     if (sequence !== loadSequence) return
-    if (!preserveLocalState) {
+    if (!preserveFeedback) {
       error.value = errorMessage(err, t('quotaResetSettings.chainLoadFailed'))
     }
   } finally {
@@ -462,7 +465,7 @@ async function saveChains() {
     if (reloadQueuedAfterSave) {
       reloadQueuedAfterSave = false
       if (saveFailed) {
-        void loadChainsWithOptions({ preserveLocalState: true })
+        void loadChainsWithOptions({ preserveLocalState: true, preserveFeedback: true })
       } else {
         void loadChains()
       }

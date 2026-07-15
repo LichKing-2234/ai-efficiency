@@ -19,10 +19,7 @@ WECOM_ROBOT_URL = (
     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
     "?key=synthetic-browser-robot-key"
 )
-WECOM_REDACTED_PREVIEW = (
-    "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
-    "?key=synthetic...redacted"
-)
+WECOM_URL_PREVIEW = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
 MAX_RUNTIME_SECONDS = 60
 TIMEOUT_EXIT_STATUS = 124
 WORKER_FLAG = "--worker"
@@ -378,7 +375,7 @@ class SyntheticAPI:
                 "channel_type": "wecom_group_robot",
                 "template_version": 1,
                 "url_configured": True,
-                "url_preview": WECOM_REDACTED_PREVIEW,
+                "url_preview": WECOM_URL_PREVIEW,
                 "auth_type": "none",
                 "credential_id": None,
             })
