@@ -96,7 +96,10 @@ func (s *Service) RepairWebhook(ctx context.Context, repoID int, req RepairWebho
 	repoInfo, err := scmProvider.GetRepo(ctx, rc.FullName)
 	if err != nil {
 		result.Error = err.Error()
-		_, saveErr := s.entClient.RepoConfig.UpdateOneID(rc.ID).SetStatus(repoconfig.StatusWebhookFailed).Save(ctx)
+		saveErr := s.mutateInventory(ctx, "save webhook verification failure", func(tx *ent.Tx) error {
+			_, updateErr := tx.RepoConfig.UpdateOneID(rc.ID).SetStatus(repoconfig.StatusWebhookFailed).Save(ctx)
+			return updateErr
+		})
 		if saveErr != nil {
 			return result, fmt.Errorf("repair webhook: verify repo: %v; save webhook_failed: %w", err, saveErr)
 		}
@@ -121,26 +124,33 @@ func (s *Service) RepairWebhook(ctx context.Context, repoID int, req RepairWebho
 	webhookID, err := scmProvider.RegisterWebhook(ctx, repoInfo.FullName, []string{"pull_request", "push"}, secret)
 	if err != nil {
 		result.Error = err.Error()
-		update := s.entClient.RepoConfig.UpdateOneID(rc.ID).SetStatus(repoconfig.StatusWebhookFailed)
-		if deletedOldWebhook {
-			update.ClearWebhookID().ClearWebhookSecret()
-		}
-		if _, saveErr := update.Save(ctx); saveErr != nil {
+		saveErr := s.mutateInventory(ctx, "save webhook registration failure", func(tx *ent.Tx) error {
+			update := tx.RepoConfig.UpdateOneID(rc.ID).SetStatus(repoconfig.StatusWebhookFailed)
+			if deletedOldWebhook {
+				update.ClearWebhookID().ClearWebhookSecret()
+			}
+			_, updateErr := update.Save(ctx)
+			return updateErr
+		})
+		if saveErr != nil {
 			return result, fmt.Errorf("repair webhook: register webhook: %v; save webhook_failed: %w", err, saveErr)
 		}
 		result.Status = string(repoconfig.StatusWebhookFailed)
 		return result, nil
 	}
 
-	update := s.entClient.RepoConfig.UpdateOneID(rc.ID).
-		SetName(repoInfo.Name).
-		SetFullName(repoInfo.FullName).
-		SetCloneURL(repoInfo.CloneURL).
-		SetDefaultBranch(repoInfo.DefaultBranch).
-		SetWebhookID(webhookID).
-		SetWebhookSecret(secret).
-		SetStatus(repoconfig.StatusActive)
-	if _, err := update.Save(ctx); err != nil {
+	if err := s.mutateInventory(ctx, "save repaired webhook metadata", func(tx *ent.Tx) error {
+		_, saveErr := tx.RepoConfig.UpdateOneID(rc.ID).
+			SetName(repoInfo.Name).
+			SetFullName(repoInfo.FullName).
+			SetCloneURL(repoInfo.CloneURL).
+			SetDefaultBranch(repoInfo.DefaultBranch).
+			SetWebhookID(webhookID).
+			SetWebhookSecret(secret).
+			SetStatus(repoconfig.StatusActive).
+			Save(ctx)
+		return saveErr
+	}); err != nil {
 		return result, fmt.Errorf("repair webhook: save repo metadata: %w", err)
 	}
 

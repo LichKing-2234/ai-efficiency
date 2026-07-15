@@ -62,6 +62,22 @@ func redisClientOptions(cfg config.RedisConfig) *redis.Options {
 	}
 }
 
+func initializeRepoInventory(ctx context.Context, entClient *ent.Client, redisClient redis.UniversalClient, namespace string) (*repo.InventoryCache, *repo.InventoryRevisionStore, error) {
+	revisions := repo.NewInventoryRevisionStore(entClient)
+	if err := revisions.Ensure(ctx); err != nil {
+		return nil, nil, fmt.Errorf("initialize repository inventory revision: %w", err)
+	}
+	cache, err := repo.NewInventoryCache(
+		repo.NewRedisInventoryStore(redisClient),
+		revisions,
+		repo.InventoryCacheOptions{Namespace: namespace},
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize repository inventory cache: %w", err)
+	}
+	return cache, revisions, nil
+}
+
 func (a *authTokenAdapter) GenerateAccessToken(userID int, username, role string) (string, string, int, error) {
 	info := &auth.UserInfo{
 		ID:       userID,
@@ -201,6 +217,15 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize work item counts cache", zap.Error(err))
 	}
+	repoInventoryCache, repoInventoryRevisions, err := initializeRepoInventory(
+		context.Background(),
+		entClient,
+		redisClient,
+		cfg.Redis.Namespace,
+	)
+	if err != nil {
+		logger.Fatal("initialize repository inventory", zap.Error(err))
+	}
 
 	// Init LDAP config (shared between auth service and admin settings handler)
 	var ldapConfig atomic.Pointer[config.LDAPConfig]
@@ -231,9 +256,11 @@ func main() {
 
 	// Init repo service
 	repoService := repo.NewService(entClient, cfg.Encryption.Key, logger, repo.ServiceOptions{
-		WebhookPublicURL: cfg.Server.PublicURL,
-		FrontendURL:      cfg.Server.FrontendURL,
-		ServerMode:       cfg.Server.Mode,
+		WebhookPublicURL:       cfg.Server.PublicURL,
+		FrontendURL:            cfg.Server.FrontendURL,
+		ServerMode:             cfg.Server.Mode,
+		InventoryCache:         repoInventoryCache,
+		InventoryRevisionStore: repoInventoryRevisions,
 	})
 
 	// Init PR labeler (with optional relay usage stats lookup)

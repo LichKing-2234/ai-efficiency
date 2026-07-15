@@ -27,6 +27,48 @@ func setupTest(t *testing.T) (*ent.Client, *Service) {
 	return client, svc
 }
 
+type failingInventoryRevisionInvalidator struct {
+	err error
+}
+
+func (f failingInventoryRevisionInvalidator) InvalidateTx(context.Context, *ent.Tx) error {
+	return f.err
+}
+
+func setupRevisionedRepoTest(t *testing.T) (*ent.Client, *Service, *InventoryRevisionStore, *fakeInventoryStore) {
+	t.Helper()
+	client := testdb.Open(t)
+	revisions := NewInventoryRevisionStore(client)
+	if err := revisions.Ensure(context.Background()); err != nil {
+		t.Fatalf("ensure inventory revision: %v", err)
+	}
+	redisStore := newFakeInventoryStore()
+	cache := testInventoryCache(t, redisStore, revisions, "test", nil)
+	svc := NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop(), ServiceOptions{
+		InventoryCache:         cache,
+		InventoryRevisionStore: revisions,
+	})
+	return client, svc, revisions, redisStore
+}
+
+func currentInventoryRevision(t *testing.T, store *InventoryRevisionStore) string {
+	t.Helper()
+	revision, err := store.Current(context.Background())
+	if err != nil {
+		t.Fatalf("current inventory revision: %v", err)
+	}
+	return revision
+}
+
+func requireInventoryRevisionChanged(t *testing.T, store *InventoryRevisionStore, before string) string {
+	t.Helper()
+	after := currentInventoryRevision(t, store)
+	if after == before {
+		t.Fatalf("inventory revision = %q, want change from previous value", after)
+	}
+	return after
+}
+
 // createSCMProvider creates a minimal SCM provider for FK satisfaction.
 func createSCMProvider(t *testing.T, client *ent.Client) *ent.ScmProvider {
 	t.Helper()
@@ -1373,6 +1415,121 @@ func TestRepoListPageEmptyDefaultHasNoSelection(t *testing.T) {
 	if page.Selection != nil || page.Total != 0 || len(page.Items) != 0 || page.Page != 1 || page.PageSize != 20 {
 		t.Fatalf("empty page = %#v, want empty default page without selection", page)
 	}
+}
+
+func TestInventoryMutationVersionsCreateMetadataUpdateAndDelete(t *testing.T) {
+	client, svc, revisions, redisStore := setupRevisionedRepoTest(t)
+	ctx := context.Background()
+
+	before := currentInventoryRevision(t, revisions)
+	if _, err := svc.Inventory(ctx); err != nil {
+		t.Fatalf("prime inventory cache: %v", err)
+	}
+	oldKey := inventoryCacheKey("test", before)
+	redisStore.mu.Lock()
+	_, oldCached := redisStore.values[oldKey]
+	redisStore.mu.Unlock()
+	if !oldCached {
+		t.Fatalf("old inventory key %q was not cached", oldKey)
+	}
+
+	direct, err := svc.CreateDirect(ctx, CreateDirectRequest{
+		Name:          "direct-repo",
+		FullName:      "alpha/direct-repo",
+		CloneURL:      "https://unknown.example.com/alpha/direct-repo.git",
+		DefaultBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("CreateDirect: %v", err)
+	}
+	afterCreate := requireInventoryRevisionChanged(t, revisions, before)
+	if inventoryCacheKey("test", afterCreate) == oldKey {
+		t.Fatalf("cache key remained %q after create", oldKey)
+	}
+	if inventory, err := svc.Inventory(ctx); err != nil || len(inventory) != 1 || inventory[0].TotalRepos != 1 {
+		t.Fatalf("inventory after create = %+v, error = %v", inventory, err)
+	}
+
+	remote, err := svc.FindOrCreateFromRemote(ctx, "https://code.example.com/beta/remote-repo.git", "main")
+	if err != nil {
+		t.Fatalf("FindOrCreateFromRemote create: %v", err)
+	}
+	afterRemoteCreate := requireInventoryRevisionChanged(t, revisions, afterCreate)
+	if _, err := svc.FindOrCreateFromRemote(ctx, "git@code.example.com:beta/remote-repo.git", "develop"); err != nil {
+		t.Fatalf("FindOrCreateFromRemote metadata refresh: %v", err)
+	}
+	afterMetadata := requireInventoryRevisionChanged(t, revisions, afterRemoteCreate)
+	loadedRemote := client.RepoConfig.GetX(ctx, remote.ID)
+	if loadedRemote.DefaultBranch != "develop" {
+		t.Fatalf("refreshed default branch = %q, want develop", loadedRemote.DefaultBranch)
+	}
+
+	if _, err := svc.Update(ctx, direct.ID, UpdateRequest{Name: "renamed-direct"}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	afterUpdate := requireInventoryRevisionChanged(t, revisions, afterMetadata)
+	if err := svc.Delete(ctx, direct.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	requireInventoryRevisionChanged(t, revisions, afterUpdate)
+}
+
+func TestInventoryMutationRollsBackWhenRevisionUpdateFails(t *testing.T) {
+	client := testdb.Open(t)
+	failure := errors.New("test inventory revision failure")
+	svc := NewService(client, "test-key", zap.NewNop(), ServiceOptions{
+		InventoryRevisionStore: failingInventoryRevisionInvalidator{err: failure},
+	})
+	ctx := context.Background()
+
+	if _, err := svc.CreateDirect(ctx, CreateDirectRequest{
+		Name:          "rollback-create",
+		FullName:      "alpha/rollback-create",
+		CloneURL:      "https://example.com/alpha/rollback-create.git",
+		DefaultBranch: "main",
+	}); !errors.Is(err, failure) {
+		t.Fatalf("CreateDirect() error = %v, want revision failure", err)
+	}
+	if count := client.RepoConfig.Query().CountX(ctx); count != 0 {
+		t.Fatalf("repos after failed create = %d, want 0", count)
+	}
+
+	repo := client.RepoConfig.Create().
+		SetRepoKey("example.com/alpha/existing").
+		SetName("existing").
+		SetFullName("alpha/existing").
+		SetCloneURL("https://example.com/alpha/existing.git").
+		SetDefaultBranch("main").
+		SetStatus(repoconfig.StatusActive).
+		SaveX(ctx)
+	if _, err := svc.Update(ctx, repo.ID, UpdateRequest{Name: "should-rollback"}); !errors.Is(err, failure) {
+		t.Fatalf("Update() error = %v, want revision failure", err)
+	}
+	if name := client.RepoConfig.GetX(ctx, repo.ID).Name; name != "existing" {
+		t.Fatalf("repo name after failed update = %q, want existing", name)
+	}
+	if err := svc.Delete(ctx, repo.ID); !errors.Is(err, failure) {
+		t.Fatalf("Delete() error = %v, want revision failure", err)
+	}
+	if exists := client.RepoConfig.Query().Where(repoconfig.IDEQ(repo.ID)).ExistX(ctx); !exists {
+		t.Fatal("repo was deleted despite revision failure")
+	}
+}
+
+func TestInventoryMutationSucceedsDuringRedisOutage(t *testing.T) {
+	_, svc, revisions, redisStore := setupRevisionedRepoTest(t)
+	redisStore.getErr = errors.New("redis unavailable")
+	before := currentInventoryRevision(t, revisions)
+
+	if _, err := svc.CreateDirect(context.Background(), CreateDirectRequest{
+		Name:          "redis-outage",
+		FullName:      "alpha/redis-outage",
+		CloneURL:      "https://example.com/alpha/redis-outage.git",
+		DefaultBranch: "main",
+	}); err != nil {
+		t.Fatalf("CreateDirect during Redis outage: %v", err)
+	}
+	requireInventoryRevisionChanged(t, revisions, before)
 }
 
 type repoQueryRecorder struct {
