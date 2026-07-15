@@ -297,8 +297,15 @@ func TestEvaluateCommitFreshnessNoUsageEvents(t *testing.T) {
 	if status.Status != UsageStatusNoUsageEvents {
 		t.Fatalf("status = %s, want %s", status.Status, UsageStatusNoUsageEvents)
 	}
-	if len(status.Commits) != 1 || status.Commits[0].Status != UsageStatusNoUsageEvents {
-		t.Fatalf("commits = %+v, want no_usage_events", status.Commits)
+	wantCommits := []CommitFreshness{{
+		CommitSHA:       "abc123",
+		Status:          UsageStatusNoUsageEvents,
+		Reason:          "Checkpoint exists but no usage events are bound to it.",
+		CheckpointFound: true,
+		UsageEventFound: false,
+	}}
+	if !reflect.DeepEqual(status.Commits, wantCommits) {
+		t.Fatalf("commits = %+v, want %+v", status.Commits, wantCommits)
 	}
 }
 
