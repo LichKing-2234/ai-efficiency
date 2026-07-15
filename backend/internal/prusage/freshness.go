@@ -3,8 +3,10 @@ package prusage
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
+	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 )
@@ -37,6 +39,11 @@ type PRFreshness struct {
 	Commits   []CommitFreshness `json:"commits"`
 }
 
+type checkpointUsageFact struct {
+	Count          int
+	LatestObserved *time.Time
+}
+
 func (s *Service) EvaluatePRFreshness(ctx context.Context, prID int) (*PRFreshness, error) {
 	if s == nil || s.entClient == nil {
 		return nil, fmt.Errorf("evaluate PR freshness: ent client is required")
@@ -66,31 +73,86 @@ func (s *Service) EvaluatePRFreshness(ctx context.Context, prID int) (*PRFreshne
 		if err != nil {
 			return nil, fmt.Errorf("evaluate PR freshness: count pending usage events: %w", err)
 		}
-		if pendingCount > 0 {
+		return evaluateLoadedPRFreshness(pr, snapshots, pendingCount > 0, nil, checkedAt), nil
+	}
+
+	usageByCheckpoint := make(map[int]checkpointUsageFact, len(snapshots))
+	for _, snapshot := range snapshots {
+		if snapshot.CommitCheckpointID == nil {
+			continue
+		}
+
+		checkpointID := *snapshot.CommitCheckpointID
+		count, err := s.entClient.ToolUsageEvent.Query().
+			Where(toolusageevent.CommitCheckpointIDEQ(checkpointID)).
+			Count(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("evaluate PR freshness: count usage events: %w", err)
+		}
+		fact := checkpointUsageFact{Count: count}
+		if count > 0 && pr.UsageRefreshedAt != nil {
+			newerCount, err := s.entClient.ToolUsageEvent.Query().
+				Where(
+					toolusageevent.CommitCheckpointIDEQ(checkpointID),
+					toolusageevent.ObservedEndAtGT(*pr.UsageRefreshedAt),
+				).
+				Count(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("evaluate PR freshness: count newer usage events: %w", err)
+			}
+			if newerCount > 0 {
+				newerObserved := pr.UsageRefreshedAt.Add(time.Nanosecond)
+				fact.LatestObserved = &newerObserved
+			}
+		}
+		usageByCheckpoint[checkpointID] = fact
+	}
+
+	return evaluateLoadedPRFreshness(pr, snapshots, false, usageByCheckpoint, checkedAt), nil
+}
+
+func evaluateLoadedPRFreshness(
+	pr *ent.PrRecord,
+	snapshots []*ent.PRCommitUsageSnapshot,
+	pendingUnbound bool,
+	usageByCheckpoint map[int]checkpointUsageFact,
+	checkedAt time.Time,
+) *PRFreshness {
+	checkedAt = checkedAt.UTC()
+	if len(snapshots) == 0 {
+		if pendingUnbound {
 			return &PRFreshness{
 				Status:    UsageStatusPendingUpload,
 				Reason:    "Unbound usage events exist for this repo and may still be waiting for checkpoint binding.",
 				CheckedAt: checkedAt,
-			}, nil
+			}
 		}
 		if pr.UsageRefreshedAt == nil {
 			return &PRFreshness{
 				Status:    UsageStatusNoCheckpoint,
 				Reason:    "No PR commit snapshot has been generated yet.",
 				CheckedAt: checkedAt,
-			}, nil
+			}
 		}
 		return &PRFreshness{
 			Status:    UsageStatusNoCheckpoint,
 			Reason:    "Snapshot refresh ran but no PR commit rows were recorded.",
 			CheckedAt: checkedAt,
-		}, nil
+		}
 	}
 
-	commits := make([]CommitFreshness, 0, len(snapshots))
+	orderedSnapshots := append([]*ent.PRCommitUsageSnapshot(nil), snapshots...)
+	sort.Slice(orderedSnapshots, func(i, j int) bool {
+		if orderedSnapshots[i].SortOrder != orderedSnapshots[j].SortOrder {
+			return orderedSnapshots[i].SortOrder < orderedSnapshots[j].SortOrder
+		}
+		return orderedSnapshots[i].ID < orderedSnapshots[j].ID
+	})
+
+	commits := make([]CommitFreshness, 0, len(orderedSnapshots))
 	overall := UsageStatusFresh
 	reason := "Usage snapshot is current."
-	for _, snapshot := range snapshots {
+	for _, snapshot := range orderedSnapshots {
 		item := CommitFreshness{
 			CommitSHA:       snapshot.CommitSha,
 			Status:          UsageStatusFresh,
@@ -104,30 +166,16 @@ func (s *Service) EvaluatePRFreshness(ctx context.Context, prID int) (*PRFreshne
 			item.CheckpointFound = false
 			item.UsageEventFound = false
 		} else {
-			count, err := s.entClient.ToolUsageEvent.Query().
-				Where(toolusageevent.CommitCheckpointIDEQ(*snapshot.CommitCheckpointID)).
-				Count(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("evaluate PR freshness: count usage events: %w", err)
-			}
-			if count == 0 {
+			fact := usageByCheckpoint[*snapshot.CommitCheckpointID]
+			if fact.Count == 0 {
 				item.Status = UsageStatusNoUsageEvents
 				item.Reason = "Checkpoint exists but no usage events are bound to it."
 				item.UsageEventFound = false
-			} else if pr.UsageRefreshedAt != nil {
-				newerCount, err := s.entClient.ToolUsageEvent.Query().
-					Where(
-						toolusageevent.CommitCheckpointIDEQ(*snapshot.CommitCheckpointID),
-						toolusageevent.ObservedEndAtGT(*pr.UsageRefreshedAt),
-					).
-					Count(ctx)
-				if err != nil {
-					return nil, fmt.Errorf("evaluate PR freshness: count newer usage events: %w", err)
-				}
-				if newerCount > 0 {
-					item.Status = UsageStatusStaleSnapshot
-					item.Reason = "Usage events newer than the PR snapshot are bound to this checkpoint."
-				}
+			} else if pr.UsageRefreshedAt != nil &&
+				fact.LatestObserved != nil &&
+				fact.LatestObserved.After(*pr.UsageRefreshedAt) {
+				item.Status = UsageStatusStaleSnapshot
+				item.Reason = "Usage events newer than the PR snapshot are bound to this checkpoint."
 			}
 		}
 		commits = append(commits, item)
@@ -142,5 +190,5 @@ func (s *Service) EvaluatePRFreshness(ctx context.Context, prID int) (*PRFreshne
 		Reason:    reason,
 		CheckedAt: checkedAt,
 		Commits:   commits,
-	}, nil
+	}
 }
