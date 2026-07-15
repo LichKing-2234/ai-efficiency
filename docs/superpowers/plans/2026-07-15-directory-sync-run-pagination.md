@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review remediation is implemented and re-review is pending on `docs/performance-contracts-116@5f6c58e`; implementation, task review, delivery, and CI remain pending.
+**Status:** The second plan-review remediation is implemented and re-review is pending on `docs/performance-contracts-116@5f6c58e`; implementation, task review, delivery, and CI remain pending.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -96,7 +96,7 @@
   Run:
 
   ```bash
-  cd backend && go test ./internal/directorysync ./internal/handler -run 'Test(ListRuns|DirectoryHandler.*Run)' -count=1
+  (cd backend && go test ./internal/directorysync ./internal/handler -run 'Test(ListRuns|DirectoryHandler.*Run)' -count=1)
   ```
 
   Expected: FAIL because the service returns an unbounded full-entity slice ordered by `created_at`, the handler accepts no pagination, and the response has no metadata/latest-active contract.
@@ -155,8 +155,8 @@
   Keep existing indexes. Run:
 
   ```bash
-  cd backend && go generate ./ent
-  gofmt -w internal/directorysync/service.go internal/directorysync/service_test.go internal/handler/directory.go internal/handler/directory_test.go ent/schema/directory_sync_run.go
+  (cd backend && go generate ./ent)
+  (cd backend && gofmt -w internal/directorysync/service.go internal/directorysync/service_test.go internal/handler/directory.go internal/handler/directory_test.go ent/schema/directory_sync_run.go)
   git diff --check
   ```
 
@@ -165,8 +165,8 @@
   Run separately:
 
   ```bash
-  cd backend && go test ./internal/directorysync ./internal/handler -run 'Test(ListRuns|GetRun|DirectoryHandler.*Run)' -count=1
-  cd backend && go test ./internal/directorysync ./internal/handler ./cmd/server -count=1
+  (cd backend && go test ./internal/directorysync ./internal/handler -run 'Test(ListRuns|GetRun|DirectoryHandler.*Run)' -count=1)
+  (cd backend && go test ./internal/directorysync ./internal/handler ./cmd/server -count=1)
   git diff --check
   ```
 
@@ -189,6 +189,7 @@
 
 **Files:**
 - Create: `backend/internal/directorysync/run_query_plan_test.go`
+- Modify: `backend/internal/handler/directory_test.go`
 - Modify only if evidence requires it: `backend/ent/schema/directory_sync_run.go` and generated `backend/ent/`
 - Maintain: `docs/superpowers/plans/2026-07-15-directory-sync-run-pagination.md`
 
@@ -200,7 +201,7 @@
 
   Wrap `dialect.Driver.Query` under a mutex, copying SQL and arguments before delegation. Open a second Ent client from `testdb.OpenWithDSN` through `entsql.OpenDB`.
 
-  Insert exactly 2,400 runs in batches of 200 for one synthetic source, and create a second synthetic source with no runs for the no-active plan case:
+  Insert exactly 2,400 runs in batches of 200 for one synthetic source:
 
   ```text
   preview/apply/validate modes with deterministic distribution
@@ -212,7 +213,7 @@
   latest active ID known in advance
   ```
 
-  Run `ANALYZE directory_sync_runs` after seeding.
+  Run `ANALYZE directory_sync_runs` after seeding. The active-present plan uses this fixture unchanged. For the no-active case in the same query-plan test, transition the bounded active preview rows to terminal status, rerun `ANALYZE`, and execute the exact active query again while all 2,400 historical rows remain; do not substitute an empty source.
 
 - [ ] **Step 2: Write scale behavior, bytes, and exact SQL-shape tests**
 
@@ -224,24 +225,26 @@
   TestLargeRunHistoryQueryPlans
   TestLargeRunHistoryDetailRemainsComplete
   TestLargeRunHistoryPreservesPreviewAndApplyStateSemantics
+  TestDirectoryHandlerLargeRunHistoryWireBounds
   ```
 
   Assert default page 20, maximum page 100, total 2,400, stable `(started_at DESC NULLS FIRST, id DESC)` pages at limits 20/50/100, no duplicate/omitted IDs for the traversed result, and page-independent latest active.
 
-  Marshal a 100-row `RunPage` and require less than 128 KiB plus absence of all large markers/diagnostic keys. Also serve the real list handler with the same 100-row database page and require the complete `pkg.Success` wire body to remain below 128 KiB while retaining `items`, `total`, `page`, `page_size`, and `latest_active_run`. Fetch one selected detail through the real detail handler and require its full 4 KiB markers and error message.
+  Marshal a 100-row `RunPage` and require less than 128 KiB plus absence of all large markers/diagnostic keys. Keep SQL capture, scale data, and EXPLAIN tests in package `directorysync`. Put `TestDirectoryHandlerLargeRunHistoryWireBounds` in `backend/internal/handler/directory_test.go`, where the existing fake service returns the same deterministic 100 summaries with `total=2400`; serve the real list handler and require the complete `pkg.Success` wire body to remain below 128 KiB while retaining `items`, `total`, `page`, `page_size`, and `latest_active_run`. Through the same real handler boundary, fetch one selected populated detail and require its full 4 KiB markers/error message, then fetch a queued zero-count detail and require the response/type fixture to accept omitted Ent `omitempty` count and timestamp fields. This keeps handler serialization evidence out of the `directorysync` package and avoids an import cycle.
 
   Classify captured SQL by shape rather than call order: source count, primary page, and latest-active page. Require the count query to aggregate without entity projection; require the primary page to have `LIMIT`, exact two-field order, and no diagnostic fields; require the active query to have the exact preview/apply and queued/running predicates, the same order, `LIMIT 1`, and the same lightweight projection.
 
-  Replay all three exact SQL/argument sets under `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`. Assert the count has an Aggregate node, the primary page has a Limit with at most 100 actual rows and uses the general source/started-time/ID index, and active-present plus an empty second source both use `directory_sync_runs_active_started_id` with at most one actual row. Do not assert costs, elapsed time, buffers, or a complete node tree.
+  Replay all three exact SQL/argument sets under `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`. Assert the count has an Aggregate node and the primary page has a Limit with at most 100 actual rows and uses the general source/started-time/ID index. The active-present case must use `directory_sync_runs_active_started_id`, contain no Sort, and materialize at most one row. After terminalizing the active rows with all 2,400 historical rows still present and rerunning `ANALYZE`, the no-active case must contain no Sort, materialize no result row, scan/filter no terminal history rows, and use a predicate-compatible index path; do not require one exact index name when PostgreSQL can prove absence through an equally bounded source/status path. Do not assert costs, elapsed time, buffers, or a complete node tree.
 
-  For `TestLargeRunHistoryPreservesPreviewAndApplyStateSemantics`, keep the 2,400 historical rows present, create known current departments/members/memberships, source run pointers, offboarding actions/candidate state, and a deterministic executor sequence. Prove a preview leaves every current fact/pointer/offboarding value unchanged; an injected failed apply also leaves them unchanged; and a successful apply transactionally replaces facts and updates `last_run_id`/`last_successful_run_id` exactly as the existing ordinary contract specifies.
+  For `TestLargeRunHistoryPreservesPreviewAndApplyStateSemantics`, keep the 2,400 historical rows present, create known current departments/members/memberships, source run pointers, offboarding actions/candidate state, and a deterministic executor sequence. Prove a preview leaves facts, memberships, offboarding state, and `last_successful_run_id` unchanged while advancing `last_run_id` to the completed preview ID; an injected failed apply leaves facts, offboarding state, `last_run_id`, and `last_successful_run_id` unchanged; and a successful apply transactionally replaces facts and updates both pointers to the successful apply ID exactly as the existing ordinary contract specifies.
 
 - [ ] **Step 3: Run post-implementation characterization without mutating production**
 
   Run:
 
   ```bash
-  cd backend && go test ./internal/directorysync -run 'TestLargeRunHistory' -count=1 -v
+  (cd backend && go test ./internal/directorysync -run 'TestLargeRunHistory' -count=1 -v)
+  (cd backend && go test ./internal/handler -run '^TestDirectoryHandlerLargeRunHistoryWireBounds$' -count=1 -v)
   ```
 
   Expected: GREEN because Task 2 is explicit post-implementation scale/plan characterization of Task 1. Do not edit correct production code to manufacture RED. Instead, table-test the SQL-role/parser assertion helpers with synthetic bad SQL strings containing an extra sort expression, a selected diagnostic column, missing active predicates, and missing limit; require deterministic validation errors before using those helpers against recorded production SQL.
@@ -251,8 +254,9 @@
   Run:
 
   ```bash
-  cd backend && go test ./internal/directorysync -run 'TestLargeRunHistory' -count=2 -v
-  cd backend && go test ./internal/directorysync -count=1
+  (cd backend && go test ./internal/directorysync -run 'TestLargeRunHistory' -count=2 -v)
+  (cd backend && go test ./internal/handler -run '^TestDirectoryHandlerLargeRunHistoryWireBounds$' -count=2 -v)
+  (cd backend && go test ./internal/directorysync ./internal/handler -count=1)
   git diff --check
   ```
 
@@ -313,7 +317,7 @@
   Run:
 
   ```bash
-  cd frontend && npm test -- src/__tests__/api-modules.test.ts src/__tests__/directory-sync-settings.test.ts
+  (cd frontend && npm test -- src/__tests__/api-modules.test.ts src/__tests__/directory-sync-settings.test.ts)
   ```
 
   Expected: FAIL because the API accepts no params, the component scans an unbounded entity list, has no history/detail state, and derives polling from whichever row it finds.
@@ -340,9 +344,21 @@
   }
 
   export interface DirectorySyncRun
-    extends Omit<DirectoryRunSummary, 'started_at' | 'completed_at'> {
+    extends Omit<DirectoryRunSummary,
+      | 'started_at'
+      | 'completed_at'
+      | 'http_request_count'
+      | 'department_count'
+      | 'member_count'
+      | 'invalid_member_count'
+      | 'warning_count'> {
     started_at?: string | null
     completed_at?: string | null
+    http_request_count?: number
+    department_count?: number
+    member_count?: number
+    invalid_member_count?: number
+    warning_count?: number
     warnings?: DirectorySyncWarning[]
     summary?: Record<string, unknown>
     preview_diff?: Record<string, unknown>
@@ -360,7 +376,7 @@
   }
   ```
 
-  API tests must prove list typing/fixtures contain no diagnostic fields. Selected-detail component tests must render distinct markers from `warnings`, `summary`, `preview_diff`, and `error_message`, so the expanded type cannot silently omit the complete contract.
+  API tests must prove list typing/fixtures contain no diagnostic fields. Selected-detail component tests must render distinct markers from `warnings`, `summary`, `preview_diff`, and `error_message`, so the expanded type cannot silently omit the complete contract. Add a queued/zero-count detail fixture that omits timestamps and all five Ent `omitempty` count fields, proving the exact detail type remains compatible with the unchanged backend entity response.
 
   Change `listDirectoryRuns` to require/accept typed limit/offset params. Increment the page request generation for every page load, including same-source navigation, and increment the detail request generation for every selection; a response applies only when its captured generation, source, offset, and selected ID still match. Source switch invalidates both generations. Track summaries, total/page/page size, latest active ID, selected summary ID, and selected full detail separately.
 
@@ -375,9 +391,9 @@
   Run separately:
 
   ```bash
-  cd frontend && npm test -- src/__tests__/api-modules.test.ts src/__tests__/directory-sync-settings.test.ts src/__tests__/settings-view.test.ts
-  cd frontend && npm test
-  cd frontend && npm run build
+  (cd frontend && npm test -- src/__tests__/api-modules.test.ts src/__tests__/directory-sync-settings.test.ts src/__tests__/settings-view.test.ts)
+  (cd frontend && npm test)
+  (cd frontend && npm run build)
   git diff --check
   ```
 
@@ -410,14 +426,14 @@
   Run exactly:
 
   ```bash
-  cd backend && gofmt -w internal/directorysync/service.go internal/directorysync/service_test.go internal/directorysync/run_query_plan_test.go internal/handler/directory.go internal/handler/directory_test.go ent/schema/directory_sync_run.go
-  cd backend && go generate ./ent
+  (cd backend && gofmt -w internal/directorysync/service.go internal/directorysync/service_test.go internal/directorysync/run_query_plan_test.go internal/handler/directory.go internal/handler/directory_test.go ent/schema/directory_sync_run.go)
+  (cd backend && go generate ./ent)
   git diff --exit-code -- backend/ent
-  cd backend && go test ./...
-  cd ae-cli && go test ./...
-  cd frontend && npm test
-  cd frontend && npm run build
-  cd frontend && npm run test:e2e:role
+  (cd backend && go test ./...)
+  (cd ae-cli && go test ./...)
+  (cd frontend && npm test)
+  (cd frontend && npm run build)
+  (cd frontend && npm run test:e2e:role)
   bash deploy/test/release-frontend-embed-test.sh
   git diff --check
   ```
@@ -442,7 +458,7 @@
   Can any list exceed 100 or select a diagnostic blob?
   Is order exactly started_at DESC NULLS FIRST, id DESC across ties/pages?
   Is latest_active_run page-independent and restricted to queued/running preview/apply?
-  Do count, primary-page, active-present, and no-active plans use the intended aggregate/ordered indexes?
+  Do count and primary-page plans use the intended aggregate/ordered paths, does active-present use the partial ordered index, and does no-active avoid sorting/filtering/materializing 2,400 terminal history rows through a bounded predicate-compatible index path?
   Does selected detail remain complete?
   Can same-source page/detail races overwrite newer state, or can terminal selection disturb active polling?
   Are apply/preview/current-fact/offboarding semantics unchanged with 2,400 historical rows present?
