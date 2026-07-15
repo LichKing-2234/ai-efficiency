@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-4 and Task 5 Steps 1-3 are complete and verified on final implementation head `15d6f6d`. Final independent SPEC and standards reviews both pass with zero findings; the Step 4 documentation checkpoint is current, while Draft PR delivery and CI remain pending. The branch is stacked on `docs/performance-contracts-116`.
+**Status:** Tasks 1-4 and Task 5 Steps 1-4 are complete and verified. Final independent SPEC and standards reviews both pass with zero findings; Draft PR delivery and CI are current. The branch is stacked on `docs/performance-contracts-116`.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 
@@ -500,7 +500,7 @@ The complete `5f6c58e..15d6f6d` package then received final independent gates: `
 
   Every Task 1-4 receives an independent spec/quality review against its recorded base and head. Resolve every Critical or Important finding and rerun covering tests. Then generate a branch package from `5f6c58e` and obtain final SPEC and standards reviews for all #118 acceptance criteria, privacy constraints, timeout ordering, and repository standards.
 
-- [ ] **Step 4: Commit architecture and verification evidence**
+- [x] **Step 4: Commit architecture and verification evidence**
 
   Commit checked Steps 1-3:
 
