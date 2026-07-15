@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan review is complete with no findings. Task 1 Steps 1-4 are complete with deterministic RED/GREEN and package verification evidence; the implementation commit and Task 1 checkpoint remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
+**Status:** Plan review is complete with no findings. Task 1 is complete at implementation commit `7659d82`; Task 2 is next, while later task review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
@@ -125,7 +125,7 @@
 
   GREEN evidence (2026-07-15): the focused `TestEvaluatePRFreshness` command and full `internal/prusage` package command passed; `git diff --check` exited 0.
 
-- [ ] **Step 5: Commit Task 1 and record the checkpoint**
+- [x] **Step 5: Commit Task 1 and record the checkpoint**
 
   Commit implementation plus checked Steps 1-4:
 
@@ -140,6 +140,8 @@
   git add docs/superpowers/plans/2026-07-15-pr-list-bulk-freshness.md
   git commit -m "docs(plan): record PR freshness contract task 1"
   ```
+
+  Checkpoint evidence (2026-07-15): implementation commit `7659d82` records the classifier, exact contract tests, and Steps 1-4 verification ledger.
 
 ---
 
