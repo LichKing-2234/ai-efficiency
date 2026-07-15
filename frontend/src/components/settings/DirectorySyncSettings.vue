@@ -25,7 +25,7 @@ defineProps<{
   credentials: Credential[]
 }>()
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const { showToast } = useToast()
 
 const sources = ref<DirectorySource[]>([])
@@ -57,6 +57,7 @@ const RUN_PAGE_SIZE = 20
 let runPollTimer: number | undefined
 let pageRequestGeneration = 0
 let detailRequestGeneration = 0
+let actionRequestGeneration = 0
 let pollGeneration = 0
 let activePollRunId: number | null = null
 let pollInFlightGeneration: number | null = null
@@ -190,6 +191,7 @@ onMounted(loadSources)
 onUnmounted(() => {
   pageRequestGeneration++
   detailRequestGeneration++
+  actionRequestGeneration++
   invalidateRunPolling()
 })
 
@@ -211,6 +213,7 @@ async function loadSources() {
 }
 
 function selectSource(source: DirectorySource) {
+  actionRequestGeneration++
   clearFeedback()
   resetRunView()
   selectedSourceId.value = source.id
@@ -265,6 +268,10 @@ function resetRunView() {
 
 function apiErrorMessage(e: any, fallback: string) {
   return e?.response?.data?.message || e?.message || fallback
+}
+
+function actionContextMatches(generation: number, sourceID: number) {
+  return generation === actionRequestGeneration && selectedSourceId.value === sourceID
 }
 
 type RunDisplay = DirectoryRunSummary | DirectorySyncRun
@@ -442,7 +449,7 @@ function statusLabel(status: DirectoryRunSummary['status']) {
 
 function runStartedLabel(run: DirectoryRunSummary) {
   if (!run.started_at) return t('directorySync.runQueuedAt')
-  return new Date(run.started_at).toLocaleString()
+  return new Date(run.started_at).toLocaleString(locale.value)
 }
 
 function formatDiagnostic(value: Record<string, unknown> | undefined) {
@@ -557,8 +564,6 @@ async function selectRun(run: DirectoryRunSummary) {
 async function pollRunUntilDone(runID: number, action: 'preview' | 'apply', sourceID: number, generation: number) {
   if (!pollContextMatches(generation, sourceID, runID)) return
   pollInFlightGeneration = generation
-  const selectedIDAtStart = selectedRunId.value
-  const detailGenerationAtStart = detailRequestGeneration
   try {
     const res = await getDirectoryRun(runID)
     const run = res.data.data
@@ -580,13 +585,12 @@ async function pollRunUntilDone(runID: number, action: 'preview' | 'apply', sour
     activePollRunId = null
     pollGeneration++
     pollInFlightGeneration = null
-    if (
-      selectedIDAtStart === runID
-      && selectedRunId.value === runID
-      && detailGenerationAtStart === detailRequestGeneration
-    ) {
+    if (selectedRunId.value === runID) {
+      detailRequestGeneration++
+      selectedRunSummary.value = summaryFromRun(run, sourceID)
       selectedRunDetail.value = run
       selectedRunLoading.value = false
+      selectedRunError.value = ''
     }
     if (selectedSourceId.value === sourceID) {
       const completedPageOffset = runOffset.value
@@ -647,11 +651,13 @@ async function validateSource() {
 async function previewSource() {
   const sourceID = selectedSourceId.value
   if (!sourceID) return
+  const generation = ++actionRequestGeneration
   clearFeedback()
   activeRunAction.value = 'preview'
   message.value = t('directorySync.previewStarted')
   try {
     const res = await previewDirectorySource(sourceID)
+    if (!actionContextMatches(generation, sourceID)) return
     const run = res.data.data
     applyRunProgress(run, 'preview')
     if (run && isActiveRun(run)) {
@@ -660,8 +666,11 @@ async function previewSource() {
       await loadRunPage(sourceID, 0)
     }
   } catch (e: any) {
+    if (!actionContextMatches(generation, sourceID)) return
     if (e?.response?.status === 409) {
-      if (await loadRunPage(sourceID, 0, 'preview')) return
+      const recovered = await loadRunPage(sourceID, 0, 'preview')
+      if (!actionContextMatches(generation, sourceID)) return
+      if (recovered) return
     }
     error.value = apiErrorMessage(e, t('directorySync.previewFailed'))
   }
@@ -670,11 +679,13 @@ async function previewSource() {
 async function runNow() {
   const sourceID = selectedSourceId.value
   if (!sourceID) return
+  const generation = ++actionRequestGeneration
   clearFeedback()
   activeRunAction.value = 'apply'
   message.value = t('directorySync.applyStarted')
   try {
     const res = await startDirectoryRun(sourceID, { mode: 'apply' })
+    if (!actionContextMatches(generation, sourceID)) return
     const run = res.data.data
     applyRunProgress(run, 'apply')
     if (run && isActiveRun(run)) {
@@ -683,8 +694,11 @@ async function runNow() {
       await loadRunPage(sourceID, 0)
     }
   } catch (e: any) {
+    if (!actionContextMatches(generation, sourceID)) return
     if (e?.response?.status === 409) {
-      if (await loadRunPage(sourceID, 0, 'apply')) return
+      const recovered = await loadRunPage(sourceID, 0, 'apply')
+      if (!actionContextMatches(generation, sourceID)) return
+      if (recovered) return
     }
     error.value = apiErrorMessage(e, t('directorySync.runFailed'))
   }
