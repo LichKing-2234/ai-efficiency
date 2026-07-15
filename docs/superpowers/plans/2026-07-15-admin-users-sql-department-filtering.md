@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-3 are complete, independently reviewed, and committed. Tasks 4-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Tasks 1-3 are complete, independently reviewed, and committed. Task 4 implementation and local verification (Steps 1-4) are complete; Task 4 independent review/checkpoint (Step 5), Tasks 5-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -991,7 +991,7 @@ Task 3 review/checkpoint evidence (2026-07-15): the initial SPEC review passed w
 - Consumes: Task 1 `adminusers.Service.Targets`, `Filters`, and its shared effective-subtree semantics.
 - Produces: the `adminsubscription.CurrentFilterTargetResolver` boundary and exact persisted-job/compatibility-batch target parity.
 
-- [ ] **Step 1: Add failing resolver and two-route parity tests**
+- [x] **Step 1: Add failing resolver and two-route parity tests**
 
 In `job_test.go`, add a recording resolver and prove `StartJob`:
 
@@ -1025,7 +1025,7 @@ exactly 500 targets
 
 Name the cycle integration case `TestAdminUsersCurrentFilterEffectiveCycleParity` so the focused Step 2/4 regex necessarily executes it.
 
-- [ ] **Step 2: Run Task 4 tests and record RED**
+- [x] **Step 2: Run Task 4 tests and record RED**
 
 Run:
 
@@ -1035,7 +1035,9 @@ Run:
 
 Expected: FAIL because persisted jobs and the compatibility endpoint still own duplicate current-filter logic.
 
-- [ ] **Step 3: Inject the resolver without a package cycle**
+**Task 4 Step 2 RED evidence (2026-07-15):** The exact focused command exited 1. `adminsubscription` failed to build because `CurrentFilter`, the resolver interface, and the variadic constructor did not exist. The handler suite also proved the duplicate current-filter implementation omitted the normalized-email side of a dual mapping (`[3]` instead of List `[3 4]`), omitted a mixed-case normalized-email match, and returned 500 rather than 400 for persisted-job invalid access status. The 500-target compatibility cases passed while the new resolver contract remained absent.
+
+- [x] **Step 3: Inject the resolver without a package cycle**
 
 Add the consumer-owned `CurrentFilter`, `CurrentFilterTargetResolver`, and function adapter from the Deep Module Interface to `adminsubscription/job.go`. Store the optional resolver on `Service`; keep the variadic constructor source-compatible.
 
@@ -1069,7 +1071,7 @@ For the legacy `subscriptionTargetsForScope` current-filter case, call the same 
 
 Map `adminusers.ErrInvalidAccessStatus` to the existing 400 response in both endpoints. Database/resolver failures remain 500; oversize remains 422.
 
-- [ ] **Step 4: Verify one target contract GREEN**
+- [x] **Step 4: Verify one target contract GREEN**
 
 Run:
 
@@ -1081,6 +1083,8 @@ git diff --check
 ```
 
 Expected: both current-filter routes share exact normalized target IDs for the complete matrix and call `adminusers.Service.Targets`; for cycle B, paged List IDs, direct Targets, persisted snapshots, and compatibility-batch relay IDs are exactly `{b,c}` and never include A; 501 targets are rejected before mutation/persistence; the `adminsubscription.Service.StartJob` `ScopeCurrentFilter` branch and `AdminUsersHandler.subscriptionTargetsForScope` `current_filter` branch contain no second directory snapshot/filter implementation. This assertion explicitly excludes the unchanged `AdminUsersHandler.ListDepartments` compatibility snapshot.
+
+**Task 4 Step 4 GREEN evidence (2026-07-15):** The exact formatting command succeeded. The exact focused suite passed twice for `adminsubscription`, `adminusers`, and `handler`, including trimmed resolver input with limit 501, normalized-email and dual mapping parity, exact cycle scopes A `{a,b,c}` / B `{b,c}` / C `{c}`, 500-target success, 501-target 422 rejection with zero job rows/relay calls, and invalid-access 400 handling. The exact unfiltered three-package suite passed once (`adminsubscription` 4.285s, `adminusers` 8.431s, `handler` 33.613s), and `git diff --check` returned zero findings. Step 5 remains unchecked pending independent review and checkpoint work.
 
 - [ ] **Step 5: Complete exact-range Task 4 reviews and checkpoint**
 

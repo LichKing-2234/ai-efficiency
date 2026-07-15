@@ -14,7 +14,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
-	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminsubscription"
@@ -238,13 +237,22 @@ func NewAdminUsersHandler(entClient *ent.Client, encryptionKey string, resolvers
 	if len(resolvers) > 0 {
 		resolver = resolvers[0]
 	}
+	userReader := adminusers.NewService(entClient)
 	return &AdminUsersHandler{
-		entClient:        entClient,
-		users:            adminusers.NewService(entClient),
-		encryptionKey:    strings.TrimSpace(encryptionKey),
-		resolver:         resolver,
-		subscriptionJobs: adminsubscription.NewService(entClient),
-		logger:           zap.NewNop(),
+		entClient:     entClient,
+		users:         userReader,
+		encryptionKey: strings.TrimSpace(encryptionKey),
+		resolver:      resolver,
+		subscriptionJobs: adminsubscription.NewService(entClient, adminsubscription.CurrentFilterTargetResolverFunc(
+			func(ctx context.Context, filter adminsubscription.CurrentFilter, limit int) ([]*ent.User, error) {
+				return userReader.Targets(ctx, adminusers.Filters{
+					Query:        filter.Query,
+					DepartmentID: filter.DepartmentID,
+					AccessStatus: filter.AccessStatus,
+				}, limit)
+			},
+		)),
+		logger: zap.NewNop(),
 	}
 }
 
@@ -650,6 +658,10 @@ func (h *AdminUsersHandler) StartSubscriptionJob(c *gin.Context) {
 		Days:         req.Days,
 	})
 	if err != nil {
+		if errors.Is(err, adminusers.ErrInvalidAccessStatus) {
+			pkg.Error(c, http.StatusBadRequest, "access_status must be configured, disabled, or missing_credential")
+			return
+		}
 		pkg.Error(c, adminSubscriptionJobErrorStatus(err), err.Error())
 		return
 	}
@@ -1156,6 +1168,9 @@ func adminSubscriptionJobErrorStatus(err error) int {
 	if errors.As(err, &tooManyTargets) {
 		return http.StatusUnprocessableEntity
 	}
+	if errors.Is(err, adminusers.ErrInvalidAccessStatus) {
+		return http.StatusBadRequest
+	}
 	var validationErr *adminsubscription.ValidationError
 	if errors.As(err, &validationErr) {
 		return http.StatusBadRequest
@@ -1195,28 +1210,28 @@ func (h *AdminUsersHandler) subscriptionTargetsForScope(c *gin.Context, req admi
 		}
 		return targets, true
 	case "current_filter":
-		q := strings.TrimSpace(req.Filters.Q)
-		if q != "" {
-			query = query.Where(adminUsersSearchPredicate(q))
-		}
-		departmentID := strings.TrimSpace(req.Filters.DepartmentID)
-		if departmentID != "" {
-			var err error
-			query, err = h.applyDepartmentFilter(c.Request.Context(), query, departmentID)
-			if err != nil {
-				pkg.Error(c, http.StatusInternalServerError, err.Error())
+		users, err := h.users.Targets(c.Request.Context(), adminusers.Filters{
+			Query:        req.Filters.Q,
+			DepartmentID: req.Filters.DepartmentID,
+			AccessStatus: req.Filters.AccessStatus,
+		}, adminsubscription.MaxTargets+1)
+		if err != nil {
+			if errors.Is(err, adminusers.ErrInvalidAccessStatus) {
+				pkg.Error(c, http.StatusBadRequest, "access_status must be configured, disabled, or missing_credential")
 				return nil, false
 			}
+			pkg.Error(c, http.StatusInternalServerError, err.Error())
+			return nil, false
 		}
-		accessStatus := strings.TrimSpace(req.Filters.AccessStatus)
-		if accessStatus != "" {
-			var err error
-			query, err = adminuseraccess.ApplyFilter(query, accessStatus)
-			if err != nil {
-				pkg.Error(c, http.StatusBadRequest, err.Error())
-				return nil, false
-			}
+		if len(users) > adminsubscription.MaxTargets {
+			pkg.Error(c, http.StatusUnprocessableEntity, fmt.Sprintf("subscription batch targets too many; maximum is %d users", adminsubscription.MaxTargets))
+			return nil, false
 		}
+		targets := make([]adminManageSubscriptionTarget, 0, len(users))
+		for _, u := range users {
+			targets = append(targets, adminManageSubscriptionTarget{User: u})
+		}
+		return targets, true
 	case "all_mapped":
 		query = query.Where(entuser.RelayUserIDNotNil(), entuser.RelayUserIDGT(0))
 	default:
@@ -1301,67 +1316,6 @@ func uniquePositiveInts(values []int) []int {
 	return ids
 }
 
-func adminUsersSearchPredicate(q string) predicate.User {
-	predicates := []predicate.User{
-		entuser.UsernameContainsFold(q),
-		entuser.EmailContainsFold(q),
-	}
-	if n, err := strconv.Atoi(q); err == nil {
-		predicates = append(predicates, entuser.IDEQ(n), entuser.RelayUserIDEQ(n))
-	}
-	return entuser.Or(predicates...)
-}
-
-func (h *AdminUsersHandler) applyDepartmentFilter(ctx context.Context, query *ent.UserQuery, departmentID string) (*ent.UserQuery, error) {
-	sourceID, ok, err := h.currentDirectorySourceID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return query.Where(entuser.IDEQ(0)), nil
-	}
-	departmentIDs, err := h.departmentSubtreeExternalIDs(ctx, sourceID, departmentID)
-	if err != nil {
-		return nil, err
-	}
-	matchingMemberIDs, memberIDsWithMemberships, err := h.memberIDSetsForDepartmentIDs(ctx, sourceID, departmentIDs)
-	if err != nil {
-		return nil, err
-	}
-	memberPredicates := make([]predicate.DirectoryMember, 0, 2)
-	if len(matchingMemberIDs) > 0 {
-		memberPredicates = append(memberPredicates, directorymember.IDIn(matchingMemberIDs...))
-	}
-	fallbackPredicate := predicate.DirectoryMember(directorymember.DepartmentExternalIDIn(departmentIDs...))
-	if len(memberIDsWithMemberships) > 0 {
-		fallbackPredicate = directorymember.And(
-			fallbackPredicate,
-			directorymember.Not(directorymember.IDIn(memberIDsWithMemberships...)),
-		)
-	}
-	memberPredicates = append(memberPredicates, fallbackPredicate)
-	members, err := h.entClient.DirectoryMember.Query().
-		Where(
-			directorymember.SourceIDEQ(sourceID),
-			directorymember.Or(memberPredicates...),
-		).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list directory members for department: %w", err)
-	}
-	return query.Where(adminUserPredicateForDirectoryMembers(members)), nil
-}
-
-func (h *AdminUsersHandler) departmentSubtreeExternalIDs(ctx context.Context, sourceID int, departmentID string) ([]string, error) {
-	departments, err := h.entClient.DirectoryDepartment.Query().
-		Where(directorydepartment.SourceIDEQ(sourceID)).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list directory departments for subtree filter: %w", err)
-	}
-	return directorytree.New(departments).SubtreeIDs(departmentID), nil
-}
-
 func (h *AdminUsersHandler) currentDirectorySourceID(ctx context.Context) (int, bool, error) {
 	return directorysync.CurrentSourceID(ctx, h.entClient)
 }
@@ -1389,38 +1343,6 @@ func (h *AdminUsersHandler) memberDepartmentIDsByMember(ctx context.Context, sou
 		out[membership.DirectoryMemberID] = appendAdminUniqueStrings(out[membership.DirectoryMemberID], membership.DepartmentExternalID)
 	}
 	return out, nil
-}
-
-func (h *AdminUsersHandler) memberIDSetsForDepartmentIDs(ctx context.Context, sourceID int, departmentIDs []string) ([]int, []int, error) {
-	if len(departmentIDs) == 0 {
-		return nil, nil, nil
-	}
-	targetDepartments := make(map[string]struct{}, len(departmentIDs))
-	for _, departmentID := range departmentIDs {
-		departmentID = strings.TrimSpace(departmentID)
-		if departmentID != "" {
-			targetDepartments[departmentID] = struct{}{}
-		}
-	}
-	memberships, err := h.entClient.DirectoryMemberDepartment.Query().
-		Where(directorymemberdepartment.SourceIDEQ(sourceID)).
-		All(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("list directory member departments: %w", err)
-	}
-	matchingMemberIDs := map[int]struct{}{}
-	memberIDsWithMemberships := map[int]struct{}{}
-	for _, membership := range memberships {
-		memberID := membership.DirectoryMemberID
-		if memberID <= 0 {
-			continue
-		}
-		memberIDsWithMemberships[memberID] = struct{}{}
-		if _, ok := targetDepartments[strings.TrimSpace(membership.DepartmentExternalID)]; ok {
-			matchingMemberIDs[memberID] = struct{}{}
-		}
-	}
-	return adminIntSetValues(matchingMemberIDs), adminIntSetValues(memberIDsWithMemberships), nil
 }
 
 func adminDirectoryMemberDepartmentIDs(member *ent.DirectoryMember, indexed map[int][]string) []string {
@@ -1481,47 +1403,6 @@ func adminStringSliceContains(values []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func adminIntSetValues(values map[int]struct{}) []int {
-	out := make([]int, 0, len(values))
-	for value := range values {
-		out = append(out, value)
-	}
-	return out
-}
-
-func adminUserPredicateForDirectoryMembers(members []*ent.DirectoryMember) predicate.User {
-	ids := make([]int, 0, len(members))
-	emails := make([]string, 0, len(members))
-	seenIDs := map[int]struct{}{}
-	seenEmails := map[string]struct{}{}
-	for _, member := range members {
-		if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-			if _, ok := seenIDs[*member.MatchedUserID]; !ok {
-				ids = append(ids, *member.MatchedUserID)
-				seenIDs[*member.MatchedUserID] = struct{}{}
-			}
-		}
-		email := strings.TrimSpace(strings.ToLower(member.EmailNormalized))
-		if email != "" {
-			if _, ok := seenEmails[email]; !ok {
-				emails = append(emails, email)
-				seenEmails[email] = struct{}{}
-			}
-		}
-	}
-	predicates := make([]predicate.User, 0, 2)
-	if len(ids) > 0 {
-		predicates = append(predicates, entuser.IDIn(ids...))
-	}
-	if len(emails) > 0 {
-		predicates = append(predicates, entuser.EmailIn(emails...))
-	}
-	if len(predicates) == 0 {
-		return entuser.IDEQ(0)
-	}
-	return entuser.Or(predicates...)
 }
 
 func parseAdminUsersListRequest(c *gin.Context) adminUsersListRequest {
