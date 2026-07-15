@@ -99,6 +99,26 @@ func EnabledNEQ(v bool) predicate.QuotaResetNotificationSetting {
 	return predicate.QuotaResetNotificationSetting(sql.FieldNEQ(FieldEnabled, v))
 }
 
+// ChannelEQ applies the EQ predicate on the "channel" field.
+func ChannelEQ(v Channel) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldEQ(FieldChannel, v))
+}
+
+// ChannelNEQ applies the NEQ predicate on the "channel" field.
+func ChannelNEQ(v Channel) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldNEQ(FieldChannel, v))
+}
+
+// ChannelIn applies the In predicate on the "channel" field.
+func ChannelIn(vs ...Channel) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldIn(FieldChannel, vs...))
+}
+
+// ChannelNotIn applies the NotIn predicate on the "channel" field.
+func ChannelNotIn(vs ...Channel) predicate.QuotaResetNotificationSetting {
+	return predicate.QuotaResetNotificationSetting(sql.FieldNotIn(FieldChannel, vs...))
+}
+
 // URLEQ applies the EQ predicate on the "url" field.
 func URLEQ(v string) predicate.QuotaResetNotificationSetting {
 	return predicate.QuotaResetNotificationSetting(sql.FieldEQ(FieldURL, v))

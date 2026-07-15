@@ -32,6 +32,12 @@ type QuotaResetRequest struct {
 	GroupPlatform string `json:"group_platform,omitempty"`
 	// Reason holds the value of the "reason" field.
 	Reason string `json:"reason,omitempty"`
+	// WorkflowVersion holds the value of the "workflow_version" field.
+	WorkflowVersion int `json:"workflow_version,omitempty"`
+	// Workflow holds the value of the "workflow" field.
+	Workflow map[string]interface{} `json:"workflow,omitempty"`
+	// WorkflowRevision holds the value of the "workflow_revision" field.
+	WorkflowRevision int `json:"workflow_revision,omitempty"`
 	// Status holds the value of the "status" field.
 	Status quotaresetrequest.Status `json:"status,omitempty"`
 	// ResolvedApproverUserIds holds the value of the "resolved_approver_user_ids" field.
@@ -64,9 +70,9 @@ func (*QuotaResetRequest) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case quotaresetrequest.FieldResolvedApproverUserIds, quotaresetrequest.FieldMatchedDepartmentPaths:
+		case quotaresetrequest.FieldWorkflow, quotaresetrequest.FieldResolvedApproverUserIds, quotaresetrequest.FieldMatchedDepartmentPaths:
 			values[i] = new([]byte)
-		case quotaresetrequest.FieldID, quotaresetrequest.FieldRequesterUserID, quotaresetrequest.FieldRequesterRelayUserID, quotaresetrequest.FieldProviderID, quotaresetrequest.FieldApprovedByUserID, quotaresetrequest.FieldRejectedByUserID:
+		case quotaresetrequest.FieldID, quotaresetrequest.FieldRequesterUserID, quotaresetrequest.FieldRequesterRelayUserID, quotaresetrequest.FieldProviderID, quotaresetrequest.FieldWorkflowVersion, quotaresetrequest.FieldWorkflowRevision, quotaresetrequest.FieldApprovedByUserID, quotaresetrequest.FieldRejectedByUserID:
 			values[i] = new(sql.NullInt64)
 		case quotaresetrequest.FieldGroupID, quotaresetrequest.FieldGroupName, quotaresetrequest.FieldGroupPlatform, quotaresetrequest.FieldReason, quotaresetrequest.FieldStatus, quotaresetrequest.FieldDecisionReason, quotaresetrequest.FieldResetError:
 			values[i] = new(sql.NullString)
@@ -134,6 +140,26 @@ func (qrr *QuotaResetRequest) assignValues(columns []string, values []any) error
 				return fmt.Errorf("unexpected type %T for field reason", values[i])
 			} else if value.Valid {
 				qrr.Reason = value.String
+			}
+		case quotaresetrequest.FieldWorkflowVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field workflow_version", values[i])
+			} else if value.Valid {
+				qrr.WorkflowVersion = int(value.Int64)
+			}
+		case quotaresetrequest.FieldWorkflow:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field workflow", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &qrr.Workflow); err != nil {
+					return fmt.Errorf("unmarshal field workflow: %w", err)
+				}
+			}
+		case quotaresetrequest.FieldWorkflowRevision:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field workflow_revision", values[i])
+			} else if value.Valid {
+				qrr.WorkflowRevision = int(value.Int64)
 			}
 		case quotaresetrequest.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -272,6 +298,15 @@ func (qrr *QuotaResetRequest) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("reason=")
 	builder.WriteString(qrr.Reason)
+	builder.WriteString(", ")
+	builder.WriteString("workflow_version=")
+	builder.WriteString(fmt.Sprintf("%v", qrr.WorkflowVersion))
+	builder.WriteString(", ")
+	builder.WriteString("workflow=")
+	builder.WriteString(fmt.Sprintf("%v", qrr.Workflow))
+	builder.WriteString(", ")
+	builder.WriteString("workflow_revision=")
+	builder.WriteString(fmt.Sprintf("%v", qrr.WorkflowRevision))
 	builder.WriteString(", ")
 	builder.WriteString("status=")
 	builder.WriteString(fmt.Sprintf("%v", qrr.Status))

@@ -595,6 +595,32 @@ var (
 			},
 		},
 	}
+	// QuotaResetApprovalChainsColumns holds the columns for the "quota_reset_approval_chains" table.
+	QuotaResetApprovalChainsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "provider_id", Type: field.TypeInt},
+		{Name: "group_id", Type: field.TypeString},
+		{Name: "group_name", Type: field.TypeString, Default: ""},
+		{Name: "department_chain", Type: field.TypeJSON},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "created_by_user_id", Type: field.TypeInt, Default: 0},
+		{Name: "updated_by_user_id", Type: field.TypeInt, Default: 0},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// QuotaResetApprovalChainsTable holds the schema information for the "quota_reset_approval_chains" table.
+	QuotaResetApprovalChainsTable = &schema.Table{
+		Name:       "quota_reset_approval_chains",
+		Columns:    QuotaResetApprovalChainsColumns,
+		PrimaryKey: []*schema.Column{QuotaResetApprovalChainsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "quotaresetapprovalchain_provider_id_group_id",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetApprovalChainsColumns[1], QuotaResetApprovalChainsColumns[2]},
+			},
+		},
+	}
 	// QuotaResetApproverConfigsColumns holds the columns for the "quota_reset_approver_configs" table.
 	QuotaResetApproverConfigsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -635,6 +661,7 @@ var (
 	QuotaResetNotificationSettingsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "enabled", Type: field.TypeBool, Default: false},
+		{Name: "channel", Type: field.TypeEnum, Enums: []string{"generic_webhook", "wecom_group_robot"}, Default: "generic_webhook"},
 		{Name: "url", Type: field.TypeString, Default: ""},
 		{Name: "auth_type", Type: field.TypeEnum, Enums: []string{"none", "bearer_token"}, Default: "none"},
 		{Name: "credential_id", Type: field.TypeInt, Nullable: true},
@@ -659,6 +686,9 @@ var (
 		{Name: "group_name", Type: field.TypeString, Default: ""},
 		{Name: "group_platform", Type: field.TypeString, Default: ""},
 		{Name: "reason", Type: field.TypeString},
+		{Name: "workflow_version", Type: field.TypeInt, Default: 1},
+		{Name: "workflow", Type: field.TypeJSON, Nullable: true},
+		{Name: "workflow_revision", Type: field.TypeInt, Default: 0},
 		{Name: "status", Type: field.TypeEnum, Enums: []string{"pending", "approved_resetting", "approved_reset_succeeded", "approved_reset_failed", "rejected", "cancelled"}, Default: "pending"},
 		{Name: "resolved_approver_user_ids", Type: field.TypeJSON, Nullable: true},
 		{Name: "matched_department_paths", Type: field.TypeJSON, Nullable: true},
@@ -681,17 +711,17 @@ var (
 			{
 				Name:    "quotaresetrequest_requester_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[18]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[21]},
 			},
 			{
 				Name:    "quotaresetrequest_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[8], QuotaResetRequestsColumns[18]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[11], QuotaResetRequestsColumns[21]},
 			},
 			{
 				Name:    "quotaresetrequest_provider_id_group_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4], QuotaResetRequestsColumns[8]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4], QuotaResetRequestsColumns[11]},
 			},
 			{
 				Name:    "quotaresetrequest_requester_user_id_provider_id_group_id",
@@ -704,7 +734,7 @@ var (
 			{
 				Name:    "quotaresetrequest_updated_at",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[19]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[22]},
 			},
 		},
 	}
@@ -713,7 +743,7 @@ var (
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "request_id", Type: field.TypeInt},
 		{Name: "actor_user_id", Type: field.TypeInt, Nullable: true},
-		{Name: "event_type", Type: field.TypeEnum, Enums: []string{"created", "approver_resolved", "notification_sent", "notification_failed", "approved", "reset_started", "reset_succeeded", "reset_failed", "rejected", "cancelled", "reset_retried"}},
+		{Name: "event_type", Type: field.TypeEnum, Enums: []string{"created", "approver_resolved", "notification_sent", "notification_failed", "approved", "reset_started", "reset_succeeded", "reset_failed", "rejected", "cancelled", "reset_retried", "workflow_created", "step_approved", "step_satisfied", "step_activated", "admin_fallback_activated"}},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
 		{Name: "error_message", Type: field.TypeString, Default: ""},
 		{Name: "created_at", Type: field.TypeTime},
@@ -1048,6 +1078,7 @@ var (
 		PrSyncJobsTable,
 		PrAttributionRunsTable,
 		PrRecordsTable,
+		QuotaResetApprovalChainsTable,
 		QuotaResetApproverConfigsTable,
 		QuotaResetNotificationSettingsTable,
 		QuotaResetRequestsTable,

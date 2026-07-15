@@ -26,6 +26,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/prsyncjob"
+	"github.com/ai-efficiency/backend/ent/quotaresetapprovalchain"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -112,6 +113,7 @@ func checkColumn(table, column string) error {
 			prsyncjob.Table:                     prsyncjob.ValidColumn,
 			prattributionrun.Table:              prattributionrun.ValidColumn,
 			prrecord.Table:                      prrecord.ValidColumn,
+			quotaresetapprovalchain.Table:       quotaresetapprovalchain.ValidColumn,
 			quotaresetapproverconfig.Table:      quotaresetapproverconfig.ValidColumn,
 			quotaresetnotificationsetting.Table: quotaresetnotificationsetting.ValidColumn,
 			quotaresetrequest.Table:             quotaresetrequest.ValidColumn,

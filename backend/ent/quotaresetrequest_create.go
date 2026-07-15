@@ -78,6 +78,40 @@ func (qrrc *QuotaResetRequestCreate) SetReason(s string) *QuotaResetRequestCreat
 	return qrrc
 }
 
+// SetWorkflowVersion sets the "workflow_version" field.
+func (qrrc *QuotaResetRequestCreate) SetWorkflowVersion(i int) *QuotaResetRequestCreate {
+	qrrc.mutation.SetWorkflowVersion(i)
+	return qrrc
+}
+
+// SetNillableWorkflowVersion sets the "workflow_version" field if the given value is not nil.
+func (qrrc *QuotaResetRequestCreate) SetNillableWorkflowVersion(i *int) *QuotaResetRequestCreate {
+	if i != nil {
+		qrrc.SetWorkflowVersion(*i)
+	}
+	return qrrc
+}
+
+// SetWorkflow sets the "workflow" field.
+func (qrrc *QuotaResetRequestCreate) SetWorkflow(m map[string]interface{}) *QuotaResetRequestCreate {
+	qrrc.mutation.SetWorkflow(m)
+	return qrrc
+}
+
+// SetWorkflowRevision sets the "workflow_revision" field.
+func (qrrc *QuotaResetRequestCreate) SetWorkflowRevision(i int) *QuotaResetRequestCreate {
+	qrrc.mutation.SetWorkflowRevision(i)
+	return qrrc
+}
+
+// SetNillableWorkflowRevision sets the "workflow_revision" field if the given value is not nil.
+func (qrrc *QuotaResetRequestCreate) SetNillableWorkflowRevision(i *int) *QuotaResetRequestCreate {
+	if i != nil {
+		qrrc.SetWorkflowRevision(*i)
+	}
+	return qrrc
+}
+
 // SetStatus sets the "status" field.
 func (qrrc *QuotaResetRequestCreate) SetStatus(q quotaresetrequest.Status) *QuotaResetRequestCreate {
 	qrrc.mutation.SetStatus(q)
@@ -273,6 +307,14 @@ func (qrrc *QuotaResetRequestCreate) defaults() {
 		v := quotaresetrequest.DefaultGroupPlatform
 		qrrc.mutation.SetGroupPlatform(v)
 	}
+	if _, ok := qrrc.mutation.WorkflowVersion(); !ok {
+		v := quotaresetrequest.DefaultWorkflowVersion
+		qrrc.mutation.SetWorkflowVersion(v)
+	}
+	if _, ok := qrrc.mutation.WorkflowRevision(); !ok {
+		v := quotaresetrequest.DefaultWorkflowRevision
+		qrrc.mutation.SetWorkflowRevision(v)
+	}
 	if _, ok := qrrc.mutation.Status(); !ok {
 		v := quotaresetrequest.DefaultStatus
 		qrrc.mutation.SetStatus(v)
@@ -327,6 +369,12 @@ func (qrrc *QuotaResetRequestCreate) check() error {
 		if err := quotaresetrequest.ReasonValidator(v); err != nil {
 			return &ValidationError{Name: "reason", err: fmt.Errorf(`ent: validator failed for field "QuotaResetRequest.reason": %w`, err)}
 		}
+	}
+	if _, ok := qrrc.mutation.WorkflowVersion(); !ok {
+		return &ValidationError{Name: "workflow_version", err: errors.New(`ent: missing required field "QuotaResetRequest.workflow_version"`)}
+	}
+	if _, ok := qrrc.mutation.WorkflowRevision(); !ok {
+		return &ValidationError{Name: "workflow_revision", err: errors.New(`ent: missing required field "QuotaResetRequest.workflow_revision"`)}
 	}
 	if _, ok := qrrc.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "QuotaResetRequest.status"`)}
@@ -401,6 +449,18 @@ func (qrrc *QuotaResetRequestCreate) createSpec() (*QuotaResetRequest, *sqlgraph
 	if value, ok := qrrc.mutation.Reason(); ok {
 		_spec.SetField(quotaresetrequest.FieldReason, field.TypeString, value)
 		_node.Reason = value
+	}
+	if value, ok := qrrc.mutation.WorkflowVersion(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflowVersion, field.TypeInt, value)
+		_node.WorkflowVersion = value
+	}
+	if value, ok := qrrc.mutation.Workflow(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflow, field.TypeJSON, value)
+		_node.Workflow = value
+	}
+	if value, ok := qrrc.mutation.WorkflowRevision(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflowRevision, field.TypeInt, value)
+		_node.WorkflowRevision = value
 	}
 	if value, ok := qrrc.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequest.FieldStatus, field.TypeEnum, value)

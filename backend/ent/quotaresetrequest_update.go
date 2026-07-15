@@ -148,6 +148,60 @@ func (qrru *QuotaResetRequestUpdate) SetNillableReason(s *string) *QuotaResetReq
 	return qrru
 }
 
+// SetWorkflowVersion sets the "workflow_version" field.
+func (qrru *QuotaResetRequestUpdate) SetWorkflowVersion(i int) *QuotaResetRequestUpdate {
+	qrru.mutation.ResetWorkflowVersion()
+	qrru.mutation.SetWorkflowVersion(i)
+	return qrru
+}
+
+// SetNillableWorkflowVersion sets the "workflow_version" field if the given value is not nil.
+func (qrru *QuotaResetRequestUpdate) SetNillableWorkflowVersion(i *int) *QuotaResetRequestUpdate {
+	if i != nil {
+		qrru.SetWorkflowVersion(*i)
+	}
+	return qrru
+}
+
+// AddWorkflowVersion adds i to the "workflow_version" field.
+func (qrru *QuotaResetRequestUpdate) AddWorkflowVersion(i int) *QuotaResetRequestUpdate {
+	qrru.mutation.AddWorkflowVersion(i)
+	return qrru
+}
+
+// SetWorkflow sets the "workflow" field.
+func (qrru *QuotaResetRequestUpdate) SetWorkflow(m map[string]interface{}) *QuotaResetRequestUpdate {
+	qrru.mutation.SetWorkflow(m)
+	return qrru
+}
+
+// ClearWorkflow clears the value of the "workflow" field.
+func (qrru *QuotaResetRequestUpdate) ClearWorkflow() *QuotaResetRequestUpdate {
+	qrru.mutation.ClearWorkflow()
+	return qrru
+}
+
+// SetWorkflowRevision sets the "workflow_revision" field.
+func (qrru *QuotaResetRequestUpdate) SetWorkflowRevision(i int) *QuotaResetRequestUpdate {
+	qrru.mutation.ResetWorkflowRevision()
+	qrru.mutation.SetWorkflowRevision(i)
+	return qrru
+}
+
+// SetNillableWorkflowRevision sets the "workflow_revision" field if the given value is not nil.
+func (qrru *QuotaResetRequestUpdate) SetNillableWorkflowRevision(i *int) *QuotaResetRequestUpdate {
+	if i != nil {
+		qrru.SetWorkflowRevision(*i)
+	}
+	return qrru
+}
+
+// AddWorkflowRevision adds i to the "workflow_revision" field.
+func (qrru *QuotaResetRequestUpdate) AddWorkflowRevision(i int) *QuotaResetRequestUpdate {
+	qrru.mutation.AddWorkflowRevision(i)
+	return qrru
+}
+
 // SetStatus sets the "status" field.
 func (qrru *QuotaResetRequestUpdate) SetStatus(q quotaresetrequest.Status) *QuotaResetRequestUpdate {
 	qrru.mutation.SetStatus(q)
@@ -463,6 +517,24 @@ func (qrru *QuotaResetRequestUpdate) sqlSave(ctx context.Context) (n int, err er
 	if value, ok := qrru.mutation.Reason(); ok {
 		_spec.SetField(quotaresetrequest.FieldReason, field.TypeString, value)
 	}
+	if value, ok := qrru.mutation.WorkflowVersion(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflowVersion, field.TypeInt, value)
+	}
+	if value, ok := qrru.mutation.AddedWorkflowVersion(); ok {
+		_spec.AddField(quotaresetrequest.FieldWorkflowVersion, field.TypeInt, value)
+	}
+	if value, ok := qrru.mutation.Workflow(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflow, field.TypeJSON, value)
+	}
+	if qrru.mutation.WorkflowCleared() {
+		_spec.ClearField(quotaresetrequest.FieldWorkflow, field.TypeJSON)
+	}
+	if value, ok := qrru.mutation.WorkflowRevision(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflowRevision, field.TypeInt, value)
+	}
+	if value, ok := qrru.mutation.AddedWorkflowRevision(); ok {
+		_spec.AddField(quotaresetrequest.FieldWorkflowRevision, field.TypeInt, value)
+	}
 	if value, ok := qrru.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequest.FieldStatus, field.TypeEnum, value)
 	}
@@ -672,6 +744,60 @@ func (qrruo *QuotaResetRequestUpdateOne) SetNillableReason(s *string) *QuotaRese
 	if s != nil {
 		qrruo.SetReason(*s)
 	}
+	return qrruo
+}
+
+// SetWorkflowVersion sets the "workflow_version" field.
+func (qrruo *QuotaResetRequestUpdateOne) SetWorkflowVersion(i int) *QuotaResetRequestUpdateOne {
+	qrruo.mutation.ResetWorkflowVersion()
+	qrruo.mutation.SetWorkflowVersion(i)
+	return qrruo
+}
+
+// SetNillableWorkflowVersion sets the "workflow_version" field if the given value is not nil.
+func (qrruo *QuotaResetRequestUpdateOne) SetNillableWorkflowVersion(i *int) *QuotaResetRequestUpdateOne {
+	if i != nil {
+		qrruo.SetWorkflowVersion(*i)
+	}
+	return qrruo
+}
+
+// AddWorkflowVersion adds i to the "workflow_version" field.
+func (qrruo *QuotaResetRequestUpdateOne) AddWorkflowVersion(i int) *QuotaResetRequestUpdateOne {
+	qrruo.mutation.AddWorkflowVersion(i)
+	return qrruo
+}
+
+// SetWorkflow sets the "workflow" field.
+func (qrruo *QuotaResetRequestUpdateOne) SetWorkflow(m map[string]interface{}) *QuotaResetRequestUpdateOne {
+	qrruo.mutation.SetWorkflow(m)
+	return qrruo
+}
+
+// ClearWorkflow clears the value of the "workflow" field.
+func (qrruo *QuotaResetRequestUpdateOne) ClearWorkflow() *QuotaResetRequestUpdateOne {
+	qrruo.mutation.ClearWorkflow()
+	return qrruo
+}
+
+// SetWorkflowRevision sets the "workflow_revision" field.
+func (qrruo *QuotaResetRequestUpdateOne) SetWorkflowRevision(i int) *QuotaResetRequestUpdateOne {
+	qrruo.mutation.ResetWorkflowRevision()
+	qrruo.mutation.SetWorkflowRevision(i)
+	return qrruo
+}
+
+// SetNillableWorkflowRevision sets the "workflow_revision" field if the given value is not nil.
+func (qrruo *QuotaResetRequestUpdateOne) SetNillableWorkflowRevision(i *int) *QuotaResetRequestUpdateOne {
+	if i != nil {
+		qrruo.SetWorkflowRevision(*i)
+	}
+	return qrruo
+}
+
+// AddWorkflowRevision adds i to the "workflow_revision" field.
+func (qrruo *QuotaResetRequestUpdateOne) AddWorkflowRevision(i int) *QuotaResetRequestUpdateOne {
+	qrruo.mutation.AddWorkflowRevision(i)
 	return qrruo
 }
 
@@ -1019,6 +1145,24 @@ func (qrruo *QuotaResetRequestUpdateOne) sqlSave(ctx context.Context) (_node *Qu
 	}
 	if value, ok := qrruo.mutation.Reason(); ok {
 		_spec.SetField(quotaresetrequest.FieldReason, field.TypeString, value)
+	}
+	if value, ok := qrruo.mutation.WorkflowVersion(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflowVersion, field.TypeInt, value)
+	}
+	if value, ok := qrruo.mutation.AddedWorkflowVersion(); ok {
+		_spec.AddField(quotaresetrequest.FieldWorkflowVersion, field.TypeInt, value)
+	}
+	if value, ok := qrruo.mutation.Workflow(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflow, field.TypeJSON, value)
+	}
+	if qrruo.mutation.WorkflowCleared() {
+		_spec.ClearField(quotaresetrequest.FieldWorkflow, field.TypeJSON)
+	}
+	if value, ok := qrruo.mutation.WorkflowRevision(); ok {
+		_spec.SetField(quotaresetrequest.FieldWorkflowRevision, field.TypeInt, value)
+	}
+	if value, ok := qrruo.mutation.AddedWorkflowRevision(); ok {
+		_spec.AddField(quotaresetrequest.FieldWorkflowRevision, field.TypeInt, value)
 	}
 	if value, ok := qrruo.mutation.Status(); ok {
 		_spec.SetField(quotaresetrequest.FieldStatus, field.TypeEnum, value)

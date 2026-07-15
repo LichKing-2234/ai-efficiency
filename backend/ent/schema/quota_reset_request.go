@@ -20,6 +20,9 @@ func (QuotaResetRequest) Fields() []ent.Field {
 		field.String("group_name").Default(""),
 		field.String("group_platform").Default(""),
 		field.String("reason").NotEmpty(),
+		field.Int("workflow_version").Default(1),
+		field.JSON("workflow", map[string]any{}).Optional(),
+		field.Int("workflow_revision").Default(0),
 		field.Enum("status").Values(
 			"pending",
 			"approved_resetting",

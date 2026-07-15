@@ -42,6 +42,20 @@ func (qrnsu *QuotaResetNotificationSettingUpdate) SetNillableEnabled(b *bool) *Q
 	return qrnsu
 }
 
+// SetChannel sets the "channel" field.
+func (qrnsu *QuotaResetNotificationSettingUpdate) SetChannel(q quotaresetnotificationsetting.Channel) *QuotaResetNotificationSettingUpdate {
+	qrnsu.mutation.SetChannel(q)
+	return qrnsu
+}
+
+// SetNillableChannel sets the "channel" field if the given value is not nil.
+func (qrnsu *QuotaResetNotificationSettingUpdate) SetNillableChannel(q *quotaresetnotificationsetting.Channel) *QuotaResetNotificationSettingUpdate {
+	if q != nil {
+		qrnsu.SetChannel(*q)
+	}
+	return qrnsu
+}
+
 // SetURL sets the "url" field.
 func (qrnsu *QuotaResetNotificationSettingUpdate) SetURL(s string) *QuotaResetNotificationSettingUpdate {
 	qrnsu.mutation.SetURL(s)
@@ -202,6 +216,11 @@ func (qrnsu *QuotaResetNotificationSettingUpdate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (qrnsu *QuotaResetNotificationSettingUpdate) check() error {
+	if v, ok := qrnsu.mutation.Channel(); ok {
+		if err := quotaresetnotificationsetting.ChannelValidator(v); err != nil {
+			return &ValidationError{Name: "channel", err: fmt.Errorf(`ent: validator failed for field "QuotaResetNotificationSetting.channel": %w`, err)}
+		}
+	}
 	if v, ok := qrnsu.mutation.AuthType(); ok {
 		if err := quotaresetnotificationsetting.AuthTypeValidator(v); err != nil {
 			return &ValidationError{Name: "auth_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetNotificationSetting.auth_type": %w`, err)}
@@ -224,6 +243,9 @@ func (qrnsu *QuotaResetNotificationSettingUpdate) sqlSave(ctx context.Context) (
 	}
 	if value, ok := qrnsu.mutation.Enabled(); ok {
 		_spec.SetField(quotaresetnotificationsetting.FieldEnabled, field.TypeBool, value)
+	}
+	if value, ok := qrnsu.mutation.Channel(); ok {
+		_spec.SetField(quotaresetnotificationsetting.FieldChannel, field.TypeEnum, value)
 	}
 	if value, ok := qrnsu.mutation.URL(); ok {
 		_spec.SetField(quotaresetnotificationsetting.FieldURL, field.TypeString, value)
@@ -288,6 +310,20 @@ func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetEnabled(b bool) *QuotaR
 func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetNillableEnabled(b *bool) *QuotaResetNotificationSettingUpdateOne {
 	if b != nil {
 		qrnsuo.SetEnabled(*b)
+	}
+	return qrnsuo
+}
+
+// SetChannel sets the "channel" field.
+func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetChannel(q quotaresetnotificationsetting.Channel) *QuotaResetNotificationSettingUpdateOne {
+	qrnsuo.mutation.SetChannel(q)
+	return qrnsuo
+}
+
+// SetNillableChannel sets the "channel" field if the given value is not nil.
+func (qrnsuo *QuotaResetNotificationSettingUpdateOne) SetNillableChannel(q *quotaresetnotificationsetting.Channel) *QuotaResetNotificationSettingUpdateOne {
+	if q != nil {
+		qrnsuo.SetChannel(*q)
 	}
 	return qrnsuo
 }
@@ -465,6 +501,11 @@ func (qrnsuo *QuotaResetNotificationSettingUpdateOne) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (qrnsuo *QuotaResetNotificationSettingUpdateOne) check() error {
+	if v, ok := qrnsuo.mutation.Channel(); ok {
+		if err := quotaresetnotificationsetting.ChannelValidator(v); err != nil {
+			return &ValidationError{Name: "channel", err: fmt.Errorf(`ent: validator failed for field "QuotaResetNotificationSetting.channel": %w`, err)}
+		}
+	}
 	if v, ok := qrnsuo.mutation.AuthType(); ok {
 		if err := quotaresetnotificationsetting.AuthTypeValidator(v); err != nil {
 			return &ValidationError{Name: "auth_type", err: fmt.Errorf(`ent: validator failed for field "QuotaResetNotificationSetting.auth_type": %w`, err)}
@@ -504,6 +545,9 @@ func (qrnsuo *QuotaResetNotificationSettingUpdateOne) sqlSave(ctx context.Contex
 	}
 	if value, ok := qrnsuo.mutation.Enabled(); ok {
 		_spec.SetField(quotaresetnotificationsetting.FieldEnabled, field.TypeBool, value)
+	}
+	if value, ok := qrnsuo.mutation.Channel(); ok {
+		_spec.SetField(quotaresetnotificationsetting.FieldChannel, field.TypeEnum, value)
 	}
 	if value, ok := qrnsuo.mutation.URL(); ok {
 		_spec.SetField(quotaresetnotificationsetting.FieldURL, field.TypeString, value)

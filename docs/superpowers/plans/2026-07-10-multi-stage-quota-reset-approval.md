@@ -105,7 +105,7 @@ func (w *Workflow) ActiveApproverUserIDs() []int
 func (w *Workflow) Decide(input WorkflowDecisionInput) (WorkflowTransition, error)
 ```
 
-- [ ] **Step 1: Add failing pure transition tests**
+- [x] **Step 1: Add failing pure transition tests**
 
   Add table-driven tests proving one approval advances one step, rejection ends
   the workflow, the requester is rejected, a non-candidate is rejected, a prior
@@ -120,18 +120,18 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) (WorkflowTransition, erro
 
   Expected: compile failure because the workflow API does not exist.
 
-- [ ] **Step 2: Implement the smallest pure workflow state machine**
+- [x] **Step 2: Implement the smallest pure workflow state machine**
 
   Keep transition code free of Ent and HTTP dependencies. Limit documents to 21
   steps and 100 unique approvers. Return transition facts needed by the service:
   activated step, automatically satisfied steps, terminal approval/rejection,
   and current approver ids.
 
-- [ ] **Step 3: Verify the pure tests pass**
+- [x] **Step 3: Verify the pure tests pass**
 
   Run the Task 1 test command. Expected: PASS.
 
-- [ ] **Step 4: Add the schema fields and generate Ent code**
+- [x] **Step 4: Add the schema fields and generate Ent code**
 
   Add `workflow_version`, nullable `workflow`, and `workflow_revision` to
   `QuotaResetRequest`; add the five workflow event enum values; add explicit
