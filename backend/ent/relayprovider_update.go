@@ -140,6 +140,27 @@ func (rpu *RelayProviderUpdate) SetNillableEnabled(b *bool) *RelayProviderUpdate
 	return rpu
 }
 
+// SetConfigurationVersion sets the "configuration_version" field.
+func (rpu *RelayProviderUpdate) SetConfigurationVersion(i int64) *RelayProviderUpdate {
+	rpu.mutation.ResetConfigurationVersion()
+	rpu.mutation.SetConfigurationVersion(i)
+	return rpu
+}
+
+// SetNillableConfigurationVersion sets the "configuration_version" field if the given value is not nil.
+func (rpu *RelayProviderUpdate) SetNillableConfigurationVersion(i *int64) *RelayProviderUpdate {
+	if i != nil {
+		rpu.SetConfigurationVersion(*i)
+	}
+	return rpu
+}
+
+// AddConfigurationVersion adds i to the "configuration_version" field.
+func (rpu *RelayProviderUpdate) AddConfigurationVersion(i int64) *RelayProviderUpdate {
+	rpu.mutation.AddConfigurationVersion(i)
+	return rpu
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (rpu *RelayProviderUpdate) SetUpdatedAt(t time.Time) *RelayProviderUpdate {
 	rpu.mutation.SetUpdatedAt(t)
@@ -204,6 +225,11 @@ func (rpu *RelayProviderUpdate) check() error {
 			return &ValidationError{Name: "base_url", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.base_url": %w`, err)}
 		}
 	}
+	if v, ok := rpu.mutation.ConfigurationVersion(); ok {
+		if err := relayprovider.ConfigurationVersionValidator(v); err != nil {
+			return &ValidationError{Name: "configuration_version", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.configuration_version": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -242,6 +268,12 @@ func (rpu *RelayProviderUpdate) sqlSave(ctx context.Context) (n int, err error) 
 	}
 	if value, ok := rpu.mutation.Enabled(); ok {
 		_spec.SetField(relayprovider.FieldEnabled, field.TypeBool, value)
+	}
+	if value, ok := rpu.mutation.ConfigurationVersion(); ok {
+		_spec.SetField(relayprovider.FieldConfigurationVersion, field.TypeInt64, value)
+	}
+	if value, ok := rpu.mutation.AddedConfigurationVersion(); ok {
+		_spec.AddField(relayprovider.FieldConfigurationVersion, field.TypeInt64, value)
 	}
 	if value, ok := rpu.mutation.UpdatedAt(); ok {
 		_spec.SetField(relayprovider.FieldUpdatedAt, field.TypeTime, value)
@@ -378,6 +410,27 @@ func (rpuo *RelayProviderUpdateOne) SetNillableEnabled(b *bool) *RelayProviderUp
 	return rpuo
 }
 
+// SetConfigurationVersion sets the "configuration_version" field.
+func (rpuo *RelayProviderUpdateOne) SetConfigurationVersion(i int64) *RelayProviderUpdateOne {
+	rpuo.mutation.ResetConfigurationVersion()
+	rpuo.mutation.SetConfigurationVersion(i)
+	return rpuo
+}
+
+// SetNillableConfigurationVersion sets the "configuration_version" field if the given value is not nil.
+func (rpuo *RelayProviderUpdateOne) SetNillableConfigurationVersion(i *int64) *RelayProviderUpdateOne {
+	if i != nil {
+		rpuo.SetConfigurationVersion(*i)
+	}
+	return rpuo
+}
+
+// AddConfigurationVersion adds i to the "configuration_version" field.
+func (rpuo *RelayProviderUpdateOne) AddConfigurationVersion(i int64) *RelayProviderUpdateOne {
+	rpuo.mutation.AddConfigurationVersion(i)
+	return rpuo
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (rpuo *RelayProviderUpdateOne) SetUpdatedAt(t time.Time) *RelayProviderUpdateOne {
 	rpuo.mutation.SetUpdatedAt(t)
@@ -455,6 +508,11 @@ func (rpuo *RelayProviderUpdateOne) check() error {
 			return &ValidationError{Name: "base_url", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.base_url": %w`, err)}
 		}
 	}
+	if v, ok := rpuo.mutation.ConfigurationVersion(); ok {
+		if err := relayprovider.ConfigurationVersionValidator(v); err != nil {
+			return &ValidationError{Name: "configuration_version", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.configuration_version": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -510,6 +568,12 @@ func (rpuo *RelayProviderUpdateOne) sqlSave(ctx context.Context) (_node *RelayPr
 	}
 	if value, ok := rpuo.mutation.Enabled(); ok {
 		_spec.SetField(relayprovider.FieldEnabled, field.TypeBool, value)
+	}
+	if value, ok := rpuo.mutation.ConfigurationVersion(); ok {
+		_spec.SetField(relayprovider.FieldConfigurationVersion, field.TypeInt64, value)
+	}
+	if value, ok := rpuo.mutation.AddedConfigurationVersion(); ok {
+		_spec.AddField(relayprovider.FieldConfigurationVersion, field.TypeInt64, value)
 	}
 	if value, ok := rpuo.mutation.UpdatedAt(); ok {
 		_spec.SetField(relayprovider.FieldUpdatedAt, field.TypeTime, value)

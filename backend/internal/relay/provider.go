@@ -86,6 +86,12 @@ type SubjectUsageDashboardProvider interface {
 	GetUsageDashboardForUser(ctx context.Context, relayUserID int64, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error)
 }
 
+// UserUsageOriginReader reads explicitly selected current-user usage branches
+// under one request-scoped Relay session and deadline.
+type UserUsageOriginReader interface {
+	ReadUserUsageOrigin(ctx context.Context, request UserUsageOriginRequest) (*UserUsageOriginResult, error)
+}
+
 type TeamUsageSummaryProvider interface {
 	GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params TeamUsageSummaryParams) (map[int64]TeamUserUsageStats, error)
 }
