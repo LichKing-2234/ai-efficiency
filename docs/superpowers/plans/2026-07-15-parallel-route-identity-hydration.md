@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, remediation, architecture documentation, full local verification, task/final reviews, draft PR delivery, and first-round CI are complete. Replacement CI, the final ledger head, and final-current-head CI remain pending.
+**Status:** Implementation, remediation, architecture documentation, full local verification, task/final reviews, draft PR delivery, first/replacement CI, and the final ledger commit are complete. Final-current-head CI remains pending and is tracked only by the external GitHub gate below.
 
 **Goal:** Start public and authenticated non-admin route chunks without waiting for current-user hydration while keeping administrator routes fail-closed and making every login, logout, refresh, and delayed redirect safe across browser-session and navigation races.
 
@@ -731,7 +731,7 @@ Expected: open draft, exact base/head, mergeable/clean or non-conflicting state,
 
 **First-round CI evidence (2026-07-15):** Draft PR #144 was open and mergeable/clean with base `docs/performance-contracts-116`, head `perf/route-hydration-122`, and head OID `d64451c01432bc13e20529951235c4be2eed93c8`. Actions run [`29397422663`](https://github.com/LichKing-2234/ai-efficiency/actions/runs/29397422663) completed successfully: `backend` 2m44s, `frontend` 54s, `ae-cli` 29s, and `deploy-static` 9s. This records first-round evidence only; replacement and final-current-head CI remain pending.
 
-- [ ] **Step 6: Commit first-round evidence, then require and verify replacement CI**
+- [x] **Step 6: Commit first-round evidence, then require and verify replacement CI**
 
 Commit only the already-earned first-round evidence and push it:
 
@@ -753,7 +753,9 @@ gh pr view --json number,state,isDraft,baseRefName,headRefName,headRefOid,mergea
 
 Expected: all four replacement checks green on `head_oid`, tracked worktree clean, draft PR still open with exact base/head, and no merge/release/deploy action. Only now check Step 6 and record the replacement head/check/run evidence. Set `Status` to: implementation/reviews/local verification/first and replacement CI complete; final ledger commit and final-current-head CI pending. Never set Complete.
 
-- [ ] **Step 7: Create the final ledger-only commit without pre-checking its own success**
+**Replacement CI evidence (2026-07-15):** Evidence commit `5856bcc3dfaa24ea53804877d1abf4532ebe5787` matched the clean local branch and PR #144 head. Actions run [`29397675913`](https://github.com/LichKing-2234/ai-efficiency/actions/runs/29397675913) passed `backend` 2m49s, `frontend` 1m0s, `ae-cli` 28s, and `deploy-static` 15s. GitHub reported the PR open/draft, mergeable/clean, with the exact base and head branches. The final ledger commit and its own CI remain pending.
+
+- [x] **Step 7: Create the final ledger-only commit without pre-checking its own success**
 
 Create the final ledger commit from evidence already earned in Steps 5-6:
 
