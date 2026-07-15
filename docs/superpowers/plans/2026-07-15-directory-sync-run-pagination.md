@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete. Task 3 implementation and fourth-round review remediation are locally complete; final independent re-review remains pending. Task 4, delivery, and CI remain pending.
+**Status:** Tasks 1-2 are complete. Task 3 implementation and fifth-round review remediation are locally complete; final independent re-review remains pending. Task 4, delivery, and CI remain pending.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -460,6 +460,18 @@
   Commit `dc36bd8` (`fix(frontend): keep active run polling authoritative`) makes history-page recovery preserve the independently owned poll and latest-active state when a response has `latest_active_run: null`. A non-null latest active may still adopt or replace the poll target; without an established poll, the existing page-zero terminal fallback remains unchanged. Detail polling still owns terminal/error shutdown, while source switch, unmount, and a different active ID retain their existing invalidation paths. The page/action generation guards from the preceding review rounds are unchanged.
 
   Targeted GREEN passed 3/3, and the expanded page/action/detail/poll/source lifecycle target passed 35/35. Fresh required verification passed: focused three files 97/97, full frontend 39 files / 459 tests, `npm run build`, and `git diff --check`.
+
+- [x] **Record the fifth review and add RED coverage for settings feedback ownership**
+
+  The independent R4 re-review of `139cadb..fa983d9` failed with **0 Critical / 1 Important / 0 Minor**. The remaining finding showed that enabled template and save interactions shared `clearFeedback()` with run-lifecycle invalidation, so either interaction could cancel a recovered preview/apply timer, clear its active state, and stop the browser from observing the backend run.
+
+  The reviewer probe became permanent preview/apply template coverage plus a deferred save case. Initial RED command `cd frontend && npm test -- src/__tests__/directory-sync-settings.test.ts -t "keeps a recovered active .* (template|save)"` failed 3/3 at the intended timer assertion: each expected one timer after the interaction and received zero. The save test was then strengthened to select source B before saving; with the old first-source reload restored, it failed because the last history request used source 1 instead of the current source 2.
+
+- [x] **Preserve active polling across settings feedback and verify Task 3 again**
+
+  Commit `57f5211` (`fix(frontend): preserve polling across settings feedback`) removes poll and active-run ownership from generic feedback cleanup, adds an explicit run-lifecycle reset for actual source changes and new preview/apply actions, and makes source reload retain the current source ID when it still exists. Template editing and save start now preserve the same timer, active run, disabled action controls, and run-start message; successful same-source save reload adopts the same active ID without replacing its timer, and the later terminal detail remains authoritative. Existing detail terminal/error, source-switch, unmount, and different-active-ID shutdown paths remain intact; Validate stays disabled during an active run.
+
+  Targeted GREEN passed 3/3 and the complete component lifecycle file passed 49/49. Fresh required verification passed: focused three files 100/100, full frontend 39 files / 462 tests, `npm run build`, and `git diff --check`.
 
 ---
 
