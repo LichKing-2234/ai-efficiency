@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, final action-ownership remediation, current documentation, full local verification, consumer audit, and final reviews are complete and committed. Draft PR delivery and CI remain pending; one non-blocking Minor progress-display follow-up is recorded below.
+**Status:** Implementation, final action-ownership remediation, current documentation, full local verification, consumer audit, and final reviews are complete and committed. Draft PR #145 is open and its first CI round is green; final ledger delivery, replacement CI, and final PR verification remain pending. One non-blocking Minor progress-display follow-up is recorded below.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -611,7 +611,7 @@
   git commit -m "docs(architecture): document bounded directory run history"
   ```
 
-- [ ] **Step 5: Push and open the stacked draft PR**
+- [x] **Step 5: Push and open the stacked draft PR**
 
   Create ignored `.superpowers/sdd/pr-121.md` with `Closes #121`, dependency on #138, API/consumer migration, scale/bytes/plan evidence, verification/reviews, migration/rollback notes. Run:
 
@@ -621,9 +621,23 @@
   gh pr view --json number,state,isDraft,baseRefName,headRefName,mergeable,mergeStateStatus,url
   ```
 
+  Delivery evidence (2026-07-15): the traced push used GitHub address
+  `20.29.134.23` with HTTP/1.1 and `http.curloptResolve`, exited 0, created
+  `origin/perf/directory-runs-121`, and configured the local upstream. Draft PR
+  #145 was created at <https://github.com/LichKing-2234/ai-efficiency/pull/145>
+  with base `docs/performance-contracts-116`, head
+  `perf/directory-runs-121`, and local/remote OID
+  `fc992e74f707486f63333f0add55eee1bf9eab8f`.
+
 - [ ] **Step 6: Require first CI, commit final ledger, and require replacement CI**
 
   Wait for backend/frontend/ae-cli/deploy-static success. Only then mark complete and commit/push `docs(plan): record directory run pagination delivery`; wait for replacement CI to pass all four jobs.
+
+  First CI evidence: run `29401353370` completed successfully on
+  `fc992e74f707486f63333f0add55eee1bf9eab8f`; backend job `87306395319`,
+  frontend job `87306395374`, ae-cli job `87306395376`, and deploy-static job
+  `87306395358` all passed. The final ledger commit and replacement CI remain
+  pending, so this step is intentionally unchecked.
 
 - [ ] **Step 7: Verify final branch and PR state**
 
