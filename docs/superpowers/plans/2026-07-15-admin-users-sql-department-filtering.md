@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, final reviews, and local repository verification are complete. Draft PR creation and all three CI rounds remain pending.
+**Status:** Implementation, final reviews, local repository verification, draft PR creation, and CI round one are complete. CI rounds two and three remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -1390,7 +1390,7 @@ git status --short
 
 Expected: clean tracked worktree.
 
-- [ ] **Step 5: Push and open the correctly based draft PR**
+- [x] **Step 5: Push and open the correctly based draft PR**
 
 Create ignored `.superpowers/sdd/pr-134.md` with `Closes #134`, dependency on draft PR #138, API/SQL/index/scale/response/DOM evidence, verification, review verdicts, rollout risk, and index rollback notes.
 
@@ -1402,7 +1402,9 @@ gh pr view --json number,state,isDraft,baseRefName,headRefName,headRefOid,mergea
 
 Expected: open draft PR with exact base/head. Capture this OID as `round1_oid`; do not check round one yet.
 
-- [ ] **Step 6: Verify round one, then create the round-two evidence head**
+**Task 6 Step 5 delivery evidence (2026-07-15):** The initial ordinary push failed with exit 128 during GitHub TLS connection setup. `dig @1.1.1.1` resolved `github.com`, and the required HTTP/1.1 `http.curloptResolve` push workaround exited 0. Draft PR [#147](https://github.com/LichKing-2234/ai-efficiency/pull/147) was then created with exit 0 as OPEN and draft, with base `docs/performance-contracts-116`, head `perf/admin-users-134`, and title `perf(admin-users): push department filtering into SQL`. Its ignored body contains `Closes #134`, dependency on draft PR #138, synthetic API/SQL/index/fixture/response/request/DOM/verification evidence, final `0/0/0` review verdicts, rollout risk, and index rollback notes. The first live PR head was `4aa68beaef63d0a5e05e98b88bffffd52f5cc66b`; it was retained as the pre-round diagnostic head below and was not counted as a green CI round.
+
+- [x] **Step 6: Verify round one, then create the round-two evidence head**
 
 Wait for `backend`, `frontend`, `ae-cli`, and `deploy-static` on `round1_oid`:
 
@@ -1410,6 +1412,10 @@ Wait for `backend`, `frontend`, `ae-cli`, and `deploy-static` on `round1_oid`:
 gh pr checks --watch
 gh pr view --json headRefOid,statusCheckRollup
 ```
+
+**Task 6 Step 6 round-one evidence (2026-07-15):** The pre-round diagnostic head `4aa68beaef63d0a5e05e98b88bffffd52f5cc66b` used CI run `29420402966`. Attempts 1 and 2 each retained successful `frontend`, `ae-cli`, and `deploy-static` checks but failed `backend`: the 500-target asynchronous job completed after the test helper's fixed five-second watchdog (`5.75s` and `5.90s`), so `waitForAdminUsersSubscriptionJob` reported a timeout even though the gate asserts completion semantics rather than performance. These failed attempts are not counted as a green round. The helper-only correction kept five-millisecond condition polling and all completed/failed/abandoned semantics, changed only the safety watchdog to 30 seconds, and documented that it is not a performance assertion. Local verification passed the complete 500/501 target-limit test three times, full `internal/handler`, full backend, and `git diff --check`; independent delta review returned Critical/Important/Minor `0/0/0`. Commit `2fda827f8db55e77ca6b7fab974c459b1e7b9f9b` became `round1_oid`.
+
+Round one then completed on CI run `29421421089` for exact head `2fda827f8db55e77ca6b7fab974c459b1e7b9f9b`: `backend` job `87372557139` SUCCESS, `frontend` job `87372557162` SUCCESS, `ae-cli` job `87372557160` SUCCESS, and `deploy-static` job `87372557143` SUCCESS. The live PR head matched `round1_oid`, and PR #147 remained OPEN/draft against `docs/performance-contracts-116` with MERGEABLE/CLEAN state. CI rounds two and three remain pending.
 
 Only after all four are green, record `round1_oid`, run IDs, conclusions, and remaining rounds in the plan. Keep `Status` explicitly incomplete with rounds two and three pending; check only the round-one evidence. Commit and push that evidence to create `round2_oid`:
 
