@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-5 are complete, independently reviewed, and committed. Task 6, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Implementation, final reviews, and local repository verification are complete. Draft PR creation and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -1266,7 +1266,7 @@ git commit -m "docs(plan): record admin users frontend task"
 - Consumes: reviewed Tasks 1-5.
 - Produces: current architecture/contract truth, full verification evidence, final reviews, an open draft PR, and three green CI rounds on three explicit heads.
 
-- [ ] **Step 1: Update only current architecture and the active performance contract**
+- [x] **Step 1: Update only current architecture and the active performance contract**
 
 In `docs/architecture.md`, insert `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md` as the newest entry in `## Source-of-Truth Order` -> `Topic-specific current specs`. Update the `/admin/users` architecture paragraph and module table with:
 
@@ -1295,7 +1295,7 @@ The 2026-07-14 performance design extends or supersedes only the administrator r
 
 Also expand `### Repository, PR, member detail, and administrator reads` with the landed route names, page bounds, source isolation, current-membership authority, dual user mapping, dangling-candidate behavior, representative scalar/array union, one shared effective-department relation, deterministic cycle navigation/filtering, and three-way list/job/batch predicate parity. Do not modify the 2026-06-22 Directory Sync design or other historical admin-user specs.
 
-- [ ] **Step 2: Run generation drift and full repository verification**
+- [x] **Step 2: Run generation drift and full repository verification**
 
 Run exactly:
 
@@ -1334,7 +1334,9 @@ trap - EXIT
 
 Record PostgreSQL small/large `EXPLAIN`, role E2E, listener ownership, and embedded build separately from ordinary unit tests. Leave every unrun checkbox open.
 
-- [ ] **Step 3: Complete final SPEC and standards gates**
+**Task 6 Step 2 supplemental wire evidence (2026-07-15):** The real authenticated handler command `(cd backend && go test ./internal/handler -run '^TestAdminUsersListHundredRowWireBound$' -count=2 -v)` exited 0. Both runs returned exactly 100 synthetic users and logged the same `27,562`-byte response body, below the test-owned `256 KiB` (`262,144` byte) synthetic-fixture regression budget. This is fixture regression evidence, not a route-specific current contract or production budget. The post-test `(cd backend && go test ./...)` rerun also exited 0.
+
+- [x] **Step 3: Complete final SPEC and standards gates**
 
 Generate one complete base-to-working-tree review package and obtain independent final SPEC and standards reviews against issue #134, the active performance contract, `AGENTS.md`, and exact code. Both reviewers must answer:
 
@@ -1362,7 +1364,21 @@ Does the active performance spec explicitly inherit Directory Sync business/coun
 
 Resolve all Critical and Important findings, regenerate the package, rerun Step 2, and obtain passing final verdicts before continuing.
 
-- [ ] **Step 4: Commit documentation and the locally verified ledger head**
+**Task 6 Step 3 final review evidence (2026-07-15):** The complete r2 package at reviewed snapshot `a366c0c3246a61fcefc20ed226213824d0e6413f` passed final SPEC and standards rereview with `0 Critical / 0 Important / 0 Minor` in `.superpowers/sdd/134-final-spec-rereview.md` and `.superpowers/sdd/134-final-standards-rereview.md`. The first standards pass had two Minor findings only: All-departments virtual focus styling and synthetic wire-budget wording. Both were closed with focused RED/GREEN coverage, a fresh complete Step 2 replay, and no active-spec change.
+
+**Task 6 Step 4 local checkpoint evidence (2026-07-15):**
+
+- PostgreSQL fixtures were exactly small `24 users / 22 members / 12 departments / 36 memberships` and large `2,400 users / 2,200 members / 120 departments / 3,600 memberships`.
+- The seven captured recursive department SQL statements were option count, option page, child count, child page, option ancestor presentation, child ancestor presentation, and final summary. Every statement's named `cycle_walk` had `Actual Loops = 1`; both presentation statements' named `ancestors` and the final summary's named `descendants` also had `Actual Loops = 1`. Filtered target, user count, and user page statements separately required one named `cycle_walk` plus one named `subtree` Recursive Union with `Actual Loops = 1` at both fixture scales.
+- The two generated join indexes were `directorymember_source_id_matched_user_id` and `directorymemberdepartment_source_id_directory_member_id_department_external_id`.
+- The authenticated 100-row synthetic fixture returned exactly `27,562` bytes twice under the test-owned `262,144`-byte synthetic-fixture regression budget. This is regression evidence, not a route-specific current contract or production budget.
+- Default `/admin/users` mount made exactly three non-department requests (user list, subscription options, latest-job recovery) and zero department requests. A selected deep link made at most one option request, department view made one root request, and first expansion made one immediate-child request; cached reopen made none.
+- The 100-user responsive fixture mounted exactly 100 user-row nodes in one active mobile or desktop tree, never 200, and department view mounted zero hidden user rows.
+- Exact verification commands were the Step 2 `gofmt`, Ent generation/drift, backend, ae-cli, frontend, build, embedded-build, structural-scan, diff-check, and trap-managed IPv6 E2E blocks above, plus `(cd backend && go test ./internal/handler -run '^TestAdminUsersListHundredRowWireBound$' -count=2 -v)` and `(cd frontend && npm test -- src/__tests__/admin-department-picker.test.ts)`. Final frontend verification passed `40` files / `464` tests, production and embedded builds transformed `190` modules, and role E2E passed `16/16`; no port `5173` listener or Vite PID remained after the trap.
+- Environment-sensitive warnings were recorded separately: the embedded-build script emitted the unresolved-hook warning and npm reported `9` audit findings (`3` moderate, `6` high); the role-only Vite log contained expected backend proxy `ECONNREFUSED` entries. All required commands exited 0.
+- Supplemental reviewed changes were committed separately before this documentation checkpoint: `6294d46` (`test(admin-users): harden bounded read verification`) and `ed65ebf` (`fix(frontend): preserve department picker focus feedback`).
+
+- [x] **Step 4: Commit documentation and the locally verified ledger head**
 
 Record exact fixture totals, query roles, recursive-loop evidence, selected indexes, response bytes, department request counts, DOM counts, commands, environment notes, and final review verdicts. Set `Status` to state that implementation/reviews/local verification are complete while draft PR creation and all CI rounds remain pending.
 
