@@ -190,14 +190,18 @@ async function mountRepoDetail(
   })
 
   await flushPromises()
-  return { wrapper, getPR, refreshPRUsage }
+  return { wrapper, getPR, refreshPRUsage, router }
 }
 
 describe('RepoDetailView', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     setLocale('en-US')
     vi.clearAllMocks()
+    const { listProviders } = await import('@/api/scmProvider')
+    ;(listProviders as any).mockResolvedValue({
+      data: { data: [{ id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' }] },
+    })
   })
 
   it('renders conclusion-first PR usage summary and readable default columns', async () => {
@@ -219,6 +223,53 @@ describe('RepoDetailView', () => {
     expect(wrapper.text()).not.toContain('Settle')
     expect(wrapper.text()).toContain('1,700')
     expect(wrapper.text()).not.toContain('2,000')
+  })
+
+  it('renders repository and PR core content while admin provider options are still pending', async () => {
+    const { listProviders } = await import('@/api/scmProvider')
+    let resolveProviders!: (value: any) => void
+    const providersPromise = new Promise((resolve) => { resolveProviders = resolve })
+    ;(listProviders as any).mockReturnValue(providersPromise)
+    const pinia = createAdminPinia()
+
+    const { wrapper, router } = await mountRepoDetail(undefined, pinia)
+    expect(wrapper.text()).toContain('Repository health')
+    expect(wrapper.text()).toContain('Add usage')
+    expect(router.currentRoute.value.path).toBe('/repos/9')
+    expect(wrapper.findAll('[data-testid="repo-pr-row"]')).toHaveLength(1)
+
+    resolveProviders({ data: { data: [{ id: 1, name: 'GitHub', type: 'github', base_url: 'https://api.github.com', status: 'active' }] } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="repo-binding-controls"]').exists()).toBe(true)
+  })
+
+  it('keeps core content and route when provider options fail', async () => {
+    const { listProviders } = await import('@/api/scmProvider')
+    ;(listProviders as any).mockRejectedValue(new Error('provider timeout'))
+    const pinia = createAdminPinia()
+
+    const { wrapper, router } = await mountRepoDetail(undefined, pinia)
+    expect(wrapper.text()).toContain('Repository health')
+    expect(wrapper.text()).toContain('Add usage')
+    expect(router.currentRoute.value.path).toBe('/repos/9')
+  })
+
+  it('mounts one PR row, one details command, and one expanded detail subtree per item', async () => {
+    const prs = [101, 102].map((id) => ({
+      ...detailFor(id).data.data,
+      id,
+      title: `PR ${id}`,
+    }))
+    const { wrapper } = await mountRepoDetail(undefined, undefined, {
+      prs,
+      getPRImpl: vi.fn(async (id: number) => detailFor(id)),
+    })
+    expect(wrapper.findAll('[data-testid="repo-pr-row"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-testid="repo-pr-details-button"]')).toHaveLength(2)
+
+    await wrapper.findAll('[data-testid="repo-pr-details-button"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="repo-pr-detail"]')).toHaveLength(1)
   })
 
   it('renders aggregate PR usage summary instead of current page counts', async () => {

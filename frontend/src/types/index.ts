@@ -84,6 +84,19 @@ export interface RepoInventoryProviderSummary {
   scopes: RepoInventoryScopeSummary[]
 }
 
+export interface RepoListSelection {
+  provider_key: string
+  provider_id?: number
+  provider_name: string
+  provider_type: string
+  scope: string
+  binding_state: 'bound' | 'unbound'
+}
+
+export interface RepoListResponse extends PagedResponse<RepoConfig> {
+  selection?: RepoListSelection
+}
+
 export interface RepoListParams {
   page?: number
   pageSize?: number

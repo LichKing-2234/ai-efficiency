@@ -101,30 +101,58 @@ function buildInventory(repos: any[]) {
 function filterReposForParams(repos: any[], params: any = {}) {
   const page = params.page ?? 1
   const pageSize = params.pageSize ?? 20
+  let effectiveParams = { ...params }
+  let selection: any
+  if (!params.scmProviderId && !params.scope && !params.bindingState) {
+    const inventory = buildInventory(repos).sort((a, b) => {
+      const rank = (provider: any) => provider.type === 'github' ? 0 : provider.type === 'bitbucket_server' ? 1 : provider.provider_key === 'unbound' ? 3 : 2
+      return rank(a) - rank(b) || a.name.localeCompare(b.name) || a.provider_key.localeCompare(b.provider_key)
+    })
+    const provider = inventory[0]
+    const scope = provider?.scopes.slice().sort((a: any, b: any) => a.scope.localeCompare(b.scope))[0]
+    if (provider && scope) {
+      selection = {
+        provider_key: provider.provider_key,
+        provider_id: provider.provider_id,
+        provider_name: provider.name,
+        provider_type: provider.type,
+        scope: scope.scope,
+        binding_state: provider.provider_key === 'unbound' ? 'unbound' : 'bound',
+      }
+      effectiveParams = {
+        ...effectiveParams,
+        scmProviderId: provider.provider_id,
+        scope: scope.scope,
+        bindingState: selection.binding_state,
+      }
+    }
+  }
   let items = [...repos]
 
-  if (params.scmProviderId) {
-    items = items.filter((repo) => repo.edges?.scm_provider?.id === params.scmProviderId || repo.scm_provider_id === params.scmProviderId)
+  if (effectiveParams.scmProviderId) {
+    items = items.filter((repo) => repo.edges?.scm_provider?.id === effectiveParams.scmProviderId || repo.scm_provider_id === effectiveParams.scmProviderId)
   }
-  if (params.scope) {
-    items = items.filter((repo) => repo.full_name === params.scope || repo.full_name.startsWith(`${params.scope}/`))
+  if (effectiveParams.scope) {
+    items = items.filter((repo) => repo.full_name === effectiveParams.scope || repo.full_name.startsWith(`${effectiveParams.scope}/`))
   }
-  if (params.bindingState) {
-    items = items.filter((repo) => repo.binding_state === params.bindingState)
+  if (effectiveParams.bindingState) {
+    items = items.filter((repo) => repo.binding_state === effectiveParams.bindingState)
   }
 
   const total = items.length
   const start = (page - 1) * pageSize
-  return { items: items.slice(start, start + pageSize), total, page, page_size: pageSize }
+  return { items: items.slice(start, start + pageSize), total, page, page_size: pageSize, ...(selection ? { selection } : {}) }
 }
 
-async function mountRepoList(repos?: any[], path = '/repos', options?: { admin?: boolean }) {
+async function mountRepoList(repos?: any[], path = '/repos', options?: { admin?: boolean; useCurrentMocks?: boolean }) {
   const { listRepos, getRepoInventory } = await import('@/api/repo')
   const repoItems = repos ?? []
-  ;(getRepoInventory as any).mockResolvedValue({ data: { data: buildInventory(repoItems) } })
-  ;(listRepos as any).mockImplementation((params: any = {}) =>
-    Promise.resolve({ data: { data: filterReposForParams(repoItems, params) } })
-  )
+  if (!options?.useCurrentMocks) {
+    ;(getRepoInventory as any).mockResolvedValue({ data: { data: buildInventory(repoItems) } })
+    ;(listRepos as any).mockImplementation((params: any = {}) =>
+      Promise.resolve({ data: { data: filterReposForParams(repoItems, params) } })
+    )
+  }
 
   const router = createTestRouter()
   await router.push(path)
@@ -163,6 +191,78 @@ describe('RepoListView', () => {
     expect(wrapper.find('h1').text()).toBe('Code Repositories')
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('Add Repo'))
     expect(addBtn).toBeTruthy()
+  })
+
+  it('starts list and inventory together and renders server-selected rows before inventory', async () => {
+    const { listRepos, getRepoInventory } = await import('@/api/repo')
+    const { listProviders } = await import('@/api/scmProvider')
+    let resolveInventory!: (value: any) => void
+    const inventoryPromise = new Promise((resolve) => { resolveInventory = resolve })
+    ;(getRepoInventory as any).mockReturnValue(inventoryPromise)
+    ;(listRepos as any).mockResolvedValue({
+      data: {
+        data: {
+          items: [sampleRepos[0]],
+          total: 1,
+          page: 1,
+          page_size: 20,
+          selection: {
+            provider_key: 'scm_provider:1',
+            provider_id: 1,
+            provider_name: 'GitHub',
+            provider_type: 'github',
+            scope: 'org',
+            binding_state: 'bound',
+          },
+        },
+      },
+    })
+
+    const { wrapper } = await mountRepoList(undefined, '/repos', { useCurrentMocks: true })
+
+    expect(listRepos).toHaveBeenCalledTimes(1)
+    expect(getRepoInventory).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAll('[data-testid="repo-row"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('repo-a')
+    expect(listProviders).not.toHaveBeenCalled()
+
+    resolveInventory({ data: { data: buildInventory([sampleRepos[0]]) } })
+    await flushPromises()
+    expect(listRepos).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends explicit route selection immediately without waiting for inventory', async () => {
+    const { listRepos, getRepoInventory } = await import('@/api/repo')
+    ;(getRepoInventory as any).mockReturnValue(new Promise(() => {}))
+    ;(listRepos as any).mockResolvedValue({ data: { data: { items: [sampleRepos[2]], total: 1, page: 2, page_size: 10 } } })
+
+    const { wrapper } = await mountRepoList(undefined, '/repos?provider=scm_provider:2&scope=team&binding=bound&page=2&page_size=10', { useCurrentMocks: true })
+
+    expect(listRepos).toHaveBeenCalledWith({
+      page: 2,
+      pageSize: 10,
+      scmProviderId: 2,
+      scope: 'team',
+      bindingState: 'bound',
+    })
+    expect(wrapper.text()).toContain('repo-c')
+  })
+
+  it('keeps list rows visible when inventory fails', async () => {
+    const { listRepos, getRepoInventory } = await import('@/api/repo')
+    ;(getRepoInventory as any).mockRejectedValue(new Error('inventory timeout'))
+    ;(listRepos as any).mockResolvedValue({
+      data: { data: { items: [sampleRepos[0]], total: 1, page: 1, page_size: 20, selection: { provider_key: 'scm_provider:1', provider_id: 1, provider_name: 'GitHub', provider_type: 'github', scope: 'org', binding_state: 'bound' } } },
+    })
+
+    const { wrapper } = await mountRepoList(undefined, '/repos', { useCurrentMocks: true })
+    expect(wrapper.findAll('[data-testid="repo-row"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('repo-a')
+  })
+
+  it('mounts exactly one responsive row subtree per repository', async () => {
+    const { wrapper } = await mountRepoList(sampleRepos)
+    expect(wrapper.findAll('[data-testid="repo-row"]')).toHaveLength(2)
   })
 
   it('switches repository workbench labels to Chinese', async () => {
@@ -457,7 +557,7 @@ describe('RepoListView', () => {
   it('navigates to repo detail on row click', async () => {
     const { wrapper, router } = await mountRepoList(sampleRepos)
 
-    const rows = wrapper.findAll('tr.cursor-pointer')
+    const rows = wrapper.findAll('[data-testid="repo-row"]')
     expect(rows.length).toBeGreaterThan(0)
     await rows[0].trigger('click')
     await flushPromises()

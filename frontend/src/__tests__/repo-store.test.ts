@@ -25,6 +25,9 @@ describe('Repo Store', () => {
     expect(store.page).toBe(1)
     expect(store.pageSize).toBe(20)
     expect(store.inventory).toEqual([])
+    expect(store.selection).toBeNull()
+    expect(store.loaded).toBe(false)
+    expect(store.inventoryError).toBeNull()
   })
 
   it('fetchRepos populates repos list', async () => {
@@ -39,6 +42,14 @@ describe('Repo Store', () => {
           total: 2,
           page: 1,
           page_size: 20,
+          selection: {
+            provider_key: 'scm_provider:1',
+            provider_id: 1,
+            provider_name: 'GitHub',
+            provider_type: 'github',
+            scope: 'org',
+            binding_state: 'bound',
+          },
         },
       },
     })
@@ -52,6 +63,8 @@ describe('Repo Store', () => {
     expect(store.page).toBe(1)
     expect(store.pageSize).toBe(20)
     expect(store.loading).toBe(false)
+    expect(store.loaded).toBe(true)
+    expect(store.selection?.scope).toBe('org')
   })
 
   it('fetchRepos handles empty response', async () => {
@@ -168,6 +181,24 @@ describe('Repo Store', () => {
     expect(store.inventory).toHaveLength(1)
     expect(store.inventory[0].scopes[0].scope).toBe('org')
     expect(store.inventoryLoading).toBe(false)
+    expect(store.inventoryError).toBeNull()
+  })
+
+  it('keeps list rows and list error independent when inventory fails', async () => {
+    const { listRepos, getRepoInventory } = await import('@/api/repo')
+    ;(listRepos as any).mockResolvedValue({
+      data: { data: { items: [{ id: 7, full_name: 'org/repo-a' }], total: 1, page: 1, page_size: 20 } },
+    })
+    ;(getRepoInventory as any).mockRejectedValue({ response: { data: { message: 'Inventory unavailable' } } })
+
+    const store = useRepoStore()
+    await store.fetchRepos()
+    await store.fetchInventory()
+
+    expect(store.repos).toHaveLength(1)
+    expect(store.error).toBeNull()
+    expect(store.inventoryError).toBe('Inventory unavailable')
+    expect(store.inventory).toEqual([])
   })
 
   it('fetchRepos clears previous error on success', async () => {

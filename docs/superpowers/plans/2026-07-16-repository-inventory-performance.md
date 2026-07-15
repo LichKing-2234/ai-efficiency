@@ -214,43 +214,47 @@
 - Extends: repo store with `selection`, `loaded`, and inventory-specific error state.
 - Consumes: Task 1's additive list `selection` response.
 
-- [ ] **Step 1: Write failing list-route waterfall tests**
+- [x] **Step 1: Write failing list-route waterfall tests**
 
   Delay inventory while resolving the list and assert default rows render before inventory, both requests start on mount, route query provider/scope is sent immediately without inventory, inventory failure leaves list rows available, and provider options are not requested until the add dialog opens. Assert initial inventory completion does not trigger a duplicate list request.
 
-- [ ] **Step 2: Write failing detail-route/provider tests**
+- [x] **Step 2: Write failing detail-route/provider tests**
 
   Delay and reject `listProviders` for an admin while resolving repo/PR/latest-job calls. Assert repository health and PR rows render immediately, no redirect occurs, and binding controls become available only when provider options resolve.
 
-- [ ] **Step 3: Write failing one-subtree render tests**
+- [x] **Step 3: Write failing one-subtree render tests**
 
   For N repository items assert exactly N `[data-testid="repo-row"]` nodes and no separate mobile/desktop `v-for` copies. For N PR items assert exactly N `[data-testid="repo-pr-row"]` nodes, one details command per PR, and expansion renders one detail subtree.
 
-- [ ] **Step 4: Run frontend focused tests and record RED**
+- [x] **Step 4: Run frontend focused tests and record RED**
 
   Run: `cd frontend && npm test -- repo-store.test.ts repo-list-view.test.ts repo-detail-view.test.ts api-modules.test.ts`
 
   Expected RED: list waits for inventory, detail global loading waits for providers, response selection types are absent, and both views mount duplicate responsive row trees.
 
-- [ ] **Step 5: Implement list/store concurrency and stable selection hydration**
+  RED evidence: 10 focused tests fail. The list request has not started while inventory is pending, rows disappear on inventory failure, detail remains on the global loading state while provider options are pending, store state is missing, and repo/PR row test IDs find no single owned subtree.
+
+- [x] **Step 5: Implement list/store concurrency and stable selection hydration**
 
   Start inventory and list requests together. Build immediate list params from URL query (`scm_provider:<id>`, `unbound`, scope, binding, page), apply the server selection when no explicit selection exists, render list state independently from inventory state, and use later inventory only to populate health/platform/scope controls. Keep mutation workbench refresh authoritative and prevent inventory errors from overwriting list errors or rows.
 
-- [ ] **Step 6: Isolate detail provider-option loading**
+- [x] **Step 6: Isolate detail provider-option loading**
 
   Start provider options concurrently for admins but remove it from the awaited core `Promise.all`. Track provider-option loading/error separately; `loading` ends when repo/PR/latest-job core calls finish.
 
-- [ ] **Step 7: Replace duplicate responsive row trees**
+- [x] **Step 7: Replace duplicate responsive row trees**
 
   Replace each mobile-card plus desktop-table pair with one responsive grid/article per item. Use CSS grid tracks and breakpoint-specific labels/visibility inside the same row; preserve navigation, delete, PR status/usage, details expansion, pagination, and keyboard behavior.
 
-- [ ] **Step 8: Run Task 3 verification and commit**
+- [x] **Step 8: Run Task 3 verification and commit**
 
   Run: `cd frontend && npm test -- repo-store.test.ts repo-list-view.test.ts repo-detail-view.test.ts api-modules.test.ts`
 
   Run: `cd frontend && npm test`
 
   Run: `cd frontend && npm run build`
+
+  Verification: the four focused files pass 103 tests; the full frontend suite passes 39 files / 459 tests; `vue-tsc -b` and the Vite production build pass. List/inventory and core/provider requests are independent, and repo/PR items now own one responsive subtree each.
 
   Commit: `perf(frontend): render repository core data without waterfalls`
 
