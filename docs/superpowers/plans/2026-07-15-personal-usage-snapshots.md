@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress. Implementation, review, and self-test are complete; draft PR delivery and CI verification for #123 remain pending.
+**Status:** Complete. Implementation, review, self-test, Draft PR #148 delivery, and required CI verification are complete; the PR remains intentionally unmerged.
 
 **Goal:** Make personal usage render from an actor-isolated, versioned, short-lived usage snapshot while quota/subscription facts and representative scope load independently and remain fresh-only.
 
@@ -356,7 +356,7 @@
 
   Delivery evidence (2026-07-15): current architecture, the active #123 implementation status, and this ledger were committed as `4802cef`; ignored `.superpowers/sdd/pr-123.md` contains the required issue links, merge base, behavior, verification, review, rollout/fallback, and rollback sections.
 
-- [ ] **Step 6: Push and open the draft PR**
+- [x] **Step 6: Push and open the draft PR**
 
   ```bash
   git push -u origin perf/personal-usage-123
@@ -366,6 +366,8 @@
   ```
 
   Expected: OPEN draft PR against `docs/performance-contracts-116`, all four CI jobs green, clean worktree, and no merge/tag/release/deploy/Helm action.
+
+  Delivery evidence (2026-07-15): Draft PR #148 is OPEN against `docs/performance-contracts-116` from `perf/personal-usage-123`; the initial delivery OID was `cb70298bab2a98601d179a0d412a8e29e3f5a174`. Required checks passed: `ae-cli` (24s), `backend` (3m23s), `deploy-static` (14s), and `frontend` (55s). The branch and isolated worktree remain available for review; no merge, tag, release, deployment, Helm action, or `sub2api` source change was performed.
 
 ## Self-Review Record
 
