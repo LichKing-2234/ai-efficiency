@@ -4,9 +4,8 @@
 > `superpowers:subagent-driven-development` or `superpowers:executing-plans` to
 > implement this plan task-by-task. Steps use checkbox syntax for live tracking.
 
-**Status:** The lean implementation is complete on the feature branch. Focused
-post-review tests pass; final full-repository verification, documentation commit,
-and PR push remain unchecked below.
+**Status:** Complete. The lean implementation, post-review hardening, full
+verification, documentation, and PR update are recorded below.
 
 **Goal:** Add an exact-department first approval, an ordered subscription-group
 department chain, prior-approver reuse, actionable notifications, and one final
@@ -369,14 +368,14 @@ types. `QuotaResetView` remains the network-state owner.
   `+2323/-193` across 23 files. The scan found no generic workflow tables/store,
   real identity data, or committed secret.
 
-- [ ] **Step 6: Commit review fixes and documentation**
+- [x] **Step 6: Commit review fixes and documentation**
 
   ```bash
   git add backend frontend docs
   git commit -m "fix(quotareset): harden sequential approval workflow"
   ```
 
-- [ ] **Step 7: Push the feature branch and update PR 146**
+- [x] **Step 7: Push the feature branch and update PR 146**
 
   Push only after all verification steps pass. Do not merge, release, or run a
   Helm rollout without a separate explicit request.
