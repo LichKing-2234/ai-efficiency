@@ -4,6 +4,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import DashboardView from '@/views/DashboardView.vue'
 import { setLocale } from '@/i18n'
+import { getUserUsageDashboard, getUserUsageGroupQuotas } from '@/api/userUsage'
+import { getTeamUsageScope } from '@/api/teamUsage'
 
 vi.mock('@/api/user', () => ({
   getUserProviders: vi.fn(),
@@ -18,6 +20,14 @@ vi.mock('@/api/userUsage', () => ({
         stats: null,
         trend: [],
         models: [],
+      },
+    },
+  })),
+  getUserUsageGroupQuotas: vi.fn(() => Promise.resolve({
+    data: {
+      data: {
+        group_quotas: { status: 'empty', unit_label: 'USD', groups: [] },
+        quota_freshness: { as_of: '2026-07-15T08:00:00Z', cache_status: 'uncached', source_status: 'ok' },
       },
     },
   })),
@@ -94,6 +104,13 @@ const usageSnapshot = {
   trend: [{ date: '2026-06-06', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 }],
   models: [{ model: 'example-model', requests: 12, input_tokens: 1000, output_tokens: 500, cache_creation_tokens: 20, cache_read_tokens: 30, total_tokens: 1550, cost: 0.25, actual_cost: 0.2 }],
   group_quotas: { status: 'empty', unit_label: 'USD', message: '', groups: [] },
+  usage_freshness: {
+    as_of: '2026-07-15T08:00:00Z',
+    fresh_until: '2026-07-15T08:00:27Z',
+    stale_until: '2026-07-15T08:01:48Z',
+    cache_status: 'miss',
+    source_status: 'ok',
+  },
 }
 
 const usageSnapshotWithQuotas = {
@@ -107,6 +124,17 @@ const usageSnapshotWithQuotas = {
       { group_id: '43', group_name: 'Group Beta', platform: 'anthropic', used_amount: 18.2, quota_amount: null, is_unlimited: true, quota_source: '' },
     ],
   },
+}
+
+function quotaResponse(groupQuotas: any) {
+  return {
+    data: {
+      data: {
+        group_quotas: groupQuotas,
+        quota_freshness: { as_of: '2026-07-15T08:00:00Z', cache_status: 'uncached', source_status: 'ok' },
+      },
+    },
+  }
 }
 
 function deferred<T>() {
@@ -143,6 +171,133 @@ describe('DashboardView', () => {
     setActivePinia(createPinia())
     setLocale('en-US')
     vi.clearAllMocks()
+    ;(getUserUsageDashboard as any).mockReset().mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(getUserUsageGroupQuotas as any).mockReset().mockResolvedValue({
+      data: {
+        data: {
+          group_quotas: { status: 'empty', unit_label: 'USD', groups: [] },
+          quota_freshness: { as_of: '2026-07-15T08:00:00Z', cache_status: 'uncached', source_status: 'ok' },
+        },
+      },
+    })
+    ;(getTeamUsageScope as any).mockReset().mockResolvedValue({
+      data: { data: { is_representative: true, departments: [] } },
+    })
+  })
+
+  it('renders usage before representative scope and quota finish loading', async () => {
+    const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
+    const { getTeamUsageScope } = await import('@/api/teamUsage')
+    const quota = deferred<any>()
+    const scope = deferred<any>()
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(getUserUsageGroupQuotas as any).mockReturnValue(quota.promise)
+    ;(getTeamUsageScope as any).mockReturnValue(scope.promise)
+
+    const router = createTestRouter()
+    await router.push('/usage')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('30 Days Requests')
+    expect(wrapper.text()).toContain('1.55K')
+    expect(wrapper.find('a[href="/usage/team"]').exists()).toBe(false)
+    expect(getUserUsageGroupQuotas).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps usage visible when the independent quota request fails', async () => {
+    const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
+    ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshot } })
+    ;(getUserUsageGroupQuotas as any).mockRejectedValue(new Error('synthetic quota outage'))
+
+    const router = createTestRouter()
+    await router.push('/usage')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('30 Days Requests')
+    expect(wrapper.text()).toContain('Group quotas are temporarily unavailable.')
+    expect(wrapper.text()).not.toContain('Usage dashboard is temporarily unavailable')
+  })
+
+  it('renders a localized marker only for stale usage', async () => {
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    ;(getUserUsageDashboard as any).mockResolvedValue({
+      data: {
+        data: {
+          ...usageSnapshot,
+          usage_freshness: { ...usageSnapshot.usage_freshness, cache_status: 'stale', source_status: 'error' },
+        },
+      },
+    })
+
+    const router = createTestRouter()
+    await router.push('/usage')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="usage-stale-marker"]').text()).toContain('recent snapshot')
+  })
+
+  it('aborts superseded personal requests and ignores out-of-order responses', async () => {
+    const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
+    const usageRequests = [deferred<any>(), deferred<any>(), deferred<any>()]
+    const quotaRequests = [deferred<any>(), deferred<any>(), deferred<any>()]
+    ;(getUserUsageDashboard as any)
+      .mockReturnValueOnce(usageRequests[0].promise)
+      .mockReturnValueOnce(usageRequests[1].promise)
+      .mockReturnValueOnce(usageRequests[2].promise)
+    ;(getUserUsageGroupQuotas as any)
+      .mockReturnValueOnce(quotaRequests[0].promise)
+      .mockReturnValueOnce(quotaRequests[1].promise)
+      .mockReturnValueOnce(quotaRequests[2].promise)
+
+    const router = createTestRouter()
+    await router.push('/usage')
+    await router.isReady()
+    const wrapper = mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    await wrapper.get('[data-test="range-7d"]').trigger('click')
+    await wrapper.get('[data-test="range-today"]').trigger('click')
+    expect((getUserUsageDashboard as any).mock.calls[0][1].aborted).toBe(true)
+    expect((getUserUsageGroupQuotas as any).mock.calls[0][1].aborted).toBe(true)
+    expect((getUserUsageDashboard as any).mock.calls[1][1].aborted).toBe(true)
+    expect((getUserUsageGroupQuotas as any).mock.calls[1][1].aborted).toBe(true)
+
+    usageRequests[2].resolve({ data: { data: { ...usageSnapshot, models: [{ ...usageSnapshot.models[0], model: 'latest-model' }] } } })
+    quotaRequests[2].resolve({ data: { data: { group_quotas: { ...usageSnapshotWithQuotas.group_quotas, groups: [{ ...usageSnapshotWithQuotas.group_quotas.groups[0], group_name: 'Latest Group' }] }, quota_freshness: { as_of: '2026-07-15T08:00:02Z', cache_status: 'uncached', source_status: 'ok' } } } })
+    await flushPromises()
+    usageRequests[1].resolve({ data: { data: { ...usageSnapshot, models: [{ ...usageSnapshot.models[0], model: 'older-model' }] } } })
+    quotaRequests[1].resolve({ data: { data: { group_quotas: { status: 'empty', groups: [] }, quota_freshness: { as_of: '2026-07-15T08:00:01Z', cache_status: 'uncached', source_status: 'ok' } } } })
+    usageRequests[0].resolve({ data: { data: usageSnapshot } })
+    quotaRequests[0].resolve({ data: { data: { group_quotas: { status: 'empty', groups: [] }, quota_freshness: { as_of: '2026-07-15T08:00:00Z', cache_status: 'uncached', source_status: 'ok' } } } })
+    await flushPromises()
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('latest-model'))
+    expect(wrapper.text()).toContain('Latest Group')
+    expect(wrapper.text()).not.toContain('older-model')
+  })
+
+  it('does not call personal usage or quota endpoints on a member route', async () => {
+    const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
+    const { getTeamUsageSubjectDashboard } = await import('@/api/teamUsage')
+    ;(getTeamUsageSubjectDashboard as any).mockResolvedValue({
+      data: { data: { ...usageSnapshot, subject: { user_id: 225, display_name: 'Pat', selectable: true }, subject_subscription_groups: [] } },
+    })
+
+    const router = createTestRouter()
+    await router.push('/usage/members/225')
+    await router.isReady()
+    mount(DashboardView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    expect(getTeamUsageSubjectDashboard).toHaveBeenCalled()
+    expect(getUserUsageDashboard).not.toHaveBeenCalled()
+    expect(getUserUsageGroupQuotas).not.toHaveBeenCalled()
   })
 
   it('renders personal AI usage title', async () => {
@@ -180,7 +335,7 @@ describe('DashboardView', () => {
       global: { plugins: [createPinia(), router] },
     })
 
-    expect(wrapper.text()).toContain('Loading your AI usage')
+    expect(wrapper.text()).toContain('Loading usage dashboard')
   })
 
   it('requests the 30 day snapshot on first homepage load', async () => {
@@ -369,7 +524,7 @@ describe('DashboardView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Token Trend')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Token Trend'))
     expect(wrapper.text()).toContain('Model Distribution')
     expect(wrapper.text()).not.toContain('7 Days Cost')
     expect(wrapper.text()).not.toContain('$0.2000')
@@ -408,7 +563,7 @@ describe('DashboardView', () => {
     await flushPromises()
 
     expect(getUserUsageDashboard).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('Token Trend')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Token Trend'))
     expect(wrapper.text()).toContain('Model Distribution')
     expect(wrapper.text()).toContain('example-model')
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(true)
@@ -1010,7 +1165,7 @@ describe('DashboardView', () => {
 
   it('renders homepage group quota cards above the usage stats', async () => {
     const { getUserProviders } = await import('@/api/user')
-    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
     ;(getUserProviders as any).mockResolvedValue({
       data: {
         data: {
@@ -1029,6 +1184,7 @@ describe('DashboardView', () => {
       },
     })
     ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshotWithQuotas } })
+    ;(getUserUsageGroupQuotas as any).mockResolvedValue(quotaResponse(usageSnapshotWithQuotas.group_quotas))
 
     const router = createTestRouter()
     await router.push('/')
@@ -1045,7 +1201,7 @@ describe('DashboardView', () => {
 
   it('opens quota reset request modal from group quota cards and submits a request', async () => {
     const { getUserProviders } = await import('@/api/user')
-    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
     const { getQuotaResetOptions, createQuotaResetRequest } = await import('@/api/quotaReset')
     ;(getUserProviders as any).mockResolvedValue({
       data: {
@@ -1065,6 +1221,7 @@ describe('DashboardView', () => {
       },
     })
     ;(getUserUsageDashboard as any).mockResolvedValue({ data: { data: usageSnapshotWithQuotas } })
+    ;(getUserUsageGroupQuotas as any).mockResolvedValue(quotaResponse(usageSnapshotWithQuotas.group_quotas))
     ;(getQuotaResetOptions as any).mockResolvedValue({
       data: {
         data: {
@@ -1120,7 +1277,7 @@ describe('DashboardView', () => {
 
   it('shows a lightweight unavailable message when quota loading degrades', async () => {
     const { getUserProviders } = await import('@/api/user')
-    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
     ;(getUserProviders as any).mockResolvedValue({ data: { data: { providers: [] } } })
     ;(getUserUsageDashboard as any).mockResolvedValue({
       data: {
@@ -1130,6 +1287,12 @@ describe('DashboardView', () => {
         },
       },
     })
+    ;(getUserUsageGroupQuotas as any).mockResolvedValue(quotaResponse({
+      status: 'unavailable',
+      unit_label: 'USD',
+      message: 'Group quotas are temporarily unavailable.',
+      groups: [],
+    }))
 
     const router = createTestRouter()
     await router.push('/')
@@ -1145,8 +1308,9 @@ describe('DashboardView', () => {
 
   it('shows quota skeleton loading while range refresh is in flight', async () => {
     const { getUserProviders } = await import('@/api/user')
-    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
     const refresh = deferred<{ data: { data: typeof usageSnapshotWithQuotas } }>()
+    const quotaRefresh = deferred<any>()
     ;(getUserProviders as any).mockResolvedValue({
       data: {
         data: {
@@ -1167,6 +1331,9 @@ describe('DashboardView', () => {
     ;(getUserUsageDashboard as any)
       .mockResolvedValueOnce({ data: { data: usageSnapshotWithQuotas } })
       .mockReturnValueOnce(refresh.promise)
+    ;(getUserUsageGroupQuotas as any)
+      .mockResolvedValueOnce(quotaResponse(usageSnapshotWithQuotas.group_quotas))
+      .mockReturnValueOnce(quotaRefresh.promise)
 
     const router = createTestRouter()
     await router.push('/')
@@ -1180,6 +1347,7 @@ describe('DashboardView', () => {
     wrapper.get('[data-testid="usage-group-quotas-loading"]')
 
     refresh.resolve({ data: { data: usageSnapshotWithQuotas } })
+    quotaRefresh.resolve(quotaResponse(usageSnapshotWithQuotas.group_quotas))
     await flushPromises()
     expect(wrapper.find('[data-testid="usage-group-quotas-loading"]').exists()).toBe(false)
   })
