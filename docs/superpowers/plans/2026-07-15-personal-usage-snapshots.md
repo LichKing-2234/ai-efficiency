@@ -207,21 +207,25 @@
 - Produces `GET /api/v1/user/usage/group-quotas`.
 - Extends `handler.RouterRuntimeOptions` with `PersonalUsageCache *personalusage.Cache`.
 
-- [ ] **Step 1: Add RED HTTP contract tests**
+- [x] **Step 1: Add RED HTTP contract tests**
 
   Assert the default dashboard includes existing usage/group quota fields plus both freshness objects; `include_group_quotas=false` omits `group_quotas` and `quota_freshness`; the quota route returns only `group_quotas`/`quota_freshness`; invalid boolean input returns 400; missing credentials returns configured=false without freshness; invalid credentials returns 409 even with stale storage; transient usage failure uses eligible stale with 200; quota failure returns 200 unavailable; and registered routes remain auth-protected.
 
-- [ ] **Step 2: Run handler tests and record RED**
+- [x] **Step 2: Run handler tests and record RED**
 
   Run: `cd backend && go test ./internal/handler -run '^TestUserUsage' -count=1`
 
   Expected: failures because the new projection, endpoint, freshness, and module wiring are absent.
 
-- [ ] **Step 3: Replace handler composition with the module**
+  RED evidence (2026-07-15): the exact focused command failed only because `NewUserUsageHandler` still required the legacy Ent/resolver/encryption constructor and `UserUsageHandler.GroupQuotas` did not exist; the new HTTP contract tests formatted successfully before execution.
+
+- [x] **Step 3: Replace handler composition with the module**
 
   Keep only auth-context lookup, query parsing, `include_group_quotas` parsing, module calls, and error-to-status mapping in `user_usage.go`. Move quota merge/window helpers and provider/user/credential/cache decisions to `personalusage`. Register both routes and inject one cache built from the existing Redis client/namespace in `main.go`; Redis is still optional for data-plane reads and readiness behavior is unchanged.
 
-- [ ] **Step 4: Verify Task 3 GREEN and checkpoint**
+  GREEN evidence (2026-07-15): `user_usage.go` now contains only HTTP concerns, the Router constructs one `personalusage.Service`, production creates one personal usage cache from the existing bounded Redis client/store, and the authenticated dashboard plus quota-only routes are both registered.
+
+- [x] **Step 4: Verify Task 3 GREEN and checkpoint**
 
   Run:
 
@@ -233,6 +237,8 @@
   ```
 
   Commit: `feat(backend): split personal usage and quota reads`
+
+  GREEN evidence (2026-07-15): the exact Task 3 command passed twice for `internal/personalusage`, `internal/handler`, and `cmd/server`; focused HTTP tests passed combined compatibility, usage-only/quota-only projections, invalid boolean input, unconfigured state, invalid-credential no-stale behavior, stale-if-error, section-local quota failure, cold 502 behavior, and authenticated route registration; `git diff --check` returned no findings.
 
 ---
 
