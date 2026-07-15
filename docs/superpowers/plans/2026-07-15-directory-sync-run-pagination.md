@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-3 are complete, including Task 1 independent-review fixes, Task 2 repeated scale/plan evidence, and Task 3 frontend pagination/detail/polling verification. Task 4, subsequent task reviews, delivery, and CI remain pending.
+**Status:** Tasks 1-2 are complete. Task 3 implementation and first-review remediation are locally complete; independent re-review remains pending. Task 4, delivery, and CI remain pending.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -402,6 +402,28 @@
 - [x] **Step 5: Commit Task 3 and record the checkpoint**
 
   Commit `perf(frontend): page directory run history`, then check Step 5 and commit `docs(plan): record directory run frontend task 3`.
+
+#### Task 3 Independent Review Remediation
+
+- [x] **Record the first review and remediate I1/I2 page lifecycle findings**
+
+  The independent review of `139cadb..0b92b8d` failed with **0 Critical / 4 Important / 1 Minor**. I1 found that terminal fallback and poll completion could replace a non-first page; I2 found that a failed pending page request could advance navigation from an uncommitted offset.
+
+  I1/I2 RED used `cd frontend && npm test -- src/__tests__/directory-sync-settings.test.ts`: 1 file, 2 failed / 28 passed. The I1 assertion expected the completion refresh at offset `20` but received `0`; the I2 assertion expected pending Next to be disabled but it remained enabled. Commit `32506c7` (`fix(frontend): keep directory run pages coherent`) made the displayed offset atomic, isolated first-page terminal fallback, and refreshed the committed page. GREEN evidence: component file 30/30; focused three files 81/81; full frontend 39 files / 443 tests; production build and `git diff --check` passed.
+
+- [x] **Add RED coverage for I3/I4/M1**
+
+  I3 RED: `cd frontend && npm test -- src/__tests__/directory-sync-settings.test.ts -t "ignores stale source action"` failed all 6 new preview/apply x success/conflict/error cases. The failures proved that stale success could cancel source B polling, stale 409 could issue a source A page load and invalidate B's pending page, and stale errors rendered under B.
+
+  I4 RED: `cd frontend && npm test -- src/__tests__/directory-sync-settings.test.ts -t "keeps selected active run terminal"` failed 2/2 response-order cases. The selected header remained Running after a terminal poll, and a selection started during an in-flight poll did not adopt the terminal result.
+
+  M1 RED: `cd frontend && npm test -- src/__tests__/directory-sync-settings.test.ts -t "formats run timestamps"` failed 1/1 because switching from `en-US` to `zh-CN` retained the English timestamp.
+
+- [x] **Implement and verify I3/I4/M1 lifecycle isolation**
+
+  Commit `7e54dff` (`fix(frontend): isolate directory run lifecycles`) added a source/action generation invalidated by new actions, source switches, and unmount; guarded every preview/apply success, error, and conflict-recovery boundary; made a terminal poll invalidate same-ID detail work and synchronize the selected summary/detail; and formatted timestamps with `locale.value`.
+
+  Targeted GREEN: I3 6/6, I4 2/2, and M1 1/1. The complete component file passed 39/39. Fresh required verification passed: focused three files 90/90, full frontend 39 files / 452 tests, `npm run build`, and `git diff --check`.
 
 ---
 
