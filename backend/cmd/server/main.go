@@ -20,6 +20,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/checkpoint"
 	"github.com/ai-efficiency/backend/internal/config"
 	"github.com/ai-efficiency/backend/internal/credential"
+	"github.com/ai-efficiency/backend/internal/dbguard"
 	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
@@ -130,6 +131,9 @@ func main() {
 	// Auto-migrate
 	if err := entClient.Schema.Create(context.Background()); err != nil {
 		logger.Fatal("ent auto-migrate", zap.Error(err))
+	}
+	if err := dbguard.InstallQuotaResetRequestEventsAppendOnlyGuard(context.Background(), db); err != nil {
+		logger.Fatal("install database guards", zap.Error(err))
 	}
 	if _, err := quotareset.BackfillNotificationChannelTypes(context.Background(), entClient); err != nil {
 		logger.Fatal("backfill quota reset notification channels", zap.Error(err))

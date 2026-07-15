@@ -193,6 +193,55 @@ describe('quota reset store', () => {
     expect(store.myRequests.map(item => item.id)).toEqual([301])
   })
 
+  it('suppresses an old action refresh chained across a new session core load', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const adminMine = deferred<any>()
+    const adminApprovals = deferred<any>()
+    const userMine = deferred<any>()
+    const userApprovals = deferred<any>()
+    const userMineRequest = { ...failedRequest, id: 501, group_name: 'User B Mine' }
+    const userApprovalRequest = { ...failedRequest, id: 502, group_name: 'User B Approval' }
+    const staleAdminMine = { ...failedRequest, id: 511, group_name: 'Stale Admin Follow-up Mine' }
+    const staleAdminApproval = { ...failedRequest, id: 512, group_name: 'Stale Admin Follow-up Approval' }
+    let mineCalls = 0
+    let approvalCalls = 0
+    api.listMyQuotaResetRequests.mockImplementation(() => {
+      mineCalls += 1
+      if (mineCalls === 1) return adminMine.promise
+      if (mineCalls === 2) return userMine.promise
+      return Promise.resolve(response([staleAdminMine]))
+    })
+    api.listQuotaResetApprovals.mockImplementation(() => {
+      approvalCalls += 1
+      if (approvalCalls === 1) return adminApprovals.promise
+      if (approvalCalls === 2) return userApprovals.promise
+      return Promise.resolve(response([staleAdminApproval]))
+    })
+    api.cancelQuotaResetRequest.mockResolvedValueOnce({ data: { data: failedRequest } })
+    setSession(1, 'admin', 'token-admin-a')
+    const store = useQuotaResetStore()
+    const adminCoreLoad = store.loadQueues()
+    const actionResult = store.cancel(48)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    setSession(2, 'user', 'token-user-b')
+    const userCoreLoad = store.loadQueues()
+    adminMine.resolve(response([{ ...failedRequest, id: 521, group_name: 'Admin A Mine' }]))
+    adminApprovals.resolve(response([{ ...failedRequest, id: 522, group_name: 'Admin A Approval' }]))
+    await adminCoreLoad
+    userMine.resolve(response([userMineRequest]))
+    userApprovals.resolve(response([userApprovalRequest]))
+    await userCoreLoad
+    const result = await actionResult
+
+    expect(['success', 'workflow_advanced']).not.toContain(result)
+    expect(api.listMyQuotaResetRequests).toHaveBeenCalledTimes(2)
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(2)
+    expect(store.myRequests.map(item => item.id)).toEqual([501])
+    expect(store.approvalRequests.map(item => item.id)).toEqual([502])
+  })
+
   it('deduplicates processed history and rejects stale generations', async () => {
     const api = await import('@/api/quotaReset') as any
     const stale = deferred<any>()

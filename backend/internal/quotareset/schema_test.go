@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,9 +100,10 @@ func TestQuotaResetRequestEventsAreAppendOnly(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		relabel bool
-		run     func(*ent.Client, int) error
+		name         string
+		relabel      bool
+		storageGuard bool
+		run          func(*ent.Client, int) error
 	}{
 		{
 			name: "direct update-one",
@@ -138,8 +140,9 @@ func TestQuotaResetRequestEventsAreAppendOnly(t *testing.T) {
 			},
 		},
 		{
-			name:    "relabeled bulk update",
-			relabel: true,
+			name:         "relabeled bulk update",
+			relabel:      true,
+			storageGuard: true,
 			run: func(client *ent.Client, id int) error {
 				update := client.QuotaResetRequestEvent.Update().Where(quotaresetrequestevent.IDEQ(id))
 				if err := update.Mutation().SetField(quotaresetrequestevent.FieldCreatedAt, tamperedCreatedAt); err != nil {
@@ -170,8 +173,9 @@ func TestQuotaResetRequestEventsAreAppendOnly(t *testing.T) {
 			},
 		},
 		{
-			name:    "relabeled bulk delete",
-			relabel: true,
+			name:         "relabeled bulk delete",
+			relabel:      true,
+			storageGuard: true,
 			run: func(client *ent.Client, id int) error {
 				_, err := client.QuotaResetRequestEvent.Delete().Where(quotaresetrequestevent.IDEQ(id)).Exec(ctx)
 				return err
@@ -185,13 +189,24 @@ func TestQuotaResetRequestEventsAreAppendOnly(t *testing.T) {
 			if tt.relabel {
 				client.QuotaResetRequestEvent.Use(func(next ent.Mutator) ent.Mutator {
 					return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
-						mutation.(interface{ SetOp(ent.Op) }).SetOp(ent.OpCreate)
+						eventMutation := mutation.(*ent.QuotaResetRequestEventMutation)
+						eventMutation.SetOp(ent.OpCreate)
+						eventMutation.SetRequestID(original.RequestID)
+						eventMutation.SetEventType(original.EventType)
+						eventMutation.SetErrorMessage(original.ErrorMessage)
+						eventMutation.SetCreatedAt(original.CreatedAt)
+						eventMutation.ClearActorUserID()
+						eventMutation.ClearMetadata()
 						return next.Mutate(ctx, mutation)
 					})
 				})
 			}
-			if err := tt.run(client, original.ID); err == nil {
+			err := tt.run(client, original.ID)
+			if err == nil {
 				t.Fatal("append-only mutation succeeded")
+			}
+			if tt.storageGuard && !strings.Contains(err.Error(), "quota_reset_request_events is append-only") {
+				t.Fatalf("storage guard error = %v, want append-only message", err)
 			}
 			stored, err := client.QuotaResetRequestEvent.Get(ctx, original.ID)
 			if err != nil {

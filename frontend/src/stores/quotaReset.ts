@@ -130,7 +130,16 @@ export const useQuotaResetStore = defineStore('quotaReset', () => {
 
   function loadQueues(forceCounts = false): Promise<void> {
     if (coreLoadPromise) {
-      return forceCounts ? coreLoadPromise.then(() => loadQueues(true)) : coreLoadPromise
+      if (!forceCounts) return coreLoadPromise
+      const scheduledLifecycleGeneration = lifecycleGeneration
+      const scheduledCoreGeneration = coreLoadGeneration
+      return coreLoadPromise.then(() => {
+        if (
+          scheduledLifecycleGeneration !== lifecycleGeneration
+          || scheduledCoreGeneration !== coreLoadGeneration
+        ) return
+        return loadQueues(true)
+      })
     }
     coreLoading.value = true
     coreLoadError.value = ''
@@ -240,6 +249,7 @@ export const useQuotaResetStore = defineStore('quotaReset', () => {
       invalidateApprovalHistory()
       if (refreshDisplayedHistory) void loadApprovalHistory()
       await loadQueues(true)
+      if (requestGeneration !== lifecycleGeneration) return 'stale'
       return 'success'
     } catch (error) {
       if (requestGeneration !== lifecycleGeneration) return 'stale'
@@ -249,6 +259,7 @@ export const useQuotaResetStore = defineStore('quotaReset', () => {
         void workItems.loadCounts({ force: true })
       } else {
         await loadQueues(true)
+        if (requestGeneration !== lifecycleGeneration) return 'stale'
       }
       return 'workflow_advanced'
     } finally {
