@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1-2 are complete. Task 3 implementation and third-round review remediation are locally complete; final independent re-review remains pending. Task 4, delivery, and CI remain pending.
+**Status:** Tasks 1-2 are complete. Task 3 implementation and fourth-round review remediation are locally complete; final independent re-review remains pending. Task 4, delivery, and CI remain pending.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -448,6 +448,18 @@
   Commit `1c264e7` (`fix(frontend): invalidate stale run page requests`) makes every new preview/apply action advance the page generation and consistently clear only pending offset, recovery ownership, and history-loading state. It preserves the committed rows/page/offset; stale page success, catch, and finally paths fail their existing context guard before they can overwrite a newer request or poll lifecycle. Existing ordinary pagination and action-scoped 409 recovery behavior remain covered.
 
   Targeted GREEN passed 2/2; the expanded pagination/409 lifecycle target passed 6/6; and the complete component file passed 43/43. Fresh required verification passed: focused three files 94/94, full frontend 39 files / 456 tests, `npm run build`, and `git diff --check`.
+
+- [x] **Record the fourth review and add RED coverage for no-active history pages**
+
+  The independent R3 re-review of `139cadb..95a0ee8` failed with **0 Critical / 2 Important / 0 Minor**. I1 showed that an ordinary page started while a preview/apply POST was pending could resolve without `latest_active_run` after the action established its poll and cancel that newer timer. I2 showed that a no-active non-first page could cancel an existing poll before its terminal detail was observed, leaving stale Running state and disabled action controls.
+
+  Both reviewer probes were promoted to permanent tests: a parameterized preview/apply case for `action POST pending -> page starts -> action establishes poll -> no-active page resolves`, and a current-active case that commits page 2, preserves its selection, observes the terminal detail, and re-enables both action buttons. RED command `cd frontend && npm test -- src/__tests__/directory-sync-settings.test.ts -t "keeps polling authoritative"` failed 3/3 at the intended timer assertions: each expected one remaining timer and received zero.
+
+- [x] **Keep established active polling authoritative and verify Task 3 again**
+
+  Commit `dc36bd8` (`fix(frontend): keep active run polling authoritative`) makes history-page recovery preserve the independently owned poll and latest-active state when a response has `latest_active_run: null`. A non-null latest active may still adopt or replace the poll target; without an established poll, the existing page-zero terminal fallback remains unchanged. Detail polling still owns terminal/error shutdown, while source switch, unmount, and a different active ID retain their existing invalidation paths. The page/action generation guards from the preceding review rounds are unchanged.
+
+  Targeted GREEN passed 3/3, and the expanded page/action/detail/poll/source lifecycle target passed 35/35. Fresh required verification passed: focused three files 97/97, full frontend 39 files / 459 tests, `npm run build`, and `git diff --check`.
 
 ---
 
