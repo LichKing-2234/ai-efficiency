@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
@@ -359,6 +361,184 @@ func TestDirectoryHandlerGetRunKeepsCompleteDiagnostics(t *testing.T) {
 			t.Fatalf("detail missing marker %q: %s", marker, rec.Body.String())
 		}
 	}
+}
+
+func TestDirectoryHandlerLargeRunHistoryWireBounds(t *testing.T) {
+	base := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	items := make([]directorysync.RunSummary, 100)
+	for i := range items {
+		startedAt := base.Add(time.Duration(i%64) * time.Minute)
+		completedAt := startedAt.Add(30 * time.Second)
+		items[i] = directorysync.RunSummary{
+			ID:                 2400 - i,
+			SourceID:           7,
+			Mode:               []directorysyncrun.Mode{directorysyncrun.ModePreview, directorysyncrun.ModeApply, directorysyncrun.ModeValidate}[i%3],
+			Trigger:            []directorysyncrun.Trigger{directorysyncrun.TriggerManual, directorysyncrun.TriggerSchedule}[i%2],
+			Status:             []directorysyncrun.Status{directorysyncrun.StatusCompleted, directorysyncrun.StatusCompletedWithWarnings, directorysyncrun.StatusFailed}[i%3],
+			Phase:              directorysyncrun.PhaseCompleted,
+			StartedAt:          &startedAt,
+			CompletedAt:        &completedAt,
+			HTTPRequestCount:   (i % 7) + 1,
+			DepartmentCount:    (i % 31) + 1,
+			MemberCount:        (i % 97) + 1,
+			InvalidMemberCount: i % 5,
+			WarningCount:       i % 3,
+		}
+		if items[i].Status == directorysyncrun.StatusFailed {
+			items[i].Phase = directorysyncrun.PhaseFailed
+		}
+	}
+	activeStartedAt := base.Add(65 * time.Minute)
+	active := directorysync.RunSummary{
+		ID:        2399,
+		SourceID:  7,
+		Mode:      directorysyncrun.ModePreview,
+		Trigger:   directorysyncrun.TriggerManual,
+		Status:    directorysyncrun.StatusRunning,
+		Phase:     directorysyncrun.PhaseExecuting,
+		StartedAt: &activeStartedAt,
+	}
+	svc := &fakeDirectoryService{runPage: &directorysync.RunPage{
+		Items:           items,
+		Total:           2400,
+		Page:            2,
+		PageSize:        100,
+		LatestActiveRun: &active,
+	}}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	h := NewDirectoryHandler(svc)
+	router.GET("/api/v1/admin/directory/sources/:id/runs", h.ListRuns)
+	router.GET("/api/v1/admin/directory/runs/:id", h.GetRun)
+
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/v1/admin/directory/sources/7/runs?limit=100&offset=200", nil)
+	listRecorder := httptest.NewRecorder()
+	router.ServeHTTP(listRecorder, listRequest)
+	if listRecorder.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listRecorder.Code, listRecorder.Body.String())
+	}
+	const wireByteLimit = 128 * 1024
+	if listRecorder.Body.Len() >= wireByteLimit {
+		t.Fatalf("100-row handler wire bytes = %d, want < %d", listRecorder.Body.Len(), wireByteLimit)
+	}
+	var listBody struct {
+		Code int                   `json:"code"`
+		Data directorysync.RunPage `json:"data"`
+	}
+	if err := json.Unmarshal(listRecorder.Body.Bytes(), &listBody); err != nil {
+		t.Fatalf("decode list wire response: %v", err)
+	}
+	if listBody.Code != http.StatusOK || listBody.Data.Total != 2400 || listBody.Data.Page != 2 || listBody.Data.PageSize != 100 || len(listBody.Data.Items) != 100 {
+		t.Fatalf("list wire contract = code:%d page:%+v", listBody.Code, listBody.Data)
+	}
+	if listBody.Data.LatestActiveRun == nil || listBody.Data.LatestActiveRun.ID != active.ID {
+		t.Fatalf("latest_active_run = %+v, want id %d", listBody.Data.LatestActiveRun, active.ID)
+	}
+	var listRaw struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(listRecorder.Body.Bytes(), &listRaw); err != nil {
+		t.Fatalf("decode raw list wire response: %v", err)
+	}
+	for _, key := range []string{"items", "total", "page", "page_size", "latest_active_run"} {
+		if _, ok := listRaw.Data[key]; !ok {
+			t.Fatalf("list wire response missing %q: %s", key, listRecorder.Body.String())
+		}
+	}
+	for _, forbidden := range []string{`"warnings"`, `"summary"`, `"preview_diff"`, `"error_message"`, "handler-warning-marker", "handler-summary-marker", "handler-preview-marker", "handler-error-marker"} {
+		if bytes.Contains(listRecorder.Body.Bytes(), []byte(forbidden)) {
+			t.Fatalf("list wire response contains diagnostic %q", forbidden)
+		}
+	}
+
+	marker := func(prefix string) string {
+		return prefix + strings.Repeat("x", 4*1024-len(prefix))
+	}
+	errorMessage := "handler-error-marker-selected-run"
+	svc.runDetail = &ent.DirectorySyncRun{
+		ID:                 1777,
+		SourceID:           7,
+		Mode:               directorysyncrun.ModeApply,
+		Trigger:            directorysyncrun.TriggerManual,
+		Status:             directorysyncrun.StatusFailed,
+		Phase:              directorysyncrun.PhaseFailed,
+		StartedAt:          &base,
+		CompletedAt:        &activeStartedAt,
+		HTTPRequestCount:   9,
+		DepartmentCount:    10,
+		MemberCount:        11,
+		InvalidMemberCount: 12,
+		WarningCount:       13,
+		ErrorMessage:       &errorMessage,
+		Warnings:           []map[string]any{{"marker": marker("handler-warning-marker:")}},
+		Summary:            map[string]any{"marker": marker("handler-summary-marker:")},
+		PreviewDiff:        map[string]any{"marker": marker("handler-preview-marker:")},
+	}
+	populatedRequest := httptest.NewRequest(http.MethodGet, "/api/v1/admin/directory/runs/1777", nil)
+	populatedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(populatedRecorder, populatedRequest)
+	if populatedRecorder.Code != http.StatusOK {
+		t.Fatalf("populated detail status = %d, body = %s", populatedRecorder.Code, populatedRecorder.Body.String())
+	}
+	for _, fullMarker := range []string{
+		marker("handler-warning-marker:"),
+		marker("handler-summary-marker:"),
+		marker("handler-preview-marker:"),
+		errorMessage,
+	} {
+		if !bytes.Contains(populatedRecorder.Body.Bytes(), []byte(fullMarker)) {
+			t.Fatalf("populated detail missing full marker prefix %q", fullMarker[:min(len(fullMarker), 32)])
+		}
+	}
+	var populatedRaw struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(populatedRecorder.Body.Bytes(), &populatedRaw); err != nil {
+		t.Fatalf("decode populated detail response: %v", err)
+	}
+	for _, key := range []string{"warnings", "summary", "preview_diff", "error_message"} {
+		if _, ok := populatedRaw.Data[key]; !ok {
+			t.Fatalf("populated detail missing %q", key)
+		}
+	}
+
+	svc.runDetail = &ent.DirectorySyncRun{
+		ID:       2401,
+		SourceID: 7,
+		Mode:     directorysyncrun.ModePreview,
+		Trigger:  directorysyncrun.TriggerManual,
+		Status:   directorysyncrun.StatusQueued,
+		Phase:    directorysyncrun.PhaseValidating,
+	}
+	queuedRequest := httptest.NewRequest(http.MethodGet, "/api/v1/admin/directory/runs/2401", nil)
+	queuedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(queuedRecorder, queuedRequest)
+	if queuedRecorder.Code != http.StatusOK {
+		t.Fatalf("queued detail status = %d, body = %s", queuedRecorder.Code, queuedRecorder.Body.String())
+	}
+	var queuedBody struct {
+		Data ent.DirectorySyncRun `json:"data"`
+	}
+	if err := json.Unmarshal(queuedRecorder.Body.Bytes(), &queuedBody); err != nil {
+		t.Fatalf("decode queued zero-count detail: %v", err)
+	}
+	if queuedBody.Data.ID != 2401 || queuedBody.Data.Status != directorysyncrun.StatusQueued || queuedBody.Data.StartedAt != nil || queuedBody.Data.CompletedAt != nil || queuedBody.Data.HTTPRequestCount != 0 {
+		t.Fatalf("queued detail = %+v, want queued zero-count run", queuedBody.Data)
+	}
+	var queuedRaw struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(queuedRecorder.Body.Bytes(), &queuedRaw); err != nil {
+		t.Fatalf("decode raw queued detail: %v", err)
+	}
+	for _, omitted := range []string{"started_at", "completed_at", "http_request_count", "department_count", "member_count", "invalid_member_count", "warning_count"} {
+		if _, present := queuedRaw.Data[omitted]; present {
+			t.Fatalf("queued zero-count detail unexpectedly contains omitempty field %q: %s", omitted, queuedRecorder.Body.String())
+		}
+	}
+
+	t.Logf("wire_bytes=%d populated_detail_wire_bytes=%d queued_detail_wire_bytes=%d items=%d total=%d", listRecorder.Body.Len(), populatedRecorder.Body.Len(), queuedRecorder.Body.Len(), len(items), 2400)
 }
 
 func TestDirectoryHandlerDisableCandidateRequiresConfirmation(t *testing.T) {
