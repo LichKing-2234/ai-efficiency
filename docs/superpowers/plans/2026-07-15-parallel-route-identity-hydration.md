@@ -20,7 +20,7 @@
 - Invalid-token `401` behavior remains authoritative: access and refresh tokens are cleared; protected navigation converges to `/login` with the original safe redirect; administrator navigation never falls through to protected content.
 - Login redirects an already verified user synchronously. When only a token exists, Login renders immediately and redirects to the existing safe target only after hydration verifies the user.
 - OAuth authorize and device route chunks render immediately. Device login retains its existing unauthenticated redirect behavior after an invalid stored token is discovered.
-- Current-user hydration is single-flight per current token. Concurrent callers share one promise; a settled request is cleared; a new token does not join an older token's request; a response from a logged-out or replaced token cannot repopulate user state.
+- Current-user hydration is single-flight per current token and session generation. Concurrent callers share one promise; a settled request is cleared; a new token/generation does not join an older request; a response from a logged-out or replaced session cannot repopulate user state even if the later session reuses the same token string.
 - A superseded navigation cannot apply a delayed hydration redirect to the newer route.
 - Keep authentication authority in the backend and existing Axios authentication/refresh path. Do not add identity caching in Redis, browser persistence for user objects, backend changes, route prefetch libraries, or a second auth store.
 - Keep `frontend/src/router/index.ts` responsible for route composition and `frontend/src/router/authGuard.ts` responsible for hydration/navigation policy. Keep API calls in the existing auth store/API modules.
@@ -45,7 +45,7 @@
 
 ## File Map
 
-- `frontend/src/stores/auth.ts`: own current-user single-flight, token isolation, stale-response protection, login/logout state transitions, and `ensureUser()`.
+- `frontend/src/stores/auth.ts`: own current-user single-flight, token/session-generation isolation, stale-response protection, login/logout state transitions, and `ensureUser()`.
 - `frontend/src/router/authGuard.ts`: own public/protected/admin scheduling plus post-confirmation hydration redirects.
 - `frontend/src/router/index.ts`: retain route definitions and install the shared guard; mark only the OAuth device route for delayed invalid-token redirect.
 - `frontend/src/__tests__/auth-store.test.ts`: prove one current-user request, retry, token replacement, and stale-response safety.
@@ -72,11 +72,12 @@
 Add a typed deferred helper to `auth-store.test.ts`, then add these exact cases:
 
 ```text
-two concurrent ensureUser calls with token-a issue one getMe and resolve to the same alice user
+two concurrent ensureUser calls with token-a in one session generation issue one getMe and resolve to the same alice user
 ensureUser with an already loaded user issues zero getMe calls
 a transient getMe rejection settles the flight and the next ensureUser retries once
 logout while token-a getMe is pending clears tokens and the later token-a response cannot restore user
 changing from token-a to token-b starts a separate token-b request and token-a cannot overwrite token-b user
+logout followed by a new session that reuses token-a starts a new request and rejects the older generation's response
 two concurrent fetchMe calls for the same token also share the same request
 ```
 
@@ -99,10 +100,12 @@ In `auth.ts`, keep one closure-owned request record:
 ```ts
 type CurrentUserRequest = {
   token: string | null
+  generation: number
   promise: Promise<User | null>
 }
 
 let currentUserRequest: CurrentUserRequest | null = null
+let sessionGeneration = 0
 ```
 
 Implement these rules without changing the backend API contract:
@@ -114,7 +117,7 @@ function ensureUser(): Promise<User | null> {
 }
 ```
 
-`fetchMe()` captures the current token, reuses only a request with that exact token, and clears only its own request record in `finally`. It applies a success or error to store state only when the current token still equals the captured token. A current-token `401` calls the existing `logout()` path; a stale request does not clear or replace the newer session. `logout()` clears the request record, and successful login clears the previous user/request before storing the new token and calling `fetchMe()`.
+`fetchMe()` captures the current token and `sessionGeneration`, reuses only a request with that exact pair, and clears only its own request record in `finally`. It applies a success or error to store state only when both the current token and generation still equal the captured values. A current-session `401` calls the existing `logout()` path; a stale request does not clear or replace the newer session. `logout()` increments the generation and clears the request record before clearing credentials. Successful login increments the generation and clears the previous user/request before storing the new token and calling `fetchMe()`.
 
 Return `User | null` from both success and handled-error paths so background router hydration never creates an unhandled rejected promise. Preserve the existing non-401 behavior of clearing the current user without clearing the token.
 
@@ -128,7 +131,7 @@ cd frontend && npm run build
 git diff --check
 ```
 
-Expected: all tests PASS, TypeScript/build PASS, concurrent same-token calls record one `getMe`, new-token calls remain isolated, and existing login/logout/sidebar behavior remains unchanged.
+Expected: all tests PASS, TypeScript/build PASS, concurrent same-session calls record one `getMe`, new token/session generations remain isolated including same-token reuse, and existing login/logout/sidebar behavior remains unchanged.
 
 - [ ] **Step 5: Commit Task 1 and record the checkpoint**
 
@@ -369,6 +372,6 @@ Expected: clean `perf/route-hydration-122`, local HEAD equals PR head OID, draft
 - Placeholder scan: no TBD/TODO/unspecified code or test step remains.
 - Type consistency: Task 1 produces `ensureUser(): Promise<User | null>`; Task 2 consumes it and produces `installAuthNavigationGuards(router: Router): void`; Task 3 reviews those exact interfaces.
 - Route consistency: every existing path/name/import remains; only OAuth device receives an explicit delayed invalid-token meta policy.
-- Security consistency: admin chunks await verified identity; 401 remains authoritative; token replacement/logout reject stale user responses; no user object is persisted.
+- Security consistency: admin chunks await verified identity; 401 remains authoritative; token plus session generation reject stale user responses across replacement/logout/same-token reuse; no user object is persisted.
 - Test consistency: all ordering/race assertions use deferred promises and call counts, never timing thresholds; every identity and redirect fixture is synthetic.
 - Scope control: no backend, Redis, Relay, sub2api, CDN, static-cache, release, deployment, or Helm behavior is added.
