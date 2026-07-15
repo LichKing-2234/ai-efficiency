@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Tasks 1-4 and Task 5 Steps 1-5 are complete. Draft PR [#141](https://github.com/LichKing-2234/ai-efficiency/pull/141) is open against `docs/performance-contracts-116`, and its first-round CI is green for backend, frontend, ae-cli, and deploy-static. Implementation, review remediation, current architecture, full local verification, and zero-finding final reviews are committed through `1e65675`. Task 5 Step 6 is in progress: this ledger update will trigger replacement CI. Step 7 remains pending until that replacement head is green and the PR/local state is verified.
+**Status:** Complete. Tasks 1-4 and all Task 5 steps are complete. Draft PR [#141](https://github.com/LichKing-2234/ai-efficiency/pull/141) is open, mergeable, and clean against `docs/performance-contracts-116`. Full local verification and zero-finding final reviews pass. First-round CI on `1e65675` and replacement CI on `a5db81d` both passed backend, frontend, ae-cli, and deploy-static. The final ledger-only head must also remain green; no merge, release, deploy, or Helm action is part of this plan.
 
 ## Global Constraints
 
@@ -542,9 +542,11 @@ gh pr view --json number,state,isDraft,baseRefName,headRefName,mergeable,mergeSt
 
 Create `.superpowers/sdd/pr-120.md` as an ignored delivery artifact with `Closes #120`, dependency on draft PR #138, summary, SQL/fixture evidence, frontend evidence, verification commands, and rollback/index-migration notes. Expected PR state: `OPEN`, draft, base `docs/performance-contracts-116`, head `perf/events-120`.
 
-- [ ] **Step 6: Wait for first-round CI, finalize the ledger, and run replacement CI**
+- [x] **Step 6: Wait for first-round CI, finalize the ledger, and run replacement CI**
 
-  **First-round CI evidence (2026-07-15):** GitHub Actions run `29384127030` passed backend in 2m58s, frontend in 1m1s, ae-cli in 24s, and deploy-static in 17s for remote head `1e65675`. No job was skipped or neutral. Step 6 remains unchecked until the replacement CI triggered by this ledger update also passes.
+  **First-round CI evidence (2026-07-15):** GitHub Actions run `29384127030` passed backend in 2m58s, frontend in 1m1s, ae-cli in 24s, and deploy-static in 17s for remote head `1e65675`. No job was skipped or neutral.
+
+  **Replacement CI evidence (2026-07-15):** GitHub Actions run `29384304209` passed backend in 3m4s, frontend in 1m2s, ae-cli in 31s, and deploy-static in 9s for remote head `a5db81d`. No job was skipped or neutral.
 
 Wait for `backend`, `frontend`, `ae-cli`, and `deploy-static` to succeed. Only then mark every completed checkbox, set `Status: Complete`, and commit the final ledger:
 
@@ -557,7 +559,9 @@ gh pr checks --watch
 
 Expected: replacement CI is green for all four jobs.
 
-- [ ] **Step 7: Verify final branch and PR state**
+- [x] **Step 7: Verify final branch and PR state**
+
+Verified before this ledger commit: the worktree was clean; local and PR head were both `a5db81d`; PR #141 was open and draft with base `docs/performance-contracts-116`, head `perf/events-120`, and `MERGEABLE` / `CLEAN`; all four replacement checks reported success.
 
 Run:
 
