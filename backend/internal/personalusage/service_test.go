@@ -337,3 +337,58 @@ func TestQuotaPresentationUsesCurrentDailyWeeklyAndMonthlyWindows(t *testing.T) 
 		})
 	}
 }
+
+func TestQuotaPresentationPreservesKeyUnlimitedAndUnconfiguredWindowSemantics(t *testing.T) {
+	monthlyLimit := 200.0
+	tests := []struct {
+		name          string
+		key           relay.APIKey
+		subscription  relay.UserSubscription
+		window        string
+		wantUsed      *float64
+		wantQuota     *float64
+		wantSource    string
+		wantUnlimited bool
+	}{
+		{
+			name:   "api key quota takes precedence",
+			key:    relay.APIKey{Status: "active", Quota: 100, QuotaUsed: 32.4, Group: &relay.Group{ID: 42}},
+			window: "monthly", wantUsed: float64Pointer(32.4), wantQuota: float64Pointer(100), wantSource: "api_key",
+		},
+		{
+			name:         "subscription without any limits is unlimited",
+			key:          relay.APIKey{Status: "active", Group: &relay.Group{ID: 42, SubscriptionType: "subscription"}},
+			subscription: relay.UserSubscription{MonthlyUsageUSD: 25},
+			window:       "monthly", wantUsed: float64Pointer(25), wantSource: "group_subscription_unlimited", wantUnlimited: true,
+		},
+		{
+			name:         "another configured window does not make the selected window unlimited",
+			key:          relay.APIKey{Status: "active", Group: &relay.Group{ID: 42, SubscriptionType: "subscription", MonthlyLimitUSD: &monthlyLimit}},
+			subscription: relay.UserSubscription{DailyUsageUSD: 6.66},
+			window:       "daily", wantUsed: float64Pointer(6.66), wantSource: "group_daily_subscription_window_unconfigured",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			used, quota, source, unlimited := selectQuotaPresentation(&tt.key, tt.subscription, tt.window)
+			assertOptionalFloat(t, "used", used, tt.wantUsed)
+			assertOptionalFloat(t, "quota", quota, tt.wantQuota)
+			if source != tt.wantSource || unlimited != tt.wantUnlimited {
+				t.Fatalf("source/unlimited = %q/%v, want %q/%v", source, unlimited, tt.wantSource, tt.wantUnlimited)
+			}
+		})
+	}
+}
+
+func assertOptionalFloat(t *testing.T, name string, got, want *float64) {
+	t.Helper()
+	if got == nil || want == nil {
+		if got != want {
+			t.Fatalf("%s = %v, want %v", name, got, want)
+		}
+		return
+	}
+	if *got != *want {
+		t.Fatalf("%s = %v, want %v", name, *got, *want)
+	}
+}

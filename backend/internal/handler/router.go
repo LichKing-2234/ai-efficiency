@@ -7,6 +7,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/toolusage"
@@ -22,6 +23,7 @@ var prUsageService prUsageRefresher
 
 type RouterRuntimeOptions struct {
 	DirectoryService       DirectoryAdminService
+	PersonalUsageCache     *personalusage.Cache
 	WorkItemsCache         *workitems.CountsCache
 	WorkItemsRevisionStore *workitems.RevisionStore
 }
@@ -254,8 +256,10 @@ func SetupRouter(
 			userGroup.POST("/providers/:id/test", providerHandler.Test)
 
 			// User usage dashboard
-			userUsageHandler := NewUserUsageHandler(entClient, providerHandler, encryptionKey)
+			userUsageService := personalusage.NewService(entClient, providerHandler, encryptionKey, runtime.PersonalUsageCache)
+			userUsageHandler := NewUserUsageHandler(userUsageService)
 			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
+			userGroup.GET("/usage/group-quotas", userUsageHandler.GroupQuotas)
 		}
 		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
 		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)
