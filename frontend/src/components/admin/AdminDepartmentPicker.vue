@@ -336,7 +336,7 @@ onBeforeUnmount(() => {
           type="button"
           data-testid="admin-department-picker-all"
           class="block w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-          :class="modelValue || activeOptionIndex !== 0 ? 'text-gray-700' : 'bg-gray-50 font-medium text-gray-900'"
+          :class="!modelValue || activeOptionIndex === 0 ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'"
           role="option"
           tabindex="-1"
           :aria-selected="!modelValue"
