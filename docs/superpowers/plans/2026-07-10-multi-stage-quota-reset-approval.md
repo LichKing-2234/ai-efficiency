@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Gin, Ent, PostgreSQL, Vue 3 `<script setup lang="ts">`, Pinia, Vite, Vitest, TailwindCSS, Python Playwright role checks.
 
-**Status:** Final review fixes in progress
+**Status:** Complete
 
 **Known Remaining Gaps:**
 
@@ -31,10 +31,6 @@
   reachable between commits `6c1c8d2` and `a14fd5f`; final integration must use
   a squash merge (or an equivalent history rewrite) so the ignored report is
   not retained in repository history.
-- Task 20 addresses findings from the final whole-branch spec and standards
-  review. Final whole-branch re-review reopened frontend chain authority and
-  settings edit-lifecycle fixes; implementation, re-review, controller
-  verification, and plan closure remain.
 
 **Design:** [2026-07-10-multi-stage-quota-reset-approval-design.md](../specs/2026-07-10-multi-stage-quota-reset-approval-design.md)
 
@@ -5095,7 +5091,7 @@ layout assertions. `git diff --check` was clean; scoped webhook and domain
 scans found only synthetic Enterprise WeChat robot keys and no real employee or
 company-domain data in added fixtures.
 
-- [ ] **Step 4: Commit review reconciliation, rerun whole-branch spec and standards review, then mark this plan complete only with evidence**
+- [x] **Step 4: Commit review reconciliation, rerun whole-branch spec and standards review, then mark this plan complete only with evidence**
 
 Pre-closure whole-branch review evidence (2026-07-15): the first final review
 found no Critical issues, but it did find contract gaps in notification
@@ -5104,6 +5100,11 @@ candidate pagination, and actionable admin counts. Standards review also found
 that the frontend duplicated current-directory-source resolution and two retry
 lookups lacked contextual error wrapping. Tasks 17-19 below keep this closure
 step open until those findings are fixed and independently re-reviewed.
+
+Final closure evidence is recorded under Task 20 Step 4. Tasks 17-20 closed
+every resulting implementation finding, both final reviewers approved the
+follow-up without Critical, Important, or Minor findings, and the controller
+completed the source-image and browser verification required by this step.
 
 ### Task 17: Align Approver Configuration with Runtime Eligibility
 
@@ -5199,9 +5200,9 @@ explicitly synthetic Enterprise WeChat robot keys. `git status --short` and
 test additions, and this live plan. A manual self-review found no remaining
 correctness, contract, data-hygiene, or ownership issue.
 
-Step 4 intentionally remains unchecked: the implementation, spec, and
-verification are complete, but the required independent Task 17 spec and
-standards reviews have not run yet.
+At that checkpoint, Step 4 intentionally remained unchecked: the
+implementation, spec, and verification were complete, but the required
+independent Task 17 spec and standards reviews had not run yet.
 
 Quality-review follow-up status (2026-07-15): Task 17 was reopened after
 commit `ca77d17` for authoritative-source invalidation, exact non-null
@@ -5267,8 +5268,8 @@ credential-shaped matches were only pre-existing explicitly synthetic robot
 keys. Manual self-review found no remaining correctness, contract, data
 hygiene, scope, or Task 18/19 ownership issue.
 
-Task 17 Step 4 remains unchecked until the independent spec and standards
-re-review passes.
+At that checkpoint, Task 17 Step 4 remained unchecked until the independent
+spec and standards re-review passed.
 
 Final re-review follow-up status (2026-07-15): Task 17 was reopened after
 commit `1f97743` for deep approver-config row decoding, server-page exhaustion
@@ -5490,7 +5491,7 @@ GREEN evidence (2026-07-15):
 
 - `cd backend && go test ./internal/quotareset -run 'Test(ListApprovalsKeepsV2DecisionHistoryBehindExplicitScope|ListApprovalsReturnsRejectedV2DecisionHistoryOnlyWithExplicitScope|ListApprovalsPreservesLegacyV1SemanticsWithHistoryScope|CountWorkItemsAdminUsesAllPendingWithoutDoubleCounting|RetryResetWorkflowWrapsLookupErrorsWithoutLosingNotFoundClassification)$' -count=1` exited 0.
 
-- [ ] **Step 4: Run full verification, update docs, commit, rerun whole-branch reviews, and close the plan**
+- [x] **Step 4: Run full verification, update docs, commit, rerun whole-branch reviews, and close the plan**
 
 Current completion (2026-07-15):
 
@@ -5526,8 +5527,8 @@ Quality-review follow-up GREEN evidence (2026-07-15):
 - `git rm --cached .superpowers/sdd/task-19-report.md` removed the ignored
   report from the index; the local file remains present and is ignored by
   `.gitignore:31`.
-- Step 4 remains unchecked pending task re-review, final browser/Compose
-  verification, and whole-branch reviews.
+- At that checkpoint, Step 4 remained unchecked pending task re-review, final
+  browser/Compose verification, and whole-branch reviews.
 
 Quality re-review follow-up RED evidence (2026-07-15):
 
@@ -5546,8 +5547,8 @@ Quality re-review follow-up GREEN evidence (2026-07-15):
 - A successful action now captures whether approvals/processed remains
   displayed, invalidates the stale history generation, starts the independent
   history reload immediately, and then refreshes core queues without awaiting
-  history. Task 19 Step 4 remains unchecked pending re-review and the existing
-  controller-managed verification.
+  history. At that checkpoint, Task 19 Step 4 remained unchecked pending
+  re-review and the existing controller-managed verification.
 
 Minor test follow-up evidence (2026-07-15):
 
@@ -5571,8 +5572,13 @@ Minor test follow-up evidence (2026-07-15):
   added mutation-proven pre-resolution assertions. Final spec and quality
   re-reviews of the complete `f084d77..01cc130` range returned PASS/Approved
   with no Critical, Important, or Minor findings.
-- Task 19 Step 4 remains unchecked pending final browser/Compose verification
-  and whole-branch reviews.
+- At that checkpoint, Task 19 Step 4 remained unchecked pending final
+  browser/Compose verification and whole-branch reviews.
+
+Final closure evidence is recorded under Task 20 Step 4. The actionable queue,
+history refresh, source-image browser, and whole-branch review gates are all
+complete; the historical scratch-report integration constraint remains listed
+under Known Remaining Gaps.
 
 ### Task 20: Close Final Whole-Branch Review Findings
 
@@ -5588,6 +5594,15 @@ Minor test follow-up evidence (2026-07-15):
 - Modify: `frontend/src/components/settings/QuotaResetNotificationSettings.vue`
 - Modify: `frontend/src/components/settings/SubscriptionGroupApprovalChains.vue`
 - Modify: `frontend/src/__tests__/quota-reset-approval-settings.test.ts`
+- Modify: `backend/internal/handler/quota_reset.go`
+- Modify: `backend/internal/handler/quota_reset_test.go`
+- Modify: `backend/internal/quotareset/workflow_resolver.go`
+- Modify: `backend/internal/quotareset/workflow_resolver_test.go`
+- Modify: `frontend/src/stores/quotaReset.ts`
+- Modify: `frontend/src/__tests__/quota-reset-store.test.ts`
+- Modify: `frontend/src/__tests__/quota-reset-view.test.ts`
+- Modify: `frontend/e2e_quota_reset_workflow.py`
+- Modify: `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
 - Modify: this live plan
 
 - [x] **Step 1: Run the final whole-branch standards and spec reviews and record every finding**
@@ -5665,8 +5680,65 @@ authoritative, PUT could fall back to the submitted payload, approver/chain
 mutators remained active during saves, and approver-revision reloads could
 discard dirty chain edits. The same review also required a stable decision-
 dialog focus fallback, coherent browser fixtures, and current-spec wording for
-canonical duplicate-member selection. Step 4 remains unchecked while these
-findings are implemented and re-reviewed. The explicitly accepted complete
-provider/browser matrix and 150 ms lock-test residuals remain listed above.
+canonical duplicate-member selection. At that checkpoint, Step 4 remained
+unchecked while these findings were implemented and re-reviewed. The
+explicitly accepted complete provider/browser matrix and 150 ms lock-test
+residuals remain listed above.
 
-- [ ] **Step 4: Run focused/full verification, browser and Compose checks, rerun whole-branch reviews, and close Tasks 16, 19, and 20 with evidence**
+- [x] **Step 4: Run focused/full verification, browser and Compose checks, rerun whole-branch reviews, and close Tasks 16, 19, and 20 with evidence**
+
+Final review and fix evidence (2026-07-15):
+
+- Commits `9a7ccc7` and `492c4af` aligned Enterprise WeChat response previews
+  with the backend path-only contract and separated dirty-draft preservation
+  from refresh feedback. RED/GREEN coverage proved rejected and malformed
+  dirty refreshes, successful-feedback lifecycle, and the browser fixture's
+  former runtime `NameError`; the focused settings suite finished at 176/176.
+- The final whole-branch spec and standards reviews of `70eb6eb..492c4af`
+  found fail-open missing/null full-list request bodies, cross-route workflow
+  summary reuse, stale non-actionable action rows, malformed explicit WeCom id
+  fallback, and impossible browser fixture permissions/queue behavior.
+- Commit `463665c` closed those findings. RED tests observed four malformed
+  replacement requests returning 200 and invoking the service, explicit
+  malformed WeCom metadata falling back to the member external id, and five
+  failing frontend queue/view regressions. GREEN tests require present non-null
+  `items` while retaining explicit `[]`, reconcile successful and stale actions
+  only within their viewer-specific route caches, remove non-actionable rows
+  across refresh failures, suppress explicit malformed WeCom fallback, and use
+  backend-coherent approve/reject plus explicit-history browser fixtures.
+- Both original final reviewers re-reviewed `492c4af..463665c` and returned
+  Approved with no Critical, Important, or Minor findings. They confirmed that
+  the current spec describes the deterministic five-case browser subset
+  honestly and retains the accepted full six-role provider/webhook matrix as
+  coverage debt rather than implemented behavior.
+
+Fresh controller verification at `463665c` (2026-07-15):
+
+- `cd backend && go test ./... -count=1` exited 0, including
+  `internal/handler 76.775s` and `internal/quotareset 84.842s`; `cd backend &&
+  go vet ./...` exited 0.
+- `cd frontend && npm test` passed 41 files and 639/639 tests. `cd frontend &&
+  npm run build` passed `vue-tsc -b` and the Vite production build after 1,957
+  modules transformed. `python3 -m py_compile
+  frontend/e2e_quota_reset_workflow.py` exited 0.
+- The exact `docker compose -p ai-efficiency --env-file
+  /Users/admin/ai-efficiency/deploy/.env -f docker-compose.dev.yml up -d
+  --build --force-recreate --remove-orphans` command succeeded from this
+  worktree. The rebuilt image and backend container use
+  `sha256:ae3877e10eab24d8a1a04d63e46be6f3e1727c40aef5633ad4144888b2af4009`;
+  backend, PostgreSQL, and Redis are healthy.
+- `GET /api/v1/health/live`, `GET /api/v1/health/ready`, and `GET /` each
+  returned 200. Readiness reported database, Redis, and relay all up.
+- `BASE_URL=http://127.0.0.1:18081 npm run test:e2e:role` passed 16/16.
+  `BASE=http://127.0.0.1:18081 python3 e2e_quota_reset_workflow.py` passed 5/5
+  against the rebuilt source image. The in-app browser runtime exposed no
+  browser backend, so the repository's standalone Playwright suites supplied
+  the browser evidence.
+- Fresh desktop and 390 px mobile screenshots in `/tmp/ae-e2e-quota-reset`
+  were inspected after the final run. Approve and Reject are both available to
+  the active approver; the approved row leaves the default queue and its reused
+  timeline is loaded from Processed history; no horizontal overflow, control
+  overlap, clipped decision controls, or endpoint-key disclosure was present.
+- `git diff --check`, NUL-delimited changed-Go-file `gofmt -d`, code-only
+  TODO/FIXME, non-reserved email, and literal Enterprise WeChat key scans were
+  clean. The Known Remaining Gaps above are the complete accepted residual set.
