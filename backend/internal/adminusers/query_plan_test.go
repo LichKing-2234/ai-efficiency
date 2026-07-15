@@ -71,6 +71,150 @@ func TestTargetPlanRecursiveRelationsRunOnceAcrossScales(t *testing.T) {
 	}
 }
 
+func TestCountPlanAndPagePlanReuseEffectivePredicatesAcrossScales(t *testing.T) {
+	scales := []targetPlanScale{
+		{name: "small", users: 24, members: 22, departments: 12, memberships: 36},
+		{name: "large", users: 2400, members: 2200, departments: 120, memberships: 3600},
+	}
+
+	for _, scale := range scales {
+		t.Run(scale.name, func(t *testing.T) {
+			client, dsn := testdb.OpenWithDSN(t)
+			sourceID := seedTargetPlanFixture(t, client, scale)
+			assertTargetPlanFixtureCounts(t, client, scale)
+			analyzeTargetPlanTables(t, dsn)
+
+			captureClient, recorder := newTargetQueryCaptureClient(t, dsn)
+			page, err := NewService(captureClient).List(context.Background(), ListRequest{
+				Filters:  Filters{DepartmentID: "dept-cycle-b"},
+				Page:     1,
+				PageSize: 100,
+			})
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(page.Users) == 0 || len(page.Users) > 100 {
+				t.Fatalf("page users = %d, want between 1 and 100", len(page.Users))
+			}
+			if got := targetIDs(page.Users...); !sortIntsAscending(got) {
+				t.Fatalf("page user ids are not stable ascending: %v", got)
+			}
+
+			queries := recorder.recordedQueries()
+			assertListSQLRoleCount(t, queries, `FROM "directory_sources"`, 1)
+			assertListSQLRoleCount(t, queries, `FROM "directory_sync_runs"`, 1)
+			assertListSQLRoleCount(t, queries, `eligible_user_ids`, 2)
+			assertListSQLRoleCount(t, queries, `FROM "directory_members"`, 1)
+			assertListSQLRoleCount(t, queries, `FROM "directory_member_departments"`, 1)
+			assertListSQLRoleCount(t, queries, `requested_candidates`, 1)
+			assertListSQLRoleCount(t, queries, `FROM "directory_offboarding_actions"`, 1)
+			if len(queries) != 8 {
+				t.Fatalf("List SQL statements = %d, want constant 8 roles; queries=%s", len(queries), describeCapturedQueries(queries))
+			}
+
+			filtered := capturedQueriesContaining(queries, "eligible_user_ids")
+			countQuery := requireOneCapturedQueryPrefix(t, filtered, `SELECT COUNT("users"."id")`)
+			pageQuery := requireOneCapturedQueryPrefix(t, filtered, `SELECT "users"."id"`)
+			if got, want := normalizedFilterFragment(pageQuery.query), normalizedFilterFragment(countQuery.query); got != want {
+				t.Fatalf("count/page filter fragments differ\n--- count ---\n%s\n--- page ---\n%s", want, got)
+			}
+			if got, want := normalizedBoundValues(t, pageQuery.args), normalizedBoundValues(t, countQuery.args); !reflect.DeepEqual(got, want) {
+				t.Fatalf("count/page args differ: count=%#v page=%#v", want, got)
+			}
+			if !strings.Contains(pageQuery.query, `ORDER BY "users"."id" ASC LIMIT 100`) {
+				t.Fatalf("page query is not bounded and stably ordered:\n%s", pageQuery.query)
+			}
+
+			prefixes := make([]string, 0, 3)
+			for _, role := range []capturedQuery{countQuery, pageQuery} {
+				sourcePlaceholder := placeholderForBoundValue(t, role.args, int64(sourceID))
+				departmentPlaceholder := placeholderForBoundValue(t, role.args, "dept-cycle-b")
+				assertExactEffectivePrefix(t, role.query, sourcePlaceholder, departmentPlaceholder)
+				prefixes = append(prefixes, canonicalEffectivePrefix(t, role.query, sourcePlaceholder))
+				plan := explainTargetPlan(t, dsn, role.query, role.args)
+				assertNamedRecursiveUnionLoopsOnce(t, plan, "cycle_walk")
+				assertNamedRecursiveUnionLoopsOnce(t, plan, "subtree")
+				if role.query == pageQuery.query {
+					assertPlanMaterializesAtMost(t, plan, "Limit", 100)
+				}
+			}
+
+			memberQuery := requireOneCapturedQuery(t, queries, `FROM "directory_members"`)
+			if !strings.Contains(memberQuery.query, `SELECT "directory_members"."id", "directory_members"."matched_user_id", "directory_members"."email_normalized", "directory_members"."department_external_id"`) ||
+				!strings.Contains(memberQuery.query, `"directory_members"."source_id" =`) ||
+				!strings.Contains(memberQuery.query, `"directory_members"."matched_user_id" IN`) {
+				t.Fatalf("page member query is not four-field and page-bounded:\n%s", memberQuery.query)
+			}
+			membershipQuery := requireOneCapturedQuery(t, queries, `FROM "directory_member_departments"`)
+			if !strings.Contains(membershipQuery.query, `SELECT "directory_member_departments"."id", "directory_member_departments"."directory_member_id", "directory_member_departments"."department_external_id"`) ||
+				!strings.Contains(membershipQuery.query, `"directory_member_departments"."directory_member_id" IN`) {
+				t.Fatalf("membership query is not three-field and page-member-bounded:\n%s", membershipQuery.query)
+			}
+
+			ancestorQuery := requireOneCapturedQuery(t, queries, "requested_candidates")
+			ancestorSourcePlaceholder := placeholderForBoundValue(t, ancestorQuery.args, int64(sourceID))
+			prefixes = append(prefixes, canonicalEffectivePrefix(t, ancestorQuery.query, ancestorSourcePlaceholder))
+			if strings.Count(ancestorQuery.query, "WITH RECURSIVE") != 1 ||
+				strings.Count(ancestorQuery.query, "ancestors(") != 1 ||
+				strings.Contains(ancestorQuery.query, "child.parent_external_id = parent.external_id") ||
+				!strings.Contains(ancestorQuery.query, "child.effective_parent_external_id = parent.external_id") {
+				t.Fatalf("ancestor query does not use one shared effective closure:\n%s", ancestorQuery.query)
+			}
+			ancestorPlan := explainTargetPlan(t, dsn, ancestorQuery.query, ancestorQuery.args)
+			assertNamedRecursiveUnionLoopsOnce(t, ancestorPlan, "cycle_walk")
+			assertNamedRecursiveUnionLoopsOnce(t, ancestorPlan, "ancestors")
+			if got := planActualRows(t, ancestorPlan); scale.name == "large" && got >= float64(scale.departments) {
+				t.Fatalf("large ancestor output rows = %.0f, want candidates plus ancestors below all %d departments", got, scale.departments)
+			}
+			for i := 1; i < len(prefixes); i++ {
+				if prefixes[i] != prefixes[0] {
+					t.Fatalf("shared effective prefix role %d drifted\n--- first ---\n%s\n--- got ---\n%s", i, prefixes[0], prefixes[i])
+				}
+			}
+		})
+	}
+}
+
+func TestListJoinIndexesExist(t *testing.T) {
+	_, dsn := testdb.OpenWithDSN(t)
+	db, err := stdsql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open index database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	assertIndexColumns := func(table string, columns ...string) {
+		t.Helper()
+		rows, err := db.QueryContext(context.Background(), `
+SELECT indexdef
+FROM pg_indexes
+WHERE schemaname = current_schema()
+  AND tablename = $1
+`, table)
+		if err != nil {
+			t.Fatalf("list %s indexes: %v", table, err)
+		}
+		defer rows.Close()
+		want := "(" + strings.Join(columns, ", ") + ")"
+		for rows.Next() {
+			var definition string
+			if err := rows.Scan(&definition); err != nil {
+				t.Fatalf("scan %s index: %v", table, err)
+			}
+			if strings.Contains(strings.ReplaceAll(definition, `"`, ""), want) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("iterate %s indexes: %v", table, err)
+		}
+		t.Fatalf("%s has no index on %s", table, strings.Join(columns, ", "))
+	}
+
+	assertIndexColumns(directorymember.Table, directorymember.FieldSourceID, directorymember.FieldMatchedUserID)
+	assertIndexColumns(directorymemberdepartment.Table, directorymemberdepartment.FieldSourceID, directorymemberdepartment.FieldDirectoryMemberID, directorymemberdepartment.FieldDepartmentExternalID)
+}
+
 func assertExactEffectivePrefix(t *testing.T, query, sourcePlaceholder, departmentPlaceholder string) {
 	t.Helper()
 	start := strings.Index(query, "WITH RECURSIVE")
@@ -153,22 +297,27 @@ func explainTargetPlan(t *testing.T, dsn, query string, args []any) any {
 
 type targetQueryRecorder struct {
 	entdialect.Driver
-	mu    sync.Mutex
+	mu      sync.Mutex
+	query   string
+	args    []any
+	queries []capturedQuery
+}
+
+type capturedQuery struct {
 	query string
 	args  []any
 }
 
 func (r *targetQueryRecorder) Query(ctx context.Context, query string, args, rows any) error {
+	values, _ := args.([]any)
+	clonedArgs := append([]any(nil), values...)
+	r.mu.Lock()
+	r.queries = append(r.queries, capturedQuery{query: query, args: clonedArgs})
 	if strings.Contains(query, "eligible_user_ids") {
-		r.mu.Lock()
 		r.query = query
-		if values, ok := args.([]any); ok {
-			r.args = append([]any(nil), values...)
-		} else {
-			r.args = nil
-		}
-		r.mu.Unlock()
+		r.args = clonedArgs
 	}
+	r.mu.Unlock()
 	return r.Driver.Query(ctx, query, args, rows)
 }
 
@@ -183,6 +332,154 @@ func (r *targetQueryRecorder) targetQuery(t *testing.T) (string, []any) {
 		t.Fatal("filtered target SQL arguments were not captured as []any")
 	}
 	return r.query, append([]any(nil), r.args...)
+}
+
+func (r *targetQueryRecorder) recordedQueries() []capturedQuery {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]capturedQuery, len(r.queries))
+	for i := range r.queries {
+		out[i] = capturedQuery{query: r.queries[i].query, args: append([]any(nil), r.queries[i].args...)}
+	}
+	return out
+}
+
+func assertListSQLRoleCount(t *testing.T, queries []capturedQuery, fragment string, want int) {
+	t.Helper()
+	if got := len(capturedQueriesContaining(queries, fragment)); got != want {
+		t.Fatalf("queries containing %q = %d, want %d; queries=%s", fragment, got, want, describeCapturedQueries(queries))
+	}
+}
+
+func capturedQueriesContaining(queries []capturedQuery, fragment string) []capturedQuery {
+	out := make([]capturedQuery, 0, len(queries))
+	for _, query := range queries {
+		if strings.Contains(query.query, fragment) {
+			out = append(out, query)
+		}
+	}
+	return out
+}
+
+func requireOneCapturedQuery(t *testing.T, queries []capturedQuery, fragment string) capturedQuery {
+	t.Helper()
+	matches := capturedQueriesContaining(queries, fragment)
+	if len(matches) != 1 {
+		t.Fatalf("queries containing %q = %d, want 1; queries=%s", fragment, len(matches), describeCapturedQueries(queries))
+	}
+	return matches[0]
+}
+
+func requireOneCapturedQueryPrefix(t *testing.T, queries []capturedQuery, prefix string) capturedQuery {
+	t.Helper()
+	matches := make([]capturedQuery, 0, 1)
+	for _, query := range queries {
+		if strings.HasPrefix(query.query, prefix) {
+			matches = append(matches, query)
+		}
+	}
+	if len(matches) != 1 {
+		t.Fatalf("queries beginning with %q = %d, want 1; queries=%s", prefix, len(matches), describeCapturedQueries(queries))
+	}
+	return matches[0]
+}
+
+func describeCapturedQueries(queries []capturedQuery) string {
+	parts := make([]string, 0, len(queries))
+	for i, query := range queries {
+		parts = append(parts, fmt.Sprintf("%d:%s", i+1, strings.Join(strings.Fields(query.query), " ")))
+	}
+	return strings.Join(parts, " | ")
+}
+
+func normalizedFilterFragment(query string) string {
+	start := strings.Index(query, " WHERE ")
+	if start < 0 {
+		return ""
+	}
+	end := len(query)
+	for _, marker := range []string{" ORDER BY ", " LIMIT ", " OFFSET "} {
+		if index := strings.Index(query[start:], marker); index >= 0 && start+index < end {
+			end = start + index
+		}
+	}
+	return query[start:end]
+}
+
+func normalizedBoundValues(t *testing.T, args []any) []any {
+	t.Helper()
+	out := make([]any, 0, len(args))
+	for i, arg := range args {
+		value := arg
+		if valuer, ok := arg.(driver.Valuer); ok {
+			var err error
+			value, err = valuer.Value()
+			if err != nil {
+				t.Fatalf("resolve bound argument %d: %v", i+1, err)
+			}
+		}
+		out = append(out, value)
+	}
+	return out
+}
+
+func canonicalEffectivePrefix(t *testing.T, query, sourcePlaceholder string) string {
+	t.Helper()
+	start := strings.Index(query, "WITH RECURSIVE")
+	if start < 0 {
+		t.Fatalf("query has no shared effective prefix:\n%s", query)
+	}
+	want := effectiveDepartmentCTEs(sourcePlaceholder)
+	if len(query) < start+len(want) || query[start:start+len(want)] != want {
+		t.Fatalf("query does not contain the exact effective department prefix:\n%s", query)
+	}
+	return strings.ReplaceAll(want, sourcePlaceholder, "$SOURCE")
+}
+
+func assertPlanMaterializesAtMost(t *testing.T, plan any, nodeType string, maximum float64) {
+	t.Helper()
+	found := false
+	walkPlanJSON(plan, func(node map[string]any) {
+		if node["Node Type"] == nodeType {
+			found = true
+			if rows, ok := node["Actual Rows"].(float64); !ok || rows > maximum {
+				t.Fatalf("%s actual rows = %v, want <= %.0f", nodeType, node["Actual Rows"], maximum)
+			}
+		}
+	})
+	if !found {
+		t.Fatalf("plan has no %s node: %s", nodeType, compactPlanJSON(plan))
+	}
+}
+
+func planActualRows(t *testing.T, plan any) float64 {
+	t.Helper()
+	root, ok := plan.([]any)
+	if !ok || len(root) != 1 {
+		t.Fatalf("unexpected EXPLAIN root: %s", compactPlanJSON(plan))
+	}
+	entry, ok := root[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected EXPLAIN entry: %s", compactPlanJSON(plan))
+	}
+	rootPlan, ok := entry["Plan"].(map[string]any)
+	if !ok {
+		t.Fatalf("EXPLAIN entry has no root Plan: %s", compactPlanJSON(plan))
+	}
+	rows, ok := rootPlan["Actual Rows"].(float64)
+	if !ok {
+		t.Fatalf("EXPLAIN root has no Actual Rows: %s", compactPlanJSON(plan))
+	}
+	return rows
+}
+
+func sortIntsAscending(values []int) bool {
+	for i := 1; i < len(values); i++ {
+		if values[i-1] > values[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func newTargetQueryCaptureClient(t *testing.T, dsn string) (*ent.Client, *targetQueryRecorder) {

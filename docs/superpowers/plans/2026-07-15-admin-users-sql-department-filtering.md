@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Task 1 is complete, independently reviewed, and committed. Tasks 2-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Task 1 is complete, independently reviewed, and committed. Task 2 implementation and verification Steps 1-4 are complete; its independent review and checkpoint Step 5 remain pending. Tasks 3-6, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -541,7 +541,7 @@ git commit -m "docs(plan): record admin user target task"
 - Consumes: Task 1 `effectiveDepartmentCTEs`, `effectiveSubtreeCTE`, `filteredUsersQuery`, `Filters`, and `Targets`.
 - Produces: `List(ctx, ListRequest) (*Page, error)` and thin unchanged `GET /api/v1/admin/users` HTTP mapping.
 
-- [ ] **Step 1: Add failing list, enrichment, HTTP, and plan tests**
+- [x] **Step 1: Add failing list, enrichment, HTTP, and plan tests**
 
 Add service/handler tests for default page 1/size 20, maximum size 100, nonpositive normalization, stable `id ASC`, exact total/page predicate parity, empty results, canceled context, and a maximum-integer page returning empty before offset calculation. Require the unchanged HTTP envelope and row fields, including encrypted relay-password ciphertext in the API, derived access/offboarding status, and page-local department display.
 
@@ -561,7 +561,7 @@ Add `TestListEffectiveCycleFilterParity` and real-HTTP `TestAdminUsersListEffect
 
 Capture filtered count and page SQL plus page-enrichment ancestor SQL for both 24-user and 2,400-user fixtures. For each filtered count/page role, run `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and require one named `CTE cycle_walk` and one named `CTE subtree` recursive union, each with `Actual Loops == 1`. For enrichment, require one named `CTE cycle_walk` and one named `CTE ancestors`, each with `Actual Loops == 1`. Prove every role contains the exact `effectiveDepartmentCTEs` return for its own source placeholder; after canonicalizing only that placeholder token, all captured prefixes are byte-identical.
 
-- [ ] **Step 2: Run Task 2 tests and record RED**
+- [x] **Step 2: Run Task 2 tests and record RED**
 
 Run:
 
@@ -571,7 +571,9 @@ Run:
 
 Expected: FAIL because `List`, bounded enrichment, new indexes, and thin handler integration are absent.
 
-- [ ] **Step 3: Implement count/page and candidate-first enrichment**
+**Task 2 RED evidence (2026-07-15):** The planned focused command exited 1. The service and query-plan packages failed to build only at the missing Task 2 `ListRequest` / `Service.List` boundary, while the real HTTP maximum-integer page test reached the legacy handler and failed with `500` / `pq: OFFSET must not be negative`. Existing adjacent admin-user HTTP cases, including the cycle A/B/C fixture, continued to pass.
+
+- [x] **Step 3: Implement count/page and candidate-first enrichment**
 
 `List` normalizes page values, resolves the source once, builds one shared filtered query, clones it for count, and returns an empty page before any offset multiplication when `(page-1) >= ceil(total/page_size)`. Otherwise it orders by ID, applies the at-most-100 limit/offset, and requests offboarding facts only for page IDs.
 
@@ -621,7 +623,7 @@ index.Fields("source_id", "directory_member_id", "department_external_id")
 
 Replace handler list filtering/enrichment with `h.users.List`; retain HTTP parsing/row mapping and the existing 400/500 behavior.
 
-- [ ] **Step 4: Prove page and database-work bounds GREEN**
+- [x] **Step 4: Prove page and database-work bounds GREEN**
 
 For small and large fixtures, require constant SQL roles for `adminusers.Service.List`: current-source resolution, count, bounded page, page members, page memberships, candidate/ancestor departments, and page offboarding facts. Assert:
 
@@ -652,6 +654,8 @@ git diff --check
 ```
 
 Expected: semantic and HTTP tests pass twice, generated Ent drift is empty, both fixture scales prove one shared cycle walk plus one effective subtree recursion per filtered count/page statement, enrichment follows one effective ancestor closure, A/B/C pages match Targets exactly, and colliding/dangling fixtures select only valid current-source departments.
+
+**Task 2 GREEN evidence (2026-07-15):** The focused service/HTTP/plan command passed twice. The 24-user/12-department and 2,400-user/120-department fixtures each reported one-loop `cycle_walk` plus `subtree` recursive unions for filtered count and page SQL and one-loop `cycle_walk` plus `ancestors` for enrichment. Candidate/source-collision/dangling/current-authority/legacy/dual-mapping semantics, exact A/B/C totals/pages/display paths, maximum-integer pagination, ciphertext/status compatibility, the generated join indexes, adjacent `adminusers` and full `handler` packages, generation drift, and `git diff --check` all passed. Step 5 remains unchecked; no review or commit has been performed.
 
 - [ ] **Step 5: Complete exact-range Task 2 reviews and checkpoint**
 

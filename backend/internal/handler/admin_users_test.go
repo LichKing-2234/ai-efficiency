@@ -367,6 +367,104 @@ func seedAdminUsersSingleMemberDirectorySnapshot(t *testing.T, env *fullTestEnv,
 	return source.ID
 }
 
+func seedAdminUsersEffectiveCycleSnapshot(t *testing.T, env *fullTestEnv) (map[string]int, string) {
+	t.Helper()
+	ctx := context.Background()
+	ciphertext := "encrypted-cycle-password"
+	userIDs := make(map[string]int, 3)
+	for _, key := range []string{"a", "b", "c"} {
+		builder := env.client.User.Create().
+			SetUsername("cycle-" + key).
+			SetEmail("cycle-" + key + "@example.com").
+			SetAuthSource("ldap").
+			SetRole("user")
+		if key == "b" {
+			builder.SetRelayUserID(4202).SetRelayAuthPassword(ciphertext)
+		}
+		user, err := builder.Save(ctx)
+		if err != nil {
+			t.Fatalf("create cycle %s user: %v", key, err)
+		}
+		userIDs[key] = user.ID
+	}
+
+	source, err := env.client.DirectorySource.Create().
+		SetName("Cycle Directory").
+		SetDescription("Synthetic cycle directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cycle directory source: %v", err)
+	}
+	run, err := env.client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetDepartmentCount(3).
+		SetMemberCount(3).
+		SetCompletedAt(time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cycle directory run: %v", err)
+	}
+	if _, err := env.client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("update cycle directory run pointers: %v", err)
+	}
+
+	departments := []struct {
+		id     string
+		parent string
+		name   string
+	}{
+		{id: "dept-cycle-a", parent: "dept-cycle-c", name: "Cycle Alpha"},
+		{id: "dept-cycle-b", parent: "dept-cycle-a", name: "Cycle Beta"},
+		{id: "dept-cycle-c", parent: "dept-cycle-b", name: "Cycle Gamma"},
+	}
+	for _, department := range departments {
+		if _, err := env.client.DirectoryDepartment.Create().
+			SetSourceID(source.ID).
+			SetExternalID(department.id).
+			SetParentExternalID(department.parent).
+			SetName(department.name).
+			SetPath("synthetic/" + department.id).
+			SetLastSeenRunID(run.ID).
+			Save(ctx); err != nil {
+			t.Fatalf("create cycle department %s: %v", department.id, err)
+		}
+	}
+	for _, key := range []string{"a", "b", "c"} {
+		departmentID := "dept-cycle-" + key
+		member, err := env.client.DirectoryMember.Create().
+			SetSourceID(source.ID).
+			SetExternalID("member-cycle-" + key).
+			SetEmailNormalized("directory-cycle-" + key + "@example.com").
+			SetDisplayName("Cycle " + strings.ToUpper(key)).
+			SetDepartmentExternalID(departmentID).
+			SetMatchedUserID(userIDs[key]).
+			SetLastSeenRunID(run.ID).
+			Save(ctx)
+		if err != nil {
+			t.Fatalf("create cycle member %s: %v", key, err)
+		}
+		if _, err := env.client.DirectoryMemberDepartment.Create().
+			SetSourceID(source.ID).
+			SetDirectoryMemberID(member.ID).
+			SetMemberExternalID(member.ExternalID).
+			SetMemberEmailNormalized(member.EmailNormalized).
+			SetDepartmentExternalID(departmentID).
+			SetLastSeenRunID(run.ID).
+			Save(ctx); err != nil {
+			t.Fatalf("create cycle membership %s: %v", key, err)
+		}
+	}
+	return userIDs, ciphertext
+}
+
 func TestAdminUsersListSearchPaginationAndCiphertext(t *testing.T) {
 	t.Parallel()
 
@@ -408,6 +506,114 @@ func TestAdminUsersListSearchPaginationAndCiphertext(t *testing.T) {
 	}
 	if int(row["relay_user_id"].(float64)) != 42 {
 		t.Fatalf("relay_user_id = %v, want 42", row["relay_user_id"])
+	}
+}
+
+func TestAdminUsersListPageBounds(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	seedAdminUsersFixture(t, env)
+	wantTotal := env.client.User.Query().CountX(context.Background())
+
+	for _, path := range []string{
+		"/api/v1/admin/users?page=0&page_size=0",
+		"/api/v1/admin/users?page=-7&page_size=-3",
+	} {
+		w := doFullRequest(env, http.MethodGet, path, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200, body=%s", path, w.Code, w.Body.String())
+		}
+		data := parseFullResponse(t, w)["data"].(map[string]interface{})
+		if data["page"] != float64(1) || data["page_size"] != float64(20) {
+			t.Fatalf("%s page metadata = (%v, %v), want (1, 20)", path, data["page"], data["page_size"])
+		}
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?page=1&page_size=101", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("max size status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if data["page_size"] != float64(100) {
+		t.Fatalf("page_size = %v, want capped 100", data["page_size"])
+	}
+
+	maxInt := int(^uint(0) >> 1)
+	w = doFullRequest(env, http.MethodGet, fmt.Sprintf("/api/v1/admin/users?page=%d&page_size=100", maxInt), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("maximum page status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != wantTotal {
+		t.Fatalf("maximum page total = %d, want %d", got, wantTotal)
+	}
+	if got := data["items"].([]interface{}); len(got) != 0 {
+		t.Fatalf("maximum page items = %d, want empty", len(got))
+	}
+}
+
+func TestAdminUsersListEffectiveCycleFilterParity(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	userIDs, ciphertext := seedAdminUsersEffectiveCycleSnapshot(t, env)
+	wantPaths := map[int]string{
+		userIDs["a"]: "Cycle Alpha",
+		userIDs["b"]: "Cycle Alpha / Cycle Beta",
+		userIDs["c"]: "Cycle Alpha / Cycle Beta / Cycle Gamma",
+	}
+	tests := []struct {
+		departmentID string
+		wantIDs      []int
+	}{
+		{departmentID: "dept-cycle-a", wantIDs: []int{userIDs["a"], userIDs["b"], userIDs["c"]}},
+		{departmentID: "dept-cycle-b", wantIDs: []int{userIDs["b"], userIDs["c"]}},
+		{departmentID: "dept-cycle-c", wantIDs: []int{userIDs["c"]}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.departmentID, func(t *testing.T) {
+			gotIDs := make([]int, 0, len(tt.wantIDs))
+			for page := 1; page <= len(tt.wantIDs)+1; page++ {
+				path := fmt.Sprintf("/api/v1/admin/users?department_id=%s&page=%d&page_size=1", tt.departmentID, page)
+				w := doFullRequest(env, http.MethodGet, path, nil)
+				if w.Code != http.StatusOK {
+					t.Fatalf("page %d status = %d, want 200, body=%s", page, w.Code, w.Body.String())
+				}
+				data := parseFullResponse(t, w)["data"].(map[string]interface{})
+				if got := int(data["total"].(float64)); got != len(tt.wantIDs) {
+					t.Fatalf("page %d total = %d, want %d", page, got, len(tt.wantIDs))
+				}
+				if data["page"] != float64(page) || data["page_size"] != float64(1) {
+					t.Fatalf("page metadata = (%v, %v), want (%d, 1)", data["page"], data["page_size"], page)
+				}
+				for _, item := range data["items"].([]interface{}) {
+					row := item.(map[string]interface{})
+					userID := int(row["id"].(float64))
+					gotIDs = append(gotIDs, userID)
+					department := row["department"].(map[string]interface{})
+					if department["display_path"] != wantPaths[userID] {
+						t.Fatalf("user %d display path = %v, want %q", userID, department["display_path"], wantPaths[userID])
+					}
+					if userID == userIDs["b"] {
+						if row["relay_auth_password"] != ciphertext || row["access_status"] != "configured" {
+							t.Fatalf("cycle B credential/status fields changed: %+v", row)
+						}
+					}
+				}
+			}
+			if fmt.Sprint(gotIDs) != fmt.Sprint(tt.wantIDs) {
+				t.Fatalf("concatenated ids = %v, want %v", gotIDs, tt.wantIDs)
+			}
+			if tt.departmentID == "dept-cycle-b" {
+				for _, id := range gotIDs {
+					if id == userIDs["a"] {
+						t.Fatalf("cycle B included anchor-only user %d", id)
+					}
+				}
+			}
+		})
 	}
 }
 

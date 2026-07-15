@@ -19,6 +19,7 @@ import (
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminsubscription"
 	"github.com/ai-efficiency/backend/internal/adminuseraccess"
+	"github.com/ai-efficiency/backend/internal/adminusers"
 	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/directorytree"
 	"github.com/ai-efficiency/backend/internal/pkg"
@@ -29,6 +30,7 @@ import (
 
 type AdminUsersHandler struct {
 	entClient        *ent.Client
+	users            *adminusers.Service
 	encryptionKey    string
 	resolver         adminUsersProviderResolver
 	subscriptionJobs *adminsubscription.Service
@@ -215,6 +217,7 @@ func NewAdminUsersHandler(entClient *ent.Client, encryptionKey string, resolvers
 	}
 	return &AdminUsersHandler{
 		entClient:        entClient,
+		users:            adminusers.NewService(entClient),
 		encryptionKey:    strings.TrimSpace(encryptionKey),
 		resolver:         resolver,
 		subscriptionJobs: adminsubscription.NewService(entClient),
@@ -224,61 +227,40 @@ func NewAdminUsersHandler(entClient *ent.Client, encryptionKey string, resolvers
 
 func (h *AdminUsersHandler) List(c *gin.Context) {
 	req := parseAdminUsersListRequest(c)
-	query := h.entClient.User.Query()
-	if req.Q != "" {
-		query = query.Where(adminUsersSearchPredicate(req.Q))
-	}
-	if req.DepartmentID != "" {
-		var err error
-		query, err = h.applyDepartmentFilter(c.Request.Context(), query, req.DepartmentID)
-		if err != nil {
-			pkg.Error(c, http.StatusInternalServerError, err.Error())
+	page, err := h.users.List(c.Request.Context(), adminusers.ListRequest{
+		Filters: adminusers.Filters{
+			Query:        req.Q,
+			DepartmentID: req.DepartmentID,
+			AccessStatus: req.AccessStatus,
+		},
+		Page:     req.Page,
+		PageSize: req.PageSize,
+	})
+	if err != nil {
+		if errors.Is(err, adminusers.ErrInvalidAccessStatus) {
+			pkg.Error(c, http.StatusBadRequest, "access_status must be configured, disabled, or missing_credential")
 			return
 		}
-	}
-	if req.AccessStatus != "" {
-		var err error
-		query, err = adminuseraccess.ApplyFilter(query, req.AccessStatus)
-		if err != nil {
-			pkg.Error(c, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-
-	total, err := query.Clone().Count(c.Request.Context())
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "list users: "+err.Error())
-		return
-	}
-
-	users, err := query.
-		Order(ent.Asc(entuser.FieldID)).
-		Limit(req.PageSize).
-		Offset((req.Page - 1) * req.PageSize).
-		All(c.Request.Context())
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "list users: "+err.Error())
-		return
-	}
-
-	departmentsByUserID, err := h.departmentsForUsers(c.Request.Context(), users)
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	offboardingFactsByUserID, err := adminuseraccess.OffboardingFactsForUsers(c.Request.Context(), h.entClient, adminUserIDs(users))
-	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	items := make([]adminUserRow, 0, len(users))
-	for _, u := range users {
+	items := make([]adminUserRow, 0, len(page.Users))
+	for _, u := range page.Users {
 		relayPassword := ""
 		if u.RelayAuthPassword != nil {
 			relayPassword = strings.TrimSpace(*u.RelayAuthPassword)
 		}
-		offboardingFact := offboardingFactsByUserID[u.ID]
+		offboardingFact := page.OffboardingByUserID[u.ID]
+		var department *adminUserDepartmentRow
+		if value := page.DepartmentsByUserID[u.ID]; value != nil {
+			department = &adminUserDepartmentRow{
+				ExternalID:  value.ExternalID,
+				Name:        value.Name,
+				Path:        value.Path,
+				DisplayPath: value.DisplayPath,
+			}
+		}
 		items = append(items, adminUserRow{
 			ID:                u.ID,
 			Username:          u.Username,
@@ -291,7 +273,7 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 			TokenValidAfter:   u.TokenValidAfter,
 			RelayDisabledAt:   u.RelayDisabledAt,
 			OffboardingStatus: offboardingFact.LatestStatus,
-			Department:        departmentsByUserID[u.ID],
+			Department:        department,
 			CreatedAt:         u.CreatedAt,
 			UpdatedAt:         u.UpdatedAt,
 		})
@@ -299,9 +281,9 @@ func (h *AdminUsersHandler) List(c *gin.Context) {
 
 	pkg.Success(c, gin.H{
 		"items":     items,
-		"total":     total,
-		"page":      req.Page,
-		"page_size": req.PageSize,
+		"total":     page.Total,
+		"page":      page.Page,
+		"page_size": page.PageSize,
 	})
 }
 
@@ -1233,14 +1215,6 @@ func adminUsersSearchPredicate(q string) predicate.User {
 	return entuser.Or(predicates...)
 }
 
-func adminUserIDs(users []*ent.User) []int {
-	ids := make([]int, 0, len(users))
-	for _, u := range users {
-		ids = append(ids, u.ID)
-	}
-	return ids
-}
-
 func (h *AdminUsersHandler) applyDepartmentFilter(ctx context.Context, query *ent.UserQuery, departmentID string) (*ent.UserQuery, error) {
 	sourceID, ok, err := h.currentDirectorySourceID(ctx)
 	if err != nil {
@@ -1293,103 +1267,6 @@ func (h *AdminUsersHandler) departmentSubtreeExternalIDs(ctx context.Context, so
 
 func (h *AdminUsersHandler) currentDirectorySourceID(ctx context.Context) (int, bool, error) {
 	return directorysync.CurrentSourceID(ctx, h.entClient)
-}
-
-func (h *AdminUsersHandler) departmentsForUsers(ctx context.Context, users []*ent.User) (map[int]*adminUserDepartmentRow, error) {
-	out := make(map[int]*adminUserDepartmentRow, len(users))
-	if len(users) == 0 {
-		return out, nil
-	}
-	sourceID, ok, err := h.currentDirectorySourceID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return out, nil
-	}
-	userIDs := make([]int, 0, len(users))
-	emails := make([]string, 0, len(users))
-	userIDByEmail := make(map[string]int, len(users))
-	for _, u := range users {
-		userIDs = append(userIDs, u.ID)
-		email := strings.TrimSpace(strings.ToLower(u.Email))
-		if email != "" {
-			emails = append(emails, email)
-			userIDByEmail[email] = u.ID
-		}
-	}
-	predicates := []predicate.DirectoryMember{directorymember.MatchedUserIDIn(userIDs...)}
-	if len(emails) > 0 {
-		predicates = append(predicates, directorymember.EmailNormalizedIn(emails...))
-	}
-	members, err := h.entClient.DirectoryMember.Query().
-		Where(
-			directorymember.SourceIDEQ(sourceID),
-			directorymember.Or(predicates...),
-		).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list directory members for users: %w", err)
-	}
-	memberDepartmentIDs, err := h.memberDepartmentIDsByMember(ctx, sourceID, members)
-	if err != nil {
-		return nil, err
-	}
-	departmentIDs := make([]string, 0, len(members))
-	seenDepartmentIDs := map[string]struct{}{}
-	for _, member := range members {
-		for _, departmentID := range adminDirectoryMemberDepartmentIDs(member, memberDepartmentIDs) {
-			if _, ok := seenDepartmentIDs[departmentID]; ok {
-				continue
-			}
-			seenDepartmentIDs[departmentID] = struct{}{}
-			departmentIDs = append(departmentIDs, departmentID)
-		}
-	}
-	if len(departmentIDs) == 0 {
-		return out, nil
-	}
-	departments, err := h.entClient.DirectoryDepartment.Query().
-		Where(
-			directorydepartment.SourceIDEQ(sourceID),
-		).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list directory departments for users: %w", err)
-	}
-	departmentsByExternalID := make(map[string]*ent.DirectoryDepartment, len(departments))
-	for _, department := range departments {
-		departmentsByExternalID[department.ExternalID] = department
-	}
-	tree := directorytree.New(departments)
-	for _, member := range members {
-		userID := 0
-		if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-			userID = *member.MatchedUserID
-		} else {
-			userID = userIDByEmail[strings.TrimSpace(strings.ToLower(member.EmailNormalized))]
-		}
-		if userID <= 0 {
-			continue
-		}
-		if _, exists := out[userID]; exists {
-			continue
-		}
-		for _, departmentID := range adminDirectoryMemberDepartmentIDs(member, memberDepartmentIDs) {
-			department := departmentsByExternalID[departmentID]
-			if department == nil {
-				continue
-			}
-			out[userID] = &adminUserDepartmentRow{
-				ExternalID:  department.ExternalID,
-				Name:        department.Name,
-				Path:        department.Path,
-				DisplayPath: tree.DisplayPath(department.ExternalID),
-			}
-			break
-		}
-	}
-	return out, nil
 }
 
 func (h *AdminUsersHandler) memberDepartmentIDsByMember(ctx context.Context, sourceID int, members []*ent.DirectoryMember) (map[int][]string, error) {
