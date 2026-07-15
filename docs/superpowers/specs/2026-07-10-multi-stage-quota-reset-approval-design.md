@@ -1,1402 +1,398 @@
-# Multi-Stage Quota Reset Approval Design
-
-**Date:** 2026-07-10
-**Status:** Current implemented contract
-**Implementation:** Current implementation, verification, review follow-ups, and
-remaining closure gates are tracked in the linked live plan. This header does
-not pin a moving follow-up commit boundary; the plan is the durable execution
-ledger for the current contract.
-**Scope:** `backend/ent/schema/`, `backend/internal/quotareset/`, `backend/internal/workitems/`, `backend/internal/handler/`, `backend/internal/directorysync/`, `frontend/src/api/`, `frontend/src/components/settings/`, `frontend/src/components/quota-reset/`, `frontend/src/views/QuotaResetView.vue`
-**Related:**
-
-- [2026-07-07-quota-reset-approval-design.md](./2026-07-07-quota-reset-approval-design.md)
-- [2026-06-22-configurable-directory-sync-design.md](./2026-06-22-configurable-directory-sync-design.md)
-- [2026-06-26-team-usage-representative-quota-design.md](./2026-06-26-team-usage-representative-quota-design.md)
-- [docs/architecture.md](../../architecture.md)
-
-## Spec Relationship
-
-The 2026-07-07 quota reset approval spec is the historical predecessor to this
-current implemented contract. This design supersedes these parts of the earlier
-spec:
-
-1. Single-node approval and immediate reset after the first approval.
-2. Upward nearest-configured-department approver resolution.
-3. The requirement that a configured department approver must be an
-   organization representative for that department.
-4. URL-inferred, hardcoded Enterprise WeChat notification formatting.
-
-It does not change the relay boundary or the reset semantics. AI Efficiency
-continues to own approval orchestration and calls
-`relay.UserSubscriptionQuotaResetter` only after every required node is
-satisfied.
-
-`docs/architecture.md` describes this implemented runtime. The 2026-07-07 spec
-remains unchanged as a point-in-time record of the earlier single-stage design.
-
-## Data Hygiene
-
-Tests, fixtures, docs, notification examples, screenshots, and command output
-must not contain real employees, company email domains, subscription group
-names, webhook URLs, credentials, tokens, or passwords.
-
-Use synthetic values such as:
-
-- `alice@example.com`
-- `bob@example.org`
-- `Department Alpha`
-- `Department Beta`
-- `Group Alpha`
-- `https://hooks.example.com/ai-efficiency`
-- `test-token`
-
-Webhook URLs are credentials when they contain a robot key. Logs, API
-responses, audit metadata, and test failures must redact query-string secrets.
-
-## Pre-Implementation Findings
-
-Before this contract was implemented, the workflow had one snapshotted
-`resolved_approver_user_ids` array. Any one resolved approver or an admin can
-approve, and approval immediately starts the quota reset. Approval comments are
-optional, while rejection comments are required.
-
-The earlier department approver settings only allowed local users matched to
-organization representatives for the selected department. The resolver walks
-each requester department path upward and selects the nearest configured
-department.
-
-The earlier notifier:
-
-1. Stores one global URL and optional bearer credential.
-2. Infers Enterprise WeChat from the URL host and path.
-3. Sends a hardcoded `text` body for Enterprise WeChat.
-4. Does not enrich the message with requester display identity or team paths.
-5. Does not mention current approvers.
-
-The active production Directory Sync mapping was verified during design
-exploration to map the stable member external id from the source's Enterprise
-WeChat user id field. The generic product contract must still keep
-channel-specific recipient resolution behind the notification adapter boundary.
-
-## Problem
-
-Quota resets require more control than one approval followed by immediate
-execution:
-
-1. The first review should be performed by someone responsible for one of the
-   requester's direct departments.
-2. Different subscription groups may require different ordered approval chains.
-3. One person's approval should not be requested repeatedly when that person is
-   also an approver for later nodes.
-4. Every manual decision needs a durable comment for later audit use.
-5. Notifications need actionable requester and workflow context and must
-   actually mention the people responsible for the active node.
-6. Notification channel behavior must be explicitly selected by admins instead
-   of inferred from URL shape.
-
-## Goals
-
-1. Build one initial logical node from all of the requester's current direct
-   departments.
-2. Prefer exact-department configured approvers for the initial node.
-3. Fall back per department to synchronized organization representatives only
-   when that exact department has no valid configured approver.
-4. Never walk to parent departments for initial-node resolution.
-5. Support an ordered configured-department approval chain per subscription
-   group.
-6. Resolve later nodes only from department approver configuration.
-7. Let any one eligible approver satisfy a node.
-8. Reuse one manual approval for every later node whose approver snapshot also
-   contains that actor.
-9. Require a comment for every manual approval and rejection.
-10. Preserve immutable request, node, approver, decision, and identity snapshots
-    for authorization, UI, and future audit tooling.
-11. Notify only the currently active node and resolve its delivery recipients
-    from current directory and access facts without mutating those snapshots.
-12. Provide explicit, preset notification channel adapters, beginning with
-    Enterprise WeChat group robot and generic JSON webhook.
-13. Preserve admin visibility and current-node fallback without allowing an
-    admin action to skip the remaining workflow.
-14. Keep existing single-stage requests readable and executable under their
-    original contract.
-
-## Non-Goals
-
-1. Do not introduce a general-purpose workflow engine.
-2. Do not support arbitrary admin-authored JSON or message templates.
-3. Do not support per-request edits to the snapshotted approval chain.
-4. Do not change subscription assignment, group limits, rate multipliers, API
-   keys, or reset semantics.
-5. Do not modify sub2api source code or access its database directly.
-6. Do not implement the future cross-feature audit center UI.
-7. Do not add approval deadlines, escalation timers, delegation windows, or
-   automatic reminder schedules in this iteration.
-8. Do not send notifications for queued or automatically satisfied nodes.
-
-## Captured Decisions
-
-| Area | Decision |
-| --- | --- |
-| First-node department scope | All current direct department memberships |
-| First-node config lookup | Exact department only; no ancestor traversal |
-| First-node priority | Valid configured approvers first, then representatives for that same department |
-| Multiple departments | Merge candidates into one node; any candidate can approve |
-| Missing first-node candidate | Skip the first node and continue to the configured chain |
-| Configured approver eligibility | Any active directory-matched local user; organization representative status is not required |
-| Local-user current access | One shared predicate requires both `relay_disabled_at` and `token_valid_after` to be null; active-member and requester checks remain additional call-site constraints |
-| Current directory source ownership | The backend resolves the authoritative source and returns its nullable id with approver configs; clients never rank directory runs |
-| Candidate pagination | Opening or changing search loads page 1; admins explicitly load later pages, which append with duplicate and stale-response protection |
-| Later-node source | Ordered department nodes configured per subscription group |
-| Later-node resolution | Configured department approvers only; no organization representative fallback |
-| Empty later node | Current-node admin fallback |
-| Empty later chain | After the initial node is approved or skipped, reset immediately |
-| Per-node quorum | Any one eligible approver |
-| Approval reuse | A manual approval satisfies every later node containing the same actor |
-| Decision comment | Required for approve and reject |
-| Admin behavior | Admin may act on the current node only and cannot skip the chain |
-| Snapshot timing | Entire workflow and notification identities snapshot when the request is created for authorization, UI, and audit |
-| Config and directory changes | Approval configuration changes affect new workflow snapshots only; current directory identity and access changes are re-evaluated for node-activation and cancellation delivery |
-| Notification templates | Code-owned preset per channel |
-| Enterprise WeChat format | Preset `markdown` with `<@userid>` mentions |
-| Notification routing | Current active node only; activation and cancellation use currently usable snapshotted users or current admins exclusively; skipped and pre-satisfied nodes produce no delivery |
-| Audit | Normalized current state plus append-only request events |
-
-## Approaches Considered
-
-### Option A: Normalized Workflow Nodes and Decisions
-
-Persist configured chains, request-node snapshots, node approvers, and manual
-decisions in separate tables.
-
-Pros:
-
-1. Clear concurrency and authorization boundaries.
-2. Efficient current-node and Work Items queries.
-3. One decision can satisfy multiple later nodes without duplicating decisions.
-4. Provides durable facts for the future audit module.
-
-Cons:
-
-1. Requires several new Ent schemas and compatibility handling.
-
-### Option B: One JSON Workflow Field on the Request
-
-Store all nodes, candidates, decisions, and state transitions in one JSON field.
-
-Pros:
-
-1. Fewer tables.
-
-Cons:
-
-1. Harder current-node counting and indexing.
-2. Fragile concurrent updates.
-3. Poorer referential integrity and audit queries.
-4. More application-level schema validation.
-
-### Option C: Event Replay as the Only Source of Current State
-
-Persist only events and derive current state by replay.
-
-Pros:
-
-1. Complete event history.
-
-Cons:
-
-1. Unnecessary workflow-engine complexity.
-2. More expensive list and Work Items queries.
-3. Harder operational recovery.
-
-## Decision
-
-Use **Option A**. Normalized workflow tables own current state, while
-`quota_reset_request_events` remains an append-only event stream.
-
-## Terminology
-
-1. **Direct department**: a department linked directly to the requester by the
-   current `directory_member_departments` snapshot.
-2. **Configured department approver**: an enabled local approver row explicitly
-   assigned by an admin to one department.
-3. **Synchronized department representative**: a directory member identified as
-   a representative of one exact department by the current representative
-   metadata contract.
-4. **Initial node**: the first logical approval node built from all requester
-   direct departments.
-5. **Configured chain node**: one ordered department node from the selected
-   subscription group's configured approval chain.
-6. **Active node**: the only node that currently accepts a manual decision.
-7. **Approval reuse**: satisfying a later node with an earlier manual approval
-   by the same eligible actor.
-8. **Admin fallback**: admin authorization to decide the current node. It is not
-   permission to complete the entire chain in one action.
-9. **Usable normal approver**: a local user with current access matched to an
-   active member in the current successful directory snapshot, excluding the
-   requester for that request. A relay mapping and a channel recipient id are
-   not required to approve.
-
-Local-user current access means that the user exists and has neither
-`relay_disabled_at` nor `token_valid_after` set. Candidate listing, approver
-configuration validation, workflow creation, and notification revalidation use
-this one predicate. Active-directory-member checks and request-specific
-requester exclusion are composed separately and are not weakened by sharing
-the local-user predicate.
-
-### Directory Member Identity Precedence
-
-When mapping a current directory member to a local approver or notification
-candidate, a non-null `matched_user_id` is authoritative. The resolver returns
-that exact user only when the id exists in the caller's allowed user map; an
-unavailable, deleted, or out-of-scope matched user leaves the member unmatched.
-It must not reassign that member by email. Normalized-email fallback is allowed
-only when `matched_user_id` is null.
-
-Non-null includes `0`, a nonexistent id, and an id whose local user is disabled
-or token-revoked. None of those values may trigger email fallback, even when
-the member email matches another current-access local user. Candidate listing,
-save validation, workflow resolution, and notification revalidation share one
-directory-member identity implementation plus one local current-access
-predicate so configuration cannot accept an identity runtime will reject.
-
-This precedence applies both to workflow creation and to live activation or
-cancellation recipient resolution. In particular, notification resolution may
-use a user subset containing only snapshotted candidates; a member still
-matched to another user cannot contribute its display identity or notification
-ids to a candidate that later acquired the same email address. Requester lookup
-uses requester-scoped id and normalized-email maps, but keeps the same
-per-member authoritative mapping rule.
-
-After per-member identity resolution and any applicability-specific active or
-current-access filtering, duplicate members that resolve to one local user use
-the lowest positive Ent `directory_members.id` as the canonical identity. This
-rule applies to candidate display/external identity and mention coverage,
-requester workflow identity and departments, representative snapshots even
-when a noncanonical member establishes representative eligibility, and current
-delivery identity. Candidate search terms and department paths may aggregate
-across usable duplicate members where this spec already requires aggregation;
-snapshotted identity, delivery identity, and mention coverage always come from
-the canonical member.
-
-## Architecture
-
-`backend/internal/quotareset` remains the workflow owner. It is responsible for:
-
-1. Subscription option validation.
-2. Department approver and subscription-chain configuration.
-3. Initial-node and configured-chain resolution.
-4. Immutable request workflow snapshots.
-5. Current-node authorization and state transitions.
-6. Approval reuse.
-7. Reset execution and retry.
-8. Request event writes.
-9. Notification context creation and dispatch.
-
-Existing boundaries remain:
-
-1. `backend/internal/directorysync` and `backend/internal/directorytree` provide
-   current organization facts.
-2. `backend/internal/relay.Provider` and optional relay interfaces own upstream
-   subscription reads and reset execution.
-3. `backend/internal/workitems` queries the normalized active workflow state.
-4. HTTP handlers remain thin and pass authenticated actor facts into the
-   service.
-
-## Configuration Model
-
-### Department Approvers
-
-Keep `quota_reset_approver_configs` as the single source for configured
-department approvers.
-
-Change its validation contract:
-
-1. Department selection still comes from the current Directory Sync source.
-2. The approver must be a current directory-matched local user who is eligible
-   to log in.
-3. The approver does not need to represent, lead, or belong to the selected
-   department.
-4. The requester is excluded only when resolving a specific request, not when
-   saving global configuration.
-5. Multiple enabled approvers per department are allowed.
-6. An approver without an Enterprise WeChat recipient id may be configured, but
-   the settings UI must show a notification-coverage warning.
-
-Candidate notification coverage uses the same channel identity selected by
-runtime delivery: an allowlisted non-empty `member.metadata.wecom_userid` takes
-precedence over the member external id fallback. The selected value is
-mentionable only when it satisfies the Enterprise WeChat renderer's exact user
-id predicate, including its length and character restrictions and rejection of
-the reserved `all` id. Malformed or reserved metadata remains authoritative and
-must not be hidden by a valid external-id fallback.
-
-The admin candidate API must therefore become a paginated searchable
-directory-matched local-user lookup instead of a selected-department
-representative lookup. Both candidate matching and save validation exclude
-local users whose relay access is disabled or whose tokens have been revoked
-through `token_valid_after`; they use the same local-user current-access
-predicate as runtime workflow usability.
-
-The backend also owns current-source selection. Approver-config reads and
-writes return the authoritative current `directory_source_id` next to `items`.
-The field is `null` when there is no current source and remains the exact
-backend-selected id when the config list is empty. Clients may list directory
-sources to render a readable label, but they must not fetch or rank sync runs
-to choose a source.
-
-The frontend decodes both GET and successful PUT approver-config responses with
-the same strict decoder before mutating state. Every config row must be an
-object with positive safe-integer `id`, `directory_source_id`, and
-`approver_user_id`; string department, approver identity, and timestamp fields;
-and a boolean `enabled` field. Every row source must equal the top-level source,
-and a null top-level source requires an empty item list. Malformed data fails
-the operation and preserves the prior authoritative configs and source. When a
-valid response changes `directory_source_id`, the component closes both
-dropdowns, invalidates both request generations, and clears all source-scoped
-department form state, options, candidate results, pagination, and errors
-before any older response can write back.
-
-### Subscription Group Approval Chains
-
-Add one optional chain per `provider_id + group_id`.
-
-Each chain:
-
-1. Snapshots the group name for readability.
-2. Contains zero or more ordered department nodes.
-3. Uses a department at most once.
-4. May reference only a current department with at least one enabled department
-   approver when saved.
-5. Is local AI Efficiency state and is not overwritten by Directory Sync or
-   relay refreshes.
-
-A zero-node or absent chain means that the workflow contains only the initial
-node. If the initial node is skipped, reset execution begins immediately.
-
-Deleting or disabling the final enabled approver row for a department used by
-an enabled chain must be rejected with the referencing subscription groups.
-Runtime admin fallback still covers later drift, such as a snapshotted user
-becoming unable to log in.
+# Lean Multi-Stage Quota Reset Approval Design
+
+**Status:** Approved for reimplementation
+
+**Date:** 2026-07-15
+
+## Relationship To Existing Design
+
+This spec extends the current quota reset approval contract in
+`2026-07-07-quota-reset-approval-design.md`. It replaces the abandoned
+normalized workflow-node design previously drafted under this file path.
+
+Existing request, event, department approver, webhook, Work Items, and relay
+reset behavior remains authoritative unless this spec explicitly changes it.
+
+## Goal
+
+Add a small, quota-reset-specific approval sequence:
+
+1. First ask an approver for the requester's exact department.
+2. Then process the subscription group's configured department chain in order.
+3. Reuse an earlier approval when the same person appears in a later step.
+4. Notify the active approvers with useful requester context and WeCom mentions.
+5. Preserve decision comments and workflow history for a future audit module.
+
+This is an incremental extension of the existing quota reset module, not a
+general workflow engine.
+
+## Confirmed Product Rules
+
+### Initial step
+
+For every exact department directly linked to the requester:
+
+1. Use enabled `quota_reset_approver_configs` rows for that exact department.
+2. If that department has no configured approver, use its synced department
+   representatives that map to active local users.
+3. Do not walk to parent departments.
+4. Combine candidates from all requester departments into one initial step.
+5. One approval from any candidate approves the whole initial step.
+6. Exclude the requester from candidates.
+7. If no department produces a candidate, omit the initial step and continue.
+
+Configured approvers may be any active directory-matched local user. They do
+not have to be a synced department representative. Representative membership
+is used only by the fallback rule.
+
+### Configured chain
+
+Admins configure one ordered department list per relay provider subscription
+group.
+
+For each configured department:
+
+1. Resolve candidates only from enabled exact-department approver configs.
+2. Do not use representatives and do not walk to parent departments.
+3. One candidate approval completes the step.
+4. If no configured candidate is usable, the step remains actionable by admins
+   as fallback.
+
+If no chain exists, the request contains only the initial step. If neither an
+initial step nor a configured chain step can be created, create one admin
+fallback step so the request is never permanently unapprovable.
+
+### Reused approvals
+
+After an approval, inspect later steps in order. A later step is automatically
+satisfied when its resolved candidate set contains any person who has already
+approved an earlier step. Continue until the next unsatisfied step.
+
+Automatically satisfied steps:
+
+- do not create another manual decision;
+- do not send an activation notification;
+- record the satisfying actor and source decision in workflow state and events.
+
+### Decisions and reset
+
+- Approval and rejection comments are required and trimmed.
+- Only the active step can be decided.
+- A normal user must be an active step candidate and cannot approve their own
+  request.
+- Admins may decide the active step as a fallback/override, but cannot skip
+  directly to a later step.
+- Rejection ends the request immediately.
+- Completing the final step enters the existing reset execution flow.
+- Relay reset success/failure and retry semantics remain unchanged.
+
+## Scope Control
+
+### In scope
+
+- One compact subscription-group chain configuration model.
+- One request-owned JSON workflow document and integer revision.
+- Exact-department resolution and representative fallback.
+- Sequential decisions, prior-approver reuse, and admin fallback.
+- Current-step Work Items counts and approval lists.
+- Requester/team-focused notifications with WeCom mentions.
+- Admin UI for department approvers, group chains, and notification channel.
+- Request timeline and mandatory decision comments.
+- Compatibility for existing single-stage requests.
+
+### Explicitly out of scope
+
+- A reusable workflow framework.
+- Separate request-node, node-approver, or decision tables.
+- Notification outbox, retries, delivery status dashboard, or idempotency API.
+- Admin-authored message templates or arbitrary template expressions.
+- Editing an in-flight workflow after request creation.
+- General audit browsing UI.
+- Reworking directory synchronization or relay APIs.
 
 ## Data Model
 
-### `quota_reset_approval_chains`
+### New `quota_reset_approval_chains` table
 
-Fields:
+One row represents one subscription group's configured chain.
 
-| Field | Type | Notes |
+| Field | Type | Contract |
 | --- | --- | --- |
-| `id` | int | Primary key |
-| `provider_id` | int | Relay provider |
-| `group_id` | string | Subscription group id |
+| `provider_id` | int | Relay provider id |
+| `group_id` | string | Relay subscription group id |
 | `group_name` | string | Display snapshot |
-| `enabled` | bool | Disabled chains are ignored for new requests |
-| `created_by_user_id` | int | Admin actor |
-| `updated_by_user_id` | int | Admin actor |
-| `created_at` | time | |
-| `updated_at` | time | |
-
-Unique index: `(provider_id, group_id)`.
-
-### `quota_reset_approval_chain_nodes`
-
-Fields:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `id` | int | Primary key |
-| `chain_id` | int | Parent chain |
-| `position` | int | Zero-based order within configured chain |
-| `directory_source_id` | int | Source active when saved |
-| `department_external_id` | string | Exact configured department |
-| `department_display_path` | string | Readable snapshot |
-| `created_at` | time | |
-| `updated_at` | time | |
-
-Indexes:
-
-1. Unique `(chain_id, position)`.
-2. Unique `(chain_id, department_external_id)`.
-3. `(directory_source_id, department_external_id)`.
-
-### Changes to `quota_reset_requests`
-
-Add:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `workflow_version` | int | Immutable creation fact; existing rows backfill to `1`; new workflow uses `2` |
-| `current_node_id` | nullable int | Active v2 node |
-| `workflow_completed_by_decision_id` | nullable int | Decision that completed the final unsatisfied node |
-| `requester_display_name_snapshot` | string | Immutable notification and audit identity |
-| `requester_email_snapshot` | string | Immutable notification and audit identity |
-| `requester_department_paths` | nullable JSON array | Historical v1 `NULL` is allowed; new Ent creates receive a fresh `[]`; immutable after insert |
-| `requester_notification_ids` | nullable JSON object | Historical v1 `NULL` is allowed; new Ent creates receive a fresh `{}`; immutable after insert; channel-keyed ids, for example `{"wecom":"alice-id"}` |
-
-Existing v1 resolution and decision fields remain for compatibility. V2 services
-must treat request nodes and decisions as authoritative.
-
-All request creation facts are immutable after insert: `requester_user_id`,
-`requester_relay_user_id`, `provider_id`, `group_id`, `group_name`,
-`group_platform`, `reason`, `workflow_version`, both requester identity snapshots,
-both requester JSON snapshots, the existing `resolved_approver_user_ids` and
-`matched_department_paths` resolution snapshots, and `created_at`. Workflow state,
-the v1 approval/rejection/reset/decision state, and `updated_at` remain mutable.
-
-The four request JSON creation snapshots (`requester_department_paths`,
-`requester_notification_ids`, `resolved_approver_user_ids`, and
-`matched_department_paths`) remain SQL-nullable because they live on an existing
-production table and historical v1 rows may contain SQL `NULL`. Their application
-defaults are factories that return a fresh non-nil empty slice or map for each new
-Ent create. Explicit nil setters fail schema validation, as do nil element maps in
-`matched_department_paths`; empty non-nil containers remain valid.
-
-Ent's `Optional().Immutable()` JSON generation exposes `Clear*` methods on the
-public mutation object even though update builders expose no normal setters. A
-`QuotaResetRequest` schema hook rejects those four clear flags unconditionally,
-including direct `Mutation()` calls, before SQL executes. It does not trust the
-mutable reported mutation operation, so `SetOp` cannot relabel an update and
-bypass the guard. Thus historical `NULL` remains readable without allowing a
-stored snapshot to be cleared after creation.
-
-When the legacy v1 resolver has no approver snapshot, its create builder omits
-that setter and lets the schema factory supply `[]`. This is distinct from an
-explicit nil setter, which remains a validation error.
-
-### `quota_reset_request_nodes`
-
-Fields:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `id` | int | Primary key |
-| `request_id` | int | Parent request |
-| `position` | int | Initial node is zero; configured nodes follow |
-| `node_type` | enum | `requester_departments` or `configured_department` |
-| `label` | string | Readable snapshot |
-| `department_snapshots` | JSON array | Non-null, defaults to `[]`; explicit nil containers and nil element maps fail Ent schema validation |
-| `status` | enum | See node state model |
-| `admin_fallback_required` | bool | Immutable creation-time fact that no normal candidate was usable when the workflow was resolved |
-| `satisfied_by_decision_id` | nullable int | Manual decision satisfying this node |
-| `activated_at` | nullable time | |
-| `completed_at` | nullable time | |
-| `created_at` | time | |
-| `updated_at` | time | |
-
-`request_id`, `position`, `node_type`, `label`, `department_snapshots`,
-`admin_fallback_required`, and `created_at` are immutable after insert. Workflow
-state fields `status`, `satisfied_by_decision_id`, `activated_at`, `completed_at`,
-and `updated_at` remain mutable.
-
-An omitted `department_snapshots` setter receives a fresh empty default for that
-create. An explicit nil container or any nil element map is rejected before
-create; empty non-nil arrays remain valid. Business-content validation belongs to
-workflow resolution, not this schema validator.
-
-Indexes:
-
-1. Unique `(request_id, position)`.
-2. PostgreSQL partial unique `(request_id) WHERE status = 'active'`.
-3. `(request_id, status)`.
-4. `(status, activated_at)`.
-
-### `quota_reset_request_node_approvers`
-
-Stores immutable normal-approver snapshots.
-
-Fields:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `id` | int | Primary key |
-| `request_node_id` | int | Parent node |
-| `user_id` | int | Local user id |
-| `display_name` | string | Snapshot |
-| `email` | string | Snapshot |
-| `source` | enum | `configured` or `directory_representative` |
-| `source_department_external_ids` | JSON array | Non-null, defaults to `[]`; explicit nil fails Ent schema validation |
-| `notification_ids` | JSON object | Non-null, defaults to `{}`; explicit nil fails Ent schema validation |
-| `created_at` | time | |
-
-Every field is immutable after insert.
-
-These rows, including their display names, emails, and notification ids, remain
-the authorization, UI-summary, and audit snapshots. Notification delivery does
-not rewrite them. Node activation and cancellation use their immutable user ids
-as the candidate set, then resolve current delivery people separately.
-
-Omitted setters receive fresh empty defaults for each create. Explicit nil
-containers are rejected before create, while empty non-nil arrays and objects
-remain valid. Request, node, and node-approver JSON snapshots share schema-only
-factory and validator helpers, while only the existing request table retains SQL
-nullability for legacy compatibility.
-
-Unique index: `(request_node_id, user_id)`.
-
-### `quota_reset_request_decisions`
-
-Stores one row for every manual decision.
-
-Fields:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `id` | int | Primary key |
-| `request_id` | int | Parent request |
-| `request_node_id` | int | Node active when decision was submitted |
-| `actor_user_id` | int | Local user |
-| `actor_display_name` | string | Snapshot |
-| `decision` | enum | `approve` or `reject` |
-| `comment` | string | Required and non-empty |
-| `admin_override` | bool | Actor used current admin permission |
-| `created_at` | time | |
-
-Every field is immutable after insert.
-
-Indexes:
-
-1. Unique `(request_node_id)` so only one manual decision wins per node.
-2. `(request_id, created_at)`.
-3. `(actor_user_id, created_at)`.
-
-One approval decision may be referenced by multiple later request nodes through
-`satisfied_by_decision_id`.
-
-### Request Events
-
-Extend `quota_reset_request_events.event_type` with:
-
-1. `workflow_snapshotted`
-2. `node_activated`
-3. `node_approved`
-4. `node_satisfied_by_prior_approval`
-5. `node_skipped_no_approver`
-6. `admin_fallback_activated`
-
-Event metadata may contain ids, positions, counts, channel type, and delivery
-recipient coverage. It must not duplicate full comments, reasons, webhook URLs,
-or channel recipient ids.
-
-## Initial Node Resolution
-
-Workflow resolution and persistence run in one PostgreSQL repeatable-read
-transaction. The transaction begins before the resolver reads the current
-directory source, users, approver configuration, approval chain, or chain nodes;
-the same Ent transaction persists the request, node and approver snapshots, and
-creation events. Consequently, a concurrent atomic directory apply or approval
-chain replacement may affect the next request, but cannot produce one immutable
-request from facts that never coexisted in a committed database snapshot.
-Request creation does not take the admin approval-configuration `SystemSetting`
-lock; repeatable-read isolation is the consistency boundary.
-
-Relay subscription preflight occurs before this transaction. Each creation
-attempt records the requester relay id used to list active subscriptions and
-validate the requested group. After the transaction begins, request creation
-re-reads the requester through the transaction client. If the transaction relay
-id differs, the attempt rolls back before resolver or persistence work and
-retries the complete requester, provider, subscription, group, and active-request
-preflight with the new binding. Creation uses a maximum of three attempts; if
-the binding changes on every attempt, it returns an explicit wrapped binding
-churn error instead of looping. If the new binding lacks the requested group,
-the normal `ErrInactiveSubscription` behavior applies with no request. If the
-binding disappears, creation returns `ErrNoRelayMapping` with no request. Only
-an attempt whose subscription lookup and transaction snapshot use the same
-relay id may persist. The immutable requester relay id, display name, and email
-snapshots come from that transaction view and its directory resolution, not
-from an earlier attempt's user object.
-
-Within that transaction, the resolver uses the current successful full-company
-directory snapshot.
-
-Algorithm:
-
-1. Match the requester to the current directory member by local user id, with
-   normalized-email fallback.
-2. Read every direct membership from `directory_member_departments`. Use
-   `directory_members.department_external_id` only as the compatibility fallback
-   when membership rows are absent.
-3. For each exact direct department, query enabled configured approvers for that
-   same `directory_source_id + department_external_id`.
-4. Remove the requester and users that are not currently usable.
-5. If valid configured candidates remain for that department, add them with
-   source `configured` and do not add organization representatives for that
-   department.
-6. Otherwise resolve synchronized representatives for that exact department
-   from `department.metadata.representative_external_ids` and
-   `member.metadata.leader_department_ids`.
-7. Remove the requester and unusable representatives.
-8. Merge candidates from all direct departments into one node, deduplicating by
-   local user id while preserving all source-department evidence.
-9. Do not inspect parent departments.
-10. If the merged candidate set is empty, persist the initial node as
-    `skipped_no_approver` and continue to the first configured chain node.
-
-If there is no current successful directory snapshot, request creation returns
-`503 directory_unavailable`. It must not silently bypass the initial node because
-the organization service is temporarily unavailable.
-
-If a current directory snapshot exists but the requester has no matched member
-or no memberships, persist a skipped initial node with explicit resolution
-evidence and continue to the configured chain.
-
-## Configured Chain Resolution
-
-For each enabled chain node in position order:
-
-1. Preserve the configured department identity and display path.
-2. Query enabled configured approvers for the current source and exact
-   department.
-3. Remove the requester and unusable users.
-4. Do not use synchronized organization representatives.
-5. Snapshot the remaining candidates.
-6. If no candidate remains, persist the node with
-   `admin_fallback_required=true`.
-
-The full chain and all normal candidate identities are immutable after request
-creation. Later admin configuration changes affect only new requests. Directory
-Sync and local access changes do not alter existing workflow authorization or
-UI/audit snapshots, but they are re-evaluated when resolving activation and
-cancellation delivery recipients.
-
-Admin authorization is evaluated at decision time because admin roles may
-legitimately change. Admins are not inserted into every node's normal approver
-snapshot.
-
-## Node State Model
-
-Node statuses:
-
-1. `queued`
-2. `active`
-3. `approved`
-4. `satisfied_by_prior_approval`
-5. `skipped_no_approver`
-6. `rejected`
-
-Invariants:
-
-1. At most one node per request is `active`.
-2. Only `active` accepts a manual decision.
-3. `satisfied_by_prior_approval` references an earlier approve decision by a
-   user present in that node's normal approver snapshot.
-4. The initial node may be `skipped_no_approver`. Configured later nodes are
-   never skipped for missing candidates; they require admin fallback.
-5. Rejection is terminal for the overall request.
-6. Reset starts only when no `queued` or `active` node remains.
-
-Request status remains:
-
-1. `pending` while approval nodes remain.
-2. `approved_resetting` during execution.
-3. `approved_reset_succeeded` on success.
-4. `approved_reset_failed` on failure.
-5. `rejected` after any node rejection.
-6. `cancelled` after requester cancellation.
-
-## Decision Processing
-
-Decision requests include `request_id`, `request_node_id`, and a non-empty
-`comment`.
-
-Approval transaction:
-
-1. Lock the request and current node.
-2. Require overall status `pending` and the supplied node to equal
-   `current_node_id` with status `active`.
-3. Reject requester self-approval.
-4. Authorize either a normal snapshotted node approver or a current admin.
-5. Insert one approve decision and mark the current node `approved`.
-6. Scan every later `queued` node.
-7. If the actor appears in a later node's normal approver snapshot, mark that
-   node `satisfied_by_prior_approval` and reference the same decision.
-8. Do not treat admin role alone as membership in later nodes.
-9. Activate the first remaining `queued` node, or atomically move the request to
-   `approved_resetting` when none remains.
-10. Commit before notification or relay I/O.
-
-Rejection transaction:
-
-1. Apply the same current-node and authorization checks.
-2. Insert one reject decision.
-3. Mark the current node and overall request `rejected`.
-4. Leave queued nodes unchanged as immutable evidence that they were never
-   reached.
-
-Concurrent or stale decisions return `409 workflow_advanced` with the latest
-request summary. They must not act on a newly activated node.
-
-The requester may cancel while the request is `pending`. Existing decisions
-remain immutable. Cancellation is not allowed after reset execution starts.
-
-## Reset Execution and Retry
-
-After the approval transaction commits:
-
-1. Once `approved_resetting` is committed, detach post-transition work from
-   HTTP cancellation with `context.WithoutCancel`, preserving parent context
-   values but not using an unbounded background context.
-2. Apply a 30-second server-owned provider context to provider resolution and
-   the existing provider-scoped quota reset call. Preserve daily, weekly, and
-   monthly reset semantics.
-3. Use fresh, separate 10-second server-owned persistence contexts for
-   reset-start audit writes and terminal outcome persistence. A provider
-   deadline or error must not cancel or poison the terminal transaction.
-4. After the provider returns, begin a database transaction, lock the request
-   `FOR UPDATE`, and require it to remain `approved_resetting`.
-5. In that transaction, write the terminal success or failure status,
-   completion time, error text, and matching `reset_succeeded` or
-   `reset_failed` event, then commit before sending the result notification.
-6. If the terminal update, audit event, or commit fails, roll back and return a
-   persistence error without a terminal request summary or result notification.
-7. A provider failure or timeout returns an `approved_reset_failed` request
-   with a nil service error only after the terminal transaction commits.
-8. Client cancellation after the running transition does not cancel the
-   provider operation or terminal persistence and cannot by itself leave the
-   request stuck in `approved_resetting`.
-9. Do not reopen approval nodes after a reset failure.
-
-This local transaction does not make the provider call idempotent.
-`UserSubscriptionQuotaResetter` has neither an idempotency key nor an outcome
-lookup. A process crash around that unkeyed call can therefore leave an
-`approved_resetting` request with an ambiguous provider outcome, including an
-unrecorded provider success. AI Efficiency must not automatically replay that
-call; resolving the crash window requires a future provider idempotency and
-recovery contract outside this design.
-
-For v2 requests, reset retry is allowed to:
-
-1. The actor of `workflow_completed_by_decision_id`.
-2. A current admin.
-
-Legacy v1 requests retain their existing retry authorization.
-
-## Admin Fallback
-
-Admins can view every request and decide the current active node at any time.
-
-Rules:
-
-1. One admin decision completes only the current node.
-2. It does not skip later nodes because the actor is an admin.
-3. Approval reuse still applies when the same admin user id is explicitly in a
-   later node's normal approver snapshot.
-4. `admin_override=true` is recorded when the actor was not a normal candidate
-   for the current node.
-5. For node activation and cancellation, re-evaluate the immutable snapshotted
-   normal user ids against the current successful directory snapshot and local
-   access state. If any remain usable, target only those current people. If none
-   remain usable, target current admins exclusively, regardless of the node's
-   immutable creation-time `admin_fallback_required` value. Exclude the
-   request's requester from this fallback recipient set even when that user is
-   currently an admin; retain every other current admin under the existing
-   admin policy.
-6. Normal nodes with usable candidates do not proactively mention admins.
-
-## Notification Architecture
-
-Replace URL-shape inference with an explicit channel adapter registry.
-
-Initial channel types:
-
-1. `wecom_group_robot`
-2. `generic_webhook`
-
-Each adapter owns:
-
-1. Type-specific setting validation.
-2. Preset rendering.
-3. Headers and authentication.
-4. Response business-error validation.
-5. Payload size enforcement and safe truncation.
-
-The notifier receives a channel-neutral `NotificationContext` containing:
-
-1. Event and occurrence time.
-2. Request id and status.
-3. Requester display name, email, direct department paths, and notification ids.
-4. Subscription group name and platform.
-5. Full request reason for rendering, bounded by adapter limits.
-6. Durable workflow progress as completed and total snapshotted node counts.
-7. Current node label, position, total node count, and approvers.
-8. Completed decision history with actor names and comments.
-9. Action URL.
-
-`completed` is derived from the persisted `QuotaResetRequestNode` rows, not
-from current-node position. It counts only nodes with status `approved`,
-`satisfied_by_prior_approval`, or `skipped_no_approver`; `active`, `queued`,
-and `rejected` nodes do not count. `total` is the number of snapshotted nodes
-for the request. Context creation derives these values for activation,
-cancellation, rejection, and terminal reset success/failure notifications.
-Every adapter independently bounds rendered values to `0 <= completed <= total`
-so malformed or synthetic contexts cannot produce invalid progress.
-
-No adapter receives relay credentials, webhook credentials, API keys, or reset
-provider secrets in the rendering context.
-
-### Notification Settings
-
-Extend the single global notification setting with:
-
-| Field | Type | Notes |
-| --- | --- | --- |
-| `channel_type` | enum | `wecom_group_robot` or `generic_webhook` |
-| `template_version` | int | Code-owned preset version |
-
-Retain enabled state, URL, auth type, and optional credential reference.
-
-Rules:
-
-1. Admins explicitly select `channel_type`.
-2. Runtime delivery never infers channel type from URL.
-3. `wecom_group_robot` validates the Enterprise WeChat group robot host and
-   endpoint path and uses no bearer-token auth.
-4. `generic_webhook` supports existing none or bearer-token auth.
-5. Settings reads return a redacted URL preview and `url_configured` rather than
-   exposing a robot key.
-6. A same-type update may omit the URL to retain the existing secret value. A
-   channel-type change requires an explicit non-empty replacement URL before
-   the stored secret may be reused, and the frontend applies the same rule
-   against its last authoritative loaded or saved channel type.
-7. An explicitly saved `generic_webhook` URL that matches the known Enterprise
-   WeChat group-robot host and path is rejected with guidance to use the WeCom
-   preset. Runtime delivery still never infers a channel from URL shape.
-8. Delivery and error messages redact URL query strings.
-9. A one-time migration may classify an existing saved setting by URL so the
-   currently configured channel keeps working. Every classified WeCom row,
-   including a disabled legacy HTTP row, is atomically normalized to
-   `auth_type=none` with `credential_id=NULL`; generic webhook auth and
-   credential values are preserved. After backfill, channel type is explicit.
-
-### Enterprise WeChat Preset
-
-Use `msgtype=markdown`, not `markdown_v2`. Enterprise WeChat's current group
-robot contract supports `<@userid>` mentions in `text` and `markdown` content,
-while `markdown_v2` does not support member mentions.
-
-Preset example with synthetic data:
-
-```text
-# 额度重置待审批
-<font color="warning">Alice 提交了额度重置申请</font>
-
-> 申请人：Alice
-> 所属团队：Department Alpha / Team One
-> 订阅组：Group Alpha
-> 申请原因：Complete a time-sensitive build investigation.
-> 当前节点：2/3 · Department Beta
-> 审批进度：1/3
-
-待审批：<@bob-wecom-id>
-[进入待处理](https://ai-efficiency.example.com/usage/quota-reset?request_id=123)
-```
-
-Rendering rules:
-
-1. Put action state, requester, team, subscription group, and reason before
-   secondary metadata.
-2. Render the durable workflow progress as `completed/total`; never infer it
-   from the current-node position.
-3. Include the latest completed decision actor and comment when activating a
-   later node.
-4. Mention every unique, mentionable current-node approver.
-5. For admin fallback, mention current admins with resolvable Enterprise WeChat
-   ids.
-6. If an approver lacks a recipient id, include their display name followed by
-   an unavailable-mention marker and record coverage in event metadata.
-7. Missing recipient ids do not fail the whole delivery.
-8. Build and validate the exact action link first. Reserve its bytes and all
-   required line separators before allocating bytes to variable context.
-9. Dynamically fit requester, team, group, current node, reason, and latest
-   decision fields, preserving action state, requester, group, current node,
-   and the unmodified action URL before lower-priority detail. Reason and the
-   latest completed decision remain present when supplied, with bounded visible
-   content for both decision actor and comment.
-10. Admit a mention only when the already-required fitted message plus that
-    mention remains within the channel limit; report every omitted person as
-    missing coverage.
-11. If the exact action link plus minimum required labeled context cannot fit,
-    fail with the required-content error instead of emitting a truncated or
-    broken link.
-12. Never send a separate mention-only message.
-
-For node activation and cancellation, the recipient resolver starts from the
-immutable current-node approver user ids but derives delivery people from the
-current successful directory snapshot and current local access state. It uses
-the same usability predicate as workflow creation: the user must have an active
-current directory member, must not be the requester, and must have neither
-`relay_disabled_at` nor `token_valid_after` set. A usable approver remains the
-normal recipient even when no channel recipient id is available; missing ids
-produce coverage output rather than admin fallback. If no snapshotted user is
-currently usable, delivery switches to current admins only and never combines
-stale normal users with admins. The requester is removed from this node-fallback
-admin set even when currently an admin, preventing self-notification without
-changing global admin eligibility or other event routing. Duplicate user ids
-are removed.
-
-Live delivery people receive their current display name, email, and
-channel-specific notification identities. The immutable approver rows continue
-to provide authorization, UI, and audit summaries. The Enterprise WeChat
-adapter supports the current deployment's member external-id mapping and may
-prefer an explicit allowlisted `member.metadata.wecom_userid` mapping when
-present. Future channel adapters add their own resolver without changing
-workflow state.
-
-### Generic Webhook Preset
-
-Send a stable versioned JSON object:
+| `department_chain` | JSON | Ordered array of department references |
+| `enabled` | bool | Disabled rows are ignored for new requests |
+| `created_by_user_id` | int | Last known creator |
+| `updated_by_user_id` | int | Last editor |
+| `created_at` | time | Creation time |
+| `updated_at` | time | Update time |
+
+`(provider_id, group_id)` is unique.
+
+Each `department_chain` item contains only:
 
 ```json
 {
-  "schema_version": 2,
-  "event": "quota_reset_approval_node_activated",
-  "request": {
-    "id": 123,
-    "status": "pending",
-    "requester": {
-      "display_name": "Alice",
-      "email": "alice@example.com",
-      "departments": ["Department Alpha / Team One"]
-    },
-    "subscription_group": {
-      "id": "42",
-      "name": "Group Alpha",
-      "platform": "openai"
-    },
-    "reason": "Complete a time-sensitive build investigation."
-  },
-  "workflow_progress": {
-    "completed": 1,
-    "total": 3
-  },
-  "current_node": {
-    "id": 456,
-    "position": 2,
-    "total": 3,
-    "label": "Department Beta",
-    "approvers": [
-      {"user_id": 7, "display_name": "Bob"}
-    ]
-  },
-  "approval_history": [],
-  "action_url": "https://ai-efficiency.example.com/usage/quota-reset?request_id=123",
-  "occurred_at": "2026-07-10T10:00:00Z"
+  "directory_source_id": 1,
+  "department_external_id": "dept-alpha",
+  "department_display_path": "Company / Group Alpha"
 }
 ```
 
-The generic payload includes `workflow_progress` for the same durable,
-bounded `completed/total` semantics as the Enterprise WeChat preset and
-excludes channel recipient ids by default.
+The service validates that items belong to the current successful directory
+snapshot, rejects duplicate departments, and limits a chain to 20 items.
 
-`workflow_progress` is a required field of the initial generic webhook v2
-contract. This v2 contract is still in flight before its first release, so
-including the originally required progress field completes that initial shape
-without changing `schema_version`. After v2 is released, future incompatible
-payload-shape changes require a schema version bump.
+### Existing `quota_reset_requests` changes
 
-### Notification Events and Routing
+Add three fields:
 
-Send:
+| Field | Type | Contract |
+| --- | --- | --- |
+| `workflow_version` | int | `1` for historical rows, `2` for this design |
+| `workflow` | nullable JSON | Request-time workflow snapshot and progress |
+| `workflow_revision` | int | Compare-and-swap revision for decisions |
 
-1. `quota_reset_approval_node_activated` when a real node becomes active.
-2. `quota_reset_request_rejected` to mention the requester when possible.
-3. `quota_reset_request_cancelled` to inform the active approvers.
-4. `quota_reset_request_reset_succeeded` to mention the requester.
-5. `quota_reset_request_reset_failed` to mention the requester, completion
-   decision actor, and current admins when possible.
-6. `quota_reset_notification_test` for explicit admin testing.
+No requester identity columns are added. Version 2 stores requester identity,
+department paths, step candidates, and notification ids inside `workflow`.
 
-Do not send:
+`resolved_approver_user_ids` remains the indexed current-action field:
 
-1. A separate request-created message in addition to the first node activation.
-2. Notifications for `skipped_no_approver`.
-3. Notifications for `satisfied_by_prior_approval`.
-4. Notifications for future queued nodes.
+- version 1 keeps its existing meaning;
+- version 2 always contains the active step's normal candidate user ids;
+- admin-only fallback uses an empty array.
 
-Notification failure remains non-blocking. It writes a redacted
-`notification_failed` event. HTTP non-2xx and Enterprise WeChat non-zero
-`errcode` responses are failures. Keep the existing short timeout and no
-automatic retry in this iteration.
+This preserves current approval-list and Work Items JSON containment queries.
 
-The test action uses synthetic request data. For Enterprise WeChat, it mentions
-the triggering admin only when a resolvable recipient id exists and returns a
-coverage warning otherwise.
+### Workflow JSON
 
-## API Contract
-
-### Admin Configuration
-
-Add:
-
-1. `GET /api/v1/admin/quota-reset/approver-candidates` with search and
-   pagination over active directory-matched local users.
-2. `GET /api/v1/admin/quota-reset/approval-chains`.
-3. `PUT /api/v1/admin/quota-reset/approval-chains` using explicit full-list
-   replace semantics.
-4. `GET /api/v1/admin/quota-reset/approval-chain-options` for current
-   subscription groups and selectable configured departments.
-
-Keep existing approver and notification settings routes, with their request and
-response contracts extended as described above.
-
-Both full-list replacement routes,
-`PUT /api/v1/admin/quota-reset/approver-configs` and
-`PUT /api/v1/admin/quota-reset/approval-chains`, require the JSON body to
-contain a present, non-null `items` array. A missing `items` member or
-`"items": null` returns `400` before the service is called. An explicit
-`"items": []` remains an intentional request to clear the full list; for
-approver configs it is used with `"mode": "replace_all"` and remains subject
-to referenced-chain conflict validation.
-
-`GET /api/v1/admin/quota-reset/approver-configs` and the successful approver
-config save response use:
+The application owns a versioned typed document:
 
 ```json
 {
-  "directory_source_id": 7,
-  "items": []
+  "version": 2,
+  "current_step": 0,
+  "requester": {
+    "user_id": 10,
+    "display_name": "alice",
+    "email": "alice@example.com",
+    "department_paths": ["Company / Group Alpha"],
+    "notification_ids": {"wecom": "alice"}
+  },
+  "steps": [
+    {
+      "kind": "requester_departments",
+      "label": "Company / Group Alpha",
+      "department_external_ids": ["dept-alpha"],
+      "approvers": [
+        {
+          "user_id": 20,
+          "display_name": "bob",
+          "email": "bob@example.org",
+          "source": "configured",
+          "notification_ids": {"wecom": "bob"}
+        }
+      ],
+      "admin_fallback": false,
+      "status": "active"
+    }
+  ]
 }
 ```
 
-`directory_source_id` is `number | null`; the key is always present, including
-when there is no current source or no configured rows. Any non-null value must
-be a positive safe integer, and every fully typed row carries that same source
-id. A null source requires empty `items`.
+Step status is one of `queued`, `active`, `approved`,
+`satisfied_by_prior_approval`, or `rejected`. A completed step stores one
+decision object containing actor id/display snapshot, comment, admin flag, and
+timestamp. A reused step stores the earlier approving actor and source step.
 
-### Decisions
+The workflow is bounded to 21 steps and 100 unique approvers. Decode or
+validation failure returns an internal consistency error and never falls back
+to permissive authorization.
 
-Keep the current approve and reject route shape, but v2 payloads require:
+### Existing request events
 
-```json
-{
-  "request_node_id": 456,
-  "decision_reason": "Approved for the current release investigation."
-}
-```
+Keep `quota_reset_request_events` as the durable append-only audit source. Add
+event types only for:
 
-For legacy v1 requests, `request_node_id` remains optional and existing behavior
-continues.
+- `workflow_created`
+- `step_approved`
+- `step_satisfied`
+- `step_activated`
+- `admin_fallback_activated`
 
-### Request Responses
+Approval/rejection event metadata contains step index, label, actor display
+snapshot, comment, admin flag, and resulting revision. Existing reset and
+notification events remain unchanged.
 
-Add a versioned workflow summary:
+No separate decision table is introduced.
 
-1. Current node.
-2. Ordered node snapshots and status.
-3. Named approver snapshots appropriate for the viewer.
-4. Manual decisions and comments.
-5. Whether the viewer can approve, reject, cancel, or retry.
-6. Admin fallback state.
+## Transaction And Concurrency Rules
 
-The backend is the authorization source. The frontend must not infer action
-permission by comparing raw user-id arrays.
+Request creation writes the request plus `created`, `approver_resolved`, and
+`workflow_created` events in one database transaction. Notification delivery
+happens after commit.
 
-## Frontend Design
+Decision processing:
 
-Split the current large `QuotaResetApprovalSettings.vue` surface into focused
-components:
+1. Load and validate the version 2 workflow.
+2. Authorize against the active step.
+3. Compute the next workflow state in memory.
+4. Update the request only where `status = pending` and
+   `workflow_revision = <loaded revision>`.
+5. Increment the revision and append decision/transition events in the same
+   transaction.
+6. Treat a zero-row update as `ErrInvalidStatus`; the caller reloads instead of
+   accepting a second decision.
+7. Commit before notification or relay calls.
 
-1. `DepartmentApproverSettings.vue`
-2. `SubscriptionGroupApprovalChains.vue`
-3. `QuotaResetNotificationSettings.vue`
+The final approval atomically changes the request to
+`approved_resetting`. Existing reset execution then handles the external relay
+call and terminal status.
 
-The parent settings section coordinates loading and shared success/error
-feedback only.
+## Resolution And Identity
 
-### Department Approvers
+The resolver reads one current successful directory snapshot and builds:
 
-1. Keep direct department dropdown selection with in-dropdown filtering.
-2. Replace representative-only candidates with a paginated user search.
-3. Show display name, email, current department paths, and Enterprise WeChat
-   mention coverage.
-4. Preserve readable rows, enable/disable, and delete.
-5. Show chain-reference errors before destructive changes.
-6. Use only the approver-config response's `directory_source_id` for department
-   and candidate requests. Directory-source listing is label-only and does not
-   participate in source resolution.
-7. Opening the candidate dropdown or changing its search loads page 1 and
-   resets prior pagination. Show an explicit accessible load-more command only
-   while the last validated raw server page is not exhausted, defined by
-   `(page - 1) * page_size + items.length < total`.
-8. Append later pages in server order, deduplicate by local `user_id`, and use a
-   request generation so stale search or pagination responses cannot replace or
-   append to current results. Display deduplication does not participate in
-   server-page exhaustion.
-9. Validate candidate items and pagination metadata before changing state. The
-   response page must equal the requested page; page and page size must be
-   positive safe integers; page size must match the request; total must be a
-   coherent nonnegative safe integer; and returned item count must fit the
-   declared page and total. An empty requested later page whose raw offset is at
-   or beyond a newly shrunken total is valid and exhausted; a nonempty page at
-   or beyond total remains malformed.
-10. A later-page network or decode error preserves all prior pages and leaves
-    load-more enabled to retry the same page. Page/search metadata advances only
-    after a valid response.
+- exact requester department memberships;
+- enabled exact-department approver configs;
+- representative metadata;
+- active directory members mapped to active local users;
+- optional `metadata.wecom_userid` values.
 
-### Subscription Group Chains
+Candidate identity matching prefers `directory_members.matched_user_id`, then
+normalized email. Disabled directory members, relay-disabled local users, and
+the requester are excluded.
 
-1. Select one current subscription group.
-2. Show its ordered department nodes.
-3. Add nodes from departments with enabled approver configuration.
-4. Support add, delete, move up, and move down.
-5. Prevent duplicate departments.
-6. Show stale group, source, department, and approver configuration warnings.
-7. Save all chains atomically.
-8. Starting a save invalidates older load generations. Approver-revision
-   changes during the PUT queue exactly one reload instead of starting a GET;
-   the queued reload runs once after the save settles, so an older response
-   cannot overwrite the saved authoritative response or seed a later
-   replace-all payload.
+`metadata.wecom_userid` is the only WeCom mention id. Missing values remain
+missing; local ids and emails are not guessed as WeCom ids.
 
-### Notification Settings
+## Notification Contract
 
-1. Explicit channel type selector.
-2. Type-specific URL and auth controls.
-3. Read-only preset-format description and synthetic preview.
-4. Mention-coverage status for Enterprise WeChat.
-5. Test button with returned success, warning, or business-error detail.
-6. No arbitrary JSON or template editor.
+`quota_reset_notification_settings` adds an explicit `channel` enum:
 
-### Approval Workbench
+- `generic_webhook`: stable structured JSON;
+- `wecom_group_robot`: code-owned WeCom markdown preset.
 
-Keep:
+The admin configures channel, enabled state, URL, auth type, and credential.
+Message fields are not individually configurable. New channels can add another
+adapter later without changing workflow state.
 
-1. `My Requests`.
-2. `Approvals`.
-3. `All Requests` for admins.
+Active-step notification highlights:
 
-Request detail shows:
+- requester display name and email;
+- requester department paths;
+- subscription group and platform;
+- full application reason within channel limits;
+- current step and progress;
+- previous approval comment when present;
+- action URL;
+- active approvers.
 
-1. Requester identity and all direct team paths.
-2. Subscription group and reason.
-3. Ordered node timeline.
-4. Current node and named candidates.
-5. Manual decision comments.
-6. `Satisfied by an earlier approval from <name>` for reused decisions.
-7. Admin override and fallback markers.
-8. Reset result or failure.
+The WeCom preset renders `<@userid>` for active approvers with a valid
+`wecom_userid`. It explicitly labels approvers without a mention id. Skipped
+steps do not notify. Test notification uses synthetic example data only.
 
-`Approvals` defaults to requests whose current node is assigned to the current
-user. Historical filters may show nodes the user manually decided. Future queued
-assignments remain hidden until activated.
+Notification failures remain non-blocking and append the existing failure
+event without storing webhook secrets or full URLs in errors.
 
-## Work Items
+## API Changes
 
-For v2 requests:
+Keep existing request and decision routes. Decision bodies require a non-empty
+`decision_reason` for both approve and reject.
 
-1. `quota_reset_approval_count` counts `pending` requests whose active node has
-   the current user as a normal candidate, excluding the user's own requests.
-2. It also counts `approved_reset_failed` when the user is the workflow
-   completion decision actor and may retry.
-3. quota_reset_admin_count preserves v1 behavior. For v2 it counts pending
-   requests only when the requester is not the current admin, because requester
-   self-approval is forbidden, and counts every approved_reset_failed request
-   because an admin may retry it, including the admin's own failed request.
-4. Admin `total_count` keeps the current deduplication rule and uses the admin
-   quota count rather than adding personal assignment count again.
-5. Automatically satisfied, skipped, queued, completed, rejected, and cancelled
-   nodes do not create separate work-item counts.
+Add admin routes:
 
-Legacy v1 requests retain current count semantics.
+- `GET /api/v1/admin/quota-reset/approval-chains`
+- `PUT /api/v1/admin/quota-reset/approval-chains`
 
-## Approval List Scopes
+The list response includes enabled relay subscription group options. Department
+dropdowns reuse the existing searchable Directory Sync department API, so this
+feature does not add another full-directory transport or cache.
 
-ListApprovals defaults to the actionable scope when scope is omitted. The
-default v2 result contains only pending requests assigned to the viewer at the
-current active node and approved_reset_failed requests whose workflow
-completion decision names the viewer as retry actor. A prior decision alone
-does not place a v2 request in this default queue. Legacy v1 list semantics
-remain unchanged for both scopes.
+Existing approver candidate lookup changes from representative-only results to
+active directory-matched members of the selected department. Results retain a
+representative flag and WeCom-mention availability for display.
 
-scope=history is the explicit v2 decision-history scope. It returns durable
-requests on which the current viewer made a manual workflow decision, including
-requests that remain overall pending because the workflow advanced to a later
-node. It does not widen the default actionable queue or work-item counts.
+Request summaries add:
 
-The frontend keeps history separate from the default approval response. Its
-default all, pending, and failed approval views use only the actionable
-response. The existing processed approval filter requests scope=history; for
-v2 rows it shows the viewer's durable decision regardless of overall request
-status, while mine/admin views and legacy v1 rows retain their status-based
-processed behavior. History rows never drive badges, default queue actions, or
-visibility for unrelated actors.
+- `workflow_version`
+- `current_step`
+- `workflow_steps`
 
-## Error Handling
+Historical version 1 summaries keep their existing shape and behavior.
 
-| Case | Behavior |
-| --- | --- |
-| No current successful directory snapshot | Reject create with `503 directory_unavailable` |
-| Requester unmatched in a valid directory snapshot | Persist skipped initial node and continue |
-| No direct memberships | Persist skipped initial node and continue |
-| First-node configured users unusable | Fall back to same-department representatives |
-| First-node config and representative both unavailable | Skip initial node |
-| Later configured node has no usable configured approver | Activate with admin fallback |
-| Requester is the only candidate | Exclude requester; apply normal empty-node behavior |
-| Chain configuration changes after create | No effect on existing request |
-| Actor already approved an active earlier node | Later matching nodes are pre-satisfied |
-| Stale node decision | Return `409 workflow_advanced` with latest summary |
-| Concurrent decisions | First committed decision wins |
-| Some snapshotted node approvers become unusable before activation/cancellation delivery | Notify only the snapshotted approvers that remain currently usable |
-| Every snapshotted node approver becomes unusable before activation/cancellation delivery | Notify current admins exclusively without changing workflow snapshots or authorization |
-| Directory member has a non-null matched user outside the allowed candidate set, but its email matches a candidate | Treat the member as unmatched; do not email-fallback or expose its notification identity |
-| Notification recipient id missing | Send without that mention and return/log coverage warning |
-| Notification delivery fails | Record event; do not change workflow |
-| Reset fails | Preserve completed approvals and allow authorized retry |
+## Frontend
 
-## Compatibility and Migration
+Extend existing quota reset surfaces rather than adding a new store or settings
+framework.
 
-1. Add `workflow_version` with existing rows backfilled to `1`.
-2. New requests use version `2`.
-3. Do not synthesize node rows for historical or active v1 requests.
-4. Route v1 decisions, retries, list responses, and Work Items through the
-   existing behavior.
-5. Keep legacy fields until a later, separately designed data migration.
-6. Keep all existing department approver rows.
-7. Backfill the existing notification channel type once. Normalize every row
-   classified as Enterprise WeChat to no auth and no credential while
-   preserving enabled HTTPS delivery and disabling legacy HTTP delivery;
-   preserve generic webhook auth and credentials.
-8. Do not auto-create subscription group chains. Their absence has explicit
-   zero-node semantics.
-9. Update `docs/architecture.md` only when v2 code becomes the current runtime.
+### Settings
 
-## Testing
+The existing quota reset settings section contains three plain subsections:
 
-### Backend
+1. Department approvers: department dropdown plus searchable member dropdown.
+2. Subscription group chains: group dropdown plus reorderable department rows.
+3. Notification: explicit channel dropdown and existing URL/auth controls.
 
-Cover:
+Search input appears inside an opened dropdown. Controls use backend-returned
+display paths/names and never expose editable internal id inputs.
 
-1. Exact-department config wins without ancestor traversal.
-2. A configured non-representative is accepted and selected.
-3. Same-department representative fallback.
-4. Multiple direct departments merge into one initial node.
-5. Per-department priority when one department has config and another requires
-   representative fallback.
-6. Empty initial node skips to the configured chain.
-7. Later nodes never use organization representative fallback.
-8. Empty later node requires admin.
-9. Empty chain resets after the initial node.
-10. Requester self-approval exclusion.
-11. Snapshot immutability after config and directory changes.
-12. Any one candidate satisfies a node.
-13. Non-contiguous later nodes are satisfied by one earlier actor.
-14. Admin override completes only the current node.
-15. Approve and reject comments are required.
-16. Rejection, cancellation, reset success, failure, and retry.
-17. Row-lock and stale-node conflict behavior.
-18. Active-node Work Items counts.
-19. Legacy v1 behavior.
-20. Explicit channel selection with no runtime URL inference.
-21. Enterprise WeChat Markdown rendering, requester/team context, approver
-    mentions, safe truncation, and missing-recipient coverage.
-22. Enterprise WeChat business-error responses.
-23. Generic versioned JSON rendering.
-24. URL and error redaction.
-25. `token_valid_after` users are absent from approver candidates and rejected
-    by approver-config save validation.
-26. Approver-config responses always include the authoritative nullable
-    `directory_source_id`, including empty config lists.
+### Approval workbench
 
-### Frontend
+The current quota reset page keeps Mine, Pending, and Admin views. Version 2
+rows show current step/progress. The details view shows the compact step
+timeline and prior comments. Approve and reject open one small dialog requiring
+a comment.
 
-Cover:
+Only backend-authorized active requests expose decision actions. Processed
+history remains readable but is not counted as pending work.
 
-1. Searchable non-representative approver selection.
-2. Enterprise WeChat mention-coverage warnings.
-3. Subscription group chain add, delete, reorder, duplicate prevention, and
-   reference validation.
-4. Explicit notification channel controls and preset previews.
-5. Required approve and reject comments.
-6. Node timeline, reused approval, fallback, and admin override rendering.
-7. Backend-provided action permissions.
-8. Current-node-only approval queues and badges.
-9. Legacy v1 request rendering.
-10. Backend-selected source ownership without client-side directory-run
-    ranking, including a nullable no-source response.
-11. Incremental candidate pagination beyond the first page, duplicate
-    suppression, search reset to page 1, and stale-response isolation.
-12. Source changes invalidate in-flight department and candidate requests and
-    clear all source-scoped form/results state.
-13. GET and PUT approver-config responses share strict decoding; malformed
-    rows, field types, ids, timestamps, and source invariants preserve prior
-    authoritative state and report the corresponding load or save failure.
-14. Candidate page mismatch, invalid metadata, and incoherent totals fail
-    closed, while a page-2 error preserves page 1 and retries page 2.
-15. Candidate exhaustion uses validated raw page geometry rather than unique
-    display count; duplicate-only final pages stop loading, and an empty later
-    page beyond a shrunken total retains prior results without a retry error.
+## Compatibility And Migration
 
-### Browser Verification
+- Existing rows backfill to `workflow_version = 1`, empty workflow, revision 0.
+- Version 1 requests continue through the existing single-stage service path.
+- New requests use version 2 after the schema migration.
+- Existing approver configs and notification settings remain in place.
+- Existing notification rows default `channel` by URL during read/migration:
+  WeCom robot URL becomes `wecom_group_robot`; all others become
+  `generic_webhook`.
+- No data migration creates request-node or decision rows.
 
-The target full browser matrix uses distinct synthetic authenticated roles:
+## Testing Boundaries
 
-1. Requester with multiple direct departments.
-2. First-node configured approver.
-3. First-node representative fallback approver.
-4. Later configured approver.
-5. Actor appearing in multiple non-adjacent nodes.
-6. Admin fallback.
+Backend tests cover:
 
-The full six-role representative/admin/provider/webhook matrix is an accepted
-deferred residual. The current deterministic script does not claim coverage of
-that complete matrix.
+- exact-department config, representative fallback, multiple departments, and
+  no-initial-step behavior;
+- ordered group chain resolution and admin fallback;
+- one approval per step, rejection, prior-actor reuse, and final reset;
+- compare-and-swap conflict behavior;
+- version 1 compatibility;
+- current-step list and Work Items counts;
+- requester context, channel selection, WeCom mentions, and synthetic tests;
+- chain replacement validation and API authorization.
 
-The current deterministic subset in `frontend/e2e_quota_reset_workflow.py`
-covers five cases: one active ordinary approver flow, future-approver
-invisibility, requester keyboard and mobile detail behavior, and admin settings
-at desktop and mobile sizes. The active flow verifies both approve and reject
-actions, removes the request and badge from the default actionable queue after
-approval, and then loads the reused-approval detail only from explicit
-`scope=history`. The settings cases exercise synthetic chain and notification
-configuration, but they do not substitute for the deferred full role,
-provider, and webhook delivery matrix.
-
-The target full matrix must verify:
-
-1. Settings save and reload.
-2. Request creation snapshots the intended nodes.
-3. Only the active node appears in pending work.
-4. Approval reuse skips later matching nodes and produces no duplicate
-   notification.
-5. Final approval triggers one reset.
-6. Enterprise WeChat payload contains requester/team details and the intended
-   `<@userid>` values.
-7. Desktop and mobile layouts have no overlap or clipped decision controls.
-
-### Verification Commands
-
-```text
-cd backend && go test ./...
-cd frontend && npm test
-cd frontend && npm run build
-cd frontend && npm run test:e2e:role
-git diff --check
-```
-
-Environment-sensitive browser and real webhook checks must be reported
-separately from deterministic unit tests.
+Frontend tests cover dropdown filtering, chain editing, explicit channel save,
+mandatory comments, step progress, and action visibility. One browser test
+covers request creation, initial approval, one configured chain approval, and
+terminal success.
 
 ## Acceptance Criteria
 
-1. A requester's first node uses only exact direct departments, with
-   per-department config priority and representative fallback.
-2. Admins can configure non-representative department approvers.
-3. Subscription groups can have ordered configured-department chains.
-4. A node needs only one approval.
-5. One approval automatically satisfies every later node containing that actor.
-6. Every manual decision has a non-empty durable comment.
-7. Admins can handle only the current node and cannot bypass remaining nodes.
-8. Existing requests keep their original behavior.
-9. Notifications identify requester, teams, subscription group, reason,
-   current node, progress, and action URL.
-10. Enterprise WeChat activation and cancellation notifications revalidate
-    snapshotted approvers and mention currently usable recipients using current
-    synchronized ids, falling back exclusively to current admins only when no
-    normal approver remains usable.
-11. Automatically satisfied nodes do not produce duplicate notifications.
-12. Admins explicitly choose a preset notification channel type.
-13. Work Items counts represent only actionable current work.
-14. Request nodes, approvers, decisions, reset events, and notification events
-    provide sufficient durable facts for the future audit module.
-15. A returned provider outcome and its matching terminal audit event commit
-    atomically before result notification; local persistence failure leaves the
-    request `approved_resetting` and returns no terminal summary.
+1. A new request first targets exact-department configured approvers, then
+   exact-department representatives only when config is absent.
+2. Any candidate from any requester department can complete the initial step.
+3. Subscription-group departments execute in configured order using only exact
+   department approver configs.
+4. A prior approving actor automatically satisfies every later step containing
+   that actor without duplicate notification.
+5. Every manual approval or rejection requires and preserves a comment.
+6. Completing the final step invokes the existing relay quota reset exactly
+   once for the winning transition.
+7. Pending lists and badges reflect only the current active step.
+8. WeCom notifications identify the requester/team/group/reason and mention
+   active approvers when `metadata.wecom_userid` is available.
+9. Admins configure departments, members, groups, chains, and channels through
+   dropdown controls.
+10. Historical version 1 requests remain operable.
+11. The implementation adds no request-node, node-approver, or decision table.
