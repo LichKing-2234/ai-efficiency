@@ -74,6 +74,11 @@ vi.mock('axios', () => {
   return {
     default: {
       create: vi.fn(() => mockInstance),
+      getAdapter: vi.fn((adapter: any) => (
+        typeof adapter === 'function'
+          ? adapter
+          : (config: any) => axiosHarness.retryHandler!(config)
+      )),
       post: axiosHarness.axiosPost,
     },
   }
@@ -159,13 +164,23 @@ function routeComponent(name: string) {
   return { template: `<div data-route-skeleton="${name}">${name}</div>` }
 }
 
-function createRouteHarness(options: { oauthDeviceComponent?: Promise<any> } = {}) {
+function createRouteHarness(options: {
+  brokenComponent?: Promise<any>
+  oauthDeviceComponent?: Promise<any>
+  reposComponent?: Promise<any>
+  reposLoader?: () => Promise<any>
+} = {}) {
   const loaders = {
+    broken: vi.fn(() => options.brokenComponent ?? Promise.resolve(routeComponent('broken'))),
     login: vi.fn(() => Promise.resolve(routeComponent('login'))),
     oauthAuthorize: vi.fn(() => Promise.resolve(routeComponent('oauth-authorize'))),
     oauthDevice: vi.fn(() => options.oauthDeviceComponent ?? Promise.resolve(routeComponent('oauth-device'))),
     usage: vi.fn(() => Promise.resolve(routeComponent('usage'))),
-    repos: vi.fn(() => Promise.resolve(routeComponent('repos'))),
+    repos: vi.fn(() => (
+      options.reposLoader?.()
+      ?? options.reposComponent
+      ?? Promise.resolve(routeComponent('repos'))
+    )),
   }
   const router = createRouter({
     history: createMemoryHistory(),
@@ -184,6 +199,7 @@ function createRouteHarness(options: { oauthDeviceComponent?: Promise<any> } = {
         meta: { public: true, redirectOnAuthExpiry: true },
       },
       { path: '/', name: 'Dashboard', component: routeComponent('dashboard') },
+      { path: '/broken', name: 'Broken', component: loaders.broken },
       { path: '/usage', name: 'Usage', component: loaders.usage },
       { path: '/repos', name: 'RepoList', component: loaders.repos },
     ],
@@ -517,6 +533,168 @@ describe('Axios client interceptors', () => {
   })
 
   describe('route-owned auth expiry policy', () => {
+    it.each([
+      'while the lazy navigation is pending',
+      'after the lazy navigation fails',
+    ])('expires the confirmed protected route when refresh fails $timing', async (timing) => {
+      const brokenComponent = deferred<any>()
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const auth = useAuthStore(pinia)
+      auth.user = alice
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      const harness = createRouteHarness({ brokenComponent: brokenComponent.promise })
+      routeDisposers.push(harness.dispose)
+      const stopRouterError = harness.router.onError(() => {})
+      routeDisposers.push(stopRouterError)
+
+      await harness.router.push('/usage')
+      const brokenNavigation = harness.router.push('/broken')
+      await vi.waitFor(() => expect(harness.loaders.broken).toHaveBeenCalledTimes(1))
+
+      const expireSession = async () => {
+        const request = client.get('/repos')
+        await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+        refresh.reject(new Error('refresh failed'))
+        await expect(request).rejects.toBeDefined()
+        await vi.waitFor(() => expect(readBrowserSession().accessToken).toBeNull())
+      }
+
+      if (timing === 'while the lazy navigation is pending') {
+        await expireSession()
+        expect(harness.router.currentRoute.value.fullPath).toBe('/usage')
+      }
+
+      brokenComponent.reject(new Error('chunk load failed'))
+      await expect(brokenNavigation).rejects.toThrow('chunk load failed')
+      expect(harness.router.currentRoute.value.fullPath).toBe('/usage')
+
+      if (timing === 'after the lazy navigation fails') {
+        await expireSession()
+      }
+      await vi.waitFor(() => expect(harness.router.currentRoute.value.name).toBe('Login'))
+      expect(harness.router.currentRoute.value.query.redirect).toBe('/usage')
+    })
+
+    it('replays an unconsumed expiry after its Login navigation is aborted and a later destination confirms', async () => {
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const auth = useAuthStore(pinia)
+      auth.user = alice
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      const harness = createRouteHarness()
+      routeDisposers.push(harness.dispose)
+      let abortNextLogin = true
+      const removeLoginAbort = harness.router.beforeEach((to) => {
+        if (to.name === 'Login' && abortNextLogin) {
+          abortNextLogin = false
+          return false
+        }
+        return undefined
+      })
+      routeDisposers.push(removeLoginAbort)
+
+      await harness.router.push('/usage')
+      const request = client.get('/repos')
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+      refresh.reject(new Error('refresh failed'))
+      await expect(request).rejects.toBeDefined()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(harness.router.currentRoute.value.fullPath).toBe('/usage')
+      expect(harness.loaders.login).not.toHaveBeenCalled()
+
+      await harness.router.push('/oauth/device')
+      await vi.waitFor(() => expect(harness.router.currentRoute.value.name).toBe('Login'))
+
+      expect(harness.loaders.login).toHaveBeenCalledTimes(1)
+      expect(harness.router.currentRoute.value.query.redirect).toBe('/oauth/device')
+    })
+
+    it('keeps expiry on a newer pending destination when an older navigation is cancelled', async () => {
+      const reposComponent = deferred<any>()
+      const oauthDeviceComponent = deferred<any>()
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const auth = useAuthStore(pinia)
+      auth.user = alice
+      const harness = createRouteHarness({
+        oauthDeviceComponent: oauthDeviceComponent.promise,
+        reposComponent: reposComponent.promise,
+      })
+      routeDisposers.push(harness.dispose)
+
+      await harness.router.push('/usage')
+      const reposNavigation = harness.router.push('/repos')
+      await vi.waitFor(() => expect(harness.loaders.repos).toHaveBeenCalledTimes(1))
+      const deviceNavigation = harness.router.push('/oauth/device')
+      await vi.waitFor(() => expect(harness.loaders.oauthDevice).toHaveBeenCalledTimes(1))
+
+      reposComponent.resolve(routeComponent('repos'))
+      await reposNavigation
+      expect(harness.router.currentRoute.value.fullPath).toBe('/usage')
+
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      const request = client.get('/repos')
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+      refresh.reject(new Error('refresh failed'))
+      await expect(request).rejects.toBeDefined()
+      expect(harness.router.currentRoute.value.fullPath).toBe('/usage')
+
+      oauthDeviceComponent.resolve(routeComponent('oauth-device'))
+      await deviceNavigation
+      await vi.waitFor(() => expect(harness.router.currentRoute.value.name).toBe('Login'))
+      expect(harness.router.currentRoute.value.query.redirect).toBe('/oauth/device')
+    })
+
+    it('does not let an older same-path cancellation settle the newer pending navigation', async () => {
+      const reposA1Component = deferred<any>()
+      const reposA2Component = deferred<any>()
+      const oauthDeviceComponent = deferred<any>()
+      const refresh = deferred<ReturnType<typeof refreshResponse>>()
+      const reposLoader = vi.fn()
+        .mockReturnValueOnce(reposA1Component.promise)
+        .mockReturnValueOnce(reposA2Component.promise)
+      replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+      const auth = useAuthStore(pinia)
+      auth.user = alice
+      const harness = createRouteHarness({
+        oauthDeviceComponent: oauthDeviceComponent.promise,
+        reposLoader,
+      })
+      routeDisposers.push(harness.dispose)
+
+      await harness.router.push('/usage')
+      const reposA1Navigation = harness.router.push('/repos')
+      await vi.waitFor(() => expect(harness.loaders.repos).toHaveBeenCalledTimes(1))
+      const oauthNavigation = harness.router.push('/oauth/device')
+      await vi.waitFor(() => expect(harness.loaders.oauthDevice).toHaveBeenCalledTimes(1))
+      const reposA2Navigation = harness.router.push('/repos')
+      await vi.waitFor(() => expect(harness.loaders.repos).toHaveBeenCalledTimes(2))
+
+      oauthDeviceComponent.resolve(routeComponent('oauth-device'))
+      await oauthNavigation
+      reposA1Component.resolve(routeComponent('repos-a1'))
+      await reposA1Navigation
+      expect(harness.router.currentRoute.value.fullPath).toBe('/usage')
+
+      axiosHarness.getHandler = rejectWith401
+      axiosHarness.axiosPost.mockReturnValue(refresh.promise)
+      const request = client.get('/repos')
+      await vi.waitFor(() => expect(axiosHarness.axiosPost).toHaveBeenCalledTimes(1))
+      refresh.reject(new Error('refresh failed'))
+      await expect(request).rejects.toBeDefined()
+      expect(harness.router.currentRoute.value.fullPath).toBe('/usage')
+      expect(harness.loaders.login).not.toHaveBeenCalled()
+
+      reposA2Component.resolve(routeComponent('repos-a2'))
+      await reposA2Navigation
+      await vi.waitFor(() => expect(harness.router.currentRoute.value.name).toBe('Login'))
+      expect(harness.router.currentRoute.value.query.redirect).toBe('/repos')
+    })
+
     it.each([
       {
         path: '/usage',
