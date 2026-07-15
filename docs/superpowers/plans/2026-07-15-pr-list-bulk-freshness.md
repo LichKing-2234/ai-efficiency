@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Planned from `docs/performance-contracts-116@5f6c58e`; plan-review remediation is implemented and re-review is pending. Implementation, task review, delivery, and CI remain pending.
+**Status:** Plan review is complete with no findings. Task 1 is next; implementation, task review, delivery, and CI remain pending. The branch is based on `docs/performance-contracts-116@5f6c58e`.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 
