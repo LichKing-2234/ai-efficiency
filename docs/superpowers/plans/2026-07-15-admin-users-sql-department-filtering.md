@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Draft revision 3 prepared from `docs/performance-contracts-116@5f6c58e`; independent revision-3 plan review, implementation, task reviews, repository verification, draft PR delivery, and all three CI rounds remain pending.
+**Status:** Draft revision 4 prepared from `docs/performance-contracts-116@5f6c58e`; independent revision-4 plan review, implementation, task reviews, repository verification, draft PR delivery, and all three CI rounds remain pending.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
-**Architecture:** Add one concrete `backend/internal/adminusers` read module that owns a single uncorrelated department-to-local-user relation, user list/target predicates, page-local enrichment, searchable department options, and paginated department children. Compose `adminsubscription.Service` with a narrow resolver in the handler package so persisted jobs and the legacy batch endpoint delegate `current_filter` to `adminusers.Service.Targets` without creating a package cycle. Migrate the frontend in the same platform release to the two bounded department APIs; keep the complete legacy `/departments` response for compatibility, but leave no active-page caller of it.
+**Architecture:** Add one concrete `backend/internal/adminusers` read module whose Task 1 foundation owns one source-scoped effective-department forest and one uncorrelated effective-subtree-to-local-user relation. List count/page, `Targets`, page enrichment, searchable options, paginated children, and summaries compose their statement-specific CTEs from that same private SQL prefix; no caller recursively follows stored cycle edges independently. Compose `adminsubscription.Service` with a narrow resolver in the handler package so persisted jobs and the legacy batch endpoint delegate `current_filter` to `adminusers.Service.Targets` without creating a package cycle. Migrate the frontend in the same platform release to the two bounded department APIs; keep the complete legacy `/departments` response for compatibility, but leave no active-page caller of it.
 
 **Tech Stack:** Go 1.23/1.24, Gin, Ent 0.14, PostgreSQL 16, `lib/pq`, Vue 3 `<script setup lang="ts">`, TailwindCSS, Vitest, Vue Test Utils.
 
@@ -20,7 +20,8 @@
 - Every page calculation handles nonpositive and maximum-integer values without offset overflow. Count first; if the requested page starts beyond total, return an empty page before calculating `(page-1)*page_size`.
 - Default `/admin/users` mount starts user rows, subscription options, and latest-job recovery only. It makes zero request to the complete department snapshot; bounded options load only when the picker opens or an existing `department_id` needs its label, and bounded roots load only when department view is active.
 - Resolve the current directory source through `directorysync.CurrentSourceID`; do not infer it from source update time or a non-current run. One `List`, `DepartmentOptions`, or `DepartmentChildren` call resolves the current source at most once and reuses it through that call.
-- Department filtering resolves the requested node and descendants with one uncorrelated recursive relation per SQL statement. The recursive node must execute once in each count, page, and target statement, independently of outer user count.
+- Task 1 defines the only source-scoped effective-department relation. It removes one deterministic stored edge per closed cycle and maps null/blank/missing current-source parents to effective roots. Every filtered subtree follows `navigation_departments.effective_parent_external_id`, never raw `directory_departments.parent_external_id`.
+- Department filtering resolves the requested node and effective descendants with one uncorrelated `subtree` relation per filtered SQL statement. Filtered target, count, and page statements each contain one named `cycle_walk` recursive node plus one named effective `subtree` recursive node; both execute once independently of outer user count.
 - Current `directory_member_departments` rows are authoritative when any exist for a member. The legacy `directory_members.department_external_id` is eligible only when that member has no current membership rows.
 - A qualifying directory member maps to every local user identified by positive `matched_user_id` or normalized email `LOWER(BTRIM(users.email)) = directory_members.email_normalized`; union and deduplicate local user IDs.
 - With no department filter, unmatched local users remain visible. With a department filter, unmatched local users are excluded because no current directory evidence places them in the selected subtree.
@@ -28,9 +29,9 @@
 - Count, page, persisted-job `current_filter`, and compatibility-batch `current_filter` use the exact same `adminusers.Filters` normalization and SQL predicate. Both mutation routes fetch at most 501 ordered users and reject more than 500 before relay mutation or job creation.
 - User-page enrichment starts from at most 100 users. It may read only their matching current members, those members' candidate memberships, those candidate departments, and their ancestors; it must not materialize the complete department/member/membership snapshot in Go.
 - For page enrichment, load all bounded candidate department IDs before choosing a display department. With current membership rows, choose the current primary if it exists, otherwise the first ordered existing current membership, skipping dangling IDs. Only a member with zero current membership rows may fall back to its first existing legacy primary department.
-- Every department ancestor read constrains both the recursive CTE and the outer `directory_departments` query by the same resolved `source_id`; equal external IDs in another source must never affect names, parents, depth, or display paths.
-- Department navigation projects one source-scoped effective parent relation. Null/blank/missing current-source parents and exactly one deterministic anchor per closed cycle have no effective parent; the anchor is the cycle row ordered first by `LOWER(BTRIM(name)), external_id`. Root/child candidate count and page, `child_count`, ancestor display/depth, and descendant summaries all use that same relation. The stored `parent_external_id` remains the response fact, but the removed anchor edge is never returned by expansion, so every closed-cycle component is reachable from one root and no expansion repeats its anchor.
-- Department-option display paths and department-child display paths/summary counts are computed in SQL or a bounded page-local read. Child, direct member, matched-user, subtree member, subtree matched-user, representative, and matched-representative counts must not require loading all entities into application memory. Representative totals use one current-source-scoped `UNION` of page-department `metadata.representative_external_ids` and current-member `metadata.leader_department_ids`, deduplicated by `(department_external_id, representative_external_id)` before matched-member evaluation.
+- Every department ancestor read selects from the shared resolved-source `navigation_departments` relation; equal external IDs in another source must never affect existence, names, effective parents, depth, display paths, or filter scope.
+- Null/blank/missing current-source parents and exactly one deterministic anchor per closed cycle have no effective parent; the anchor is the cycle row ordered first by `LOWER(BTRIM(name)), external_id`. Filter subtree, page enrichment, options, root/child candidate count and page, `child_count`, ancestor display/depth, and descendant summaries all compose from that one relation. The stored `parent_external_id` remains the response fact, but no active read follows the removed anchor edge, so every closed-cycle component is reachable from one root and no subtree includes a node above its effective root.
+- Department-option display paths and department-child display paths/summary counts are computed in SQL or a bounded page-local read. Child, direct member, matched-user, subtree member, subtree matched-user, representative, and matched-representative counts must not require loading all entities into application memory. Representative totals use one current-source-scoped `UNION` of page-department `metadata.representative_external_ids` and current-member `metadata.leader_department_ids`, deduplicated by `(department_external_id, representative_external_id)` before matched-member evaluation. Service and HTTP fixtures must pin both JSON scalar and array forms for both metadata fields, repeated values inside an array, duplicate-in-both declarations, and matched/unmatched outcomes.
 - Frontend department navigation loads roots and immediate children separately. It never recursively preloads the full tree; collapsed children remain cached locally, and a parent with more children exposes bounded continuation rather than an implicit complete fetch.
 - The frontend mounts either mobile user cards or the desktop user table at the existing 768px breakpoint, never both. Selection, dialogs, filters, pagination, keyboard behavior, and subscription operations remain available.
 - Keep handlers thin, API calls under `frontend/src/api`, and package dependencies acyclic. Do not introduce Redis, a cache service, a new process, direct `sub2api` coupling, or Relay/provider interface changes.
@@ -141,472 +142,16 @@ func (s *Service) DepartmentOptions(ctx context.Context, request DepartmentOptio
 func (s *Service) DepartmentChildren(ctx context.Context, request DepartmentChildrenRequest) (*DepartmentChildrenPage, error)
 ```
 
-`backend/internal/adminsubscription` defines the consumer-owned injection boundary. It does not import `adminusers`; the handler composition root converts the DTOs:
+The package also owns these private SQL composers from Task 1 onward:
 
 ```go
-package adminsubscription
-
-type CurrentFilter struct {
-    Query        string
-    DepartmentID string
-    AccessStatus string
-}
-
-type CurrentFilterTargetResolver interface {
-    ResolveCurrentFilterTargets(ctx context.Context, filter CurrentFilter, limit int) ([]*ent.User, error)
-}
-
-type CurrentFilterTargetResolverFunc func(context.Context, CurrentFilter, int) ([]*ent.User, error)
-
-func (f CurrentFilterTargetResolverFunc) ResolveCurrentFilterTargets(
-    ctx context.Context,
-    filter CurrentFilter,
-    limit int,
-) ([]*ent.User, error) {
-    return f(ctx, filter, limit)
-}
-
-func NewService(client *ent.Client, resolvers ...CurrentFilterTargetResolver) *Service
+func effectiveDepartmentCTEs(sourcePlaceholder string) string
+func effectiveSubtreeCTE(departmentPlaceholder string) string
 ```
 
-The optional constructor argument preserves selected/all-mapped test and compatibility setup. `ScopeCurrentFilter` without a resolver returns a wrapped configuration error; production always supplies the resolver.
+`sourcePlaceholder` and `departmentPlaceholder` are placeholders returned by the SQL builder for bound runtime values, never request text. `effectiveDepartmentCTEs` interpolates only Ent table/field constants and emits the complete `WITH RECURSIVE` prefix through `navigation_departments`. `effectiveSubtreeCTE` emits the comma-prefixed selected-root recursion over that effective relation. Target, count, page, page-enrichment, option, child, and summary statement builders must call these composers; copying the CTE text or adding a raw-parent recursive join elsewhere is a review failure.
 
-## HTTP Contracts
-
-The user list contract remains unchanged. The new bounded department routes return the standard `pkg.Success` envelope with these data payloads:
-
-```http
-GET /api/v1/admin/users/department-options?q=alpha&selected_id=dept-beta&page=1&page_size=20
-```
-
-```json
-{
-  "items": [
-    {"external_id": "dept-alpha", "name": "Department Alpha", "display_path": "Company / Department Alpha"}
-  ],
-  "selected": {"external_id": "dept-beta", "name": "Department Beta", "display_path": "Company / Department Beta"},
-  "total": 1,
-  "page": 1,
-  "page_size": 20
-}
-```
-
-`selected_id` is an exact, current-source-scoped lookup returned separately and does not change `items` or `total`. Missing/current-source-absent selections return `selected: null`.
-
-```http
-GET /api/v1/admin/users/department-children?parent_department_id=dept-alpha&page=1&page_size=25
-```
-
-```json
-{
-  "items": [
-    {
-      "external_id": "dept-alpha-one",
-      "parent_external_id": "dept-alpha",
-      "name": "Team One",
-      "path": "1.10.20",
-      "display_path": "Company / Department Alpha / Team One",
-      "depth": 2,
-      "child_count": 0,
-      "has_children": false,
-      "member_count": 8,
-      "matched_user_count": 7,
-      "subtree_member_count": 8,
-      "subtree_matched_user_count": 7,
-      "representative_count": 1,
-      "matched_representative_count": 1
-    }
-  ],
-  "parent_department_id": "dept-alpha",
-  "total": 1,
-  "page": 1,
-  "page_size": 25
-}
-```
-
-For root requests, `parent_department_id` is omitted and the response returns it as `""`. A department whose parent ID is missing from the current source is treated as a root, matching the current tree behavior. A supplied parent must exist in the resolved current source before any child is eligible: missing parents return an empty 200 page even when a non-current source has the same external ID. Every closed cycle contributes exactly one deterministic synthetic root anchor; expansion follows the effective parent relation and never returns that anchor through its stored parent, so a root-and-expand walk emits each cycle department once.
-
-## File Map
-
-- `backend/internal/adminusers/service.go`: exported service/types, filter normalization, shared user query, list paging, and targets.
-- `backend/internal/adminusers/department.go`: uncorrelated subtree/user relation, page-user enrichment, ancestor closure, department options, source-scoped parent validation, deterministic cycle-anchor/effective-parent relation, department children, and deduplicated representative summary aggregates.
-- `backend/internal/adminusers/service_test.go`: semantic mapping matrix, list/target parity, page normalization, source selection, and enrichment fallbacks.
-- `backend/internal/adminusers/department_test.go`: option/child paging, current-source parent validation, root/orphan/cycle navigation, representative union parity, display paths, and compatibility fixtures.
-- `backend/internal/adminusers/query_plan_test.go`: small/large PostgreSQL fixtures, SQL-role capture, projection/materialization bounds, target/descendant/cycle recursive-loop assertions, and cycle-walk cardinality gates.
-- `backend/ent/schema/directory_member.go`: current-source/matched-user composite index.
-- `backend/ent/schema/directory_member_department.go`: current-source/member/department composite index.
-- `backend/ent/`: regenerated Ent schema/migration artifacts.
-- `backend/internal/adminsubscription/job.go`: injected current-filter resolver and removal of duplicated directory filtering.
-- `backend/internal/adminsubscription/job_test.go`: resolver delegation, no-resolver error, snapshots, selected/all-mapped compatibility, and 501st-target rejection.
-- `backend/internal/handler/admin_users.go`: thin list/bounded-department HTTP mapping, composition-root resolver, compatibility-batch delegation, and unchanged exempt `ListDepartments` compatibility route.
-- `backend/internal/handler/admin_users_test.go`: list wire contract plus bounded option/child parent, cycle, and representative route contracts; legacy `ListDepartments` remains separately covered.
-- `backend/internal/handler/admin_users_subscription_test.go`: real-HTTP parity across persisted jobs and compatibility batch.
-- `backend/internal/handler/router.go`: two new admin-only department routes.
-- `frontend/src/api/adminUsers.ts`: bounded department option/child wrappers; legacy full route remains exported only for compatibility.
-- `frontend/src/types/index.ts`: exact option, option-page, child-page, and summary DTOs.
-- `frontend/src/components/admin/AdminDepartmentPicker.vue`: lazy searchable/paged department filter.
-- `frontend/src/__tests__/admin-department-picker.test.ts`: picker request, paging, stale response, selected deep-link, and clear behavior.
-- `frontend/src/views/admin/AdminUsersView.vue`: lazy child navigation, no full-snapshot mount, and one active responsive row tree.
-- `frontend/src/__tests__/admin-users-view.test.ts`: request/DOM bounds, lazy tree interaction, and unchanged workflow regression.
-- `docs/architecture.md`: current bounded admin-user list, navigation, target-resolution relationships, and active performance-spec source-of-truth entry.
-- `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`: landed administrator collection bounds, mapping/fallback semantics, and explicit inheritance/supersession relationship to the 2026-06-22 Directory Sync contract.
-- `docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md`: live execution ledger.
-
----
-
-### Task 1: Build One Uncorrelated Department-To-User Predicate
-
-**Files:**
-- Create: `backend/internal/adminusers/service.go`
-- Create: `backend/internal/adminusers/department.go`
-- Create: `backend/internal/adminusers/service_test.go`
-- Create: `backend/internal/adminusers/query_plan_test.go`
-- Maintain: `docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md`
-
-**Interfaces:**
-- Consumes: `directorysync.CurrentSourceID`, `adminuseraccess.ApplyFilter`, Ent user predicates, and current directory tables.
-- Produces: `NewService`, `Filters`, private `resolvedSource`, private `filteredUsersQuery`, and `Targets(ctx, filters, limit)` from the Deep Module Interface.
-
-- [ ] **Step 1: Add the semantic fixture and failing target tests**
-
-Create one current successful full-company snapshot with this exact shape:
-
-```text
-dept-alpha -> dept-alpha-one; sibling dept-beta
-alice: positive matched_user_id, membership dept-alpha-one
-bob: nil matched_user_id, member email bob@example.org, local email Bob@Example.org, membership dept-alpha-one
-carol: memberships dept-alpha-one and dept-beta, legacy primary dept-alpha
-dave: membership dept-beta, legacy primary dept-alpha-one (legacy must not leak)
-erin: no current memberships, legacy primary dept-alpha-one
-frank: unmatched local user
-grace: one member whose positive matched_user_id maps grace and whose normalized email maps a second local user; both users are eligible and IDs deduplicate
-```
-
-Add table-driven `TestTargetsDepartmentMappingMatrix` cases for direct node, ancestor subtree, sibling exclusion, multi-membership, current-membership authority, legacy fallback, positive matched ID, mixed-case normalized email, dual mapping, no filter with unmatched local user, filtered unmatched exclusion, unknown department, no current source, search intersection, access-status intersection, invalid access status, positive limit, and canceled context. Compare exact `id ASC` target IDs.
-
-Seed two query-plan sizes with the same logical proportions:
-
-```text
-small: 24 users, 22 members, 12 departments, 36 memberships
-large: 2,400 users, 2,200 members, 120 departments, 3,600 memberships
-both: 10% unmatched users, mixed ID/email mappings, multi-membership rows, legacy-only rows
-```
-
-Capture the filtered target SQL and bound arguments for both sizes. Add `assertRecursiveUnionLoopsOnce` that walks the decoded JSON plan, finds exactly one `Recursive Union` node, and requires `Actual Loops == 1`.
-
-- [ ] **Step 2: Run the focused tests and record RED**
-
-Run:
-
-```bash
-(cd backend && go test ./internal/adminusers -run 'TestTargets|TestTargetPlan' -count=1 -v)
-```
-
-Expected: FAIL because `backend/internal/adminusers` and the shared target predicate do not exist.
-
-- [ ] **Step 3: Implement the uncorrelated relation and target reader**
-
-Normalize `Query`, `DepartmentID`, and `AccessStatus` once. Validate access status before composing SQL, wrap `ErrInvalidAccessStatus`, and retain the current user-facing validation message. Resolve the source once only when a department predicate needs it.
-
-Build the department filter as one selector-qualified `users.id IN (...)` predicate with this PostgreSQL 16 shape:
-
-```sql
-users.id IN (
-  WITH RECURSIVE subtree(external_id) AS MATERIALIZED (
-    SELECT root.external_id
-    FROM directory_departments AS root
-    WHERE root.source_id = $1
-      AND root.external_id = $2
-    UNION
-    SELECT child.external_id
-    FROM directory_departments AS child
-    JOIN subtree AS parent
-      ON child.parent_external_id = parent.external_id
-    WHERE child.source_id = $1
-  ),
-  eligible_members(id, matched_user_id, email_normalized) AS MATERIALIZED (
-    SELECT member.id, member.matched_user_id, member.email_normalized
-    FROM directory_members AS member
-    WHERE member.source_id = $1
-      AND (
-        EXISTS (
-          SELECT 1
-          FROM directory_member_departments AS membership
-          JOIN subtree
-            ON subtree.external_id = membership.department_external_id
-          WHERE membership.source_id = $1
-            AND membership.directory_member_id = member.id
-        )
-        OR (
-          NOT EXISTS (
-            SELECT 1
-            FROM directory_member_departments AS current_membership
-            WHERE current_membership.source_id = $1
-              AND current_membership.directory_member_id = member.id
-          )
-          AND member.department_external_id IN (SELECT external_id FROM subtree)
-        )
-      )
-  ),
-  eligible_user_ids(user_id) AS MATERIALIZED (
-    SELECT eligible_members.matched_user_id
-    FROM eligible_members
-    WHERE eligible_members.matched_user_id > 0
-    UNION
-    SELECT candidate.id
-    FROM users AS candidate
-    JOIN eligible_members
-      ON eligible_members.email_normalized = LOWER(BTRIM(candidate.email))
-  )
-  SELECT eligible_user_ids.user_id
-  FROM eligible_user_ids
-)
-```
-
-Use Ent table/field constants for every interpolated identifier. Bind only runtime values. Use `UNION`, not `UNION ALL`, for cycle termination and user-ID deduplication. The CTE contains no reference to the outer `users` alias, so recursion is not evaluated per candidate user.
-
-When no current source exists, use an always-false user predicate. `Targets` applies the exact normalized search/access/department predicates, orders by `users.id ASC`, requires a positive `limit`, and returns no more than that limit.
-
-- [ ] **Step 4: Prove target semantics and recursive structural bounds GREEN**
-
-Run:
-
-```bash
-(cd backend && gofmt -w internal/adminusers/*.go)
-(cd backend && go test ./internal/adminusers -run 'TestTargets|TestTargetPlan' -count=2 -v)
-(cd backend && go test ./internal/adminuseraccess ./internal/adminusers -count=1)
-git diff --check
-```
-
-Expected: all semantic cases pass twice; target IDs are stable; both small and large target plans contain one recursive union with one actual loop; no test depends on duration, cost, or exact buffers.
-
-- [ ] **Step 5: Complete exact-range Task 1 reviews and checkpoint**
-
-Generate an ignored base-to-working-tree package. Obtain independent SPEC and standards reviews for Task 1, resolve every Critical/Important finding, rerun Step 4, then commit:
-
-```bash
-git add backend/internal/adminusers docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
-git commit -m "perf(admin-users): evaluate department targets in SQL"
-```
-
-After the commit exists, check only completed Task 1 steps and record the ledger in a separate commit:
-
-```bash
-git add docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
-git commit -m "docs(plan): record admin user target task"
-```
-
----
-
-### Task 2: Return Bounded User Pages And Correct Page-Local Departments
-
-**Files:**
-- Modify: `backend/internal/adminusers/service.go`
-- Modify: `backend/internal/adminusers/department.go`
-- Modify: `backend/internal/adminusers/service_test.go`
-- Modify: `backend/internal/adminusers/query_plan_test.go`
-- Modify: `backend/ent/schema/directory_member.go`
-- Modify: `backend/ent/schema/directory_member_department.go`
-- Regenerate: `backend/ent/`
-- Modify: `backend/internal/handler/admin_users.go`
-- Modify: `backend/internal/handler/admin_users_test.go`
-- Maintain: `docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md`
-
-**Interfaces:**
-- Consumes: Task 1 `filteredUsersQuery`, `Filters`, and `Targets`.
-- Produces: `List(ctx, ListRequest) (*Page, error)` and thin unchanged `GET /api/v1/admin/users` HTTP mapping.
-
-- [ ] **Step 1: Add failing list, enrichment, HTTP, and plan tests**
-
-Add service/handler tests for default page 1/size 20, maximum size 100, nonpositive normalization, stable `id ASC`, exact total/page predicate parity, empty results, canceled context, and a maximum-integer page returning empty before offset calculation. Require the unchanged HTTP envelope and row fields, including encrypted relay-password ciphertext in the API, derived access/offboarding status, and page-local department display.
-
-Extend the semantic fixture with:
-
-```text
-colliding source: dept-alpha and dept-alpha-one exist under another source with different names/parents
-dangling current membership: first ordered ID dept-aaa-missing, later existing dept-alpha-one
-dangling current primary: primary dept-aaa-missing is present in memberships, later existing dept-alpha-one
-all current memberships dangling plus existing legacy primary: no department is displayed because current rows remain authoritative
-no current memberships plus existing legacy primary: legacy department is displayed
-```
-
-Assert selection order is member ID ascending; within a member, primary-if-current then department external ID and membership row ID. A dangling candidate is skipped only after the candidate department set has been loaded. Apply one chosen member department to both its positive-ID and normalized-email page users, without duplicate assignment.
-
-Capture filtered count and page SQL for both 24-user and 2,400-user fixtures. For each SQL role, run `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` with its recorded arguments and require exactly one `Recursive Union` node with `Actual Loops == 1`.
-
-- [ ] **Step 2: Run Task 2 tests and record RED**
-
-Run:
-
-```bash
-(cd backend && go test ./internal/adminusers ./internal/handler -run 'TestList|TestAdminUsersList|TestCountPlan|TestPagePlan' -count=1 -v)
-```
-
-Expected: FAIL because `List`, bounded enrichment, new indexes, and thin handler integration are absent.
-
-- [ ] **Step 3: Implement count/page and candidate-first enrichment**
-
-`List` normalizes page values, resolves the source once, builds one shared filtered query, clones it for count, and returns an empty page before any offset multiplication when `(page-1) >= ceil(total/page_size)`. Otherwise it orders by ID, applies the at-most-100 limit/offset, and requests offboarding facts only for page IDs.
-
-For department enrichment:
-
-1. Load current members matching page positive user IDs or page normalized emails. Select only member ID, matched user ID, normalized email, and legacy primary; order by member ID.
-2. Load current membership rows only for those member IDs. Select row ID, member ID, and department external ID; order by member ID, department external ID, then row ID.
-3. Build each member's bounded candidate IDs. If current memberships exist, put primary first only when it occurs in those rows, then append all ordered current memberships. If none exist, use only the legacy primary.
-4. Load the union of candidate departments plus ancestors for the resolved source. Do not choose a candidate before this existence read.
-5. For each member, choose the first candidate present in the current-source department map. Never use legacy primary when current membership rows exist, even if every current candidate is dangling.
-6. Apply the first chosen department by member ID order to every matching page user, preserving positive-ID and normalized-email mappings with user-ID deduplication.
-
-The ancestor query must constrain the outer table and recursive relation explicitly:
-
-```sql
-SELECT outer_department.external_id,
-       outer_department.parent_external_id,
-       outer_department.name,
-       outer_department.path
-FROM directory_departments AS outer_department
-WHERE outer_department.source_id = $1
-  AND outer_department.external_id IN (
-    WITH RECURSIVE ancestors(external_id, parent_external_id) AS MATERIALIZED (
-      SELECT seed.external_id, seed.parent_external_id
-      FROM directory_departments AS seed
-      WHERE seed.source_id = $1
-        AND seed.external_id = ANY($2)
-      UNION
-      SELECT parent.external_id, parent.parent_external_id
-      FROM directory_departments AS parent
-      JOIN ancestors AS child
-        ON child.parent_external_id = parent.external_id
-      WHERE parent.source_id = $1
-    )
-    SELECT ancestors.external_id FROM ancestors
-  )
-```
-
-Bind the same resolved source to every source position. Use `pq.Array(candidateIDs)` instead of expanding one bind per ID. Build `display_path` from this page-local closure only.
-
-Add these Ent indexes and regenerate:
-
-```go
-index.Fields("source_id", "matched_user_id")
-index.Fields("source_id", "directory_member_id", "department_external_id")
-```
-
-Replace handler list filtering/enrichment with `h.users.List`; retain HTTP parsing/row mapping and the existing 400/500 behavior.
-
-- [ ] **Step 4: Prove page and database-work bounds GREEN**
-
-For small and large fixtures, require constant SQL roles for `adminusers.Service.List`: current-source resolution, count, bounded page, page members, page memberships, candidate/ancestor departments, and page offboarding facts. Assert:
-
-```text
-count/page share byte-equivalent normalized filter fragments and arguments
-count/page recursive union count = 1 and Actual Loops = 1
-page Limit materializes at most 100 user rows in id ASC order
-member lookup starts from page IDs/emails and projects four fields
-membership lookup starts from page member IDs and projects three fields
-ancestor outer query includes source_id equality and never reads the colliding source row
-candidate/ancestor output is candidates plus ancestors, not all 120 departments
-adminusers.Service.List has no full-table All for departments, members, or memberships
-this gate does not inspect or change the explicitly exempt AdminUsersHandler.ListDepartments compatibility snapshot
-```
-
-Run:
-
-```bash
-(cd backend && gofmt -w internal/adminusers/*.go internal/handler/admin_users.go internal/handler/admin_users_test.go ent/schema/directory_member.go ent/schema/directory_member_department.go)
-(cd backend && go generate ./ent)
-git add backend/ent
-(cd backend && go generate ./ent)
-git diff --exit-code -- backend/ent
-(cd backend && go test ./internal/adminusers ./internal/handler -run 'TestList|TestAdminUsersList|TestCountPlan|TestPagePlan' -count=2 -v)
-(cd backend && go test ./internal/adminusers ./internal/handler -count=1)
-git diff --check
-```
-
-Expected: semantic and HTTP tests pass twice, generated Ent drift is empty, both fixture scales prove one recursion per count/page statement, and the colliding/dangling fixtures select only valid current-source departments.
-
-- [ ] **Step 5: Complete exact-range Task 2 reviews and checkpoint**
-
-Obtain independent Task 2 SPEC and standards reviews, resolve every Critical/Important finding, rerun Step 4, then commit implementation and ledger separately:
-
-```bash
-git add backend/internal/adminusers backend/internal/handler/admin_users.go backend/internal/handler/admin_users_test.go backend/ent docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
-git commit -m "perf(admin-users): page directory-enriched users"
-git add docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
-git commit -m "docs(plan): record admin user page task"
-```
-
----
-
-### Task 3: Add Bounded Department Options And Lazy Child Reads
-
-**Files:**
-- Modify: `backend/internal/adminusers/department.go`
-- Create: `backend/internal/adminusers/department_test.go`
-- Modify: `backend/internal/adminusers/query_plan_test.go`
-- Modify: `backend/internal/handler/admin_users.go`
-- Modify: `backend/internal/handler/admin_users_test.go`
-- Modify: `backend/internal/handler/router.go`
-- Maintain: `docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md`
-
-**Interfaces:**
-- Consumes: Task 2 source resolution and current membership/ancestor helpers.
-- Produces: `DepartmentOptions`, `DepartmentChildren`, and the two HTTP contracts above.
-
-- [ ] **Step 1: Add failing option, child-page, summary, and scale tests**
-
-At service and real HTTP seams, cover:
-
-```text
-options default page 1/20; size 0 -> 20; size 101 -> 100
-options normalized-name/external-ID order, q filtering, second page, overflow page
-selected_id returned separately even when it is outside q/page; unknown selected_id -> null
-children root default page 1/25; size 101 -> 100; second root page; overflow page
-supplied current-source parent returns immediate effective children only; unknown parent -> empty 200
-current-source orphan dept-orphan names missing parent dept-missing; a non-current source owns dept-missing
-dept-orphan appears once in roots; requesting dept-missing returns empty at both service and HTTP seams
-closed cycle dept-cycle-a (Cycle Alpha) <- dept-cycle-b (Cycle Beta) <- dept-cycle-c (Cycle Gamma) <- dept-cycle-a chooses dept-cycle-a by normalized name/external ID
-root contains dept-cycle-a once; expanding a returns b, b returns c, and c does not return a
-the complete root/expand walk reaches every cycle row once with no duplicate external ID and is stable across insertion order
-child/direct/subtree/matched counts match the legacy summary fixture over the effective navigation edges
-representatives: department-only matched/unmatched, leader-only matched/unmatched, and duplicate-in-both matched
-representative union returns total 5/matched 3 once at service and HTTP seams; non-current collisions do not change it
-display paths/depth use the current source despite colliding external IDs elsewhere
-```
-
-Use these exact representative facts for one requested page department; repeat colliding external IDs and leader metadata under a non-current source with opposite match state:
-
-```text
-rep-department-matched: listed only in department representative_external_ids; current member matched_user_id > 0
-rep-department-unmatched: listed only in department representative_external_ids; current member matched_user_id nil
-rep-leader-matched: absent from department metadata; current member leader_department_ids contains the department; matched_user_id > 0
-rep-leader-unmatched: absent from department metadata; current member leader_department_ids contains the department; matched_user_id nil
-rep-duplicate: listed in department metadata and declared by its own leader_department_ids; matched_user_id > 0; counted once
-```
-
-Reserve three current-source department rows in each 12/120-department plan fixture for the exact `dept-cycle-a/b/c` cycle above, keeping the fixture totals unchanged; include `dept-orphan -> dept-missing` in each current source and place `dept-missing` only in a separate non-current source. For both PostgreSQL fixture scales, execute a diagnostic projection over the exact production cycle CTEs and assert `source_rows = N`, `cycle_walk_rows <= N*N`, `max_cycle_walk_path <= N`, `cycle_anchor_rows = 1`, anchor ID `dept-cycle-a`, and the same anchor after reverse insertion order. For the 2,400-user/120-department fixture, require option/child result slices to stay at their requested maximum, query role count to stay constant versus the small fixture, and no active bounded query to return full member/membership/department entities. Walk the JSON plans and require the top-level option-page, child-page, and final-summary nodes to report at most 100 actual rows. On a leaf-parent request, require descendant rows to stay below the full 120-department fixture. Require the named cycle-walk and multi-seed descendant `Recursive Union` nodes to each have `Actual Loops == 1` per statement, never once per returned department.
-
-Name the focused service cases `TestDepartmentChildrenRequiresCurrentSourceParent`, `TestDepartmentChildrenClosedCycleNavigation`, and `TestDepartmentChildrenRepresentativeUnion`; name their real-HTTP counterparts with the `TestAdminUsersDepartmentChildren` prefix so the Step 2/5 commands execute every new seam explicitly. Extend the JSON-plan helper to identify the recursive node whose `Subplan Name` is `CTE cycle_walk` and require exactly one such node with `Actual Loops == 1`.
-
-- [ ] **Step 2: Run Task 3 tests and record RED**
-
-Run:
-
-```bash
-(cd backend && go test ./internal/adminusers ./internal/handler -run 'TestDepartmentOptions|TestDepartmentChildren|TestAdminUsersDepartmentOptions|TestAdminUsersDepartmentChildren|TestDepartmentReadPlan' -count=1 -v)
-```
-
-Expected: FAIL because the bounded department service methods and routes do not exist.
-
-- [ ] **Step 3: Implement the lightweight selector page**
-
-`DepartmentOptions` resolves one source, normalizes page values, and applies `q` to trimmed department name or external ID. It counts and pages by `LOWER(BTRIM(name)) ASC, external_id ASC`, selects only external ID/name/parent ID, and loads ancestors for at most 100 option rows plus the optional exact `selected_id` row. Its ancestor display paths use the same effective parent relation defined below, so closed-cycle labels agree with lazy navigation.
-
-The selected exact lookup is source-scoped and independent from the option query. Build option display paths from the bounded ancestor closure. A page beyond total returns empty before offset calculation; current-source absence returns an empty page and `Selected == nil`.
-
-- [ ] **Step 4: Implement child-at-a-time summaries with SQL aggregates**
-
-`DepartmentChildren` trims the parent request and binds SQL `$2` as nullable text: omitted/blank becomes `NULL` for a root request; a nonblank value is a supplied parent. Candidate count and page statements use this exact current-source navigation prefix. The cycle walk follows at most `N` distinct parent rows per seed and emits at most `N*N` rows for `N` current-source departments:
+`effectiveDepartmentCTEs` has this one PostgreSQL 16 definition:
 
 ```sql
 WITH RECURSIVE
@@ -707,8 +252,495 @@ navigation_departments(
          department.path,
          department.metadata
   FROM source_departments AS department
+)
+```
+
+`effectiveSubtreeCTE` appends only this recursion:
+
+```sql
+, subtree(external_id) AS MATERIALIZED (
+  SELECT root.external_id
+  FROM navigation_departments AS root
+  WHERE root.external_id = $2
+  UNION
+  SELECT child.external_id
+  FROM navigation_departments AS child
+  JOIN subtree AS parent
+    ON child.effective_parent_external_id = parent.external_id
+)
+```
+
+For the shared cycle `dept-cycle-a <- dept-cycle-b <- dept-cycle-c <- dept-cycle-a`, `dept-cycle-a` is the anchor and the only valid effective subtrees are: anchor `{a,b,c}`, non-anchor `b` `{b,c}`, and leaf `c` `{c}`. Stored `a.parent_external_id = c` is preserved for response compatibility but is never traversed by an active SQL relation.
+
+`backend/internal/adminsubscription` defines the consumer-owned injection boundary. It does not import `adminusers`; the handler composition root converts the DTOs:
+
+```go
+package adminsubscription
+
+type CurrentFilter struct {
+    Query        string
+    DepartmentID string
+    AccessStatus string
+}
+
+type CurrentFilterTargetResolver interface {
+    ResolveCurrentFilterTargets(ctx context.Context, filter CurrentFilter, limit int) ([]*ent.User, error)
+}
+
+type CurrentFilterTargetResolverFunc func(context.Context, CurrentFilter, int) ([]*ent.User, error)
+
+func (f CurrentFilterTargetResolverFunc) ResolveCurrentFilterTargets(
+    ctx context.Context,
+    filter CurrentFilter,
+    limit int,
+) ([]*ent.User, error) {
+    return f(ctx, filter, limit)
+}
+
+func NewService(client *ent.Client, resolvers ...CurrentFilterTargetResolver) *Service
+```
+
+The optional constructor argument preserves selected/all-mapped test and compatibility setup. `ScopeCurrentFilter` without a resolver returns a wrapped configuration error; production always supplies the resolver.
+
+## HTTP Contracts
+
+The user list contract remains unchanged. The new bounded department routes return the standard `pkg.Success` envelope with these data payloads:
+
+```http
+GET /api/v1/admin/users/department-options?q=alpha&selected_id=dept-beta&page=1&page_size=20
+```
+
+```json
+{
+  "items": [
+    {"external_id": "dept-alpha", "name": "Department Alpha", "display_path": "Company / Department Alpha"}
+  ],
+  "selected": {"external_id": "dept-beta", "name": "Department Beta", "display_path": "Company / Department Beta"},
+  "total": 1,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+`selected_id` is an exact, current-source-scoped lookup returned separately and does not change `items` or `total`. Missing/current-source-absent selections return `selected: null`.
+
+```http
+GET /api/v1/admin/users/department-children?parent_department_id=dept-alpha&page=1&page_size=25
+```
+
+```json
+{
+  "items": [
+    {
+      "external_id": "dept-alpha-one",
+      "parent_external_id": "dept-alpha",
+      "name": "Team One",
+      "path": "1.10.20",
+      "display_path": "Company / Department Alpha / Team One",
+      "depth": 2,
+      "child_count": 0,
+      "has_children": false,
+      "member_count": 8,
+      "matched_user_count": 7,
+      "subtree_member_count": 8,
+      "subtree_matched_user_count": 7,
+      "representative_count": 1,
+      "matched_representative_count": 1
+    }
+  ],
+  "parent_department_id": "dept-alpha",
+  "total": 1,
+  "page": 1,
+  "page_size": 25
+}
+```
+
+For root requests, `parent_department_id` is omitted and the response returns it as `""`. A department whose parent ID is missing from the current source is treated as a root, matching the current tree behavior. A supplied parent must exist in the resolved current source before any child is eligible: missing parents return an empty 200 page even when a non-current source has the same external ID. Every closed cycle contributes exactly one deterministic synthetic root anchor; expansion follows the effective parent relation and never returns that anchor through its stored parent, so a root-and-expand walk emits each cycle department once.
+
+The same effective relation is the HTTP filter contract. In cycle `a -> b -> c`, the B summary reports subtree `{b,c}`; `GET /api/v1/admin/users?department_id=dept-cycle-b`, persisted-job `current_filter`, and compatibility-batch `current_filter` must resolve exactly those same B/C local users and must never include an A-only user.
+
+## File Map
+
+- `backend/internal/adminusers/service.go`: exported service/types, filter normalization, shared user query, list paging, and targets.
+- `backend/internal/adminusers/department.go`: Task 1 shared `effectiveDepartmentCTEs`/`effectiveSubtreeCTE`, source-scoped parent validation, deterministic cycle-anchor/effective-parent relation, uncorrelated subtree/user relation, page-user enrichment, effective ancestor closure, department options/children, and deduplicated representative summary aggregates.
+- `backend/internal/adminusers/service_test.go`: semantic mapping matrix, anchor/non-anchor effective-cycle list/target parity, page normalization, source selection, and enrichment fallbacks.
+- `backend/internal/adminusers/department_test.go`: option/child paging, current-source parent validation, root/orphan/cycle effective-subtree parity, representative scalar/array/duplicate union parity, display paths, and compatibility fixtures.
+- `backend/internal/adminusers/query_plan_test.go`: small/large PostgreSQL fixtures, shared-composer identity/canonical SQL capture across statement roles, projection/materialization bounds, named cycle/subtree/ancestor/descendant recursive-loop assertions, and cycle-walk cardinality gates.
+- `backend/ent/schema/directory_member.go`: current-source/matched-user composite index.
+- `backend/ent/schema/directory_member_department.go`: current-source/member/department composite index.
+- `backend/ent/`: regenerated Ent schema/migration artifacts.
+- `backend/internal/adminsubscription/job.go`: injected current-filter resolver and removal of duplicated directory filtering.
+- `backend/internal/adminsubscription/job_test.go`: resolver delegation, no-resolver error, snapshots, selected/all-mapped compatibility, and 501st-target rejection.
+- `backend/internal/handler/admin_users.go`: thin list/bounded-department HTTP mapping, composition-root resolver, compatibility-batch delegation, and unchanged exempt `ListDepartments` compatibility route.
+- `backend/internal/handler/admin_users_test.go`: list wire contract plus bounded option/child parent, cycle, and representative route contracts; legacy `ListDepartments` remains separately covered.
+- `backend/internal/handler/admin_users_subscription_test.go`: real-HTTP parity across persisted jobs and compatibility batch, including cycle anchor/non-anchor/leaf filters.
+- `backend/internal/handler/router.go`: two new admin-only department routes.
+- `frontend/src/api/adminUsers.ts`: bounded department option/child wrappers; legacy full route remains exported only for compatibility.
+- `frontend/src/types/index.ts`: exact option, option-page, child-page, and summary DTOs.
+- `frontend/src/components/admin/AdminDepartmentPicker.vue`: lazy searchable/paged department filter.
+- `frontend/src/__tests__/admin-department-picker.test.ts`: picker request, paging, stale response, selected deep-link, and clear behavior.
+- `frontend/src/views/admin/AdminUsersView.vue`: lazy child navigation, no full-snapshot mount, and one active responsive row tree.
+- `frontend/src/__tests__/admin-users-view.test.ts`: request/DOM bounds, lazy tree interaction, B effective-subtree drill-in, and unchanged workflow regression.
+- `docs/architecture.md`: current bounded admin-user list, navigation, target-resolution relationships, and active performance-spec source-of-truth entry.
+- `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`: landed administrator collection bounds, mapping/fallback semantics, and explicit inheritance/supersession relationship to the 2026-06-22 Directory Sync contract.
+- `docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md`: live execution ledger.
+
+---
+
+### Task 1: Build One Uncorrelated Department-To-User Predicate
+
+**Files:**
+- Create: `backend/internal/adminusers/service.go`
+- Create: `backend/internal/adminusers/department.go`
+- Create: `backend/internal/adminusers/service_test.go`
+- Create: `backend/internal/adminusers/query_plan_test.go`
+- Maintain: `docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md`
+
+**Interfaces:**
+- Consumes: `directorysync.CurrentSourceID`, `adminuseraccess.ApplyFilter`, Ent user predicates, and current directory tables.
+- Produces: `NewService`, `Filters`, private `resolvedSource`, private `effectiveDepartmentCTEs`, private `effectiveSubtreeCTE`, private `filteredUsersQuery`, and `Targets(ctx, filters, limit)` from the Deep Module Interface.
+
+- [ ] **Step 1: Add the semantic fixture and failing target tests**
+
+Create one current successful full-company snapshot with this exact shape:
+
+```text
+dept-alpha -> dept-alpha-one; sibling dept-beta
+alice: positive matched_user_id, membership dept-alpha-one
+bob: nil matched_user_id, member email bob@example.org, local email Bob@Example.org, membership dept-alpha-one
+carol: memberships dept-alpha-one and dept-beta, legacy primary dept-alpha
+dave: membership dept-beta, legacy primary dept-alpha-one (legacy must not leak)
+erin: no current memberships, legacy primary dept-alpha-one
+frank: unmatched local user
+grace: one member whose positive matched_user_id maps grace and whose normalized email maps a second local user; both users are eligible and IDs deduplicate
+dept-cycle-a (Cycle Alpha) parent dept-cycle-c; dept-cycle-b (Cycle Beta) parent dept-cycle-a; dept-cycle-c (Cycle Gamma) parent dept-cycle-b
+cycle-a-user@example.com: positive matched_user_id and membership dept-cycle-a
+cycle-b-user@example.com: positive matched_user_id and membership dept-cycle-b
+cycle-c-user@example.com: positive matched_user_id and membership dept-cycle-c
+```
+
+Add table-driven `TestTargetsDepartmentMappingMatrix` cases for direct node, ancestor subtree, sibling exclusion, multi-membership, current-membership authority, legacy fallback, positive matched ID, mixed-case normalized email, dual mapping, no filter with unmatched local user, filtered unmatched exclusion, unknown department, no current source, search intersection, access-status intersection, invalid access status, positive limit, and canceled context. Add explicit effective-cycle cases: anchor `dept-cycle-a` returns exact users `{a,b,c}`, non-anchor `dept-cycle-b` returns `{b,c}` and excludes the anchor-only user, and leaf `dept-cycle-c` returns `{c}`. Compare exact `id ASC` target IDs.
+
+Seed two query-plan sizes with the same logical proportions:
+
+```text
+small: 24 users, 22 members, 12 departments, 36 memberships
+large: 2,400 users, 2,200 members, 120 departments, 3,600 memberships
+both: 10% unmatched users, mixed ID/email mappings, multi-membership rows, legacy-only rows, and the exact a/b/c closed cycle within the declared 12/120 department totals
+```
+
+Capture the filtered target SQL and bound arguments for both sizes. Add `assertNamedRecursiveUnionLoopsOnce(plan, cteName)` and require exactly one node with `Subplan Name == "CTE cycle_walk"` plus exactly one with `Subplan Name == "CTE subtree"`; both require `Actual Loops == 1`. Capture the effective prefix and prove it equals the exact `effectiveDepartmentCTEs` return for that statement's builder-assigned source placeholder.
+
+- [ ] **Step 2: Run the focused tests and record RED**
+
+Run:
+
+```bash
+(cd backend && go test ./internal/adminusers -run 'TestTargets|TestTargetPlan' -count=1 -v)
+```
+
+Expected: FAIL because `backend/internal/adminusers` and the shared target predicate do not exist.
+
+- [ ] **Step 3: Implement the uncorrelated relation and target reader**
+
+Normalize `Query`, `DepartmentID`, and `AccessStatus` once. Validate access status before composing SQL, wrap `ErrInvalidAccessStatus`, and retain the current user-facing validation message. Resolve the source once only when a department predicate needs it. Implement `effectiveDepartmentCTEs` and `effectiveSubtreeCTE` exactly as defined in the Deep Module Interface before building any user predicate.
+
+Build the department filter as one selector-qualified `users.id IN (...)` predicate by concatenating the one shared effective prefix, the one effective subtree CTE, and this statement-specific suffix:
+
+```sql
+, eligible_members(id, matched_user_id, email_normalized) AS MATERIALIZED (
+    SELECT member.id, member.matched_user_id, member.email_normalized
+    FROM directory_members AS member
+    WHERE member.source_id = $1
+      AND (
+        EXISTS (
+          SELECT 1
+          FROM directory_member_departments AS membership
+          JOIN subtree
+            ON subtree.external_id = membership.department_external_id
+          WHERE membership.source_id = $1
+            AND membership.directory_member_id = member.id
+        )
+        OR (
+          NOT EXISTS (
+            SELECT 1
+            FROM directory_member_departments AS current_membership
+            WHERE current_membership.source_id = $1
+              AND current_membership.directory_member_id = member.id
+          )
+          AND member.department_external_id IN (SELECT external_id FROM subtree)
+        )
+      )
+  ),
+  eligible_user_ids(user_id) AS MATERIALIZED (
+    SELECT eligible_members.matched_user_id
+    FROM eligible_members
+    WHERE eligible_members.matched_user_id > 0
+    UNION
+    SELECT candidate.id
+    FROM users AS candidate
+    JOIN eligible_members
+      ON eligible_members.email_normalized = LOWER(BTRIM(candidate.email))
+  )
+  SELECT eligible_user_ids.user_id
+  FROM eligible_user_ids
+```
+
+Wrap the complete shared-prefix/subtree/suffix statement in `users.id IN (...)`. Use Ent table/field constants for every interpolated identifier and bind only runtime values. The shared `cycle_walk` uses `UNION ALL` only with its explicit no-repeat path and `N`-row guard; effective `subtree` and user-ID deduplication use `UNION`. No CTE references the outer `users` alias, so neither recursive node is evaluated per candidate user. Any subtree join through a child's stored parent field is forbidden; only the shared effective-parent field may drive it.
+
+When no current source exists, use an always-false user predicate. `Targets` applies the exact normalized search/access/department predicates, orders by `users.id ASC`, requires a positive `limit`, and returns no more than that limit.
+
+- [ ] **Step 4: Prove target semantics and recursive structural bounds GREEN**
+
+Run:
+
+```bash
+(cd backend && gofmt -w internal/adminusers/*.go)
+(cd backend && go test ./internal/adminusers -run 'TestTargets|TestTargetPlan' -count=2 -v)
+(cd backend && go test ./internal/adminuseraccess ./internal/adminusers -count=1)
+git diff --check
+```
+
+Expected: all semantic cases pass twice; A/B/C target IDs are stable at `{a,b,c}` / `{b,c}` / `{c}`; both small and large filtered target plans contain the one shared cycle walk and one effective subtree recursive union with one actual loop each; no test depends on duration, cost, or exact buffers.
+
+- [ ] **Step 5: Complete exact-range Task 1 reviews and checkpoint**
+
+Generate an ignored base-to-working-tree package. Obtain independent SPEC and standards reviews for Task 1; require explicit confirmation that `effectiveDepartmentCTEs` is defined once, `effectiveSubtreeCTE` follows only `effective_parent_external_id`, and non-anchor `b` excludes `a`. Resolve every Critical/Important finding, rerun Step 4, then commit:
+
+```bash
+git add backend/internal/adminusers docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
+git commit -m "perf(admin-users): evaluate department targets in SQL"
+```
+
+After the commit exists, check only completed Task 1 steps and record the ledger in a separate commit:
+
+```bash
+git add docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
+git commit -m "docs(plan): record admin user target task"
+```
+
+---
+
+### Task 2: Return Bounded User Pages And Correct Page-Local Departments
+
+**Files:**
+- Modify: `backend/internal/adminusers/service.go`
+- Modify: `backend/internal/adminusers/department.go`
+- Modify: `backend/internal/adminusers/service_test.go`
+- Modify: `backend/internal/adminusers/query_plan_test.go`
+- Modify: `backend/ent/schema/directory_member.go`
+- Modify: `backend/ent/schema/directory_member_department.go`
+- Regenerate: `backend/ent/`
+- Modify: `backend/internal/handler/admin_users.go`
+- Modify: `backend/internal/handler/admin_users_test.go`
+- Maintain: `docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md`
+
+**Interfaces:**
+- Consumes: Task 1 `effectiveDepartmentCTEs`, `effectiveSubtreeCTE`, `filteredUsersQuery`, `Filters`, and `Targets`.
+- Produces: `List(ctx, ListRequest) (*Page, error)` and thin unchanged `GET /api/v1/admin/users` HTTP mapping.
+
+- [ ] **Step 1: Add failing list, enrichment, HTTP, and plan tests**
+
+Add service/handler tests for default page 1/size 20, maximum size 100, nonpositive normalization, stable `id ASC`, exact total/page predicate parity, empty results, canceled context, and a maximum-integer page returning empty before offset calculation. Require the unchanged HTTP envelope and row fields, including encrypted relay-password ciphertext in the API, derived access/offboarding status, and page-local department display.
+
+Extend the semantic fixture with:
+
+```text
+colliding source: dept-alpha and dept-alpha-one exist under another source with different names/parents
+dangling current membership: first ordered ID dept-aaa-missing, later existing dept-alpha-one
+dangling current primary: primary dept-aaa-missing is present in memberships, later existing dept-alpha-one
+all current memberships dangling plus existing legacy primary: no department is displayed because current rows remain authoritative
+no current memberships plus existing legacy primary: legacy department is displayed
+```
+
+Assert selection order is member ID ascending; within a member, primary-if-current then department external ID and membership row ID. A dangling candidate is skipped only after the candidate department set has been loaded. Apply one chosen member department to both its positive-ID and normalized-email page users, without duplicate assignment.
+
+Add `TestListEffectiveCycleFilterParity` and real-HTTP `TestAdminUsersListEffectiveCycleFilterParity`. For `department_id=dept-cycle-a/b/c`, assert exact `total`, every paged user ID, and `id ASC` concatenation are `{a,b,c}` / `{b,c}` / `{c}`; the `b` page must never include the anchor-only user. For page enrichment, assert effective display paths `Cycle Alpha`, `Cycle Alpha / Cycle Beta`, and `Cycle Alpha / Cycle Beta / Cycle Gamma`, even though the stored anchor parent still points to `dept-cycle-c`.
+
+Capture filtered count and page SQL plus page-enrichment ancestor SQL for both 24-user and 2,400-user fixtures. For each filtered count/page role, run `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and require one named `CTE cycle_walk` and one named `CTE subtree` recursive union, each with `Actual Loops == 1`. For enrichment, require one named `CTE cycle_walk` and one named `CTE ancestors`, each with `Actual Loops == 1`. Prove every role contains the exact `effectiveDepartmentCTEs` return for its own source placeholder; after canonicalizing only that placeholder token, all captured prefixes are byte-identical.
+
+- [ ] **Step 2: Run Task 2 tests and record RED**
+
+Run:
+
+```bash
+(cd backend && go test ./internal/adminusers ./internal/handler -run 'TestList|TestAdminUsersList|TestCountPlan|TestPagePlan' -count=1 -v)
+```
+
+Expected: FAIL because `List`, bounded enrichment, new indexes, and thin handler integration are absent.
+
+- [ ] **Step 3: Implement count/page and candidate-first enrichment**
+
+`List` normalizes page values, resolves the source once, builds one shared filtered query, clones it for count, and returns an empty page before any offset multiplication when `(page-1) >= ceil(total/page_size)`. Otherwise it orders by ID, applies the at-most-100 limit/offset, and requests offboarding facts only for page IDs.
+
+For department enrichment:
+
+1. Load current members matching page positive user IDs or page normalized emails. Select only member ID, matched user ID, normalized email, and legacy primary; order by member ID.
+2. Load current membership rows only for those member IDs. Select row ID, member ID, and department external ID; order by member ID, department external ID, then row ID.
+3. Build each member's bounded candidate IDs. If current memberships exist, put primary first only when it occurs in those rows, then append all ordered current memberships. If none exist, use only the legacy primary.
+4. Compose Task 1 `effectiveDepartmentCTEs`, then load the union of candidate `navigation_departments` plus their effective ancestors. Do not choose a candidate before this existence read.
+5. For each member, choose the first candidate present in the current-source department map. Never use legacy primary when current membership rows exist, even if every current candidate is dangling.
+6. Apply the first chosen department by member ID order to every matching page user, preserving positive-ID and normalized-email mappings with user-ID deduplication.
+
+The page-enrichment statement appends this candidate/ancestor suffix to the one shared effective prefix; it never reads a raw department parent edge:
+
+```sql
+, requested_candidates(external_id) AS MATERIALIZED (
+  SELECT UNNEST($2::text[])
 ),
-supplied_parent(external_id) AS MATERIALIZED (
+ancestors(external_id, effective_parent_external_id) AS MATERIALIZED (
+  SELECT seed.external_id, seed.effective_parent_external_id
+  FROM navigation_departments AS seed
+  JOIN requested_candidates
+    ON requested_candidates.external_id = seed.external_id
+  UNION
+  SELECT parent.external_id, parent.effective_parent_external_id
+  FROM navigation_departments AS parent
+  JOIN ancestors AS child
+    ON child.effective_parent_external_id = parent.external_id
+)
+SELECT outer_department.external_id,
+       outer_department.parent_external_id,
+       outer_department.name,
+       outer_department.path
+FROM navigation_departments AS outer_department
+JOIN ancestors
+  ON ancestors.external_id = outer_department.external_id
+```
+
+Bind the resolved source once through the shared prefix. Use `pq.Array(candidateIDs)` instead of expanding one bind per ID. Build `display_path` from this page-local effective closure only; for cycle `b`/`c`, it must stop at anchor `a` and must not wrap through stored `a -> c`.
+
+Add these Ent indexes and regenerate:
+
+```go
+index.Fields("source_id", "matched_user_id")
+index.Fields("source_id", "directory_member_id", "department_external_id")
+```
+
+Replace handler list filtering/enrichment with `h.users.List`; retain HTTP parsing/row mapping and the existing 400/500 behavior.
+
+- [ ] **Step 4: Prove page and database-work bounds GREEN**
+
+For small and large fixtures, require constant SQL roles for `adminusers.Service.List`: current-source resolution, count, bounded page, page members, page memberships, candidate/ancestor departments, and page offboarding facts. Assert:
+
+```text
+count/page share byte-equivalent normalized filter fragments and arguments
+filtered count/page each have CTE cycle_walk count = 1/loops = 1 and CTE subtree count = 1/loops = 1
+page Limit materializes at most 100 user rows in id ASC order
+member lookup starts from page IDs/emails and projects four fields
+membership lookup starts from page member IDs and projects three fields
+ancestor SQL composes the byte-identical shared effective prefix, has one ancestors recursion/loop, and never reads the colliding source row or removed anchor edge
+candidate/ancestor output is candidates plus ancestors, not all 120 departments
+cycle b list total/page IDs equal {b,c}, exclude a, and equal Task 1 Targets
+adminusers.Service.List has no full-table All for departments, members, or memberships
+this gate does not inspect or change the explicitly exempt AdminUsersHandler.ListDepartments compatibility snapshot
+```
+
+Run:
+
+```bash
+(cd backend && gofmt -w internal/adminusers/*.go internal/handler/admin_users.go internal/handler/admin_users_test.go ent/schema/directory_member.go ent/schema/directory_member_department.go)
+(cd backend && go generate ./ent)
+git add backend/ent
+(cd backend && go generate ./ent)
+git diff --exit-code -- backend/ent
+(cd backend && go test ./internal/adminusers ./internal/handler -run 'TestList|TestAdminUsersList|TestCountPlan|TestPagePlan' -count=2 -v)
+(cd backend && go test ./internal/adminusers ./internal/handler -count=1)
+git diff --check
+```
+
+Expected: semantic and HTTP tests pass twice, generated Ent drift is empty, both fixture scales prove one shared cycle walk plus one effective subtree recursion per filtered count/page statement, enrichment follows one effective ancestor closure, A/B/C pages match Targets exactly, and colliding/dangling fixtures select only valid current-source departments.
+
+- [ ] **Step 5: Complete exact-range Task 2 reviews and checkpoint**
+
+Obtain independent Task 2 SPEC and standards reviews. Require explicit confirmation that filtered count/page compose Task 1's exact cycle/subtree relation, page enrichment composes the same effective prefix/ancestors, and B list/enrichment excludes the removed A edge. Resolve every Critical/Important finding, rerun Step 4, then commit implementation and ledger separately:
+
+```bash
+git add backend/internal/adminusers backend/internal/handler/admin_users.go backend/internal/handler/admin_users_test.go backend/ent docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
+git commit -m "perf(admin-users): page directory-enriched users"
+git add docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
+git commit -m "docs(plan): record admin user page task"
+```
+
+---
+
+### Task 3: Add Bounded Department Options And Lazy Child Reads
+
+**Files:**
+- Modify: `backend/internal/adminusers/department.go`
+- Create: `backend/internal/adminusers/department_test.go`
+- Modify: `backend/internal/adminusers/query_plan_test.go`
+- Modify: `backend/internal/handler/admin_users.go`
+- Modify: `backend/internal/handler/admin_users_test.go`
+- Modify: `backend/internal/handler/router.go`
+- Maintain: `docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md`
+
+**Interfaces:**
+- Consumes: Task 1 `effectiveDepartmentCTEs`/`effectiveSubtreeCTE` and Task 2 source resolution/current membership/ancestor helpers.
+- Produces: `DepartmentOptions`, `DepartmentChildren`, and the two HTTP contracts above.
+
+- [ ] **Step 1: Add failing option, child-page, summary, and scale tests**
+
+At service and real HTTP seams, cover:
+
+```text
+options default page 1/20; size 0 -> 20; size 101 -> 100
+options normalized-name/external-ID order, q filtering, second page, overflow page
+selected_id returned separately even when it is outside q/page; unknown selected_id -> null
+children root default page 1/25; size 101 -> 100; second root page; overflow page
+supplied current-source parent returns immediate effective children only; unknown parent -> empty 200
+current-source orphan dept-orphan names missing parent dept-missing; a non-current source owns dept-missing
+dept-orphan appears once in roots; requesting dept-missing returns empty at both service and HTTP seams
+closed cycle dept-cycle-a (Cycle Alpha) <- dept-cycle-b (Cycle Beta) <- dept-cycle-c (Cycle Gamma) <- dept-cycle-a chooses dept-cycle-a by normalized name/external ID
+root contains dept-cycle-a once; expanding a returns b, b returns c, and c does not return a
+the complete root/expand walk reaches every cycle row once with no duplicate external ID and is stable across insertion order
+the UI-visible summary row for b has effective subtree {b,c}: direct/subtree members 1/2 and matched users 1/2; it excludes a
+service and HTTP b summary counts equal the b-filtered List IDs and Task 1 Targets IDs exactly
+child/direct/subtree/matched counts match the legacy summary fixture over the effective navigation edges
+representatives: department scalar+array, leader scalar+array, in-array duplicate, department-only/leader-only, duplicate-in-both, matched/unmatched
+primary representative union returns total 5/matched 3 and scalar department returns 1/0 at service and HTTP seams; non-current collisions do not change either
+display paths/depth use the current source despite colliding external IDs elsewhere
+```
+
+Use these exact JSON shapes; repeat colliding external IDs and leader metadata under a non-current source with opposite match state:
+
+```text
+dept-representative-main representative_external_ids JSON array: ["rep-department-matched", "rep-department-unmatched", "rep-duplicate", "rep-duplicate"]
+rep-department-matched: department-only; current member matched_user_id > 0
+rep-department-unmatched: department-only; current member matched_user_id nil
+rep-leader-matched leader_department_ids JSON scalar: "dept-representative-main"; absent from department metadata; matched_user_id > 0
+rep-leader-unmatched leader_department_ids JSON array: ["dept-representative-main", "dept-representative-main"]; absent from department metadata; matched_user_id nil
+rep-duplicate leader_department_ids JSON array: ["dept-representative-main"]; also repeated in the department array; matched_user_id > 0; counted once
+dept-representative-scalar representative_external_ids JSON scalar: "rep-scalar-unmatched"
+rep-scalar-unmatched: current member matched_user_id nil, so scalar department total/matched = 1/0
+```
+
+Reuse Task 1's exact three cycle rows inside each 12/120-department plan fixture; make `dept-orphan -> dept-missing` one of the already counted current-source rows and place `dept-missing` only in a separate non-current source. For both fixture scales, execute the diagnostic projection through `effectiveDepartmentCTEs` and assert `source_rows = N`, `cycle_walk_rows <= N*N`, `max_cycle_walk_path <= N`, `cycle_anchor_rows = 1`, anchor ID `dept-cycle-a`, and the same anchor after reverse insertion order. For the 2,400-user/120-department fixture, require option/child slices to stay at their maximum, query role count to stay constant, and no active bounded query to return full entities. Require every option/child/summary statement to contain the exact shared-composer return for its source placeholder and canonicalize only that placeholder before cross-role byte comparison. In JSON plans, require each role's named `CTE cycle_walk` to have `Actual Loops == 1`; option enrichment's `CTE ancestors` and summary's multi-seed `CTE descendants` each occur once with one loop. Top-level option page, child page, and final summary report at most 100 actual rows; a leaf-parent descendant relation stays below all 120 departments.
+
+Name the focused service cases `TestDepartmentChildrenRequiresCurrentSourceParent`, `TestDepartmentChildrenClosedCycleNavigation`, `TestDepartmentChildrenEffectiveSubtreeParity`, and `TestDepartmentChildrenRepresentativeJSONShapes`; name their real-HTTP counterparts with the `TestAdminUsersDepartmentChildren` prefix so Step 2/5 executes every seam. Reuse `assertNamedRecursiveUnionLoopsOnce` for `cycle_walk`, `ancestors`, and `descendants`.
+
+- [ ] **Step 2: Run Task 3 tests and record RED**
+
+Run:
+
+```bash
+(cd backend && go test ./internal/adminusers ./internal/handler -run 'TestDepartmentOptions|TestDepartmentChildren|TestAdminUsersDepartmentOptions|TestAdminUsersDepartmentChildren|TestDepartmentReadPlan' -count=1 -v)
+```
+
+Expected: FAIL because the bounded department service methods and routes do not exist.
+
+- [ ] **Step 3: Implement the lightweight selector page**
+
+`DepartmentOptions` resolves one source, composes Task 1 `effectiveDepartmentCTEs`, normalizes page values, and applies `q` to trimmed department name or external ID. It counts and pages by `LOWER(BTRIM(name)) ASC, external_id ASC`, selects only external ID/name/parent ID, and loads effective ancestors for at most 100 option rows plus the optional exact `selected_id` row. Closed-cycle labels therefore agree with List enrichment and lazy navigation.
+
+The selected exact lookup is source-scoped and independent from the option query. Build option display paths from the bounded ancestor closure. A page beyond total returns empty before offset calculation; current-source absence returns an empty page and `Selected == nil`.
+
+- [ ] **Step 4: Implement child-at-a-time summaries with SQL aggregates**
+
+`DepartmentChildren` trims the parent request and binds SQL `$2` as nullable text: omitted/blank becomes `NULL` for a root request; a nonblank value is a supplied parent. Candidate count and page statements call Task 1 `effectiveDepartmentCTEs` and append only this child-specific suffix:
+
+```sql
+, supplied_parent(external_id) AS MATERIALIZED (
   SELECT parent.external_id
   FROM source_departments AS parent
   WHERE $2::text IS NOT NULL
@@ -738,9 +770,9 @@ ORDER BY LOWER(BTRIM(candidate_departments.name)), candidate_departments.externa
 LIMIT $3
 ```
 
-Use the same `candidate_departments` relation for total and page roles; apply the existing overflow-before-offset rule around it. The resolved source is present only in `source_departments`, so a same-ID parent from another source cannot validate `$2`. `navigation_departments` converts current-source orphans and one ordered row per closed cycle to effective roots. Keep the stored `parent_external_id` in `DepartmentSummary`, but use only `effective_parent_external_id` for root/child selection, child counts, ancestor depth/display path, and descendant traversal. This removes the anchor's back edge and makes the effective relation a forest without changing Directory Sync apply/schema contracts.
+Use the same `candidate_departments` relation for total and page roles; apply the existing overflow-before-offset rule around it. The shared prefix's `source_departments` is the only parent existence source, so a same-ID parent elsewhere cannot validate `$2`. Keep stored `parent_external_id` in `DepartmentSummary`, but use only shared `effective_parent_external_id` for root/child selection, child counts, ancestor depth/display path, and descendant traversal.
 
-In `query_plan_test.go`, replace only the final candidate projection with this diagnostic projection while reusing the byte-identical production CTE prefix through `cycle_anchors`:
+In `query_plan_test.go`, replace only the final statement-specific projection while calling the same Task 1 composer, then append this diagnostic projection:
 
 ```sql
 SELECT source_cardinality.row_count AS source_rows,
@@ -755,7 +787,7 @@ FROM source_cardinality
 
 Compare `cycle_anchor_rows` with independently seeded expected components, assert the exact anchor IDs from a separate `SELECT external_id FROM cycle_anchors ORDER BY external_id`, and run the same diagnostics after reverse-order fixture insertion. These are structural correctness gates, not elapsed-time assertions.
 
-After the at-most-100 candidate page is known, bind its external IDs as one array and build one multi-seed recursive descendant relation `(root_external_id, external_id)` over the exact prefix above through `navigation_departments`; omit only the candidate-statement `supplied_parent` and `candidate_departments` CTEs. Append the following CTEs in that same `WITH RECURSIVE` statement. The summary core is uncorrelated and source scoped:
+After the at-most-100 candidate page is known, bind its external IDs as one array, call `effectiveDepartmentCTEs`, and append the following multi-seed effective descendant relation. The summary core is uncorrelated and source scoped:
 
 ```sql
 , requested_roots(root_external_id) AS MATERIALIZED (
@@ -917,11 +949,11 @@ Run:
 git diff --check
 ```
 
-Expected: exact bounds and summaries pass twice; missing/colliding supplied parents return empty; each closed cycle has one stable root anchor and a duplicate-free expansion; representative union reports exact department-only/leader-only/deduplicated matched totals; no active bounded route materializes the full snapshot; source collisions cannot alter parents, representatives, or display paths; legacy `/departments` tests still pass unchanged.
+Expected: exact bounds and summaries pass twice; every department statement contains its exact Task 1 composer return and canonical shared prefix; missing/colliding supplied parents return empty; each closed cycle has one stable root anchor and duplicate-free expansion; B summary is exactly `{b,c}` and equals List/Targets; representative scalar/array fixtures report exact 5/3 and 1/0 totals with all duplicates removed; no active bounded route materializes the full snapshot; source collisions cannot alter parents, representatives, or display paths; legacy `/departments` tests still pass unchanged.
 
 - [ ] **Step 6: Complete exact-range Task 3 reviews and checkpoint**
 
-Obtain independent Task 3 SPEC and standards reviews. Require the reviewers to inspect the exact supplied-parent source predicate, cycle-walk cardinality/anchor/effective-edge SQL, representative metadata `UNION`, service plus HTTP fixtures, and `ListDepartments` compatibility exemption. Resolve every Critical/Important finding, rerun Step 5, then commit implementation and ledger separately:
+Obtain independent Task 3 SPEC and standards reviews. Require reviewers to confirm Task 3 calls rather than copies `effectiveDepartmentCTEs`, B summary scope equals B List/Targets, supplied-parent validation stays source scoped, representative scalar/array branches and duplicate removal are exercised at service/HTTP seams, and `ListDepartments` remains the only exempt snapshot. Resolve every Critical/Important finding, rerun Step 5, then commit implementation and ledger separately:
 
 ```bash
 git add backend/internal/adminusers backend/internal/handler/admin_users.go backend/internal/handler/admin_users_test.go backend/internal/handler/router.go docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
@@ -942,7 +974,7 @@ git commit -m "docs(plan): record admin department read task"
 - Maintain: `docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md`
 
 **Interfaces:**
-- Consumes: Task 1 `adminusers.Service.Targets` and `Filters`.
+- Consumes: Task 1 `adminusers.Service.Targets`, `Filters`, and its shared effective-subtree semantics.
 - Produces: the `adminsubscription.CurrentFilterTargetResolver` boundary and exact persisted-job/compatibility-batch target parity.
 
 - [ ] **Step 1: Add failing resolver and two-route parity tests**
@@ -965,6 +997,9 @@ positive matched_user_id
 mixed-case normalized email
 one member with both mappings
 multi-membership and ancestor subtree
+cycle anchor dept-cycle-a -> exact users {a,b,c}
+cycle non-anchor dept-cycle-b -> exact users {b,c}, never anchor-only a
+cycle leaf dept-cycle-c -> exact user {c}
 current membership overriding a conflicting legacy primary
 legacy primary when no current memberships exist
 search plus department plus access status
@@ -973,6 +1008,8 @@ unmatched user with and without a department filter
 exactly 500 targets
 501 targets rejected with 422 and zero relay calls/job rows
 ```
+
+Name the cycle integration case `TestAdminUsersCurrentFilterEffectiveCycleParity` so the focused Step 2/4 regex necessarily executes it.
 
 - [ ] **Step 2: Run Task 4 tests and record RED**
 
@@ -1029,11 +1066,11 @@ Run:
 git diff --check
 ```
 
-Expected: both current-filter routes share exact normalized target IDs for the complete matrix and call `adminusers.Service.Targets`; 501 targets are rejected before mutation/persistence; the `adminsubscription.Service.StartJob` `ScopeCurrentFilter` branch and `AdminUsersHandler.subscriptionTargetsForScope` `current_filter` branch contain no second directory snapshot/filter implementation. This assertion explicitly excludes the unchanged `AdminUsersHandler.ListDepartments` compatibility snapshot.
+Expected: both current-filter routes share exact normalized target IDs for the complete matrix and call `adminusers.Service.Targets`; for cycle B, paged List IDs, direct Targets, persisted snapshots, and compatibility-batch relay IDs are exactly `{b,c}` and never include A; 501 targets are rejected before mutation/persistence; the `adminsubscription.Service.StartJob` `ScopeCurrentFilter` branch and `AdminUsersHandler.subscriptionTargetsForScope` `current_filter` branch contain no second directory snapshot/filter implementation. This assertion explicitly excludes the unchanged `AdminUsersHandler.ListDepartments` compatibility snapshot.
 
 - [ ] **Step 5: Complete exact-range Task 4 reviews and checkpoint**
 
-Obtain independent Task 4 SPEC and standards reviews, resolve every Critical/Important finding, rerun Step 4, then commit implementation and ledger separately:
+Obtain independent Task 4 SPEC and standards reviews. Require reviewers to trace the non-anchor B filter through List -> `Targets` -> persisted resolver and compatibility batch, confirming exact `{b,c}` scope with no raw parent recursion outside `adminusers`. Resolve every Critical/Important finding, rerun Step 4, then commit implementation and ledger separately:
 
 ```bash
 git add backend/internal/adminsubscription/job.go backend/internal/adminsubscription/job_test.go backend/internal/handler/admin_users.go backend/internal/handler/admin_users_subscription_test.go docs/superpowers/plans/2026-07-15-admin-users-sql-department-filtering.md
@@ -1073,6 +1110,7 @@ mount or switch to ?view=departments requests root children page 1/25 only
 expanding one parent requests only that parent's immediate children page 1/25
 collapse/re-expand reuses loaded children; load-more requests only the next page and appends by external ID
 opening a department switches to user view and applies its external ID without a full tree request
+opening cycle non-anchor b from its UI summary requests the user list with department_id=dept-cycle-b and renders only mocked b/c rows, never a
 unknown/empty child pages render stable empty states
 ```
 
@@ -1175,7 +1213,7 @@ Run:
 git diff --check
 ```
 
-Expected: focused/full Vitest and build pass; default mount has zero complete-snapshot requests; option/child collections honor their pages; one viewport mounts one row per user; all retained workflows pass.
+Expected: focused/full Vitest and build pass; default mount has zero complete-snapshot requests; option/child collections honor their pages; B drill-in preserves the effective `{b,c}` scope; one viewport mounts one row per user; all retained workflows pass.
 
 - [ ] **Step 7: Complete exact-range Task 5 reviews and checkpoint**
 
@@ -1207,7 +1245,8 @@ git commit -m "docs(plan): record admin users frontend task"
 In `docs/architecture.md`, insert `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md` as the newest entry in `## Source-of-Truth Order` -> `Topic-specific current specs`. Update the `/admin/users` architecture paragraph and module table with:
 
 ```text
-adminusers owns uncorrelated SQL subtree-to-user eligibility
+adminusers owns one source-scoped effective-department SQL prefix and uncorrelated effective-subtree-to-user eligibility
+Targets, count/page, enrichment, options, children, and summaries compose from that prefix; stored cycle edges are response facts only
 list count/page and current-filter targets share one predicate
 page enrichment is capped by 100 users and candidate/ancestor closure
 department options are 20 default/100 maximum
@@ -1216,7 +1255,7 @@ the compatibility full department route has no current frontend caller
 persisted and compatibility current-filter mutations use one target reader
 the frontend loads department data on demand and mounts one responsive row tree
 missing supplied parents are validated only in the resolved current source
-closed cycles expose one deterministic effective root and expand without duplicates
+closed cycles expose one deterministic effective root; anchor/non-anchor filtering matches navigation and summaries without duplicates
 representative totals union and deduplicate department and member-leader metadata in the current source
 ```
 
@@ -1225,10 +1264,10 @@ In `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design
 ```text
 The 2026-06-22 Directory Sync design remains authoritative for current-snapshot resolution from the latest successful apply, current membership authority with legacy fallback only when no membership rows exist, multi-department/subtree member deduplication, unmatched-user behavior, display-path business semantics, the union of department representative_external_ids with member leader_department_ids, matched-representative semantics, and the requirement that visible/current-filter mutation scopes agree.
 
-The 2026-07-14 performance design extends or supersedes only the administrator read transport/loading/materialization clauses: positive matched_user_id and normalized-email user mapping are both preserved and deduplicated; list/enrichment and current-filter targets become bounded SQL/page-local reads; active frontend selection/navigation uses the 20/100 option route and 25/100 immediate-child route; the complete /departments route remains response-compatible but has no active frontend caller; supplied parents are current-source validated; closed cycles use one deterministic read-side navigation anchor. Directory Sync apply, storage, offboarding, and source-authoring contracts do not change.
+The 2026-07-14 performance design extends or supersedes only the administrator read transport/loading/materialization clauses: positive matched_user_id and normalized-email user mapping are both preserved and deduplicated; list/enrichment and current-filter targets become bounded SQL/page-local reads; active frontend selection/navigation uses the 20/100 option route and 25/100 immediate-child route; the complete /departments route remains response-compatible but has no active frontend caller; supplied parents are current-source validated; one shared read-side effective relation removes the deterministic cycle-anchor edge for filtering, enrichment, options, navigation, summaries, and current-filter mutations alike. Directory Sync apply, storage, stored parent facts, offboarding, and source-authoring contracts do not change.
 ```
 
-Also expand `### Repository, PR, member detail, and administrator reads` with the landed route names, page bounds, source isolation, current-membership authority, dual user mapping, dangling-candidate behavior, representative union, deterministic cycle navigation, and three-way list/job/batch predicate parity. Do not modify the 2026-06-22 Directory Sync design or other historical admin-user specs.
+Also expand `### Repository, PR, member detail, and administrator reads` with the landed route names, page bounds, source isolation, current-membership authority, dual user mapping, dangling-candidate behavior, representative scalar/array union, one shared effective-department relation, deterministic cycle navigation/filtering, and three-way list/job/batch predicate parity. Do not modify the 2026-06-22 Directory Sync design or other historical admin-user specs.
 
 - [ ] **Step 2: Run generation drift and full repository verification**
 
@@ -1243,6 +1282,8 @@ git diff --exit-code -- backend/ent
 (cd frontend && npm test)
 (cd frontend && npm run build)
 bash deploy/test/release-frontend-embed-test.sh
+test "$(rg -c 'cycle_walk\(seed_external_id' backend/internal/adminusers/department.go)" -eq 1
+! rg -n 'child\.parent_external_id\s*=\s*parent\.external_id' backend/internal/adminusers
 git diff --check
 ```
 
@@ -1278,9 +1319,11 @@ Can adminusers.List, DepartmentOptions, DepartmentChildren, persisted-job curren
 Is the unchanged AdminUsersHandler.ListDepartments compatibility snapshot explicitly exempt while every active frontend view/component has no import or call to listAdminUserDepartments?
 Does a supplied parent require an exact row in the resolved current source, leaving a current-source orphan at root and returning empty for a missing parent that collides only in another source?
 Does each closed cycle expose the normalized-name/external-ID-first anchor as one root, use one bounded cycle walk, and expand every component row once without returning the anchor through its stored parent?
-Does the representative relation source-scope and deduplicate department-only, leader-only, and duplicate-in-both IDs before matched/unmatched counts at service and HTTP seams?
+Is effectiveDepartmentCTEs defined exactly once in adminusers and composed by Targets, count, page, enrichment, options, children, and summaries with no independent raw-parent subtree recursion?
+For cycle B, are the UI summary subtree, paged List IDs, Targets, persisted-job snapshot, and compatibility-batch relay IDs exactly {b,c}, excluding anchor-only A?
+Do filtered target/count/page plans each contain one CTE cycle_walk and one effective CTE subtree Recursive Union with Actual Loops = 1 at both fixture scales?
+Does the representative relation exercise department scalar+array and member leader scalar+array JSON, deduplicate repeated array values and duplicate-in-both IDs, and preserve matched/unmatched counts at service and HTTP seams?
 Do count, page, Targets, persisted jobs, and compatibility batch share exact filter semantics?
-Does each count/page/target recursive node have Actual Loops = 1 across fixture scales?
 Do current memberships override legacy primary only when rows exist?
 Are dangling current candidates skipped only after bounded existence loading?
 Can positive matched ID and normalized email each map users without duplicates?
@@ -1362,18 +1405,19 @@ Expected: clean `perf/admin-users-134`; open draft PR against `docs/performance-
 
 ## Self-Review Record
 
-- Spec coverage: Tasks 1-2 implement recursive SQL filtering, exact count/page parity, stable pagination, multi-membership, dual mapping, legacy fallback, and bounded enrichment; Task 5 implements the single responsive row tree.
+- Spec coverage: Task 1 defines the shared effective forest and recursive SQL filtering; Tasks 2-3 reuse it for exact count/page/enrichment/navigation/summary parity alongside stable pagination, multi-membership, dual mapping, and legacy fallback; Task 5 implements the single responsive row tree.
 - Complete-page coverage: Tasks 3 and 5 remove the active page's unconditional complete department snapshot, add a 20/100 searchable selector, and add 25/100 child-at-a-time navigation while retaining the old route only for compatibility.
 - Mutation coverage: Task 4 injects `adminusers.Targets` into persisted jobs and directly reuses it for the legacy batch route; the full matrix and the 501st target exercise both HTTP paths.
-- Recursive-work coverage: Task 1 makes eligible local IDs an uncorrelated materialized relation; Tasks 1-2 require `Recursive Union Actual Loops == 1` for Targets, count, and page across small/large fixtures.
+- Recursive-work coverage: Task 1 defines the only cycle walk and effective subtree composers; filtered Targets/count/page require one named cycle walk plus one named subtree `Recursive Union`, each with `Actual Loops == 1`, while enrichment/options/summaries name and bound their additional ancestor/descendant recursion.
 - Source-isolation coverage: Tasks 2-3 bind the same source in recursive and outer department queries, require supplied-parent existence inside that source, and include a current-source orphan whose missing parent external ID collides in a non-current source.
-- Cycle-navigation coverage: Task 3 defines an exact read-side cycle walk bounded by `N` path entries and `N*N` emitted rows, chooses one deterministic anchor per component, applies one effective-parent relation to root/child/count/path/descendant work, and verifies root expansion without duplicates at service and HTTP seams.
-- Representative coverage: Task 3 unions page-department `representative_external_ids` with source-scoped member `leader_department_ids`, deduplicates both declarations, and tests department-only, leader-only, duplicate, matched, unmatched, and non-current collision cases at service and HTTP seams.
+- Cycle-navigation/filter coverage: Task 1 defines the exact read-side cycle walk bounded by `N` path entries and `N*N` rows and the shared effective forest; Tasks 1-5 prove A `{a,b,c}`, B `{b,c}`, C `{c}` across Targets, List count/page, enrichment, UI summaries/drill-in, persisted jobs, and compatibility batch without following the removed edge.
+- Representative coverage: Task 3 exercises scalar and array JSON on both metadata fields, repeated array values, department-only, leader-only, duplicate-in-both, matched, unmatched, and non-current collisions at service and HTTP seams.
 - Candidate-fallback coverage: Task 2 loads bounded candidate departments before primary/ordered-existing selection, skips dangling memberships, and allows legacy fallback only when no current membership rows exist.
 - Collection consistency: user 20/100, option 20/100, child 25/100, mutation 500/501-probe, and DOM one-per-user limits are declared in interfaces, HTTP payloads, tests, and frontend behavior.
 - Compatibility-boundary consistency: no-full-snapshot gates name only `adminusers.List`, the two new bounded readers, and both `current_filter` mutation paths; `AdminUsersHandler.ListDepartments` remains intentionally exempt while the frontend import/call scan proves it is inactive.
 - Documentation consistency: Task 6 adds the performance spec to architecture source-of-truth order and records exactly which Directory Sync business/count contracts remain authoritative versus which administrator read/loading clauses the newer spec extends or supersedes.
-- Type consistency: `adminusers.Filters`, list/department request/page DTOs, `adminsubscription.CurrentFilter`, handler adapters, TypeScript DTOs, and API parameter names match exactly across tasks.
+- SQL ownership consistency: the complete `source_departments` -> `navigation_departments` prefix appears only inside `effectiveDepartmentCTEs`; statement-specific builders append named CTEs and tests compare their composer return/canonical prefix instead of copying the cycle contract.
+- Type consistency: `adminusers.Filters`, list/department request/page DTOs, private `effectiveDepartmentCTEs`/`effectiveSubtreeCTE`, `adminsubscription.CurrentFilter`, handler adapters, TypeScript DTOs, and API parameter names match exactly across tasks.
 - Package consistency: `adminsubscription` owns its narrow resolver interface; only the handler composition root imports both modules, so no import cycle is introduced.
 - Plan-detail consistency: every implementation step names exact paths, signatures, query shapes, commands, expected failures, and pass criteria; every helper and behavior is fully defined.
 - Delivery consistency: the plan keeps all verification and CI items open until run, requires three explicit CI heads, and reports the final-head result externally without falsely completing it in an earlier ledger commit.
