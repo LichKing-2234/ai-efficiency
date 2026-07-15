@@ -173,6 +173,24 @@ func TestApprovalChainsReplaceAndValidateCurrentFacts(t *testing.T) {
 	}
 }
 
+func TestApprovalChainOptionsRequireExplicitSubscriptionType(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerRow := createQuotaResetRelayProvider(t, ctx, client)
+	provider := &fakeApprovalChainProvider{groups: []relay.Group{
+		{ID: 42, Name: "Group Alpha", Platform: "openai", SubscriptionType: "subscription"},
+		{ID: 43, Name: "Unknown Group", Platform: "openai"},
+	}}
+
+	options, err := NewService(client, fakeProviderResolver(providerRow.ID, provider), nil, nil).approvalChainGroupOptions(ctx)
+	if err != nil {
+		t.Fatalf("approvalChainGroupOptions() error = %v", err)
+	}
+	if len(options) != 1 || options[0].GroupID != "42" {
+		t.Fatalf("options = %#v, want explicit subscription group only", options)
+	}
+}
+
 type fakeApprovalChainProvider struct {
 	fakeQuotaResetProvider
 	groups []relay.Group

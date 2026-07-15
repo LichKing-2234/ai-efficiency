@@ -41,6 +41,7 @@ func (s *Service) createWorkflowRequest(
 		SetGroupName(subscriptionGroupName(subscription)).
 		SetGroupPlatform(subscriptionGroupPlatform(subscription)).
 		SetReason(input.Reason).
+		SetStatus(quotaresetrequest.StatusWorkflowPending).
 		SetWorkflowVersion(workflowVersionV2).
 		SetWorkflow(rawWorkflow).
 		SetWorkflowRevision(0).
@@ -87,12 +88,15 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 	if comment == "" {
 		return nil, ErrDecisionRequired
 	}
-	if request.Status != quotaresetrequest.StatusPending {
+	if request.Status != quotaresetrequest.StatusWorkflowPending {
 		return nil, ErrInvalidStatus
 	}
 	workflow, err := DecodeWorkflow(request.Workflow)
 	if err != nil {
 		return nil, err
+	}
+	if workflow.CurrentStep < 0 || workflow.CurrentStep >= len(workflow.Steps) {
+		return nil, ErrInvalidStatus
 	}
 	actor, err := s.client.User.Get(ctx, input.ActorUserID)
 	if err != nil {
@@ -130,7 +134,7 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 	}
 	update := tx.QuotaResetRequest.UpdateOneID(request.ID).
 		Where(
-			quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending),
+			quotaresetrequest.StatusEQ(quotaresetrequest.StatusWorkflowPending),
 			quotaresetrequest.WorkflowRevisionEQ(request.WorkflowRevision),
 		).
 		SetWorkflow(rawWorkflow).
@@ -179,13 +183,23 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 		}
 	}
 	for _, satisfiedStep := range transition.SatisfiedSteps {
+		sourceStep := workflow.Steps[satisfiedStep].SatisfiedByStep
+		if sourceStep == nil || *sourceStep < 0 || *sourceStep >= satisfiedStep {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("%w: satisfied step %d has no source", ErrInvalidWorkflow, satisfiedStep)
+		}
+		sourceDecision := workflow.Steps[*sourceStep].Decision
+		if sourceDecision == nil || !sourceDecision.Approve {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("%w: satisfied step %d source has no approval", ErrInvalidWorkflow, satisfiedStep)
+		}
 		metadata := map[string]any{
 			"step_index":        satisfiedStep,
-			"satisfied_by_step": stepIndex,
-			"actor_user_id":     input.ActorUserID,
+			"satisfied_by_step": *sourceStep,
+			"actor_user_id":     sourceDecision.ActorUserID,
 			"workflow_revision": request.WorkflowRevision + 1,
 		}
-		if err := writeWorkflowEventTx(ctx, tx, request.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeStepSatisfied, metadata, ""); err != nil {
+		if err := writeWorkflowEventTx(ctx, tx, request.ID, &sourceDecision.ActorUserID, quotaresetrequestevent.EventTypeStepSatisfied, metadata, ""); err != nil {
 			_ = tx.Rollback()
 			return nil, err
 		}

@@ -689,7 +689,7 @@ var (
 		{Name: "workflow_version", Type: field.TypeInt, Default: 1},
 		{Name: "workflow", Type: field.TypeJSON, Nullable: true},
 		{Name: "workflow_revision", Type: field.TypeInt, Default: 0},
-		{Name: "status", Type: field.TypeEnum, Enums: []string{"pending", "approved_resetting", "approved_reset_succeeded", "approved_reset_failed", "rejected", "cancelled"}, Default: "pending"},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"pending", "workflow_pending", "approved_resetting", "approved_reset_succeeded", "approved_reset_failed", "rejected", "cancelled"}, Default: "pending"},
 		{Name: "resolved_approver_user_ids", Type: field.TypeJSON, Nullable: true},
 		{Name: "matched_department_paths", Type: field.TypeJSON, Nullable: true},
 		{Name: "approved_by_user_id", Type: field.TypeInt, Nullable: true},
@@ -729,6 +729,14 @@ var (
 				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status IN ('pending', 'approved_resetting', 'approved_reset_failed')",
+				},
+			},
+			{
+				Name:    "quotaresetrequest_workflow_active_unique",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status IN ('pending', 'workflow_pending', 'approved_resetting', 'approved_reset_failed')",
 				},
 			},
 			{

@@ -28,6 +28,10 @@ const message = ref('')
 let searchSequence = 0
 
 const selectedGroup = computed(() => groups.value.find((group) => groupKey(group.provider_id, group.group_id) === selectedGroupKey.value))
+const selectedChain = computed(() => {
+  const group = selectedGroup.value
+  return group ? chains.value.find((chain) => chain.provider_id === group.provider_id && chain.group_id === group.group_id) : undefined
+})
 
 onMounted(() => void loadChains())
 
@@ -159,7 +163,7 @@ function saveDraft() {
     provider_id: group.provider_id,
     group_id: group.group_id,
     group_name: group.group_name,
-    enabled: true,
+    enabled: selectedChain.value?.enabled ?? true,
     departments: [...draftDepartments.value],
   }
   const remaining = chains.value.filter((chain) => chain.provider_id !== group.provider_id || chain.group_id !== group.group_id)

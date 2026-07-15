@@ -133,6 +133,7 @@ const DefaultStatus = StatusPending
 // Status values.
 const (
 	StatusPending                Status = "pending"
+	StatusWorkflowPending        Status = "workflow_pending"
 	StatusApprovedResetting      Status = "approved_resetting"
 	StatusApprovedResetSucceeded Status = "approved_reset_succeeded"
 	StatusApprovedResetFailed    Status = "approved_reset_failed"
@@ -147,7 +148,7 @@ func (s Status) String() string {
 // StatusValidator is a validator for the "status" field enum values. It is called by the builders before save.
 func StatusValidator(s Status) error {
 	switch s {
-	case StatusPending, StatusApprovedResetting, StatusApprovedResetSucceeded, StatusApprovedResetFailed, StatusRejected, StatusCancelled:
+	case StatusPending, StatusWorkflowPending, StatusApprovedResetting, StatusApprovedResetSucceeded, StatusApprovedResetFailed, StatusRejected, StatusCancelled:
 		return nil
 	default:
 		return fmt.Errorf("quotaresetrequest: invalid enum value for status field: %q", s)

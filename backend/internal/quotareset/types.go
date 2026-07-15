@@ -72,7 +72,8 @@ type NotificationSettings struct {
 }
 
 type ApproverConfigListResponse struct {
-	Items []ApproverConfig `json:"items"`
+	CurrentDirectorySourceID *int             `json:"current_directory_source_id,omitempty"`
+	Items                    []ApproverConfig `json:"items"`
 }
 
 type ApproverCandidateListResponse struct {

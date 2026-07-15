@@ -416,6 +416,10 @@ func quotaResetEntResponse(req *ent.QuotaResetRequest) quotaResetRequestResponse
 	if req == nil {
 		return quotaResetRequestResponse{}
 	}
+	status := req.Status.String()
+	if req.WorkflowVersion == 2 && status == "workflow_pending" {
+		status = "pending"
+	}
 	return quotaResetRequestResponse{
 		ID:                      req.ID,
 		RequesterUserID:         req.RequesterUserID,
@@ -424,7 +428,7 @@ func quotaResetEntResponse(req *ent.QuotaResetRequest) quotaResetRequestResponse
 		GroupName:               req.GroupName,
 		GroupPlatform:           req.GroupPlatform,
 		Reason:                  req.Reason,
-		Status:                  req.Status.String(),
+		Status:                  status,
 		ResolvedApproverUserIDs: req.ResolvedApproverUserIds,
 		ApprovedByUserID:        req.ApprovedByUserID,
 		RejectedByUserID:        req.RejectedByUserID,

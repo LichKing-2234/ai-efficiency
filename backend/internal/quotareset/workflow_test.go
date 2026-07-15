@@ -81,6 +81,24 @@ func TestWorkflowRejectIsTerminal(t *testing.T) {
 	}
 }
 
+func TestWorkflowTerminalStateCannotBeDecidedAgain(t *testing.T) {
+	workflow := workflowFixture()
+	workflow.CurrentStep = len(workflow.Steps)
+	for index := range workflow.Steps {
+		workflow.Steps[index].Status = WorkflowStepApproved
+		workflow.Steps[index].Decision = &WorkflowDecision{
+			ActorUserID: 2,
+			Comment:     "already approved",
+			Approve:     true,
+			DecidedAt:   time.Now().UTC(),
+		}
+	}
+
+	if _, err := workflow.Decide(WorkflowDecisionInput{RequesterUserID: 1, ActorUserID: 2, Comment: "again", Approve: true}); !errors.Is(err, ErrInvalidStatus) {
+		t.Fatalf("Decide() error = %v, want ErrInvalidStatus", err)
+	}
+}
+
 func TestWorkflowDecisionAuthorizationFailsClosed(t *testing.T) {
 	tests := []struct {
 		name      string

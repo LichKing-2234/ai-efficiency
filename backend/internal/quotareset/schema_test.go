@@ -4,9 +4,25 @@ import (
 	"context"
 	"testing"
 
+	entmigrate "github.com/ai-efficiency/backend/ent/migrate"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
+
+func TestSchemaKeepsLegacyActiveRequestIndexAndAddsWorkflowSafeIndex(t *testing.T) {
+	wheres := make(map[string]string)
+	for _, idx := range entmigrate.QuotaResetRequestsTable.Indexes {
+		if idx.Annotation != nil {
+			wheres[idx.Name] = idx.Annotation.Where
+		}
+	}
+	if got, want := wheres["quotaresetrequest_requester_user_id_provider_id_group_id"], "status IN ('pending', 'approved_resetting', 'approved_reset_failed')"; got != want {
+		t.Fatalf("legacy active request index predicate = %q, want %q", got, want)
+	}
+	if got, want := wheres["quotaresetrequest_workflow_active_unique"], "status IN ('pending', 'workflow_pending', 'approved_resetting', 'approved_reset_failed')"; got != want {
+		t.Fatalf("workflow-safe active request index predicate = %q, want %q", got, want)
+	}
+}
 
 func TestSchemaPersistsCompactWorkflowAndApprovalChain(t *testing.T) {
 	ctx := context.Background()

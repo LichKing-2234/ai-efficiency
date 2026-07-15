@@ -7,6 +7,7 @@ const props = defineProps<{
   items: QuotaResetRequestSummary[]
   loading?: boolean
   mode: 'mine' | 'approvals' | 'admin'
+  actorUserId?: number
 }>()
 
 const emit = defineEmits<{
@@ -55,11 +56,15 @@ function canCancel(item: QuotaResetRequestSummary) {
 }
 
 function canDecide(item: QuotaResetRequestSummary) {
-  return (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'pending'
+  if (item.status !== 'pending') return false
+  if (props.mode === 'admin') return true
+  return props.mode === 'approvals' && !!props.actorUserId && item.resolved_approver_user_ids.includes(props.actorUserId)
 }
 
 function canRetry(item: QuotaResetRequestSummary) {
-  return (props.mode === 'approvals' || props.mode === 'admin') && item.status === 'approved_reset_failed'
+  if (item.status !== 'approved_reset_failed') return false
+  if (props.mode === 'admin') return true
+  return props.mode === 'approvals' && !!props.actorUserId && item.approved_by_user_id === props.actorUserId
 }
 
 function workflowProgress(item: QuotaResetRequestSummary) {

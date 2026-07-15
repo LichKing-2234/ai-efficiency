@@ -2,6 +2,7 @@ package quotareset
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -39,6 +40,24 @@ type workflowDirectoryFacts struct {
 	departmentIDsByMember map[int]map[string]struct{}
 	configUserIDsByDept   map[string][]int
 	representativesByDept map[string]map[string]struct{}
+}
+
+func (s *Service) resolveWorkflowSnapshot(ctx context.Context, requester *ent.User, providerID int, groupID string) (*Workflow, []DepartmentPathEvidence, error) {
+	tx, err := s.client.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, nil, fmt.Errorf("start quota reset workflow snapshot: %w", err)
+	}
+	defer tx.Rollback()
+	snapshotService := *s
+	snapshotService.client = tx.Client()
+	workflow, paths, err := snapshotService.resolveWorkflow(ctx, requester, providerID, groupID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("commit quota reset workflow snapshot: %w", err)
+	}
+	return workflow, paths, nil
 }
 
 func (s *Service) ListApprovalChains(ctx context.Context) (*ApprovalChainListResponse, error) {
@@ -200,7 +219,7 @@ func (s *Service) approvalChainGroupOptions(ctx context.Context) ([]ApprovalChai
 			if group.ID <= 0 || strings.TrimSpace(group.Platform) == "" {
 				continue
 			}
-			if kind := strings.TrimSpace(group.SubscriptionType); kind != "" && !strings.EqualFold(kind, "subscription") {
+			if kind := strings.TrimSpace(group.SubscriptionType); !strings.EqualFold(kind, "subscription") {
 				continue
 			}
 			groupID := strconv.FormatInt(group.ID, 10)

@@ -37,21 +37,24 @@ const (
 	ApproverConfigSaveModeReplaceAll         = "replace_all"
 
 	quotaResetNotificationSettingsLockKey = "quota_reset_notification_settings"
+	defaultResetExecutionTimeout          = 30 * time.Second
 )
 
 type Service struct {
-	client           *ent.Client
-	providerResolver ProviderResolver
-	approverResolver *ApproverResolver
-	notifier         Notifier
+	client                *ent.Client
+	providerResolver      ProviderResolver
+	approverResolver      *ApproverResolver
+	notifier              Notifier
+	resetExecutionTimeout time.Duration
 }
 
 func NewService(client *ent.Client, providerResolver ProviderResolver, approverResolver *ApproverResolver, notifier Notifier) *Service {
 	return &Service{
-		client:           client,
-		providerResolver: providerResolver,
-		approverResolver: approverResolver,
-		notifier:         notifier,
+		client:                client,
+		providerResolver:      providerResolver,
+		approverResolver:      approverResolver,
+		notifier:              notifier,
+		resetExecutionTimeout: defaultResetExecutionTimeout,
 	}
 }
 
@@ -98,7 +101,7 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 	if err := activeRequestExists(ctx, s.client, requester.ID, providerRow.ID, input.GroupID); err != nil {
 		return nil, err
 	}
-	workflow, paths, err := s.resolveWorkflow(ctx, requester, providerRow.ID, input.GroupID)
+	workflow, paths, err := s.resolveWorkflowSnapshot(ctx, requester, providerRow.ID, input.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -113,11 +116,11 @@ func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.
 	if req.RequesterUserID != actorUserID {
 		return nil, ErrNotApprover
 	}
-	if req.Status != quotaresetrequest.StatusPending {
+	if req.Status != quotaresetrequest.StatusPending && req.Status != quotaresetrequest.StatusWorkflowPending {
 		return nil, ErrInvalidStatus
 	}
 	updated, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
-		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending)).
+		Where(quotaresetrequest.StatusEQ(req.Status)).
 		SetStatus(quotaresetrequest.StatusCancelled).
 		Save(ctx)
 	if err != nil {
@@ -131,12 +134,20 @@ func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.
 }
 
 func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
+	input.DecisionReason = strings.TrimSpace(input.DecisionReason)
+	if input.DecisionReason == "" {
+		return nil, ErrDecisionRequired
+	}
 	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
 	if err != nil {
 		return nil, err
 	}
-	if request.WorkflowVersion == workflowVersionV2 {
+	switch request.WorkflowVersion {
+	case workflowVersionV2:
 		return s.decideWorkflowRequest(ctx, request, input, true)
+	case 1:
+	default:
+		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, request.WorkflowVersion)
 	}
 	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
@@ -170,8 +181,12 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 	if err != nil {
 		return nil, err
 	}
-	if request.WorkflowVersion == workflowVersionV2 {
+	switch request.WorkflowVersion {
+	case workflowVersionV2:
 		return s.decideWorkflowRequest(ctx, request, input, false)
+	case 1:
+	default:
+		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, request.WorkflowVersion)
 	}
 	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
@@ -198,9 +213,33 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 }
 
 func (s *Service) RetryReset(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
-	_, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusApprovedResetFailed)
+	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
 	if err != nil {
 		return nil, err
+	}
+	if request.Status != quotaresetrequest.StatusApprovedResetFailed {
+		return nil, ErrInvalidStatus
+	}
+	if request.WorkflowVersion != 1 && request.WorkflowVersion != workflowVersionV2 {
+		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, request.WorkflowVersion)
+	}
+	if !input.Admin {
+		if request.WorkflowVersion == workflowVersionV2 {
+			if request.ApprovedByUserID == nil || *request.ApprovedByUserID != input.ActorUserID {
+				return nil, ErrNotApprover
+			}
+		} else {
+			allowed := false
+			for _, userID := range request.ResolvedApproverUserIds {
+				if userID == input.ActorUserID {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				return nil, ErrNotApprover
+			}
+		}
 	}
 	return s.executeReset(ctx, input.RequestID, input.ActorUserID, true, input.Admin)
 }
@@ -250,7 +289,12 @@ func (s *Service) ListApproverConfigs(ctx context.Context) (*ApproverConfigListR
 	if err != nil {
 		return nil, fmt.Errorf("list quota reset approver configs: %w", err)
 	}
-	return s.approverConfigResponse(ctx, rows)
+	response, err := s.approverConfigResponse(ctx, rows)
+	if err != nil {
+		return nil, err
+	}
+	response.CurrentDirectorySourceID = &sourceID
+	return response, nil
 }
 
 func (s *Service) ListApproverCandidates(ctx context.Context, sourceID int, departmentExternalID string) (*ApproverCandidateListResponse, error) {
@@ -563,6 +607,7 @@ func activeRequestExists(ctx context.Context, client *ent.Client, requesterUserI
 			quotaresetrequest.GroupIDEQ(groupID),
 			quotaresetrequest.StatusIn(
 				quotaresetrequest.StatusPending,
+				quotaresetrequest.StatusWorkflowPending,
 				quotaresetrequest.StatusApprovedResetting,
 				quotaresetrequest.StatusApprovedResetFailed,
 			),
@@ -617,6 +662,7 @@ func isResolvedApprover(request *ent.QuotaResetRequest, actorUserID int) bool {
 }
 
 func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID int, retry bool, admin bool) (*ent.QuotaResetRequest, error) {
+	ctx = context.WithoutCancel(ctx)
 	req, err := s.client.QuotaResetRequest.Get(ctx, requestID)
 	if err != nil {
 		return nil, err
@@ -666,7 +712,9 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	if !ok {
 		return s.storeResetFailure(ctx, requestID, actorUserID, ErrProviderUnsupported)
 	}
-	if err := resetter.ResetSubscriptionQuotaForUser(ctx, running.RequesterRelayUserID, groupID); err != nil {
+	resetCtx, cancelReset := context.WithTimeout(ctx, s.resetExecutionTimeout)
+	defer cancelReset()
+	if err := resetter.ResetSubscriptionQuotaForUser(resetCtx, running.RequesterRelayUserID, groupID); err != nil {
 		return s.storeResetFailure(ctx, requestID, actorUserID, err)
 	}
 	succeeded, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
@@ -742,7 +790,9 @@ func (s *Service) list(ctx context.Context, params ListParams, filter func(*ent.
 		query = filter(query)
 	}
 	status := strings.TrimSpace(params.Status)
-	if status != "" {
+	if status == quotaresetrequest.StatusPending.String() {
+		query = query.Where(quotaresetrequest.StatusIn(quotaresetrequest.StatusPending, quotaresetrequest.StatusWorkflowPending))
+	} else if status != "" {
 		query = query.Where(quotaresetrequest.StatusEQ(quotaresetrequest.Status(status)))
 	}
 	total, err := query.Clone().Count(ctx)
@@ -835,7 +885,7 @@ func requestSummary(req *ent.QuotaResetRequest, requester *ent.User) (RequestSum
 		GroupName:               req.GroupName,
 		GroupPlatform:           req.GroupPlatform,
 		Reason:                  req.Reason,
-		Status:                  req.Status.String(),
+		Status:                  publicQuotaResetStatus(req.Status),
 		WorkflowVersion:         req.WorkflowVersion,
 		ResolvedApproverUserIDs: req.ResolvedApproverUserIds,
 		MatchedDepartmentPaths:  paths,
@@ -859,6 +909,13 @@ func requestSummary(req *ent.QuotaResetRequest, requester *ent.User) (RequestSum
 		item.RequesterEmail = requester.Email
 	}
 	return item, nil
+}
+
+func publicQuotaResetStatus(status quotaresetrequest.Status) string {
+	if status == quotaresetrequest.StatusWorkflowPending {
+		return quotaresetrequest.StatusPending.String()
+	}
+	return status.String()
 }
 
 func requestEventSummary(event *ent.QuotaResetRequestEvent) RequestEvent {

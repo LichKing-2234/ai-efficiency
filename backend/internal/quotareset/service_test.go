@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
@@ -31,7 +32,7 @@ func TestCreateRequestRequiresActiveSubscriptionAndReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRequest() error = %v", err)
 	}
-	if req.Status.String() != "pending" || req.RequesterRelayUserID != 1001 || req.GroupID != "42" {
+	if req.Status.String() != "workflow_pending" || req.RequesterRelayUserID != 1001 || req.GroupID != "42" {
 		t.Fatalf("request = %+v", req)
 	}
 	if count := client.QuotaResetRequestEvent.Query().CountX(ctx); count != 3 {
@@ -109,7 +110,7 @@ func TestApproverApproveExecutesResetAndWritesEvents(t *testing.T) {
 	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
 	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
 
-	updated, err := svc.Approve(ctx, DecisionInput{ActorUserID: approver.ID, RequestID: request.ID})
+	updated, err := svc.Approve(ctx, DecisionInput{ActorUserID: approver.ID, RequestID: request.ID, DecisionReason: "Approved"})
 	if err != nil {
 		t.Fatalf("Approve() error = %v", err)
 	}
@@ -118,6 +119,20 @@ func TestApproverApproveExecutesResetAndWritesEvents(t *testing.T) {
 	}
 	if fake.resetUserID != 1001 || fake.resetGroupID != 42 {
 		t.Fatalf("reset call = %d/%d, want 1001/42", fake.resetUserID, fake.resetGroupID)
+	}
+}
+
+func TestApproveV1RequiresComment(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "lead", "lead@example.org", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{approver.ID})
+
+	_, err := NewService(client, nil, nil, nil).Approve(ctx, DecisionInput{ActorUserID: approver.ID, RequestID: request.ID})
+	if !errors.Is(err, ErrDecisionRequired) {
+		t.Fatalf("Approve() error = %v, want ErrDecisionRequired", err)
 	}
 }
 
@@ -135,6 +150,9 @@ func TestCreateRequestV2SnapshotsWorkflowAndEvents(t *testing.T) {
 	}
 	if request.WorkflowVersion != workflowVersionV2 || request.WorkflowRevision != 0 {
 		t.Fatalf("workflow version/revision = %d/%d", request.WorkflowVersion, request.WorkflowRevision)
+	}
+	if request.Status.String() != "workflow_pending" {
+		t.Fatalf("status = %s, want rollout-safe workflow_pending", request.Status)
 	}
 	workflow, err := DecodeWorkflow(request.Workflow)
 	if err != nil {
@@ -163,7 +181,7 @@ func TestApproveV2AdvancesThenFinalApprovalResetsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Approve() error = %v", err)
 	}
-	if intermediate.Status != quotaresetrequest.StatusPending || intermediate.WorkflowRevision != 1 {
+	if intermediate.Status != quotaresetrequest.StatusWorkflowPending || intermediate.WorkflowRevision != 1 {
 		t.Fatalf("intermediate status/revision = %s/%d", intermediate.Status, intermediate.WorkflowRevision)
 	}
 	if got, want := intermediate.ResolvedApproverUserIds, []int{finalApprover.ID}; !reflect.DeepEqual(got, want) {
@@ -218,6 +236,43 @@ func TestApproveV2ReusesPriorActorAndResetsWithoutDuplicateDecision(t *testing.T
 	}
 }
 
+func TestApproveV2RecordsTheOriginalDecisionThatSatisfiedALaterStep(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	bob := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	carol := createQuotaResetUser(t, ctx, client, "carol", "carol@example.org", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	workflow := workflowFixtureForUsers(requester.ID, bob.ID, carol.ID, false)
+	workflow.Steps = append(workflow.Steps, WorkflowStep{
+		Kind:                  WorkflowStepConfiguredDepartment,
+		Label:                 "Company / Security",
+		DepartmentExternalIDs: []string{"dept-security"},
+		Approvers:             []WorkflowApprover{{UserID: bob.ID, DisplayName: "bob", Email: bob.Email, Source: "configured"}},
+		Status:                WorkflowStepQueued,
+	})
+	request := createPendingWorkflowRequest(t, ctx, client, requester, provider, workflow)
+	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil)
+
+	if _, err := svc.Approve(ctx, DecisionInput{ActorUserID: bob.ID, RequestID: request.ID, DecisionReason: "Initial approval"}); err != nil {
+		t.Fatalf("first Approve() error = %v", err)
+	}
+	if _, err := svc.Approve(ctx, DecisionInput{ActorUserID: carol.ID, RequestID: request.ID, DecisionReason: "Second approval"}); err != nil {
+		t.Fatalf("second Approve() error = %v", err)
+	}
+	event := client.QuotaResetRequestEvent.Query().Where(
+		quotaresetrequestevent.RequestIDEQ(request.ID),
+		quotaresetrequestevent.EventTypeEQ(quotaresetrequestevent.EventTypeStepSatisfied),
+	).OnlyX(ctx)
+	if event.ActorUserID == nil || *event.ActorUserID != bob.ID {
+		t.Fatalf("step_satisfied actor = %v, want bob %d", event.ActorUserID, bob.ID)
+	}
+	if got := int(event.Metadata["satisfied_by_step"].(float64)); got != 0 {
+		t.Fatalf("satisfied_by_step = %d, want 0", got)
+	}
+}
+
 func TestApproveV2RequiresComment(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -230,6 +285,54 @@ func TestApproveV2RequiresComment(t *testing.T) {
 	_, err := NewService(client, nil, nil, nil).Approve(ctx, DecisionInput{ActorUserID: approver.ID, RequestID: request.ID})
 	if !errors.Is(err, ErrDecisionRequired) {
 		t.Fatalf("Approve() error = %v, want ErrDecisionRequired", err)
+	}
+}
+
+func TestApproveRejectsUnknownWorkflowVersion(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	admin := createQuotaResetUser(t, ctx, client, "admin", "admin@example.com", nil, "admin")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{admin.ID})
+	request = client.QuotaResetRequest.UpdateOneID(request.ID).SetWorkflowVersion(3).SaveX(ctx)
+	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
+
+	_, err := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil).Approve(ctx, DecisionInput{
+		ActorUserID: admin.ID, RequestID: request.ID, DecisionReason: "Approved", Admin: true,
+	})
+	if !errors.Is(err, ErrInvalidWorkflow) {
+		t.Fatalf("Approve() error = %v, want ErrInvalidWorkflow", err)
+	}
+	if fake.resetCalls != 0 {
+		t.Fatalf("reset calls = %d, want 0", fake.resetCalls)
+	}
+}
+
+func TestApproveV2RejectsTerminalWorkflowState(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	workflow := workflowFixtureForUsers(requester.ID, approver.ID, approver.ID, false)
+	workflow.CurrentStep = len(workflow.Steps)
+	for index := range workflow.Steps {
+		workflow.Steps[index].Status = WorkflowStepApproved
+		workflow.Steps[index].Decision = &WorkflowDecision{
+			ActorUserID: approver.ID,
+			Comment:     "already approved",
+			Approve:     true,
+			DecidedAt:   time.Now().UTC(),
+		}
+	}
+	request := createPendingWorkflowRequest(t, ctx, client, requester, provider, workflow)
+
+	_, err := NewService(client, nil, nil, nil).Approve(ctx, DecisionInput{
+		ActorUserID: approver.ID, RequestID: request.ID, DecisionReason: "approve",
+	})
+	if !errors.Is(err, ErrInvalidStatus) {
+		t.Fatalf("Approve() error = %v, want ErrInvalidStatus", err)
 	}
 }
 
@@ -316,7 +419,7 @@ func TestApproveStoresProviderResolutionFailureAsResetFailed(t *testing.T) {
 		return nil, errors.New("resolver unavailable")
 	}), NewApproverResolver(client), nil)
 
-	updated, err := svc.Approve(ctx, DecisionInput{ActorUserID: admin.ID, RequestID: request.ID, Admin: true})
+	updated, err := svc.Approve(ctx, DecisionInput{ActorUserID: admin.ID, RequestID: request.ID, DecisionReason: "Approved", Admin: true})
 	if err != nil {
 		t.Fatalf("Approve() error = %v, want stored reset failure", err)
 	}
@@ -342,7 +445,7 @@ func TestApproveStoresUnsupportedResetterAsResetFailed(t *testing.T) {
 	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", nil)
 	svc := NewService(client, fakeProviderResolver(provider.ID, &listOnlyQuotaResetProvider{}), NewApproverResolver(client), nil)
 
-	updated, err := svc.Approve(ctx, DecisionInput{ActorUserID: admin.ID, RequestID: request.ID, Admin: true})
+	updated, err := svc.Approve(ctx, DecisionInput{ActorUserID: admin.ID, RequestID: request.ID, DecisionReason: "Approved", Admin: true})
 	if err != nil {
 		t.Fatalf("Approve() error = %v, want stored reset failure", err)
 	}
@@ -363,7 +466,7 @@ func TestAdminCanApproveOwnRequestThroughAdminFallback(t *testing.T) {
 	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
 	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
 
-	updated, err := svc.Approve(ctx, DecisionInput{ActorUserID: admin.ID, RequestID: request.ID, Admin: true})
+	updated, err := svc.Approve(ctx, DecisionInput{ActorUserID: admin.ID, RequestID: request.ID, DecisionReason: "Approved", Admin: true})
 	if err != nil {
 		t.Fatalf("admin self Approve() error = %v", err)
 	}
@@ -401,7 +504,7 @@ func TestResetFailureCanBeRetriedByAdmin(t *testing.T) {
 	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", nil)
 	fake := &fakeQuotaResetProvider{resetErr: errors.New("relay timeout")}
 	svc := NewService(client, fakeProviderResolver(provider.ID, fake), NewApproverResolver(client), nil)
-	_, err := svc.Approve(ctx, DecisionInput{ActorUserID: admin.ID, RequestID: request.ID, Admin: true})
+	_, err := svc.Approve(ctx, DecisionInput{ActorUserID: admin.ID, RequestID: request.ID, DecisionReason: "Approved", Admin: true})
 	if err != nil {
 		t.Fatalf("admin Approve() should store reset failure without returning error: %v", err)
 	}
@@ -412,6 +515,35 @@ func TestResetFailureCanBeRetriedByAdmin(t *testing.T) {
 	}
 	if updated.Status.String() != "approved_reset_succeeded" {
 		t.Fatalf("status = %s, want approved_reset_succeeded", updated.Status)
+	}
+}
+
+func TestResetFailureCanBeRetriedByFinalV2Approver(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	workflow := workflowFixtureForUsers(requester.ID, approver.ID, approver.ID, true)
+	workflow.Steps = workflow.Steps[:1]
+	request := createPendingWorkflowRequest(t, ctx, client, requester, provider, workflow)
+	fake := &fakeQuotaResetProvider{
+		subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")},
+		resetErr:      errors.New("relay timeout"),
+	}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil)
+
+	failed, err := svc.Approve(ctx, DecisionInput{ActorUserID: approver.ID, RequestID: request.ID, DecisionReason: "Approved"})
+	if err != nil || failed.Status != quotaresetrequest.StatusApprovedResetFailed {
+		t.Fatalf("Approve() = status %v error %v, want reset failure", failed.Status, err)
+	}
+	fake.resetErr = nil
+	updated, err := svc.RetryReset(ctx, DecisionInput{ActorUserID: approver.ID, RequestID: request.ID})
+	if err != nil {
+		t.Fatalf("RetryReset() error = %v", err)
+	}
+	if updated.Status != quotaresetrequest.StatusApprovedResetSucceeded || fake.resetCalls != 2 {
+		t.Fatalf("status/reset calls = %s/%d, want succeeded/2", updated.Status, fake.resetCalls)
 	}
 }
 
@@ -434,6 +566,53 @@ func TestRetryResetRejectsRequestAlreadyResettingBeforeCallingProvider(t *testin
 	}
 	if fake.resetCalls != 0 {
 		t.Fatalf("reset calls = %d, want 0", fake.resetCalls)
+	}
+}
+
+func TestExecuteResetSurvivesCallerCancellationAfterApprovalCommit(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{approver.ID})
+	request = client.QuotaResetRequest.UpdateOneID(request.ID).SetStatus(quotaresetrequest.StatusApprovedResetFailed).SaveX(ctx)
+	fake := &fakeQuotaResetProvider{}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil)
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+
+	updated, err := svc.executeReset(cancelled, request.ID, approver.ID, true, false)
+	if err != nil {
+		t.Fatalf("executeReset() error = %v", err)
+	}
+	if updated.Status != quotaresetrequest.StatusApprovedResetSucceeded || fake.resetCalls != 1 {
+		t.Fatalf("status/reset calls = %s/%d, want succeeded/1", updated.Status, fake.resetCalls)
+	}
+}
+
+func TestExecuteResetBoundsDetachedRelayCall(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{approver.ID})
+	request = client.QuotaResetRequest.UpdateOneID(request.ID).SetStatus(quotaresetrequest.StatusApprovedResetFailed).SaveX(ctx)
+	fake := &fakeQuotaResetProvider{resetBlockFor: 500 * time.Millisecond}
+	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil)
+	svc.resetExecutionTimeout = 20 * time.Millisecond
+
+	started := time.Now()
+	updated, err := svc.executeReset(ctx, request.ID, approver.ID, true, false)
+	if err != nil {
+		t.Fatalf("executeReset() error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed >= 250*time.Millisecond {
+		t.Fatalf("executeReset() elapsed = %s, want relay deadline", elapsed)
+	}
+	if updated.Status != quotaresetrequest.StatusApprovedResetFailed || !strings.Contains(updated.ResetError, context.DeadlineExceeded.Error()) {
+		t.Fatalf("status/reset error = %s/%q, want bounded reset failure", updated.Status, updated.ResetError)
 	}
 }
 
@@ -649,6 +828,9 @@ func TestListApproverConfigsOnlyReturnsCurrentDirectorySource(t *testing.T) {
 	if len(resp.Items) != 1 {
 		t.Fatalf("config count = %d, want current source only", len(resp.Items))
 	}
+	if resp.CurrentDirectorySourceID == nil || *resp.CurrentDirectorySourceID != currentSource.ID {
+		t.Fatalf("current directory source = %v, want %d", resp.CurrentDirectorySourceID, currentSource.ID)
+	}
 	if resp.Items[0].DirectorySourceID != currentSource.ID || resp.Items[0].ApproverUserID != currentApprover.ID {
 		t.Fatalf("configs = %#v, want current source config only", resp.Items)
 	}
@@ -722,6 +904,7 @@ type fakeQuotaResetProvider struct {
 	mu            sync.Mutex
 	subscriptions []relay.UserSubscription
 	resetErr      error
+	resetBlockFor time.Duration
 	resetUserID   int64
 	resetGroupID  int64
 	resetCalls    int
@@ -749,13 +932,23 @@ func (f *fakeQuotaResetProvider) ListUserSubscriptions(_ context.Context, relayU
 	return f.subscriptions, nil
 }
 
-func (f *fakeQuotaResetProvider) ResetSubscriptionQuotaForUser(_ context.Context, relayUserID, groupID int64) error {
+func (f *fakeQuotaResetProvider) ResetSubscriptionQuotaForUser(ctx context.Context, relayUserID, groupID int64) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.resetCalls++
 	f.resetUserID = relayUserID
 	f.resetGroupID = groupID
-	return f.resetErr
+	blockFor := f.resetBlockFor
+	resetErr := f.resetErr
+	f.mu.Unlock()
+	if blockFor > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(blockFor):
+			return errors.New("test reset did not receive deadline")
+		}
+	}
+	return resetErr
 }
 
 func workflowFixtureForUsers(requesterID, firstApproverID, finalApproverID int, reuseFirst bool) *Workflow {
@@ -806,6 +999,7 @@ func createPendingWorkflowRequest(t *testing.T, ctx context.Context, client *ent
 		SetGroupName("Group Alpha").
 		SetGroupPlatform("openai").
 		SetReason("Need reset for a build investigation").
+		SetStatus(quotaresetrequest.StatusWorkflowPending).
 		SetWorkflowVersion(workflowVersionV2).
 		SetWorkflow(raw).
 		SetWorkflowRevision(0).

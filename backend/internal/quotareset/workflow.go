@@ -144,6 +144,9 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) (WorkflowTransition, erro
 	if err := w.validate(); err != nil {
 		return WorkflowTransition{}, err
 	}
+	if w.CurrentStep >= len(w.Steps) {
+		return WorkflowTransition{}, ErrInvalidStatus
+	}
 	comment := strings.TrimSpace(input.Comment)
 	if comment == "" {
 		return WorkflowTransition{}, ErrDecisionRequired

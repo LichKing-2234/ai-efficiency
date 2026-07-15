@@ -155,7 +155,7 @@ func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx 
 	payload := map[string]any{
 		"event":                      event,
 		"request_id":                 req.ID,
-		"status":                     req.Status.String(),
+		"status":                     publicQuotaResetStatus(req.Status),
 		"requester_user_id":          req.RequesterUserID,
 		"provider_id":                req.ProviderID,
 		"group_id":                   req.GroupID,
@@ -312,11 +312,7 @@ func webhookResponseBusinessError(body []byte) error {
 	if err := json.Unmarshal(body, &response); err != nil || response.ErrCode == nil || *response.ErrCode == 0 {
 		return nil
 	}
-	errmsg := strings.TrimSpace(response.ErrMsg)
-	if errmsg == "" {
-		return fmt.Errorf("webhook returned errcode %d", *response.ErrCode)
-	}
-	return fmt.Errorf("webhook returned errcode %d: %s", *response.ErrCode, errmsg)
+	return fmt.Errorf("webhook returned errcode %d", *response.ErrCode)
 }
 
 func (n *WebhookNotifier) bearerToken(ctx context.Context, setting *ent.QuotaResetNotificationSetting) (string, error) {

@@ -265,11 +265,12 @@ onMounted(loadQueues)
         :items="visibleItems"
         :loading="loading || actionBusy"
         :mode="activeQueue"
+        :actor-user-id="auth.user?.id"
         @cancel="handleCancel"
         @approve="handleApprove"
         @reject="handleReject"
         @retry="handleRetry"
-		@select="handleSelect"
+        @select="handleSelect"
       />
 
 	  <section v-if="selectedRequest?.workflow_version === 2 && selectedRequest.workflow_steps?.length" class="space-y-3" aria-label="Quota reset workflow details">

@@ -206,6 +206,47 @@ describe('QuotaResetView', () => {
     expect(wrapper.text()).toContain('Group Beta')
   })
 
+  it('does not show decision actions to an earlier approver after the workflow advances', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listQuotaResetApprovals.mockResolvedValue({
+      data: {
+        data: {
+          items: [{
+            ...approvalRequest,
+            current_step: 1,
+            resolved_approver_user_ids: [30],
+            workflow_steps: [
+              {
+                ...approvalRequest.workflow_steps[0],
+                status: 'approved',
+                decision: {
+                  actor_user_id: 20,
+                  actor_display_name: 'user',
+                  comment: 'Approved first step',
+                  approve: true,
+                  admin: false,
+                  decided_at: '2026-07-15T01:00:00Z',
+                },
+              },
+              { ...approvalRequest.workflow_steps[1], status: 'active' },
+            ],
+          }],
+          page: 1,
+          page_size: 20,
+          total: 1,
+        },
+      },
+    })
+
+    const wrapper = await mountQuotaResetView()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="quota-reset-approve-2"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-reject-2"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="quota-reset-row-2"]').trigger('click')
+    expect(wrapper.text()).toContain('Approved first step')
+  })
+
   it('uses historical totals for my requests and actionable counts for approval queues', async () => {
     const api = await import('@/api/quotaReset') as any
     api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 4 } } })

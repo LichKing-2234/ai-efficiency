@@ -120,7 +120,7 @@ func TestWebhookNotifierReturnsErrorForWebhookErrcode(t *testing.T) {
 	request := createNotificationQuotaResetRequest(t, ctx, client)
 	notifier := NewWebhookNotifier(client, "", "https://ai-efficiency.example.com")
 	err := notifier.NotifyRequestEvent(ctx, "quota_reset_request_created", request)
-	if err == nil || !strings.Contains(err.Error(), "webhook returned errcode 40008: invalid message type") {
+	if err == nil || err.Error() != "webhook returned errcode 40008" {
 		t.Fatalf("NotifyRequestEvent() error = %v, want errcode failure", err)
 	}
 }
@@ -207,6 +207,9 @@ func TestWebhookNotifierHonorsExplicitGenericChannelForWeComURL(t *testing.T) {
 	if gotPayload["event"] != "quota_reset_request_created" || gotPayload["msgtype"] != nil {
 		t.Fatalf("generic payload = %#v", gotPayload)
 	}
+	if gotPayload["status"] != "pending" {
+		t.Fatalf("generic status = %#v, want public pending", gotPayload["status"])
+	}
 }
 
 func TestWebhookNotifierRedactsSecretURLFromTransportErrors(t *testing.T) {
@@ -225,6 +228,20 @@ func TestWebhookNotifierRedactsSecretURLFromTransportErrors(t *testing.T) {
 	err := notifier.NotifyRequestEvent(ctx, "quota_reset_request_created", createNotificationQuotaResetRequest(t, ctx, client))
 	if err == nil || strings.Contains(err.Error(), "secret-value") || strings.Contains(err.Error(), "hooks.example.com") {
 		t.Fatalf("NotifyRequestEvent() error = %v, want redacted transport error", err)
+	}
+}
+
+func TestWebhookBusinessErrorRedactsEchoedSecrets(t *testing.T) {
+	err := webhookResponseBusinessError([]byte(`{"errcode":40008,"errmsg":"token: secret-value"}`))
+	if err == nil {
+		t.Fatal("webhookResponseBusinessError() error = nil")
+	}
+	message := err.Error()
+	if strings.Contains(message, "secret-value") {
+		t.Fatalf("business error leaked secret material: %q", message)
+	}
+	if !strings.Contains(message, "errcode 40008") {
+		t.Fatalf("business error = %q, want errcode", message)
 	}
 }
 

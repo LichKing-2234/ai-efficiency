@@ -130,6 +130,7 @@ func (s *Service) countAdminQuotaApprovals(ctx context.Context) (int, error) {
 func actionableQuotaResetStatuses() []quotaresetrequest.Status {
 	return []quotaresetrequest.Status{
 		quotaresetrequest.StatusPending,
+		quotaresetrequest.StatusWorkflowPending,
 		quotaresetrequest.StatusApprovedResetFailed,
 	}
 }

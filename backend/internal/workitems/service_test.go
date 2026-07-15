@@ -31,6 +31,7 @@ func TestCountsForRegularApproverIncludesAssignedPendingAndFailedResetApprovals(
 	approver := createWorkItemsUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
 	requester := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
 	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "42", quotaresetrequest.StatusPending, []int{approver.ID})
+	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "45", quotaresetrequest.StatusWorkflowPending, []int{approver.ID})
 	createWorkItemsQuotaRequest(t, ctx, client, approver.ID, 1002, 1, "43", quotaresetrequest.StatusPending, []int{approver.ID})
 	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "44", quotaresetrequest.StatusApprovedResetFailed, []int{approver.ID})
 
@@ -39,11 +40,11 @@ func TestCountsForRegularApproverIncludesAssignedPendingAndFailedResetApprovals(
 		t.Fatalf("Counts() error = %v", err)
 	}
 
-	if counts.QuotaResetApprovalCount != 2 {
-		t.Fatalf("quota_reset_approval_count = %d, want 2", counts.QuotaResetApprovalCount)
+	if counts.QuotaResetApprovalCount != 3 {
+		t.Fatalf("quota_reset_approval_count = %d, want 3", counts.QuotaResetApprovalCount)
 	}
-	if counts.QuotaResetAdminCount != 0 || counts.OffboardingCount != 0 || counts.TotalCount != 2 {
-		t.Fatalf("counts = %+v, want two actionable regular approvals", counts)
+	if counts.QuotaResetAdminCount != 0 || counts.OffboardingCount != 0 || counts.TotalCount != 3 {
+		t.Fatalf("counts = %+v, want three actionable regular approvals", counts)
 	}
 }
 

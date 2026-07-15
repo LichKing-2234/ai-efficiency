@@ -33,7 +33,7 @@ beforeEach(async () => {
   setLocale('en-US')
   vi.clearAllMocks()
   const api = await import('@/api/quotaReset') as any
-  api.getQuotaResetApproverConfigs.mockResolvedValue({ data: { data: { items: [] } } })
+  api.getQuotaResetApproverConfigs.mockResolvedValue({ data: { data: { current_directory_source_id: 1, items: [] } } })
   api.getQuotaResetApprovalChains.mockResolvedValue({
     data: {
       data: {
@@ -255,8 +255,9 @@ describe('QuotaResetApprovalSettings', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="quota-reset-approver-ids"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="quota-reset-approver-select"]').trigger('click')
     expect(wrapper.text()).toContain('lead-alpha@example.com')
-    await wrapper.find('[data-testid="quota-reset-approver-select"]').setValue('12')
+    await wrapper.find('[data-testid="quota-reset-approver-option-12"]').trigger('click')
     await wrapper.find('[data-testid="quota-reset-save-approvers"]').trigger('click')
     await flushPromises()
 
@@ -275,6 +276,58 @@ describe('QuotaResetApprovalSettings', () => {
         enabled: true,
       },
     ], 'replace_all')
+  })
+
+  it('uses the backend-selected current directory source', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const directory = await import('@/api/directory') as any
+    api.getQuotaResetApproverConfigs.mockResolvedValueOnce({
+      data: { data: { current_directory_source_id: 2, items: [] } },
+    })
+    directory.listDirectorySources.mockResolvedValueOnce({
+      data: {
+        data: {
+          items: [
+            { id: 1, name: 'Old Directory', last_successful_run_id: 20 },
+            { id: 2, name: 'Current Directory', last_successful_run_id: 21 },
+          ],
+        },
+      },
+    })
+
+    const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-department-select"]').trigger('click')
+    await flushPromises()
+
+    expect(directory.listDirectoryDepartments).toHaveBeenCalledWith(expect.objectContaining({ source_id: 2 }))
+    expect(wrapper.text()).not.toContain('Old Directory')
+  })
+
+  it('filters approvers inside the opened dropdown', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listQuotaResetApproverCandidates.mockResolvedValueOnce({
+      data: {
+        data: {
+          items: [
+            { user_id: 12, username: 'lead-alpha', email: 'lead-alpha@example.com', display_name: 'Lead Alpha', directory_member_external_id: 'member-alpha-lead' },
+            { user_id: 13, username: 'reviewer-beta', email: 'reviewer-beta@example.com', display_name: 'Reviewer Beta', directory_member_external_id: 'member-beta-reviewer' },
+          ],
+        },
+      },
+    })
+    const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-department-select"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-department-option-dept-alpha"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="quota-reset-approver-filter"]').setValue('beta')
+    expect(wrapper.find('[data-testid="quota-reset-approver-option-12"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-approver-option-13"]').exists()).toBe(true)
   })
 
   it('keeps the latest filtered departments when the initial unfiltered request resolves later', async () => {
