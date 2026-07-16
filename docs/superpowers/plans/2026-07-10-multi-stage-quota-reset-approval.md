@@ -469,6 +469,17 @@ current. Do not rewrite the historical 2026-07-07 spec.
 
   Delivery evidence (2026-07-16):
 
+  - Review-fix implementation commit: `de3c327` (`fix(quotareset): address
+    task 4 review findings`). GitHub smart-HTTP receive-pack timed out twice;
+    the exact matching tree was uploaded through the Git Data API, the branch
+    ref was advanced without force, and read-side fetch synchronized local and
+    remote to the API commit.
+  - `gh pr checks 146 --watch --interval 10` exited 0 for run `29490734626`:
+    `deploy-static` passed in 10s, `ae-cli` in 29s, `frontend` in 1m2s, and
+    `backend` in 3m8s.
+  - The review-fix evidence-only plan commit is the final branch update; its
+    final-head CI result is recorded in the Task 4 report.
+
   - Production simplification commit: `76a767f` (`refactor(quotareset):
     simplify approval workflow`).
   - Architecture/verification commit: `d929b00` (`docs(architecture): document
