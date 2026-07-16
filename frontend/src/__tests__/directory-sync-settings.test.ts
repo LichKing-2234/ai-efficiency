@@ -741,6 +741,61 @@ auth:
     }
   })
 
+  it('keeps the pending next-page destination when the active run completes', async () => {
+    vi.useFakeTimers()
+    const pendingNextPage = deferred<any>()
+    const refreshedNextPage = deferred<any>()
+    const activeA = runSummary({
+      id: 289,
+      mode: 'apply',
+      status: 'running',
+      phase: 'applying',
+      completed_at: null,
+    })
+    const pageZeroRun = runSummary({ id: 288, member_count: 20 })
+    const pageOneRun = runSummary({ id: 268, member_count: 10 })
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockImplementation((_sourceID: number, params: { offset: number }) => {
+        if (api.listDirectoryRuns.mock.calls.length === 1) {
+          return Promise.resolve(apiResponse(runPage([pageZeroRun], { total: 41, page: 0, latest_active_run: activeA })))
+        }
+        if (params.offset === 20 && api.listDirectoryRuns.mock.calls.length === 2) {
+          return pendingNextPage.promise
+        }
+        if (params.offset === 20) return refreshedNextPage.promise
+        return Promise.resolve(apiResponse(runPage([pageZeroRun], { total: 41, page: 0 })))
+      })
+      api.getDirectoryRun.mockResolvedValueOnce(apiResponse({
+        ...activeA,
+        status: 'completed',
+        phase: 'completed',
+        completed_at: '2026-07-15T01:04:00Z',
+      }))
+    })
+
+    try {
+      await wrapper.get('[data-testid="directory-run-next"]').trigger('click')
+      expect(api.listDirectoryRuns.mock.calls.map((call: any[]) => call[1].offset)).toEqual([0, 20])
+
+      await vi.runOnlyPendingTimersAsync()
+      await flushPromises()
+
+      expect(api.listDirectoryRuns.mock.calls.map((call: any[]) => call[1].offset)).toEqual([0, 20, 20])
+
+      refreshedNextPage.resolve(apiResponse(runPage([pageOneRun], { total: 41, page: 1 })))
+      await flushPromises()
+      pendingNextPage.resolve(apiResponse(runPage([pageZeroRun], { total: 41, page: 0 })))
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="directory-run-page-meta"]').text()).toContain('Page 2 of 3')
+      expect(wrapper.find(`[data-testid="directory-run-row-${pageOneRun.id}"]`).exists()).toBe(true)
+      expect(wrapper.find(`[data-testid="directory-run-row-${pageZeroRun.id}"]`).exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps the committed non-first page coherent when active A completes beside selected terminal B', async () => {
     vi.useFakeTimers()
     const workItemsApi = await import('@/api/workItems') as any
