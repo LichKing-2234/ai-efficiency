@@ -225,6 +225,10 @@ describe('DashboardView chart loading', () => {
     expect(wrapper.text()).toContain('example-model')
     expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(false)
+    const trendSection = wrapper.findAll('section').find((section) => section.text().includes('Token Trend'))
+    const modelSection = wrapper.findAll('section').find((section) => section.text().includes('Model Distribution'))
+    expect(trendSection?.get('.h-72').classes()).toContain('h-72')
+    expect(modelSection?.get('.h-44').classes()).toContain('h-44')
 
     canvasModules.resolveLine()
     canvasModules.resolveDoughnut()
@@ -237,6 +241,8 @@ describe('DashboardView chart loading', () => {
     const doughnut = wrapper.get('[data-test="doughnut-chart"]')
     expect(JSON.parse(line.attributes('data-chart') ?? '{}').labels).toEqual(['2026-06-06'])
     expect(JSON.parse(doughnut.attributes('data-chart') ?? '{}').labels).toEqual(['example-model'])
+    expect(JSON.parse(line.attributes('data-options') ?? '{}').maintainAspectRatio).toBe(false)
+    expect(JSON.parse(doughnut.attributes('data-options') ?? '{}').maintainAspectRatio).toBe(false)
 
     await wrapper.get('[data-test="range-today"]').trigger('click')
     await flushPromises()
