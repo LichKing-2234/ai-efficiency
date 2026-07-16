@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -293,6 +294,38 @@ func TestSnapshotCacheTreatsMalformedValueAsMiss(t *testing.T) {
 	}
 	if loads.Load() != 1 || result.Freshness.CacheStatus != "miss" {
 		t.Fatalf("loads/status = %d/%q, want 1/miss", loads.Load(), result.Freshness.CacheStatus)
+	}
+}
+
+func TestSnapshotCacheRejectsPreviousOverviewSchema(t *testing.T) {
+	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	cache, server := testSnapshotCache(t, now, 0)
+	key, err := snapshotCacheKey("test", testSnapshotCacheKey())
+	if err != nil {
+		t.Fatalf("snapshotCacheKey() error = %v", err)
+	}
+	encoded, err := json.Marshal(snapshotValueEnvelope{
+		SchemaVersion: 1,
+		GeneratedAt:   now,
+		FreshUntil:    now.Add(54 * time.Second),
+		StaleUntil:    now.Add(4*time.Minute + 30*time.Second),
+		Snapshot:      testOverviewSnapshot(12),
+	})
+	if err != nil {
+		t.Fatalf("encode previous snapshot schema: %v", err)
+	}
+	server.Set(key, string(encoded))
+
+	var loads atomic.Int32
+	result, err := cache.GetOrLoad(context.Background(), testSnapshotCacheKey(), func(context.Context) (SnapshotOriginLoadResult, error) {
+		loads.Add(1)
+		return SnapshotOriginLoadResult{Snapshot: testOverviewSnapshot(13)}, nil
+	})
+	if err != nil {
+		t.Fatalf("GetOrLoad() error = %v", err)
+	}
+	if loads.Load() != 1 || result.Freshness.CacheStatus != "miss" || *result.Snapshot.Summary.RangeActualCost != 13 {
+		t.Fatalf("loads/status/range = %d/%q/%v, want 1/miss/13", loads.Load(), result.Freshness.CacheStatus, result.Snapshot.Summary.RangeActualCost)
 	}
 }
 

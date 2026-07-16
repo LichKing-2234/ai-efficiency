@@ -7,6 +7,7 @@ import type {
   TeamUsageAuditParams,
   TeamUsageOverviewParams,
   TeamUsageSummaryResponse,
+  TeamUsageTrendResponse,
   TeamOverviewResponse,
   TeamUsageScopeResponse,
   UpdateTeamUsageRateMultiplierRequest,
@@ -35,6 +36,13 @@ export function getTeamUsageOverview(params?: TeamUsageOverviewParams) {
 
 export function getTeamUsageSummary(params?: TeamUsageOverviewParams) {
   return client.get<ApiResponse<TeamUsageSummaryResponse>>('/user/team-usage/summary', { params })
+}
+
+export function getTeamUsageTrend(params?: TeamUsageOverviewParams) {
+  return client.get<ApiResponse<TeamUsageTrendResponse>>('/user/team-usage/trend', {
+    params,
+    timeout: 45000,
+  })
 }
 
 export function updateTeamUsageRateMultiplier(
