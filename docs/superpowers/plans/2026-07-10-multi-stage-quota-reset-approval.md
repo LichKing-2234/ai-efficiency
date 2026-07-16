@@ -4,8 +4,10 @@
 > `superpowers:subagent-driven-development` or `superpowers:executing-plans` to
 > implement this plan task-by-task. Steps use checkbox syntax for live tracking.
 
-**Status:** Complete. The lean implementation, post-review hardening, full
-verification, documentation, and PR update are recorded below.
+**Status:** Superseded on 2026-07-16. Do not replay this plan. Its completed
+checkboxes describe the rejected subscription-group approval-chain design. A new
+implementation plan must be written from the approved department-derived design
+after the replacement spec is reviewed.
 
 **Goal:** Add an exact-department first approval, an ordered subscription-group
 department chain, prior-approver reuse, actionable notifications, and one final
