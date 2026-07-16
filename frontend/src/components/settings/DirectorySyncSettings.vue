@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import {
   createDirectorySource,
   getDirectoryRun,
   listDirectoryRuns,
-  listDirectorySources,
   previewDirectorySource,
   startDirectoryRun,
   updateDirectorySource,
@@ -12,9 +12,9 @@ import {
 } from '@/api/directory'
 import { useToast } from '@/composables/useToast'
 import { useI18n, type MessageKey } from '@/i18n'
+import { useSettingsResourcesStore } from '@/stores/settingsResources'
 import { useWorkItemsStore } from '@/stores/workItems'
 import type {
-  Credential,
   DirectoryRunSummary,
   DirectorySource,
   DirectorySourceRequest,
@@ -22,17 +22,17 @@ import type {
   DirectoryValidationIssue,
 } from '@/types'
 
-defineProps<{
-  credentials: Credential[]
-}>()
-
 const { locale, t } = useI18n()
 const { showToast } = useToast()
 const workItems = useWorkItemsStore()
+const settingsResources = useSettingsResourcesStore()
+const {
+  directorySources: sources,
+  directorySourcesLoading: loading,
+  directorySourcesError,
+} = storeToRefs(settingsResources)
 
-const sources = ref<DirectorySource[]>([])
 const selectedSourceId = ref<number | null>(null)
-const loading = ref(false)
 const saving = ref(false)
 const actionRequestPending = ref<number | null>(null)
 const message = ref('')
@@ -200,21 +200,17 @@ onUnmounted(() => {
   invalidateRunPolling()
 })
 
-async function loadSources() {
-  loading.value = true
-  try {
-    const res = await listDirectorySources()
-    sources.value = res.data.data?.items ?? []
-    if (sources.value.length > 0) {
-      const source = sources.value.find((candidate) => candidate.id === selectedSourceId.value) ?? sources.value[0]
-      selectSource(source)
-    } else {
-      applyTemplate(templates[0].dsl)
-    }
-  } catch (e: any) {
-    error.value = e?.message || t('directorySync.loadSourcesFailed')
-  } finally {
-    loading.value = false
+async function loadSources(options: { force?: boolean } = {}) {
+  await settingsResources.loadDirectorySources(options)
+  if (directorySourcesError.value) {
+    error.value = directorySourcesError.value || t('directorySync.loadSourcesFailed')
+    return
+  }
+  if (sources.value.length > 0) {
+    const current = sources.value.find((source) => source.id === selectedSourceId.value) ?? sources.value[0]
+    selectSource(current)
+  } else {
+    applyTemplate(templates[0].dsl)
   }
 }
 
@@ -696,13 +692,13 @@ async function saveSource() {
       await updateDirectorySource(selectedSourceId.value, form.value)
       workItems.invalidateCounts()
       await Promise.all([
-        loadSources(),
+        loadSources({ force: true }),
         workItems.loadCounts({ force: true }),
       ])
     } else {
       const res = await createDirectorySource(form.value)
       selectedSourceId.value = res.data.data?.id ?? null
-      await loadSources()
+      await loadSources({ force: true })
     }
     if (!isActiveRun(activeRun.value)) {
       message.value = t('directorySync.saved')
