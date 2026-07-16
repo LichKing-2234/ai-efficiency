@@ -40,6 +40,7 @@ type Service struct {
 	maxMultiplier            float64
 	snapshotCache            *SnapshotCache
 	memberCursorCodec        *memberCursorCodec
+	organizationCursorCodec  *organizationCursorCodec
 }
 
 func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker) *Service {
@@ -62,6 +63,7 @@ func NewServiceWithSnapshotCache(client *ent.Client, scopeResolver ScopeResolver
 	}
 	if len(memberCursorSecrets) > 0 && strings.TrimSpace(memberCursorSecrets[0]) != "" {
 		service.memberCursorCodec = newMemberCursorCodec(memberCursorSecrets[0])
+		service.organizationCursorCodec = newOrganizationCursorCodec(memberCursorSecrets[0])
 	}
 	return service
 }
