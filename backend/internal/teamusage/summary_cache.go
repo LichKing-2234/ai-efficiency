@@ -18,7 +18,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const snapshotCacheSchemaVersion = 1
+const snapshotCacheSchemaVersion = 2
 
 var snapshotCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
