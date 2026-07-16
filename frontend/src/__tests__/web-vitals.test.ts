@@ -17,7 +17,12 @@ vi.mock('web-vitals', () => ({
 }))
 
 import { submitWebVital } from '@/api/telemetry'
-import { normalizeWebVitalsRoute, readWebVitalsSampleRate, startWebVitalsReporting } from '@/telemetry/webVitals'
+import {
+  normalizeWebVitalsRoute,
+  readWebVitalsSampleRate,
+  startWebVitalsReporting,
+  startWebVitalsReportingAfterRouterReady,
+} from '@/telemetry/webVitals'
 
 function metric(name: 'LCP' | 'INP' | 'CLS' | 'TTFB', value: number, navigationType: Metric['navigationType']): Metric {
   return {
@@ -38,6 +43,7 @@ describe('web vitals reporting', () => {
     vitalMocks.onINP.mockClear()
     vitalMocks.onCLS.mockClear()
     vitalMocks.onTTFB.mockClear()
+    localStorage.clear()
   })
 
   it('samples once and reports four metrics against the initial normalized route', async () => {
@@ -72,6 +78,39 @@ describe('web vitals reporting', () => {
     expect(serialized).not.toContain('private-LCP-id')
     expect(serialized).not.toContain('alice@example.com')
     expect(serialized).not.toContain('44')
+  })
+
+  it('waits for the final initial route and refreshed token before reporting', async () => {
+    let resolveReady!: () => void
+    const ready = new Promise<void>((resolve) => {
+      resolveReady = resolve
+    })
+    const router = {
+      isReady: () => ready,
+      currentRoute: { value: { path: '/' } },
+    }
+    const submit = vi.fn().mockResolvedValue(undefined)
+    localStorage.setItem('token', 'expired-access-token')
+
+    const started = startWebVitalsReportingAfterRouterReady(router, {
+      sampleRate: 1,
+      random: () => 0,
+      submit,
+    })
+    expect(vitalMocks.onLCP).not.toHaveBeenCalled()
+
+    router.currentRoute.value.path = '/usage'
+    localStorage.setItem('token', 'refreshed-access-token')
+    resolveReady()
+
+    await expect(started).resolves.toBe(true)
+    await vi.waitFor(() => expect(vitalMocks.onLCP).toHaveBeenCalledOnce())
+    vitalMocks.callbacks.get('LCP')!(metric('LCP', 2500, 'navigate'))
+    await vi.waitFor(() => expect(submit).toHaveBeenCalledOnce())
+    expect(submit).toHaveBeenCalledWith(
+      { metric: 'LCP', value: 2500, route: '/usage', navigation_type: 'navigate' },
+      'refreshed-access-token',
+    )
   })
 
   it('does not register callbacks without auth or when the page is not sampled', () => {

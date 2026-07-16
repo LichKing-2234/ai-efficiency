@@ -4,6 +4,8 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install --registry=https://registry.npmmirror.com
 COPY frontend/ ./
+ARG VITE_WEB_VITALS_SAMPLE_RATE=0.1
+ENV VITE_WEB_VITALS_SAMPLE_RATE=${VITE_WEB_VITALS_SAMPLE_RATE}
 RUN npm run build
 
 # Stage 2: Build backend

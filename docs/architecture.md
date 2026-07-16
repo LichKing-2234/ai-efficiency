@@ -154,6 +154,7 @@ flowchart TD
 - `deploy/.env.example` is the operator-facing configuration template.
 - Admin settings can display the current backend version and manually check the latest backend GitHub release through `/api/v1/system/version` and `/api/v1/system/version/check`. These endpoints are read-only and never replace binaries, restart services, or mutate deployment state.
 - In-app deployment status, update, rollback, and restart APIs are no longer part of the runtime surface. Operators upgrade Docker deployments by refreshing the image and recreating the service, and upgrade systemd deployments through install/release tooling.
+- Prometheus metrics use a second listener configured by `metrics.listen_address` / `AE_METRICS_LISTEN_ADDRESS`. It defaults to `127.0.0.1:9090`; Docker binds `:9090` only inside its un-published private network. The public application listener never serves the scrape payload.
 
 ## Work Items Read Model
 
@@ -262,7 +263,50 @@ Each completed inbound request emits one `http_request` structured log with only
 
 Each Relay round trip emits exactly one `dependency_request` after response-body EOF, close, or read error, rather than treating response headers as successful completion. A body timeout is therefore classified as `status_class=error` and `error_class=timeout`. Dependency labels remain fixed as `dependency=relay` and `operation=http_request`; methods use the same canonical classifier. Raw paths, queries, request/response bodies, route parameters, actors, panic values, credentials, and downstream response text are never logged. Relay readiness probes drain only a small bounded body, allowing normal health responses to reuse their connection without accepting an unbounded payload.
 
-This runtime currently emits structured zap events only. Prometheus pool/cache metrics and sampled browser Web Vitals remain future #135 work. Cold/warm production evidence and final route-specific budget ratification remain future #136 work; the current defaults are not a substitute for that production measurement.
+## Performance Observability
+
+`backend/internal/telemetry.Metrics` owns one explicit Prometheus registry per
+backend process. The registry is not global and its handler is mounted only on
+the dedicated metrics listener. Request counters, duration/response-byte
+histograms, and in-flight gauges use the normalized Gin route template,
+canonical method, status class, and backend release. Relay dependency counters
+and duration histograms retain the #118 body-completion point and use only the
+fixed dependency/operation, canonical method, status class, and release.
+
+Pull-based pool collectors export current database open/in-use/idle
+connections, wait count/duration, and max-idle/max-idle-time/max-lifetime
+closures. Redis pool metrics separately expose current total/idle connections
+and pending requests plus cumulative waits, wait duration, timeouts, and stale
+connections removed. These pool measurements are
+separate from the application cache counter. The work-item cache binds that
+counter once to `work_items_counts` and the closed outcomes `fresh`, `miss`,
+`stale`, `error`, `refresh`, `lease_acquired`, `lease_wait`, and
+`lease_failed`; it never sends a revision, actor, role, Redis key/token, or
+value. Redis failure still uses the authoritative #119 fallback. A non-miss
+lease-TTL error now follows that fallback immediately instead of being treated
+as lease expiry.
+
+Authenticated frontend pages make one 10-percent sampling decision by default.
+Sampling waits for Vue Router's initial redirects and authorization guards to
+finish, then reads the final route and current access token. Only a selected
+page dynamically imports `web-vitals`, captures that normalized initial route,
+and submits LCP, INP, CLS, and TTFB to protected
+`POST /api/v1/telemetry/web-vitals` with a keepalive bearer request. The handler
+uses a 4 KiB strict JSON limit and a process-wide 50 samples/second, 100-sample
+burst token bucket. Backend validation owns the metric/navigation allowlists,
+normalizes the route again, supplies the release label, converts duration
+milliseconds to seconds, and aggregates directly into fixed-memory
+histograms. It stores no raw sample, metric ID, user, query, route parameter,
+DOM text, or response content.
+
+The internal Grafana baseline under `deploy/observability` declares its
+Prometheus import input and provides request, dependency, and Web Vitals
+p75/p95 views plus database, Redis, and cache panels. Quantiles remain grouped
+by release, and HTTP API routes and browser routes have independent filters.
+Prometheus owns bounded TSDB retention outside this process. Cold/warm
+production evidence, sample sufficiency, and route-specific budget ratification
+remain #136 work; these metrics and local tests are not themselves a production
+performance claim.
 
 ## Current Runtime Flow
 
@@ -425,12 +469,12 @@ flowchart LR
 | Directory sync | `backend/internal/directorysync` | Configurable HTTP directory DSL validation/execution, current department/member/membership facts, scheduled transactional apply runs, shared bounded offboarding count/page anti-join, and confirmed relay-user disable plus tx-aware token/revision finalization |
 | Quota reset approvals | `backend/internal/quotareset` | Department-derived versioned JSON workflow on the existing request row, exact-department configured approvers with representative fallback, configured ancestor rounds, current-candidate indexing, compare-and-swap sequential decisions, rollback-safe active-request uniqueness, transactional actionable-state/revision transitions, durable comments/events, bounded Relay reset execution, and explicit generic/WeCom webhook rendering |
 | Work items | `backend/internal/workitems` | Auth-scoped pending work counters, the PostgreSQL UUID revision, and the namespace/revision/actor/role-isolated Redis read model with bounded authoritative fallback; counts include best-effort relay-derived personal AI access setup plus locally derived quota reset and count-only injected Directory offboarding dependencies |
-| HTTP runtime and telemetry | `backend/internal/httpclient`, `backend/internal/health`, `backend/internal/telemetry`, `backend/internal/middleware` | Bounded reusable downstream transports, parallel deadline-bounded readiness, validated request IDs, normalized request logs, and fixed Relay dependency timing |
+| HTTP runtime and telemetry | `backend/internal/httpclient`, `backend/internal/health`, `backend/internal/telemetry`, `backend/internal/middleware` | Bounded reusable downstream transports, parallel deadline-bounded readiness, validated request IDs, normalized request/Relay logs and Prometheus histograms, database/Redis pool collectors, closed application-cache events, fixed-memory Web Vitals aggregation, and the internal-only scrape registry |
 | Representative scope and team usage | `backend/internal/representativescope`, `backend/internal/teamusage` | Resolve representative subtree scope from current directory metadata and member-department memberships, enforce delegated subject visibility and ancestor-only multiplier policy, orchestrate selected-member detail and team-overview usage reads, and persist local `team_usage_rate_multiplier_audits` |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
 | Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, PR labeling, and dashboard-facing summary inputs |
 | Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution`, `backend/internal/prusage` | Commit checkpoints, rewrite mapping, checkpoint-bound tool usage propagation, and PR usage summary/detail snapshot generation |
-| API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints, representative `/user/team-usage/*` endpoints, quota reset user/admin endpoints including approver candidate lookup, work item count endpoint, admin team-usage audit, admin-users direct relay-user disablement/subscription jobs, and admin directory sync/offboarding endpoints |
+| API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints, representative `/user/team-usage/*` endpoints, quota reset user/admin endpoints including approver candidate lookup, work item count endpoint, protected and rate-limited Web Vitals ingestion, admin team-usage audit, admin-users direct relay-user disablement/subscription jobs, and admin directory sync/offboarding endpoints |
 
 ### Frontend
 
@@ -439,6 +483,7 @@ flowchart LR
 | Views | `frontend/src/views` | Dashboard, Work Items, repos, events, oauth, personal AI Usage, selected-member usage detail, representative Team Overview, admin users, paginated admin Directory offboarding, and admin/settings pages with immediate affected-mutation count refresh |
 | Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, representative team-usage clients, paginated Directory clients, and the generation-safe Work Items count store with completion-based 20-second freshness, invalidation/reset ownership, and one queued forced follow-up |
 | App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation with a freshness-bounded pending-work badge across protected routes and mobile remounts, route composition, and representative `/team-usage` route entry |
+| Browser telemetry | `frontend/src/telemetry`, `frontend/src/api/telemetry.ts` | Auth-gated per-page sampling, initial-route normalization, lazy official Web Vitals collection, and exact keepalive submission without metric IDs, identity, query, parameters, or content |
 
 ### ae-cli
 

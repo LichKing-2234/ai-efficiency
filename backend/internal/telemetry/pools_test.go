@@ -57,10 +57,13 @@ func TestMetricsExportsRedisPoolStatsSeparatelyFromCacheOutcomes(t *testing.T) {
 		t.Fatalf("RegisterRedisPool() error = %v", err)
 	}
 
-	for state, want := range map[string]float64{"total": 11, "idle": 7, "stale": 4, "pending": 2} {
+	for state, want := range map[string]float64{"total": 11, "idle": 7, "pending": 2} {
 		if got := gaugeValue(t, metrics.Gatherer(), "ai_efficiency_redis_pool_connections", map[string]string{"state": state}); got != want {
 			t.Fatalf("redis pool state %s = %v, want %v", state, got, want)
 		}
+	}
+	if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_redis_pool_stale_connections_total", nil); got != 4 {
+		t.Fatalf("redis stale connections total = %v, want 4", got)
 	}
 	if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_redis_pool_wait_total", nil); got != 8 {
 		t.Fatalf("redis pool wait total = %v, want 8", got)

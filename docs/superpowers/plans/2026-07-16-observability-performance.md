@@ -114,7 +114,7 @@
 
   Export `ai_efficiency_http_requests_total`, request duration/response byte histograms, in-flight requests, dependency request count/duration, database connection/wait/closure metrics, and Redis pool connection/wait/duration/timeout metrics. Bind `release` once at registry construction and never accept arbitrary labels from requests.
 
-  Implementation evidence (2026-07-16): `telemetry.Metrics` now owns an isolated registry, request/dependency counters and histograms, in-flight gauges, scrape handler, and pull-based database/Redis pool collectors. Existing request logs and Relay body-completion semantics remain unchanged while optional observers receive only normalized fields.
+  Implementation evidence (2026-07-16): `telemetry.Metrics` now owns an isolated registry, request/dependency counters and histograms, in-flight gauges, scrape handler, and pull-based database/Redis pool collectors. Duration histograms retain finite buckets beyond the configured 30-35 second runtime budgets. Redis `StaleConns` is exported with its actual cumulative-removal counter semantics rather than as a current-connection gauge. Existing request logs and Relay body-completion semantics remain unchanged while optional observers receive only normalized fields.
 
 - [x] **Step 4: Wire the internal metrics server and operator config**
 
@@ -254,7 +254,7 @@
 
   Add `web-vitals@5.3.0`. Capture the initial browser path, normalize it through a closed route table, decide sampling once, and use authenticated `fetch(..., {method: 'POST', keepalive: true})`. Do not use metric IDs or backend-returned page content. Register the handler only under the existing protected `/api/v1/telemetry/web-vitals` group and aggregate immediately into fixed-memory Prometheus histograms.
 
-  Implementation evidence (2026-07-16): the protected handler rate-limits before strict decoding, validates again before recording, and returns an empty 202. Metrics aggregate LCP/INP/TTFB seconds and CLS ratios only. The frontend samples authenticated initial navigation at 10 percent by default and dynamically imports `web-vitals` only after selection, keeping the library out of unsampled users' critical path.
+  Implementation evidence (2026-07-16): the protected handler rate-limits before strict decoding, validates again before recording, and returns an empty 202. Metrics aggregate LCP/INP/TTFB seconds and CLS ratios only. The frontend waits for initial router redirects and authorization guards, then samples the final authenticated route at 10 percent by default with the current token and dynamically imports `web-vitals` only after selection, keeping the library out of unsampled users' critical path.
 
 - [x] **Step 5: Verify Task 3 GREEN and checkpoint**
 
@@ -282,19 +282,25 @@
 - Modify: `docs/architecture.md`
 - Modify: this plan
 
-- [ ] **Step 1: Add RED dashboard contract test**
+- [x] **Step 1: Add RED dashboard contract test**
 
   Parse the dashboard JSON and require p75/p95 HTTP and dependency histogram queries, p75 LCP/INP/CLS/TTFB queries, database and Redis pool panels, cache event panels, route/release filters, and absence of prohibited user, request-ID, query, key, provider, or scope labels.
 
-- [ ] **Step 2: Build the baseline dashboard and operator contract**
+  RED evidence (2026-07-16): the contract test failed only because the Grafana JSON did not exist. It now parses the artifact and asserts exact quantile, pool/cache, variable, and prohibited-label fragments.
+
+- [x] **Step 2: Build the baseline dashboard and operator contract**
 
   Add Grafana panels using `histogram_quantile(0.75, ...)` and `histogram_quantile(0.95, ...)`, plus pool gauges/counters and cache event rates. Document the separate listener, Docker internal-network rule, no raw browser-event storage, Prometheus-side retention ownership, scrape example, sample-rate build variable, expected baseline-only interpretation, and that #136 ratifies budgets after sufficient production samples.
 
-- [ ] **Step 3: Update current architecture and plan state**
+  Dashboard evidence (2026-07-16): the importable dashboard declares its Prometheus datasource input and provides release-preserving HTTP/dependency and all four Web Vitals p75/p95 panels, response-size quantiles, DB/Redis pools including wait-duration evidence, cache-event rates, and separate HTTP/browser route filters. The operator README records loopback/private-network scraping, fixed-memory aggregation, example bounded retention, dynamic browser sampling, and #136 ownership; Docker exposes the sample rate as a build argument.
+
+- [x] **Step 3: Update current architecture and plan state**
 
   Record the explicit registry/listener boundary, request/dependency and pool metric dimensions, work-item event outcomes, protected/rate-limited Web Vitals flow, privacy exclusions, fixed-memory aggregation, and Grafana baseline. Do not rewrite historical specs.
 
-- [ ] **Step 4: Run full verification**
+  Documentation evidence (2026-07-16): `docs/architecture.md` now records the second-listener deployment relationship, explicit registry, request/Relay/pool/cache dimensions, Redis TTL-error fallback, protected sampled browser flow, raw-data exclusions, fixed-memory aggregation, dashboard, retention ownership, and remaining #136 production-verification boundary. Historical specs were not rewritten.
+
+- [x] **Step 4: Run full verification**
 
   ```bash
   git diff --check
@@ -305,9 +311,13 @@
 
   Also run race-enabled telemetry/work-item tests and parse the Grafana JSON through the dashboard contract test.
 
-- [ ] **Step 5: Review against issue #135 and the active performance spec**
+  Full verification evidence (2026-07-16): after review remediation, `git diff --check`, formatting of every changed Go file, targeted backend `go vet`, backend `go test ./...`, race-enabled telemetry/middleware/workitems tests, frontend 40 files/458 tests and production build, ae-cli `go test ./...`, the Grafana dashboard contract test, Dockerfile multi-architecture contract, and release-workflow contract all passed. The production build keeps `web-vitals` in a separate 6.31 kB chunk (2.56 kB gzip) and the main entry at 258.95 kB (89.49 kB gzip).
+
+- [x] **Step 5: Review against issue #135 and the active performance spec**
 
   Audit every metric name/label, p75/p95 query, request/dependency completion point, DB/Redis pool field, work-item cold/warm/collapse/lease/fallback event, frontend sampling decision, route/navigation normalization, auth/rate/body boundary, scrape isolation, raw-data retention, configuration/deploy path, compatibility signature, and synthetic test value. Fix every Critical/Important finding and rerun affected verification.
+
+  Review evidence (2026-07-16): independent standards and spec reviews found no Critical issues and identified four Important classes: runtime histograms ended below configured request/dependency budgets; Redis `StaleConns` used gauge semantics instead of its cumulative-removal meaning; Grafana lacked a datasource input, mixed releases in quantiles, and reused API routes for browser filtering; and Web Vitals captured route/token before initial router guards completed. RED regressions reproduced every issue. The fixes extend finite duration buckets beyond runtime budgets, export stale removals as a counter, make the dashboard importable with release-preserving quantiles and separate HTTP/browser route variables, and wait for `router.isReady()` before reading the final route/current token. Both reviewers confirmed every Important finding closed with no new Critical/Important findings, and the full verification suite passed afterward.
 
 - [ ] **Step 6: Push and open a Draft PR**
 
