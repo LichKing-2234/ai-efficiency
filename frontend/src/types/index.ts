@@ -1005,7 +1005,18 @@ export interface TeamDepartmentTrendState {
   unit_label: string
   unavailable: boolean
   unavailable_reason?: string | null
+  comparison_total_count: number
+  comparison_truncated: boolean
   series: TeamDepartmentTrendSeries[]
+}
+
+export interface TeamUsageTrendResponse extends TeamUsageSnapshotFreshness {
+  scope_version: string
+  request_id: string
+  window: TeamOverviewWindow
+  top_members: TeamOverviewMember[]
+  top_member_trend: TeamMemberTrendState
+  department_trend: TeamDepartmentTrendState
 }
 
 export interface TeamOverviewResponse {
