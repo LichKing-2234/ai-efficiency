@@ -1,7 +1,7 @@
 # End-to-End Page Loading Performance Design
 
 - **Date:** 2026-07-14
-- **Status:** Approved target design; implementation pending
+- **Status:** Approved target design; the #123 personal usage slice is implemented on its feature branch, while unrelated slices remain pending
 - **Parent issue:** [#115](https://github.com/LichKing-2234/ai-efficiency/issues/115)
 - **Contract ticket:** [#116](https://github.com/LichKing-2234/ai-efficiency/issues/116)
 - **Audit baseline:** commit `70eb6ebe32298c333d4bebf144edd1b474a039dc`, production `v0.1.0-preview.71`
@@ -243,6 +243,37 @@ Do not cache or use stale values for:
 
 ## Personal Usage Target Contract
 
+### Implementation status for #123
+
+The #123 slice implements the personal usage clauses in this section with these
+concrete choices:
+
+- `backend/internal/personalusage` owns current-user/provider resolution, the
+  two-window usage read model, freshness semantics, and fresh-only quota
+  composition. The Gin handler is a thin projection and error-mapping adapter.
+- `relay.UserUsageOriginReader` is the optional migration seam. It selects usage
+  and quota branches, uses one login when usage is requested, starts no more
+  than five child calls concurrently, and applies one 12-second origin deadline.
+- Personal usage keys use SHA-256 over the deployment namespace, provider id and
+  persisted `configuration_version`, actor id, Relay subject id,
+  `users.updated_at` binding version, start/end, granularity, and timezone. The
+  value contains only range/stats/trend/models and freshness timestamps.
+- Freshness uses 10-20 percent jitter: 24-27 seconds fresh and 96-108 seconds to
+  the hard stale deadline. Invalid credentials, configuration errors, and caller
+  cancellation never use stale. Redis failure bypasses the distributed read
+  model while retaining the bounded process-local flight.
+- The first-party browser sends the usage-only and quota-only requests in
+  parallel from `UserUsageDashboard`. Representative-scope discovery runs
+  independently in `DashboardView`; the API helpers remain in `frontend/src/api`.
+  Each personal request branch has its own AbortController, one generation guard
+  protects all state, and chart modules load only after usable usage exists.
+- `/usage/members/:user_id` remains isolated on the selected-subject team API and
+  does not call or populate the personal usage cache or quota endpoint.
+
+These statements mark only #123 as implemented. Provider-client convergence,
+the Team Usage split, telemetry, and every other ticket in the rollout table
+remain target contracts until their own slices land.
+
 ### Endpoint and origin composition
 
 The stable combined endpoint remains available for existing callers:
@@ -258,7 +289,7 @@ GET /api/v1/user/usage/dashboard?start_date=...&end_date=...&granularity=...&tim
 GET /api/v1/user/usage/group-quotas?start_date=...&end_date=...&granularity=...&timezone=...
 ```
 
-The additive `include_group_quotas=false` projection returns the existing usage fields plus `usage_freshness`, and omits `group_quotas` and `quota_freshness`. Omitting the parameter preserves the current combined response shape for compatibility. The independent quota endpoint returns only `group_quotas` and `quota_freshness`. The frontend composes the two results in its API/store boundary and renders either result as soon as it arrives.
+The additive `include_group_quotas=false` projection returns the existing usage fields plus `usage_freshness`, and omits `group_quotas` and `quota_freshness`. Omitting the parameter preserves the current combined response shape for compatibility. The independent quota endpoint returns only `group_quotas` and `quota_freshness`. The frontend keeps request definitions in its API boundary, composes the two results in the personal-usage domain component, and renders either result as soon as it arrives.
 
 The service checks the usage-metric cache before deciding which origin branches are needed. The Relay provider boundary exposes one high-level, request-scoped origin read with explicit branch selection:
 

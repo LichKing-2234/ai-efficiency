@@ -269,6 +269,7 @@ const enUS = {
   'usageDashboard.openSetup': 'Open AI Setup',
   'usageDashboard.credentialError': 'Relay credentials need attention',
   'usageDashboard.unavailable': 'Usage dashboard is temporarily unavailable',
+  'usageDashboard.staleSnapshot': 'Showing a recent snapshot while live usage is temporarily unavailable.',
   'usageDashboard.retryHelp': 'Try refreshing after checking your setup.',
   'usageDashboard.todayCost': 'Today Cost',
   'usageDashboard.todayRequests': 'Today Requests',

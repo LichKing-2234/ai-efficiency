@@ -2807,7 +2807,13 @@ func TestListPlatformGroupsReturnsActivePlatformSummaries(t *testing.T) {
 func TestGetUserUsageDashboard(t *testing.T) {
 	var loginCount int
 	var meCount int
+	var seenPathsMu sync.Mutex
 	var seenPaths []string
+	recordPath := func(r *http.Request) {
+		seenPathsMu.Lock()
+		seenPaths = append(seenPaths, r.URL.RequestURI())
+		seenPathsMu.Unlock()
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
@@ -2843,7 +2849,7 @@ func TestGetUserUsageDashboard(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, r *http.Request) {
-		seenPaths = append(seenPaths, r.URL.RequestURI())
+		recordPath(r)
 		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
 			t.Fatalf("stats Authorization = %q, want user JWT", r.Header.Get("Authorization"))
 		}
@@ -2877,7 +2883,7 @@ func TestGetUserUsageDashboard(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/api/v1/usage/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
-		seenPaths = append(seenPaths, r.URL.RequestURI())
+		recordPath(r)
 		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
 			t.Fatalf("trend Authorization = %q, want user JWT", r.Header.Get("Authorization"))
 		}
@@ -2909,7 +2915,7 @@ func TestGetUserUsageDashboard(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/api/v1/usage/dashboard/models", func(w http.ResponseWriter, r *http.Request) {
-		seenPaths = append(seenPaths, r.URL.RequestURI())
+		recordPath(r)
 		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
 			t.Fatalf("models Authorization = %q, want user JWT", r.Header.Get("Authorization"))
 		}
@@ -2958,6 +2964,10 @@ func TestGetUserUsageDashboard(t *testing.T) {
 		"/api/v1/usage/dashboard/trend?end_date=2026-06-06&granularity=day&start_date=2026-06-01&timezone=Asia%2FShanghai",
 		"/api/v1/usage/dashboard/models?end_date=2026-06-06&start_date=2026-06-01&timezone=Asia%2FShanghai",
 	}
+	seenPathsMu.Lock()
+	sort.Strings(seenPaths)
+	seenPathsMu.Unlock()
+	sort.Strings(wantPaths)
 	if diff := cmp.Diff(wantPaths, seenPaths); diff != "" {
 		t.Fatalf("paths mismatch (-want +got):\n%s", diff)
 	}

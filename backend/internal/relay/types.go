@@ -218,6 +218,27 @@ type UserUsageDashboardParams struct {
 	Timezone    string `json:"timezone"`
 }
 
+type UserUsageOriginBranches struct {
+	Usage bool
+	Quota bool
+}
+
+type UserUsageOriginRequest struct {
+	Login       string
+	Password    string
+	RelayUserID int64
+	Params      UserUsageDashboardParams
+	Branches    UserUsageOriginBranches
+}
+
+type UserUsageOriginResult struct {
+	Usage         *UserUsageDashboardResponse
+	UsageErr      error
+	APIKeys       []APIKey
+	Subscriptions []UserSubscription
+	QuotaErr      error
+}
+
 type UserUsageDashboardRange struct {
 	StartDate   string `json:"start_date"`
 	EndDate     string `json:"end_date"`
