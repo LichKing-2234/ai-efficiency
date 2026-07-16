@@ -31,6 +31,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/relayruntime"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/teamusage"
@@ -198,6 +199,21 @@ func main() {
 	redisClient := redis.NewClient(redisClientOptions(cfg.Redis))
 	defer redisClient.Close()
 	redisStore := readcache.NewRedisStore(redisClient)
+	providerInvalidationBus, err := relayruntime.NewRedisInvalidationBus(redisClient, cfg.Redis.Namespace)
+	if err != nil {
+		logger.Fatal("initialize relay provider invalidation bus", zap.Error(err))
+	}
+	providerRuntime, err := relayruntime.NewManager(entClient, cfg.Encryption.Key, logger, relayruntime.Options{
+		Namespace: cfg.Redis.Namespace,
+		Store:     redisStore,
+		Bus:       providerInvalidationBus,
+	})
+	if err != nil {
+		logger.Fatal("initialize relay provider runtime", zap.Error(err))
+	}
+	providerRuntimeCtx, stopProviderRuntime := context.WithCancel(context.Background())
+	defer stopProviderRuntime()
+	providerRuntime.Start(providerRuntimeCtx)
 	workItemsCache, err := workitems.NewCountsCache(
 		redisStore,
 		workItemsRevisionStore,
@@ -288,7 +304,7 @@ func main() {
 	oauthHandler := oauth.NewHandler(oauthServer, cfg.Server.FrontendURL, &authTokenAdapter{authService: authService})
 
 	// Init provider handler
-	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger)
+	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger, providerRuntime)
 	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
 		Executor:                  directorysync.NewExecutor(directorysync.ExecutorOptions{}),
 		Credentials:               directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
