@@ -25,7 +25,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update each checkbox immediately after the action is actually complete.
 
-**Status:** In progress. Dependency merge `1efd3f0` passed backend `go test ./...`, frontend 39 files/452 tests plus production build, ae-cli `go test ./...`, and `git diff --check` before #135 implementation.
+**Status:** Complete. Draft PR #158 targets `docs/performance-contracts-116`, depends on Draft PR #138 and the explicitly merged runtime Draft PR #143, and the implementation-head CI passed all required jobs. The worktree remains available for review; no merge, release, tag, deployment, or Helm action was performed.
 
 ---
 
@@ -319,10 +319,14 @@
 
   Review evidence (2026-07-16): independent standards and spec reviews found no Critical issues and identified four Important classes: runtime histograms ended below configured request/dependency budgets; Redis `StaleConns` used gauge semantics instead of its cumulative-removal meaning; Grafana lacked a datasource input, mixed releases in quantiles, and reused API routes for browser filtering; and Web Vitals captured route/token before initial router guards completed. RED regressions reproduced every issue. The fixes extend finite duration buckets beyond runtime budgets, export stale removals as a counter, make the dashboard importable with release-preserving quantiles and separate HTTP/browser route variables, and wait for `router.isReady()` before reading the final route/current token. Both reviewers confirmed every Important finding closed with no new Critical/Important findings, and the full verification suite passed afterward.
 
-- [ ] **Step 6: Push and open a Draft PR**
+- [x] **Step 6: Push and open a Draft PR**
 
   Target `docs/performance-contracts-116`. List Draft PR #138 as the base dependency, Draft PR #143 as the explicit runtime dependency, and merged PR #139/#119 as already present in the base. Close #135. Preserve all worktrees and do not merge or release.
 
-- [ ] **Step 7: Wait for required CI and record final state**
+  Publication evidence (2026-07-16): published `perf/observability-135` at implementation head `15a52b7f6e70d017e5e7d1be8d1f0e750be88504` and opened Draft PR #158 (`https://github.com/LichKing-2234/ai-efficiency/pull/158`) against `docs/performance-contracts-116`. The PR names Draft PR #138 as the base dependency, Draft PR #143 as the explicit runtime dependency, and PR #139 / issue #119 as already present in the base; it closes #135 and performs no merge, release, deployment, or Helm action.
+
+- [x] **Step 7: Wait for required CI and record final state**
 
   Record the exact implementation-head run and backend/frontend/ae-cli/deploy-static conclusions, then push one ledger commit and verify final ledger-head CI.
+
+  CI evidence (2026-07-16): GitHub Actions run `29495502514` (`https://github.com/LichKing-2234/ai-efficiency/actions/runs/29495502514`) completed successfully for implementation head `15a52b7f6e70d017e5e7d1be8d1f0e750be88504`: backend job `87611374793`, frontend job `87611374853`, ae-cli job `87611374871`, and deploy-static job `87611374843` all concluded `success`.
