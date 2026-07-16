@@ -23,6 +23,14 @@ type repoResponse struct {
 	SCMProviderID *int   `json:"scm_provider_id,omitempty"`
 }
 
+type repoListResponse struct {
+	Items     []repoResponse      `json:"items"`
+	Total     int64               `json:"total"`
+	Page      int                 `json:"page"`
+	PageSize  int                 `json:"page_size"`
+	Selection *repo.ListSelection `json:"selection,omitempty"`
+}
+
 type ensureRemoteRequest struct {
 	RemoteURL string `json:"remote_url" binding:"required"`
 	Branch    string `json:"branch"`
@@ -57,18 +65,24 @@ func (h *RepoHandler) List(c *gin.Context) {
 		BindingState:  bindingState,
 	}
 
-	repos, total, err := h.repoService.List(c.Request.Context(), opts)
+	pageResult, err := h.repoService.ListPage(c.Request.Context(), opts)
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "failed to list repos")
 		return
 	}
 
-	items := make([]repoResponse, 0, len(repos))
-	for _, r := range repos {
+	items := make([]repoResponse, 0, len(pageResult.Items))
+	for _, r := range pageResult.Items {
 		items = append(items, buildRepoResponse(r))
 	}
 
-	pkg.Paged(c, total, page, pageSize, items)
+	pkg.Success(c, repoListResponse{
+		Items:     items,
+		Total:     pageResult.Total,
+		Page:      pageResult.Page,
+		PageSize:  pageResult.PageSize,
+		Selection: pageResult.Selection,
+	})
 }
 
 // Inventory handles GET /api/v1/repos/inventory

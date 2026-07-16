@@ -46,11 +46,27 @@ type CommitRewriteRequest struct {
 }
 
 type Service struct {
-	entClient *ent.Client
+	entClient   *ent.Client
+	repoService *reposvc.Service
 }
 
-func NewService(entClient *ent.Client) *Service {
-	return &Service{entClient: entClient}
+type ServiceOptions struct {
+	InventoryRevisionStore reposvc.InventoryRevisionInvalidator
+	RepoService            *reposvc.Service
+}
+
+func NewService(entClient *ent.Client, options ...ServiceOptions) *Service {
+	opt := ServiceOptions{}
+	if len(options) > 0 {
+		opt = options[0]
+	}
+	repoService := opt.RepoService
+	if repoService == nil {
+		repoService = reposvc.NewService(entClient, "", nil, reposvc.ServiceOptions{
+			InventoryRevisionStore: opt.InventoryRevisionStore,
+		})
+	}
+	return &Service{entClient: entClient, repoService: repoService}
 }
 
 func (s *Service) RecordCheckpoint(ctx context.Context, req CommitCheckpointRequest) error {
@@ -94,7 +110,13 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 		}
 	}()
 
-	txSvc := &Service{entClient: tx.Client()}
+	pendingAutoBind := make([]int, 0, 1)
+	txSvc := &Service{
+		entClient: tx.Client(),
+		repoService: s.repoService.WithTransaction(tx, func(repoID int) {
+			pendingAutoBind = append(pendingAutoBind, repoID)
+		}),
+	}
 
 	exists, err := txSvc.entClient.CommitCheckpoint.Query().
 		Where(commitcheckpoint.EventIDEQ(eventID)).
@@ -181,6 +203,9 @@ func (s *Service) recordCheckpoint(ctx context.Context, userID int, req CommitCh
 		return fmt.Errorf("record checkpoint: commit tx: %w", err)
 	}
 	txDone = true
+	for _, repoID := range pendingAutoBind {
+		_, _ = s.repoService.AutoBindRepo(ctx, repoID)
+	}
 	return nil
 }
 
@@ -337,8 +362,7 @@ func (s *Service) resolveOrEnsureRepoConfig(ctx context.Context, repoFullName, c
 		return nil, err
 	}
 
-	repoService := reposvc.NewService(s.entClient, "", nil)
-	return repoService.EnsureFromRemote(ctx, remoteURL, branch)
+	return s.repoService.EnsureFromRemote(ctx, remoteURL, branch)
 }
 
 func (s *Service) resolveRepoConfigForIngest(ctx context.Context, repoConfigID int, repoFullName, cloneURL, branch string) (*ent.RepoConfig, error) {
