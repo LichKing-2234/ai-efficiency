@@ -21,7 +21,7 @@
 - Tests and examples use synthetic identities only.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** In progress. Baseline is issue #125 head `c3de13e`; backend and frontend baseline suites and frontend production build passed.
+**Status:** Complete. Draft PR #154 targets `perf/team-summary-125`, depends directly on Draft PR #153, and the implementation-head CI passed all required jobs. The worktree remains available for review; no merge, release, tag, deployment, or Helm action was performed.
 
 ---
 
@@ -189,6 +189,8 @@
 
   Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/154. It is OPEN and Draft, targets `perf/team-summary-125`, and records Draft PR #153 as its direct dependency.
 
-- [ ] **Step 5: Wait for required CI and record final state**
+- [x] **Step 5: Wait for required CI and record final state**
 
   Record the exact latest-head run and all backend/frontend/ae-cli/deploy-static conclusions.
+
+  CI evidence: https://github.com/LichKing-2234/ai-efficiency/actions/runs/29474631505 passed for implementation head `4c95f5b`: backend (3m25s), frontend (55s), ae-cli (41s), and deploy-static (17s) all completed successfully.
