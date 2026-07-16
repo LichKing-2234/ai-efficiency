@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -18,6 +19,12 @@ import (
 
 var prAttributionService prAttributionSettler
 var prUsageService prUsageRefresher
+
+type RouterRuntimeOptions struct {
+	DirectoryService       DirectoryAdminService
+	WorkItemsCache         *workitems.CountsCache
+	WorkItemsRevisionStore *workitems.RevisionStore
+}
 
 func SetPRAttributionService(service prAttributionSettler) {
 	prAttributionService = service
@@ -44,8 +51,12 @@ func SetupRouter(
 	adminSettingsHandler *AdminSettingsHandler,
 	checkpointHandler *CheckpointHandler,
 	healthHandler *HealthHandler,
-	directoryServices ...DirectoryAdminService,
+	runtimeOptions ...RouterRuntimeOptions,
 ) *gin.Engine {
+	var runtime RouterRuntimeOptions
+	if len(runtimeOptions) > 0 {
+		runtime = runtimeOptions[0]
+	}
 	r := gin.New()
 	r.RemoveExtraSlash = true
 	r.Use(gin.Recovery())
@@ -80,10 +91,17 @@ func SetupRouter(
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
-	workItemsService := workitems.NewService(entClient)
-	if providerHandler != nil {
-		workItemsService = workitems.NewService(entClient, userSetupService)
+	var offboardingCounter interface {
+		CountOffboardingCandidates(context.Context, int) (int, error)
 	}
+	if runtime.DirectoryService != nil {
+		offboardingCounter = runtime.DirectoryService
+	}
+	workItemsService := workitems.NewService(entClient, offboardingCounter)
+	if providerHandler != nil {
+		workItemsService = workitems.NewService(entClient, offboardingCounter, userSetupService)
+	}
+	workItemsService.WithCountsCache(runtime.WorkItemsCache)
 	workItemsHandler := NewWorkItemsHandler(workItemsService)
 	var quotaResetHandler *QuotaResetHandler
 	if providerHandler != nil {
@@ -94,6 +112,7 @@ func SetupRouter(
 			providerHandler,
 			quotareset.NewApproverResolver(entClient),
 			quotareset.NewWebhookNotifier(entClient, encryptionKey, publicURL),
+			runtime.WorkItemsRevisionStore,
 		)
 		quotaResetHandler = NewQuotaResetHandler(quotaResetService)
 	}
@@ -323,10 +342,10 @@ func SetupRouter(
 		}
 	}
 
-	if len(directoryServices) > 0 && directoryServices[0] != nil {
+	if runtime.DirectoryService != nil {
 		directoryGroup := protected.Group("/admin/directory")
 		directoryGroup.Use(auth.RequireAdmin())
-		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(directoryServices[0]))
+		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(runtime.DirectoryService))
 	}
 
 	// Settings — admin only
