@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -10,6 +12,7 @@ import (
 
 type Config struct {
 	Server       ServerConfig       `mapstructure:"server"`
+	Metrics      MetricsConfig      `mapstructure:"metrics"`
 	HTTPClient   HTTPClientConfig   `mapstructure:"http_client"`
 	DB           DBConfig           `mapstructure:"db"`
 	Redis        RedisConfig        `mapstructure:"redis"`
@@ -17,6 +20,10 @@ type Config struct {
 	Encryption   EncryptionConfig   `mapstructure:"encryption"`
 	Relay        RelayConfig        `mapstructure:"relay"`
 	VersionCheck VersionCheckConfig `mapstructure:"version_check"`
+}
+
+type MetricsConfig struct {
+	ListenAddress string `mapstructure:"listen_address"`
 }
 
 type ServerConfig struct {
@@ -109,6 +116,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("server.idle_timeout_seconds", 120)
 	v.SetDefault("server.readiness_timeout_seconds", 2)
 	v.SetDefault("server.request_timeout_seconds", 35)
+	v.SetDefault("metrics.listen_address", "127.0.0.1:9090")
 	v.SetDefault("http_client.connect_timeout_seconds", 5)
 	v.SetDefault("http_client.tls_handshake_timeout_seconds", 5)
 	v.SetDefault("http_client.response_header_timeout_seconds", 15)
@@ -153,6 +161,7 @@ func Load(path string) (*Config, error) {
 		"server.idle_timeout_seconds",
 		"server.readiness_timeout_seconds",
 		"server.request_timeout_seconds",
+		"metrics.listen_address",
 		"http_client.connect_timeout_seconds",
 		"http_client.tls_handshake_timeout_seconds",
 		"http_client.response_header_timeout_seconds",
@@ -206,11 +215,27 @@ func Load(path string) (*Config, error) {
 	if err := ValidateRedisNamespace(cfg.Redis.Namespace); err != nil {
 		return nil, fmt.Errorf("invalid redis namespace %q: %w", cfg.Redis.Namespace, err)
 	}
+	if err := validateMetricsConfig(cfg.Metrics); err != nil {
+		return nil, err
+	}
 	if err := validateHTTPRuntime(cfg); err != nil {
 		return nil, err
 	}
 
 	return &cfg, nil
+}
+
+func validateMetricsConfig(cfg MetricsConfig) error {
+	address := strings.TrimSpace(cfg.ListenAddress)
+	_, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("invalid metrics.listen_address %q: expected host:port", cfg.ListenAddress)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("invalid metrics.listen_address %q: port must be between 1 and 65535", cfg.ListenAddress)
+	}
+	return nil
 }
 
 const (

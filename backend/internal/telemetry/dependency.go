@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func WrapDependency(logger *zap.Logger, release, dependency, operation string) httpclient.TransportWrapper {
+func WrapDependency(logger *zap.Logger, release, dependency, operation string, observers ...DependencyObserver) httpclient.TransportWrapper {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -25,6 +25,7 @@ func WrapDependency(logger *zap.Logger, release, dependency, operation string) h
 			release:    release,
 			dependency: dependency,
 			operation:  operation,
+			observers:  observers,
 		}
 	}
 }
@@ -35,6 +36,7 @@ type dependencyTransport struct {
 	release    string
 	dependency string
 	operation  string
+	observers  []DependencyObserver
 }
 
 func (t *dependencyTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -79,13 +81,20 @@ func (t *dependencyTransport) RoundTrip(request *http.Request) (*http.Response, 
 }
 
 func (t *dependencyTransport) logEvent(ctx context.Context, requestID, method, statusClass string, startedAt time.Time, err error) {
+	duration := time.Since(startedAt)
+	method = HTTPMethod(method)
+	for _, observer := range t.observers {
+		if observer != nil {
+			observer.Observe(t.dependency, t.operation, method, statusClass, duration)
+		}
+	}
 	fields := []zap.Field{
 		zap.String("event", "dependency_request"),
 		zap.String("dependency", t.dependency),
 		zap.String("operation", t.operation),
-		zap.String("method", HTTPMethod(method)),
+		zap.String("method", method),
 		zap.String("status_class", statusClass),
-		zap.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
+		zap.Int64("duration_ms", duration.Milliseconds()),
 		zap.String("release", t.release),
 	}
 	if requestID != "" {

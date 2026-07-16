@@ -26,6 +26,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.DB.MaxOpenConns != 25 {
 		t.Errorf("default max_open_conns = %d, want 25", cfg.DB.MaxOpenConns)
 	}
+	if cfg.Metrics.ListenAddress != "127.0.0.1:9090" {
+		t.Errorf("default metrics listen address = %q, want 127.0.0.1:9090", cfg.Metrics.ListenAddress)
+	}
 	if cfg.Auth.AccessTokenTTL != 7200 {
 		t.Errorf("default access_token_ttl = %d, want 7200", cfg.Auth.AccessTokenTTL)
 	}
@@ -34,6 +37,28 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Redis.Namespace != "ai-efficiency" {
 		t.Errorf("default redis namespace = %q, want ai-efficiency", cfg.Redis.Namespace)
+	}
+}
+
+func TestLoadMetricsListenAddressFromEnvironment(t *testing.T) {
+	t.Setenv("AE_METRICS_LISTEN_ADDRESS", ":9191")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Metrics.ListenAddress != ":9191" {
+		t.Fatalf("metrics.listen_address = %q, want :9191", cfg.Metrics.ListenAddress)
+	}
+}
+
+func TestLoadRejectsInvalidMetricsListenAddress(t *testing.T) {
+	for _, address := range []string{"http://127.0.0.1:9090", "127.0.0.1", "127.0.0.1:0", "127.0.0.1:70000"} {
+		t.Run(address, func(t *testing.T) {
+			t.Setenv("AE_METRICS_LISTEN_ADDRESS", address)
+			if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "metrics.listen_address") {
+				t.Fatalf("Load() error = %v, want metrics.listen_address validation error", err)
+			}
+		})
 	}
 }
 
@@ -738,6 +763,7 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 			ReadinessTimeoutSeconds:  4,
 			RequestTimeoutSeconds:    35,
 		},
+		Metrics: MetricsConfig{ListenAddress: "127.0.0.1:9090"},
 		HTTPClient: HTTPClientConfig{
 			ConnectTimeoutSeconds:        8,
 			TLSHandshakeTimeoutSeconds:   9,

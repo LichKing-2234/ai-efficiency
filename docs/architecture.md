@@ -168,6 +168,7 @@ flowchart TD
 - `deploy/.env.example` is the operator-facing configuration template.
 - Admin settings can display the current backend version and manually check the latest backend GitHub release through `/api/v1/system/version` and `/api/v1/system/version/check`. These endpoints are read-only and never replace binaries, restart services, or mutate deployment state.
 - In-app deployment status, update, rollback, and restart APIs are no longer part of the runtime surface. Operators upgrade Docker deployments by refreshing the image and recreating the service, and upgrade systemd deployments through install/release tooling.
+- Prometheus metrics use a second listener configured by `metrics.listen_address` / `AE_METRICS_LISTEN_ADDRESS`. It defaults to `127.0.0.1:9090`; Docker binds `:9090` only inside its un-published private network. The public application listener never serves the scrape payload.
 
 ## Work Items Read Model
 
@@ -420,19 +421,28 @@ The backend owns one bounded inbound server and four reusable outbound HTTP conn
 - `server.readiness_timeout_seconds: 2` remains a smaller shared readiness budget.
 - `ReadTimeout` and `WriteTimeout` intentionally remain unset while long synchronous Team Overview requests still exist. The browser and request context supply the temporary synchronous caller budgets instead.
 
-During the monolithic Team Overview migration, the complete default caller ordering is: reverse proxy upstream timeout at least 60 seconds, browser Axios timeout 45 seconds, request context 35 seconds, shared downstream overall timeout 30 seconds, fixed version check timeout 10 seconds, and fixed quota notification webhook timeout 5 seconds. A proxy timeout below 60 seconds is unsupported deployment configuration for this migration window and must be corrected before rollout.
+During the monolithic Team Overview migration, the complete default caller ordering is: reverse proxy upstream timeout at least 60 seconds, browser Axios timeout 45 seconds (including the explicit Team Overview override and the raw token-refresh request), request context 35 seconds, shared downstream overall timeout 30 seconds, fixed version check timeout 10 seconds, and fixed quota notification webhook timeout 5 seconds. A proxy timeout below 60 seconds is unsupported deployment configuration for this migration window and must be corrected before rollout. The project does not own proxy configuration, so deployment verification must confirm that prerequisite explicitly.
 
-Every outbound pool uses a 5-second connect timeout, 5-second TLS handshake timeout, 15-second response-header timeout, 90-second idle-connection timeout, at most 100 total idle connections, 20 idle connections per host, and 50 total connections per host. Relay, general downstream, version-check, and quota-notification clients are created once at startup; the version and webhook clients preserve their stricter 10-second and 5-second overall deadlines. Compatibility constructors share one package-level bounded fallback transport instead of creating private pools. Request contexts flow into downstream calls so cancellation and deadlines stop in-flight work.
+Every outbound pool uses a 5-second connect timeout, 5-second TLS handshake timeout, 15-second response-header timeout, 90-second idle-connection timeout, at most 100 total idle connections, 20 idle connections per host, and 50 total connections per host. The pools differ by consumer and overall deadline:
 
-Config load rejects non-positive or excessive runtime durations and pool sizes before conversion to `time.Duration`. Ordering requires connect, TLS, and response-header phases below shared downstream overall, shared downstream below request context, readiness below request context, and the fixed browser/request/downstream/version/webhook sequence above.
+| Pool | Consumers | Overall deadline | Additional behavior |
+| --- | --- | --- | --- |
+| Relay | Runtime Relay provider, DB-created Relay providers, Relay settings probes | 30 seconds | Carries request correlation and fixed Relay dependency timing |
+| General downstream | Directory Sync and SCM providers | 30 seconds | Isolated from Relay telemetry and connections |
+| Version check | Explicit GitHub release checks | 10 seconds | Preserves the stricter existing version-check budget |
+| Quota notification webhook | Quota-reset outbound notifications | 5 seconds | Preserves the stricter existing webhook budget |
 
-Liveness performs no dependency calls. Readiness runs database, Redis, and Relay probes concurrently under one shared two-second budget and preserves deterministic result order. A probe panic becomes only the sanitized result `down/unavailable`. Only database failure or timeout produces `not_ready` with HTTP 503. Redis or Relay failure/not-configured produces `degraded` with HTTP 200 when the database is up.
+These four clients and their private transports are created once during startup rather than per request. Compatibility constructors outside production injection return distinct deadline-bearing clients over one documented package-level bounded fallback transport, so repeated compatibility construction does not leak private pools. Request contexts flow into downstream calls so cancellation and deadlines stop in-flight work instead of detaching background HTTP requests.
 
-Request telemetry is the first Gin middleware, followed by privacy-safe recovery, request timeout, CORS, canonical request-path redirect, embedded frontend, and route handlers. Gin's engine-level trailing-slash redirect is disabled; the in-chain 307 redirect preserves query, method, body replay, correlation, and CORS. Incoming `X-Request-ID` values are accepted only when they are 1-128 ASCII characters from `[A-Za-z0-9._-]`; otherwise a UUID is generated. The selected ID is returned on every response and forwarded by Relay transport.
+Config load rejects non-positive or excessive runtime durations and pool sizes before conversion to `time.Duration`. The supported operator ranges are 1-60 seconds for request headers, 1-3600 seconds for server and connection idle time, 1-30 seconds for readiness/connect/TLS handshake, 12-44 seconds for request context, 11-43 seconds for shared downstream overall, 1-60 seconds for response headers, and 1-10,000 for each HTTP pool field. Ordering further requires connect, TLS, and response-header phases below shared downstream overall, shared downstream overall below request context, and readiness below request context. The phase rule makes 42 seconds the effective maximum response-header value. The shared overall lower bound preserves the strict `shared > version 10s > webhook 5s` order, while the request upper bound preserves fixed browser 45s > request. Startup errors name the invalid configuration field.
 
-Each completed request emits one `http_request` event with only route template or `unmatched`, canonical method, status class, duration, response bytes, release, and request ID. Panic recovery emits only fixed route/method/status/release/request-id/error-class fields. Each Relay round trip emits one `dependency_request` after response-body EOF, close, or read error. Raw paths, queries, bodies, route parameters, actors, panic values, credentials, and downstream response text are never logged.
+Liveness performs no dependency calls. Readiness runs database, Redis, and Relay probes concurrently under one shared two-second budget and preserves deterministic result order. A probe panic is contained inside its child goroutine and becomes only the sanitized result `down/unavailable`. Only database failure or timeout produces body status `not_ready` and HTTP 503. Redis or Relay failure/not-configured produces body status `degraded` and HTTP 200 when the database is up; all dependencies up produces `ready` and HTTP 200.
 
-Prometheus pool/cache metrics and sampled browser Web Vitals are owned by #135. Cold/warm production evidence and final route-specific budget ratification remain #136 work; runtime defaults are not a substitute for production measurement.
+Request telemetry is the first Gin middleware. Production middleware order is request telemetry, privacy-safe recovery, request timeout, CORS, canonical request-path redirect, embedded frontend, then route/group handlers. Gin's engine-level trailing-slash redirect is disabled so canonical redirects for every HTTP method, including registered API mutations, remain inside that middleware chain and retain correlation, CORS, and exact-once telemetry. The in-chain redirect uses 307, preserves the query in `Location`, and therefore lets clients replay the original method and body against the canonical route. Request telemetry accepts an incoming `X-Request-ID` only when the value is 1-128 ASCII characters from `[A-Za-z0-9._-]`; otherwise it generates a UUID. The selected ID is stored in the request context, returned on every response, allowed and exposed by CORS, and forwarded by the Relay transport on correlated downstream requests.
+
+Each completed inbound request emits one `http_request` structured log with only the Gin route template (or the fixed value `unmatched`), canonical HTTP method, status class, duration in milliseconds, response bytes, release, and request ID. Gin's pre-finalization `Size() == -1` sentinel is recorded as zero for real zero-byte responses such as status-only handlers and embedded HEAD serving; telemetry does not fabricate a response body. Standard methods retain their uppercase fixed values; every other method is `OTHER`. Panic recovery discards Gin's raw request/panic dump and emits one zap `http_recovery` event with only fixed route, canonical method, `5xx`, release, request ID, and `error_class=panic` fields.
+
+Each Relay round trip emits exactly one `dependency_request` after response-body EOF, close, or read error, rather than treating response headers as successful completion. A body timeout is therefore classified as `status_class=error` and `error_class=timeout`. Dependency labels remain fixed as `dependency=relay` and `operation=http_request`; methods use the same canonical classifier. Raw paths, queries, request/response bodies, route parameters, actors, panic values, credentials, and downstream response text are never logged. Relay readiness probes drain only a small bounded body, allowing normal health responses to reuse their connection without accepting an unbounded payload.
 
 ## Relay Provider Runtime And Metadata
 
@@ -464,6 +474,51 @@ second provider client or metadata cache.
   membership and select a current active group API key before cached model
   display metadata can be returned. Provider version changes and revoked
   membership therefore never inherit authority from a warm metadata value.
+
+## Performance Observability
+
+`backend/internal/telemetry.Metrics` owns one explicit Prometheus registry per
+backend process. The registry is not global and its handler is mounted only on
+the dedicated metrics listener. Request counters, duration/response-byte
+histograms, and in-flight gauges use the normalized Gin route template,
+canonical method, status class, and backend release. Relay dependency counters
+and duration histograms retain the #118 body-completion point and use only the
+fixed dependency/operation, canonical method, status class, and release.
+
+Pull-based pool collectors export current database open/in-use/idle
+connections, wait count/duration, and max-idle/max-idle-time/max-lifetime
+closures. Redis pool metrics separately expose current total/idle connections
+and pending requests plus cumulative waits, wait duration, timeouts, and stale
+connections removed. These pool measurements are
+separate from the application cache counter. The work-item cache binds that
+counter once to `work_items_counts` and the closed outcomes `fresh`, `miss`,
+`stale`, `error`, `refresh`, `lease_acquired`, `lease_wait`, and
+`lease_failed`; it never sends a revision, actor, role, Redis key/token, or
+value. Redis failure still uses the authoritative #119 fallback. A non-miss
+lease-TTL error now follows that fallback immediately instead of being treated
+as lease expiry.
+
+Authenticated frontend pages make one 10-percent sampling decision by default.
+Sampling waits for Vue Router's initial redirects and authorization guards to
+finish, then reads the final route and current access token. Only a selected
+page dynamically imports `web-vitals`, captures that normalized initial route,
+and submits LCP, INP, CLS, and TTFB to protected
+`POST /api/v1/telemetry/web-vitals` with a keepalive bearer request. The handler
+uses a 4 KiB strict JSON limit and a process-wide 50 samples/second, 100-sample
+burst token bucket. Backend validation owns the metric/navigation allowlists,
+normalizes the route again, supplies the release label, converts duration
+milliseconds to seconds, and aggregates directly into fixed-memory
+histograms. It stores no raw sample, metric ID, user, query, route parameter,
+DOM text, or response content.
+
+The internal Grafana baseline under `deploy/observability` declares its
+Prometheus import input and provides request, dependency, and Web Vitals
+p75/p95 views plus database, Redis, and cache panels. Quantiles remain grouped
+by release, and HTTP API routes and browser routes have independent filters.
+Prometheus owns bounded TSDB retention outside this process. Cold/warm
+production evidence, sample sufficiency, and route-specific budget ratification
+remain #136 work; these metrics and local tests are not themselves a production
+performance claim.
 
 ## Current Runtime Flow
 
@@ -628,11 +683,11 @@ flowchart LR
 | Work items | `backend/internal/workitems` | Auth-scoped pending work counters, the PostgreSQL UUID revision, and the namespace/revision/actor/role-isolated Redis read model with bounded authoritative fallback; counts include best-effort relay-derived personal AI access setup plus locally derived quota reset and count-only injected Directory offboarding dependencies |
 | Administrator users | `backend/internal/adminusers`, `backend/internal/adminsubscription` | Source-scoped effective-department SQL and effective-subtree-to-user eligibility shared by targets, count/page, page-local enrichment, bounded options, immediate-child navigation, and summaries; one current-filter target reader preserves list, persisted-job, and compatibility-batch predicate parity |
 | Representative scope and team usage | `backend/internal/representativescope`, `backend/internal/readcache`, `backend/internal/teamusage` | Resolve representative subtree scope from current directory metadata and member-department memberships, derive and twice-check opaque scope versions, reuse namespace/provider/actor/scope/range-isolated Redis team snapshots with bounded stale-if-error and authoritative fallback, serve split summary, bounded split trend, snapshot-bound paged members, shallow paged organization branches, and the legacy overview adapter from one generation, enforce delegated subject visibility and ancestor-only multiplier policy, and persist local `team_usage_rate_multiplier_audits` |
-| HTTP runtime and telemetry | `backend/internal/httpclient`, `backend/internal/health`, `backend/internal/telemetry`, `backend/internal/middleware` | Bounded reusable downstream transports, parallel deadline-bounded readiness, validated request IDs, normalized request logs, and fixed Relay dependency timing |
+| HTTP runtime and telemetry | `backend/internal/httpclient`, `backend/internal/health`, `backend/internal/telemetry`, `backend/internal/middleware` | Bounded reusable downstream transports, parallel deadline-bounded readiness, validated request IDs, normalized request/Relay logs and Prometheus histograms, database/Redis pool collectors, closed application-cache events, fixed-memory Web Vitals aggregation, and the internal-only scrape registry |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
 | Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, bounded SQL inventory aggregation, transactionally versioned optional Redis inventory reads, PR labeling, and dashboard-facing summary inputs |
 | Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution`, `backend/internal/prusage` | Commit checkpoints, rewrite mapping, checkpoint-bound tool usage propagation, and PR usage summary/detail snapshot generation |
-| API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints, representative `/user/team-usage/*` endpoints, quota reset user/admin endpoints including approver candidate lookup, work item count endpoint, admin team-usage audit, admin-users direct relay-user disablement/subscription jobs, and admin directory sync/offboarding endpoints |
+| API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints, representative `/user/team-usage/*` endpoints, quota reset user/admin endpoints including approver candidate lookup, work item count endpoint, protected and rate-limited Web Vitals ingestion, admin team-usage audit, admin-users direct relay-user disablement/subscription jobs, and admin directory sync/offboarding endpoints |
 | Embedded frontend delivery | `backend/internal/web`, `backend/internal/oauth`, `backend/internal/handler` | Resolve embedded files and SPA fallbacks before applying gzip and cache policy, serve browser GET/HEAD consistently, and reuse the embedded index representation for OAuth authorize/device browser entry routes |
 
 ### Frontend
@@ -645,6 +700,7 @@ flowchart LR
 | Route and session policy | `frontend/src/router/authGuard.ts`, `frontend/src/router/index.ts` | Parallel public/ordinary chunk and identity scheduling, fail-closed administrator role verification, exact attempt-generation lifecycle settlement, navigation-generation-gated follow-ups, failed-attempt recovery, and confirmation-based destination expiry consumption |
 | App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation with a freshness-bounded pending-work badge across protected routes and mobile remounts, route composition, and representative `/team-usage` route entry |
 | Runtime loading | `frontend/src/main.ts`, `frontend/src/i18n.ts`, `frontend/src/locales`, `frontend/src/components/charts`, `frontend/src/components/user/usage`, `frontend/src/components/team-usage` | Gate mount on the active locale dictionary, commit language switches atomically, and keep Chart.js canvas renderers behind chartable-data async component boundaries while lightweight shell and non-chart states remain immediately renderable |
+| Browser telemetry | `frontend/src/telemetry`, `frontend/src/api/telemetry.ts` | Auth-gated per-page sampling, initial-route normalization, lazy official Web Vitals collection, and exact keepalive submission without metric IDs, identity, query, parameters, or content |
 
 ### ae-cli
 
