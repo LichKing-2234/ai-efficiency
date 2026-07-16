@@ -13,13 +13,20 @@ import {
 import { useToast } from '@/composables/useToast'
 import { useI18n, type MessageKey } from '@/i18n'
 import { useWorkItemsStore } from '@/stores/workItems'
-import type { Credential, DirectorySource, DirectorySourceRequest, DirectorySyncRun, DirectoryValidationIssue } from '@/types'
+import type {
+  Credential,
+  DirectoryRunSummary,
+  DirectorySource,
+  DirectorySourceRequest,
+  DirectorySyncRun,
+  DirectoryValidationIssue,
+} from '@/types'
 
 defineProps<{
   credentials: Credential[]
 }>()
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const { showToast } = useToast()
 const workItems = useWorkItemsStore()
 
@@ -27,19 +34,37 @@ const sources = ref<DirectorySource[]>([])
 const selectedSourceId = ref<number | null>(null)
 const loading = ref(false)
 const saving = ref(false)
+const actionRequestPending = ref<number | null>(null)
 const message = ref('')
 const error = ref('')
 const validationIssues = ref<DirectoryValidationIssue[]>([])
 const aiPromptContext = ref('')
 const runWarningSummaries = ref<Array<{ code: string; count: number; labelKey: MessageKey; helpKey: MessageKey }>>([])
-const activeRun = ref<DirectorySyncRun | null>(null)
+const activeRun = ref<DirectoryRunSummary | DirectorySyncRun | null>(null)
 const activeRunAction = ref<'preview' | 'apply' | null>(null)
-let displayRunPollTimer: number | undefined
-let runRecoveryRequest = 0
-let unmounted = false
-const trackedApplyRunIDs = new Set<number>()
-const applyPollTimers = new Map<number, number>()
-const applyPollRequests = new Set<number>()
+const runSummaries = ref<DirectoryRunSummary[]>([])
+const runTotal = ref(0)
+const runPage = ref(0)
+const runPageSize = ref(20)
+const runOffset = ref(0)
+const pendingRunOffset = ref<number | null>(null)
+const runHistoryLoading = ref(false)
+const runHistoryError = ref('')
+const latestActiveRun = ref<DirectoryRunSummary | null>(null)
+const selectedRunId = ref<number | null>(null)
+const selectedRunSummary = ref<DirectoryRunSummary | null>(null)
+const selectedRunDetail = ref<DirectorySyncRun | null>(null)
+const selectedRunLoading = ref(false)
+const selectedRunError = ref('')
+const RUN_PAGE_SIZE = 20
+let runPollTimer: number | undefined
+let pageRequestGeneration = 0
+let pendingRunPageActionGeneration: number | null = null
+let detailRequestGeneration = 0
+let actionRequestGeneration = 0
+let pollGeneration = 0
+let activePollRunId: number | null = null
+let pollInFlightGeneration: number | null = null
 const form = ref<DirectorySourceRequest>({
   name: '',
   description: '',
@@ -52,6 +77,9 @@ const form = ref<DirectorySourceRequest>({
 })
 
 const selectedSource = computed(() => sources.value.find((source) => source.id === selectedSourceId.value) || null)
+const runPageCount = computed(() => Math.max(1, Math.ceil(runTotal.value / Math.max(runPageSize.value, 1))))
+const canLoadPreviousRuns = computed(() => !runHistoryLoading.value && runOffset.value > 0)
+const canLoadNextRuns = computed(() => !runHistoryLoading.value && runOffset.value + runPageSize.value < runTotal.value)
 const currentCredentialRef = computed(() => {
   const match = form.value.dsl.match(/^\s*credential_ref:\s*["']?([^"'\s#]+)["']?\s*$/m)
   return match?.[1] || 'directory_api_key'
@@ -165,12 +193,11 @@ steps:
 
 onMounted(loadSources)
 onUnmounted(() => {
-  unmounted = true
-  runRecoveryRequest++
-  stopDisplayRunPolling()
-  stopApplyRunPolling()
-  applyPollRequests.clear()
-  trackedApplyRunIDs.clear()
+  pageRequestGeneration++
+  detailRequestGeneration++
+  actionRequestGeneration++
+  actionRequestPending.value = null
+  invalidateRunPolling()
 })
 
 async function loadSources() {
@@ -179,7 +206,8 @@ async function loadSources() {
     const res = await listDirectorySources()
     sources.value = res.data.data?.items ?? []
     if (sources.value.length > 0) {
-      selectSource(sources.value[0])
+      const source = sources.value.find((candidate) => candidate.id === selectedSourceId.value) ?? sources.value[0]
+      selectSource(source)
     } else {
       applyTemplate(templates[0].dsl)
     }
@@ -191,7 +219,14 @@ async function loadSources() {
 }
 
 function selectSource(source: DirectorySource) {
+  const sourceChanged = selectedSourceId.value !== source.id
+  if (sourceChanged) {
+    actionRequestGeneration++
+    actionRequestPending.value = null
+    resetRunLifecycle()
+  }
   clearFeedback()
+  resetRunView()
   selectedSourceId.value = source.id
   form.value = {
     name: source.name,
@@ -203,9 +238,7 @@ function selectSource(source: DirectorySource) {
     schedule_interval: source.schedule_interval || 'daily',
     schedule_timezone: source.schedule_timezone || 'UTC',
   }
-  void startRecoverLatestRun(source.id).catch(() => {
-    // Recovery is best-effort; normal source loading feedback stays separate.
-  })
+  void loadRunPage(source.id, 0)
 }
 
 function applyTemplate(dsl: string) {
@@ -216,21 +249,88 @@ function applyTemplate(dsl: string) {
 }
 
 function clearFeedback() {
-  runRecoveryRequest++
-  stopDisplayRunPolling()
-  message.value = ''
   error.value = ''
   validationIssues.value = []
-  runWarningSummaries.value = []
+  if (!isActiveRun(activeRun.value)) {
+    message.value = ''
+    runWarningSummaries.value = []
+  }
+}
+
+function resetRunLifecycle() {
+  invalidateRunPolling()
   activeRun.value = null
   activeRunAction.value = null
+  latestActiveRun.value = null
+}
+
+function resetRunView() {
+  pageRequestGeneration++
+  detailRequestGeneration++
+  runSummaries.value = []
+  runTotal.value = 0
+  runPage.value = 0
+  runPageSize.value = RUN_PAGE_SIZE
+  runOffset.value = 0
+  pendingRunOffset.value = null
+  pendingRunPageActionGeneration = null
+  runHistoryLoading.value = false
+  runHistoryError.value = ''
+  selectedRunId.value = null
+  selectedRunSummary.value = null
+  selectedRunDetail.value = null
+  selectedRunLoading.value = false
+  selectedRunError.value = ''
 }
 
 function apiErrorMessage(e: any, fallback: string) {
   return e?.response?.data?.message || e?.message || fallback
 }
 
-function runStats(run: DirectorySyncRun | undefined) {
+function actionContextMatches(generation: number, sourceID: number) {
+  return generation === actionRequestGeneration && selectedSourceId.value === sourceID
+}
+
+function beginActionRequest() {
+  if (actionRequestPending.value !== null) return null
+  const generation = ++actionRequestGeneration
+  actionRequestPending.value = generation
+  pageRequestGeneration++
+  pendingRunOffset.value = null
+  pendingRunPageActionGeneration = null
+  runHistoryLoading.value = false
+  return generation
+}
+
+async function performActionRequest<T>(generation: number, request: () => Promise<T>) {
+  try {
+    return await request()
+  } finally {
+    if (actionRequestPending.value === generation) actionRequestPending.value = null
+  }
+}
+
+interface RunPageRecoveryContext {
+  action: 'preview' | 'apply'
+  generation: number
+}
+
+interface RunPollOwnership {
+  generation: number
+  runID: number | null
+}
+
+function pageRequestContextMatches(generation: number, sourceID: number, offset: number, recovery?: RunPageRecoveryContext) {
+  return generation === pageRequestGeneration
+    && selectedSourceId.value === sourceID
+    && pendingRunOffset.value === offset
+    && pendingRunPageActionGeneration === (recovery?.generation ?? null)
+    && (!recovery || actionContextMatches(recovery.generation, sourceID))
+}
+
+type RunDisplay = DirectoryRunSummary | DirectorySyncRun
+
+function runStats(run: RunDisplay | undefined) {
   return {
     departments: run?.department_count ?? 0,
     members: run?.member_count ?? 0,
@@ -253,9 +353,9 @@ const warningCopy: Record<string, { labelKey: MessageKey; helpKey: MessageKey }>
   },
 }
 
-function summarizeWarnings(run: DirectorySyncRun | undefined) {
+function summarizeWarnings(run: RunDisplay | undefined) {
   const counts = new Map<string, number>()
-  for (const warning of run?.warnings ?? []) {
+  for (const warning of (run as DirectorySyncRun | undefined)?.warnings ?? []) {
     const code = warningCopy[warning.code] ? warning.code : 'unknown'
     counts.set(code, (counts.get(code) ?? 0) + 1)
   }
@@ -280,56 +380,46 @@ function warningRecordUnit(count: number) {
   return t(count === 1 ? 'directorySync.warningRecordSingular' : 'directorySync.warningRecordPlural')
 }
 
-function isTerminalRun(run: DirectorySyncRun | undefined) {
+function isTerminalRun(run: RunDisplay | null | undefined) {
   return run?.status === 'completed' || run?.status === 'completed_with_warnings' || run?.status === 'failed'
 }
 
-function isActiveRun(run: DirectorySyncRun | undefined) {
+function isActiveRun(run: RunDisplay | null | undefined) {
   return run?.status === 'queued' || run?.status === 'running'
 }
 
-function actionForRun(run: DirectorySyncRun | undefined): 'preview' | 'apply' | null {
+function actionForRun(run: RunDisplay | null | undefined): 'preview' | 'apply' | null {
   if (run?.mode === 'preview') return 'preview'
   if (run?.mode === 'apply') return 'apply'
   return null
 }
 
-function stopDisplayRunPolling() {
-  if (displayRunPollTimer !== undefined) {
-    window.clearTimeout(displayRunPollTimer)
-    displayRunPollTimer = undefined
+function invalidateRunPolling() {
+  pollGeneration++
+  if (runPollTimer) {
+    window.clearTimeout(runPollTimer)
+    runPollTimer = undefined
   }
+  activePollRunId = null
+  pollInFlightGeneration = null
 }
 
-function stopApplyRunPolling(runID?: number) {
-  if (runID !== undefined) {
-    const timer = applyPollTimers.get(runID)
-    if (timer !== undefined) window.clearTimeout(timer)
-    applyPollTimers.delete(runID)
-    return
-  }
-  for (const timer of applyPollTimers.values()) {
-    window.clearTimeout(timer)
-  }
-  applyPollTimers.clear()
+function pollContextMatches(generation: number, sourceID: number, runID: number) {
+  return generation === pollGeneration
+    && selectedSourceId.value === sourceID
+    && activePollRunId === runID
 }
 
-function scheduleDisplayRunPolling(runID: number, sourceID?: number | null) {
-  stopDisplayRunPolling()
-  if (unmounted) return
-  displayRunPollTimer = window.setTimeout(() => {
-    displayRunPollTimer = undefined
-    void pollDisplayedPreviewUntilDone(runID, sourceID)
+function pollOwnershipMatches(ownership: RunPollOwnership) {
+  return ownership.generation === pollGeneration && ownership.runID === activePollRunId
+}
+
+function scheduleRunPolling(runID: number, action: 'preview' | 'apply', sourceID: number, generation: number) {
+  if (!pollContextMatches(generation, sourceID, runID) || runPollTimer || pollInFlightGeneration === generation) return
+  runPollTimer = window.setTimeout(() => {
+    runPollTimer = undefined
+    void pollRunUntilDone(runID, action, sourceID, generation)
   }, 1500)
-}
-
-function scheduleApplyRunPolling(runID: number) {
-  if (unmounted || applyPollTimers.has(runID)) return
-  const timer = window.setTimeout(() => {
-    applyPollTimers.delete(runID)
-    void pollObservedApplyUntilDone(runID)
-  }, 1500)
-  applyPollTimers.set(runID, timer)
 }
 
 function phaseLabel(phase?: string) {
@@ -344,7 +434,7 @@ function phaseLabel(phase?: string) {
   return t(phase ? labels[phase] ?? 'directorySync.phaseValidating' : 'directorySync.phaseValidating')
 }
 
-function showRunResult(run: DirectorySyncRun | undefined, action: 'preview' | 'apply') {
+function showRunResult(run: RunDisplay | undefined, action: 'preview' | 'apply') {
   const status = run?.status
   if (status === 'completed_with_warnings') {
     runWarningSummaries.value = summarizeWarnings(run)
@@ -360,115 +450,242 @@ function showRunResult(run: DirectorySyncRun | undefined, action: 'preview' | 'a
   } else {
     message.value = t(action === 'preview' ? 'directorySync.previewStarted' : 'directorySync.applyStarted')
   }
-  if (run?.status === 'failed' && run.error_message) {
-    error.value = run.error_message
+  const detail = run as DirectorySyncRun | undefined
+  if (detail?.status === 'failed' && detail.error_message) {
+    error.value = detail.error_message
   }
 }
 
-async function refreshWorkItemsForCompletedApply(run: DirectorySyncRun, action: 'preview' | 'apply') {
-  if (action !== 'apply' || !isTerminalRun(run)) return
-  const tracked = trackedApplyRunIDs.delete(run.id)
-  if (!tracked || run.status === 'failed') return
-  workItems.invalidateCounts()
-  await workItems.loadCounts({ force: true })
-}
-
-async function applyRunProgress(run: DirectorySyncRun | undefined, action: 'preview' | 'apply') {
+function applyRunProgress(run: RunDisplay | undefined, action: 'preview' | 'apply') {
   if (!run) return
   activeRun.value = run
   activeRunAction.value = action
   if (isTerminalRun(run)) {
-    stopDisplayRunPolling()
     showRunResult(run, action)
     return
   }
   message.value = t(action === 'preview' ? 'directorySync.previewStarted' : 'directorySync.applyStarted')
 }
 
-async function pollDisplayedPreviewUntilDone(runID: number, sourceID?: number | null) {
-  try {
-    const res = await getDirectoryRun(runID)
-    if (unmounted) return
-    const run = res.data.data
-    if ((sourceID && selectedSourceId.value !== sourceID) || (run?.source_id && selectedSourceId.value !== run.source_id)) {
-      return
-    }
-    await applyRunProgress(run, 'preview')
-    if (run && !isTerminalRun(run)) {
-      scheduleDisplayRunPolling(runID, sourceID ?? run.source_id)
-    }
-  } catch (e: any) {
-    if (unmounted) return
-    stopDisplayRunPolling()
-    activeRun.value = null
-    activeRunAction.value = null
-    error.value = apiErrorMessage(e, t('directorySync.runProgressFailed'))
+async function refreshWorkItemsAfterSuccessfulApply(run: RunDisplay, action: 'preview' | 'apply') {
+  if (action !== 'apply' || !isTerminalRun(run) || run.status === 'failed') return
+  workItems.invalidateCounts()
+  await workItems.loadCounts({ force: true })
+}
+
+function summaryFromRun(run: RunDisplay, sourceID: number): DirectoryRunSummary {
+  return {
+    id: run.id,
+    source_id: run.source_id || sourceID,
+    mode: run.mode,
+    trigger: run.trigger || 'manual',
+    status: run.status,
+    phase: run.phase || (run.status === 'failed' ? 'failed' : isTerminalRun(run) ? 'completed' : 'validating'),
+    started_at: run.started_at ?? null,
+    completed_at: run.completed_at ?? null,
+    http_request_count: run.http_request_count ?? 0,
+    department_count: run.department_count ?? 0,
+    member_count: run.member_count ?? 0,
+    invalid_member_count: run.invalid_member_count ?? 0,
+    warning_count: run.warning_count ?? 0,
   }
 }
 
-async function pollObservedApplyUntilDone(runID: number) {
-  if (unmounted || !trackedApplyRunIDs.has(runID) || applyPollRequests.has(runID)) return
-  applyPollRequests.add(runID)
+function modeLabel(mode: DirectoryRunSummary['mode']) {
+  const labels: Record<DirectoryRunSummary['mode'], MessageKey> = {
+    validate: 'directorySync.runModeValidate',
+    preview: 'directorySync.runModePreview',
+    apply: 'directorySync.runModeApply',
+  }
+  return t(labels[mode])
+}
+
+function statusLabel(status: DirectoryRunSummary['status']) {
+  const labels: Record<DirectoryRunSummary['status'], MessageKey> = {
+    queued: 'directorySync.runStatusQueued',
+    running: 'directorySync.runStatusRunning',
+    completed: 'directorySync.runStatusCompleted',
+    completed_with_warnings: 'directorySync.runStatusCompletedWithWarnings',
+    failed: 'directorySync.runStatusFailed',
+  }
+  return t(labels[status])
+}
+
+function runStartedLabel(run: DirectoryRunSummary) {
+  if (!run.started_at) return t('directorySync.runQueuedAt')
+  return new Date(run.started_at).toLocaleString(locale.value)
+}
+
+function formatDiagnostic(value: Record<string, unknown> | undefined) {
+  return JSON.stringify(value ?? {}, null, 2)
+}
+
+function adoptLatestActiveRun(run: DirectoryRunSummary, sourceID: number) {
+  const action = actionForRun(run)
+  if (!action) return false
+  latestActiveRun.value = run
+  applyRunProgress(run, action)
+  if (activePollRunId !== run.id) {
+    invalidateRunPolling()
+    activePollRunId = run.id
+  }
+  scheduleRunPolling(run.id, action, sourceID, pollGeneration)
+  return true
+}
+
+function applyPageRecovery(items: DirectoryRunSummary[], latestActive: DirectoryRunSummary | null, sourceID: number, offset: number, pollOwnership: RunPollOwnership, expectedAction?: 'preview' | 'apply') {
+  if (latestActive) {
+    if (!pollOwnershipMatches(pollOwnership)) return false
+    const action = actionForRun(latestActive)
+    const recovered = adoptLatestActiveRun(latestActive, sourceID)
+    return recovered && (!expectedAction || action === expectedAction)
+  }
+
+  if (activePollRunId !== null) return false
+  if (!pollOwnershipMatches(pollOwnership)) return false
+  latestActiveRun.value = null
+  if (offset !== 0) return false
+  const newest = items.find((candidate) => Boolean(actionForRun(candidate)))
+  const action = actionForRun(newest)
+  if (newest && action && !(activeRun.value?.id === newest.id && isTerminalRun(activeRun.value))) {
+    applyRunProgress(newest, action)
+  }
+  return expectedAction ? false : Boolean(newest && action)
+}
+
+async function loadRunPage(sourceID: number, offset: number, recovery?: RunPageRecoveryContext) {
+  const generation = ++pageRequestGeneration
+  const pollOwnership = { generation: pollGeneration, runID: activePollRunId }
+  pendingRunOffset.value = offset
+  pendingRunPageActionGeneration = recovery?.generation ?? null
+  runHistoryLoading.value = true
+  runHistoryError.value = ''
   try {
-    const res = await getDirectoryRun(runID)
-    if (unmounted || !trackedApplyRunIDs.has(runID)) return
-    const run = res.data.data
-    if (!run) {
-      stopApplyRunPolling(runID)
-      trackedApplyRunIDs.delete(runID)
-      return
+    const res = await listDirectoryRuns(sourceID, { limit: RUN_PAGE_SIZE, offset })
+    if (!pageRequestContextMatches(generation, sourceID, offset, recovery)) return false
+    const page = res.data.data ?? {
+      items: [],
+      total: 0,
+      page: Math.floor(offset / RUN_PAGE_SIZE),
+      page_size: RUN_PAGE_SIZE,
+      latest_active_run: null,
     }
-    const isDisplayed = activeRunAction.value === 'apply'
-      && activeRun.value?.id === runID
-      && (!run.source_id || selectedSourceId.value === run.source_id)
-    if (isDisplayed) {
-      await applyRunProgress(run, 'apply')
-    }
-    if (isTerminalRun(run)) {
-      stopApplyRunPolling(runID)
-      await refreshWorkItemsForCompletedApply(run, 'apply')
-      return
-    }
-    scheduleApplyRunPolling(runID)
+    runSummaries.value = page.items
+    runTotal.value = page.total
+    runPage.value = page.page
+    runPageSize.value = page.page_size
+    runOffset.value = offset
+    return applyPageRecovery(page.items, page.latest_active_run, sourceID, offset, pollOwnership, recovery?.action)
   } catch (e: any) {
-    if (unmounted) return
-    stopApplyRunPolling(runID)
-    trackedApplyRunIDs.delete(runID)
-    if (activeRunAction.value === 'apply' && activeRun.value?.id === runID) {
-      activeRun.value = null
-      activeRunAction.value = null
-      error.value = apiErrorMessage(e, t('directorySync.runProgressFailed'))
+    if (pageRequestContextMatches(generation, sourceID, offset, recovery)) {
+      runHistoryError.value = apiErrorMessage(e, t('directorySync.runHistoryLoadFailed'))
+    }
+    return false
+  } finally {
+    if (pageRequestContextMatches(generation, sourceID, offset, recovery)) {
+      pendingRunOffset.value = null
+      pendingRunPageActionGeneration = null
+      runHistoryLoading.value = false
+    }
+  }
+}
+
+function loadPreviousRunPage() {
+  if (!selectedSourceId.value || !canLoadPreviousRuns.value) return
+  void loadRunPage(selectedSourceId.value, Math.max(0, runOffset.value - runPageSize.value))
+}
+
+function loadNextRunPage() {
+  if (!selectedSourceId.value || !canLoadNextRuns.value) return
+  void loadRunPage(selectedSourceId.value, runOffset.value + runPageSize.value)
+}
+
+async function selectRun(run: DirectoryRunSummary) {
+  const sourceID = selectedSourceId.value
+  if (!sourceID) return
+  const generation = ++detailRequestGeneration
+  selectedRunId.value = run.id
+  selectedRunSummary.value = run
+  selectedRunDetail.value = null
+  selectedRunLoading.value = true
+  selectedRunError.value = ''
+  try {
+    const res = await getDirectoryRun(run.id)
+    const detail = res.data.data
+    if (
+      generation !== detailRequestGeneration
+      || selectedSourceId.value !== sourceID
+      || selectedRunId.value !== run.id
+      || (detail?.source_id && detail.source_id !== sourceID)
+    ) return
+    selectedRunDetail.value = detail ?? null
+  } catch (e: any) {
+    if (generation === detailRequestGeneration && selectedSourceId.value === sourceID && selectedRunId.value === run.id) {
+      selectedRunError.value = apiErrorMessage(e, t('directorySync.runDetailLoadFailed'))
     }
   } finally {
-    applyPollRequests.delete(runID)
+    if (generation === detailRequestGeneration && selectedSourceId.value === sourceID && selectedRunId.value === run.id) {
+      selectedRunLoading.value = false
+    }
   }
 }
 
-function startRecoverLatestRun(sourceID: number, expectedAction?: 'preview' | 'apply') {
-  return recoverLatestRun(sourceID, expectedAction, ++runRecoveryRequest)
+async function pollRunUntilDone(runID: number, action: 'preview' | 'apply', sourceID: number, generation: number) {
+  if (!pollContextMatches(generation, sourceID, runID)) return
+  pollInFlightGeneration = generation
+  try {
+    const res = await getDirectoryRun(runID)
+    const run = res.data.data
+    if (
+      !pollContextMatches(generation, sourceID, runID)
+      || (run?.source_id && run.source_id !== sourceID)
+    ) return
+    if (!run) return
+
+    applyRunProgress(run, action)
+    if (isActiveRun(run)) {
+      latestActiveRun.value = summaryFromRun(run, sourceID)
+      pollInFlightGeneration = null
+      scheduleRunPolling(runID, action, sourceID, generation)
+      return
+    }
+
+    latestActiveRun.value = null
+    activePollRunId = null
+    pollGeneration++
+    pollInFlightGeneration = null
+    if (selectedRunId.value === runID) {
+      detailRequestGeneration++
+      selectedRunSummary.value = summaryFromRun(run, sourceID)
+      selectedRunDetail.value = run
+      selectedRunLoading.value = false
+      selectedRunError.value = ''
+    }
+    const completedPageReload = selectedSourceId.value === sourceID
+      ? loadRunPage(sourceID, runOffset.value)
+      : Promise.resolve(false)
+    await Promise.all([
+      refreshWorkItemsAfterSuccessfulApply(run, action),
+      completedPageReload,
+    ])
+  } catch (e: any) {
+    if (!pollContextMatches(generation, sourceID, runID)) return
+    invalidateRunPolling()
+    activeRun.value = null
+    activeRunAction.value = null
+    latestActiveRun.value = null
+    error.value = apiErrorMessage(e, t('directorySync.runProgressFailed'))
+  } finally {
+    if (pollInFlightGeneration === generation) pollInFlightGeneration = null
+  }
 }
 
-async function recoverLatestRun(sourceID: number, expectedAction?: 'preview' | 'apply', requestID = runRecoveryRequest) {
-  const res = await listDirectoryRuns(sourceID)
-  const runs = res.data.data?.items ?? []
-  if (unmounted || selectedSourceId.value !== sourceID || requestID !== runRecoveryRequest) return false
-  const candidates = runs.filter((candidate) => {
-    const action = actionForRun(candidate)
-    return Boolean(action && (!expectedAction || action === expectedAction))
-  })
-  const activeApplyRuns = candidates.filter((candidate) => candidate.mode === 'apply' && isActiveRun(candidate))
-  for (const applyRun of activeApplyRuns) {
-    trackedApplyRunIDs.add(applyRun.id)
-    scheduleApplyRunPolling(applyRun.id)
-  }
-  const run = candidates.find(isActiveRun) ?? candidates[0]
-  const action = actionForRun(run)
-  if (!run || !action) return false
-  await applyRunProgress(run, action)
-  if (isActiveRun(run) && action === 'preview') {
-    scheduleDisplayRunPolling(run.id, sourceID)
-  }
-  return true
+async function startCreatedRunPolling(run: DirectorySyncRun, action: 'preview' | 'apply', sourceID: number) {
+  invalidateRunPolling()
+  activePollRunId = run.id
+  latestActiveRun.value = summaryFromRun(run, sourceID)
+  applyRunProgress(run, action)
+  await pollRunUntilDone(run.id, action, sourceID, pollGeneration)
 }
 
 async function saveSource() {
@@ -487,7 +704,9 @@ async function saveSource() {
       selectedSourceId.value = res.data.data?.id ?? null
       await loadSources()
     }
-    message.value = t('directorySync.saved')
+    if (!isActiveRun(activeRun.value)) {
+      message.value = t('directorySync.saved')
+    }
   } catch (e: any) {
     error.value = apiErrorMessage(e, t('directorySync.saveFailed'))
   } finally {
@@ -509,52 +728,65 @@ async function validateSource() {
 }
 
 async function previewSource() {
-  if (!selectedSourceId.value) return
+  const sourceID = selectedSourceId.value
+  if (!sourceID) return
+  const generation = beginActionRequest()
+  if (generation === null) return
+  resetRunLifecycle()
   clearFeedback()
   activeRunAction.value = 'preview'
   message.value = t('directorySync.previewStarted')
   try {
-    const res = await previewDirectorySource(selectedSourceId.value)
+    const res = await performActionRequest(generation, () => previewDirectorySource(sourceID))
+    if (!actionContextMatches(generation, sourceID)) return
     const run = res.data.data
-    await applyRunProgress(run, 'preview')
-    if (run && !isTerminalRun(run)) {
-      await pollDisplayedPreviewUntilDone(run.id, selectedSourceId.value)
+    applyRunProgress(run, 'preview')
+    if (run && isActiveRun(run)) {
+      await startCreatedRunPolling(run, 'preview', sourceID)
+    } else if (run && selectedSourceId.value === sourceID) {
+      await loadRunPage(sourceID, 0)
     }
   } catch (e: any) {
+    if (!actionContextMatches(generation, sourceID)) return
     if (e?.response?.status === 409) {
-      try {
-        if (await startRecoverLatestRun(selectedSourceId.value, 'preview')) return
-      } catch {
-        // Fall through to the original preview error.
-      }
+      const recovered = await loadRunPage(sourceID, 0, { action: 'preview', generation })
+      if (!actionContextMatches(generation, sourceID)) return
+      if (recovered) return
     }
     error.value = apiErrorMessage(e, t('directorySync.previewFailed'))
   }
 }
 
 async function runNow() {
-  if (!selectedSourceId.value) return
+  const sourceID = selectedSourceId.value
+  if (!sourceID) return
+  const generation = beginActionRequest()
+  if (generation === null) return
+  resetRunLifecycle()
   clearFeedback()
   activeRunAction.value = 'apply'
   message.value = t('directorySync.applyStarted')
   try {
-    const res = await startDirectoryRun(selectedSourceId.value, { mode: 'apply' })
-    if (unmounted) return
+    const res = await performActionRequest(generation, () => startDirectoryRun(sourceID, { mode: 'apply' }))
+    if (!actionContextMatches(generation, sourceID)) return
     const run = res.data.data
-    if (run?.id) trackedApplyRunIDs.add(run.id)
-    await applyRunProgress(run, 'apply')
-    if (run?.id && isTerminalRun(run)) {
-      await refreshWorkItemsForCompletedApply(run, 'apply')
-    } else if (run?.id) {
-      await pollObservedApplyUntilDone(run.id)
+    applyRunProgress(run, 'apply')
+    if (run && isActiveRun(run)) {
+      await startCreatedRunPolling(run, 'apply', sourceID)
+    } else if (run && selectedSourceId.value === sourceID) {
+      const completedPageReload = loadRunPage(sourceID, 0)
+      await Promise.all([
+        refreshWorkItemsAfterSuccessfulApply(run, 'apply'),
+        completedPageReload,
+      ])
+      if (!actionContextMatches(generation, sourceID)) return
     }
   } catch (e: any) {
+    if (!actionContextMatches(generation, sourceID)) return
     if (e?.response?.status === 409) {
-      try {
-        if (await startRecoverLatestRun(selectedSourceId.value, 'apply')) return
-      } catch {
-        // Fall through to the original apply error.
-      }
+      const recovered = await loadRunPage(sourceID, 0, { action: 'apply', generation })
+      if (!actionContextMatches(generation, sourceID)) return
+      if (recovered) return
     }
     error.value = apiErrorMessage(e, t('directorySync.runFailed'))
   }
@@ -778,16 +1010,107 @@ steps:
           <button data-testid="directory-validate" type="button" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="validateSource">
             {{ t('directorySync.validate') }}
           </button>
-          <button data-testid="directory-preview" type="button" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="previewSource">
+          <button data-testid="directory-preview" type="button" :disabled="!selectedSourceId || actionRequestPending !== null || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="previewSource">
             {{ activeRunAction === 'preview' && activeRun && !isTerminalRun(activeRun) ? t('directorySync.previewing') : t('directorySync.preview') }}
           </button>
-          <button data-testid="directory-run-now" type="button" :disabled="!selectedSourceId || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="runNow">
+          <button data-testid="directory-run-now" type="button" :disabled="!selectedSourceId || actionRequestPending !== null || Boolean(activeRun && !isTerminalRun(activeRun))" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50" @click="runNow">
             {{ activeRunAction === 'apply' && activeRun && !isTerminalRun(activeRun) ? t('directorySync.running') : t('directorySync.runNow') }}
           </button>
           <button data-testid="directory-save" type="button" :disabled="saving" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50" @click="saveSource">
             {{ saving ? t('settings.saving') : t('settings.save') }}
           </button>
         </div>
+
+        <section data-testid="directory-run-history" class="border-t border-gray-200 pt-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h4 class="text-sm font-semibold text-gray-900">{{ t('directorySync.runHistoryTitle') }}</h4>
+            <span class="text-xs text-gray-500">{{ t('directorySync.runHistoryTotal', { total: runTotal }) }}</span>
+          </div>
+
+          <p v-if="runHistoryError" class="mt-3 text-sm text-red-700">{{ runHistoryError }}</p>
+          <p v-if="runHistoryLoading && runSummaries.length === 0" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runHistoryLoading') }}</p>
+          <p v-else-if="!runHistoryError && runSummaries.length === 0" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runHistoryEmpty') }}</p>
+          <div v-if="runSummaries.length > 0" class="mt-3 divide-y divide-gray-200 border-y border-gray-200" role="list">
+            <button
+              v-for="run in runSummaries"
+              :key="run.id"
+              :data-testid="`directory-run-row-${run.id}`"
+              type="button"
+              class="grid min-h-16 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-3 text-left hover:bg-gray-50"
+              :class="selectedRunId === run.id ? 'bg-indigo-50' : ''"
+              @click="selectRun(run)"
+            >
+              <span class="min-w-0">
+                <span class="block text-sm font-medium text-gray-900">#{{ run.id }} · {{ modeLabel(run.mode) }}</span>
+                <span class="mt-1 block text-xs text-gray-500">{{ runStartedLabel(run) }}</span>
+                <span class="mt-1 block text-xs text-gray-500">
+                  {{ t('directorySync.runProgressCounts', { departments: run.department_count, members: run.member_count, warnings: run.warning_count }) }}
+                </span>
+              </span>
+              <span class="text-right text-xs font-medium text-gray-700">{{ statusLabel(run.status) }}</span>
+            </button>
+          </div>
+
+          <div class="mt-3 flex min-h-9 flex-wrap items-center justify-between gap-2">
+            <button
+              data-testid="directory-run-prev"
+              type="button"
+              :disabled="!canLoadPreviousRuns"
+              class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 disabled:opacity-40"
+              @click="loadPreviousRunPage"
+            >
+              {{ t('directorySync.runHistoryPrevious') }}
+            </button>
+            <span data-testid="directory-run-page-meta" class="text-xs text-gray-500">
+              {{ t('directorySync.runHistoryPage', { page: runPage + 1, pages: runPageCount }) }}
+            </span>
+            <button
+              data-testid="directory-run-next"
+              type="button"
+              :disabled="!canLoadNextRuns"
+              class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 disabled:opacity-40"
+              @click="loadNextRunPage"
+            >
+              {{ t('directorySync.runHistoryNext') }}
+            </button>
+          </div>
+
+          <div v-if="selectedRunSummary" data-testid="directory-run-detail" class="mt-4 border-t border-gray-200 pt-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h5 class="text-sm font-semibold text-gray-900">{{ t('directorySync.runDetailTitle', { id: selectedRunSummary.id }) }}</h5>
+              <span class="text-xs text-gray-500">{{ statusLabel(selectedRunSummary.status) }}</span>
+            </div>
+            <p v-if="selectedRunLoading" class="mt-3 text-sm text-gray-500">{{ t('directorySync.runDetailLoading') }}</p>
+            <p v-if="selectedRunError" class="mt-3 text-sm text-red-700">{{ selectedRunError }}</p>
+            <div v-if="selectedRunDetail" class="mt-3 space-y-4 text-sm text-gray-700">
+              <p>{{ t('directorySync.runProgressCounts', {
+                departments: selectedRunDetail.department_count ?? 0,
+                members: selectedRunDetail.member_count ?? 0,
+                warnings: selectedRunDetail.warning_count ?? 0,
+              }) }}</p>
+              <div v-if="selectedRunDetail.warnings?.length">
+                <h6 class="text-xs font-semibold uppercase text-gray-500">{{ t('directorySync.runDetailWarnings') }}</h6>
+                <ul class="mt-2 space-y-1">
+                  <li v-for="(warning, index) in selectedRunDetail.warnings" :key="`${warning.code}:${warning.step_id ?? ''}:${index}`" class="break-words">
+                    <span class="font-medium">{{ warning.code }}</span><span v-if="warning.message">: {{ warning.message }}</span>
+                  </li>
+                </ul>
+              </div>
+              <div v-if="selectedRunDetail.summary">
+                <h6 class="text-xs font-semibold uppercase text-gray-500">{{ t('directorySync.runDetailSummary') }}</h6>
+                <pre class="mt-2 overflow-x-auto bg-gray-950 p-3 text-xs text-gray-100">{{ formatDiagnostic(selectedRunDetail.summary) }}</pre>
+              </div>
+              <div v-if="selectedRunDetail.preview_diff">
+                <h6 class="text-xs font-semibold uppercase text-gray-500">{{ t('directorySync.runDetailPreviewDiff') }}</h6>
+                <pre class="mt-2 overflow-x-auto bg-gray-950 p-3 text-xs text-gray-100">{{ formatDiagnostic(selectedRunDetail.preview_diff) }}</pre>
+              </div>
+              <div v-if="selectedRunDetail.error_message">
+                <h6 class="text-xs font-semibold uppercase text-gray-500">{{ t('directorySync.runDetailError') }}</h6>
+                <p class="mt-2 break-words text-red-700">{{ selectedRunDetail.error_message }}</p>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </section>

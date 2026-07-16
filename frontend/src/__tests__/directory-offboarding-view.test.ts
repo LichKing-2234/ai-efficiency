@@ -17,10 +17,12 @@ vi.mock('@/api/workItems', () => ({
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((done, fail) => {
     resolve = done
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 function candidate(userID: number, username: string, email: string) {
@@ -121,6 +123,24 @@ describe('DirectoryOffboardingView', () => {
     })
   })
 
+  it('submits one disable request while the candidate action is pending', async () => {
+    const disableRequest = deferred<any>()
+    const { wrapper, api } = await mountOffboarding((api) => {
+      api.disableDirectoryRelayUser.mockReturnValueOnce(disableRequest.promise)
+    })
+
+    await wrapper.get('[data-testid="confirm-email-7"]').setValue('bob@example.org')
+    const disableButton = wrapper.get('[data-testid="disable-relay-user-7"]')
+    await disableButton.trigger('click')
+    await disableButton.trigger('click')
+
+    expect(api.disableDirectoryRelayUser).toHaveBeenCalledTimes(1)
+    expect(disableButton.attributes('disabled')).toBeDefined()
+
+    disableRequest.resolve({ data: { data: { id: 8, status: 'succeeded' } } })
+    await flushPromises()
+  })
+
   it('uses total-aware pagination and resets to page one on search', async () => {
     const firstPage = candidate(7, 'bob', 'bob@example.org')
     const secondPage = candidate(8, 'carol', 'carol@example.com')
@@ -152,6 +172,35 @@ describe('DirectoryOffboardingView', () => {
     expect(api.listDirectoryOffboardingCandidates).toHaveBeenLastCalledWith({ q: 'alice', page: 1, page_size: 20 })
     expect(wrapper.get('[data-testid="offboarding-page-status"]').text()).toContain('Page 1 / 1')
     expect(wrapper.text()).toContain('alice@example.com')
+  })
+
+  it('keeps the newest overlapping search result and ignores a stale error', async () => {
+    const staleSearch = deferred<any>()
+    const currentSearch = deferred<any>()
+    const currentCandidate = candidate(9, 'alice', 'alice@example.com')
+    const { wrapper, api } = await mountOffboarding((api) => {
+      api.listDirectoryOffboardingCandidates
+        .mockResolvedValueOnce(candidatePage([candidate(7, 'bob', 'bob@example.org')]))
+        .mockReturnValueOnce(staleSearch.promise)
+        .mockReturnValueOnce(currentSearch.promise)
+    })
+
+    await wrapper.get('input[type="search"]').setValue('stale')
+    await wrapper.get('[data-testid="offboarding-search"]').trigger('click')
+    await wrapper.get('input[type="search"]').setValue('alice')
+    await wrapper.get('[data-testid="offboarding-search"]').trigger('click')
+
+    expect(api.listDirectoryOffboardingCandidates).toHaveBeenNthCalledWith(2, { q: 'stale', page: 1, page_size: 20 })
+    expect(api.listDirectoryOffboardingCandidates).toHaveBeenNthCalledWith(3, { q: 'alice', page: 1, page_size: 20 })
+
+    currentSearch.resolve(candidatePage([currentCandidate], 1, 1))
+    await flushPromises()
+    expect(wrapper.text()).toContain('alice@example.com')
+
+    staleSearch.reject(new Error('stale search failed'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('alice@example.com')
+    expect(wrapper.text()).not.toContain('stale search failed')
   })
 
   it('clamps the last page and waits for one generation-safe count refresh after disable', async () => {

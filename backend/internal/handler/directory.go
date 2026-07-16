@@ -24,7 +24,7 @@ type DirectoryAdminService interface {
 	RunSource(ctx context.Context, sourceID int, mode, trigger string) (*ent.DirectorySyncRun, error)
 	ExecuteRun(ctx context.Context, runID int) (*ent.DirectorySyncRun, error)
 	GetRun(ctx context.Context, runID int) (*ent.DirectorySyncRun, error)
-	ListRuns(ctx context.Context, sourceID int) ([]*ent.DirectorySyncRun, error)
+	ListRuns(ctx context.Context, request directorysync.RunListRequest) (directorysync.RunPage, error)
 	ListDepartments(ctx context.Context, sourceID int, q string) ([]directorysync.DepartmentOption, error)
 	ListMembers(ctx context.Context, sourceID int, q string) ([]*ent.DirectoryMember, error)
 	ListOffboardingCandidates(ctx context.Context, params directorysync.OffboardingCandidateListParams) (*directorysync.OffboardingCandidatePage, error)
@@ -195,12 +195,25 @@ func (h *DirectoryHandler) ListRuns(c *gin.Context) {
 	if !ok {
 		return
 	}
-	runs, err := h.service.ListRuns(c.Request.Context(), id)
+	limit, err := strconv.Atoi(c.Query("limit"))
+	if err != nil {
+		limit = 0
+	}
+	offset, err := strconv.Atoi(c.Query("offset"))
+	if err != nil {
+		offset = 0
+	}
+	limit, offset = directorysync.NormalizeRunPage(limit, offset)
+	page, err := h.service.ListRuns(c.Request.Context(), directorysync.RunListRequest{
+		SourceID: id,
+		Limit:    limit,
+		Offset:   offset,
+	})
 	if err != nil {
 		writeDirectoryError(c, err)
 		return
 	}
-	pkg.Success(c, gin.H{"items": runs})
+	pkg.Success(c, page)
 }
 
 func (h *DirectoryHandler) GetRun(c *gin.Context) {
