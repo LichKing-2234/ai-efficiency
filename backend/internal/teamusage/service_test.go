@@ -136,6 +136,69 @@ func TestSubjectDashboardIsolatesFailedAndMissingBatchMultiplierMetadata(t *test
 	}
 }
 
+func TestSubjectDashboardTreatsDuplicateBatchMultiplierResultsAsUnavailableRegardlessOfOrder(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []relay.GroupRateMultiplierReadResult
+	}{
+		{
+			name: "success then failure",
+			results: []relay.GroupRateMultiplierReadResult{
+				{GroupID: 42, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(1.75)}}},
+				{GroupID: 42, Err: errors.New("synthetic duplicate failure")},
+				{GroupID: 7, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(2.25)}}},
+			},
+		},
+		{
+			name: "failure then success",
+			results: []relay.GroupRateMultiplierReadResult{
+				{GroupID: 42, Err: errors.New("synthetic duplicate failure")},
+				{GroupID: 42, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(1.75)}}},
+				{GroupID: 7, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(2.25)}}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			createPrimaryRelayProvider(t, client)
+
+			scope := syntheticRepresentativeScope(1, 2, 2002, "alice@example.com")
+			provider := &fakeRelayProvider{
+				subscriptionsByUser: map[int64][]relay.UserSubscription{
+					2002: {
+						syntheticActiveSubscription(42, "Group Alpha", 1.25),
+						syntheticActiveSubscription(7, "Group Beta", 0.75),
+					},
+				},
+				batchRateResults: tt.results,
+			}
+
+			svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+			resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
+			if err != nil {
+				t.Fatalf("SubjectDashboard() error = %v", err)
+			}
+			if provider.batchRateCalls != 1 || len(provider.listRateGroupIDs) != 0 {
+				t.Fatalf("multiplier reads = batch %d serial %#v, want one batch and no serial", provider.batchRateCalls, provider.listRateGroupIDs)
+			}
+
+			duplicateRow := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, "42")
+			if duplicateRow == nil {
+				t.Fatal("missing duplicate-result subscription row for group 42")
+			}
+			assertUnavailableMultiplierMetadata(t, duplicateRow, ErrMultiplierMetadataUnavailable.Error())
+
+			availableRow := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, "7")
+			if availableRow == nil || availableRow.MultiplierMetadataStatus != MultiplierMetadataStatusOK || availableRow.EffectiveMultiplier == nil || *availableRow.EffectiveMultiplier != 2.25 || !availableRow.Editable {
+				t.Fatalf("independent group row = %#v, want available editable 2.25 metadata", availableRow)
+			}
+		})
+	}
+}
+
 func TestSubjectDashboardWithoutBatchCapabilityMarksMetadataUnavailableAndPreservesAuthorizationReason(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -155,6 +218,12 @@ func TestSubjectDashboardWithoutBatchCapabilityMarksMetadataUnavailableAndPreser
 		subscriptionsByUser: map[int64][]relay.UserSubscription{
 			2002: {subscription},
 		},
+	}
+	if _, ok := any(provider).(relay.GroupRateMultiplierManager); !ok {
+		t.Fatal("fallback provider must retain the serial multiplier manager capability")
+	}
+	if _, ok := any(provider).(relay.GroupRateMultiplierBatchReader); ok {
+		t.Fatal("fallback provider must intentionally omit the multiplier batch capability")
 	}
 
 	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
@@ -1830,6 +1899,16 @@ func (f *fakeRelayProviderWithoutMultiplierBatch) GetUsageDashboardForUser(conte
 func (f *fakeRelayProviderWithoutMultiplierBatch) ListUserSubscriptions(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
 	return append([]relay.UserSubscription(nil), f.subscriptionsByUser[relayUserID]...), nil
 }
+
+func (f *fakeRelayProviderWithoutMultiplierBatch) ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]relay.UserGroupRateEntry, error) {
+	return f.Provider.(relay.GroupRateMultiplierManager).ListGroupRateMultipliers(ctx, groupID)
+}
+
+func (f *fakeRelayProviderWithoutMultiplierBatch) ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, inputs []relay.GroupRateMultiplierInput) error {
+	return f.Provider.(relay.GroupRateMultiplierManager).ReplaceGroupRateMultipliers(ctx, groupID, inputs)
+}
+
+var _ relay.GroupRateMultiplierManager = (*fakeRelayProviderWithoutMultiplierBatch)(nil)
 
 func createPrimaryRelayProvider(t *testing.T, client *ent.Client) *ent.RelayProvider {
 	t.Helper()

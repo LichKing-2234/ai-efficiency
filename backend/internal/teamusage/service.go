@@ -657,12 +657,18 @@ func (s *Service) buildSubjectSubscriptionRows(ctx context.Context, provider rel
 	}
 
 	metadataByGroup := make(map[int64]relay.GroupRateMultiplierReadResult, len(groupIDs))
+	duplicateMetadataGroupIDs := make(map[int64]struct{})
 	batchReader, batchReaderOK := provider.(relay.GroupRateMultiplierBatchReader)
 	if batchReaderOK && len(groupIDs) > 0 {
 		for _, result := range batchReader.GroupRateMultipliersForGroups(ctx, groupIDs) {
-			if _, requested := seenGroupIDs[result.GroupID]; requested {
-				metadataByGroup[result.GroupID] = result
+			if _, requested := seenGroupIDs[result.GroupID]; !requested {
+				continue
 			}
+			if _, duplicate := metadataByGroup[result.GroupID]; duplicate {
+				duplicateMetadataGroupIDs[result.GroupID] = struct{}{}
+				continue
+			}
+			metadataByGroup[result.GroupID] = result
 		}
 	}
 
@@ -681,7 +687,8 @@ func (s *Service) buildSubjectSubscriptionRows(ctx context.Context, provider rel
 		metadataStatus := MultiplierMetadataStatusUnavailable
 		var metadataMessage *string
 		var currentEntry *relay.UserGroupRateEntry
-		if result, found := metadataByGroup[subscription.GroupID]; batchReaderOK && found && result.Err == nil {
+		_, duplicateMetadata := duplicateMetadataGroupIDs[subscription.GroupID]
+		if result, found := metadataByGroup[subscription.GroupID]; batchReaderOK && found && !duplicateMetadata && result.Err == nil {
 			metadataStatus = MultiplierMetadataStatusOK
 			currentEntry = findRateEntry(result.Entries, int64(relayUserID))
 		} else {
