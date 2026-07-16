@@ -24,6 +24,7 @@ type teamUsageService interface {
 	SubjectDashboard(context.Context, int, int, relay.UserUsageDashboardParams) (*teamusage.SubjectDashboardResponse, error)
 	Summary(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error)
 	Trend(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error)
+	Members(context.Context, int, teamusage.MembersParams) (*teamusage.MembersResponse, error)
 	Overview(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error)
 	UpdateMultiplier(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	ListAudit(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
@@ -44,7 +45,7 @@ func (f teamUsageProviderResolverFunc) Resolve(ctx context.Context, providerID i
 	return f(ctx, providerID)
 }
 
-func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *ProviderHandler, scopeCache *representativescope.Cache, snapshotCache *teamusage.SnapshotCache) *teamusage.Service {
+func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *ProviderHandler, scopeCache *representativescope.Cache, snapshotCache *teamusage.SnapshotCache, memberCursorSecret string) *teamusage.Service {
 	resolver := teamUsageProviderResolverFunc(func(context.Context, int) (relay.Provider, error) {
 		return nil, teamusage.ErrProviderUnsupported
 	})
@@ -57,6 +58,7 @@ func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *
 		resolver,
 		teamusage.NewPostgresAdvisoryLocker(sqlDB),
 		snapshotCache,
+		memberCursorSecret,
 	)
 }
 
@@ -187,6 +189,43 @@ func (h *TeamUsageHandler) Trend(c *gin.Context) {
 	resp, err := h.service.Trend(c.Request.Context(), uc.UserID, teamusage.OverviewParams{
 		StartDate: dashboardParams.StartDate, EndDate: dashboardParams.EndDate,
 		Granularity: dashboardParams.Granularity, Timezone: dashboardParams.Timezone,
+	})
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	requestID := uuid.NewString()
+	resp.RequestID = requestID
+	c.Header("X-Request-ID", requestID)
+	pkg.Success(c, resp)
+}
+
+func (h *TeamUsageHandler) Members(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dashboardParams, ok := parseUserUsageDashboardParams(c)
+	if !ok {
+		return
+	}
+	limit, ok := parseOptionalIntQueryParam(c, "limit")
+	if !ok {
+		return
+	}
+	limitValue := 0
+	if limit != nil {
+		limitValue = *limit
+	}
+	resp, err := h.service.Members(c.Request.Context(), uc.UserID, teamusage.MembersParams{
+		OverviewParams: teamusage.OverviewParams{
+			StartDate: dashboardParams.StartDate, EndDate: dashboardParams.EndDate,
+			Granularity: dashboardParams.Granularity, Timezone: dashboardParams.Timezone,
+		},
+		Cursor: strings.TrimSpace(c.Query("cursor")),
+		Limit:  limitValue,
 	})
 	if err != nil {
 		writeTeamUsageError(c, err)
@@ -330,6 +369,10 @@ func writeTeamUsageError(c *gin.Context, err error) {
 	}
 
 	switch {
+	case errors.Is(err, teamusage.ErrInvalidMemberCursor):
+		pkg.Error(c, http.StatusBadRequest, teamusage.ErrInvalidMemberCursor.Error())
+	case errors.Is(err, teamusage.ErrMemberSnapshotExpired):
+		pkg.Error(c, http.StatusConflict, teamusage.ErrMemberSnapshotExpired.Error())
 	case errors.Is(err, teamusage.ErrInvalidOverviewParams):
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, teamusage.ErrNotRepresentative), errors.Is(err, teamusage.ErrSelfEditForbidden), errors.Is(err, teamusage.ErrNotUpperLevelRepresentative):

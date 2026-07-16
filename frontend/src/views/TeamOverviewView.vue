@@ -4,10 +4,10 @@ import { useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberTable.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
-import { getTeamUsageOverview, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
+import { getTeamUsageMembers, getTeamUsageOverview, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
-import type { TeamOverviewResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
+import type { TeamOverviewResponse, TeamUsageMembersResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
 
 const TeamOverviewMemberTrendChart = defineAsyncComponent(
   () => import('@/components/team-usage/TeamOverviewMemberTrendChart.vue'),
@@ -17,20 +17,27 @@ const { t } = useI18n()
 const router = useRouter()
 const summary = ref<TeamUsageSummaryResponse | null>(null)
 const trend = ref<TeamUsageTrendResponse | null>(null)
+const membersPage = ref<TeamUsageMembersResponse | null>(null)
 const compatibilityOverview = ref<TeamOverviewResponse | null>(null)
 const summaryLoading = ref(false)
 const trendLoading = ref(false)
+const membersLoading = ref(false)
 const compatibilityLoading = ref(false)
 const summaryError = ref<'no_scope' | 'unavailable' | null>(null)
 const trendError = ref<'no_scope' | 'unavailable' | null>(null)
+const membersError = ref<'no_scope' | 'unavailable' | null>(null)
 const compatibilityError = ref<'no_scope' | 'unavailable' | null>(null)
 type RangeOption = 'today' | '7d' | '30d'
 const selectedRange = ref<RangeOption>('30d')
 let summaryRequestSeq = 0
 let trendRequestSeq = 0
+let membersRequestSeq = 0
 let compatibilityRequestSeq = 0
+const memberPageCursors = ref<Array<string | null>>([null])
+const memberPageIndex = ref(0)
+let memberPageParams: TeamUsageOverviewParams | null = null
 
-const loading = computed(() => summaryLoading.value || trendLoading.value || compatibilityLoading.value)
+const loading = computed(() => summaryLoading.value || trendLoading.value || membersLoading.value || compatibilityLoading.value)
 
 const scopeTooLarge = computed(() => {
   return summary.value?.summary.unavailable_reason === 'scope_too_large'
@@ -81,6 +88,44 @@ async function loadTrend(params: TeamUsageOverviewParams) {
   }
 }
 
+async function loadMembers(
+  params: TeamUsageOverviewParams,
+  cursor: string | null,
+  targetPageIndex: number,
+  recoverSnapshot = true,
+): Promise<void> {
+  const requestSeq = ++membersRequestSeq
+  membersLoading.value = true
+  membersError.value = null
+  try {
+    const response = await getTeamUsageMembers({
+      ...params,
+      cursor: cursor ?? undefined,
+      limit: 50,
+    })
+    if (requestSeq !== membersRequestSeq) return
+    membersPage.value = response.data.data ?? null
+    memberPageIndex.value = targetPageIndex
+    const cursors = memberPageCursors.value.slice(0, targetPageIndex + 1)
+    cursors[targetPageIndex] = cursor
+    memberPageCursors.value = cursors
+  } catch (error) {
+    if (requestSeq !== membersRequestSeq) return
+    if (recoverSnapshot && cursor != null && isSnapshotExpired(error)) {
+      resetMemberPagination()
+      return loadMembers(params, null, 0, false)
+    }
+    if (cursor == null) {
+      membersPage.value = null
+    }
+    membersError.value = isForbidden(error) ? 'no_scope' : 'unavailable'
+  } finally {
+    if (requestSeq === membersRequestSeq) {
+      membersLoading.value = false
+    }
+  }
+}
+
 async function loadCompatibilityOverview(params: TeamUsageOverviewParams) {
   const requestSeq = ++compatibilityRequestSeq
   compatibilityLoading.value = true
@@ -102,15 +147,42 @@ async function loadCompatibilityOverview(params: TeamUsageOverviewParams) {
 
 function loadOverview() {
   const params = buildOverviewParams(selectedRange.value)
+  resetMemberPagination()
+  memberPageParams = { ...params }
   void loadSummary(params)
   void loadTrend(params)
+  void loadMembers(params, null, 0)
   void loadCompatibilityOverview(params)
+}
+
+function resetMemberPagination() {
+  memberPageCursors.value = [null]
+  memberPageIndex.value = 0
+}
+
+function loadNextMemberPage() {
+  const cursor = membersPage.value?.next_cursor
+  if (!cursor || membersLoading.value || memberPageParams == null) return
+  void loadMembers(memberPageParams, cursor, memberPageIndex.value + 1)
+}
+
+function loadPreviousMemberPage() {
+  if (memberPageIndex.value <= 0 || membersLoading.value || memberPageParams == null) return
+  const targetPageIndex = memberPageIndex.value - 1
+  const cursor = memberPageCursors.value[targetPageIndex] ?? null
+  void loadMembers(memberPageParams, cursor, targetPageIndex)
 }
 
 function isForbidden(error: unknown) {
   if (typeof error !== 'object' || error == null) return false
   const response = (error as { response?: { status?: number } }).response
   return response?.status === 403
+}
+
+function isSnapshotExpired(error: unknown) {
+  if (typeof error !== 'object' || error == null) return false
+  const response = (error as { response?: { status?: number; data?: { message?: string } } }).response
+  return response?.status === 409 && response.data?.message === 'snapshot_expired'
 }
 
 function formatDate(date: Date): string {
@@ -198,7 +270,7 @@ onMounted(loadOverview)
         :class="['space-y-4 transition-opacity', loading ? 'opacity-60' : 'opacity-100']"
       >
         <div
-          v-if="loading && (summary || trend || compatibilityOverview)"
+          v-if="loading && (summary || trend || membersPage || compatibilityOverview)"
           data-testid="team-overview-refreshing"
           class="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700"
         >
@@ -312,11 +384,26 @@ onMounted(loadOverview)
         >
           {{ compatibilityError === 'no_scope' ? t('teamUsage.noScope') : t('teamUsage.unavailable') }}
         </section>
+
+        <div
+          v-if="membersPage?.cache_status === 'stale'"
+          data-testid="team-members-stale-marker"
+          class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
+        >
+          {{ t('usageDashboard.staleSnapshot') }}
+        </div>
         <TeamOverviewMemberTable
-          v-else-if="compatibilityOverview"
-          :members="compatibilityOverview.members"
-          :member-tree="compatibilityOverview.member_tree"
+          v-if="membersLoading || membersPage || membersError || compatibilityOverview"
+          :members="membersPage?.items ?? []"
+          :member-tree="compatibilityOverview?.member_tree"
+          :member-loading="membersLoading"
+          :member-error="membersError != null"
+          :member-total-count="membersPage?.total_count ?? 0"
+          :has-previous-page="memberPageIndex > 0"
+          :has-next-page="Boolean(membersPage?.next_cursor)"
           @open-member="openMember"
+          @previous-page="loadPreviousMemberPage"
+          @next-page="loadNextMemberPage"
         />
       </div>
     </div>

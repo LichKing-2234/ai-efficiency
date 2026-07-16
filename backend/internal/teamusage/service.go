@@ -40,17 +40,18 @@ type Service struct {
 	teamOverviewTrendTimeout time.Duration
 	maxMultiplier            float64
 	snapshotCache            *SnapshotCache
+	memberCursorCodec        *memberCursorCodec
 }
 
 func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker) *Service {
 	return NewServiceWithSnapshotCache(client, scopeResolver, providerResolver, locker, nil)
 }
 
-func NewServiceWithSnapshotCache(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache) *Service {
+func NewServiceWithSnapshotCache(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, memberCursorSecrets ...string) *Service {
 	if locker == nil {
 		locker = &PostgresAdvisoryLocker{}
 	}
-	return &Service{
+	service := &Service{
 		client:                   client,
 		scopeResolver:            scopeResolver,
 		providerResolver:         providerResolver,
@@ -60,6 +61,10 @@ func NewServiceWithSnapshotCache(client *ent.Client, scopeResolver ScopeResolver
 		maxMultiplier:            defaultMaxMultiplier,
 		snapshotCache:            snapshotCache,
 	}
+	if len(memberCursorSecrets) > 0 && strings.TrimSpace(memberCursorSecrets[0]) != "" {
+		service.memberCursorCodec = newMemberCursorCodec(memberCursorSecrets[0])
+	}
+	return service
 }
 
 func (s *Service) Scope(ctx context.Context, actorUserID int) (*ScopeResponse, error) {
