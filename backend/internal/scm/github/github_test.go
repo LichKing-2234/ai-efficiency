@@ -2,14 +2,63 @@ package github
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/internal/scm"
 	gh "github.com/google/go-github/v60/github"
+	"go.uber.org/zap"
 )
+
+func TestNewUsesInjectedHTTPClient(t *testing.T) {
+	var calls int
+	injected := &http.Client{
+		Timeout: 27 * time.Second,
+		Transport: githubRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			calls++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"full_name":"acme/project","name":"project","default_branch":"main"}`)),
+				Request:    req,
+			}, nil
+		}),
+	}
+	provider, err := NewWithHTTPClient("https://api.github.com", "test-token", zap.NewNop(), injected)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if provider.client.Client().Timeout != 27*time.Second {
+		t.Fatalf("GitHub HTTP client Timeout = %s, want 27s", provider.client.Client().Timeout)
+	}
+	if _, err := provider.GetRepo(context.Background(), "acme/project"); err != nil {
+		t.Fatalf("GetRepo() error = %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("injected transport calls = %d, want 1", calls)
+	}
+}
+
+func TestNewPreservesWebhookCallbackArgument(t *testing.T) {
+	provider, err := New("https://api.github.com", "test-token", zap.NewNop(), "https://ai-efficiency.example.com/api/v1/webhooks/github")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if provider.webhookCallbackURL != "https://ai-efficiency.example.com/api/v1/webhooks/github" {
+		t.Fatalf("webhookCallbackURL = %q", provider.webhookCallbackURL)
+	}
+}
+
+type githubRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn githubRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
 
 func TestSplitFullName(t *testing.T) {
 	tests := []struct {

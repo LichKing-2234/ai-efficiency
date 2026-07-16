@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -74,6 +76,39 @@ func TestPing(t *testing.T) {
 	p := newTestProvider(t, mux)
 	if err := p.Ping(context.Background()); err != nil {
 		t.Fatalf("Ping() unexpected error: %v", err)
+	}
+}
+
+func TestPingDrainsBoundedBodyAndReusesConnection(t *testing.T) {
+	var connectionMu sync.Mutex
+	newConnections := 0
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, strings.Repeat("h", 128))
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			connectionMu.Lock()
+			newConnections++
+			connectionMu.Unlock()
+		}
+	}
+	server.Start()
+	t.Cleanup(server.Close)
+
+	client := server.Client()
+	t.Cleanup(client.CloseIdleConnections)
+	provider := relay.NewSub2apiProvider(client, server.URL, "test-key", "test-model", zap.NewNop())
+	for index := 0; index < 2; index++ {
+		if err := provider.Ping(context.Background()); err != nil {
+			t.Fatalf("Ping() call %d error = %v", index+1, err)
+		}
+	}
+
+	connectionMu.Lock()
+	gotConnections := newConnections
+	connectionMu.Unlock()
+	if gotConnections != 1 {
+		t.Fatalf("new connections = %d, want 1 across two sequential pings", gotConnections)
 	}
 }
 
