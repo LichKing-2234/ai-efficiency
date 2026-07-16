@@ -75,6 +75,12 @@ type PlatformModelLister interface {
 	ListModelsForPlatform(ctx context.Context, platform string) ([]ModelOption, error)
 }
 
+// PlatformGroupLister exposes provider-wide group display metadata. Callers
+// must still resolve current user membership and entitlement separately.
+type PlatformGroupLister interface {
+	ListPlatformGroups(ctx context.Context) ([]Group, error)
+}
+
 // UserDisabler is an optional extension for relay implementations that can
 // disable upstream users without exposing provider-specific request details to
 // admin/offboarding handlers.

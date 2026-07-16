@@ -13,22 +13,34 @@ import (
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
-const maximumClientTTL = 5 * time.Minute
+const (
+	maximumClientTTL   = 5 * time.Minute
+	maximumMetadataTTL = 5 * time.Minute
+)
 
 var ErrStaleProviderConfiguration = errors.New("relay provider configuration is stale")
 
 type ProviderFactory func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error)
 
 type Options struct {
-	Namespace string
-	Store     readcache.Store
-	Bus       InvalidationBus
-	ClientTTL time.Duration
-	Now       func() time.Time
-	Factory   ProviderFactory
+	Namespace      string
+	Store          readcache.Store
+	Bus            InvalidationBus
+	ClientTTL      time.Duration
+	MetadataTTL    time.Duration
+	CommandTimeout time.Duration
+	RefreshTimeout time.Duration
+	LeaseTTL       time.Duration
+	PollInterval   time.Duration
+	ReleaseTimeout time.Duration
+	Now            func() time.Time
+	Factory        ProviderFactory
+	NewToken       func() string
+	Sleep          func(context.Context, time.Duration) error
 }
 
 type clientKey struct {
@@ -47,10 +59,11 @@ type Manager struct {
 	logger        *zap.Logger
 	options       Options
 
-	mu             sync.RWMutex
-	clients        map[clientKey]clientEntry
-	minimumVersion map[int]int64
-	latestVersion  map[int]int64
+	mu              sync.RWMutex
+	clients         map[clientKey]clientEntry
+	minimumVersion  map[int]int64
+	latestVersion   map[int]int64
+	metadataFlights readcache.FlightGroup[[]byte]
 }
 
 func NewManager(client *ent.Client, encryptionKey string, logger *zap.Logger, options Options) (*Manager, error) {
@@ -65,6 +78,30 @@ func NewManager(client *ent.Client, encryptionKey string, logger *zap.Logger, op
 	}
 	if options.Now == nil {
 		options.Now = time.Now
+	}
+	if options.MetadataTTL <= 0 || options.MetadataTTL > maximumMetadataTTL {
+		options.MetadataTTL = maximumMetadataTTL
+	}
+	if options.CommandTimeout <= 0 {
+		options.CommandTimeout = 100 * time.Millisecond
+	}
+	if options.RefreshTimeout <= 0 {
+		options.RefreshTimeout = 15 * time.Second
+	}
+	if options.LeaseTTL <= 0 {
+		options.LeaseTTL = 20 * time.Second
+	}
+	if options.PollInterval <= 0 {
+		options.PollInterval = 25 * time.Millisecond
+	}
+	if options.ReleaseTimeout <= 0 {
+		options.ReleaseTimeout = 100 * time.Millisecond
+	}
+	if options.NewToken == nil {
+		options.NewToken = uuid.NewString
+	}
+	if options.Sleep == nil {
+		options.Sleep = readcache.Sleep
 	}
 	if options.Factory == nil {
 		options.Factory = func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
