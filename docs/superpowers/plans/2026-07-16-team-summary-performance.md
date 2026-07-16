@@ -22,7 +22,7 @@
 - Tests and examples use only synthetic identities and credentials.
 - Update each checkbox immediately after its action is actually complete.
 
-**Status:** In progress. Dependency branches `perf/personal-usage-123` and `perf/team-scope-124` are merged in commit `6c48cf0`; implementation and verification remain.
+**Status:** Implementation and local verification complete. Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/153. Required CI checks are pending.
 
 ---
 
@@ -263,9 +263,11 @@
 
   Review result (2026-07-16): no unresolved findings. The review caught and fixed unnecessary provider-origin resolution on warm hits and for explicit `scope_too_large` generations; focused regressions and the full verification suite passed afterward.
 
-- [ ] **Step 5: Commit documentation, push, and open a Draft PR**
+- [x] **Step 5: Commit documentation, push, and open a Draft PR**
 
   Use Conventional Commits, target `perf/team-scope-124`, state that the branch includes the explicit #123 dependency merge, and list Draft PRs #148 and #149 as dependencies. Do not merge or release.
+
+  Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/153. Base is `perf/team-scope-124`; the PR records the explicit #123 merge and dependencies on PRs #148/#149.
 
 - [ ] **Step 6: Wait for required PR checks and record final state**
 
