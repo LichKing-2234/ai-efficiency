@@ -117,7 +117,6 @@ func (w *Workflow) Decide(input WorkflowDecision) ([]int, error) {
 		w.CurrentStep = len(w.Steps)
 		return nil, nil
 	}
-
 	step.Status = WorkflowStepApproved
 	var satisfiedSteps []int
 	for next := stepIndex + 1; next < len(w.Steps); next++ {

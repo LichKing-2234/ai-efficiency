@@ -17,8 +17,9 @@ verification remains the only unchecked item because both the controller and
 worker observed no browser runtime.
 
 **Final Whole-Branch Review Remediation Status (2026-07-16):** Code remediation
-is complete and final verification is in progress. Browser verification remains
-blocked and unchecked.
+for reset audit atomicity and normalized-email candidate consistency is complete.
+Full backend verification, the dated report, and the local commit are complete.
+Browser verification remains blocked and unchecked.
 
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
@@ -41,8 +42,10 @@ and remove the branch-only chain table, API, types, tests, and settings UI.
   `workflow_service.go`.
 - Retain only two new frontend production components:
   `QuotaResetDecisionDialog.vue` and `QuotaResetWorkflowTimeline.vue`.
-- Keep hand-written production additions at or below 1,500 lines versus
-  `origin/main`, excluding tests and generated Ent code.
+- Keep hand-written production additions at or below 1,500 lines versus fixed
+  base `70eb6ebe32298c333d4bebf144edd1b474a039dc`, including
+  `backend/ent/schema` and excluding tests, frontend tests, and generated Ent
+  outside that schema directory.
 - Preserve V1 requests, internal `workflow_pending`, required comments, event
   audit, CAS, bounded detached reset, current-step counts, prior-actor reuse,
   and generic/WeCom notification channels.
@@ -386,11 +389,9 @@ current. Do not rewrite the historical 2026-07-07 spec.
 - [x] **Step 3: Audit final scope**
 
   ```bash
-  git diff --check origin/main
-  git diff --numstat origin/main -- backend/internal backend/ent/schema frontend/src \
-    ':(exclude)**/*_test.go' ':(exclude)frontend/src/__tests__/**' \
-    | awk '{ a += $1; d += $2 } END { print "handwritten production +" a "/-" d }'
-  git diff --numstat origin/main -- backend/ent ':(exclude)backend/ent/schema/**' \
+  git diff --check
+  git diff --numstat 70eb6ebe32298c333d4bebf144edd1b474a039dc -- backend/internal backend/ent/schema frontend/src ':(exclude)**/*_test.go' ':(exclude)frontend/src/__tests__/**' | awk '{a+=$1;d+=$2} END{print a,d}'
+  git diff --numstat 70eb6ebe32298c333d4bebf144edd1b474a039dc -- backend/ent ':(exclude)backend/ent/schema/**' \
     | awk '{ a += $1; d += $2 } END { print "generated Ent +" a "/-" d }'
   ! rg -n 'QuotaResetApprovalChain|approval-chains|quota_reset_approval_chains' \
     backend frontend docs/architecture.md \
@@ -402,11 +403,11 @@ current. Do not rewrite the historical 2026-07-07 spec.
   chain scan is empty; only intentional branch files are modified. Simplify and
   leave this step unchecked if the limit is exceeded.
 
-  Latest final evidence (2026-07-16 re-review):
+  Latest fixed-base evidence (2026-07-16 final review fix wave):
 
-  - `git diff --check origin/main` exited 0.
-  - Hand-written production, including `backend/ent/schema`, is
-    `+1499/-482`; the schema-only subtotal is `+16/-0`.
+  - `git diff --check` exited 0.
+  - The binding hand-written production audit, including
+    `backend/ent/schema`, is `+1500/-531`.
   - Generated Ent outside `backend/ent/schema` is `+862/-33` and is reported
     separately from the hand-written total.
   - The production chain scan found no matches when excluding only
@@ -428,9 +429,9 @@ current. Do not rewrite the historical 2026-07-07 spec.
   - Focused quota-reset/work-items tests and vet, full backend tests and vet,
     whitespace checks, and scope audits passed. Frontend files are unchanged
     from the searchable-picker commit and were not rerun.
-  - Hand-written production is `+1499/-484`; schema is `+16/-0`; generated Ent
-    outside schema is `+862/-33`; the production chain scan is empty when
-    excluding only the intentional schema-test guard.
+  - The earlier moving-base count is superseded by the binding fixed-base
+    `+1500/-531` audit above; the production chain scan is empty when excluding
+    only the intentional schema-test guard.
 
   Frontend workflow-approver contract re-review evidence (2026-07-16):
 
@@ -444,8 +445,8 @@ current. Do not rewrite the historical 2026-07-07 spec.
   - Backend and generic webhook files are unchanged from `c569a34`; no backend
     rerun was required. Workflow-approver source and production chain scans are
     empty.
-  - Hand-written production is now `+1498/-484`; schema remains `+16/-0`; and
-    generated Ent outside schema remains `+862/-33`.
+  - The earlier moving-base count is superseded by the binding fixed-base
+    `+1500/-531` audit above.
 
 - [ ] **Step 4: Browser-test one complete workflow**
 
@@ -578,9 +579,9 @@ current. Do not rewrite the historical 2026-07-07 spec.
   The spec is marked implemented. No additional string-byte guard was added:
   the workflow already enforces 21 steps and 100 unique approvers, while
   decision-comment and snapshotted display strings remain a documented
-  residual storage risk. The exact hand-written production audit is 1,500
-  additions, so adding a new production guard would exceed the binding
-  complexity limit.
+  residual storage risk. The binding fixed-base audit after the newest review
+  wave is `+1500/-531`, including `backend/ent/schema`, so adding a new
+  production guard would exceed the complexity limit.
 
 - [ ] **Step 5: Verify, report, commit, push, and wait for PR checks**
 
@@ -595,10 +596,51 @@ current. Do not rewrite the historical 2026-07-07 spec.
   - `ae-cli` `go test ./... -count=1` passed;
   - frontend passed 39 files / 435 tests and the production build;
   - role E2E passed 16/16 after starting its required Vite server;
-  - `git diff --check` passed and the production audit is exactly 1,500
-    additions / 493 deletions;
+  - the earlier moving-base audit is superseded by the binding fixed-base
+    `+1500/-531` result, including `backend/ent/schema`;
   - the in-app browser still reports `No browser is available`, so the browser
     workflow checkbox remains intentionally open.
+
+  This push/check step is superseded for the current fix wave: the current
+  instruction explicitly requires a local commit only and prohibits push,
+  merge, release, and deployment actions.
+
+---
+
+### Task 6: Reset Audit Atomicity And Candidate Consistency Final Fix
+
+- [x] **Step 1: Add and run focused failing regressions**
+
+  Event-insert hooks proved that reset-start, reset-success, and reset-failure
+  state could commit without their audit events. A normalized-email candidate
+  passed list/save but resolved to an admin fallback.
+
+- [x] **Step 2: Make reset transitions atomic and align candidate eligibility**
+
+  Start CAS plus retry/start events now share one transaction; success/failure
+  CAS plus their terminal event each share one transaction. The relay call stays
+  between committed transactions, notifications stay after terminal commit,
+  and normalized-email directory matches use the same active exact-membership
+  checks across list/save/resolve.
+
+- [x] **Step 3: Pass focused tests and the binding production audit**
+
+  `go test ./internal/quotareset ./internal/workitems ./internal/handler -count=1`
+  passed. `git diff --check` passed. The prompt's exact fixed-base audit reports
+  `+1500/-531`, including `backend/ent/schema`.
+
+- [x] **Step 4: Complete full backend verification and report**
+
+  Run `go test ./... -count=1`, `go vet ./...`, append the dated final report,
+  and repeat formatting/diff/audit checks. Both full backend commands passed;
+  the report records the RED/GREEN evidence and residual concerns. Browser
+  verification remains unchecked.
+
+- [x] **Step 5: Review and commit locally**
+
+  Review the staged diff and commit all tracked changes with a Conventional
+  Commit message. The fix wave was committed locally as
+  `fix(quotareset): close reset audit consistency gaps`. It was not pushed.
 
 ## Deferred
 

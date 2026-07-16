@@ -12,15 +12,8 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
-func (s *Service) createWorkflowRequest(
-	ctx context.Context,
-	requester *ent.User,
-	providerRow *ent.RelayProvider,
-	subscription relay.UserSubscription,
-	input CreateRequestInput,
-	workflow *Workflow,
-	paths []DepartmentPathEvidence,
-) (*ent.QuotaResetRequest, error) {
+func (s *Service) createWorkflowRequest(ctx context.Context, requester *ent.User, providerRow *ent.RelayProvider,
+	subscription relay.UserSubscription, input CreateRequestInput, workflow *Workflow, paths []DepartmentPathEvidence) (*ent.QuotaResetRequest, error) {
 	rawWorkflow, err := EncodeWorkflow(workflow)
 	if err != nil {
 		return nil, err
@@ -60,14 +53,8 @@ func (s *Service) createWorkflowRequest(
 	}
 	events := []*ent.QuotaResetRequestEventCreate{
 		newWorkflowEvent(tx, request.ID, &requester.ID, quotaresetrequestevent.EventTypeCreated, map[string]any{"group_id": input.GroupID}),
-		newWorkflowEvent(tx, request.ID, nil, quotaresetrequestevent.EventTypeApproverResolved, map[string]any{
-			"approver_user_ids": workflow.ActiveApproverUserIDs(),
-			"path_count":        len(paths),
-		}),
-		newWorkflowEvent(tx, request.ID, nil, quotaresetrequestevent.EventTypeWorkflowCreated, map[string]any{
-			"workflow_version": workflowVersionV2,
-			"step_count":       len(workflow.Steps),
-		}),
+		newWorkflowEvent(tx, request.ID, nil, quotaresetrequestevent.EventTypeApproverResolved, map[string]any{"approver_user_ids": workflow.ActiveApproverUserIDs(), "path_count": len(paths)}),
+		newWorkflowEvent(tx, request.ID, nil, quotaresetrequestevent.EventTypeWorkflowCreated, map[string]any{"workflow_version": workflowVersionV2, "step_count": len(workflow.Steps)}),
 	}
 	events = append(events, workflowActivationEvents(tx, request.ID, workflow, 0)...)
 	if _, err := tx.QuotaResetRequestEvent.CreateBulk(events...).Save(ctx); err != nil {
@@ -107,12 +94,8 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 	}
 	now := time.Now().UTC()
 	satisfiedSteps, err := workflow.Decide(WorkflowDecision{
-		ActorUserID:      input.ActorUserID,
-		ActorDisplayName: actorDisplayName,
-		Comment:          comment,
-		Approve:          approve,
-		Admin:            input.Admin,
-		DecidedAt:        now,
+		ActorUserID: input.ActorUserID, ActorDisplayName: actorDisplayName, Comment: comment,
+		Approve: approve, Admin: input.Admin, DecidedAt: now,
 	})
 	if err != nil {
 		return nil, err
@@ -128,10 +111,8 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 	}
 	defer tx.Rollback()
 	update := tx.QuotaResetRequest.UpdateOneID(request.ID).
-		Where(
-			quotaresetrequest.StatusEQ(quotaresetrequest.StatusWorkflowPending),
-			quotaresetrequest.WorkflowRevisionEQ(request.WorkflowRevision),
-		).
+		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusWorkflowPending),
+			quotaresetrequest.WorkflowRevisionEQ(request.WorkflowRevision)).
 		SetWorkflow(rawWorkflow).
 		SetWorkflowRevision(request.WorkflowRevision + 1).
 		SetResolvedApproverUserIds(workflow.ActiveApproverUserIDs())
@@ -151,29 +132,19 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 		return nil, fmt.Errorf("store quota reset workflow decision: %w", err)
 	}
 	decisionMetadata := map[string]any{
-		"step_index":         stepIndex,
-		"step_label":         stepLabel,
-		"actor_display_name": actorDisplayName,
-		"comment":            comment,
-		"admin":              input.Admin,
-		"workflow_revision":  request.WorkflowRevision + 1,
+		"step_index": stepIndex, "step_label": stepLabel, "actor_display_name": actorDisplayName,
+		"comment": comment, "admin": input.Admin, "workflow_revision": request.WorkflowRevision + 1,
 	}
 	decisionEvent := quotaresetrequestevent.EventTypeRejected
 	if approve {
 		decisionEvent = quotaresetrequestevent.EventTypeStepApproved
 	}
-	events := []*ent.QuotaResetRequestEventCreate{
-		newWorkflowEvent(tx, request.ID, &input.ActorUserID, decisionEvent, decisionMetadata),
-	}
+	events := []*ent.QuotaResetRequestEventCreate{newWorkflowEvent(tx, request.ID, &input.ActorUserID, decisionEvent, decisionMetadata)}
 	for _, satisfiedStep := range satisfiedSteps {
 		sourceStep := workflow.Steps[satisfiedStep].SatisfiedByStep
 		sourceDecision := workflow.Steps[*sourceStep].Decision
-		metadata := map[string]any{
-			"step_index":        satisfiedStep,
-			"satisfied_by_step": *sourceStep,
-			"actor_user_id":     sourceDecision.ActorUserID,
-			"workflow_revision": request.WorkflowRevision + 1,
-		}
+		metadata := map[string]any{"step_index": satisfiedStep, "satisfied_by_step": *sourceStep,
+			"actor_user_id": sourceDecision.ActorUserID, "workflow_revision": request.WorkflowRevision + 1}
 		events = append(events, newWorkflowEvent(tx, request.ID, &sourceDecision.ActorUserID, quotaresetrequestevent.EventTypeStepSatisfied, metadata))
 	}
 	if !terminal {
@@ -202,14 +173,10 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 func workflowActivationEvents(tx *ent.Tx, requestID int, workflow *Workflow, revision int) []*ent.QuotaResetRequestEventCreate {
 	active := workflow.Steps[workflow.CurrentStep]
 	metadata := map[string]any{
-		"step_index":        workflow.CurrentStep,
-		"step_label":        active.Label,
-		"approver_user_ids": workflow.ActiveApproverUserIDs(),
-		"workflow_revision": revision,
+		"step_index": workflow.CurrentStep, "step_label": active.Label,
+		"approver_user_ids": workflow.ActiveApproverUserIDs(), "workflow_revision": revision,
 	}
-	events := []*ent.QuotaResetRequestEventCreate{
-		newWorkflowEvent(tx, requestID, nil, quotaresetrequestevent.EventTypeStepActivated, metadata),
-	}
+	events := []*ent.QuotaResetRequestEventCreate{newWorkflowEvent(tx, requestID, nil, quotaresetrequestevent.EventTypeStepActivated, metadata)}
 	if active.AdminFallback {
 		events = append(events, newWorkflowEvent(tx, requestID, nil, quotaresetrequestevent.EventTypeAdminFallbackActivated, metadata))
 	}
@@ -217,9 +184,5 @@ func workflowActivationEvents(tx *ent.Tx, requestID int, workflow *Workflow, rev
 }
 
 func newWorkflowEvent(tx *ent.Tx, requestID int, actorUserID *int, eventType quotaresetrequestevent.EventType, metadata map[string]any) *ent.QuotaResetRequestEventCreate {
-	return tx.QuotaResetRequestEvent.Create().
-		SetRequestID(requestID).
-		SetNillableActorUserID(actorUserID).
-		SetEventType(eventType).
-		SetMetadata(metadata)
+	return tx.QuotaResetRequestEvent.Create().SetRequestID(requestID).SetNillableActorUserID(actorUserID).SetEventType(eventType).SetMetadata(metadata)
 }

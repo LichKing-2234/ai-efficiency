@@ -297,6 +297,51 @@ func TestResolveWorkflowRejectsStaleConfiguredMembership(t *testing.T) {
 	}
 }
 
+func TestNormalizedEmailFallbackCandidateCanBeConfiguredAndResolved(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	exact := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-exact", "Exact", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, exact.ExternalID, &requester.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, exact.ExternalID)
+	approverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-bob", strings.ToUpper(approver.Email), exact.ExternalID, nil)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, approverMember, exact.ExternalID)
+	svc := NewService(client, nil, nil, nil)
+
+	candidates, err := svc.ListApproverCandidates(ctx, source.ID, exact.ExternalID)
+	if err != nil {
+		t.Fatalf("ListApproverCandidates() = %+v, %v, want email-matched approver %d", candidates, err, approver.ID)
+	}
+	found := false
+	for _, candidate := range candidates.Items {
+		found = found || candidate.UserID == approver.ID
+	}
+	if !found {
+		t.Fatalf("ListApproverCandidates() = %+v, want email-matched approver %d", candidates, approver.ID)
+	}
+	saved, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+		ActorUserID: requester.ID,
+		Items: []ApproverConfigInput{{
+			DepartmentExternalID:  exact.ExternalID,
+			DepartmentDisplayPath: exact.Name,
+			ApproverUserID:        approver.ID,
+			Enabled:               true,
+		}},
+	})
+	if err != nil || len(saved.Items) != 1 || saved.Items[0].ApproverUserID != approver.ID {
+		t.Fatalf("SaveApproverConfigs() = %+v, %v, want saved approver %d", saved, err, approver.ID)
+	}
+	workflow, _, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
+	if err != nil {
+		t.Fatalf("ResolveWorkflow() error = %v", err)
+	}
+	if got := workflowApproverIDs(workflow.Steps[0]); !reflect.DeepEqual(got, []int{approver.ID}) || workflow.Steps[0].AdminFallback {
+		t.Fatalf("resolved step = %+v, approvers %v, want email-matched normal candidate", workflow.Steps[0], got)
+	}
+}
+
 func createQuotaResetDirectorySource(t *testing.T, ctx context.Context, client *ent.Client) *ent.DirectorySource {
 	t.Helper()
 	source, err := client.DirectorySource.Create().

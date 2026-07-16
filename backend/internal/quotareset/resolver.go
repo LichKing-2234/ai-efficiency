@@ -297,7 +297,7 @@ func (f *workflowDirectoryFacts) configuredApprovers(departmentID string, reques
 		}
 		user := f.usersByID[userID]
 		member := f.membersByUserID[userID]
-		if member == nil || member.MatchedUserID == nil || *member.MatchedUserID != userID || !workflowCandidateUsable(user, member) {
+		if !workflowCandidateUsable(user, member) {
 			continue
 		}
 		if _, belongs := f.departmentIDsByMember[member.ID][departmentID]; !belongs {

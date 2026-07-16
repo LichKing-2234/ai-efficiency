@@ -1007,6 +1007,91 @@ func TestExecuteResetBoundsDetachedRelayCall(t *testing.T) {
 	}
 }
 
+func TestExecuteResetRollsBackStartWhenEventInsertFails(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	startedAt := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	completedAt := startedAt.Add(time.Minute)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{approver.ID})
+	request = client.QuotaResetRequest.UpdateOneID(request.ID).
+		SetStatus(quotaresetrequest.StatusApprovedResetFailed).
+		SetResetError("previous relay failure").
+		SetResetStartedAt(startedAt).
+		SetResetCompletedAt(completedAt).
+		SaveX(ctx)
+	failQuotaResetEventInsert(client, quotaresetrequestevent.EventTypeResetStarted, "injected reset-started audit failure")
+	fake := &fakeQuotaResetProvider{}
+
+	_, err := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil).
+		executeReset(ctx, request.ID, approver.ID, true, false)
+	if err == nil || !strings.Contains(err.Error(), "injected reset-started audit failure") {
+		t.Fatalf("executeReset() error = %v, want reset-started audit failure", err)
+	}
+	stored := client.QuotaResetRequest.GetX(ctx, request.ID)
+	if stored.Status != request.Status || stored.ResetError != request.ResetError ||
+		!stored.ResetStartedAt.Equal(*request.ResetStartedAt) || !stored.ResetCompletedAt.Equal(*request.ResetCompletedAt) {
+		t.Fatalf("stored reset state = %+v, want unchanged %+v", stored, request)
+	}
+	if fake.resetCalls != 0 || quotaResetEventCount(ctx, client, request.ID, quotaresetrequestevent.EventTypeResetRetried) != 0 {
+		t.Fatalf("reset calls/retry events = %d/%d, want 0/0", fake.resetCalls, quotaResetEventCount(ctx, client, request.ID, quotaresetrequestevent.EventTypeResetRetried))
+	}
+}
+
+func TestExecuteResetRollsBackSuccessWhenEventInsertFails(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{approver.ID})
+	request = client.QuotaResetRequest.UpdateOneID(request.ID).SetStatus(quotaresetrequest.StatusApprovedResetting).SaveX(ctx)
+	failQuotaResetEventInsert(client, quotaresetrequestevent.EventTypeResetSucceeded, "injected reset-succeeded audit failure")
+	fake := &fakeQuotaResetProvider{}
+	notifier := &recordingQuotaResetNotifier{}
+
+	_, err := NewService(client, fakeProviderResolver(provider.ID, fake), nil, notifier).
+		executeReset(ctx, request.ID, approver.ID, false, false)
+	if err == nil || !strings.Contains(err.Error(), "injected reset-succeeded audit failure") {
+		t.Fatalf("executeReset() error = %v, want reset-succeeded audit failure", err)
+	}
+	stored := client.QuotaResetRequest.GetX(ctx, request.ID)
+	if stored.Status != quotaresetrequest.StatusApprovedResetting || stored.ResetCompletedAt != nil {
+		t.Fatalf("stored status/completed_at = %s/%v, want resetting/nil", stored.Status, stored.ResetCompletedAt)
+	}
+	if fake.resetCalls != 1 || len(notifier.events) != 0 || quotaResetEventCount(ctx, client, request.ID, quotaresetrequestevent.EventTypeResetSucceeded) != 0 {
+		t.Fatalf("reset calls/notifications/success events = %d/%v/%d, want 1/[]/0", fake.resetCalls, notifier.events, quotaResetEventCount(ctx, client, request.ID, quotaresetrequestevent.EventTypeResetSucceeded))
+	}
+}
+
+func TestExecuteResetRollsBackFailureWhenEventInsertFails(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	provider := createQuotaResetRelayProvider(t, ctx, client)
+	request := createPendingQuotaResetRequest(t, ctx, client, requester.ID, 1001, provider.ID, "42", []int{approver.ID})
+	request = client.QuotaResetRequest.UpdateOneID(request.ID).SetStatus(quotaresetrequest.StatusApprovedResetting).SaveX(ctx)
+	failQuotaResetEventInsert(client, quotaresetrequestevent.EventTypeResetFailed, "injected reset-failed audit failure")
+	fake := &fakeQuotaResetProvider{resetErr: errors.New("relay timeout")}
+	notifier := &recordingQuotaResetNotifier{}
+
+	_, err := NewService(client, fakeProviderResolver(provider.ID, fake), nil, notifier).
+		executeReset(ctx, request.ID, approver.ID, false, false)
+	if err == nil || !strings.Contains(err.Error(), "injected reset-failed audit failure") {
+		t.Fatalf("executeReset() error = %v, want reset-failed audit failure", err)
+	}
+	stored := client.QuotaResetRequest.GetX(ctx, request.ID)
+	if stored.Status != quotaresetrequest.StatusApprovedResetting || stored.ResetError != "" || stored.ResetCompletedAt != nil {
+		t.Fatalf("stored status/error/completed_at = %s/%q/%v, want resetting/empty/nil", stored.Status, stored.ResetError, stored.ResetCompletedAt)
+	}
+	if fake.resetCalls != 1 || len(notifier.events) != 0 || quotaResetEventCount(ctx, client, request.ID, quotaresetrequestevent.EventTypeResetFailed) != 0 {
+		t.Fatalf("reset calls/notifications/failure events = %d/%v/%d, want 1/[]/0", fake.resetCalls, notifier.events, quotaResetEventCount(ctx, client, request.ID, quotaresetrequestevent.EventTypeResetFailed))
+	}
+}
+
 func TestUpdateNotificationSettingsValidatesEnabledURLAndBearerCredential(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -1486,4 +1571,24 @@ func assertQuotaResetEventTypes(t *testing.T, ctx context.Context, client *ent.C
 	if !reflect.DeepEqual(got, wantCounts) {
 		t.Fatalf("event types = %v, want %v", got, wantCounts)
 	}
+}
+
+func failQuotaResetEventInsert(client *ent.Client, eventType quotaresetrequestevent.EventType, message string) {
+	client.QuotaResetRequestEvent.Use(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
+			if eventMutation, ok := mutation.(*ent.QuotaResetRequestEventMutation); ok {
+				if got, exists := eventMutation.EventType(); exists && got == eventType {
+					return nil, errors.New(message)
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+}
+
+func quotaResetEventCount(ctx context.Context, client *ent.Client, requestID int, eventType quotaresetrequestevent.EventType) int {
+	return client.QuotaResetRequestEvent.Query().Where(
+		quotaresetrequestevent.RequestIDEQ(requestID),
+		quotaresetrequestevent.EventTypeEQ(eventType),
+	).CountX(ctx)
 }
