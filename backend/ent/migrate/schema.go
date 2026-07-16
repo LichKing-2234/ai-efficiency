@@ -761,6 +761,7 @@ var (
 		{Name: "default_model", Type: field.TypeString, Default: "claude-sonnet-4-20250514"},
 		{Name: "is_primary", Type: field.TypeBool, Default: false},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "configuration_version", Type: field.TypeInt64, Default: 1},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
