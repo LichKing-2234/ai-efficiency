@@ -15,6 +15,29 @@ import (
 	redis "github.com/redis/go-redis/v9"
 )
 
+func TestScopeVersionChangesWithAuthoritativeGuardDimensions(t *testing.T) {
+	base := scopeGuard{ActorUserID: 7, ActorRole: "user", DirectorySourceID: 3, DirectoryRunID: 11}
+	baseVersion := scopeVersion(base)
+	if baseVersion == "" {
+		t.Fatal("scopeVersion() = empty, want opaque version")
+	}
+	if got := scopeVersion(base); got != baseVersion {
+		t.Fatalf("scopeVersion() = %q, want deterministic %q", got, baseVersion)
+	}
+
+	variants := []scopeGuard{
+		{ActorUserID: 8, ActorRole: "user", DirectorySourceID: 3, DirectoryRunID: 11},
+		{ActorUserID: 7, ActorRole: "admin", DirectorySourceID: 3, DirectoryRunID: 11},
+		{ActorUserID: 7, ActorRole: "user", DirectorySourceID: 4, DirectoryRunID: 11},
+		{ActorUserID: 7, ActorRole: "user", DirectorySourceID: 3, DirectoryRunID: 12},
+	}
+	for _, guard := range variants {
+		if got := scopeVersion(guard); got == baseVersion {
+			t.Fatalf("scopeVersion(%+v) reused base version %q", guard, got)
+		}
+	}
+}
+
 func TestScopeCacheReusesVersionedScopeAndPreservesDepartmentData(t *testing.T) {
 	cache, server := testScopeCache(t, "test")
 	guard := scopeGuard{ActorUserID: 7, ActorRole: "user", DirectorySourceID: 3, DirectoryRunID: 11}
@@ -32,6 +55,10 @@ func TestScopeCacheReusesVersionedScopeAndPreservesDepartmentData(t *testing.T) 
 	second, err := cache.GetOrLoad(context.Background(), guard, loader)
 	if err != nil {
 		t.Fatalf("second GetOrLoad: %v", err)
+	}
+	wantVersion := scopeVersion(guard)
+	if first.Version != wantVersion || second.Version != wantVersion {
+		t.Fatalf("scope versions = %q/%q, want %q", first.Version, second.Version, wantVersion)
 	}
 	if !reflect.DeepEqual(first, want) || !reflect.DeepEqual(second, want) {
 		t.Fatalf("cached scope mismatch: first=%#v second=%#v want=%#v", first, second, want)
