@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, remediation, architecture documentation, full local verification, task/final reviews, draft PR delivery, first/replacement CI, and the final ledger commit are complete. Final-current-head CI remains pending and is tracked only by the external GitHub gate below.
+**Status:** Implementation, remediation, architecture documentation, full local verification, task/final reviews, draft PR delivery, first/replacement CI, and the final ledger commit are complete. The 2026-07-16 base-sync conflict resolution and required local replay verification are also complete. Post-merge final-current-head CI remains tracked only by the external GitHub gate below.
 
 **Goal:** Start public and authenticated non-admin route chunks without waiting for current-user hydration while keeping administrator routes fail-closed and making every login, logout, refresh, and delayed redirect safe across browser-session and navigation races.
 
@@ -788,6 +788,13 @@ gh pr view --json number,state,isDraft,baseRefName,headRefName,headRefOid,mergea
 ```
 
 Delivery passes only when all four third-round jobs are green for `final_head`, the worktree is clean, the PR is still open/draft with base `docs/performance-contracts-116` and head `perf/route-hydration-122`, and it is non-conflicting. GitHub checks/PR state record this mutable final gate; the committed ledger honestly records that the gate was pending when its own commit was created. Keep the worktree for review iteration; do not merge, tag, release, deploy, or run Helm.
+
+#### 2026-07-16 Base-Sync Replay
+
+- [x] Merge the latest `origin/docs/performance-contracts-116` without rebasing and resolve the sole `docs/architecture.md` conflict by preserving both the route/session generation-safe hydration contract and the base branch's Work Items revision invalidation plus paginated Directory offboarding contract.
+- [x] Replay the required local verification after conflict resolution: `git diff --check`, backend `go test ./...` and `go vet ./...`, frontend `npm test` and `npm run build`, ae-cli `go test ./...`, the frontend-embed release harness, and the isolated role E2E command.
+
+**Base-sync evidence (2026-07-16):** The merge incorporated base commit `7f2999a561454cb514c399839d38d3d691e590e5`; only `docs/architecture.md` conflicted. The resolved architecture retains the generation-aware browser session owner, parallel public/ordinary route hydration, fail-closed administrator loaders, and exact navigation-attempt settlement alongside the PostgreSQL Work Items revision, Redis read model, generation-safe browser refresh, and bounded paginated Directory offboarding descriptions. Backend `go test ./...` and `go vet ./...` exited 0, ae-cli `go test ./...` exited 0, frontend Vitest passed 41/41 files and 497/497 tests, and the production build transformed 190 modules. The frontend-embed harness rebuilt 190 modules and passed `backend/internal/web`; `git diff --check` passed. The worktree-owned strict-port role run used PID `1453` at `http://127.0.0.1:50703`, passed 16/16 checks, and post-exit probes confirmed both the PID and listener were gone. Push, PR mergeability, and post-merge current-head CI remain external GitHub delivery evidence and are not pre-checked in this committed ledger.
 
 ## Self-Review Checklist For The Implementer
 
