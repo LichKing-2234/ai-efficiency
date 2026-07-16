@@ -1,20 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import {
-  CategoryScale,
-  Chart as ChartJS,
-  Legend,
-  LinearScale,
-  LineElement,
-  PointElement,
-  Tooltip,
-} from 'chart.js'
-import { Line } from 'vue-chartjs'
+import { computed, defineAsyncComponent } from 'vue'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
 import type { TeamDepartmentTrendState, TeamMemberTrendState, TeamOverviewWindow } from '@/types'
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
+const LineChartCanvas = defineAsyncComponent(() => import('@/components/charts/LineChartCanvas.vue'))
 
 const props = defineProps<{
   state: TeamMemberTrendState
@@ -286,7 +276,7 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
             -
           </div>
           <div v-else class="mt-2 h-52 min-w-0">
-            <Line :data="teamTotalChartData" :options="chartOptions" />
+            <LineChartCanvas :data="teamTotalChartData" :options="chartOptions" />
           </div>
         </div>
 
@@ -330,7 +320,7 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
             -
           </div>
           <div v-else class="mt-2 h-64 min-w-0">
-            <Line :data="comparisonChartData" :options="chartOptions" />
+            <LineChartCanvas :data="comparisonChartData" :options="chartOptions" />
           </div>
         </div>
 
@@ -374,7 +364,7 @@ function seriesKey(series: TeamMemberTrendState['series'][number]) {
             -
           </div>
           <div v-else class="mt-2 h-64 min-w-0">
-            <Line :data="memberChartData" :options="chartOptions" />
+            <LineChartCanvas :data="memberChartData" :options="chartOptions" />
           </div>
         </div>
 
