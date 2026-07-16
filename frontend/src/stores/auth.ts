@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { login as apiLogin, getMe } from '@/api/auth'
+import { resetSessionResources } from '@/stores/sessionResources'
 import { useWorkItemsStore } from '@/stores/workItems'
 import type { User, LoginRequest } from '@/types'
 
@@ -21,6 +22,7 @@ export const useAuthStore = defineStore('auth', () => {
         throw new Error('login response missing access token')
       }
       useWorkItemsStore().resetCounts()
+      resetSessionResources()
       token.value = accessToken
       localStorage.setItem('token', accessToken)
       if (refreshToken) {
@@ -44,6 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function logout() {
     useWorkItemsStore().resetCounts()
+    resetSessionResources()
     token.value = null
     user.value = null
     localStorage.removeItem('token')

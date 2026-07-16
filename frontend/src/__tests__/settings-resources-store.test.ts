@@ -142,6 +142,58 @@ describe('settings resources store', () => {
     expect(store.credentials).toEqual([refreshedCredential])
   })
 
+  it('runs another refresh when a mutation lands during a forced follow-up', async () => {
+    const { listCredentials } = await import('@/api/credential')
+    const initialRequest = deferred<any>()
+    const firstMutationRefresh = deferred<any>()
+    const afterFirstMutation = { ...credential, name: 'After First Mutation' }
+    const afterSecondMutation = { ...credential, name: 'After Second Mutation' }
+    vi.mocked(listCredentials)
+      .mockReturnValueOnce(initialRequest.promise)
+      .mockReturnValueOnce(firstMutationRefresh.promise)
+      .mockResolvedValueOnce({ data: { data: [afterSecondMutation] } } as any)
+    const store = useSettingsResourcesStore()
+
+    const initial = store.loadCredentials()
+    const firstForce = store.loadCredentials({ force: true })
+    initialRequest.resolve({ data: { data: [credential] } })
+    await initial
+    await vi.waitFor(() => expect(listCredentials).toHaveBeenCalledTimes(2))
+
+    const secondForce = store.loadCredentials({ force: true })
+    firstMutationRefresh.resolve({ data: { data: [afterFirstMutation] } })
+    await Promise.all([firstForce, secondForce])
+
+    expect(listCredentials).toHaveBeenCalledTimes(3)
+    expect(store.credentials).toEqual([afterSecondMutation])
+  })
+
+  it('drains Directory source forces through the last mutation', async () => {
+    const { listDirectorySources } = await import('@/api/directory')
+    const initialRequest = deferred<any>()
+    const firstMutationRefresh = deferred<any>()
+    const afterFirstMutation = { ...directorySource, name: 'Directory After First Mutation' }
+    const afterSecondMutation = { ...directorySource, name: 'Directory After Second Mutation' }
+    vi.mocked(listDirectorySources)
+      .mockReturnValueOnce(initialRequest.promise)
+      .mockReturnValueOnce(firstMutationRefresh.promise)
+      .mockResolvedValueOnce({ data: { data: { items: [afterSecondMutation] } } } as any)
+    const store = useSettingsResourcesStore()
+
+    const initial = store.loadDirectorySources()
+    const firstForce = store.loadDirectorySources({ force: true })
+    initialRequest.resolve({ data: { data: { items: [directorySource] } } })
+    await initial
+    await vi.waitFor(() => expect(listDirectorySources).toHaveBeenCalledTimes(2))
+
+    const secondForce = store.loadDirectorySources({ force: true })
+    firstMutationRefresh.resolve({ data: { data: { items: [afterFirstMutation] } } })
+    await Promise.all([firstForce, secondForce])
+
+    expect(listDirectorySources).toHaveBeenCalledTimes(3)
+    expect(store.directorySources).toEqual([afterSecondMutation])
+  })
+
   it('clones replacement and API arrays at the store boundary', async () => {
     const store = useSettingsResourcesStore()
     await store.loadCredentials()

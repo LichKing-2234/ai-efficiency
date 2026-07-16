@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
+import { useSettingsResourcesStore } from '@/stores/settingsResources'
 import { useWorkItemsStore } from '@/stores/workItems'
 
 // Mock the auth API
@@ -72,6 +73,28 @@ describe('Auth Store', () => {
     expect(workItems.totalCount).toBe(0)
     expect(workItems.loaded).toBe(false)
     expect(workItems.error).toBe('')
+  })
+
+  it('logout clears Settings resources from the previous user', () => {
+    const auth = useAuthStore()
+    const settingsResources = useSettingsResourcesStore()
+    settingsResources.replaceDirectorySources([{
+      id: 7,
+      name: 'Directory Alpha',
+      description: '',
+      scope: 'full_company',
+      enabled: true,
+      dsl: 'version: 1',
+      schedule_enabled: false,
+      schedule_interval: 'daily',
+      schedule_timezone: 'UTC',
+    }])
+
+    auth.logout()
+
+    expect(settingsResources.directorySources).toEqual([])
+    expect(settingsResources.directorySourcesLoaded).toBe(false)
+    expect(settingsResources.directorySourcesError).toBe('')
   })
 
   it('login stores token and fetches user', async () => {

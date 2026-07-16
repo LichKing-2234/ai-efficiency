@@ -294,7 +294,13 @@ func (m *Manager) readMetadata(ctx context.Context, key string, valid func([]byt
 func (m *Manager) setMetadata(ctx context.Context, key string, raw []byte) error {
 	commandCtx, cancel := context.WithTimeout(ctx, m.options.CommandTimeout)
 	defer cancel()
-	return m.options.Store.Set(commandCtx, key, append([]byte(nil), raw...), m.options.MetadataTTL)
+	return m.options.Store.Set(commandCtx, key, append([]byte(nil), raw...), m.metadataTTL(key))
+}
+
+func (m *Manager) metadataTTL(key string) time.Duration {
+	digest := sha256.Sum256([]byte(key))
+	jitterPermille := int64(100 + int(digest[0])*100/255)
+	return m.options.MetadataTTL - time.Duration(int64(m.options.MetadataTTL)*jitterPermille/1000)
 }
 
 func (m *Manager) acquireMetadataLease(ctx context.Context, key, token string) (bool, error) {
