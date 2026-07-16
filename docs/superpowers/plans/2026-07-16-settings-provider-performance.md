@@ -166,11 +166,13 @@
 - `useSettingsResourcesStore` exposes credential and Directory-source refs plus `loadCredentials({ force? })`, `loadDirectorySources({ force? })`, `replaceDirectorySources`, and invalidation/refresh actions with one in-flight promise per resource.
 - Code Platform loads credential summaries only when its add/edit task opens. Organization/Login and Advanced Credentials reuse the same store result; Directory Sync source remounts reuse the same store result.
 
-- [ ] **Step 1: Add RED route, section, store, and mutation tests**
+- [x] **Step 1: Add RED route, section, store, and mutation tests**
 
   Assert default `/settings` requests only Relay providers; every direct `?section=` link imports/renders only its requested section and issues only owned requests; hidden sections make zero requests; switching sections preserves the URL contract. Cover credential/source concurrent deduplication, five-minute reuse/expiry, error retry, force refresh, mutation refresh, Code Platform dialog-time credential loading, Organization/Advanced credential reuse, Directory source reuse across remount, and unchanged CRUD/dialog/keyboard behavior.
 
-- [ ] **Step 2: Run focused tests and record RED**
+  Test evidence (2026-07-16): new store tests define concurrent promise reuse, exact five-minute freshness, retry, force refresh, and clone boundaries. Settings route tests define default/direct request ownership, dialog-time Code Platform credentials, Advanced-to-Organization credential reuse, and Directory source remount reuse while retaining the existing URL, localization, CRUD, dialog, and loading regressions.
+
+- [x] **Step 2: Run focused tests and record RED**
 
   Run:
 
@@ -181,11 +183,15 @@
 
   Expected: failures because the parent eagerly imports every section and requests every dataset, while credentials/sources have no shared freshness owner.
 
-- [ ] **Step 3: Implement async sections and the shared store**
+  RED evidence (2026-07-16): the focused command failed because `settingsResources` does not exist, default/direct Settings still request hidden SCM/credential/system/LDAP data, Code Platform loads credentials before its dialog, and Organization issues two Directory source requests. The 43 pre-existing focused regressions remained green.
+
+- [x] **Step 3: Implement async sections and the shared store**
 
   Move existing section-specific state, API calls, dialogs, and handlers into the five section modules without changing visible behavior or payloads. Replace static imports with an exhaustive typed async-loader map. Keep active section URL and tab focus logic in the shell. Deduplicate shared resources through Pinia, clone API arrays at the store interface, and force-refresh after successful owned mutations.
 
-- [ ] **Step 4: Verify Task 3 GREEN and checkpoint**
+  Implementation evidence (2026-07-16): `SettingsView` is now a navigation-only shell with one exhaustive async component map and one active panel. Each section owns its prior request/CRUD/dialog state. `useSettingsResourcesStore` owns cloned credential and Directory-source arrays, independent five-minute freshness and errors, one active request plus one serialized forced follow-up per resource, invalidation/reset actions, and mutation refresh. Code Platform loads credentials only when opening add/edit; Advanced and Organization reuse credentials; Directory Sync and Quota Reset share one Directory-source request without keeping hidden polling components alive.
+
+- [x] **Step 4: Verify Task 3 GREEN and checkpoint**
 
   Run:
 
@@ -199,6 +205,8 @@
   Inspect the Vite manifest/output and record that `SettingsView` is a small shell and the five Settings sections are separate lazy chunks.
 
   Commit: `perf(frontend): load settings sections on demand`
+
+  GREEN evidence (2026-07-16): focused Settings/store/Directory/Quota regressions passed 58/58; the full frontend suite passed 40 files and 496 tests; `vue-tsc` and the Vite production build passed; and `git diff --check` passed. The production output now emits `SettingsView` as a 4.14 kB shell (1.70 kB gzip) plus separate AI Services (11.81 kB), Code Platforms (13.61 kB), Organization/Login (40.31 kB), Deployment/Runtime (3.77 kB), and Advanced Credentials (10.55 kB) chunks.
 
 ### Task 4: Document, Verify, Review, And Publish
 
