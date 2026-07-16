@@ -16,9 +16,9 @@ approver type now also matches the source-free backend response. Browser
 verification remains the only unchecked item because both the controller and
 worker observed no browser runtime.
 
-**Final Whole-Branch Review Remediation Status (2026-07-16):** The reset-start
-follow-up, full backend verification, and final re-review are complete. Push and
-PR checks remain; browser verification is blocked and unchecked.
+**Final Whole-Branch Review Remediation Status (2026-07-16):** Complete except
+for browser verification, which remains blocked and unchecked because the
+required browser runtime is unavailable.
 
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
@@ -582,7 +582,7 @@ current. Do not rewrite the historical 2026-07-07 spec.
   wave is `+1499/-523`, including `backend/ent/schema`, so adding a new
   production guard would exceed the complexity limit.
 
-- [ ] **Step 5: Verify, report, commit, push, and wait for PR checks**
+- [x] **Step 5: Verify, report, commit, push, and wait for PR checks**
 
   Run the requested focused/full suites and exact audits, keep browser
   verification unchecked, write the final-review report, push PR 146, and wait
@@ -599,6 +599,12 @@ current. Do not rewrite the historical 2026-07-07 spec.
     `+1499/-523` result, including `backend/ent/schema`;
   - the in-app browser still reports `No browser is available`, so the browser
     workflow checkbox remains intentionally open.
+
+  Final re-review at `ea6f04d` reported no Critical, Important, or Minor
+  findings and marked the branch ready to merge. PR head `9d277ad` then passed
+  CI run `29508639978`: backend, frontend, `ae-cli`, and `deploy-static` all
+  completed successfully. No merge, tag, release, Helm, or deployment command
+  was run.
 
 ---
 
