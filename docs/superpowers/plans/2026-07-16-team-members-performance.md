@@ -24,7 +24,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** In progress. Implementation and full local verification are complete; Draft PR publication and required CI remain.
+**Status:** In progress. Implementation, review remediation, and full local verification are complete; Draft PR publication and required CI remain.
 
 ---
 
@@ -166,13 +166,13 @@
   cd ../ae-cli && go test ./...
   ```
 
-  Verification evidence (2026-07-16): both diff checks and focused `go vet` passed; the complete backend suite and race-enabled `internal/readcache`/`internal/teamusage` suites passed; the frontend suite passed 39 files/475 tests and the production build completed; the complete `ae-cli` suite passed.
+  Post-fix verification evidence (2026-07-16): diff checks and focused `go vet` including `internal/representativescope` passed; the complete backend suite and race-enabled `internal/readcache`/`internal/representativescope`/`internal/teamusage` suites passed; the frontend suite passed 39 files/476 tests and the production build completed; the complete `ae-cli` suite passed.
 
 - [x] **Step 3: Review against issue #127 and the active performance spec**
 
   Audit limits, global rank/order, cursor integrity and dimensions, scope/snapshot expiry, Redis outage behavior, response bytes, DOM rows, sibling lifecycle isolation, no organization duplication, and synthetic test data. Fix every finding and rerun affected verification.
 
-  Review evidence (2026-07-16): the complete `597c7f4..228ca3e` implementation diff and current documentation were audited against issue #127, the active performance spec, and `AGENTS.md`. No Critical, Important, or Minor finding remained. The cursor secret fails closed when missing, compatibility overview keeps its historical payload, and organization pagination remains outside this ticket.
+  Review evidence (2026-07-16): independent review found and the implementation fixed two Important edge cases: member pagination had rebuilt absolute dates after midnight, and member snapshot identity had retained nondeterministic department-membership ordering across authoritative rebuilds. Regression tests cover both findings, final focused re-review was clean, the cursor secret still fails closed when missing, compatibility overview keeps its historical payload, and organization pagination remains outside this ticket.
 
 - [ ] **Step 4: Push and open a Draft PR**
 

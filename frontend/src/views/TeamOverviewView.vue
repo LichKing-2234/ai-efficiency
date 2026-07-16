@@ -35,6 +35,7 @@ let membersRequestSeq = 0
 let compatibilityRequestSeq = 0
 const memberPageCursors = ref<Array<string | null>>([null])
 const memberPageIndex = ref(0)
+let memberPageParams: TeamUsageOverviewParams | null = null
 
 const loading = computed(() => summaryLoading.value || trendLoading.value || membersLoading.value || compatibilityLoading.value)
 
@@ -147,6 +148,7 @@ async function loadCompatibilityOverview(params: TeamUsageOverviewParams) {
 function loadOverview() {
   const params = buildOverviewParams(selectedRange.value)
   resetMemberPagination()
+  memberPageParams = { ...params }
   void loadSummary(params)
   void loadTrend(params)
   void loadMembers(params, null, 0)
@@ -160,15 +162,15 @@ function resetMemberPagination() {
 
 function loadNextMemberPage() {
   const cursor = membersPage.value?.next_cursor
-  if (!cursor || membersLoading.value) return
-  void loadMembers(buildOverviewParams(selectedRange.value), cursor, memberPageIndex.value + 1)
+  if (!cursor || membersLoading.value || memberPageParams == null) return
+  void loadMembers(memberPageParams, cursor, memberPageIndex.value + 1)
 }
 
 function loadPreviousMemberPage() {
-  if (memberPageIndex.value <= 0 || membersLoading.value) return
+  if (memberPageIndex.value <= 0 || membersLoading.value || memberPageParams == null) return
   const targetPageIndex = memberPageIndex.value - 1
   const cursor = memberPageCursors.value[targetPageIndex] ?? null
-  void loadMembers(buildOverviewParams(selectedRange.value), cursor, targetPageIndex)
+  void loadMembers(memberPageParams, cursor, targetPageIndex)
 }
 
 function isForbidden(error: unknown) {

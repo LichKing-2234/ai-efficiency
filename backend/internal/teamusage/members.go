@@ -130,7 +130,12 @@ func pagedMemberIdentityLess(left, right OverviewMember) bool {
 }
 
 func memberSnapshotIdentity(members []OverviewMember) (string, error) {
-	encoded, err := json.Marshal(members)
+	canonical := append([]OverviewMember(nil), members...)
+	for index := range canonical {
+		canonical[index].DepartmentExternalIDs = append([]string(nil), canonical[index].DepartmentExternalIDs...)
+		sort.Strings(canonical[index].DepartmentExternalIDs)
+	}
+	encoded, err := json.Marshal(canonical)
 	if err != nil {
 		return "", fmt.Errorf("encode member snapshot identity: %w", err)
 	}
