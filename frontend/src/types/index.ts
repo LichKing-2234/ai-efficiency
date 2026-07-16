@@ -1019,6 +1019,15 @@ export interface TeamUsageTrendResponse extends TeamUsageSnapshotFreshness {
   department_trend: TeamDepartmentTrendState
 }
 
+export interface TeamUsageMembersResponse extends TeamUsageSnapshotFreshness {
+  scope_version: string
+  request_id: string
+  window: TeamOverviewWindow
+  items: TeamOverviewMember[]
+  total_count: number
+  next_cursor?: string
+}
+
 export interface TeamOverviewResponse {
   configured: boolean
   is_representative: boolean
@@ -1050,6 +1059,11 @@ export interface TeamUsageOverviewParams {
   timezone?: string
   page?: number
   page_size?: number
+}
+
+export interface TeamUsageMembersParams extends TeamUsageOverviewParams {
+  cursor?: string
+  limit?: number
 }
 
 export interface TeamUsageAuditParams {
