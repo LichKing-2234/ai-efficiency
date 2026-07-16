@@ -61,6 +61,34 @@ func TestMetricsRecordsNormalizedDependencyEvidence(t *testing.T) {
 	}
 }
 
+func TestMetricsDurationHistogramsCoverConfiguredRuntimeBudgets(t *testing.T) {
+	metrics := NewMetrics("test-release")
+	requestObserver := metrics.RequestObserver()
+	requestObserver.Start("GET")
+	requestObserver.Finish("/usage", "GET", "2xx", 35*time.Second, 128)
+	metrics.DependencyObserver().Observe("relay", "http_request", "GET", "2xx", 30*time.Second)
+
+	requestDuration := histogramValue(t, metrics.Gatherer(), "ai_efficiency_http_request_duration_seconds", map[string]string{
+		"method":       "GET",
+		"release":      "test-release",
+		"route":        "/usage",
+		"status_class": "2xx",
+	})
+	if got := highestFiniteBucket(requestDuration); got < 35 {
+		t.Fatalf("request duration highest finite bucket = %v seconds, want at least 35", got)
+	}
+	dependencyDuration := histogramValue(t, metrics.Gatherer(), "ai_efficiency_dependency_request_duration_seconds", map[string]string{
+		"dependency":   "relay",
+		"method":       "GET",
+		"operation":    "http_request",
+		"release":      "test-release",
+		"status_class": "2xx",
+	})
+	if got := highestFiniteBucket(dependencyDuration); got < 30 {
+		t.Fatalf("dependency duration highest finite bucket = %v seconds, want at least 30", got)
+	}
+}
+
 func TestMetricsCacheRecorderUsesOnlyStableCacheAndOutcomeLabels(t *testing.T) {
 	metrics := NewMetrics("test-release")
 	recorder := metrics.CacheRecorder("work_items_counts")
@@ -128,4 +156,12 @@ func gaugeValue(t *testing.T, gatherer prometheus.Gatherer, name string, labels 
 func histogramValue(t *testing.T, gatherer prometheus.Gatherer, name string, labels map[string]string) *dto.Histogram {
 	t.Helper()
 	return gatheredMetric(t, gatherer, name, labels).GetHistogram()
+}
+
+func highestFiniteBucket(histogram *dto.Histogram) float64 {
+	buckets := histogram.GetBucket()
+	if len(buckets) == 0 {
+		return 0
+	}
+	return buckets[len(buckets)-1].GetUpperBound()
 }

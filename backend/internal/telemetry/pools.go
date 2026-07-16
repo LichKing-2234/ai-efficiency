@@ -89,6 +89,7 @@ type redisPoolCollector struct {
 	waitTotal    *prometheus.Desc
 	waitDuration *prometheus.Desc
 	timeoutTotal *prometheus.Desc
+	staleTotal   *prometheus.Desc
 }
 
 func newRedisPoolCollector(source RedisPoolStatsSource) *redisPoolCollector {
@@ -114,6 +115,11 @@ func newRedisPoolCollector(source RedisPoolStatsSource) *redisPoolCollector {
 			"Total Redis pool wait timeouts.",
 			nil, nil,
 		),
+		staleTotal: prometheus.NewDesc(
+			prometheus.BuildFQName(metricsNamespace, "redis_pool", "stale_connections_total"),
+			"Total stale Redis connections removed from the pool.",
+			nil, nil,
+		),
 	}
 }
 
@@ -122,6 +128,7 @@ func (c *redisPoolCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.waitTotal
 	ch <- c.waitDuration
 	ch <- c.timeoutTotal
+	ch <- c.staleTotal
 }
 
 func (c *redisPoolCollector) Collect(ch chan<- prometheus.Metric) {
@@ -131,9 +138,9 @@ func (c *redisPoolCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	ch <- prometheus.MustNewConstMetric(c.connections, prometheus.GaugeValue, float64(stats.TotalConns), "total")
 	ch <- prometheus.MustNewConstMetric(c.connections, prometheus.GaugeValue, float64(stats.IdleConns), "idle")
-	ch <- prometheus.MustNewConstMetric(c.connections, prometheus.GaugeValue, float64(stats.StaleConns), "stale")
 	ch <- prometheus.MustNewConstMetric(c.connections, prometheus.GaugeValue, float64(stats.PendingRequests), "pending")
 	ch <- prometheus.MustNewConstMetric(c.waitTotal, prometheus.CounterValue, float64(stats.WaitCount))
 	ch <- prometheus.MustNewConstMetric(c.waitDuration, prometheus.CounterValue, float64(stats.WaitDurationNs)/1e9)
 	ch <- prometheus.MustNewConstMetric(c.timeoutTotal, prometheus.CounterValue, float64(stats.Timeouts))
+	ch <- prometheus.MustNewConstMetric(c.staleTotal, prometheus.CounterValue, float64(stats.StaleConns))
 }

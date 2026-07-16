@@ -29,6 +29,13 @@ export interface WebVitalsReportingOptions {
   loadWebVitals?: () => Promise<WebVitalsModule>
 }
 
+export interface WebVitalsReadyRouter {
+  isReady: () => Promise<void>
+  currentRoute: { value: { path: string } }
+}
+
+export type WebVitalsAfterRouterReadyOptions = Omit<WebVitalsReportingOptions, 'token' | 'path'>
+
 export function readWebVitalsSampleRate(raw: string | undefined): number {
   if (raw === undefined || raw.trim() === '') {
     return 0.1
@@ -94,4 +101,12 @@ export function startWebVitalsReporting(options: WebVitalsReportingOptions = {})
     })
     .catch(() => undefined)
   return true
+}
+
+export async function startWebVitalsReportingAfterRouterReady(
+  router: WebVitalsReadyRouter,
+  options: WebVitalsAfterRouterReadyOptions = {},
+): Promise<boolean> {
+  await router.isReady()
+  return startWebVitalsReporting({ ...options, path: router.currentRoute.value.path })
 }

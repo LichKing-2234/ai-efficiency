@@ -71,7 +71,7 @@ func NewMetrics(release string) *Metrics {
 			Namespace: metricsNamespace,
 			Name:      "http_request_duration_seconds",
 			Help:      "First-party HTTP request duration in seconds.",
-			Buckets:   prometheus.ExponentialBuckets(0.005, 2, 13),
+			Buckets:   prometheus.ExponentialBuckets(0.005, 2, 15),
 		}, []string{"route", "method", "status_class", "release"}),
 		httpResponseBytes: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: metricsNamespace,
@@ -93,7 +93,7 @@ func NewMetrics(release string) *Metrics {
 			Namespace: metricsNamespace,
 			Name:      "dependency_request_duration_seconds",
 			Help:      "Downstream dependency request duration in seconds.",
-			Buckets:   prometheus.ExponentialBuckets(0.005, 2, 13),
+			Buckets:   prometheus.ExponentialBuckets(0.005, 2, 15),
 		}, []string{"dependency", "operation", "method", "status_class", "release"}),
 		cacheEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: metricsNamespace,
