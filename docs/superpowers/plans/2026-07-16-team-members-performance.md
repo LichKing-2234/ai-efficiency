@@ -24,7 +24,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** In progress. Implementation, review remediation, and full local verification are complete; Draft PR publication and required CI remain.
+**Status:** Complete. Draft PR #155 targets `perf/team-trend-126`, depends directly on Draft PR #154, and the implementation-head CI passed all required jobs. The worktree remains available for review; no merge, release, tag, deployment, Helm action, or `sub2api` change was performed.
 
 ---
 
@@ -174,10 +174,14 @@
 
   Review evidence (2026-07-16): independent review found and the implementation fixed two Important edge cases: member pagination had rebuilt absolute dates after midnight, and member snapshot identity had retained nondeterministic department-membership ordering across authoritative rebuilds. Regression tests cover both findings, final focused re-review was clean, the cursor secret still fails closed when missing, compatibility overview keeps its historical payload, and organization pagination remains outside this ticket.
 
-- [ ] **Step 4: Push and open a Draft PR**
+- [x] **Step 4: Push and open a Draft PR**
 
   Target `perf/team-trend-126`, list Draft PR #154 as the direct dependency, preserve the worktree, and do not merge or release.
 
-- [ ] **Step 5: Wait for required CI and record final state**
+  Publication evidence (2026-07-16): pushed `perf/team-members-127` and opened Draft PR [#155](https://github.com/LichKing-2234/ai-efficiency/pull/155) against `perf/team-trend-126`; the PR lists Draft PR #154 as its direct dependency and closes issue #127.
+
+- [x] **Step 5: Wait for required CI and record final state**
 
   Record the exact implementation-head run and backend/frontend/ae-cli/deploy-static conclusions.
+
+  CI evidence (2026-07-16): [run 29478073428](https://github.com/LichKing-2234/ai-efficiency/actions/runs/29478073428) passed for implementation head `d3e16c6`: backend (3m40s), frontend (38s), ae-cli (25s), and deploy-static (17s) all completed successfully.
