@@ -321,6 +321,8 @@ const zhCN = {
   'teamUsage.hourly': '按小时',
   'teamUsage.expandDepartment': '展开部门',
   'teamUsage.collapseDepartment': '收起部门',
+  'teamUsage.loadMoreDepartments': '加载更多部门',
+  'teamUsage.loadMoreMembers': '加载更多成员',
   'teamUsage.memberCountSingular': '{count} 个成员',
   'teamUsage.memberCountPlural': '{count} 个成员',
   'teamUsage.connectedCountSingular': '{count} 个已接入',

@@ -28,6 +28,7 @@ type fakeTeamUsageService struct {
 	summaryFn          func(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error)
 	trendFn            func(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error)
 	membersFn          func(context.Context, int, teamusage.MembersParams) (*teamusage.MembersResponse, error)
+	organizationFn     func(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error)
 	overviewFn         func(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error)
 	updateMultiplierFn func(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	listAuditFn        func(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
@@ -56,6 +57,10 @@ func (f *fakeTeamUsageService) Trend(ctx context.Context, actorUserID int, param
 
 func (f *fakeTeamUsageService) Members(ctx context.Context, actorUserID int, params teamusage.MembersParams) (*teamusage.MembersResponse, error) {
 	return f.membersFn(ctx, actorUserID, params)
+}
+
+func (f *fakeTeamUsageService) Organization(ctx context.Context, actorUserID int, params teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+	return f.organizationFn(ctx, actorUserID, params)
 }
 
 func (f *fakeTeamUsageService) Overview(ctx context.Context, actorUserID int, params teamusage.OverviewParams) (*teamusage.OverviewResponse, error) {
@@ -129,6 +134,7 @@ func newTeamUsageTestRouter(t *testing.T, service *fakeTeamUsageService) *teamUs
 	userGroup.GET("/team-usage/summary", teamHandler.Summary)
 	userGroup.GET("/team-usage/trend", teamHandler.Trend)
 	userGroup.GET("/team-usage/members", teamHandler.Members)
+	userGroup.GET("/team-usage/organization", teamHandler.Organization)
 	userGroup.GET("/team-usage/overview", teamHandler.Overview)
 	userGroup.GET("/team-usage/audit", teamHandler.Audit)
 
@@ -442,6 +448,129 @@ func TestTeamUsageMembersRequiresAuthentication(t *testing.T) {
 		},
 	})
 	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/members", "", "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("response = %d %s, want 401", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTeamUsageOrganizationReturnsShallowCollectionsAndUniqueRequestID(t *testing.T) {
+	asOf := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	parentID := "department-root"
+	var env *teamUsageTestEnv
+	env = newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		organizationFn: func(_ context.Context, actorID int, params teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+			if actorID != env.userID || params.StartDate != "2026-07-01" || params.EndDate != "2026-07-07" || params.Granularity != "day" || params.Timezone != "Asia/Shanghai" ||
+				params.ParentDepartmentExternalID != parentID || params.DepartmentCursor != "department-page-2" || params.DepartmentLimit != 25 || params.MemberCursor != "member-page-2" || params.MemberLimit != 50 {
+				t.Fatalf("unexpected organization request: actor=%d params=%+v", actorID, params)
+			}
+			tokens := int64(1234)
+			return &teamusage.OrganizationResponse{
+				SnapshotFreshness: teamusage.SnapshotFreshness{
+					AsOf: asOf, FreshUntil: asOf.Add(54 * time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second), CacheStatus: "fresh", SourceStatus: "ok",
+				},
+				ScopeVersion: "scope-version-organization-1", ParentDepartmentExternalID: &parentID,
+				Window:               teamusage.OverviewWindow{StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai"},
+				Departments:          []teamusage.OrganizationDepartment{{DepartmentExternalID: "department-alpha", Name: "Alpha", ChildCount: 1, HasChildren: true, DirectMemberCount: 2, AggregateMemberCount: 3}},
+				Members:              []teamusage.OverviewMember{{Rank: 51, UserID: 101, DisplayName: "Alice", Email: "alice@example.com", TotalTokens: &tokens}},
+				NextDepartmentCursor: "department-page-3", NextMemberCursor: "member-page-3",
+			}, nil
+		},
+	})
+
+	path := "/api/v1/user/team-usage/organization?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=Asia%2FShanghai&parent_department_external_id=department-root&department_cursor=department-page-2&department_limit=25&member_cursor=member-page-2&member_limit=50"
+	first := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	second := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	if first.Code != http.StatusOK || second.Code != http.StatusOK {
+		t.Fatalf("organization responses = %d/%d, want 200", first.Code, second.Code)
+	}
+	firstRequestID := first.Header().Get("X-Request-ID")
+	secondRequestID := second.Header().Get("X-Request-ID")
+	if firstRequestID == "" || secondRequestID == "" || firstRequestID == secondRequestID {
+		t.Fatalf("request IDs = %q/%q, want unique non-empty IDs", firstRequestID, secondRequestID)
+	}
+	body := first.Body.String()
+	for _, expected := range []string{`"request_id":"` + firstRequestID + `"`, `"parent_department_external_id":"department-root"`, `"departments":[`, `"members":[`, `"has_children":true`, `"next_department_cursor":"department-page-3"`, `"next_member_cursor":"member-page-3"`} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("organization body = %s, want %s", body, expected)
+		}
+	}
+	for _, forbidden := range []string{`"children"`, `"member_tree"`, `"top_members"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("organization body = %s, must not contain %s", body, forbidden)
+		}
+	}
+	if first.Header().Get("Deprecation") != "" || first.Header().Get("Sunset") != "" {
+		t.Fatalf("organization unexpectedly exposed compatibility headers: %+v", first.Header())
+	}
+}
+
+func TestTeamUsageOrganizationForwardsDefaultLimits(t *testing.T) {
+	var env *teamUsageTestEnv
+	env = newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		organizationFn: func(_ context.Context, actorID int, params teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+			if actorID != env.userID || params.DepartmentLimit != 0 || params.MemberLimit != 0 || params.ParentDepartmentExternalID != "" || params.DepartmentCursor != "" || params.MemberCursor != "" {
+				t.Fatalf("default organization request: actor=%d params=%+v", actorID, params)
+			}
+			return &teamusage.OrganizationResponse{Departments: []teamusage.OrganizationDepartment{}, Members: []teamusage.OverviewMember{}}, nil
+		},
+	})
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/organization?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=UTC", env.token, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response = %d %s, want 200", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTeamUsageOrganizationMapsScopedCursorAndInputFailures(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		body   string
+	}{
+		{name: "no representative scope", err: &teamusage.ForbiddenError{Reason: teamusage.ErrNotRepresentative.Error()}, status: http.StatusForbidden, body: "not_representative"},
+		{name: "outside parent", err: teamusage.ErrOutOfScope, status: http.StatusNotFound, body: "target is not available"},
+		{name: "invalid cursor", err: teamusage.ErrInvalidOrganizationCursor, status: http.StatusBadRequest, body: "invalid_cursor"},
+		{name: "expired snapshot", err: teamusage.ErrOrganizationSnapshotExpired, status: http.StatusConflict, body: "snapshot_expired"},
+		{name: "invalid limit", err: fmt.Errorf("%w: department_limit must be between 1 and 100", teamusage.ErrInvalidOverviewParams), status: http.StatusBadRequest, body: "department_limit must be between"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+				organizationFn: func(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+					return nil, tt.err
+				},
+			})
+			rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/organization?department_limit=101", env.token, "")
+			if rec.Code != tt.status || !strings.Contains(rec.Body.String(), tt.body) {
+				t.Fatalf("response = %d %s, want %d containing %q", rec.Code, rec.Body.String(), tt.status, tt.body)
+			}
+		})
+	}
+
+	for _, field := range []string{"department_limit", "member_limit"} {
+		t.Run("non-integer "+field, func(t *testing.T) {
+			env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+				organizationFn: func(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+					t.Fatal("organization service must not run for a non-integer limit")
+					return nil, nil
+				},
+			})
+			rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/organization?"+field+"=invalid", env.token, "")
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("response = %d %s, want 400", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestTeamUsageOrganizationRequiresAuthentication(t *testing.T) {
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		organizationFn: func(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+			t.Fatal("organization service must not run without authentication")
+			return nil, nil
+		},
+	})
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/organization", "", "")
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("response = %d %s, want 401", rec.Code, rec.Body.String())
 	}
