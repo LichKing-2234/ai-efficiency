@@ -17,8 +17,8 @@ verification remains the only unchecked item because both the controller and
 worker observed no browser runtime.
 
 **Final Whole-Branch Review Remediation Status (2026-07-16):** The reset-start
-re-review follow-up and full backend verification are complete. Final review,
-push, and PR checks remain; browser verification is blocked and unchecked.
+follow-up, full backend verification, and final re-review are complete. Push and
+PR checks remain; browser verification is blocked and unchecked.
 
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
@@ -659,6 +659,12 @@ current. Do not rewrite the historical 2026-07-07 spec.
   is `+1499/-523`; generated Ent is `+862/-33`; whitespace and production chain
   scans passed. Frontend and CLI remained unchanged from their prior green
   local/CI runs.
+
+  Final re-review reported no Critical, Important, or Minor findings and marked
+  the branch ready to merge. It classified terminal database failure after a
+  successful external relay call as the explicitly deferred provider outcome
+  recovery risk, not an in-scope blocker; automatic relay replay remains
+  prohibited because it can reset newly accumulated usage.
 
 ## Deferred
 
