@@ -205,20 +205,16 @@ func (f *workflowDirectoryFacts) resolveExactStep(exactIDs []string, requesterID
 			labels = append(labels, path)
 		}
 		approvers, configured := f.configuredApprovers(departmentID, requesterID)
-		resolution := "configured"
+		resolution := "no_config_found"
 		if configured {
 			hadConfig = true
+			resolution = "matched"
 		} else {
 			approvers = f.representativeApprovers(departmentID, requesterID)
-			if len(approvers) == 0 {
-				resolution = "no_approver"
-			} else {
-				resolution = "representative"
-			}
 		}
 		paths = append(paths, DepartmentPathEvidence{
 			StartDepartmentExternalID:   departmentID,
-			Path:                        []DepartmentPathNode{{ExternalID: departmentID, DisplayPath: path}},
+			Path:                        f.departmentPathEvidence(departmentID),
 			MatchedDepartmentExternalID: departmentID,
 			MatchedApproverUserIDs:      workflowApproverUserIDs(approvers),
 			Resolution:                  resolution,
@@ -296,6 +292,27 @@ func (f *workflowDirectoryFacts) memberDepartmentIDs(member *ent.DirectoryMember
 		ids = append(ids, id)
 	}
 	return uniqueSortedStrings(ids)
+}
+
+func (f *workflowDirectoryFacts) departmentPathEvidence(startDepartmentID string) []DepartmentPathNode {
+	path := []DepartmentPathNode{}
+	visited := map[string]struct{}{}
+	for departmentID := strings.TrimSpace(startDepartmentID); departmentID != ""; {
+		if _, seen := visited[departmentID]; seen {
+			break
+		}
+		visited[departmentID] = struct{}{}
+		department := f.departmentsByID[departmentID]
+		if department == nil {
+			break
+		}
+		path = append(path, DepartmentPathNode{
+			ExternalID:  department.ExternalID,
+			DisplayPath: workflowDepartmentPath(f.tree, department),
+		})
+		departmentID = directorytree.ParentExternalID(department)
+	}
+	return path
 }
 
 func (f *workflowDirectoryFacts) configuredApprovers(departmentID string, requesterID int) ([]WorkflowApprover, bool) {
