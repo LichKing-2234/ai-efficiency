@@ -50,6 +50,8 @@ type Metrics struct {
 	dependencyRequests  *prometheus.CounterVec
 	dependencyDuration  *prometheus.HistogramVec
 	cacheEvents         *prometheus.CounterVec
+	browserVitalSeconds *prometheus.HistogramVec
+	browserVitalRatio   *prometheus.HistogramVec
 }
 
 func NewMetrics(release string) *Metrics {
@@ -98,6 +100,18 @@ func NewMetrics(release string) *Metrics {
 			Name:      "cache_events_total",
 			Help:      "Application cache events by stable cache name and outcome.",
 		}, []string{"cache", "outcome"}),
+		browserVitalSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: metricsNamespace,
+			Name:      "browser_web_vital_seconds",
+			Help:      "Sampled browser LCP, INP, and TTFB values in seconds.",
+			Buckets:   []float64{0.05, 0.1, 0.2, 0.5, 0.8, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 15, 30, 60, 120, 300, 600},
+		}, []string{"metric", "route", "navigation_type", "release"}),
+		browserVitalRatio: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: metricsNamespace,
+			Name:      "browser_web_vital_ratio",
+			Help:      "Sampled browser CLS values.",
+			Buckets:   []float64{0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.25, 0.4, 0.6, 1, 2, 5, 10},
+		}, []string{"metric", "route", "navigation_type", "release"}),
 	}
 	m.registry.MustRegister(
 		m.httpRequests,
@@ -107,6 +121,8 @@ func NewMetrics(release string) *Metrics {
 		m.dependencyRequests,
 		m.dependencyDuration,
 		m.cacheEvents,
+		m.browserVitalSeconds,
+		m.browserVitalRatio,
 	)
 	return m
 }

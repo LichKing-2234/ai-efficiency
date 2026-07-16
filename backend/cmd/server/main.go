@@ -388,6 +388,7 @@ func main() {
 	}
 	versionCheckService := versioncheck.NewService(versionInfo, releaseSource)
 	healthHandler := handler.NewHealthHandler(healthService, versionCheckService)
+	webVitalsHandler := handler.NewWebVitalsHandler(metrics, handler.WebVitalsOptions{})
 
 	r := handler.SetupRouterWithOptions(
 		entClient,
@@ -412,6 +413,7 @@ func main() {
 			WebhookHTTPClient:      httpClients.webhook,
 			RequestLogger:          logger,
 			RequestObserver:        metrics.RequestObserver(),
+			WebVitalsHandler:       webVitalsHandler,
 			Release:                versionInfo.Version,
 			RequestTimeout:         time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
