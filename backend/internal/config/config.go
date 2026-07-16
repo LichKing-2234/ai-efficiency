@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -39,9 +41,19 @@ type DBConfig struct {
 }
 
 type RedisConfig struct {
-	Addr     string `mapstructure:"addr"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
+	Addr      string `mapstructure:"addr"`
+	Password  string `mapstructure:"password"`
+	DB        int    `mapstructure:"db"`
+	Namespace string `mapstructure:"namespace"`
+}
+
+var redisNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
+
+func ValidateRedisNamespace(namespace string) error {
+	if !redisNamespaceRE.MatchString(namespace) {
+		return fmt.Errorf("redis namespace must match [A-Za-z0-9][A-Za-z0-9._-]{0,62}")
+	}
+	return nil
 }
 
 type AuthConfig struct {
@@ -82,6 +94,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("db.conn_max_lifetime", 300)
 	v.SetDefault("redis.addr", "redis:6379")
 	v.SetDefault("redis.db", 0)
+	v.SetDefault("redis.namespace", "ai-efficiency")
 	v.SetDefault("relay.provider", "sub2api")
 	v.SetDefault("relay.model", "claude-sonnet-4-20250514")
 	v.SetDefault("relay.default_group_id", "")
@@ -130,6 +143,7 @@ func Load(path string) (*Config, error) {
 		"redis.addr",
 		"redis.password",
 		"redis.db",
+		"redis.namespace",
 		"version_check.enabled",
 		"version_check.release_api_url",
 	} {
@@ -148,6 +162,9 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
+	}
+	if err := ValidateRedisNamespace(cfg.Redis.Namespace); err != nil {
+		return nil, fmt.Errorf("invalid redis namespace %q: %w", cfg.Redis.Namespace, err)
 	}
 
 	return &cfg, nil

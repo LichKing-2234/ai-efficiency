@@ -85,10 +85,9 @@ async function loadAllQueuePages(loader: (params: QuotaResetListParams) => Retur
     if (items.length >= total || pageItems.length < queuePageSize) return { items, total }
   }
 }
-async function loadQueues(forceCounts = false) {
+async function loadQueues() {
   loading.value = true
   loadError.value = ''
-  void workItems.loadCounts({ force: forceCounts })
   try {
     const [mine, approvals] = await Promise.all([
       loadAllQueuePages(listMyQuotaResetRequests),
@@ -160,7 +159,11 @@ async function withAction(action: () => Promise<unknown>) {
   actionBusy.value = true
   try {
     await action()
-    await loadQueues(true)
+    workItems.invalidateCounts()
+    await Promise.all([
+      loadQueues(),
+      workItems.loadCounts({ force: true }),
+    ])
     showToast({ message: t('quotaReset.actionSucceeded'), tone: 'success' })
     return true
   } catch {
@@ -205,7 +208,10 @@ function handleRetry(item: QuotaResetRequestSummary) {
   void withAction(() => retry(item.id))
 }
 
-onMounted(loadQueues)
+onMounted(() => {
+  void workItems.loadCounts()
+  void loadQueues()
+})
 </script>
 
 <template>

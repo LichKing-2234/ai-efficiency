@@ -19,6 +19,7 @@ redis:
   addr: "localhost:6379"
   password: ""
   db: 0
+  namespace: "ai-efficiency"
 
 relay:
   provider: "sub2api"

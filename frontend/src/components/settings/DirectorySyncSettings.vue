@@ -12,6 +12,7 @@ import {
 } from '@/api/directory'
 import { useToast } from '@/composables/useToast'
 import { useI18n, type MessageKey } from '@/i18n'
+import { useWorkItemsStore } from '@/stores/workItems'
 import type {
   Credential,
   DirectoryRunSummary,
@@ -27,6 +28,7 @@ defineProps<{
 
 const { locale, t } = useI18n()
 const { showToast } = useToast()
+const workItems = useWorkItemsStore()
 
 const sources = ref<DirectorySource[]>([])
 const selectedSourceId = ref<number | null>(null)
@@ -465,6 +467,12 @@ function applyRunProgress(run: RunDisplay | undefined, action: 'preview' | 'appl
   message.value = t(action === 'preview' ? 'directorySync.previewStarted' : 'directorySync.applyStarted')
 }
 
+async function refreshWorkItemsAfterSuccessfulApply(run: RunDisplay, action: 'preview' | 'apply') {
+  if (action !== 'apply' || !isTerminalRun(run) || run.status === 'failed') return
+  workItems.invalidateCounts()
+  await workItems.loadCounts({ force: true })
+}
+
 function summaryFromRun(run: RunDisplay, sourceID: number): DirectoryRunSummary {
   return {
     id: run.id,
@@ -653,10 +661,13 @@ async function pollRunUntilDone(runID: number, action: 'preview' | 'apply', sour
       selectedRunLoading.value = false
       selectedRunError.value = ''
     }
-    if (selectedSourceId.value === sourceID) {
-      const completedPageOffset = runOffset.value
-      await loadRunPage(sourceID, completedPageOffset)
-    }
+    const completedPageReload = selectedSourceId.value === sourceID
+      ? loadRunPage(sourceID, runOffset.value)
+      : Promise.resolve(false)
+    await Promise.all([
+      refreshWorkItemsAfterSuccessfulApply(run, action),
+      completedPageReload,
+    ])
   } catch (e: any) {
     if (!pollContextMatches(generation, sourceID, runID)) return
     invalidateRunPolling()
@@ -683,12 +694,19 @@ async function saveSource() {
   try {
     if (selectedSourceId.value) {
       await updateDirectorySource(selectedSourceId.value, form.value)
+      workItems.invalidateCounts()
+      await Promise.all([
+        loadSources(),
+        workItems.loadCounts({ force: true }),
+      ])
     } else {
       const res = await createDirectorySource(form.value)
       selectedSourceId.value = res.data.data?.id ?? null
+      await loadSources()
     }
-    message.value = t('directorySync.saved')
-    await loadSources()
+    if (!isActiveRun(activeRun.value)) {
+      message.value = t('directorySync.saved')
+    }
   } catch (e: any) {
     error.value = apiErrorMessage(e, t('directorySync.saveFailed'))
   } finally {
@@ -756,7 +774,12 @@ async function runNow() {
     if (run && isActiveRun(run)) {
       await startCreatedRunPolling(run, 'apply', sourceID)
     } else if (run && selectedSourceId.value === sourceID) {
-      await loadRunPage(sourceID, 0)
+      const completedPageReload = loadRunPage(sourceID, 0)
+      await Promise.all([
+        refreshWorkItemsAfterSuccessfulApply(run, 'apply'),
+        completedPageReload,
+      ])
+      if (!actionContextMatches(generation, sourceID)) return
     }
   } catch (e: any) {
     if (!actionContextMatches(generation, sourceID)) return
