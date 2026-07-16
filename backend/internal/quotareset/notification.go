@@ -78,9 +78,6 @@ func (n *WebhookNotifier) NotifyRequestEvent(ctx context.Context, event string, 
 		if isWeComRobotWebhookURL(parsed) {
 			channel = quotaresetnotificationsetting.ChannelWecomGroupRobot
 		}
-		if _, err := n.client.QuotaResetNotificationSetting.UpdateOneID(setting.ID).SetChannel(channel).Save(ctx); err != nil {
-			return fmt.Errorf("backfill quota reset notification channel: %w", err)
-		}
 	}
 	notificationContext, err := notificationContextForRequest(req)
 	if err != nil {
@@ -132,7 +129,9 @@ func (n *WebhookNotifier) payloadForChannel(channel quotaresetnotificationsettin
 
 func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx quotaResetNotificationContext) map[string]any {
 	workflowPayload := map[string]any{
-		"step_number": min(ctx.StepIndex+1, ctx.StepCount), "step_count": ctx.StepCount, "step_label": ctx.StepLabel,
+		"step_number":      min(ctx.StepIndex+1, ctx.StepCount),
+		"step_count":       ctx.StepCount,
+		"step_label":       ctx.StepLabel,
 		"active_approvers": genericWebhookApprovers(ctx.ActiveApprovers),
 		"steps":            genericWebhookSteps(ctx.WorkflowSteps),
 	}
@@ -151,8 +150,12 @@ func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx 
 		"reason":                     reasonPreview(req.Reason),
 		"reason_preview":             reasonPreview(req.Reason),
 		"resolved_approver_user_ids": req.ResolvedApproverUserIds,
-		"requester": map[string]any{"user_id": ctx.Requester.UserID, "display_name": ctx.Requester.DisplayName,
-			"email": ctx.Requester.Email, "department_paths": ctx.Requester.DepartmentPaths},
+		"requester": map[string]any{
+			"user_id":          ctx.Requester.UserID,
+			"display_name":     ctx.Requester.DisplayName,
+			"email":            ctx.Requester.Email,
+			"department_paths": ctx.Requester.DepartmentPaths,
+		},
 		"workflow":    workflowPayload,
 		"occurred_at": time.Now().UTC().Format(time.RFC3339),
 	}
@@ -165,19 +168,33 @@ func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx 
 func genericWebhookApprovers(approvers []WorkflowApprover) []map[string]any {
 	result := make([]map[string]any, len(approvers))
 	for index, approver := range approvers {
-		result[index] = map[string]any{"user_id": approver.UserID, "display_name": approver.DisplayName, "email": approver.Email}
+		result[index] = map[string]any{
+			"user_id":      approver.UserID,
+			"display_name": approver.DisplayName,
+			"email":        approver.Email,
+		}
 	}
 	return result
 }
 
 func genericWebhookDecision(decision *WorkflowDecision) map[string]any {
-	return map[string]any{"actor_user_id": decision.ActorUserID, "actor_display_name": decision.ActorDisplayName, "comment": decision.Comment, "decided_at": decision.DecidedAt}
+	return map[string]any{
+		"actor_user_id":      decision.ActorUserID,
+		"actor_display_name": decision.ActorDisplayName,
+		"comment":            decision.Comment,
+		"decided_at":         decision.DecidedAt,
+	}
 }
 
 func genericWebhookSteps(steps []WorkflowStep) []map[string]any {
 	result := make([]map[string]any, len(steps))
 	for index, step := range steps {
-		item := map[string]any{"step_number": index + 1, "label": step.Label, "admin_fallback": step.AdminFallback, "status": step.Status}
+		item := map[string]any{
+			"step_number":    index + 1,
+			"label":          step.Label,
+			"admin_fallback": step.AdminFallback,
+			"status":         step.Status,
+		}
 		if step.Decision != nil {
 			item["decision"] = genericWebhookDecision(step.Decision)
 		}

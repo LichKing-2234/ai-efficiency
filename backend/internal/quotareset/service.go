@@ -468,37 +468,14 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 	if !setting.Enabled || strings.TrimSpace(setting.URL) == "" {
 		return fmt.Errorf("%w: enabled webhook url is required before sending test notification", ErrInvalidNotification)
 	}
-	workflow := &Workflow{
-		Version: workflowVersionV2,
-		Requester: WorkflowPerson{
-			UserID:          actorUserID,
-			DisplayName:     "Alice Example",
-			Email:           "alice@example.com",
-			DepartmentPaths: []string{"Company / Group Alpha"},
-		},
-		Steps: []WorkflowStep{{
-			Kind:  WorkflowStepRequesterDepartments,
-			Label: "Company / Group Alpha",
-			Approvers: []WorkflowApprover{{
-				UserID:          actorUserID,
-				DisplayName:     "Bob Example",
-				Email:           "bob@example.org",
-				NotificationIDs: map[string]string{"wecom": "bob"},
-			}},
-			Status: WorkflowStepActive,
-		}},
-	}
-	rawWorkflow, err := EncodeWorkflow(workflow)
-	if err != nil {
-		return err
-	}
 	return s.notifier.NotifyRequestEvent(ctx, "quota_reset_notification_test", &ent.QuotaResetRequest{
-		RequesterUserID: actorUserID,
-		GroupName:       "Group Alpha",
-		Reason:          "Synthetic quota reset notification test",
-		WorkflowVersion: workflowVersionV2,
-		Workflow:        rawWorkflow,
-		Status:          quotaresetrequest.StatusPending,
+		RequesterUserID:         actorUserID,
+		GroupID:                 "0",
+		GroupName:               "Group Alpha",
+		GroupPlatform:           "openai",
+		Reason:                  "Synthetic quota reset notification test",
+		Status:                  quotaresetrequest.StatusPending,
+		ResolvedApproverUserIds: []int{actorUserID},
 	})
 }
 
@@ -665,6 +642,9 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	}
 	running, err := s.transitionReset(ctx, requestID, actorUserID, requiredStatus, quotaresetrequest.StatusApprovedResetting, retry, admin, "")
 	if err != nil {
+		if !retry {
+			return s.storeResetFailure(ctx, requestID, actorUserID, err)
+		}
 		return nil, err
 	}
 	provider, err := s.providerResolver.Resolve(ctx, running.ProviderID)
