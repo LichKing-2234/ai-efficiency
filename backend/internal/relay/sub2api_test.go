@@ -3369,6 +3369,164 @@ func TestSub2APIGroupRateMultipliersForGroupsCancelsRequestAtDeadline(t *testing
 	}
 }
 
+func TestSub2APIGroupRateMultipliersForGroupsShorterCallerDeadlineWins(t *testing.T) {
+	started := make(chan int64, 6)
+	canceled := make(chan int64, 6)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		started <- groupID
+		<-r.Context().Done()
+		canceled <- groupID
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
+	defer cancel()
+	startedAt := time.Now()
+	results := reader.GroupRateMultipliersForGroups(ctx, []int64{1, 2, 3, 4, 5, 6})
+	elapsed := time.Since(startedAt)
+
+	if elapsed < 500*time.Millisecond || elapsed > 1500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want the 750ms caller deadline to win", elapsed)
+	}
+	byGroup := rateMultiplierResultsByGroup(t, results)
+	if len(byGroup) != 6 {
+		t.Fatalf("result count = %d, want 6", len(byGroup))
+	}
+	for groupID := int64(1); groupID <= 6; groupID++ {
+		result := byGroup[groupID]
+		if !errors.Is(result.Err, context.DeadlineExceeded) {
+			t.Fatalf("group %d error = %v, want caller deadline exceeded", groupID, result.Err)
+		}
+		if len(result.Entries) != 0 {
+			t.Fatalf("group %d entries = %#v, want none after deadline", groupID, result.Entries)
+		}
+	}
+
+	startedGroupIDs := drainInt64Channel(started)
+	sort.Slice(startedGroupIDs, func(i, j int) bool { return startedGroupIDs[i] < startedGroupIDs[j] })
+	if diff := cmp.Diff([]int64{1, 2, 3, 4}, startedGroupIDs); diff != "" {
+		t.Fatalf("started HTTP groups mismatch (-want +got):\n%s", diff)
+	}
+	canceledGroupIDs := receiveInt64Values(t, canceled, 4)
+	sort.Slice(canceledGroupIDs, func(i, j int) bool { return canceledGroupIDs[i] < canceledGroupIDs[j] })
+	if diff := cmp.Diff([]int64{1, 2, 3, 4}, canceledGroupIDs); diff != "" {
+		t.Fatalf("canceled HTTP groups mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsHonorsOverallBatchBudget(t *testing.T) {
+	var mu sync.Mutex
+	requested := make(map[int64]struct{})
+	lifecycles := make(chan rateMultiplierRequestLifecycle, 16)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		requestStartedAt := time.Now()
+		mu.Lock()
+		requested[groupID] = struct{}{}
+		mu.Unlock()
+		<-r.Context().Done()
+		lifecycles <- rateMultiplierRequestLifecycle{GroupID: groupID, Duration: time.Since(requestStartedAt)}
+	})
+
+	groupIDs := make([]int64, 16)
+	for i := range groupIDs {
+		groupIDs[i] = int64(i + 1)
+	}
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	startedAt := time.Now()
+	results := reader.GroupRateMultipliersForGroups(context.Background(), groupIDs)
+	elapsed := time.Since(startedAt)
+
+	if elapsed < 4500*time.Millisecond || elapsed > 6500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want the five-second overall batch budget", elapsed)
+	}
+	byGroup := rateMultiplierResultsByGroup(t, results)
+	if len(byGroup) != len(groupIDs) {
+		t.Fatalf("result count = %d, want %d", len(byGroup), len(groupIDs))
+	}
+	for _, groupID := range groupIDs {
+		result := byGroup[groupID]
+		if !errors.Is(result.Err, context.DeadlineExceeded) {
+			t.Fatalf("group %d error = %v, want deadline exceeded", groupID, result.Err)
+		}
+		if len(result.Entries) != 0 {
+			t.Fatalf("group %d entries = %#v, want none after deadline", groupID, result.Entries)
+		}
+	}
+
+	mu.Lock()
+	requestedGroupIDs := make([]int64, 0, len(requested))
+	for groupID := range requested {
+		requestedGroupIDs = append(requestedGroupIDs, groupID)
+	}
+	mu.Unlock()
+	sort.Slice(requestedGroupIDs, func(i, j int) bool { return requestedGroupIDs[i] < requestedGroupIDs[j] })
+	if diff := cmp.Diff([]int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, requestedGroupIDs); diff != "" {
+		t.Fatalf("requested HTTP groups mismatch (-want +got):\n%s", diff)
+	}
+
+	for _, lifecycle := range receiveRequestLifecycles(t, lifecycles, 12) {
+		switch {
+		case lifecycle.GroupID <= 8:
+			if lifecycle.Duration < 1700*time.Millisecond || lifecycle.Duration > 3*time.Second {
+				t.Fatalf("group %d request duration = %v, want the two-second request deadline", lifecycle.GroupID, lifecycle.Duration)
+			}
+		case lifecycle.GroupID <= 12:
+			if lifecycle.Duration < 500*time.Millisecond || lifecycle.Duration > 1800*time.Millisecond {
+				t.Fatalf("group %d request duration = %v, want cancellation by the batch deadline", lifecycle.GroupID, lifecycle.Duration)
+			}
+		default:
+			t.Fatalf("unexpected HTTP request for group %d", lifecycle.GroupID)
+		}
+	}
+}
+
+func drainInt64Channel(values <-chan int64) []int64 {
+	drained := make([]int64, 0, len(values))
+	for len(values) > 0 {
+		drained = append(drained, <-values)
+	}
+	return drained
+}
+
+func receiveInt64Values(t *testing.T, values <-chan int64, count int) []int64 {
+	t.Helper()
+	received := make([]int64, 0, count)
+	for len(received) < count {
+		select {
+		case value := <-values:
+			received = append(received, value)
+		case <-time.After(time.Second):
+			t.Fatalf("received %d values, want %d", len(received), count)
+		}
+	}
+	return received
+}
+
+type rateMultiplierRequestLifecycle struct {
+	GroupID  int64
+	Duration time.Duration
+}
+
+func receiveRequestLifecycles(t *testing.T, values <-chan rateMultiplierRequestLifecycle, count int) []rateMultiplierRequestLifecycle {
+	t.Helper()
+	received := make([]rateMultiplierRequestLifecycle, 0, count)
+	for len(received) < count {
+		select {
+		case value := <-values:
+			received = append(received, value)
+		case <-time.After(time.Second):
+			t.Fatalf("received %d request lifecycles, want %d", len(received), count)
+		}
+	}
+	return received
+}
+
 func rateMultiplierGroupIDFromPath(t *testing.T, path string) int64 {
 	t.Helper()
 	const prefix = "/api/v1/admin/groups/"
