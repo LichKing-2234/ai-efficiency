@@ -324,6 +324,8 @@ const zhCN = {
   'teamUsage.memberPageNext': '下一页',
   'teamUsage.rankingView': 'Token 排名',
   'teamUsage.organizationView': '组织视图',
+  'teamUsage.loadMoreDepartments': '加载更多部门',
+  'teamUsage.loadMoreMembers': '加载更多成员',
   'teamUsage.scopeTooLarge': '当前部门范围过大，暂时无法计算团队用量。',
   'teamUsage.unavailable': '团队用量暂时不可用。',
   'teamUsage.summaryUnavailable': '当前范围汇总暂时不可用。',

@@ -322,6 +322,8 @@ const enUS = {
   'teamUsage.memberPageNext': 'Next',
   'teamUsage.rankingView': 'Token Ranking',
   'teamUsage.organizationView': 'Organization View',
+  'teamUsage.loadMoreDepartments': 'Load more departments',
+  'teamUsage.loadMoreMembers': 'Load more members',
   'teamUsage.scopeTooLarge': 'Team usage is unavailable for this scope size.',
   'teamUsage.unavailable': 'Team usage is temporarily unavailable.',
   'teamUsage.summaryUnavailable': 'Selected range totals are temporarily unavailable.',

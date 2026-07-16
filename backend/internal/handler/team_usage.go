@@ -25,6 +25,7 @@ type teamUsageService interface {
 	Summary(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error)
 	Trend(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error)
 	Members(context.Context, int, teamusage.MembersParams) (*teamusage.MembersResponse, error)
+	Organization(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error)
 	Overview(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error)
 	UpdateMultiplier(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	ListAudit(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
@@ -226,6 +227,54 @@ func (h *TeamUsageHandler) Members(c *gin.Context) {
 		},
 		Cursor: strings.TrimSpace(c.Query("cursor")),
 		Limit:  limitValue,
+	})
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	requestID := uuid.NewString()
+	resp.RequestID = requestID
+	c.Header("X-Request-ID", requestID)
+	pkg.Success(c, resp)
+}
+
+func (h *TeamUsageHandler) Organization(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dashboardParams, ok := parseUserUsageDashboardParams(c)
+	if !ok {
+		return
+	}
+	departmentLimit, ok := parseOptionalIntQueryParam(c, "department_limit")
+	if !ok {
+		return
+	}
+	memberLimit, ok := parseOptionalIntQueryParam(c, "member_limit")
+	if !ok {
+		return
+	}
+	departmentLimitValue := 0
+	if departmentLimit != nil {
+		departmentLimitValue = *departmentLimit
+	}
+	memberLimitValue := 0
+	if memberLimit != nil {
+		memberLimitValue = *memberLimit
+	}
+	resp, err := h.service.Organization(c.Request.Context(), uc.UserID, teamusage.OrganizationParams{
+		OverviewParams: teamusage.OverviewParams{
+			StartDate: dashboardParams.StartDate, EndDate: dashboardParams.EndDate,
+			Granularity: dashboardParams.Granularity, Timezone: dashboardParams.Timezone,
+		},
+		ParentDepartmentExternalID: strings.TrimSpace(c.Query("parent_department_external_id")),
+		DepartmentCursor:           strings.TrimSpace(c.Query("department_cursor")),
+		DepartmentLimit:            departmentLimitValue,
+		MemberCursor:               strings.TrimSpace(c.Query("member_cursor")),
+		MemberLimit:                memberLimitValue,
 	})
 	if err != nil {
 		writeTeamUsageError(c, err)
