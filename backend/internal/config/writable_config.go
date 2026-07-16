@@ -68,6 +68,9 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"readiness_timeout_seconds":   cfg.Server.ReadinessTimeoutSeconds,
 			"request_timeout_seconds":     cfg.Server.RequestTimeoutSeconds,
 		},
+		"metrics": map[string]any{
+			"listen_address": cfg.Metrics.ListenAddress,
+		},
 		"http_client": map[string]any{
 			"connect_timeout_seconds":         cfg.HTTPClient.ConnectTimeoutSeconds,
 			"tls_handshake_timeout_seconds":   cfg.HTTPClient.TLSHandshakeTimeoutSeconds,

@@ -197,9 +197,10 @@ func main() {
 	if config.RequireExplicitDBDSN(cfg.DB.DSN) {
 		logger.Fatal("DB.DSN is required and must point to PostgreSQL")
 	}
+	metrics := telemetry.NewMetrics(versionInfo.Version)
 	httpClients := newRuntimeHTTPClients(
 		cfg.HTTPClient,
-		telemetry.WrapDependency(logger, versionInfo.Version, "relay", "http_request"),
+		telemetry.WrapDependency(logger, versionInfo.Version, "relay", "http_request", metrics.DependencyObserver()),
 	)
 	defer httpClients.runtimeRelay.CloseIdleConnections()
 	defer httpClients.directory.CloseIdleConnections()
@@ -221,6 +222,9 @@ func main() {
 	db.SetMaxOpenConns(cfg.DB.MaxOpenConns)
 	db.SetMaxIdleConns(cfg.DB.MaxIdleConns)
 	db.SetConnMaxLifetime(time.Duration(cfg.DB.ConnMaxLifetime) * time.Second)
+	if err := metrics.RegisterDBPool(db); err != nil {
+		logger.Fatal("register database pool metrics", zap.Error(err))
+	}
 
 	if err := db.Ping(); err != nil {
 		logger.Fatal("ping ai_efficiency db", zap.Error(err))
@@ -280,6 +284,9 @@ func main() {
 
 	redisClient := redis.NewClient(redisClientOptions(cfg.Redis))
 	defer redisClient.Close()
+	if err := metrics.RegisterRedisPool(redisClient); err != nil {
+		logger.Fatal("register Redis pool metrics", zap.Error(err))
+	}
 	redisStore := readcache.NewRedisStore(redisClient)
 	providerInvalidationBus, err := relayruntime.NewRedisInvalidationBus(redisClient, cfg.Redis.Namespace)
 	if err != nil {
@@ -308,7 +315,10 @@ func main() {
 	workItemsCache, err := workitems.NewCountsCache(
 		redisStore,
 		workItemsRevisionStore,
-		workitems.CountsCacheOptions{Namespace: cfg.Redis.Namespace},
+		workitems.CountsCacheOptions{
+			Namespace: cfg.Redis.Namespace,
+			Metrics:   metrics.CacheRecorder("work_items_counts"),
+		},
 	)
 	if err != nil {
 		logger.Fatal("initialize work item counts cache", zap.Error(err))
@@ -459,6 +469,7 @@ func main() {
 	}
 	versionCheckService := versioncheck.NewService(versionInfo, releaseSource)
 	healthHandler := handler.NewHealthHandler(healthService, versionCheckService)
+	webVitalsHandler := handler.NewWebVitalsHandler(metrics, handler.WebVitalsOptions{})
 
 	r := handler.SetupRouterWithOptions(
 		entClient,
@@ -485,6 +496,8 @@ func main() {
 			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
 			WebhookHTTPClient:        httpClients.webhook,
 			RequestLogger:            logger,
+			RequestObserver:          metrics.RequestObserver(),
+			WebVitalsHandler:         webVitalsHandler,
 			Release:                  versionInfo.Version,
 			RequestTimeout:           time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
@@ -493,11 +506,18 @@ func main() {
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	srv := newHTTPServer(addr, r, cfg.Server)
+	metricsSrv := newMetricsServer(cfg.Metrics.ListenAddress, metrics.Handler(), cfg.Server)
 
 	go func() {
 		logger.Info("starting server", zap.String("addr", addr))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("server error", zap.Error(err))
+		}
+	}()
+	go func() {
+		logger.Info("starting metrics server", zap.String("addr", cfg.Metrics.ListenAddress))
+		if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("metrics server error", zap.Error(err))
 		}
 	}()
 
@@ -512,6 +532,9 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Fatal("server shutdown", zap.Error(err))
+	}
+	if err := metricsSrv.Shutdown(ctx); err != nil {
+		logger.Fatal("metrics server shutdown", zap.Error(err))
 	}
 	logger.Info("server stopped")
 }
