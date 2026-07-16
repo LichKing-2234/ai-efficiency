@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"time"
@@ -26,12 +27,16 @@ var ginDefaultNotFoundBody = []byte("404 page not found")
 
 // RouterOptions supplies production dependencies while SetupRouter preserves its legacy call shape.
 type RouterOptions struct {
-	DirectoryService  DirectoryAdminService
-	WebhookHTTPClient *http.Client
-	RequestLogger     *zap.Logger
-	Release           string
-	RequestTimeout    time.Duration
+	DirectoryService       DirectoryAdminService
+	WorkItemsCache         *workitems.CountsCache
+	WorkItemsRevisionStore *workitems.RevisionStore
+	WebhookHTTPClient      *http.Client
+	RequestLogger          *zap.Logger
+	Release                string
+	RequestTimeout         time.Duration
 }
+
+type RouterRuntimeOptions = RouterOptions
 
 func SetPRAttributionService(service prAttributionSettler) {
 	prAttributionService = service
@@ -58,11 +63,11 @@ func SetupRouter(
 	adminSettingsHandler *AdminSettingsHandler,
 	checkpointHandler *CheckpointHandler,
 	healthHandler *HealthHandler,
-	directoryServices ...DirectoryAdminService,
+	runtimeOptions ...RouterRuntimeOptions,
 ) *gin.Engine {
-	var directoryService DirectoryAdminService
-	if len(directoryServices) > 0 {
-		directoryService = directoryServices[0]
+	var options RouterOptions
+	if len(runtimeOptions) > 0 {
+		options = runtimeOptions[0]
 	}
 	return setupRouter(
 		entClient,
@@ -80,7 +85,7 @@ func SetupRouter(
 		adminSettingsHandler,
 		checkpointHandler,
 		healthHandler,
-		RouterOptions{DirectoryService: directoryService},
+		options,
 	)
 }
 
@@ -185,10 +190,17 @@ func setupRouter(
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
-	workItemsService := workitems.NewService(entClient)
-	if providerHandler != nil {
-		workItemsService = workitems.NewService(entClient, userSetupService)
+	var offboardingCounter interface {
+		CountOffboardingCandidates(context.Context, int) (int, error)
 	}
+	if options.DirectoryService != nil {
+		offboardingCounter = options.DirectoryService
+	}
+	workItemsService := workitems.NewService(entClient, offboardingCounter)
+	if providerHandler != nil {
+		workItemsService = workitems.NewService(entClient, offboardingCounter, userSetupService)
+	}
+	workItemsService.WithCountsCache(options.WorkItemsCache)
 	workItemsHandler := NewWorkItemsHandler(workItemsService)
 	var quotaResetHandler *QuotaResetHandler
 	if providerHandler != nil {
@@ -199,6 +211,7 @@ func setupRouter(
 			providerHandler,
 			quotareset.NewApproverResolver(entClient),
 			quotareset.NewWebhookNotifier(entClient, encryptionKey, publicURL, options.WebhookHTTPClient),
+			options.WorkItemsRevisionStore,
 		)
 		quotaResetHandler = NewQuotaResetHandler(quotaResetService)
 	}

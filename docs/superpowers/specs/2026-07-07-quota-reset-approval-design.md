@@ -374,6 +374,15 @@ Rules:
 3. Approval and retry execute reset through a backend service method, not from the browser.
 4. State changes must be protected by a transaction or row-level status predicate so concurrent approvals cannot both execute reset.
 5. If a reset succeeds but a later local event write fails, the service must preserve the request as `approved_reset_succeeded` and log the local write failure.
+6. Work Items treats `{pending, approved_reset_failed}` as the actionable set. Every mutation that enters or leaves that set advances the shared PostgreSQL work-item counts revision in the same transaction as the request status and required audit events.
+7. Request creation commits the request, `created`, `approver_resolved`, and revision together. Cancel and reject commit their terminal status, required event, and revision together.
+8. Approval commits `pending -> approved_resetting`, `approved`, and the revision before Relay is called. Retry commits `approved_reset_failed -> approved_resetting`, `reset_retried`, `reset_started`, and the revision before Relay is called. Relay execution is never held inside either database transaction.
+9. A reset failure commits `approved_resetting -> approved_reset_failed`, `reset_failed`, and a second revision change together. If this transaction fails, the request remains `approved_resetting`; the required failure event is not silently discarded.
+10. Reset success does not advance the work-item revision because `approved_resetting` is already outside the actionable set. The succeeded status is persisted before `reset_succeeded`, so an event-write failure cannot erase the upstream reset result.
+11. Status predicate misses map to `ErrInvalidStatus`. Revision-write failure rolls the corresponding status and events back, and approval/retry must not call Relay unless their actionable-exit transaction committed.
+12. After approval enters `approved_resetting`, and after retry eligibility is accepted, reset execution runs synchronously under a service-owned 30-second context derived with `context.WithoutCancel`. Caller cancellation or deadline expiry therefore cannot abort the post-decision Relay workflow, while the service bound still prevents an unbounded reset call.
+13. Reset failure finalization always creates a fresh independent 5-second `context.WithoutCancel` context, including when the execution context has already timed out. The `approved_reset_failed` status, `reset_failed` event, and actionable-entry revision advance remain one atomic transaction.
+14. Reset success finalization likewise uses a fresh independent 5-second context. It persists `approved_reset_succeeded` before the optional `reset_succeeded` event, so caller cancellation after Relay success cannot leave the request in `approved_resetting` or erase the recorded upstream result.
 
 ## Backend API
 
@@ -543,6 +552,7 @@ Queue badge semantics:
 5. The workbench refreshes shared Work Items counts with its queue data, including after approval, rejection, cancellation, or reset retry, so its badges and the sidebar stay aligned. A post-action refresh queues a fresh count request after any already in-flight pre-action request completes.
 6. Work Items count loading is supplemental: slow or failed count requests do not block quota-reset history. The workbench hides approval badges while counts are unavailable instead of reporting stale values as current.
 7. Shared frontend counts reset when the authenticated session changes, and late responses from a previous session are ignored.
+8. Backend counts cache keys include the persisted PostgreSQL revision. A committed actionable-state mutation therefore makes every old Redis value unreachable immediately; Redis availability is not required for the mutation or revision commit.
 
 First-version filters:
 
@@ -663,6 +673,7 @@ Rules:
 | Request is already active for same user/group | Reject create request with `409 active_request_exists` |
 | Concurrent approvals | First status transition wins; later request returns current state |
 | Reset API fails or times out | Mark `approved_reset_failed`, preserve error, allow retry |
+| Caller disconnects or deadline expires after approval/retry starts reset execution | Continue the synchronous reset workflow under the bounded service context and finalize success or failure under an independent bounded context |
 | Notification fails | Write event only; do not alter request status |
 
 ## Service Boundaries
@@ -710,6 +721,11 @@ Backend tests:
 17. Duplicate active request guard rejects same user/provider/group.
 18. Notification success and failure both write events without changing core status.
 19. Credential-backed webhook settings do not return secret plaintext.
+20. PostgreSQL-backed tests prove every actionable-set crossing commits its status, required events, and revision atomically, including rollback on revision failure and Relay suppression for failed approval/retry commits.
+21. A reset-success event failure preserves `approved_reset_succeeded`, and reset success does not perform another revision change.
+22. Caller cancellation after approval commits but before Relay work cannot strand the request in `approved_resetting`.
+23. Caller cancellation during a retry Relay reset still stores `approved_reset_failed`, `reset_failed`, and a second revision under a fresh bounded finalization context.
+24. Caller cancellation after Relay success but before local persistence still stores `approved_reset_succeeded` before the optional success event.
 
 Frontend tests:
 
