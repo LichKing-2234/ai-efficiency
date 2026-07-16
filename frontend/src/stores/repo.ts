@@ -17,8 +17,10 @@ export const useRepoStore = defineStore('repo', () => {
   const pageSize = ref(20)
   const inventory = ref<RepoInventoryProviderSummary[]>([])
   const selection = ref<RepoListSelection | null>(null)
+  let listRequestGeneration = 0
 
   async function fetchRepos(params: RepoListParams = {}) {
+    const requestGeneration = ++listRequestGeneration
     loading.value = true
     error.value = null
     const requestParams = {
@@ -28,17 +30,23 @@ export const useRepoStore = defineStore('repo', () => {
     }
     try {
       const res = await listRepos(requestParams)
+      if (requestGeneration !== listRequestGeneration) return false
       const data = res.data.data
       repos.value = data?.items ?? []
       total.value = data?.total ?? repos.value.length
       page.value = data?.page ?? requestParams.page
       pageSize.value = data?.page_size ?? requestParams.pageSize
       selection.value = data?.selection ?? null
+      return true
     } catch (e: any) {
+      if (requestGeneration !== listRequestGeneration) return false
       error.value = e.response?.data?.message || 'Failed to fetch repos'
+      return false
     } finally {
-      loading.value = false
-      loaded.value = true
+      if (requestGeneration === listRequestGeneration) {
+        loading.value = false
+        loaded.value = true
+      }
     }
   }
 

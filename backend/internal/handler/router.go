@@ -82,7 +82,7 @@ func SetupRouter(
 	// Handlers
 	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
-	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
+	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey, repoService)
 	repoHandler := NewRepoHandler(repoService)
 	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService, prUsageService)
 	efficiencyHandler := NewEfficiencyHandler(entClient)

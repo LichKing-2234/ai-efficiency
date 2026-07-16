@@ -84,7 +84,9 @@ onMounted(() => {
   const listRequest = repoStore.fetchRepos(buildListParams())
   const inventoryRequest = refreshInventoryOnly()
 
-  void listRequest.then(() => {
+  void listRequest.then((applied) => {
+    if (!applied) return
+    hydrateServerPagination()
     hydrateServerSelection()
     replaceRepoQuery()
   })
@@ -138,6 +140,13 @@ function ensureSelectionFromInventory() {
     return
   }
 
+  if (hasExplicitRouteSelection()) {
+    if (!queryString(route.query.provider) && queryString(route.query.binding) === 'unbound') {
+      selectedProviderKey.value = providers.some((provider) => provider.provider_key === 'unbound') ? 'unbound' : ''
+    }
+    return
+  }
+
   const selectedExists = providers.some((provider) => provider.provider_key === selectedProviderKey.value)
   if (!selectedExists) {
     const unbound = providers.find((provider) => provider.provider_key === 'unbound')
@@ -158,6 +167,11 @@ function hydrateServerSelection() {
   if (!selection) return
   selectedProviderKey.value = selection.provider_key
   selectedScope.value = selection.scope
+}
+
+function hydrateServerPagination() {
+  currentPage.value = repoStore.page
+  currentPageSize.value = repoStore.pageSize
 }
 
 function hasExplicitRouteSelection() {
@@ -208,10 +222,9 @@ async function refreshWorkbench() {
 }
 
 async function fetchSelectedRepos() {
-  if (!selectedProviderKey.value || !selectedScope.value) {
-    return
-  }
-  await repoStore.fetchRepos(buildListParams())
+  const applied = await repoStore.fetchRepos(buildListParams())
+  if (!applied) return
+  hydrateServerPagination()
   replaceRepoQuery()
 }
 

@@ -12,6 +12,7 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ## Source-of-Truth Order
 
 1. Topic-specific current specs:
+   - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`
    - `docs/superpowers/specs/2026-07-07-quota-reset-approval-design.md`
    - `docs/superpowers/specs/2026-06-26-team-usage-representative-quota-design.md`
    - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md`
@@ -41,7 +42,7 @@ flowchart LR
     Tool["Codex / Claude"]
     Backend["ai-efficiency backend<br/>Gin + Ent modular monolith"]
     DB[("ai_efficiency database<br/>PostgreSQL")]
-    Redis[("work-item read model<br/>Redis")]
+    Redis[("optional read models<br/>Redis")]
     SCM["SCM providers<br/>GitHub / Bitbucket Server"]
     Relay["Relay provider<br/>sub2api HTTP APIs"]
     Directory["Configured directory APIs<br/>admin-provided HTTPS DSL"]
@@ -65,6 +66,7 @@ flowchart LR
 - Release units remain in one repository but are published separately. Platform releases use `v*` tags for the backend/frontend/deploy unit, GHCR image, and Helm-consumed image tags. `ae-cli` releases use `ae-cli/v*` tags and publish only CLI artifacts; CLI installer and updater discovery filters that tag namespace instead of using the platform-owned repository latest release. The exact `v0.2.0-cli.1` tag is a one-time bridge for older CLIs that still read repository `/releases/latest`; it publishes only CLI artifacts and is excluded from the platform release workflow.
 - The backend is the central orchestration point for auth, repo configuration, attribution, provider management, and SCM/webhook workflows.
 - PostgreSQL remains authoritative for Work Items state and its persisted cache revision. Redis is an optional performance read model for work-item counts; an unavailable Redis never becomes an authorization or mutation dependency.
+- PostgreSQL also remains authoritative for repository inventory. The repo module aggregates inventory by provider and scope in one SQL query, versions cached snapshots with a PostgreSQL UUID, and uses Redis only as a reconstructible approximately 60-second read model. Repository writes commit their local row change and revision advance in one transaction; Redis failure falls back to SQL and never blocks a mutation.
 - Runtime config remains a startup bootstrap input, not the user-facing provider source of truth. On first startup the backend can seed the primary `RelayProvider` row from `relay.*` config, but `/user`, settings, and normal provider surfaces operate on DB-backed `RelayProvider` records rather than a runtime fallback provider contract.
 - The frontend is built separately and embedded into the backend binary during Docker build, so the backend process serves both API routes and the SPA entrypoint in deployed images.
 - The embedded SPA now exposes a regular-user `/user` surface as a personal AI onboarding workbench. The page keeps provider-first, group-second credential self-serve driven by the current relay user's user-scoped group facts (`allowed_groups` plus active subscription entries), but the primary flow is now group-scoped and API-key-first: users select an access group, create or regenerate a personal key, can immediately choose configuration paths once a key exists, and are encouraged to run a real connection test with the selected group's platform and model before relying on that access.
@@ -182,6 +184,49 @@ into Redis.
   Badge reads execute only the count path; pages default to 20 rows, cap page
   size at 100, order by username then local user id, and batch-load action
   metadata for the selected page.
+
+## Repository Inventory Read Model
+
+`backend/internal/repo` owns both the authoritative repository configuration
+rows and their bounded inventory projection.
+
+- `GET /api/v1/repos/inventory` executes one dialect-aware aggregate query with
+  a left join to SCM providers and one row per provider/scope group. It never
+  materializes all `RepoConfig` entities to calculate counts.
+- Redis keys use
+  `ae:<namespace>:repos:inventory:v1:rev:<postgres-uuid>`. Values have a
+  jittered 48-54 second TTL and no stale-serving window; keys and payloads omit
+  provider secrets, repository names, raw query strings, and user data.
+- Identical cold reads collapse through a waiter-counted in-process flight and
+  a token-protected Redis lease across replicas. Redis command failure bypasses
+  cache/lease behavior and runs one bounded SQL load under the refresh budget.
+- Repository create, remote metadata refresh, update, delete, provider
+  bind/unbind, auto-bind metadata/status, webhook-repair metadata/status, and
+  SCM provider update/delete writes advance the inventory UUID inside the same
+  Ent transaction. Provider deletion and its `ON DELETE SET NULL` repository
+  unbinding therefore select a new cache key atomically. A failed revision
+  update rolls the local write back; external SCM no-op/failure paths that do
+  not write a local row do not advance it.
+- Checkpoint-owned remote repository auto-creation participates in the
+  checkpoint transaction and advances the same inventory UUID there. The
+  resulting auto-bind and webhook calls are deferred until after checkpoint
+  commit, so a rollback cannot leave an orphan external webhook or hold the
+  inventory revision row lock across SCM traffic.
+- An unfiltered `GET /api/v1/repos` response includes an additive stable
+  `selection` and returns only that provider/scope page. GitHub is preferred,
+  then Bitbucket Server, then other bound providers by name and ID; unbound is
+  used only when no bound scope exists. Explicit provider/scope/binding filters
+  remain authoritative. Pages contain at most 100 repositories and use
+  `created_at DESC, id DESC` ordering so timestamp ties remain stable.
+- `/repos` starts list and inventory requests together and renders the selected
+  page from the list response without waiting for inventory. Inventory later
+  hydrates platform, health, and scope controls without issuing a duplicate
+  list request. Partial explicit URLs such as provider-only or binding-only
+  filters do not display an inferred scope that was not applied to the rows,
+  and superseded list responses cannot replace a newer selection. `/repos/:id`
+  renders repository/PR core data without waiting for admin provider options.
+  Repository and PR records each own one responsive DOM row subtree across
+  viewport sizes.
 
 ### Mutation Invalidation
 
@@ -366,7 +411,7 @@ flowchart LR
 - Local state and hook ownership:
   Active user-level CLI state lives under `~/.ae-cli/`: auth in `~/.ae-cli/token.json`, global managed hook scripts in `~/.ae-cli/git-hooks`, hook eligibility and installation state under `~/.ae-cli/state/hooks`, and attribution state under `~/.ae-cli/state/attribution`. Attribution workspace state now includes `scan-state.json`, `spool.json`, `hooks.jsonl`, `upload-ledger.jsonl`, `dead-letter-tool-usage.jsonl`, and workspace-level `sync-task.json`; unresolved first-run hook events live in `~/.ae-cli/state/hooks/unresolved-hooks.jsonl`. Repo-local managed hooks live under the canonical git common directory at `<git common dir>/ae-hooks`. Managed hooks resolve the runtime binary from `AE_CLI_BIN`, then `~/.local/bin/ae-cli`, then `PATH`. AE-managed hook installation owns the configured `core.hooksPath` layer it writes and does not chain previous hooks; `--force` authorizes overwriting the relevant path.
 - Current formal frontend surface:
-  the repo list page is a scoped inventory workbench: `GET /api/v1/repos/inventory` summarizes Platform -> org/project scopes, using stable `provider_key` values (`scm_provider:<id>` for bound providers and `unbound` for unbound repos) for tab/query selection while `name` remains display text; `GET /api/v1/repos` accepts `scm_provider_id`, `scope`, and `binding_state` so repo table pagination applies only to the selected platform scope. Repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls. `POST /api/v1/repos/:id/sync-prs` creates or reuses a backend `pr_sync_jobs` record and the backend process performs PR metadata sync plus active PR usage refresh asynchronously. Repo detail pages recover the latest repo-level sync job through `GET /api/v1/repos/:id/pr-sync-job/latest`, then poll `GET /api/v1/pr-sync-jobs/:id` while the job is active. `StartSyncJob` abandons stale queued/running jobs that have not recorded progress for more than one hour, which prevents a lost in-process worker from permanently blocking a new sync attempt. PR list summaries use bounded aggregate queries, while only the current page rows receive PR-level freshness evaluation. Bitbucket Server PR sync records SCM `createdDate` so recent-window filters are based on actual PR age rather than first ingestion time. PR usage numbers still come from `tool_usage_events -> commit_checkpoints -> pr_commit_usage_snapshots`; freshness fields explain missing or stale usage without counting unbound evidence as valid PR usage.
+  the repo list page is a scoped inventory workbench: `GET /api/v1/repos/inventory` summarizes Platform -> org/project scopes through the versioned aggregate read model, using stable `provider_key` values (`scm_provider:<id>` for bound providers and `unbound` for unbound repos) for tab/query selection while `name` remains display text; `GET /api/v1/repos` accepts `scm_provider_id`, `scope`, and `binding_state`, and an unfiltered request returns the server-selected default scope plus additive `selection`. List rows render from that response while inventory loads independently. Repo detail pages show PR usage summaries and commit usage details directly, rather than user-facing attribution status controls, and admin provider options load independently from repository/PR core content. Both routes own one responsive row subtree per repository or PR. `POST /api/v1/repos/:id/sync-prs` creates or reuses a backend `pr_sync_jobs` record and the backend process performs PR metadata sync plus active PR usage refresh asynchronously. Repo detail pages recover the latest repo-level sync job through `GET /api/v1/repos/:id/pr-sync-job/latest`, then poll `GET /api/v1/pr-sync-jobs/:id` while the job is active. `StartSyncJob` abandons stale queued/running jobs that have not recorded progress for more than one hour, which prevents a lost in-process worker from permanently blocking a new sync attempt. PR list summaries use bounded aggregate queries, while only the current page rows receive PR-level freshness evaluation. Bitbucket Server PR sync records SCM `createdDate` so recent-window filters are based on actual PR age rather than first ingestion time. PR usage numbers still come from `tool_usage_events -> commit_checkpoints -> pr_commit_usage_snapshots`; freshness fields explain missing or stale usage without counting unbound evidence as valid PR usage.
 - Current global event surface:
   `/events` is a protected top-level page for browsing backend-ingested `tool_usage_events`. It shows summary cards plus event-level rows, scopes regular users to their own events, and only exposes full raw source/path/payload detail to admins.
 - Remaining direction:
@@ -386,7 +431,7 @@ flowchart LR
 | Work items | `backend/internal/workitems` | Auth-scoped pending work counters, the PostgreSQL UUID revision, and the namespace/revision/actor/role-isolated Redis read model with bounded authoritative fallback; counts include best-effort relay-derived personal AI access setup plus locally derived quota reset and count-only injected Directory offboarding dependencies |
 | Representative scope and team usage | `backend/internal/representativescope`, `backend/internal/teamusage` | Resolve representative subtree scope from current directory metadata and member-department memberships, enforce delegated subject visibility and ancestor-only multiplier policy, orchestrate selected-member detail and team-overview usage reads, and persist local `team_usage_rate_multiplier_audits` |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
-| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, PR labeling, and dashboard-facing summary inputs |
+| Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, bounded SQL inventory aggregation, transactionally versioned optional Redis inventory reads, PR labeling, and dashboard-facing summary inputs |
 | Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution`, `backend/internal/prusage` | Commit checkpoints, rewrite mapping, checkpoint-bound tool usage propagation, and PR usage summary/detail snapshot generation |
 | API surface | `backend/internal/handler`, `backend/internal/middleware` | HTTP handlers, routing, auth middleware, settings endpoints, representative `/user/team-usage/*` endpoints, quota reset user/admin endpoints including approver candidate lookup, work item count endpoint, admin team-usage audit, admin-users direct relay-user disablement/subscription jobs, and admin directory sync/offboarding endpoints |
 
@@ -395,7 +440,7 @@ flowchart LR
 | Area | Paths | Responsibility |
 | --- | --- | --- |
 | Views | `frontend/src/views` | Dashboard, Work Items, repos, events, oauth, personal AI Usage, selected-member usage detail, representative Team Overview, admin users, paginated admin Directory offboarding, and admin/settings pages with immediate affected-mutation count refresh |
-| Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, representative team-usage clients, paginated Directory clients, and the generation-safe Work Items count store with completion-based 20-second freshness, invalidation/reset ownership, and one queued forced follow-up |
+| Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, independent repository list/inventory state and stable server-selection hydration, representative team-usage clients, paginated Directory clients, and the generation-safe Work Items count store with completion-based 20-second freshness, invalidation/reset ownership, and one queued forced follow-up |
 | App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation with a freshness-bounded pending-work badge across protected routes and mobile remounts, route composition, and representative `/team-usage` route entry |
 
 ### ae-cli

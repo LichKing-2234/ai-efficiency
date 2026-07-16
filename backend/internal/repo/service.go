@@ -29,6 +29,8 @@ var ErrRepoUnbound = errors.New("repo is not bound to an scm provider")
 var ErrSCMProviderNotFound = errors.New("scm provider not found")
 var ErrWebhookPublicURLRequired = errors.New("server.public_url is required for webhook registration")
 
+const maxRepoListPageSize = 100
+
 // CreateRequest is the request to create a repo config.
 type CreateRequest struct {
 	SCMProviderID     int    `json:"scm_provider_id" binding:"required"`
@@ -137,6 +139,8 @@ type Service struct {
 	scmFactory        scmProviderFactory
 	inventoryCache    *InventoryCache
 	inventoryRevision InventoryRevisionInvalidator
+	mutationTx        *ent.Tx
+	afterRemoteCreate func(int)
 }
 
 // NewService creates a new repo service.
@@ -156,6 +160,16 @@ func NewService(entClient *ent.Client, encryptionKey string, logger *zap.Logger,
 		inventoryCache:    opt.InventoryCache,
 		inventoryRevision: opt.InventoryRevisionStore,
 	}
+}
+
+// WithTransaction returns a configured service that participates in tx. The
+// callback records work that must run only after the transaction commits.
+func (s *Service) WithTransaction(tx *ent.Tx, afterRemoteCreate func(int)) *Service {
+	clone := *s
+	clone.entClient = tx.Client()
+	clone.mutationTx = tx
+	clone.afterRemoteCreate = afterRemoteCreate
+	return &clone
 }
 
 func IsRepoUnbound(err error) bool {
@@ -355,7 +369,9 @@ func (s *Service) FindOrCreateFromRemote(ctx context.Context, remoteURL, branch 
 		}
 		return nil, fmt.Errorf("find or create repo: create repo: %w", err)
 	}
-	if _, bindErr := s.AutoBindRepo(ctx, rc.ID); bindErr != nil {
+	if s.afterRemoteCreate != nil {
+		s.afterRemoteCreate(rc.ID)
+	} else if _, bindErr := s.AutoBindRepo(ctx, rc.ID); bindErr != nil && s.logger != nil {
 		s.logger.Warn("auto-bind newly discovered repo failed", zap.Int("repo_config_id", rc.ID), zap.Error(bindErr))
 	}
 	return s.entClient.RepoConfig.Query().
@@ -464,6 +480,8 @@ func (s *Service) ListPage(ctx context.Context, opts ListOpts) (*ListPage, error
 	}
 	if opts.PageSize <= 0 {
 		opts.PageSize = 20
+	} else if opts.PageSize > maxRepoListPageSize {
+		opts.PageSize = maxRepoListPageSize
 	}
 
 	var selection *ListSelection
@@ -512,9 +530,9 @@ func (s *Service) ListPage(ctx context.Context, opts ListOpts) (*ListPage, error
 	}
 
 	repos, err := query.
-		Offset((opts.Page - 1) * opts.PageSize).
+		Offset((opts.Page-1)*opts.PageSize).
 		Limit(opts.PageSize).
-		Order(ent.Desc(repoconfig.FieldCreatedAt)).
+		Order(ent.Desc(repoconfig.FieldCreatedAt), ent.Desc(repoconfig.FieldID)).
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list repos: %w", err)

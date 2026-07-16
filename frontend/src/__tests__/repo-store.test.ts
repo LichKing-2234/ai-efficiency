@@ -154,6 +154,32 @@ describe('Repo Store', () => {
     expect(store.pageSize).toBe(10)
   })
 
+  it('ignores an older list response after a newer request starts', async () => {
+    const { listRepos } = await import('@/api/repo')
+    let resolveFirst!: (value: any) => void
+    let resolveSecond!: (value: any) => void
+    ;(listRepos as any)
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve }))
+
+    const store = useRepoStore()
+    const firstRequest = store.fetchRepos({ page: 1 })
+    const secondRequest = store.fetchRepos({ page: 2 })
+
+    resolveFirst({ data: { data: { items: [{ id: 1, full_name: 'org/old' }], total: 1, page: 1, page_size: 20 } } })
+    await firstRequest
+    expect(store.repos).toEqual([])
+    expect(store.loading).toBe(true)
+    expect(store.loaded).toBe(false)
+
+    resolveSecond({ data: { data: { items: [{ id: 2, full_name: 'org/current' }], total: 1, page: 2, page_size: 20 } } })
+    await secondRequest
+    expect(store.repos.map((item) => item.id)).toEqual([2])
+    expect(store.page).toBe(2)
+    expect(store.loading).toBe(false)
+    expect(store.loaded).toBe(true)
+  })
+
   it('fetchInventory populates platform and scope summaries', async () => {
     const { getRepoInventory } = await import('@/api/repo')
     ;(getRepoInventory as any).mockResolvedValue({

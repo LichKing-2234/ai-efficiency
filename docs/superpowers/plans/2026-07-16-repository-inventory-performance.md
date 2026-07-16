@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress. Issue #132 is isolated on `perf/repos-132`; clean baseline verification passed for backend `go test ./...` and frontend 39 files / 451 tests.
+**Status:** In progress. Tasks 1-3 and independent review are complete. Final repository verification passes; only the delivery commit, draft PR, and CI remain.
 
 **Goal:** Render repository list/detail core content without browser waterfalls while making inventory work bounded, deployment-isolated, and immediately versioned after repository mutations.
 
@@ -266,11 +266,11 @@
 - Modify: `docs/architecture.md`
 - Modify: this plan
 
-- [ ] **Step 1: Document only landed current behavior**
+- [x] **Step 1: Document only landed current behavior**
 
   Record SQL aggregate inventory, versioned deployment-isolated Redis freshness, transactional repo mutation revisioning, stable default list selection, independent inventory/provider loading, and single responsive row ownership. Keep the 2026-07-14 performance spec as the approved target/history contract.
 
-- [ ] **Step 2: Run repository verification**
+- [x] **Step 2: Run repository verification**
 
   Run: `cd backend && go test ./...`
 
@@ -286,9 +286,19 @@
 
   Run: `git diff --check && git status --short`
 
-- [ ] **Step 3: Complete independent code review**
+  Verification: backend `go test ./...` and `go vet ./...` pass; ae-cli `go test ./...` passes; frontend passes 39 files / 464 tests and the production build; role E2E passes 16/16 with the Vite prerequisite; `go test -race ./internal/repo ./internal/checkpoint -count=1` and `git diff --check` pass. Full backend verification also exposed and fixed transaction participation for checkpoint-owned remote repo auto-create, with focused commit/rollback coverage.
+
+- [x] **Step 3: Complete independent code review**
 
   Review from base `7f2999a` against issue #132, this plan, current architecture, and the 2026-07-14 performance contract. Fix every critical/important finding with focused RED/GREEN evidence and rerun affected full suites.
+
+  Initial review findings: checkpoint auto-bind performed SCM/webhook traffic before the outer transaction committed; SCM provider update/delete bypassed inventory revisioning; superseded browser list responses could overwrite newer state; partial explicit URLs displayed an unapplied inferred scope; and repository pages were unbounded and unstable for timestamp ties.
+
+  RED evidence: checkpoint/provider tests failed to compile because post-commit repo-service injection and inventory-aware provider mutation did not exist; a 105-row list returned all 105 rows for `page_size=1000000`; and three frontend tests observed old-response overwrite plus scope highlighting for binding-only/provider-only URLs.
+
+  GREEN evidence: checkpoint success/rollback tests defer auto-bind until after commit, provider update/delete revision and rollback tests pass, repository pages cap at 100 with `created_at DESC, id DESC`, and the focused frontend suite passes with request-generation and partial-URL coverage. Full `repo`, `handler`, `checkpoint`, and `cmd/server` package suites pass.
+
+  First re-review found that partial URLs could not paginate/refresh without an inferred scope and that the view retained an oversized URL page size after the server capped it. Focused RED reproduced both. GREEN removes the complete-selection gate, applies only current list responses, hydrates server-normalized page/page size, and passes 56 focused tests. The final independent re-review reports no critical or important findings.
 
 - [ ] **Step 4: Publish the draft PR**
 
