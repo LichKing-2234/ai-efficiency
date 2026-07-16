@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	systemDefaultMultiplier         = 1.0
-	defaultTeamOverviewTrendTimeout = 20 * time.Second
+	systemDefaultMultiplier              = 1.0
+	defaultTeamOverviewTrendTimeout      = 20 * time.Second
+	multiplierMetadataUnavailableMessage = "Multiplier metadata is temporarily unavailable."
 )
 
 type ProviderResolver interface {
@@ -640,40 +641,73 @@ func (s *Service) buildSubjectSubscriptionRows(ctx context.Context, provider rel
 	if err != nil {
 		return nil, relay.UserUsageGroupQuotaState{}, fmt.Errorf("list subject subscriptions: %w", err)
 	}
-	manager, managerOK := provider.(relay.GroupRateMultiplierManager)
-
-	rows := make([]SubscriptionRow, 0, len(subscriptions))
+	activeSubscriptions := make([]relay.UserSubscription, 0, len(subscriptions))
+	groupIDs := make([]int64, 0, len(subscriptions))
+	seenGroupIDs := make(map[int64]struct{}, len(subscriptions))
 	for _, subscription := range subscriptions {
 		if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") || subscription.Group == nil {
 			continue
 		}
+		activeSubscriptions = append(activeSubscriptions, subscription)
+		if _, seen := seenGroupIDs[subscription.GroupID]; seen {
+			continue
+		}
+		seenGroupIDs[subscription.GroupID] = struct{}{}
+		groupIDs = append(groupIDs, subscription.GroupID)
+	}
+
+	metadataByGroup := make(map[int64]relay.GroupRateMultiplierReadResult, len(groupIDs))
+	duplicateMetadataGroupIDs := make(map[int64]struct{})
+	batchReader, batchReaderOK := provider.(relay.GroupRateMultiplierBatchReader)
+	if batchReaderOK && len(groupIDs) > 0 {
+		for _, result := range batchReader.GroupRateMultipliersForGroups(ctx, groupIDs) {
+			if _, requested := seenGroupIDs[result.GroupID]; !requested {
+				continue
+			}
+			if _, duplicate := metadataByGroup[result.GroupID]; duplicate {
+				duplicateMetadataGroupIDs[result.GroupID] = struct{}{}
+				continue
+			}
+			metadataByGroup[result.GroupID] = result
+		}
+	}
+
+	rows := make([]SubscriptionRow, 0, len(activeSubscriptions))
+	for _, subscription := range activeSubscriptions {
 		var editableReason *string
 		editable := canManageTarget
-		switch {
-		case !canManageTarget:
+		if !canManageTarget {
 			reason := manageReason
 			if strings.TrimSpace(reason) == "" {
 				reason = ErrPolicyDenied.Error()
 			}
 			editableReason = &reason
-		case !managerOK:
-			editable = false
-			reason := ErrProviderUnsupported.Error()
-			editableReason = &reason
 		}
 
+		metadataStatus := MultiplierMetadataStatusUnavailable
+		var metadataMessage *string
 		var currentEntry *relay.UserGroupRateEntry
-		if managerOK {
-			entries, err := manager.ListGroupRateMultipliers(ctx, subscription.GroupID)
-			if err != nil {
+		_, duplicateMetadata := duplicateMetadataGroupIDs[subscription.GroupID]
+		if result, found := metadataByGroup[subscription.GroupID]; batchReaderOK && found && !duplicateMetadata && result.Err == nil {
+			metadataStatus = MultiplierMetadataStatusOK
+			currentEntry = findRateEntry(result.Entries, int64(relayUserID))
+		} else {
+			message := multiplierMetadataUnavailableMessage
+			metadataMessage = &message
+			if editable {
 				editable = false
-				reason := ErrProviderUnsupported.Error()
+				reason := ErrMultiplierMetadataUnavailable.Error()
 				editableReason = &reason
-			} else {
-				currentEntry = findRateEntry(entries, int64(relayUserID))
 			}
 		}
-		rows = append(rows, buildSubscriptionRowFromSubscription(subscription, currentEntry, editable, editableReason))
+		rows = append(rows, buildSubscriptionRowFromSubscriptionWithMultiplierMetadata(
+			subscription,
+			currentEntry,
+			editable,
+			editableReason,
+			metadataStatus,
+			metadataMessage,
+		))
 	}
 
 	sort.Slice(rows, func(i, j int) bool {
@@ -943,24 +977,37 @@ func (s *Service) markAuditOutcome(ctx context.Context, auditID int, status team
 }
 
 func buildSubscriptionRowFromSubscription(subscription relay.UserSubscription, entry *relay.UserGroupRateEntry, editable bool, editableReason *string) SubscriptionRow {
+	return buildSubscriptionRowFromSubscriptionWithMultiplierMetadata(
+		subscription,
+		entry,
+		editable,
+		editableReason,
+		MultiplierMetadataStatusOK,
+		nil,
+	)
+}
+
+func buildSubscriptionRowFromSubscriptionWithMultiplierMetadata(subscription relay.UserSubscription, entry *relay.UserGroupRateEntry, editable bool, editableReason *string, metadataStatus string, metadataMessage *string) SubscriptionRow {
 	var userMultiplier *float64
 	if entry != nil {
 		userMultiplier = entry.RateMultiplier
 	}
 	input := SubscriptionInput{
-		GroupID:                 strconv.FormatInt(subscription.GroupID, 10),
-		GroupName:               "",
-		Platform:                "",
-		SubscriptionStatus:      strings.TrimSpace(subscription.Status),
-		GroupDefaultMultiplier:  nil,
-		SystemDefaultMultiplier: systemDefaultMultiplier,
-		UserMultiplier:          userMultiplier,
-		DailyUsageUSD:           subscription.DailyUsageUSD,
-		WeeklyUsageUSD:          subscription.WeeklyUsageUSD,
-		MonthlyUsageUSD:         subscription.MonthlyUsageUSD,
-		UsageValueBasis:         "raw_actual_cost",
-		Editable:                editable,
-		EditableReason:          editableReason,
+		GroupID:                   strconv.FormatInt(subscription.GroupID, 10),
+		GroupName:                 "",
+		Platform:                  "",
+		SubscriptionStatus:        strings.TrimSpace(subscription.Status),
+		GroupDefaultMultiplier:    nil,
+		SystemDefaultMultiplier:   systemDefaultMultiplier,
+		UserMultiplier:            userMultiplier,
+		DailyUsageUSD:             subscription.DailyUsageUSD,
+		WeeklyUsageUSD:            subscription.WeeklyUsageUSD,
+		MonthlyUsageUSD:           subscription.MonthlyUsageUSD,
+		UsageValueBasis:           "raw_actual_cost",
+		Editable:                  editable,
+		EditableReason:            editableReason,
+		MultiplierMetadataStatus:  metadataStatus,
+		MultiplierMetadataMessage: metadataMessage,
 	}
 	if subscription.Group != nil {
 		input.GroupName = strings.TrimSpace(subscription.Group.Name)

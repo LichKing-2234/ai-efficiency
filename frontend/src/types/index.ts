@@ -902,8 +902,10 @@ export interface SubjectSubscriptionGroup {
   system_default_multiplier: number
   inherited_default_multiplier: number
   user_multiplier?: number | null
-  effective_multiplier: number
+  effective_multiplier: number | null
   multiplier_source: 'user' | 'group' | 'system' | 'unknown'
+  multiplier_metadata_status?: 'ok' | 'unavailable'
+  multiplier_metadata_message?: string | null
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null

@@ -9,15 +9,21 @@ import (
 )
 
 var (
-	ErrNotRepresentative           = errors.New("not_representative")
-	ErrSelfEditForbidden           = errors.New("self_edit_forbidden")
-	ErrNotUpperLevelRepresentative = errors.New("not_upper_level_representative")
-	ErrOutOfScope                  = errors.New("out_of_scope")
-	ErrNoRelayMapping              = errors.New("no_relay_mapping")
-	ErrInactiveSubscription        = errors.New("inactive_subscription")
-	ErrPolicyDenied                = errors.New("policy_denied")
-	ErrProviderUnsupported         = errors.New("provider_unsupported")
-	ErrPartialFailed               = errors.New("partial_failed")
+	ErrNotRepresentative             = errors.New("not_representative")
+	ErrSelfEditForbidden             = errors.New("self_edit_forbidden")
+	ErrNotUpperLevelRepresentative   = errors.New("not_upper_level_representative")
+	ErrOutOfScope                    = errors.New("out_of_scope")
+	ErrNoRelayMapping                = errors.New("no_relay_mapping")
+	ErrInactiveSubscription          = errors.New("inactive_subscription")
+	ErrPolicyDenied                  = errors.New("policy_denied")
+	ErrProviderUnsupported           = errors.New("provider_unsupported")
+	ErrMultiplierMetadataUnavailable = errors.New("multiplier_metadata_unavailable")
+	ErrPartialFailed                 = errors.New("partial_failed")
+)
+
+const (
+	MultiplierMetadataStatusOK          = "ok"
+	MultiplierMetadataStatusUnavailable = "unavailable"
 )
 
 type ForbiddenError struct {
@@ -63,8 +69,10 @@ type SubscriptionRow struct {
 	SystemDefaultMultiplier            float64  `json:"system_default_multiplier"`
 	InheritedDefaultMultiplier         float64  `json:"inherited_default_multiplier"`
 	UserMultiplier                     *float64 `json:"user_multiplier,omitempty"`
-	EffectiveMultiplier                float64  `json:"effective_multiplier"`
+	EffectiveMultiplier                *float64 `json:"effective_multiplier"`
 	MultiplierSource                   string   `json:"multiplier_source"`
+	MultiplierMetadataStatus           string   `json:"multiplier_metadata_status"`
+	MultiplierMetadataMessage          *string  `json:"multiplier_metadata_message,omitempty"`
 	DailyLimitUSD                      *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD                     *float64 `json:"weekly_limit_usd,omitempty"`
 	MonthlyLimitUSD                    *float64 `json:"monthly_limit_usd,omitempty"`
