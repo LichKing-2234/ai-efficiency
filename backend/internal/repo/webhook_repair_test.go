@@ -148,6 +148,44 @@ func TestRepairWebhookRejectsInactiveRepo(t *testing.T) {
 	}
 }
 
+func TestInventoryMutationVersionsWebhookRepairStatusAndMetadataWrites(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		failRegister bool
+		wantStatus   repoconfig.Status
+	}{
+		{name: "metadata success", wantStatus: repoconfig.StatusActive},
+		{name: "failure status", failRegister: true, wantStatus: repoconfig.StatusWebhookFailed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := newBitbucketRepairServer(t)
+			server.failRegister = test.failRegister
+			client := testdb.Open(t)
+			ctx := context.Background()
+			revisions := NewInventoryRevisionStore(client)
+			if err := revisions.Ensure(ctx); err != nil {
+				t.Fatalf("ensure inventory revision: %v", err)
+			}
+			svc := NewService(client, webhookRepairTestKey, zap.NewNop(), ServiceOptions{
+				WebhookPublicURL:       "https://ai-efficiency.example.com",
+				ServerMode:             "release",
+				InventoryRevisionStore: revisions,
+			})
+			provider := createRepairProvider(t, client, server.server.URL)
+			repo := createRepairRepo(t, client, provider, repoconfig.StatusWebhookFailed)
+			before := currentInventoryRevision(t, revisions)
+
+			if _, err := svc.RepairWebhook(ctx, repo.ID, RepairWebhookRequest{}); err != nil {
+				t.Fatalf("RepairWebhook: %v", err)
+			}
+			requireInventoryRevisionChanged(t, revisions, before)
+			if status := client.RepoConfig.GetX(ctx, repo.ID).Status; status != test.wantStatus {
+				t.Fatalf("repo status = %q, want %q", status, test.wantStatus)
+			}
+		})
+	}
+}
+
 func TestRepairWebhookMissingPublicURLFailsBeforeSCM(t *testing.T) {
 	server := newBitbucketRepairServer(t)
 	client, svc := newRepairTestService(t, "")

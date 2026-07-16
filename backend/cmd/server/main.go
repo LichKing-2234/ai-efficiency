@@ -124,6 +124,22 @@ func newRuntimeHTTPClients(cfg config.HTTPClientConfig, relayWrappers ...httpcli
 	}
 }
 
+func initializeRepoInventory(ctx context.Context, entClient *ent.Client, redisClient redis.UniversalClient, namespace string) (*repo.InventoryCache, *repo.InventoryRevisionStore, error) {
+	revisions := repo.NewInventoryRevisionStore(entClient)
+	if err := revisions.Ensure(ctx); err != nil {
+		return nil, nil, fmt.Errorf("initialize repository inventory revision: %w", err)
+	}
+	cache, err := repo.NewInventoryCache(
+		repo.NewRedisInventoryStore(redisClient),
+		revisions,
+		repo.InventoryCacheOptions{Namespace: namespace},
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize repository inventory cache: %w", err)
+	}
+	return cache, revisions, nil
+}
+
 func (a *authTokenAdapter) GenerateAccessToken(userID int, username, role string) (string, string, int, error) {
 	info := &auth.UserInfo{
 		ID:       userID,
@@ -293,6 +309,15 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize team usage snapshot cache", zap.Error(err))
 	}
+	repoInventoryCache, repoInventoryRevisions, err := initializeRepoInventory(
+		context.Background(),
+		entClient,
+		redisClient,
+		cfg.Redis.Namespace,
+	)
+	if err != nil {
+		logger.Fatal("initialize repository inventory", zap.Error(err))
+	}
 
 	// Init LDAP config (shared between auth service and admin settings handler)
 	var ldapConfig atomic.Pointer[config.LDAPConfig]
@@ -323,10 +348,12 @@ func main() {
 
 	// Init repo service
 	repoService := repo.NewService(entClient, cfg.Encryption.Key, logger, repo.ServiceOptions{
-		WebhookPublicURL: cfg.Server.PublicURL,
-		FrontendURL:      cfg.Server.FrontendURL,
-		ServerMode:       cfg.Server.Mode,
-		HTTPClient:       httpClients.scm,
+		WebhookPublicURL:       cfg.Server.PublicURL,
+		FrontendURL:            cfg.Server.FrontendURL,
+		ServerMode:             cfg.Server.Mode,
+		HTTPClient:             httpClients.scm,
+		InventoryCache:         repoInventoryCache,
+		InventoryRevisionStore: repoInventoryRevisions,
 	})
 
 	// Init PR labeler (with optional relay usage stats lookup)
@@ -370,7 +397,10 @@ func main() {
 	// Init admin settings handler
 	adminSettingsHandler := handler.NewAdminSettingsHandler(settingsConfigPath, &ldapConfig)
 
-	checkpointService := checkpoint.NewService(entClient)
+	checkpointService := checkpoint.NewService(entClient, checkpoint.ServiceOptions{
+		InventoryRevisionStore: repoInventoryRevisions,
+		RepoService:            repoService,
+	})
 	checkpointHandler := handler.NewCheckpointHandler(checkpointService)
 	attributionService := attribution.NewService(entClient, relayProvider)
 	handler.SetPRAttributionService(attributionService)
