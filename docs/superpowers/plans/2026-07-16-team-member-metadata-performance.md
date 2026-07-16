@@ -57,11 +57,11 @@
 - Failed/missing group results set the multiplier source to `unknown`, do not expose an inherited effective value as authoritative, and disable edits with `multiplier_metadata_unavailable`.
 - Providers without the batch capability return active subscription rows with unavailable multiplier metadata rather than reintroducing serial calls.
 
-- [ ] **Step 1: Add failing service tests for one unique batch call, successful multi-group rows, isolated partial failure, unsupported capability, and no serial dashboard reads**
-- [ ] **Step 2: Add a failing regression test proving a subsequent multiplier edit still uses single-group reads, whole-group replace/readback, and a successful audit**
-- [ ] **Step 3: Run focused Team Usage tests and record RED**
-- [ ] **Step 4: Implement the row metadata contract and batch-only selected-member read path**
-- [ ] **Step 5: Re-run focused Team Usage tests and confirm GREEN**
+- [x] **Step 1: Add failing service tests for one unique batch call, successful multi-group rows, isolated partial failure, unsupported capability, and no serial dashboard reads**
+- [x] **Step 2: Add a failing regression test proving a subsequent multiplier edit still uses single-group reads, whole-group replace/readback, and a successful audit**
+- [x] **Step 3: Run focused Team Usage tests and record RED**
+- [x] **Step 4: Implement the row metadata contract and batch-only selected-member read path**
+- [x] **Step 5: Re-run focused Team Usage tests and confirm GREEN**
 
 ### Task 3: Render explicit multiplier metadata degradation
 
