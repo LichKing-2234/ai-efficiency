@@ -24,7 +24,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** In progress. Implementation, review, and local verification are complete; Draft PR publication and required CI remain.
+**Status:** Complete. Draft PR #156 targets `perf/team-members-127`, depends directly on Draft PR #155, and the implementation-head CI passed all required jobs. The worktree remains available for review; no merge, release, tag, deployment, Helm action, or `sub2api` change was performed.
 
 ---
 
@@ -194,10 +194,14 @@
 
   Review evidence (2026-07-16): contract review found one important nested-branch recovery gap. Two RED/GREEN regressions now prove that parent expiry evicts cached descendants and their expansion state while preserving unrelated siblings, and that a late pre-eviction descendant response cannot overwrite the freshly reloaded branch. Request identities are monotonic across branch eviction. Focused re-review found no remaining Critical or Important issues.
 
-- [ ] **Step 4: Push and open a Draft PR**
+- [x] **Step 4: Push and open a Draft PR**
 
   Target `perf/team-members-127`, list Draft PR #155 as the direct dependency, preserve the worktree, and do not merge or release.
 
-- [ ] **Step 5: Wait for required CI and record final state**
+  Publication evidence (2026-07-16): Draft PR #156 targets `perf/team-members-127`, identifies Draft PR #155 as its direct dependency, closes issue #128, and points at implementation head `5cab9deafae65c4c975d46865bc1aab89a7c21a5` on `perf/team-organization-128`.
+
+- [x] **Step 5: Wait for required CI and record final state**
 
   Record the exact implementation-head run and backend/frontend/ae-cli/deploy-static conclusions, then push one ledger commit and wait for final ledger-head CI.
+
+  CI evidence (2026-07-16): [run 29481308621](https://github.com/LichKing-2234/ai-efficiency/actions/runs/29481308621) passed for implementation head `5cab9de`: backend (3m45s), frontend (57s), ae-cli (28s), and deploy-static (15s) all completed successfully.
