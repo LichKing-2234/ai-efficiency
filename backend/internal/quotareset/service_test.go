@@ -2,6 +2,7 @@ package quotareset
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
@@ -10,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	entsql "entgo.io/ent/dialect/sql"
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
@@ -54,6 +57,46 @@ func TestCreateRequestRejectsDuplicateActiveRequest(t *testing.T) {
 	_, err = svc.CreateRequest(ctx, CreateRequestInput{RequesterUserID: requester.ID, GroupID: "42", Reason: "Second request"})
 	if !errors.Is(err, ErrActiveRequestExists) {
 		t.Fatalf("second CreateRequest() error = %v, want ErrActiveRequestExists", err)
+	}
+}
+
+func TestCreateWorkflowRequestRollsBackBeforeDuplicateDetection(t *testing.T) {
+	ctx := context.Background()
+	seedClient, dsn := testdb.OpenWithDSN(t)
+	requester := createQuotaResetUser(t, ctx, seedClient, "alice", "alice@example.com", intPtr(1001), "user")
+	provider := createQuotaResetRelayProvider(t, ctx, seedClient)
+	createPendingQuotaResetRequest(t, ctx, seedClient, requester.ID, 1001, provider.ID, "42", nil)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open single-connection database: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	singleConnectionClient := ent.NewClient(ent.Driver(entsql.OpenDB("postgres", db)))
+	t.Cleanup(func() { _ = singleConnectionClient.Close() })
+
+	workflow := &Workflow{
+		Version:     workflowVersionV2,
+		CurrentStep: 0,
+		Requester:   WorkflowPerson{UserID: requester.ID},
+		Steps:       []WorkflowStep{adminFallbackWorkflowStep()},
+	}
+	workflow.Steps[0].Status = WorkflowStepActive
+	requestCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	_, err = NewService(singleConnectionClient, nil, nil, nil).createWorkflowRequest(
+		requestCtx,
+		requester,
+		provider,
+		activeQuotaResetSubscription(42, "Group Alpha"),
+		CreateRequestInput{RequesterUserID: requester.ID, GroupID: "42", Reason: "Duplicate request"},
+		workflow,
+		nil,
+	)
+	if !errors.Is(err, ErrActiveRequestExists) {
+		t.Fatalf("createWorkflowRequest() error = %v, want ErrActiveRequestExists", err)
 	}
 }
 

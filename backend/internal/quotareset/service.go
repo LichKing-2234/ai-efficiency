@@ -15,8 +15,6 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/directorydepartment"
-	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -43,16 +41,14 @@ const (
 type Service struct {
 	client                *ent.Client
 	providerResolver      ProviderResolver
-	approverResolver      *ApproverResolver
 	notifier              Notifier
 	resetExecutionTimeout time.Duration
 }
 
-func NewService(client *ent.Client, providerResolver ProviderResolver, approverResolver *ApproverResolver, notifier Notifier) *Service {
+func NewService(client *ent.Client, providerResolver ProviderResolver, _ *ApproverResolver, notifier Notifier) *Service {
 	return &Service{
 		client:                client,
 		providerResolver:      providerResolver,
-		approverResolver:      approverResolver,
 		notifier:              notifier,
 		resetExecutionTimeout: defaultResetExecutionTimeout,
 	}
@@ -223,21 +219,9 @@ func (s *Service) RetryReset(ctx context.Context, input DecisionInput) (*ent.Quo
 		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, request.WorkflowVersion)
 	}
 	if !input.Admin {
-		if request.WorkflowVersion == workflowVersionV2 {
-			if request.ApprovedByUserID == nil || *request.ApprovedByUserID != input.ActorUserID {
-				return nil, ErrNotApprover
-			}
-		} else {
-			allowed := false
-			for _, userID := range request.ResolvedApproverUserIds {
-				if userID == input.ActorUserID {
-					allowed = true
-					break
-				}
-			}
-			if !allowed {
-				return nil, ErrNotApprover
-			}
+		approvedV2 := request.WorkflowVersion == workflowVersionV2 && request.ApprovedByUserID != nil && *request.ApprovedByUserID == input.ActorUserID
+		if !approvedV2 && (request.WorkflowVersion != 1 || !isResolvedApprover(request, input.ActorUserID)) {
+			return nil, ErrNotApprover
 		}
 	}
 	return s.executeReset(ctx, input.RequestID, input.ActorUserID, true, input.Admin)
@@ -370,10 +354,7 @@ func (s *Service) GetNotificationSettings(ctx context.Context) (*NotificationSet
 		Order(ent.Asc(quotaresetnotificationsetting.FieldID)).
 		First(ctx)
 	if ent.IsNotFound(err) {
-		return &NotificationSettings{
-			Channel:  quotaresetnotificationsetting.ChannelGenericWebhook.String(),
-			AuthType: quotaresetnotificationsetting.AuthTypeNone.String(),
-		}, nil
+		return notificationSettingsResponse(nil), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load quota reset notification settings: %w", err)
@@ -490,24 +471,20 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 		return fmt.Errorf("%w: enabled webhook url is required before sending test notification", ErrInvalidNotification)
 	}
 	workflow := &Workflow{
-		Version:     workflowVersionV2,
-		CurrentStep: 0,
+		Version: workflowVersionV2,
 		Requester: WorkflowPerson{
 			UserID:          actorUserID,
 			DisplayName:     "Alice Example",
 			Email:           "alice@example.com",
 			DepartmentPaths: []string{"Company / Group Alpha"},
-			NotificationIDs: map[string]string{"wecom": "alice"},
 		},
 		Steps: []WorkflowStep{{
-			Kind:                  WorkflowStepRequesterDepartments,
-			Label:                 "Company / Group Alpha",
-			DepartmentExternalIDs: []string{"dept-alpha"},
+			Kind:  WorkflowStepRequesterDepartments,
+			Label: "Company / Group Alpha",
 			Approvers: []WorkflowApprover{{
 				UserID:          actorUserID,
 				DisplayName:     "Bob Example",
 				Email:           "bob@example.org",
-				Source:          "configured",
 				NotificationIDs: map[string]string{"wecom": "bob"},
 			}},
 			Status: WorkflowStepActive,
@@ -518,17 +495,12 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 		return err
 	}
 	return s.notifier.NotifyRequestEvent(ctx, "quota_reset_notification_test", &ent.QuotaResetRequest{
-		ID:                      0,
-		RequesterUserID:         actorUserID,
-		ProviderID:              0,
-		GroupID:                 "0",
-		GroupName:               "Group Alpha",
-		GroupPlatform:           "openai",
-		Reason:                  "Synthetic quota reset notification test",
-		WorkflowVersion:         workflowVersionV2,
-		Workflow:                rawWorkflow,
-		Status:                  quotaresetrequest.StatusPending,
-		ResolvedApproverUserIds: []int{actorUserID},
+		RequesterUserID: actorUserID,
+		GroupName:       "Group Alpha",
+		Reason:          "Synthetic quota reset notification test",
+		WorkflowVersion: workflowVersionV2,
+		Workflow:        rawWorkflow,
+		Status:          quotaresetrequest.StatusPending,
 	})
 }
 
@@ -1092,110 +1064,6 @@ func (s *Service) currentWorkflowDirectoryFacts(ctx context.Context, sourceID in
 		return nil, ErrDirectoryUnavailable
 	}
 	return NewApproverResolver(s.client).loadWorkflowDirectoryFacts(ctx, sourceID)
-}
-
-func (s *Service) approverCandidateUserIDsByDepartment(ctx context.Context, sourceID int) (map[string]map[int]struct{}, map[int]*ent.DirectoryMember, map[string][]UnmatchedApproverRepresentative, error) {
-	departments, err := s.client.DirectoryDepartment.Query().
-		Where(directorydepartment.SourceIDEQ(sourceID)).
-		All(ctx)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("query approver candidate departments: %w", err)
-	}
-	members, err := s.client.DirectoryMember.Query().
-		Where(directorymember.SourceIDEQ(sourceID)).
-		All(ctx)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("query approver candidate members: %w", err)
-	}
-	representatives := representativeExternalIDsByDepartment(departments, members)
-	membersByExternalID := make(map[string]*ent.DirectoryMember, len(members))
-	for _, member := range members {
-		if member == nil {
-			continue
-		}
-		externalID := strings.TrimSpace(member.ExternalID)
-		if externalID != "" {
-			membersByExternalID[externalID] = member
-		}
-	}
-	usersByEmail, err := s.approverCandidateUsersByEmail(ctx, representatives, membersByExternalID)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	userIDsByDepartment := make(map[string]map[int]struct{}, len(representatives))
-	memberByUserID := map[int]*ent.DirectoryMember{}
-	unmatchedByDepartment := map[string][]UnmatchedApproverRepresentative{}
-	for departmentID, representativeExternalIDs := range representatives {
-		for representativeExternalID := range representativeExternalIDs {
-			member := membersByExternalID[representativeExternalID]
-			if member == nil {
-				unmatchedByDepartment[departmentID] = append(unmatchedByDepartment[departmentID], UnmatchedApproverRepresentative{
-					DirectoryMemberExternalID: representativeExternalID,
-				})
-				continue
-			}
-			userID := 0
-			if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-				userID = *member.MatchedUserID
-			} else if user := usersByEmail[strings.TrimSpace(strings.ToLower(member.EmailNormalized))]; user != nil {
-				userID = user.ID
-			}
-			if userID <= 0 {
-				unmatchedByDepartment[departmentID] = append(unmatchedByDepartment[departmentID], UnmatchedApproverRepresentative{
-					DirectoryMemberExternalID: strings.TrimSpace(member.ExternalID),
-					DisplayName:               strings.TrimSpace(member.DisplayName),
-					Email:                     strings.TrimSpace(member.EmailNormalized),
-				})
-				continue
-			}
-			if userIDsByDepartment[departmentID] == nil {
-				userIDsByDepartment[departmentID] = map[int]struct{}{}
-			}
-			userIDsByDepartment[departmentID][userID] = struct{}{}
-			memberByUserID[userID] = member
-		}
-	}
-	return userIDsByDepartment, memberByUserID, unmatchedByDepartment, nil
-}
-
-func (s *Service) approverCandidateUsersByEmail(ctx context.Context, representatives map[string]map[string]struct{}, membersByExternalID map[string]*ent.DirectoryMember) (map[string]*ent.User, error) {
-	emails := make([]string, 0)
-	seen := map[string]struct{}{}
-	for _, representativeExternalIDs := range representatives {
-		for representativeExternalID := range representativeExternalIDs {
-			member := membersByExternalID[representativeExternalID]
-			if member == nil || member.MatchedUserID != nil {
-				continue
-			}
-			email := strings.TrimSpace(strings.ToLower(member.EmailNormalized))
-			if email == "" {
-				continue
-			}
-			if _, ok := seen[email]; ok {
-				continue
-			}
-			seen[email] = struct{}{}
-			emails = append(emails, email)
-		}
-	}
-	if len(emails) == 0 {
-		return map[string]*ent.User{}, nil
-	}
-	users, err := s.client.User.Query().Where(entuser.EmailIn(emails...)).All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("load quota reset approver candidate users by email: %w", err)
-	}
-	usersByEmail := make(map[string]*ent.User, len(users))
-	for _, user := range users {
-		if user == nil {
-			continue
-		}
-		email := strings.TrimSpace(strings.ToLower(user.Email))
-		if email != "" {
-			usersByEmail[email] = user
-		}
-	}
-	return usersByEmail, nil
 }
 
 func representativeExternalIDsByDepartment(departments []*ent.DirectoryDepartment, members []*ent.DirectoryMember) map[string]map[string]struct{} {

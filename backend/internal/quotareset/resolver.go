@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -21,7 +23,6 @@ type ApproverResolver struct {
 }
 
 type workflowDirectoryFacts struct {
-	sourceID              int
 	tree                  *directorytree.Tree
 	departmentsByID       map[string]*ent.DirectoryDepartment
 	membersByExternalID   map[string]*ent.DirectoryMember
@@ -64,11 +65,9 @@ func (r *ApproverResolver) ResolveWorkflow(ctx context.Context, requester *ent.U
 			DisplayName:     strings.TrimSpace(requester.Username),
 			Email:           strings.TrimSpace(requester.Email),
 			DepartmentPaths: []string{},
-			NotificationIDs: map[string]string{},
 		},
-		Steps: []WorkflowStep{},
 	}
-	paths := []DepartmentPathEvidence{}
+	var paths []DepartmentPathEvidence
 
 	sourceID, ok, err := directorysync.CurrentSourceID(ctx, r.client)
 	if err != nil {
@@ -82,11 +81,7 @@ func (r *ApproverResolver) ResolveWorkflow(ctx context.Context, requester *ent.U
 		if requesterMember := facts.membersByUserID[requester.ID]; requesterMember != nil {
 			workflow.Requester.DisplayName = firstWorkflowValue(requesterMember.DisplayName, requester.Username)
 			workflow.Requester.NotificationIDs = notificationIDsForWorkflowMember(requesterMember)
-			exactIDs := make([]string, 0, len(facts.departmentIDsByMember[requesterMember.ID]))
-			for departmentID := range facts.departmentIDsByMember[requesterMember.ID] {
-				exactIDs = append(exactIDs, departmentID)
-			}
-			exactIDs = uniqueSortedStrings(exactIDs)
+			exactIDs := slices.Sorted(maps.Keys(facts.departmentIDsByMember[requesterMember.ID]))
 			for _, departmentID := range exactIDs {
 				if path := workflowDepartmentPath(facts.tree, facts.departmentsByID[departmentID]); path != "" {
 					workflow.Requester.DepartmentPaths = append(workflow.Requester.DepartmentPaths, path)
@@ -95,6 +90,7 @@ func (r *ApproverResolver) ResolveWorkflow(ctx context.Context, requester *ent.U
 			workflow.Requester.DepartmentPaths = uniqueSortedStrings(workflow.Requester.DepartmentPaths)
 
 			exactStep, exactHadConfig, exactPaths := facts.resolveExactStep(exactIDs, requester.ID)
+			exactStep.Label = strings.Join(workflow.Requester.DepartmentPaths, ", ")
 			paths = append(paths, exactPaths...)
 			if len(exactStep.Approvers) > 0 || exactHadConfig {
 				exactStep.AdminFallback = len(exactStep.Approvers) == 0
@@ -117,7 +113,6 @@ func (r *ApproverResolver) ResolveWorkflow(ctx context.Context, requester *ent.U
 	if len(workflow.Steps) == 0 {
 		workflow.Steps = append(workflow.Steps, adminFallbackWorkflowStep())
 	}
-	workflow.CurrentStep = 0
 	workflow.Steps[0].Status = WorkflowStepActive
 	if _, err := EncodeWorkflow(workflow); err != nil {
 		return nil, nil, err
@@ -150,7 +145,6 @@ func (r *ApproverResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 		return nil, fmt.Errorf("load workflow approver configs: %w", err)
 	}
 	facts := &workflowDirectoryFacts{
-		sourceID:              sourceID,
 		tree:                  directorytree.New(departments),
 		departmentsByID:       make(map[string]*ent.DirectoryDepartment, len(departments)),
 		membersByExternalID:   make(map[string]*ent.DirectoryMember, len(members)),
@@ -203,14 +197,9 @@ func (f *workflowDirectoryFacts) resolveExactStep(exactIDs []string, requesterID
 		Approvers:             []WorkflowApprover{},
 		Status:                WorkflowStepQueued,
 	}
-	labels := make([]string, 0, len(departmentIDs))
 	paths := make([]DepartmentPathEvidence, 0, len(departmentIDs))
 	hadConfig := false
 	for _, departmentID := range departmentIDs {
-		path := workflowDepartmentPath(f.tree, f.departmentsByID[departmentID])
-		if path != "" {
-			labels = append(labels, path)
-		}
 		approvers, configured := f.configuredApprovers(departmentID, requesterID)
 		resolution := "no_config_found"
 		if configured {
@@ -228,7 +217,6 @@ func (f *workflowDirectoryFacts) resolveExactStep(exactIDs []string, requesterID
 		})
 		mergeWorkflowApprovers(&step.Approvers, approvers)
 	}
-	step.Label = strings.Join(uniqueSortedStrings(labels), ", ")
 	return step, hadConfig, paths
 }
 
@@ -305,7 +293,8 @@ func (f *workflowDirectoryFacts) departmentPathEvidence(startDepartmentID string
 }
 
 func (f *workflowDirectoryFacts) configuredApprovers(departmentID string, requesterID int) ([]WorkflowApprover, bool) {
-	configuredUserIDs, configured := f.configUserIDsByDept[strings.TrimSpace(departmentID)]
+	departmentID = strings.TrimSpace(departmentID)
+	configuredUserIDs, configured := f.configUserIDsByDept[departmentID]
 	if !configured {
 		return []WorkflowApprover{}, false
 	}
@@ -319,7 +308,7 @@ func (f *workflowDirectoryFacts) configuredApprovers(departmentID string, reques
 		if member == nil || member.MatchedUserID == nil || *member.MatchedUserID != userID || !workflowCandidateUsable(user, member) {
 			continue
 		}
-		if _, belongs := f.departmentIDsByMember[member.ID][strings.TrimSpace(departmentID)]; !belongs {
+		if _, belongs := f.departmentIDsByMember[member.ID][departmentID]; !belongs {
 			continue
 		}
 		approvers = append(approvers, workflowApprover(user, member, "configured"))
@@ -334,7 +323,7 @@ func (f *workflowDirectoryFacts) representativeApprovers(departmentID string, re
 		if member == nil {
 			continue
 		}
-		user := f.userForMember(member)
+		user := f.usersByID[f.userIDByMemberID[member.ID]]
 		if user == nil || user.ID == requesterID || !workflowCandidateUsable(user, member) {
 			continue
 		}
@@ -342,13 +331,6 @@ func (f *workflowDirectoryFacts) representativeApprovers(departmentID string, re
 	}
 	sort.SliceStable(approvers, func(i, j int) bool { return approvers[i].UserID < approvers[j].UserID })
 	return approvers
-}
-
-func (f *workflowDirectoryFacts) userForMember(member *ent.DirectoryMember) *ent.User {
-	if f == nil || member == nil {
-		return nil
-	}
-	return f.usersByID[f.userIDByMemberID[member.ID]]
 }
 
 func workflowMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) *ent.User {
@@ -376,16 +358,14 @@ func workflowApprover(user *ent.User, member *ent.DirectoryMember, source string
 }
 
 func notificationIDsForWorkflowMember(member *ent.DirectoryMember) map[string]string {
-	result := map[string]string{}
 	if member == nil {
-		return result
+		return nil
 	}
-	if value, ok := member.Metadata["wecom_userid"].(string); ok {
-		if value = strings.TrimSpace(value); value != "" {
-			result["wecom"] = value
-		}
+	value, _ := member.Metadata["wecom_userid"].(string)
+	if value = strings.TrimSpace(value); value == "" {
+		return nil
 	}
-	return result
+	return map[string]string{"wecom": value}
 }
 
 func mergeWorkflowApprovers(target *[]WorkflowApprover, candidates []WorkflowApprover) {
@@ -417,13 +397,7 @@ func stringSet(values []string) map[string]struct{} {
 }
 
 func uniqueSortedStrings(values []string) []string {
-	set := stringSet(values)
-	result := make([]string, 0, len(set))
-	for value := range set {
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
+	return slices.Sorted(maps.Keys(stringSet(values)))
 }
 
 func adminFallbackWorkflowStep() WorkflowStep {

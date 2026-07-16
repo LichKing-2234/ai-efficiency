@@ -192,7 +192,7 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.text()).toContain('webhook returned errcode 40008: invalid message type')
   })
 
-  it('selects approver department and corresponding representative through dropdowns', async () => {
+  it('selects an approver department and member through searchable controls', async () => {
     const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
     await flushPromises()
 
@@ -210,9 +210,9 @@ describe('QuotaResetApprovalSettings', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="quota-reset-approver-ids"]').exists()).toBe(false)
-    await wrapper.find('[data-testid="quota-reset-approver-select"]').trigger('click')
+    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('lead-alpha@example.com')
-    await wrapper.find('[data-testid="quota-reset-approver-option-12"]').trigger('click')
+    await wrapper.find('[data-testid="quota-reset-approver-select"]').setValue('12')
     await wrapper.find('[data-testid="quota-reset-save-approvers"]').trigger('click')
     await flushPromises()
 
@@ -259,7 +259,7 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.text()).not.toContain('Old Directory')
   })
 
-  it('filters approvers inside the opened dropdown', async () => {
+  it('filters the member select options', async () => {
     const api = await import('@/api/quotaReset') as any
     api.listQuotaResetApproverCandidates.mockResolvedValueOnce({
       data: {
@@ -277,7 +277,6 @@ describe('QuotaResetApprovalSettings', () => {
     await flushPromises()
     await wrapper.get('[data-testid="quota-reset-department-option-dept-alpha"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
 
     expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(true)
     await wrapper.get('[data-testid="quota-reset-approver-filter"]').setValue('beta')

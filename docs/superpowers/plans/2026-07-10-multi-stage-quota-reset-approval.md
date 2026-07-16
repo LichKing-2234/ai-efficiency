@@ -9,6 +9,11 @@
 verification, which remains blocked and unchecked because the required browser
 runtime reports no available browser.
 
+**Review Remediation Status (2026-07-16):** All Task 4 code, architecture, and
+formatting findings are fixed and fully reverified. Browser verification remains
+the only unchecked item because both the controller and worker observed no
+browser runtime.
+
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
 identifies the quota to reset.
@@ -342,6 +347,14 @@ current. Do not rewrite the historical 2026-07-07 spec.
 
   Verification evidence (2026-07-16):
 
+  - Review-fix rerun: backend tests/vet and ae-cli tests exited 0; frontend
+    reported 39 files / 435 tests, a successful 192-module production build,
+    and role E2E 16/16. Output:
+    `.superpowers/sdd/task-4-logs/review-fixes-full-verification.log`.
+  - Review-fix focused checks passed quota-reset/work-items tests and vet, 3
+    frontend quota-reset files / 22 tests, and the production build. Output:
+    `.superpowers/sdd/task-4-logs/review-fixes-focused.log`.
+
   - The final combined rerun used the three commands above against the final
     production diff. Backend tests/vet and ae-cli tests exited 0; frontend
     reported 39 test files / 435 tests, a successful production build, and role
@@ -381,14 +394,15 @@ current. Do not rewrite the historical 2026-07-07 spec.
 
   - `git diff --check origin/main` exited 0.
   - Hand-written production, including `backend/ent/schema`, is
-    `+1497/-338`; the schema-only subtotal is `+16/-0`.
+    `+1500/-434`; the schema-only subtotal is `+16/-0`.
   - Generated Ent outside `backend/ent/schema` is `+862/-33` and is reported
     separately from the hand-written total.
   - The production chain scan found no matches when excluding only
     `backend/internal/quotareset/schema_test.go`; that guard still contains the
     intentional `quota_reset_approval_chains` literal.
   - `git status --short` listed only intentional Task 4 simplification/docs
-    files. Output: `.superpowers/sdd/task-4-logs/final-scope-audit.log`.
+    files. Review-fix output:
+    `.superpowers/sdd/task-4-logs/review-fixes-scope-audit.log`.
 
 - [ ] **Step 4: Browser-test one complete workflow**
 
@@ -413,6 +427,10 @@ current. Do not rewrite the historical 2026-07-07 spec.
   the required bootstrap troubleshooting then returned an empty browser list
   (`[]`). No standalone Playwright or alternate browser was substituted, and
   there are no desktop/mobile screenshot paths.
+
+  The review-fix controller and worker both observed the same missing browser
+  runtime, so this evidence was not reclassified and the API diagnostic remains
+  explicitly non-browser verification.
 
   Environment and diagnostic evidence:
 

@@ -67,11 +67,14 @@ type WorkflowDecision struct {
 	DecidedAt        time.Time `json:"decided_at"`
 }
 
-type WorkflowTransition struct {
-	ActivatedStep    *int
-	SatisfiedSteps   []int
-	TerminalApproved bool
-	TerminalRejected bool
+type WorkflowDecisionInput struct {
+	RequesterUserID  int
+	ActorUserID      int
+	ActorDisplayName string
+	Comment          string
+	Approve          bool
+	Admin            bool
+	DecidedAt        time.Time
 }
 
 func EncodeWorkflow(workflow *Workflow) (map[string]any, error) {
@@ -110,63 +113,61 @@ func (w *Workflow) ActiveApproverUserIDs() []int {
 	return workflowApproverUserIDs(step.Approvers)
 }
 
-func (w *Workflow) Decide(requesterUserID int, input DecisionInput, actorDisplayName string, approve bool, decidedAt time.Time) (WorkflowTransition, error) {
+func (w *Workflow) Decide(input WorkflowDecisionInput) ([]int, error) {
 	if err := w.validate(); err != nil {
-		return WorkflowTransition{}, err
+		return nil, err
 	}
 	if w.CurrentStep >= len(w.Steps) {
-		return WorkflowTransition{}, ErrInvalidStatus
+		return nil, ErrInvalidStatus
 	}
-	comment := strings.TrimSpace(input.DecisionReason)
+	comment := strings.TrimSpace(input.Comment)
 	if comment == "" {
-		return WorkflowTransition{}, ErrDecisionRequired
+		return nil, ErrDecisionRequired
 	}
 	if input.ActorUserID <= 0 {
-		return WorkflowTransition{}, ErrNotApprover
+		return nil, ErrNotApprover
 	}
-	if !input.Admin && input.ActorUserID == requesterUserID {
-		return WorkflowTransition{}, ErrSelfApprovalForbidden
+	if !input.Admin && input.ActorUserID == input.RequesterUserID {
+		return nil, ErrSelfApprovalForbidden
 	}
 	stepIndex := w.CurrentStep
 	step := &w.Steps[stepIndex]
 	if !input.Admin && !workflowStepContainsApprover(*step, input.ActorUserID) {
-		return WorkflowTransition{}, ErrNotApprover
+		return nil, ErrNotApprover
 	}
-	if decidedAt.IsZero() {
-		decidedAt = time.Now().UTC()
+	if input.DecidedAt.IsZero() {
+		input.DecidedAt = time.Now().UTC()
 	}
 	step.Decision = &WorkflowDecision{
 		ActorUserID:      input.ActorUserID,
-		ActorDisplayName: strings.TrimSpace(actorDisplayName),
+		ActorDisplayName: strings.TrimSpace(input.ActorDisplayName),
 		Comment:          comment,
-		Approve:          approve,
+		Approve:          input.Approve,
 		Admin:            input.Admin,
-		DecidedAt:        decidedAt,
+		DecidedAt:        input.DecidedAt,
 	}
-	if !approve {
+	if !input.Approve {
 		step.Status = WorkflowStepRejected
 		w.CurrentStep = len(w.Steps)
-		return WorkflowTransition{TerminalRejected: true}, nil
+		return nil, nil
 	}
 
 	step.Status = WorkflowStepApproved
-	transition := WorkflowTransition{}
+	var satisfiedSteps []int
 	for next := stepIndex + 1; next < len(w.Steps); next++ {
 		source := w.priorApprovingStepFor(next)
 		if source >= 0 {
 			w.Steps[next].Status = WorkflowStepSatisfied
-			w.Steps[next].SatisfiedByStep = intPointer(source)
-			transition.SatisfiedSteps = append(transition.SatisfiedSteps, next)
+			w.Steps[next].SatisfiedByStep = &source
+			satisfiedSteps = append(satisfiedSteps, next)
 			continue
 		}
 		w.Steps[next].Status = WorkflowStepActive
 		w.CurrentStep = next
-		transition.ActivatedStep = intPointer(next)
-		return transition, nil
+		return satisfiedSteps, nil
 	}
 	w.CurrentStep = len(w.Steps)
-	transition.TerminalApproved = true
-	return transition, nil
+	return satisfiedSteps, nil
 }
 
 func (w *Workflow) priorApprovingStepFor(stepIndex int) int {
@@ -183,12 +184,9 @@ func (w *Workflow) priorApprovingStepFor(stepIndex int) int {
 }
 
 func workflowStepContainsApprover(step WorkflowStep, userID int) bool {
-	for _, approver := range step.Approvers {
-		if approver.UserID == userID {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(step.Approvers, func(approver WorkflowApprover) bool {
+		return approver.UserID == userID
+	})
 }
 
 func (w *Workflow) validate() error {
@@ -251,10 +249,6 @@ func (w *Workflow) validate() error {
 		return fmt.Errorf("%w: terminal workflow has active step", ErrInvalidWorkflow)
 	}
 	return nil
-}
-
-func intPointer(value int) *int {
-	return &value
 }
 
 func workflowApproverUserIDs(approvers []WorkflowApprover) []int {

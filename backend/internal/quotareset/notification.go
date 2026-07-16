@@ -229,8 +229,7 @@ func (n *WebhookNotifier) weComRobotMarkdown(event string, req *ent.QuotaResetRe
 
 func notificationContextForRequest(req *ent.QuotaResetRequest) (quotaResetNotificationContext, error) {
 	ctx := quotaResetNotificationContext{
-		Requester: WorkflowPerson{UserID: req.RequesterUserID, DepartmentPaths: []string{}, NotificationIDs: map[string]string{}},
-		StepIndex: 0,
+		Requester: WorkflowPerson{UserID: req.RequesterUserID, DepartmentPaths: []string{}},
 		StepCount: 1,
 	}
 	if req.WorkflowVersion != workflowVersionV2 {

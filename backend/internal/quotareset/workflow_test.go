@@ -11,18 +11,19 @@ func TestWorkflowApproveAdvancesAndReusesPriorActor(t *testing.T) {
 	workflow := workflowFixture()
 	when := time.Date(2026, 7, 15, 9, 30, 0, 0, time.UTC)
 
-	transition, err := workflow.Decide(1, DecisionInput{ActorUserID: 2, DecisionReason: "额度异常，确认重置"}, "bob", true, when)
+	satisfiedSteps, err := workflow.Decide(WorkflowDecisionInput{
+		RequesterUserID:  1,
+		ActorUserID:      2,
+		ActorDisplayName: "bob",
+		Comment:          "额度异常，确认重置",
+		Approve:          true,
+		DecidedAt:        when,
+	})
 	if err != nil {
 		t.Fatalf("Decide() error = %v", err)
 	}
-	if transition.TerminalApproved || transition.TerminalRejected {
-		t.Fatalf("transition = %+v, want intermediate approval", transition)
-	}
-	if transition.ActivatedStep == nil || *transition.ActivatedStep != 2 {
-		t.Fatalf("activated step = %v, want 2", transition.ActivatedStep)
-	}
-	if len(transition.SatisfiedSteps) != 1 || transition.SatisfiedSteps[0] != 1 {
-		t.Fatalf("satisfied steps = %v, want [1]", transition.SatisfiedSteps)
+	if len(satisfiedSteps) != 1 || satisfiedSteps[0] != 1 {
+		t.Fatalf("satisfied steps = %v, want [1]", satisfiedSteps)
 	}
 	if got := workflow.Steps[0].Decision; got == nil || got.ActorUserID != 2 || got.Comment != "额度异常，确认重置" || !got.DecidedAt.Equal(when) {
 		t.Fatalf("first decision = %+v", got)
@@ -37,25 +38,35 @@ func TestWorkflowApproveAdvancesAndReusesPriorActor(t *testing.T) {
 		t.Fatalf("ActiveApproverUserIDs() = %v, want [3]", got)
 	}
 
-	transition, err = workflow.Decide(1, DecisionInput{ActorUserID: 3, DecisionReason: "同意最终重置"}, "carol", true, when.Add(time.Minute))
+	_, err = workflow.Decide(WorkflowDecisionInput{
+		RequesterUserID:  1,
+		ActorUserID:      3,
+		ActorDisplayName: "carol",
+		Comment:          "同意最终重置",
+		Approve:          true,
+		DecidedAt:        when.Add(time.Minute),
+	})
 	if err != nil {
 		t.Fatalf("final Decide() error = %v", err)
 	}
-	if !transition.TerminalApproved || transition.ActivatedStep != nil {
-		t.Fatalf("final transition = %+v, want terminal approval", transition)
+	if workflow.CurrentStep != len(workflow.Steps) || workflow.Steps[2].Status != WorkflowStepApproved {
+		t.Fatalf("final workflow = current %d step %+v, want terminal approval", workflow.CurrentStep, workflow.Steps[2])
 	}
 }
 
 func TestWorkflowRejectIsTerminal(t *testing.T) {
 	workflow := workflowFixture()
-	transition, err := workflow.Decide(1, DecisionInput{ActorUserID: 2, DecisionReason: "信息不足"}, "bob", false, time.Now().UTC())
+	_, err := workflow.Decide(WorkflowDecisionInput{
+		RequesterUserID:  1,
+		ActorUserID:      2,
+		ActorDisplayName: "bob",
+		Comment:          "信息不足",
+		DecidedAt:        time.Now().UTC(),
+	})
 	if err != nil {
 		t.Fatalf("Decide() error = %v", err)
 	}
-	if !transition.TerminalRejected || transition.TerminalApproved {
-		t.Fatalf("transition = %+v, want terminal rejection", transition)
-	}
-	if workflow.Steps[0].Status != WorkflowStepRejected {
+	if workflow.CurrentStep != len(workflow.Steps) || workflow.Steps[0].Status != WorkflowStepRejected {
 		t.Fatalf("step status = %q, want rejected", workflow.Steps[0].Status)
 	}
 }
@@ -73,7 +84,7 @@ func TestWorkflowTerminalStateCannotBeDecidedAgain(t *testing.T) {
 		}
 	}
 
-	if _, err := workflow.Decide(1, DecisionInput{ActorUserID: 2, DecisionReason: "again"}, "", true, time.Time{}); !errors.Is(err, ErrInvalidStatus) {
+	if _, err := workflow.Decide(WorkflowDecisionInput{RequesterUserID: 1, ActorUserID: 2, Comment: "again", Approve: true}); !errors.Is(err, ErrInvalidStatus) {
 		t.Fatalf("Decide() error = %v, want ErrInvalidStatus", err)
 	}
 }
@@ -81,33 +92,29 @@ func TestWorkflowTerminalStateCannotBeDecidedAgain(t *testing.T) {
 func TestWorkflowDecisionAuthorizationFailsClosed(t *testing.T) {
 	tests := []struct {
 		name      string
-		requester int
-		input     DecisionInput
+		input     WorkflowDecisionInput
 		wantError error
 	}{
 		{
 			name:      "comment required",
-			requester: 1,
-			input:     DecisionInput{ActorUserID: 2},
+			input:     WorkflowDecisionInput{RequesterUserID: 1, ActorUserID: 2, Approve: true},
 			wantError: ErrDecisionRequired,
 		},
 		{
 			name:      "requester cannot decide",
-			requester: 2,
-			input:     DecisionInput{ActorUserID: 2, DecisionReason: "self"},
+			input:     WorkflowDecisionInput{RequesterUserID: 2, ActorUserID: 2, Comment: "self", Approve: true},
 			wantError: ErrSelfApprovalForbidden,
 		},
 		{
 			name:      "non candidate cannot decide",
-			requester: 1,
-			input:     DecisionInput{ActorUserID: 99, DecisionReason: "approve"},
+			input:     WorkflowDecisionInput{RequesterUserID: 1, ActorUserID: 99, Comment: "approve", Approve: true},
 			wantError: ErrNotApprover,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			workflow := workflowFixture()
-			_, err := workflow.Decide(tt.requester, tt.input, "", true, time.Time{})
+			_, err := workflow.Decide(tt.input)
 			if !errors.Is(err, tt.wantError) {
 				t.Fatalf("Decide() error = %v, want %v", err, tt.wantError)
 			}
@@ -117,12 +124,20 @@ func TestWorkflowDecisionAuthorizationFailsClosed(t *testing.T) {
 
 func TestWorkflowAdminCanDecideOnlyActiveStep(t *testing.T) {
 	workflow := workflowFixture()
-	transition, err := workflow.Decide(1, DecisionInput{ActorUserID: 50, DecisionReason: "admin fallback", Admin: true}, "admin", true, time.Now().UTC())
+	_, err := workflow.Decide(WorkflowDecisionInput{
+		RequesterUserID:  1,
+		ActorUserID:      50,
+		ActorDisplayName: "admin",
+		Comment:          "admin fallback",
+		Approve:          true,
+		Admin:            true,
+		DecidedAt:        time.Now().UTC(),
+	})
 	if err != nil {
 		t.Fatalf("Decide() error = %v", err)
 	}
-	if transition.ActivatedStep == nil || *transition.ActivatedStep != 1 {
-		t.Fatalf("transition = %+v, want next step 1", transition)
+	if workflow.CurrentStep != 1 || workflow.Steps[1].Status != WorkflowStepActive {
+		t.Fatalf("workflow = current %d step %+v, want active step 1", workflow.CurrentStep, workflow.Steps[1])
 	}
 	if workflow.Steps[0].Decision == nil || !workflow.Steps[0].Decision.Admin {
 		t.Fatalf("decision = %+v, want admin decision", workflow.Steps[0].Decision)

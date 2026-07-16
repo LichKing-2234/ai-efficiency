@@ -57,13 +57,16 @@ function canCancel(item: QuotaResetRequestSummary) {
 
 function canDecide(item: QuotaResetRequestSummary) {
   if (item.status !== 'pending') return false
-  return props.mode === 'admin' || (props.mode === 'approvals' && !!props.actorUserId && item.resolved_approver_user_ids.includes(props.actorUserId))
+  return props.mode === 'admin'
+    || (props.mode === 'approvals' && !!props.actorUserId && item.resolved_approver_user_ids.includes(props.actorUserId))
 }
 
 function canRetry(item: QuotaResetRequestSummary) {
   if (item.status !== 'approved_reset_failed') return false
-  return props.mode === 'admin' || (props.mode === 'approvals' && !!props.actorUserId && item.approved_by_user_id === props.actorUserId)
+  return props.mode === 'admin'
+    || (props.mode === 'approvals' && !!props.actorUserId && item.approved_by_user_id === props.actorUserId)
 }
+
 function workflowProgress(item: QuotaResetRequestSummary) {
   const steps = item.workflow_steps ?? []
   if (item.workflow_version !== 2 || steps.length === 0) return ''
@@ -97,7 +100,7 @@ function workflowProgress(item: QuotaResetRequestSummary) {
             <span v-if="item.requester_email"> · {{ item.requester_display_name || item.requester_email }}</span>
           </p>
           <p class="mt-2 line-clamp-2 break-words text-sm text-slate-700">{{ item.reason }}</p>
-		  <p v-if="workflowProgress(item)" class="mt-2 break-words text-xs font-medium text-cyan-800">{{ workflowProgress(item) }}</p>
+          <p v-if="workflowProgress(item)" class="mt-2 break-words text-xs font-medium text-cyan-800">{{ workflowProgress(item) }}</p>
           <p v-if="item.reset_error" class="mt-2 break-words text-xs font-medium text-red-600">{{ item.reset_error }}</p>
         </div>
         <div class="flex flex-wrap items-start gap-2 md:justify-end">

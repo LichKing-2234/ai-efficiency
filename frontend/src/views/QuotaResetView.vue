@@ -161,16 +161,24 @@ function handleDecision(item: QuotaResetRequestSummary, action: 'approve' | 'rej
   decisionAction.value = action
 }
 
+function submitDecision(item: QuotaResetRequestSummary, comment: string) {
+  const payload = { decision_reason: comment }
+  if (decisionAction.value === 'approve') {
+    return activeQueue.value === 'admin' ? adminApproveQuotaResetRequest(item.id, payload) : approveQuotaResetRequest(item.id, payload)
+  }
+  return activeQueue.value === 'admin' ? adminRejectQuotaResetRequest(item.id, payload) : rejectQuotaResetRequest(item.id, payload)
+}
+
 async function confirmDecision(comment: string) {
   const item = decisionRequest.value
   if (!item) return
-  const admin = activeQueue.value === 'admin'
-  const action = decisionAction.value === 'approve' ? () => admin ? adminApproveQuotaResetRequest(item.id, { decision_reason: comment }) : approveQuotaResetRequest(item.id, { decision_reason: comment }) : () => admin ? adminRejectQuotaResetRequest(item.id, { decision_reason: comment }) : rejectQuotaResetRequest(item.id, { decision_reason: comment })
-  if (await withAction(action)) {
+  if (await withAction(() => submitDecision(item, comment))) {
     decisionRequest.value = null
-    selectedRequest.value = [...myRequests.value, ...approvalRequests.value, ...adminRequests.value].find((request) => request.id === item.id) ?? null
+    selectedRequest.value = [...myRequests.value, ...approvalRequests.value, ...adminRequests.value]
+      .find((request) => request.id === item.id) ?? null
   }
 }
+
 function handleSelect(item: QuotaResetRequestSummary) {
   selectedRequest.value = selectedRequest.value?.id === item.id ? null : item
 }
@@ -278,10 +286,19 @@ onMounted(loadQueues)
         @select="handleSelect"
       />
       <section v-if="selectedRequest?.workflow_version === 2 && selectedRequest.workflow_steps?.length" class="space-y-3" aria-label="Quota reset workflow details">
-        <div><h2 class="text-base font-semibold text-slate-950">{{ t('quotaReset.workflow') }}</h2><p class="mt-1 text-sm text-slate-600">{{ selectedRequest.group_name || selectedRequest.group_id }}</p></div>
-        <QuotaResetWorkflowTimeline :steps="selectedRequest.workflow_steps" :current-step="selectedRequest.current_step" />
+        <div>
+          <h2 class="text-base font-semibold text-slate-950">{{ t('quotaReset.workflow') }}</h2>
+          <p class="mt-1 text-sm text-slate-600">{{ selectedRequest.group_name || selectedRequest.group_id }}</p>
+        </div>
+        <QuotaResetWorkflowTimeline :steps="selectedRequest.workflow_steps" />
       </section>
     </div>
-    <QuotaResetDecisionDialog :open="Boolean(decisionRequest)" :action="decisionAction" :busy="actionBusy" @confirm="confirmDecision" @cancel="decisionRequest = null" />
+    <QuotaResetDecisionDialog
+      :open="Boolean(decisionRequest)"
+      :action="decisionAction"
+      :busy="actionBusy"
+      @confirm="confirmDecision"
+      @cancel="decisionRequest = null"
+    />
   </AppLayout>
 </template>

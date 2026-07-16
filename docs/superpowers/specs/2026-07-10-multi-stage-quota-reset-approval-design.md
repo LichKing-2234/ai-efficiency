@@ -98,9 +98,10 @@ notification.
 
 ### Admin fallback
 
-- Admins may decide only the active step and cannot jump ahead.
-- A step marked as admin fallback remains actionable even with no normal
-  candidates.
+- Admins may decide the active step whether or not it has normal candidates,
+  but cannot jump ahead.
+- Admin fallback does not grant admin authority; it keeps a step actionable
+  when no normal candidate exists.
 - If resolution produces no first or parent step, create one admin-fallback step
   so the request cannot become permanently unapprovable.
 
