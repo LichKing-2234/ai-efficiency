@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/gin-gonic/gin"
@@ -218,6 +219,61 @@ func TestRequestTelemetryNormalizesUnknownMethod(t *testing.T) {
 	}
 	fields := observed.All()[0].ContextMap()
 	assertRequestField(t, fields, "method", "OTHER")
+}
+
+func TestRequestTelemetryReportsOnlyNormalizedMetricsFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	metrics := &recordingRequestObserver{}
+	router := gin.New()
+	router.Use(RequestTelemetry(zap.NewNop(), "test-release", metrics))
+	router.GET("/users/:id", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/users/44?email=alice@example.com", strings.NewReader("private-content"))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if len(metrics.started) != 1 || metrics.started[0] != "GET" {
+		t.Fatalf("started methods = %#v, want [GET]", metrics.started)
+	}
+	if len(metrics.finished) != 1 {
+		t.Fatalf("finished observations = %#v, want one", metrics.finished)
+	}
+	got := metrics.finished[0]
+	if got.route != "/users/:id" || got.method != "GET" || got.statusClass != "2xx" || got.responseBytes != 2 {
+		t.Fatalf("finished observation = %#v, want normalized route/method/status/bytes", got)
+	}
+	if got.duration < 0 {
+		t.Fatalf("duration = %s, want non-negative", got.duration)
+	}
+}
+
+type recordingRequestObserver struct {
+	started  []string
+	finished []requestMetricObservation
+}
+
+type requestMetricObservation struct {
+	route         string
+	method        string
+	statusClass   string
+	duration      time.Duration
+	responseBytes int
+}
+
+func (o *recordingRequestObserver) Start(method string) {
+	o.started = append(o.started, method)
+}
+
+func (o *recordingRequestObserver) Finish(route, method, statusClass string, duration time.Duration, responseBytes int) {
+	o.finished = append(o.finished, requestMetricObservation{
+		route:         route,
+		method:        method,
+		statusClass:   statusClass,
+		duration:      duration,
+		responseBytes: responseBytes,
+	})
 }
 
 func assertRequestField(t *testing.T, fields map[string]interface{}, key, want string) {

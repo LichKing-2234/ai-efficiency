@@ -62,7 +62,7 @@
 - Extends `middleware.RequestTelemetry(logger, release, observers ...telemetry.RequestObserver)` and `telemetry.WrapDependency(logger, release, dependency, operation, observers ...DependencyObserver)` without breaking existing callers.
 - Adds `config.MetricsConfig{ListenAddress string}` with default `127.0.0.1:9090` and `AE_METRICS_LISTEN_ADDRESS` binding.
 
-- [ ] **Step 1: Add RED registry, request, dependency, pool, listener, and config tests**
+- [x] **Step 1: Add RED registry, request, dependency, pool, listener, and config tests**
 
   Define an isolated registry and assert exact metric families and label sets:
 
@@ -79,7 +79,9 @@
 
   Cover request in-flight cleanup, response duration/bytes, body-completion dependency timing, canonical unknown methods, database open/in-use/idle/wait/closure stats, Redis connection/wait/duration/timeout stats, repeated scrapes without duplicate registration, internal metrics mux exposing only `/metrics`, config default/env/YAML persistence, and compose files not publishing port 9090.
 
-- [ ] **Step 2: Run focused tests and record RED**
+  Test evidence (2026-07-16): registry tests fix exact request/dependency count, duration, byte, in-flight, release, route, method, and status labels; middleware/transport tests require normalized completion-only observer calls; pool fakes cover every required `sql.DBStats` and go-redis `PoolStats` field; server/config tests require a dedicated `/metrics`-only mux, loopback default, environment override, and startup validation.
+
+- [x] **Step 2: Run focused tests and record RED**
 
   ```bash
   cd backend
@@ -88,7 +90,9 @@
 
   Expected: compile failures for the absent registry, observers, pool collectors, metrics listener, and config surface.
 
-- [ ] **Step 3: Implement the explicit Prometheus registry and observers**
+  RED evidence (2026-07-16): focused tests failed only because `NewMetrics`, observer variadics, `RegisterDBPool`, `RegisterRedisPool`, `MetricsConfig`, and `newMetricsServer` did not exist.
+
+- [x] **Step 3: Implement the explicit Prometheus registry and observers**
 
   Use `prometheus.NewRegistry`, `promhttp.HandlerFor`, histograms suitable for p75/p95 queries, and fixed label vectors:
 
@@ -108,11 +112,15 @@
 
   Export `ai_efficiency_http_requests_total`, request duration/response byte histograms, in-flight requests, dependency request count/duration, database connection/wait/closure metrics, and Redis pool connection/wait/duration/timeout metrics. Bind `release` once at registry construction and never accept arbitrary labels from requests.
 
-- [ ] **Step 4: Wire the internal metrics server and operator config**
+  Implementation evidence (2026-07-16): `telemetry.Metrics` now owns an isolated registry, request/dependency counters and histograms, in-flight gauges, scrape handler, and pull-based database/Redis pool collectors. Existing request logs and Relay body-completion semantics remain unchanged while optional observers receive only normalized fields.
+
+- [x] **Step 4: Wire the internal metrics server and operator config**
 
   Start a separately shutdown-aware HTTP server over `Metrics.ListenAddress`. Its mux serves only `/metrics`; it does not reuse Gin, auth middleware, SPA fallback, or the public port. Keep the config default loopback-only, set Docker compose to `:9090` without a `ports` mapping, and document the internal-network requirement in comments.
 
-- [ ] **Step 5: Verify Task 1 GREEN and checkpoint**
+  Wiring evidence (2026-07-16): startup injects the registry into request/dependency telemetry, registers the live SQL/Redis pools, and owns a separately shutdown-aware metrics server. Writable YAML and environment configuration use loopback by default; all five Docker compose variants set an internal `:9090` listener without publishing it.
+
+- [x] **Step 5: Verify Task 1 GREEN and checkpoint**
 
   ```bash
   cd backend
@@ -124,6 +132,8 @@
   ```
 
   Commit: `feat(observability): expose runtime and pool metrics`
+
+  GREEN evidence (2026-07-16): focused GREEN runs, double telemetry/middleware/config/handler/server tests, race-enabled telemetry/middleware, all five `docker compose config` validations, and `git diff --check` passed.
 
 ### Task 2: Record Real Work-Item Cache Outcomes
 
