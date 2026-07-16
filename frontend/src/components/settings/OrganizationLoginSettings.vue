@@ -1,31 +1,76 @@
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import client from '@/api/client'
 import { useI18n } from '@/i18n'
 import DirectorySyncSettings from '@/components/settings/DirectorySyncSettings.vue'
 import QuotaResetApprovalSettings from '@/components/settings/QuotaResetApprovalSettings.vue'
-import type { Credential } from '@/types'
+import { useSettingsResourcesStore } from '@/stores/settingsResources'
 
 const { t } = useI18n()
+const settingsResources = useSettingsResourcesStore()
+const { credentials } = storeToRefs(settingsResources)
+const ldapForm = ref({ url: '', base_dn: '', bind_dn: '', bind_password: '', user_filter: '', tls: false })
+const ldapSaving = ref(false)
+const ldapTesting = ref(false)
+const ldapError = ref('')
+const ldapSuccess = ref('')
 
-defineProps<{
-  ldapForm: {
-    url: string
-    base_dn: string
-    bind_dn: string
-    bind_password: string
-    user_filter: string
-    tls: boolean
+onMounted(() => {
+  void settingsResources.loadCredentials()
+  void fetchLDAPConfig()
+})
+
+async function fetchLDAPConfig() {
+  try {
+    const { data } = await client.get('/admin/settings/ldap')
+    const settings = data.data
+    ldapForm.value = {
+      url: settings.url || '',
+      base_dn: settings.base_dn || '',
+      bind_dn: settings.bind_dn || '',
+      bind_password: '',
+      user_filter: settings.user_filter || '',
+      tls: settings.tls || false,
+    }
+  } catch {
+    // An empty form represents an unconfigured directory.
   }
-  ldapSaving: boolean
-  ldapTesting: boolean
-  ldapError: string
-  ldapSuccess: string
-  credentials: Credential[]
-}>()
+}
 
-defineEmits<{
-  (e: 'test'): void
-  (e: 'save'): void
-}>()
+async function handleSaveLDAP() {
+  ldapError.value = ''
+  ldapSuccess.value = ''
+  if (!ldapForm.value.url) {
+    ldapError.value = t('settings.ldapUrlRequired')
+    return
+  }
+  ldapSaving.value = true
+  try {
+    await client.put('/admin/settings/ldap', ldapForm.value)
+    ldapSuccess.value = t('settings.ldapSaved')
+    setTimeout(() => { ldapSuccess.value = '' }, 3000)
+  } catch (error: any) {
+    ldapError.value = error.response?.data?.message || t('settings.ldapSaveFailed')
+  } finally {
+    ldapSaving.value = false
+  }
+}
+
+async function handleTestLDAP() {
+  ldapError.value = ''
+  ldapSuccess.value = ''
+  ldapTesting.value = true
+  try {
+    await client.post('/admin/settings/ldap/test', ldapForm.value)
+    ldapSuccess.value = t('settings.ldapTestSuccessful')
+    setTimeout(() => { ldapSuccess.value = '' }, 3000)
+  } catch (error: any) {
+    ldapError.value = error.response?.data?.message || t('settings.ldapTestFailed')
+  } finally {
+    ldapTesting.value = false
+  }
+}
 </script>
 
 <template>
@@ -68,16 +113,16 @@ defineEmits<{
         <div v-if="ldapSuccess" class="rounded-md bg-green-50 p-3 text-sm text-green-700">{{ ldapSuccess }}</div>
 
         <div class="flex justify-end space-x-3">
-          <button @click="$emit('test')" :disabled="ldapTesting" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+          <button @click="handleTestLDAP" :disabled="ldapTesting" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
             {{ ldapTesting ? t('settings.testing') : t('settings.testConnection') }}
           </button>
-          <button @click="$emit('save')" :disabled="ldapSaving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+          <button @click="handleSaveLDAP" :disabled="ldapSaving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
             {{ ldapSaving ? t('settings.saving') : t('settings.save') }}
           </button>
         </div>
       </div>
     </div>
     <QuotaResetApprovalSettings :credentials="credentials" />
-    <DirectorySyncSettings :credentials="credentials" />
+    <DirectorySyncSettings />
   </div>
 </template>

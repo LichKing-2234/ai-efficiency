@@ -124,9 +124,6 @@ async function mountDirectorySyncSettings(configureMocks?: (api: any) => void) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const wrapper = mount(DirectorySyncSettings, {
-    props: {
-      credentials: [{ id: 3, name: 'directory_api_key', kind: 'secret_text', description: '', usage_count: 0, summary: {}, created_at: '', updated_at: '' }],
-    },
     global: { plugins: [pinia] },
   })
   await flushPromises()

@@ -42,6 +42,27 @@ type fakeRelayProvider struct {
 	listAllowedGroupsForUserFn func(ctx context.Context, userID int64) ([]relay.Group, error)
 }
 
+type versionedGroupResolver struct {
+	provider             relay.Provider
+	groups               []relay.Group
+	providerID           int
+	configurationVersion int64
+	userID               int64
+	calls                int
+}
+
+func (r *versionedGroupResolver) Resolve(_ context.Context, _ int) (relay.Provider, error) {
+	return r.provider, nil
+}
+
+func (r *versionedGroupResolver) ListAllowedGroupsForUser(_ context.Context, providerID int, configurationVersion, userID int64) ([]relay.Group, error) {
+	r.calls++
+	r.providerID = providerID
+	r.configurationVersion = configurationVersion
+	r.userID = userID
+	return append([]relay.Group(nil), r.groups...), nil
+}
+
 func (f *fakeRelayProvider) Ping(ctx context.Context) error { return nil }
 func (f *fakeRelayProvider) Name() string                   { return "fake-relay" }
 func (f *fakeRelayProvider) Authenticate(ctx context.Context, username, password string) (*relay.User, error) {
@@ -249,6 +270,48 @@ func TestListProvidersReturnsOnlyAllowedGroups(t *testing.T) {
 	}
 	if got.Groups[1].Credential.Key != "sk-existing-openai-123456" {
 		t.Fatalf("group credential key = %q, want full API key", got.Groups[1].Credential.Key)
+	}
+}
+
+func TestAllowedGroupsUseVersionedSharedResolver(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	provider := client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL("https://relay.example.com").
+		SetAdminAPIKey("test-admin-key").
+		SetEnabled(true).
+		SetIsPrimary(true).
+		SaveX(ctx)
+	localUser := client.User.Create().
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetAuthSource(user.AuthSourceRelaySSO).
+		SetRole(user.RoleUser).
+		SetRelayUserID(42).
+		SaveX(ctx)
+	fakeRelay := &fakeRelayProvider{
+		keysByUser: map[int64][]relay.APIKey{42: {}},
+		listAllowedGroupsForUserFn: func(context.Context, int64) ([]relay.Group, error) {
+			return nil, errors.New("uncached group resolver was called")
+		},
+	}
+	resolver := &versionedGroupResolver{
+		provider: fakeRelay,
+		groups:   []relay.Group{{ID: 5, Name: "Group Alpha", Platform: "openai"}},
+	}
+	svc := usersetup.NewService(client, resolver, "d98460dc58409c713d1586802217c23932d58c95479641e4b0fec1c740386696")
+
+	response, err := svc.ListProviders(ctx, usersetup.ListProvidersRequest{UserID: localUser.ID})
+	if err != nil {
+		t.Fatalf("ListProviders() unexpected error: %v", err)
+	}
+	if resolver.calls != 1 || resolver.providerID != provider.ID || resolver.configurationVersion != provider.ConfigurationVersion || resolver.userID != 42 {
+		t.Fatalf("versioned group resolver calls=%d provider=%d version=%d user=%d", resolver.calls, resolver.providerID, resolver.configurationVersion, resolver.userID)
+	}
+	if len(response.Providers) != 1 || len(response.Providers[0].Groups) != 1 || response.Providers[0].Groups[0].GroupID != "5" {
+		t.Fatalf("provider groups = %#v", response.Providers)
 	}
 }
 
