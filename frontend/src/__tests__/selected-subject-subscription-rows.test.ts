@@ -158,6 +158,9 @@ describe('SelectedSubjectSubscriptionRows', () => {
     const warning = wrapper.get('[data-testid="multiplier-metadata-warning-44"]')
     expect(warning.text()).toBe('Multiplier unavailable')
     expect(warning.attributes('role')).toBe('status')
+    const multiplierCell = warning.element.closest('td')
+    expect(multiplierCell).not.toBeNull()
+    expect(multiplierCell?.textContent?.trim()).toBe('Multiplier unavailable')
     expect(wrapper.text()).not.toContain('3.5x')
     expect(wrapper.text()).not.toContain('nullx')
     expect(wrapper.text()).not.toContain('upstream-internal-multiplier-error')
@@ -191,7 +194,11 @@ describe('SelectedSubjectSubscriptionRows', () => {
       },
     })
 
-    expect(wrapper.get('[data-testid="multiplier-metadata-warning-44"]').text()).toBe('倍率暂不可用')
+    const warning = wrapper.get('[data-testid="multiplier-metadata-warning-44"]')
+    expect(warning.text()).toBe('倍率暂不可用')
+    const multiplierCell = warning.element.closest('td')
+    expect(multiplierCell).not.toBeNull()
+    expect(multiplierCell?.textContent?.trim()).toBe('倍率暂不可用')
     expect(wrapper.text()).not.toContain('Multiplier unavailable')
     expect(wrapper.text()).toContain('$80.00 / $500.00')
   })
