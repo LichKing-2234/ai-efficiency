@@ -12,6 +12,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/ai-efficiency/backend/internal/web"
@@ -32,6 +33,7 @@ type RouterOptions struct {
 	WorkItemsRevisionStore *workitems.RevisionStore
 	WebhookHTTPClient      *http.Client
 	RequestLogger          *zap.Logger
+	RequestObserver        telemetry.RequestObserver
 	Release                string
 	RequestTimeout         time.Duration
 }
@@ -150,7 +152,7 @@ func setupRouter(
 	// Keep canonical redirects inside the correlation and telemetry chain.
 	r.RedirectTrailingSlash = false
 	r.RemoveExtraSlash = true
-	r.Use(middleware.RequestTelemetry(options.RequestLogger, options.Release))
+	r.Use(middleware.RequestTelemetry(options.RequestLogger, options.Release, options.RequestObserver))
 	r.Use(middleware.Recovery(options.RequestLogger, options.Release))
 	if options.RequestTimeout > 0 {
 		r.Use(middleware.RequestTimeout(options.RequestTimeout))
