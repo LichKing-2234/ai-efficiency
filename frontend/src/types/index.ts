@@ -1028,6 +1028,32 @@ export interface TeamUsageMembersResponse extends TeamUsageSnapshotFreshness {
   next_cursor?: string
 }
 
+export interface TeamUsageOrganizationDepartment {
+  department_external_id: string
+  parent_external_id?: string | null
+  name: string
+  display_path: string
+  depth: number
+  child_count: number
+  has_children: boolean
+  direct_member_count: number
+  aggregate_member_count: number
+  connected_member_count: number
+  range_actual_cost: number
+  range_total_tokens?: number | null
+}
+
+export interface TeamUsageOrganizationResponse extends TeamUsageSnapshotFreshness {
+  scope_version: string
+  request_id: string
+  window: TeamOverviewWindow
+  parent_department_external_id: string | null
+  departments: TeamUsageOrganizationDepartment[]
+  members: TeamOverviewMember[]
+  next_department_cursor?: string
+  next_member_cursor?: string
+}
+
 export interface TeamOverviewResponse {
   configured: boolean
   is_representative: boolean
@@ -1064,6 +1090,14 @@ export interface TeamUsageOverviewParams {
 export interface TeamUsageMembersParams extends TeamUsageOverviewParams {
   cursor?: string
   limit?: number
+}
+
+export interface TeamUsageOrganizationParams extends TeamUsageOverviewParams {
+  parent_department_external_id?: string
+  department_cursor?: string
+  department_limit?: number
+  member_cursor?: string
+  member_limit?: number
 }
 
 export interface TeamUsageAuditParams {

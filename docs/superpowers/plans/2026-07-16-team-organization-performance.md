@@ -137,25 +137,33 @@
 - `useTeamUsageOrganization` owns exact range parameters plus a generation-safe branch map keyed by nullable parent ID. It supports replace, append-departments, and append-members loads, deduplicates appended rows by stable identity, and locally replaces only the affected branch after 409.
 - The organization UI renders root rows, fetches one branch on first expansion, reuses loaded state after collapse/re-expand, and exposes independent localized load-more/error/loading controls for child departments and direct members.
 
-- [ ] **Step 1: Add RED API/view/component tests**
+- [x] **Step 1: Add RED API/view/component tests**
 
   Cover API parameter/timeout behavior, a wide root with only 25 department rows initially, expansion fetching only the selected parent, collapse/re-expand without refetch, independent department/member pagination, exact range retention across midnight, branch-local 409 recovery, one-branch failure isolation, range reset, direct-member access actions, bounded DOM, and zero current frontend calls to the compatibility overview.
 
-- [ ] **Step 2: Run focused frontend tests and record RED**
+  Test evidence (2026-07-16): API types and timeout/query forwarding are specified; view tests define a 25-row shallow root, on-demand branch reuse, collection-specific cursor calls and append behavior, branch-local 409 replacement, unchanged sibling request counts, and absence of the compatibility request.
+
+- [x] **Step 2: Run focused frontend tests and record RED**
 
   Run: `cd frontend && npm test -- src/__tests__/team-usage-api.test.ts src/__tests__/team-overview-view.test.ts`
 
   Expected: failures for the absent organization API/state, eager recursive compatibility tree, and missing local branch controls/recovery.
 
-- [ ] **Step 3: Implement independent branch state and shallow recursive rendering**
+  RED evidence (2026-07-16): seven focused failures showed the absent organization API, missing shallow root/tab, missing expansion and collection paging controls, missing branch-local recovery, and lack of fixed-range organization state.
+
+- [x] **Step 3: Implement independent branch state and shallow recursive rendering**
 
   Start root organization loading independently with the same fixed range as sibling sections. Remove compatibility overview from the current view lifecycle, keep ranking independent, render only returned shallow nodes, fetch children/direct members on first expansion, and append only the requested collection. A branch error or recovery must not refetch/hide summary, trend, ranking, roots, or sibling branches.
 
-- [ ] **Step 4: Verify Task 3 GREEN and checkpoint**
+  Implementation evidence (2026-07-16): a generation-safe composable now owns fixed range and per-parent state; the view starts a shallow root request without the compatibility call; recursive rendering uses only loaded branches, caches collapse/re-expand state, independently appends departments or members, locally replaces expired branches, and clears expansion state on explicit range reset.
+
+- [x] **Step 4: Verify Task 3 GREEN and checkpoint**
 
   Run: `cd frontend && npm test && npm run build && git diff --check`
 
   Commit: `perf(frontend): lazy-load team organization branches`
+
+  GREEN evidence (2026-07-16): focused API/view tests passed 58/58; the full frontend suite passed 39 files/484 tests; `vue-tsc`, the production Vite build, and `git diff --check` passed.
 
 ### Task 4: Document, Verify, Review, And Publish
 
