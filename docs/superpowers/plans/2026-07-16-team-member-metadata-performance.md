@@ -21,7 +21,7 @@
 - Do not merge, release, tag, deploy, or run Helm as part of this issue.
 - Every completed step updates this file in the same execution turn.
 
-**Status:** Task 4 Steps 1-8 are complete for issue #129. Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/152. Step 9 remains for required CI. Stacked on `perf/team-scope-124` / Draft PR #149.
+**Status:** Complete for issue #129. Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/152. Stacked on `perf/team-scope-124` / Draft PR #149. No merge, release, tag, deploy, or Helm action was performed.
 
 ---
 
@@ -97,7 +97,7 @@ Task 3 RED: the focused Vitest file ran 9 tests; the 2 new degradation tests fai
 - [x] **Step 6: Run `cd ae-cli && go test ./...`**
 - [x] **Step 7: Review the exact branch diff against issue #129 and the active performance spec; fix all critical/important findings**
 - [x] **Step 8: Commit with Conventional Commits, push, and open a Draft PR against `perf/team-scope-124` with `Closes #129` and dependency/no-release notes**
-- [ ] **Step 9: Wait for all required PR checks and record their final state**
+- [x] **Step 9: Wait for all required PR checks and record their final state**
 
 ## Verification Notes
 
@@ -110,3 +110,4 @@ Task 3 RED: the focused Vitest file ran 9 tests; the 2 new degradation tests fai
 - Task 4 Step 6: `cd ae-cli && go test ./...` passed with exit code 0; all ae-cli packages completed without failures (`internal/attributionlocal` was the longest package at 25.151s).
 - Task 4 Step 7: task-level reviews and the final whole-branch review of `ed3a6ad..8cfe46f` found no remaining Critical, Important, or Minor findings. The final reviewer recorded only a residual integration gap: service tests use fakes while delayed concurrency is exercised at the Sub2API HTTP adapter seam.
 - Task 4 Step 8: pushed `perf/team-member-metadata-129` and opened Draft PR https://github.com/LichKing-2234/ai-efficiency/pull/152 against `perf/team-scope-124`. The PR includes `Closes #129`, its dependency on #149, and an explicit no-merge/no-release/no-deploy note.
+- Task 4 Step 9: CI run https://github.com/LichKing-2234/ai-efficiency/actions/runs/29465411506 passed all four jobs: backend, frontend, ae-cli, and deploy-static. The final plan-only ledger commit is followed by one final-head CI confirmation without further repository changes.
