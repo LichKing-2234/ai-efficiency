@@ -37,6 +37,19 @@ const zeroMultiplierRow = {
   monthly_effective_allowance_unlimited: true,
 }
 
+const unavailableMultiplierRow = {
+  ...editableRow,
+  group_id: '44',
+  group_name: 'Group Beta',
+  inherited_default_multiplier: 3.5,
+  user_multiplier: null,
+  effective_multiplier: null,
+  multiplier_source: 'unknown' as const,
+  multiplier_metadata_status: 'unavailable' as const,
+  multiplier_metadata_message: 'upstream-internal-multiplier-error',
+  editable: true,
+}
+
 describe('SelectedSubjectSubscriptionRows', () => {
   beforeEach(() => {
     setLocale('en-US')
@@ -132,6 +145,55 @@ describe('SelectedSubjectSubscriptionRows', () => {
     })
 
     expect(wrapper.text()).toContain('$80.00 / ∞')
+  })
+
+  it('renders a compact warning and preserves usage when multiplier metadata is unavailable', async () => {
+    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+      props: {
+        subjectUserId: 101,
+        rows: [unavailableMultiplierRow],
+      },
+    })
+
+    const warning = wrapper.get('[data-testid="multiplier-metadata-warning-44"]')
+    expect(warning.text()).toBe('Multiplier unavailable')
+    expect(warning.attributes('role')).toBe('status')
+    expect(wrapper.text()).not.toContain('3.5x')
+    expect(wrapper.text()).not.toContain('nullx')
+    expect(wrapper.text()).not.toContain('upstream-internal-multiplier-error')
+    expect(wrapper.text()).toContain('$80.00 / $500.00')
+
+    const editButton = wrapper.get('[data-testid="edit-multiplier-44"]')
+    expect(editButton.attributes('disabled')).toBeDefined()
+    await editButton.trigger('click')
+    expect(wrapper.find('[data-testid="multiplier-input"]').exists()).toBe(false)
+  })
+
+  it('treats a missing multiplier metadata status as available for rolling upgrades', () => {
+    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+      props: {
+        subjectUserId: 101,
+        rows: [editableRow],
+      },
+    })
+
+    expect(wrapper.text()).toContain('1x')
+    expect(wrapper.find('[data-testid="multiplier-metadata-warning-42"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="edit-multiplier-42"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('localizes unavailable multiplier metadata in Chinese', () => {
+    setLocale('zh-CN')
+    const wrapper = mount(SelectedSubjectSubscriptionRows, {
+      props: {
+        subjectUserId: 101,
+        rows: [unavailableMultiplierRow],
+      },
+    })
+
+    expect(wrapper.get('[data-testid="multiplier-metadata-warning-44"]').text()).toBe('倍率暂不可用')
+    expect(wrapper.text()).not.toContain('Multiplier unavailable')
+    expect(wrapper.text()).toContain('$80.00 / $500.00')
   })
 
   it('localizes subscription rows and multiplier modal in Chinese', async () => {
