@@ -662,7 +662,7 @@ async function pollRunUntilDone(runID: number, action: 'preview' | 'apply', sour
       selectedRunError.value = ''
     }
     const completedPageReload = selectedSourceId.value === sourceID
-      ? loadRunPage(sourceID, runOffset.value)
+      ? loadRunPage(sourceID, pendingRunOffset.value ?? runOffset.value)
       : Promise.resolve(false)
     await Promise.all([
       refreshWorkItemsAfterSuccessfulApply(run, action),
