@@ -1104,7 +1104,6 @@ export interface QuotaResetWorkflowApprover {
   user_id: number
   display_name: string
   email: string
-  source: 'configured' | 'directory_representative'
   notification_ids?: Record<string, string>
 }
 export interface QuotaResetWorkflowDecision {

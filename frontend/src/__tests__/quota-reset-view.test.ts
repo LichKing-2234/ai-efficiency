@@ -5,6 +5,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import QuotaResetView from '@/views/QuotaResetView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { setLocale } from '@/i18n'
+import type { QuotaResetWorkflowApprover } from '@/types'
 
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
@@ -46,6 +47,12 @@ const mineRequest = {
   updated_at: '2026-07-07T01:00:00Z',
 }
 
+const workflowApproverWithoutSource = {
+  user_id: 20,
+  display_name: 'user',
+  email: 'user@example.com',
+} satisfies QuotaResetWorkflowApprover
+
 const approvalRequest = {
   ...mineRequest,
   id: 2,
@@ -60,7 +67,7 @@ const approvalRequest = {
       kind: 'requester_departments',
       label: 'Company / Group Beta',
       department_external_ids: ['dept-beta'],
-      approvers: [{ user_id: 20, display_name: 'user', email: 'user@example.com', source: 'configured' }],
+      approvers: [workflowApproverWithoutSource],
       admin_fallback: false,
       status: 'active',
     },
@@ -68,7 +75,7 @@ const approvalRequest = {
       kind: 'configured_department',
       label: 'Company / Security',
       department_external_ids: ['dept-security'],
-      approvers: [{ user_id: 30, display_name: 'security', email: 'security@example.com', source: 'configured' }],
+      approvers: [{ user_id: 30, display_name: 'security', email: 'security@example.com' }],
       admin_fallback: false,
       status: 'queued',
     },

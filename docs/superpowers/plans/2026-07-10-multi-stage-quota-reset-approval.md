@@ -11,9 +11,10 @@ runtime reports no available browser.
 
 **Review And Re-review Remediation Status (2026-07-16):** All Task 4 code,
 architecture, formatting, searchable approver-picker, and generic-webhook
-contract findings are fixed and fully reverified. Browser verification remains
-the only unchecked item because both the controller and worker observed no
-browser runtime.
+contract findings are fixed and fully reverified. The frontend workflow
+approver type now also matches the source-free backend response. Browser
+verification remains the only unchecked item because both the controller and
+worker observed no browser runtime.
 
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
@@ -426,6 +427,21 @@ current. Do not rewrite the historical 2026-07-07 spec.
   - Hand-written production is `+1499/-484`; schema is `+16/-0`; generated Ent
     outside schema is `+862/-33`; the production chain scan is empty when
     excluding only the intentional schema-test guard.
+
+  Frontend workflow-approver contract re-review evidence (2026-07-16):
+
+  - A source-free fixture using `satisfies QuotaResetWorkflowApprover` made
+    `npm run build` fail with TS1360 while the stale public type still required
+    `source`. Removing that one obsolete type field and both fixture values made
+    the same build pass.
+  - Focused quota-reset tests passed 22/22; full frontend tests passed 435/435;
+    the production build transformed 192 modules; role E2E passed 16/16. The
+    temporary Vite server was stopped afterward.
+  - Backend and generic webhook files are unchanged from `c569a34`; no backend
+    rerun was required. Workflow-approver source and production chain scans are
+    empty.
+  - Hand-written production is now `+1498/-484`; schema remains `+16/-0`; and
+    generated Ent outside schema remains `+862/-33`.
 
 - [ ] **Step 4: Browser-test one complete workflow**
 
