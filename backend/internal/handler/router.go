@@ -234,7 +234,7 @@ func SetupRouter(
 
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 
-	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler, runtime.RepresentativeScopeCache, runtime.TeamUsageSnapshotCache))
+	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler, runtime.RepresentativeScopeCache, runtime.TeamUsageSnapshotCache, encryptionKey))
 
 	userGroup := protected.Group("/user")
 	{
