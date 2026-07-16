@@ -50,8 +50,12 @@ if (typeof window !== 'undefined') {
   })
 }
 
+const { preloadI18nForTest, setLocale } = await import('./src/i18n')
+await preloadI18nForTest()
+
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
+  void setLocale('en-US')
   resetToastsForTest()
 })
