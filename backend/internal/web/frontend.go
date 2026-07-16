@@ -49,8 +49,7 @@ func RedirectCanonicalBrowserPath() gin.HandlerFunc {
 		}
 
 		canonicalPath := canonicalRequestPath(c.Request.URL.Path)
-		if canonicalPath != c.Request.URL.Path &&
-			(c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) {
+		if canonicalPath != c.Request.URL.Path {
 			target := canonicalPath
 			if c.Request.URL.RawQuery != "" {
 				target += "?" + c.Request.URL.RawQuery

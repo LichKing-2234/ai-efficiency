@@ -24,12 +24,14 @@ import (
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
 	"github.com/ai-efficiency/backend/internal/health"
+	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/ai-efficiency/backend/internal/workitems"
@@ -59,6 +61,62 @@ func redisClientOptions(cfg config.RedisConfig) *redis.Options {
 		WriteTimeout:          timeout,
 		PoolTimeout:           timeout,
 		ContextTimeoutEnabled: true,
+	}
+}
+
+func newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: time.Duration(cfg.ReadHeaderTimeoutSeconds) * time.Second,
+		IdleTimeout:       time.Duration(cfg.IdleTimeoutSeconds) * time.Second,
+	}
+}
+
+type runtimeHTTPClients struct {
+	runtimeRelay  *http.Client
+	providerRelay *http.Client
+	directory     *http.Client
+	settings      *http.Client
+	scm           *http.Client
+	version       *http.Client
+	webhook       *http.Client
+}
+
+func httpClientOptions(cfg config.HTTPClientConfig) httpclient.Options {
+	return httpclient.Options{
+		ConnectTimeout:        time.Duration(cfg.ConnectTimeoutSeconds) * time.Second,
+		TLSHandshakeTimeout:   time.Duration(cfg.TLSHandshakeTimeoutSeconds) * time.Second,
+		ResponseHeaderTimeout: time.Duration(cfg.ResponseHeaderTimeoutSeconds) * time.Second,
+		OverallTimeout:        time.Duration(cfg.OverallTimeoutSeconds) * time.Second,
+		IdleConnTimeout:       time.Duration(cfg.IdleConnTimeoutSeconds) * time.Second,
+		MaxIdleConns:          cfg.MaxIdleConns,
+		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       cfg.MaxConnsPerHost,
+	}
+}
+
+func newRuntimeHTTPClients(cfg config.HTTPClientConfig, relayWrappers ...httpclient.TransportWrapper) runtimeHTTPClients {
+	downstreamOptions := httpClientOptions(cfg)
+	relayClient := httpclient.New(downstreamOptions, relayWrappers...)
+	generalClient := httpclient.New(downstreamOptions)
+
+	versionOptions := downstreamOptions
+	versionOptions.OverallTimeout = config.VersionCheckTimeoutSeconds * time.Second
+	version := httpclient.New(versionOptions)
+
+	webhookOptions := downstreamOptions
+	webhookOptions.OverallTimeout = config.QuotaNotificationWebhookTimeoutSeconds * time.Second
+	webhook := httpclient.New(webhookOptions)
+
+	return runtimeHTTPClients{
+		runtimeRelay:  relayClient,
+		providerRelay: relayClient,
+		directory:     generalClient,
+		settings:      relayClient,
+		scm:           generalClient,
+		version:       version,
+		webhook:       webhook,
 	}
 }
 
@@ -118,6 +176,14 @@ func main() {
 	if config.RequireExplicitDBDSN(cfg.DB.DSN) {
 		logger.Fatal("DB.DSN is required and must point to PostgreSQL")
 	}
+	httpClients := newRuntimeHTTPClients(
+		cfg.HTTPClient,
+		telemetry.WrapDependency(logger, versionInfo.Version, "relay", "http_request"),
+	)
+	defer httpClients.runtimeRelay.CloseIdleConnections()
+	defer httpClients.directory.CloseIdleConnections()
+	defer httpClients.version.CloseIdleConnections()
+	defer httpClients.webhook.CloseIdleConnections()
 
 	// Set gin mode
 	if cfg.Server.Mode == "release" {
@@ -178,7 +244,7 @@ func main() {
 	var relayProvider relay.Provider
 	if cfg.Relay.URL != "" {
 		relayProvider = relay.NewSub2apiProvider(
-			http.DefaultClient,
+			httpClients.runtimeRelay,
 			cfg.Relay.URL,
 			cfg.Relay.AdminAPIKey,
 			cfg.Relay.Model,
@@ -234,6 +300,7 @@ func main() {
 		WebhookPublicURL: cfg.Server.PublicURL,
 		FrontendURL:      cfg.Server.FrontendURL,
 		ServerMode:       cfg.Server.Mode,
+		HTTPClient:       httpClients.scm,
 	})
 
 	// Init PR labeler (with optional relay usage stats lookup)
@@ -255,16 +322,16 @@ func main() {
 	}); ok {
 		relayRuntimeUpdater = u
 	}
-	settingsHandler := handler.NewSettingsHandler(settingsConfigPath, cfg.Relay, logger, relayRuntimeUpdater)
+	settingsHandler := handler.NewSettingsHandlerWithHTTPClient(settingsConfigPath, cfg.Relay, logger, httpClients.settings, relayRuntimeUpdater)
 
 	// Init OAuth handler
 	oauthServer := oauth.NewServer()
 	oauthHandler := oauth.NewHandler(oauthServer, cfg.Server.FrontendURL, &authTokenAdapter{authService: authService})
 
 	// Init provider handler
-	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger)
+	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger, httpClients.providerRelay)
 	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
-		Executor:                  directorysync.NewExecutor(directorysync.ExecutorOptions{}),
+		Executor:                  directorysync.NewExecutor(directorysync.ExecutorOptions{HTTPClient: httpClients.directory}),
 		Credentials:               directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
 		RelayDisablers:            directorysync.NewProviderRelayDisablerResolver(providerHandler),
 		TokenRevoker:              authService,
@@ -303,16 +370,16 @@ func main() {
 		}),
 		relayPinger,
 		versionInfo,
+		health.WithReadyTimeout(time.Duration(cfg.Server.ReadinessTimeoutSeconds)*time.Second),
 	)
-	versionHTTPClient := &http.Client{Timeout: 10 * time.Second}
 	var releaseSource versioncheck.ReleaseSource
 	if cfg.VersionCheck.Enabled && strings.TrimSpace(cfg.VersionCheck.ReleaseAPIURL) != "" {
-		releaseSource = versioncheck.NewGitHubReleaseSource(versionHTTPClient, cfg.VersionCheck.ReleaseAPIURL)
+		releaseSource = versioncheck.NewGitHubReleaseSource(httpClients.version, cfg.VersionCheck.ReleaseAPIURL)
 	}
 	versionCheckService := versioncheck.NewService(versionInfo, releaseSource)
 	healthHandler := handler.NewHealthHandler(healthService, versionCheckService)
 
-	r := handler.SetupRouter(
+	r := handler.SetupRouterWithOptions(
 		entClient,
 		sqlDB,
 		authService,
@@ -328,19 +395,20 @@ func main() {
 		adminSettingsHandler,
 		checkpointHandler,
 		healthHandler,
-		handler.RouterRuntimeOptions{
+		handler.RouterOptions{
 			DirectoryService:       directoryService,
 			WorkItemsCache:         workItemsCache,
 			WorkItemsRevisionStore: workItemsRevisionStore,
+			WebhookHTTPClient:      httpClients.webhook,
+			RequestLogger:          logger,
+			Release:                versionInfo.Version,
+			RequestTimeout:         time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
 	)
 
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: r,
-	}
+	srv := newHTTPServer(addr, r, cfg.Server)
 
 	go func() {
 		logger.Info("starting server", zap.String("addr", addr))
