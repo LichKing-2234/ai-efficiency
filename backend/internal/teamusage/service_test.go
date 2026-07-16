@@ -226,12 +226,22 @@ func TestSummaryAndOverviewShareCachedSnapshotAndPreserveComparisonTotals(t *tes
 	if err != nil {
 		t.Fatalf("Summary() error = %v", err)
 	}
+	trend, err := svc.Trend(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("Trend() error = %v", err)
+	}
 	overview, err := svc.Overview(ctx, 1, params)
 	if err != nil {
 		t.Fatalf("Overview() error = %v", err)
 	}
 	if summary.ScopeVersion != scope.Version || summary.CacheStatus != "miss" || summary.SourceStatus != "ok" {
 		t.Fatalf("summary metadata = scope %q cache/source %q/%q", summary.ScopeVersion, summary.CacheStatus, summary.SourceStatus)
+	}
+	if trend.ScopeVersion != scope.Version || trend.CacheStatus != "fresh" || trend.SourceStatus != "ok" {
+		t.Fatalf("trend metadata = scope %q cache/source %q/%q", trend.ScopeVersion, trend.CacheStatus, trend.SourceStatus)
+	}
+	if len(trend.TopMembers) != 2 || len(trend.TopMemberTrend.Series) != 2 || trend.Window.StartDate != "2026-07-01" {
+		t.Fatalf("trend projection = %+v", trend)
 	}
 	if summary.Window.StartDate != "2026-07-01" || summary.Window.Granularity != "day" || summary.Window.Timezone != "Asia/Shanghai" {
 		t.Fatalf("normalized summary window = %+v", summary.Window)
@@ -254,11 +264,55 @@ func TestSummaryAndOverviewShareCachedSnapshotAndPreserveComparisonTotals(t *tes
 	if provider.trendCalls != 1 || len(provider.summaryRequestUserIDs) != 2 {
 		t.Fatalf("Relay generation calls = trend %d summary IDs %#v, want one shared generation", provider.trendCalls, provider.summaryRequestUserIDs)
 	}
-	if scopeResolver.calls.Load() != 2 || providerResolver.calls.Load() != 1 {
-		t.Fatalf("warm-hit guard calls = scope %d provider origin %d, want 2/1", scopeResolver.calls.Load(), providerResolver.calls.Load())
+	if scopeResolver.calls.Load() != 3 || providerResolver.calls.Load() != 1 {
+		t.Fatalf("warm-hit guard calls = scope %d provider origin %d, want 3/1", scopeResolver.calls.Load(), providerResolver.calls.Load())
 	}
 	if providerRow.ConfigurationVersion <= 0 {
 		t.Fatalf("provider configuration version = %d, want positive cache guard", providerRow.ConfigurationVersion)
+	}
+}
+
+func TestTrendProjectsEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	tokens := int64(1200)
+	scope := &representativescope.Scope{
+		Version: "scope-version-1", ActorUserID: 1, IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{{
+			SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com",
+			DepartmentExternalID: "department-alpha", RelayUserID: intPtr(1002), Selectable: true,
+		}},
+		MemberTreeRootIDs:     []string{"department-alpha"},
+		MemberTreeDepartments: []representativescope.DepartmentScope{{ExternalID: "department-alpha", Name: "Department Alpha"}},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{1002: {UserID: 1002, TodayActualCost: 1, TotalActualCost: 10}},
+		trendPoints:  map[int64][]relay.UsageTrendPoint{1002: {{Date: "2026-07-16", ActualCost: 3, TotalTokens: &tokens}}},
+	}
+	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
+	svc := NewServiceWithSnapshotCache(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache)
+	params := OverviewParams{StartDate: "2026-07-16", EndDate: "2026-07-16", Granularity: "hour", Timezone: "UTC"}
+
+	first, err := svc.Trend(ctx, 1, params)
+	if err != nil || first.CacheStatus != "miss" {
+		t.Fatalf("prime Trend() = %+v, %v", first, err)
+	}
+	now = now.Add(55 * time.Second)
+	transient := errors.New("synthetic trend origin outage")
+	provider.summaryErr = transient
+	stale, err := svc.Trend(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("stale Trend() error = %v", err)
+	}
+	if stale.CacheStatus != "stale" || stale.SourceStatus != "error" || len(stale.TopMemberTrend.Series) != 1 {
+		t.Fatalf("stale trend = %+v", stale)
+	}
+
+	now = now.Add(4*time.Minute + 16*time.Second)
+	if _, err := svc.Trend(ctx, 1, params); !errors.Is(err, transient) {
+		t.Fatalf("expired Trend() error = %v, want transient origin error", err)
 	}
 }
 
@@ -285,6 +339,15 @@ func TestSummaryLargeScopeDoesNotRequireProviderOriginCapabilities(t *testing.T)
 	}
 	if result.Summary.UnavailableReason == nil || *result.Summary.UnavailableReason != "scope_too_large" || result.Summary.MemberCount != 501 {
 		t.Fatalf("large-scope summary = %+v", result.Summary)
+	}
+	trend, err := svc.Trend(ctx, 1, OverviewParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("large-scope Trend() error = %v", err)
+	}
+	if !trend.TopMemberTrend.Unavailable || trend.TopMemberTrend.UnavailableReason == nil || *trend.TopMemberTrend.UnavailableReason != "scope_too_large" || len(trend.TopMemberTrend.Series) != 0 || len(trend.DepartmentTrend.Series) != 0 {
+		t.Fatalf("large-scope trend = %+v", trend)
 	}
 	if providerResolver.calls.Load() != 0 {
 		t.Fatalf("provider origin resolves = %d, want 0", providerResolver.calls.Load())
