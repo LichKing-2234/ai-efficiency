@@ -44,7 +44,7 @@ func (f teamUsageProviderResolverFunc) Resolve(ctx context.Context, providerID i
 	return f(ctx, providerID)
 }
 
-func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *ProviderHandler, scopeCache *representativescope.Cache, snapshotCache *teamusage.SnapshotCache) *teamusage.Service {
+func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *ProviderHandler, scopeCache *representativescope.Cache, snapshotCache *teamusage.SnapshotCache, memberCursorSecret string) *teamusage.Service {
 	resolver := teamUsageProviderResolverFunc(func(context.Context, int) (relay.Provider, error) {
 		return nil, teamusage.ErrProviderUnsupported
 	})
@@ -57,6 +57,7 @@ func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *
 		resolver,
 		teamusage.NewPostgresAdvisoryLocker(sqlDB),
 		snapshotCache,
+		memberCursorSecret,
 	)
 }
 
