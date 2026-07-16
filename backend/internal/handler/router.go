@@ -10,6 +10,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/ai-efficiency/backend/internal/web"
@@ -22,10 +23,11 @@ var prAttributionService prAttributionSettler
 var prUsageService prUsageRefresher
 
 type RouterRuntimeOptions struct {
-	DirectoryService       DirectoryAdminService
-	PersonalUsageCache     *personalusage.Cache
-	WorkItemsCache         *workitems.CountsCache
-	WorkItemsRevisionStore *workitems.RevisionStore
+	DirectoryService         DirectoryAdminService
+	PersonalUsageCache       *personalusage.Cache
+	WorkItemsCache           *workitems.CountsCache
+	WorkItemsRevisionStore   *workitems.RevisionStore
+	RepresentativeScopeCache *representativescope.Cache
 }
 
 func SetPRAttributionService(service prAttributionSettler) {
@@ -232,7 +234,7 @@ func SetupRouter(
 
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 
-	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler))
+	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler, runtime.RepresentativeScopeCache))
 
 	userGroup := protected.Group("/user")
 	{
