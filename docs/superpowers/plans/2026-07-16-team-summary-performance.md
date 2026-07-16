@@ -22,7 +22,7 @@
 - Tests and examples use only synthetic identities and credentials.
 - Update each checkbox immediately after its action is actually complete.
 
-**Status:** Implementation and local verification complete. Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/153. Required CI checks are pending.
+**Status:** Complete for issue #125. Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/153. Local verification and all required CI jobs passed.
 
 ---
 
@@ -269,6 +269,8 @@
 
   Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/153. Base is `perf/team-scope-124`; the PR records the explicit #123 merge and dependencies on PRs #148/#149.
 
-- [ ] **Step 6: Wait for required PR checks and record final state**
+- [x] **Step 6: Wait for required PR checks and record final state**
 
   Record the exact GitHub Actions run and backend/frontend/ae-cli/deploy-static results in this plan.
+
+  CI evidence: https://github.com/LichKing-2234/ai-efficiency/actions/runs/29473140415 passed for head `9cd4bd0`: `ae-cli`, `backend`, `frontend`, and `deploy-static` all completed successfully.
