@@ -79,7 +79,7 @@ func (s *Service) resolveWorkflowSnapshot(context.Context, *ent.User) (*Workflow
 
 Neither interface accepts `providerID` or `groupID`.
 
-- [ ] **Step 1: Write failing resolver tests**
+- [x] **Step 1: Write failing resolver tests**
 
   Add these exact cases to `resolver_test.go`:
 
@@ -109,7 +109,7 @@ Neither interface accepts `providerID` or `groupID`.
   }
   ```
 
-- [ ] **Step 2: Run the tests and confirm RED**
+- [x] **Step 2: Run the tests and confirm RED**
 
   ```bash
   cd backend
@@ -119,7 +119,7 @@ Neither interface accepts `providerID` or `groupID`.
   Expected: FAIL because `ResolveWorkflow` is not implemented and current
   routing still reads the selected group's chain.
 
-- [ ] **Step 3: Implement request-time resolution in `resolver.go`**
+- [x] **Step 3: Implement request-time resolution in `resolver.go`**
 
   Move `workflowDirectoryFacts` and its identity/candidate helpers from
   `workflow_config.go`. Build the workflow with this control flow:
@@ -168,7 +168,7 @@ Neither interface accepts `providerID` or `groupID`.
   workflow, paths, err := NewApproverResolver(tx.Client()).ResolveWorkflow(ctx, requester)
   ```
 
-- [ ] **Step 4: Remove group inputs from request creation and add lifecycle tests**
+- [x] **Step 4: Remove group inputs from request creation and add lifecycle tests**
 
   In `CreateRequest` call:
 
@@ -186,7 +186,7 @@ Neither interface accepts `providerID` or `groupID`.
   previous comment, action URL, active approvers, and mentions sourced only from
   snapshotted `metadata.wecom_userid`.
 
-- [ ] **Step 5: Run focused regression and commit**
+- [x] **Step 5: Run focused regression and commit**
 
   ```bash
   cd backend

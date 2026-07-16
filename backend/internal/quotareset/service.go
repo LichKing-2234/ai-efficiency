@@ -101,7 +101,7 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 	if err := activeRequestExists(ctx, s.client, requester.ID, providerRow.ID, input.GroupID); err != nil {
 		return nil, err
 	}
-	workflow, paths, err := s.resolveWorkflowSnapshot(ctx, requester, providerRow.ID, input.GroupID)
+	workflow, paths, err := s.resolveWorkflowSnapshot(ctx, requester)
 	if err != nil {
 		return nil, err
 	}
@@ -999,7 +999,7 @@ func (s *Service) approverCandidates(ctx context.Context, sourceID int, departme
 	if !ok || sourceID != currentSourceID {
 		return nil, nil, ErrDirectoryUnavailable
 	}
-	facts, err := s.loadWorkflowDirectoryFacts(ctx, sourceID)
+	facts, err := NewApproverResolver(s.client).loadWorkflowDirectoryFacts(ctx, sourceID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1084,7 +1084,7 @@ func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, ite
 	if !ok || sourceID != currentSourceID {
 		return ErrDirectoryUnavailable
 	}
-	facts, err := s.loadWorkflowDirectoryFacts(ctx, sourceID)
+	facts, err := NewApproverResolver(s.client).loadWorkflowDirectoryFacts(ctx, sourceID)
 	if err != nil {
 		return err
 	}

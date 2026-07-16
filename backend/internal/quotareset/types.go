@@ -8,11 +8,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
-type ApproverResolution struct {
-	ApproverUserIDs []int                    `json:"approver_user_ids"`
-	Paths           []DepartmentPathEvidence `json:"paths"`
-}
-
 type DepartmentPathEvidence struct {
 	StartDepartmentExternalID   string               `json:"start_department_external_id"`
 	Path                        []DepartmentPathNode `json:"path"`

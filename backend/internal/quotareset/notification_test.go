@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -70,6 +71,67 @@ func TestWebhookNotifierSendsBearerTokenAndWritesNoSecretToPayload(t *testing.T)
 	workflow, ok := gotPayload["workflow"].(map[string]any)
 	if !ok || workflow["step_label"] != "Company / Group Alpha" || workflow["step_number"] != float64(1) || workflow["step_count"] != float64(2) {
 		t.Fatalf("workflow context = %#v", gotPayload["workflow"])
+	}
+	if gotPayload["group_name"] != "Group Alpha" || gotPayload["reason"] != "Need reset for a build investigation" || gotPayload["action_url"] == nil {
+		t.Fatalf("request context = %#v", gotPayload)
+	}
+	if paths, ok := requester["department_paths"].([]any); !ok || !reflect.DeepEqual(paths, []any{"Company / Group Alpha"}) {
+		t.Fatalf("requester department paths = %#v", requester["department_paths"])
+	}
+	approvers, ok := workflow["active_approvers"].([]any)
+	if !ok || len(approvers) != 1 {
+		t.Fatalf("active approvers = %#v", workflow["active_approvers"])
+	}
+	approver, ok := approvers[0].(map[string]any)
+	if !ok || approver["display_name"] != "bob" || approver["email"] != "bob@example.org" {
+		t.Fatalf("active approver = %#v", approvers[0])
+	}
+}
+
+func TestWebhookNotifierIncludesPreviousDecision(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	var gotPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetChannel(quotaresetnotificationsetting.ChannelGenericWebhook).
+		SetURL(server.URL).
+		SetAuthType("none").
+		SetCreatedByUserID(1).
+		SetUpdatedByUserID(1).
+		SaveX(ctx)
+	request := createNotificationQuotaResetRequest(t, ctx, client)
+	workflow, err := DecodeWorkflow(request.Workflow)
+	if err != nil {
+		t.Fatalf("DecodeWorkflow() error = %v", err)
+	}
+	workflow.Steps[0].Status = WorkflowStepApproved
+	workflow.Steps[0].Decision = &WorkflowDecision{ActorUserID: workflow.Steps[0].Approvers[0].UserID, ActorDisplayName: "Bob Example", Comment: "Previous approval comment", Approve: true}
+	workflow.CurrentStep = 1
+	workflow.Steps[1].Status = WorkflowStepActive
+	raw, err := EncodeWorkflow(workflow)
+	if err != nil {
+		t.Fatalf("EncodeWorkflow() error = %v", err)
+	}
+	request = client.QuotaResetRequest.UpdateOneID(request.ID).SetWorkflow(raw).SetResolvedApproverUserIds(workflow.ActiveApproverUserIDs()).SaveX(ctx)
+
+	if err := NewWebhookNotifier(client, "", "https://ai-efficiency.example.com").NotifyRequestEvent(ctx, "quota_reset_step_activated", request); err != nil {
+		t.Fatalf("NotifyRequestEvent() error = %v", err)
+	}
+	workflowPayload, ok := gotPayload["workflow"].(map[string]any)
+	if !ok {
+		t.Fatalf("workflow payload = %#v", gotPayload["workflow"])
+	}
+	previous, ok := workflowPayload["previous_decision"].(map[string]any)
+	if !ok || previous["comment"] != "Previous approval comment" {
+		t.Fatalf("previous decision = %#v", workflowPayload["previous_decision"])
 	}
 }
 
