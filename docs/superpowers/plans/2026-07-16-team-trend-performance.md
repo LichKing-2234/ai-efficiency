@@ -88,25 +88,29 @@
 - Produces authenticated `GET /api/v1/user/team-usage/trend`.
 - Generates a new `X-Request-ID` and matching response `request_id` in the handler, never in Redis.
 
-- [ ] **Step 1: Add RED HTTP tests**
+- [x] **Step 1: Add RED HTTP tests**
 
   Cover normalized query forwarding, freshness/scope/request metadata, bounded response fields, unique request IDs, auth protection, 403 no-scope behavior, and 400 invalid input.
 
-- [ ] **Step 2: Run focused handler tests and record RED**
+- [x] **Step 2: Run focused handler tests and record RED**
 
   Run: `cd backend && go test ./internal/handler -run 'TeamUsageTrend' -count=1 -v`
 
   Expected: compile/route failure because the trend handler is absent.
 
-- [ ] **Step 3: Implement route and request-local projection**
+  RED evidence (2026-07-16): the focused command failed only because `TeamUsageHandler.Trend` was absent.
+
+- [x] **Step 3: Implement route and request-local projection**
 
   Reuse the summary query parser and error mapping; do not expose compatibility headers on the new route.
 
-- [ ] **Step 4: Verify Task 2 GREEN and checkpoint**
+- [x] **Step 4: Verify Task 2 GREEN and checkpoint**
 
   Run: `cd backend && go test ./internal/teamusage ./internal/handler ./cmd/server -count=2 && git diff --check`
 
   Commit: `feat(backend): expose split team usage trend`
+
+  GREEN evidence (2026-07-16): focused trend handler tests passed, then `go test ./internal/teamusage ./internal/handler ./cmd/server -count=2` and `git diff --check` passed.
 
 ### Task 3: Load Trend And Chart Code Independently
 

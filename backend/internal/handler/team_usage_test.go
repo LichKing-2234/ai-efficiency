@@ -26,6 +26,7 @@ type fakeTeamUsageService struct {
 	subjectsFn         func(context.Context, int, string, int, int) (*teamusage.SubjectsResponse, error)
 	subjectDashboardFn func(context.Context, int, int, relay.UserUsageDashboardParams) (*teamusage.SubjectDashboardResponse, error)
 	summaryFn          func(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error)
+	trendFn            func(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error)
 	overviewFn         func(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error)
 	updateMultiplierFn func(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	listAuditFn        func(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
@@ -46,6 +47,10 @@ func (f *fakeTeamUsageService) SubjectDashboard(ctx context.Context, actorUserID
 
 func (f *fakeTeamUsageService) Summary(ctx context.Context, actorUserID int, params teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
 	return f.summaryFn(ctx, actorUserID, params)
+}
+
+func (f *fakeTeamUsageService) Trend(ctx context.Context, actorUserID int, params teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+	return f.trendFn(ctx, actorUserID, params)
 }
 
 func (f *fakeTeamUsageService) Overview(ctx context.Context, actorUserID int, params teamusage.OverviewParams) (*teamusage.OverviewResponse, error) {
@@ -117,6 +122,7 @@ func newTeamUsageTestRouter(t *testing.T, service *fakeTeamUsageService) *teamUs
 	userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamHandler.SubjectDashboard)
 	userGroup.PUT("/team-usage/subjects/:user_id/groups/:group_id/rate-multiplier", teamHandler.UpdateMultiplier)
 	userGroup.GET("/team-usage/summary", teamHandler.Summary)
+	userGroup.GET("/team-usage/trend", teamHandler.Trend)
 	userGroup.GET("/team-usage/overview", teamHandler.Overview)
 	userGroup.GET("/team-usage/audit", teamHandler.Audit)
 
@@ -210,6 +216,100 @@ func TestTeamUsageSummaryRequiresAuthentication(t *testing.T) {
 		},
 	})
 	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/summary", "", "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("response = %d %s, want 401", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTeamUsageTrendReturnsBoundedFreshnessScopeAndUniqueRequestID(t *testing.T) {
+	asOf := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	var env *teamUsageTestEnv
+	env = newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		trendFn: func(_ context.Context, actorID int, params teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+			if actorID != env.userID || params.StartDate != "2026-07-01" || params.EndDate != "2026-07-07" || params.Granularity != "hour" || params.Timezone != "Asia/Shanghai" {
+				t.Fatalf("unexpected trend request: actor=%d params=%+v", actorID, params)
+			}
+			return &teamusage.TrendResponse{
+				SnapshotFreshness: teamusage.SnapshotFreshness{
+					AsOf: asOf, FreshUntil: asOf.Add(54 * time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
+					CacheStatus: "hit", SourceStatus: "ok",
+				},
+				ScopeVersion: "scope-version-trend-1",
+				Window: teamusage.OverviewWindow{
+					StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "hour", Timezone: "Asia/Shanghai",
+				},
+				TopMembers: []teamusage.OverviewMember{{UserID: 101, DisplayName: "Alice", Rank: 1}},
+				DepartmentTrend: teamusage.DepartmentTrendState{
+					ComparisonTotalCount: 14,
+					ComparisonTruncated:  true,
+					Series: []teamusage.DepartmentTrendSeries{{
+						SeriesType: "team_total", DisplayName: "Team total",
+					}},
+				},
+			}, nil
+		},
+	})
+
+	path := "/api/v1/user/team-usage/trend?start_date=2026-07-01&end_date=2026-07-07&granularity=hour&timezone=Asia%2FShanghai"
+	first := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	second := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	if first.Code != http.StatusOK || second.Code != http.StatusOK {
+		t.Fatalf("trend responses = %d/%d, want 200", first.Code, second.Code)
+	}
+	firstRequestID := first.Header().Get("X-Request-ID")
+	secondRequestID := second.Header().Get("X-Request-ID")
+	if firstRequestID == "" || secondRequestID == "" || firstRequestID == secondRequestID {
+		t.Fatalf("request IDs = %q/%q, want unique non-empty IDs", firstRequestID, secondRequestID)
+	}
+	if first.Header().Get("Deprecation") != "" || first.Header().Get("Sunset") != "" || first.Header().Get("Link") != "" {
+		t.Fatalf("trend unexpectedly exposed compatibility headers: %+v", first.Header())
+	}
+	for _, expected := range []string{
+		`"scope_version":"scope-version-trend-1"`, `"cache_status":"hit"`, `"source_status":"ok"`,
+		`"request_id":"` + firstRequestID + `"`, `"comparison_total_count":14`, `"comparison_truncated":true`,
+		`"series_type":"team_total"`, `"display_name":"Alice"`,
+	} {
+		if !strings.Contains(first.Body.String(), expected) {
+			t.Fatalf("trend body = %s, want %s", first.Body.String(), expected)
+		}
+	}
+}
+
+func TestTeamUsageTrendMapsScopeAndInputFailures(t *testing.T) {
+	t.Run("no representative scope", func(t *testing.T) {
+		env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+			trendFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+				return nil, &teamusage.ForbiddenError{Reason: teamusage.ErrNotRepresentative.Error()}
+			},
+		})
+		rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/trend?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=UTC", env.token, "")
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("response = %d %s, want 403", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("invalid granularity", func(t *testing.T) {
+		env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+			trendFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+				t.Fatal("trend service must not run for invalid input")
+				return nil, nil
+			},
+		})
+		rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/trend?granularity=week", env.token, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("response = %d %s, want 400", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestTeamUsageTrendRequiresAuthentication(t *testing.T) {
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		trendFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+			t.Fatal("trend service must not run without authentication")
+			return nil, nil
+		},
+	})
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/trend", "", "")
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("response = %d %s, want 401", rec.Code, rec.Body.String())
 	}

@@ -254,6 +254,7 @@ func SetupRouter(
 		userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamUsageHandler.SubjectDashboard)
 		userGroup.PUT("/team-usage/subjects/:user_id/groups/:group_id/rate-multiplier", teamUsageHandler.UpdateMultiplier)
 		userGroup.GET("/team-usage/summary", teamUsageHandler.Summary)
+		userGroup.GET("/team-usage/trend", teamUsageHandler.Trend)
 		userGroup.GET("/team-usage/overview", teamUsageHandler.Overview)
 		userGroup.GET("/team-usage/audit", teamUsageHandler.Audit)
 		if providerHandler != nil {
