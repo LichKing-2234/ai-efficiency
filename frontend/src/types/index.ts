@@ -667,6 +667,13 @@ export interface DirectoryOffboardingCandidate {
   offboarding_status?: string
 }
 
+export interface DirectoryOffboardingCandidateListResponse {
+  items: DirectoryOffboardingCandidate[]
+  page: number
+  page_size: number
+  total: number
+}
+
 export interface DirectoryOffboardingAction {
   id: number
   source_id: number

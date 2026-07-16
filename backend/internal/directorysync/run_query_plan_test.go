@@ -41,22 +41,61 @@ type recordedRunQuery struct {
 type recordingRunDriver struct {
 	dialect.Driver
 
-	mu      sync.Mutex
-	queries []recordedRunQuery
+	mu        sync.Mutex
+	queries   []recordedRunQuery
+	queryHook func(recordedRunQuery)
 }
 
 func (d *recordingRunDriver) Query(ctx context.Context, query string, args, value any) error {
+	d.record(query, args)
+	return d.Driver.Query(ctx, query, args, value)
+}
+
+func (d *recordingRunDriver) BeginTx(ctx context.Context, opts *sql.TxOptions) (dialect.Tx, error) {
+	driver, ok := d.Driver.(interface {
+		BeginTx(context.Context, *sql.TxOptions) (dialect.Tx, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("recording driver does not support transaction options")
+	}
+	tx, err := driver.BeginTx(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &recordingRunTx{Tx: tx, recorder: d}, nil
+}
+
+type recordingRunTx struct {
+	dialect.Tx
+	recorder *recordingRunDriver
+}
+
+func (tx *recordingRunTx) Query(ctx context.Context, query string, args, value any) error {
+	tx.recorder.record(query, args)
+	return tx.Tx.Query(ctx, query, args, value)
+}
+
+func (d *recordingRunDriver) record(query string, args any) {
 	values, ok := args.([]any)
 	if !ok {
 		values = []any{args}
 	}
-	copiedArgs := append([]any(nil), values...)
+	recorded := recordedRunQuery{SQL: query, Args: append([]any(nil), values...)}
 
 	d.mu.Lock()
-	d.queries = append(d.queries, recordedRunQuery{SQL: query, Args: copiedArgs})
+	d.queries = append(d.queries, recorded)
+	hook := d.queryHook
 	d.mu.Unlock()
 
-	return d.Driver.Query(ctx, query, args, value)
+	if hook != nil {
+		hook(recorded)
+	}
+}
+
+func (d *recordingRunDriver) setQueryHook(hook func(recordedRunQuery)) {
+	d.mu.Lock()
+	d.queryHook = hook
+	d.mu.Unlock()
 }
 
 func (d *recordingRunDriver) reset() {
@@ -336,6 +375,99 @@ const (
 	runQueryRolePrimary runQueryRole = "primary"
 	runQueryRoleActive  runQueryRole = "active"
 )
+
+func TestRunPageAndLatestActiveShareRepeatableReadSnapshot(t *testing.T) {
+	writer, dsn := testdb.OpenWithDSN(t)
+	ctx := context.Background()
+	source := writer.DirectorySource.Create().
+		SetName("Snapshot Example Directory").
+		SetDescription("Synthetic snapshot consistency test").
+		SetScope("full_company").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		SetScheduleEnabled(false).
+		SetScheduleInterval("daily").
+		SetScheduleTimezone("UTC").
+		SaveX(ctx)
+	startedAt := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	run := writer.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode(directorysyncrun.ModeApply).
+		SetTrigger(directorysyncrun.TriggerManual).
+		SetStatus(directorysyncrun.StatusRunning).
+		SetPhase(directorysyncrun.PhaseExecuting).
+		SetStartedAt(startedAt).
+		SaveX(ctx)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open snapshot reader: %v", err)
+	}
+	recorder := &recordingRunDriver{Driver: entsql.OpenDB(dialect.Postgres, db)}
+	reader := ent.NewClient(ent.Driver(recorder))
+	t.Cleanup(func() {
+		if err := reader.Close(); err != nil {
+			t.Errorf("close snapshot reader: %v", err)
+		}
+	})
+
+	activeQueryReached := make(chan struct{})
+	releaseActiveQuery := make(chan struct{})
+	var activeOnce sync.Once
+	recorder.setQueryHook(func(query recordedRunQuery) {
+		role, err := classifyRunQuerySQL(query.SQL)
+		if err == nil && role == runQueryRoleActive {
+			activeOnce.Do(func() { close(activeQueryReached) })
+			<-releaseActiveQuery
+		}
+	})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseActiveQuery) }) }
+	defer release()
+
+	type listResult struct {
+		Page RunPage
+		Err  error
+	}
+	resultCh := make(chan listResult, 1)
+	go func() {
+		page, err := NewService(reader, ServiceOptions{}).ListRuns(ctx, RunListRequest{SourceID: source.ID})
+		resultCh <- listResult{Page: page, Err: err}
+	}()
+
+	select {
+	case <-activeQueryReached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("latest-active query did not start")
+	}
+	completedAt := startedAt.Add(time.Minute)
+	writer.DirectorySyncRun.UpdateOneID(run.ID).
+		SetStatus(directorysyncrun.StatusCompleted).
+		SetPhase(directorysyncrun.PhaseCompleted).
+		SetCompletedAt(completedAt).
+		SaveX(ctx)
+	release()
+
+	var result listResult
+	select {
+	case result = <-resultCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ListRuns did not finish")
+	}
+	if result.Err != nil {
+		t.Fatalf("ListRuns: %v", result.Err)
+	}
+	if len(result.Page.Items) != 1 || result.Page.Items[0].Status != directorysyncrun.StatusRunning {
+		t.Fatalf("page items = %+v, want the running snapshot", result.Page.Items)
+	}
+	if result.Page.LatestActiveRun == nil || result.Page.LatestActiveRun.ID != run.ID || result.Page.LatestActiveRun.Status != directorysyncrun.StatusRunning {
+		t.Fatalf("latest active = %+v, want running run %d from the same snapshot", result.Page.LatestActiveRun, run.ID)
+	}
+	if got := writer.DirectorySyncRun.GetX(ctx, run.ID).Status; got != directorysyncrun.StatusCompleted {
+		t.Fatalf("authoritative run status = %s, want completed", got)
+	}
+	requireRecordedRunQueryRoles(t, recorder.snapshot())
+}
 
 func TestLargeRunHistoryBoundsBytesAndProjection(t *testing.T) {
 	fixture := newLargeRunHistoryFixture(t)
@@ -736,11 +868,15 @@ func captureOffboardingState(t *testing.T, service *Service, client *ent.Client,
 	for _, action := range actions {
 		state.Actions = append(state.Actions, fmt.Sprintf("%d|%d|%s|%d", action.ID, action.UserID, action.Status, action.DirectoryRunID))
 	}
-	candidates, err := service.ListOffboardingCandidates(ctx, sourceID, "")
+	candidates, err := service.ListOffboardingCandidates(ctx, OffboardingCandidateListParams{
+		SourceID: sourceID,
+		Page:     1,
+		PageSize: maxOffboardingPageSize,
+	})
 	if err != nil {
 		t.Fatalf("ListOffboardingCandidates: %v", err)
 	}
-	for _, candidate := range candidates {
+	for _, candidate := range candidates.Items {
 		actionID := 0
 		if candidate.OffboardingActionID != nil {
 			actionID = *candidate.OffboardingActionID

@@ -50,10 +50,9 @@ const queueItems = computed(() => {
 
 const visibleItems = computed(() => queueItems.value.filter((item) => filterMatches(item.status, activeFilter.value)))
 
-async function loadQueues(forceCounts = false) {
+async function loadQueues() {
   loading.value = true
   loadError.value = ''
-  void workItems.loadCounts({ force: forceCounts })
   try {
     const requests = [
       listMyQuotaResetRequests(),
@@ -123,7 +122,11 @@ async function withAction(action: () => Promise<unknown>) {
   actionBusy.value = true
   try {
     await action()
-    await loadQueues(true)
+    workItems.invalidateCounts()
+    await Promise.all([
+      loadQueues(),
+      workItems.loadCounts({ force: true }),
+    ])
     showToast({ message: t('quotaReset.actionSucceeded'), tone: 'success' })
   } catch {
     showToast({ message: t('quotaReset.actionFailed'), tone: 'error' })
@@ -166,7 +169,10 @@ function handleRetry(item: QuotaResetRequestSummary) {
   void withAction(() => retryQuotaResetRequest(item.id))
 }
 
-onMounted(loadQueues)
+onMounted(() => {
+  void workItems.loadCounts()
+  void loadQueues()
+})
 </script>
 
 <template>

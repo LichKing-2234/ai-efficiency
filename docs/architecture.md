@@ -41,6 +41,7 @@ flowchart LR
     Tool["Codex / Claude"]
     Backend["ai-efficiency backend<br/>Gin + Ent modular monolith"]
     DB[("ai_efficiency database<br/>PostgreSQL")]
+    Redis[("work-item read model<br/>Redis")]
     SCM["SCM providers<br/>GitHub / Bitbucket Server"]
     Relay["Relay provider<br/>sub2api HTTP APIs"]
     Directory["Configured directory APIs<br/>admin-provided HTTPS DSL"]
@@ -52,6 +53,7 @@ flowchart LR
     Tool --> Workspace
     Workspace --> Backend
     Backend <--> DB
+    Backend <--> Redis
     Backend <--> SCM
     Backend <--> Relay
     Backend --> Directory
@@ -62,6 +64,7 @@ flowchart LR
 - `ai-efficiency` is a standalone system. It integrates with `sub2api` through relay/provider HTTP APIs rather than direct database coupling.
 - Release units remain in one repository but are published separately. Platform releases use `v*` tags for the backend/frontend/deploy unit, GHCR image, and Helm-consumed image tags. `ae-cli` releases use `ae-cli/v*` tags and publish only CLI artifacts; CLI installer and updater discovery filters that tag namespace instead of using the platform-owned repository latest release. The exact `v0.2.0-cli.1` tag is a one-time bridge for older CLIs that still read repository `/releases/latest`; it publishes only CLI artifacts and is excluded from the platform release workflow.
 - The backend is the central orchestration point for auth, repo configuration, attribution, provider management, and SCM/webhook workflows.
+- PostgreSQL remains authoritative for Work Items state and its persisted cache revision. Redis is an optional performance read model for work-item counts; an unavailable Redis never becomes an authorization or mutation dependency.
 - Runtime config remains a startup bootstrap input, not the user-facing provider source of truth. On first startup the backend can seed the primary `RelayProvider` row from `relay.*` config, but `/user`, settings, and normal provider surfaces operate on DB-backed `RelayProvider` records rather than a runtime fallback provider contract.
 - The frontend is built separately and embedded into the backend binary during Docker build, so the backend process serves both API routes and the SPA entrypoint in deployed images.
 - The embedded SPA now exposes a regular-user `/user` surface as a personal AI onboarding workbench. The page keeps provider-first, group-second credential self-serve driven by the current relay user's user-scoped group facts (`allowed_groups` plus active subscription entries), but the primary flow is now group-scoped and API-key-first: users select an access group, create or regenerate a personal key, can immediately choose configuration paths once a key exists, and are encouraged to run a real connection test with the selected group's platform and model before relying on that access.
@@ -70,8 +73,9 @@ flowchart LR
 - The embedded SPA also exposes an admin-only `/admin/users` surface backed primarily by the local `users` table and enriched with the current single Directory Sync snapshot. Admins can switch inside the same route between a user view and a department view. The user view supports search, pagination, department subtree filtering, derived access-status filtering, and row-level department display derived from directory members matched by email plus their current member-department memberships; unmatched local users remain visible unless a specific department filter is active. User-visible department labels use a backend-computed name-based `display_path` rather than the source `path`, because source paths can be numeric ID chains. Access status is local-state derived rather than a live sub2api inventory read: `disabled` takes precedence when `users.token_valid_after` or `users.relay_disabled_at` is set, or when a successful directory offboarding disable action exists; otherwise stored relay credentials show as `configured` and missing credentials show as `missing_credential`. The department view renders current departments as a collapsible tree using parent/depth metadata, shows direct and subtree member/matched-local-user counts based on current memberships with subtree-level member deduplication, shows representative match coverage when the directory DSL maps representative metadata, and drills back into the user view with the selected department subtree filter. Admins can inspect `username`, `email`, `role`, `auth_source`, `relay_user_id`, timestamps, and the encrypted `relay_auth_password` ciphertext. Plaintext relay password access is separated into an explicit per-user copy action that calls `/api/v1/admin/users/:id/relay-password/reveal`; the list API never returns plaintext. The same admin surface can also disable an individual upstream relay/sub2api user through `POST /api/v1/admin/users/:id/disable-access` after exact email confirmation. That direct admin-users disable action calls the optional `relay.UserDisabler` capability, records `users.relay_disabled_at`, and intentionally does not revoke local AI Efficiency login tokens or change relay subscriptions. The same admin surface can now load enabled relay providers' assignable subscription groups through the relay provider abstraction and manage sub2api subscriptions through one centralized workflow. The workflow supports selected local users, the current search/department/access-status filter across all pages, or all relay-mapped users, and can add, extend, remove, or reset quota for a selected subscription group by creating a persisted admin subscription job through `POST /api/v1/admin/users/subscription-jobs`; the frontend loads the latest subscription job when the page opens, displays its terminal state when complete, and polls active jobs instead of holding one long HTTP request open. Quota reset resolves each user's matching upstream subscription by group and calls sub2api's reset-quota admin endpoint for the daily, weekly, and monthly windows. Jobs are capped at 500 target users, snapshot target local users including `relay_user_id` before relay mutation starts, apply per-target deadlines plus a target-count-scaled job deadline, abandon stale active jobs with no progress for more than one hour, and report stale selected IDs as per-user failures. The older synchronous `POST /api/v1/admin/users/subscriptions/batch` and add-only `POST /api/v1/admin/users/:id/subscriptions` endpoints remain for compatibility. These subscription paths mutate relay subscription state only; they do not edit local user identity fields, fetch relay API keys, or fetch usage logs.
 - The embedded SPA also exposes representative-scoped team usage as ordinary authenticated user surfaces rather than as admin pages. `/usage` is the personal AI Usage page and no longer loads or renders a representative member subject selector; it always calls the current user's usage dashboard. Team comparison is separated into `/usage/team`, which calls `/api/v1/user/team-usage/overview` for team-total trend, group-comparison trend, top-member trend, and member ranking views without rendering quota cards or quota-edit controls. Scoped member drill-down is separated into `/usage/members/:user_id`, which calls `/api/v1/user/team-usage/subjects/:user_id/usage/dashboard` directly and relies on the backend as the authorization boundary. Team total is rendered independently from group comparison and deduplicates canonical members even when one member has multiple current department memberships. Group comparison uses represented root departments when a representative has multiple first-level groups, direct child departments when there is one represented root with child departments, and no comparison rows when there is only one leaf represented group; a multi-department member contributes to each matching comparison bucket while remaining single-counted in team total and parent aggregates. Delegated quota control stays inside the selected-member detail surface and is implemented as sub2api user-group `rate_multiplier` writes through the relay provider boundary, not as local quota enforcement and not as shared group-limit edits. Every delegated write attempt is also recorded locally in `team_usage_rate_multiplier_audits`, with representative-readable `/api/v1/user/team-usage/audit` and admin-visible `/api/v1/admin/team-usage/audit` API paths; current representative UI surfaces do not render audit history.
 - The embedded SPA also exposes quota reset approvals for user subscription groups. Ordinary users can request a reset for one current active subscription group with a reason, AI Efficiency resolves approvers from local department approver configuration over the current Directory Sync tree, and any resolved approver or admin can approve or reject. Approval calls the primary relay provider's subscription quota reset capability for the requester's relay user and selected group, while local request and event rows preserve audit-ready history. Admins configure department approvers and an optional outbound webhook under Organization & Login settings.
-- The embedded SPA now exposes configurable Directory Sync under `/settings` -> Organization & Login and a separate admin offboarding review page at `/admin/directory/offboarding`. Directory Sync is owned by `backend/internal/directorysync` and stores admin-authored HTTP DSL sources, validate/preview/apply runs, current directory departments, canonical current directory members, and current member-department memberships. Run history is a bounded read model: `GET /api/v1/admin/directory/sources/:id/runs` returns `limit`/`offset` pages with a default of 20 and maximum of 100, projects only display/progress summary fields, and orders rows by `started_at DESC NULLS FIRST, id DESC`. Complete warnings, summary, preview diff, error message, and other diagnostic fields remain available only through the selected-run detail endpoint. Each history response also carries a nullable `latest_active_run`, selected independently of the requested page and restricted to the newest queued/running preview or apply run. The settings UI uses that page-independent value to recover run state and polls only that active run or a just-created active run; selecting a terminal or older history row fetches its complete detail once without changing the active polling lifecycle. The DSL is generic and declarative: it supports safe GET requests, header credential references resolved from the existing encrypted credential store, item extraction from JSONPath-like paths or a root-array `$`, mapping, explicit non-sensitive metadata mappings such as organization representative ids, and bounded execution. It does not embed vendor-specific SDKs, execute scripts, or mutate external directory systems. Preview runs never update current facts, and failed apply runs leave current facts and offboarding candidates unchanged. Apply completion replaces current departments, canonical members, membership links, and the run result plus `last_successful_run_id` in one transaction; the current company snapshot is resolved from the latest successful apply run rather than from source edit time. Successful full-company apply runs match directory members to local users by normalized email.
-- Directory offboarding candidates are local relay-bound users whose normalized email is missing from the latest complete successful full-company directory snapshot. Confirmed offboarding is an explicit admin action: the backend rechecks that the user is still missing, calls the optional `relay.UserDisabler` capability through the configured relay provider boundary, and then sets `users.token_valid_after` through the auth service. It does not automatically assign, extend, remove, delete, or reset quota for relay/sub2api subscriptions; those remain under the `/admin/users` subscription job workflow.
+- The embedded SPA now exposes configurable Directory Sync under `/settings` -> Organization & Login and a separate admin offboarding review page at `/admin/directory/offboarding`. Directory Sync is owned by `backend/internal/directorysync` and stores admin-authored HTTP DSL sources, validate/preview/apply runs, current directory departments, canonical current directory members, and current member-department memberships. Run history is a bounded read model: `GET /api/v1/admin/directory/sources/:id/runs` returns `limit`/`offset` pages with a default of 20 and maximum of 100, projects only display/progress summary fields, and orders rows by `started_at DESC NULLS FIRST, id DESC`. Its count, page, and page-independent `latest_active_run` queries share one read-only repeatable-read snapshot; lifecycle transitions therefore cannot mix a running summary with a null active-run result. Complete warnings, summary, preview diff, error message, and other diagnostic fields remain available only through the selected-run detail endpoint. Each history response carries a nullable `latest_active_run` restricted to the newest queued/running preview or apply run. The settings UI uses that value to recover run state and polls only that active run or a just-created active run; selecting a terminal or older history row fetches its complete detail once without changing the active polling lifecycle. The DSL is generic and declarative: it supports safe GET requests, header credential references resolved from the existing encrypted credential store, item extraction from JSONPath-like paths or a root-array `$`, mapping, explicit non-sensitive metadata mappings such as organization representative ids, and bounded execution. It does not embed vendor-specific SDKs, execute scripts, or mutate external directory systems. Preview runs never update current facts, and failed apply runs leave current facts and offboarding candidates unchanged. Apply completion replaces current departments, canonical members, membership links, and the run result plus `last_successful_run_id` in one transaction; the current company snapshot is resolved from the latest successful apply run rather than from source edit time. Successful full-company apply runs match directory members to local users by normalized email.
+- Directory offboarding candidates are local relay-bound users whose normalized email is missing from the latest complete successful full-company directory snapshot. The backend derives both count and stable bounded pages from one shared SQL anti-join; pages order by username and local user id and batch-load prior action metadata, while the work-item badge consumes only the injected count interface. Confirmed offboarding is an explicit admin action: the backend rechecks that the user is still missing, calls the optional `relay.UserDisabler` capability through the configured relay provider boundary, and then sets `users.token_valid_after` through the auth service. It does not automatically assign, extend, remove, delete, or reset quota for relay/sub2api subscriptions; those remain under the `/admin/users` subscription job workflow.
+- Work-item freshness is owned at both runtime layers: the backend invalidates Redis keys through a PostgreSQL UUID revision, while the Pinia store bounds browser reuse to 20 seconds from successful response completion and performs generation-safe refreshes after current-actor quota, Directory, and offboarding mutations.
 - Browser login loads `/api/v1/auth/options` before choosing auth sources. If `auth.ldap.url` is configured it defaults to LDAP and also offers Relay SSO; otherwise it shows only Relay SSO. Dev Login is exposed only when the debug endpoint is explicitly enabled. Relay SSO is an existing-relay-account login path only: invalid credentials or a missing upstream relay user fail authentication and never create a sub2api user. LDAP passwords are used only for LDAP bind and are never forwarded to relay user create/update APIs. LDAP relay identity resolution prefers an exact relay email match before canonical username provisioning, and when a linked relay user has a valid role the local user role follows that relay role. When a successful LDAP login reuses an existing local `relay_sso` row by username/email, the backend updates the local `auth_source` to `ldap` so `/auth/me` and the `/user` profile reflect the actual latest login provider, while preserving any Relay SSO-captured `relay_auth_password` for later relay user JWT acquisition.
 - Official production deployment now has two supported paths: Docker Compose and Linux systemd.
 - The business entrypoint remains the backend service that also serves the frontend bundle.
@@ -148,6 +152,80 @@ flowchart TD
 - `deploy/.env.example` is the operator-facing configuration template.
 - Admin settings can display the current backend version and manually check the latest backend GitHub release through `/api/v1/system/version` and `/api/v1/system/version/check`. These endpoints are read-only and never replace binaries, restart services, or mutate deployment state.
 - In-app deployment status, update, rollback, and restart APIs are no longer part of the runtime surface. Operators upgrade Docker deployments by refreshing the image and recreating the service, and upgrade systemd deployments through install/release tooling.
+
+## Work Items Read Model
+
+PostgreSQL owns the authoritative facts used by `/api/v1/work-items/counts`. The
+`backend/internal/workitems` module accelerates that calculation with a Redis
+read model; it does not move authorization, mutation decisions, or source facts
+into Redis.
+
+### Backend Cache Contract
+
+- Cache keys include the explicit deployment namespace from `redis.namespace`
+  / `AE_REDIS_NAMESPACE`, the persisted PostgreSQL UUID revision, actor id, and
+  effective `user` or `admin` role. Namespaces are validated deployment inputs,
+  so replicas in one deployment share keys without colliding with another
+  deployment.
+- Successful values have a jittered 24-27 second TTL and no stale-serving
+  window. A revision mismatch makes every older Redis value unreachable even if
+  that value remains physically present.
+- Identical cold loads collapse first through a waiter-counted process-local
+  flight and then across replicas through a token-protected Redis lease. Lease
+  acquisition is followed by a second cache read, waiters recover after lease
+  expiry, and release uses token-checked compare-and-delete.
+- Redis command failure bypasses Redis and performs one bounded authoritative
+  load through the local flight. Relay-derived degradation remains usable for
+  that response but is not cacheable, so the next request retries the Relay
+  lookup.
+- Directory offboarding count and page reads share one PostgreSQL anti-join.
+  Badge reads execute only the count path; pages default to 20 rows, cap page
+  size at 100, order by username then local user id, and batch-load action
+  metadata for the selected page.
+
+### Mutation Invalidation
+
+One `workitems.RevisionStore` is initialized after schema migration and shared
+with the counts cache, quota reset service, and Directory Sync service. The
+following PostgreSQL commits advance its UUID revision in the same Ent
+transaction as the authoritative local mutation:
+
+- quota request creation and every transition into or out of actionable
+  `{pending, approved_reset_failed}` state, together with required audit events;
+- Directory source update/delete and successful apply completion, together with
+  current facts, run completion, and source pointers;
+- successful offboarding finalization, together with
+  `users.token_valid_after` and the succeeded action.
+
+Relay quota reset and Relay user disable calls remain outside local database
+transactions. After Relay disable succeeds, offboarding uses a synchronous
+`context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)` finalization
+transaction through the auth service's tx-aware token revocation seam. A failed
+finalization rolls back token/action/revision state, then records
+`partial_failed` under a new independent bounded context. Redis availability is
+irrelevant to all of these commits.
+
+### Browser Freshness And Mutation Refresh
+
+The Pinia Work Items store starts a 20-second freshness window only when a count
+response succeeds. Protected-route navigation and repeated desktop/mobile
+sidebar mounts reuse that completed value. One active request is shared by
+normal callers, and concurrent forced callers share exactly one queued forced
+follow-up.
+
+Invalidation preserves the displayed badge but advances a freshness generation,
+expires the window, and prevents late success, error, or `finally` handling from
+an older generation or auth session from overwriting current state. Auth reset
+clears counts, freshness, queued work, and generations. Failed loads are not
+marked fresh and remain retryable.
+
+After successful current-actor quota cancel/approve/reject/retry operations,
+Directory source updates, newly completed tracked apply runs, or confirmed
+offboarding, the owning view invalidates counts and awaits one forced refresh.
+Source creation, preview, failed apply, and already-completed historical runs do
+not trigger this refresh. The offboarding view consumes the bounded
+`{items,page,page_size,total}` contract, resets search to page 1, clamps an empty
+last page, and keeps exact normalized-email confirmation before disable.
 
 ## Current Runtime Flow
 
@@ -303,9 +381,9 @@ flowchart LR
 | Auth and identity | `backend/internal/auth`, `backend/internal/oauth` | Config-aware login source exposure, LDAP-first auth when configured, relay SSO fallback, local token issuance, user identity mapping |
 | Credentials | `backend/internal/credential` | Reusable encrypted secret assets, payload validation, provider credential migration, and credential masking |
 | Relay integration | `backend/internal/relay` | Unified relay/sub2api adapter, optional upstream user disablement, subscription add/extend/remove/reset-quota management, user/group usage reads, group rate-multiplier read/replace extensions, and usage/API key operations |
-| Directory sync | `backend/internal/directorysync` | Configurable HTTP directory DSL validation/execution, current department/member/membership facts, scheduled apply runs, offboarding candidate derivation, and confirmed relay-user disable plus token revocation orchestration |
-| Quota reset approvals | `backend/internal/quotareset` | Local subscription-group quota reset request workflow, department approver candidate resolution from Directory Sync representative metadata with local-user email fallback and unmatched-representative diagnostics, validated approver configuration, approval/rejection/reset state transitions, audit-ready request events, and outbound webhook notification settings |
-| Work items | `backend/internal/workitems` | Auth-scoped pending work counters for sidebar and `/work-items`, including best-effort relay-derived personal AI access setup plus locally derived quota reset and directory offboarding counts that remain available when the relay lookup fails |
+| Directory sync | `backend/internal/directorysync` | Configurable HTTP directory DSL validation/execution, current department/member/membership facts, scheduled transactional apply runs, shared bounded offboarding count/page anti-join, and confirmed relay-user disable plus tx-aware token/revision finalization |
+| Quota reset approvals | `backend/internal/quotareset` | Local subscription-group quota reset request workflow, department approver candidate resolution from Directory Sync representative metadata with local-user email fallback and unmatched-representative diagnostics, validated approver configuration, transactional actionable-state/revision transitions, audit-ready request events, Relay reset orchestration, and outbound webhook notification settings |
+| Work items | `backend/internal/workitems` | Auth-scoped pending work counters, the PostgreSQL UUID revision, and the namespace/revision/actor/role-isolated Redis read model with bounded authoritative fallback; counts include best-effort relay-derived personal AI access setup plus locally derived quota reset and count-only injected Directory offboarding dependencies |
 | Representative scope and team usage | `backend/internal/representativescope`, `backend/internal/teamusage` | Resolve representative subtree scope from current directory metadata and member-department memberships, enforce delegated subject visibility and ancestor-only multiplier policy, orchestrate selected-member detail and team-overview usage reads, and persist local `team_usage_rate_multiplier_audits` |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
 | Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, PR labeling, and dashboard-facing summary inputs |
@@ -316,9 +394,9 @@ flowchart LR
 
 | Area | Paths | Responsibility |
 | --- | --- | --- |
-| Views | `frontend/src/views` | Dashboard, Work Items, repos, events, oauth, personal AI Usage, selected-member usage detail, representative Team Overview, admin users, admin directory offboarding, and admin/settings pages |
-| Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, representative team-usage clients, directory sync clients, work item count state, state management, request orchestration |
-| App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation with pending-work badge, route composition, and representative `/team-usage` route entry |
+| Views | `frontend/src/views` | Dashboard, Work Items, repos, events, oauth, personal AI Usage, selected-member usage detail, representative Team Overview, admin users, paginated admin Directory offboarding, and admin/settings pages with immediate affected-mutation count refresh |
+| Data access | `frontend/src/api`, `frontend/src/stores` | Backend API clients, representative team-usage clients, paginated Directory clients, and the generation-safe Work Items count store with completion-based 20-second freshness, invalidation/reset ownership, and one queued forced follow-up |
+| App shell | `frontend/src/components`, `frontend/src/router` | Layout, navigation with a freshness-bounded pending-work badge across protected routes and mobile remounts, route composition, and representative `/team-usage` route entry |
 
 ### ae-cli
 
