@@ -1,33 +1,41 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import TeamOverviewMemberTrendChart from '@/components/team-usage/TeamOverviewMemberTrendChart.vue'
 import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberTable.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
-import { getTeamUsageOverview, getTeamUsageSummary } from '@/api/teamUsage'
+import { getTeamUsageOverview, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
-import type { TeamOverviewResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse } from '@/types'
+import type { TeamOverviewResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
+
+const TeamOverviewMemberTrendChart = defineAsyncComponent(
+  () => import('@/components/team-usage/TeamOverviewMemberTrendChart.vue'),
+)
 
 const { t } = useI18n()
 const router = useRouter()
 const summary = ref<TeamUsageSummaryResponse | null>(null)
-const overview = ref<TeamOverviewResponse | null>(null)
+const trend = ref<TeamUsageTrendResponse | null>(null)
+const compatibilityOverview = ref<TeamOverviewResponse | null>(null)
 const summaryLoading = ref(false)
-const sectionsLoading = ref(false)
+const trendLoading = ref(false)
+const compatibilityLoading = ref(false)
 const summaryError = ref<'no_scope' | 'unavailable' | null>(null)
-const sectionsError = ref<'no_scope' | 'unavailable' | null>(null)
+const trendError = ref<'no_scope' | 'unavailable' | null>(null)
+const compatibilityError = ref<'no_scope' | 'unavailable' | null>(null)
 type RangeOption = 'today' | '7d' | '30d'
 const selectedRange = ref<RangeOption>('30d')
 let summaryRequestSeq = 0
-let overviewRequestSeq = 0
+let trendRequestSeq = 0
+let compatibilityRequestSeq = 0
 
-const loading = computed(() => summaryLoading.value || sectionsLoading.value)
+const loading = computed(() => summaryLoading.value || trendLoading.value || compatibilityLoading.value)
 
 const scopeTooLarge = computed(() => {
   return summary.value?.summary.unavailable_reason === 'scope_too_large'
-    || overview.value?.top_member_trend.unavailable_reason === 'scope_too_large'
+    || trend.value?.top_member_trend.unavailable_reason === 'scope_too_large'
+    || trend.value?.department_trend.unavailable_reason === 'scope_too_large'
 })
 
 const summaryPartiallyUnavailable = computed(() => {
@@ -54,21 +62,40 @@ async function loadSummary(params: TeamUsageOverviewParams) {
   }
 }
 
-async function loadSections(params: TeamUsageOverviewParams) {
-  const requestSeq = ++overviewRequestSeq
-  sectionsLoading.value = true
-  sectionsError.value = null
+async function loadTrend(params: TeamUsageOverviewParams) {
+  const requestSeq = ++trendRequestSeq
+  trendLoading.value = true
+  trendError.value = null
+  try {
+    const response = await getTeamUsageTrend(params)
+    if (requestSeq !== trendRequestSeq) return
+    trend.value = response.data.data ?? null
+  } catch (error) {
+    if (requestSeq !== trendRequestSeq) return
+    trend.value = null
+    trendError.value = isForbidden(error) ? 'no_scope' : 'unavailable'
+  } finally {
+    if (requestSeq === trendRequestSeq) {
+      trendLoading.value = false
+    }
+  }
+}
+
+async function loadCompatibilityOverview(params: TeamUsageOverviewParams) {
+  const requestSeq = ++compatibilityRequestSeq
+  compatibilityLoading.value = true
+  compatibilityError.value = null
   try {
     const response = await getTeamUsageOverview(params)
-    if (requestSeq !== overviewRequestSeq) return
-    overview.value = response.data.data ?? null
+    if (requestSeq !== compatibilityRequestSeq) return
+    compatibilityOverview.value = response.data.data ?? null
   } catch (error) {
-    if (requestSeq !== overviewRequestSeq) return
-    overview.value = null
-    sectionsError.value = isForbidden(error) ? 'no_scope' : 'unavailable'
+    if (requestSeq !== compatibilityRequestSeq) return
+    compatibilityOverview.value = null
+    compatibilityError.value = isForbidden(error) ? 'no_scope' : 'unavailable'
   } finally {
-    if (requestSeq === overviewRequestSeq) {
-      sectionsLoading.value = false
+    if (requestSeq === compatibilityRequestSeq) {
+      compatibilityLoading.value = false
     }
   }
 }
@@ -76,7 +103,8 @@ async function loadSections(params: TeamUsageOverviewParams) {
 function loadOverview() {
   const params = buildOverviewParams(selectedRange.value)
   void loadSummary(params)
-  void loadSections(params)
+  void loadTrend(params)
+  void loadCompatibilityOverview(params)
 }
 
 function isForbidden(error: unknown) {
@@ -170,7 +198,7 @@ onMounted(loadOverview)
         :class="['space-y-4 transition-opacity', loading ? 'opacity-60' : 'opacity-100']"
       >
         <div
-          v-if="loading && (summary || overview)"
+          v-if="loading && (summary || trend || compatibilityOverview)"
           data-testid="team-overview-refreshing"
           class="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700"
         >
@@ -242,27 +270,54 @@ onMounted(loadOverview)
         </div>
 
         <section
-          v-if="sectionsLoading && !overview"
+          v-if="trendLoading && !trend"
+          data-testid="team-overview-trend-loading"
+          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm"
+        >
+          {{ t('settings.loading') }}
+        </section>
+        <section
+          v-else-if="trendError && !trend"
+          data-testid="team-overview-trend-error"
+          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm"
+        >
+          {{ trendError === 'no_scope' ? t('teamUsage.noScope') : t('teamUsage.unavailable') }}
+        </section>
+        <div v-else-if="trend" data-testid="team-overview-trend" class="space-y-3">
+          <div
+            v-if="trend.cache_status === 'stale'"
+            data-testid="team-trend-stale-marker"
+            class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
+          >
+            {{ t('usageDashboard.staleSnapshot') }}
+          </div>
+          <TeamOverviewMemberTrendChart
+            :state="trend.top_member_trend"
+            :department-trend="trend.department_trend"
+            :window="trend.window"
+          />
+        </div>
+
+        <section
+          v-if="compatibilityLoading && !compatibilityOverview"
           data-testid="team-overview-sections-loading"
           class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm"
         >
           {{ t('settings.loading') }}
         </section>
         <section
-          v-else-if="sectionsError && !overview"
+          v-else-if="compatibilityError && !compatibilityOverview"
           data-testid="team-overview-sections-error"
           class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm"
         >
-          {{ t('teamUsage.unavailable') }}
+          {{ compatibilityError === 'no_scope' ? t('teamUsage.noScope') : t('teamUsage.unavailable') }}
         </section>
-        <template v-else-if="overview">
-          <TeamOverviewMemberTrendChart
-            :state="overview.top_member_trend"
-            :department-trend="overview.department_trend"
-            :window="overview.window"
-          />
-          <TeamOverviewMemberTable :members="overview.members" :member-tree="overview.member_tree" @open-member="openMember" />
-        </template>
+        <TeamOverviewMemberTable
+          v-else-if="compatibilityOverview"
+          :members="compatibilityOverview.members"
+          :member-tree="compatibilityOverview.member_tree"
+          @open-member="openMember"
+        />
       </div>
     </div>
   </AppLayout>

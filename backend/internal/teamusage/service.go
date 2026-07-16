@@ -162,6 +162,21 @@ func (s *Service) Summary(ctx context.Context, actorUserID int, params OverviewP
 	}, nil
 }
 
+func (s *Service) Trend(ctx context.Context, actorUserID int, params OverviewParams) (*TrendResponse, error) {
+	result, scopeVersion, err := s.readOverviewSnapshot(ctx, actorUserID, params)
+	if err != nil {
+		return nil, err
+	}
+	return &TrendResponse{
+		SnapshotFreshness: result.Freshness,
+		ScopeVersion:      scopeVersion,
+		Window:            result.Snapshot.Window,
+		TopMembers:        append([]OverviewMember(nil), result.Snapshot.TopMembers...),
+		TopMemberTrend:    result.Snapshot.TopMemberTrend,
+		DepartmentTrend:   result.Snapshot.DepartmentTrend,
+	}, nil
+}
+
 func (s *Service) Overview(ctx context.Context, actorUserID int, params OverviewParams) (*OverviewResponse, error) {
 	result, _, err := s.readOverviewSnapshot(ctx, actorUserID, params)
 	if err != nil {

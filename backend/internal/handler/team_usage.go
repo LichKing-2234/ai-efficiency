@@ -23,6 +23,7 @@ type teamUsageService interface {
 	Subjects(context.Context, int, string, int, int) (*teamusage.SubjectsResponse, error)
 	SubjectDashboard(context.Context, int, int, relay.UserUsageDashboardParams) (*teamusage.SubjectDashboardResponse, error)
 	Summary(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error)
+	Trend(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error)
 	Overview(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error)
 	UpdateMultiplier(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	ListAudit(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
@@ -159,6 +160,31 @@ func (h *TeamUsageHandler) Summary(c *gin.Context) {
 		return
 	}
 	resp, err := h.service.Summary(c.Request.Context(), uc.UserID, teamusage.OverviewParams{
+		StartDate: dashboardParams.StartDate, EndDate: dashboardParams.EndDate,
+		Granularity: dashboardParams.Granularity, Timezone: dashboardParams.Timezone,
+	})
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	requestID := uuid.NewString()
+	resp.RequestID = requestID
+	c.Header("X-Request-ID", requestID)
+	pkg.Success(c, resp)
+}
+
+func (h *TeamUsageHandler) Trend(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dashboardParams, ok := parseUserUsageDashboardParams(c)
+	if !ok {
+		return
+	}
+	resp, err := h.service.Trend(c.Request.Context(), uc.UserID, teamusage.OverviewParams{
 		StartDate: dashboardParams.StartDate, EndDate: dashboardParams.EndDate,
 		Granularity: dashboardParams.Granularity, Timezone: dashboardParams.Timezone,
 	})
