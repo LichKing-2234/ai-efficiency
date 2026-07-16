@@ -1,0 +1,686 @@
+# End-to-End Page Loading Performance Design
+
+- **Date:** 2026-07-14
+- **Status:** Approved target design; implementation pending
+- **Parent issue:** [#115](https://github.com/LichKing-2234/ai-efficiency/issues/115)
+- **Contract ticket:** [#116](https://github.com/LichKing-2234/ai-efficiency/issues/116)
+- **Audit baseline:** commit `70eb6ebe32298c333d4bebf144edd1b474a039dc`, production `v0.1.0-preview.71`
+
+## Purpose and Status Boundary
+
+This document is the active design contract for reducing end-to-end page loading latency across AI Efficiency Platform. It covers browser critical paths, API composition, database query shape, Relay calls, Redis read models, embedded static serving, runtime deadlines, readiness, and performance telemetry.
+
+The code at the audit baseline does **not** implement most target behavior in this document. To keep project documentation honest:
+
+1. `Current State at the Audit Commit` and statements explicitly labeled **Current** describe verified behavior at the audit commit.
+2. Every other behavioral contract in this document is an approved **Target** for child tickets of #115 unless it explicitly says otherwise; `Target` in a heading is a reminder, not a requirement for that status to apply.
+3. `docs/architecture.md` continues to describe current runtime behavior. Each implementation ticket updates it only after that slice becomes real.
+4. This ticket changes documentation only. It does not change business behavior, API behavior, deployment, or production configuration.
+
+## Related Documents and Supersession
+
+This spec extends the current architecture and selectively supersedes older feature contracts. Historical specs remain unchanged so the design history stays readable.
+
+### Personal usage
+
+[2026-06-06-user-usage-trend-design.md](./2026-06-06-user-usage-trend-design.md) remains authoritative for:
+
+- the personal usage range and field semantics;
+- the single high-level `relay.Provider` boundary instead of handler-owned stats/trend/models calls;
+- one Relay login/session per origin read;
+- current-user isolation and the existing configured/invalid-credential behavior.
+
+This spec supersedes only these parts of that design:
+
+- usage is no longer permanently fail-fast when a transient Relay failure has an eligible recent usage snapshot;
+- usage is no longer always an uncached live read;
+- stats, trend, and model origin calls must use bounded concurrency rather than the historical serial-first allowance;
+- the response now reports explicit usage freshness and source availability.
+
+[2026-06-16-ai-usage-center-group-quota-design.md](./2026-06-16-ai-usage-center-group-quota-design.md) remains authoritative for `group_quotas`, including its `ok`, `empty`, and `unavailable` states and its display semantics.
+
+This spec supersedes the assumption that the homepage has one response lifecycle and one freshness class. The frontend snapshot becomes sectioned and may be assembled from independent responses:
+
+- usage metrics may be fresh, a cold miss result, or an eligible stale-if-error result;
+- quota and subscription state must be fresh or explicitly unavailable and must never be copied from a stale usage value.
+
+### Representative scope and Team Overview
+
+[2026-06-26-team-usage-representative-quota-design.md](./2026-06-26-team-usage-representative-quota-design.md) remains authoritative for:
+
+- Directory Sync-backed representative scope and fail-closed target authorization;
+- team total, department comparison, top-member ranking, and billed-usage semantics;
+- personal versus Team Overview information architecture;
+- selected-member detail, subscription rows, rate multiplier policy, writes, and audit;
+- the rule that Team Overview contains no quota cards or multiplier controls.
+
+This spec supersedes only:
+
+- the monolithic `GET /api/v1/user/team-usage/overview` read contract;
+- full members plus recursive `member_tree` delivery in the initial response;
+- request-local-only representative scope reuse;
+- the first-version assumption that all Team Overview sections share one loading and error boundary.
+
+The legacy overview contract becomes a temporary compatibility adapter during an expand-contract migration. The existing scope, selected-member, multiplier, and audit endpoints remain separate contracts.
+
+### Documented drift resolved by this spec
+
+Current code has already drifted from a few historical Team Overview statements:
+
+1. The historical design described a 200 `is_representative=false` overview response. The current overview implementation returns a generic 403 when an authenticated actor has no representative scope. The split endpoints retain the current fail-closed behavior; only the scope discovery endpoint returns 200 with `is_representative=false`.
+2. The current overview handler parses page inputs, but the service ignores them and returns full member and tree collections. The split members and organization endpoints replace this with enforceable cursor bounds.
+3. The historical design allowed member browsing when aggregate scope was too large, while the current monolithic fallback returns empty member collections. The split contract restores the intended separation: summary/trend may be unavailable while bounded members/organization remain independently retrievable.
+4. Historical component names are not current contracts. API behavior, authorization, and user-visible states take precedence over old component naming.
+
+### Deployment and health
+
+[2026-04-08-production-deployment-packaging-design.md](./2026-04-08-production-deployment-packaging-design.md) provides historical packaging and high-level health context. This spec is the current detailed target for embedded asset delivery, server and downstream deadlines, readiness HTTP semantics, and loading-performance telemetry.
+
+## Current State at the Audit Commit
+
+The following facts are current at `70eb6ebe32298c333d4bebf144edd1b474a039dc`:
+
+1. The platform is a modular monolith and one platform release unit. The Docker build embeds `frontend/dist` in the backend binary, and the backend process serves both API and SPA traffic.
+2. Embedded assets and SPA fallback use Go `http.FileServer` without application-owned gzip, `Cache-Control`, ETag, or a meaningful embedded-file `Last-Modified` contract.
+3. The HTTP server sets only address and handler. It has no explicit read-header or idle timeout.
+4. Readiness computes body states `ready`, `degraded`, and `not_ready`, but the HTTP handler always returns status 200.
+5. Redis is initialized and pinged by readiness only. No business service owns Redis keys, read models, locks, or cache metrics.
+6. The configured database pool is already applied; its saturation and wait statistics are not exported.
+7. Request middleware has no shared request ID, normalized route timing, response-byte metric, or downstream timing spine.
+8. The frontend has a default API timeout but no sampled Web Vitals collection.
+9. Personal usage fetches the usage dashboard first, then assembles group quotas from additional Relay calls. Stats, trend, and model origin reads are serial inside the current Relay adapter.
+10. The personal usage page waits for both the usage dashboard and optional representative scope before leaving its page-level loading state.
+11. Team Overview uses one endpoint and one response containing summary, trends, full members, and a recursive member tree. Its handler accepts page inputs, but the service currently returns the full member collections.
+12. The representative scope service rebuilds directory and membership structures from current facts for each resolution.
+
+Point-in-time production observations tied to this commit and release were:
+
+| Surface | Observation |
+| --- | --- |
+| Work-item counts | 12.5-13.4 seconds backend time and requested from every protected page |
+| Personal usage dashboard | 2.5-3.8 seconds backend time |
+| Team overview | 5.2-6.2 seconds backend time for four members; one 12.3-second end-to-end sample |
+| User providers | 3.8-4.7 seconds backend time |
+| Offboarding candidates | 7.9-10.2 seconds backend time |
+| Directory Sync run history | 3,968,728-byte unpaginated response |
+| Entry JavaScript | Approximately 256 KB raw and 11.1 seconds transferred in the sampled environment |
+| Chart chunk | Approximately 175 KB raw and 10.7 seconds transferred in the sampled environment |
+| Static upstream generation | Approximately 1 ms at Kong for sampled JavaScript |
+
+These observations are evidence for prioritization, not service-level objectives. Comparisons must retain release, route, cache state, and approximate network conditions.
+
+## Goals
+
+1. Make the first useful content independent from optional or slower page sections.
+2. Bound database rows, Relay fan-out, response bytes, and rendered DOM by contract.
+3. Reuse short-lived, reconstructible read models without weakening authorization or mutation consistency.
+4. Keep Redis optional for data-plane reads: Redis failure falls back to authoritative sources.
+5. Let operators distinguish browser transfer, application work, database work, and downstream Relay/SCM work.
+6. Keep the existing modular monolith, provider boundaries, release units, and embedded frontend deployment.
+
+## Non-Goals
+
+1. CDN adoption, a separate asset domain, HTTP/3, or edge caching.
+2. Splitting frontend and backend into separate repositories, containers, deployments, or release units.
+3. Changing `sub2api` source code or introducing direct database coupling to it.
+4. Caching authorization decisions, token revocation, credentials, or mutation results.
+5. Rewriting historical specs to look like the final implementation.
+6. A full OpenTelemetry collector rollout before low-cardinality request and dependency timing is established.
+7. Brotli precompression before gzip and correct application cache headers are verified.
+
+## Cross-Cutting Invariants
+
+### Correctness before caching
+
+1. Fix unbounded queries, N+1 behavior, duplicate requests, and oversized response contracts before caching their output.
+2. A cache value is a reconstructible read model, never an authority for a write or access decision.
+3. Every protected request still validates the current authenticated user, including the token revocation floor.
+4. Authorization, mutation, and credential failures are not eligible stale-if-error conditions.
+
+### Module boundaries
+
+1. Relay and sub2api integration stays behind `backend/internal/relay.Provider` and its optional capability interfaces.
+2. Handlers remain thin. Services own read-model composition, cache policy, query shape, and invalidation.
+3. Frontend API access stays under `frontend/src/api`; shared request state and freshness live in API/store boundaries, not duplicated in views.
+4. The platform remains a single backend process serving API and the embedded SPA.
+
+### Bounded work
+
+Every collection contract must define stable ordering and a default and maximum page size. Every downstream fan-out must define a concurrency limit and an overall deadline. Hidden UI must not cause unbounded requests, JSON formatting, or duplicate DOM trees.
+
+## Redis Read-Model Contract
+
+### Key isolation
+
+All keys use a versioned prefix and deployment/tenant namespace. Include every dimension that changes the answer:
+
+- provider ID and provider configuration version;
+- actor or subject identity;
+- directory run and representative scope version;
+- date range, granularity, and timezone;
+- parent node, cursor position, and limit when a cached value is a paginated response rather than the shared versioned snapshot;
+- effective role where it changes visibility;
+- a schema/read-model version.
+
+Do not put passwords, JWTs, API keys, credentials, raw user email, raw query parameters, or serialized cache values into key names, metrics, or logs.
+
+### Two-window freshness
+
+Values that support stale-if-error store:
+
+- `generated_at`;
+- `fresh_until`;
+- `stale_until`;
+- the versioned payload.
+
+The Redis hard TTL lasts through `stale_until`, not merely through the fresh window.
+
+1. At or before `fresh_until`, return the value as `fresh`.
+2. After `fresh_until` and at or before `stale_until`, perform one collapsed authoritative refresh.
+3. Return the old value as `stale` only when that refresh fails with an eligible transient source error or a bounded waiter observes the failed refresh.
+4. After `stale_until`, never return the value.
+5. Invalid credentials, forbidden access, invalid input, provider configuration changes, and mutation conflicts are not transient source errors.
+
+TTL jitter is 10-20 percent to avoid synchronized expiry. Jitter must not extend a value past its documented maximum stale age.
+
+### Refresh collapse
+
+1. Use process-local singleflight for identical keys in one replica.
+2. Use a short Redis `SET NX` lease with an expiry for cross-replica refresh ownership.
+3. Waiters may wait briefly for the lease holder and then read its result.
+4. A cancelled or failed lease holder cannot leave a durable lock or make callers wait beyond their request deadline.
+5. Redis failure bypasses cache and lease logic and performs an authoritative read under the endpoint's normal budget.
+
+### Cache matrix
+
+| Read model | Fresh window | Maximum stale | Required isolation |
+| --- | --- | --- | --- |
+| Work-item counts | 20-30 seconds | None | deployment, actor, effective role |
+| Personal usage metrics | 15-30 seconds | 2 minutes | deployment, provider version, subject, credential/binding version, range, granularity, timezone |
+| Team summary/trend/member/organization read models | 30-60 seconds | 5 minutes | deployment, provider version, actor, scope version/hash, range, granularity, timezone, and parent/page dimensions where applicable |
+| Representative scope read model | 10-60 minutes | None across a version change | deployment, actor, current directory run, role/grant version |
+| Relay group/model metadata | About 5 minutes | None | deployment, provider version, platform, group |
+| Repository inventory | About 60 seconds | None | deployment and inventory version |
+
+An implementation may cache a shared immutable snapshot and paginate it deterministically, or cache individual response pages. Only a page cache includes normalized parent/sort position and limit dimensions; never place an unvalidated raw cursor or query string in a key.
+
+The current Directory Sync run ID is a natural scope version because representative metadata is part of that applied snapshot. If representative grants later come from another source, that source must expose a monotonic version and join the guard and cache key.
+
+### Invalidation
+
+Platform-owned mutations invalidate or version affected read models before returning success:
+
+- quota request and approval state changes invalidate affected work-item counts;
+- credential/provider changes persist a new version and invalidate usage/provider metadata and the mutating replica's provider client before success; other replicas follow the provider-version convergence contract below;
+- Directory Sync apply and offboarding invalidate/version scope and work-item data;
+- repository mutations invalidate inventory;
+- subscription and quota changes invalidate any fresh quota presentation but never create a stale quota value.
+
+Changes made directly in an external system without an AE mutation path become visible no later than the fresh TTL unless that external system supplies an explicit event.
+
+### Provider configuration version
+
+Provider configuration version is a shared correctness boundary, not a process-local cache counter:
+
+1. Each provider has a persisted monotonically increasing `configuration_version`, initialized to 1.
+2. Every successful mutation that can change provider behavior, credentials, enablement, primary selection, base URL, or default model increments that version in the same database transaction as the mutation.
+3. Read-model keys use the persisted version. A timestamp alone is not the version contract because timestamp precision and concurrent updates must not alias.
+4. Process-local provider clients are keyed by `(provider_id, configuration_version)`, revalidate the persisted version at least every 30 seconds, and have a maximum lifetime of five minutes.
+5. After commit and before returning success, the mutating replica evicts its old client and publishes a best-effort cross-replica invalidation. A replica that misses the notification converges through the 30-second version check and maximum lifetime; it never keeps an old client indefinitely.
+6. Secrets remain only in the authoritative provider record and process-local client. Redis read models, keys, metrics, logs, and invalidation messages contain the provider ID and version but never the secret value.
+
+### Never cached
+
+Do not cache or use stale values for:
+
+- `users.token_valid_after` and current user disable state;
+- quota approve/reject/reset decisions;
+- Relay disable or rate-multiplier writes;
+- Directory Sync apply;
+- repository binding or webhook repair writes;
+- checkpoint or attribution ingest decisions;
+- passwords, JWTs, API keys, provider credentials, or credential payloads.
+
+## Personal Usage Target Contract
+
+### Endpoint and origin composition
+
+The stable combined endpoint remains available for existing callers:
+
+```text
+GET /api/v1/user/usage/dashboard?start_date=...&end_date=...&granularity=...&timezone=...
+```
+
+To give usage and quota independent loading lifecycles without streaming a JSON response, the first-party browser issues these requests in parallel:
+
+```text
+GET /api/v1/user/usage/dashboard?start_date=...&end_date=...&granularity=...&timezone=...&include_group_quotas=false
+GET /api/v1/user/usage/group-quotas?start_date=...&end_date=...&granularity=...&timezone=...
+```
+
+The additive `include_group_quotas=false` projection returns the existing usage fields plus `usage_freshness`, and omits `group_quotas` and `quota_freshness`. Omitting the parameter preserves the current combined response shape for compatibility. The independent quota endpoint returns only `group_quotas` and `quota_freshness`. The frontend composes the two results in its API/store boundary and renders either result as soon as it arrives.
+
+The service checks the usage-metric cache before deciding which origin branches are needed. The Relay provider boundary exposes one high-level, request-scoped origin read with explicit branch selection:
+
+1. Authenticate once when an origin read requires user authentication.
+2. Fetch requested stats, trend, models, keys, and subscriptions with bounded concurrency.
+3. Do not expose stats/trend/models as separate handler calls.
+4. Do not call an aggregate dashboard operation and duplicate component operations in the same request.
+5. Treat stats, trend, and models as one atomic usage generation. A refresh stores all three with one generation timestamp or stores none; it never mixes live and cached components or components from different generations.
+6. Treat quota/subscription facts as a separate fresh-only unit. The independent quota endpoint requests only key/subscription branches and does not refresh stats, trend, or models.
+
+An implementation may evolve `GetUserUsageDashboard` directly or use a temporary optional capability during migration, but the stable service/handler contract is one high-level origin operation with explicit branch selection rather than handler-owned Relay orchestration. The combined compatibility response composes the same internal usage and quota operations; it does not make an internal HTTP call.
+
+### Response freshness
+
+The existing usage fields and `group_quotas` remain in the default combined response. Add separate usage and quota freshness metadata:
+
+```json
+{
+  "usage_freshness": {
+    "as_of": "2026-07-14T08:00:00Z",
+    "fresh_until": "2026-07-14T08:00:30Z",
+    "stale_until": "2026-07-14T08:02:00Z",
+    "cache_status": "fresh",
+    "source_status": "ok"
+  },
+  "quota_freshness": {
+    "as_of": "2026-07-14T08:00:01Z",
+    "cache_status": "uncached",
+    "source_status": "ok"
+  }
+}
+```
+
+`cache_status` is one of:
+
+- `miss`: this request read the authoritative source and populated a new value;
+- `fresh`: the usage value came from the fresh window;
+- `stale`: an eligible refresh failed and the value is still before `stale_until`.
+
+For usage, `as_of` is the atomic usage generation time in UTC RFC3339 form. `source_status` is `ok` or `error`. A stale response uses `source_status=error`; it is a successful HTTP response with a degraded freshness state, not a page-level error lifecycle. The response never claims a stale value is fresh.
+
+`quota_freshness.cache_status` is always `uncached`. Its `source_status` is `ok` when the current request completed the authoritative quota/subscription branch, including an empty result, and `error` when that branch failed or is unsupported. `quota_freshness.as_of` is the UTC RFC3339 completion time for an `ok` branch and `null` for an `error` branch.
+
+`group_quotas.status` remains the quota availability contract:
+
+- `ok`: fresh quota/subscription facts were read and rows are available;
+- `empty`: the fresh read proves there are no displayable rows;
+- `unavailable`: the fresh read failed or the provider lacks the capability.
+
+Quota/subscription rows are not stored inside the stale usage value. A stale default combined response may therefore carry `group_quotas.status=ok`, `empty`, or `unavailable` based on the current request's fresh quota branch; the usage-only projection omits that branch entirely.
+
+This cache contract applies to the current user's personal dashboard only. Team selected-member dashboards do not automatically read or populate the personal cache; any reuse there requires its own subject authorization, cache isolation, freshness, and invalidation contract.
+
+### Error behavior
+
+1. Missing Relay configuration remains a 200 response with `configured=false`, empty usage data, and no cached usage freshness.
+2. Invalid or changed credentials remain a 409 configuration error and do not use stale-if-error.
+3. A transient usage origin failure returns eligible stale usage with HTTP 200, `usage_freshness.cache_status=stale`, and `usage_freshness.source_status=error` when available.
+4. A transient usage origin failure after the hard stale deadline returns the existing upstream failure response.
+5. A quota failure returns HTTP 200 from the independent quota endpoint with `group_quotas.status=unavailable`, `quota_freshness.as_of=null`, and `quota_freshness.source_status=error`. It does not change the usage request's HTTP result or lifecycle. The default combined response preserves the same section-local unavailable state.
+6. A platform-owned credential, provider, or subscription mutation invalidates the corresponding read model before success is returned.
+
+### Frontend behavior
+
+1. Personal usage, quota, and optional representative scope start independently. Personal usage leaves its page-level loading state when the usage-only request is available; quota owns only the quota section, and representative scope controls only Team tab visibility.
+2. Usage freshness is visible when a stale value is shown. Fresh and cold-miss values need no noisy badge.
+3. Quota unavailable state remains local to the quota section.
+4. Superseded range requests are aborted or prevented; only the latest selected range updates the view.
+5. Chart code loads after data is available or shortly before its viewport entry.
+
+## Representative Scope Target Contract
+
+### Lightweight authoritative guard
+
+Every representative endpoint validates:
+
+1. current authenticated user and token revocation state;
+2. current applied Directory Sync source and successful run ID;
+3. actor user ID and current role;
+4. the representative grant version.
+
+For the current Directory Sync-backed model, grant version is the applied run ID because the representative IDs and leader department IDs are facts in that run. A stable scope version may be derived from:
+
+```text
+source ID + applied run ID + actor user ID + actor role + token revocation floor + scope schema version
+```
+
+The derived version contains no secret and may be represented as an opaque hash.
+
+### Cached scope fields
+
+A scope read model may contain:
+
+- represented root department IDs;
+- descendant department IDs;
+- normalized member subject identities and Relay IDs;
+- tree-navigation metadata needed by read endpoints.
+
+A hit avoids loading and rebuilding all departments, members, memberships, and users. A version change always selects a new value. Redis failure rebuilds from authoritative database facts.
+
+Selected-member reads still validate the requested subject against the current versioned scope. Rate-multiplier writes and other high-impact access decisions recheck authoritative current facts and fail closed; they do not trust only a cached member list.
+
+### No-scope behavior
+
+`GET /api/v1/user/team-usage/scope` remains the discovery endpoint and returns 200 with `is_representative=false` when no scope exists.
+
+Direct summary, trend, members, organization, selected-member, and write endpoints require current representative scope. They return a generic 403 for a no-scope actor rather than revealing target or organization facts. The frontend maps this to the compact no-delegated-scope state.
+
+## Split Team Overview Target Contract
+
+All four read endpoints share common range normalization, representative authorization, scope version, provider version, cache isolation, and freshness metadata. A failure in one endpoint does not change the HTTP result or rendered state of another section.
+
+Common response metadata:
+
+```json
+{
+  "as_of": "2026-07-14T08:00:00Z",
+  "fresh_until": "2026-07-14T08:01:00Z",
+  "stale_until": "2026-07-14T08:05:00Z",
+  "cache_status": "fresh",
+  "source_status": "ok",
+  "scope_version": "opaque-version",
+  "request_id": "request-id"
+}
+```
+
+`as_of` is the snapshot generation time in UTC RFC3339 form. `cache_status` is `miss` when this request generated and stored the snapshot, `fresh` when it reused a value within the fresh window, or `stale` when an eligible refresh failed before `stale_until`. `source_status` is `ok` for `miss` and `fresh`, and `error` for `stale`. A stale value is a successful degraded response and never bypasses the current representative authorization guard.
+
+### Summary
+
+```text
+GET /api/v1/user/team-usage/summary?start_date=...&end_date=...&granularity=...&timezone=...
+```
+
+The response contains:
+
+- common freshness metadata;
+- `window`, preserving the current normalized `start_date`, `end_date`, `granularity`, `today`, `rolling_days`, and `timezone` fields;
+- `summary`, preserving `unavailable`, `unavailable_reason`, `member_count`, `relay_member_count`, `range_actual_cost`, `range_total_tokens`, `today_actual_cost`, `total_actual_cost`, and `unit_label`.
+
+The existing semantics remain: totals cover the complete authorized scope, canonical members are deduplicated in team total, and an unavailable full-scope computation is explicit rather than a truncated total. `range_actual_cost` and `range_total_tokens` are the selected-window aggregate values; `today_actual_cost` and historical `total_actual_cost` remain comparison values and must not be mislabeled as selected-window totals.
+
+### Trend
+
+```text
+GET /api/v1/user/team-usage/trend?start_date=...&end_date=...&granularity=...&timezone=...
+```
+
+The top-level DTO contains common freshness metadata, `window`, `top_members`, `top_member_trend`, and `department_trend`. It preserves the current row and series field names while applying these bounds:
+
+1. `top_members` and `top_member_trend.series` contain at most 12 subjects, ranked by complete selected-window token usage with billed usage as the existing tie-breaker/auxiliary value. `top_member_trend.rank_basis` remains `range_total_tokens`.
+2. `department_trend.series` contains one independent `series_type=team_total` row and at most 12 `series_type=department` comparison rows using the existing represented-root/first-branching-child bucketing rules.
+3. When more than 12 department buckets exist, select the 12 largest by selected-window total tokens descending, then billed usage descending, then department external ID ascending. `department_trend` reports `comparison_total_count` and `comparison_truncated`; the independent team-total series still covers the complete authorized scope.
+4. Trend state objects retain `unit_label`, `unavailable`, `unavailable_reason`, and `series`. Top-member series retain subject identity, display name, rank, per-series availability, and points. Department series retain series type, department identity, display name, rank, per-series availability, and points.
+5. Stable unavailable reasons are `scope_too_large` and `provider_error`. A failed member or department series has `unavailable=true`, an explicit reason, and empty points. Authentication or authorization failure is an endpoint-level 401/403 and never a partial DTO.
+
+Series use stable department external IDs or stable subject identities. Team total, group comparison, and top-member series remain separate chart areas. Partial provider failure is encoded inside the trend response without affecting a successful summary response; authorization still fails closed.
+
+### Members
+
+```text
+GET /api/v1/user/team-usage/members?start_date=...&end_date=...&granularity=...&timezone=...&cursor=...&limit=...
+```
+
+Contract:
+
+1. Default limit is 50; maximum is 100.
+2. Stable order is selected-window total tokens descending, then stable subject key ascending. The subject key is `user:<positive-user-id>` when a positive platform user ID exists; for `user_id=0`, it is `directory:<source-scoped-directory-member-external-id>`.
+3. Each row preserves the current member field contract: `rank`, `user_id`, `directory_member_external_id`, display metadata, all current department memberships, `relay_user_id`, selected-window and comparison totals, `total_tokens`, optional `subscription_count`, and `selectable`.
+4. The response contains common freshness metadata, `window`, `items`, `total_count`, and `next_cursor`.
+5. It does not contain the organization tree or duplicate top-member/member arrays.
+6. Ranking is based on the complete supported scope, not only the returned page.
+
+The cursor is opaque and integrity-protected. It binds to scope version, snapshot identity, range, and sort position. An invalid cursor returns 400. A valid cursor whose snapshot is no longer available returns 409 with stable code `snapshot_expired`; the frontend restarts only the member section.
+
+### Organization
+
+```text
+GET /api/v1/user/team-usage/organization?start_date=...&end_date=...&granularity=...&timezone=...&parent_department_external_id=...&department_cursor=...&department_limit=...&member_cursor=...&member_limit=...
+```
+
+Contract:
+
+1. Return immediate child departments only, never a recursive full tree.
+2. Department default limit is 25; maximum is 100.
+3. Department order is normalized display name ascending, then external ID ascending.
+4. Return direct members for the requested node as a separately paginated collection.
+5. Member default limit is 50; maximum is 100.
+6. Member order is selected-window total tokens descending, then the same stable subject key as the members endpoint ascending.
+7. Return independent `next_department_cursor` and `next_member_cursor` values.
+8. The top-level DTO contains common freshness metadata, `window`, nullable `parent_department_external_id`, `departments`, `members`, `next_department_cursor`, and `next_member_cursor`.
+9. Department rows contain `department_external_id`, `parent_external_id`, `name`, `display_path`, `depth`, `child_count`, `has_children`, `direct_member_count`, `aggregate_member_count`, `connected_member_count`, `range_actual_cost`, and `range_total_tokens`. `has_children` is exactly `child_count > 0`.
+10. Direct-member rows in `members` use the same member row contract and stable subject key as the members endpoint.
+11. Both cursors bind to scope and snapshot version and use the same invalid/expired behavior as the members endpoint.
+
+The omitted parent identifier represents authorized root nodes. A supplied parent outside the current scope returns the generic scoped error.
+
+### Legacy overview compatibility
+
+The migration is expand-contract:
+
+1. Land shared normalization, authorization, scope version, and read services.
+2. Add the four split endpoints and migrate the frontend in the same platform release.
+3. Keep `GET /api/v1/user/team-usage/overview` for one complete platform release as an adapter over the same services and caches.
+4. Continue accepting every historical query parameter. In particular, `page` and `page_size` remain accepted and ineffective during compatibility; the adapter must not silently turn them into pagination.
+5. Return the complete historical response shape throughout the compatibility release, including the full member collection and recursive member tree expected by old consumers.
+6. Build that response from the same authorized scope snapshot, internal services, and read models as the split endpoints. The adapter must not retain a second monolithic or Relay calculation path, use a separate cache, or make internal HTTP calls to the split routes.
+7. Emit an RFC 9745 `Deprecation` structured date, an RFC 8594 `Sunset` HTTP date, and a successor link on every compatibility response, for example:
+
+   ```http
+   Deprecation: @1783987200
+   Sunset: Tue, 15 Sep 2026 00:00:00 GMT
+   Link: </api/v1/user/team-usage/summary>; rel="successor-version"
+   ```
+
+8. Production telemetry and code search must show no current frontend, internal caller, or verified external consumer before removal.
+9. Remove the legacy route, adapter, monolithic DTO, and obsolete tests no earlier than the following platform release. If a verified consumer remains near the announced sunset, extend the sunset and compatibility period rather than breaking that consumer.
+
+## Other Bounded Read Contracts
+
+### Work items and offboarding
+
+1. Work-item counts use count-oriented queries and never load the full offboarding candidate list.
+2. Offboarding candidates use database anti-join/batched latest-action logic and stable server pagination.
+3. Quota approver containment uses an index matched to its JSON predicate.
+4. Client/store freshness prevents repeated count requests during protected navigation and mobile-sidebar remounts.
+5. Disable/offboarding/quota mutations invalidate affected count values before success.
+
+### Events
+
+1. Summary uses database aggregates over the same filters as the list.
+2. List uses database filtering, count, stable ordering, and bounded pagination with default 20 and maximum 100.
+3. List rows omit raw payloads; detail returns the selected full payload.
+4. Hidden raw JSON is formatted only on expansion.
+5. Search fields that cannot be expressed or indexed safely in SQL require an explicit contract decision before implementation; the service must not silently restore a full in-memory scan.
+
+### Directory Sync run history
+
+1. Run summaries use stable `started_at` descending plus run ID ordering.
+2. Default page size is 20; maximum is 100.
+3. Summary rows omit full source/result JSON, warnings, preview diffs, and other large diagnostic blobs.
+4. Run detail remains the complete diagnostic contract.
+
+### Repository, PR, member detail, and administrator reads
+
+1. Repository inventory aggregates in SQL before an optional 60-second cache; repository mutations invalidate/version it.
+2. Repository list has a stable default provider/scope contract and does not wait for inventory solely to determine first-page parameters.
+3. PR freshness for a page uses bounded bulk queries or a maintained read model while preserving current status precedence.
+4. Selected-member group metadata uses a batch-shaped provider capability; when upstream remains per-group, the adapter uses bounded fan-out and deadlines.
+5. Administrator department filtering, subtree selection, total count, and pagination execute in SQL or an equivalent bounded read model while preserving multi-department and legacy fallback semantics.
+
+## Frontend Critical-Path Contract
+
+### Routing and identity
+
+1. Public routes do not wait for `/auth/me` because a token exists.
+2. Authenticated non-admin route chunks and identity hydration start concurrently.
+3. Admin routes do not render protected content until the current role is verified.
+4. One navigation does not introduce duplicate current-user requests.
+
+### Code and data loading
+
+1. Chart.js loads when chart data exists or before viewport entry, not before page skeleton/API start.
+2. Only the active locale dictionary is in the initial entry path; another locale loads once on switch with a stable fallback while loading.
+3. Settings loads one section component and its owned requests at a time.
+4. Shared credentials and Directory Sync sources are deduplicated in a shared API/store owner.
+5. Quota-reset mine, approvals, and admin queues have independent states and load on demand.
+6. Repository core content does not wait for provider-binding options.
+
+### Rendering
+
+List-heavy pages render one row/card subtree for the active viewport instead of mounting desktop and mobile copies and hiding one with CSS. Dynamic labels, loading indicators, and details must not change stable layout dimensions unexpectedly.
+
+## Embedded Static Serving Target
+
+1. Hashed assets under `/assets/` return `Cache-Control: public, max-age=31536000, immutable`.
+2. `index.html`, root SPA responses, SPA fallback, and OAuth SPA entry responses return `Cache-Control: no-cache` or an equivalent mandatory revalidation policy.
+3. JavaScript, CSS, JSON, SVG, and HTML negotiate gzip and set `Vary: Accept-Encoding`.
+4. ETag may support HTML revalidation. Do not fabricate `Last-Modified` for embedded files.
+5. HEAD, content type, fallback, conditional request behavior, and decompression correctness are part of the handler contract.
+6. Static policy never applies to `/api/*`, OAuth token responses, or authenticated API responses.
+7. CDN, separate asset domain, Brotli, and HTTP/3 remain deferred.
+
+## Runtime Deadline and Readiness Target
+
+1. The HTTP server defines at least `ReadHeaderTimeout` and `IdleTimeout`.
+2. Read/write budgets remain configurable and must accommodate the longest intentional synchronous endpoint during migration; they are tightened after the monolithic team contract is removed.
+3. Relay, SCM, Directory, and other downstream HTTP clients define connect, response-header, and overall deadlines plus bounded connection pools.
+4. Browser, proxy, server, handler, and downstream budgets are ordered so inner work stops before the caller's deadline. Cancellation must propagate and must not leave background requests running.
+5. Readiness completes under a short overall deadline.
+6. Database down returns body status `not_ready` and HTTP 503.
+7. Non-critical Redis or Relay degradation returns body status `degraded` and HTTP 200.
+8. Liveness never depends on external services.
+9. Redis cache failure does not make the data plane not-ready because cache-enabled reads can fall back to authoritative sources.
+
+Concrete default durations are configuration decisions in the runtime implementation ticket and must be validated against the still-current longest endpoint before rollout. This spec does not invent a shorter production budget from point-in-time samples.
+
+## Observability and Privacy Target
+
+### Request and dependency telemetry
+
+1. Accept a bounded, validated incoming request ID or generate one; return it on every response.
+2. Request ID may appear in logs/traces but never as a metrics label.
+3. Request telemetry includes normalized route, method, status class, duration, response bytes, in-flight count, and release.
+4. Dependency telemetry uses stable dependency and operation names for database, Relay, SCM, Directory, and Redis timing/errors.
+5. Slow requests and 5xx responses are logged at full rate; ordinary successful requests may be sampled.
+6. The metrics scrape endpoint is reachable only from an internal network boundary or requires service authentication; it is never an unauthenticated public route.
+
+### Pool and cache telemetry
+
+1. Export database open/in-use/idle connections, wait count/duration, and lifetime closures.
+2. Export Redis pool connections, waits, and timeouts separately from application cache outcomes.
+3. Application cache outcomes are `fresh`, `miss`, `stale`, `error`, refresh, and lease acquired/wait/failed.
+4. Cache metrics use a stable cache name and outcome only. They never include a key, actor, scope, provider ID, range, or cached value.
+
+### Browser telemetry
+
+Sample LCP, INP, CLS, and TTFB with normalized route, release, and navigation/cache class. Do not collect route parameters, query strings, user identity, email, DOM text, or page content. Ingestion requires rate limiting, retention limits, and an internal access boundary.
+
+### Prohibited telemetry
+
+Do not record raw path/query/body, user IDs or emails, cache keys/values, JWTs, API keys, credentials, SQL parameters, or unredacted downstream error payloads. Full OpenTelemetry rollout and `Server-Timing` remain optional follow-ups after these labels and timings stabilize.
+
+## Testing Contract
+
+Tests assert externally observable behavior at the highest existing seam.
+
+### Frontend route tests
+
+- Delay optional scope or quota and assert available personal usage renders first.
+- Delay team trend/members/organization and assert summary remains available.
+- Assert hidden Settings sections and quota queues make no request.
+- Assert non-admin chunks start before identity hydration while admin content remains fail-closed.
+- Assert one rendered row subtree per record and raw JSON formatting only after expansion.
+
+### Backend module and contract tests
+
+- Use fake Relay/SCM providers and controllable clocks for origin concurrency and freshness.
+- Prove personal stats, trend, and models share one atomic generation, while quota freshness remains uncached and independently reported.
+- Delay the independent quota endpoint and prove the usage-only response completes first; also preserve the default combined response contract.
+- Cover cold miss, fresh hit, soft expiry, hard expiry, eligible stale-if-error, invalidation, version changes, Redis outage, serialization mismatch, and actor/scope isolation.
+- Prove concurrent cold requests collapse to one authoritative refresh and lease cancellation cannot deadlock waiters.
+- Prove quota/subscription data and authorization/mutation decisions are never served stale.
+- Exercise all four team endpoints independently, including pagination bounds, stable subject-key ties, cursor integrity, snapshot expiry, and no-scope authorization.
+- Prove the legacy overview accepts historical query parameters, emits standards-compliant deprecation headers, and preserves its full response without internal HTTP calls or a second Relay calculation.
+- Prove provider mutations increment the shared configuration version, old clients are evicted, and a replica that misses invalidation converges within the version-check bound.
+
+### Handler and database tests
+
+- Embedded handler tests cover gzip, `Vary`, cache classification, HTML fallback, HEAD, content type, and conditional requests if ETag is implemented.
+- Health tests cover database 503, non-critical degraded 200, liveness, and deadlines.
+- Scale fixtures include at least 500 team members, a large directory/offboarding set, large event tables, many repositories/PR checkpoints, and long Directory Sync history.
+- Query-plan tests prove database pagination/aggregation and bounded row materialization.
+
+### Regression suites
+
+Each implementation slice runs its focused tests regularly and the repository verification commands before completion:
+
+```text
+cd backend && go test ./...
+cd ae-cli && go test ./...
+cd frontend && npm test
+cd frontend && npm run test:e2e:role
+```
+
+Environment-sensitive browser, listener, and production checks are reported separately from unit-test results.
+
+## Production Measurement Contract
+
+Every production comparison records:
+
+- platform release and commit;
+- normalized route;
+- cold or warm browser/read-model state;
+- approximate network/device class;
+- request count and transferred bytes;
+- TTFB and first useful content;
+- backend and dependency timing;
+- cache status;
+- errors and fallback state.
+
+Browser experience uses p75 Web Vitals; server/dependency analysis uses at least p75 and p95. Group by route and release, never by user.
+
+The standard Core Web Vitals good thresholds are target direction, not an automatic gate in this first rollout. Route-specific numerical budgets are approved only after telemetry and the corresponding serving/cache/API/frontend slice have enough production samples. Insufficient data must be reported as insufficient, not converted into a pass.
+
+Initial comparative acceptance includes:
+
+1. repeat work-item and usage reads do not cause duplicate origin refresh inside their fresh window;
+2. eligible stale values remain available only through their hard stale deadline;
+3. quota data is never stale;
+4. entry transfer reflects gzip and repeat navigation reuses immutable assets;
+5. team summary and personal usage render independently from optional slow sections;
+6. Directory Sync and events payload/memory are bounded by pagination;
+7. no cache isolation, authorization, or mutation regression is observed.
+
+## Rollout and Documentation
+
+Implementation is tracked by #115 child tickets:
+
+| Stage | Tickets | Outcome |
+| --- | --- | --- |
+| Contract | #116 | This target design |
+| Independent foundations and P0 slices | #117-#122 | Static delivery, runtime/request spine, work items, events, Directory runs, route hydration |
+| Usage and team split | #123-#129 | Personal snapshot, versioned scope, summary, trend, members, organization, member detail |
+| Remaining page/query slices | #130-#134 | Settings/provider, quota queues, repositories, PR freshness, admin users |
+| Telemetry | #135 | Pool/cache metrics and Web Vitals baseline |
+| Production verification | #136 | Cold/warm evidence, route budgets, one-release team compatibility proof |
+| Contract cleanup | #137 | Remove legacy Team Overview adapter |
+
+Rollout rules:
+
+1. Each slice is independently deployable and updates `docs/architecture.md` only for behavior that landed.
+2. New Redis keys are versioned so rollback can ignore newer values safely.
+3. The frontend and matching backend API changes ship in the same platform release.
+4. Team split uses expand-contract and keeps the legacy adapter for one complete release.
+5. CLI release tags and Helm rules remain unchanged; this is platform work, not a CLI-only release.
+6. Historical specs are not rewritten. This document records the current target and its relationship to them.
+
+## Deferred Work
+
+1. CDN, separate static domain, Brotli precompression, and HTTP/3.
+2. Full distributed tracing/collector rollout and `Server-Timing`.
+3. Upstream scoped batch trend or group-multiplier APIs in sub2api.
+4. Cross-system event-driven invalidation for changes made directly outside AE.
+5. Numerical route budgets before sufficient production samples exist.

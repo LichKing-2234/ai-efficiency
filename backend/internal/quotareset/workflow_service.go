@@ -66,6 +66,9 @@ func (s *Service) createWorkflowRequest(ctx context.Context, requester *ent.User
 	if _, err := tx.QuotaResetRequestEvent.CreateBulk(events...).Save(ctx); err != nil {
 		return nil, fmt.Errorf("write quota reset workflow events: %w", err)
 	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx, "creating quota reset workflow request"); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit quota reset request: %w", err)
 	}
@@ -161,6 +164,9 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 	}
 	if _, err := tx.QuotaResetRequestEvent.CreateBulk(events...).Save(ctx); err != nil {
 		return nil, fmt.Errorf("write quota reset workflow events: %w", err)
+	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx, "deciding quota reset workflow request"); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit quota reset workflow decision: %w", err)
