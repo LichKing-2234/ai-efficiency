@@ -163,8 +163,8 @@ type RequestSummary struct {
 	Reason                  string                   `json:"reason"`
 	Status                  string                   `json:"status"`
 	WorkflowVersion         int                      `json:"workflow_version"`
-	CurrentStep             int                      `json:"current_step,omitempty"`
-	WorkflowSteps           []WorkflowStep           `json:"workflow_steps,omitempty"`
+	CurrentStep             *int                     `json:"current_step,omitempty"`
+	WorkflowSteps           []map[string]any         `json:"workflow_steps,omitempty"`
 	ResolvedApproverUserIDs []int                    `json:"resolved_approver_user_ids"`
 	MatchedDepartmentPaths  []DepartmentPathEvidence `json:"matched_department_paths"`
 	ApprovedByUserID        *int                     `json:"approved_by_user_id,omitempty"`

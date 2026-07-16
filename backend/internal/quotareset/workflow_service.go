@@ -69,6 +69,7 @@ func (s *Service) createWorkflowRequest(
 			"step_count":       len(workflow.Steps),
 		}),
 	}
+	events = append(events, workflowActivationEvents(tx, request.ID, workflow, 0)...)
 	if _, err := tx.QuotaResetRequestEvent.CreateBulk(events...).Save(ctx); err != nil {
 		return nil, fmt.Errorf("write quota reset workflow events: %w", err)
 	}
@@ -105,7 +106,7 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 		}
 	}
 	now := time.Now().UTC()
-	satisfiedSteps, err := workflow.Decide(WorkflowDecisionInput{
+	satisfiedSteps, err := workflow.Decide(WorkflowDecision{
 		ActorUserID:      input.ActorUserID,
 		ActorDisplayName: actorDisplayName,
 		Comment:          comment,
@@ -176,17 +177,7 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 		events = append(events, newWorkflowEvent(tx, request.ID, &sourceDecision.ActorUserID, quotaresetrequestevent.EventTypeStepSatisfied, metadata))
 	}
 	if !terminal {
-		active := workflow.Steps[workflow.CurrentStep]
-		metadata := map[string]any{
-			"step_index":        workflow.CurrentStep,
-			"step_label":        active.Label,
-			"approver_user_ids": workflow.ActiveApproverUserIDs(),
-			"workflow_revision": request.WorkflowRevision + 1,
-		}
-		events = append(events, newWorkflowEvent(tx, request.ID, nil, quotaresetrequestevent.EventTypeStepActivated, metadata))
-		if active.AdminFallback {
-			events = append(events, newWorkflowEvent(tx, request.ID, nil, quotaresetrequestevent.EventTypeAdminFallbackActivated, metadata))
-		}
+		events = append(events, workflowActivationEvents(tx, request.ID, workflow, request.WorkflowRevision+1)...)
 	}
 	if terminal && approve {
 		events = append(events, newWorkflowEvent(tx, request.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeApproved, decisionMetadata))
@@ -206,6 +197,23 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 	}
 	_ = s.notify(ctx, "quota_reset_step_activated", updated)
 	return updated, nil
+}
+
+func workflowActivationEvents(tx *ent.Tx, requestID int, workflow *Workflow, revision int) []*ent.QuotaResetRequestEventCreate {
+	active := workflow.Steps[workflow.CurrentStep]
+	metadata := map[string]any{
+		"step_index":        workflow.CurrentStep,
+		"step_label":        active.Label,
+		"approver_user_ids": workflow.ActiveApproverUserIDs(),
+		"workflow_revision": revision,
+	}
+	events := []*ent.QuotaResetRequestEventCreate{
+		newWorkflowEvent(tx, requestID, nil, quotaresetrequestevent.EventTypeStepActivated, metadata),
+	}
+	if active.AdminFallback {
+		events = append(events, newWorkflowEvent(tx, requestID, nil, quotaresetrequestevent.EventTypeAdminFallbackActivated, metadata))
+	}
+	return events
 }
 
 func newWorkflowEvent(tx *ent.Tx, requestID int, actorUserID *int, eventType quotaresetrequestevent.EventType, metadata map[string]any) *ent.QuotaResetRequestEventCreate {

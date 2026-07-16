@@ -193,9 +193,10 @@ func genericWebhookSteps(steps []WorkflowStep) []map[string]any {
 	result := make([]map[string]any, len(steps))
 	for index, step := range steps {
 		item := map[string]any{
-			"step_number": index + 1,
-			"label":       step.Label,
-			"status":      step.Status,
+			"step_number":    index + 1,
+			"label":          step.Label,
+			"admin_fallback": step.AdminFallback,
+			"status":         step.Status,
 		}
 		if step.Decision != nil {
 			item["decision"] = genericWebhookDecision(step.Decision)

@@ -5,7 +5,17 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import QuotaResetView from '@/views/QuotaResetView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { setLocale } from '@/i18n'
-import type { QuotaResetWorkflowApprover } from '@/types'
+import type { QuotaResetWorkflowDecision, QuotaResetWorkflowStep } from '@/types'
+
+type ExactKeys<T, Keys extends PropertyKey> = Exclude<keyof T, Keys> extends never
+  ? Exclude<Keys, keyof T> extends never ? true : false
+  : false
+
+const publicWorkflowTypeContract = [
+  true satisfies ExactKeys<QuotaResetWorkflowDecision, 'actor_user_id' | 'actor_display_name' | 'comment' | 'decided_at'>,
+  true satisfies ExactKeys<QuotaResetWorkflowStep, 'step_number' | 'label' | 'admin_fallback' | 'status' | 'decision' | 'satisfied_by_step_number'>,
+]
+void publicWorkflowTypeContract
 
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
@@ -47,12 +57,6 @@ const mineRequest = {
   updated_at: '2026-07-07T01:00:00Z',
 }
 
-const workflowApproverWithoutSource = {
-  user_id: 20,
-  display_name: 'user',
-  email: 'user@example.com',
-} satisfies QuotaResetWorkflowApprover
-
 const approvalRequest = {
   ...mineRequest,
   id: 2,
@@ -64,18 +68,14 @@ const approvalRequest = {
   current_step: 0,
   workflow_steps: [
     {
-      kind: 'requester_departments',
+      step_number: 1,
       label: 'Company / Group Beta',
-      department_external_ids: ['dept-beta'],
-      approvers: [workflowApproverWithoutSource],
       admin_fallback: false,
       status: 'active',
     },
     {
-      kind: 'configured_department',
+      step_number: 2,
       label: 'Company / Security',
-      department_external_ids: ['dept-security'],
-      approvers: [{ user_id: 30, display_name: 'security', email: 'security@example.com' }],
       admin_fallback: false,
       status: 'queued',
     },
@@ -153,7 +153,7 @@ describe('QuotaResetView', () => {
     await wrapper.get('[data-testid="quota-reset-approve-2"]').trigger('click')
     expect(wrapper.find('[data-testid="quota-reset-decision-dialog"]').exists()).toBe(true)
     await wrapper.get('[data-testid="quota-reset-decision-comment"]').setValue('Usage spike confirmed')
-    await wrapper.get('[data-testid="quota-reset-decision-confirm"]').trigger('click')
+    await wrapper.get('form[role="dialog"]').trigger('submit')
     await flushPromises()
 
     expect(api.approveQuotaResetRequest).toHaveBeenCalledWith(2, { decision_reason: 'Usage spike confirmed' })
@@ -182,7 +182,7 @@ describe('QuotaResetView', () => {
     await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
     await wrapper.get('[data-testid="quota-reset-approve-2"]').trigger('click')
     await wrapper.get('[data-testid="quota-reset-decision-comment"]').setValue('Approved after review')
-    await wrapper.get('[data-testid="quota-reset-decision-confirm"]').trigger('click')
+    await wrapper.get('form[role="dialog"]').trigger('submit')
 
     initialCounts.resolve({
       data: {
@@ -230,8 +230,6 @@ describe('QuotaResetView', () => {
                   actor_user_id: 20,
                   actor_display_name: 'user',
                   comment: 'Approved first step',
-                  approve: true,
-                  admin: false,
                   decided_at: '2026-07-15T01:00:00Z',
                 },
               },
@@ -391,8 +389,6 @@ describe('QuotaResetView', () => {
             actor_user_id: 21,
             actor_display_name: 'Team Lead',
             comment: 'Initial department approved',
-            approve: true,
-            admin: false,
             decided_at: '2026-07-15T01:00:00Z',
           },
         },

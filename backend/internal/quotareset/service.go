@@ -115,31 +115,58 @@ func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.
 	if req.Status != quotaresetrequest.StatusPending && req.Status != quotaresetrequest.StatusWorkflowPending {
 		return nil, ErrInvalidStatus
 	}
-	updated, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
-		Where(quotaresetrequest.StatusEQ(req.Status)).
+	eventWriter := s
+	var tx *ent.Tx
+	if req.WorkflowVersion == workflowVersionV2 {
+		tx, err = s.client.Tx(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("start quota reset cancellation transaction: %w", err)
+		}
+		defer tx.Rollback()
+		transactional := *s
+		transactional.client = tx.Client()
+		eventWriter = &transactional
+	}
+	update := eventWriter.client.QuotaResetRequest.UpdateOneID(requestID).
+		Where(quotaresetrequest.StatusEQ(req.Status))
+	if tx != nil {
+		update.Where(quotaresetrequest.WorkflowRevisionEQ(req.WorkflowRevision))
+	}
+	updated, err := update.
 		SetStatus(quotaresetrequest.StatusCancelled).
 		Save(ctx)
+	if ent.IsNotFound(err) && tx != nil {
+		return nil, ErrInvalidStatus
+	}
 	if err != nil {
 		return nil, fmt.Errorf("cancel quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeCancelled, nil, ""); err != nil {
+	var metadata map[string]any
+	if tx != nil {
+		metadata = map[string]any{"workflow_revision": req.WorkflowRevision}
+	}
+	if err := eventWriter.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeCancelled, metadata, ""); err != nil {
 		return nil, err
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit quota reset workflow cancellation: %w", err)
+		}
 	}
 	_ = s.notify(ctx, "quota_reset_request_cancelled", updated)
 	return updated, nil
 }
 
 func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
-	request, err := s.loadDecisionRequest(ctx, &input)
+	if input.DecisionReason = strings.TrimSpace(input.DecisionReason); input.DecisionReason == "" {
+		return nil, ErrDecisionRequired
+	}
+	request, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
 		return nil, err
 	}
 	if request.WorkflowVersion == workflowVersionV2 {
 		return s.decideWorkflowRequest(ctx, request, input, true)
-	}
-	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
-	if err != nil {
-		return nil, err
 	}
 	now := time.Now()
 	updated, err := s.client.QuotaResetRequest.UpdateOneID(input.RequestID).
@@ -152,7 +179,7 @@ func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaR
 	if err != nil {
 		return nil, fmt.Errorf("approve quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, req.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeApproved, map[string]any{
+	if err := s.writeEvent(ctx, request.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeApproved, map[string]any{
 		"admin": input.Admin,
 	}, ""); err != nil {
 		return s.storeResetFailure(ctx, updated.ID, input.ActorUserID, err)
@@ -161,16 +188,15 @@ func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaR
 }
 
 func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
-	request, err := s.loadDecisionRequest(ctx, &input)
+	if input.DecisionReason = strings.TrimSpace(input.DecisionReason); input.DecisionReason == "" {
+		return nil, ErrDecisionRequired
+	}
+	request, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
 		return nil, err
 	}
 	if request.WorkflowVersion == workflowVersionV2 {
 		return s.decideWorkflowRequest(ctx, request, input, false)
-	}
-	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
-	if err != nil {
-		return nil, err
 	}
 	now := time.Now()
 	updated, err := s.client.QuotaResetRequest.UpdateOneID(input.RequestID).
@@ -183,7 +209,7 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 	if err != nil {
 		return nil, fmt.Errorf("reject quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, req.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeRejected, map[string]any{
+	if err := s.writeEvent(ctx, request.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeRejected, map[string]any{
 		"admin": input.Admin,
 	}, ""); err != nil {
 		return nil, err
@@ -192,37 +218,9 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 	return updated, nil
 }
 
-func (s *Service) loadDecisionRequest(ctx context.Context, input *DecisionInput) (*ent.QuotaResetRequest, error) {
-	input.DecisionReason = strings.TrimSpace(input.DecisionReason)
-	if input.DecisionReason == "" {
-		return nil, ErrDecisionRequired
-	}
-	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
-	if err != nil {
-		return nil, err
-	}
-	if request.WorkflowVersion != 1 && request.WorkflowVersion != workflowVersionV2 {
-		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, request.WorkflowVersion)
-	}
-	return request, nil
-}
-
 func (s *Service) RetryReset(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
-	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
-	if err != nil {
+	if _, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusApprovedResetFailed); err != nil {
 		return nil, err
-	}
-	if request.Status != quotaresetrequest.StatusApprovedResetFailed {
-		return nil, ErrInvalidStatus
-	}
-	if request.WorkflowVersion != 1 && request.WorkflowVersion != workflowVersionV2 {
-		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, request.WorkflowVersion)
-	}
-	if !input.Admin {
-		approvedV2 := request.WorkflowVersion == workflowVersionV2 && request.ApprovedByUserID != nil && *request.ApprovedByUserID == input.ActorUserID
-		if !approvedV2 && (request.WorkflowVersion != 1 || !isResolvedApprover(request, input.ActorUserID)) {
-			return nil, ErrNotApprover
-		}
 	}
 	return s.executeReset(ctx, input.RequestID, input.ActorUserID, true, input.Admin)
 }
@@ -605,14 +603,30 @@ func (s *Service) requireDecisionAllowed(ctx context.Context, input DecisionInpu
 	if err != nil {
 		return nil, err
 	}
-	if req.Status != requiredStatus {
+	if req.WorkflowVersion != 1 && req.WorkflowVersion != workflowVersionV2 {
+		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, req.WorkflowVersion)
+	}
+	expectedStatus := requiredStatus
+	if req.WorkflowVersion == workflowVersionV2 && requiredStatus == quotaresetrequest.StatusPending {
+		expectedStatus = quotaresetrequest.StatusWorkflowPending
+	}
+	if req.Status != expectedStatus {
 		return nil, ErrInvalidStatus
+	}
+	if req.WorkflowVersion == workflowVersionV2 && requiredStatus == quotaresetrequest.StatusPending {
+		return req, nil
 	}
 	if input.Admin {
 		return req, nil
 	}
 	if req.RequesterUserID == input.ActorUserID {
 		return nil, ErrSelfApprovalForbidden
+	}
+	if req.WorkflowVersion == workflowVersionV2 && requiredStatus == quotaresetrequest.StatusApprovedResetFailed {
+		if req.ApprovedByUserID == nil || *req.ApprovedByUserID != input.ActorUserID {
+			return nil, ErrNotApprover
+		}
+		return req, nil
 	}
 	if !isResolvedApprover(req, input.ActorUserID) {
 		return nil, ErrNotApprover
@@ -872,8 +886,8 @@ func requestSummary(req *ent.QuotaResetRequest, requester *ent.User) (RequestSum
 		if err != nil {
 			return RequestSummary{}, err
 		}
-		item.CurrentStep = workflow.CurrentStep
-		item.WorkflowSteps = append([]WorkflowStep(nil), workflow.Steps...)
+		item.CurrentStep = &workflow.CurrentStep
+		item.WorkflowSteps = genericWebhookSteps(workflow.Steps)
 	}
 	if requester != nil {
 		item.RequesterDisplayName = requester.Username

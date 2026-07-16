@@ -1,7 +1,7 @@
 # Department-Derived Quota Reset Approval Design
 
-**Status:** Approved design; the current feature-branch implementation must be
-reworked before merge
+**Status:** Implemented on the feature branch; browser verification remains
+blocked because the required browser runtime is unavailable
 
 **Date:** 2026-07-16
 

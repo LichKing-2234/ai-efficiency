@@ -16,6 +16,10 @@ approver type now also matches the source-free backend response. Browser
 verification remains the only unchecked item because both the controller and
 worker observed no browser runtime.
 
+**Final Whole-Branch Review Remediation Status (2026-07-16):** Code remediation
+is complete and final verification is in progress. Browser verification remains
+blocked and unchecked.
+
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
 identifies the quota to reset.
@@ -527,6 +531,74 @@ current. Do not rewrite the historical 2026-07-07 spec.
   - `gh pr checks 146 --watch` exited 0 for run `29486757404`: `deploy-static`
     passed in 17s, `ae-cli` in 31s, `frontend` in 51s, and `backend` in 3m2s.
   - No merge, tag, release, Helm command, or deployment was run.
+
+---
+
+### Task 5: Final Whole-Branch Review Remediation
+
+- [x] **Step 1: Preserve V2 failed-reset Work Items for the final approver**
+
+  Add a real V2 create/approve/reset-failure regression, then count retry work
+  through `approved_by_user_id` without changing active-step, V1, admin, or
+  total deduplication behavior.
+
+  RED returned zero after a real V2 final approval cleared active approvers and
+  the relay reset failed. GREEN returned one through `approved_by_user_id`;
+  the existing Work Items suite also passed.
+
+- [x] **Step 2: Project authenticated workflow summaries explicitly**
+
+  Add recursive backend/API leakage regressions for requester and future
+  approver WeCom IDs. Return only the public timeline/action fields and align
+  frontend response types and fixtures.
+
+  RED leaked `notification_ids` and all synthetic values from mine,
+  approvals, and admin responses; `current_step: 0` was also omitted. GREEN
+  reuses the explicit outward workflow mapper, preserves the UI/history fields,
+  and passes the backend service/API regressions plus the frontend exact-key
+  build guard.
+
+- [x] **Step 3: Complete transactional V2 creation and cancellation audit**
+
+  Record initial step activation/fallback events in the create transaction and
+  make the V2 cancellation CAS update plus cancellation event one transaction.
+  Preserve V1 cancellation and post-commit notification behavior.
+
+  RED showed both missing activation events, a committed request when the
+  unattempted activation audit was injected to fail, and a committed cancelled
+  status after cancellation audit failure. GREEN passes all four regressions
+  with transactional event writes and V2 status/revision CAS.
+
+- [x] **Step 4: Close documentation and bounded-size review findings**
+
+  Mark the approved spec implemented while retaining its replacement history.
+  Add a focused bounded-size guard only if it fits the production-line budget;
+  otherwise record the concrete residual risk.
+
+  The spec is marked implemented. No additional string-byte guard was added:
+  the workflow already enforces 21 steps and 100 unique approvers, while
+  decision-comment and snapshotted display strings remain a documented
+  residual storage risk. The exact hand-written production audit is 1,500
+  additions, so adding a new production guard would exceed the binding
+  complexity limit.
+
+- [ ] **Step 5: Verify, report, commit, push, and wait for PR checks**
+
+  Run the requested focused/full suites and exact audits, keep browser
+  verification unchecked, write the final-review report, push PR 146, and wait
+  for every final-head check without merging or releasing.
+
+  Local verification completed on 2026-07-16:
+
+  - focused backend quota-reset, Work Items, and handler packages passed;
+  - backend `go test ./... -count=1` and `go vet ./...` passed;
+  - `ae-cli` `go test ./... -count=1` passed;
+  - frontend passed 39 files / 435 tests and the production build;
+  - role E2E passed 16/16 after starting its required Vite server;
+  - `git diff --check` passed and the production audit is exactly 1,500
+    additions / 493 deletions;
+  - the in-app browser still reports `No browser is available`, so the browser
+    workflow checkbox remains intentionally open.
 
 ## Deferred
 

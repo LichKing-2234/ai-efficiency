@@ -10,18 +10,16 @@ import (
 )
 
 const (
-	workflowVersionV2    = 2
-	maxWorkflowSteps     = 21
-	maxWorkflowApprovers = 100
-
+	workflowVersionV2                = 2
+	maxWorkflowSteps                 = 21
+	maxWorkflowApprovers             = 100
 	WorkflowStepRequesterDepartments = "requester_departments"
 	WorkflowStepConfiguredDepartment = "configured_department"
-
-	WorkflowStepQueued    = "queued"
-	WorkflowStepActive    = "active"
-	WorkflowStepApproved  = "approved"
-	WorkflowStepSatisfied = "satisfied_by_prior_approval"
-	WorkflowStepRejected  = "rejected"
+	WorkflowStepQueued               = "queued"
+	WorkflowStepActive               = "active"
+	WorkflowStepApproved             = "approved"
+	WorkflowStepSatisfied            = "satisfied_by_prior_approval"
+	WorkflowStepRejected             = "rejected"
 )
 
 type Workflow struct {
@@ -61,8 +59,6 @@ type WorkflowDecision struct {
 	DecidedAt        time.Time `json:"decided_at"`
 }
 
-type WorkflowDecisionInput WorkflowDecision
-
 func EncodeWorkflow(workflow *Workflow) (map[string]any, error) {
 	if err := workflow.validate(); err != nil {
 		return nil, err
@@ -92,15 +88,15 @@ func (w *Workflow) ActiveApproverUserIDs() []int {
 	return workflowApproverUserIDs(w.Steps[w.CurrentStep].Approvers)
 }
 
-func (w *Workflow) Decide(input WorkflowDecisionInput) ([]int, error) {
+func (w *Workflow) Decide(input WorkflowDecision) ([]int, error) {
 	if err := w.validate(); err != nil {
 		return nil, err
 	}
 	if w.CurrentStep >= len(w.Steps) {
 		return nil, ErrInvalidStatus
 	}
-	comment := strings.TrimSpace(input.Comment)
-	if comment == "" {
+	input.Comment = strings.TrimSpace(input.Comment)
+	if input.Comment == "" {
 		return nil, ErrDecisionRequired
 	}
 	if input.ActorUserID <= 0 {
@@ -114,10 +110,8 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) ([]int, error) {
 	if !input.Admin && !workflowStepContainsApprover(*step, input.ActorUserID) {
 		return nil, ErrNotApprover
 	}
-	decision := WorkflowDecision(input)
-	decision.ActorDisplayName = strings.TrimSpace(decision.ActorDisplayName)
-	decision.Comment = comment
-	step.Decision = &decision
+	input.ActorDisplayName = strings.TrimSpace(input.ActorDisplayName)
+	step.Decision = &input
 	if !input.Approve {
 		step.Status = WorkflowStepRejected
 		w.CurrentStep = len(w.Steps)
@@ -144,15 +138,12 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) ([]int, error) {
 
 func (w *Workflow) priorApprovingStepFor(stepIndex int) int {
 	return slices.IndexFunc(w.Steps[:stepIndex], func(step WorkflowStep) bool {
-		decision := step.Decision
-		return decision != nil && decision.Approve && workflowStepContainsApprover(w.Steps[stepIndex], decision.ActorUserID)
+		return step.Decision != nil && step.Decision.Approve && workflowStepContainsApprover(w.Steps[stepIndex], step.Decision.ActorUserID)
 	})
 }
 
 func workflowStepContainsApprover(step WorkflowStep, userID int) bool {
-	return slices.ContainsFunc(step.Approvers, func(approver WorkflowApprover) bool {
-		return approver.UserID == userID
-	})
+	return slices.ContainsFunc(step.Approvers, func(approver WorkflowApprover) bool { return approver.UserID == userID })
 }
 
 func (w *Workflow) validate() error {
@@ -219,8 +210,8 @@ func (w *Workflow) validate() error {
 
 func workflowApproverUserIDs(approvers []WorkflowApprover) []int {
 	ids := make([]int, len(approvers))
-	for index, approver := range approvers {
-		ids[index] = approver.UserID
+	for index := range approvers {
+		ids[index] = approvers[index].UserID
 	}
 	return uniqueSortedWorkflowIDs(ids)
 }

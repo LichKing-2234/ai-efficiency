@@ -11,7 +11,7 @@ func TestWorkflowApproveAdvancesAndReusesPriorActor(t *testing.T) {
 	workflow := workflowFixture()
 	when := time.Date(2026, 7, 15, 9, 30, 0, 0, time.UTC)
 
-	satisfiedSteps, err := workflow.Decide(WorkflowDecisionInput{
+	satisfiedSteps, err := workflow.Decide(WorkflowDecision{
 		ActorUserID:      2,
 		ActorDisplayName: "bob",
 		Comment:          "额度异常，确认重置",
@@ -37,7 +37,7 @@ func TestWorkflowApproveAdvancesAndReusesPriorActor(t *testing.T) {
 		t.Fatalf("ActiveApproverUserIDs() = %v, want [3]", got)
 	}
 
-	_, err = workflow.Decide(WorkflowDecisionInput{
+	_, err = workflow.Decide(WorkflowDecision{
 		ActorUserID:      3,
 		ActorDisplayName: "carol",
 		Comment:          "同意最终重置",
@@ -54,7 +54,7 @@ func TestWorkflowApproveAdvancesAndReusesPriorActor(t *testing.T) {
 
 func TestWorkflowRejectIsTerminal(t *testing.T) {
 	workflow := workflowFixture()
-	_, err := workflow.Decide(WorkflowDecisionInput{
+	_, err := workflow.Decide(WorkflowDecision{
 		ActorUserID:      2,
 		ActorDisplayName: "bob",
 		Comment:          "信息不足",
@@ -81,7 +81,7 @@ func TestWorkflowTerminalStateCannotBeDecidedAgain(t *testing.T) {
 		}
 	}
 
-	if _, err := workflow.Decide(WorkflowDecisionInput{ActorUserID: 2, Comment: "again", Approve: true}); !errors.Is(err, ErrInvalidStatus) {
+	if _, err := workflow.Decide(WorkflowDecision{ActorUserID: 2, Comment: "again", Approve: true}); !errors.Is(err, ErrInvalidStatus) {
 		t.Fatalf("Decide() error = %v, want ErrInvalidStatus", err)
 	}
 }
@@ -89,22 +89,22 @@ func TestWorkflowTerminalStateCannotBeDecidedAgain(t *testing.T) {
 func TestWorkflowDecisionAuthorizationFailsClosed(t *testing.T) {
 	tests := []struct {
 		name      string
-		input     WorkflowDecisionInput
+		input     WorkflowDecision
 		wantError error
 	}{
 		{
 			name:      "comment required",
-			input:     WorkflowDecisionInput{ActorUserID: 2, Approve: true},
+			input:     WorkflowDecision{ActorUserID: 2, Approve: true},
 			wantError: ErrDecisionRequired,
 		},
 		{
 			name:      "requester cannot decide",
-			input:     WorkflowDecisionInput{ActorUserID: 1, Comment: "self", Approve: true},
+			input:     WorkflowDecision{ActorUserID: 1, Comment: "self", Approve: true},
 			wantError: ErrSelfApprovalForbidden,
 		},
 		{
 			name:      "non candidate cannot decide",
-			input:     WorkflowDecisionInput{ActorUserID: 99, Comment: "approve", Approve: true},
+			input:     WorkflowDecision{ActorUserID: 99, Comment: "approve", Approve: true},
 			wantError: ErrNotApprover,
 		},
 	}
@@ -121,7 +121,7 @@ func TestWorkflowDecisionAuthorizationFailsClosed(t *testing.T) {
 
 func TestWorkflowAdminCanDecideOnlyActiveStep(t *testing.T) {
 	workflow := workflowFixture()
-	_, err := workflow.Decide(WorkflowDecisionInput{
+	_, err := workflow.Decide(WorkflowDecision{
 		ActorUserID:      50,
 		ActorDisplayName: "admin",
 		Comment:          "admin fallback",

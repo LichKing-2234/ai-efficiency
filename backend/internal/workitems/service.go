@@ -99,7 +99,20 @@ func (s *Service) countAssignedQuotaApprovals(ctx context.Context, userID int) (
 			quotaresetrequest.StatusIn(actionableQuotaResetStatuses()...),
 			quotaresetrequest.RequesterUserIDNEQ(userID),
 			func(selector *sql.Selector) {
-				selector.Where(jsonbContainsInt(selector, quotaresetrequest.FieldResolvedApproverUserIds, userID))
+				resolved := jsonbContainsInt(selector, quotaresetrequest.FieldResolvedApproverUserIds, userID)
+				selector.Where(sql.Or(
+					sql.And(
+						sql.In(selector.C(quotaresetrequest.FieldStatus), quotaresetrequest.StatusPending, quotaresetrequest.StatusWorkflowPending),
+						resolved,
+					),
+					sql.And(
+						sql.EQ(selector.C(quotaresetrequest.FieldStatus), quotaresetrequest.StatusApprovedResetFailed),
+						sql.Or(
+							sql.And(sql.EQ(selector.C(quotaresetrequest.FieldWorkflowVersion), 1), resolved),
+							sql.And(sql.EQ(selector.C(quotaresetrequest.FieldWorkflowVersion), 2), sql.EQ(selector.C(quotaresetrequest.FieldApprovedByUserID), userID)),
+						),
+					),
+				))
 			},
 		).
 		Count(ctx)

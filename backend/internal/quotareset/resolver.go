@@ -321,7 +321,6 @@ func (f *workflowDirectoryFacts) representativeApprovers(departmentID string, re
 		}
 		approvers = append(approvers, workflowApprover(user, member))
 	}
-	sort.SliceStable(approvers, func(i, j int) bool { return approvers[i].UserID < approvers[j].UserID })
 	return approvers
 }
 
@@ -353,18 +352,11 @@ func workflowApprover(user *ent.User, member *ent.DirectoryMember) WorkflowAppro
 }
 
 func mergeWorkflowApprovers(target *[]WorkflowApprover, candidates []WorkflowApprover) {
-	seen := make(map[int]struct{}, len(*target)+len(candidates))
-	for _, approver := range *target {
-		seen[approver.UserID] = struct{}{}
-	}
-	for _, candidate := range candidates {
-		if _, exists := seen[candidate.UserID]; exists {
-			continue
-		}
-		seen[candidate.UserID] = struct{}{}
-		*target = append(*target, candidate)
-	}
+	*target = append(*target, candidates...)
 	sort.SliceStable(*target, func(i, j int) bool { return (*target)[i].UserID < (*target)[j].UserID })
+	*target = slices.CompactFunc(*target, func(left, right WorkflowApprover) bool {
+		return left.UserID == right.UserID
+	})
 }
 
 func uniqueSortedStrings(values []string) []string {

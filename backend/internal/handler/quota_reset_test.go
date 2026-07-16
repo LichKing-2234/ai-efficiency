@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -119,6 +120,90 @@ func TestQuotaResetCreateRequestPassesActorAndBody(t *testing.T) {
 	rec := performQuotaResetRequest(env.router, http.MethodPost, "/api/v1/user/quota-reset/requests", env.userToken, `{"group_id":"42","reason":"Need reset"}`)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"pending"`) {
 		t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestQuotaResetListAPIsExcludePrivateWorkflowNotificationIDs(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	logger := zap.NewNop()
+	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
+	requester := client.User.Create().SetUsername("alice").SetEmail("alice@example.com").SetAuthSource("ldap").SetRole(entuser.RoleUser).SaveX(ctx)
+	approver := client.User.Create().SetUsername("bob").SetEmail("bob@example.org").SetAuthSource("ldap").SetRole(entuser.RoleUser).SaveX(ctx)
+	futureApprover := client.User.Create().SetUsername("carol").SetEmail("carol@example.net").SetAuthSource("ldap").SetRole(entuser.RoleUser).SaveX(ctx)
+	admin := client.User.Create().SetUsername("admin").SetEmail("admin@example.com").SetAuthSource("ldap").SetRole(entuser.RoleAdmin).SaveX(ctx)
+	workflow := map[string]any{
+		"version":      2,
+		"current_step": 0,
+		"requester": map[string]any{
+			"user_id": requester.ID, "display_name": "alice", "email": requester.Email,
+			"notification_ids": map[string]string{"wecom": "api-private-requester-wecom"},
+		},
+		"steps": []map[string]any{
+			{
+				"kind": "requester_departments", "label": "Company / Group Alpha", "department_external_ids": []string{"dept-alpha"},
+				"approvers":      []map[string]any{{"user_id": approver.ID, "display_name": "bob", "email": approver.Email}},
+				"admin_fallback": false, "status": "active",
+			},
+			{
+				"kind": "configured_department", "label": "Company / Security", "department_external_ids": []string{"dept-security"},
+				"approvers": []map[string]any{{
+					"user_id": futureApprover.ID, "display_name": "carol", "email": futureApprover.Email,
+					"notification_ids": map[string]string{"wecom": "api-private-future-wecom"},
+				}},
+				"admin_fallback": false, "status": "queued",
+			},
+		},
+	}
+	client.QuotaResetRequest.Create().
+		SetRequesterUserID(requester.ID).
+		SetRequesterRelayUserID(1001).
+		SetProviderID(1).
+		SetGroupID("42").
+		SetGroupName("Group Alpha").
+		SetGroupPlatform("openai").
+		SetReason("Need reset for a build investigation").
+		SetStatus(quotaresetrequest.StatusWorkflowPending).
+		SetWorkflowVersion(2).
+		SetWorkflow(workflow).
+		SetResolvedApproverUserIds([]int{approver.ID}).
+		SetMatchedDepartmentPaths([]map[string]any{}).
+		SaveX(ctx)
+
+	router := gin.New()
+	handler := NewQuotaResetHandler(quotareset.NewService(client, nil, nil, nil))
+	userGroup := router.Group("/api/v1/user")
+	userGroup.Use(auth.RequireAuth(authSvc))
+	userGroup.GET("/quota-reset/requests", handler.ListMine)
+	userGroup.GET("/quota-reset/approvals", handler.ListApprovals)
+	adminGroup := router.Group("/api/v1/admin/quota-reset")
+	adminGroup.Use(auth.RequireAuth(authSvc), auth.RequireAdmin())
+	adminGroup.GET("/requests", handler.ListAdmin)
+
+	requests := []struct {
+		name  string
+		path  string
+		actor *ent.User
+	}{
+		{name: "mine", path: "/api/v1/user/quota-reset/requests", actor: requester},
+		{name: "approvals", path: "/api/v1/user/quota-reset/approvals", actor: approver},
+		{name: "admin", path: "/api/v1/admin/quota-reset/requests", actor: admin},
+	}
+	for _, test := range requests {
+		t.Run(test.name, func(t *testing.T) {
+			pair, err := authSvc.GenerateTokenPairForUser(&auth.UserInfo{ID: test.actor.ID, Username: test.actor.Username, Role: test.actor.Role.String()})
+			if err != nil {
+				t.Fatalf("GenerateTokenPairForUser() error = %v", err)
+			}
+			rec := performQuotaResetRequest(router, http.MethodGet, test.path, pair.AccessToken, "")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), `"current_step":0`) {
+				t.Fatalf("response omitted current step zero: %s", rec.Body.String())
+			}
+		assertQuotaResetAPINoPrivateWorkflowData(t, rec.Body.Bytes(), "api-private-requester-wecom", "api-private-future-wecom")
+		})
 	}
 }
 
@@ -255,4 +340,37 @@ func performQuotaResetRequest(router *gin.Engine, method, path, token string, bo
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	return rec
+}
+
+func assertQuotaResetAPINoPrivateWorkflowData(t *testing.T, raw []byte, forbiddenValues ...string) {
+	t.Helper()
+	var payload any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	forbidden := make(map[string]struct{}, len(forbiddenValues))
+	for _, value := range forbiddenValues {
+		forbidden[value] = struct{}{}
+	}
+	var visit func(any)
+	visit = func(value any) {
+		switch typed := value.(type) {
+		case map[string]any:
+			for field, child := range typed {
+				if field == "notification_ids" {
+					t.Fatalf("API response leaked %q", field)
+				}
+				visit(child)
+			}
+		case []any:
+			for _, child := range typed {
+				visit(child)
+			}
+		case string:
+			if _, leaked := forbidden[typed]; leaked {
+				t.Fatalf("API response leaked private value %q", typed)
+			}
+		}
+	}
+	visit(payload)
 }

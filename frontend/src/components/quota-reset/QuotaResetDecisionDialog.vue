@@ -27,7 +27,7 @@ const canSubmit = computed(() => comment.value.trim().length > 0 && !props.busy)
         <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700" :disabled="busy" @click="emit('cancel')">
           {{ t('settings.cancel') }}
         </button>
-        <button type="submit" data-testid="quota-reset-decision-confirm" :class="['rounded-md px-3 py-2 text-sm font-medium text-white disabled:opacity-50', action === 'approve' ? 'bg-cyan-700' : 'bg-red-700']" :disabled="!canSubmit" @click.prevent="canSubmit && emit('confirm', comment.trim())">
+        <button type="submit" data-testid="quota-reset-decision-confirm" :class="['rounded-md px-3 py-2 text-sm font-medium text-white disabled:opacity-50', action === 'approve' ? 'bg-cyan-700' : 'bg-red-700']" :disabled="!canSubmit">
           {{ busy ? t('settings.saving') : t(action === 'approve' ? 'quotaReset.approve' : 'quotaReset.reject') }}
         </button>
       </div>

@@ -1100,29 +1100,19 @@ export interface QuotaResetRequestEvent {
 }
 
 export type QuotaResetWorkflowStepStatus = 'queued' | 'active' | 'approved' | 'satisfied_by_prior_approval' | 'rejected'
-export interface QuotaResetWorkflowApprover {
-  user_id: number
-  display_name: string
-  email: string
-  notification_ids?: Record<string, string>
-}
 export interface QuotaResetWorkflowDecision {
   actor_user_id: number
   actor_display_name: string
   comment: string
-  approve: boolean
-  admin: boolean
   decided_at: string
 }
 export interface QuotaResetWorkflowStep {
-  kind: 'requester_departments' | 'configured_department'
+  step_number: number
   label: string
-  department_external_ids: string[]
-  approvers: QuotaResetWorkflowApprover[]
   admin_fallback: boolean
   status: QuotaResetWorkflowStepStatus
   decision?: QuotaResetWorkflowDecision | null
-  satisfied_by_step?: number | null
+  satisfied_by_step_number?: number | null
 }
 export interface QuotaResetRequestSummary {
   id: number
