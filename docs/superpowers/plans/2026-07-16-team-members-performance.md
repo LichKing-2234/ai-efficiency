@@ -24,7 +24,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** In progress. Backend and frontend baseline suites and the frontend production build passed at `597c7f4`.
+**Status:** In progress. Implementation and full local verification are complete; Draft PR publication and required CI remain.
 
 ---
 
@@ -151,11 +151,13 @@
 - Modify: `docs/architecture.md`
 - Modify: this plan
 
-- [ ] **Step 1: Update current architecture**
+- [x] **Step 1: Update current architecture**
 
   Record the split members route, HMAC cursor dimensions, deterministic snapshot identity and Redis fallback, bounds/order, independent frontend lifecycle, and compatibility organization-only role.
 
-- [ ] **Step 2: Run full verification**
+  Documentation evidence (2026-07-16): `docs/architecture.md` now records the fourth independent request, 50/100 limits, global ranking order, HMAC cursor dimensions and stable errors, deterministic Redis-outage identity, local 409 recovery, and compatibility overview's organization-only frontend role.
+
+- [x] **Step 2: Run full verification**
 
   ```bash
   git diff --check
@@ -164,9 +166,13 @@
   cd ../ae-cli && go test ./...
   ```
 
-- [ ] **Step 3: Review against issue #127 and the active performance spec**
+  Verification evidence (2026-07-16): both diff checks and focused `go vet` passed; the complete backend suite and race-enabled `internal/readcache`/`internal/teamusage` suites passed; the frontend suite passed 39 files/475 tests and the production build completed; the complete `ae-cli` suite passed.
+
+- [x] **Step 3: Review against issue #127 and the active performance spec**
 
   Audit limits, global rank/order, cursor integrity and dimensions, scope/snapshot expiry, Redis outage behavior, response bytes, DOM rows, sibling lifecycle isolation, no organization duplication, and synthetic test data. Fix every finding and rerun affected verification.
+
+  Review evidence (2026-07-16): the complete `597c7f4..228ca3e` implementation diff and current documentation were audited against issue #127, the active performance spec, and `AGENTS.md`. No Critical, Important, or Minor finding remained. The cursor secret fails closed when missing, compatibility overview keeps its historical payload, and organization pagination remains outside this ticket.
 
 - [ ] **Step 4: Push and open a Draft PR**
 
