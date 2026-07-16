@@ -11,6 +11,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/ai-efficiency/backend/internal/web"
@@ -28,6 +29,7 @@ type RouterRuntimeOptions struct {
 	WorkItemsCache           *workitems.CountsCache
 	WorkItemsRevisionStore   *workitems.RevisionStore
 	RepresentativeScopeCache *representativescope.Cache
+	TeamUsageSnapshotCache   *teamusage.SnapshotCache
 }
 
 func SetPRAttributionService(service prAttributionSettler) {
@@ -232,7 +234,7 @@ func SetupRouter(
 
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 
-	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler, runtime.RepresentativeScopeCache))
+	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler, runtime.RepresentativeScopeCache, runtime.TeamUsageSnapshotCache))
 
 	userGroup := protected.Group("/user")
 	{
@@ -251,6 +253,7 @@ func SetupRouter(
 		userGroup.GET("/team-usage/subjects", teamUsageHandler.Subjects)
 		userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamUsageHandler.SubjectDashboard)
 		userGroup.PUT("/team-usage/subjects/:user_id/groups/:group_id/rate-multiplier", teamUsageHandler.UpdateMultiplier)
+		userGroup.GET("/team-usage/summary", teamUsageHandler.Summary)
 		userGroup.GET("/team-usage/overview", teamUsageHandler.Overview)
 		userGroup.GET("/team-usage/audit", teamUsageHandler.Audit)
 		if providerHandler != nil {
