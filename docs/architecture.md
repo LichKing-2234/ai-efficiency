@@ -393,6 +393,30 @@ materialization:
   optimization and perform the authoritative PostgreSQL build; an authoritative
   error fails closed.
 
+## Bounded HTTP Runtime
+
+The backend owns one bounded inbound server and four reusable outbound HTTP connection pools. The server reads these startup defaults from writable runtime configuration:
+
+- `server.read_header_timeout_seconds: 5` limits receipt of request headers, including slow-header connections.
+- `server.idle_timeout_seconds: 120` limits keep-alive idle time.
+- `server.request_timeout_seconds: 35` gives every Gin request context a common deadline; downstream requests derived from that context are cancelled with it.
+- `server.readiness_timeout_seconds: 2` remains a smaller shared readiness budget.
+- `ReadTimeout` and `WriteTimeout` intentionally remain unset while long synchronous Team Overview requests still exist. The browser and request context supply the temporary synchronous caller budgets instead.
+
+During the monolithic Team Overview migration, the complete default caller ordering is: reverse proxy upstream timeout at least 60 seconds, browser Axios timeout 45 seconds, request context 35 seconds, shared downstream overall timeout 30 seconds, fixed version check timeout 10 seconds, and fixed quota notification webhook timeout 5 seconds. A proxy timeout below 60 seconds is unsupported deployment configuration for this migration window and must be corrected before rollout.
+
+Every outbound pool uses a 5-second connect timeout, 5-second TLS handshake timeout, 15-second response-header timeout, 90-second idle-connection timeout, at most 100 total idle connections, 20 idle connections per host, and 50 total connections per host. Relay, general downstream, version-check, and quota-notification clients are created once at startup; the version and webhook clients preserve their stricter 10-second and 5-second overall deadlines. Compatibility constructors share one package-level bounded fallback transport instead of creating private pools. Request contexts flow into downstream calls so cancellation and deadlines stop in-flight work.
+
+Config load rejects non-positive or excessive runtime durations and pool sizes before conversion to `time.Duration`. Ordering requires connect, TLS, and response-header phases below shared downstream overall, shared downstream below request context, readiness below request context, and the fixed browser/request/downstream/version/webhook sequence above.
+
+Liveness performs no dependency calls. Readiness runs database, Redis, and Relay probes concurrently under one shared two-second budget and preserves deterministic result order. A probe panic becomes only the sanitized result `down/unavailable`. Only database failure or timeout produces `not_ready` with HTTP 503. Redis or Relay failure/not-configured produces `degraded` with HTTP 200 when the database is up.
+
+Request telemetry is the first Gin middleware, followed by privacy-safe recovery, request timeout, CORS, canonical request-path redirect, embedded frontend, and route handlers. Gin's engine-level trailing-slash redirect is disabled; the in-chain 307 redirect preserves query, method, body replay, correlation, and CORS. Incoming `X-Request-ID` values are accepted only when they are 1-128 ASCII characters from `[A-Za-z0-9._-]`; otherwise a UUID is generated. The selected ID is returned on every response and forwarded by Relay transport.
+
+Each completed request emits one `http_request` event with only route template or `unmatched`, canonical method, status class, duration, response bytes, release, and request ID. Panic recovery emits only fixed route/method/status/release/request-id/error-class fields. Each Relay round trip emits one `dependency_request` after response-body EOF, close, or read error. Raw paths, queries, bodies, route parameters, actors, panic values, credentials, and downstream response text are never logged.
+
+Prometheus pool/cache metrics and sampled browser Web Vitals are owned by #135. Cold/warm production evidence and final route-specific budget ratification remain #136 work; runtime defaults are not a substitute for production measurement.
+
 ## Current Runtime Flow
 
 The current implementation now uses one formal attribution path:
@@ -555,6 +579,7 @@ flowchart LR
 | Quota reset approvals | `backend/internal/quotareset` | Department-derived versioned JSON workflow on the existing request row, exact-department configured approvers with representative fallback, configured ancestor rounds, current-candidate indexing, compare-and-swap sequential decisions, rollback-safe active-request uniqueness, durable comments/events, bounded relay reset execution, and explicit generic/WeCom webhook rendering |
 | Work items | `backend/internal/workitems` | Auth-scoped pending work counters, the PostgreSQL UUID revision, and the namespace/revision/actor/role-isolated Redis read model with bounded authoritative fallback; counts include best-effort relay-derived personal AI access setup plus locally derived quota reset and count-only injected Directory offboarding dependencies |
 | Representative scope and team usage | `backend/internal/representativescope`, `backend/internal/readcache`, `backend/internal/teamusage` | Resolve representative subtree scope from current directory metadata and member-department memberships, derive and twice-check opaque scope versions, reuse namespace/provider/actor/scope/range-isolated Redis team snapshots with bounded stale-if-error and authoritative fallback, serve split summary, bounded split trend, snapshot-bound paged members, shallow paged organization branches, and the legacy overview adapter from one generation, enforce delegated subject visibility and ancestor-only multiplier policy, and persist local `team_usage_rate_multiplier_audits` |
+| HTTP runtime and telemetry | `backend/internal/httpclient`, `backend/internal/health`, `backend/internal/telemetry`, `backend/internal/middleware` | Bounded reusable downstream transports, parallel deadline-bounded readiness, validated request IDs, normalized request logs, and fixed Relay dependency timing |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
 | Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, PR labeling, and dashboard-facing summary inputs |
 | Session and attribution | `backend/internal/checkpoint`, `backend/internal/attribution`, `backend/internal/prusage` | Commit checkpoints, rewrite mapping, checkpoint-bound tool usage propagation, and PR usage summary/detail snapshot generation |
