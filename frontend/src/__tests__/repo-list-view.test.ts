@@ -248,6 +248,115 @@ describe('RepoListView', () => {
     expect(wrapper.text()).toContain('repo-c')
   })
 
+  it('does not display an inferred scope for a binding-only URL', async () => {
+    const { listRepos, getRepoInventory } = await import('@/api/repo')
+    const unboundRepos = [
+      { ...sampleRepos[0], id: 11, name: 'repo-alpha', full_name: 'alpha/repo-alpha', binding_state: 'unbound', edges: {} },
+      { ...sampleRepos[0], id: 12, name: 'repo-beta', full_name: 'beta/repo-beta', binding_state: 'unbound', edges: {} },
+    ]
+    let resolveInventory!: (value: any) => void
+    ;(getRepoInventory as any).mockReturnValue(new Promise((resolve) => { resolveInventory = resolve }))
+    ;(listRepos as any).mockResolvedValue({
+      data: { data: { items: unboundRepos, total: 2, page: 1, page_size: 20 } },
+    })
+
+    const { wrapper } = await mountRepoList(undefined, '/repos?binding=unbound', { useCurrentMocks: true })
+    expect(wrapper.findAll('[data-testid="repo-row"]')).toHaveLength(2)
+
+    resolveInventory({ data: { data: buildInventory(unboundRepos) } })
+    await flushPromises()
+
+    const scopeOptions = wrapper.findAll('[data-testid="repo-scope-option"]')
+    expect(scopeOptions).toHaveLength(2)
+    expect(scopeOptions.some((option) => option.classes().includes('border-teal-500'))).toBe(false)
+    expect(listRepos).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not display an inferred scope for a provider-only URL', async () => {
+    const { listRepos, getRepoInventory } = await import('@/api/repo')
+    const providerRepos = [
+      { ...sampleRepos[0], id: 21, name: 'repo-alpha', full_name: 'alpha/repo-alpha' },
+      { ...sampleRepos[0], id: 22, name: 'repo-beta', full_name: 'beta/repo-beta' },
+    ]
+    let resolveInventory!: (value: any) => void
+    ;(getRepoInventory as any).mockReturnValue(new Promise((resolve) => { resolveInventory = resolve }))
+    ;(listRepos as any).mockResolvedValue({
+      data: { data: { items: providerRepos, total: 2, page: 1, page_size: 20 } },
+    })
+
+    const { wrapper } = await mountRepoList(undefined, '/repos?provider=scm_provider:1', { useCurrentMocks: true })
+    expect(wrapper.findAll('[data-testid="repo-row"]')).toHaveLength(2)
+
+    resolveInventory({ data: { data: buildInventory(providerRepos) } })
+    await flushPromises()
+
+    const scopeOptions = wrapper.findAll('[data-testid="repo-scope-option"]')
+    expect(scopeOptions).toHaveLength(2)
+    expect(scopeOptions.some((option) => option.classes().includes('border-teal-500'))).toBe(false)
+    expect(listRepos).toHaveBeenCalledTimes(1)
+  })
+
+  it('paginates a binding-only URL without requiring an inferred scope', async () => {
+    const { listRepos } = await import('@/api/repo')
+    const unboundRepos = Array.from({ length: 25 }, (_, index) => ({
+      ...sampleRepos[0],
+      id: index + 100,
+      name: `repo-${index + 1}`,
+      full_name: `${index % 2 === 0 ? 'alpha' : 'beta'}/repo-${index + 1}`,
+      binding_state: 'unbound',
+      edges: {},
+    }))
+
+    const { wrapper } = await mountRepoList(unboundRepos, '/repos?binding=unbound')
+    expect(wrapper.findAll('[data-testid="repo-row"]')).toHaveLength(20)
+
+    await wrapper.get('[data-testid="repo-next-page"]').trigger('click')
+    await flushPromises()
+
+    expect(listRepos).toHaveBeenLastCalledWith({
+      page: 2,
+      pageSize: 20,
+      bindingState: 'unbound',
+    })
+    expect(wrapper.findAll('[data-testid="repo-row"]')).toHaveLength(5)
+  })
+
+  it('uses the server-capped page size for pagination and the URL', async () => {
+    const { listRepos, getRepoInventory } = await import('@/api/repo')
+    ;(getRepoInventory as any).mockReturnValue(new Promise(() => {}))
+    ;(listRepos as any).mockImplementation((params: any) => Promise.resolve({
+      data: {
+        data: {
+          items: [{ ...sampleRepos[0], id: params.page }],
+          total: 105,
+          page: params.page,
+          page_size: 100,
+          selection: {
+            provider_key: 'scm_provider:1',
+            provider_id: 1,
+            provider_name: 'GitHub',
+            provider_type: 'github',
+            scope: 'org',
+            binding_state: 'bound',
+          },
+        },
+      },
+    }))
+
+    const { wrapper, router } = await mountRepoList(undefined, '/repos?page_size=1000000', { useCurrentMocks: true })
+    expect(router.currentRoute.value.query.page_size).toBe('100')
+
+    await wrapper.get('[data-testid="repo-next-page"]').trigger('click')
+    await flushPromises()
+
+    expect(listRepos).toHaveBeenLastCalledWith({
+      page: 2,
+      pageSize: 100,
+      scmProviderId: 1,
+      scope: 'org',
+    })
+  })
+
   it('keeps list rows visible when inventory fails', async () => {
     const { listRepos, getRepoInventory } = await import('@/api/repo')
     ;(getRepoInventory as any).mockRejectedValue(new Error('inventory timeout'))

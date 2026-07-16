@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/repoconfig"
@@ -1414,6 +1415,55 @@ func TestRepoListPageEmptyDefaultHasNoSelection(t *testing.T) {
 	}
 	if page.Selection != nil || page.Total != 0 || len(page.Items) != 0 || page.Page != 1 || page.PageSize != 20 {
 		t.Fatalf("empty page = %#v, want empty default page without selection", page)
+	}
+}
+
+func TestRepoListPageCapsPageSizeAndUsesStableTieBreaker(t *testing.T) {
+	client, svc := setupTest(t)
+	ctx := context.Background()
+	createdAt := time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC)
+	builders := make([]*ent.RepoConfigCreate, 0, 105)
+	for index := 0; index < 105; index++ {
+		builders = append(builders, client.RepoConfig.Create().
+			SetRepoKey(fmt.Sprintf("example.com/acme/repo-%03d", index)).
+			SetName(fmt.Sprintf("repo-%03d", index)).
+			SetFullName(fmt.Sprintf("acme/repo-%03d", index)).
+			SetCloneURL(fmt.Sprintf("https://example.com/acme/repo-%03d.git", index)).
+			SetDefaultBranch("main").
+			SetStatus(repoconfig.StatusActive).
+			SetCreatedAt(createdAt))
+	}
+	created, err := client.RepoConfig.CreateBulk(builders...).Save(ctx)
+	if err != nil {
+		t.Fatalf("create repository page fixtures: %v", err)
+	}
+
+	page, err := svc.ListPage(ctx, ListOpts{Page: 1, PageSize: 1_000_000, BindingState: "unbound"})
+	if err != nil {
+		t.Fatalf("ListPage first page: %v", err)
+	}
+	if page.PageSize != 100 || len(page.Items) != 100 || page.Total != 105 {
+		t.Fatalf("bounded first page = page_size %d items %d total %d, want 100/100/105", page.PageSize, len(page.Items), page.Total)
+	}
+	for index, item := range page.Items {
+		wantID := created[len(created)-1-index].ID
+		if item.ID != wantID {
+			t.Fatalf("first page item %d id = %d, want stable descending id %d", index, item.ID, wantID)
+		}
+	}
+
+	second, err := svc.ListPage(ctx, ListOpts{Page: 2, PageSize: 1_000_000, BindingState: "unbound"})
+	if err != nil {
+		t.Fatalf("ListPage second page: %v", err)
+	}
+	if len(second.Items) != 5 {
+		t.Fatalf("second page items = %d, want 5", len(second.Items))
+	}
+	for index, item := range second.Items {
+		wantID := created[4-index].ID
+		if item.ID != wantID {
+			t.Fatalf("second page item %d id = %d, want stable descending id %d", index, item.ID, wantID)
+		}
 	}
 }
 

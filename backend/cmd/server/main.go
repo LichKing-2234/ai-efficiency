@@ -304,7 +304,10 @@ func main() {
 	// Init admin settings handler
 	adminSettingsHandler := handler.NewAdminSettingsHandler(settingsConfigPath, &ldapConfig)
 
-	checkpointService := checkpoint.NewService(entClient)
+	checkpointService := checkpoint.NewService(entClient, checkpoint.ServiceOptions{
+		InventoryRevisionStore: repoInventoryRevisions,
+		RepoService:            repoService,
+	})
 	checkpointHandler := handler.NewCheckpointHandler(checkpointService)
 	attributionService := attribution.NewService(entClient, relayProvider)
 	handler.SetPRAttributionService(attributionService)
