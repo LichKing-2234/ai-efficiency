@@ -126,27 +126,31 @@
 - Produces `TeamUsageTrendResponse` matching the backend DTO.
 - Uses `defineAsyncComponent(() => import('@/components/team-usage/TeamOverviewMemberTrendChart.vue'))` and renders it only after trend data exists.
 
-- [ ] **Step 1: Add RED API/view tests**
+- [x] **Step 1: Add RED API/view tests**
 
   Cover delayed, empty, stale, failed, and successful trend responses; prove summary and member content survive trend failure; prove compatibility failure does not hide trend; and prove the chart is absent before trend success.
 
-- [ ] **Step 2: Run focused frontend tests and record RED**
+- [x] **Step 2: Run focused frontend tests and record RED**
 
   Run: `cd frontend && npm test -- src/__tests__/team-usage-api.test.ts src/__tests__/team-overview-view.test.ts`
 
   Expected: failures for the missing trend API and independent trend state.
 
-- [ ] **Step 3: Implement independent trend lifecycle and async chart**
+  RED evidence (2026-07-16): 9 focused failures showed the missing trend API, absent independent request/state, stale legacy trend rendering, and missing local loading/error/freshness states.
+
+- [x] **Step 3: Implement independent trend lifecycle and async chart**
 
   Keep separate request sequence, loading, data, and error refs for summary, trend, and compatibility members. Use only `TeamUsageTrendResponse` for chart props and ignore trend fields in the legacy response.
 
-- [ ] **Step 4: Verify Task 3 GREEN and checkpoint**
+- [x] **Step 4: Verify Task 3 GREEN and checkpoint**
 
   Run: `cd frontend && npm test && npm run build`
 
   Confirm the build emits the chart component as an async chunk separate from the Team Overview route chunk.
 
   Commit: `perf(frontend): load team trends independently`
+
+  GREEN evidence (2026-07-16): focused API/view tests passed 42/42, the full frontend suite passed 467/467, and the production build emitted `TeamOverviewMemberTrendChart-*.js` separately from `TeamOverviewView-*.js`.
 
 ### Task 4: Document, Verify, Review, And Publish
 
