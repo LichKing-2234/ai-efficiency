@@ -91,25 +91,33 @@
 - Accepts `parent_department_external_id`, `department_cursor`, `department_limit`, `member_cursor`, and `member_limit` alongside the normalized range.
 - Returns request-local `X-Request-ID` plus matching `request_id`, with stable 400/409 mappings and no compatibility deprecation headers.
 
-- [ ] **Step 1: Add RED HTTP tests**
+- [x] **Step 1: Add RED HTTP tests**
 
   Cover normalized range and parent forwarding, both default/explicit limits and cursors, response fields without recursive `children`/`member_tree`, unique request IDs, auth, no scope, out-of-scope parent, non-integer/oversized limits, invalid cursors, and `snapshot_expired`.
 
-- [ ] **Step 2: Run focused handler tests and record RED**
+  Test evidence (2026-07-16): handler tests define explicit/default query forwarding, shallow response metadata and request IDs, absence of compatibility headers/recursive fields, authentication, scoped 403/404 errors, both non-integer limits, and stable invalid/expired cursor responses.
+
+- [x] **Step 2: Run focused handler tests and record RED**
 
   Run: `cd backend && go test ./internal/handler -run 'TeamUsageOrganization' -count=1 -v`
 
   Expected: compile failure because `TeamUsageHandler.Organization` is absent.
 
-- [ ] **Step 3: Implement handler, error mapping, and production route**
+  RED evidence (2026-07-16): the focused handler command failed only because `TeamUsageHandler.Organization` was absent.
+
+- [x] **Step 3: Implement handler, error mapping, and production route**
 
   Reuse the summary/trend/members range parser and optional integer parser. Generate request IDs only after successful service projection and keep the legacy overview route unchanged.
 
-- [ ] **Step 4: Verify Task 2 GREEN and checkpoint**
+  Implementation evidence (2026-07-16): the authenticated handler forwards normalized range, parent, both limits, and both cursors; successful responses receive matching request-local IDs, while existing generic scoped and invalid/expired cursor mappings are reused.
+
+- [x] **Step 4: Verify Task 2 GREEN and checkpoint**
 
   Run: `cd backend && go test ./internal/teamusage ./internal/handler ./cmd/server -count=2 && git diff --check`
 
   Commit: `feat(backend): expose paged team organization`
+
+  GREEN evidence (2026-07-16): focused organization handler tests, double `internal/teamusage`/`internal/handler`/`cmd/server` runs, and `git diff --check` passed.
 
 ### Task 3: Lazy-Load One Organization Branch At A Time
 
