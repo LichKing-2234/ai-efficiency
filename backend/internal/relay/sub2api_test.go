@@ -3,10 +3,12 @@ package relay_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -3140,6 +3142,264 @@ func TestSub2APIListGroupRateMultipliersDecodesRateAndRPM(t *testing.T) {
 	if got[0].RPMOverride == nil || *got[0].RPMOverride != 120 {
 		t.Fatalf("rpm override = %#v, want 120", got[0].RPMOverride)
 	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsDeduplicatesRequests(t *testing.T) {
+	var mu sync.Mutex
+	requestCountByGroup := make(map[int64]int)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		mu.Lock()
+		requestCountByGroup[groupID]++
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{{"user_id": groupID * 100, "rate_multiplier": float64(groupID)}},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	results := reader.GroupRateMultipliersForGroups(context.Background(), []int64{42, 7, 42, 9, 7})
+	byGroup := rateMultiplierResultsByGroup(t, results)
+
+	if diff := cmp.Diff([]int64{7, 9, 42}, sortedRateMultiplierResultGroupIDs(byGroup)); diff != "" {
+		t.Fatalf("result group IDs mismatch (-want +got):\n%s", diff)
+	}
+	for _, groupID := range []int64{7, 9, 42} {
+		result := byGroup[groupID]
+		if result.Err != nil {
+			t.Fatalf("group %d result error = %v", groupID, result.Err)
+		}
+		if len(result.Entries) != 1 || result.Entries[0].UserID != groupID*100 {
+			t.Fatalf("group %d entries = %#v", groupID, result.Entries)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if diff := cmp.Diff(map[int64]int{7: 1, 9: 1, 42: 1}, requestCountByGroup); diff != "" {
+		t.Fatalf("request counts mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsLimitsConcurrencyToFour(t *testing.T) {
+	var mu sync.Mutex
+	active := 0
+	maxActive := 0
+	requestCount := 0
+	started := make(chan struct{}, 8)
+	release := make(chan struct{})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		mu.Lock()
+		active++
+		requestCount++
+		if active > maxActive {
+			maxActive = active
+		}
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			active--
+			mu.Unlock()
+		}()
+
+		started <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{{"user_id": groupID * 100}},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	done := make(chan []relay.GroupRateMultiplierReadResult, 1)
+	go func() {
+		done <- reader.GroupRateMultipliersForGroups(context.Background(), []int64{1, 2, 3, 4, 5, 6, 7, 8})
+	}()
+
+	for i := 0; i < 4; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatalf("only %d requests started before timeout, want four", i)
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	startedBeforeRelease := requestCount
+	maxBeforeRelease := maxActive
+	mu.Unlock()
+	close(release)
+
+	var results []relay.GroupRateMultiplierReadResult
+	select {
+	case results = <-done:
+	case <-time.After(time.Second):
+		t.Fatal("batch read did not finish after releasing requests")
+	}
+	if len(results) != 8 {
+		t.Fatalf("result count = %d, want 8", len(results))
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if startedBeforeRelease != 4 {
+		t.Fatalf("requests started before release = %d, want 4", startedBeforeRelease)
+	}
+	if maxBeforeRelease != 4 || maxActive != 4 {
+		t.Fatalf("max active requests = %d before release and %d overall, want 4", maxBeforeRelease, maxActive)
+	}
+	if requestCount != 8 {
+		t.Fatalf("request count = %d, want 8", requestCount)
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsFinishesNearSlowestBranch(t *testing.T) {
+	delays := map[int64]time.Duration{
+		1: 80 * time.Millisecond,
+		2: 120 * time.Millisecond,
+		3: 160 * time.Millisecond,
+		4: 200 * time.Millisecond,
+	}
+	var mu sync.Mutex
+	arrived := 0
+	allArrived := make(chan struct{})
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		mu.Lock()
+		arrived++
+		if arrived == len(delays) {
+			close(allArrived)
+		}
+		mu.Unlock()
+		select {
+		case <-allArrived:
+		case <-r.Context().Done():
+			return
+		}
+		select {
+		case <-time.After(delays[groupID]):
+		case <-r.Context().Done():
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": []any{}})
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	startedAt := time.Now()
+	results := reader.GroupRateMultipliersForGroups(context.Background(), []int64{1, 2, 3, 4})
+	elapsed := time.Since(startedAt)
+
+	if len(results) != 4 {
+		t.Fatalf("result count = %d, want 4", len(results))
+	}
+	if elapsed < 180*time.Millisecond || elapsed > 500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want near the 200ms slowest branch", elapsed)
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsRecordsPartialFailure(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		if groupID == 11 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "group metadata unavailable"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{{"user_id": groupID * 100}},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	byGroup := rateMultiplierResultsByGroup(t, reader.GroupRateMultipliersForGroups(context.Background(), []int64{10, 11, 12}))
+
+	if byGroup[10].Err != nil || len(byGroup[10].Entries) != 1 {
+		t.Fatalf("group 10 result = %#v, want success", byGroup[10])
+	}
+	if byGroup[12].Err != nil || len(byGroup[12].Entries) != 1 {
+		t.Fatalf("group 12 result = %#v, want success", byGroup[12])
+	}
+	if byGroup[11].Err == nil || !strings.Contains(byGroup[11].Err.Error(), "unexpected status 503") {
+		t.Fatalf("group 11 error = %v, want status 503 failure", byGroup[11].Err)
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsCancelsRequestAtDeadline(t *testing.T) {
+	requestCanceled := make(chan struct{}, 1)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/42/rate-multipliers", func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		requestCanceled <- struct{}{}
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	startedAt := time.Now()
+	results := reader.GroupRateMultipliersForGroups(context.Background(), []int64{42})
+	elapsed := time.Since(startedAt)
+
+	if len(results) != 1 || results[0].GroupID != 42 {
+		t.Fatalf("results = %#v, want one result for group 42", results)
+	}
+	if !errors.Is(results[0].Err, context.DeadlineExceeded) {
+		t.Fatalf("result error = %v, want context deadline exceeded", results[0].Err)
+	}
+	if elapsed < 1800*time.Millisecond || elapsed > 3500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want the two-second per-request deadline", elapsed)
+	}
+	select {
+	case <-requestCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("server request context was not canceled")
+	}
+}
+
+func rateMultiplierGroupIDFromPath(t *testing.T, path string) int64 {
+	t.Helper()
+	const prefix = "/api/v1/admin/groups/"
+	const suffix = "/rate-multipliers"
+	groupID, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix), 10, 64)
+	if err != nil {
+		t.Errorf("parse group ID from path %q: %v", path, err)
+		return 0
+	}
+	return groupID
+}
+
+func rateMultiplierResultsByGroup(t *testing.T, results []relay.GroupRateMultiplierReadResult) map[int64]relay.GroupRateMultiplierReadResult {
+	t.Helper()
+	byGroup := make(map[int64]relay.GroupRateMultiplierReadResult, len(results))
+	for _, result := range results {
+		if _, exists := byGroup[result.GroupID]; exists {
+			t.Fatalf("duplicate result for group %d", result.GroupID)
+		}
+		byGroup[result.GroupID] = result
+	}
+	return byGroup
+}
+
+func sortedRateMultiplierResultGroupIDs(results map[int64]relay.GroupRateMultiplierReadResult) []int64 {
+	groupIDs := make([]int64, 0, len(results))
+	for groupID := range results {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	return groupIDs
 }
 
 func TestSub2APIReplaceGroupRateMultipliersPreservesRPMPayloadShape(t *testing.T) {

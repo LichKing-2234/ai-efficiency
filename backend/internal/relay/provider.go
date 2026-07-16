@@ -110,3 +110,13 @@ type GroupRateMultiplierManager interface {
 	ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
 	ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error
 }
+
+type GroupRateMultiplierReadResult struct {
+	GroupID int64
+	Entries []UserGroupRateEntry
+	Err     error
+}
+
+type GroupRateMultiplierBatchReader interface {
+	GroupRateMultipliersForGroups(ctx context.Context, groupIDs []int64) []GroupRateMultiplierReadResult
+}
