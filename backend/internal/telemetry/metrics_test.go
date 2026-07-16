@@ -61,6 +61,27 @@ func TestMetricsRecordsNormalizedDependencyEvidence(t *testing.T) {
 	}
 }
 
+func TestMetricsCacheRecorderUsesOnlyStableCacheAndOutcomeLabels(t *testing.T) {
+	metrics := NewMetrics("test-release")
+	recorder := metrics.CacheRecorder("work_items_counts")
+	for _, outcome := range []string{"fresh", "miss", "refresh", "lease_acquired", "lease_wait", "lease_failed", "error"} {
+		recorder.Record(outcome)
+	}
+
+	for _, outcome := range []string{"fresh", "miss", "stale", "error", "refresh", "lease_acquired", "lease_wait", "lease_failed"} {
+		want := float64(1)
+		if outcome == "stale" {
+			want = 0
+		}
+		if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_cache_events_total", map[string]string{
+			"cache":   "work_items_counts",
+			"outcome": outcome,
+		}); got != want {
+			t.Fatalf("cache outcome %s = %v, want %v", outcome, got, want)
+		}
+	}
+}
+
 func gatheredMetric(t *testing.T, gatherer prometheus.Gatherer, name string, labels map[string]string) *dto.Metric {
 	t.Helper()
 	families, err := gatherer.Gather()

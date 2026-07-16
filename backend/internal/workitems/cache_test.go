@@ -45,13 +45,14 @@ type fakeCountsLease struct {
 type fakeCountsStore struct {
 	mu sync.Mutex
 
-	now        time.Time
-	values     map[string]fakeCountsStoreValue
-	leases     map[string]fakeCountsLease
-	getErr     error
-	acquireErr error
-	setErr     error
-	releaseErr error
+	now         time.Time
+	values      map[string]fakeCountsStoreValue
+	leases      map[string]fakeCountsLease
+	getErr      error
+	acquireErr  error
+	leaseTTLErr error
+	setErr      error
+	releaseErr  error
 
 	getCalls        int
 	acquireCalls    int
@@ -174,6 +175,9 @@ func (f *fakeCountsStore) TryAcquireLease(_ context.Context, key string, token s
 func (f *fakeCountsStore) LeaseTTL(_ context.Context, key string) (time.Duration, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.leaseTTLErr != nil {
+		return 0, f.leaseTTLErr
+	}
 	lease, ok := f.leases[key]
 	if !ok {
 		return 0, ErrCountsCacheMiss
