@@ -242,6 +242,84 @@ describe('DashboardView', () => {
     })
   })
 
+  afterEach(() => {
+    canvasModules.releaseAll()
+  })
+
+  // This cold-module contract must run before cases that render chartable snapshots.
+  it('loads chart canvases only after chartable dashboard data exists', async () => {
+    canvasModules.defer()
+    const { getUserUsageDashboard } = await import('@/api/userUsage')
+    const firstRequest = deferred<any>()
+    const refreshRequest = deferred<any>()
+    ;(getUserUsageDashboard as any)
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(refreshRequest.promise)
+      .mockResolvedValue({ data: { data: usageSnapshot } })
+
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(DashboardView, {
+      global: { plugins: [createPinia(), router] },
+    })
+
+    expect(getUserUsageDashboard).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Loading usage dashboard')
+    expect(canvasModules.lineLoads).toBe(0)
+    expect(canvasModules.doughnutLoads).toBe(0)
+
+    firstRequest.resolve({
+      data: {
+        data: { ...usageSnapshot, trend: [], models: [] },
+      },
+    })
+    await flushPromises()
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No trend data available'))
+    expect(wrapper.text()).toContain('No model data available')
+    expect(canvasModules.lineLoads).toBe(0)
+    expect(canvasModules.doughnutLoads).toBe(0)
+
+    await wrapper.get('[data-test="range-7d"]').trigger('click')
+    expect(getUserUsageDashboard).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Loading trend...')
+    expect(wrapper.text()).toContain('Loading models...')
+    expect(canvasModules.lineLoads).toBe(0)
+    expect(canvasModules.doughnutLoads).toBe(0)
+
+    refreshRequest.resolve({ data: { data: usageSnapshot } })
+    await flushPromises()
+
+    await vi.waitFor(() => {
+      expect(canvasModules.lineLoads).toBe(1)
+      expect(canvasModules.doughnutLoads).toBe(1)
+    })
+    expect(wrapper.text()).toContain('example-model')
+    expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(false)
+    const trendSection = wrapper.findAll('section').find((section) => section.text().includes('Token Trend'))
+    const modelSection = wrapper.findAll('section').find((section) => section.text().includes('Model Distribution'))
+    expect(trendSection?.get('.h-72').classes()).toContain('h-72')
+    expect(modelSection?.get('.h-44').classes()).toContain('h-44')
+
+    canvasModules.resolveLine()
+    canvasModules.resolveDoughnut()
+    await flushPromises()
+
+    const line = wrapper.get('[data-test="line-chart"]')
+    const doughnut = wrapper.get('[data-test="doughnut-chart"]')
+    expect(JSON.parse(line.attributes('data-chart') ?? '{}').labels).toEqual(['2026-06-06'])
+    expect(JSON.parse(doughnut.attributes('data-chart') ?? '{}').labels).toEqual(['example-model'])
+    expect(JSON.parse(line.attributes('data-options') ?? '{}').maintainAspectRatio).toBe(false)
+    expect(JSON.parse(doughnut.attributes('data-options') ?? '{}').maintainAspectRatio).toBe(false)
+
+    await wrapper.get('[data-test="range-today"]').trigger('click')
+    await flushPromises()
+    expect(canvasModules.lineLoads).toBe(1)
+    expect(canvasModules.doughnutLoads).toBe(1)
+  })
+
   it('renders usage before representative scope and quota finish loading', async () => {
     const { getUserUsageDashboard, getUserUsageGroupQuotas } = await import('@/api/userUsage')
     const { getTeamUsageScope } = await import('@/api/teamUsage')
@@ -355,81 +433,6 @@ describe('DashboardView', () => {
     expect(getTeamUsageSubjectDashboard).toHaveBeenCalled()
     expect(getUserUsageDashboard).not.toHaveBeenCalled()
     expect(getUserUsageGroupQuotas).not.toHaveBeenCalled()
-  })
-
-  afterEach(() => {
-    canvasModules.releaseAll()
-  })
-
-  it('loads chart canvases only after chartable dashboard data exists', async () => {
-    canvasModules.defer()
-    const { getUserUsageDashboard } = await import('@/api/userUsage')
-    const firstRequest = deferred<any>()
-    const refreshRequest = deferred<any>()
-    ;(getUserUsageDashboard as any)
-      .mockReturnValueOnce(firstRequest.promise)
-      .mockReturnValueOnce(refreshRequest.promise)
-      .mockResolvedValue({ data: { data: usageSnapshot } })
-
-    const router = createTestRouter()
-    await router.push('/')
-    await router.isReady()
-    const wrapper = mount(DashboardView, {
-      global: { plugins: [createPinia(), router] },
-    })
-
-    expect(getUserUsageDashboard).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('Loading your AI usage')
-    expect(canvasModules.lineLoads).toBe(0)
-    expect(canvasModules.doughnutLoads).toBe(0)
-
-    firstRequest.resolve({
-      data: {
-        data: { ...usageSnapshot, trend: [], models: [] },
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('No trend data available')
-    expect(wrapper.text()).toContain('No model data available')
-    expect(canvasModules.lineLoads).toBe(0)
-    expect(canvasModules.doughnutLoads).toBe(0)
-
-    await wrapper.get('[data-test="range-7d"]').trigger('click')
-    expect(getUserUsageDashboard).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('Loading trend...')
-    expect(wrapper.text()).toContain('Loading models...')
-    expect(canvasModules.lineLoads).toBe(0)
-    expect(canvasModules.doughnutLoads).toBe(0)
-
-    refreshRequest.resolve({ data: { data: usageSnapshot } })
-    await flushPromises()
-
-    expect(canvasModules.lineLoads).toBe(1)
-    expect(canvasModules.doughnutLoads).toBe(1)
-    expect(wrapper.text()).toContain('example-model')
-    expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(false)
-    const trendSection = wrapper.findAll('section').find((section) => section.text().includes('Token Trend'))
-    const modelSection = wrapper.findAll('section').find((section) => section.text().includes('Model Distribution'))
-    expect(trendSection?.get('.h-72').classes()).toContain('h-72')
-    expect(modelSection?.get('.h-44').classes()).toContain('h-44')
-
-    canvasModules.resolveLine()
-    canvasModules.resolveDoughnut()
-    await flushPromises()
-
-    const line = wrapper.get('[data-test="line-chart"]')
-    const doughnut = wrapper.get('[data-test="doughnut-chart"]')
-    expect(JSON.parse(line.attributes('data-chart') ?? '{}').labels).toEqual(['2026-06-06'])
-    expect(JSON.parse(doughnut.attributes('data-chart') ?? '{}').labels).toEqual(['example-model'])
-    expect(JSON.parse(line.attributes('data-options') ?? '{}').maintainAspectRatio).toBe(false)
-    expect(JSON.parse(doughnut.attributes('data-options') ?? '{}').maintainAspectRatio).toBe(false)
-
-    await wrapper.get('[data-test="range-today"]').trigger('click')
-    await flushPromises()
-    expect(canvasModules.lineLoads).toBe(1)
-    expect(canvasModules.doughnutLoads).toBe(1)
   })
 
   it('renders personal AI usage title', async () => {

@@ -212,12 +212,12 @@ describe('i18n locale loading', () => {
     expect(documentElement.lang).toBe('en-US')
   })
 
-  it('keeps both real dictionaries at the complete 1002-key contract', () => {
+  it('keeps both real dictionaries at the complete 1034-key contract', () => {
     const englishKeys = Object.keys(enUS).sort()
     const chineseKeys = Object.keys(zhCN).sort()
 
-    expect(englishKeys).toHaveLength(1002)
-    expect(chineseKeys).toHaveLength(1002)
+    expect(englishKeys).toHaveLength(1034)
+    expect(chineseKeys).toHaveLength(1034)
     expect(chineseKeys).toEqual(englishKeys)
   })
 
@@ -227,19 +227,26 @@ describe('i18n locale loading', () => {
     const app = { use: vi.fn(), mount }
     const createApp = vi.fn(() => app)
     const createPinia = vi.fn(() => ({ synthetic: 'pinia' }))
+    const router = {
+      isReady: vi.fn(() => Promise.resolve()),
+      currentRoute: { value: { path: '/' } },
+    }
+    const startWebVitalsReportingAfterRouterReady = vi.fn(() => Promise.resolve(true))
 
     vi.resetModules()
     vi.doMock('@/i18n', () => ({ initializeI18n: () => initialization.promise }))
     vi.doMock('vue', () => ({ createApp }))
     vi.doMock('pinia', () => ({ createPinia }))
     vi.doMock('@/App.vue', () => ({ default: { name: 'SyntheticApp' } }))
-    vi.doMock('@/router', () => ({ default: { synthetic: 'router' } }))
+    vi.doMock('@/router', () => ({ default: router }))
+    vi.doMock('@/telemetry/webVitals', () => ({ startWebVitalsReportingAfterRouterReady }))
 
     try {
       await import('@/main')
 
       expect(createApp).not.toHaveBeenCalled()
       expect(mount).not.toHaveBeenCalled()
+      expect(startWebVitalsReportingAfterRouterReady).not.toHaveBeenCalled()
 
       initialization.resolve()
       await initialization.promise
@@ -249,12 +256,15 @@ describe('i18n locale loading', () => {
       expect(app.use).toHaveBeenCalledTimes(2)
       expect(mount).toHaveBeenCalledTimes(1)
       expect(mount).toHaveBeenCalledWith('#app')
+      expect(startWebVitalsReportingAfterRouterReady).toHaveBeenCalledTimes(1)
+      expect(startWebVitalsReportingAfterRouterReady).toHaveBeenCalledWith(router)
     } finally {
       vi.doUnmock('@/i18n')
       vi.doUnmock('vue')
       vi.doUnmock('pinia')
       vi.doUnmock('@/App.vue')
       vi.doUnmock('@/router')
+      vi.doUnmock('@/telemetry/webVitals')
       vi.resetModules()
     }
   })
