@@ -76,10 +76,12 @@
 - For `unavailable`, render localized warning text in the multiplier cell, hide the numeric effective multiplier, and keep the edit command disabled.
 - Preserve usage/quota display because those fields come from the current subscription response, not the failed multiplier metadata branch.
 
-- [ ] **Step 1: Add failing component tests for warning copy, hidden inherited multiplier, disabled edit, preserved usage/quota, and Chinese localization**
-- [ ] **Step 2: Run the focused Vitest file and record RED**
-- [ ] **Step 3: Implement the TypeScript contract, localized warning state, and non-editable rendering**
-- [ ] **Step 4: Re-run the focused Vitest file and confirm GREEN**
+- [x] **Step 1: Add failing component tests for warning copy, hidden inherited multiplier, disabled edit, preserved usage/quota, and Chinese localization**
+- [x] **Step 2: Run the focused Vitest file and record RED**
+- [x] **Step 3: Implement the TypeScript contract, localized warning state, and non-editable rendering**
+- [x] **Step 4: Re-run the focused Vitest file and confirm GREEN**
+
+Task 3 RED: the focused Vitest file ran 9 tests; the 2 new degradation tests failed because the warning state was absent, while the existing 7 tests passed. Task 3 GREEN: the focused file passed 9/9, the full frontend suite passed 454/454, and the frontend production build passed.
 
 ### Task 4: Document, verify, review, and publish
 
