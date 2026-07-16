@@ -163,6 +163,7 @@ const enUS = {
   'quotaReset.title': 'Quota Reset Requests',
   'quotaReset.subtitle': 'Request a reset for a subscription group and track approval status.',
   'quotaReset.requestReset': 'Request reset',
+  'quotaReset.refresh': 'Refresh',
   'quotaReset.modalHelp': 'Approval resets the selected group daily, weekly, and monthly used amounts. It does not change future limits.',
   'quotaReset.subscriptionGroup': 'Subscription group',
   'quotaReset.currentUsage': 'Current daily / weekly / monthly usage',
