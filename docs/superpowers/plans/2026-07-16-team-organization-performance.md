@@ -24,7 +24,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** In progress. The backend, frontend, frontend production build, and `ae-cli` baselines passed at `d568905` before implementation.
+**Status:** In progress. Implementation, review, and local verification are complete; Draft PR publication and required CI remain.
 
 ---
 
@@ -171,11 +171,13 @@
 - Modify: `docs/architecture.md`
 - Modify: this plan
 
-- [ ] **Step 1: Update current architecture**
+- [x] **Step 1: Update current architecture**
 
-  Record the fifth independent Team Overview request, shallow department/direct-member collections, bounds/order, cursor dimensions and Redis fallback, node-local frontend lifecycle, removal of the current compatibility frontend caller, and unchanged compatibility API response.
+  Record the fourth split Team Overview request, shallow department/direct-member collections, bounds/order, cursor dimensions and Redis fallback, node-local frontend lifecycle, removal of the current compatibility frontend caller, and unchanged compatibility API response.
 
-- [ ] **Step 2: Run full verification**
+  Documentation evidence (2026-07-16): `docs/architecture.md` now records four independent split requests, root/parent shallow organization semantics, 25/100 and 50/100 bounds, stable ordering and row metadata, collection/actor/range/parent/scope/content cursor binding, deterministic Redis fallback, generation-safe branch loading/recovery, no current compatibility frontend caller, and the unchanged legacy response.
+
+- [x] **Step 2: Run full verification**
 
   ```bash
   git diff --check
@@ -184,9 +186,13 @@
   cd ../ae-cli && go test ./...
   ```
 
-- [ ] **Step 3: Review against issue #128 and the active performance spec**
+  Verification evidence (2026-07-16): `git diff --check`, targeted backend `go vet`, full backend tests, race-enabled `internal/readcache`/`internal/representativescope`/`internal/teamusage`, all 39 frontend files and 486 tests, `vue-tsc`, the production Vite build, and all `ae-cli` tests passed.
+
+- [x] **Step 3: Review against issue #128 and the active performance spec**
 
   Audit shallow response shape, direct versus aggregate counts, root semantics, stable ordering, cursor collection/parent integrity, expiry and Redis-outage behavior, authorization, response/DOM bounds, exact range retention, sibling/branch lifecycle isolation, compatibility preservation, and synthetic data. Fix every finding and rerun affected verification.
+
+  Review evidence (2026-07-16): contract review found one important nested-branch recovery gap. Two RED/GREEN regressions now prove that parent expiry evicts cached descendants and their expansion state while preserving unrelated siblings, and that a late pre-eviction descendant response cannot overwrite the freshly reloaded branch. Request identities are monotonic across branch eviction. Focused re-review found no remaining Critical or Important issues.
 
 - [ ] **Step 4: Push and open a Draft PR**
 
