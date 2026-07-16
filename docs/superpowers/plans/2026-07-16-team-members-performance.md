@@ -86,23 +86,27 @@
 - Produces authenticated `GET /api/v1/user/team-usage/members`.
 - Returns request-local `X-Request-ID` plus matching response `request_id`.
 
-- [ ] **Step 1: Add RED HTTP tests**
+- [x] **Step 1: Add RED HTTP tests**
 
   Cover normalized range forwarding, missing/default and explicit limit, cursor forwarding, response fields without `member_tree`/duplicate collections, unique request ids, auth, 403 no scope, 400 invalid limit/cursor, and 409 `snapshot_expired`.
 
-- [ ] **Step 2: Run focused handler tests and record RED**
+- [x] **Step 2: Run focused handler tests and record RED**
 
   Run: `cd backend && go test ./internal/handler -run 'TeamUsageMembers' -count=1 -v`
 
-- [ ] **Step 3: Implement handler, stable error mapping, and production route**
+  RED evidence (2026-07-16): the focused command failed only because `TeamUsageHandler.Members` was absent.
+
+- [x] **Step 3: Implement handler, stable error mapping, and production route**
 
   Reuse the summary/trend range parser. Generate request IDs only after service projection and expose no legacy deprecation headers.
 
-- [ ] **Step 4: Verify Task 2 GREEN and checkpoint**
+- [x] **Step 4: Verify Task 2 GREEN and checkpoint**
 
   Run: `cd backend && go test ./internal/teamusage ./internal/handler ./cmd/server -count=2 && git diff --check`
 
   Commit: `feat(backend): expose paged team members`
+
+  GREEN evidence (2026-07-16): focused members handler tests and double runs of teamusage, handler, and cmd/server passed; `git diff --check` was clean.
 
 ### Task 3: Render One Independent Member Page
 
