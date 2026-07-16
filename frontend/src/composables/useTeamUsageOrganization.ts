@@ -72,9 +72,11 @@ function isSnapshotExpired(error: unknown) {
 
 export function useTeamUsageOrganization() {
   const branches = ref<Record<string, TeamUsageOrganizationBranchState>>({})
+  const invalidatedDepartmentIds = ref<string[]>([])
   const resetVersion = ref(0)
   let fixedParams: TeamUsageOverviewParams | null = null
   let generation = 0
+  let requestSequence = 0
 
   const rootBranch = computed(() => branches.value[rootBranchKey])
 
@@ -86,6 +88,31 @@ export function useTeamUsageOrganization() {
     branches.value = { ...branches.value, [key]: branch }
   }
 
+  function invalidateDescendantBranches(parentDepartmentExternalID: string | null) {
+    const parent = branches.value[branchKey(parentDepartmentExternalID)]
+    if (parent == null) return
+
+    const descendants: string[] = []
+    const visited = new Set(parentDepartmentExternalID == null ? [] : [parentDepartmentExternalID])
+    const pending = parent.departments.map((department) => department.department_external_id)
+    while (pending.length > 0) {
+      const departmentID = pending.pop()
+      if (departmentID == null || visited.has(departmentID)) continue
+      visited.add(departmentID)
+      descendants.push(departmentID)
+      const branch = branches.value[branchKey(departmentID)]
+      if (branch != null) {
+        pending.push(...branch.departments.map((department) => department.department_external_id))
+      }
+    }
+    if (descendants.length === 0) return
+
+    const remaining = { ...branches.value }
+    for (const departmentID of descendants) delete remaining[branchKey(departmentID)]
+    branches.value = remaining
+    invalidatedDepartmentIds.value = descendants
+  }
+
   async function loadBranch(
     parentDepartmentExternalID: string | null,
     mode: BranchLoadMode,
@@ -95,7 +122,7 @@ export function useTeamUsageOrganization() {
     if (fixedParams == null || expectedGeneration !== generation) return
     const key = branchKey(parentDepartmentExternalID)
     const current = branches.value[key] ?? emptyBranch(parentDepartmentExternalID)
-    const requestSeq = current.requestSeq + 1
+    const requestSeq = ++requestSequence
     const next: TeamUsageOrganizationBranchState = {
       ...current,
       requestSeq,
@@ -157,6 +184,7 @@ export function useTeamUsageOrganization() {
     } catch (error) {
       if (expectedGeneration !== generation || branches.value[key]?.requestSeq !== requestSeq) return
       if (recoverSnapshot && mode !== 'replace' && isSnapshotExpired(error)) {
+        invalidateDescendantBranches(parentDepartmentExternalID)
         return loadBranch(parentDepartmentExternalID, 'replace', false, expectedGeneration)
       }
       const latest = branches.value[key] ?? next
@@ -185,6 +213,7 @@ export function useTeamUsageOrganization() {
     resetVersion.value += 1
     fixedParams = { ...params }
     branches.value = {}
+    invalidatedDepartmentIds.value = []
     void loadBranch(null, 'replace', true, generation)
   }
 
@@ -209,6 +238,7 @@ export function useTeamUsageOrganization() {
   return {
     branches,
     rootBranch,
+    invalidatedDepartmentIds,
     resetVersion,
     branchFor,
     reset,

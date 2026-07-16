@@ -10,6 +10,7 @@ const props = withDefaults(defineProps<{
   members: TeamOverviewMember[]
   organizationRoot?: TeamUsageOrganizationBranchState
   organizationBranches?: Record<string, TeamUsageOrganizationBranchState>
+  organizationInvalidatedDepartmentIds?: string[]
   organizationResetVersion?: number
   organizationBranchFor: (departmentID: string) => TeamUsageOrganizationBranchState | undefined
   memberLoading?: boolean
@@ -19,6 +20,7 @@ const props = withDefaults(defineProps<{
   hasNextPage?: boolean
 }>(), {
   organizationBranches: () => ({}),
+  organizationInvalidatedDepartmentIds: () => [],
   organizationResetVersion: 0,
   memberLoading: false,
   memberError: false,
@@ -110,6 +112,15 @@ const expandedDepartmentIds = ref<Set<string>>(new Set())
 
 watch(() => props.organizationResetVersion, () => {
   expandedDepartmentIds.value = new Set()
+})
+
+watch(() => props.organizationInvalidatedDepartmentIds, (invalidatedDepartmentIds) => {
+  const next = new Set(expandedDepartmentIds.value)
+  let changed = false
+  for (const departmentID of invalidatedDepartmentIds) {
+    changed = next.delete(departmentID) || changed
+  }
+  if (changed) expandedDepartmentIds.value = next
 })
 
 function departmentExpanded(departmentID: string) {

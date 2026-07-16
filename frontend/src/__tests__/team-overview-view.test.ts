@@ -537,6 +537,113 @@ describe('TeamOverviewView', () => {
     expect(mockGetTeamUsageMembers).toHaveBeenCalledTimes(1)
   })
 
+  it('invalidates recovered branch descendants while preserving sibling branches', async () => {
+    const childBeforeRefresh = organizationDepartment('department-alpha-child', 'Alpha Child', {
+      parent_external_id: 'department-alpha',
+      depth: 1,
+      direct_member_count: 1,
+      aggregate_member_count: 1,
+    })
+    const childAfterRefresh = organizationDepartment('department-alpha-child', 'Alpha Child Updated', {
+      parent_external_id: 'department-alpha',
+      depth: 1,
+      direct_member_count: 1,
+      aggregate_member_count: 1,
+    })
+    const sibling = organizationDepartment('department-beta', 'Department Beta', {
+      direct_member_count: 1,
+      aggregate_member_count: 1,
+    })
+    mockGetTeamUsageOrganization
+      .mockResolvedValueOnce({ data: { data: organizationPage(null, [rootOrganizationDepartment, sibling]) } } as any)
+      .mockResolvedValueOnce({ data: { data: organizationPage('department-alpha', [childBeforeRefresh], [], { members: 'alpha-members-page-2' }) } } as any)
+      .mockResolvedValueOnce({ data: { data: organizationPage('department-alpha-child', [], [pagedMember(11, 'Stale Child Member')]) } } as any)
+      .mockResolvedValueOnce({ data: { data: organizationPage('department-beta', [], [pagedMember(12, 'Sibling Member')]) } } as any)
+      .mockRejectedValueOnce({ response: { status: 409, data: { message: 'snapshot_expired' } } })
+      .mockResolvedValueOnce({ data: { data: organizationPage('department-alpha', [childAfterRefresh]) } } as any)
+      .mockResolvedValueOnce({ data: { data: organizationPage('department-alpha-child', [], [pagedMember(13, 'Fresh Child Member')]) } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+
+    await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha-child"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="team-overview-department-toggle-department-beta"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="team-overview-member-user-1011"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-overview-member-user-1012"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="team-overview-members-more-department-alpha"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="team-overview-department-department-alpha-child"]').text()).toContain('Alpha Child Updated')
+    expect(wrapper.get('[data-testid="team-overview-department-department-alpha-child"]').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[data-testid="team-overview-member-user-1011"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="team-overview-member-user-1012"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="team-overview-department-department-beta"]').attributes('aria-expanded')).toBe('true')
+
+    await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha-child"]').trigger('click')
+    await flushPromises()
+
+    expect(mockGetTeamUsageOrganization).toHaveBeenCalledTimes(7)
+    expect(mockGetTeamUsageOrganization.mock.calls[6][0]).toEqual(expect.objectContaining({
+      parent_department_external_id: 'department-alpha-child',
+      department_cursor: undefined,
+      member_cursor: undefined,
+    }))
+    expect(wrapper.find('[data-testid="team-overview-member-user-1013"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-overview-member-user-1012"]').exists()).toBe(true)
+  })
+
+  it('ignores an invalidated descendant request that resolves after the branch reloads', async () => {
+    const child = organizationDepartment('department-alpha-child', 'Alpha Child', {
+      parent_external_id: 'department-alpha',
+      depth: 1,
+      direct_member_count: 1,
+      aggregate_member_count: 1,
+    })
+    let resolveStaleChild!: (value: unknown) => void
+    const staleChildRequest = new Promise((resolve) => {
+      resolveStaleChild = resolve
+    })
+    mockGetTeamUsageOrganization
+      .mockResolvedValueOnce({ data: { data: organizationPage(null, [rootOrganizationDepartment]) } } as any)
+      .mockResolvedValueOnce({ data: { data: organizationPage('department-alpha', [child], [], { members: 'alpha-members-page-2' }) } } as any)
+      .mockReturnValueOnce(staleChildRequest as any)
+      .mockRejectedValueOnce({ response: { status: 409, data: { message: 'snapshot_expired' } } })
+      .mockResolvedValueOnce({ data: { data: organizationPage('department-alpha', [child]) } } as any)
+      .mockResolvedValueOnce({ data: { data: organizationPage('department-alpha-child', [], [pagedMember(14, 'Fresh Child Member')]) } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+    const wrapper = mount(TeamOverviewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+
+    await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha-child"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="team-overview-members-more-department-alpha"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="team-overview-department-toggle-department-alpha-child"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="team-overview-member-user-1014"]').exists()).toBe(true)
+
+    resolveStaleChild({ data: { data: organizationPage('department-alpha-child', [], [pagedMember(15, 'Stale Child Member')]) } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="team-overview-member-user-1014"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-overview-member-user-1015"]').exists()).toBe(false)
+  })
+
   it('keeps sibling branches visible when one expansion fails', async () => {
     const beta = organizationDepartment('department-beta', 'Department Beta', { has_children: true, child_count: 1 })
     mockGetTeamUsageOrganization
