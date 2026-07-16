@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, final action-ownership remediation, current documentation, full local verification, consumer audit, final reviews, draft PR delivery, first and replacement CI, and the final branch/PR verification are complete. This ledger-only commit's final-current-head CI remains an external GitHub gate below. One non-blocking Minor progress-display follow-up is recorded below.
+**Status:** Implementation, current documentation, consumer audit, draft PR delivery, and the original CI gates are complete. A later integration review found one pending-pagination ownership gap; its RED regression, fix, and full component test are complete locally. The post-remediation branch push and exact-head CI remain the external GitHub gate below. One non-blocking Minor progress-display follow-up is also recorded below.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
@@ -653,14 +653,30 @@
   replacement checks were successful. The worktree remains retained, and no
   merge, tag, release, deploy, or Helm action was performed.
 
+#### Post-Integration Pending-Page Remediation
+
+An integration review on 2026-07-17 reproduced one Important race that the
+original committed-page case did not cover: when Next had started but had not
+committed its response, terminal active-run polling reloaded the old committed
+offset, advanced `pageRequestGeneration`, and discarded the user's pending
+destination. The new regression holds that Next response pending while the
+active run completes and proves the terminal refresh follows offset 20 rather
+than returning to offset 0. The production fix selects
+`pendingRunOffset ?? runOffset` for that terminal refresh. The RED test failed
+with offsets `[0, 20, 0]`; after the fix, the complete
+`directory-sync-settings.test.ts` suite passed 62/62 and `git diff --check`
+passed. No API, backend query, polling-target, or source-selection contract
+changed.
+
 #### External Final-Current-Head Delivery Gate
 
 This gate deliberately has no ledger checkbox because checking it would create
-another unverified commit. After pushing this final ledger-only commit, require
+another unverified commit. After pushing the post-remediation commit, require
 backend, frontend, ae-cli, and deploy-static to pass on its exact OID; then
 recheck the clean worktree, local/remote/PR OID equality, OPEN draft state,
 exact base/head, and MERGEABLE/CLEAN status. GitHub is the source of truth for
-this mutable final gate. Do not edit this plan after that final push.
+this mutable final gate. Do not edit this plan after that push unless another
+new implementation or review finding changes the branch again.
 
 ## Self-Review Record
 
