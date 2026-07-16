@@ -258,6 +258,9 @@ describe('i18n locale loading', () => {
       expect(mount).toHaveBeenCalledWith('#app')
       expect(startWebVitalsReportingAfterRouterReady).toHaveBeenCalledTimes(1)
       expect(startWebVitalsReportingAfterRouterReady).toHaveBeenCalledWith(router)
+      expect(mount.mock.invocationCallOrder[0]).toBeLessThan(
+        startWebVitalsReportingAfterRouterReady.mock.invocationCallOrder[0],
+      )
     } finally {
       vi.doUnmock('@/i18n')
       vi.doUnmock('vue')
