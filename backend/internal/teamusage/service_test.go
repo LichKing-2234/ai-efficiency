@@ -3,6 +3,7 @@ package teamusage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -253,11 +254,40 @@ func TestSummaryAndOverviewShareCachedSnapshotAndPreserveComparisonTotals(t *tes
 	if provider.trendCalls != 1 || len(provider.summaryRequestUserIDs) != 2 {
 		t.Fatalf("Relay generation calls = trend %d summary IDs %#v, want one shared generation", provider.trendCalls, provider.summaryRequestUserIDs)
 	}
-	if scopeResolver.calls.Load() != 2 || providerResolver.calls.Load() != 2 {
-		t.Fatalf("warm-hit guard calls = scope %d provider %d, want 2 each", scopeResolver.calls.Load(), providerResolver.calls.Load())
+	if scopeResolver.calls.Load() != 2 || providerResolver.calls.Load() != 1 {
+		t.Fatalf("warm-hit guard calls = scope %d provider origin %d, want 2/1", scopeResolver.calls.Load(), providerResolver.calls.Load())
 	}
 	if providerRow.ConfigurationVersion <= 0 {
 		t.Fatalf("provider configuration version = %d, want positive cache guard", providerRow.ConfigurationVersion)
+	}
+}
+
+func TestSummaryLargeScopeDoesNotRequireProviderOriginCapabilities(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	subjects := make([]representativescope.Subject, 501)
+	for index := range subjects {
+		subjects[index] = representativescope.Subject{SubjectType: "member", UserID: index + 2, DisplayName: fmt.Sprintf("Member %d", index+1)}
+	}
+	scope := &representativescope.Scope{
+		Version: "scope-version-large", ActorUserID: 1, IsRepresentative: true, OverviewSubjects: subjects,
+	}
+	providerResolver := &countingTeamProviderResolver{err: errors.New("provider origin must not resolve for unsupported scope size")}
+	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC), 0)
+	svc := NewServiceWithSnapshotCache(client, fakeScopeResolver{scope: scope}, providerResolver, nil, cache)
+
+	result, err := svc.Summary(ctx, 1, OverviewParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if result.Summary.UnavailableReason == nil || *result.Summary.UnavailableReason != "scope_too_large" || result.Summary.MemberCount != 501 {
+		t.Fatalf("large-scope summary = %+v", result.Summary)
+	}
+	if providerResolver.calls.Load() != 0 {
+		t.Fatalf("provider origin resolves = %d, want 0", providerResolver.calls.Load())
 	}
 }
 
@@ -1447,11 +1477,15 @@ type fakeProviderResolver struct {
 
 type countingTeamProviderResolver struct {
 	provider relay.Provider
+	err      error
 	calls    atomic.Int32
 }
 
 func (r *countingTeamProviderResolver) Resolve(context.Context, int) (relay.Provider, error) {
 	r.calls.Add(1)
+	if r.err != nil {
+		return nil, r.err
+	}
 	return r.provider, nil
 }
 
