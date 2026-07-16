@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import DirectorySyncSettings from '@/components/settings/DirectorySyncSettings.vue'
 import { setLocale } from '@/i18n'
 import { resetToastsForTest, useToast } from '@/composables/useToast'
+import { useWorkItemsStore } from '@/stores/workItems'
 
 vi.mock('@/api/directory', () => ({
   listDirectorySources: vi.fn(),
@@ -13,6 +15,10 @@ vi.mock('@/api/directory', () => ({
   previewDirectorySource: vi.fn(),
   startDirectoryRun: vi.fn(),
   getDirectoryRun: vi.fn(),
+}))
+
+vi.mock('@/api/workItems', () => ({
+  getWorkItemCounts: vi.fn(),
 }))
 
 Object.assign(navigator, {
@@ -35,8 +41,23 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+function countsResponse(total: number) {
+  return {
+    data: {
+      data: {
+        quota_reset_approval_count: 0,
+        quota_reset_admin_count: 0,
+        ai_access_setup_count: 0,
+        offboarding_count: total,
+        total_count: total,
+      },
+    },
+  }
+}
+
 async function mountDirectorySyncSettings(configureMocks?: (api: any) => void) {
   const api = await import('@/api/directory') as any
+  const workItemsApi = await import('@/api/workItems') as any
   api.listDirectorySources.mockResolvedValue({
     data: {
       data: {
@@ -56,21 +77,26 @@ async function mountDirectorySyncSettings(configureMocks?: (api: any) => void) {
       },
     },
   })
+  api.createDirectorySource.mockResolvedValue({ data: { data: { id: 2, name: 'New Directory' } } })
   api.updateDirectorySource.mockResolvedValue({ data: { data: { id: 1, name: 'Example Directory' } } })
   api.validateDirectorySource.mockResolvedValue({ data: { data: { valid: true, issues: [] } } })
   api.listDirectoryRuns.mockResolvedValue({ data: { data: { items: [] } } })
   api.previewDirectorySource.mockResolvedValue({ data: { data: { id: 10, mode: 'preview', status: 'completed' } } })
   api.startDirectoryRun.mockResolvedValue({ data: { data: { id: 11, mode: 'apply', status: 'completed' } } })
   api.getDirectoryRun.mockResolvedValue({ data: { data: { id: 10, mode: 'preview', status: 'completed' } } })
+  workItemsApi.getWorkItemCounts.mockResolvedValue(countsResponse(0))
   configureMocks?.(api)
 
+  const pinia = createPinia()
+  setActivePinia(pinia)
   const wrapper = mount(DirectorySyncSettings, {
     props: {
       credentials: [{ id: 3, name: 'directory_api_key', kind: 'secret_text', description: '', usage_count: 0, summary: {}, created_at: '', updated_at: '' }],
     },
+    global: { plugins: [pinia] },
   })
   await flushPromises()
-  return { wrapper, api }
+  return { wrapper, api, workItems: useWorkItemsStore(pinia) }
 }
 
 describe('DirectorySyncSettings', () => {
@@ -184,6 +210,7 @@ auth:
   })
 
   it('shows preview and apply run failure details', async () => {
+    const workItemsApi = await import('@/api/workItems') as any
     const { wrapper, api } = await mountDirectorySyncSettings()
     api.previewDirectorySource.mockResolvedValueOnce({
       data: { data: { id: 20, mode: 'preview', status: 'failed', error_message: 'steps[0].request.url: url host is required' } },
@@ -201,6 +228,7 @@ auth:
     await flushPromises()
     expect(wrapper.text()).toContain('Apply run failed')
     expect(wrapper.text()).toContain('steps[0].map: department or member mapping is required')
+    expect(workItemsApi.getWorkItemCounts).not.toHaveBeenCalled()
   })
 
   it('shows completed preview and run counts when the backend returns warnings', async () => {
@@ -291,6 +319,7 @@ auth:
 
   it('polls preview progress until the run completes', async () => {
     vi.useFakeTimers()
+    const workItemsApi = await import('@/api/workItems') as any
     const { wrapper, api } = await mountDirectorySyncSettings()
     api.previewDirectorySource.mockResolvedValueOnce({
       data: { data: { id: 40, mode: 'preview', status: 'queued', phase: 'validating', department_count: 0, member_count: 0, warning_count: 0 } },
@@ -310,6 +339,7 @@ auth:
       await flushPromises()
       expect(wrapper.text()).toContain('Preview completed: kept 3 valid members; 2 departments.')
       expect(wrapper.text()).not.toContain('Reading directory API')
+      expect(workItemsApi.getWorkItemCounts).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
     }
@@ -318,6 +348,7 @@ auth:
   it('shows localized apply progress while polling the run', async () => {
     vi.useFakeTimers()
     setLocale('zh-CN')
+    const workItemsApi = await import('@/api/workItems') as any
     const { wrapper, api } = await mountDirectorySyncSettings()
     api.startDirectoryRun.mockResolvedValueOnce({
       data: { data: { id: 41, mode: 'apply', status: 'queued', phase: 'validating', department_count: 0, member_count: 0, warning_count: 0 } },
@@ -345,19 +376,157 @@ auth:
       await flushPromises()
       expect(wrapper.text()).toContain('正在读取组织架构接口')
       expect(api.getDirectoryRun).toHaveBeenCalledWith(41)
+      expect(workItemsApi.getWorkItemCounts).not.toHaveBeenCalled()
 
       await vi.runOnlyPendingTimersAsync()
       await flushPromises()
       expect(wrapper.text()).toContain('运行已完成：已保留 633 个有效成员，跳过 3769 条记录；部门 184 个。')
       expect(wrapper.text()).toContain('重复邮箱：3769 条')
       expect(wrapper.text()).not.toContain('正在读取组织架构接口')
+      expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(1)
     } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps polling an observed apply after switching sources and clearing feedback', async () => {
+    vi.useFakeTimers()
+    const workItemsApi = await import('@/api/workItems') as any
+    const { wrapper, api, workItems } = await mountDirectorySyncSettings((api) => {
+      api.listDirectorySources.mockResolvedValue({
+        data: {
+          data: {
+            items: [
+              {
+                id: 1,
+                name: 'First Directory',
+                description: 'First source',
+                scope: 'full_company',
+                enabled: true,
+                dsl: 'version: 1\nscope: full_company\n',
+                schedule_enabled: false,
+                schedule_interval: 'daily',
+                schedule_timezone: 'UTC',
+              },
+              {
+                id: 2,
+                name: 'Second Directory',
+                description: 'Second source',
+                scope: 'full_company',
+                enabled: true,
+                dsl: 'version: 1\nscope: full_company\n',
+                schedule_enabled: false,
+                schedule_interval: 'daily',
+                schedule_timezone: 'UTC',
+              },
+            ],
+          },
+        },
+      })
+      api.startDirectoryRun.mockResolvedValueOnce({
+        data: { data: { id: 42, source_id: 1, mode: 'apply', status: 'queued', phase: 'validating' } },
+      })
+      api.getDirectoryRun
+        .mockResolvedValueOnce({
+          data: { data: { id: 42, source_id: 1, mode: 'apply', status: 'running', phase: 'executing' } },
+        })
+        .mockResolvedValueOnce({
+          data: { data: { id: 42, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 2, member_count: 5, warning_count: 0 } },
+        })
+    })
+    const invalidateCounts = vi.spyOn(workItems, 'invalidateCounts')
+    const loadCounts = vi.spyOn(workItems, 'loadCounts')
+
+    try {
+      await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
+      await flushPromises()
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(1)
+
+      const secondSourceButton = wrapper.findAll('button').find((button) => button.text().includes('Second Directory'))
+      expect(secondSourceButton).toBeTruthy()
+      await secondSourceButton!.trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="directory-validate"]').trigger('click')
+      await flushPromises()
+
+      await vi.advanceTimersByTimeAsync(1500)
+      await flushPromises()
+
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(2)
+      expect(api.getDirectoryRun).toHaveBeenLastCalledWith(42)
+      expect(invalidateCounts).toHaveBeenCalledTimes(1)
+      expect(loadCounts).toHaveBeenCalledTimes(1)
+      expect(loadCounts).toHaveBeenCalledWith({ force: true })
+      expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(3000)
+      await flushPromises()
+      expect(api.getDirectoryRun).toHaveBeenCalledTimes(2)
+      expect(invalidateCounts).toHaveBeenCalledTimes(1)
+      expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(1)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('polls an active apply independently when mount recovery displays an active preview first', async () => {
+    vi.useFakeTimers()
+    const workItemsApi = await import('@/api/workItems') as any
+    const { wrapper, api, workItems } = await mountDirectorySyncSettings((api) => {
+      api.listDirectoryRuns.mockResolvedValueOnce({
+        data: {
+          data: {
+            items: [
+              { id: 53, source_id: 1, mode: 'preview', status: 'running', phase: 'executing', department_count: 1, member_count: 2, warning_count: 0 },
+              { id: 54, source_id: 1, mode: 'apply', status: 'running', phase: 'applying', department_count: 3, member_count: 4, warning_count: 0 },
+            ],
+          },
+        },
+      })
+      api.getDirectoryRun.mockImplementation((runID: number) => {
+        if (runID === 54) {
+          return Promise.resolve({
+            data: { data: { id: 54, source_id: 1, mode: 'apply', status: 'completed', phase: 'completed', department_count: 3, member_count: 4, warning_count: 0 } },
+          })
+        }
+        return Promise.resolve({
+          data: { data: { id: 53, source_id: 1, mode: 'preview', status: 'completed', phase: 'completed', department_count: 1, member_count: 2, warning_count: 0 } },
+        })
+      })
+    })
+    const invalidateCounts = vi.spyOn(workItems, 'invalidateCounts')
+    const loadCounts = vi.spyOn(workItems, 'loadCounts')
+
+    try {
+      expect(wrapper.text()).toContain('Reading directory API')
+
+      await vi.advanceTimersByTimeAsync(1500)
+      await flushPromises()
+
+      const polledRunIDs = api.getDirectoryRun.mock.calls.map(([runID]: [number]) => runID)
+      expect(polledRunIDs[0]).toBe(54)
+      expect(polledRunIDs.filter((runID: number) => runID === 54)).toHaveLength(1)
+      expect(polledRunIDs.filter((runID: number) => runID === 53)).toHaveLength(1)
+      expect(invalidateCounts).toHaveBeenCalledTimes(1)
+      expect(loadCounts).toHaveBeenCalledTimes(1)
+      expect(loadCounts).toHaveBeenCalledWith({ force: true })
+      expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(3000)
+      await flushPromises()
+      expect(api.getDirectoryRun.mock.calls.filter(([runID]: [number]) => runID === 54)).toHaveLength(1)
+      expect(invalidateCounts).toHaveBeenCalledTimes(1)
+      expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(1)
+    } finally {
+      wrapper.unmount()
       vi.useRealTimers()
     }
   })
 
   it('recovers the latest active directory apply run on mount and keeps polling it', async () => {
     vi.useFakeTimers()
+    const workItemsApi = await import('@/api/workItems') as any
     const { wrapper, api } = await mountDirectorySyncSettings((api) => {
       api.listDirectoryRuns.mockResolvedValueOnce({
         data: {
@@ -388,6 +557,7 @@ auth:
 
       expect(api.getDirectoryRun).toHaveBeenCalledWith(50)
       expect(wrapper.text()).toContain('Run completed: kept 34 valid members; 12 departments.')
+      expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
     }
@@ -440,6 +610,7 @@ auth:
 
   it('shows the latest completed directory apply run on mount without polling', async () => {
     vi.useFakeTimers()
+    const workItemsApi = await import('@/api/workItems') as any
     const { wrapper, api } = await mountDirectorySyncSettings((api) => {
       api.listDirectoryRuns.mockResolvedValueOnce({
         data: {
@@ -463,6 +634,7 @@ auth:
       await flushPromises()
 
       expect(api.getDirectoryRun).not.toHaveBeenCalledWith(52)
+      expect(workItemsApi.getWorkItemCounts).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
     }
@@ -599,6 +771,78 @@ auth:
     await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
     await flushPromises()
     expect(api.startDirectoryRun).toHaveBeenCalledWith(1, { mode: 'apply' })
+  })
+
+  it('invalidates an older generation and awaits fresh counts after updating an existing source', async () => {
+    const workItemsApi = await import('@/api/workItems') as any
+    const previousCounts = deferred<any>()
+    const freshCounts = deferred<any>()
+    const { wrapper, workItems } = await mountDirectorySyncSettings()
+    workItemsApi.getWorkItemCounts.mockReset()
+      .mockResolvedValueOnce(countsResponse(1))
+      .mockReturnValueOnce(previousCounts.promise)
+      .mockReturnValueOnce(freshCounts.promise)
+    await workItems.loadCounts()
+    const previousLoad = workItems.loadCounts({ force: true })
+
+    await wrapper.get('[data-testid="directory-source-name"]').setValue('Updated Directory')
+    await wrapper.get('[data-testid="directory-save"]').trigger('click')
+    await flushPromises()
+
+    expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(3)
+    expect(wrapper.get('[data-testid="directory-save"]').attributes('disabled')).toBeDefined()
+
+    previousCounts.resolve(countsResponse(9))
+    await previousLoad
+    expect(workItems.totalCount).toBe(1)
+    expect(workItems.loading).toBe(true)
+
+    freshCounts.resolve(countsResponse(0))
+    await flushPromises()
+    expect(workItems.totalCount).toBe(0)
+    expect(workItems.loading).toBe(false)
+    expect(wrapper.get('[data-testid="directory-save"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('does not refresh work-item counts when creating a source', async () => {
+    const workItemsApi = await import('@/api/workItems') as any
+    const { wrapper, api } = await mountDirectorySyncSettings((api) => {
+      api.listDirectorySources.mockResolvedValue({ data: { data: { items: [] } } })
+    })
+
+    await wrapper.get('[data-testid="directory-save"]').trigger('click')
+    await flushPromises()
+
+    expect(api.createDirectorySource).toHaveBeenCalled()
+    expect(workItemsApi.getWorkItemCounts).not.toHaveBeenCalled()
+  })
+
+  it('refreshes once for an immediately completed apply and ignores the pre-apply response', async () => {
+    const workItemsApi = await import('@/api/workItems') as any
+    const previousCounts = deferred<any>()
+    const freshCounts = deferred<any>()
+    const { wrapper, workItems } = await mountDirectorySyncSettings()
+    workItemsApi.getWorkItemCounts.mockReset()
+      .mockResolvedValueOnce(countsResponse(1))
+      .mockReturnValueOnce(previousCounts.promise)
+      .mockReturnValueOnce(freshCounts.promise)
+    await workItems.loadCounts()
+    const previousLoad = workItems.loadCounts({ force: true })
+
+    await wrapper.get('[data-testid="directory-run-now"]').trigger('click')
+    await flushPromises()
+
+    expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(3)
+    previousCounts.resolve(countsResponse(9))
+    await previousLoad
+    expect(workItems.totalCount).toBe(1)
+    expect(workItems.loading).toBe(true)
+
+    freshCounts.resolve(countsResponse(0))
+    await flushPromises()
+    expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(3)
+    expect(workItems.totalCount).toBe(0)
+    expect(workItems.loading).toBe(false)
   })
 
   it('switches directory sync copy to Chinese', async () => {

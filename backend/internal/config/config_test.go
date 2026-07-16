@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -29,6 +31,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Auth.RefreshTokenTTL != 604800 {
 		t.Errorf("default refresh_token_ttl = %d, want 604800", cfg.Auth.RefreshTokenTTL)
+	}
+	if cfg.Redis.Namespace != "ai-efficiency" {
+		t.Errorf("default redis namespace = %q, want ai-efficiency", cfg.Redis.Namespace)
 	}
 }
 
@@ -514,6 +519,7 @@ func TestLoadRedisConfigFromEnv(t *testing.T) {
 	t.Setenv("AE_REDIS_ADDR", "redis:6379")
 	t.Setenv("AE_REDIS_PASSWORD", "redis-pass")
 	t.Setenv("AE_REDIS_DB", "2")
+	t.Setenv("AE_REDIS_NAMESPACE", "env-blue")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -529,6 +535,111 @@ func TestLoadRedisConfigFromEnv(t *testing.T) {
 	if cfg.Redis.DB != 2 {
 		t.Errorf("redis db = %d, want %d", cfg.Redis.DB, 2)
 	}
+	if cfg.Redis.Namespace != "env-blue" {
+		t.Errorf("redis namespace = %q, want env-blue", cfg.Redis.Namespace)
+	}
+}
+
+func TestValidateRedisNamespace(t *testing.T) {
+	valid63 := "a" + strings.Repeat("b", 62)
+	invalid64 := "a" + strings.Repeat("b", 63)
+	for _, test := range []struct {
+		name      string
+		namespace string
+		wantErr   bool
+	}{
+		{name: "single character", namespace: "a"},
+		{name: "allowed punctuation", namespace: "prod.blue_1-east"},
+		{name: "maximum length", namespace: valid63},
+		{name: "empty", namespace: "", wantErr: true},
+		{name: "leading hyphen", namespace: "-prod", wantErr: true},
+		{name: "space", namespace: "prod blue", wantErr: true},
+		{name: "slash", namespace: "prod/blue", wantErr: true},
+		{name: "colon", namespace: "prod:blue", wantErr: true},
+		{name: "unicode", namespace: "prod-蓝", wantErr: true},
+		{name: "too long", namespace: invalid64, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateRedisNamespace(test.namespace)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("ValidateRedisNamespace(%q) error = %v, wantErr %v", test.namespace, err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsUnsafeRedisNamespace(t *testing.T) {
+	t.Setenv("AE_REDIS_NAMESPACE", "unsafe/namespace")
+	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "redis namespace") {
+		t.Fatalf("Load() error = %v, want Redis namespace validation error", err)
+	}
+}
+
+func TestDeployExamplesDeclareExplicitValidRedisNamespace(t *testing.T) {
+	deployDir := filepath.Clean(filepath.Join("..", "..", "..", "deploy"))
+
+	configData, err := os.ReadFile(filepath.Join(deployDir, "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("read config.example.yaml: %v", err)
+	}
+	var configExample struct {
+		Redis struct {
+			Namespace string `yaml:"namespace"`
+		} `yaml:"redis"`
+	}
+	if err := yaml.Unmarshal(configData, &configExample); err != nil {
+		t.Fatalf("parse config.example.yaml: %v", err)
+	}
+	if err := ValidateRedisNamespace(configExample.Redis.Namespace); err != nil {
+		t.Fatalf("config.example.yaml Redis namespace = %q: %v", configExample.Redis.Namespace, err)
+	}
+
+	envData, err := os.ReadFile(filepath.Join(deployDir, ".env.example"))
+	if err != nil {
+		t.Fatalf("read .env.example: %v", err)
+	}
+	envNamespace := envFileValue(string(envData), "AE_REDIS_NAMESPACE")
+	if err := ValidateRedisNamespace(envNamespace); err != nil {
+		t.Fatalf(".env.example Redis namespace = %q: %v", envNamespace, err)
+	}
+
+	for _, name := range []string{
+		"docker-compose.yml",
+		"docker-compose.bootstrap.yml",
+		"docker-compose.dev.yml",
+		"docker-compose.external.yml",
+		"docker-compose.local.yml",
+	} {
+		data, err := os.ReadFile(filepath.Join(deployDir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		var compose struct {
+			Services map[string]struct {
+				Environment map[string]string `yaml:"environment"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(data, &compose); err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		raw, ok := compose.Services["backend"].Environment["AE_REDIS_NAMESPACE"]
+		if !ok {
+			t.Fatalf("%s does not declare AE_REDIS_NAMESPACE", name)
+		}
+		namespace := strings.TrimSuffix(strings.TrimPrefix(raw, "${AE_REDIS_NAMESPACE:-"), "}")
+		if err := ValidateRedisNamespace(namespace); err != nil {
+			t.Fatalf("%s Redis namespace default = %q: %v", name, namespace, err)
+		}
+	}
+}
+
+func envFileValue(content, key string) string {
+	for _, line := range strings.Split(content, "\n") {
+		if name, value, ok := strings.Cut(line, "="); ok && strings.TrimSpace(name) == key {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func TestLoadExplicitMissingPathReturnsError(t *testing.T) {
@@ -644,9 +755,10 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 			ConnMaxLifetime: 300,
 		},
 		Redis: RedisConfig{
-			Addr:     "redis:6379",
-			Password: "",
-			DB:       0,
+			Addr:      "redis:6379",
+			Password:  "",
+			DB:        0,
+			Namespace: "test-blue",
 		},
 		Relay: RelayConfig{
 			Provider:       "sub2api",
@@ -693,6 +805,9 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if loaded.Server.PublicURL != "https://ai-efficiency.example.com" {
 		t.Fatalf("server.public_url = %q, want %q", loaded.Server.PublicURL, "https://ai-efficiency.example.com")
+	}
+	if loaded.Redis.Namespace != "test-blue" {
+		t.Fatalf("redis.namespace = %q, want test-blue", loaded.Redis.Namespace)
 	}
 	if !reflect.DeepEqual(loaded.Server, cfg.Server) {
 		t.Fatalf("persisted Server = %#v, want %#v", loaded.Server, cfg.Server)
