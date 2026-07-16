@@ -11,12 +11,13 @@ import client from '@/api/client'
 import {
   getTeamUsageAudit,
   getTeamUsageOverview,
+  getTeamUsageSummary,
   getTeamUsageScope,
   getTeamUsageSubjectDashboard,
   listTeamUsageSubjects,
   updateTeamUsageRateMultiplier,
 } from '@/api/teamUsage'
-import type { TeamUsageAuditParams, TeamUsageAuditRecord, TeamUsageOverviewParams } from '@/types'
+import type { TeamUsageAuditParams, TeamUsageAuditRecord, TeamUsageOverviewParams, TeamUsageSummaryResponse } from '@/types'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -45,6 +46,15 @@ describe('team usage API', () => {
     }>()
 
     expectTypeOf<TeamUsageAuditRecord['reason']>().toEqualTypeOf<string>()
+    expectTypeOf<TeamUsageSummaryResponse>().toMatchTypeOf<{
+      as_of: string
+      fresh_until: string
+      stale_until: string
+      cache_status: string
+      source_status: string
+      scope_version: string
+      request_id: string
+    }>()
   })
 
   it('fetches representative scope', async () => {
@@ -107,6 +117,26 @@ describe('team usage API', () => {
         page_size: 10,
       },
       timeout: 45000,
+    })
+  })
+
+  it('fetches the split team summary with the standard client timeout', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { scope_version: 'scope-v1' } } })
+
+    await getTeamUsageSummary({
+      start_date: '2026-06-01',
+      end_date: '2026-06-30',
+      granularity: 'day',
+      timezone: 'Asia/Shanghai',
+    })
+
+    expect(mockClient.get).toHaveBeenCalledWith('/user/team-usage/summary', {
+      params: {
+        start_date: '2026-06-01',
+        end_date: '2026-06-30',
+        granularity: 'day',
+        timezone: 'Asia/Shanghai',
+      },
     })
   })
 

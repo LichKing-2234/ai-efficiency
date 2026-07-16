@@ -1,6 +1,7 @@
 package teamusage
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -19,6 +20,7 @@ var (
 	ErrProviderUnsupported           = errors.New("provider_unsupported")
 	ErrMultiplierMetadataUnavailable = errors.New("multiplier_metadata_unavailable")
 	ErrPartialFailed                 = errors.New("partial_failed")
+	ErrInvalidOverviewParams         = errors.New("invalid_overview_params")
 )
 
 const (
@@ -113,6 +115,56 @@ type OverviewResponse struct {
 	DepartmentTrend  DepartmentTrendState `json:"department_trend"`
 	Members          []OverviewMember     `json:"members"`
 	MemberTree       []OverviewMemberNode `json:"member_tree"`
+}
+
+type SnapshotFreshness struct {
+	AsOf         time.Time `json:"as_of"`
+	FreshUntil   time.Time `json:"fresh_until"`
+	StaleUntil   time.Time `json:"stale_until"`
+	CacheStatus  string    `json:"cache_status"`
+	SourceStatus string    `json:"source_status"`
+}
+
+type SummaryResponse struct {
+	SnapshotFreshness
+	ScopeVersion string          `json:"scope_version"`
+	RequestID    string          `json:"request_id"`
+	Window       OverviewWindow  `json:"window"`
+	Summary      OverviewSummary `json:"summary"`
+}
+
+type SnapshotCacheKey struct {
+	ProviderID      int
+	ProviderVersion int64
+	ActorID         int
+	ScopeVersion    string
+	ScopeHash       string
+	Params          OverviewParams
+}
+
+type SnapshotOriginLoadResult struct {
+	Snapshot    *OverviewResponse
+	SnapshotErr error
+}
+
+type SnapshotOriginLoader func(context.Context) (SnapshotOriginLoadResult, error)
+
+type SnapshotCacheResult struct {
+	Snapshot  *OverviewResponse
+	Freshness SnapshotFreshness
+}
+
+type SnapshotCacheOptions struct {
+	Namespace      string
+	CommandTimeout time.Duration
+	RefreshTimeout time.Duration
+	LeaseTTL       time.Duration
+	PollInterval   time.Duration
+	ReleaseTimeout time.Duration
+	Now            func() time.Time
+	RandFloat64    func() float64
+	NewToken       func() string
+	Sleep          func(context.Context, time.Duration) error
 }
 
 type OverviewWindow struct {
