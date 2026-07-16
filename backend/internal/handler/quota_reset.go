@@ -29,8 +29,6 @@ type quotaResetService interface {
 	ListApproverCandidates(context.Context, int, string) (*quotareset.ApproverCandidateListResponse, error)
 	ListApproverConfigs(context.Context) (*quotareset.ApproverConfigListResponse, error)
 	SaveApproverConfigs(context.Context, quotareset.SaveApproverConfigsInput) (*quotareset.ApproverConfigListResponse, error)
-	ListApprovalChains(context.Context) (*quotareset.ApprovalChainListResponse, error)
-	SaveApprovalChains(context.Context, int, []quotareset.ApprovalChainInput) (*quotareset.ApprovalChainListResponse, error)
 	GetNotificationSettings(context.Context) (*quotareset.NotificationSettings, error)
 	UpdateNotificationSettings(context.Context, quotareset.UpdateNotificationSettingsInput) (*quotareset.NotificationSettings, error)
 	TestNotificationSettings(context.Context, int) error
@@ -57,10 +55,6 @@ type quotaResetDecisionRequest struct {
 type quotaResetSaveApproverConfigsRequest struct {
 	Items []quotareset.ApproverConfigInput `json:"items"`
 	Mode  string                           `json:"mode"`
-}
-
-type quotaResetSaveApprovalChainsRequest struct {
-	Items []quotareset.ApprovalChainInput `json:"items"`
 }
 
 type quotaResetNotificationSettingsRequest struct {
@@ -242,33 +236,6 @@ func (h *QuotaResetHandler) SaveApproverConfigs(c *gin.Context) {
 		Mode:        strings.TrimSpace(req.Mode),
 		Items:       req.Items,
 	})
-	if err != nil {
-		writeQuotaResetError(c, err)
-		return
-	}
-	pkg.Success(c, resp)
-}
-
-func (h *QuotaResetHandler) ListApprovalChains(c *gin.Context) {
-	resp, err := h.service.ListApprovalChains(c.Request.Context())
-	if err != nil {
-		writeQuotaResetError(c, err)
-		return
-	}
-	pkg.Success(c, resp)
-}
-
-func (h *QuotaResetHandler) SaveApprovalChains(c *gin.Context) {
-	uc, ok := quotaResetActor(c)
-	if !ok {
-		return
-	}
-	var req quotaResetSaveApprovalChainsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Error(c, http.StatusBadRequest, err.Error())
-		return
-	}
-	resp, err := h.service.SaveApprovalChains(c.Request.Context(), uc.UserID, req.Items)
 	if err != nil {
 		writeQuotaResetError(c, err)
 		return

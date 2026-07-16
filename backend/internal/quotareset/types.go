@@ -118,43 +118,6 @@ type ApproverConfigInput struct {
 	Enabled               bool   `json:"enabled"`
 }
 
-type ChainDepartmentInput struct {
-	DirectorySourceID     int    `json:"directory_source_id"`
-	DepartmentExternalID  string `json:"department_external_id"`
-	DepartmentDisplayPath string `json:"department_display_path"`
-}
-
-type ApprovalChainInput struct {
-	ProviderID  int                    `json:"provider_id"`
-	GroupID     string                 `json:"group_id"`
-	GroupName   string                 `json:"group_name"`
-	Enabled     bool                   `json:"enabled"`
-	Departments []ChainDepartmentInput `json:"departments"`
-}
-
-type ApprovalChain struct {
-	ID          int                    `json:"id"`
-	ProviderID  int                    `json:"provider_id"`
-	GroupID     string                 `json:"group_id"`
-	GroupName   string                 `json:"group_name"`
-	Enabled     bool                   `json:"enabled"`
-	Departments []ChainDepartmentInput `json:"departments"`
-	UpdatedAt   time.Time              `json:"updated_at"`
-}
-
-type ApprovalChainGroupOption struct {
-	ProviderID   int    `json:"provider_id"`
-	ProviderName string `json:"provider_name"`
-	GroupID      string `json:"group_id"`
-	GroupName    string `json:"group_name"`
-	Platform     string `json:"platform"`
-}
-
-type ApprovalChainListResponse struct {
-	Items  []ApprovalChain            `json:"items"`
-	Groups []ApprovalChainGroupOption `json:"groups"`
-}
-
 type UpdateNotificationSettingsInput struct {
 	ActorUserID  int
 	Enabled      bool

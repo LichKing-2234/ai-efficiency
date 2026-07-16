@@ -40,8 +40,6 @@ type Tx struct {
 	PrAttributionRun *PrAttributionRunClient
 	// PrRecord is the client for interacting with the PrRecord builders.
 	PrRecord *PrRecordClient
-	// QuotaResetApprovalChain is the client for interacting with the QuotaResetApprovalChain builders.
-	QuotaResetApprovalChain *QuotaResetApprovalChainClient
 	// QuotaResetApproverConfig is the client for interacting with the QuotaResetApproverConfig builders.
 	QuotaResetApproverConfig *QuotaResetApproverConfigClient
 	// QuotaResetNotificationSetting is the client for interacting with the QuotaResetNotificationSetting builders.
@@ -211,7 +209,6 @@ func (tx *Tx) init() {
 	tx.PRSyncJob = NewPRSyncJobClient(tx.config)
 	tx.PrAttributionRun = NewPrAttributionRunClient(tx.config)
 	tx.PrRecord = NewPrRecordClient(tx.config)
-	tx.QuotaResetApprovalChain = NewQuotaResetApprovalChainClient(tx.config)
 	tx.QuotaResetApproverConfig = NewQuotaResetApproverConfigClient(tx.config)
 	tx.QuotaResetNotificationSetting = NewQuotaResetNotificationSettingClient(tx.config)
 	tx.QuotaResetRequest = NewQuotaResetRequestClient(tx.config)

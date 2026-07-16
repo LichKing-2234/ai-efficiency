@@ -211,7 +211,7 @@ Neither interface accepts `providerID` or `groupID`.
 and `GET/PUT /api/v1/admin/quota-reset/approval-chains`. Preserve all existing
 request, decision, approver-config, candidate, and notification routes.
 
-- [ ] **Step 1: Add and run a failing no-table guard**
+- [x] **Step 1: Add and run a failing no-table guard**
 
   Import `github.com/ai-efficiency/backend/ent/migrate` in `schema_test.go` and
   add:
@@ -233,7 +233,7 @@ request, decision, approver-config, candidate, and notification routes.
 
   Expected: FAIL while the branch-only table exists.
 
-- [ ] **Step 2: Delete the chain surface and regenerate Ent**
+- [x] **Step 2: Delete the chain surface and regenerate Ent**
 
   Delete every backend chain file listed in **Final Deletions**, remove handler
   interface/fake methods and both routes, remove chain types, then run:
@@ -245,7 +245,7 @@ request, decision, approver-config, candidate, and notification routes.
     internal/quotareset/types.go internal/quotareset/schema_test.go
   ```
 
-- [ ] **Step 3: Verify absence and commit**
+- [x] **Step 3: Verify absence and commit**
 
   ```bash
   cd backend

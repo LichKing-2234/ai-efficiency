@@ -48,9 +48,6 @@ type PrAttributionRun func(*sql.Selector)
 // PrRecord is the predicate function for prrecord builders.
 type PrRecord func(*sql.Selector)
 
-// QuotaResetApprovalChain is the predicate function for quotaresetapprovalchain builders.
-type QuotaResetApprovalChain func(*sql.Selector)
-
 // QuotaResetApproverConfig is the predicate function for quotaresetapproverconfig builders.
 type QuotaResetApproverConfig func(*sql.Selector)
 

@@ -595,32 +595,6 @@ var (
 			},
 		},
 	}
-	// QuotaResetApprovalChainsColumns holds the columns for the "quota_reset_approval_chains" table.
-	QuotaResetApprovalChainsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt, Increment: true},
-		{Name: "provider_id", Type: field.TypeInt},
-		{Name: "group_id", Type: field.TypeString},
-		{Name: "group_name", Type: field.TypeString, Default: ""},
-		{Name: "department_chain", Type: field.TypeJSON},
-		{Name: "enabled", Type: field.TypeBool, Default: true},
-		{Name: "created_by_user_id", Type: field.TypeInt, Default: 0},
-		{Name: "updated_by_user_id", Type: field.TypeInt, Default: 0},
-		{Name: "created_at", Type: field.TypeTime},
-		{Name: "updated_at", Type: field.TypeTime},
-	}
-	// QuotaResetApprovalChainsTable holds the schema information for the "quota_reset_approval_chains" table.
-	QuotaResetApprovalChainsTable = &schema.Table{
-		Name:       "quota_reset_approval_chains",
-		Columns:    QuotaResetApprovalChainsColumns,
-		PrimaryKey: []*schema.Column{QuotaResetApprovalChainsColumns[0]},
-		Indexes: []*schema.Index{
-			{
-				Name:    "quotaresetapprovalchain_provider_id_group_id",
-				Unique:  true,
-				Columns: []*schema.Column{QuotaResetApprovalChainsColumns[1], QuotaResetApprovalChainsColumns[2]},
-			},
-		},
-	}
 	// QuotaResetApproverConfigsColumns holds the columns for the "quota_reset_approver_configs" table.
 	QuotaResetApproverConfigsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -1086,7 +1060,6 @@ var (
 		PrSyncJobsTable,
 		PrAttributionRunsTable,
 		PrRecordsTable,
-		QuotaResetApprovalChainsTable,
 		QuotaResetApproverConfigsTable,
 		QuotaResetNotificationSettingsTable,
 		QuotaResetRequestsTable,

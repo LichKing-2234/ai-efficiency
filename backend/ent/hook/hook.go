@@ -177,18 +177,6 @@ func (f PrRecordFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PrRecordMutation", m)
 }
 
-// The QuotaResetApprovalChainFunc type is an adapter to allow the use of ordinary
-// function as QuotaResetApprovalChain mutator.
-type QuotaResetApprovalChainFunc func(context.Context, *ent.QuotaResetApprovalChainMutation) (ent.Value, error)
-
-// Mutate calls f(ctx, m).
-func (f QuotaResetApprovalChainFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-	if mv, ok := m.(*ent.QuotaResetApprovalChainMutation); ok {
-		return f(ctx, mv)
-	}
-	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.QuotaResetApprovalChainMutation", m)
-}
-
 // The QuotaResetApproverConfigFunc type is an adapter to allow the use of ordinary
 // function as QuotaResetApproverConfig mutator.
 type QuotaResetApproverConfigFunc func(context.Context, *ent.QuotaResetApproverConfigMutation) (ent.Value, error)

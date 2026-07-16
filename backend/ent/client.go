@@ -29,7 +29,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/prsyncjob"
-	"github.com/ai-efficiency/backend/ent/quotaresetapprovalchain"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -77,8 +76,6 @@ type Client struct {
 	PrAttributionRun *PrAttributionRunClient
 	// PrRecord is the client for interacting with the PrRecord builders.
 	PrRecord *PrRecordClient
-	// QuotaResetApprovalChain is the client for interacting with the QuotaResetApprovalChain builders.
-	QuotaResetApprovalChain *QuotaResetApprovalChainClient
 	// QuotaResetApproverConfig is the client for interacting with the QuotaResetApproverConfig builders.
 	QuotaResetApproverConfig *QuotaResetApproverConfigClient
 	// QuotaResetNotificationSetting is the client for interacting with the QuotaResetNotificationSetting builders.
@@ -128,7 +125,6 @@ func (c *Client) init() {
 	c.PRSyncJob = NewPRSyncJobClient(c.config)
 	c.PrAttributionRun = NewPrAttributionRunClient(c.config)
 	c.PrRecord = NewPrRecordClient(c.config)
-	c.QuotaResetApprovalChain = NewQuotaResetApprovalChainClient(c.config)
 	c.QuotaResetApproverConfig = NewQuotaResetApproverConfigClient(c.config)
 	c.QuotaResetNotificationSetting = NewQuotaResetNotificationSettingClient(c.config)
 	c.QuotaResetRequest = NewQuotaResetRequestClient(c.config)
@@ -247,7 +243,6 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		PRSyncJob:                     NewPRSyncJobClient(cfg),
 		PrAttributionRun:              NewPrAttributionRunClient(cfg),
 		PrRecord:                      NewPrRecordClient(cfg),
-		QuotaResetApprovalChain:       NewQuotaResetApprovalChainClient(cfg),
 		QuotaResetApproverConfig:      NewQuotaResetApproverConfigClient(cfg),
 		QuotaResetNotificationSetting: NewQuotaResetNotificationSettingClient(cfg),
 		QuotaResetRequest:             NewQuotaResetRequestClient(cfg),
@@ -293,7 +288,6 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		PRSyncJob:                     NewPRSyncJobClient(cfg),
 		PrAttributionRun:              NewPrAttributionRunClient(cfg),
 		PrRecord:                      NewPrRecordClient(cfg),
-		QuotaResetApprovalChain:       NewQuotaResetApprovalChainClient(cfg),
 		QuotaResetApproverConfig:      NewQuotaResetApproverConfigClient(cfg),
 		QuotaResetNotificationSetting: NewQuotaResetNotificationSettingClient(cfg),
 		QuotaResetRequest:             NewQuotaResetRequestClient(cfg),
@@ -339,10 +333,10 @@ func (c *Client) Use(hooks ...Hook) {
 		c.DirectoryDepartment, c.DirectoryMember, c.DirectoryMemberDepartment,
 		c.DirectoryOffboardingAction, c.DirectorySource, c.DirectorySyncRun,
 		c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun, c.PrRecord,
-		c.QuotaResetApprovalChain, c.QuotaResetApproverConfig,
-		c.QuotaResetNotificationSetting, c.QuotaResetRequest, c.QuotaResetRequestEvent,
-		c.RelayProvider, c.RepoConfig, c.ScmProvider, c.SystemSetting,
-		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
+		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayProvider, c.RepoConfig,
+		c.ScmProvider, c.SystemSetting, c.TeamUsageRateMultiplierAudit,
+		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Use(hooks...)
 	}
@@ -356,10 +350,10 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.DirectoryDepartment, c.DirectoryMember, c.DirectoryMemberDepartment,
 		c.DirectoryOffboardingAction, c.DirectorySource, c.DirectorySyncRun,
 		c.PRCommitUsageSnapshot, c.PRSyncJob, c.PrAttributionRun, c.PrRecord,
-		c.QuotaResetApprovalChain, c.QuotaResetApproverConfig,
-		c.QuotaResetNotificationSetting, c.QuotaResetRequest, c.QuotaResetRequestEvent,
-		c.RelayProvider, c.RepoConfig, c.ScmProvider, c.SystemSetting,
-		c.TeamUsageRateMultiplierAudit, c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
+		c.QuotaResetApproverConfig, c.QuotaResetNotificationSetting,
+		c.QuotaResetRequest, c.QuotaResetRequestEvent, c.RelayProvider, c.RepoConfig,
+		c.ScmProvider, c.SystemSetting, c.TeamUsageRateMultiplierAudit,
+		c.ToolUsageEvent, c.User, c.WebhookDeadLetter,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -396,8 +390,6 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PrAttributionRun.mutate(ctx, m)
 	case *PrRecordMutation:
 		return c.PrRecord.mutate(ctx, m)
-	case *QuotaResetApprovalChainMutation:
-		return c.QuotaResetApprovalChain.mutate(ctx, m)
 	case *QuotaResetApproverConfigMutation:
 		return c.QuotaResetApproverConfig.mutate(ctx, m)
 	case *QuotaResetNotificationSettingMutation:
@@ -2547,139 +2539,6 @@ func (c *PrRecordClient) mutate(ctx context.Context, m *PrRecordMutation) (Value
 	}
 }
 
-// QuotaResetApprovalChainClient is a client for the QuotaResetApprovalChain schema.
-type QuotaResetApprovalChainClient struct {
-	config
-}
-
-// NewQuotaResetApprovalChainClient returns a client for the QuotaResetApprovalChain from the given config.
-func NewQuotaResetApprovalChainClient(c config) *QuotaResetApprovalChainClient {
-	return &QuotaResetApprovalChainClient{config: c}
-}
-
-// Use adds a list of mutation hooks to the hooks stack.
-// A call to `Use(f, g, h)` equals to `quotaresetapprovalchain.Hooks(f(g(h())))`.
-func (c *QuotaResetApprovalChainClient) Use(hooks ...Hook) {
-	c.hooks.QuotaResetApprovalChain = append(c.hooks.QuotaResetApprovalChain, hooks...)
-}
-
-// Intercept adds a list of query interceptors to the interceptors stack.
-// A call to `Intercept(f, g, h)` equals to `quotaresetapprovalchain.Intercept(f(g(h())))`.
-func (c *QuotaResetApprovalChainClient) Intercept(interceptors ...Interceptor) {
-	c.inters.QuotaResetApprovalChain = append(c.inters.QuotaResetApprovalChain, interceptors...)
-}
-
-// Create returns a builder for creating a QuotaResetApprovalChain entity.
-func (c *QuotaResetApprovalChainClient) Create() *QuotaResetApprovalChainCreate {
-	mutation := newQuotaResetApprovalChainMutation(c.config, OpCreate)
-	return &QuotaResetApprovalChainCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// CreateBulk returns a builder for creating a bulk of QuotaResetApprovalChain entities.
-func (c *QuotaResetApprovalChainClient) CreateBulk(builders ...*QuotaResetApprovalChainCreate) *QuotaResetApprovalChainCreateBulk {
-	return &QuotaResetApprovalChainCreateBulk{config: c.config, builders: builders}
-}
-
-// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
-// a builder and applies setFunc on it.
-func (c *QuotaResetApprovalChainClient) MapCreateBulk(slice any, setFunc func(*QuotaResetApprovalChainCreate, int)) *QuotaResetApprovalChainCreateBulk {
-	rv := reflect.ValueOf(slice)
-	if rv.Kind() != reflect.Slice {
-		return &QuotaResetApprovalChainCreateBulk{err: fmt.Errorf("calling to QuotaResetApprovalChainClient.MapCreateBulk with wrong type %T, need slice", slice)}
-	}
-	builders := make([]*QuotaResetApprovalChainCreate, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		builders[i] = c.Create()
-		setFunc(builders[i], i)
-	}
-	return &QuotaResetApprovalChainCreateBulk{config: c.config, builders: builders}
-}
-
-// Update returns an update builder for QuotaResetApprovalChain.
-func (c *QuotaResetApprovalChainClient) Update() *QuotaResetApprovalChainUpdate {
-	mutation := newQuotaResetApprovalChainMutation(c.config, OpUpdate)
-	return &QuotaResetApprovalChainUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOne returns an update builder for the given entity.
-func (c *QuotaResetApprovalChainClient) UpdateOne(qrac *QuotaResetApprovalChain) *QuotaResetApprovalChainUpdateOne {
-	mutation := newQuotaResetApprovalChainMutation(c.config, OpUpdateOne, withQuotaResetApprovalChain(qrac))
-	return &QuotaResetApprovalChainUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// UpdateOneID returns an update builder for the given id.
-func (c *QuotaResetApprovalChainClient) UpdateOneID(id int) *QuotaResetApprovalChainUpdateOne {
-	mutation := newQuotaResetApprovalChainMutation(c.config, OpUpdateOne, withQuotaResetApprovalChainID(id))
-	return &QuotaResetApprovalChainUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// Delete returns a delete builder for QuotaResetApprovalChain.
-func (c *QuotaResetApprovalChainClient) Delete() *QuotaResetApprovalChainDelete {
-	mutation := newQuotaResetApprovalChainMutation(c.config, OpDelete)
-	return &QuotaResetApprovalChainDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
-}
-
-// DeleteOne returns a builder for deleting the given entity.
-func (c *QuotaResetApprovalChainClient) DeleteOne(qrac *QuotaResetApprovalChain) *QuotaResetApprovalChainDeleteOne {
-	return c.DeleteOneID(qrac.ID)
-}
-
-// DeleteOneID returns a builder for deleting the given entity by its id.
-func (c *QuotaResetApprovalChainClient) DeleteOneID(id int) *QuotaResetApprovalChainDeleteOne {
-	builder := c.Delete().Where(quotaresetapprovalchain.ID(id))
-	builder.mutation.id = &id
-	builder.mutation.op = OpDeleteOne
-	return &QuotaResetApprovalChainDeleteOne{builder}
-}
-
-// Query returns a query builder for QuotaResetApprovalChain.
-func (c *QuotaResetApprovalChainClient) Query() *QuotaResetApprovalChainQuery {
-	return &QuotaResetApprovalChainQuery{
-		config: c.config,
-		ctx:    &QueryContext{Type: TypeQuotaResetApprovalChain},
-		inters: c.Interceptors(),
-	}
-}
-
-// Get returns a QuotaResetApprovalChain entity by its id.
-func (c *QuotaResetApprovalChainClient) Get(ctx context.Context, id int) (*QuotaResetApprovalChain, error) {
-	return c.Query().Where(quotaresetapprovalchain.ID(id)).Only(ctx)
-}
-
-// GetX is like Get, but panics if an error occurs.
-func (c *QuotaResetApprovalChainClient) GetX(ctx context.Context, id int) *QuotaResetApprovalChain {
-	obj, err := c.Get(ctx, id)
-	if err != nil {
-		panic(err)
-	}
-	return obj
-}
-
-// Hooks returns the client hooks.
-func (c *QuotaResetApprovalChainClient) Hooks() []Hook {
-	return c.hooks.QuotaResetApprovalChain
-}
-
-// Interceptors returns the client interceptors.
-func (c *QuotaResetApprovalChainClient) Interceptors() []Interceptor {
-	return c.inters.QuotaResetApprovalChain
-}
-
-func (c *QuotaResetApprovalChainClient) mutate(ctx context.Context, m *QuotaResetApprovalChainMutation) (Value, error) {
-	switch m.Op() {
-	case OpCreate:
-		return (&QuotaResetApprovalChainCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdate:
-		return (&QuotaResetApprovalChainUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpUpdateOne:
-		return (&QuotaResetApprovalChainUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
-	case OpDelete, OpDeleteOne:
-		return (&QuotaResetApprovalChainDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
-	default:
-		return nil, fmt.Errorf("ent: unknown QuotaResetApprovalChain mutation op: %q", m.Op())
-	}
-}
-
 // QuotaResetApproverConfigClient is a client for the QuotaResetApproverConfig schema.
 type QuotaResetApproverConfigClient struct {
 	config
@@ -4556,9 +4415,8 @@ type (
 		DirectoryDepartment, DirectoryMember, DirectoryMemberDepartment,
 		DirectoryOffboardingAction, DirectorySource, DirectorySyncRun,
 		PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
-		QuotaResetApprovalChain, QuotaResetApproverConfig,
-		QuotaResetNotificationSetting, QuotaResetRequest, QuotaResetRequestEvent,
-		RelayProvider, RepoConfig, ScmProvider, SystemSetting,
+		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
+		QuotaResetRequestEvent, RelayProvider, RepoConfig, ScmProvider, SystemSetting,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Hook
 	}
@@ -4567,9 +4425,8 @@ type (
 		DirectoryDepartment, DirectoryMember, DirectoryMemberDepartment,
 		DirectoryOffboardingAction, DirectorySource, DirectorySyncRun,
 		PRCommitUsageSnapshot, PRSyncJob, PrAttributionRun, PrRecord,
-		QuotaResetApprovalChain, QuotaResetApproverConfig,
-		QuotaResetNotificationSetting, QuotaResetRequest, QuotaResetRequestEvent,
-		RelayProvider, RepoConfig, ScmProvider, SystemSetting,
+		QuotaResetApproverConfig, QuotaResetNotificationSetting, QuotaResetRequest,
+		QuotaResetRequestEvent, RelayProvider, RepoConfig, ScmProvider, SystemSetting,
 		TeamUsageRateMultiplierAudit, ToolUsageEvent, User,
 		WebhookDeadLetter []ent.Interceptor
 	}

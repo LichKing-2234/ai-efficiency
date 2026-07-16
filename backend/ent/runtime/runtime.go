@@ -19,7 +19,6 @@ import (
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
 	"github.com/ai-efficiency/backend/ent/prrecord"
 	"github.com/ai-efficiency/backend/ent/prsyncjob"
-	"github.com/ai-efficiency/backend/ent/quotaresetapprovalchain"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -489,42 +488,6 @@ func init() {
 	prrecord.DefaultUpdatedAt = prrecordDescUpdatedAt.Default.(func() time.Time)
 	// prrecord.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	prrecord.UpdateDefaultUpdatedAt = prrecordDescUpdatedAt.UpdateDefault.(func() time.Time)
-	quotaresetapprovalchainFields := schema.QuotaResetApprovalChain{}.Fields()
-	_ = quotaresetapprovalchainFields
-	// quotaresetapprovalchainDescGroupID is the schema descriptor for group_id field.
-	quotaresetapprovalchainDescGroupID := quotaresetapprovalchainFields[1].Descriptor()
-	// quotaresetapprovalchain.GroupIDValidator is a validator for the "group_id" field. It is called by the builders before save.
-	quotaresetapprovalchain.GroupIDValidator = quotaresetapprovalchainDescGroupID.Validators[0].(func(string) error)
-	// quotaresetapprovalchainDescGroupName is the schema descriptor for group_name field.
-	quotaresetapprovalchainDescGroupName := quotaresetapprovalchainFields[2].Descriptor()
-	// quotaresetapprovalchain.DefaultGroupName holds the default value on creation for the group_name field.
-	quotaresetapprovalchain.DefaultGroupName = quotaresetapprovalchainDescGroupName.Default.(string)
-	// quotaresetapprovalchainDescDepartmentChain is the schema descriptor for department_chain field.
-	quotaresetapprovalchainDescDepartmentChain := quotaresetapprovalchainFields[3].Descriptor()
-	// quotaresetapprovalchain.DefaultDepartmentChain holds the default value on creation for the department_chain field.
-	quotaresetapprovalchain.DefaultDepartmentChain = quotaresetapprovalchainDescDepartmentChain.Default.([]map[string]interface{})
-	// quotaresetapprovalchainDescEnabled is the schema descriptor for enabled field.
-	quotaresetapprovalchainDescEnabled := quotaresetapprovalchainFields[4].Descriptor()
-	// quotaresetapprovalchain.DefaultEnabled holds the default value on creation for the enabled field.
-	quotaresetapprovalchain.DefaultEnabled = quotaresetapprovalchainDescEnabled.Default.(bool)
-	// quotaresetapprovalchainDescCreatedByUserID is the schema descriptor for created_by_user_id field.
-	quotaresetapprovalchainDescCreatedByUserID := quotaresetapprovalchainFields[5].Descriptor()
-	// quotaresetapprovalchain.DefaultCreatedByUserID holds the default value on creation for the created_by_user_id field.
-	quotaresetapprovalchain.DefaultCreatedByUserID = quotaresetapprovalchainDescCreatedByUserID.Default.(int)
-	// quotaresetapprovalchainDescUpdatedByUserID is the schema descriptor for updated_by_user_id field.
-	quotaresetapprovalchainDescUpdatedByUserID := quotaresetapprovalchainFields[6].Descriptor()
-	// quotaresetapprovalchain.DefaultUpdatedByUserID holds the default value on creation for the updated_by_user_id field.
-	quotaresetapprovalchain.DefaultUpdatedByUserID = quotaresetapprovalchainDescUpdatedByUserID.Default.(int)
-	// quotaresetapprovalchainDescCreatedAt is the schema descriptor for created_at field.
-	quotaresetapprovalchainDescCreatedAt := quotaresetapprovalchainFields[7].Descriptor()
-	// quotaresetapprovalchain.DefaultCreatedAt holds the default value on creation for the created_at field.
-	quotaresetapprovalchain.DefaultCreatedAt = quotaresetapprovalchainDescCreatedAt.Default.(func() time.Time)
-	// quotaresetapprovalchainDescUpdatedAt is the schema descriptor for updated_at field.
-	quotaresetapprovalchainDescUpdatedAt := quotaresetapprovalchainFields[8].Descriptor()
-	// quotaresetapprovalchain.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	quotaresetapprovalchain.DefaultUpdatedAt = quotaresetapprovalchainDescUpdatedAt.Default.(func() time.Time)
-	// quotaresetapprovalchain.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	quotaresetapprovalchain.UpdateDefaultUpdatedAt = quotaresetapprovalchainDescUpdatedAt.UpdateDefault.(func() time.Time)
 	quotaresetapproverconfigFields := schema.QuotaResetApproverConfig{}.Fields()
 	_ = quotaresetapproverconfigFields
 	// quotaresetapproverconfigDescDepartmentExternalID is the schema descriptor for department_external_id field.

@@ -24,27 +24,19 @@ func TestSchemaKeepsLegacyActiveRequestIndexAndAddsWorkflowSafeIndex(t *testing.
 	}
 }
 
-func TestSchemaPersistsCompactWorkflowAndApprovalChain(t *testing.T) {
+func TestSchemaDoesNotRegisterQuotaResetApprovalChainTable(t *testing.T) {
+	for _, table := range entmigrate.Tables {
+		if table.Name == "quota_reset_approval_chains" {
+			t.Fatal("branch-only approval-chain table is still registered")
+		}
+	}
+}
+
+func TestSchemaPersistsCompactWorkflow(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
 	provider := createQuotaResetRelayProvider(t, ctx, client)
-
-	chain := client.QuotaResetApprovalChain.Create().
-		SetProviderID(provider.ID).
-		SetGroupID("42").
-		SetGroupName("Group Alpha").
-		SetDepartmentChain([]map[string]any{{
-			"directory_source_id":     1,
-			"department_external_id":  "dept-alpha",
-			"department_display_path": "Company / Group Alpha",
-		}}).
-		SetCreatedByUserID(requester.ID).
-		SetUpdatedByUserID(requester.ID).
-		SaveX(ctx)
-	if len(chain.DepartmentChain) != 1 || chain.DepartmentChain[0]["department_external_id"] != "dept-alpha" {
-		t.Fatalf("department chain = %#v", chain.DepartmentChain)
-	}
 
 	workflow, err := EncodeWorkflow(workflowFixture())
 	if err != nil {
