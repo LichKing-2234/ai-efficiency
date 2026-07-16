@@ -602,13 +602,14 @@ func TestCountsCacheCollapsesStaggeredRedisReadErrorsWithFastLoader(t *testing.T
 	cache := testCountsCache(t, store, revisions, "test", func(options *CountsCacheOptions) {
 		options.CommandTimeout = 2 * time.Second
 	})
-	key := countsCacheKey("test", "11111111-1111-4111-8111-111111111111", 7, "user")
 	var loads atomic.Int32
+	var attempting atomic.Int32
 	start := make(chan struct{})
 	results := make(chan error, callers)
 	for i := 0; i < callers; i++ {
 		go func() {
 			<-start
+			attempting.Add(1)
 			counts, err := cache.GetOrLoad(context.Background(), 7, "user", func(context.Context) (CountsLoadResult, error) {
 				loads.Add(1)
 				return CountsLoadResult{Counts: &CountsResponse{TotalCount: 1}, Cacheable: true}, nil
@@ -621,40 +622,19 @@ func TestCountsCacheCollapsesStaggeredRedisReadErrorsWithFastLoader(t *testing.T
 	}
 	close(start)
 
-	mode := ""
 	deadline := time.Now().Add(time.Second)
-	for mode == "" && time.Now().Before(deadline) {
-		cache.flights.mu.Lock()
-		waiters := 0
-		if call := cache.flights.calls[key]; call != nil {
-			waiters = call.waiters
-		}
-		cache.flights.mu.Unlock()
-		if waiters == callers {
-			mode = "inside-flight"
-		} else if store.calls() == callers {
-			mode = "outside-flight"
-		} else {
-			time.Sleep(time.Millisecond)
-		}
+	for (attempting.Load() != callers || store.calls() == 0) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
 	}
-	if mode == "" {
-		t.Fatalf("callers did not converge inside or outside flight; Redis gets=%d", store.calls())
+	if attempting.Load() != callers || store.calls() == 0 {
+		t.Fatalf("callers did not reach the cache; attempting=%d Redis gets=%d", attempting.Load(), store.calls())
 	}
-
-	if mode == "inside-flight" {
-		close(store.gates[0])
-		for i := 0; i < callers; i++ {
-			if err := <-results; err != nil {
-				t.Fatalf("GetOrLoad() error = %v", err)
-			}
-		}
-	} else {
-		for i := 0; i < callers; i++ {
-			close(store.gates[i])
-			if err := <-results; err != nil {
-				t.Fatalf("GetOrLoad() error = %v", err)
-			}
+	// The generic flight contract separately proves exact waiter convergence.
+	// Keep the first Redis read blocked until every caller has entered GetOrLoad.
+	close(store.gates[0])
+	for i := 0; i < callers; i++ {
+		if err := <-results; err != nil {
+			t.Fatalf("GetOrLoad() error = %v", err)
 		}
 	}
 	if got := loads.Load(); got != 1 {
