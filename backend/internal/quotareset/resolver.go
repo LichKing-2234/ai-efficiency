@@ -97,7 +97,10 @@ func (r *ApproverResolver) ResolveWorkflow(ctx context.Context, requester *ent.U
 				workflow.Steps = append(workflow.Steps, exactStep)
 			}
 
-			visited := stringSet(exactIDs)
+			visited := make(map[string]struct{}, len(exactIDs))
+			for _, departmentID := range exactIDs {
+				visited[departmentID] = struct{}{}
+			}
 			for round := facts.parentRound(exactIDs, visited); len(round) > 0; round = facts.parentRound(round, visited) {
 				step, roundHadConfig := facts.resolveConfiguredRound(round, requester.ID)
 				if roundHadConfig {
@@ -191,12 +194,7 @@ func (r *ApproverResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 
 func (f *workflowDirectoryFacts) resolveExactStep(exactIDs []string, requesterID int) (WorkflowStep, bool, []DepartmentPathEvidence) {
 	departmentIDs := uniqueSortedStrings(exactIDs)
-	step := WorkflowStep{
-		Kind:                  WorkflowStepRequesterDepartments,
-		DepartmentExternalIDs: departmentIDs,
-		Approvers:             []WorkflowApprover{},
-		Status:                WorkflowStepQueued,
-	}
+	step := newWorkflowStep(WorkflowStepRequesterDepartments, departmentIDs)
 	paths := make([]DepartmentPathEvidence, 0, len(departmentIDs))
 	hadConfig := false
 	for _, departmentID := range departmentIDs {
@@ -221,12 +219,7 @@ func (f *workflowDirectoryFacts) resolveExactStep(exactIDs []string, requesterID
 }
 
 func (f *workflowDirectoryFacts) resolveConfiguredRound(round []string, requesterID int) (WorkflowStep, bool) {
-	step := WorkflowStep{
-		Kind:                  WorkflowStepConfiguredDepartment,
-		DepartmentExternalIDs: []string{},
-		Approvers:             []WorkflowApprover{},
-		Status:                WorkflowStepQueued,
-	}
+	step := newWorkflowStep(WorkflowStepConfiguredDepartment, nil)
 	labels := []string{}
 	for _, departmentID := range uniqueSortedStrings(round) {
 		approvers, configured := f.configuredApprovers(departmentID, requesterID)
@@ -248,10 +241,7 @@ func (f *workflowDirectoryFacts) parentRound(departmentIDs []string, visited map
 	for _, departmentID := range uniqueSortedStrings(departmentIDs) {
 		department := f.departmentsByID[departmentID]
 		parentID := directorytree.ParentExternalID(department)
-		if parentID == "" {
-			continue
-		}
-		if _, seen := visited[parentID]; seen {
+		if _, seen := visited[parentID]; parentID == "" || seen {
 			continue
 		}
 		visited[parentID] = struct{}{}
@@ -386,38 +376,34 @@ func mergeWorkflowApprovers(target *[]WorkflowApprover, candidates []WorkflowApp
 	sort.SliceStable(*target, func(i, j int) bool { return (*target)[i].UserID < (*target)[j].UserID })
 }
 
-func stringSet(values []string) map[string]struct{} {
-	set := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
-			set[value] = struct{}{}
-		}
-	}
-	return set
+func uniqueSortedStrings(values []string) []string {
+	values = compactQuotaResetStrings(values)
+	sort.Strings(values)
+	return values
 }
 
-func uniqueSortedStrings(values []string) []string {
-	return slices.Sorted(maps.Keys(stringSet(values)))
+func newWorkflowStep(kind string, departmentIDs []string) WorkflowStep {
+	return WorkflowStep{
+		Kind:                  kind,
+		DepartmentExternalIDs: departmentIDs,
+		Approvers:             []WorkflowApprover{},
+		Status:                WorkflowStepQueued,
+	}
 }
 
 func adminFallbackWorkflowStep() WorkflowStep {
-	return WorkflowStep{
-		Kind:          WorkflowStepConfiguredDepartment,
-		Label:         "Admin fallback",
-		Approvers:     []WorkflowApprover{},
-		AdminFallback: true,
-		Status:        WorkflowStepQueued,
-	}
+	step := newWorkflowStep(WorkflowStepConfiguredDepartment, nil)
+	step.Label = "Admin fallback"
+	step.AdminFallback = true
+	return step
 }
 
 func workflowDepartmentPath(tree *directorytree.Tree, department *ent.DirectoryDepartment) string {
 	if department == nil {
 		return ""
 	}
-	if tree != nil {
-		if path := strings.TrimSpace(tree.DisplayPath(department.ExternalID)); path != "" {
-			return path
-		}
+	if path := strings.TrimSpace(tree.DisplayPath(department.ExternalID)); path != "" {
+		return path
 	}
 	return firstWorkflowValue(department.Name, department.ExternalID)
 }

@@ -1189,7 +1189,6 @@ export interface QuotaResetApproverCandidate {
   display_name: string
   directory_member_external_id: string
   representative: boolean
-  has_wecom_userid: boolean
 }
 
 export interface QuotaResetUnmatchedApproverRepresentative {
@@ -1203,10 +1202,9 @@ export interface QuotaResetApproverCandidateListResponse {
   unmatched_representatives?: QuotaResetUnmatchedApproverRepresentative[]
 }
 
-export type QuotaResetNotificationChannel = 'generic_webhook' | 'wecom_group_robot'
 export interface QuotaResetNotificationSettings {
   enabled: boolean
-  channel: QuotaResetNotificationChannel
+  channel: 'generic_webhook' | 'wecom_group_robot'
   url: string
   auth_type: 'none' | 'bearer_token'
   credential_id?: number | null

@@ -83,7 +83,6 @@ type ApproverCandidate struct {
 	DisplayName               string `json:"display_name"`
 	DirectoryMemberExternalID string `json:"directory_member_external_id"`
 	Representative            bool   `json:"representative"`
-	HasWeComUserID            bool   `json:"has_wecom_userid"`
 }
 
 type UnmatchedApproverRepresentative struct {

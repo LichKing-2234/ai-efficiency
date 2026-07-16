@@ -103,14 +103,10 @@ func DecodeWorkflow(raw map[string]any) (*Workflow, error) {
 }
 
 func (w *Workflow) ActiveApproverUserIDs() []int {
-	if w == nil || w.CurrentStep < 0 || w.CurrentStep >= len(w.Steps) {
+	if w == nil || w.CurrentStep < 0 || w.CurrentStep >= len(w.Steps) || w.Steps[w.CurrentStep].Status != WorkflowStepActive {
 		return []int{}
 	}
-	step := w.Steps[w.CurrentStep]
-	if step.Status != WorkflowStepActive {
-		return []int{}
-	}
-	return workflowApproverUserIDs(step.Approvers)
+	return workflowApproverUserIDs(w.Steps[w.CurrentStep].Approvers)
 }
 
 func (w *Workflow) Decide(input WorkflowDecisionInput) ([]int, error) {
@@ -173,10 +169,7 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) ([]int, error) {
 func (w *Workflow) priorApprovingStepFor(stepIndex int) int {
 	for prior := 0; prior < stepIndex; prior++ {
 		decision := w.Steps[prior].Decision
-		if decision == nil || !decision.Approve {
-			continue
-		}
-		if workflowStepContainsApprover(w.Steps[stepIndex], decision.ActorUserID) {
+		if decision != nil && decision.Approve && workflowStepContainsApprover(w.Steps[stepIndex], decision.ActorUserID) {
 			return prior
 		}
 	}
@@ -252,11 +245,9 @@ func (w *Workflow) validate() error {
 }
 
 func workflowApproverUserIDs(approvers []WorkflowApprover) []int {
-	ids := make([]int, 0, len(approvers))
-	for _, approver := range approvers {
-		if approver.UserID > 0 {
-			ids = append(ids, approver.UserID)
-		}
+	ids := make([]int, len(approvers))
+	for index, approver := range approvers {
+		ids[index] = approver.UserID
 	}
 	return uniqueSortedWorkflowIDs(ids)
 }

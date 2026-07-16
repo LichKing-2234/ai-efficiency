@@ -130,27 +130,14 @@ func (n *WebhookNotifier) payloadForChannel(channel quotaresetnotificationsettin
 }
 
 func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx quotaResetNotificationContext) map[string]any {
-	approvers := make([]map[string]any, 0, len(ctx.ActiveApprovers))
-	for _, approver := range ctx.ActiveApprovers {
-		approvers = append(approvers, map[string]any{
-			"user_id":      approver.UserID,
-			"display_name": approver.DisplayName,
-			"email":        approver.Email,
-		})
-	}
 	workflowPayload := map[string]any{
 		"step_number":      min(ctx.StepIndex+1, ctx.StepCount),
 		"step_count":       ctx.StepCount,
 		"step_label":       ctx.StepLabel,
-		"active_approvers": approvers,
+		"active_approvers": ctx.ActiveApprovers,
 	}
 	if ctx.PreviousDecision != nil {
-		workflowPayload["previous_decision"] = map[string]any{
-			"actor_user_id":      ctx.PreviousDecision.ActorUserID,
-			"actor_display_name": ctx.PreviousDecision.ActorDisplayName,
-			"comment":            ctx.PreviousDecision.Comment,
-			"decided_at":         ctx.PreviousDecision.DecidedAt,
-		}
+		workflowPayload["previous_decision"] = ctx.PreviousDecision
 	}
 	payload := map[string]any{
 		"event":                      event,
@@ -164,14 +151,9 @@ func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx 
 		"reason":                     reasonPreview(req.Reason),
 		"reason_preview":             reasonPreview(req.Reason),
 		"resolved_approver_user_ids": req.ResolvedApproverUserIds,
-		"requester": map[string]any{
-			"user_id":          ctx.Requester.UserID,
-			"display_name":     ctx.Requester.DisplayName,
-			"email":            ctx.Requester.Email,
-			"department_paths": ctx.Requester.DepartmentPaths,
-		},
-		"workflow":    workflowPayload,
-		"occurred_at": time.Now().UTC().Format(time.RFC3339),
+		"requester":                  ctx.Requester,
+		"workflow":                   workflowPayload,
+		"occurred_at":                time.Now().UTC().Format(time.RFC3339),
 	}
 	if n.frontendURL != "" {
 		payload["action_url"] = fmt.Sprintf("%s/usage/quota-reset?request_id=%d", n.frontendURL, req.ID)

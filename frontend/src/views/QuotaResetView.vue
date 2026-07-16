@@ -73,20 +73,16 @@ async function loadQueues(forceCounts = false) {
   loadError.value = ''
   void workItems.loadCounts({ force: forceCounts })
   try {
-    const requests = [
+    const [mine, approvals] = await Promise.all([
       loadAllQueuePages(listMyQuotaResetRequests),
       loadAllQueuePages(listQuotaResetApprovals),
-    ] as const
-    const [mine, approvals] = await Promise.all(requests)
+    ])
     myRequests.value = mine.items
     approvalRequests.value = approvals.items
     myTotal.value = mine.total
-    if (auth.isAdmin) {
-      const admin = await loadAllQueuePages(listAdminQuotaResetRequests)
-      adminRequests.value = admin.items
-    } else {
-      adminRequests.value = []
-    }
+    adminRequests.value = auth.isAdmin
+      ? (await loadAllQueuePages(listAdminQuotaResetRequests)).items
+      : []
   } catch {
     loadError.value = t('quotaReset.loadFailed')
   } finally {
@@ -162,11 +158,10 @@ function handleDecision(item: QuotaResetRequestSummary, action: 'approve' | 'rej
 }
 
 function submitDecision(item: QuotaResetRequestSummary, comment: string) {
-  const payload = { decision_reason: comment }
-  if (decisionAction.value === 'approve') {
-    return activeQueue.value === 'admin' ? adminApproveQuotaResetRequest(item.id, payload) : approveQuotaResetRequest(item.id, payload)
-  }
-  return activeQueue.value === 'admin' ? adminRejectQuotaResetRequest(item.id, payload) : rejectQuotaResetRequest(item.id, payload)
+  const submit = decisionAction.value === 'approve'
+    ? (activeQueue.value === 'admin' ? adminApproveQuotaResetRequest : approveQuotaResetRequest)
+    : (activeQueue.value === 'admin' ? adminRejectQuotaResetRequest : rejectQuotaResetRequest)
+  return submit(item.id, { decision_reason: comment })
 }
 
 async function confirmDecision(comment: string) {
@@ -174,8 +169,7 @@ async function confirmDecision(comment: string) {
   if (!item) return
   if (await withAction(() => submitDecision(item, comment))) {
     decisionRequest.value = null
-    selectedRequest.value = [...myRequests.value, ...approvalRequests.value, ...adminRequests.value]
-      .find((request) => request.id === item.id) ?? null
+    selectedRequest.value = queueItems.value.find((request) => request.id === item.id) ?? null
   }
 }
 
@@ -184,11 +178,8 @@ function handleSelect(item: QuotaResetRequestSummary) {
 }
 
 function handleRetry(item: QuotaResetRequestSummary) {
-  if (activeQueue.value === 'admin') {
-    void withAction(() => adminRetryQuotaResetRequest(item.id))
-    return
-  }
-  void withAction(() => retryQuotaResetRequest(item.id))
+  const retry = activeQueue.value === 'admin' ? adminRetryQuotaResetRequest : retryQuotaResetRequest
+  void withAction(() => retry(item.id))
 }
 
 onMounted(loadQueues)
@@ -294,7 +285,7 @@ onMounted(loadQueues)
       </section>
     </div>
     <QuotaResetDecisionDialog
-      :open="Boolean(decisionRequest)"
+      v-if="decisionRequest"
       :action="decisionAction"
       :busy="actionBusy"
       @confirm="confirmDecision"

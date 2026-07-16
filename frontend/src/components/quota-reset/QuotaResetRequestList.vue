@@ -56,15 +56,13 @@ function canCancel(item: QuotaResetRequestSummary) {
 }
 
 function canDecide(item: QuotaResetRequestSummary) {
-  if (item.status !== 'pending') return false
-  return props.mode === 'admin'
-    || (props.mode === 'approvals' && !!props.actorUserId && item.resolved_approver_user_ids.includes(props.actorUserId))
+  return item.status === 'pending' && (props.mode === 'admin'
+    || (props.mode === 'approvals' && !!props.actorUserId && item.resolved_approver_user_ids.includes(props.actorUserId)))
 }
 
 function canRetry(item: QuotaResetRequestSummary) {
-  if (item.status !== 'approved_reset_failed') return false
-  return props.mode === 'admin'
-    || (props.mode === 'approvals' && !!props.actorUserId && item.approved_by_user_id === props.actorUserId)
+  return item.status === 'approved_reset_failed' && (props.mode === 'admin'
+    || (props.mode === 'approvals' && !!props.actorUserId && item.approved_by_user_id === props.actorUserId))
 }
 
 function workflowProgress(item: QuotaResetRequestSummary) {

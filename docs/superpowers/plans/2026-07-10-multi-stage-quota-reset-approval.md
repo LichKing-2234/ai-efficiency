@@ -9,10 +9,10 @@
 verification, which remains blocked and unchecked because the required browser
 runtime reports no available browser.
 
-**Review Remediation Status (2026-07-16):** All Task 4 code, architecture, and
-formatting findings are fixed and fully reverified. Browser verification remains
-the only unchecked item because both the controller and worker observed no
-browser runtime.
+**Review And Re-review Remediation Status (2026-07-16):** All Task 4 code,
+architecture, formatting, and searchable approver-picker findings are fixed and
+fully reverified. Browser verification remains the only unchecked item because
+both the controller and worker observed no browser runtime.
 
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
@@ -370,6 +370,12 @@ current. Do not rewrite the historical 2026-07-07 spec.
     successful fresh rerun used `npm run dev -- --host 127.0.0.1`; the failed
     environment attempt remains in
     `.superpowers/sdd/task-4-logs/frontend-test-build-role-e2e.log`.
+  - Re-review rerun: focused quota-reset/work-items tests and vet passed; focused
+    frontend quota-reset API/settings/view tests reported 3 files / 21 tests and
+    the build passed. Because backend production code was structurally reduced,
+    full backend tests/vet were rerun and passed. Full frontend verification
+    reported 39 files / 435 tests, a successful 192-module build, and role E2E
+    16/16. The untouched CLI was not rerun for this frontend finding.
 
 - [x] **Step 3: Audit final scope**
 
@@ -390,19 +396,18 @@ current. Do not rewrite the historical 2026-07-07 spec.
   chain scan is empty; only intentional branch files are modified. Simplify and
   leave this step unchecked if the limit is exceeded.
 
-  Final evidence (2026-07-16):
+  Latest final evidence (2026-07-16 re-review):
 
   - `git diff --check origin/main` exited 0.
   - Hand-written production, including `backend/ent/schema`, is
-    `+1500/-434`; the schema-only subtotal is `+16/-0`.
+    `+1499/-482`; the schema-only subtotal is `+16/-0`.
   - Generated Ent outside `backend/ent/schema` is `+862/-33` and is reported
     separately from the hand-written total.
   - The production chain scan found no matches when excluding only
     `backend/internal/quotareset/schema_test.go`; that guard still contains the
     intentional `quota_reset_approval_chains` literal.
-  - `git status --short` listed only intentional Task 4 simplification/docs
-    files. Review-fix output:
-    `.superpowers/sdd/task-4-logs/review-fixes-scope-audit.log`.
+  - `git status --short` listed only intentional re-review tests, picker code,
+    structural simplifications, and plan evidence before commit.
 
 - [ ] **Step 4: Browser-test one complete workflow**
 

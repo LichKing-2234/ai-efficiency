@@ -11,8 +11,7 @@ const { t } = useI18n()
       <div class="min-w-0">
         <div class="break-words text-sm font-medium text-slate-900">{{ step.label || t('quotaReset.adminFallback') }}</div>
         <div v-if="step.decision" class="mt-1 text-sm text-slate-600">
-          <span class="font-medium">{{ step.decision.actor_display_name || `User #${step.decision.actor_user_id}` }}</span>
-          <span> · {{ step.decision.comment }}</span>
+          <span class="font-medium">{{ step.decision.actor_display_name || `User #${step.decision.actor_user_id}` }}</span> · {{ step.decision.comment }}
         </div>
         <div v-else-if="step.admin_fallback" class="mt-1 text-xs text-amber-700">{{ t('quotaReset.adminFallback') }}</div>
       </div>

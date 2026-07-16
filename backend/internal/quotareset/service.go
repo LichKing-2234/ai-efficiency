@@ -982,22 +982,12 @@ func (s *Service) approverCandidates(ctx context.Context, sourceID int, departme
 			DisplayName:               strings.TrimSpace(member.DisplayName),
 			DirectoryMemberExternalID: strings.TrimSpace(member.ExternalID),
 			Representative:            representative,
-			HasWeComUserID:            strings.TrimSpace(notificationIDsForWorkflowMember(member)["wecom"]) != "",
 		})
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
-		left := strings.ToLower(strings.TrimSpace(candidates[i].DisplayName))
-		if left == "" {
-			left = strings.ToLower(strings.TrimSpace(candidates[i].Username))
-		}
-		right := strings.ToLower(strings.TrimSpace(candidates[j].DisplayName))
-		if right == "" {
-			right = strings.ToLower(strings.TrimSpace(candidates[j].Username))
-		}
-		if left != right {
-			return left < right
-		}
-		return candidates[i].UserID < candidates[j].UserID
+		left := quotaResetSortLabel(candidates[i].DisplayName, candidates[i].Username)
+		right := quotaResetSortLabel(candidates[j].DisplayName, candidates[j].Username)
+		return left < right || (left == right && candidates[i].UserID < candidates[j].UserID)
 	})
 	unmatched := make([]UnmatchedApproverRepresentative, 0)
 	for externalID := range representativeIDs {
@@ -1013,20 +1003,15 @@ func (s *Service) approverCandidates(ctx context.Context, sourceID int, departme
 		unmatched = append(unmatched, item)
 	}
 	sort.SliceStable(unmatched, func(i, j int) bool {
-		left := strings.ToLower(strings.TrimSpace(unmatched[i].DisplayName))
-		if left == "" {
-			left = strings.ToLower(strings.TrimSpace(unmatched[i].DirectoryMemberExternalID))
-		}
-		right := strings.ToLower(strings.TrimSpace(unmatched[j].DisplayName))
-		if right == "" {
-			right = strings.ToLower(strings.TrimSpace(unmatched[j].DirectoryMemberExternalID))
-		}
-		if left != right {
-			return left < right
-		}
-		return unmatched[i].DirectoryMemberExternalID < unmatched[j].DirectoryMemberExternalID
+		left := quotaResetSortLabel(unmatched[i].DisplayName, unmatched[i].DirectoryMemberExternalID)
+		right := quotaResetSortLabel(unmatched[j].DisplayName, unmatched[j].DirectoryMemberExternalID)
+		return left < right || (left == right && unmatched[i].DirectoryMemberExternalID < unmatched[j].DirectoryMemberExternalID)
 	})
 	return candidates, unmatched, nil
+}
+
+func quotaResetSortLabel(values ...string) string {
+	return strings.ToLower(firstWorkflowValue(values...))
 }
 
 func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, items []ApproverConfigInput) error {

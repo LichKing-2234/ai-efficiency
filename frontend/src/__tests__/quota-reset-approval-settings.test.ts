@@ -192,7 +192,32 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.text()).toContain('webhook returned errcode 40008: invalid message type')
   })
 
-  it('selects an approver department and member through searchable controls', async () => {
+  it('keeps the selected approver visible while filtering the opened picker', async () => {
+    const quotaReset = await import('@/api/quotaReset') as any
+    quotaReset.listQuotaResetApproverCandidates.mockResolvedValueOnce({
+      data: {
+        data: {
+          items: [
+            {
+              user_id: 12,
+              username: 'lead-alpha',
+              email: 'lead-alpha@example.com',
+              display_name: 'Lead Alpha',
+              directory_member_external_id: 'member-alpha-lead',
+              representative: true,
+            },
+            {
+              user_id: 13,
+              username: 'reviewer-beta',
+              email: 'reviewer-beta@example.com',
+              display_name: 'Reviewer Beta',
+              directory_member_external_id: 'member-beta-reviewer',
+              representative: false,
+            },
+          ],
+        },
+      },
+    })
     const wrapper = mount(QuotaResetApprovalSettings, { props: { credentials: [] } })
     await flushPromises()
 
@@ -210,13 +235,28 @@ describe('QuotaResetApprovalSettings', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="quota-reset-approver-ids"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(false)
+
+    const picker = wrapper.get('[data-testid="quota-reset-approver-select"]')
+    await picker.trigger('click')
     expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('lead-alpha@example.com')
-    await wrapper.find('[data-testid="quota-reset-approver-select"]').setValue('12')
+    await wrapper.get('[data-testid="quota-reset-approver-option-12"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(false)
+    expect(picker.text()).toContain('Lead Alpha')
+    expect(picker.text()).toContain('lead-alpha@example.com')
+    expect(picker.text()).toContain('Representative')
+
+    await picker.trigger('click')
+    await wrapper.get('[data-testid="quota-reset-approver-filter"]').setValue('beta')
+    expect(wrapper.find('[data-testid="quota-reset-approver-option-12"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="quota-reset-approver-option-13"]').exists()).toBe(true)
+    expect(picker.text()).toContain('Lead Alpha')
+    expect(picker.text()).toContain('Representative')
+
     await wrapper.find('[data-testid="quota-reset-save-approvers"]').trigger('click')
     await flushPromises()
 
-    const quotaReset = await import('@/api/quotaReset') as any
     const directory = await import('@/api/directory') as any
     expect(directory.listDirectoryDepartments).toHaveBeenCalledWith({ source_id: 1, q: 'Platform' })
     expect(quotaReset.listQuotaResetApproverCandidates).toHaveBeenCalledWith({
@@ -259,14 +299,28 @@ describe('QuotaResetApprovalSettings', () => {
     expect(wrapper.text()).not.toContain('Old Directory')
   })
 
-  it('filters the member select options', async () => {
+  it('filters member picker options after opening the dropdown', async () => {
     const api = await import('@/api/quotaReset') as any
     api.listQuotaResetApproverCandidates.mockResolvedValueOnce({
       data: {
         data: {
           items: [
-            { user_id: 12, username: 'lead-alpha', email: 'lead-alpha@example.com', display_name: 'Lead Alpha', directory_member_external_id: 'member-alpha-lead' },
-            { user_id: 13, username: 'reviewer-beta', email: 'reviewer-beta@example.com', display_name: 'Reviewer Beta', directory_member_external_id: 'member-beta-reviewer' },
+            {
+              user_id: 12,
+              username: 'lead-alpha',
+              email: 'lead-alpha@example.com',
+              display_name: 'Lead Alpha',
+              directory_member_external_id: 'member-alpha-lead',
+              representative: true,
+            },
+            {
+              user_id: 13,
+              username: 'reviewer-beta',
+              email: 'reviewer-beta@example.com',
+              display_name: 'Reviewer Beta',
+              directory_member_external_id: 'member-beta-reviewer',
+              representative: false,
+            },
           ],
         },
       },
@@ -278,8 +332,10 @@ describe('QuotaResetApprovalSettings', () => {
     await wrapper.get('[data-testid="quota-reset-department-option-dept-alpha"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="quota-reset-approver-filter"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="quota-reset-approver-select"]').trigger('click')
     await wrapper.get('[data-testid="quota-reset-approver-filter"]').setValue('beta')
+
     expect(wrapper.find('[data-testid="quota-reset-approver-option-12"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="quota-reset-approver-option-13"]').exists()).toBe(true)
   })
