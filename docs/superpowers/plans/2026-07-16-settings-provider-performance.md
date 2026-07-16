@@ -26,7 +26,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** In progress. Backend, frontend (39 files/486 tests plus production build), and `ae-cli` baselines passed at `0b694ba` before implementation.
+**Status:** Complete. Draft PR #157 targets `perf/team-organization-128`, depends directly on Draft PR #156, and the implementation-head CI passed all required jobs. The worktree remains available for review; no merge, release, tag, deployment, or Helm action was performed.
 
 ---
 
@@ -242,10 +242,14 @@
 
   Review evidence (2026-07-16): independent spec and standards reviews found no Critical issues. Important findings were fixed with RED/GREEN coverage for metadata TTL jitter, stale provider rows, abandoned foreign leases, invalid prototype-key section queries, auth-session Settings reset without eager bundling, and repeated mutations that arrive during an existing forced refresh. Both review axes confirmed no remaining Critical/Important findings against issue #130, the active performance spec, and repository standards.
 
-- [ ] **Step 4: Push and open a Draft PR**
+- [x] **Step 4: Push and open a Draft PR**
 
   Target `perf/team-organization-128`, list Draft PR #156 as the direct dependency, preserve both worktrees, and do not merge or release.
 
-- [ ] **Step 5: Wait for required CI and record final state**
+  Publication evidence (2026-07-16): pushed `perf/settings-metadata-130` at implementation head `5c6fbd92451303a437d4c58dcb793dedec452280` and opened Draft PR #157 (`https://github.com/LichKing-2234/ai-efficiency/pull/157`) against `perf/team-organization-128`. The PR names Draft PR #156 as its direct dependency, closes #130, and explicitly excludes merge/release/deploy work.
+
+- [x] **Step 5: Wait for required CI and record final state**
 
   Record the exact implementation-head run and backend/frontend/ae-cli/deploy-static conclusions, then push one ledger commit and wait for final ledger-head CI.
+
+  CI evidence (2026-07-16): GitHub Actions run `29487914105` (`https://github.com/LichKing-2234/ai-efficiency/actions/runs/29487914105`) completed successfully for implementation head `5c6fbd92451303a437d4c58dcb793dedec452280`: backend job `87586730854`, frontend job `87586730683`, `ae-cli` job `87586730749`, and `deploy-static` job `87586730789` all concluded `success`.
