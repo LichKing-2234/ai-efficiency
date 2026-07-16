@@ -228,11 +228,13 @@
 - Modify: `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md` only if implementation clarifies the active contract
 - Modify: this plan
 
-- [ ] **Step 1: Update current architecture and plan status**
+- [x] **Step 1: Update current architecture and plan status**
 
   Document authoritative per-request guards, scope/provider/range cache isolation, selected-window versus comparison-total semantics, stale eligibility, Redis fallback, frontend section independence, and the one-release legacy adapter.
 
-- [ ] **Step 2: Run formatting and static checks**
+  Documentation evidence (2026-07-16): `docs/architecture.md` now records the split lifecycle, shared snapshot cache contract, opaque scope version, comparison-total semantics, compatibility headers, and authoritative fallback boundaries.
+
+- [x] **Step 2: Run formatting and static checks**
 
   Run:
 
@@ -241,7 +243,9 @@
   cd backend && go vet ./internal/readcache ./internal/representativescope ./internal/teamusage ./internal/handler ./cmd/server
   ```
 
-- [ ] **Step 3: Run full repository verification**
+  GREEN evidence (2026-07-16): `git diff --check` and changed-package `go vet` passed.
+
+- [x] **Step 3: Run full repository verification**
 
   Run:
 
@@ -251,9 +255,13 @@
   cd ../ae-cli && go test ./...
   ```
 
-- [ ] **Step 4: Review the complete diff against issue #125 and the active performance spec**
+  GREEN evidence (2026-07-16): backend `go test ./...`, frontend 39 files/462 tests plus production build, and ae-cli `go test ./...` all passed. Race-enabled readcache/representativescope/teamusage tests also passed.
+
+- [x] **Step 4: Review the complete diff against issue #125 and the active performance spec**
 
   Check every acceptance criterion, cache-key dimension, stale exclusion, legacy response field, deprecation header, and independent frontend state. Resolve every finding and rerun affected verification.
+
+  Review result (2026-07-16): no unresolved findings. The review caught and fixed unnecessary provider-origin resolution on warm hits and for explicit `scope_too_large` generations; focused regressions and the full verification suite passed afterward.
 
 - [ ] **Step 5: Commit documentation, push, and open a Draft PR**
 
