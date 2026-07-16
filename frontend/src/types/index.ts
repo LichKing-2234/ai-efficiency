@@ -842,13 +842,34 @@ export interface UserUsageGroupQuotaState {
   groups: UserUsageGroupQuotaItem[]
 }
 
+export interface UserUsageFreshness {
+  as_of: string
+  fresh_until: string
+  stale_until: string
+  cache_status: 'miss' | 'fresh' | 'stale' | string
+  source_status: 'ok' | 'error' | string
+}
+
+export interface UserQuotaFreshness {
+  as_of: string | null
+  cache_status: 'uncached' | string
+  source_status: 'ok' | 'error' | string
+}
+
+export interface UserUsageGroupQuotaResponse {
+  group_quotas: UserUsageGroupQuotaState
+  quota_freshness: UserQuotaFreshness
+}
+
 export interface UserUsageDashboardSnapshot {
   configured: boolean
   range: UserUsageDashboardRange
   stats: UserUsageDashboardStats | null
   trend: UserUsageTrendPoint[]
   models: UserUsageModelStat[]
+  usage_freshness?: UserUsageFreshness
   group_quotas?: UserUsageGroupQuotaState
+  quota_freshness?: UserQuotaFreshness
 }
 
 export interface TeamUsageDepartment {

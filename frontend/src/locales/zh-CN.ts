@@ -257,6 +257,7 @@ const zhCN = {
   'usageDashboard.credentialError': 'Relay 凭据需要处理',
   'usageDashboard.unavailable': '用量概览暂时不可用',
   'usageDashboard.retryHelp': '检查接入配置后再刷新。',
+  'usageDashboard.staleSnapshot': '实时用量暂时不可用，当前展示最近一次快照。',
   'usageDashboard.todayCost': '今日费用',
   'usageDashboard.todayRequests': '今日请求',
   'usageDashboard.todayTokens': '今日 Token',

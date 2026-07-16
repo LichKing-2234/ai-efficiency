@@ -26,8 +26,10 @@ import (
 	"github.com/ai-efficiency/backend/internal/health"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
@@ -193,13 +195,21 @@ func main() {
 
 	redisClient := redis.NewClient(redisClientOptions(cfg.Redis))
 	defer redisClient.Close()
+	redisStore := readcache.NewRedisStore(redisClient)
 	workItemsCache, err := workitems.NewCountsCache(
-		workitems.NewRedisCountsStore(redisClient),
+		redisStore,
 		workItemsRevisionStore,
 		workitems.CountsCacheOptions{Namespace: cfg.Redis.Namespace},
 	)
 	if err != nil {
 		logger.Fatal("initialize work item counts cache", zap.Error(err))
+	}
+	personalUsageCache, err := personalusage.NewCache(
+		redisStore,
+		personalusage.CacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize personal usage cache", zap.Error(err))
 	}
 
 	// Init LDAP config (shared between auth service and admin settings handler)
@@ -330,6 +340,7 @@ func main() {
 		healthHandler,
 		handler.RouterRuntimeOptions{
 			DirectoryService:       directoryService,
+			PersonalUsageCache:     personalUsageCache,
 			WorkItemsCache:         workItemsCache,
 			WorkItemsRevisionStore: workItemsRevisionStore,
 		},
