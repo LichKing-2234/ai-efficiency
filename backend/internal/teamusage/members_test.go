@@ -164,6 +164,28 @@ func TestMembersCursorContinuesAcrossRedisOutageWhenAuthoritativeContentMatches(
 	}
 }
 
+func TestMemberSnapshotIdentityIgnoresDepartmentMembershipOrder(t *testing.T) {
+	tokens := int64(1000)
+	left := []OverviewMember{{
+		UserID: 1, DirectoryMemberExternalID: "member-alice", DepartmentExternalID: "department-alpha", DepartmentExternalIDs: []string{"department-beta", "department-alpha"}, DepartmentDisplayPath: "Department Alpha", TotalTokens: &tokens,
+	}}
+	right := []OverviewMember{{
+		UserID: 1, DirectoryMemberExternalID: "member-alice", DepartmentExternalID: "department-alpha", DepartmentExternalIDs: []string{"department-alpha", "department-beta"}, DepartmentDisplayPath: "Department Alpha", TotalTokens: &tokens,
+	}}
+
+	leftID, err := memberSnapshotIdentity(left)
+	if err != nil {
+		t.Fatalf("memberSnapshotIdentity(left) error = %v", err)
+	}
+	rightID, err := memberSnapshotIdentity(right)
+	if err != nil {
+		t.Fatalf("memberSnapshotIdentity(right) error = %v", err)
+	}
+	if leftID != rightID {
+		t.Fatalf("snapshot identities = %q/%q, want equal semantic content", leftID, rightID)
+	}
+}
+
 func newMembersTestService(t *testing.T, count int, now func() time.Time) (*Service, *fakeRelayProvider, *representativescope.Scope) {
 	t.Helper()
 	client := testdb.Open(t)

@@ -458,6 +458,39 @@ describe('TeamOverviewView', () => {
     expect(mockGetTeamUsageOverview).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the original absolute range when pagination crosses midnight', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date(2026, 6, 16, 23, 59, 59))
+      mockGetTeamUsageMembers
+        .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
+        .mockResolvedValueOnce({ data: { data: membersPage(51, 50, 100) } } as any)
+      mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+      const router = createTestRouter()
+      await router.push('/usage/team')
+      await router.isReady()
+
+      const wrapper = mount(TeamOverviewView, {
+        global: { plugins: [createPinia(), router] },
+      })
+      await flushPromises()
+      const firstParams = mockGetTeamUsageMembers.mock.calls[0]?.[0]
+      if (firstParams == null) throw new Error('initial member request was not issued')
+
+      vi.setSystemTime(new Date(2026, 6, 17, 0, 0, 1))
+      await wrapper.get('[data-testid="team-overview-members-next"]').trigger('click')
+      await flushPromises()
+
+      expect(mockGetTeamUsageMembers.mock.calls[1][0]).toEqual(expect.objectContaining({
+        cursor: 'cursor-page-2',
+        start_date: firstParams.start_date,
+        end_date: firstParams.end_date,
+      }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('restarts only the member section after snapshot expiry', async () => {
     mockGetTeamUsageMembers
       .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
