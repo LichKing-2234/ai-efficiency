@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { listCredentials } from '@/api/credential'
 import { listDirectorySources } from '@/api/directory'
+import { registerSessionResourceReset } from '@/stores/sessionResources'
 import type { Credential, DirectorySource } from '@/types'
 
 const settingsResourceFreshnessMs = 5 * 60_000
@@ -25,30 +26,32 @@ export const useSettingsResourcesStore = defineStore('settingsResources', () => 
   let directorySourcesFreshUntil = 0
   let credentialsRequest: Promise<void> | null = null
   let directorySourcesRequest: Promise<void> | null = null
-  let credentialsQueuedForce: Promise<void> | null = null
-  let directorySourcesQueuedForce: Promise<void> | null = null
+  let credentialsForceRequested = false
+  let directorySourcesForceRequested = false
+  let credentialsForceDrain: Promise<void> | null = null
+  let directorySourcesForceDrain: Promise<void> | null = null
+  let resolveCredentialsForceDrain: (() => void) | null = null
+  let resolveDirectorySourcesForceDrain: (() => void) | null = null
   let generation = 0
 
   function loadCredentials(options: { force?: boolean } = {}): Promise<void> {
     if (credentialsRequest) {
       if (!options.force) return credentialsRequest
-      if (credentialsQueuedForce) return credentialsQueuedForce
-      const requestGeneration = generation
-      let queued!: Promise<void>
-      queued = credentialsRequest
-        .then(() => {
-          if (requestGeneration === generation) return loadCredentials({ force: true })
+      credentialsForceRequested = true
+      if (!credentialsForceDrain) {
+        credentialsForceDrain = new Promise<void>((resolve) => {
+          resolveCredentialsForceDrain = resolve
         })
-        .finally(() => {
-          if (credentialsQueuedForce === queued) credentialsQueuedForce = null
-        })
-      credentialsQueuedForce = queued
-      return queued
+      }
+      return credentialsForceDrain
     }
     if (!options.force && credentialsLoaded.value && Date.now() < credentialsFreshUntil) {
       return Promise.resolve()
     }
+    return startCredentialsRequest()
+  }
 
+  function startCredentialsRequest() {
     const requestGeneration = generation
     credentialsLoading.value = true
     credentialsError.value = ''
@@ -69,7 +72,15 @@ export const useSettingsResourcesStore = defineStore('settingsResources', () => 
       .finally(() => {
         if (credentialsRequest !== request) return
         credentialsRequest = null
+        if (credentialsForceRequested && requestGeneration === generation) {
+          credentialsForceRequested = false
+          void startCredentialsRequest()
+          return
+        }
         credentialsLoading.value = false
+        resolveCredentialsForceDrain?.()
+        resolveCredentialsForceDrain = null
+        credentialsForceDrain = null
       })
     credentialsRequest = request
     return request
@@ -78,23 +89,21 @@ export const useSettingsResourcesStore = defineStore('settingsResources', () => 
   function loadDirectorySources(options: { force?: boolean } = {}): Promise<void> {
     if (directorySourcesRequest) {
       if (!options.force) return directorySourcesRequest
-      if (directorySourcesQueuedForce) return directorySourcesQueuedForce
-      const requestGeneration = generation
-      let queued!: Promise<void>
-      queued = directorySourcesRequest
-        .then(() => {
-          if (requestGeneration === generation) return loadDirectorySources({ force: true })
+      directorySourcesForceRequested = true
+      if (!directorySourcesForceDrain) {
+        directorySourcesForceDrain = new Promise<void>((resolve) => {
+          resolveDirectorySourcesForceDrain = resolve
         })
-        .finally(() => {
-          if (directorySourcesQueuedForce === queued) directorySourcesQueuedForce = null
-        })
-      directorySourcesQueuedForce = queued
-      return queued
+      }
+      return directorySourcesForceDrain
     }
     if (!options.force && directorySourcesLoaded.value && Date.now() < directorySourcesFreshUntil) {
       return Promise.resolve()
     }
+    return startDirectorySourcesRequest()
+  }
 
+  function startDirectorySourcesRequest() {
     const requestGeneration = generation
     directorySourcesLoading.value = true
     directorySourcesError.value = ''
@@ -114,7 +123,15 @@ export const useSettingsResourcesStore = defineStore('settingsResources', () => 
       .finally(() => {
         if (directorySourcesRequest !== request) return
         directorySourcesRequest = null
+        if (directorySourcesForceRequested && requestGeneration === generation) {
+          directorySourcesForceRequested = false
+          void startDirectorySourcesRequest()
+          return
+        }
         directorySourcesLoading.value = false
+        resolveDirectorySourcesForceDrain?.()
+        resolveDirectorySourcesForceDrain = null
+        directorySourcesForceDrain = null
       })
     directorySourcesRequest = request
     return request
@@ -139,8 +156,14 @@ export const useSettingsResourcesStore = defineStore('settingsResources', () => 
     generation += 1
     credentialsRequest = null
     directorySourcesRequest = null
-    credentialsQueuedForce = null
-    directorySourcesQueuedForce = null
+    credentialsForceRequested = false
+    directorySourcesForceRequested = false
+    resolveCredentialsForceDrain?.()
+    resolveDirectorySourcesForceDrain?.()
+    credentialsForceDrain = null
+    directorySourcesForceDrain = null
+    resolveCredentialsForceDrain = null
+    resolveDirectorySourcesForceDrain = null
     credentialsFreshUntil = 0
     directorySourcesFreshUntil = 0
     credentials.value = []
@@ -152,6 +175,8 @@ export const useSettingsResourcesStore = defineStore('settingsResources', () => 
     directorySourcesLoaded.value = false
     directorySourcesError.value = ''
   }
+
+  registerSessionResourceReset('settingsResources', resetSettingsResources)
 
   return {
     credentials,

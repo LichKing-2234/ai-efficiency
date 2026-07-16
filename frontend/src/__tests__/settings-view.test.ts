@@ -255,6 +255,18 @@ describe('SettingsView', () => {
     expect(client.get).not.toHaveBeenCalledWith('/admin/settings/ldap')
   })
 
+  it('falls back to AI Services for prototype-key section queries', async () => {
+    const { listProviders } = await import('@/api/scmProvider')
+    const { listRelayProviders } = await import('@/api/relayProvider')
+
+    const wrapper = await mountSettings(undefined, '/settings?section=constructor')
+
+    expect(wrapper.get('[data-testid="settings-tab-ai-services"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.text()).toContain('Add Relay Provider')
+    expect(listRelayProviders).toHaveBeenCalledTimes(1)
+    expect(listProviders).not.toHaveBeenCalled()
+  })
+
   it('loads only the directly linked section and its owned requests', async () => {
     const { listProviders } = await import('@/api/scmProvider')
     const { listRelayProviders } = await import('@/api/relayProvider')

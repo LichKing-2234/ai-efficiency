@@ -264,7 +264,7 @@ func TestProviderMetadataModelsRejectStaleProviderRow(t *testing.T) {
 	}
 }
 
-func TestProviderMetadataTTLDoesNotExceedFiveMinutes(t *testing.T) {
+func TestProviderMetadataTTLJittersBelowFiveMinuteMaximum(t *testing.T) {
 	client := testdbClient(t)
 	row := createProviderRow(t, client)
 	server := miniredis.RunT(t)
@@ -282,17 +282,27 @@ func TestProviderMetadataTTLDoesNotExceedFiveMinutes(t *testing.T) {
 		t.Fatalf("new metadata manager: %v", err)
 	}
 
-	if _, err := manager.Models(context.Background(), row, "openai", "5", func(_ context.Context) ([]relay.ModelOption, error) {
-		return []relay.ModelOption{{ID: "model-alpha"}}, nil
-	}); err != nil {
-		t.Fatalf("models: %v", err)
+	for _, groupID := range []string{"5", "6", "7", "8", "9", "10", "11", "12"} {
+		if _, err := manager.Models(context.Background(), row, "openai", groupID, func(_ context.Context) ([]relay.ModelOption, error) {
+			return []relay.ModelOption{{ID: "model-alpha"}}, nil
+		}); err != nil {
+			t.Fatalf("models for group %s: %v", groupID, err)
+		}
 	}
 	keys := server.Keys()
-	if len(keys) != 1 {
-		t.Fatalf("Redis keys = %v, want one metadata key", keys)
+	if len(keys) != 8 {
+		t.Fatalf("Redis keys = %v, want eight metadata keys", keys)
 	}
-	if ttl := server.TTL(keys[0]); ttl != 5*time.Minute {
-		t.Fatalf("metadata TTL = %s, want 5m", ttl)
+	ttls := make(map[time.Duration]struct{}, len(keys))
+	for _, key := range keys {
+		ttl := server.TTL(key)
+		if ttl < 4*time.Minute || ttl > 4*time.Minute+30*time.Second {
+			t.Fatalf("metadata TTL = %s, want 10-20%% jitter below 5m", ttl)
+		}
+		ttls[ttl] = struct{}{}
+	}
+	if len(ttls) < 2 {
+		t.Fatalf("metadata TTLs are synchronized: %v", ttls)
 	}
 }
 

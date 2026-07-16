@@ -15,7 +15,7 @@
 - Keep the persisted `relay_providers.configuration_version`, initialized at 1, and increment it in the same successful provider update statement as every behavior-affecting mutation.
 - Process clients are keyed by provider ID plus configuration version, are revalidated against the current database row on `Resolve`, and live no longer than five minutes.
 - Provider mutations evict the local provider immediately and publish best-effort cross-replica invalidation containing only schema version, provider ID, and configuration version. Missed notifications recover through persisted version revalidation and maximum client lifetime.
-- Relay group/model metadata is fresh-only for five minutes. Keys bind deployment namespace, provider ID, persisted provider version, collection kind, platform, and group where applicable. Values contain group/model display metadata only.
+- Relay group/model metadata is fresh-only with a five-minute maximum and 10-20 percent downward TTL jitter. Keys bind deployment namespace, provider ID, persisted provider version, collection kind, platform, and group where applicable. Values contain group/model display metadata only.
 - Redis read/write/lease/Pub/Sub failure must not fail user/provider reads or successful provider mutations. It bypasses shared caching/invalidation while authoritative database and Relay reads continue.
 - Current local user state, Relay membership/subscriptions, API keys, quota entitlement, and authorization are checked on every relevant request and are never inferred from shared metadata.
 - Passwords, JWTs, admin/user API keys, credential payloads, raw user identity, cache payloads, and provider secrets never enter Redis keys, values, Pub/Sub messages, metrics, or logs.
@@ -107,7 +107,7 @@
 
 - [x] **Step 1: Add RED metadata and authorization tests**
 
-  Cover cross-manager group/model hits, exact five-minute expiry, provider-version/platform/group isolation, local and distributed refresh collapse, malformed value recovery, Redis outage authoritative fallback, clone-on-read/write, no secret fields in keys/JSON, and changed group metadata under a new provider version. Prove each warm group request still calls current `GetUser`, each warm model request still checks current membership and active group API keys, and revoked entitlement returns no cached model list.
+  Cover cross-manager group/model hits, jittered expiry below the five-minute maximum, provider-version/platform/group isolation, local and distributed refresh collapse, malformed value recovery, Redis outage authoritative fallback, clone-on-read/write, no secret fields in keys/JSON, and changed group metadata under a new provider version. Prove each warm group request still calls current `GetUser`, each warm model request still checks current membership and active group API keys, and revoked entitlement returns no cached model list.
 
   Test evidence (2026-07-16): runtime tests define cross-manager group hits with fresh user reads, sanitized group values, model dimension/TTL isolation, clone behavior, concurrent collapse, and Redis fallback; usersetup tests require its versioned resolver seam; handler tests require fresh membership and active-key checks before a warm model result.
 
@@ -128,7 +128,7 @@
 
   Use the shared `readcache.Store` and flight/lease patterns. Read failures, lease failures, write failures, and invalid JSON fall back to bounded authoritative Relay work; no stale metadata is served. Keep user/subscription/key selection outside cached values, reject a requested model group that is absent from the current allowed-group set, and return cloned rows.
 
-  Implementation evidence (2026-07-16): `relayruntime.Manager` now serves versioned, sanitized group/model metadata through process-local flights and a Redis lease, including the no-Redis fallback path; caps metadata TTL at five minutes; rejects stale provider rows; and falls back to authoritative Relay reads for malformed values and Redis read/lease/write failures. `usersetup` discovers the versioned group resolver, while provider model/test handlers recheck current membership and active group keys before using cached model display metadata.
+  Implementation evidence (2026-07-16): `relayruntime.Manager` now serves versioned, sanitized group/model metadata through process-local flights and a Redis lease, including the no-Redis fallback path; caps metadata TTL at five minutes with key-derived 10-20 percent downward jitter; rejects stale provider rows; and falls back to authoritative Relay reads for malformed values and Redis read/lease/write failures. `usersetup` discovers the versioned group resolver, while provider model/test handlers recheck current membership and active group keys before using cached model display metadata.
 
 - [x] **Step 4: Verify Task 2 GREEN and checkpoint**
 
@@ -144,13 +144,15 @@
 
   Commit: `perf(backend): cache relay provider metadata`
 
-  GREEN evidence (2026-07-16): the focused metadata/usersetup/handler suite, the full target package set twice, race-enabled `readcache`/`relayruntime`/`usersetup`, and `git diff --check` passed. Follow-up RED/GREEN tests cap metadata at five minutes, reject stale provider rows, preserve process-local collapse without Redis, prove cross-manager lease collapse, and fall back to Relay when a foreign lease outlives the refresh wait budget. Independent review found no Critical issues; all three Important findings were fixed before checkpointing.
+  GREEN evidence (2026-07-16): the focused metadata/usersetup/handler suite, the full target package set twice, race-enabled `readcache`/`relayruntime`/`usersetup`, and `git diff --check` passed. Follow-up RED/GREEN tests cap and jitter metadata below five minutes, reject stale provider rows, preserve process-local collapse without Redis, prove cross-manager lease collapse, and fall back to Relay when a foreign lease outlives the refresh wait budget. Independent review found no Critical issues; all Important findings were fixed before checkpointing.
 
 ### Task 3: Load One Settings Section And Shared Resource At A Time
 
 **Files:**
 - Create: `frontend/src/stores/settingsResources.ts`
+- Create: `frontend/src/stores/sessionResources.ts`
 - Create: `frontend/src/__tests__/settings-resources-store.test.ts`
+- Modify: `frontend/src/stores/auth.ts`
 - Modify: `frontend/src/views/SettingsView.vue`
 - Modify: `frontend/src/components/settings/AIServiceSettings.vue`
 - Modify: `frontend/src/components/settings/CodePlatformSettings.vue`
@@ -158,8 +160,11 @@
 - Modify: `frontend/src/components/settings/DeploymentRuntimeSettings.vue`
 - Modify: `frontend/src/components/settings/OrganizationLoginSettings.vue`
 - Modify: `frontend/src/components/settings/DirectorySyncSettings.vue`
+- Modify: `frontend/src/components/settings/QuotaResetApprovalSettings.vue`
+- Modify: `frontend/src/__tests__/auth-store.test.ts`
 - Modify: `frontend/src/__tests__/settings-view.test.ts`
 - Modify: `frontend/src/__tests__/directory-sync-settings.test.ts`
+- Modify: `frontend/src/__tests__/quota-reset-approval-settings.test.ts`
 
 **Interfaces:**
 - `SettingsView` owns only section navigation and `defineAsyncComponent` loaders; each section owns its requests, CRUD state, dialogs, and localized feedback.
@@ -206,7 +211,7 @@
 
   Commit: `perf(frontend): load settings sections on demand`
 
-  GREEN evidence (2026-07-16): focused Settings/store/Directory/Quota regressions passed 58/58; the full frontend suite passed 40 files and 496 tests; `vue-tsc` and the Vite production build passed; and `git diff --check` passed. The production output now emits `SettingsView` as a 4.14 kB shell (1.70 kB gzip) plus separate AI Services (11.81 kB), Code Platforms (13.61 kB), Organization/Login (40.31 kB), Deployment/Runtime (3.77 kB), and Advanced Credentials (10.55 kB) chunks.
+  GREEN evidence (2026-07-16): focused Settings/store/Directory/Quota regressions initially passed 58/58; after review fixes the full frontend suite passed 40 files and 500 tests; `vue-tsc` and the Vite production build passed; and `git diff --check` passed. The production output now emits `SettingsView` as a 4.17 kB shell (1.73 kB gzip) plus separate AI Services (11.81 kB), Code Platforms (13.61 kB), Organization/Login (40.31 kB), Deployment/Runtime (3.77 kB), and Advanced Credentials (10.55 kB) chunks; `settingsResources` remains a separate 2.13 kB chunk.
 
 ### Task 4: Document, Verify, Review, And Publish
 
@@ -214,11 +219,13 @@
 - Modify: `docs/architecture.md`
 - Modify: this plan
 
-- [ ] **Step 1: Update current architecture**
+- [x] **Step 1: Update current architecture**
 
   Record active-section Settings code/data ownership, shared frontend freshness/deduplication, persisted provider version usage, five-minute/versioned process clients, secret-free invalidation, group/model cache dimensions and fallback, and fresh membership/key checks. Do not rewrite historical specs.
 
-- [ ] **Step 2: Run full verification**
+  Documentation evidence (2026-07-16): `docs/architecture.md` now records the navigation-only Settings shell and section-owned requests, five-minute shared Settings resources, `relayruntime` module boundary, persisted-version process clients, secret-free invalidation, sanitized fresh-only metadata dimensions/fallback, and current membership/active-key checks. Historical specs were not rewritten.
+
+- [x] **Step 2: Run full verification**
 
   ```bash
   git diff --check
@@ -227,9 +234,13 @@
   cd ../ae-cli && go test ./...
   ```
 
-- [ ] **Step 3: Review against issue #130 and the active performance spec**
+  Verification evidence (2026-07-16): repository `git diff --check`; targeted backend `go vet`; backend `go test ./...`; frontend 40-file/500-test Vitest suite and production `vue-tsc`/Vite build; and `ae-cli go test ./...` all exited successfully after the final review fixes. The final production build retained the 4.17 kB Settings shell, independent Settings resource store, and five separate section chunks.
+
+- [x] **Step 3: Review against issue #130 and the active performance spec**
 
   Audit default/direct Settings requests and chunks, shared resource ownership/freshness/mutations, provider version transactionality, client version/TTL, publish/subscribe and missed-notification recovery, cache key/value privacy, TTL/isolation/collapse, Redis failure, fresh membership/key/quota authorization, compatibility, and synthetic data. Fix every Critical/Important finding and rerun affected verification.
+
+  Review evidence (2026-07-16): independent spec and standards reviews found no Critical issues. Important findings were fixed with RED/GREEN coverage for metadata TTL jitter, stale provider rows, abandoned foreign leases, invalid prototype-key section queries, auth-session Settings reset without eager bundling, and repeated mutations that arrive during an existing forced refresh. Both review axes confirmed no remaining Critical/Important findings against issue #130, the active performance spec, and repository standards.
 
 - [ ] **Step 4: Push and open a Draft PR**
 

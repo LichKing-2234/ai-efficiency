@@ -39,7 +39,7 @@ watch(activeSection, replaceSettingsQuery)
 
 function initialSettingsSection(): SettingsSection {
   const section = route.query.section
-  return typeof section === 'string' && section in settingsSectionLoaders
+  return typeof section === 'string' && Object.prototype.hasOwnProperty.call(settingsSectionLoaders, section)
     ? section as SettingsSection
     : 'ai-services'
 }
