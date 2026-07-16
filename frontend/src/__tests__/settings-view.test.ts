@@ -57,8 +57,17 @@ vi.mock('@/api/system', () => ({
   checkSystemUpdate: vi.fn(),
 }))
 
+vi.mock('@/api/client', () => ({
+  default: {
+    get: vi.fn(),
+    put: vi.fn(),
+    post: vi.fn(),
+  },
+}))
+
 vi.mock('@/api/directory', () => ({
   listDirectorySources: vi.fn(),
+  listDirectoryDepartments: vi.fn(),
   createDirectorySource: vi.fn(),
   updateDirectorySource: vi.fn(),
   validateDirectorySource: vi.fn(),
@@ -70,6 +79,7 @@ vi.mock('@/api/directory', () => ({
 
 vi.mock('@/api/quotaReset', () => ({
   getQuotaResetApproverConfigs: vi.fn(),
+  listQuotaResetApproverCandidates: vi.fn(),
   saveQuotaResetApproverConfigs: vi.fn(),
   getQuotaResetNotificationSettings: vi.fn(),
   updateQuotaResetNotificationSettings: vi.fn(),
@@ -132,14 +142,25 @@ async function resetApiMocks() {
 
   const directoryApi = await import('@/api/directory') as any
   directoryApi.listDirectorySources.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
+  directoryApi.listDirectoryDepartments.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
   directoryApi.createDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   directoryApi.updateDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   directoryApi.validateDirectorySource.mockReset().mockResolvedValue({ data: { data: { valid: true, issues: [] } } })
+  directoryApi.listDirectoryRuns.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
   directoryApi.previewDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1, status: 'completed' } } })
   directoryApi.startDirectoryRun.mockReset().mockResolvedValue({ data: { data: { id: 2, status: 'completed' } } })
+  directoryApi.getDirectoryRun.mockReset().mockResolvedValue({ data: { data: { id: 1, status: 'completed' } } })
+
+  const client = (await import('@/api/client')).default as any
+  client.get.mockReset().mockResolvedValue({
+    data: { data: { url: '', base_dn: '', bind_dn: '', user_filter: '', tls: false } },
+  })
+  client.put.mockReset().mockResolvedValue({ data: { data: {} } })
+  client.post.mockReset().mockResolvedValue({ data: { data: {} } })
 
   const quotaResetApi = await import('@/api/quotaReset') as any
   quotaResetApi.getQuotaResetApproverConfigs.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
+  quotaResetApi.listQuotaResetApproverCandidates.mockReset().mockResolvedValue({ data: { data: { items: [], unmatched_representatives: [] } } })
   quotaResetApi.saveQuotaResetApproverConfigs.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
   quotaResetApi.getQuotaResetNotificationSettings.mockReset().mockResolvedValue({ data: { data: { enabled: false, url: '', auth_type: 'none' } } })
   quotaResetApi.updateQuotaResetNotificationSettings.mockReset().mockResolvedValue({ data: { data: { enabled: false, url: '', auth_type: 'none' } } })
@@ -194,6 +215,7 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
     global: { plugins: [createPinia(), router] },
   })
 
+  await vi.dynamicImportSettled()
   await flushPromises()
   await wrapper.vm.$nextTick()
 
@@ -202,6 +224,7 @@ async function mountSettings(overrides?: { providers?: any[]; relayProviders?: a
 
 async function openSettingsSection(wrapper: any, section: string) {
   await wrapper.get(`[data-testid="settings-tab-${section}"]`).trigger('click')
+  await vi.dynamicImportSettled()
   await flushPromises()
 }
 
@@ -210,6 +233,98 @@ describe('SettingsView', () => {
     setActivePinia(createPinia())
     setLocale('en-US')
     await resetApiMocks()
+  })
+
+  it('loads only Relay providers for the default section', async () => {
+    const { listProviders } = await import('@/api/scmProvider')
+    const { listRelayProviders } = await import('@/api/relayProvider')
+    const { listCredentials } = await import('@/api/credential')
+    const { getSystemVersion } = await import('@/api/system')
+    const { listDirectorySources } = await import('@/api/directory')
+    const { getQuotaResetApproverConfigs } = await import('@/api/quotaReset')
+    const client = (await import('@/api/client')).default as any
+
+    await mountSettings()
+
+    expect(listRelayProviders).toHaveBeenCalledTimes(1)
+    expect(listProviders).not.toHaveBeenCalled()
+    expect(listCredentials).not.toHaveBeenCalled()
+    expect(getSystemVersion).not.toHaveBeenCalled()
+    expect(listDirectorySources).not.toHaveBeenCalled()
+    expect(getQuotaResetApproverConfigs).not.toHaveBeenCalled()
+    expect(client.get).not.toHaveBeenCalledWith('/admin/settings/ldap')
+  })
+
+  it('loads only the directly linked section and its owned requests', async () => {
+    const { listProviders } = await import('@/api/scmProvider')
+    const { listRelayProviders } = await import('@/api/relayProvider')
+    const { listCredentials } = await import('@/api/credential')
+    const { getSystemVersion } = await import('@/api/system')
+    const { listDirectorySources } = await import('@/api/directory')
+    const { getQuotaResetApproverConfigs, getQuotaResetNotificationSettings } = await import('@/api/quotaReset')
+    const client = (await import('@/api/client')).default as any
+
+    await mountSettings(undefined, '/settings?section=code-platforms')
+    expect(listProviders).toHaveBeenCalledTimes(1)
+    expect(listCredentials).not.toHaveBeenCalled()
+    expect(listRelayProviders).not.toHaveBeenCalled()
+    expect(getSystemVersion).not.toHaveBeenCalled()
+
+    await resetApiMocks()
+    await mountSettings(undefined, '/settings?section=deployment-runtime')
+    expect(getSystemVersion).toHaveBeenCalledTimes(1)
+    expect(listProviders).not.toHaveBeenCalled()
+    expect(listRelayProviders).not.toHaveBeenCalled()
+    expect(listCredentials).not.toHaveBeenCalled()
+
+    await resetApiMocks()
+    await mountSettings(undefined, '/settings?section=advanced-credentials')
+    expect(listCredentials).toHaveBeenCalledTimes(1)
+    expect(listProviders).not.toHaveBeenCalled()
+    expect(listRelayProviders).not.toHaveBeenCalled()
+    expect(getSystemVersion).not.toHaveBeenCalled()
+
+    await resetApiMocks()
+    await mountSettings(undefined, '/settings?section=organization-login')
+    expect(client.get).toHaveBeenCalledWith('/admin/settings/ldap')
+    expect(listCredentials).toHaveBeenCalledTimes(1)
+    expect(listDirectorySources).toHaveBeenCalledTimes(1)
+    expect(getQuotaResetApproverConfigs).toHaveBeenCalledTimes(1)
+    expect(getQuotaResetNotificationSettings).toHaveBeenCalledTimes(1)
+    expect(listProviders).not.toHaveBeenCalled()
+    expect(listRelayProviders).not.toHaveBeenCalled()
+    expect(getSystemVersion).not.toHaveBeenCalled()
+  })
+
+  it('loads code platform credentials only when its add dialog opens', async () => {
+    const { listCredentials } = await import('@/api/credential')
+    const wrapper = await mountSettings(undefined, '/settings?section=code-platforms')
+
+    expect(listCredentials).not.toHaveBeenCalled()
+    const addBtn = wrapper.findAll('button').find((button) => button.text() === 'Add Platform')
+    await addBtn!.trigger('click')
+    await flushPromises()
+
+    expect(listCredentials).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses credentials across Advanced and Organization sections', async () => {
+    const { listCredentials } = await import('@/api/credential')
+    const wrapper = await mountSettings(undefined, '/settings?section=advanced-credentials')
+    expect(listCredentials).toHaveBeenCalledTimes(1)
+
+    await openSettingsSection(wrapper, 'organization-login')
+    expect(listCredentials).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses directory sources after the Organization section remounts', async () => {
+    const { listDirectorySources } = await import('@/api/directory')
+    const wrapper = await mountSettings(undefined, '/settings?section=organization-login')
+    expect(listDirectorySources).toHaveBeenCalledTimes(1)
+
+    await openSettingsSection(wrapper, 'ai-services')
+    await openSettingsSection(wrapper, 'organization-login')
+    expect(listDirectorySources).toHaveBeenCalledTimes(1)
   })
 
   it('renders code platform, relay provider, and credential sections', async () => {
@@ -616,12 +731,15 @@ describe('SettingsView', () => {
     ;(listProviders as any).mockReturnValue(new Promise(() => {}))
 
     const router = createTestRouter()
-    await router.push('/settings')
+    await router.push('/settings?section=code-platforms')
     await router.isReady()
 
     const wrapper = mount(SettingsView, {
       global: { plugins: [createPinia(), router] },
     })
+
+    await vi.dynamicImportSettled()
+    await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('Loading...')
   })
