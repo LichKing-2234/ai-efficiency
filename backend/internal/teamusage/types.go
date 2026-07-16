@@ -22,6 +22,8 @@ var (
 	ErrInvalidOverviewParams       = errors.New("invalid_overview_params")
 	ErrInvalidMemberCursor         = errors.New("invalid_cursor")
 	ErrMemberSnapshotExpired       = errors.New("snapshot_expired")
+	ErrInvalidOrganizationCursor   = ErrInvalidMemberCursor
+	ErrOrganizationSnapshotExpired = ErrMemberSnapshotExpired
 )
 
 type ForbiddenError struct {
@@ -151,6 +153,42 @@ type MembersResponse struct {
 	Items        []OverviewMember `json:"items"`
 	TotalCount   int              `json:"total_count"`
 	NextCursor   string           `json:"next_cursor,omitempty"`
+}
+
+type OrganizationParams struct {
+	OverviewParams
+	ParentDepartmentExternalID string
+	DepartmentCursor           string
+	DepartmentLimit            int
+	MemberCursor               string
+	MemberLimit                int
+}
+
+type OrganizationResponse struct {
+	SnapshotFreshness
+	ScopeVersion               string                   `json:"scope_version"`
+	RequestID                  string                   `json:"request_id"`
+	Window                     OverviewWindow           `json:"window"`
+	ParentDepartmentExternalID *string                  `json:"parent_department_external_id"`
+	Departments                []OrganizationDepartment `json:"departments"`
+	Members                    []OverviewMember         `json:"members"`
+	NextDepartmentCursor       string                   `json:"next_department_cursor,omitempty"`
+	NextMemberCursor           string                   `json:"next_member_cursor,omitempty"`
+}
+
+type OrganizationDepartment struct {
+	DepartmentExternalID string  `json:"department_external_id"`
+	ParentExternalID     *string `json:"parent_external_id,omitempty"`
+	Name                 string  `json:"name"`
+	DisplayPath          string  `json:"display_path"`
+	Depth                int     `json:"depth"`
+	ChildCount           int     `json:"child_count"`
+	HasChildren          bool    `json:"has_children"`
+	DirectMemberCount    int     `json:"direct_member_count"`
+	AggregateMemberCount int     `json:"aggregate_member_count"`
+	ConnectedMemberCount int     `json:"connected_member_count"`
+	RangeActualCost      float64 `json:"range_actual_cost"`
+	RangeTotalTokens     *int64  `json:"range_total_tokens,omitempty"`
 }
 
 type SnapshotCacheKey struct {
