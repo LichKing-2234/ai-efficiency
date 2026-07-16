@@ -1118,6 +1118,49 @@ func TestTokenRevocationAllowsTokenIssuedAfterFloor(t *testing.T) {
 	}
 }
 
+func TestRevokeUserTokensTxHonorsCallerCommitAndRollback(t *testing.T) {
+	svc, client := newTestServiceWithDB(t)
+	ctx := context.Background()
+	user := client.User.Create().
+		SetUsername("transactional-revocation").
+		SetEmail("transactional-revocation@example.com").
+		SetAuthSource(entuser.AuthSourceLdap).
+		SetRole(entuser.RoleUser).
+		SaveX(ctx)
+	revokedAt := time.Date(2026, 7, 14, 10, 30, 0, 0, time.UTC)
+
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		t.Fatalf("begin rollback tx: %v", err)
+	}
+	if err := svc.RevokeUserTokensTx(ctx, tx, user.ID, revokedAt); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("RevokeUserTokensTx rollback path: %v", err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("rollback token revocation: %v", err)
+	}
+	if reloaded := client.User.GetX(ctx, user.ID); reloaded.TokenValidAfter != nil {
+		t.Fatalf("token_valid_after after rollback = %v, want nil", reloaded.TokenValidAfter)
+	}
+
+	tx, err = client.Tx(ctx)
+	if err != nil {
+		t.Fatalf("begin commit tx: %v", err)
+	}
+	if err := svc.RevokeUserTokensTx(ctx, tx, user.ID, revokedAt); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("RevokeUserTokensTx commit path: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit token revocation: %v", err)
+	}
+	reloaded := client.User.GetX(ctx, user.ID)
+	if reloaded.TokenValidAfter == nil || !reloaded.TokenValidAfter.Equal(revokedAt) {
+		t.Fatalf("token_valid_after after commit = %v, want %v", reloaded.TokenValidAfter, revokedAt)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ValidateAccessToken edge cases
 // ---------------------------------------------------------------------------

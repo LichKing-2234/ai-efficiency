@@ -698,6 +698,15 @@ var (
 				Columns: []*schema.Column{QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4], QuotaResetRequestsColumns[11]},
 			},
 			{
+				Name:    "quotaresetrequest_resolved_approver_user_ids",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestsColumns[12]},
+				Annotation: &entsql.IndexAnnotation{
+					OpClass: "jsonb_path_ops",
+					Type:    "GIN",
+				},
+			},
+			{
 				Name:    "quotaresetrequest_requester_user_id_provider_id_group_id",
 				Unique:  true,
 				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4]},
