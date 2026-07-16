@@ -229,6 +229,25 @@ func (s *Service) RevokeUserTokens(ctx context.Context, userID int, revokedAt ti
 	return nil
 }
 
+func (s *Service) RevokeUserTokensTx(ctx context.Context, tx *ent.Tx, userID int, revokedAt time.Time) error {
+	if s == nil {
+		return fmt.Errorf("auth service is not configured")
+	}
+	if tx == nil {
+		return fmt.Errorf("revoke user tokens: transaction is required")
+	}
+	if userID <= 0 {
+		return fmt.Errorf("user id is required")
+	}
+	if revokedAt.IsZero() {
+		revokedAt = time.Now()
+	}
+	if _, err := tx.User.UpdateOneID(userID).SetTokenValidAfter(revokedAt).Save(ctx); err != nil {
+		return fmt.Errorf("revoke user tokens: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) ensureLocalUser(ctx context.Context, info *UserInfo) (*ent.User, error) {
 	ldapLogin := strings.EqualFold(info.AuthSource, "ldap")
 	if ldapLogin {

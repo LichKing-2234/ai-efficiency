@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, reviews, repository verification, and CI rounds one and two are complete. Final-ledger round three remains pending.
+**Status:** Implementation, reviews, repository verification, and the original three CI rounds are complete. The latest `docs/performance-contracts-116` base reconciliation and local merge verification are complete; the pushed post-merge PR head and its CI observation remain pending and are reported externally without another ledger-only commit.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 
@@ -1452,6 +1452,35 @@ git status --short --branch
 ```
 
 Expected: clean `perf/admin-users-134`; open draft PR against `docs/performance-contracts-116`; local HEAD, PR head, and `round3_oid` are equal; all three recorded heads had four green jobs. Keep the worktree and do not merge, tag, release, deploy, or run Helm.
+
+### Post-Delivery Base Reconciliation (2026-07-16)
+
+- [x] **Merge the latest performance-contract base without rewriting history**
+
+  Fetched `origin/docs/performance-contracts-116` at `7f2999a561454cb514c399839d38d3d691e590e5` and merged it into `perf/admin-users-134` with `--no-ff`. The base contains merged PR #139's Work Items revision/cache and bounded Directory offboarding implementation. No rebase, force-push, abort, release, deployment, or Helm action was used.
+
+- [x] **Resolve the current-architecture conflict without inventing behavior**
+
+  `docs/architecture.md` was the only unmerged path. The resolution preserves the #134 source-scoped effective-department SQL, shared current-filter targets, on-demand administrator department browsing, and one responsive user-row tree alongside the base's PostgreSQL Work Items revision, Redis read model, transactional invalidation, paginated Directory offboarding, and generation-safe browser freshness. `backend/ent/migrate/schema.go`, `backend/internal/handler/router.go`, and `frontend/src/types/index.ts` merged automatically and retain both branches' indexes, runtime composition, and DTOs.
+
+- [x] **Verify the reconciled tree locally**
+
+  The following commands exited 0 on the reconciled worktree:
+
+  ```bash
+  git diff --check
+  (cd backend && go test ./...)
+  (cd backend && go vet ./...)
+  (cd ae-cli && go test ./...)
+  (cd frontend && npm test)
+  (cd frontend && npm run build)
+  bash deploy/test/release-frontend-embed-test.sh
+  (cd frontend && npm run test:e2e:role)
+  ```
+
+  Frontend unit verification passed `40` files / `486` tests. The production and embedded builds each transformed `190` modules. Role E2E passed `16/16` against a trap-owned `::1:5173` Vite process; the pre-existing foreign `127.0.0.1:5173` listener was not stopped, and no owned IPv6 listener remained afterward. The embedded check retained the known unresolved-hook diagnostic and npm reported `9` audit findings (`3` moderate, `6` high); its required build and embedded web test still exited 0. The role-only Vite proxy logged expected `ECONNREFUSED` entries because no backend listener was started.
+
+**External post-merge gate (intentionally not a branch-ledger checkbox):** push the merge commit, verify PR #147's live head equals that merge OID and is no longer `DIRTY`, observe the new CI checks, and record the exact merge OID and verification in a PR comment. Do not create another plan-only commit solely to record its own CI result.
 
 ## Self-Review Record
 

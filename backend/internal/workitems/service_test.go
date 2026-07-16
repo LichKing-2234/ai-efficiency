@@ -2,16 +2,18 @@ package workitems
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
-	"github.com/ai-efficiency/backend/ent/directorysource"
-	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 )
@@ -19,6 +21,46 @@ import (
 type fakeProviderLister struct {
 	resp *usersetup.ListProvidersResponse
 	err  error
+}
+
+type countingProviderLister struct {
+	calls   atomic.Int32
+	started chan struct{}
+	release chan struct{}
+	err     error
+	once    sync.Once
+}
+
+func (f *countingProviderLister) ListProviders(ctx context.Context, _ usersetup.ListProvidersRequest) (*usersetup.ListProvidersResponse, error) {
+	f.calls.Add(1)
+	if f.started != nil {
+		f.once.Do(func() { close(f.started) })
+	}
+	if f.release != nil {
+		select {
+		case <-f.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return nil, f.err
+}
+
+type fakeOffboardingCounter struct {
+	count     int
+	err       error
+	countCall int
+	listCall  int
+}
+
+func (f *fakeOffboardingCounter) CountOffboardingCandidates(context.Context, int) (int, error) {
+	f.countCall++
+	return f.count, f.err
+}
+
+func (f *fakeOffboardingCounter) ListOffboardingCandidates(context.Context, directorysync.OffboardingCandidateListParams) (*directorysync.OffboardingCandidatePage, error) {
+	f.listCall++
+	return nil, errors.New("candidate list must not be called by work item counts")
 }
 
 func (f fakeProviderLister) ListProviders(context.Context, usersetup.ListProvidersRequest) (*usersetup.ListProvidersResponse, error) {
@@ -34,7 +76,7 @@ func TestCountsForRegularApproverIncludesAssignedPendingAndFailedResetApprovals(
 	createWorkItemsQuotaRequest(t, ctx, client, approver.ID, 1002, 1, "43", quotaresetrequest.StatusPending, []int{approver.ID})
 	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "44", quotaresetrequest.StatusApprovedResetFailed, []int{approver.ID})
 
-	counts, err := NewService(client).Counts(ctx, approver.ID, false)
+	counts, err := NewService(client, nil).Counts(ctx, approver.ID, false)
 	if err != nil {
 		t.Fatalf("Counts() error = %v", err)
 	}
@@ -71,7 +113,7 @@ func TestCountsForRegularUserIncludesMissingAIAccessSetup(t *testing.T) {
 		},
 	}}
 
-	counts, err := NewService(client, lister).Counts(ctx, user.ID, false)
+	counts, err := NewService(client, nil, lister).Counts(ctx, user.ID, false)
 	if err != nil {
 		t.Fatalf("Counts() error = %v", err)
 	}
@@ -91,7 +133,7 @@ func TestCountsKeepLocalWorkItemsWhenAIAccessLookupFails(t *testing.T) {
 	requester := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
 	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "42", quotaresetrequest.StatusPending, []int{approver.ID})
 
-	counts, err := NewService(client, fakeProviderLister{err: errors.New("relay unavailable")}).Counts(ctx, approver.ID, false)
+	counts, err := NewService(client, nil, fakeProviderLister{err: errors.New("relay unavailable")}).Counts(ctx, approver.ID, false)
 	if err != nil {
 		t.Fatalf("Counts() error = %v, want local counts to remain available", err)
 	}
@@ -100,7 +142,7 @@ func TestCountsKeepLocalWorkItemsWhenAIAccessLookupFails(t *testing.T) {
 	}
 }
 
-func TestCountsForAdminIncludesPendingAndFailedResetQuotaWithOffboardingCandidates(t *testing.T) {
+func TestCountsForAdminUsesInjectedOffboardingCounterWithoutListingCandidates(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	admin := createWorkItemsUser(t, ctx, client, "admin", "admin@example.com", nil, "admin")
@@ -110,22 +152,9 @@ func TestCountsForAdminIncludesPendingAndFailedResetQuotaWithOffboardingCandidat
 	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "44", quotaresetrequest.StatusApprovedResetSucceeded, []int{admin.ID})
 	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "45", quotaresetrequest.StatusApprovedResetFailed, []int{admin.ID})
 
-	source, run := createWorkItemsDirectorySnapshot(t, ctx, client, "alice@example.com")
-	missing := createWorkItemsUser(t, ctx, client, "bob", "bob@example.org", intPtr(2002), "user")
-	disabled := createWorkItemsUser(t, ctx, client, "carol", "carol@example.net", intPtr(2003), "user")
-	client.DirectoryOffboardingAction.Create().
-		SetSourceID(source.ID).
-		SetUserID(disabled.ID).
-		SetRelayUserID(2003).
-		SetDirectoryRunID(run.ID).
-		SetAction(directoryoffboardingaction.ActionDisableRelayUser).
-		SetStatus(directoryoffboardingaction.StatusSucceeded).
-		SetReason("missing_from_latest_full_company_directory").
-		SetPerformedByUserID(admin.ID).
-		SaveX(ctx)
-	_ = missing
+	counter := &fakeOffboardingCounter{count: 1}
 
-	counts, err := NewService(client).Counts(ctx, admin.ID, true)
+	counts, err := NewService(client, counter).Counts(ctx, admin.ID, true)
 	if err != nil {
 		t.Fatalf("Counts() error = %v", err)
 	}
@@ -141,6 +170,181 @@ func TestCountsForAdminIncludesPendingAndFailedResetQuotaWithOffboardingCandidat
 	}
 	if counts.TotalCount != 4 {
 		t.Fatalf("total_count = %d, want admin actionable quota plus offboarding 4", counts.TotalCount)
+	}
+	if counter.countCall != 1 || counter.listCall != 0 {
+		t.Fatalf("offboarding dependency calls count=%d list=%d, want count=1 list=0", counter.countCall, counter.listCall)
+	}
+}
+
+func TestCountsCacheServiceReusesWarmResponseAndIsolatesActorRoleAndRevision(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	actor := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	other := createWorkItemsUser(t, ctx, client, "bob", "bob@example.org", intPtr(1002), "user")
+	lister := &countingProviderLister{}
+	revisions := &fakeRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
+	cache := testCountsCache(t, newFakeCountsStore(), revisions, "test", nil)
+	service := NewService(client, nil, lister).WithCountsCache(cache)
+
+	assertTotal := func(userID int, admin bool, want int) {
+		t.Helper()
+		counts, err := service.Counts(ctx, userID, admin)
+		if err != nil {
+			t.Fatalf("Counts(%d, %v) error = %v", userID, admin, err)
+		}
+		if counts == nil || counts.TotalCount != want {
+			t.Fatalf("Counts(%d, %v) = %+v, want total %d", userID, admin, counts, want)
+		}
+	}
+
+	assertTotal(actor.ID, false, 1)
+	assertTotal(actor.ID, false, 1)
+	if got := lister.calls.Load(); got != 1 {
+		t.Fatalf("provider calls after warm hit = %d, want 1", got)
+	}
+	assertTotal(other.ID, false, 1)
+	assertTotal(actor.ID, true, 1)
+	if got := lister.calls.Load(); got != 3 {
+		t.Fatalf("provider calls after actor and role misses = %d, want 3", got)
+	}
+
+	revisions.set("22222222-2222-4222-8222-222222222222")
+	assertTotal(actor.ID, false, 1)
+	if got := lister.calls.Load(); got != 4 {
+		t.Fatalf("provider calls after revision change = %d, want 4", got)
+	}
+}
+
+func TestCountsCacheServiceCollapsesFiftyConcurrentColdCalculations(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	actor := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	lister := &countingProviderLister{started: make(chan struct{}), release: make(chan struct{})}
+	revisions := &fakeRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
+	cache := testCountsCache(t, newFakeCountsStore(), revisions, "test", nil)
+	service := NewService(client, nil, lister).WithCountsCache(cache)
+
+	const callers = 50
+	start := make(chan struct{})
+	errs := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			<-start
+			counts, err := service.Counts(ctx, actor.ID, false)
+			if err == nil && (counts == nil || counts.TotalCount != 1) {
+				err = errors.New("unexpected cached counts")
+			}
+			errs <- err
+		}()
+	}
+	close(start)
+	select {
+	case <-lister.started:
+	case <-time.After(time.Second):
+		t.Fatal("authoritative service calculation did not reach provider")
+	}
+	time.Sleep(10 * time.Millisecond)
+	close(lister.release)
+	for i := 0; i < callers; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("Counts() error = %v", err)
+		}
+	}
+	if got := lister.calls.Load(); got != 1 {
+		t.Fatalf("authoritative provider calls = %d, want 1", got)
+	}
+}
+
+func TestCountsCacheServiceDoesNotCacheSwallowedRelayFailure(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	approver := createWorkItemsUser(t, ctx, client, "lead", "lead@example.com", nil, "user")
+	requester := createWorkItemsUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	createWorkItemsQuotaRequest(t, ctx, client, requester.ID, 1001, 1, "42", quotaresetrequest.StatusPending, []int{approver.ID})
+	lister := &countingProviderLister{err: errors.New("relay unavailable")}
+	revisions := &fakeRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
+	cache := testCountsCache(t, newFakeCountsStore(), revisions, "test", nil)
+	service := NewService(client, nil, lister).WithCountsCache(cache)
+
+	for i := 0; i < 2; i++ {
+		counts, err := service.Counts(ctx, approver.ID, false)
+		if err != nil {
+			t.Fatalf("Counts() call %d error = %v", i+1, err)
+		}
+		if counts == nil || counts.QuotaResetApprovalCount != 1 || counts.AIAccessSetupCount != 0 || counts.TotalCount != 1 {
+			t.Fatalf("Counts() call %d = %+v, want current local counts", i+1, counts)
+		}
+	}
+	if got := lister.calls.Load(); got != 2 {
+		t.Fatalf("provider calls = %d, want retry after degraded result", got)
+	}
+}
+
+func TestResolvedApproverUserIDsGINIndexSupportsContainsPlan(t *testing.T) {
+	_, dsn := testdb.OpenWithDSN(t)
+	ctx := context.Background()
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	var indexName, indexDefinition string
+	err = db.QueryRowContext(ctx, `
+		SELECT DISTINCT index_relation.relname, pg_get_indexdef(index_relation.oid)
+		FROM pg_index AS index_metadata
+		JOIN pg_class AS table_relation ON table_relation.oid = index_metadata.indrelid
+		JOIN pg_class AS index_relation ON index_relation.oid = index_metadata.indexrelid
+		JOIN pg_namespace AS table_namespace ON table_namespace.oid = table_relation.relnamespace
+		JOIN pg_am AS access_method ON access_method.oid = index_relation.relam
+		JOIN pg_attribute AS indexed_attribute
+		  ON indexed_attribute.attrelid = table_relation.oid
+		 AND indexed_attribute.attnum = ANY(index_metadata.indkey)
+		WHERE table_namespace.nspname = current_schema()
+		  AND table_relation.relname = 'quota_reset_requests'
+		  AND access_method.amname = 'gin'
+		  AND indexed_attribute.attname = 'resolved_approver_user_ids'
+	`).Scan(&indexName, &indexDefinition)
+	if err != nil {
+		t.Fatalf("find resolved approver GIN index: %v", err)
+	}
+	normalizedDefinition := strings.ToLower(indexDefinition)
+	if !strings.Contains(normalizedDefinition, "using gin (resolved_approver_user_ids jsonb_path_ops)") {
+		t.Fatalf("index definition = %q, want GIN jsonb_path_ops", indexDefinition)
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin explain transaction: %v", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, "SET LOCAL enable_seqscan = off"); err != nil {
+		t.Fatalf("disable sequential scans: %v", err)
+	}
+	rows, err := tx.QueryContext(ctx, `
+		EXPLAIN (COSTS OFF)
+		SELECT id
+		FROM quota_reset_requests
+		WHERE resolved_approver_user_ids::jsonb @> '[123]'::jsonb
+	`)
+	if err != nil {
+		t.Fatalf("explain resolved approver contains query: %v", err)
+	}
+	defer rows.Close()
+	var planLines []string
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatalf("scan explain line: %v", err)
+		}
+		planLines = append(planLines, line)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read explain plan: %v", err)
+	}
+	plan := strings.Join(planLines, "\n")
+	if !strings.Contains(plan, indexName) || (!strings.Contains(plan, "Bitmap Index Scan") && !strings.Contains(plan, "Index Scan")) {
+		t.Fatalf("EXPLAIN did not select %s for @> predicate:\n%s", indexName, plan)
 	}
 }
 
@@ -179,36 +383,6 @@ func createWorkItemsQuotaRequest(t *testing.T, ctx context.Context, client *ent.
 		t.Fatalf("create quota request %s: %v", groupID, err)
 	}
 	return request
-}
-
-func createWorkItemsDirectorySnapshot(t *testing.T, ctx context.Context, client *ent.Client, memberEmail string) (*ent.DirectorySource, *ent.DirectorySyncRun) {
-	t.Helper()
-	completedAt := time.Date(2026, 7, 7, 10, 0, 0, 0, time.UTC)
-	source := client.DirectorySource.Create().
-		SetName("Directory Alpha").
-		SetDescription("Synthetic directory").
-		SetScope(directorysource.ScopeFullCompany).
-		SetEnabled(true).
-		SetDsl("steps: []").
-		SaveX(ctx)
-	run := client.DirectorySyncRun.Create().
-		SetSourceID(source.ID).
-		SetMode(directorysyncrun.ModeApply).
-		SetTrigger(directorysyncrun.TriggerManual).
-		SetStatus(directorysyncrun.StatusCompleted).
-		SetPhase(directorysyncrun.PhaseCompleted).
-		SetCompletedAt(completedAt).
-		SaveX(ctx)
-	client.DirectorySource.UpdateOneID(source.ID).SetLastSuccessfulRunID(run.ID).SaveX(ctx)
-	client.DirectoryMember.Create().
-		SetSourceID(source.ID).
-		SetExternalID("member-alpha").
-		SetEmailNormalized(memberEmail).
-		SetDisplayName("Alice").
-		SetDepartmentExternalID("dept-alpha").
-		SetLastSeenRunID(run.ID).
-		SaveX(ctx)
-	return source, run
 }
 
 func intPtr(value int) *int {
