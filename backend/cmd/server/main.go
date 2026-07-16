@@ -269,7 +269,10 @@ func main() {
 	workItemsCache, err := workitems.NewCountsCache(
 		workitems.NewRedisCountsStore(redisClient),
 		workItemsRevisionStore,
-		workitems.CountsCacheOptions{Namespace: cfg.Redis.Namespace},
+		workitems.CountsCacheOptions{
+			Namespace: cfg.Redis.Namespace,
+			Metrics:   metrics.CacheRecorder("work_items_counts"),
+		},
 	)
 	if err != nil {
 		logger.Fatal("initialize work item counts cache", zap.Error(err))

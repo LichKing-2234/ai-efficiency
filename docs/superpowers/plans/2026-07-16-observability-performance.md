@@ -142,13 +142,14 @@
 - Modify: `backend/internal/telemetry/metrics_test.go`
 - Modify: `backend/internal/workitems/cache.go`
 - Modify: `backend/internal/workitems/cache_test.go`
+- Create: `backend/internal/workitems/cache_metrics_test.go`
 - Modify: `backend/cmd/server/main.go`
 
 **Interfaces:**
 - Produces `telemetry.CacheRecorder(name string) CacheObserver` bound once to a validated stable cache name.
 - Adds optional `CountsCacheOptions.Metrics interface{ Record(outcome string) }` without changing cache authority or return values.
 
-- [ ] **Step 1: Add RED cache metrics tests at the real work-item seam**
+- [x] **Step 1: Add RED cache metrics tests at the real work-item seam**
 
   Add a recording observer and registry-backed tests proving:
 
@@ -167,7 +168,9 @@
 
   Cover cold miss, warm hit, one refresh under local collapse, cross-manager lease acquired/wait, malformed value, Redis read/acquire/TTL/write/release failure, authoritative fallback, and the unused-but-exported zero `stale` series. Assert no actor, role, revision, key, token, or cached value appears in gathered labels.
 
-- [ ] **Step 2: Run focused tests and record RED**
+  Test evidence (2026-07-16): the real cache state machine now has recorder-backed cold/warm, 20-caller local collapse, two-manager distributed lease, malformed/schema-safe recovery, read/acquire/TTL/write/release/loader error, authoritative fallback, and stable-label registry tests. The Redis TTL error case also proves the request completes instead of spinning.
+
+- [x] **Step 2: Run focused tests and record RED**
 
   ```bash
   cd backend
@@ -176,11 +179,15 @@
 
   Expected: compile failures for `CountsCacheOptions.Metrics` and the cache recorder.
 
-- [ ] **Step 3: Instrument without changing cache decisions**
+  RED evidence (2026-07-16): focused tests first failed only because `CountsCacheOptions.Metrics` and `Metrics.CacheRecorder` did not exist. The added TTL-error regression then hung until interrupted because the pre-existing loop checked zero TTL before a non-miss Redis error; reordering that decision made the bounded authoritative fallback GREEN.
+
+- [x] **Step 3: Instrument without changing cache decisions**
 
   Record events only where the existing cache state machine already decides them: `fresh` on a decoded hit; `miss` on Redis miss or invalid value; `error` on Redis/loader/write/release error; `refresh` immediately before the authoritative loader; `lease_acquired` after successful `SET NX`; `lease_wait` after a held lease; and `lease_failed` on lease acquire/TTL/release errors. Observer calls must be nil-safe and must not affect fallback behavior.
 
-- [ ] **Step 4: Verify Task 2 GREEN and checkpoint**
+  Implementation evidence (2026-07-16): `CacheRecorder("work_items_counts")` preinitializes the closed outcome set and ignores unknown outcomes. `CountsCache` records once at existing logical decisions, remains nil-safe, collapses refresh metrics with the existing flight/lease ownership, and now treats a non-miss lease TTL error as immediate authoritative fallback rather than lease expiry.
+
+- [x] **Step 4: Verify Task 2 GREEN and checkpoint**
 
   ```bash
   cd backend
@@ -192,6 +199,8 @@
   ```
 
   Commit: `feat(observability): instrument work item cache outcomes`
+
+  GREEN evidence (2026-07-16): all focused cache metrics regressions, double workitems/telemetry/server tests, race-enabled workitems/telemetry, and `git diff --check` passed.
 
 ### Task 3: Collect Sampled, Privacy-Safe Browser Web Vitals
 

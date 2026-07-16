@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -11,6 +12,20 @@ import (
 
 const metricsNamespace = "ai_efficiency"
 
+var (
+	cacheNameRE   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+	cacheOutcomes = []string{
+		"fresh",
+		"miss",
+		"stale",
+		"error",
+		"refresh",
+		"lease_acquired",
+		"lease_wait",
+		"lease_failed",
+	}
+)
+
 type RequestObserver interface {
 	Start(method string)
 	Finish(route, method, statusClass string, duration time.Duration, responseBytes int)
@@ -18,6 +33,10 @@ type RequestObserver interface {
 
 type DependencyObserver interface {
 	Observe(dependency, operation, method, statusClass string, duration time.Duration)
+}
+
+type CacheObserver interface {
+	Record(outcome string)
 }
 
 type Metrics struct {
@@ -30,6 +49,7 @@ type Metrics struct {
 	httpRequestsActive  *prometheus.GaugeVec
 	dependencyRequests  *prometheus.CounterVec
 	dependencyDuration  *prometheus.HistogramVec
+	cacheEvents         *prometheus.CounterVec
 }
 
 func NewMetrics(release string) *Metrics {
@@ -73,6 +93,11 @@ func NewMetrics(release string) *Metrics {
 			Help:      "Downstream dependency request duration in seconds.",
 			Buckets:   prometheus.ExponentialBuckets(0.005, 2, 13),
 		}, []string{"dependency", "operation", "method", "status_class", "release"}),
+		cacheEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: metricsNamespace,
+			Name:      "cache_events_total",
+			Help:      "Application cache events by stable cache name and outcome.",
+		}, []string{"cache", "outcome"}),
 	}
 	m.registry.MustRegister(
 		m.httpRequests,
@@ -81,6 +106,7 @@ func NewMetrics(release string) *Metrics {
 		m.httpRequestsActive,
 		m.dependencyRequests,
 		m.dependencyDuration,
+		m.cacheEvents,
 	)
 	return m
 }
@@ -99,6 +125,30 @@ func (m *Metrics) RequestObserver() RequestObserver {
 
 func (m *Metrics) DependencyObserver() DependencyObserver {
 	return dependencyMetrics{metrics: m}
+}
+
+func (m *Metrics) CacheRecorder(name string) CacheObserver {
+	if !cacheNameRE.MatchString(name) {
+		panic("invalid cache metrics name")
+	}
+	for _, outcome := range cacheOutcomes {
+		m.cacheEvents.WithLabelValues(name, outcome).Add(0)
+	}
+	return cacheMetrics{name: name, events: m.cacheEvents}
+}
+
+type cacheMetrics struct {
+	name   string
+	events *prometheus.CounterVec
+}
+
+func (m cacheMetrics) Record(outcome string) {
+	for _, allowed := range cacheOutcomes {
+		if outcome == allowed {
+			m.events.WithLabelValues(m.name, outcome).Inc()
+			return
+		}
+	}
 }
 
 type requestMetrics struct {
