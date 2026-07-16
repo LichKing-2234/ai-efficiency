@@ -49,8 +49,6 @@ const queuePageSize = 100
 const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : workItems.counts.quota_reset_approval_count)
 const adminTotal = computed(() => workItems.loading || workItems.error || !auth.isAdmin ? 0 : workItems.counts.quota_reset_admin_count)
 
-type QueuePageLoader = (params: QuotaResetListParams) => ReturnType<typeof listMyQuotaResetRequests>
-
 const queueItems = computed(() => {
   if (activeQueue.value === 'approvals') return approvalRequests.value
   if (activeQueue.value === 'admin') return adminRequests.value
@@ -59,23 +57,17 @@ const queueItems = computed(() => {
 
 const visibleItems = computed(() => queueItems.value.filter((item) => filterMatches(item.status, activeFilter.value)))
 
-async function loadAllQueuePages(loader: QueuePageLoader) {
+async function loadAllQueuePages(loader: (params: QuotaResetListParams) => ReturnType<typeof listMyQuotaResetRequests>) {
   const items: QuotaResetRequestSummary[] = []
-  let page = 1
-  let total = 0
-  let pageItemCount = 0
-  do {
+  for (let page = 1; ; page += 1) {
     const response = await loader({ page, page_size: queuePageSize })
     const data = response.data.data
     const pageItems = data?.items ?? []
     items.push(...pageItems)
-    total = data?.total ?? items.length
-    pageItemCount = pageItems.length
-    page += 1
-  } while (items.length < total && pageItemCount === queuePageSize)
-  return { items, total }
+    const total = data?.total ?? items.length
+    if (items.length >= total || pageItems.length < queuePageSize) return { items, total }
+  }
 }
-
 async function loadQueues(forceCounts = false) {
   loading.value = true
   loadError.value = ''
@@ -164,31 +156,23 @@ function handleCancel(item: QuotaResetRequestSummary) {
   void withAction(() => cancelQuotaResetRequest(item.id))
 }
 
-function handleApprove(item: QuotaResetRequestSummary) {
-	decisionRequest.value = item
-	decisionAction.value = 'approve'
-}
-
-function handleReject(item: QuotaResetRequestSummary) {
-	decisionRequest.value = item
-	decisionAction.value = 'reject'
+function handleDecision(item: QuotaResetRequestSummary, action: 'approve' | 'reject') {
+  decisionRequest.value = item
+  decisionAction.value = action
 }
 
 async function confirmDecision(comment: string) {
-	const item = decisionRequest.value
-	if (!item) return
-	const admin = activeQueue.value === 'admin'
-	const action = decisionAction.value === 'approve'
-		? () => admin ? adminApproveQuotaResetRequest(item.id, { decision_reason: comment }) : approveQuotaResetRequest(item.id, { decision_reason: comment })
-		: () => admin ? adminRejectQuotaResetRequest(item.id, { decision_reason: comment }) : rejectQuotaResetRequest(item.id, { decision_reason: comment })
-	if (await withAction(action)) {
-		decisionRequest.value = null
-		selectedRequest.value = [...myRequests.value, ...approvalRequests.value, ...adminRequests.value].find((request) => request.id === item.id) ?? null
-	}
+  const item = decisionRequest.value
+  if (!item) return
+  const admin = activeQueue.value === 'admin'
+  const action = decisionAction.value === 'approve' ? () => admin ? adminApproveQuotaResetRequest(item.id, { decision_reason: comment }) : approveQuotaResetRequest(item.id, { decision_reason: comment }) : () => admin ? adminRejectQuotaResetRequest(item.id, { decision_reason: comment }) : rejectQuotaResetRequest(item.id, { decision_reason: comment })
+  if (await withAction(action)) {
+    decisionRequest.value = null
+    selectedRequest.value = [...myRequests.value, ...approvalRequests.value, ...adminRequests.value].find((request) => request.id === item.id) ?? null
+  }
 }
-
 function handleSelect(item: QuotaResetRequestSummary) {
-	selectedRequest.value = selectedRequest.value?.id === item.id ? null : item
+  selectedRequest.value = selectedRequest.value?.id === item.id ? null : item
 }
 
 function handleRetry(item: QuotaResetRequestSummary) {
@@ -288,27 +272,16 @@ onMounted(loadQueues)
         :mode="activeQueue"
         :actor-user-id="auth.user?.id"
         @cancel="handleCancel"
-        @approve="handleApprove"
-        @reject="handleReject"
+        @approve="handleDecision($event, 'approve')"
+        @reject="handleDecision($event, 'reject')"
         @retry="handleRetry"
         @select="handleSelect"
       />
-
-	  <section v-if="selectedRequest?.workflow_version === 2 && selectedRequest.workflow_steps?.length" class="space-y-3" aria-label="Quota reset workflow details">
-		<div>
-		  <h2 class="text-base font-semibold text-slate-950">{{ t('quotaReset.workflow') }}</h2>
-		  <p class="mt-1 text-sm text-slate-600">{{ selectedRequest.group_name || selectedRequest.group_id }}</p>
-		</div>
-		<QuotaResetWorkflowTimeline :steps="selectedRequest.workflow_steps" :current-step="selectedRequest.current_step" />
-	  </section>
+      <section v-if="selectedRequest?.workflow_version === 2 && selectedRequest.workflow_steps?.length" class="space-y-3" aria-label="Quota reset workflow details">
+        <div><h2 class="text-base font-semibold text-slate-950">{{ t('quotaReset.workflow') }}</h2><p class="mt-1 text-sm text-slate-600">{{ selectedRequest.group_name || selectedRequest.group_id }}</p></div>
+        <QuotaResetWorkflowTimeline :steps="selectedRequest.workflow_steps" :current-step="selectedRequest.current_step" />
+      </section>
     </div>
-
-	<QuotaResetDecisionDialog
-	  :open="Boolean(decisionRequest)"
-	  :action="decisionAction"
-	  :busy="actionBusy"
-	  @confirm="confirmDecision"
-	  @cancel="decisionRequest = null"
-	/>
+    <QuotaResetDecisionDialog :open="Boolean(decisionRequest)" :action="decisionAction" :busy="actionBusy" @confirm="confirmDecision" @cancel="decisionRequest = null" />
   </AppLayout>
 </template>

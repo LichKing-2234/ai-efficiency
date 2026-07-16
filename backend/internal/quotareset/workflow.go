@@ -3,6 +3,7 @@ package quotareset
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -66,16 +67,6 @@ type WorkflowDecision struct {
 	DecidedAt        time.Time `json:"decided_at"`
 }
 
-type WorkflowDecisionInput struct {
-	RequesterUserID  int
-	ActorUserID      int
-	ActorDisplayName string
-	Comment          string
-	Approve          bool
-	Admin            bool
-	DecidedAt        time.Time
-}
-
 type WorkflowTransition struct {
 	ActivatedStep    *int
 	SatisfiedSteps   []int
@@ -87,12 +78,8 @@ func EncodeWorkflow(workflow *Workflow) (map[string]any, error) {
 	if err := workflow.validate(); err != nil {
 		return nil, err
 	}
-	raw, err := json.Marshal(workflow)
+	result, err := convertJSON[map[string]any](workflow)
 	if err != nil {
-		return nil, fmt.Errorf("%w: encode: %v", ErrInvalidWorkflow, err)
-	}
-	var result map[string]any
-	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, fmt.Errorf("%w: normalize: %v", ErrInvalidWorkflow, err)
 	}
 	return result, nil
@@ -102,12 +89,8 @@ func DecodeWorkflow(raw map[string]any) (*Workflow, error) {
 	if raw == nil {
 		return nil, fmt.Errorf("%w: document is missing", ErrInvalidWorkflow)
 	}
-	encoded, err := json.Marshal(raw)
+	workflow, err := convertJSON[Workflow](raw)
 	if err != nil {
-		return nil, fmt.Errorf("%w: encode stored document: %v", ErrInvalidWorkflow, err)
-	}
-	var workflow Workflow
-	if err := json.Unmarshal(encoded, &workflow); err != nil {
 		return nil, fmt.Errorf("%w: decode stored document: %v", ErrInvalidWorkflow, err)
 	}
 	if err := workflow.validate(); err != nil {
@@ -124,37 +107,24 @@ func (w *Workflow) ActiveApproverUserIDs() []int {
 	if step.Status != WorkflowStepActive {
 		return []int{}
 	}
-	seen := make(map[int]struct{}, len(step.Approvers))
-	ids := make([]int, 0, len(step.Approvers))
-	for _, approver := range step.Approvers {
-		if approver.UserID <= 0 {
-			continue
-		}
-		if _, exists := seen[approver.UserID]; exists {
-			continue
-		}
-		seen[approver.UserID] = struct{}{}
-		ids = append(ids, approver.UserID)
-	}
-	sort.Ints(ids)
-	return ids
+	return workflowApproverUserIDs(step.Approvers)
 }
 
-func (w *Workflow) Decide(input WorkflowDecisionInput) (WorkflowTransition, error) {
+func (w *Workflow) Decide(requesterUserID int, input DecisionInput, actorDisplayName string, approve bool, decidedAt time.Time) (WorkflowTransition, error) {
 	if err := w.validate(); err != nil {
 		return WorkflowTransition{}, err
 	}
 	if w.CurrentStep >= len(w.Steps) {
 		return WorkflowTransition{}, ErrInvalidStatus
 	}
-	comment := strings.TrimSpace(input.Comment)
+	comment := strings.TrimSpace(input.DecisionReason)
 	if comment == "" {
 		return WorkflowTransition{}, ErrDecisionRequired
 	}
 	if input.ActorUserID <= 0 {
 		return WorkflowTransition{}, ErrNotApprover
 	}
-	if !input.Admin && input.ActorUserID == input.RequesterUserID {
+	if !input.Admin && input.ActorUserID == requesterUserID {
 		return WorkflowTransition{}, ErrSelfApprovalForbidden
 	}
 	stepIndex := w.CurrentStep
@@ -162,26 +132,25 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) (WorkflowTransition, erro
 	if !input.Admin && !workflowStepContainsApprover(*step, input.ActorUserID) {
 		return WorkflowTransition{}, ErrNotApprover
 	}
-	decidedAt := input.DecidedAt
 	if decidedAt.IsZero() {
 		decidedAt = time.Now().UTC()
 	}
 	step.Decision = &WorkflowDecision{
 		ActorUserID:      input.ActorUserID,
-		ActorDisplayName: strings.TrimSpace(input.ActorDisplayName),
+		ActorDisplayName: strings.TrimSpace(actorDisplayName),
 		Comment:          comment,
-		Approve:          input.Approve,
+		Approve:          approve,
 		Admin:            input.Admin,
 		DecidedAt:        decidedAt,
 	}
-	if !input.Approve {
+	if !approve {
 		step.Status = WorkflowStepRejected
 		w.CurrentStep = len(w.Steps)
-		return WorkflowTransition{TerminalRejected: true, SatisfiedSteps: []int{}}, nil
+		return WorkflowTransition{TerminalRejected: true}, nil
 	}
 
 	step.Status = WorkflowStepApproved
-	transition := WorkflowTransition{SatisfiedSteps: []int{}}
+	transition := WorkflowTransition{}
 	for next := stepIndex + 1; next < len(w.Steps); next++ {
 		source := w.priorApprovingStepFor(next)
 		if source >= 0 {
@@ -201,9 +170,6 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) (WorkflowTransition, erro
 }
 
 func (w *Workflow) priorApprovingStepFor(stepIndex int) int {
-	if w == nil || stepIndex < 0 || stepIndex >= len(w.Steps) {
-		return -1
-	}
 	for prior := 0; prior < stepIndex; prior++ {
 		decision := w.Steps[prior].Decision
 		if decision == nil || !decision.Approve {
@@ -289,4 +255,27 @@ func (w *Workflow) validate() error {
 
 func intPointer(value int) *int {
 	return &value
+}
+
+func workflowApproverUserIDs(approvers []WorkflowApprover) []int {
+	ids := make([]int, 0, len(approvers))
+	for _, approver := range approvers {
+		if approver.UserID > 0 {
+			ids = append(ids, approver.UserID)
+		}
+	}
+	return uniqueSortedWorkflowIDs(ids)
+}
+
+func uniqueSortedWorkflowIDs(ids []int) []int {
+	sort.Ints(ids)
+	return slices.Compact(ids)
+}
+
+func convertJSON[T any](value any) (result T, err error) {
+	raw, err := json.Marshal(value)
+	if err == nil {
+		err = json.Unmarshal(raw, &result)
+	}
+	return result, err
 }

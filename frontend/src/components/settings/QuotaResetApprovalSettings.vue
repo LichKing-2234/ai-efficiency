@@ -64,13 +64,9 @@ const selectedDepartmentLabel = computed(() => configForm.value.department_displ
 const selectedApprover = computed(() => approverCandidates.value.find((candidate) => candidate.user_id === configForm.value.approver_user_id))
 const filteredApproverCandidates = computed(() => {
   const query = approverFilter.value.trim().toLowerCase()
-  if (!query) return approverCandidates.value
-  return approverCandidates.value.filter((candidate) => approverOptionLabel(candidate).toLowerCase().includes(query))
+  return query ? approverCandidates.value.filter((candidate) => approverOptionLabel(candidate).toLowerCase().includes(query)) : approverCandidates.value
 })
-
-onMounted(() => {
-  void loadSettings()
-})
+onMounted(() => { void loadSettings() })
 
 async function loadSettings() {
   loading.value = true
@@ -195,18 +191,12 @@ async function loadApproverCandidates() {
     loadingApproverCandidates.value = false
   }
 }
-
 function toggleApproverDropdown() {
   if (loadingApproverCandidates.value || !configForm.value.department_external_id || approverCandidates.value.length === 0) return
   approverDropdownOpen.value = !approverDropdownOpen.value
   if (!approverDropdownOpen.value) approverFilter.value = ''
 }
-
-function selectApprover(candidate: QuotaResetApproverCandidate) {
-  configForm.value.approver_user_id = candidate.user_id
-  approverDropdownOpen.value = false
-  approverFilter.value = ''
-}
+function selectApprover(candidate: QuotaResetApproverCandidate) { configForm.value.approver_user_id = candidate.user_id; approverDropdownOpen.value = false; approverFilter.value = '' }
 
 function configRowsForSave(): QuotaResetApproverConfigInput[] {
   const existing = configs.value.map((config) => ({
@@ -441,32 +431,14 @@ function credentialOptionLabel(credential: Credential) {
         <div class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.approverSelect') }}</span>
           <div class="relative">
-            <button
-              type="button"
-              data-testid="quota-reset-approver-select"
-              class="mt-1 flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm disabled:opacity-60"
-              :disabled="loadingApproverCandidates || !configForm.department_external_id || approverCandidates.length === 0"
-              aria-haspopup="listbox"
-              :aria-expanded="approverDropdownOpen ? 'true' : 'false'"
-              @click="toggleApproverDropdown"
-            >
+            <button type="button" data-testid="quota-reset-approver-select" class="mt-1 flex w-full items-center justify-between gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm disabled:opacity-60" :disabled="loadingApproverCandidates || !configForm.department_external_id || approverCandidates.length === 0" aria-haspopup="listbox" :aria-expanded="approverDropdownOpen ? 'true' : 'false'" @click="toggleApproverDropdown">
               <span class="truncate">{{ selectedApprover ? approverOptionLabel(selectedApprover) : (loadingApproverCandidates ? t('settings.loading') : t('quotaResetSettings.selectApproverPlaceholder')) }}</span>
               <span aria-hidden="true" class="text-xs text-gray-400">v</span>
             </button>
             <div v-if="approverDropdownOpen" class="absolute z-20 mt-1 w-full rounded-md border border-gray-200 bg-white p-2 shadow-lg">
               <input v-model="approverFilter" data-testid="quota-reset-approver-filter" type="text" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" :placeholder="t('quotaResetSettings.selectApproverPlaceholder')" />
               <div class="mt-1 max-h-44 overflow-y-auto" role="listbox">
-                <button
-                  v-for="candidate in filteredApproverCandidates"
-                  :key="candidate.user_id"
-                  type="button"
-                  :data-testid="`quota-reset-approver-option-${candidate.user_id}`"
-                  class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50"
-                  role="option"
-                  @click="selectApprover(candidate)"
-                >
-                  {{ approverOptionLabel(candidate) }}
-                </button>
+                <button v-for="candidate in filteredApproverCandidates" :key="candidate.user_id" type="button" :data-testid="`quota-reset-approver-option-${candidate.user_id}`" class="block w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-50" role="option" @click="selectApprover(candidate)">{{ approverOptionLabel(candidate) }}</button>
               </div>
             </div>
           </div>
@@ -514,10 +486,7 @@ function credentialOptionLabel(credential: Credential) {
         </label>
         <label class="block">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.channel') }}</span>
-          <select v-model="notification.channel" data-testid="quota-reset-webhook-channel" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-            <option value="generic_webhook">{{ t('quotaResetSettings.channelGeneric') }}</option>
-            <option value="wecom_group_robot">{{ t('quotaResetSettings.channelWeCom') }}</option>
-          </select>
+          <select v-model="notification.channel" data-testid="quota-reset-webhook-channel" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="generic_webhook">{{ t('quotaResetSettings.channelGeneric') }}</option><option value="wecom_group_robot">{{ t('quotaResetSettings.channelWeCom') }}</option></select>
         </label>
         <label class="block md:col-span-2">
           <span class="text-sm font-medium text-gray-700">{{ t('quotaResetSettings.webhookURL') }}</span>

@@ -1100,35 +1100,9 @@ export interface QuotaResetRequestEvent {
 }
 
 export type QuotaResetWorkflowStepStatus = 'queued' | 'active' | 'approved' | 'satisfied_by_prior_approval' | 'rejected'
-
-export interface QuotaResetWorkflowApprover {
-  user_id: number
-  display_name: string
-  email: string
-  source: 'configured' | 'directory_representative'
-  notification_ids?: Record<string, string>
-}
-
-export interface QuotaResetWorkflowDecision {
-  actor_user_id: number
-  actor_display_name: string
-  comment: string
-  approve: boolean
-  admin: boolean
-  decided_at: string
-}
-
-export interface QuotaResetWorkflowStep {
-  kind: 'requester_departments' | 'configured_department'
-  label: string
-  department_external_ids: string[]
-  approvers: QuotaResetWorkflowApprover[]
-  admin_fallback: boolean
-  status: QuotaResetWorkflowStepStatus
-  decision?: QuotaResetWorkflowDecision | null
-  satisfied_by_step?: number | null
-}
-
+export interface QuotaResetWorkflowApprover { user_id: number; display_name: string; email: string; source: 'configured' | 'directory_representative'; notification_ids?: Record<string, string> }
+export interface QuotaResetWorkflowDecision { actor_user_id: number; actor_display_name: string; comment: string; approve: boolean; admin: boolean; decided_at: string }
+export interface QuotaResetWorkflowStep { kind: 'requester_departments' | 'configured_department'; label: string; department_external_ids: string[]; approvers: QuotaResetWorkflowApprover[]; admin_fallback: boolean; status: QuotaResetWorkflowStepStatus; decision?: QuotaResetWorkflowDecision | null; satisfied_by_step?: number | null }
 export interface QuotaResetRequestSummary {
   id: number
   requester_user_id: number
@@ -1208,7 +1182,6 @@ export interface QuotaResetApproverCandidateListResponse {
 }
 
 export type QuotaResetNotificationChannel = 'generic_webhook' | 'wecom_group_robot'
-
 export interface QuotaResetNotificationSettings {
   enabled: boolean
   channel: QuotaResetNotificationChannel

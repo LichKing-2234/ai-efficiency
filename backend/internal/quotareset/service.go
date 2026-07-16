@@ -134,20 +134,12 @@ func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.
 }
 
 func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
-	input.DecisionReason = strings.TrimSpace(input.DecisionReason)
-	if input.DecisionReason == "" {
-		return nil, ErrDecisionRequired
-	}
-	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
+	request, err := s.loadDecisionRequest(ctx, &input)
 	if err != nil {
 		return nil, err
 	}
-	switch request.WorkflowVersion {
-	case workflowVersionV2:
+	if request.WorkflowVersion == workflowVersionV2 {
 		return s.decideWorkflowRequest(ctx, request, input, true)
-	case 1:
-	default:
-		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, request.WorkflowVersion)
 	}
 	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
@@ -173,20 +165,12 @@ func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaR
 }
 
 func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
-	input.DecisionReason = strings.TrimSpace(input.DecisionReason)
-	if input.DecisionReason == "" {
-		return nil, ErrDecisionRequired
-	}
-	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
+	request, err := s.loadDecisionRequest(ctx, &input)
 	if err != nil {
 		return nil, err
 	}
-	switch request.WorkflowVersion {
-	case workflowVersionV2:
+	if request.WorkflowVersion == workflowVersionV2 {
 		return s.decideWorkflowRequest(ctx, request, input, false)
-	case 1:
-	default:
-		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, request.WorkflowVersion)
 	}
 	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
@@ -210,6 +194,21 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 	}
 	_ = s.notify(ctx, "quota_reset_request_rejected", updated)
 	return updated, nil
+}
+
+func (s *Service) loadDecisionRequest(ctx context.Context, input *DecisionInput) (*ent.QuotaResetRequest, error) {
+	input.DecisionReason = strings.TrimSpace(input.DecisionReason)
+	if input.DecisionReason == "" {
+		return nil, ErrDecisionRequired
+	}
+	request, err := s.client.QuotaResetRequest.Get(ctx, input.RequestID)
+	if err != nil {
+		return nil, err
+	}
+	if request.WorkflowVersion != 1 && request.WorkflowVersion != workflowVersionV2 {
+		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, request.WorkflowVersion)
+	}
+	return request, nil
 }
 
 func (s *Service) RetryReset(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
@@ -934,13 +933,9 @@ func departmentPathEvidenceToMaps(paths []DepartmentPathEvidence) ([]map[string]
 	if len(paths) == 0 {
 		return []map[string]any{}, nil
 	}
-	raw, err := json.Marshal(paths)
+	result, err := convertJSON[[]map[string]any](paths)
 	if err != nil {
-		return nil, fmt.Errorf("marshal department path evidence: %w", err)
-	}
-	var result []map[string]any
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal department path evidence: %w", err)
+		return nil, fmt.Errorf("normalize department path evidence: %w", err)
 	}
 	return result, nil
 }
@@ -949,13 +944,9 @@ func mapsToDepartmentPathEvidence(rawPaths []map[string]any) ([]DepartmentPathEv
 	if len(rawPaths) == 0 {
 		return []DepartmentPathEvidence{}, nil
 	}
-	raw, err := json.Marshal(rawPaths)
+	result, err := convertJSON[[]DepartmentPathEvidence](rawPaths)
 	if err != nil {
-		return nil, fmt.Errorf("marshal stored department path evidence: %w", err)
-	}
-	var result []DepartmentPathEvidence
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal stored department path evidence: %w", err)
+		return nil, fmt.Errorf("decode stored department path evidence: %w", err)
 	}
 	return result, nil
 }
@@ -992,14 +983,7 @@ func subscriptionGroupPlatform(subscription relay.UserSubscription) string {
 }
 
 func (s *Service) approverCandidates(ctx context.Context, sourceID int, departmentExternalID string) ([]ApproverCandidate, []UnmatchedApproverRepresentative, error) {
-	currentSourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
-	if err != nil {
-		return nil, nil, fmt.Errorf("current directory source: %w", err)
-	}
-	if !ok || sourceID != currentSourceID {
-		return nil, nil, ErrDirectoryUnavailable
-	}
-	facts, err := NewApproverResolver(s.client).loadWorkflowDirectoryFacts(ctx, sourceID)
+	facts, err := s.currentWorkflowDirectoryFacts(ctx, sourceID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1077,14 +1061,7 @@ func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, ite
 	if len(items) == 0 {
 		return nil
 	}
-	currentSourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
-	if err != nil {
-		return fmt.Errorf("current directory source: %w", err)
-	}
-	if !ok || sourceID != currentSourceID {
-		return ErrDirectoryUnavailable
-	}
-	facts, err := NewApproverResolver(s.client).loadWorkflowDirectoryFacts(ctx, sourceID)
+	facts, err := s.currentWorkflowDirectoryFacts(ctx, sourceID)
 	if err != nil {
 		return err
 	}
@@ -1104,6 +1081,17 @@ func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, ite
 		}
 	}
 	return nil
+}
+
+func (s *Service) currentWorkflowDirectoryFacts(ctx context.Context, sourceID int) (*workflowDirectoryFacts, error) {
+	currentSourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
+	if err != nil {
+		return nil, fmt.Errorf("current directory source: %w", err)
+	}
+	if !ok || sourceID != currentSourceID {
+		return nil, ErrDirectoryUnavailable
+	}
+	return NewApproverResolver(s.client).loadWorkflowDirectoryFacts(ctx, sourceID)
 }
 
 func (s *Service) approverCandidateUserIDsByDepartment(ctx context.Context, sourceID int) (map[string]map[int]struct{}, map[int]*ent.DirectoryMember, map[string][]UnmatchedApproverRepresentative, error) {

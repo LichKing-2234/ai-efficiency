@@ -26,6 +26,7 @@ type workflowDirectoryFacts struct {
 	departmentsByID       map[string]*ent.DirectoryDepartment
 	membersByExternalID   map[string]*ent.DirectoryMember
 	membersByUserID       map[int]*ent.DirectoryMember
+	userIDByMemberID      map[int]int
 	usersByID             map[int]*ent.User
 	departmentIDsByMember map[int]map[string]struct{}
 	configUserIDsByDept   map[string][]int
@@ -78,10 +79,14 @@ func (r *ApproverResolver) ResolveWorkflow(ctx context.Context, requester *ent.U
 		if err != nil {
 			return nil, nil, err
 		}
-		if requesterMember := facts.memberForUser(requester); requesterMember != nil {
+		if requesterMember := facts.membersByUserID[requester.ID]; requesterMember != nil {
 			workflow.Requester.DisplayName = firstWorkflowValue(requesterMember.DisplayName, requester.Username)
 			workflow.Requester.NotificationIDs = notificationIDsForWorkflowMember(requesterMember)
-			exactIDs := facts.memberDepartmentIDs(requesterMember)
+			exactIDs := make([]string, 0, len(facts.departmentIDsByMember[requesterMember.ID]))
+			for departmentID := range facts.departmentIDsByMember[requesterMember.ID] {
+				exactIDs = append(exactIDs, departmentID)
+			}
+			exactIDs = uniqueSortedStrings(exactIDs)
 			for _, departmentID := range exactIDs {
 				if path := workflowDepartmentPath(facts.tree, facts.departmentsByID[departmentID]); path != "" {
 					workflow.Requester.DepartmentPaths = append(workflow.Requester.DepartmentPaths, path)
@@ -150,6 +155,7 @@ func (r *ApproverResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 		departmentsByID:       make(map[string]*ent.DirectoryDepartment, len(departments)),
 		membersByExternalID:   make(map[string]*ent.DirectoryMember, len(members)),
 		membersByUserID:       map[int]*ent.DirectoryMember{},
+		userIDByMemberID:      map[int]int{},
 		usersByID:             make(map[int]*ent.User, len(users)),
 		departmentIDsByMember: map[int]map[string]struct{}{},
 		configUserIDsByDept:   map[string][]int{},
@@ -170,6 +176,7 @@ func (r *ApproverResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 			if current := facts.membersByUserID[user.ID]; current == nil || member.ID < current.ID {
 				facts.membersByUserID[user.ID] = member
 			}
+			facts.userIDByMemberID[member.ID] = user.ID
 		}
 		facts.addMemberDepartment(member.ID, member.DepartmentExternalID)
 	}
@@ -276,24 +283,6 @@ func (f *workflowDirectoryFacts) addMemberDepartment(memberID int, departmentID 
 	f.departmentIDsByMember[memberID][departmentID] = struct{}{}
 }
 
-func (f *workflowDirectoryFacts) memberForUser(user *ent.User) *ent.DirectoryMember {
-	if f == nil || user == nil {
-		return nil
-	}
-	return f.membersByUserID[user.ID]
-}
-
-func (f *workflowDirectoryFacts) memberDepartmentIDs(member *ent.DirectoryMember) []string {
-	if f == nil || member == nil {
-		return []string{}
-	}
-	ids := make([]string, 0, len(f.departmentIDsByMember[member.ID]))
-	for id := range f.departmentIDsByMember[member.ID] {
-		ids = append(ids, id)
-	}
-	return uniqueSortedStrings(ids)
-}
-
 func (f *workflowDirectoryFacts) departmentPathEvidence(startDepartmentID string) []DepartmentPathNode {
 	path := []DepartmentPathNode{}
 	visited := map[string]struct{}{}
@@ -327,20 +316,15 @@ func (f *workflowDirectoryFacts) configuredApprovers(departmentID string, reques
 		}
 		user := f.usersByID[userID]
 		member := f.membersByUserID[userID]
-		if !f.configuredMemberInDepartment(userID, member, departmentID) || !workflowCandidateUsable(user, member) {
+		if member == nil || member.MatchedUserID == nil || *member.MatchedUserID != userID || !workflowCandidateUsable(user, member) {
+			continue
+		}
+		if _, belongs := f.departmentIDsByMember[member.ID][strings.TrimSpace(departmentID)]; !belongs {
 			continue
 		}
 		approvers = append(approvers, workflowApprover(user, member, "configured"))
 	}
 	return approvers, true
-}
-
-func (f *workflowDirectoryFacts) configuredMemberInDepartment(userID int, member *ent.DirectoryMember, departmentID string) bool {
-	if member == nil || member.MatchedUserID == nil || *member.MatchedUserID != userID {
-		return false
-	}
-	_, ok := f.departmentIDsByMember[member.ID][strings.TrimSpace(departmentID)]
-	return ok
 }
 
 func (f *workflowDirectoryFacts) representativeApprovers(departmentID string, requesterID int) []WorkflowApprover {
@@ -364,15 +348,7 @@ func (f *workflowDirectoryFacts) userForMember(member *ent.DirectoryMember) *ent
 	if f == nil || member == nil {
 		return nil
 	}
-	if member.MatchedUserID != nil {
-		return f.usersByID[*member.MatchedUserID]
-	}
-	for userID, candidate := range f.membersByUserID {
-		if candidate != nil && candidate.ID == member.ID {
-			return f.usersByID[userID]
-		}
-	}
-	return nil
+	return f.usersByID[f.userIDByMemberID[member.ID]]
 }
 
 func workflowMemberUser(member *ent.DirectoryMember, usersByID map[int]*ent.User, usersByEmail map[string]*ent.User) *ent.User {
@@ -428,31 +404,6 @@ func mergeWorkflowApprovers(target *[]WorkflowApprover, candidates []WorkflowApp
 		*target = append(*target, candidate)
 	}
 	sort.SliceStable(*target, func(i, j int) bool { return (*target)[i].UserID < (*target)[j].UserID })
-}
-
-func workflowApproverUserIDs(approvers []WorkflowApprover) []int {
-	ids := make([]int, 0, len(approvers))
-	for _, approver := range approvers {
-		ids = append(ids, approver.UserID)
-	}
-	return uniqueSortedWorkflowIDs(ids)
-}
-
-func uniqueSortedWorkflowIDs(ids []int) []int {
-	seen := map[int]struct{}{}
-	out := make([]int, 0, len(ids))
-	for _, id := range ids {
-		if id <= 0 {
-			continue
-		}
-		if _, exists := seen[id]; exists {
-			continue
-		}
-		seen[id] = struct{}{}
-		out = append(out, id)
-	}
-	sort.Ints(out)
-	return out
 }
 
 func stringSet(values []string) map[string]struct{} {

@@ -139,7 +139,7 @@ func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx 
 		})
 	}
 	workflowPayload := map[string]any{
-		"step_number":      notificationStepNumber(ctx),
+		"step_number":      min(ctx.StepIndex+1, ctx.StepCount),
 		"step_count":       ctx.StepCount,
 		"step_label":       ctx.StepLabel,
 		"active_approvers": approvers,
@@ -198,7 +198,7 @@ func (n *WebhookNotifier) weComRobotMarkdown(event string, req *ent.QuotaResetRe
 		"> 申请人：" + safeWeComText(requester),
 		"> 所属团队：" + safeWeComText(team),
 		"> 订阅组：" + safeWeComText(firstWorkflowValue(req.GroupName, req.GroupID)),
-		fmt.Sprintf("> 审批进度：%d/%d", notificationStepNumber(ctx), ctx.StepCount),
+		fmt.Sprintf("> 审批进度：%d/%d", min(ctx.StepIndex+1, ctx.StepCount), ctx.StepCount),
 	}
 	if label := strings.TrimSpace(ctx.StepLabel); label != "" {
 		lines = append(lines, "> 当前节点："+safeWeComText(label))
@@ -258,16 +258,6 @@ func notificationContextForRequest(req *ent.QuotaResetRequest) (quotaResetNotifi
 		}
 	}
 	return ctx, nil
-}
-
-func notificationStepNumber(ctx quotaResetNotificationContext) int {
-	if ctx.StepCount <= 0 {
-		return 0
-	}
-	if ctx.StepIndex >= ctx.StepCount {
-		return ctx.StepCount
-	}
-	return ctx.StepIndex + 1
 }
 
 func safeWeComText(value string) string {
