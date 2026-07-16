@@ -5,8 +5,10 @@
 > `superpowers:executing-plans` to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for live tracking.
 
-**Status:** Ready for implementation. This replaces the rejected
-subscription-group approval-chain plan; all checkboxes are intentionally reset.
+**Status:** Tasks 1-3 and Task 4 automated verification/scope audit are
+complete. Task 4 browser verification is blocked because the required browser
+runtime reports no available browser; final commit/push and PR checks remain
+outstanding.
 
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
@@ -322,14 +324,14 @@ and complete processed-history pagination.
 **Files:** Modify `docs/architecture.md` and keep this plan's status/checklist
 current. Do not rewrite the historical 2026-07-07 spec.
 
-- [ ] **Step 1: Update current architecture**
+- [x] **Step 1: Update current architecture**
 
   Document exact-department config/representative fallback, configured ancestor
   rounds, same-round merge, admin fallback, request-time snapshot, prior-actor
   reuse, CAS/event audit, and explicit generic/WeCom channels. State that the
   subscription group affects only the reset target.
 
-- [ ] **Step 2: Run full automated verification**
+- [x] **Step 2: Run full automated verification**
 
   ```bash
   cd backend && go test ./... -count=1 && go vet ./...
@@ -339,7 +341,25 @@ current. Do not rewrite the historical 2026-07-07 spec.
 
   Expected: every command exits 0.
 
-- [ ] **Step 3: Audit final scope**
+  Verification evidence (2026-07-16):
+
+  - The final combined rerun used the three commands above against the final
+    production diff. Backend tests/vet and ae-cli tests exited 0; frontend
+    reported 39 test files / 435 tests, a successful production build, and role
+    E2E 16/16. Output:
+    `.superpowers/sdd/task-4-logs/full-verification-commit-gate.log`.
+  - Focused regression after the line-budget simplification passed
+    `go test ./internal/quotareset ./internal/workitems -count=1`,
+    `go vet ./internal/quotareset`, 3 frontend quota-reset files / 22 tests,
+    and the frontend production build. Output:
+    `.superpowers/sdd/task-4-logs/focused-regression.log`.
+  - The first frontend attempt reached successful unit tests and build but role
+    E2E could not connect to its required Vite URL at `localhost:5173`. The
+    successful fresh rerun used `npm run dev -- --host 127.0.0.1`; the failed
+    environment attempt remains in
+    `.superpowers/sdd/task-4-logs/frontend-test-build-role-e2e.log`.
+
+- [x] **Step 3: Audit final scope**
 
   ```bash
   git diff --check origin/main
@@ -349,13 +369,27 @@ current. Do not rewrite the historical 2026-07-07 spec.
   git diff --numstat origin/main -- backend/ent ':(exclude)backend/ent/schema/**' \
     | awk '{ a += $1; d += $2 } END { print "generated Ent +" a "/-" d }'
   ! rg -n 'QuotaResetApprovalChain|approval-chains|quota_reset_approval_chains' \
-    backend frontend docs/architecture.md
+    backend frontend docs/architecture.md \
+    --glob '!backend/internal/quotareset/schema_test.go'
   git status --short
   ```
 
   Expected: no whitespace errors; hand-written additions are at most 1,500;
   chain scan is empty; only intentional branch files are modified. Simplify and
   leave this step unchecked if the limit is exceeded.
+
+  Final evidence (2026-07-16):
+
+  - `git diff --check origin/main` exited 0.
+  - Hand-written production, including `backend/ent/schema`, is
+    `+1497/-338`; the schema-only subtotal is `+16/-0`.
+  - Generated Ent outside `backend/ent/schema` is `+862/-33` and is reported
+    separately from the hand-written total.
+  - The production chain scan found no matches when excluding only
+    `backend/internal/quotareset/schema_test.go`; that guard still contains the
+    intentional `quota_reset_approval_chains` literal.
+  - `git status --short` listed only intentional Task 4 simplification/docs
+    files. Output: `.superpowers/sdd/task-4-logs/final-scope-audit.log`.
 
 - [ ] **Step 4: Browser-test one complete workflow**
 
@@ -372,6 +406,35 @@ current. Do not rewrite the historical 2026-07-07 spec.
   notification, one relay reset, terminal `approved_reset_succeeded`, and no
   desktop/mobile overlap. Record the URL, result, and screenshot paths here
   before checking this step.
+
+  **BLOCKED (2026-07-16):** This checkbox remains unchecked. The requested
+  `26.707.71524` browser skill path was absent, so the installed replacement at
+  `26.707.91948` was read and followed. Browser runtime selection for
+  `http://127.0.0.1:28081/usage/quota-reset` returned `No browser is available`;
+  the required bootstrap troubleshooting then returned an empty browser list
+  (`[]`). No standalone Playwright or alternate browser was substituted, and
+  there are no desktop/mobile screenshot paths.
+
+  Environment and diagnostic evidence:
+
+  - Compose command: `docker compose -p ai-efficiency-quota-reset-rework
+    --env-file /Users/admin/ai-efficiency/deploy/.env -f
+    docker-compose.dev.yml up -d --build --force-recreate --remove-orphans`.
+    Output: `.superpowers/sdd/task-4-logs/compose-rebuild-final.log`.
+  - Isolated URL/ports: `http://127.0.0.1:28081/usage/quota-reset`, backend
+    `28081`, PostgreSQL `25432`, Redis `26379`. The pre-existing
+    `ai-efficiency` project remained running on `18081/15432/16379`; no stop,
+    recreate, remove, or build command targeted it.
+  - Synthetic actors: Alice requester (local user 101), Bob exact-department
+    approver (102), and Carol parent/root approver (103). Fixture output:
+    `.superpowers/sdd/task-4-logs/browser-fixture-seed.log`.
+  - API-only diagnostic fallback (not browser verification) rejected Bob's
+    empty comment with `decision_reason_required`, showed Bob and Carol each
+    with one actionable approval, preserved both comments, auto-satisfied the
+    root from Carol's parent approval without a second activation notice,
+    issued exactly one relay reset, and ended at
+    `approved_reset_succeeded`. Output:
+    `.superpowers/sdd/task-4-logs/api-workflow-fallback.log`.
 
 - [ ] **Step 5: Commit docs, push, and watch PR 146**
 
