@@ -141,21 +141,25 @@
 - Extends `handler.RouterRuntimeOptions` with `TeamUsageSnapshotCache *teamusage.SnapshotCache`.
 - Adds legacy headers `Deprecation: @1783987200`, `Sunset: Tue, 15 Sep 2026 00:00:00 GMT`, and `Link: </api/v1/user/team-usage/summary>; rel="successor-version"`.
 
-- [ ] **Step 1: Add RED HTTP tests**
+- [x] **Step 1: Add RED HTTP tests**
 
   Assert query forwarding, top-level freshness/scope/request metadata, a new request ID on every response, auth protection, generic 403 no-scope behavior, 400 invalid-window behavior, bounded Redis fallback, and all three compatibility headers on both successful and failed legacy responses.
 
-- [ ] **Step 2: Run focused handler/runtime tests and record RED**
+- [x] **Step 2: Run focused handler/runtime tests and record RED**
 
   Run: `cd backend && go test ./internal/handler ./cmd/server -run 'TeamUsageSummary|TeamOverviewDeprecation|TeamUsageSnapshotCache' -count=1`
 
   Expected: compile or route-not-found failure.
 
-- [ ] **Step 3: Implement route, request metadata, headers, and runtime injection**
+  RED evidence (2026-07-16): focused handler tests failed only because `TeamUsageHandler.Summary` did not exist.
+
+- [x] **Step 3: Implement route, request metadata, headers, and runtime injection**
 
   Keep request ID generation in the HTTP layer so it is never cached. Construct one snapshot cache from the existing shared bounded Redis store and namespace, inject it into `teamusage.Service`, and leave the authenticated middleware/token-revocation path unchanged.
 
-- [ ] **Step 4: Verify Task 3 GREEN and checkpoint**
+  GREEN evidence (2026-07-16): focused handler tests pass for metadata, unique request IDs, auth, scoped/input failures, and compatibility headers; server compilation includes the shared Redis cache construction.
+
+- [x] **Step 4: Verify Task 3 GREEN and checkpoint**
 
   Run:
 
@@ -167,6 +171,8 @@
   ```
 
   Commit: `feat(backend): expose split team usage summary`
+
+  GREEN evidence (2026-07-16): teamusage, handler, and server package suites passed twice; `git diff --check` reported no findings.
 
 ### Task 4: Render Summary Independently In The Frontend
 

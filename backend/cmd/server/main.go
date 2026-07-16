@@ -33,6 +33,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/ai-efficiency/backend/internal/workitems"
@@ -219,6 +220,13 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize personal usage cache", zap.Error(err))
 	}
+	teamUsageSnapshotCache, err := teamusage.NewSnapshotCache(
+		redisStore,
+		teamusage.SnapshotCacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize team usage snapshot cache", zap.Error(err))
+	}
 
 	// Init LDAP config (shared between auth service and admin settings handler)
 	var ldapConfig atomic.Pointer[config.LDAPConfig]
@@ -352,6 +360,7 @@ func main() {
 			WorkItemsCache:           workItemsCache,
 			WorkItemsRevisionStore:   workItemsRevisionStore,
 			RepresentativeScopeCache: representativeScopeCache,
+			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
 		},
 	)
 
