@@ -1,0 +1,224 @@
+# Settings And Provider Metadata Performance Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Deliver issue #130 with an on-demand Settings shell, deduplicated shared Settings resources, version-bounded Relay clients, and a five-minute shared Relay group/model metadata read model.
+
+**Architecture:** `backend/internal/relayruntime.Manager` becomes the deep module behind the existing `relay.Provider` seam: it resolves current persisted provider versions, owns `(provider_id, configuration_version)` process clients, consumes and publishes secret-free invalidations, and serves non-stale shared group/model metadata through Redis with authoritative fallback. The frontend turns `SettingsView` into a section router that imports only the active section, while `useSettingsResourcesStore` deduplicates credential summaries and Directory Sync sources across section remounts and refreshes them after owned mutations.
+
+**Tech Stack:** Go, Gin, Ent, Redis, go-redis Pub/Sub, shared `readcache`, Vue 3, Pinia, TypeScript, Vitest, Vite.
+
+## Global Constraints
+
+- Work only in `/Users/admin/ai-efficiency/.worktrees/perf-settings-metadata-130` on `perf/settings-metadata-130`.
+- Base is issue #128 final head `0b694ba`; target Draft PR #156 when publishing.
+- Keep the persisted `relay_providers.configuration_version`, initialized at 1, and increment it in the same successful provider update statement as every behavior-affecting mutation.
+- Process clients are keyed by provider ID plus configuration version, are revalidated against the current database row on `Resolve`, and live no longer than five minutes.
+- Provider mutations evict the local provider immediately and publish best-effort cross-replica invalidation containing only schema version, provider ID, and configuration version. Missed notifications recover through persisted version revalidation and maximum client lifetime.
+- Relay group/model metadata is fresh-only for five minutes. Keys bind deployment namespace, provider ID, persisted provider version, collection kind, platform, and group where applicable. Values contain group/model display metadata only.
+- Redis read/write/lease/Pub/Sub failure must not fail user/provider reads or successful provider mutations. It bypasses shared caching/invalidation while authoritative database and Relay reads continue.
+- Current local user state, Relay membership/subscriptions, API keys, quota entitlement, and authorization are checked on every relevant request and are never inferred from shared metadata.
+- Passwords, JWTs, admin/user API keys, credential payloads, raw user identity, cache payloads, and provider secrets never enter Redis keys, values, Pub/Sub messages, metrics, or logs.
+- `SettingsView` imports and mounts one section implementation at a time. The default route loads only AI Services and its Relay-provider request; a direct section query loads only that section and its owned requests.
+- Credential summaries and Directory Sync source summaries have one Pinia owner, one in-flight request per resource, a five-minute frontend freshness window, and force-refresh after owned create/update/delete operations.
+- Preserve current URL section links, keyboard tab behavior, dialogs, validation, localized copy, CRUD payloads, Directory run polling, compatibility routes, and role enforcement.
+- Tests and examples use synthetic identities, domains, groups, keys, and credentials only.
+- Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
+- Update every checkbox immediately after the action is completed.
+
+**Status:** In progress. Backend, frontend (39 files/486 tests plus production build), and `ae-cli` baselines passed at `0b694ba` before implementation.
+
+---
+
+### Task 1: Version And Invalidate Process-Local Relay Clients
+
+**Files:**
+- Create: `backend/internal/relayruntime/manager.go`
+- Create: `backend/internal/relayruntime/manager_test.go`
+- Create: `backend/internal/relayruntime/invalidation.go`
+- Create: `backend/internal/relayruntime/invalidation_test.go`
+- Modify: `backend/internal/handler/provider.go`
+- Modify: `backend/internal/handler/provider_configuration_version_test.go`
+- Modify: `backend/cmd/server/main.go`
+
+**Interfaces:**
+- Produces `relayruntime.Manager.Resolve(context.Context, int)`, `ResolveEntity(*ent.RelayProvider)`, `Invalidate(context.Context, int, int64)`, `Start(context.Context)`, and Redis/fake invalidation adapters.
+- `handler.ProviderHandler` keeps its existing `Resolve` interface and delegates client lifetime/version/invalidation behavior to the manager.
+- Invalidation payload is exactly `schema_version`, `provider_id`, and `configuration_version`.
+
+- [x] **Step 1: Add RED manager and mutation tests**
+
+  Cover same-version reuse, version-separated clients, five-minute maximum lifetime, current-row revalidation after a missed notification, remote eviction after Pub/Sub delivery, malformed notification ignore, secret-free payload serialization, local eviction before publish, failed publish as non-fatal, and create/update/delete publication only after successful database mutation.
+
+  Test evidence (2026-07-16): manager tests define decrypted client construction, same-version reuse, TTL rebuild, database-version recovery without a notification, local/remote eviction, and failed-publish behavior; handler tests define post-commit version publication and failed-mutation silence; codec tests require an exact secret-free payload and strict decoding.
+
+- [x] **Step 2: Run focused tests and record RED**
+
+  Run:
+
+  ```bash
+  cd backend
+  go test ./internal/relayruntime ./internal/handler -run 'RelayRuntime|ProviderConfigurationVersion|ProviderInvalidation' -count=1 -v
+  ```
+
+  Expected: compile failures for the absent runtime manager, invalidation adapter, injected handler runtime, and mutation notifications.
+
+  RED evidence (2026-07-16): the focused command failed only because `InvalidationEvent`, its strict codec, `Manager`, `Options`, and the injected handler runtime do not exist.
+
+- [x] **Step 3: Implement versioned clients and best-effort invalidation**
+
+  Build providers only from decrypted current Ent rows, double-check cache insertion under concurrency, remove other versions for the same provider, and rebuild after five minutes. Start one cancellable Redis subscription in server startup. On provider create/update/delete, commit first, evict local state, then publish; log only provider ID/version and the error on best-effort failure.
+
+  Implementation evidence (2026-07-16): `relayruntime.Manager` now revalidates the persisted row on every `Resolve`, caches only one provider/version for at most five minutes, rejects stale in-flight rows after a newer event, and uses an exact secret-free Pub/Sub payload. Server startup owns the cancellable subscription; create/update/delete evict locally after commit and publish without rolling back a successful mutation on Redis failure.
+
+- [x] **Step 4: Verify Task 1 GREEN and checkpoint**
+
+  Run:
+
+  ```bash
+  cd backend
+  gofmt -w internal/relayruntime/*.go internal/handler/provider*.go cmd/server/main.go
+  go test ./internal/relayruntime ./internal/handler ./cmd/server -count=2
+  go test -race ./internal/relayruntime ./internal/handler -run 'RelayRuntime|ProviderConfigurationVersion|ProviderInvalidation' -count=1
+  git diff --check
+  ```
+
+  Commit: `perf(backend): version relay provider runtime`
+
+  GREEN evidence (2026-07-16): focused RED/GREEN tests, double `internal/relayruntime`/`internal/handler`/`cmd/server` runs, race-enabled runtime/handler invalidation tests, a final uncached runtime test, and `git diff --check` passed.
+
+### Task 2: Cache Shared Relay Group And Model Metadata Safely
+
+**Files:**
+- Create: `backend/internal/relayruntime/metadata.go`
+- Create: `backend/internal/relayruntime/metadata_test.go`
+- Modify: `backend/internal/relay/provider.go`
+- Modify: `backend/internal/usersetup/service.go`
+- Modify: `backend/internal/usersetup/service_test.go`
+- Modify: `backend/internal/handler/provider.go`
+- Modify: `backend/internal/handler/handler_test.go`
+- Modify: `backend/cmd/server/main.go`
+
+**Interfaces:**
+- Adds optional `relay.PlatformGroupLister.ListPlatformGroups(context.Context)` without widening the required `relay.Provider` interface.
+- `relayruntime.Manager.ListAllowedGroupsForUser` always reads the current Relay user/subscriptions, then joins allowed IDs against cached shared group metadata.
+- `relayruntime.Manager.Models` caches cloned `[]relay.ModelOption` by provider/version/platform/group through a loader that is invoked only on a miss or Redis fallback.
+- `usersetup.Service` discovers the richer group resolver through its existing provider resolver; compatibility fake providers continue through `relay.Provider.ListAllowedGroupsForUser`.
+
+- [ ] **Step 1: Add RED metadata and authorization tests**
+
+  Cover cross-manager group/model hits, exact five-minute expiry, provider-version/platform/group isolation, local and distributed refresh collapse, malformed value recovery, Redis outage authoritative fallback, clone-on-read/write, no secret fields in keys/JSON, and changed group metadata under a new provider version. Prove each warm group request still calls current `GetUser`, each warm model request still checks current membership and active group API keys, and revoked entitlement returns no cached model list.
+
+- [ ] **Step 2: Run focused tests and record RED**
+
+  Run:
+
+  ```bash
+  cd backend
+  go test ./internal/relayruntime ./internal/usersetup ./internal/handler -run 'ProviderMetadata|AllowedGroups|ProviderModels' -count=1 -v
+  ```
+
+  Expected: compile/test failures for the absent metadata cache, group resolver, membership guard, and model loader.
+
+- [ ] **Step 3: Implement fresh-only metadata read model**
+
+  Use the shared `readcache.Store` and flight/lease patterns. Read failures, lease failures, write failures, and invalid JSON fall back to bounded authoritative Relay work; no stale metadata is served. Keep user/subscription/key selection outside cached values, reject a requested model group that is absent from the current allowed-group set, and return cloned rows.
+
+- [ ] **Step 4: Verify Task 2 GREEN and checkpoint**
+
+  Run:
+
+  ```bash
+  cd backend
+  gofmt -w internal/relayruntime/*.go internal/relay/provider.go internal/usersetup/*.go internal/handler/provider*.go cmd/server/main.go
+  go test ./internal/relayruntime ./internal/relay ./internal/usersetup ./internal/handler ./cmd/server -count=2
+  go test -race ./internal/readcache ./internal/relayruntime ./internal/usersetup -count=1
+  git diff --check
+  ```
+
+  Commit: `perf(backend): cache relay provider metadata`
+
+### Task 3: Load One Settings Section And Shared Resource At A Time
+
+**Files:**
+- Create: `frontend/src/stores/settingsResources.ts`
+- Create: `frontend/src/__tests__/settings-resources-store.test.ts`
+- Modify: `frontend/src/views/SettingsView.vue`
+- Modify: `frontend/src/components/settings/AIServiceSettings.vue`
+- Modify: `frontend/src/components/settings/CodePlatformSettings.vue`
+- Modify: `frontend/src/components/settings/AdvancedCredentialSettings.vue`
+- Modify: `frontend/src/components/settings/DeploymentRuntimeSettings.vue`
+- Modify: `frontend/src/components/settings/OrganizationLoginSettings.vue`
+- Modify: `frontend/src/components/settings/DirectorySyncSettings.vue`
+- Modify: `frontend/src/__tests__/settings-view.test.ts`
+- Modify: `frontend/src/__tests__/directory-sync-settings.test.ts`
+
+**Interfaces:**
+- `SettingsView` owns only section navigation and `defineAsyncComponent` loaders; each section owns its requests, CRUD state, dialogs, and localized feedback.
+- `useSettingsResourcesStore` exposes credential and Directory-source refs plus `loadCredentials({ force? })`, `loadDirectorySources({ force? })`, `replaceDirectorySources`, and invalidation/refresh actions with one in-flight promise per resource.
+- Code Platform loads credential summaries only when its add/edit task opens. Organization/Login and Advanced Credentials reuse the same store result; Directory Sync source remounts reuse the same store result.
+
+- [ ] **Step 1: Add RED route, section, store, and mutation tests**
+
+  Assert default `/settings` requests only Relay providers; every direct `?section=` link imports/renders only its requested section and issues only owned requests; hidden sections make zero requests; switching sections preserves the URL contract. Cover credential/source concurrent deduplication, five-minute reuse/expiry, error retry, force refresh, mutation refresh, Code Platform dialog-time credential loading, Organization/Advanced credential reuse, Directory source reuse across remount, and unchanged CRUD/dialog/keyboard behavior.
+
+- [ ] **Step 2: Run focused tests and record RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  npm test -- src/__tests__/settings-resources-store.test.ts src/__tests__/settings-view.test.ts src/__tests__/directory-sync-settings.test.ts
+  ```
+
+  Expected: failures because the parent eagerly imports every section and requests every dataset, while credentials/sources have no shared freshness owner.
+
+- [ ] **Step 3: Implement async sections and the shared store**
+
+  Move existing section-specific state, API calls, dialogs, and handlers into the five section modules without changing visible behavior or payloads. Replace static imports with an exhaustive typed async-loader map. Keep active section URL and tab focus logic in the shell. Deduplicate shared resources through Pinia, clone API arrays at the store interface, and force-refresh after successful owned mutations.
+
+- [ ] **Step 4: Verify Task 3 GREEN and checkpoint**
+
+  Run:
+
+  ```bash
+  cd frontend
+  npm test
+  npm run build
+  git diff --check
+  ```
+
+  Inspect the Vite manifest/output and record that `SettingsView` is a small shell and the five Settings sections are separate lazy chunks.
+
+  Commit: `perf(frontend): load settings sections on demand`
+
+### Task 4: Document, Verify, Review, And Publish
+
+**Files:**
+- Modify: `docs/architecture.md`
+- Modify: this plan
+
+- [ ] **Step 1: Update current architecture**
+
+  Record active-section Settings code/data ownership, shared frontend freshness/deduplication, persisted provider version usage, five-minute/versioned process clients, secret-free invalidation, group/model cache dimensions and fallback, and fresh membership/key checks. Do not rewrite historical specs.
+
+- [ ] **Step 2: Run full verification**
+
+  ```bash
+  git diff --check
+  cd backend && go vet ./internal/relayruntime ./internal/relay ./internal/usersetup ./internal/handler ./cmd/server && go test ./...
+  cd ../frontend && npm test && npm run build
+  cd ../ae-cli && go test ./...
+  ```
+
+- [ ] **Step 3: Review against issue #130 and the active performance spec**
+
+  Audit default/direct Settings requests and chunks, shared resource ownership/freshness/mutations, provider version transactionality, client version/TTL, publish/subscribe and missed-notification recovery, cache key/value privacy, TTL/isolation/collapse, Redis failure, fresh membership/key/quota authorization, compatibility, and synthetic data. Fix every Critical/Important finding and rerun affected verification.
+
+- [ ] **Step 4: Push and open a Draft PR**
+
+  Target `perf/team-organization-128`, list Draft PR #156 as the direct dependency, preserve both worktrees, and do not merge or release.
+
+- [ ] **Step 5: Wait for required CI and record final state**
+
+  Record the exact implementation-head run and backend/frontend/ae-cli/deploy-static conclusions, then push one ledger commit and wait for final ledger-head CI.

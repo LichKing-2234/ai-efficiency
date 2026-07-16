@@ -14,12 +14,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/ai-efficiency/backend/ent"
 	authpkg "github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/relayruntime"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -30,61 +30,46 @@ type ProviderHandler struct {
 	entClient     *ent.Client
 	encryptionKey string
 	logger        *zap.Logger
-
-	mu            sync.RWMutex
-	providerCache map[int]relay.Provider
+	runtime       *relayruntime.Manager
 }
 
 // NewProviderHandler creates a new provider handler.
-func NewProviderHandler(entClient *ent.Client, encryptionKey string, logger *zap.Logger) *ProviderHandler {
+func NewProviderHandler(entClient *ent.Client, encryptionKey string, logger *zap.Logger, runtimes ...*relayruntime.Manager) *ProviderHandler {
+	var runtime *relayruntime.Manager
+	if len(runtimes) > 0 {
+		runtime = runtimes[0]
+	}
+	if runtime == nil {
+		var err error
+		runtime, err = relayruntime.NewManager(entClient, encryptionKey, logger, relayruntime.Options{})
+		if err != nil {
+			panic(fmt.Sprintf("initialize relay runtime: %v", err))
+		}
+	}
 	return &ProviderHandler{
 		entClient:     entClient,
 		encryptionKey: encryptionKey,
 		logger:        logger,
-		providerCache: make(map[int]relay.Provider),
+		runtime:       runtime,
 	}
 }
 
-func (h *ProviderHandler) getOrCreateRelayProvider(p *ent.RelayProvider) relay.Provider {
-	h.mu.RLock()
-	rp, ok := h.providerCache[p.ID]
-	h.mu.RUnlock()
-	if ok {
-		return rp
-	}
-
-	adminKey, err := decryptAESGCM(p.AdminAPIKey, h.encryptionKey)
-	if err != nil {
-		h.logger.Error("failed to decrypt admin_api_key", zap.String("provider", p.Name), zap.Error(err))
-		adminKey = p.AdminAPIKey
-	}
-
-	rp = relay.NewSub2apiProvider(
-		http.DefaultClient,
-		p.BaseURL,
-		adminKey,
-		p.DefaultModel,
-		h.logger,
-	)
-
-	h.mu.Lock()
-	h.providerCache[p.ID] = rp
-	h.mu.Unlock()
-	return rp
+func (h *ProviderHandler) getOrCreateRelayProvider(p *ent.RelayProvider) (relay.Provider, error) {
+	return h.runtime.ResolveEntity(p)
 }
 
-func (h *ProviderHandler) invalidateCache() {
-	h.mu.Lock()
-	h.providerCache = make(map[int]relay.Provider)
-	h.mu.Unlock()
+func (h *ProviderHandler) invalidateProvider(ctx context.Context, providerID int, configurationVersion int64) {
+	if err := h.runtime.Invalidate(ctx, providerID, configurationVersion); err != nil {
+		h.logger.Warn("relay provider invalidation publish failed",
+			zap.Int("provider_id", providerID),
+			zap.Int64("configuration_version", configurationVersion),
+			zap.Error(err),
+		)
+	}
 }
 
 func (h *ProviderHandler) Resolve(ctx context.Context, providerID int) (relay.Provider, error) {
-	p, err := h.entClient.RelayProvider.Get(ctx, providerID)
-	if err != nil {
-		return nil, err
-	}
-	return h.getOrCreateRelayProvider(p), nil
+	return h.runtime.Resolve(ctx, providerID)
 }
 
 type providerResponse struct {
@@ -274,7 +259,7 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 		pkg.Error(c, http.StatusInternalServerError, "failed to create provider")
 		return
 	}
-	h.invalidateCache()
+	h.invalidateProvider(ctx, p.ID, p.ConfigurationVersion)
 	c.JSON(http.StatusCreated, gin.H{
 		"code": 201,
 		"data": toAdminProviderResponse(p),
@@ -339,7 +324,7 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 		pkg.Error(c, http.StatusInternalServerError, "failed to update provider")
 		return
 	}
-	h.invalidateCache()
+	h.invalidateProvider(ctx, p.ID, p.ConfigurationVersion)
 	pkg.Success(c, toAdminProviderResponse(p))
 }
 
@@ -352,11 +337,20 @@ func (h *ProviderHandler) Delete(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	provider, err := h.entClient.RelayProvider.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "provider not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get provider")
+		return
+	}
 	if err := h.entClient.RelayProvider.DeleteOneID(id).Exec(ctx); err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "failed to delete provider")
 		return
 	}
-	h.invalidateCache()
+	h.invalidateProvider(ctx, id, provider.ConfigurationVersion+1)
 	pkg.Success(c, gin.H{"message": "deleted"})
 }
 
@@ -433,7 +427,11 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		return
 	}
 
-	rp := h.getOrCreateRelayProvider(provider)
+	rp, err := h.getOrCreateRelayProvider(provider)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to resolve provider")
+		return
+	}
 	keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
 	if err != nil {
 		pkg.Success(c, gin.H{
@@ -544,7 +542,11 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 		return
 	}
 
-	rp := h.getOrCreateRelayProvider(provider)
+	rp, err := h.getOrCreateRelayProvider(provider)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to resolve provider")
+		return
+	}
 	keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
 	if err != nil {
 		pkg.Success(c, gin.H{
