@@ -5,10 +5,9 @@
 > `superpowers:executing-plans` to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for live tracking.
 
-**Status:** Tasks 1-3 and Task 4 automated verification/scope audit are
-complete. Task 4 browser verification is blocked because the required browser
-runtime reports no available browser; final commit/push and PR checks remain
-outstanding.
+**Status:** Tasks 1-3 and Task 4 delivery are complete except browser
+verification, which remains blocked and unchecked because the required browser
+runtime reports no available browser.
 
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
@@ -436,7 +435,7 @@ current. Do not rewrite the historical 2026-07-07 spec.
     `approved_reset_succeeded`. Output:
     `.superpowers/sdd/task-4-logs/api-workflow-fallback.log`.
 
-- [ ] **Step 5: Commit docs, push, and watch PR 146**
+- [x] **Step 5: Commit docs, push, and watch PR 146**
 
   ```bash
   git add docs/architecture.md \
@@ -449,6 +448,17 @@ current. Do not rewrite the historical 2026-07-07 spec.
   Skip an empty docs commit. Do not merge, tag, release, or run Helm without a
   separate request. PR 146 must eventually be squash merged so abandoned chain
   commits do not enter `main` history.
+
+  Delivery evidence (2026-07-16):
+
+  - Production simplification commit: `76a767f` (`refactor(quotareset):
+    simplify approval workflow`).
+  - Architecture/verification commit: `d929b00` (`docs(architecture): document
+    department-derived quota reset approvals`).
+  - `git push origin codex/multi-stage-quota-reset-approval` updated PR 146.
+  - `gh pr checks 146 --watch` exited 0 for run `29486757404`: `deploy-static`
+    passed in 17s, `ae-cli` in 31s, `frontend` in 51s, and `backend` in 3m2s.
+  - No merge, tag, release, Helm command, or deployment was run.
 
 ## Deferred
 
