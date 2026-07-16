@@ -3,6 +3,7 @@ package adminsubscription
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,14 +11,7 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/adminsubscriptionjob"
-	"github.com/ai-efficiency/backend/ent/directorydepartment"
-	"github.com/ai-efficiency/backend/ent/directorymember"
-	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
-	"github.com/ai-efficiency/backend/ent/predicate"
 	entuser "github.com/ai-efficiency/backend/ent/user"
-	"github.com/ai-efficiency/backend/internal/adminuseraccess"
-	"github.com/ai-efficiency/backend/internal/directorysync"
-	"github.com/ai-efficiency/backend/internal/directorytree"
 )
 
 const (
@@ -28,6 +22,8 @@ const (
 	defaultStaleJobAfter           = time.Hour
 	staleAdminSubscriptionJobError = "admin subscription job was abandoned after no progress was recorded for more than 1h."
 )
+
+var errCurrentFilterTargetResolverNotConfigured = errors.New("current filter target resolver is not configured")
 
 type ValidationError struct {
 	message string
@@ -90,17 +86,39 @@ type SubscriptionOperator interface {
 	ResetSubscriptionQuotaForUser(ctx context.Context, userID, groupID int64) error
 }
 
+type CurrentFilter struct {
+	Query        string
+	DepartmentID string
+	AccessStatus string
+}
+
+type CurrentFilterTargetResolver interface {
+	ResolveCurrentFilterTargets(ctx context.Context, filter CurrentFilter, limit int) ([]*ent.User, error)
+}
+
+type CurrentFilterTargetResolverFunc func(context.Context, CurrentFilter, int) ([]*ent.User, error)
+
+func (f CurrentFilterTargetResolverFunc) ResolveCurrentFilterTargets(ctx context.Context, filter CurrentFilter, limit int) ([]*ent.User, error) {
+	return f(ctx, filter, limit)
+}
+
 type Service struct {
 	client               *ent.Client
+	currentFilterTargets CurrentFilterTargetResolver
 	jobTimeout           time.Duration
 	perTargetTimeout     time.Duration
 	failureUpdateTimeout time.Duration
 	staleJobAfter        time.Duration
 }
 
-func NewService(client *ent.Client) *Service {
+func NewService(client *ent.Client, resolvers ...CurrentFilterTargetResolver) *Service {
+	var currentFilterTargets CurrentFilterTargetResolver
+	if len(resolvers) > 0 {
+		currentFilterTargets = resolvers[0]
+	}
 	return &Service{
 		client:               client,
+		currentFilterTargets: currentFilterTargets,
 		jobTimeout:           defaultJobTimeout,
 		perTargetTimeout:     defaultPerTargetTimeout,
 		failureUpdateTimeout: defaultFailureUpdateTimeout,
@@ -294,6 +312,7 @@ func TargetSnapshotsFromJob(job *ent.AdminSubscriptionJob) []TargetSnapshot {
 
 func (s *Service) resolveTargets(ctx context.Context, scope adminsubscriptionjob.Scope, req StartJobRequest) ([]int, []int, []TargetSnapshot, error) {
 	query := s.client.User.Query()
+	var users []*ent.User
 	switch scope {
 	case adminsubscriptionjob.ScopeSelected:
 		ids := uniquePositiveInts(req.UserIDs)
@@ -321,36 +340,32 @@ func (s *Service) resolveTargets(ctx context.Context, scope adminsubscriptionjob
 		}
 		return ids, ids, snapshots, nil
 	case adminsubscriptionjob.ScopeCurrentFilter:
-		if req.FilterQuery != "" {
-			query = query.Where(searchPredicate(req.FilterQuery))
+		if s.currentFilterTargets == nil {
+			return nil, nil, nil, fmt.Errorf("resolve current filter targets: %w", errCurrentFilterTargetResolverNotConfigured)
 		}
-		if req.DepartmentID != "" {
-			var err error
-			query, err = s.applyDepartmentFilter(ctx, query, req.DepartmentID)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-		}
-		if req.AccessStatus != "" {
-			var err error
-			query, err = adminuseraccess.ApplyFilter(query, req.AccessStatus)
-			if err != nil {
-				return nil, nil, nil, err
-			}
+		var err error
+		users, err = s.currentFilterTargets.ResolveCurrentFilterTargets(ctx, CurrentFilter{
+			Query:        req.FilterQuery,
+			DepartmentID: req.DepartmentID,
+			AccessStatus: req.AccessStatus,
+		}, MaxTargets+1)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("resolve current filter targets: %w", err)
 		}
 	case adminsubscriptionjob.ScopeAllMapped:
-		query = query.Where(entuser.RelayUserIDNotNil(), entuser.RelayUserIDGT(0))
+		var err error
+		users, err = query.
+			Where(entuser.RelayUserIDNotNil(), entuser.RelayUserIDGT(0)).
+			Order(ent.Asc(entuser.FieldID)).
+			Limit(MaxTargets + 1).
+			All(ctx)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("list users: %w", err)
+		}
 	default:
 		return nil, nil, nil, NewValidationError("scope must be selected, current_filter, or all_mapped")
 	}
 
-	users, err := query.
-		Order(ent.Asc(entuser.FieldID)).
-		Limit(MaxTargets + 1).
-		All(ctx)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("list users: %w", err)
-	}
 	if len(users) > MaxTargets {
 		return nil, nil, nil, NewTooManyTargetsError(MaxTargets)
 	}
@@ -361,100 +376,6 @@ func (s *Service) resolveTargets(ctx context.Context, scope adminsubscriptionjob
 		snapshots = append(snapshots, targetSnapshotFromUser(u))
 	}
 	return ids, nil, snapshots, nil
-}
-
-func (s *Service) applyDepartmentFilter(ctx context.Context, query *ent.UserQuery, departmentID string) (*ent.UserQuery, error) {
-	sourceID, ok, err := s.currentDirectorySourceID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return query.Where(entuser.IDEQ(0)), nil
-	}
-	departmentIDs, err := s.departmentSubtreeExternalIDs(ctx, sourceID, departmentID)
-	if err != nil {
-		return nil, err
-	}
-	matchingMemberIDs, memberIDsWithMemberships, err := s.memberIDSetsForDepartmentIDs(ctx, sourceID, departmentIDs)
-	if err != nil {
-		return nil, err
-	}
-	memberPredicates := make([]predicate.DirectoryMember, 0, 2)
-	if len(matchingMemberIDs) > 0 {
-		memberPredicates = append(memberPredicates, directorymember.IDIn(matchingMemberIDs...))
-	}
-	fallbackPredicate := predicate.DirectoryMember(directorymember.DepartmentExternalIDIn(departmentIDs...))
-	if len(memberIDsWithMemberships) > 0 {
-		fallbackPredicate = directorymember.And(
-			fallbackPredicate,
-			directorymember.Not(directorymember.IDIn(memberIDsWithMemberships...)),
-		)
-	}
-	memberPredicates = append(memberPredicates, fallbackPredicate)
-	members, err := s.client.DirectoryMember.Query().
-		Where(
-			directorymember.SourceIDEQ(sourceID),
-			directorymember.Or(memberPredicates...),
-		).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list directory members for department: %w", err)
-	}
-	return query.Where(userPredicateForDirectoryMembers(members)), nil
-}
-
-func (s *Service) departmentSubtreeExternalIDs(ctx context.Context, sourceID int, departmentID string) ([]string, error) {
-	departments, err := s.client.DirectoryDepartment.Query().
-		Where(directorydepartment.SourceIDEQ(sourceID)).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list directory departments for subtree filter: %w", err)
-	}
-	return directorytree.New(departments).SubtreeIDs(departmentID), nil
-}
-
-func (s *Service) memberIDSetsForDepartmentIDs(ctx context.Context, sourceID int, departmentIDs []string) ([]int, []int, error) {
-	if len(departmentIDs) == 0 {
-		return nil, nil, nil
-	}
-	targetDepartments := make(map[string]struct{}, len(departmentIDs))
-	for _, departmentID := range departmentIDs {
-		departmentID = strings.TrimSpace(departmentID)
-		if departmentID != "" {
-			targetDepartments[departmentID] = struct{}{}
-		}
-	}
-	memberships, err := s.client.DirectoryMemberDepartment.Query().
-		Where(directorymemberdepartment.SourceIDEQ(sourceID)).
-		All(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("list directory member departments: %w", err)
-	}
-	matchingMemberIDs := map[int]struct{}{}
-	memberIDsWithMemberships := map[int]struct{}{}
-	for _, membership := range memberships {
-		memberID := membership.DirectoryMemberID
-		if memberID <= 0 {
-			continue
-		}
-		memberIDsWithMemberships[memberID] = struct{}{}
-		if _, ok := targetDepartments[strings.TrimSpace(membership.DepartmentExternalID)]; ok {
-			matchingMemberIDs[memberID] = struct{}{}
-		}
-	}
-	return intSetValues(matchingMemberIDs), intSetValues(memberIDsWithMemberships), nil
-}
-
-func intSetValues(values map[int]struct{}) []int {
-	out := make([]int, 0, len(values))
-	for value := range values {
-		out = append(out, value)
-	}
-	return out
-}
-
-func (s *Service) currentDirectorySourceID(ctx context.Context) (int, bool, error) {
-	return directorysync.CurrentSourceID(ctx, s.client)
 }
 
 func (s *Service) runTarget(ctx context.Context, job *ent.AdminSubscriptionJob, operator SubscriptionOperator, groupID int64, target TargetSnapshot) ResultRow {
@@ -708,48 +629,4 @@ func uniquePositiveInts(values []int) []int {
 		ids = append(ids, value)
 	}
 	return ids
-}
-
-func searchPredicate(q string) predicate.User {
-	predicates := []predicate.User{
-		entuser.UsernameContainsFold(q),
-		entuser.EmailContainsFold(q),
-	}
-	if n, err := strconv.Atoi(q); err == nil {
-		predicates = append(predicates, entuser.IDEQ(n), entuser.RelayUserIDEQ(n))
-	}
-	return entuser.Or(predicates...)
-}
-
-func userPredicateForDirectoryMembers(members []*ent.DirectoryMember) predicate.User {
-	ids := make([]int, 0, len(members))
-	emails := make([]string, 0, len(members))
-	seenIDs := map[int]struct{}{}
-	seenEmails := map[string]struct{}{}
-	for _, member := range members {
-		if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-			if _, ok := seenIDs[*member.MatchedUserID]; !ok {
-				ids = append(ids, *member.MatchedUserID)
-				seenIDs[*member.MatchedUserID] = struct{}{}
-			}
-		}
-		email := strings.TrimSpace(strings.ToLower(member.EmailNormalized))
-		if email != "" {
-			if _, ok := seenEmails[email]; !ok {
-				emails = append(emails, email)
-				seenEmails[email] = struct{}{}
-			}
-		}
-	}
-	predicates := make([]predicate.User, 0, 2)
-	if len(ids) > 0 {
-		predicates = append(predicates, entuser.IDIn(ids...))
-	}
-	if len(emails) > 0 {
-		predicates = append(predicates, entuser.EmailIn(emails...))
-	}
-	if len(predicates) == 0 {
-		return entuser.IDEQ(0)
-	}
-	return entuser.Or(predicates...)
 }

@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
+import AdminDepartmentPicker from '@/components/admin/AdminDepartmentPicker.vue'
 import DepartmentTreeToggle from '@/components/DepartmentTreeToggle.vue'
 import { useModalFocus } from '@/composables/useModalFocus'
 import {
   disableAdminUserAccess,
   getAdminUserSubscriptionJob,
   getLatestAdminUserSubscriptionJob,
-  listAdminUserDepartments,
+  listAdminUserDepartmentChildren,
   listAdminUsers,
   listAdminUserSubscriptionOptions,
   revealAdminUserRelayPassword,
@@ -18,6 +19,7 @@ import { useToast } from '@/composables/useToast'
 import { useI18n } from '@/i18n'
 import type {
   AdminAssignableSubscriptionProvider,
+  AdminDepartmentChildrenResponse,
   AdminDirectoryDepartmentSummary,
   AdminManageSubscriptionsRequest,
   AdminManageSubscriptionsResultRow,
@@ -28,18 +30,35 @@ import type {
   AdminUserAccessStatus,
 } from '@/types'
 
+type LoadedDepartmentChildren = {
+  items: AdminDirectoryDepartmentSummary[]
+  page: number
+  page_size: number
+  total: number
+}
+
+type VisibleDepartmentRow = {
+  department: AdminDirectoryDepartmentSummary
+  depth: number
+}
+
 const { t, locale } = useI18n()
 const { showToast, dismissToast } = useToast()
 const route = useRoute()
 const router = useRouter()
+const departmentFilterLabelID = useId()
 const loading = ref(false)
 const error = ref('')
 const rows = ref<AdminUser[]>([])
 const total = ref(0)
-const departments = ref<AdminDirectoryDepartmentSummary[]>([])
+const desktopUserRows = ref(false)
+const rootDepartments = ref<LoadedDepartmentChildren | null>(null)
+const childrenByParentID = ref<Map<string, LoadedDepartmentChildren>>(new Map())
 const departmentsLoading = ref(false)
 const departmentsError = ref('')
 const expandedDepartmentIds = ref<Set<string>>(new Set())
+const departmentChildrenLoadingIDs = ref<Set<string>>(new Set())
+const departmentChildrenErrors = ref<Map<string, string>>(new Map())
 const subscriptionProviders = ref<AdminAssignableSubscriptionProvider[]>([])
 const subscriptionOptionsLoading = ref(false)
 const subscriptionOptionsError = ref('')
@@ -102,6 +121,10 @@ const subscriptionForm = reactive<{
 })
 let searchTimer: number | undefined
 let subscriptionJobPollTimer: number | undefined
+let userRequestGeneration = 0
+let rootDepartmentRequestGeneration = 0
+let childDepartmentRequestGeneration = 0
+let desktopUserRowsMediaQuery: MediaQueryList | null = null
 
 const filters = reactive({
   view: queryString('view') === 'departments' ? 'departments' : 'users',
@@ -115,6 +138,9 @@ const filters = reactive({
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / filters.page_size)))
 const canGoPrev = computed(() => filters.page > 1)
 const canGoNext = computed(() => filters.page < totalPages.value)
+const activeViewLoading = computed(() => filters.view === 'departments' ? departmentsLoading.value : loading.value)
+const showMobileUserRows = computed(() => filters.view === 'users' && rows.value.length > 0 && !desktopUserRows.value)
+const showDesktopUserRows = computed(() => filters.view === 'users' && rows.value.length > 0 && desktopUserRows.value)
 const selectedUserIdList = computed(() => Array.from(selectedUserIds.value))
 const selectedCount = computed(() => selectedUserIdList.value.length)
 const allVisibleSelected = computed(() => rows.value.length > 0 && rows.value.every((row) => selectedUserIds.value.has(row.id)))
@@ -136,21 +162,19 @@ const { handleKeydown: handleDisableAccessDialogKeydown } = useModalFocus(disabl
   initialFocus: disableAccessConfirmInput,
   onClose: closeDisableAccessDialog,
 })
-const visibleDepartments = computed(() => {
-  const byID = new Map(departments.value.map((department) => [department.external_id, department]))
-  return departments.value.filter((department) => {
-    let parentID = department.parent_external_id?.trim()
-    const seen = new Set<string>()
-    while (parentID) {
-      if (seen.has(parentID)) return true
-      seen.add(parentID)
-      const parent = byID.get(parentID)
-      if (!parent) return true
-      if (!expandedDepartmentIds.value.has(parentID)) return false
-      parentID = parent?.parent_external_id?.trim()
-    }
-    return true
-  })
+const visibleDepartmentRows = computed<VisibleDepartmentRow[]>(() => flattenLoadedDepartmentRows(
+  rootDepartments.value?.items ?? [],
+  childrenByParentID.value,
+  expandedDepartmentIds.value,
+))
+const rootDepartmentTotalPages = computed(() => Math.max(
+  1,
+  Math.ceil((rootDepartments.value?.total ?? 0) / (rootDepartments.value?.page_size ?? 25)),
+))
+const canGoPreviousRootDepartmentPage = computed(() => (rootDepartments.value?.page ?? 1) > 1)
+const canGoNextRootDepartmentPage = computed(() => {
+  const current = rootDepartments.value
+  return current != null && current.page * current.page_size < current.total
 })
 const canSubmitSubscriptionManagement = computed(() => {
   if (subscriptionForm.loading || !subscriptionForm.provider_id || !subscriptionForm.group_id) return false
@@ -161,7 +185,12 @@ const canSubmitSubscriptionManagement = computed(() => {
   return true
 })
 
+function handleDesktopUserRowsChange(event: MediaQueryListEvent) {
+  desktopUserRows.value = event.matches
+}
+
 async function loadUsers() {
+  const generation = ++userRequestGeneration
   loading.value = true
   error.value = ''
 	try {
@@ -173,6 +202,7 @@ async function loadUsers() {
       page_size: filters.page_size,
     }
     const res = await listAdminUsers(params)
+    if (generation !== userRequestGeneration) return
     const data = res.data.data
     rows.value = data?.items ?? []
     total.value = data?.total ?? 0
@@ -180,32 +210,123 @@ async function loadUsers() {
     filters.page_size = data?.page_size ?? filters.page_size
     replaceAdminUsersQuery()
   } catch (err: any) {
+    if (generation !== userRequestGeneration) return
     error.value = err.response?.data?.message || err.message || t('adminUsers.loadFailed')
     rows.value = []
     total.value = 0
   } finally {
-    loading.value = false
+    if (generation === userRequestGeneration) loading.value = false
   }
 }
 
-async function loadDepartments() {
+function loadedDepartmentPage(
+  data: AdminDepartmentChildrenResponse | undefined,
+  requestedPage: number,
+): LoadedDepartmentChildren {
+  return {
+    items: data?.items ?? [],
+    page: data?.page ?? requestedPage,
+    page_size: data?.page_size ?? 25,
+    total: data?.total ?? 0,
+  }
+}
+
+function flattenLoadedDepartmentRows(
+  roots: AdminDirectoryDepartmentSummary[],
+  children: Map<string, LoadedDepartmentChildren>,
+  expandedIDs: Set<string>,
+) {
+  const visible: VisibleDepartmentRow[] = []
+  const visited = new Set<string>()
+
+  const visit = (departments: AdminDirectoryDepartmentSummary[], depth: number) => {
+    for (const department of departments) {
+      if (visited.has(department.external_id)) continue
+      visited.add(department.external_id)
+      visible.push({ department, depth })
+      if (!expandedIDs.has(department.external_id)) continue
+      visit(children.get(department.external_id)?.items ?? [], depth + 1)
+    }
+  }
+
+  visit(roots, 0)
+  return visible
+}
+
+async function loadRootDepartments(page = 1) {
+  if (departmentsLoading.value) return
+  const generation = ++rootDepartmentRequestGeneration
   departmentsLoading.value = true
   departmentsError.value = ''
   try {
-    const res = await listAdminUserDepartments()
-    departments.value = res.data.data?.items ?? []
-    expandedDepartmentIds.value = new Set(
-      departments.value
-        .filter((department) => (department.child_count ?? 0) > 0)
-        .map((department) => department.external_id),
-    )
+    const res = await listAdminUserDepartmentChildren({ page, page_size: 25 })
+    if (generation !== rootDepartmentRequestGeneration) return
+    rootDepartments.value = loadedDepartmentPage(res.data.data, page)
   } catch (err: any) {
-    departments.value = []
-    expandedDepartmentIds.value = new Set()
+    if (generation !== rootDepartmentRequestGeneration) return
+    rootDepartments.value = null
     departmentsError.value = err.response?.data?.message || err.message || t('adminUsers.departmentsLoadFailed')
   } finally {
-    departmentsLoading.value = false
+    if (generation === rootDepartmentRequestGeneration) departmentsLoading.value = false
   }
+}
+
+function mergeDepartmentItems(
+  existing: AdminDirectoryDepartmentSummary[],
+  incoming: AdminDirectoryDepartmentSummary[],
+) {
+  const seen = new Set<string>()
+  const merged: AdminDirectoryDepartmentSummary[] = []
+  for (const item of [...existing, ...incoming]) {
+    if (seen.has(item.external_id)) continue
+    seen.add(item.external_id)
+    merged.push(item)
+  }
+  return merged
+}
+
+async function loadDepartmentChildren(parentDepartmentID: string, page = 1, append = false) {
+  if (departmentChildrenLoadingIDs.value.has(parentDepartmentID)) return
+  const generation = childDepartmentRequestGeneration
+  departmentChildrenLoadingIDs.value = new Set(departmentChildrenLoadingIDs.value).add(parentDepartmentID)
+  const nextErrors = new Map(departmentChildrenErrors.value)
+  nextErrors.delete(parentDepartmentID)
+  departmentChildrenErrors.value = nextErrors
+  try {
+    const res = await listAdminUserDepartmentChildren({
+      parent_department_id: parentDepartmentID,
+      page,
+      page_size: 25,
+    })
+    if (generation !== childDepartmentRequestGeneration) return
+    const loaded = loadedDepartmentPage(res.data.data, page)
+    const current = childrenByParentID.value.get(parentDepartmentID)
+    if (append && current) loaded.items = mergeDepartmentItems(current.items, loaded.items)
+    const nextChildren = new Map(childrenByParentID.value)
+    nextChildren.set(parentDepartmentID, loaded)
+    childrenByParentID.value = nextChildren
+  } catch (err: any) {
+    if (generation !== childDepartmentRequestGeneration) return
+    const errors = new Map(departmentChildrenErrors.value)
+    errors.set(
+      parentDepartmentID,
+      err.response?.data?.message || err.message || t('adminUsers.departmentsLoadFailed'),
+    )
+    departmentChildrenErrors.value = errors
+  } finally {
+    if (generation !== childDepartmentRequestGeneration) return
+    const loadingIDs = new Set(departmentChildrenLoadingIDs.value)
+    loadingIDs.delete(parentDepartmentID)
+    departmentChildrenLoadingIDs.value = loadingIDs
+  }
+}
+
+function invalidateDepartmentChildren() {
+  childDepartmentRequestGeneration += 1
+  childrenByParentID.value = new Map()
+  expandedDepartmentIds.value = new Set()
+  departmentChildrenLoadingIDs.value = new Set()
+  departmentChildrenErrors.value = new Map()
 }
 
 async function loadSubscriptionOptions() {
@@ -273,9 +394,18 @@ async function setAdminUsersView(view: 'users' | 'departments') {
   filters.view = view
   filters.page = 1
   replaceAdminUsersQuery()
-  if (view === 'departments' && departments.value.length === 0) {
-    await loadDepartments()
+  if (view === 'departments' && rootDepartments.value === null && !departmentsLoading.value) {
+    await loadRootDepartments(1)
   }
+}
+
+async function refreshActiveView() {
+  if (filters.view === 'departments') {
+    invalidateDepartmentChildren()
+    await loadRootDepartments(rootDepartments.value?.page ?? 1)
+    return
+  }
+  await loadUsers()
 }
 
 async function openDepartmentUsers(department: AdminDirectoryDepartmentSummary) {
@@ -364,33 +494,78 @@ function matchedUserCountLabel(count: number) {
   return t(count === 1 ? 'adminUsers.matchedUserCountSingular' : 'adminUsers.matchedUserCountPlural', { count })
 }
 
-function departmentDepth(department: AdminDirectoryDepartmentSummary) {
-  const depth = Number(department.depth ?? 0)
+function departmentDepth(depthValue: number) {
+  const depth = Number(depthValue)
   return Number.isFinite(depth) && depth > 0 ? Math.min(depth, 8) : 0
 }
 
-function departmentIndentStyle(department: AdminDirectoryDepartmentSummary) {
-  const depth = departmentDepth(department)
+function departmentIndentStyle(depthValue: number) {
+  const depth = departmentDepth(depthValue)
   return { paddingLeft: depth === 0 ? '1rem' : `${depth * 1.25}rem` }
 }
 
-function departmentAriaLevel(department: AdminDirectoryDepartmentSummary) {
-  return String(departmentDepth(department) + 1)
+function departmentAriaLevel(depthValue: number) {
+  return String(departmentDepth(depthValue) + 1)
 }
 
 function departmentExpanded(department: AdminDirectoryDepartmentSummary) {
   return expandedDepartmentIds.value.has(department.external_id)
 }
 
-function toggleDepartment(department: AdminDirectoryDepartmentSummary) {
-  if ((department.child_count ?? 0) <= 0) return
+function departmentHasChildren(department: AdminDirectoryDepartmentSummary) {
+  return department.has_children || department.child_count > 0
+}
+
+async function toggleDepartment(department: AdminDirectoryDepartmentSummary) {
+  if (!departmentHasChildren(department)) return
   const next = new Set(expandedDepartmentIds.value)
   if (next.has(department.external_id)) {
     next.delete(department.external_id)
+    expandedDepartmentIds.value = next
+    return
   } else {
     next.add(department.external_id)
   }
   expandedDepartmentIds.value = next
+  if (!childrenByParentID.value.has(department.external_id)) {
+    await loadDepartmentChildren(department.external_id, 1)
+  }
+}
+
+function departmentChildrenLoading(departmentID: string) {
+  return departmentChildrenLoadingIDs.value.has(departmentID)
+}
+
+function departmentChildrenError(departmentID: string) {
+  return departmentChildrenErrors.value.get(departmentID) ?? ''
+}
+
+function departmentChildrenEmpty(departmentID: string) {
+  const loaded = childrenByParentID.value.get(departmentID)
+  return loaded != null && loaded.items.length === 0
+}
+
+function canLoadMoreDepartmentChildren(departmentID: string) {
+  const loaded = childrenByParentID.value.get(departmentID)
+  return loaded != null && loaded.page * loaded.page_size < loaded.total
+}
+
+async function loadMoreDepartmentChildren(departmentID: string) {
+  const loaded = childrenByParentID.value.get(departmentID)
+  if (!loaded || loaded.page * loaded.page_size >= loaded.total) return
+  await loadDepartmentChildren(departmentID, loaded.page + 1, true)
+}
+
+async function previousRootDepartmentPage() {
+  const current = rootDepartments.value
+  if (!current || current.page <= 1 || departmentsLoading.value) return
+  await loadRootDepartments(current.page - 1)
+}
+
+async function nextRootDepartmentPage() {
+  const current = rootDepartments.value
+  if (!current || current.page * current.page_size >= current.total || departmentsLoading.value) return
+  await loadRootDepartments(current.page + 1)
 }
 
 function subtreeMemberCountLabel(department: AdminDirectoryDepartmentSummary) {
@@ -739,8 +914,9 @@ async function confirmDisableAccess() {
 }
 
 watch(
-	() => filters.q,
+		() => filters.q,
   () => {
+    userRequestGeneration += 1
     clearSearchTimer()
     searchTimer = window.setTimeout(() => {
       void applySearch()
@@ -748,16 +924,28 @@ watch(
 	}
 )
 
-watch([visibleSelectionIndeterminate, allVisibleSelected], syncVisibleSelectionIndeterminate, { flush: 'post' })
+watch(
+  [visibleSelectionIndeterminate, allVisibleSelected, desktopUserRows, () => filters.view, selectAllUsersCheckbox],
+  syncVisibleSelectionIndeterminate,
+  { flush: 'post' },
+)
 
 onMounted(() => {
+  desktopUserRowsMediaQuery = window.matchMedia('(min-width: 768px)')
+  desktopUserRows.value = desktopUserRowsMediaQuery.matches
+  desktopUserRowsMediaQuery.addEventListener('change', handleDesktopUserRowsChange)
   void loadUsers()
-  void loadDepartments()
+  if (filters.view === 'departments') void loadRootDepartments(1)
   void loadSubscriptionOptions()
   void recoverLatestSubscriptionJob()
   syncVisibleSelectionIndeterminate()
 })
 onBeforeUnmount(() => {
+  userRequestGeneration += 1
+  rootDepartmentRequestGeneration += 1
+  childDepartmentRequestGeneration += 1
+  desktopUserRowsMediaQuery?.removeEventListener('change', handleDesktopUserRowsChange)
+  desktopUserRowsMediaQuery = null
   clearSearchTimer()
   stopSubscriptionJobPolling()
 })
@@ -772,11 +960,12 @@ onBeforeUnmount(() => {
           <p class="mt-1 text-sm text-gray-500">{{ t('adminUsers.subtitle') }}</p>
         </div>
         <button
+          data-testid="admin-users-refresh"
           class="shrink-0 self-start whitespace-nowrap rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:self-auto"
-          :disabled="loading"
-          @click="loadUsers"
+          :disabled="activeViewLoading"
+          @click="refreshActiveView"
         >
-          {{ loading ? t('adminUsers.loading') : t('adminUsers.refresh') }}
+          {{ activeViewLoading ? t('adminUsers.loading') : t('adminUsers.refresh') }}
         </button>
       </div>
 
@@ -813,20 +1002,14 @@ onBeforeUnmount(() => {
               @keyup.enter="applySearch"
             />
           </label>
-          <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
-            {{ t('adminUsers.department') }}
-            <select
-              v-model="filters.department_id"
-              data-testid="admin-users-department-filter"
-              class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700"
-              @change="changeDepartmentFilter"
-            >
-	              <option value="">{{ t('adminUsers.allDepartments') }}</option>
-	              <option v-for="department in departments" :key="department.external_id" :value="department.external_id">
-	                {{ departmentDisplayLabel(department) }}
-	              </option>
-            </select>
-          </label>
+	          <div class="text-xs font-medium uppercase tracking-wide text-gray-500">
+	            <span :id="departmentFilterLabelID" data-testid="admin-users-department-label">{{ t('adminUsers.department') }}</span>
+	            <AdminDepartmentPicker
+	              v-model="filters.department_id"
+	              :labelled-by="departmentFilterLabelID"
+	              @change="changeDepartmentFilter"
+	            />
+	          </div>
           <label class="text-xs font-medium uppercase tracking-wide text-gray-500">
             {{ t('adminUsers.accessStatus') }}
             <select
@@ -867,8 +1050,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <p v-if="error" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ error }}</p>
-        <p v-if="departmentsError" class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-800">{{ departmentsError }}</p>
-      </div>
+	      </div>
 
       <div v-if="filters.view === 'users'" class="rounded-lg bg-white p-4 shadow">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -1014,52 +1196,105 @@ onBeforeUnmount(() => {
       <div v-if="filters.view === 'departments'" class="rounded-lg bg-white p-5 shadow">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-900">{{ t('adminUsers.departments') }}</h2>
-          <span class="text-xs text-gray-500">{{ departments.length }} {{ t('adminUsers.totalSuffix') }}</span>
+	        <div class="flex items-center gap-2 text-xs text-gray-500">
+	          <span>{{ rootDepartments?.total ?? 0 }} {{ t('adminUsers.totalSuffix') }}</span>
+	          <button
+	            type="button"
+	            data-testid="admin-users-department-roots-prev"
+	            class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
+	            :disabled="departmentsLoading || !canGoPreviousRootDepartmentPage"
+	            @click="previousRootDepartmentPage"
+	          >
+	            {{ t('adminUsers.prev') }}
+	          </button>
+	          <span>{{ t('adminUsers.page') }} {{ rootDepartments?.page ?? 1 }} / {{ rootDepartmentTotalPages }}</span>
+	          <button
+	            type="button"
+	            data-testid="admin-users-department-roots-next"
+	            class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
+	            :disabled="departmentsLoading || !canGoNextRootDepartmentPage"
+	            @click="nextRootDepartmentPage"
+	          >
+	            {{ t('adminUsers.next') }}
+	          </button>
+	        </div>
         </div>
         <p v-if="departmentsError" class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{{ departmentsError }}</p>
         <div v-if="departmentsLoading" class="mt-3 text-sm text-gray-500">{{ t('adminUsers.loading') }}</div>
-        <div v-else-if="departments.length === 0" class="mt-3 text-sm text-gray-400">{{ t('adminUsers.noDepartments') }}</div>
+        <div v-else-if="visibleDepartmentRows.length === 0" class="mt-3 text-sm text-gray-400">{{ t('adminUsers.noDepartments') }}</div>
 	        <div v-else class="mt-3 overflow-hidden rounded-md border border-gray-200" role="tree">
 	          <div
-	            v-for="department in visibleDepartments"
-	            :key="department.external_id"
-	            :data-testid="`admin-users-department-open-${department.external_id}`"
+	            v-for="visibleRow in visibleDepartmentRows"
+	            :key="visibleRow.department.external_id"
+	            :data-testid="`admin-users-department-open-${visibleRow.department.external_id}`"
 	            role="treeitem"
-	            :aria-level="departmentAriaLevel(department)"
-	            :aria-expanded="(department.child_count ?? 0) > 0 ? departmentExpanded(department) : undefined"
-	            :style="departmentIndentStyle(department)"
+	            :aria-level="departmentAriaLevel(visibleRow.depth)"
+	            :aria-expanded="departmentHasChildren(visibleRow.department) ? departmentExpanded(visibleRow.department) : undefined"
+	            :style="departmentIndentStyle(visibleRow.depth)"
 	            class="flex w-full cursor-pointer flex-col gap-2 border-b border-gray-100 bg-white py-3 pr-4 text-left last:border-b-0 hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between"
 	            tabindex="0"
-	            @click="openDepartmentUsers(department)"
-	            @keydown.enter.prevent="openDepartmentUsers(department)"
-	            @keydown.space.prevent="openDepartmentUsers(department)"
+	            @click="openDepartmentUsers(visibleRow.department)"
+	            @keydown.enter.prevent="openDepartmentUsers(visibleRow.department)"
+	            @keydown.space.prevent="openDepartmentUsers(visibleRow.department)"
 	          >
 	            <div class="min-w-0">
 	              <div class="flex items-center gap-2">
 	                <DepartmentTreeToggle
-	                  v-if="(department.child_count ?? 0) > 0"
-	                  :data-testid="`admin-users-department-toggle-${department.external_id}`"
-	                  :expanded="departmentExpanded(department)"
+	                  v-if="departmentHasChildren(visibleRow.department)"
+	                  :data-testid="`admin-users-department-toggle-${visibleRow.department.external_id}`"
+	                  :expanded="departmentExpanded(visibleRow.department)"
 	                  :expanded-label="t('adminUsers.collapseDepartment')"
 	                  :collapsed-label="t('adminUsers.expandDepartment')"
-	                  @toggle="toggleDepartment(department)"
+	                  @toggle="toggleDepartment(visibleRow.department)"
 	                />
 	                <span v-else class="inline-flex h-7 w-7" aria-hidden="true"></span>
-	                <span class="truncate font-medium text-gray-900">{{ department.name }}</span>
+	                <span class="truncate font-medium text-gray-900">{{ visibleRow.department.name }}</span>
 	              </div>
-	              <div class="mt-1 truncate text-xs text-gray-500">{{ departmentDisplayLabel(department) }}</div>
+	              <div class="mt-1 truncate text-xs text-gray-500">{{ departmentDisplayLabel(visibleRow.department) }}</div>
+	              <div
+	                v-if="departmentExpanded(visibleRow.department) && departmentChildrenLoading(visibleRow.department.external_id)"
+	                class="mt-1 text-xs text-gray-500"
+	              >
+	                {{ t('adminUsers.loading') }}
+	              </div>
+	              <div
+	                v-else-if="departmentExpanded(visibleRow.department) && departmentChildrenError(visibleRow.department.external_id)"
+	                :data-testid="`admin-users-department-children-error-${visibleRow.department.external_id}`"
+	                class="mt-1 text-xs text-red-700"
+	              >
+	                {{ departmentChildrenError(visibleRow.department.external_id) }}
+	              </div>
+	              <div
+	                v-else-if="departmentExpanded(visibleRow.department) && departmentChildrenEmpty(visibleRow.department.external_id)"
+	                :data-testid="`admin-users-department-children-empty-${visibleRow.department.external_id}`"
+	                class="mt-1 text-xs text-gray-400"
+	              >
+	                {{ t('adminUsers.noDepartments') }}
+	              </div>
 	            </div>
-            <div class="flex shrink-0 flex-wrap gap-2 text-xs text-gray-600">
-              <span class="rounded-full bg-gray-100 px-2 py-0.5">{{ memberCountLabel(department.member_count) }}</span>
-              <span class="rounded-full bg-slate-50 px-2 py-0.5 text-slate-700">{{ subtreeMemberCountLabel(department) }}</span>
-              <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">{{ matchedUserCountLabel(department.matched_user_count) }}</span>
-              <span class="rounded-full bg-teal-50 px-2 py-0.5 text-teal-700">{{ subtreeMatchedUserCountLabel(department) }}</span>
+            <div class="flex shrink-0 flex-wrap items-center gap-2 text-xs text-gray-600">
+              <span class="rounded-full bg-gray-100 px-2 py-0.5">{{ memberCountLabel(visibleRow.department.member_count) }}</span>
+              <span class="rounded-full bg-slate-50 px-2 py-0.5 text-slate-700">{{ subtreeMemberCountLabel(visibleRow.department) }}</span>
+              <span class="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">{{ matchedUserCountLabel(visibleRow.department.matched_user_count) }}</span>
+              <span class="rounded-full bg-teal-50 px-2 py-0.5 text-teal-700">{{ subtreeMatchedUserCountLabel(visibleRow.department) }}</span>
               <span
-                v-if="(department.representative_count ?? 0) > 0"
+                v-if="visibleRow.department.representative_count > 0"
                 class="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700"
               >
-                {{ representativeCountLabel(department) }}
+                {{ representativeCountLabel(visibleRow.department) }}
               </span>
+	          <button
+	            v-if="departmentExpanded(visibleRow.department) && canLoadMoreDepartmentChildren(visibleRow.department.external_id)"
+	            type="button"
+	            :data-testid="`admin-users-department-load-more-${visibleRow.department.external_id}`"
+	            class="rounded border border-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+	            :disabled="departmentChildrenLoading(visibleRow.department.external_id)"
+	            @click.stop="loadMoreDepartmentChildren(visibleRow.department.external_id)"
+		            @keydown.enter.prevent.stop="loadMoreDepartmentChildren(visibleRow.department.external_id)"
+		            @keydown.space.prevent.stop="loadMoreDepartmentChildren(visibleRow.department.external_id)"
+	          >
+	            {{ t('adminUsers.next') }}
+	          </button>
             </div>
 	          </div>
 	        </div>
@@ -1090,8 +1325,13 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="rows.length > 0" class="mt-3 space-y-3 md:hidden">
-          <div v-for="row in rows" :key="row.id" class="rounded-lg border border-gray-100 bg-white p-4 shadow-sm">
+	        <div v-if="showMobileUserRows" data-admin-user-list="mobile" class="mt-3 space-y-3 md:hidden">
+	          <div
+	            v-for="row in rows"
+	            :key="row.id"
+	            data-admin-user-row
+	            class="rounded-lg border border-gray-100 bg-white p-4 shadow-sm"
+	          >
             <div class="flex items-start justify-between gap-3">
               <label class="flex min-w-0 items-start gap-3">
                 <input
@@ -1164,7 +1404,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="rows.length > 0" class="mt-3 hidden overflow-x-auto md:block">
+	        <div v-if="showDesktopUserRows" data-admin-user-list="desktop" class="mt-3 hidden overflow-x-auto md:block">
           <table class="min-w-[1080px] divide-y divide-gray-100 text-sm">
             <thead>
               <tr class="text-xs uppercase text-gray-400">
@@ -1192,7 +1432,7 @@ onBeforeUnmount(() => {
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-50">
-              <tr v-for="row in rows" :key="row.id">
+	              <tr v-for="row in rows" :key="row.id" data-admin-user-row>
                 <td class="px-3 py-2 align-top">
                   <input
                     :data-testid="`select-user-${row.id}`"
@@ -1255,7 +1495,7 @@ onBeforeUnmount(() => {
             </tbody>
           </table>
         </div>
-        <div v-else class="mt-3 text-sm text-gray-400">{{ t('adminUsers.empty') }}</div>
+	        <div v-if="rows.length === 0" class="mt-3 text-sm text-gray-400">{{ t('adminUsers.empty') }}</div>
       </div>
     </div>
 

@@ -400,6 +400,8 @@ func setupRouter(
 	adminUsersGroup.Use(auth.RequireAdmin())
 	{
 		adminUsersGroup.GET("", adminUsersHandler.List)
+		adminUsersGroup.GET("/department-options", adminUsersHandler.ListDepartmentOptions)
+		adminUsersGroup.GET("/department-children", adminUsersHandler.ListDepartmentChildren)
 		adminUsersGroup.GET("/departments", adminUsersHandler.ListDepartments)
 		adminUsersGroup.GET("/subscription-options", adminUsersHandler.ListSubscriptionOptions)
 		adminUsersGroup.POST("/subscription-jobs", adminUsersHandler.StartSubscriptionJob)
