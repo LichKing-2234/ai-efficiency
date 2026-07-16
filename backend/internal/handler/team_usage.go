@@ -15,12 +15,14 @@ import (
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type teamUsageService interface {
 	Scope(context.Context, int) (*teamusage.ScopeResponse, error)
 	Subjects(context.Context, int, string, int, int) (*teamusage.SubjectsResponse, error)
 	SubjectDashboard(context.Context, int, int, relay.UserUsageDashboardParams) (*teamusage.SubjectDashboardResponse, error)
+	Summary(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error)
 	Overview(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error)
 	UpdateMultiplier(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	ListAudit(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
@@ -41,18 +43,19 @@ func (f teamUsageProviderResolverFunc) Resolve(ctx context.Context, providerID i
 	return f(ctx, providerID)
 }
 
-func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *ProviderHandler, scopeCache *representativescope.Cache) *teamusage.Service {
+func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *ProviderHandler, scopeCache *representativescope.Cache, snapshotCache *teamusage.SnapshotCache) *teamusage.Service {
 	resolver := teamUsageProviderResolverFunc(func(context.Context, int) (relay.Provider, error) {
 		return nil, teamusage.ErrProviderUnsupported
 	})
 	if providerHandler != nil {
 		resolver = providerHandler.Resolve
 	}
-	return teamusage.NewService(
+	return teamusage.NewServiceWithSnapshotCache(
 		entClient,
 		representativescope.NewWithCache(entClient, scopeCache),
 		resolver,
 		teamusage.NewPostgresAdvisoryLocker(sqlDB),
+		snapshotCache,
 	)
 }
 
@@ -117,6 +120,7 @@ func (h *TeamUsageHandler) SubjectDashboard(c *gin.Context) {
 }
 
 func (h *TeamUsageHandler) Overview(c *gin.Context) {
+	writeTeamOverviewCompatibilityHeaders(c)
 	uc := auth.GetUserContext(c)
 	if uc == nil {
 		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
@@ -141,6 +145,37 @@ func (h *TeamUsageHandler) Overview(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, resp)
+}
+
+func (h *TeamUsageHandler) Summary(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dashboardParams, ok := parseUserUsageDashboardParams(c)
+	if !ok {
+		return
+	}
+	resp, err := h.service.Summary(c.Request.Context(), uc.UserID, teamusage.OverviewParams{
+		StartDate: dashboardParams.StartDate, EndDate: dashboardParams.EndDate,
+		Granularity: dashboardParams.Granularity, Timezone: dashboardParams.Timezone,
+	})
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	requestID := uuid.NewString()
+	resp.RequestID = requestID
+	c.Header("X-Request-ID", requestID)
+	pkg.Success(c, resp)
+}
+
+func writeTeamOverviewCompatibilityHeaders(c *gin.Context) {
+	c.Header("Deprecation", "@1783987200")
+	c.Header("Sunset", "Tue, 15 Sep 2026 00:00:00 GMT")
+	c.Header("Link", `</api/v1/user/team-usage/summary>; rel="successor-version"`)
 }
 
 func (h *TeamUsageHandler) UpdateMultiplier(c *gin.Context) {
@@ -269,6 +304,8 @@ func writeTeamUsageError(c *gin.Context, err error) {
 	}
 
 	switch {
+	case errors.Is(err, teamusage.ErrInvalidOverviewParams):
+		pkg.Error(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, teamusage.ErrNotRepresentative), errors.Is(err, teamusage.ErrSelfEditForbidden), errors.Is(err, teamusage.ErrNotUpperLevelRepresentative):
 		pkg.Error(c, http.StatusForbidden, err.Error())
 	case errors.Is(err, teamusage.ErrOutOfScope):

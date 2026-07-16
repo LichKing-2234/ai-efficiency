@@ -3,6 +3,7 @@ package representativescope
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,11 +17,19 @@ import (
 	"github.com/google/uuid"
 )
 
-const scopeCacheSchemaVersion = 1
+const scopeCacheSchemaVersion = 2
 
 var scopeCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
 type scopeGuard struct {
+	ActorUserID       int    `json:"actor_user_id"`
+	ActorRole         string `json:"actor_role"`
+	DirectorySourceID int    `json:"directory_source_id"`
+	DirectoryRunID    int    `json:"directory_run_id"`
+}
+
+type scopeVersionDimensions struct {
+	SchemaVersion     int    `json:"schema_version"`
 	ActorUserID       int    `json:"actor_user_id"`
 	ActorRole         string `json:"actor_role"`
 	DirectorySourceID int    `json:"directory_source_id"`
@@ -124,6 +133,18 @@ func validateScopeGuard(guard scopeGuard) error {
 	return nil
 }
 
+func scopeVersion(guard scopeGuard) string {
+	encoded, _ := json.Marshal(scopeVersionDimensions{
+		SchemaVersion:     scopeCacheSchemaVersion,
+		ActorUserID:       guard.ActorUserID,
+		ActorRole:         guard.ActorRole,
+		DirectorySourceID: guard.DirectorySourceID,
+		DirectoryRunID:    guard.DirectoryRunID,
+	})
+	digest := sha256.Sum256(encoded)
+	return fmt.Sprintf("%x", digest)
+}
+
 func (c *Cache) loadWithLease(ctx context.Context, key string, guard scopeGuard, loader ScopeLoader) (*Scope, error) {
 	if scope, hit, err := c.read(ctx, key, guard); hit {
 		return scope, nil
@@ -196,6 +217,9 @@ func (c *Cache) loadAuthoritative(ctx context.Context, guard scopeGuard, loader 
 	if err != nil {
 		return nil, err
 	}
+	if scope != nil {
+		scope.Version = scopeVersion(guard)
+	}
 	if !validScopeForGuard(scope, guard) {
 		return nil, fmt.Errorf("representative scope loader returned an invalid scope")
 	}
@@ -229,7 +253,7 @@ func (c *Cache) read(ctx context.Context, key string, guard scopeGuard) (*Scope,
 }
 
 func validScopeForGuard(scope *Scope, guard scopeGuard) bool {
-	if scope == nil || scope.ActorUserID != guard.ActorUserID {
+	if scope == nil || scope.Version != scopeVersion(guard) || scope.ActorUserID != guard.ActorUserID {
 		return false
 	}
 	if !scope.IsRepresentative {
@@ -294,7 +318,7 @@ func (c *Cache) valueTTL() time.Duration {
 
 func scopeCacheKey(namespace string, guard scopeGuard) string {
 	return fmt.Sprintf(
-		"ae:%s:representative-scope:v1:actor:%d:directory-source:%d:directory-run:%d:role:%s",
+		"ae:%s:representative-scope:v2:actor:%d:directory-source:%d:directory-run:%d:role:%s",
 		namespace,
 		guard.ActorUserID,
 		guard.DirectorySourceID,
