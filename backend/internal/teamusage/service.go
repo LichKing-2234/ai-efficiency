@@ -178,13 +178,25 @@ func (s *Service) readOverviewSnapshot(ctx context.Context, actorUserID int, par
 	if err != nil {
 		return nil, "", err
 	}
-	providerBinding, err := s.resolvePrimaryProviderBinding(ctx)
+	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("resolve primary relay provider: %w", err)
+		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
 	}
 
 	loader := func(loadCtx context.Context) (SnapshotOriginLoadResult, error) {
-		snapshot, loadErr := s.generateOverviewSnapshot(loadCtx, scope, providerBinding.Provider, normalized)
+		var provider relay.Provider
+		overviewSubjects := scope.OverviewSubjects
+		if len(overviewSubjects) == 0 {
+			overviewSubjects = scope.Subjects
+		}
+		if len(overviewSubjects) <= s.fullScopeCap {
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
+			if resolveErr != nil {
+				return SnapshotOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
+			}
+			provider = resolvedProvider
+		}
+		snapshot, loadErr := s.generateOverviewSnapshot(loadCtx, scope, provider, normalized)
 		if loadErr == nil {
 			return SnapshotOriginLoadResult{Snapshot: snapshot}, nil
 		}
@@ -216,7 +228,7 @@ func (s *Service) readOverviewSnapshot(ctx context.Context, actorUserID int, par
 		return nil, "", err
 	}
 	result, err := s.snapshotCache.GetOrLoad(ctx, SnapshotCacheKey{
-		ProviderID: providerBinding.ID, ProviderVersion: providerBinding.ConfigurationVersion,
+		ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
 		ActorID: actorUserID, ScopeVersion: scope.Version, ScopeHash: scopeHash, Params: normalized,
 	}, loader)
 	if err != nil {
@@ -799,7 +811,26 @@ type primaryProviderBinding struct {
 	Provider             relay.Provider
 }
 
+type primaryProviderConfig struct {
+	ID                   int
+	ConfigurationVersion int64
+}
+
 func (s *Service) resolvePrimaryProviderBinding(ctx context.Context) (*primaryProviderBinding, error) {
+	config, err := s.resolvePrimaryProviderConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := s.providerResolver.Resolve(ctx, config.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &primaryProviderBinding{
+		ID: config.ID, ConfigurationVersion: config.ConfigurationVersion, Provider: provider,
+	}, nil
+}
+
+func (s *Service) resolvePrimaryProviderConfig(ctx context.Context) (*primaryProviderConfig, error) {
 	if s.client == nil {
 		return nil, errors.New("teamusage ent client is not configured")
 	}
@@ -814,19 +845,11 @@ func (s *Service) resolvePrimaryProviderBinding(ctx context.Context) (*primaryPr
 		return nil, err
 	}
 	if len(providers) == 0 {
-		provider, err := s.providerResolver.Resolve(ctx, 1)
-		if err != nil {
-			return nil, err
-		}
-		return &primaryProviderBinding{ID: 1, ConfigurationVersion: 1, Provider: provider}, nil
+		return &primaryProviderConfig{ID: 1, ConfigurationVersion: 1}, nil
 	}
 	providerRow := providers[0]
-	provider, err := s.providerResolver.Resolve(ctx, providerRow.ID)
-	if err != nil {
-		return nil, err
-	}
-	return &primaryProviderBinding{
-		ID: providerRow.ID, ConfigurationVersion: providerRow.ConfigurationVersion, Provider: provider,
+	return &primaryProviderConfig{
+		ID: providerRow.ID, ConfigurationVersion: providerRow.ConfigurationVersion,
 	}, nil
 }
 
