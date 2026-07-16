@@ -49,6 +49,8 @@
 - Modify: `backend/cmd/server/main.go`
 - Modify: `backend/go.mod`
 - Modify: `backend/go.sum`
+- Modify: `backend/go.mod`
+- Modify: `backend/go.sum`
 - Modify: `deploy/config.example.yaml`
 - Modify: `deploy/.env.example`
 - Modify: `deploy/docker-compose.yml`
@@ -223,15 +225,19 @@
 - Produces `handler.NewWebVitalsHandler(recorder, options)` with a 4 KiB strict JSON body and a default 50 samples/second, 100-sample burst global limiter.
 - Produces `frontend/src/api/telemetry.ts::submitWebVital(sample, token, fetchImpl?)` and `startWebVitalsReporting(options?)`.
 
-- [ ] **Step 1: Add RED backend validation, authorization, rate, and privacy tests**
+- [x] **Step 1: Add RED backend validation, authorization, rate, and privacy tests**
 
   Cover the closed metric set, finite/non-negative values, route normalization for `/usage/members/:user_id` and `/repos/:id`, query/fragment stripping, unknown route fallback, closed navigation types, server-owned release, histogram units (`CLS` ratio; other metrics milliseconds converted to seconds), strict/limited JSON, 401 without auth, 202 without echo on success, and 429 after limiter exhaustion.
 
-- [ ] **Step 2: Add RED frontend sampling and transport tests**
+  Backend test evidence (2026-07-16): route-table tests remove parameters/query/fragment and reject unknown/oversized origins; metrics tests cover four allowed metrics, six navigation types, server release, duration/CLS units, bounds, and invalid-label absence; handler/router tests cover strict 4 KiB JSON, no echo, 400/401/429, and protected registration.
+
+- [x] **Step 2: Add RED frontend sampling and transport tests**
 
   Mock `web-vitals` callbacks and assert a sampled authenticated page registers exactly `onLCP`, `onINP`, `onCLS`, and `onTTFB`; a non-sampled or unauthenticated page registers/sends nothing; repeated callbacks preserve the initial normalized route; and the transmitted JSON contains exactly `metric`, `value`, `route`, and `navigation_type`. Assert raw IDs, query strings, user/email, DOM text, and parameter values are absent.
 
-- [ ] **Step 3: Run focused tests and record RED**
+  Frontend test evidence (2026-07-16): five Vitest cases cover one stable sampling decision, auth exclusion, sample-rate default/clamping, closed route normalization, all four official callbacks, dynamic library loading, exact keepalive/Bearer transport, no response-content read, and payload privacy.
+
+- [x] **Step 3: Run focused tests and record RED**
 
   ```bash
   cd backend
@@ -242,11 +248,15 @@
 
   Expected: compile/import failures for the absent backend handler/recorder and frontend `web-vitals` module.
 
-- [ ] **Step 4: Implement authenticated aggregation and frontend sampling**
+  RED evidence (2026-07-16): backend tests failed only for absent `WebVitalSample`, normalization, observer, handler/options, and router field; frontend failed to resolve the absent API/reporting modules. A first handler GREEN exposed missing boundary validation with a fake recorder, which was fixed by sharing the strict validator between handler and metrics.
+
+- [x] **Step 4: Implement authenticated aggregation and frontend sampling**
 
   Add `web-vitals@5.3.0`. Capture the initial browser path, normalize it through a closed route table, decide sampling once, and use authenticated `fetch(..., {method: 'POST', keepalive: true})`. Do not use metric IDs or backend-returned page content. Register the handler only under the existing protected `/api/v1/telemetry/web-vitals` group and aggregate immediately into fixed-memory Prometheus histograms.
 
-- [ ] **Step 5: Verify Task 3 GREEN and checkpoint**
+  Implementation evidence (2026-07-16): the protected handler rate-limits before strict decoding, validates again before recording, and returns an empty 202. Metrics aggregate LCP/INP/TTFB seconds and CLS ratios only. The frontend samples authenticated initial navigation at 10 percent by default and dynamically imports `web-vitals` only after selection, keeping the library out of unsampled users' critical path.
+
+- [x] **Step 5: Verify Task 3 GREEN and checkpoint**
 
   ```bash
   cd backend
@@ -260,6 +270,8 @@
   ```
 
   Commit: `feat(observability): collect sampled web vitals`
+
+  GREEN evidence (2026-07-16): focused backend and five-case frontend suites, double telemetry/handler/server tests, 33 telemetry/router/client regressions, dependency tidy, two production builds, and `git diff --check` passed. The final build emits `web-vitals` as a separate 6.31 kB chunk (2.56 kB gzip); the entry is 258.85 kB rather than embedding that library.
 
 ### Task 4: Add Operator Views, Document, Review, And Publish
 

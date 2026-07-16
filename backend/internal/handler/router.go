@@ -34,6 +34,7 @@ type RouterOptions struct {
 	WebhookHTTPClient      *http.Client
 	RequestLogger          *zap.Logger
 	RequestObserver        telemetry.RequestObserver
+	WebVitalsHandler       *WebVitalsHandler
 	Release                string
 	RequestTimeout         time.Duration
 }
@@ -328,6 +329,7 @@ func setupRouter(
 	}
 
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
+	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
 
 	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler))
 
