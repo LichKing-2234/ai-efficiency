@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -183,6 +184,107 @@ func TestOverviewReturnsHardErrorForTrendAuthorizationFailure(t *testing.T) {
 	}
 }
 
+func TestSummaryAndOverviewShareCachedSnapshotAndPreserveComparisonTotals(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	providerRow := createPrimaryRelayProvider(t, client)
+	tokenAlice := int64(1000)
+	tokenBob := int64(3500)
+	scope := &representativescope.Scope{
+		Version:          "scope-version-1",
+		ActorUserID:      1,
+		IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 3, DisplayName: "Bob", Email: "bob@example.org", RelayUserID: intPtr(1003), Selectable: true},
+		},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {UserID: 1002, TodayActualCost: 1, TotalActualCost: 10},
+			1003: {UserID: 1003, TodayActualCost: 2, TotalActualCost: 99},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			1002: {{Date: "2026-07-06", ActualCost: 30, TotalTokens: &tokenAlice}},
+			1003: {
+				{Date: "2026-07-06", ActualCost: 7, TotalTokens: int64Ptr(1500)},
+				{Date: "2026-07-07", ActualCost: 8, TotalTokens: &tokenBob},
+			},
+		},
+	}
+	clock := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	cache, _ := testSnapshotCache(t, clock, 0)
+	scopeResolver := &countingTeamScopeResolver{scope: scope}
+	providerResolver := &countingTeamProviderResolver{provider: provider}
+	svc := NewServiceWithSnapshotCache(client, scopeResolver, providerResolver, nil, cache)
+	params := OverviewParams{
+		StartDate: " 2026-07-01 ", EndDate: "2026-07-07", Granularity: " day ", Timezone: " Asia/Shanghai ",
+	}
+
+	summary, err := svc.Summary(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	overview, err := svc.Overview(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+	if summary.ScopeVersion != scope.Version || summary.CacheStatus != "miss" || summary.SourceStatus != "ok" {
+		t.Fatalf("summary metadata = scope %q cache/source %q/%q", summary.ScopeVersion, summary.CacheStatus, summary.SourceStatus)
+	}
+	if summary.Window.StartDate != "2026-07-01" || summary.Window.Granularity != "day" || summary.Window.Timezone != "Asia/Shanghai" {
+		t.Fatalf("normalized summary window = %+v", summary.Window)
+	}
+	if summary.Summary.RangeActualCost == nil || *summary.Summary.RangeActualCost != 45 {
+		t.Fatalf("summary range_actual_cost = %#v, want selected-window 45", summary.Summary.RangeActualCost)
+	}
+	if summary.Summary.RangeTotalTokens == nil || *summary.Summary.RangeTotalTokens != 6000 {
+		t.Fatalf("summary range_total_tokens = %#v, want selected-window 6000", summary.Summary.RangeTotalTokens)
+	}
+	if summary.Summary.TodayActualCost == nil || *summary.Summary.TodayActualCost != 3 {
+		t.Fatalf("summary today_actual_cost = %#v, want comparison 3", summary.Summary.TodayActualCost)
+	}
+	if summary.Summary.TotalActualCost == nil || *summary.Summary.TotalActualCost != 109 {
+		t.Fatalf("summary total_actual_cost = %#v, want historical comparison 109", summary.Summary.TotalActualCost)
+	}
+	if overview.Summary.TodayActualCost == nil || *overview.Summary.TodayActualCost != 3 || overview.Summary.TotalActualCost == nil || *overview.Summary.TotalActualCost != 109 {
+		t.Fatalf("overview comparison totals = today %#v total %#v", overview.Summary.TodayActualCost, overview.Summary.TotalActualCost)
+	}
+	if provider.trendCalls != 1 || len(provider.summaryRequestUserIDs) != 2 {
+		t.Fatalf("Relay generation calls = trend %d summary IDs %#v, want one shared generation", provider.trendCalls, provider.summaryRequestUserIDs)
+	}
+	if scopeResolver.calls.Load() != 2 || providerResolver.calls.Load() != 2 {
+		t.Fatalf("warm-hit guard calls = scope %d provider %d, want 2 each", scopeResolver.calls.Load(), providerResolver.calls.Load())
+	}
+	if providerRow.ConfigurationVersion <= 0 {
+		t.Fatalf("provider configuration version = %d, want positive cache guard", providerRow.ConfigurationVersion)
+	}
+}
+
+func TestSummaryRejectsInvalidNormalizedWindowBeforeRelayReads(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	provider := &fakeRelayProvider{}
+	svc := NewServiceWithSnapshotCache(
+		client,
+		fakeScopeResolver{scope: &representativescope.Scope{Version: "scope-v1", ActorUserID: 1, IsRepresentative: true}},
+		fakeProviderResolver{provider: provider},
+		nil,
+		newTestSnapshotCache(t, failingSnapshotStore{err: errors.New("Redis unavailable")}, time.Now, 0),
+	)
+
+	_, err := svc.Summary(ctx, 1, OverviewParams{
+		StartDate: "2026-07-08", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
+	})
+	if !errors.Is(err, ErrInvalidOverviewParams) {
+		t.Fatalf("Summary() error = %v, want ErrInvalidOverviewParams", err)
+	}
+	if provider.trendCalls != 0 || len(provider.summaryRequestUserIDs) != 0 {
+		t.Fatalf("invalid window reached Relay: trend %d summary %#v", provider.trendCalls, provider.summaryRequestUserIDs)
+	}
+}
+
 func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -277,8 +379,11 @@ func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
 	if resp.Summary.RangeTotalTokens == nil || *resp.Summary.RangeTotalTokens != 4500 {
 		t.Fatalf("summary range_total_tokens = %#v, want 4500", resp.Summary.RangeTotalTokens)
 	}
-	if resp.Summary.TotalActualCost != nil {
-		t.Fatalf("summary total_actual_cost = %#v, want nil for selected-window Team Overview", resp.Summary.TotalActualCost)
+	if resp.Summary.TodayActualCost == nil || *resp.Summary.TodayActualCost != 3 {
+		t.Fatalf("summary today_actual_cost = %#v, want comparison total 3", resp.Summary.TodayActualCost)
+	}
+	if resp.Summary.TotalActualCost == nil || *resp.Summary.TotalActualCost != 109 {
+		t.Fatalf("summary total_actual_cost = %#v, want historical comparison total 109", resp.Summary.TotalActualCost)
 	}
 	if got, want := resp.TopMemberTrend.RankBasis, "range_total_tokens"; got != want {
 		t.Fatalf("rank basis = %q, want %q", got, want)
@@ -1318,6 +1423,16 @@ type fakeScopeResolver struct {
 	err   error
 }
 
+type countingTeamScopeResolver struct {
+	scope *representativescope.Scope
+	calls atomic.Int32
+}
+
+func (r *countingTeamScopeResolver) Resolve(context.Context, int) (*representativescope.Scope, error) {
+	r.calls.Add(1)
+	return r.scope, nil
+}
+
 func (f fakeScopeResolver) Resolve(context.Context, int) (*representativescope.Scope, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -1328,6 +1443,16 @@ func (f fakeScopeResolver) Resolve(context.Context, int) (*representativescope.S
 type fakeProviderResolver struct {
 	provider relay.Provider
 	err      error
+}
+
+type countingTeamProviderResolver struct {
+	provider relay.Provider
+	calls    atomic.Int32
+}
+
+func (r *countingTeamProviderResolver) Resolve(context.Context, int) (relay.Provider, error) {
+	r.calls.Add(1)
+	return r.provider, nil
 }
 
 func (f fakeProviderResolver) Resolve(context.Context, int) (relay.Provider, error) {
