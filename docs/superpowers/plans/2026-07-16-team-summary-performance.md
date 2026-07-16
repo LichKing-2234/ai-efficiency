@@ -188,21 +188,25 @@
 - Produces `TeamUsageSummaryResponse` matching the split endpoint.
 - Keeps trend/member/organization content on the compatibility overview only for issue #125, with section-local loading/error state.
 
-- [ ] **Step 1: Add RED API and view tests**
+- [x] **Step 1: Add RED API and view tests**
 
   Assert both requests start with the same normalized range, summary cards render while overview is still pending, overview failure leaves summary visible with a local sections error, summary failure does not hide a successful legacy section, a summary 403 shows the no-scope state, stale freshness is visible, and superseded range results cannot overwrite the current selection.
 
-- [ ] **Step 2: Run focused frontend tests and record RED**
+- [x] **Step 2: Run focused frontend tests and record RED**
 
   Run: `cd frontend && npm test -- src/__tests__/team-usage-api.test.ts src/__tests__/team-overview-view.test.ts`
 
   Expected: failures because `getTeamUsageSummary` and independent state do not exist.
 
-- [ ] **Step 3: Implement independent summary and legacy section lifecycles**
+  RED evidence (2026-07-16): five focused failures cover the missing summary API, independent early render, both section-local failure directions, and stale marker.
+
+- [x] **Step 3: Implement independent summary and legacy section lifecycles**
 
   Keep separate request sequence counters, data refs, loading refs, and error refs. Render summary cards from `TeamUsageSummaryResponse.summary` only; render the trend/member tree from the legacy response only; disable a range button while either current request is pending without clearing successful prior section data.
 
-- [ ] **Step 4: Verify Task 4 GREEN and checkpoint**
+  GREEN evidence (2026-07-16): focused tests prove early summary render, both failure directions, independent stale marker, shared normalized params, and preserved existing Team Overview interactions.
+
+- [x] **Step 4: Verify Task 4 GREEN and checkpoint**
 
   Run:
 
@@ -214,6 +218,8 @@
   ```
 
   Commit: `perf(frontend): render team summary independently`
+
+  GREEN evidence (2026-07-16): focused API/view tests passed 37/37; full frontend suite passed 39 files and 462 tests; `vue-tsc` and Vite production build passed.
 
 ### Task 5: Document, Verify, Review, And Publish
 

@@ -919,6 +919,21 @@ export interface TeamOverviewSummary {
   unit_label: string
 }
 
+export interface TeamUsageSnapshotFreshness {
+  as_of: string
+  fresh_until: string
+  stale_until: string
+  cache_status: 'miss' | 'fresh' | 'stale' | string
+  source_status: 'ok' | 'error' | string
+}
+
+export interface TeamUsageSummaryResponse extends TeamUsageSnapshotFreshness {
+  scope_version: string
+  request_id: string
+  window: TeamOverviewWindow
+  summary: TeamOverviewSummary
+}
+
 export interface TeamOverviewMember {
   rank?: number
   user_id: number
