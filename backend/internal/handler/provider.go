@@ -72,6 +72,10 @@ func (h *ProviderHandler) Resolve(ctx context.Context, providerID int) (relay.Pr
 	return h.runtime.Resolve(ctx, providerID)
 }
 
+func (h *ProviderHandler) ListAllowedGroupsForUser(ctx context.Context, providerID int, configurationVersion, userID int64) ([]relay.Group, error) {
+	return h.runtime.ListAllowedGroupsForUser(ctx, providerID, configurationVersion, userID)
+}
+
 type providerResponse struct {
 	Name         string `json:"name"`
 	DisplayName  string `json:"display_name"`
@@ -432,6 +436,15 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		pkg.Error(c, http.StatusInternalServerError, "failed to resolve provider")
 		return
 	}
+	allowedGroups, err := h.runtime.ListAllowedGroupsForUser(ctx, provider.ID, provider.ConfigurationVersion, int64(*user.RelayUserID))
+	if err != nil {
+		pkg.Success(c, gin.H{"success": false, "message": fmt.Sprintf("list current allowed groups: %v", err)})
+		return
+	}
+	if !containsAllowedGroup(allowedGroups, groupID, platform) {
+		pkg.Success(c, gin.H{"success": false, "message": fmt.Sprintf("group %s is not currently allowed for platform %s", groupID, platform)})
+		return
+	}
 	keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
 	if err != nil {
 		pkg.Success(c, gin.H{
@@ -547,6 +560,15 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 		pkg.Error(c, http.StatusInternalServerError, "failed to resolve provider")
 		return
 	}
+	allowedGroups, err := h.runtime.ListAllowedGroupsForUser(ctx, provider.ID, provider.ConfigurationVersion, int64(*user.RelayUserID))
+	if err != nil {
+		pkg.Success(c, gin.H{"models": []relay.ModelOption{}, "message": fmt.Sprintf("list current allowed groups: %v", err)})
+		return
+	}
+	if !containsAllowedGroup(allowedGroups, groupID, platform) {
+		pkg.Success(c, gin.H{"models": []relay.ModelOption{}, "message": fmt.Sprintf("group %s is not currently allowed for platform %s", groupID, platform)})
+		return
+	}
 	keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
 	if err != nil {
 		pkg.Success(c, gin.H{
@@ -584,7 +606,9 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 		})
 		return
 	}
-	models, err := lister.ListModelsForPlatform(ctx, platform)
+	models, err := h.runtime.Models(ctx, provider, platform, groupID, func(loadCtx context.Context) ([]relay.ModelOption, error) {
+		return lister.ListModelsForPlatform(loadCtx, platform)
+	})
 	if err != nil {
 		pkg.Success(c, gin.H{
 			"models":  []relay.ModelOption{},
@@ -594,6 +618,15 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{"models": models})
+}
+
+func containsAllowedGroup(groups []relay.Group, groupID, platform string) bool {
+	for _, group := range groups {
+		if strconv.FormatInt(group.ID, 10) == strings.TrimSpace(groupID) && strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(platform)) {
+			return true
+		}
+	}
+	return false
 }
 
 func encryptAESGCM(plaintext, keyHex string) (string, error) {

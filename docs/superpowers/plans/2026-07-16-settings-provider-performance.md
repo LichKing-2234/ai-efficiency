@@ -105,11 +105,13 @@
 - `relayruntime.Manager.Models` caches cloned `[]relay.ModelOption` by provider/version/platform/group through a loader that is invoked only on a miss or Redis fallback.
 - `usersetup.Service` discovers the richer group resolver through its existing provider resolver; compatibility fake providers continue through `relay.Provider.ListAllowedGroupsForUser`.
 
-- [ ] **Step 1: Add RED metadata and authorization tests**
+- [x] **Step 1: Add RED metadata and authorization tests**
 
   Cover cross-manager group/model hits, exact five-minute expiry, provider-version/platform/group isolation, local and distributed refresh collapse, malformed value recovery, Redis outage authoritative fallback, clone-on-read/write, no secret fields in keys/JSON, and changed group metadata under a new provider version. Prove each warm group request still calls current `GetUser`, each warm model request still checks current membership and active group API keys, and revoked entitlement returns no cached model list.
 
-- [ ] **Step 2: Run focused tests and record RED**
+  Test evidence (2026-07-16): runtime tests define cross-manager group hits with fresh user reads, sanitized group values, model dimension/TTL isolation, clone behavior, concurrent collapse, and Redis fallback; usersetup tests require its versioned resolver seam; handler tests require fresh membership and active-key checks before a warm model result.
+
+- [x] **Step 2: Run focused tests and record RED**
 
   Run:
 
@@ -120,11 +122,15 @@
 
   Expected: compile/test failures for the absent metadata cache, group resolver, membership guard, and model loader.
 
-- [ ] **Step 3: Implement fresh-only metadata read model**
+  RED evidence (2026-07-16): the focused command failed only because `MetadataTTL`, `Manager.ListAllowedGroupsForUser`, `Manager.Models`, and the handler metadata wiring do not exist; the existing uncached usersetup fallback remained green.
+
+- [x] **Step 3: Implement fresh-only metadata read model**
 
   Use the shared `readcache.Store` and flight/lease patterns. Read failures, lease failures, write failures, and invalid JSON fall back to bounded authoritative Relay work; no stale metadata is served. Keep user/subscription/key selection outside cached values, reject a requested model group that is absent from the current allowed-group set, and return cloned rows.
 
-- [ ] **Step 4: Verify Task 2 GREEN and checkpoint**
+  Implementation evidence (2026-07-16): `relayruntime.Manager` now serves versioned, sanitized group/model metadata through process-local flights and a Redis lease, including the no-Redis fallback path; caps metadata TTL at five minutes; rejects stale provider rows; and falls back to authoritative Relay reads for malformed values and Redis read/lease/write failures. `usersetup` discovers the versioned group resolver, while provider model/test handlers recheck current membership and active group keys before using cached model display metadata.
+
+- [x] **Step 4: Verify Task 2 GREEN and checkpoint**
 
   Run:
 
@@ -137,6 +143,8 @@
   ```
 
   Commit: `perf(backend): cache relay provider metadata`
+
+  GREEN evidence (2026-07-16): the focused metadata/usersetup/handler suite, the full target package set twice, race-enabled `readcache`/`relayruntime`/`usersetup`, and `git diff --check` passed. Follow-up RED/GREEN tests cap metadata at five minutes, reject stale provider rows, preserve process-local collapse without Redis, prove cross-manager lease collapse, and fall back to Relay when a foreign lease outlives the refresh wait budget. Independent review found no Critical issues; all three Important findings were fixed before checkpointing.
 
 ### Task 3: Load One Settings Section And Shared Resource At A Time
 
