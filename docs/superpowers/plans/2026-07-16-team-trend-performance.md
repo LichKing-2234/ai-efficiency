@@ -158,11 +158,13 @@
 - Modify: `docs/architecture.md`
 - Modify: this plan
 
-- [ ] **Step 1: Update current architecture**
+- [x] **Step 1: Update current architecture**
 
   Record the split trend route, bounded comparison selection, shared snapshot reuse, independent frontend lifecycle, and async chart loading.
 
-- [ ] **Step 2: Run static and full verification**
+  Documentation evidence (2026-07-16): `docs/architecture.md` now records the split trend route, 12-comparison bound with complete team total, shared authorized snapshot, request-local metadata, three independent frontend lifecycles, and async chart chunk.
+
+- [x] **Step 2: Run static and full verification**
 
   Run:
 
@@ -173,9 +175,13 @@
   cd ../ae-cli && go test ./...
   ```
 
-- [ ] **Step 3: Review against issue #126 and the active performance spec**
+  GREEN evidence (2026-07-16): `git diff --check`, changed-package `go vet`, backend `go test ./...`, race-enabled `readcache/teamusage`, frontend 39 files/467 tests plus production build, and ae-cli `go test ./...` all passed. The build emitted separate Team Overview route and trend chart chunks.
+
+- [x] **Step 3: Review against issue #126 and the active performance spec**
 
   Audit every endpoint field, bound, stable identity, cache/freshness behavior, failure lifecycle, and lazy-import requirement; fix every finding and rerun affected tests.
+
+  Review result (2026-07-16): one Important cache-migration finding was fixed. Because #126 adds comparison metadata and bounds the cached overview generation, the envelope schema is now v2 and rejects valid pre-bound v1 values before an authoritative rebuild. Its RED/GREEN regression, full backend suite, changed-package vet, and race tests passed. No unresolved standards or spec findings remain.
 
 - [ ] **Step 4: Push and open a Draft PR**
 
