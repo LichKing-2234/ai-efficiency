@@ -106,7 +106,6 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 	}
 	now := time.Now().UTC()
 	satisfiedSteps, err := workflow.Decide(WorkflowDecisionInput{
-		RequesterUserID:  request.RequesterUserID,
 		ActorUserID:      input.ActorUserID,
 		ActorDisplayName: actorDisplayName,
 		Comment:          comment,
@@ -135,19 +134,13 @@ func (s *Service) decideWorkflowRequest(ctx context.Context, request *ent.QuotaR
 		SetWorkflow(rawWorkflow).
 		SetWorkflowRevision(request.WorkflowRevision + 1).
 		SetResolvedApproverUserIds(workflow.ActiveApproverUserIDs())
-	if terminal && approve {
-		update.
-			SetStatus(quotaresetrequest.StatusApprovedResetting).
-			SetApprovedByUserID(input.ActorUserID).
-			SetDecisionReason(comment).
-			SetDecidedAt(now)
-	}
-	if terminal && !approve {
-		update.
-			SetStatus(quotaresetrequest.StatusRejected).
-			SetRejectedByUserID(input.ActorUserID).
-			SetDecisionReason(comment).
-			SetDecidedAt(now)
+	if terminal {
+		update.SetDecisionReason(comment).SetDecidedAt(now)
+		if approve {
+			update.SetStatus(quotaresetrequest.StatusApprovedResetting).SetApprovedByUserID(input.ActorUserID)
+		} else {
+			update.SetStatus(quotaresetrequest.StatusRejected).SetRejectedByUserID(input.ActorUserID)
+		}
 	}
 	updated, err := update.Save(ctx)
 	if ent.IsNotFound(err) {

@@ -29,6 +29,7 @@ var validWeComUserID = regexp.MustCompile(`^[A-Za-z0-9_.@-]{1,128}$`)
 type quotaResetNotificationContext struct {
 	Requester        WorkflowPerson
 	ActiveApprovers  []WorkflowApprover
+	WorkflowSteps    []WorkflowStep
 	StepIndex        int
 	StepCount        int
 	StepLabel        string
@@ -134,10 +135,11 @@ func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx 
 		"step_number":      min(ctx.StepIndex+1, ctx.StepCount),
 		"step_count":       ctx.StepCount,
 		"step_label":       ctx.StepLabel,
-		"active_approvers": ctx.ActiveApprovers,
+		"active_approvers": genericWebhookApprovers(ctx.ActiveApprovers),
+		"steps":            genericWebhookSteps(ctx.WorkflowSteps),
 	}
 	if ctx.PreviousDecision != nil {
-		workflowPayload["previous_decision"] = ctx.PreviousDecision
+		workflowPayload["previous_decision"] = genericWebhookDecision(ctx.PreviousDecision)
 	}
 	payload := map[string]any{
 		"event":                      event,
@@ -151,14 +153,59 @@ func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx 
 		"reason":                     reasonPreview(req.Reason),
 		"reason_preview":             reasonPreview(req.Reason),
 		"resolved_approver_user_ids": req.ResolvedApproverUserIds,
-		"requester":                  ctx.Requester,
-		"workflow":                   workflowPayload,
-		"occurred_at":                time.Now().UTC().Format(time.RFC3339),
+		"requester": map[string]any{
+			"user_id":          ctx.Requester.UserID,
+			"display_name":     ctx.Requester.DisplayName,
+			"email":            ctx.Requester.Email,
+			"department_paths": ctx.Requester.DepartmentPaths,
+		},
+		"workflow":    workflowPayload,
+		"occurred_at": time.Now().UTC().Format(time.RFC3339),
 	}
 	if n.frontendURL != "" {
 		payload["action_url"] = fmt.Sprintf("%s/usage/quota-reset?request_id=%d", n.frontendURL, req.ID)
 	}
 	return payload
+}
+
+func genericWebhookApprovers(approvers []WorkflowApprover) []map[string]any {
+	result := make([]map[string]any, len(approvers))
+	for index, approver := range approvers {
+		result[index] = map[string]any{
+			"user_id":      approver.UserID,
+			"display_name": approver.DisplayName,
+			"email":        approver.Email,
+		}
+	}
+	return result
+}
+
+func genericWebhookDecision(decision *WorkflowDecision) map[string]any {
+	return map[string]any{
+		"actor_user_id":      decision.ActorUserID,
+		"actor_display_name": decision.ActorDisplayName,
+		"comment":            decision.Comment,
+		"decided_at":         decision.DecidedAt,
+	}
+}
+
+func genericWebhookSteps(steps []WorkflowStep) []map[string]any {
+	result := make([]map[string]any, len(steps))
+	for index, step := range steps {
+		item := map[string]any{
+			"step_number": index + 1,
+			"label":       step.Label,
+			"status":      step.Status,
+		}
+		if step.Decision != nil {
+			item["decision"] = genericWebhookDecision(step.Decision)
+		}
+		if step.SatisfiedByStep != nil {
+			item["satisfied_by_step_number"] = *step.SatisfiedByStep + 1
+		}
+		result[index] = item
+	}
+	return result
 }
 
 func (n *WebhookNotifier) weComRobotMarkdown(event string, req *ent.QuotaResetRequest, ctx quotaResetNotificationContext) string {
@@ -225,6 +272,7 @@ func notificationContextForRequest(req *ent.QuotaResetRequest) (quotaResetNotifi
 		return quotaResetNotificationContext{}, err
 	}
 	ctx.Requester = workflow.Requester
+	ctx.WorkflowSteps = workflow.Steps
 	ctx.StepCount = len(workflow.Steps)
 	ctx.StepIndex = workflow.CurrentStep
 	if workflow.CurrentStep < len(workflow.Steps) {

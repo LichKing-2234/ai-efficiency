@@ -12,7 +12,6 @@ func TestWorkflowApproveAdvancesAndReusesPriorActor(t *testing.T) {
 	when := time.Date(2026, 7, 15, 9, 30, 0, 0, time.UTC)
 
 	satisfiedSteps, err := workflow.Decide(WorkflowDecisionInput{
-		RequesterUserID:  1,
 		ActorUserID:      2,
 		ActorDisplayName: "bob",
 		Comment:          "额度异常，确认重置",
@@ -39,7 +38,6 @@ func TestWorkflowApproveAdvancesAndReusesPriorActor(t *testing.T) {
 	}
 
 	_, err = workflow.Decide(WorkflowDecisionInput{
-		RequesterUserID:  1,
 		ActorUserID:      3,
 		ActorDisplayName: "carol",
 		Comment:          "同意最终重置",
@@ -57,7 +55,6 @@ func TestWorkflowApproveAdvancesAndReusesPriorActor(t *testing.T) {
 func TestWorkflowRejectIsTerminal(t *testing.T) {
 	workflow := workflowFixture()
 	_, err := workflow.Decide(WorkflowDecisionInput{
-		RequesterUserID:  1,
 		ActorUserID:      2,
 		ActorDisplayName: "bob",
 		Comment:          "信息不足",
@@ -84,7 +81,7 @@ func TestWorkflowTerminalStateCannotBeDecidedAgain(t *testing.T) {
 		}
 	}
 
-	if _, err := workflow.Decide(WorkflowDecisionInput{RequesterUserID: 1, ActorUserID: 2, Comment: "again", Approve: true}); !errors.Is(err, ErrInvalidStatus) {
+	if _, err := workflow.Decide(WorkflowDecisionInput{ActorUserID: 2, Comment: "again", Approve: true}); !errors.Is(err, ErrInvalidStatus) {
 		t.Fatalf("Decide() error = %v, want ErrInvalidStatus", err)
 	}
 }
@@ -97,17 +94,17 @@ func TestWorkflowDecisionAuthorizationFailsClosed(t *testing.T) {
 	}{
 		{
 			name:      "comment required",
-			input:     WorkflowDecisionInput{RequesterUserID: 1, ActorUserID: 2, Approve: true},
+			input:     WorkflowDecisionInput{ActorUserID: 2, Approve: true},
 			wantError: ErrDecisionRequired,
 		},
 		{
 			name:      "requester cannot decide",
-			input:     WorkflowDecisionInput{RequesterUserID: 2, ActorUserID: 2, Comment: "self", Approve: true},
+			input:     WorkflowDecisionInput{ActorUserID: 1, Comment: "self", Approve: true},
 			wantError: ErrSelfApprovalForbidden,
 		},
 		{
 			name:      "non candidate cannot decide",
-			input:     WorkflowDecisionInput{RequesterUserID: 1, ActorUserID: 99, Comment: "approve", Approve: true},
+			input:     WorkflowDecisionInput{ActorUserID: 99, Comment: "approve", Approve: true},
 			wantError: ErrNotApprover,
 		},
 	}
@@ -125,7 +122,6 @@ func TestWorkflowDecisionAuthorizationFailsClosed(t *testing.T) {
 func TestWorkflowAdminCanDecideOnlyActiveStep(t *testing.T) {
 	workflow := workflowFixture()
 	_, err := workflow.Decide(WorkflowDecisionInput{
-		RequesterUserID:  1,
 		ActorUserID:      50,
 		ActorDisplayName: "admin",
 		Comment:          "admin fallback",
@@ -173,7 +169,6 @@ func workflowFixture() *Workflow {
 			DisplayName:     "alice",
 			Email:           "alice@example.com",
 			DepartmentPaths: []string{"Company / Group Alpha"},
-			NotificationIDs: map[string]string{"wecom": "alice"},
 		},
 		Steps: []WorkflowStep{
 			{
@@ -181,7 +176,7 @@ func workflowFixture() *Workflow {
 				Label:                 "Company / Group Alpha",
 				DepartmentExternalIDs: []string{"dept-alpha"},
 				Approvers: []WorkflowApprover{
-					{UserID: 2, DisplayName: "bob", Email: "bob@example.org", Source: "configured", NotificationIDs: map[string]string{"wecom": "bob"}},
+					{UserID: 2, DisplayName: "bob", Email: "bob@example.org", NotificationIDs: map[string]string{"wecom": "bob"}},
 				},
 				Status: WorkflowStepActive,
 			},
@@ -190,7 +185,7 @@ func workflowFixture() *Workflow {
 				Label:                 "Company / Group Beta",
 				DepartmentExternalIDs: []string{"dept-beta"},
 				Approvers: []WorkflowApprover{
-					{UserID: 2, DisplayName: "bob", Email: "bob@example.org", Source: "configured"},
+					{UserID: 2, DisplayName: "bob", Email: "bob@example.org"},
 				},
 				Status: WorkflowStepQueued,
 			},
@@ -199,7 +194,7 @@ func workflowFixture() *Workflow {
 				Label:                 "Company / Group Gamma",
 				DepartmentExternalIDs: []string{"dept-gamma"},
 				Approvers: []WorkflowApprover{
-					{UserID: 3, DisplayName: "carol", Email: "carol@example.org", Source: "configured"},
+					{UserID: 3, DisplayName: "carol", Email: "carol@example.org"},
 				},
 				Status: WorkflowStepQueued,
 			},

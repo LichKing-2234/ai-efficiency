@@ -76,13 +76,16 @@ func TestCreateWorkflowRequestRollsBackBeforeDuplicateDetection(t *testing.T) {
 	singleConnectionClient := ent.NewClient(ent.Driver(entsql.OpenDB("postgres", db)))
 	t.Cleanup(func() { _ = singleConnectionClient.Close() })
 
+	fallback := newWorkflowStep(WorkflowStepConfiguredDepartment, nil)
+	fallback.Label = "Admin fallback"
+	fallback.AdminFallback = true
+	fallback.Status = WorkflowStepActive
 	workflow := &Workflow{
 		Version:     workflowVersionV2,
 		CurrentStep: 0,
 		Requester:   WorkflowPerson{UserID: requester.ID},
-		Steps:       []WorkflowStep{adminFallbackWorkflowStep()},
+		Steps:       []WorkflowStep{fallback},
 	}
-	workflow.Steps[0].Status = WorkflowStepActive
 	requestCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 
@@ -378,7 +381,7 @@ func TestApproveV2RecordsTheOriginalDecisionThatSatisfiedALaterStep(t *testing.T
 		Kind:                  WorkflowStepConfiguredDepartment,
 		Label:                 "Company / Security",
 		DepartmentExternalIDs: []string{"dept-security"},
-		Approvers:             []WorkflowApprover{{UserID: bob.ID, DisplayName: "bob", Email: bob.Email, Source: "configured"}},
+		Approvers:             []WorkflowApprover{{UserID: bob.ID, DisplayName: "bob", Email: bob.Email}},
 		Status:                WorkflowStepQueued,
 	})
 	request := createPendingWorkflowRequest(t, ctx, client, requester, provider, workflow)
@@ -502,7 +505,7 @@ func TestConcurrentDecisionV2HasOneWinner(t *testing.T) {
 	provider := createQuotaResetRelayProvider(t, ctx, client)
 	workflow := workflowFixtureForUsers(requester.ID, first.ID, second.ID, true)
 	workflow.Steps = workflow.Steps[:1]
-	workflow.Steps[0].Approvers = append(workflow.Steps[0].Approvers, WorkflowApprover{UserID: second.ID, DisplayName: second.Username, Email: second.Email, Source: "configured"})
+	workflow.Steps[0].Approvers = append(workflow.Steps[0].Approvers, WorkflowApprover{UserID: second.ID, DisplayName: second.Username, Email: second.Email})
 	request := createPendingWorkflowRequest(t, ctx, client, requester, provider, workflow)
 	fake := &fakeQuotaResetProvider{subscriptions: []relay.UserSubscription{activeQuotaResetSubscription(42, "Group Alpha")}}
 	svc := NewService(client, fakeProviderResolver(provider.ID, fake), nil, nil)
@@ -1094,21 +1097,20 @@ func workflowFixtureForUsers(requesterID, firstApproverID, finalApproverID int, 
 			DisplayName:     "alice",
 			Email:           "alice@example.com",
 			DepartmentPaths: []string{"Company / Group Alpha"},
-			NotificationIDs: map[string]string{"wecom": "alice"},
 		},
 		Steps: []WorkflowStep{
 			{
 				Kind:                  WorkflowStepRequesterDepartments,
 				Label:                 "Company / Group Alpha",
 				DepartmentExternalIDs: []string{"dept-alpha"},
-				Approvers:             []WorkflowApprover{{UserID: firstApproverID, DisplayName: "bob", Email: "bob@example.org", Source: "configured"}},
+				Approvers:             []WorkflowApprover{{UserID: firstApproverID, DisplayName: "bob", Email: "bob@example.org"}},
 				Status:                WorkflowStepActive,
 			},
 			{
 				Kind:                  WorkflowStepConfiguredDepartment,
 				Label:                 "Company / Group Beta",
 				DepartmentExternalIDs: []string{"dept-beta"},
-				Approvers:             []WorkflowApprover{{UserID: secondApproverID, DisplayName: "carol", Email: "carol@example.org", Source: "configured"}},
+				Approvers:             []WorkflowApprover{{UserID: secondApproverID, DisplayName: "carol", Email: "carol@example.org"}},
 				Status:                WorkflowStepQueued,
 			},
 		},

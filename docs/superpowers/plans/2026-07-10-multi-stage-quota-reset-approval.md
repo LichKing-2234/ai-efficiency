@@ -10,9 +10,10 @@ verification, which remains blocked and unchecked because the required browser
 runtime reports no available browser.
 
 **Review And Re-review Remediation Status (2026-07-16):** All Task 4 code,
-architecture, formatting, and searchable approver-picker findings are fixed and
-fully reverified. Browser verification remains the only unchecked item because
-both the controller and worker observed no browser runtime.
+architecture, formatting, searchable approver-picker, and generic-webhook
+contract findings are fixed and fully reverified. Browser verification remains
+the only unchecked item because both the controller and worker observed no
+browser runtime.
 
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
@@ -408,6 +409,23 @@ current. Do not rewrite the historical 2026-07-07 spec.
     intentional `quota_reset_approval_chains` literal.
   - `git status --short` listed only intentional re-review tests, picker code,
     structural simplifications, and plan evidence before commit.
+
+  Webhook-contract re-review evidence (2026-07-16):
+
+  - A test-first recursive generic-payload assertion failed on leaked
+    `notification_ids` before the outward DTO mapping was restored, then passed
+    after the fix. Synthetic requester, previous-approver, and current-approver
+    WeCom IDs are all rejected by value as well as by field name.
+  - Generic webhook requester, active approver, workflow-step, and decision
+    history are now mapped explicitly; internal workflow DTOs are not serialized
+    into the outward payload. WeCom rendering continues to read only snapshotted
+    active-approver notification IDs.
+  - Focused quota-reset/work-items tests and vet, full backend tests and vet,
+    whitespace checks, and scope audits passed. Frontend files are unchanged
+    from the searchable-picker commit and were not rerun.
+  - Hand-written production is `+1499/-484`; schema is `+16/-0`; generated Ent
+    outside schema is `+862/-33`; the production chain scan is empty when
+    excluding only the intentional schema-test guard.
 
 - [ ] **Step 4: Browser-test one complete workflow**
 

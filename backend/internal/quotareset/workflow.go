@@ -35,17 +35,11 @@ type WorkflowPerson struct {
 	UserID          int               `json:"user_id"`
 	DisplayName     string            `json:"display_name"`
 	Email           string            `json:"email"`
-	DepartmentPaths []string          `json:"department_paths"`
-	NotificationIDs map[string]string `json:"notification_ids"`
+	DepartmentPaths []string          `json:"department_paths,omitempty"`
+	NotificationIDs map[string]string `json:"notification_ids,omitempty"`
 }
 
-type WorkflowApprover struct {
-	UserID          int               `json:"user_id"`
-	DisplayName     string            `json:"display_name"`
-	Email           string            `json:"email"`
-	Source          string            `json:"source"`
-	NotificationIDs map[string]string `json:"notification_ids"`
-}
+type WorkflowApprover = WorkflowPerson
 
 type WorkflowStep struct {
 	Kind                  string             `json:"kind"`
@@ -67,15 +61,7 @@ type WorkflowDecision struct {
 	DecidedAt        time.Time `json:"decided_at"`
 }
 
-type WorkflowDecisionInput struct {
-	RequesterUserID  int
-	ActorUserID      int
-	ActorDisplayName string
-	Comment          string
-	Approve          bool
-	Admin            bool
-	DecidedAt        time.Time
-}
+type WorkflowDecisionInput WorkflowDecision
 
 func EncodeWorkflow(workflow *Workflow) (map[string]any, error) {
 	if err := workflow.validate(); err != nil {
@@ -89,9 +75,6 @@ func EncodeWorkflow(workflow *Workflow) (map[string]any, error) {
 }
 
 func DecodeWorkflow(raw map[string]any) (*Workflow, error) {
-	if raw == nil {
-		return nil, fmt.Errorf("%w: document is missing", ErrInvalidWorkflow)
-	}
 	workflow, err := convertJSON[Workflow](raw)
 	if err != nil {
 		return nil, fmt.Errorf("%w: decode stored document: %v", ErrInvalidWorkflow, err)
@@ -123,7 +106,7 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) ([]int, error) {
 	if input.ActorUserID <= 0 {
 		return nil, ErrNotApprover
 	}
-	if !input.Admin && input.ActorUserID == input.RequesterUserID {
+	if !input.Admin && input.ActorUserID == w.Requester.UserID {
 		return nil, ErrSelfApprovalForbidden
 	}
 	stepIndex := w.CurrentStep
@@ -131,17 +114,10 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) ([]int, error) {
 	if !input.Admin && !workflowStepContainsApprover(*step, input.ActorUserID) {
 		return nil, ErrNotApprover
 	}
-	if input.DecidedAt.IsZero() {
-		input.DecidedAt = time.Now().UTC()
-	}
-	step.Decision = &WorkflowDecision{
-		ActorUserID:      input.ActorUserID,
-		ActorDisplayName: strings.TrimSpace(input.ActorDisplayName),
-		Comment:          comment,
-		Approve:          input.Approve,
-		Admin:            input.Admin,
-		DecidedAt:        input.DecidedAt,
-	}
+	decision := WorkflowDecision(input)
+	decision.ActorDisplayName = strings.TrimSpace(decision.ActorDisplayName)
+	decision.Comment = comment
+	step.Decision = &decision
 	if !input.Approve {
 		step.Status = WorkflowStepRejected
 		w.CurrentStep = len(w.Steps)
@@ -167,13 +143,10 @@ func (w *Workflow) Decide(input WorkflowDecisionInput) ([]int, error) {
 }
 
 func (w *Workflow) priorApprovingStepFor(stepIndex int) int {
-	for prior := 0; prior < stepIndex; prior++ {
-		decision := w.Steps[prior].Decision
-		if decision != nil && decision.Approve && workflowStepContainsApprover(w.Steps[stepIndex], decision.ActorUserID) {
-			return prior
-		}
-	}
-	return -1
+	return slices.IndexFunc(w.Steps[:stepIndex], func(step WorkflowStep) bool {
+		decision := step.Decision
+		return decision != nil && decision.Approve && workflowStepContainsApprover(w.Steps[stepIndex], decision.ActorUserID)
+	})
 }
 
 func workflowStepContainsApprover(step WorkflowStep, userID int) bool {

@@ -135,6 +135,107 @@ func TestWebhookNotifierIncludesPreviousDecision(t *testing.T) {
 	}
 }
 
+func TestGenericWebhookPayloadExcludesInternalWorkflowFields(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	request := createNotificationQuotaResetRequest(t, ctx, client)
+	workflow, err := DecodeWorkflow(request.Workflow)
+	if err != nil {
+		t.Fatalf("DecodeWorkflow() error = %v", err)
+	}
+	workflow.Requester.NotificationIDs = map[string]string{"wecom": "alice-internal-wecom"}
+	workflow.Steps[0].Approvers[0].NotificationIDs = map[string]string{"wecom": "bob-internal-wecom"}
+	workflow.Steps[0].Status = WorkflowStepApproved
+	workflow.Steps[0].Decision = &WorkflowDecision{
+		ActorUserID:      workflow.Steps[0].Approvers[0].UserID,
+		ActorDisplayName: "Bob Example",
+		Comment:          "Previous approval comment",
+		Approve:          true,
+		Admin:            true,
+	}
+	workflow.Steps[1].Approvers[0].NotificationIDs = map[string]string{"wecom": "carol-internal-wecom"}
+	workflow.Steps[1].Status = WorkflowStepActive
+	workflow.CurrentStep = 1
+	rawWorkflow, err := EncodeWorkflow(workflow)
+	if err != nil {
+		t.Fatalf("EncodeWorkflow() error = %v", err)
+	}
+	request = client.QuotaResetRequest.UpdateOneID(request.ID).
+		SetWorkflow(rawWorkflow).
+		SetResolvedApproverUserIds(workflow.ActiveApproverUserIDs()).
+		SaveX(ctx)
+
+	notificationContext, err := notificationContextForRequest(request)
+	if err != nil {
+		t.Fatalf("notificationContextForRequest() error = %v", err)
+	}
+	payloadJSON, err := json.Marshal(NewWebhookNotifier(client, "", "https://ai-efficiency.example.com").payloadForChannel(
+		quotaresetnotificationsetting.ChannelGenericWebhook,
+		"quota_reset_step_activated",
+		request,
+		notificationContext,
+	))
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	assertNoJSONFields(t, payload, "notification_ids", "source", "approve", "admin")
+	for _, internalID := range []string{"alice-internal-wecom", "bob-internal-wecom", "carol-internal-wecom"} {
+		if strings.Contains(string(payloadJSON), internalID) {
+			t.Fatalf("generic webhook leaked internal WeCom id %q: %s", internalID, payloadJSON)
+		}
+	}
+	if payload["status"] != "pending" || payload["group_name"] != "Group Alpha" || payload["reason"] != "Need reset for a build investigation" {
+		t.Fatalf("public request fields = %#v", payload)
+	}
+	if payload["action_url"] != fmt.Sprintf("https://ai-efficiency.example.com/usage/quota-reset?request_id=%d", request.ID) {
+		t.Fatalf("action_url = %#v", payload["action_url"])
+	}
+	requester, ok := payload["requester"].(map[string]any)
+	if !ok || requester["display_name"] != "Alice Example" || requester["email"] != "alice@example.com" {
+		t.Fatalf("requester = %#v", payload["requester"])
+	}
+	if paths, ok := requester["department_paths"].([]any); !ok || !reflect.DeepEqual(paths, []any{"Company / Group Alpha"}) {
+		t.Fatalf("requester department paths = %#v", requester["department_paths"])
+	}
+	workflowPayload, ok := payload["workflow"].(map[string]any)
+	if !ok || workflowPayload["step_number"] != float64(2) || workflowPayload["step_count"] != float64(2) || workflowPayload["step_label"] != "Company / Group Beta" {
+		t.Fatalf("workflow progress = %#v", payload["workflow"])
+	}
+	previous, ok := workflowPayload["previous_decision"].(map[string]any)
+	if !ok || previous["actor_display_name"] != "Bob Example" || previous["comment"] != "Previous approval comment" {
+		t.Fatalf("previous decision = %#v", workflowPayload["previous_decision"])
+	}
+	activeApprovers, ok := workflowPayload["active_approvers"].([]any)
+	if !ok || len(activeApprovers) != 1 {
+		t.Fatalf("active approvers = %#v", workflowPayload["active_approvers"])
+	}
+	activeApprover, ok := activeApprovers[0].(map[string]any)
+	if !ok || activeApprover["display_name"] != "carol" || activeApprover["email"] != "carol@example.org" {
+		t.Fatalf("active approver = %#v", activeApprovers[0])
+	}
+	steps, ok := workflowPayload["steps"].([]any)
+	if !ok || len(steps) != 2 {
+		t.Fatalf("workflow steps = %#v", workflowPayload["steps"])
+	}
+	firstStep, ok := steps[0].(map[string]any)
+	if !ok || firstStep["step_number"] != float64(1) || firstStep["label"] != "Company / Group Alpha" || firstStep["status"] != WorkflowStepApproved {
+		t.Fatalf("first workflow step = %#v", steps[0])
+	}
+	decision, ok := firstStep["decision"].(map[string]any)
+	if !ok || decision["actor_display_name"] != "Bob Example" || decision["comment"] != "Previous approval comment" {
+		t.Fatalf("first workflow decision = %#v", firstStep["decision"])
+	}
+	secondStep, ok := steps[1].(map[string]any)
+	if !ok || secondStep["step_number"] != float64(2) || secondStep["label"] != "Company / Group Beta" || secondStep["status"] != WorkflowStepActive {
+		t.Fatalf("second workflow step = %#v", steps[1])
+	}
+}
+
 func TestWebhookNotifierReturnsErrorForHTTPFailure(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -337,6 +438,31 @@ func createNotificationQuotaResetRequest(t *testing.T, ctx context.Context, clie
 	workflow.Requester.DepartmentPaths = []string{"Company / Group Alpha"}
 	workflow.Steps[0].Approvers[0].NotificationIDs = map[string]string{"wecom": "bob-wecom"}
 	return createPendingWorkflowRequest(t, ctx, client, requester, provider, workflow)
+}
+
+func assertNoJSONFields(t *testing.T, value any, forbidden ...string) {
+	t.Helper()
+	forbiddenFields := make(map[string]struct{}, len(forbidden))
+	for _, field := range forbidden {
+		forbiddenFields[field] = struct{}{}
+	}
+	var visit func(string, any)
+	visit = func(path string, value any) {
+		switch typed := value.(type) {
+		case map[string]any:
+			for field, child := range typed {
+				if _, forbidden := forbiddenFields[field]; forbidden {
+					t.Fatalf("generic webhook leaked field %q at %s", field, path)
+				}
+				visit(path+"."+field, child)
+			}
+		case []any:
+			for index, child := range typed {
+				visit(fmt.Sprintf("%s[%d]", path, index), child)
+			}
+		}
+	}
+	visit("payload", value)
 }
 
 func rewriteURLTransport(t *testing.T, target string) http.RoundTripper {

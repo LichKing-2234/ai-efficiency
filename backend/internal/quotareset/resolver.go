@@ -80,7 +80,6 @@ func (r *ApproverResolver) ResolveWorkflow(ctx context.Context, requester *ent.U
 		}
 		if requesterMember := facts.membersByUserID[requester.ID]; requesterMember != nil {
 			workflow.Requester.DisplayName = firstWorkflowValue(requesterMember.DisplayName, requester.Username)
-			workflow.Requester.NotificationIDs = notificationIDsForWorkflowMember(requesterMember)
 			exactIDs := slices.Sorted(maps.Keys(facts.departmentIDsByMember[requesterMember.ID]))
 			for _, departmentID := range exactIDs {
 				if path := workflowDepartmentPath(facts.tree, facts.departmentsByID[departmentID]); path != "" {
@@ -114,7 +113,10 @@ func (r *ApproverResolver) ResolveWorkflow(ctx context.Context, requester *ent.U
 		}
 	}
 	if len(workflow.Steps) == 0 {
-		workflow.Steps = append(workflow.Steps, adminFallbackWorkflowStep())
+		fallback := newWorkflowStep(WorkflowStepConfiguredDepartment, nil)
+		fallback.Label = "Admin fallback"
+		fallback.AdminFallback = true
+		workflow.Steps = append(workflow.Steps, fallback)
 	}
 	workflow.Steps[0].Status = WorkflowStepActive
 	if _, err := EncodeWorkflow(workflow); err != nil {
@@ -301,7 +303,7 @@ func (f *workflowDirectoryFacts) configuredApprovers(departmentID string, reques
 		if _, belongs := f.departmentIDsByMember[member.ID][departmentID]; !belongs {
 			continue
 		}
-		approvers = append(approvers, workflowApprover(user, member, "configured"))
+		approvers = append(approvers, workflowApprover(user, member))
 	}
 	return approvers, true
 }
@@ -317,7 +319,7 @@ func (f *workflowDirectoryFacts) representativeApprovers(departmentID string, re
 		if user == nil || user.ID == requesterID || !workflowCandidateUsable(user, member) {
 			continue
 		}
-		approvers = append(approvers, workflowApprover(user, member, "directory_representative"))
+		approvers = append(approvers, workflowApprover(user, member))
 	}
 	sort.SliceStable(approvers, func(i, j int) bool { return approvers[i].UserID < approvers[j].UserID })
 	return approvers
@@ -337,40 +339,29 @@ func workflowCandidateUsable(user *ent.User, member *ent.DirectoryMember) bool {
 	return user != nil && member != nil && strings.EqualFold(strings.TrimSpace(member.Status), "active") && user.RelayDisabledAt == nil && user.TokenValidAfter == nil
 }
 
-func workflowApprover(user *ent.User, member *ent.DirectoryMember, source string) WorkflowApprover {
+func workflowApprover(user *ent.User, member *ent.DirectoryMember) WorkflowApprover {
+	notificationIDs := map[string]string(nil)
+	if value, _ := member.Metadata["wecom_userid"].(string); strings.TrimSpace(value) != "" {
+		notificationIDs = map[string]string{"wecom": strings.TrimSpace(value)}
+	}
 	return WorkflowApprover{
 		UserID:          user.ID,
 		DisplayName:     firstWorkflowValue(member.DisplayName, user.Username),
 		Email:           strings.TrimSpace(user.Email),
-		Source:          source,
-		NotificationIDs: notificationIDsForWorkflowMember(member),
+		NotificationIDs: notificationIDs,
 	}
-}
-
-func notificationIDsForWorkflowMember(member *ent.DirectoryMember) map[string]string {
-	if member == nil {
-		return nil
-	}
-	value, _ := member.Metadata["wecom_userid"].(string)
-	if value = strings.TrimSpace(value); value == "" {
-		return nil
-	}
-	return map[string]string{"wecom": value}
 }
 
 func mergeWorkflowApprovers(target *[]WorkflowApprover, candidates []WorkflowApprover) {
-	indexByUserID := make(map[int]int, len(*target))
-	for index, approver := range *target {
-		indexByUserID[approver.UserID] = index
+	seen := make(map[int]struct{}, len(*target)+len(candidates))
+	for _, approver := range *target {
+		seen[approver.UserID] = struct{}{}
 	}
 	for _, candidate := range candidates {
-		if index, exists := indexByUserID[candidate.UserID]; exists {
-			if candidate.Source == "configured" {
-				(*target)[index] = candidate
-			}
+		if _, exists := seen[candidate.UserID]; exists {
 			continue
 		}
-		indexByUserID[candidate.UserID] = len(*target)
+		seen[candidate.UserID] = struct{}{}
 		*target = append(*target, candidate)
 	}
 	sort.SliceStable(*target, func(i, j int) bool { return (*target)[i].UserID < (*target)[j].UserID })
@@ -389,13 +380,6 @@ func newWorkflowStep(kind string, departmentIDs []string) WorkflowStep {
 		Approvers:             []WorkflowApprover{},
 		Status:                WorkflowStepQueued,
 	}
-}
-
-func adminFallbackWorkflowStep() WorkflowStep {
-	step := newWorkflowStep(WorkflowStepConfiguredDepartment, nil)
-	step.Label = "Admin fallback"
-	step.AdminFallback = true
-	return step
 }
 
 func workflowDepartmentPath(tree *directorytree.Tree, department *ent.DirectoryDepartment) string {
