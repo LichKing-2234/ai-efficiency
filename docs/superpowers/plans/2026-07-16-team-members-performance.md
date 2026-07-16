@@ -123,23 +123,27 @@
 - Produces `TeamUsageMembersResponse` and `getTeamUsageMembers(params)` with the existing 45-second shared-origin budget.
 - Adds independent member request sequence/loading/data/error/current cursor/history state and Next/Previous controls.
 
-- [ ] **Step 1: Add RED API/view/component tests**
+- [x] **Step 1: Add RED API/view/component tests**
 
   Cover a 500-member total with 50 rendered ranking rows, no compatibility `members` use, member delay/failure isolation, compatibility failure while rankings remain, Next/Previous cursor calls with unchanged range, pagination without sibling refetch, stale member marker, and 409 recovery that reloads only the first member page.
 
-- [ ] **Step 2: Run focused frontend tests and record RED**
+- [x] **Step 2: Run focused frontend tests and record RED**
 
   Run: `cd frontend && npm test -- src/__tests__/team-usage-api.test.ts src/__tests__/team-overview-view.test.ts`
 
-- [ ] **Step 3: Implement independent member lifecycle and bounded controls**
+  RED evidence (2026-07-16): 8 focused failures showed the missing members API, 500-row legacy DOM, absent independent member states, compatibility coupling, missing pagination, missing 409 recovery, and missing local stale marker.
+
+- [x] **Step 3: Implement independent member lifecycle and bounded controls**
 
   Pass only split endpoint items to the ranking table and only compatibility `member_tree` to organization rendering. Keep current range selection while paging and clear cursor history only when range changes or the backend reports `snapshot_expired`.
 
-- [ ] **Step 4: Verify Task 3 GREEN and checkpoint**
+- [x] **Step 4: Verify Task 3 GREEN and checkpoint**
 
   Run: `cd frontend && npm test && npm run build && git diff --check`
 
   Commit: `perf(frontend): paginate team member rankings`
+
+  GREEN evidence (2026-07-16): focused API/view tests passed 50/50, the full frontend suite passed 39 files/475 tests, the production build passed, and `git diff --check` was clean.
 
 ### Task 4: Document, Verify, Review, And Publish
 

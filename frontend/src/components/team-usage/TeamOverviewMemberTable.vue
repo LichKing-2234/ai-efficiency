@@ -5,13 +5,26 @@ import TeamOverviewDepartmentNode from '@/components/team-usage/TeamOverviewDepa
 import { formatTokenCount } from '@/utils/formatters'
 import type { TeamOverviewMember, TeamOverviewMemberNode } from '@/types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   members: TeamOverviewMember[]
   memberTree?: TeamOverviewMemberNode[]
-}>()
+  memberLoading?: boolean
+  memberError?: boolean
+  memberTotalCount?: number
+  hasPreviousPage?: boolean
+  hasNextPage?: boolean
+}>(), {
+  memberLoading: false,
+  memberError: false,
+  memberTotalCount: 0,
+  hasPreviousPage: false,
+  hasNextPage: false,
+})
 
 const emit = defineEmits<{
   'open-member': [userID: number]
+  'previous-page': []
+  'next-page': []
 }>()
 
 const { t } = useI18n()
@@ -80,6 +93,11 @@ function memberAriaLevel(node: TeamOverviewMemberNode) {
 
 const treeRoots = computed(() => props.memberTree ?? [])
 const hasTree = computed(() => treeRoots.value.length > 0)
+const memberPageStart = computed(() => props.members[0]?.rank ?? 0)
+const memberPageEnd = computed(() => props.members[props.members.length - 1]?.rank ?? 0)
+const showMemberPagination = computed(() => props.members.length > 0 && (
+  props.hasPreviousPage || props.hasNextPage || props.memberTotalCount > props.members.length
+))
 const expandedDepartmentIds = ref<Set<string>>(new Set())
 
 const allExpandableDepartmentIds = computed(() => {
@@ -159,11 +177,7 @@ function nodeChildren(node: TeamOverviewMemberNode) {
       </div>
     </div>
 
-    <div v-if="props.members.length === 0" class="px-4 py-4 text-sm text-slate-500">
-      -
-    </div>
-
-    <div v-else-if="hasTree && detailView === 'organization'" class="p-4">
+    <div v-if="hasTree && detailView === 'organization'" class="p-4">
       <div class="overflow-hidden rounded-md border border-gray-200" role="tree">
         <template v-for="department in treeRoots" :key="department.department_external_id">
           <TeamOverviewDepartmentNode
@@ -187,6 +201,26 @@ function nodeChildren(node: TeamOverviewMemberNode) {
           />
         </template>
       </div>
+    </div>
+
+    <div
+      v-else-if="props.memberLoading && props.members.length === 0"
+      data-testid="team-overview-members-loading"
+      class="px-4 py-4 text-sm text-slate-500"
+    >
+      {{ t('settings.loading') }}
+    </div>
+
+    <div
+      v-else-if="props.memberError && props.members.length === 0"
+      data-testid="team-overview-members-error"
+      class="px-4 py-4 text-sm text-slate-600"
+    >
+      {{ t('teamUsage.unavailable') }}
+    </div>
+
+    <div v-else-if="props.members.length === 0" class="px-4 py-4 text-sm text-slate-500">
+      -
     </div>
 
     <div v-else class="overflow-x-auto" data-testid="team-overview-ranking-table">
@@ -236,6 +270,44 @@ function nodeChildren(node: TeamOverviewMemberNode) {
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div
+      v-if="detailView === 'ranking' && props.memberError && props.members.length > 0"
+      data-testid="team-overview-members-error"
+      class="border-t border-slate-200 px-4 py-2 text-sm text-slate-600"
+    >
+      {{ t('teamUsage.unavailable') }}
+    </div>
+
+    <div
+      v-if="detailView === 'ranking' && showMemberPagination"
+      data-testid="team-overview-member-pagination"
+      class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3"
+    >
+      <span class="text-sm text-slate-500">
+        {{ t('teamUsage.memberPageRange', { start: memberPageStart, end: memberPageEnd, total: props.memberTotalCount }) }}
+      </span>
+      <div class="flex items-center gap-2">
+        <button
+          data-testid="team-overview-members-previous"
+          type="button"
+          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!props.hasPreviousPage || props.memberLoading"
+          @click="emit('previous-page')"
+        >
+          {{ t('teamUsage.memberPagePrevious') }}
+        </button>
+        <button
+          data-testid="team-overview-members-next"
+          type="button"
+          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!props.hasNextPage || props.memberLoading"
+          @click="emit('next-page')"
+        >
+          {{ t('teamUsage.memberPageNext') }}
+        </button>
+      </div>
     </div>
   </section>
 </template>
