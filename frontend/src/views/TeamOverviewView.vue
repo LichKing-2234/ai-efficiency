@@ -36,6 +36,7 @@ let memberPageParams: TeamUsageOverviewParams | null = null
 const {
   branches: organizationBranches,
   rootBranch: organizationRoot,
+  invalidatedDepartmentIds: organizationInvalidatedDepartmentIds,
   resetVersion: organizationResetVersion,
   branchFor: organizationBranchFor,
   reset: resetOrganization,
@@ -370,6 +371,7 @@ onMounted(loadOverview)
           :members="membersPage?.items ?? []"
           :organization-root="organizationRoot"
           :organization-branches="organizationBranches"
+          :organization-invalidated-department-ids="organizationInvalidatedDepartmentIds"
           :organization-reset-version="organizationResetVersion"
           :organization-branch-for="organizationBranchFor"
           :member-loading="membersLoading"
