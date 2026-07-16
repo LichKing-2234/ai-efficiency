@@ -13,7 +13,6 @@ import {
   adminApproveQuotaResetRequest,
   approveQuotaResetRequest,
   createQuotaResetRequest,
-  getQuotaResetApprovalChains,
   getQuotaResetApproverConfigs,
   getQuotaResetNotificationSettings,
   getQuotaResetOptions,
@@ -21,7 +20,6 @@ import {
   listQuotaResetApproverCandidates,
   listQuotaResetApprovals,
   saveQuotaResetApproverConfigs,
-  saveQuotaResetApprovalChains,
   updateQuotaResetNotificationSettings,
 } from '@/api/quotaReset'
 
@@ -55,7 +53,6 @@ describe('quota reset api', () => {
     listAdminQuotaResetRequests({ page: 2, page_size: 20 })
     adminApproveQuotaResetRequest(99, { decision_reason: 'Approved' })
     approveQuotaResetRequest(98, { decision_reason: 'Looks valid' })
-    getQuotaResetApprovalChains()
     getQuotaResetApproverConfigs()
     listQuotaResetApproverCandidates({ source_id: 1, department_external_id: 'department-alpha' })
     saveQuotaResetApproverConfigs([
@@ -66,21 +63,6 @@ describe('quota reset api', () => {
         enabled: true,
       },
     ], 'replace_all')
-    saveQuotaResetApprovalChains([
-      {
-        provider_id: 1,
-        group_id: '42',
-        group_name: 'Group Alpha',
-        enabled: true,
-        departments: [
-          {
-            directory_source_id: 1,
-            department_external_id: 'department-alpha',
-            department_display_path: 'Company / Group Alpha',
-          },
-        ],
-      },
-    ])
     getQuotaResetNotificationSettings()
     updateQuotaResetNotificationSettings({
       enabled: true,
@@ -98,7 +80,6 @@ describe('quota reset api', () => {
     expect(mockClient.post).toHaveBeenCalledWith('/user/quota-reset/approvals/98/approve', {
       decision_reason: 'Looks valid',
     })
-    expect(mockClient.get).toHaveBeenCalledWith('/admin/quota-reset/approval-chains')
     expect(mockClient.get).toHaveBeenCalledWith('/admin/quota-reset/approver-configs')
     expect(mockClient.get).toHaveBeenCalledWith('/admin/quota-reset/approver-candidates', {
       params: { source_id: 1, department_external_id: 'department-alpha' },
@@ -113,23 +94,6 @@ describe('quota reset api', () => {
         },
       ],
       mode: 'replace_all',
-    })
-    expect(mockClient.put).toHaveBeenCalledWith('/admin/quota-reset/approval-chains', {
-      items: [
-        {
-          provider_id: 1,
-          group_id: '42',
-          group_name: 'Group Alpha',
-          enabled: true,
-          departments: [
-            {
-              directory_source_id: 1,
-              department_external_id: 'department-alpha',
-              department_display_path: 'Company / Group Alpha',
-            },
-          ],
-        },
-      ],
     })
     expect(mockClient.get).toHaveBeenCalledWith('/admin/quota-reset/notification-settings')
     expect(mockClient.put).toHaveBeenCalledWith('/admin/quota-reset/notification-settings', {

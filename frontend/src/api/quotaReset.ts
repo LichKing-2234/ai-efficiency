@@ -1,8 +1,6 @@
 import client from './client'
 import type {
   ApiResponse,
-  QuotaResetApprovalChainInput,
-  QuotaResetApprovalChainListResponse,
   QuotaResetApproverCandidateListResponse,
   QuotaResetApproverConfigInput,
   QuotaResetApproverConfigListResponse,
@@ -75,14 +73,6 @@ export function adminRetryQuotaResetRequest(id: number) {
 
 export function getQuotaResetApproverConfigs() {
   return client.get<ApiResponse<QuotaResetApproverConfigListResponse>>('/admin/quota-reset/approver-configs')
-}
-
-export function getQuotaResetApprovalChains() {
-  return client.get<ApiResponse<QuotaResetApprovalChainListResponse>>('/admin/quota-reset/approval-chains')
-}
-
-export function saveQuotaResetApprovalChains(items: QuotaResetApprovalChainInput[]) {
-  return client.put<ApiResponse<QuotaResetApprovalChainListResponse>>('/admin/quota-reset/approval-chains', { items })
 }
 
 export function listQuotaResetApproverCandidates(params: QuotaResetApproverCandidateParams) {

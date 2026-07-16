@@ -274,7 +274,7 @@ request, decision, approver-config, candidate, and notification routes.
 notification channel controls, decision dialog, timeline, current-step actions,
 and complete processed-history pagination.
 
-- [ ] **Step 1: Add and run a failing absence test**
+- [x] **Step 1: Add and run a failing absence test**
 
   Replace the ordered-chain settings test with:
 
@@ -291,7 +291,7 @@ and complete processed-history pagination.
 
   Expected: FAIL while the chain subsection remains mounted.
 
-- [ ] **Step 2: Remove chain component/API/types/copy and verify**
+- [x] **Step 2: Remove chain component/API/types/copy and verify**
 
   Settings must contain only department approval representatives followed by
   notification controls. Search stays inside opened dropdowns.
@@ -307,7 +307,7 @@ and complete processed-history pagination.
 
   Expected: tests/build PASS and the scan finds no frontend chain contract.
 
-- [ ] **Step 3: Commit frontend cleanup**
+- [x] **Step 3: Commit frontend cleanup**
 
   ```bash
   cd ..

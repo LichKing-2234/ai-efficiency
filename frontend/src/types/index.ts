@@ -1207,38 +1207,6 @@ export interface QuotaResetApproverCandidateListResponse {
   unmatched_representatives?: QuotaResetUnmatchedApproverRepresentative[]
 }
 
-export interface QuotaResetApprovalChainDepartment {
-  directory_source_id: number
-  department_external_id: string
-  department_display_path: string
-}
-
-export interface QuotaResetApprovalChainInput {
-  provider_id: number
-  group_id: string
-  group_name: string
-  enabled: boolean
-  departments: QuotaResetApprovalChainDepartment[]
-}
-
-export interface QuotaResetApprovalChain extends QuotaResetApprovalChainInput {
-  id: number
-  updated_at: string
-}
-
-export interface QuotaResetApprovalChainGroupOption {
-  provider_id: number
-  provider_name: string
-  group_id: string
-  group_name: string
-  platform: string
-}
-
-export interface QuotaResetApprovalChainListResponse {
-  items: QuotaResetApprovalChain[]
-  groups: QuotaResetApprovalChainGroupOption[]
-}
-
 export type QuotaResetNotificationChannel = 'generic_webhook' | 'wecom_group_robot'
 
 export interface QuotaResetNotificationSettings {

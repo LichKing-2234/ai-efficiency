@@ -10,7 +10,6 @@ import {
 } from '@/api/quotaReset'
 import { listDirectoryDepartments } from '@/api/directory'
 import { useI18n } from '@/i18n'
-import QuotaResetApprovalChainSettings from '@/components/settings/QuotaResetApprovalChainSettings.vue'
 import type {
   Credential,
   DirectoryDepartment,
@@ -499,10 +498,6 @@ function credentialOptionLabel(credential: Credential) {
           {{ savingConfigs ? t('settings.saving') : t('quotaResetSettings.saveApprovers') }}
         </button>
       </div>
-    </div>
-
-    <div class="mt-6 border-t border-gray-200 pt-5">
-      <QuotaResetApprovalChainSettings :source-id="selectedDirectorySourceID" />
     </div>
 
     <div class="mt-6 border-t border-gray-200 pt-5">
