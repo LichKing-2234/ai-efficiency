@@ -21,7 +21,7 @@
 - Do not merge, release, tag, deploy, or run Helm as part of this issue.
 - Every completed step updates this file in the same execution turn.
 
-**Status:** Task 4 Steps 1-6 are complete for issue #129. Steps 7-9 remain reserved for independent review and publication. Stacked on `perf/team-scope-124` / Draft PR #149.
+**Status:** Task 4 Steps 1-7 are complete for issue #129. Steps 8-9 remain for Draft PR publication and required CI. Stacked on `perf/team-scope-124` / Draft PR #149.
 
 ---
 
@@ -95,7 +95,7 @@ Task 3 RED: the focused Vitest file ran 9 tests; the 2 new degradation tests fai
 - [x] **Step 4: Run changed-package race tests and `go vet`**
 - [x] **Step 5: Run `cd frontend && npm test`, `npm run build`, and the role E2E suite**
 - [x] **Step 6: Run `cd ae-cli && go test ./...`**
-- [ ] **Step 7: Review the exact branch diff against issue #129 and the active performance spec; fix all critical/important findings**
+- [x] **Step 7: Review the exact branch diff against issue #129 and the active performance spec; fix all critical/important findings**
 - [ ] **Step 8: Commit with Conventional Commits, push, and open a Draft PR against `perf/team-scope-124` with `Closes #129` and dependency/no-release notes**
 - [ ] **Step 9: Wait for all required PR checks and record their final state**
 
@@ -108,3 +108,4 @@ Task 3 RED: the focused Vitest file ran 9 tests; the 2 new degradation tests fai
 - Task 4 Step 4: `cd backend && go test -race ./internal/relay ./internal/teamusage` passed (`relay` 10.069s, `teamusage` 7.886s). `cd backend && go vet ./internal/relay ./internal/teamusage` passed with exit code 0 and no output.
 - Task 4 Step 5: `cd frontend && npm test` passed 39/39 files and 454/454 tests; `npm run build` passed after transforming 188 modules. For the environment-sensitive role suite, port 5173 was confirmed unused, this worktree's Vite server was started on `127.0.0.1:5173`, and `npm run test:e2e:role` passed 16/16 checks. The Vite server was then terminated and `lsof` confirmed that port 5173 was released. With no backend intentionally running, Vite logged `ECONNREFUSED` for non-asserted bootstrap endpoints not covered by the role script's route mocks; the scoped role assertions and runner still completed with exit code 0.
 - Task 4 Step 6: `cd ae-cli && go test ./...` passed with exit code 0; all ae-cli packages completed without failures (`internal/attributionlocal` was the longest package at 25.151s).
+- Task 4 Step 7: task-level reviews and the final whole-branch review of `ed3a6ad..8cfe46f` found no remaining Critical, Important, or Minor findings. The final reviewer recorded only a residual integration gap: service tests use fakes while delayed concurrency is exercised at the Sub2API HTTP adapter seam.
