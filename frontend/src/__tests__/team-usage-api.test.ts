@@ -11,6 +11,7 @@ import client from '@/api/client'
 import {
   getTeamUsageAudit,
   getTeamUsageMembers,
+  getTeamUsageOrganization,
   getTeamUsageOverview,
   getTeamUsageSummary,
   getTeamUsageTrend,
@@ -24,6 +25,8 @@ import type {
   TeamUsageAuditRecord,
   TeamUsageOverviewParams,
   TeamUsageMembersResponse,
+  TeamUsageOrganizationParams,
+  TeamUsageOrganizationResponse,
   TeamUsageSummaryResponse,
   TeamUsageTrendResponse,
 } from '@/types'
@@ -78,6 +81,20 @@ describe('team usage API', () => {
       items: unknown[]
       total_count: number
       next_cursor?: string
+    }>()
+    expectTypeOf<TeamUsageOrganizationParams>().toMatchTypeOf<{
+      parent_department_external_id?: string
+      department_cursor?: string
+      department_limit?: number
+      member_cursor?: string
+      member_limit?: number
+    }>()
+    expectTypeOf<TeamUsageOrganizationResponse>().toMatchTypeOf<{
+      parent_department_external_id: string | null
+      departments: unknown[]
+      members: unknown[]
+      next_department_cursor?: string
+      next_member_cursor?: string
     }>()
   })
 
@@ -205,6 +222,37 @@ describe('team usage API', () => {
         timezone: 'Asia/Shanghai',
         limit: 50,
         cursor: 'cursor-page-2',
+      },
+      timeout: 45000,
+    })
+  })
+
+  it('fetches one shallow organization branch with independent cursors', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { departments: [], members: [] } } })
+
+    await getTeamUsageOrganization({
+      start_date: '2026-06-01',
+      end_date: '2026-06-30',
+      granularity: 'day',
+      timezone: 'Asia/Shanghai',
+      parent_department_external_id: 'department-alpha',
+      department_cursor: 'department-page-2',
+      department_limit: 25,
+      member_cursor: 'member-page-2',
+      member_limit: 50,
+    })
+
+    expect(mockClient.get).toHaveBeenCalledWith('/user/team-usage/organization', {
+      params: {
+        start_date: '2026-06-01',
+        end_date: '2026-06-30',
+        granularity: 'day',
+        timezone: 'Asia/Shanghai',
+        parent_department_external_id: 'department-alpha',
+        department_cursor: 'department-page-2',
+        department_limit: 25,
+        member_cursor: 'member-page-2',
+        member_limit: 50,
       },
       timeout: 45000,
     })
