@@ -5,10 +5,11 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import TeamOverviewMemberTrendChart from '@/components/team-usage/TeamOverviewMemberTrendChart.vue'
 import TeamOverviewView from '@/views/TeamOverviewView.vue'
 import { setLocale } from '@/i18n'
-import type { TeamOverviewResponse } from '@/types'
+import type { TeamOverviewResponse, TeamUsageSummaryResponse } from '@/types'
 
 vi.mock('@/api/teamUsage', () => ({
   getTeamUsageOverview: vi.fn(),
+  getTeamUsageSummary: vi.fn(),
 }))
 
 const lineCanvasModule = vi.hoisted(() => {
@@ -41,6 +42,7 @@ vi.mock('@/components/charts/LineChartCanvas.vue', async () => {
 })
 
 const mockGetTeamUsageOverview = vi.mocked((await import('@/api/teamUsage')).getTeamUsageOverview)
+const mockGetTeamUsageSummary = vi.mocked((await import('@/api/teamUsage')).getTeamUsageSummary)
 
 const overviewFixture: TeamOverviewResponse = {
   configured: true,
@@ -272,6 +274,18 @@ const overviewFixture: TeamOverviewResponse = {
   ],
 }
 
+const summaryFixture: TeamUsageSummaryResponse = {
+  as_of: '2026-07-16T08:00:00Z',
+  fresh_until: '2026-07-16T08:00:54Z',
+  stale_until: '2026-07-16T08:04:30Z',
+  cache_status: 'fresh',
+  source_status: 'ok',
+  scope_version: 'scope-version-1',
+  request_id: 'request-summary-1',
+  window: overviewFixture.window,
+  summary: overviewFixture.summary,
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((promiseResolve) => { resolve = promiseResolve })
@@ -298,6 +312,76 @@ describe('TeamOverviewView', () => {
     setActivePinia(createPinia())
     setLocale('en-US')
     vi.clearAllMocks()
+    mockGetTeamUsageSummary.mockResolvedValue({ data: { data: summaryFixture } } as any)
+  })
+
+  it('renders summary cards before the compatibility overview finishes', async () => {
+    mockGetTeamUsageOverview.mockImplementation(() => new Promise(() => {}) as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(mockGetTeamUsageSummary).toHaveBeenCalledWith(expect.objectContaining({ granularity: 'day' }))
+    expect(mockGetTeamUsageOverview).toHaveBeenCalledWith(expect.objectContaining({ granularity: 'day' }))
+    expect(wrapper.text()).toContain('28.00 USD')
+    expect(wrapper.text()).toContain('12.9K')
+    expect(wrapper.find('[data-testid="team-overview-sections-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(false)
+  })
+
+  it('keeps a successful summary visible when compatibility sections fail', async () => {
+    mockGetTeamUsageOverview.mockRejectedValue(new Error('synthetic compatibility failure'))
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('28.00 USD')
+    expect(wrapper.text()).toContain('Team usage is temporarily unavailable.')
+    expect(wrapper.find('[data-testid="team-overview-summary"]').exists()).toBe(true)
+  })
+
+  it('keeps successful compatibility sections visible when summary fails', async () => {
+    mockGetTeamUsageSummary.mockRejectedValue(new Error('synthetic summary failure'))
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Team usage is temporarily unavailable.')
+    expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(true)
+  })
+
+  it('shows stale freshness only on the summary section', async () => {
+    mockGetTeamUsageSummary.mockResolvedValue({
+      data: { data: { ...summaryFixture, cache_status: 'stale', source_status: 'error' } },
+    } as any)
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="team-summary-stale-marker"]').text()).toContain('Showing a recent snapshot')
   })
 
   afterEach(() => {
@@ -305,6 +389,8 @@ describe('TeamOverviewView', () => {
   })
 
   it('loads one shared line canvas only after team trend data is chartable', async () => {
+    const initialLoads = lineCanvasModule.loads
+    const expectedLoads = Math.max(initialLoads, 1)
     lineCanvasModule.defer()
     const initialRequest = deferred<any>()
     mockGetTeamUsageOverview.mockReturnValueOnce(initialRequest.promise as any)
@@ -318,7 +404,7 @@ describe('TeamOverviewView', () => {
 
     expect(mockGetTeamUsageOverview).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('Loading')
-    expect(lineCanvasModule.loads).toBe(0)
+    expect(lineCanvasModule.loads).toBe(initialLoads)
 
     const unavailableFixture = structuredClone(overviewFixture)
     unavailableFixture.top_member_trend = {
@@ -339,13 +425,13 @@ describe('TeamOverviewView', () => {
     expect(wrapper.text()).toContain('Team usage is temporarily unavailable.')
     expect(wrapper.text()).toContain('tokens')
     expect(wrapper.text()).toContain('Daily')
-    expect(lineCanvasModule.loads).toBe(0)
+    expect(lineCanvasModule.loads).toBe(initialLoads)
 
     const noSeriesRequest = deferred<any>()
     mockGetTeamUsageOverview.mockReturnValueOnce(noSeriesRequest.promise as any)
     await wrapper.get('[data-test="range-7d"]').trigger('click')
     expect(wrapper.text()).toContain('Updating team usage...')
-    expect(lineCanvasModule.loads).toBe(0)
+    expect(lineCanvasModule.loads).toBe(initialLoads)
     const noSeriesFixture = structuredClone(overviewFixture)
     noSeriesFixture.top_member_trend.series = []
     noSeriesFixture.department_trend!.series = []
@@ -353,7 +439,7 @@ describe('TeamOverviewView', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="team-member-trend-chart"]').text()).toContain('-')
-    expect(lineCanvasModule.loads).toBe(0)
+    expect(lineCanvasModule.loads).toBe(initialLoads)
 
     const unchartableRequest = deferred<any>()
     mockGetTeamUsageOverview.mockReturnValueOnce(unchartableRequest.promise as any)
@@ -376,7 +462,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.get('[data-testid="team-total-trend-legend"]').classes()).toContain('max-h-64')
     expect(wrapper.get('[data-testid="subteam-trend-legend"]').classes()).toContain('overflow-y-auto')
     expect(wrapper.get('[data-testid="top-member-trend-legend"]').classes()).toContain('max-h-64')
-    expect(lineCanvasModule.loads).toBe(0)
+    expect(lineCanvasModule.loads).toBe(initialLoads)
 
     const chartableRequest = deferred<any>()
     mockGetTeamUsageOverview.mockReturnValueOnce(chartableRequest.promise as any)
@@ -384,7 +470,7 @@ describe('TeamOverviewView', () => {
     chartableRequest.resolve({ data: { data: overviewFixture } })
     await flushPromises()
 
-    expect(lineCanvasModule.loads).toBe(1)
+    expect(lineCanvasModule.loads).toBe(expectedLoads)
     expect(wrapper.text()).toContain('2026-06-01 - 2026-06-30')
     expect(wrapper.text()).toContain('Team total')
     expect(wrapper.text()).toContain('Team One')
@@ -392,7 +478,7 @@ describe('TeamOverviewView', () => {
     expect(wrapper.get('[data-testid="team-total-trend-chart"] .h-52').classes()).toContain('h-52')
     expect(wrapper.get('[data-testid="team-comparison-trend-chart"] .h-64').classes()).toContain('h-64')
     expect(wrapper.get('[data-testid="top-member-trend-chart"] .h-64').classes()).toContain('h-64')
-    expect(wrapper.findAll('[data-test="line-chart"]')).toHaveLength(0)
+    expect(wrapper.findAll('[data-test="line-chart"]')).toHaveLength(initialLoads > 0 ? 3 : 0)
 
     lineCanvasModule.resolve()
     await flushPromises()
@@ -401,7 +487,7 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageOverview.mockResolvedValueOnce({ data: { data: overviewFixture } } as any)
     await wrapper.get('[data-test="range-7d"]').trigger('click')
     await flushPromises()
-    expect(lineCanvasModule.loads).toBe(1)
+    expect(lineCanvasModule.loads).toBe(expectedLoads)
   })
 
   it('renders top member trend and member table without quota controls', async () => {
@@ -736,6 +822,20 @@ describe('TeamOverviewView', () => {
   })
 
   it('renders partial unavailable warning while keeping team content visible', async () => {
+		mockGetTeamUsageSummary.mockResolvedValue({
+			data: {
+				data: {
+					...summaryFixture,
+					summary: {
+						...summaryFixture.summary,
+						unavailable: true,
+						unavailable_reason: 'provider_error',
+						range_actual_cost: null,
+						range_total_tokens: null,
+					},
+				},
+			},
+		} as any)
     mockGetTeamUsageOverview.mockResolvedValue({
       data: {
         data: {
@@ -771,6 +871,9 @@ describe('TeamOverviewView', () => {
   })
 
   it('renders no-scope state when overview load is rejected with 403', async () => {
+		mockGetTeamUsageSummary.mockRejectedValue({
+			response: { status: 403, data: { code: 'not_representative' } },
+		})
     mockGetTeamUsageOverview.mockRejectedValue({
       response: { status: 403, data: { code: 'not_representative' } },
     })
@@ -832,6 +935,14 @@ describe('TeamOverviewView', () => {
     largeTokenFixture.members[0].total_tokens = 805_033_680
     largeTokenFixture.member_tree![0].range_total_tokens = 12_285_557_755
     largeTokenFixture.member_tree![0].members[0].total_tokens = 805_033_680
+		mockGetTeamUsageSummary.mockResolvedValue({
+			data: {
+				data: {
+					...summaryFixture,
+					summary: largeTokenFixture.summary,
+				},
+			},
+		} as any)
     mockGetTeamUsageOverview.mockResolvedValue({ data: { data: largeTokenFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')

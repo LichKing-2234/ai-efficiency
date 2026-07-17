@@ -33,6 +33,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/ai-efficiency/backend/internal/workitems"
@@ -205,6 +206,13 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize work item counts cache", zap.Error(err))
 	}
+	representativeScopeCache, err := representativescope.NewCache(
+		redisStore,
+		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize representative scope cache", zap.Error(err))
+	}
 	personalUsageCache, err := personalusage.NewCache(
 		redisStore,
 		personalusage.CacheOptions{Namespace: cfg.Redis.Namespace},
@@ -212,12 +220,12 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize personal usage cache", zap.Error(err))
 	}
-	representativeScopeCache, err := representativescope.NewCache(
+	teamUsageSnapshotCache, err := teamusage.NewSnapshotCache(
 		redisStore,
-		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace},
+		teamusage.SnapshotCacheOptions{Namespace: cfg.Redis.Namespace},
 	)
 	if err != nil {
-		logger.Fatal("initialize representative scope cache", zap.Error(err))
+		logger.Fatal("initialize team usage snapshot cache", zap.Error(err))
 	}
 
 	// Init LDAP config (shared between auth service and admin settings handler)
@@ -352,6 +360,7 @@ func main() {
 			WorkItemsCache:           workItemsCache,
 			WorkItemsRevisionStore:   workItemsRevisionStore,
 			RepresentativeScopeCache: representativeScopeCache,
+			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
 		},
 	)
 
