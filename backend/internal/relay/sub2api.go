@@ -2302,6 +2302,67 @@ func (s *sub2apiRelay) ListGroupRateMultipliers(ctx context.Context, groupID int
 	return entries, nil
 }
 
+func (s *sub2apiRelay) GroupRateMultipliersForGroups(ctx context.Context, groupIDs []int64) []GroupRateMultiplierReadResult {
+	const (
+		maxConcurrentRequests = 4
+		requestTimeout        = 2 * time.Second
+		batchTimeout          = 5 * time.Second
+	)
+
+	uniqueGroupIDs := make([]int64, 0, len(groupIDs))
+	seen := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if _, exists := seen[groupID]; exists {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		uniqueGroupIDs = append(uniqueGroupIDs, groupID)
+	}
+
+	results := make([]GroupRateMultiplierReadResult, len(uniqueGroupIDs))
+	for i, groupID := range uniqueGroupIDs {
+		results[i].GroupID = groupID
+	}
+	if len(results) == 0 {
+		return results
+	}
+
+	batchCtx, cancelBatch := context.WithTimeout(ctx, batchTimeout)
+	defer cancelBatch()
+
+	workerCount := maxConcurrentRequests
+	if len(results) < workerCount {
+		workerCount = len(results)
+	}
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for resultIndex := range jobs {
+				if err := batchCtx.Err(); err != nil {
+					results[resultIndex].Err = err
+					continue
+				}
+
+				requestCtx, cancelRequest := context.WithTimeout(batchCtx, requestTimeout)
+				entries, err := s.ListGroupRateMultipliers(requestCtx, results[resultIndex].GroupID)
+				cancelRequest()
+				results[resultIndex].Entries = entries
+				results[resultIndex].Err = err
+			}
+		}()
+	}
+
+	for resultIndex := range results {
+		jobs <- resultIndex
+	}
+	close(jobs)
+	wg.Wait()
+	return results
+}
+
 func (s *sub2apiRelay) ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error {
 	payload, err := json.Marshal(map[string]any{"entries": entries})
 	if err != nil {
