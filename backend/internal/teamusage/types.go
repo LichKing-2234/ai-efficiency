@@ -1,6 +1,7 @@
 package teamusage
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -9,15 +10,26 @@ import (
 )
 
 var (
-	ErrNotRepresentative           = errors.New("not_representative")
-	ErrSelfEditForbidden           = errors.New("self_edit_forbidden")
-	ErrNotUpperLevelRepresentative = errors.New("not_upper_level_representative")
-	ErrOutOfScope                  = errors.New("out_of_scope")
-	ErrNoRelayMapping              = errors.New("no_relay_mapping")
-	ErrInactiveSubscription        = errors.New("inactive_subscription")
-	ErrPolicyDenied                = errors.New("policy_denied")
-	ErrProviderUnsupported         = errors.New("provider_unsupported")
-	ErrPartialFailed               = errors.New("partial_failed")
+	ErrNotRepresentative             = errors.New("not_representative")
+	ErrSelfEditForbidden             = errors.New("self_edit_forbidden")
+	ErrNotUpperLevelRepresentative   = errors.New("not_upper_level_representative")
+	ErrOutOfScope                    = errors.New("out_of_scope")
+	ErrNoRelayMapping                = errors.New("no_relay_mapping")
+	ErrInactiveSubscription          = errors.New("inactive_subscription")
+	ErrPolicyDenied                  = errors.New("policy_denied")
+	ErrProviderUnsupported           = errors.New("provider_unsupported")
+	ErrMultiplierMetadataUnavailable = errors.New("multiplier_metadata_unavailable")
+	ErrPartialFailed                 = errors.New("partial_failed")
+	ErrInvalidOverviewParams         = errors.New("invalid_overview_params")
+	ErrInvalidMemberCursor           = errors.New("invalid_cursor")
+	ErrMemberSnapshotExpired         = errors.New("snapshot_expired")
+	ErrInvalidOrganizationCursor     = ErrInvalidMemberCursor
+	ErrOrganizationSnapshotExpired   = ErrMemberSnapshotExpired
+)
+
+const (
+	MultiplierMetadataStatusOK          = "ok"
+	MultiplierMetadataStatusUnavailable = "unavailable"
 )
 
 type ForbiddenError struct {
@@ -63,8 +75,10 @@ type SubscriptionRow struct {
 	SystemDefaultMultiplier            float64  `json:"system_default_multiplier"`
 	InheritedDefaultMultiplier         float64  `json:"inherited_default_multiplier"`
 	UserMultiplier                     *float64 `json:"user_multiplier,omitempty"`
-	EffectiveMultiplier                float64  `json:"effective_multiplier"`
+	EffectiveMultiplier                *float64 `json:"effective_multiplier"`
 	MultiplierSource                   string   `json:"multiplier_source"`
+	MultiplierMetadataStatus           string   `json:"multiplier_metadata_status"`
+	MultiplierMetadataMessage          *string  `json:"multiplier_metadata_message,omitempty"`
 	DailyLimitUSD                      *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD                     *float64 `json:"weekly_limit_usd,omitempty"`
 	MonthlyLimitUSD                    *float64 `json:"monthly_limit_usd,omitempty"`
@@ -105,6 +119,118 @@ type OverviewResponse struct {
 	DepartmentTrend  DepartmentTrendState `json:"department_trend"`
 	Members          []OverviewMember     `json:"members"`
 	MemberTree       []OverviewMemberNode `json:"member_tree"`
+}
+
+type SnapshotFreshness struct {
+	AsOf         time.Time `json:"as_of"`
+	FreshUntil   time.Time `json:"fresh_until"`
+	StaleUntil   time.Time `json:"stale_until"`
+	CacheStatus  string    `json:"cache_status"`
+	SourceStatus string    `json:"source_status"`
+}
+
+type SummaryResponse struct {
+	SnapshotFreshness
+	ScopeVersion string          `json:"scope_version"`
+	RequestID    string          `json:"request_id"`
+	Window       OverviewWindow  `json:"window"`
+	Summary      OverviewSummary `json:"summary"`
+}
+
+type TrendResponse struct {
+	SnapshotFreshness
+	ScopeVersion    string               `json:"scope_version"`
+	RequestID       string               `json:"request_id"`
+	Window          OverviewWindow       `json:"window"`
+	TopMembers      []OverviewMember     `json:"top_members"`
+	TopMemberTrend  TopMemberTrendState  `json:"top_member_trend"`
+	DepartmentTrend DepartmentTrendState `json:"department_trend"`
+}
+
+type MembersParams struct {
+	OverviewParams
+	Cursor string
+	Limit  int
+}
+
+type MembersResponse struct {
+	SnapshotFreshness
+	ScopeVersion string           `json:"scope_version"`
+	RequestID    string           `json:"request_id"`
+	Window       OverviewWindow   `json:"window"`
+	Items        []OverviewMember `json:"items"`
+	TotalCount   int              `json:"total_count"`
+	NextCursor   string           `json:"next_cursor,omitempty"`
+}
+
+type OrganizationParams struct {
+	OverviewParams
+	ParentDepartmentExternalID string
+	DepartmentCursor           string
+	DepartmentLimit            int
+	MemberCursor               string
+	MemberLimit                int
+}
+
+type OrganizationResponse struct {
+	SnapshotFreshness
+	ScopeVersion               string                   `json:"scope_version"`
+	RequestID                  string                   `json:"request_id"`
+	Window                     OverviewWindow           `json:"window"`
+	ParentDepartmentExternalID *string                  `json:"parent_department_external_id"`
+	Departments                []OrganizationDepartment `json:"departments"`
+	Members                    []OverviewMember         `json:"members"`
+	NextDepartmentCursor       string                   `json:"next_department_cursor,omitempty"`
+	NextMemberCursor           string                   `json:"next_member_cursor,omitempty"`
+}
+
+type OrganizationDepartment struct {
+	DepartmentExternalID string  `json:"department_external_id"`
+	ParentExternalID     *string `json:"parent_external_id,omitempty"`
+	Name                 string  `json:"name"`
+	DisplayPath          string  `json:"display_path"`
+	Depth                int     `json:"depth"`
+	ChildCount           int     `json:"child_count"`
+	HasChildren          bool    `json:"has_children"`
+	DirectMemberCount    int     `json:"direct_member_count"`
+	AggregateMemberCount int     `json:"aggregate_member_count"`
+	ConnectedMemberCount int     `json:"connected_member_count"`
+	RangeActualCost      float64 `json:"range_actual_cost"`
+	RangeTotalTokens     *int64  `json:"range_total_tokens,omitempty"`
+}
+
+type SnapshotCacheKey struct {
+	ProviderID      int
+	ProviderVersion int64
+	ActorID         int
+	ScopeVersion    string
+	ScopeHash       string
+	Params          OverviewParams
+}
+
+type SnapshotOriginLoadResult struct {
+	Snapshot    *OverviewResponse
+	SnapshotErr error
+}
+
+type SnapshotOriginLoader func(context.Context) (SnapshotOriginLoadResult, error)
+
+type SnapshotCacheResult struct {
+	Snapshot  *OverviewResponse
+	Freshness SnapshotFreshness
+}
+
+type SnapshotCacheOptions struct {
+	Namespace      string
+	CommandTimeout time.Duration
+	RefreshTimeout time.Duration
+	LeaseTTL       time.Duration
+	PollInterval   time.Duration
+	ReleaseTimeout time.Duration
+	Now            func() time.Time
+	RandFloat64    func() float64
+	NewToken       func() string
+	Sleep          func(context.Context, time.Duration) error
 }
 
 type OverviewWindow struct {
@@ -180,10 +306,12 @@ type TopMemberTrendSeries struct {
 }
 
 type DepartmentTrendState struct {
-	UnitLabel         string                  `json:"unit_label"`
-	Unavailable       bool                    `json:"unavailable"`
-	UnavailableReason *string                 `json:"unavailable_reason"`
-	Series            []DepartmentTrendSeries `json:"series"`
+	UnitLabel            string                  `json:"unit_label"`
+	Unavailable          bool                    `json:"unavailable"`
+	UnavailableReason    *string                 `json:"unavailable_reason"`
+	ComparisonTotalCount int                     `json:"comparison_total_count"`
+	ComparisonTruncated  bool                    `json:"comparison_truncated"`
+	Series               []DepartmentTrendSeries `json:"series"`
 }
 
 type DepartmentTrendSeries struct {

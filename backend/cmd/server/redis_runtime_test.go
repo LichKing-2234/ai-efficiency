@@ -7,7 +7,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/config"
 )
 
-func TestRedisClientOptionsBoundWorkItemCacheLatency(t *testing.T) {
+func TestRedisClientOptionsBoundReadCacheLatency(t *testing.T) {
 	options := redisClientOptions(config.RedisConfig{Addr: "redis.example:6379", Password: "test-password", DB: 2})
 	if options.Addr != "redis.example:6379" || options.Password != "test-password" || options.DB != 2 {
 		t.Fatalf("Redis identity options = %+v", options)

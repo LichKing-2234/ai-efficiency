@@ -30,6 +30,7 @@ func (DirectoryMember) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("source_id", "email_normalized").Unique(),
 		index.Fields("source_id", "department_external_id"),
+		index.Fields("source_id", "matched_user_id"),
 		index.Fields("matched_user_id"),
 		index.Fields("last_seen_run_id"),
 	}

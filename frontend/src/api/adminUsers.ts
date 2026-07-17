@@ -2,6 +2,8 @@ import client from './client'
 import type {
   AdminAssignSubscriptionRequest,
   AdminAssignSubscriptionResponse,
+  AdminDepartmentChildrenResponse,
+  AdminDepartmentOptionsResponse,
   AdminDisableUserAccessRequest,
   AdminDisableUserAccessResponse,
   AdminManageSubscriptionsRequest,
@@ -22,12 +24,33 @@ export interface AdminUsersListParams {
   page_size?: number
 }
 
+export interface AdminDepartmentOptionsParams {
+  q?: string
+  selected_id?: string
+  page?: number
+  page_size?: number
+}
+
+export interface AdminDepartmentChildrenParams {
+  parent_department_id?: string
+  page?: number
+  page_size?: number
+}
+
 export function listAdminUsers(params: AdminUsersListParams) {
   return client.get<ApiResponse<AdminUsersListResponse>>('/admin/users', { params })
 }
 
 export function listAdminUserDepartments() {
   return client.get<ApiResponse<AdminUserDepartmentsResponse>>('/admin/users/departments')
+}
+
+export function listAdminUserDepartmentOptions(params: AdminDepartmentOptionsParams) {
+  return client.get<ApiResponse<AdminDepartmentOptionsResponse>>('/admin/users/department-options', { params })
+}
+
+export function listAdminUserDepartmentChildren(params: AdminDepartmentChildrenParams) {
+  return client.get<ApiResponse<AdminDepartmentChildrenResponse>>('/admin/users/department-children', { params })
 }
 
 export function listAdminUserSubscriptionOptions() {

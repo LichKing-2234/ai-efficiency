@@ -105,10 +105,12 @@ function countsResponse(approvalCount: number, adminCount = 0) {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((res) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
     resolve = res
+    reject = rej
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 function createTestRouter() {
@@ -180,29 +182,118 @@ describe('QuotaResetView', () => {
     expect(wrapper.text()).toContain('Group Alpha')
   })
 
-  it('loads my requests and approval queue, then approves a pending request', async () => {
+  it('loads only the active mine queue and work-item counts on mount', async () => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any
     const wrapper = await mountQuotaResetView()
 
-    expect(api.listMyQuotaResetRequests).toHaveBeenCalled()
-    expect(api.listQuotaResetApprovals).toHaveBeenCalled()
+    expect(api.listMyQuotaResetRequests).toHaveBeenCalledTimes(1)
+    expect(api.listQuotaResetApprovals).not.toHaveBeenCalled()
+    expect(api.listAdminQuotaResetRequests).not.toHaveBeenCalled()
+    expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="quota-reset-tab-admin"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Group Alpha')
     expect(wrapper.text()).toContain('Need reset for a build investigation')
-
-    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
-    await wrapper.get('[data-testid="quota-reset-approve-2"]').trigger('click')
-    expect(wrapper.find('[data-testid="quota-reset-decision-dialog"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="quota-reset-decision-comment"]').setValue('Usage spike confirmed')
-    await wrapper.get('form[role="dialog"]').trigger('submit')
-    await flushPromises()
-
-    expect(api.approveQuotaResetRequest).toHaveBeenCalledWith(2, { decision_reason: 'Usage spike confirmed' })
-    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(2)
-    expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
   })
 
-  it('invalidates an in-flight count request and keeps the action pending for the fresh generation', async () => {
+  it('loads approvals on first selection and reuses them on repeated visits', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const wrapper = await mountQuotaResetView()
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await flushPromises()
+
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Group Beta')
+
+    await wrapper.get('[data-testid="quota-reset-tab-mine"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await flushPromises()
+
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Group Beta')
+  })
+
+  it('loads the admin queue only after an administrator selects it', async () => {
+    const api = await import('@/api/quotaReset') as any
+    api.listAdminQuotaResetRequests.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
+    const wrapper = await mountQuotaResetView('admin')
+
+    expect(wrapper.find('[data-testid="quota-reset-tab-admin"]').exists()).toBe(true)
+    expect(api.listAdminQuotaResetRequests).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="quota-reset-tab-admin"]').trigger('click')
+    await flushPromises()
+
+    expect(api.listAdminQuotaResetRequests).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Group Beta')
+  })
+
+  it('deduplicates a delayed approval load and keeps the visible mine queue available', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const pendingApprovals = deferred<any>()
+    api.listQuotaResetApprovals.mockReturnValue(pendingApprovals.promise)
+    const wrapper = await mountQuotaResetView()
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-tab-mine"]').trigger('click')
+
+    expect(wrapper.text()).toContain('Group Alpha')
+    expect(wrapper.text()).not.toContain('Loading...')
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-tab-mine"]').trigger('click')
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(1)
+
+    pendingApprovals.resolve({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Group Beta')
+  })
+
+  it('contains a hidden queue failure until that queue is selected again', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const pendingApprovals = deferred<any>()
+    api.listQuotaResetApprovals.mockReturnValue(pendingApprovals.promise)
+    const wrapper = await mountQuotaResetView()
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-tab-mine"]').trigger('click')
+    pendingApprovals.reject(new Error('approvals unavailable'))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Group Alpha')
+    expect(wrapper.text()).not.toContain('Failed to load quota reset requests')
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    expect(wrapper.text()).toContain('Failed to load quota reset requests')
+    expect(wrapper.text()).not.toContain('Group Alpha')
+  })
+
+  it('refreshes only the active queue and never serves its old rows after failure', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const pendingMine = deferred<any>()
+    const wrapper = await mountQuotaResetView('admin')
+    api.listMyQuotaResetRequests.mockReturnValueOnce(pendingMine.promise)
+
+    await wrapper.get('[data-testid="quota-reset-refresh"]').trigger('click')
+
+    expect(api.listMyQuotaResetRequests).toHaveBeenCalledTimes(2)
+    expect(api.listQuotaResetApprovals).not.toHaveBeenCalled()
+    expect(api.listAdminQuotaResetRequests).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('Group Alpha')
+    expect(wrapper.text()).toContain('Loading...')
+
+    pendingMine.reject(new Error('mine unavailable'))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Failed to load quota reset requests')
+    expect(wrapper.text()).not.toContain('Group Alpha')
+  })
+
+  it('refreshes invalidated counts without blocking refreshed queue history', async () => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any
     const initialCounts = deferred<any>()
@@ -213,21 +304,25 @@ describe('QuotaResetView', () => {
     const wrapper = await mountQuotaResetView()
     const workItems = useWorkItemsStore()
     await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await flushPromises()
     await wrapper.get('[data-testid="quota-reset-approve-2"]').trigger('click')
     await wrapper.get('[data-testid="quota-reset-decision-comment"]').setValue('Approved after review')
     await wrapper.get('form[role="dialog"]').trigger('submit')
     await flushPromises()
 
     expect(api.approveQuotaResetRequest).toHaveBeenCalledWith(2, { decision_reason: 'Approved after review' })
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(2)
     expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('Loading...')
+    expect(wrapper.text()).toContain('Group Beta')
+    expect(wrapper.text()).not.toContain('Loading...')
 
     initialCounts.resolve(countsResponse(9))
     await flushPromises()
 
     expect(workItems.totalCount).toBe(0)
     expect(workItems.loading).toBe(true)
-    expect(wrapper.text()).toContain('Loading...')
+    expect(wrapper.text()).toContain('Group Beta')
+    expect(wrapper.text()).not.toContain('Loading...')
 
     freshCounts.resolve(countsResponse(0))
     await flushPromises()
@@ -294,7 +389,7 @@ describe('QuotaResetView', () => {
       expectedArgs: [2],
       status: 'approved_reset_failed',
     },
-  ])('refreshes queues and counts exactly once after $name succeeds', async ({ name, role, queue, selector, apiName, expectedArgs, status }) => {
+  ])('refreshes only the source queue and counts after $name succeeds', async ({ name, role, queue, selector, apiName, expectedArgs, status }) => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any
     const queueItem = {
@@ -313,6 +408,7 @@ describe('QuotaResetView', () => {
     } else if (queue === 'admin') {
       await wrapper.get('[data-testid="quota-reset-tab-admin"]').trigger('click')
     }
+    await flushPromises()
     await wrapper.get(selector).trigger('click')
     if (name.includes('approve') || name.includes('reject')) {
       expect(wrapper.find('[data-testid="quota-reset-decision-dialog"]').exists()).toBe(true)
@@ -322,20 +418,57 @@ describe('QuotaResetView', () => {
     await flushPromises()
 
     expect(api[apiName]).toHaveBeenCalledWith(...expectedArgs)
-    expect(api.listMyQuotaResetRequests).toHaveBeenCalledTimes(2)
-    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(2)
+    expect(api.listMyQuotaResetRequests).toHaveBeenCalledTimes(queue === 'mine' ? 2 : 1)
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(queue === 'approvals' ? 2 : 0)
+    expect(api.listAdminQuotaResetRequests).toHaveBeenCalledTimes(queue === 'admin' ? 2 : 0)
     expect(workItemsApi.getWorkItemCounts).toHaveBeenCalledTimes(2)
   })
 
-  it('loads admin queue for admins', async () => {
+  it('invalidates only the overlapping admin queue after cancellation', async () => {
     const api = await import('@/api/quotaReset') as any
     api.listAdminQuotaResetRequests.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 1 } } })
-
     const wrapper = await mountQuotaResetView('admin')
 
-    expect(api.listAdminQuotaResetRequests).toHaveBeenCalled()
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await flushPromises()
     await wrapper.get('[data-testid="quota-reset-tab-admin"]').trigger('click')
-    expect(wrapper.text()).toContain('Group Beta')
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-tab-mine"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-cancel-1"]').trigger('click')
+    await flushPromises()
+
+    expect(api.listMyQuotaResetRequests).toHaveBeenCalledTimes(2)
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(1)
+    expect(api.listAdminQuotaResetRequests).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-tab-admin"]').trigger('click')
+    await flushPromises()
+
+    expect(api.listQuotaResetApprovals).toHaveBeenCalledTimes(1)
+    expect(api.listAdminQuotaResetRequests).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not let a hidden mutation action block the newly visible queue', async () => {
+    const api = await import('@/api/quotaReset') as any
+    const pendingAction = deferred<any>()
+    api.approveQuotaResetRequest.mockReturnValue(pendingAction.promise)
+    const wrapper = await mountQuotaResetView()
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="quota-reset-approve-2"]').trigger('click')
+    await wrapper.get('[data-testid="quota-reset-tab-mine"]').trigger('click')
+
+    expect(wrapper.text()).toContain('Group Alpha')
+    expect(wrapper.text()).not.toContain('Loading...')
+
+    pendingAction.resolve({ data: { data: { ...approvalRequest, status: 'approved_reset_succeeded' } } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Group Alpha')
+    expect(wrapper.text()).not.toContain('Loading...')
   })
 
   it('does not show decision actions to an earlier approver after the workflow advances', async () => {
@@ -495,6 +628,7 @@ describe('QuotaResetView', () => {
     expect(wrapper.text()).toContain('Group Alpha')
 
     await wrapper.get('[data-testid="quota-reset-tab-admin"]').trigger('click')
+    await flushPromises()
     expect(wrapper.text()).toContain('Group Alpha')
   })
 

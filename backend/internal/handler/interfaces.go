@@ -35,3 +35,7 @@ type prUsageRefresher interface {
 type prUsageFreshnessEvaluator interface {
 	EvaluatePRFreshness(ctx context.Context, prID int) (*prusage.PRFreshness, error)
 }
+
+type prUsagePageFreshnessEvaluator interface {
+	EvaluatePRFreshnessPage(ctx context.Context, repoConfigID int, prs []*ent.PrRecord) (map[int]*prusage.PRFreshness, error)
+}
