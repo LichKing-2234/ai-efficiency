@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
-	redis "github.com/redis/go-redis/v9"
+	"github.com/ai-efficiency/backend/internal/readcache"
 )
 
 type fakeInventoryRevisionReader struct {
@@ -77,7 +75,7 @@ func (f *fakeInventoryStore) Get(_ context.Context, key string) ([]byte, error) 
 	}
 	value, ok := f.values[key]
 	if !ok {
-		return nil, ErrInventoryCacheMiss
+		return nil, readcache.ErrMiss
 	}
 	return append([]byte(nil), value.value...), nil
 }
@@ -113,12 +111,12 @@ func (f *fakeInventoryStore) LeaseTTL(_ context.Context, key string) (time.Durat
 	defer f.mu.Unlock()
 	lease, ok := f.leases[key]
 	if !ok {
-		return 0, ErrInventoryCacheMiss
+		return 0, readcache.ErrMiss
 	}
 	ttl := lease.expiresAt.Sub(f.now)
 	if ttl <= 0 {
 		delete(f.leases, key)
-		return 0, ErrInventoryCacheMiss
+		return 0, readcache.ErrMiss
 	}
 	return ttl, nil
 }
@@ -144,7 +142,7 @@ func (f *fakeInventoryStore) advance(duration time.Duration) {
 	f.mu.Unlock()
 }
 
-func testInventoryCache(t *testing.T, store InventoryStore, revisions InventoryRevisionReader, namespace string, mutate func(*InventoryCacheOptions)) *InventoryCache {
+func testInventoryCache(t *testing.T, store readcache.Store, revisions InventoryRevisionReader, namespace string, mutate func(*InventoryCacheOptions)) *InventoryCache {
 	t.Helper()
 	options := InventoryCacheOptions{
 		Namespace:      namespace,
@@ -526,47 +524,4 @@ func TestInventoryCacheLeaseExpiryAndRevisionChangeRecover(t *testing.T) {
 			t.Fatalf("cache writes old=%v new=%v, want false/true", oldWritten, newWritten)
 		}
 	})
-}
-
-func TestInventoryCacheRedisAdapterUsesSetNXPXAndTokenCheckedRelease(t *testing.T) {
-	server := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
-	t.Cleanup(func() { _ = client.Close() })
-	store := NewRedisInventoryStore(client)
-	ctx := context.Background()
-
-	if _, err := store.Get(ctx, "missing"); !errors.Is(err, ErrInventoryCacheMiss) {
-		t.Fatalf("Get(missing) error = %v, want ErrInventoryCacheMiss", err)
-	}
-	if err := store.Set(ctx, "value", []byte(`{"schema_version":1}`), 48*time.Second); err != nil {
-		t.Fatalf("Set() error = %v", err)
-	}
-	if ttl := server.TTL("value"); ttl != 48*time.Second {
-		t.Fatalf("value TTL = %s, want 48s", ttl)
-	}
-	acquired, err := store.TryAcquireLease(ctx, "lease", "owner-a", 1250*time.Millisecond)
-	if err != nil || !acquired {
-		t.Fatalf("first TryAcquireLease() = %v, %v", acquired, err)
-	}
-	if ttl := server.TTL("lease"); ttl != 1250*time.Millisecond {
-		t.Fatalf("lease TTL = %s, want 1.25s", ttl)
-	}
-	acquired, err = store.TryAcquireLease(ctx, "lease", "owner-b", 1250*time.Millisecond)
-	if err != nil || acquired {
-		t.Fatalf("second TryAcquireLease() = %v, %v, want false, nil", acquired, err)
-	}
-	released, err := store.ReleaseLease(ctx, "lease", "owner-b")
-	if err != nil || released {
-		t.Fatalf("mismatched ReleaseLease() = %v, %v", released, err)
-	}
-	if got, err := server.Get("lease"); err != nil || got != "owner-a" {
-		t.Fatalf("lease after mismatched release = %q, %v", got, err)
-	}
-	released, err = store.ReleaseLease(ctx, "lease", "owner-a")
-	if err != nil || !released || server.Exists("lease") {
-		t.Fatalf("matching ReleaseLease() = %v, %v, exists=%v", released, err, server.Exists("lease"))
-	}
-	if strings.Contains(inventoryCacheKey("prod", "11111111-1111-4111-8111-111111111111"), "github") {
-		t.Fatal("inventory cache key unexpectedly contains repository/provider data")
-	}
 }
