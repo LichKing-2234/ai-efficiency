@@ -440,6 +440,17 @@ The response contains:
 
 The existing semantics remain: totals cover the complete authorized scope, canonical members are deduplicated in team total, and an unavailable full-scope computation is explicit rather than a truncated total. `range_actual_cost` and `range_total_tokens` are the selected-window aggregate values; `today_actual_cost` and historical `total_actual_cost` remain comparison values and must not be mislabeled as selected-window totals.
 
+The #164 refinement makes this endpoint an independent cold-cache read rather than a projection of the compatibility overview snapshot:
+
+1. Summary has its own versioned Redis key space, process-local flight, and distributed lease while retaining the common provider, actor, scope, range, granularity, and timezone isolation dimensions and freshness/stale rules.
+2. Its origin resolves only the current authorized scope, provider binding, Relay subject identities, and the summary-specific batch capability. It never calls `TeamMemberTrendProvider`, ranks members, projects trend series, or constructs an organization tree.
+3. `TeamUsageSummaryProvider` receives the normalized start date, end date, granularity, and timezone. A provider may return selected-window billed usage and token totals alongside the existing today and historical comparison totals.
+4. Selected-window totals are available only when the summary capability returns complete range values for the connected scope. A provider that does not support those fields or returns incomplete range fields yields a summary with `unavailable=true`, stable reason `range_aggregation_unavailable`, null range totals, and still-correct member counts plus comparison totals. Authentication, authorization, invalid input, provider configuration failure, and invalid credentials remain endpoint-level failures and never become partial data.
+5. Summary cache values contain only normalized window and summary data. They cannot satisfy trend, members, organization, or compatibility reads, and those larger values cannot satisfy Summary.
+6. The first-party frontend keeps rendering the available summary cards and the section-local selected-window warning while trend, members, or organization remain loading or unavailable.
+
+The one-release compatibility endpoint remains on the existing complete overview read path during this refinement. It does not call the Summary HTTP endpoint, and its eventual removal remains governed by the compatibility contract below.
+
 ### Trend
 
 ```text
