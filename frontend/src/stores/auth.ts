@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref } from 'vue'
 import { devLogin as apiDevLogin, getMe, login as apiLogin } from '@/api/auth'
+import { resetSessionResources } from '@/stores/sessionResources'
 import { useWorkItemsStore } from '@/stores/workItems'
 import {
   clearBrowserSession,
@@ -24,6 +25,7 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = null
       currentUserRequest = null
       workItems.resetCounts()
+      resetSessionResources()
     }
   })
   onScopeDispose(stopSessionTransition)
