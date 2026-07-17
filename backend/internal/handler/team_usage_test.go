@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -23,6 +25,7 @@ type fakeTeamUsageService struct {
 	scopeFn            func(context.Context, int) (*teamusage.ScopeResponse, error)
 	subjectsFn         func(context.Context, int, string, int, int) (*teamusage.SubjectsResponse, error)
 	subjectDashboardFn func(context.Context, int, int, relay.UserUsageDashboardParams) (*teamusage.SubjectDashboardResponse, error)
+	summaryFn          func(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error)
 	overviewFn         func(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error)
 	updateMultiplierFn func(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	listAuditFn        func(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
@@ -39,6 +42,10 @@ func (f *fakeTeamUsageService) Subjects(ctx context.Context, actorUserID int, q 
 
 func (f *fakeTeamUsageService) SubjectDashboard(ctx context.Context, actorUserID, targetUserID int, params relay.UserUsageDashboardParams) (*teamusage.SubjectDashboardResponse, error) {
 	return f.subjectDashboardFn(ctx, actorUserID, targetUserID, params)
+}
+
+func (f *fakeTeamUsageService) Summary(ctx context.Context, actorUserID int, params teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
+	return f.summaryFn(ctx, actorUserID, params)
 }
 
 func (f *fakeTeamUsageService) Overview(ctx context.Context, actorUserID int, params teamusage.OverviewParams) (*teamusage.OverviewResponse, error) {
@@ -109,6 +116,7 @@ func newTeamUsageTestRouter(t *testing.T, service *fakeTeamUsageService) *teamUs
 	userGroup.GET("/team-usage/subjects", teamHandler.Subjects)
 	userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamHandler.SubjectDashboard)
 	userGroup.PUT("/team-usage/subjects/:user_id/groups/:group_id/rate-multiplier", teamHandler.UpdateMultiplier)
+	userGroup.GET("/team-usage/summary", teamHandler.Summary)
 	userGroup.GET("/team-usage/overview", teamHandler.Overview)
 	userGroup.GET("/team-usage/audit", teamHandler.Audit)
 
@@ -123,6 +131,115 @@ func newTeamUsageTestRouter(t *testing.T, service *fakeTeamUsageService) *teamUs
 		adminToken: adminPair.AccessToken,
 		userID:     user.ID,
 		adminID:    admin.ID,
+	}
+}
+
+func TestTeamUsageSummaryReturnsFreshnessScopeAndUniqueRequestID(t *testing.T) {
+	asOf := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	var env *teamUsageTestEnv
+	env = newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		summaryFn: func(_ context.Context, actorID int, params teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
+			if actorID != env.userID || params.StartDate != "2026-07-01" || params.EndDate != "2026-07-07" || params.Granularity != "day" || params.Timezone != "Asia/Shanghai" {
+				t.Fatalf("unexpected summary request: actor=%d params=%+v", actorID, params)
+			}
+			rangeCost := 12.5
+			return &teamusage.SummaryResponse{
+				SnapshotFreshness: teamusage.SnapshotFreshness{
+					AsOf: asOf, FreshUntil: asOf.Add(54 * time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
+					CacheStatus: "miss", SourceStatus: "ok",
+				},
+				ScopeVersion: "scope-version-1",
+				Window: teamusage.OverviewWindow{
+					StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
+				},
+				Summary: teamusage.OverviewSummary{MemberCount: 2, RangeActualCost: &rangeCost, UnitLabel: "USD"},
+			}, nil
+		},
+	})
+
+	path := "/api/v1/user/team-usage/summary?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=Asia%2FShanghai"
+	first := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	second := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	if first.Code != http.StatusOK || second.Code != http.StatusOK {
+		t.Fatalf("summary responses = %d/%d, want 200", first.Code, second.Code)
+	}
+	firstRequestID := first.Header().Get("X-Request-ID")
+	secondRequestID := second.Header().Get("X-Request-ID")
+	if firstRequestID == "" || secondRequestID == "" || firstRequestID == secondRequestID {
+		t.Fatalf("request IDs = %q/%q, want unique non-empty IDs", firstRequestID, secondRequestID)
+	}
+	for _, expected := range []string{
+		`"scope_version":"scope-version-1"`, `"cache_status":"miss"`, `"source_status":"ok"`,
+		`"request_id":"` + firstRequestID + `"`, `"range_actual_cost":12.5`,
+	} {
+		if !strings.Contains(first.Body.String(), expected) {
+			t.Fatalf("summary body = %s, want %s", first.Body.String(), expected)
+		}
+	}
+}
+
+func TestTeamUsageSummaryMapsScopedAndInputFailures(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "no representative scope", err: &teamusage.ForbiddenError{Reason: teamusage.ErrNotRepresentative.Error()}, status: http.StatusForbidden},
+		{name: "invalid window", err: fmt.Errorf("%w: end date precedes start date", teamusage.ErrInvalidOverviewParams), status: http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+				summaryFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
+					return nil, tt.err
+				},
+			})
+			rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/summary?start_date=2026-07-08&end_date=2026-07-07&granularity=day&timezone=UTC", env.token, "")
+			if rec.Code != tt.status {
+				t.Fatalf("response = %d %s, want %d", rec.Code, rec.Body.String(), tt.status)
+			}
+		})
+	}
+}
+
+func TestTeamUsageSummaryRequiresAuthentication(t *testing.T) {
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		summaryFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
+			t.Fatal("summary service must not run without authentication")
+			return nil, nil
+		},
+	})
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/summary", "", "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("response = %d %s, want 401", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTeamOverviewEmitsCompatibilityHeadersOnSuccessAndFailure(t *testing.T) {
+	tests := []struct {
+		name   string
+		result *teamusage.OverviewResponse
+		err    error
+		status int
+	}{
+		{name: "success", result: &teamusage.OverviewResponse{Configured: true, IsRepresentative: true}, status: http.StatusOK},
+		{name: "failure", err: errors.New("synthetic overview failure"), status: http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+				overviewFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error) {
+					return tt.result, tt.err
+				},
+			})
+			rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/overview?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=UTC", env.token, "")
+			if rec.Code != tt.status {
+				t.Fatalf("response = %d %s, want %d", rec.Code, rec.Body.String(), tt.status)
+			}
+			if rec.Header().Get("Deprecation") != "@1783987200" || rec.Header().Get("Sunset") != "Tue, 15 Sep 2026 00:00:00 GMT" || rec.Header().Get("Link") != `</api/v1/user/team-usage/summary>; rel="successor-version"` {
+				t.Fatalf("compatibility headers = Deprecation %q Sunset %q Link %q", rec.Header().Get("Deprecation"), rec.Header().Get("Sunset"), rec.Header().Get("Link"))
+			}
+		})
 	}
 }
 

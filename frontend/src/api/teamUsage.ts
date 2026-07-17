@@ -6,6 +6,7 @@ import type {
   SelectedSubjectUsageSnapshot,
   TeamUsageAuditParams,
   TeamUsageOverviewParams,
+  TeamUsageSummaryResponse,
   TeamOverviewResponse,
   TeamUsageScopeResponse,
   UpdateTeamUsageRateMultiplierRequest,
@@ -30,6 +31,10 @@ export function getTeamUsageOverview(params?: TeamUsageOverviewParams) {
     params,
     timeout: 45000,
   })
+}
+
+export function getTeamUsageSummary(params?: TeamUsageOverviewParams) {
+  return client.get<ApiResponse<TeamUsageSummaryResponse>>('/user/team-usage/summary', { params })
 }
 
 export function updateTeamUsageRateMultiplier(

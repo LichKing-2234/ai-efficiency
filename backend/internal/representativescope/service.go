@@ -45,6 +45,7 @@ type DepartmentScope struct {
 }
 
 type Scope struct {
+	Version                  string                         `json:"version"`
 	ActorUserID              int                            `json:"actor_user_id"`
 	ActorMemberExternalID    string                         `json:"actor_member_external_id"`
 	IsRepresentative         bool                           `json:"is_representative"`
@@ -110,6 +111,9 @@ func (s *Service) Resolve(ctx context.Context, actorUserID int) (*Scope, error) 
 		var scope *Scope
 		if s.cache == nil {
 			scope, err = loader(ctx)
+			if err == nil && scope != nil {
+				scope.Version = scopeVersion(guard)
+			}
 		} else {
 			scope, err = s.cache.GetOrLoad(ctx, guard, loader)
 		}
