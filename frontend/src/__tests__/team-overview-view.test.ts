@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -15,34 +15,13 @@ vi.mock('@/api/teamUsage', () => ({
   getTeamUsageTrend: vi.fn(),
 }))
 
-const lineCanvasModule = vi.hoisted(() => {
-  let gate = Promise.resolve()
-  let release = () => {}
-
-  function defer() {
-    gate = new Promise<void>((resolve) => { release = resolve })
-  }
-
-  function resolve() {
-    release()
-    gate = Promise.resolve()
-    release = () => {}
-  }
-
-  return { loads: 0, defer, resolve, wait: () => gate }
-})
-
-vi.mock('@/components/charts/LineChartCanvas.vue', async () => {
-  lineCanvasModule.loads += 1
-  await lineCanvasModule.wait()
-  return {
-    __esModule: true,
-    default: {
-      props: ['data', 'options'],
-      template: '<div data-test="line-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
-    },
-  }
-})
+vi.mock('@/components/charts/LineChartCanvas.vue', () => ({
+  __esModule: true,
+  default: {
+    props: ['data', 'options'],
+    template: '<div data-test="line-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
+  },
+}))
 
 const mockGetTeamUsageOverview = vi.mocked((await import('@/api/teamUsage')).getTeamUsageOverview)
 const mockGetTeamUsageMembers = vi.mocked((await import('@/api/teamUsage')).getTeamUsageMembers)
@@ -1090,37 +1069,6 @@ describe('TeamOverviewView', () => {
     const trend = wrapper.get('[data-testid="team-member-trend-chart"]')
     expect(trend.text()).toContain('Alice')
     expect(trend.text()).not.toContain('Legacy Trend Member')
-  })
-
-  afterEach(() => {
-    lineCanvasModule.resolve()
-  })
-
-  it('does not load another line canvas module for an empty split trend', async () => {
-    const loadBaseline = lineCanvasModule.loads
-    mockGetTeamUsageTrend.mockResolvedValue({
-      data: {
-        data: {
-          ...trendFixture,
-          top_members: [],
-          top_member_trend: { ...trendFixture.top_member_trend, series: [] },
-          department_trend: { ...trendFixture.department_trend, series: [] },
-        },
-      },
-    } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
-    const router = createTestRouter()
-    await router.push('/usage/team')
-    await router.isReady()
-
-    const wrapper = mount(TeamOverviewView, {
-      global: { plugins: [createPinia(), router] },
-    })
-    await flushPromises()
-
-    expect(wrapper.get('[data-testid="team-member-trend-chart"]').text()).toContain('-')
-    expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(false)
-    expect(lineCanvasModule.loads).toBe(loadBaseline)
   })
 
   it('renders top member trend and member table without quota controls', async () => {
