@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"github.com/ai-efficiency/backend/internal/httpclient"
 )
 
 const backendAssetPrefix = "ai-efficiency-backend_"
@@ -30,7 +33,7 @@ type githubReleasePayload struct {
 
 func NewGitHubReleaseSource(client *http.Client, url string) *GitHubReleaseSource {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.NewDefault(10 * time.Second)
 	}
 	return &GitHubReleaseSource{
 		client: client,

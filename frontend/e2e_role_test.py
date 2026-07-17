@@ -8,6 +8,7 @@ After task-zone frontend refactor:
 
 Usage:
   python frontend/e2e_role_test.py
+  AE_E2E_BASE_URL=http://127.0.0.1:PORT npm run test:e2e:role
 """
 
 import sys
@@ -15,7 +16,7 @@ import os
 import json
 from playwright.sync_api import sync_playwright
 
-BASE = "http://localhost:5173"
+BASE = os.environ.get("AE_E2E_BASE_URL", "http://localhost:5173").rstrip("/")
 API = "http://localhost:8081/api/v1"
 SCREENSHOT_DIR = "/tmp/ae-e2e-role"
 

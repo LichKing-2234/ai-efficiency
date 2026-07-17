@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
 
@@ -44,8 +45,8 @@ func CORS(allowOrigins []string) gin.HandlerFunc {
 				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 			c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
-			c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, Accept")
-			c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+			c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, Accept, "+telemetry.HeaderRequestID)
+			c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, "+telemetry.HeaderRequestID)
 			c.Writer.Header().Set("Access-Control-Max-Age", "43200")
 		}
 

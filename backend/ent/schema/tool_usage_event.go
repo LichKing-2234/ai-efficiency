@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
@@ -86,5 +87,13 @@ func (ToolUsageEvent) Indexes() []ent.Index {
 		index.Fields("workspace_id", "observed_end_at"),
 		index.Fields("commit_checkpoint_id"),
 		index.Fields("tool", "tool_session_id"),
+		index.Fields("observed_end_at", "id").
+			Annotations(entsql.DescColumns("observed_end_at", "id")),
+		index.Fields("user_id", "observed_end_at", "id").
+			Annotations(entsql.DescColumns("observed_end_at", "id")),
+		index.Fields("repo_config_id", "observed_end_at", "id").
+			Annotations(entsql.DescColumns("observed_end_at", "id")),
+		index.Fields("tool", "observed_end_at", "id").
+			Annotations(entsql.DescColumns("observed_end_at", "id")),
 	}
 }

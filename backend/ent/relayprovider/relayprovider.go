@@ -29,6 +29,8 @@ const (
 	FieldIsPrimary = "is_primary"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
+	// FieldConfigurationVersion holds the string denoting the configuration_version field in the database.
+	FieldConfigurationVersion = "configuration_version"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -48,6 +50,7 @@ var Columns = []string{
 	FieldDefaultModel,
 	FieldIsPrimary,
 	FieldEnabled,
+	FieldConfigurationVersion,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -77,6 +80,10 @@ var (
 	DefaultIsPrimary bool
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
+	// DefaultConfigurationVersion holds the default value on creation for the "configuration_version" field.
+	DefaultConfigurationVersion int64
+	// ConfigurationVersionValidator is a validator for the "configuration_version" field. It is called by the builders before save.
+	ConfigurationVersionValidator func(int64) error
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -131,6 +138,11 @@ func ByIsPrimary(opts ...sql.OrderTermOption) OrderOption {
 // ByEnabled orders the results by the enabled field.
 func ByEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEnabled, opts...).ToFunc()
+}
+
+// ByConfigurationVersion orders the results by the configuration_version field.
+func ByConfigurationVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldConfigurationVersion, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.
