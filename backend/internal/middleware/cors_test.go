@@ -3,8 +3,10 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
 
@@ -66,6 +68,12 @@ func TestCORSMiddlewareHandlesOptions(t *testing.T) {
 	}
 	if w.Header().Get("Access-Control-Allow-Origin") != "https://example.com" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want %q", w.Header().Get("Access-Control-Allow-Origin"), "https://example.com")
+	}
+	if got := w.Header().Get("Access-Control-Allow-Headers"); !headerListContains(got, telemetry.HeaderRequestID) {
+		t.Errorf("Access-Control-Allow-Headers = %q, want %s", got, telemetry.HeaderRequestID)
+	}
+	if got := w.Header().Get("Access-Control-Expose-Headers"); !headerListContains(got, telemetry.HeaderRequestID) {
+		t.Errorf("Access-Control-Expose-Headers = %q, want %s", got, telemetry.HeaderRequestID)
 	}
 }
 
@@ -146,4 +154,13 @@ func TestCORSMiddlewareAllowsLoopbackVariantForConfiguredFrontend(t *testing.T) 
 	if w.Header().Get("Access-Control-Allow-Origin") != "http://127.0.0.1:19084" {
 		t.Errorf("Access-Control-Allow-Origin = %q, want loopback variant", w.Header().Get("Access-Control-Allow-Origin"))
 	}
+}
+
+func headerListContains(value, want string) bool {
+	for _, item := range strings.Split(value, ",") {
+		if strings.EqualFold(strings.TrimSpace(item), want) {
+			return true
+		}
+	}
+	return false
 }
