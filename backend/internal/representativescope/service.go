@@ -338,6 +338,9 @@ func indexMemberDepartmentIDs(memberships []*ent.DirectoryMemberDepartment) map[
 		}
 		out[memberID] = appendUniqueStrings(out[memberID], membership.DepartmentExternalID)
 	}
+	for memberID := range out {
+		sort.Strings(out[memberID])
+	}
 	return out
 }
 

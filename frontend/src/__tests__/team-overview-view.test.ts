@@ -5,10 +5,11 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import TeamOverviewMemberTrendChart from '@/components/team-usage/TeamOverviewMemberTrendChart.vue'
 import TeamOverviewView from '@/views/TeamOverviewView.vue'
 import { setLocale } from '@/i18n'
-import type { TeamOverviewResponse, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
+import type { TeamOverviewMember, TeamOverviewResponse, TeamUsageMembersResponse, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
 
 vi.mock('@/api/teamUsage', () => ({
   getTeamUsageOverview: vi.fn(),
+  getTeamUsageMembers: vi.fn(),
   getTeamUsageSummary: vi.fn(),
   getTeamUsageTrend: vi.fn(),
 }))
@@ -43,6 +44,7 @@ vi.mock('@/components/charts/LineChartCanvas.vue', async () => {
 })
 
 const mockGetTeamUsageOverview = vi.mocked((await import('@/api/teamUsage')).getTeamUsageOverview)
+const mockGetTeamUsageMembers = vi.mocked((await import('@/api/teamUsage')).getTeamUsageMembers)
 const mockGetTeamUsageSummary = vi.mocked((await import('@/api/teamUsage')).getTeamUsageSummary)
 const mockGetTeamUsageTrend = vi.mocked((await import('@/api/teamUsage')).getTeamUsageTrend)
 
@@ -304,6 +306,48 @@ const trendFixture: TeamUsageTrendResponse = {
   department_trend: overviewFixture.department_trend!,
 }
 
+const membersFixture: TeamUsageMembersResponse = {
+  as_of: '2026-07-16T08:00:00Z',
+  fresh_until: '2026-07-16T08:00:54Z',
+  stale_until: '2026-07-16T08:04:30Z',
+  cache_status: 'fresh',
+  source_status: 'ok',
+  scope_version: 'scope-version-1',
+  request_id: 'request-members-1',
+  window: overviewFixture.window,
+  items: overviewFixture.members,
+  total_count: overviewFixture.members.length,
+}
+
+function pagedMember(rank: number, prefix = 'Split Member'): TeamOverviewMember {
+  return {
+    rank,
+    user_id: 1000 + rank,
+    display_name: `${prefix} ${rank}`,
+    email: `member-${rank}@example.com`,
+    department_external_id: 'department-alpha',
+    department_external_ids: ['department-alpha'],
+    department_display_path: 'Department Alpha',
+    relay_user_id: 2000 + rank,
+    range_actual_cost: rank,
+    today_actual_cost: 0,
+    total_actual_cost: rank,
+    total_tokens: 10_000 - rank,
+    subscription_count: 1,
+    selectable: true,
+  }
+}
+
+function membersPage(startRank: number, count: number, totalCount: number, nextCursor?: string): TeamUsageMembersResponse {
+  return {
+    ...membersFixture,
+    request_id: `request-members-${startRank}`,
+    items: Array.from({ length: count }, (_, index) => pagedMember(startRank + index)),
+    total_count: totalCount,
+    next_cursor: nextCursor,
+  }
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((promiseResolve) => { resolve = promiseResolve })
@@ -332,6 +376,192 @@ describe('TeamOverviewView', () => {
     vi.clearAllMocks()
     mockGetTeamUsageSummary.mockResolvedValue({ data: { data: summaryFixture } } as any)
     mockGetTeamUsageTrend.mockResolvedValue({ data: { data: trendFixture } } as any)
+    mockGetTeamUsageMembers.mockResolvedValue({ data: { data: membersFixture } } as any)
+  })
+
+  it('renders only the 50 split ranking rows from a 500-member result', async () => {
+    const compatibilityFixture = structuredClone(overviewFixture)
+    compatibilityFixture.members = Array.from({ length: 500 }, (_, index) => pagedMember(index + 1, 'Legacy Member'))
+    mockGetTeamUsageMembers.mockResolvedValue({ data: { data: membersPage(1, 50, 500, 'cursor-page-2') } } as any)
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: compatibilityFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const rows = wrapper.findAll('[data-testid^="team-overview-member-user-"]')
+    expect(rows).toHaveLength(50)
+    expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Split Member 1')
+    expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).not.toContain('Legacy Member')
+    expect(wrapper.get('[data-testid="team-overview-member-pagination"]').text()).toContain('1-50')
+    expect(wrapper.get('[data-testid="team-overview-member-pagination"]').text()).toContain('500')
+  })
+
+  it('keeps summary, trend, and organization available while members are delayed', async () => {
+    mockGetTeamUsageMembers.mockImplementation(() => new Promise(() => {}) as any)
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="team-overview-summary"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-overview-members-loading"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    expect(wrapper.find('[data-testid="team-overview-department-department-alpha"]').exists()).toBe(true)
+  })
+
+  it('keeps summary, trend, and organization available when members fail', async () => {
+    mockGetTeamUsageMembers.mockRejectedValue(new Error('synthetic members failure'))
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="team-overview-summary"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-overview-members-error"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="team-overview-organization-view"]').trigger('click')
+    expect(wrapper.find('[data-testid="team-overview-department-department-alpha"]').exists()).toBe(true)
+  })
+
+  it('keeps split member rankings visible when compatibility organization fails', async () => {
+    mockGetTeamUsageMembers.mockResolvedValue({ data: { data: membersPage(1, 3, 3) } } as any)
+    mockGetTeamUsageOverview.mockRejectedValue(new Error('synthetic compatibility failure'))
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Split Member 1')
+    expect(wrapper.find('[data-testid="team-overview-sections-error"]').exists()).toBe(true)
+  })
+
+  it('pages members forward and backward without refetching sibling sections', async () => {
+    mockGetTeamUsageMembers
+      .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
+      .mockResolvedValueOnce({ data: { data: membersPage(51, 50, 100) } } as any)
+      .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="team-overview-members-next"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Split Member 51')
+    expect(mockGetTeamUsageMembers.mock.calls[1][0]).toEqual(expect.objectContaining({
+      cursor: 'cursor-page-2', granularity: 'day', limit: 50,
+    }))
+
+    await wrapper.get('[data-testid="team-overview-members-previous"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Split Member 1')
+    expect(mockGetTeamUsageMembers.mock.calls[2][0]).toEqual(expect.objectContaining({ cursor: undefined, limit: 50 }))
+    expect(mockGetTeamUsageSummary).toHaveBeenCalledTimes(1)
+    expect(mockGetTeamUsageTrend).toHaveBeenCalledTimes(1)
+    expect(mockGetTeamUsageOverview).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the original absolute range when pagination crosses midnight', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date(2026, 6, 16, 23, 59, 59))
+      mockGetTeamUsageMembers
+        .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
+        .mockResolvedValueOnce({ data: { data: membersPage(51, 50, 100) } } as any)
+      mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+      const router = createTestRouter()
+      await router.push('/usage/team')
+      await router.isReady()
+
+      const wrapper = mount(TeamOverviewView, {
+        global: { plugins: [createPinia(), router] },
+      })
+      await flushPromises()
+      const firstParams = mockGetTeamUsageMembers.mock.calls[0]?.[0]
+      if (firstParams == null) throw new Error('initial member request was not issued')
+
+      vi.setSystemTime(new Date(2026, 6, 17, 0, 0, 1))
+      await wrapper.get('[data-testid="team-overview-members-next"]').trigger('click')
+      await flushPromises()
+
+      expect(mockGetTeamUsageMembers.mock.calls[1][0]).toEqual(expect.objectContaining({
+        cursor: 'cursor-page-2',
+        start_date: firstParams.start_date,
+        end_date: firstParams.end_date,
+      }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('restarts only the member section after snapshot expiry', async () => {
+    mockGetTeamUsageMembers
+      .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
+      .mockRejectedValueOnce({ response: { status: 409, data: { message: 'snapshot_expired' } } })
+      .mockResolvedValueOnce({ data: { data: membersPage(1, 50, 100, 'cursor-page-2') } } as any)
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="team-overview-members-next"]').trigger('click')
+    await flushPromises()
+
+    expect(mockGetTeamUsageMembers).toHaveBeenCalledTimes(3)
+    expect(mockGetTeamUsageMembers.mock.calls[2][0]).toEqual(expect.objectContaining({ cursor: undefined, limit: 50 }))
+    expect(wrapper.get('[data-testid="team-overview-ranking-table"]').text()).toContain('Split Member 1')
+    expect(mockGetTeamUsageSummary).toHaveBeenCalledTimes(1)
+    expect(mockGetTeamUsageTrend).toHaveBeenCalledTimes(1)
+    expect(mockGetTeamUsageOverview).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows stale freshness only on the member ranking section', async () => {
+    mockGetTeamUsageMembers.mockResolvedValue({
+      data: { data: { ...membersPage(1, 3, 3), cache_status: 'stale', source_status: 'error' } },
+    } as any)
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="team-members-stale-marker"]').text()).toContain('Showing a recent snapshot')
+    expect(wrapper.find('[data-testid="team-summary-stale-marker"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="team-trend-stale-marker"]').exists()).toBe(false)
   })
 
   it('keeps summary and compatibility members visible while trend is delayed and renders no chart early', async () => {
@@ -1065,12 +1295,14 @@ describe('TeamOverviewView', () => {
   it('abbreviates large token totals in summary trend legend and member details', async () => {
     const largeTokenFixture: TeamOverviewResponse = structuredClone(overviewFixture)
     const largeTrendFixture: TeamUsageTrendResponse = structuredClone(trendFixture)
+    const largeMembersFixture: TeamUsageMembersResponse = structuredClone(membersFixture)
     largeTokenFixture.summary.range_total_tokens = 12_285_557_755
     largeTrendFixture.top_member_trend.series[0].points = [
       { date: '2026-06-27', actual_cost: 0.75, total_tokens: 3_000_000_000 },
       { date: '2026-06-28', actual_cost: 1.25, total_tokens: 3_052_813_773 },
     ]
     largeTokenFixture.members[0].total_tokens = 805_033_680
+    largeMembersFixture.items[0].total_tokens = 805_033_680
     largeTokenFixture.member_tree![0].range_total_tokens = 12_285_557_755
     largeTokenFixture.member_tree![0].members[0].total_tokens = 805_033_680
 		mockGetTeamUsageSummary.mockResolvedValue({
@@ -1082,6 +1314,7 @@ describe('TeamOverviewView', () => {
 			},
 		} as any)
     mockGetTeamUsageTrend.mockResolvedValue({ data: { data: largeTrendFixture } } as any)
+    mockGetTeamUsageMembers.mockResolvedValue({ data: { data: largeMembersFixture } } as any)
     mockGetTeamUsageOverview.mockResolvedValue({ data: { data: largeTokenFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
