@@ -319,14 +319,19 @@ type UserUsageGroupQuotaGroupItem struct {
 }
 
 type TeamUserUsageStats struct {
-	UserID          int64   `json:"user_id"`
-	TodayActualCost float64 `json:"today_actual_cost"`
-	TotalActualCost float64 `json:"total_actual_cost"`
-	TotalTokens     *int64  `json:"total_tokens,omitempty"`
+	UserID           int64    `json:"user_id"`
+	TodayActualCost  float64  `json:"today_actual_cost"`
+	TotalActualCost  float64  `json:"total_actual_cost"`
+	TotalTokens      *int64   `json:"total_tokens,omitempty"`
+	RangeActualCost  *float64 `json:"range_actual_cost,omitempty"`
+	RangeTotalTokens *int64   `json:"range_total_tokens,omitempty"`
 }
 
 type TeamUsageSummaryParams struct {
-	Timezone string `json:"timezone"`
+	StartDate   string `json:"start_date"`
+	EndDate     string `json:"end_date"`
+	Granularity string `json:"granularity"`
+	Timezone    string `json:"timezone"`
 }
 
 type TeamMemberTrendParams struct {

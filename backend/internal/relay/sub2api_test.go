@@ -3719,10 +3719,12 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 			"data": map[string]any{
 				"stats": map[string]any{
 					"1001": map[string]any{
-						"user_id":           1001,
-						"today_actual_cost": 1.0,
-						"total_actual_cost": 10.0,
-						"total_tokens":      1234,
+						"user_id":            1001,
+						"today_actual_cost":  1.0,
+						"total_actual_cost":  10.0,
+						"total_tokens":       1234,
+						"range_actual_cost":  7.5,
+						"range_total_tokens": 987,
 					},
 				},
 			},
@@ -3730,17 +3732,34 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 	})
 	p := newTestProvider(t, mux)
 	summary := p.(relay.TeamUsageSummaryProvider)
-	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{Timezone: "Asia/Shanghai"})
+	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07",
+		Granularity: "day", Timezone: "Asia/Shanghai",
+	})
 	if err != nil {
 		t.Fatalf("GetBatchUserUsageStats() error = %v", err)
 	}
 	if diff := cmp.Diff([]any{float64(1001)}, body["user_ids"]); diff != "" {
 		t.Fatalf("user_ids mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff("Asia/Shanghai", body["timezone"]); diff != "" {
-		t.Fatalf("timezone mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff(map[string]any{
+		"start_date":  "2026-07-01",
+		"end_date":    "2026-07-07",
+		"granularity": "day",
+		"timezone":    "Asia/Shanghai",
+	}, map[string]any{
+		"start_date":  body["start_date"],
+		"end_date":    body["end_date"],
+		"granularity": body["granularity"],
+		"timezone":    body["timezone"],
+	}); diff != "" {
+		t.Fatalf("normalized range mismatch (-want +got):\n%s", diff)
 	}
 	if got[1001].TotalActualCost != 10.0 || got[1001].TotalTokens == nil || *got[1001].TotalTokens != 1234 {
 		t.Fatalf("batch stats = %#v, want user 1001 total_actual_cost 10.0 total_tokens 1234", got)
+	}
+	if got[1001].RangeActualCost == nil || *got[1001].RangeActualCost != 7.5 ||
+		got[1001].RangeTotalTokens == nil || *got[1001].RangeTotalTokens != 987 {
+		t.Fatalf("batch stats = %#v, want independent range_actual_cost 7.5 range_total_tokens 987", got)
 	}
 }

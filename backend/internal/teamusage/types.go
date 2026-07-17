@@ -220,6 +220,23 @@ type SnapshotCacheResult struct {
 	Freshness SnapshotFreshness
 }
 
+type SummarySnapshot struct {
+	Window  OverviewWindow  `json:"window"`
+	Summary OverviewSummary `json:"summary"`
+}
+
+type SummaryOriginLoadResult struct {
+	Snapshot    *SummarySnapshot
+	SnapshotErr error
+}
+
+type SummaryOriginLoader func(context.Context) (SummaryOriginLoadResult, error)
+
+type SummaryCacheResult struct {
+	Snapshot  *SummarySnapshot
+	Freshness SnapshotFreshness
+}
+
 type SnapshotCacheOptions struct {
 	Namespace      string
 	CommandTimeout time.Duration

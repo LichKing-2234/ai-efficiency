@@ -42,7 +42,7 @@
 - Produces `teamusage.SummarySnapshot{Window OverviewWindow; Summary OverviewSummary}`.
 - Produces `SnapshotCache.GetSummaryOrLoad(context.Context, SnapshotCacheKey, SummaryOriginLoader) (*SummaryCacheResult, error)` using Redis prefix `ae:<namespace>:team-usage-summary:v1:<digest>`.
 
-- [ ] **Step 1: Write RED Relay contract tests**
+- [x] **Step 1: Write RED Relay contract tests**
 
   Extend `TestSub2APIGetBatchUserUsageStatsPostsUserIDs` to call:
 
@@ -55,7 +55,7 @@
 
   Assert the JSON body contains all four normalized fields and that response fields `range_actual_cost` and `range_total_tokens` decode without reusing `total_actual_cost` or `total_tokens`.
 
-- [ ] **Step 2: Write RED summary-lane cache tests**
+- [x] **Step 2: Write RED summary-lane cache tests**
 
   Add focused tests proving:
 
@@ -67,7 +67,7 @@
 
   Cover summary cold miss/warm hit, eligible stale fallback, hard stale rejection, malformed or overview-shaped value rejection, Redis outage authoritative fallback, caller cancellation, and process-local collapse. Assert the cached value contains only `window` and `summary` plus freshness envelope fields.
 
-- [ ] **Step 3: Run RED commands**
+- [x] **Step 3: Run RED commands**
 
   Run:
 
@@ -79,7 +79,26 @@
 
   Expected: compile/assertion failures for the missing range fields, summary snapshot types, cache key, and `GetSummaryOrLoad` method.
 
-- [ ] **Step 4: Implement the Relay DTO and typed cache lanes**
+  RED evidence (2026-07-17):
+
+  ```text
+  $ cd backend && go test ./internal/relay -run '^TestSub2APIGetBatchUserUsageStatsPostsUserIDs$' -count=1
+  internal/relay/sub2api_test.go:3736:3: unknown field StartDate in struct literal of type relay.TeamUsageSummaryParams
+  internal/relay/sub2api_test.go:3736:28: unknown field EndDate in struct literal of type relay.TeamUsageSummaryParams
+  internal/relay/sub2api_test.go:3737:3: unknown field Granularity in struct literal of type relay.TeamUsageSummaryParams
+  internal/relay/sub2api_test.go:3761:15: got[1001].RangeActualCost undefined (type relay.TeamUserUsageStats has no field or method RangeActualCost)
+  internal/relay/sub2api_test.go:3762:13: got[1001].RangeTotalTokens undefined (type relay.TeamUserUsageStats has no field or method RangeTotalTokens)
+  FAIL github.com/ai-efficiency/backend/internal/relay [build failed]
+
+  $ cd backend && go test ./internal/teamusage -run 'SummaryCache|SummaryLane|CacheKey' -count=1
+  internal/teamusage/summary_cache_test.go:337:21: undefined: summaryCacheKey
+  internal/teamusage/summary_cache_test.go:356:35: undefined: SummaryOriginLoadResult
+  internal/teamusage/summary_cache_test.go:361:22: cache.GetSummaryOrLoad undefined (type *SnapshotCache has no field or method GetSummaryOrLoad)
+  internal/teamusage/summary_cache_test.go:660:46: undefined: SummarySnapshot
+  FAIL github.com/ai-efficiency/backend/internal/teamusage [build failed]
+  ```
+
+- [x] **Step 4: Implement the Relay DTO and typed cache lanes**
 
   Refactor the existing cache mechanics into an internal generic lane owned by `SnapshotCache`:
 
@@ -101,7 +120,7 @@
 
   Keep public overview methods and key format unchanged. Use the same lease, stale, timeout, and strict envelope validation code for both lanes, and provide thin typed wrappers for overview and summary origin/result types.
 
-- [ ] **Step 5: Verify Task 1 GREEN and commit**
+- [x] **Step 5: Verify Task 1 GREEN and commit**
 
   Run:
 
@@ -111,6 +130,42 @@
   go test ./internal/relay ./internal/teamusage -run 'Sub2APIGetBatchUserUsageStats|SummaryCache|SummaryLane|SnapshotCache' -count=1
   go test -race ./internal/readcache ./internal/teamusage -run 'SummaryCache|SnapshotCache' -count=1
   git diff --check
+  ```
+
+  GREEN evidence (2026-07-17, final pre-commit diff):
+
+  ```text
+  $ cd backend && gofmt -w internal/relay/types.go internal/relay/sub2api*.go internal/teamusage/types.go internal/teamusage/summary_cache*.go
+  exit 0
+
+  $ cd backend && go test ./internal/relay ./internal/teamusage -run 'Sub2APIGetBatchUserUsageStats|SummaryCache|SummaryLane|SnapshotCache' -count=1
+  ok  github.com/ai-efficiency/backend/internal/relay 0.325s
+  ok  github.com/ai-efficiency/backend/internal/teamusage 0.740s
+
+  $ cd backend && go test -race ./internal/readcache ./internal/teamusage -run 'SummaryCache|SnapshotCache' -count=1
+  ok  github.com/ai-efficiency/backend/internal/readcache 1.315s [no tests to run]
+  ok  github.com/ai-efficiency/backend/internal/teamusage 1.867s
+
+  $ git diff --check
+  exit 0
+  ```
+
+  Review-fix GREEN evidence (2026-07-17):
+
+  ```text
+  $ cd backend && go test ./internal/teamusage -run '^TestSummaryCacheCollapsesProcessLocalLoads$' -count=20
+  ok  github.com/ai-efficiency/backend/internal/teamusage 0.703s
+
+  $ cd backend && go test ./internal/relay ./internal/teamusage -run 'Sub2APIGetBatchUserUsageStats|SummaryCache|SummaryLane|SnapshotCache' -count=1
+  ok  github.com/ai-efficiency/backend/internal/relay 0.583s
+  ok  github.com/ai-efficiency/backend/internal/teamusage 0.788s
+
+  $ cd backend && go test -race ./internal/readcache ./internal/teamusage -run 'SummaryCache|SnapshotCache' -count=1
+  ok  github.com/ai-efficiency/backend/internal/readcache 1.558s [no tests to run]
+  ok  github.com/ai-efficiency/backend/internal/teamusage 1.892s
+
+  $ git diff --check
+  exit 0
   ```
 
   Commit: `perf(teamusage): isolate summary cache lane`

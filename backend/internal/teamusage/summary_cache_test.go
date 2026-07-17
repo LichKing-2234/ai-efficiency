@@ -329,6 +329,295 @@ func TestSnapshotCacheRejectsPreviousOverviewSchema(t *testing.T) {
 	}
 }
 
+func TestSummaryCacheKeyIsolatedFromOverviewLane(t *testing.T) {
+	overviewKey, err := snapshotCacheKey("test", testSnapshotCacheKey())
+	if err != nil {
+		t.Fatalf("snapshotCacheKey() error = %v", err)
+	}
+	summaryKey, err := summaryCacheKey("test", testSnapshotCacheKey())
+	if err != nil {
+		t.Fatalf("summaryCacheKey() error = %v", err)
+	}
+	if overviewKey == summaryKey {
+		t.Fatal("summary and overview cache keys must be isolated")
+	}
+	if !strings.HasPrefix(overviewKey, "ae:test:team-usage-snapshot:v1:") {
+		t.Fatalf("overview cache key = %q, want unchanged prefix", overviewKey)
+	}
+	if !strings.HasPrefix(summaryKey, "ae:test:team-usage-summary:v1:") {
+		t.Fatalf("summary cache key = %q, want summary prefix", summaryKey)
+	}
+}
+
+func TestSummaryCacheColdMissWarmHitAndStoresOnlySummarySnapshot(t *testing.T) {
+	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	cache, server := testSnapshotCache(t, now, 0)
+	var loads atomic.Int32
+	loader := func(context.Context) (SummaryOriginLoadResult, error) {
+		loads.Add(1)
+		return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(12.5)}, nil
+	}
+
+	first, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), loader)
+	if err != nil {
+		t.Fatalf("cold GetSummaryOrLoad() error = %v", err)
+	}
+	second, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), loader)
+	if err != nil {
+		t.Fatalf("warm GetSummaryOrLoad() error = %v", err)
+	}
+	if loads.Load() != 1 || first.Freshness.CacheStatus != "miss" || second.Freshness.CacheStatus != "fresh" {
+		t.Fatalf("loads/status = %d %q/%q, want 1 miss/fresh", loads.Load(), first.Freshness.CacheStatus, second.Freshness.CacheStatus)
+	}
+	if first.Snapshot.Summary.RangeActualCost == nil || *first.Snapshot.Summary.RangeActualCost != 12.5 {
+		t.Fatalf("summary snapshot = %+v, want range_actual_cost 12.5", first.Snapshot)
+	}
+
+	key, err := summaryCacheKey("test", testSnapshotCacheKey())
+	if err != nil {
+		t.Fatalf("summaryCacheKey() error = %v", err)
+	}
+	stored, err := server.Get(key)
+	if err != nil {
+		t.Fatalf("read stored summary snapshot: %v", err)
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(stored), &envelope); err != nil {
+		t.Fatalf("decode stored summary envelope: %v", err)
+	}
+	assertJSONFields(t, envelope, "schema_version", "generated_at", "fresh_until", "stale_until", "snapshot")
+	var snapshot map[string]json.RawMessage
+	if err := json.Unmarshal(envelope["snapshot"], &snapshot); err != nil {
+		t.Fatalf("decode stored summary snapshot: %v", err)
+	}
+	assertJSONFields(t, snapshot, "window", "summary")
+}
+
+func TestSummaryCacheUsesEligibleStaleAndRejectsHardStale(t *testing.T) {
+	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
+	key := testSnapshotCacheKey()
+	if _, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(7.5)}, nil
+	}); err != nil {
+		t.Fatalf("prime summary cache: %v", err)
+	}
+
+	now = now.Add(55 * time.Second)
+	transient := errors.New("synthetic Relay outage")
+	stale, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		return SummaryOriginLoadResult{SnapshotErr: transient}, nil
+	})
+	if err != nil {
+		t.Fatalf("eligible stale GetSummaryOrLoad() error = %v", err)
+	}
+	if stale.Snapshot.Summary.RangeActualCost == nil || *stale.Snapshot.Summary.RangeActualCost != 7.5 ||
+		stale.Freshness.CacheStatus != "stale" || stale.Freshness.SourceStatus != "error" {
+		t.Fatalf("stale summary result = %+v", stale)
+	}
+
+	if _, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		return SummaryOriginLoadResult{}, relay.ErrInvalidCredentials
+	}); !errors.Is(err, relay.ErrInvalidCredentials) {
+		t.Fatalf("hard error = %v, want ErrInvalidCredentials", err)
+	}
+
+	now = now.Add(4*time.Minute + 16*time.Second)
+	if _, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		return SummaryOriginLoadResult{SnapshotErr: transient}, nil
+	}); !errors.Is(err, transient) {
+		t.Fatalf("expired stale error = %v, want transient origin error", err)
+	}
+}
+
+func TestSummaryCacheRejectsMalformedAndOverviewShapedValues(t *testing.T) {
+	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name  string
+		value func(t *testing.T, cache *SnapshotCache, server *miniredis.Miniredis, key string) string
+	}{
+		{
+			name: "malformed",
+			value: func(*testing.T, *SnapshotCache, *miniredis.Miniredis, string) string {
+				return `{"schema_version":999,"snapshot":null}`
+			},
+		},
+		{
+			name: "overview shaped",
+			value: func(t *testing.T, cache *SnapshotCache, server *miniredis.Miniredis, key string) string {
+				t.Helper()
+				if _, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), func(context.Context) (SummaryOriginLoadResult, error) {
+					return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(12)}, nil
+				}); err != nil {
+					t.Fatalf("prime summary cache: %v", err)
+				}
+				stored, err := server.Get(key)
+				if err != nil {
+					t.Fatalf("read stored summary snapshot: %v", err)
+				}
+				var envelope map[string]json.RawMessage
+				if err := json.Unmarshal([]byte(stored), &envelope); err != nil {
+					t.Fatalf("decode stored summary envelope: %v", err)
+				}
+				overview, err := json.Marshal(testOverviewSnapshot(12))
+				if err != nil {
+					t.Fatalf("encode overview snapshot: %v", err)
+				}
+				envelope["snapshot"] = overview
+				encoded, err := json.Marshal(envelope)
+				if err != nil {
+					t.Fatalf("encode overview-shaped envelope: %v", err)
+				}
+				return string(encoded)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache, server := testSnapshotCache(t, now, 0)
+			key, err := summaryCacheKey("test", testSnapshotCacheKey())
+			if err != nil {
+				t.Fatalf("summaryCacheKey() error = %v", err)
+			}
+			server.Set(key, tt.value(t, cache, server, key))
+			var loads atomic.Int32
+			result, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), func(context.Context) (SummaryOriginLoadResult, error) {
+				loads.Add(1)
+				return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(13)}, nil
+			})
+			if err != nil {
+				t.Fatalf("GetSummaryOrLoad() error = %v", err)
+			}
+			if loads.Load() != 1 || result.Freshness.CacheStatus != "miss" ||
+				result.Snapshot.Summary.RangeActualCost == nil || *result.Snapshot.Summary.RangeActualCost != 13 {
+				t.Fatalf("loads/result = %d/%+v, want one fresh authoritative load", loads.Load(), result)
+			}
+		})
+	}
+}
+
+func TestSummaryCacheRedisOutageFallsBackAuthoritatively(t *testing.T) {
+	cache := newTestSnapshotCache(t, failingSnapshotStore{err: errors.New("synthetic Redis outage")}, time.Now, 0)
+	var loads atomic.Int32
+	loader := func(context.Context) (SummaryOriginLoadResult, error) {
+		loads.Add(1)
+		return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(9)}, nil
+	}
+	for index := 0; index < 2; index++ {
+		result, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), loader)
+		if err != nil {
+			t.Fatalf("GetSummaryOrLoad() call %d error = %v", index+1, err)
+		}
+		if result.Freshness.CacheStatus != "miss" {
+			t.Fatalf("GetSummaryOrLoad() call %d cache status = %q, want miss", index+1, result.Freshness.CacheStatus)
+		}
+	}
+	if loads.Load() != 2 {
+		t.Fatalf("authoritative loads = %d, want one per Redis-outage request", loads.Load())
+	}
+}
+
+func TestSummaryCacheCallerCancellationStopsFinalLoader(t *testing.T) {
+	cache, _ := testSnapshotCache(t, time.Now(), 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	loaderCancelled := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		_, err := cache.GetSummaryOrLoad(ctx, testSnapshotCacheKey(), func(ctx context.Context) (SummaryOriginLoadResult, error) {
+			close(started)
+			<-ctx.Done()
+			close(loaderCancelled)
+			return SummaryOriginLoadResult{}, ctx.Err()
+		})
+		result <- err
+	}()
+	<-started
+	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetSummaryOrLoad() error = %v, want context.Canceled", err)
+	}
+	select {
+	case <-loaderCancelled:
+	case <-time.After(time.Second):
+		t.Fatal("final waiter cancellation did not stop the shared summary loader")
+	}
+}
+
+func TestSummaryCacheCollapsesProcessLocalLoads(t *testing.T) {
+	cache := newTestSnapshotCache(t, failingSnapshotStore{err: errors.New("synthetic Redis outage")}, time.Now, 0)
+	var loads atomic.Int32
+	started := make(chan struct{}, 20)
+	release := make(chan struct{})
+	loader := func(ctx context.Context) (SummaryOriginLoadResult, error) {
+		loads.Add(1)
+		started <- struct{}{}
+		select {
+		case <-release:
+			return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(11)}, nil
+		case <-ctx.Done():
+			return SummaryOriginLoadResult{}, ctx.Err()
+		}
+	}
+
+	const callers = 20
+	results := make(chan error, callers)
+	var wg sync.WaitGroup
+	call := func(ctx context.Context) {
+		defer wg.Done()
+		result, err := cache.GetSummaryOrLoad(ctx, testSnapshotCacheKey(), loader)
+		if err == nil && (result == nil || result.Snapshot == nil) {
+			err = errors.New("missing summary cache result")
+		}
+		results <- err
+	}
+
+	wg.Add(1)
+	go call(context.Background())
+	<-started
+	for index := 1; index < callers; index++ {
+		ctx := &observedWaitContext{Context: context.Background(), waitStarted: make(chan struct{})}
+		wg.Add(1)
+		go call(ctx)
+		<-ctx.waitStarted
+	}
+	close(release)
+	wg.Wait()
+	close(results)
+	for err := range results {
+		if err != nil {
+			t.Fatalf("GetSummaryOrLoad() error = %v", err)
+		}
+	}
+	if loads.Load() != 1 {
+		t.Fatalf("authoritative loads = %d, want 1", loads.Load())
+	}
+}
+
+type observedWaitContext struct {
+	context.Context
+	waitStarted chan struct{}
+	once        sync.Once
+}
+
+func (c *observedWaitContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.waitStarted) })
+	return c.Context.Done()
+}
+
+func assertJSONFields(t *testing.T, value map[string]json.RawMessage, fields ...string) {
+	t.Helper()
+	if len(value) != len(fields) {
+		t.Fatalf("JSON fields = %v, want exactly %v", value, fields)
+	}
+	for _, field := range fields {
+		if _, ok := value[field]; !ok {
+			t.Fatalf("JSON fields = %v, missing %q", value, field)
+		}
+	}
+}
+
 func testSnapshotCache(t *testing.T, now time.Time, random float64) (*SnapshotCache, *miniredis.Miniredis) {
 	t.Helper()
 	return testSnapshotCacheWithClock(t, func() time.Time { return now }, random)
@@ -379,6 +668,11 @@ func testOverviewSnapshot(rangeCost float64) *OverviewResponse {
 		DepartmentTrend: DepartmentTrendState{UnitLabel: "USD", Series: []DepartmentTrendSeries{}},
 		Members:         []OverviewMember{}, MemberTree: []OverviewMemberNode{},
 	}
+}
+
+func testSummarySnapshot(rangeCost float64) *SummarySnapshot {
+	overview := testOverviewSnapshot(rangeCost)
+	return &SummarySnapshot{Window: overview.Window, Summary: overview.Summary}
 }
 
 func testEffectiveScope() *representativescope.Scope {
