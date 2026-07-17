@@ -265,7 +265,10 @@ func (s *Service) AutoBindRepo(ctx context.Context, repoID int) (AutoBindResult,
 		return result, nil
 	}
 
-	if _, err := s.entClient.RepoConfig.UpdateOneID(repo.ID).SetScmProviderID(provider.ID).Save(ctx); err != nil {
+	if err := s.mutateInventory(ctx, "auto-bind repository provider", func(tx *ent.Tx) error {
+		_, saveErr := tx.RepoConfig.UpdateOneID(repo.ID).SetScmProviderID(provider.ID).Save(ctx)
+		return saveErr
+	}); err != nil {
 		return AutoBindResult{}, fmt.Errorf("auto-bind repo: set scm provider: %w", err)
 	}
 
@@ -346,28 +349,41 @@ func (s *Service) defaultAutoBindPostBind(ctx context.Context, repoID, providerI
 		return AutoBindWebhookSkipped, fmt.Errorf("verify repo with scm provider: %w", err)
 	}
 
-	update := s.entClient.RepoConfig.UpdateOneID(repo.ID).
-		SetName(repoInfo.Name).
-		SetFullName(repoInfo.FullName).
-		SetCloneURL(repoInfo.CloneURL).
-		SetDefaultBranch(repoInfo.DefaultBranch)
-
 	webhookSecret, err := generateSecret(32)
 	if err != nil {
 		return AutoBindWebhookSkipped, fmt.Errorf("generate webhook secret: %w", err)
 	}
 	webhookID, err := scmProvider.RegisterWebhook(ctx, repoInfo.FullName, []string{"pull_request", "push"}, webhookSecret)
 	if err != nil {
-		if _, saveErr := update.SetStatus(repoconfig.StatusWebhookFailed).Save(ctx); saveErr != nil {
+		saveErr := s.mutateInventory(ctx, "save auto-bind webhook failure", func(tx *ent.Tx) error {
+			_, updateErr := tx.RepoConfig.UpdateOneID(repo.ID).
+				SetName(repoInfo.Name).
+				SetFullName(repoInfo.FullName).
+				SetCloneURL(repoInfo.CloneURL).
+				SetDefaultBranch(repoInfo.DefaultBranch).
+				SetStatus(repoconfig.StatusWebhookFailed).
+				Save(ctx)
+			return updateErr
+		})
+		if saveErr != nil {
 			return AutoBindWebhookFailed, fmt.Errorf("register webhook: %v; save webhook_failed status: %w", err, saveErr)
 		}
 		return AutoBindWebhookFailed, err
 	}
 
-	if webhookID != "" {
-		update.SetWebhookID(webhookID).SetWebhookSecret(webhookSecret)
-	}
-	if _, err := update.SetStatus(repoconfig.StatusActive).Save(ctx); err != nil {
+	if err := s.mutateInventory(ctx, "save auto-bind repository metadata", func(tx *ent.Tx) error {
+		update := tx.RepoConfig.UpdateOneID(repo.ID).
+			SetName(repoInfo.Name).
+			SetFullName(repoInfo.FullName).
+			SetCloneURL(repoInfo.CloneURL).
+			SetDefaultBranch(repoInfo.DefaultBranch).
+			SetStatus(repoconfig.StatusActive)
+		if webhookID != "" {
+			update.SetWebhookID(webhookID).SetWebhookSecret(webhookSecret)
+		}
+		_, saveErr := update.Save(ctx)
+		return saveErr
+	}); err != nil {
 		return AutoBindWebhookRegistered, fmt.Errorf("save post-bind repo metadata: %w", err)
 	}
 	return AutoBindWebhookRegistered, nil
