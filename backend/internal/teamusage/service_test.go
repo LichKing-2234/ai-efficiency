@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -18,6 +19,232 @@ import (
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
+
+func TestSubjectDashboardReadsUniqueActiveGroupMultiplierMetadataInOneBatch(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := syntheticRepresentativeScope(1, 2, 2002, "alice@example.com")
+	provider := &fakeRelayProvider{
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			2002: {
+				syntheticActiveSubscription(42, "Group Alpha", 1.25),
+				syntheticActiveSubscription(7, "Group Beta", 0.75),
+				syntheticActiveSubscription(42, "Group Alpha Secondary", 1.25),
+				{
+					GroupID: 99,
+					Status:  "inactive",
+					Group:   &relay.Group{ID: 99, Name: "Inactive Group"},
+				},
+			},
+		},
+		batchRateResults: []relay.GroupRateMultiplierReadResult{
+			{GroupID: 42, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(1.5)}}},
+			{GroupID: 7, Entries: []relay.UserGroupRateEntry{{UserID: 9001, RateMultiplier: floatPtr(2)}}},
+		},
+	}
+
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
+	if err != nil {
+		t.Fatalf("SubjectDashboard() error = %v", err)
+	}
+	if provider.batchRateCalls != 1 {
+		t.Fatalf("batch multiplier calls = %d, want 1", provider.batchRateCalls)
+	}
+	if got, want := provider.batchRateGroupIDs, [][]int64{{42, 7}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("batch group ids = %#v, want %#v", got, want)
+	}
+	if len(provider.listRateGroupIDs) != 0 {
+		t.Fatalf("serial multiplier reads = %#v, want none", provider.listRateGroupIDs)
+	}
+	if len(resp.SubjectSubscriptionGroups) != 3 {
+		t.Fatalf("subscription rows = %#v, want 3 active rows", resp.SubjectSubscriptionGroups)
+	}
+	for _, row := range resp.SubjectSubscriptionGroups {
+		if row.MultiplierMetadataStatus != "ok" || row.MultiplierMetadataMessage != nil {
+			t.Fatalf("row metadata = %q/%#v, want ok/nil: %#v", row.MultiplierMetadataStatus, row.MultiplierMetadataMessage, row)
+		}
+		if !row.Editable || row.EditableReason != nil {
+			t.Fatalf("row edit policy = %v/%#v, want editable: %#v", row.Editable, row.EditableReason, row)
+		}
+		if row.EffectiveMultiplier == nil {
+			t.Fatalf("row effective multiplier = nil, want successful metadata value: %#v", row)
+		}
+		switch row.GroupID {
+		case "42":
+			if *row.EffectiveMultiplier != 1.5 || row.MultiplierSource != "user" {
+				t.Fatalf("group 42 multiplier = %#v/%q, want 1.5/user", row.EffectiveMultiplier, row.MultiplierSource)
+			}
+		case "7":
+			if *row.EffectiveMultiplier != 0.75 || row.MultiplierSource != "group" {
+				t.Fatalf("group 7 multiplier = %#v/%q, want 0.75/group", row.EffectiveMultiplier, row.MultiplierSource)
+			}
+		default:
+			t.Fatalf("unexpected active group row: %#v", row)
+		}
+	}
+}
+
+func TestSubjectDashboardIsolatesFailedAndMissingBatchMultiplierMetadata(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := syntheticRepresentativeScope(1, 2, 2002, "alice@example.com")
+	okSubscription := syntheticActiveSubscription(42, "Group Alpha", 1.25)
+	okSubscription.Group.WeeklyLimitUSD = floatPtr(90)
+	okSubscription.WeeklyUsageUSD = 12
+	failedSubscription := syntheticActiveSubscription(43, "Group Beta", 1.5)
+	failedSubscription.Group.WeeklyLimitUSD = floatPtr(70)
+	failedSubscription.WeeklyUsageUSD = 34
+	missingSubscription := syntheticActiveSubscription(44, "Group Gamma", 2)
+	missingSubscription.Group.WeeklyLimitUSD = floatPtr(50)
+	missingSubscription.WeeklyUsageUSD = 45
+	provider := &fakeRelayProvider{
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			2002: {okSubscription, failedSubscription, missingSubscription},
+		},
+		batchRateResults: []relay.GroupRateMultiplierReadResult{
+			{GroupID: 42, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(1.75)}}},
+			{GroupID: 43, Err: errors.New("synthetic group read failure")},
+		},
+	}
+
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{StartDate: "2026-07-13", EndDate: "2026-07-16"})
+	if err != nil {
+		t.Fatalf("SubjectDashboard() error = %v", err)
+	}
+	if provider.batchRateCalls != 1 || len(provider.listRateGroupIDs) != 0 {
+		t.Fatalf("multiplier reads = batch %d serial %#v, want one batch and no serial", provider.batchRateCalls, provider.listRateGroupIDs)
+	}
+
+	okRow := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, "42")
+	if okRow == nil || okRow.MultiplierMetadataStatus != "ok" || okRow.EffectiveMultiplier == nil || *okRow.EffectiveMultiplier != 1.75 || !okRow.Editable {
+		t.Fatalf("successful group row = %#v, want available editable 1.75 metadata", okRow)
+	}
+	for _, groupID := range []string{"43", "44"} {
+		row := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, groupID)
+		if row == nil {
+			t.Fatalf("missing subscription row for group %s", groupID)
+		}
+		assertUnavailableMultiplierMetadata(t, row, ErrMultiplierMetadataUnavailable.Error())
+	}
+	failedRow := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, "43")
+	if failedRow.WeeklyUsageUSD != 34 || failedRow.WeeklyLimitUSD == nil || *failedRow.WeeklyLimitUSD != 70 || failedRow.WeeklyEffectiveAllowanceUSD == nil || *failedRow.WeeklyEffectiveAllowanceUSD != 70 {
+		t.Fatalf("failed metadata row usage/quota = %#v, want subscription values preserved", failedRow)
+	}
+}
+
+func TestSubjectDashboardTreatsDuplicateBatchMultiplierResultsAsUnavailableRegardlessOfOrder(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []relay.GroupRateMultiplierReadResult
+	}{
+		{
+			name: "success then failure",
+			results: []relay.GroupRateMultiplierReadResult{
+				{GroupID: 42, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(1.75)}}},
+				{GroupID: 42, Err: errors.New("synthetic duplicate failure")},
+				{GroupID: 7, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(2.25)}}},
+			},
+		},
+		{
+			name: "failure then success",
+			results: []relay.GroupRateMultiplierReadResult{
+				{GroupID: 42, Err: errors.New("synthetic duplicate failure")},
+				{GroupID: 42, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(1.75)}}},
+				{GroupID: 7, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(2.25)}}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			createPrimaryRelayProvider(t, client)
+
+			scope := syntheticRepresentativeScope(1, 2, 2002, "alice@example.com")
+			provider := &fakeRelayProvider{
+				subscriptionsByUser: map[int64][]relay.UserSubscription{
+					2002: {
+						syntheticActiveSubscription(42, "Group Alpha", 1.25),
+						syntheticActiveSubscription(7, "Group Beta", 0.75),
+					},
+				},
+				batchRateResults: tt.results,
+			}
+
+			svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+			resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
+			if err != nil {
+				t.Fatalf("SubjectDashboard() error = %v", err)
+			}
+			if provider.batchRateCalls != 1 || len(provider.listRateGroupIDs) != 0 {
+				t.Fatalf("multiplier reads = batch %d serial %#v, want one batch and no serial", provider.batchRateCalls, provider.listRateGroupIDs)
+			}
+
+			duplicateRow := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, "42")
+			if duplicateRow == nil {
+				t.Fatal("missing duplicate-result subscription row for group 42")
+			}
+			assertUnavailableMultiplierMetadata(t, duplicateRow, ErrMultiplierMetadataUnavailable.Error())
+
+			availableRow := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, "7")
+			if availableRow == nil || availableRow.MultiplierMetadataStatus != MultiplierMetadataStatusOK || availableRow.EffectiveMultiplier == nil || *availableRow.EffectiveMultiplier != 2.25 || !availableRow.Editable {
+				t.Fatalf("independent group row = %#v, want available editable 2.25 metadata", availableRow)
+			}
+		})
+	}
+}
+
+func TestSubjectDashboardWithoutBatchCapabilityMarksMetadataUnavailableAndPreservesAuthorizationReason(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := syntheticRepresentativeScope(1, 2, 2002, "peer-rep@example.com")
+	scope.RepresentedSubtreeIDs = map[string]map[string]struct{}{
+		"department-root": {"department-root": {}, "department-child": {}},
+	}
+	scope.TargetRepresentedRoots = map[int][]string{2: {"department-root"}}
+	subscription := syntheticActiveSubscription(42, "Group Alpha", 1.5)
+	subscription.Group.MonthlyLimitUSD = floatPtr(300)
+	subscription.MonthlyUsageUSD = 120
+	base := &fakeRelayProvider{}
+	provider := &fakeRelayProviderWithoutMultiplierBatch{
+		Provider: base,
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			2002: {subscription},
+		},
+	}
+	if _, ok := any(provider).(relay.GroupRateMultiplierManager); !ok {
+		t.Fatal("fallback provider must retain the serial multiplier manager capability")
+	}
+	if _, ok := any(provider).(relay.GroupRateMultiplierBatchReader); ok {
+		t.Fatal("fallback provider must intentionally omit the multiplier batch capability")
+	}
+
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
+	if err != nil {
+		t.Fatalf("SubjectDashboard() error = %v", err)
+	}
+	if len(resp.SubjectSubscriptionGroups) != 1 {
+		t.Fatalf("subscription rows = %#v, want 1 active row", resp.SubjectSubscriptionGroups)
+	}
+	row := resp.SubjectSubscriptionGroups[0]
+	assertUnavailableMultiplierMetadata(t, &row, ErrNotUpperLevelRepresentative.Error())
+	if row.MonthlyUsageUSD != 120 || row.MonthlyLimitUSD == nil || *row.MonthlyLimitUSD != 300 {
+		t.Fatalf("row usage/quota = %#v, want subscription values preserved", row)
+	}
+	if len(base.listRateGroupIDs) != 0 {
+		t.Fatalf("serial multiplier reads = %#v, want none without batch capability", base.listRateGroupIDs)
+	}
+}
 
 func TestSubjectDashboardMarksPeerRepresentativeAsNonEditable(t *testing.T) {
 	ctx := context.Background()
@@ -1068,6 +1295,89 @@ func TestOverviewReturnsUnavailableSummaryWhenTrendFetchTimesOut(t *testing.T) {
 	}
 }
 
+func TestSubjectDashboardBatchReadDoesNotChangeAuthoritativeMultiplierEditAndAuditPath(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	target := createTeamUsageUser(t, client, "edit-target", "edit-target@example.com", intPtr(2002))
+
+	scope := syntheticRepresentativeScope(999, target.ID, 2002, target.Email)
+	provider := &fakeRelayProvider{
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			2002: {syntheticActiveSubscription(42, "Group Alpha", 1)},
+		},
+		rateEntriesByGroup: map[int64][]relay.UserGroupRateEntry{
+			42: {
+				{UserID: 2002, RateMultiplier: floatPtr(1), RPMOverride: intPtr(80)},
+				{UserID: 3003, RateMultiplier: floatPtr(1.2), RPMOverride: intPtr(120)},
+			},
+		},
+	}
+	provider.replaceFn = func(_ context.Context, groupID int64, inputs []relay.GroupRateMultiplierInput) error {
+		provider.rateEntriesByGroup[groupID] = make([]relay.UserGroupRateEntry, 0, len(inputs))
+		for _, input := range inputs {
+			provider.rateEntriesByGroup[groupID] = append(provider.rateEntriesByGroup[groupID], relay.UserGroupRateEntry{
+				UserID:         input.UserID,
+				RateMultiplier: input.RateMultiplier,
+				RPMOverride:    input.RPMOverride,
+			})
+		}
+		return nil
+	}
+	locker := &fakeLocker{}
+	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, locker)
+
+	dashboard, err := svc.SubjectDashboard(ctx, 999, target.ID, relay.UserUsageDashboardParams{})
+	if err != nil {
+		t.Fatalf("SubjectDashboard() error = %v", err)
+	}
+	if len(dashboard.SubjectSubscriptionGroups) != 1 || dashboard.SubjectSubscriptionGroups[0].EffectiveMultiplier == nil || *dashboard.SubjectSubscriptionGroups[0].EffectiveMultiplier != 1 {
+		t.Fatalf("dashboard subscription rows = %#v, want batch-read multiplier 1", dashboard.SubjectSubscriptionGroups)
+	}
+	if provider.batchRateCalls != 1 || len(provider.listRateGroupIDs) != 0 {
+		t.Fatalf("dashboard multiplier reads = batch %d serial %#v, want one batch and no serial", provider.batchRateCalls, provider.listRateGroupIDs)
+	}
+
+	resp, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
+		Mode:           "set",
+		RateMultiplier: floatPtr(1.5),
+		Reason:         "Synthetic approved adjustment",
+	})
+	if err != nil {
+		t.Fatalf("UpdateMultiplier() error = %v", err)
+	}
+	if resp.Status != teamusageratemultiplieraudit.StatusSucceeded.String() || !resp.Changed {
+		t.Fatalf("UpdateMultiplier() response = %#v, want succeeded changed edit", resp)
+	}
+	if got, want := provider.listRateGroupIDs, []int64{42, 42, 42}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("authoritative single-group reads = %#v, want initial/lock/readback %#v", got, want)
+	}
+	if provider.batchRateCalls != 1 {
+		t.Fatalf("batch multiplier calls after edit = %d, want dashboard-only call unchanged", provider.batchRateCalls)
+	}
+	if provider.replaceCalls != 1 || locker.lockCalls != 1 {
+		t.Fatalf("mutation calls = replace %d lock %d, want one whole-group replace under one lock", provider.replaceCalls, locker.lockCalls)
+	}
+	if len(provider.replaceInputs) != 2 {
+		t.Fatalf("whole-group replace inputs = %#v, want target and existing peer", provider.replaceInputs)
+	}
+	targetInput := findRateMultiplierInputByUserID(provider.replaceInputs, 2002)
+	peerInput := findRateMultiplierInputByUserID(provider.replaceInputs, 3003)
+	if targetInput == nil || targetInput.RateMultiplier == nil || *targetInput.RateMultiplier != 1.5 || targetInput.RPMOverride == nil || *targetInput.RPMOverride != 80 {
+		t.Fatalf("target replacement input = %#v, want multiplier 1.5 with RPM override preserved", targetInput)
+	}
+	if peerInput == nil || peerInput.RateMultiplier == nil || *peerInput.RateMultiplier != 1.2 || peerInput.RPMOverride == nil || *peerInput.RPMOverride != 120 {
+		t.Fatalf("peer replacement input = %#v, want whole-group state preserved", peerInput)
+	}
+	audit := client.TeamUsageRateMultiplierAudit.GetX(ctx, resp.AuditID)
+	if audit.Status != teamusageratemultiplieraudit.StatusSucceeded || !audit.Changed || audit.OldMultiplier == nil || *audit.OldMultiplier != 1 || audit.NewMultiplier == nil || *audit.NewMultiplier != 1.5 {
+		t.Fatalf("audit row = %#v, want successful authoritative 1 -> 1.5 change", audit)
+	}
+	if audit.OldMultiplierSource != teamusageratemultiplieraudit.OldMultiplierSourceUser || audit.NewMultiplierSource != teamusageratemultiplieraudit.NewMultiplierSourceUser || audit.ErrorMessage != "" {
+		t.Fatalf("audit sources/error = %q/%q/%q, want user/user/empty", audit.OldMultiplierSource, audit.NewMultiplierSource, audit.ErrorMessage)
+	}
+}
+
 func TestUpdateMultiplierReconcilesStaleRelayUserIDBeforeWrite(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
@@ -1577,11 +1887,16 @@ type fakeRelayProvider struct {
 	subscriptionErr            error
 	subscriptionRequestUserIDs []int64
 	rateEntriesByGroup         map[int64][]relay.UserGroupRateEntry
+	batchRateResults           []relay.GroupRateMultiplierReadResult
+	batchRateCalls             int
+	batchRateGroupIDs          [][]int64
 	listRatesErr               error
+	listRateGroupIDs           []int64
 	replaceFn                  func(context.Context, int64, []relay.GroupRateMultiplierInput) error
 	replaceErr                 error
 	replaceCalls               int
 	replaceUserIDs             []int64
+	replaceInputs              []relay.GroupRateMultiplierInput
 	summaryStats               map[int64]relay.TeamUserUsageStats
 	summaryErr                 error
 	summaryRequestUserIDs      []int64
@@ -1750,7 +2065,24 @@ func (f *fakeRelayProvider) ListUserSubscriptions(_ context.Context, relayUserID
 	return append([]relay.UserSubscription(nil), f.subscriptionsByUser[relayUserID]...), nil
 }
 
+func (f *fakeRelayProvider) GroupRateMultipliersForGroups(_ context.Context, groupIDs []int64) []relay.GroupRateMultiplierReadResult {
+	f.batchRateCalls++
+	f.batchRateGroupIDs = append(f.batchRateGroupIDs, append([]int64(nil), groupIDs...))
+	if f.batchRateResults != nil {
+		return append([]relay.GroupRateMultiplierReadResult(nil), f.batchRateResults...)
+	}
+	results := make([]relay.GroupRateMultiplierReadResult, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		results = append(results, relay.GroupRateMultiplierReadResult{
+			GroupID: groupID,
+			Entries: append([]relay.UserGroupRateEntry(nil), f.rateEntriesByGroup[groupID]...),
+		})
+	}
+	return results
+}
+
 func (f *fakeRelayProvider) ListGroupRateMultipliers(_ context.Context, groupID int64) ([]relay.UserGroupRateEntry, error) {
+	f.listRateGroupIDs = append(f.listRateGroupIDs, groupID)
 	if f.listRatesErr != nil {
 		return nil, f.listRatesErr
 	}
@@ -1760,6 +2092,7 @@ func (f *fakeRelayProvider) ListGroupRateMultipliers(_ context.Context, groupID 
 func (f *fakeRelayProvider) ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, inputs []relay.GroupRateMultiplierInput) error {
 	f.replaceCalls++
 	f.replaceUserIDs = f.replaceUserIDs[:0]
+	f.replaceInputs = append([]relay.GroupRateMultiplierInput(nil), inputs...)
 	for _, input := range inputs {
 		f.replaceUserIDs = append(f.replaceUserIDs, input.UserID)
 	}
@@ -1768,6 +2101,36 @@ func (f *fakeRelayProvider) ReplaceGroupRateMultipliers(ctx context.Context, gro
 	}
 	return f.replaceErr
 }
+
+type fakeRelayProviderWithoutMultiplierBatch struct {
+	relay.Provider
+	dashboardResponse   *relay.UserUsageDashboardResponse
+	subscriptionsByUser map[int64][]relay.UserSubscription
+}
+
+func (f *fakeRelayProviderWithoutMultiplierBatch) GetUsageDashboardForUser(context.Context, int64, relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
+	if f.dashboardResponse != nil {
+		return f.dashboardResponse, nil
+	}
+	return &relay.UserUsageDashboardResponse{
+		Configured:  true,
+		GroupQuotas: relay.UserUsageGroupQuotaState{Status: "ok", Groups: []relay.UserUsageGroupQuotaGroupItem{}},
+	}, nil
+}
+
+func (f *fakeRelayProviderWithoutMultiplierBatch) ListUserSubscriptions(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
+	return append([]relay.UserSubscription(nil), f.subscriptionsByUser[relayUserID]...), nil
+}
+
+func (f *fakeRelayProviderWithoutMultiplierBatch) ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]relay.UserGroupRateEntry, error) {
+	return f.Provider.(relay.GroupRateMultiplierManager).ListGroupRateMultipliers(ctx, groupID)
+}
+
+func (f *fakeRelayProviderWithoutMultiplierBatch) ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, inputs []relay.GroupRateMultiplierInput) error {
+	return f.Provider.(relay.GroupRateMultiplierManager).ReplaceGroupRateMultipliers(ctx, groupID, inputs)
+}
+
+var _ relay.GroupRateMultiplierManager = (*fakeRelayProviderWithoutMultiplierBatch)(nil)
 
 func createPrimaryRelayProvider(t *testing.T, client *ent.Client) *ent.RelayProvider {
 	t.Helper()
@@ -1803,6 +2166,78 @@ func findOverviewMemberByEmail(members []OverviewMember, email string) *Overview
 		}
 	}
 	return nil
+}
+
+func findSubscriptionRowByGroupID(rows []SubscriptionRow, groupID string) *SubscriptionRow {
+	for i := range rows {
+		if rows[i].GroupID == groupID {
+			return &rows[i]
+		}
+	}
+	return nil
+}
+
+func findRateMultiplierInputByUserID(inputs []relay.GroupRateMultiplierInput, userID int64) *relay.GroupRateMultiplierInput {
+	for i := range inputs {
+		if inputs[i].UserID == userID {
+			return &inputs[i]
+		}
+	}
+	return nil
+}
+
+func syntheticRepresentativeScope(actorUserID, targetUserID int, relayUserID int, email string) *representativescope.Scope {
+	return &representativescope.Scope{
+		ActorUserID:      actorUserID,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{
+				SubjectType: "member",
+				UserID:      targetUserID,
+				DisplayName: "Synthetic Member",
+				Email:       email,
+				RelayUserID: intPtr(relayUserID),
+				Selectable:  true,
+			},
+		},
+	}
+}
+
+func syntheticActiveSubscription(groupID int64, groupName string, groupDefaultMultiplier float64) relay.UserSubscription {
+	return relay.UserSubscription{
+		GroupID: groupID,
+		Status:  "active",
+		Group: &relay.Group{
+			ID:             groupID,
+			Name:           groupName,
+			Platform:       "openai",
+			RateMultiplier: floatPtr(groupDefaultMultiplier),
+		},
+	}
+}
+
+func assertUnavailableMultiplierMetadata(t *testing.T, row *SubscriptionRow, editableReason string) {
+	t.Helper()
+	if row.MultiplierMetadataStatus != MultiplierMetadataStatusUnavailable || row.MultiplierMetadataMessage == nil || strings.TrimSpace(*row.MultiplierMetadataMessage) == "" {
+		t.Fatalf("row metadata = %q/%#v, want unavailable with message", row.MultiplierMetadataStatus, row.MultiplierMetadataMessage)
+	}
+	if row.UserMultiplier != nil || row.EffectiveMultiplier != nil || row.MultiplierSource != "unknown" {
+		t.Fatalf("row multiplier values = user %#v effective %#v source %q, want nil/nil/unknown", row.UserMultiplier, row.EffectiveMultiplier, row.MultiplierSource)
+	}
+	if row.Editable || row.EditableReason == nil || *row.EditableReason != editableReason {
+		t.Fatalf("row edit policy = %v/%#v, want %q", row.Editable, row.EditableReason, editableReason)
+	}
+	payload, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if effective, exists := wire["effective_multiplier"]; !exists || effective != nil {
+		t.Fatalf("wire effective_multiplier = %#v, exists %v, want explicit null: %s", effective, exists, payload)
+	}
 }
 
 func int64Ptr(v int64) *int64 {
