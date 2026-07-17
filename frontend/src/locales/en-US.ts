@@ -337,6 +337,7 @@ const enUS = {
   'teamUsage.rateMultiplier': 'Rate multiplier',
   'teamUsage.multiplierHelp': "Future requests will consume this quota at {multiplier}x speed. It does not change this member's quota limit or recalculate existing Used / Quota values.",
   'teamUsage.multiplier': 'Multiplier',
+  'teamUsage.multiplierUnavailable': 'Multiplier unavailable',
   'teamUsage.usedOverQuota': 'Used / Quota',
   'teamUsage.editMultiplier': 'Edit',
   'teamUsage.close': 'Close',

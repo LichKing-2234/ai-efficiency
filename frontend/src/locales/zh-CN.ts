@@ -339,6 +339,7 @@ const zhCN = {
   'teamUsage.rateMultiplier': '倍率',
   'teamUsage.multiplierHelp': '后续请求会按这个倍率消耗配额：{multiplier}x。它不会修改该组员的配额上限，也不会重算已有的已使用 / 配额数值。',
   'teamUsage.multiplier': '倍率',
+  'teamUsage.multiplierUnavailable': '倍率暂不可用',
   'teamUsage.usedOverQuota': '已使用 / 配额',
   'teamUsage.editMultiplier': '编辑',
   'teamUsage.close': '关闭',
