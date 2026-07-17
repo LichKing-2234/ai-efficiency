@@ -7,6 +7,8 @@ import type {
   TeamUsageAuditParams,
   TeamUsageMembersParams,
   TeamUsageMembersResponse,
+  TeamUsageOrganizationParams,
+  TeamUsageOrganizationResponse,
   TeamUsageOverviewParams,
   TeamUsageSummaryResponse,
   TeamUsageTrendResponse,
@@ -49,6 +51,13 @@ export function getTeamUsageTrend(params?: TeamUsageOverviewParams) {
 
 export function getTeamUsageMembers(params?: TeamUsageMembersParams) {
   return client.get<ApiResponse<TeamUsageMembersResponse>>('/user/team-usage/members', {
+    params,
+    timeout: 45000,
+  })
+}
+
+export function getTeamUsageOrganization(params?: TeamUsageOrganizationParams) {
+  return client.get<ApiResponse<TeamUsageOrganizationResponse>>('/user/team-usage/organization', {
     params,
     timeout: 45000,
   })

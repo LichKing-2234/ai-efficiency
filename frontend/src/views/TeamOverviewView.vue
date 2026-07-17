@@ -4,10 +4,11 @@ import { useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberTable.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
-import { getTeamUsageMembers, getTeamUsageOverview, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
+import { getTeamUsageMembers, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
+import { useTeamUsageOrganization } from '@/composables/useTeamUsageOrganization'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
-import type { TeamOverviewResponse, TeamUsageMembersResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
+import type { TeamUsageMembersResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
 
 const TeamOverviewMemberTrendChart = defineAsyncComponent(
   () => import('@/components/team-usage/TeamOverviewMemberTrendChart.vue'),
@@ -18,26 +19,33 @@ const router = useRouter()
 const summary = ref<TeamUsageSummaryResponse | null>(null)
 const trend = ref<TeamUsageTrendResponse | null>(null)
 const membersPage = ref<TeamUsageMembersResponse | null>(null)
-const compatibilityOverview = ref<TeamOverviewResponse | null>(null)
 const summaryLoading = ref(false)
 const trendLoading = ref(false)
 const membersLoading = ref(false)
-const compatibilityLoading = ref(false)
 const summaryError = ref<'no_scope' | 'unavailable' | null>(null)
 const trendError = ref<'no_scope' | 'unavailable' | null>(null)
 const membersError = ref<'no_scope' | 'unavailable' | null>(null)
-const compatibilityError = ref<'no_scope' | 'unavailable' | null>(null)
 type RangeOption = 'today' | '7d' | '30d'
 const selectedRange = ref<RangeOption>('30d')
 let summaryRequestSeq = 0
 let trendRequestSeq = 0
 let membersRequestSeq = 0
-let compatibilityRequestSeq = 0
 const memberPageCursors = ref<Array<string | null>>([null])
 const memberPageIndex = ref(0)
 let memberPageParams: TeamUsageOverviewParams | null = null
+const {
+  branches: organizationBranches,
+  rootBranch: organizationRoot,
+  invalidatedDepartmentIds: organizationInvalidatedDepartmentIds,
+  resetVersion: organizationResetVersion,
+  branchFor: organizationBranchFor,
+  reset: resetOrganization,
+  ensureBranch: ensureOrganizationBranch,
+  loadMoreDepartments: loadMoreOrganizationDepartments,
+  loadMoreMembers: loadMoreOrganizationMembers,
+} = useTeamUsageOrganization()
 
-const loading = computed(() => summaryLoading.value || trendLoading.value || membersLoading.value || compatibilityLoading.value)
+const loading = computed(() => summaryLoading.value || trendLoading.value || membersLoading.value)
 
 const scopeTooLarge = computed(() => {
   return summary.value?.summary.unavailable_reason === 'scope_too_large'
@@ -126,25 +134,6 @@ async function loadMembers(
   }
 }
 
-async function loadCompatibilityOverview(params: TeamUsageOverviewParams) {
-  const requestSeq = ++compatibilityRequestSeq
-  compatibilityLoading.value = true
-  compatibilityError.value = null
-  try {
-    const response = await getTeamUsageOverview(params)
-    if (requestSeq !== compatibilityRequestSeq) return
-    compatibilityOverview.value = response.data.data ?? null
-  } catch (error) {
-    if (requestSeq !== compatibilityRequestSeq) return
-    compatibilityOverview.value = null
-    compatibilityError.value = isForbidden(error) ? 'no_scope' : 'unavailable'
-  } finally {
-    if (requestSeq === compatibilityRequestSeq) {
-      compatibilityLoading.value = false
-    }
-  }
-}
-
 function loadOverview() {
   const params = buildOverviewParams(selectedRange.value)
   resetMemberPagination()
@@ -152,7 +141,7 @@ function loadOverview() {
   void loadSummary(params)
   void loadTrend(params)
   void loadMembers(params, null, 0)
-  void loadCompatibilityOverview(params)
+  resetOrganization(params)
 }
 
 function resetMemberPagination() {
@@ -270,7 +259,7 @@ onMounted(loadOverview)
         :class="['space-y-4 transition-opacity', loading ? 'opacity-60' : 'opacity-100']"
       >
         <div
-          v-if="loading && (summary || trend || membersPage || compatibilityOverview)"
+          v-if="loading && (summary || trend || membersPage)"
           data-testid="team-overview-refreshing"
           class="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700"
         >
@@ -370,21 +359,6 @@ onMounted(loadOverview)
           />
         </div>
 
-        <section
-          v-if="compatibilityLoading && !compatibilityOverview"
-          data-testid="team-overview-sections-loading"
-          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm"
-        >
-          {{ t('settings.loading') }}
-        </section>
-        <section
-          v-else-if="compatibilityError && !compatibilityOverview"
-          data-testid="team-overview-sections-error"
-          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm"
-        >
-          {{ compatibilityError === 'no_scope' ? t('teamUsage.noScope') : t('teamUsage.unavailable') }}
-        </section>
-
         <div
           v-if="membersPage?.cache_status === 'stale'"
           data-testid="team-members-stale-marker"
@@ -393,9 +367,13 @@ onMounted(loadOverview)
           {{ t('usageDashboard.staleSnapshot') }}
         </div>
         <TeamOverviewMemberTable
-          v-if="membersLoading || membersPage || membersError || compatibilityOverview"
+          v-if="membersLoading || membersPage || membersError || organizationRoot"
           :members="membersPage?.items ?? []"
-          :member-tree="compatibilityOverview?.member_tree"
+          :organization-root="organizationRoot"
+          :organization-branches="organizationBranches"
+          :organization-invalidated-department-ids="organizationInvalidatedDepartmentIds"
+          :organization-reset-version="organizationResetVersion"
+          :organization-branch-for="organizationBranchFor"
           :member-loading="membersLoading"
           :member-error="membersError != null"
           :member-total-count="membersPage?.total_count ?? 0"
@@ -404,6 +382,9 @@ onMounted(loadOverview)
           @open-member="openMember"
           @previous-page="loadPreviousMemberPage"
           @next-page="loadNextMemberPage"
+          @expand-department="ensureOrganizationBranch"
+          @load-more-departments="loadMoreOrganizationDepartments"
+          @load-more-members="loadMoreOrganizationMembers"
         />
       </div>
     </div>

@@ -319,6 +319,8 @@ const enUS = {
   'teamUsage.hourly': 'Hourly',
   'teamUsage.expandDepartment': 'Expand department',
   'teamUsage.collapseDepartment': 'Collapse department',
+  'teamUsage.loadMoreDepartments': 'Load more departments',
+  'teamUsage.loadMoreMembers': 'Load more members',
   'teamUsage.memberCountSingular': '{count} member',
   'teamUsage.memberCountPlural': '{count} members',
   'teamUsage.connectedCountSingular': '{count} connected',
