@@ -23508,23 +23508,25 @@ func (m *QuotaResetRequestEventMutation) ResetEdge(name string) error {
 // RelayProviderMutation represents an operation that mutates the RelayProvider nodes in the graph.
 type RelayProviderMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *int
-	name          *string
-	display_name  *string
-	base_url      *string
-	relay_type    *string
-	admin_api_key *string
-	default_model *string
-	is_primary    *bool
-	enabled       *bool
-	created_at    *time.Time
-	updated_at    *time.Time
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*RelayProvider, error)
-	predicates    []predicate.RelayProvider
+	op                       Op
+	typ                      string
+	id                       *int
+	name                     *string
+	display_name             *string
+	base_url                 *string
+	relay_type               *string
+	admin_api_key            *string
+	default_model            *string
+	is_primary               *bool
+	enabled                  *bool
+	configuration_version    *int64
+	addconfiguration_version *int64
+	created_at               *time.Time
+	updated_at               *time.Time
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*RelayProvider, error)
+	predicates               []predicate.RelayProvider
 }
 
 var _ ent.Mutation = (*RelayProviderMutation)(nil)
@@ -23913,6 +23915,62 @@ func (m *RelayProviderMutation) ResetEnabled() {
 	m.enabled = nil
 }
 
+// SetConfigurationVersion sets the "configuration_version" field.
+func (m *RelayProviderMutation) SetConfigurationVersion(i int64) {
+	m.configuration_version = &i
+	m.addconfiguration_version = nil
+}
+
+// ConfigurationVersion returns the value of the "configuration_version" field in the mutation.
+func (m *RelayProviderMutation) ConfigurationVersion() (r int64, exists bool) {
+	v := m.configuration_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConfigurationVersion returns the old "configuration_version" field's value of the RelayProvider entity.
+// If the RelayProvider object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayProviderMutation) OldConfigurationVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConfigurationVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConfigurationVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConfigurationVersion: %w", err)
+	}
+	return oldValue.ConfigurationVersion, nil
+}
+
+// AddConfigurationVersion adds i to the "configuration_version" field.
+func (m *RelayProviderMutation) AddConfigurationVersion(i int64) {
+	if m.addconfiguration_version != nil {
+		*m.addconfiguration_version += i
+	} else {
+		m.addconfiguration_version = &i
+	}
+}
+
+// AddedConfigurationVersion returns the value that was added to the "configuration_version" field in this mutation.
+func (m *RelayProviderMutation) AddedConfigurationVersion() (r int64, exists bool) {
+	v := m.addconfiguration_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetConfigurationVersion resets all changes to the "configuration_version" field.
+func (m *RelayProviderMutation) ResetConfigurationVersion() {
+	m.configuration_version = nil
+	m.addconfiguration_version = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *RelayProviderMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -24019,7 +24077,7 @@ func (m *RelayProviderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RelayProviderMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 11)
 	if m.name != nil {
 		fields = append(fields, relayprovider.FieldName)
 	}
@@ -24043,6 +24101,9 @@ func (m *RelayProviderMutation) Fields() []string {
 	}
 	if m.enabled != nil {
 		fields = append(fields, relayprovider.FieldEnabled)
+	}
+	if m.configuration_version != nil {
+		fields = append(fields, relayprovider.FieldConfigurationVersion)
 	}
 	if m.created_at != nil {
 		fields = append(fields, relayprovider.FieldCreatedAt)
@@ -24074,6 +24135,8 @@ func (m *RelayProviderMutation) Field(name string) (ent.Value, bool) {
 		return m.IsPrimary()
 	case relayprovider.FieldEnabled:
 		return m.Enabled()
+	case relayprovider.FieldConfigurationVersion:
+		return m.ConfigurationVersion()
 	case relayprovider.FieldCreatedAt:
 		return m.CreatedAt()
 	case relayprovider.FieldUpdatedAt:
@@ -24103,6 +24166,8 @@ func (m *RelayProviderMutation) OldField(ctx context.Context, name string) (ent.
 		return m.OldIsPrimary(ctx)
 	case relayprovider.FieldEnabled:
 		return m.OldEnabled(ctx)
+	case relayprovider.FieldConfigurationVersion:
+		return m.OldConfigurationVersion(ctx)
 	case relayprovider.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case relayprovider.FieldUpdatedAt:
@@ -24172,6 +24237,13 @@ func (m *RelayProviderMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetEnabled(v)
 		return nil
+	case relayprovider.FieldConfigurationVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConfigurationVersion(v)
+		return nil
 	case relayprovider.FieldCreatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -24193,13 +24265,21 @@ func (m *RelayProviderMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *RelayProviderMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addconfiguration_version != nil {
+		fields = append(fields, relayprovider.FieldConfigurationVersion)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *RelayProviderMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case relayprovider.FieldConfigurationVersion:
+		return m.AddedConfigurationVersion()
+	}
 	return nil, false
 }
 
@@ -24208,6 +24288,13 @@ func (m *RelayProviderMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *RelayProviderMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case relayprovider.FieldConfigurationVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddConfigurationVersion(v)
+		return nil
 	}
 	return fmt.Errorf("unknown RelayProvider numeric field %s", name)
 }
@@ -24258,6 +24345,9 @@ func (m *RelayProviderMutation) ResetField(name string) error {
 		return nil
 	case relayprovider.FieldEnabled:
 		m.ResetEnabled()
+		return nil
+	case relayprovider.FieldConfigurationVersion:
+		m.ResetConfigurationVersion()
 		return nil
 	case relayprovider.FieldCreatedAt:
 		m.ResetCreatedAt()

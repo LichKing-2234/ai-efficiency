@@ -16,9 +16,11 @@ const page = ref(1)
 const pageSize = 20
 const total = ref(0)
 const confirmations = ref<Record<number, string>>({})
+const disablingUserIDs = ref(new Set<number>())
 const loading = ref(false)
 const message = ref('')
 const error = ref('')
+let loadGeneration = 0
 
 const hasCandidates = computed(() => candidates.value.length > 0)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
@@ -28,11 +30,13 @@ const canGoNext = computed(() => page.value < totalPages.value)
 onMounted(loadCandidates)
 
 async function loadCandidates(allowPageClamp = true) {
+  const generation = ++loadGeneration
   loading.value = true
   error.value = ''
   try {
     const params = { q: q.value.trim(), page: page.value, page_size: pageSize }
     const res = await listDirectoryOffboardingCandidates(params)
+    if (generation !== loadGeneration) return
     const data = res.data.data
     candidates.value = data?.items ?? []
     total.value = data?.total ?? candidates.value.length
@@ -43,9 +47,10 @@ async function loadCandidates(allowPageClamp = true) {
       await loadCandidates(false)
     }
   } catch (e: any) {
+    if (generation !== loadGeneration) return
     error.value = e?.response?.data?.message || e?.message || t('directoryOffboarding.loadFailed')
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 
@@ -71,7 +76,8 @@ function confirmed(candidate: DirectoryOffboardingCandidate) {
 }
 
 async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
-  if (!confirmed(candidate)) return
+  if (!confirmed(candidate) || disablingUserIDs.value.has(candidate.user_id)) return
+  disablingUserIDs.value = new Set(disablingUserIDs.value).add(candidate.user_id)
   message.value = ''
   error.value = ''
   try {
@@ -89,6 +95,10 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
     ])
   } catch (e: any) {
     error.value = e?.response?.data?.message || e?.message || t('directoryOffboarding.disableFailed')
+  } finally {
+    const pending = new Set(disablingUserIDs.value)
+    pending.delete(candidate.user_id)
+    disablingUserIDs.value = pending
   }
 }
 </script>
@@ -153,7 +163,7 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
                   :data-testid="`disable-relay-user-${candidate.user_id}`"
                   type="button"
                   class="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
-                  :disabled="!confirmed(candidate)"
+                  :disabled="!confirmed(candidate) || disablingUserIDs.has(candidate.user_id)"
                   @click="disableCandidate(candidate)"
                 >
                   {{ t('directoryOffboarding.disableRelayUser') }}

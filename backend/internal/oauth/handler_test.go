@@ -189,6 +189,65 @@ func TestAuthorizeRejectsUnsupportedResponseType(t *testing.T) {
 	}
 }
 
+func TestOAuthInvalidAuthorizeDoesNotApplyEmbeddedCacheOrGzip(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "dist"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dist", "index.html"), []byte("<html><body>oauth-app</body></html>"), 0o644); err != nil {
+		t.Fatalf("WriteFile index: %v", err)
+	}
+	restore := web.SetFrontendFSForTest(os.DirFS(root))
+	defer restore()
+
+	oauthServer := oauth.NewServer()
+	handler := oauth.NewHandler(oauthServer, "http://localhost:18081", &mockTokenGen{})
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Next()
+	})
+	router.GET("/oauth/authorize", handler.Authorize)
+
+	request := httptest.NewRequest(http.MethodGet, "http://localhost:18081/oauth/authorize?response_type=token", nil)
+	request.Header.Set("Accept-Encoding", "gzip")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	if !strings.Contains(response.Body.String(), `"unsupported_response_type"`) {
+		t.Fatalf("body = %q, want unsupported_response_type error", response.Body.String())
+	}
+	if got := response.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("Content-Encoding = %q, want empty", got)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want preserved handler policy no-store", got)
+	}
+	if oauthHeaderHasToken(response.Header().Values("Cache-Control"), "no-cache") || oauthHeaderHasToken(response.Header().Values("Cache-Control"), "immutable") {
+		t.Fatalf("Cache-Control = %q, must not contain embedded frontend policy", response.Header().Values("Cache-Control"))
+	}
+	if oauthHeaderHasToken(response.Header().Values("Vary"), "Accept-Encoding") {
+		t.Fatalf("Vary = %q, must not contain Accept-Encoding", response.Header().Values("Vary"))
+	}
+}
+
+func oauthHeaderHasToken(values []string, token string) bool {
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), token) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestAuthorizeRejectsMissingCodeChallenge(t *testing.T) {
 	r, _ := setupTestRouter()
 
