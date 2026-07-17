@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/teamusage"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/ai-efficiency/backend/internal/web"
@@ -38,6 +39,8 @@ type RouterOptions struct {
 	TeamUsageSnapshotCache   *teamusage.SnapshotCache
 	WebhookHTTPClient        *http.Client
 	RequestLogger            *zap.Logger
+	RequestObserver          telemetry.RequestObserver
+	WebVitalsHandler         *WebVitalsHandler
 	Release                  string
 	RequestTimeout           time.Duration
 }
@@ -156,7 +159,7 @@ func setupRouter(
 	// Keep canonical redirects inside the correlation and telemetry chain.
 	r.RedirectTrailingSlash = false
 	r.RemoveExtraSlash = true
-	r.Use(middleware.RequestTelemetry(options.RequestLogger, options.Release))
+	r.Use(middleware.RequestTelemetry(options.RequestLogger, options.Release, options.RequestObserver))
 	r.Use(middleware.Recovery(options.RequestLogger, options.Release))
 	if options.RequestTimeout > 0 {
 		r.Use(middleware.RequestTimeout(options.RequestTimeout))
@@ -334,6 +337,7 @@ func setupRouter(
 	}
 
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
+	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
 
 	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, encryptionKey))
 

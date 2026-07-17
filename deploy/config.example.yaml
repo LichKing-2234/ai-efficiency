@@ -16,6 +16,11 @@ server:
   # Supported range: 12-44; must remain above http_client.overall_timeout_seconds.
   request_timeout_seconds: 35
 
+# Prometheus scrape listener. The default is loopback-only. Docker compose may
+# use :9090 on its un-published internal network; never publish it publicly.
+metrics:
+  listen_address: "127.0.0.1:9090"
+
 # Shared downstream HTTP defaults. Version checks and quota notification webhooks
 # retain fixed 10-second and 5-second overall budgets. Shared overall supports
 # 11-43 seconds and must remain below server.request_timeout_seconds. Connect and

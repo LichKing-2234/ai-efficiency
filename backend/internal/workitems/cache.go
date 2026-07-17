@@ -37,6 +37,10 @@ type RevisionReader interface {
 
 type RedisCountsStore = readcache.RedisStore
 
+type CountsCacheMetrics interface {
+	Record(outcome string)
+}
+
 func NewRedisCountsStore(client redis.UniversalClient) *RedisCountsStore {
 	return readcache.NewRedisStore(client)
 }
@@ -51,6 +55,7 @@ type CountsCacheOptions struct {
 	RandFloat64    func() float64
 	NewToken       func() string
 	Sleep          func(context.Context, time.Duration) error
+	Metrics        CountsCacheMetrics
 }
 
 type CountsCache struct {
@@ -150,34 +155,53 @@ func (c *CountsCache) GetOrLoad(ctx context.Context, actorID int, effectiveRole 
 
 func (c *CountsCache) loadWithLease(ctx context.Context, key, revision string, loader CountsLoader) (*CountsResponse, error) {
 	if counts, hit, err := c.read(ctx, key); hit {
+		c.record("fresh")
 		return counts, nil
 	} else if err != nil {
+		c.record("error")
 		return c.loadAuthoritative(ctx, loader)
 	}
+	c.record("miss")
 
 	leaseKey := key + ":lease"
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		token := c.options.NewToken()
 		acquired, err := c.acquireLease(ctx, leaseKey, token)
 		if err != nil {
+			c.record("error")
+			c.record("lease_failed")
 			return c.loadAuthoritative(ctx, loader)
 		}
 		if acquired {
+			c.record("lease_acquired")
 			return c.loadAsLeaseHolder(ctx, key, leaseKey, token, revision, loader)
 		}
+		c.record("lease_wait")
 
 		for {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if counts, hit, err := c.read(ctx, key); hit {
 				return counts, nil
 			} else if err != nil {
+				c.record("error")
 				return c.loadAuthoritative(ctx, loader)
 			}
 			ttl, err := c.leaseTTL(ctx, leaseKey)
-			if errors.Is(err, ErrCountsCacheMiss) || ttl <= 0 {
+			if errors.Is(err, ErrCountsCacheMiss) {
 				break
 			}
 			if err != nil {
+				c.record("error")
+				c.record("lease_failed")
 				return c.loadAuthoritative(ctx, loader)
+			}
+			if ttl <= 0 {
+				break
 			}
 			wait := c.options.PollInterval
 			if ttl < wait {
@@ -196,15 +220,13 @@ func (c *CountsCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, toke
 	if counts, hit, err := c.read(ctx, key); hit {
 		return counts, nil
 	} else if err != nil {
+		c.record("error")
 		return c.loadAuthoritative(ctx, loader)
 	}
 
-	result, err := loader(ctx)
+	result, err := c.runLoader(ctx, loader)
 	if err != nil {
 		return nil, err
-	}
-	if result.Counts == nil {
-		return nil, fmt.Errorf("work item counts loader returned nil counts")
 	}
 	if !result.Cacheable {
 		return result.Counts, nil
@@ -212,6 +234,7 @@ func (c *CountsCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, toke
 
 	currentRevision, err := c.currentRevision(ctx)
 	if err != nil {
+		c.record("error")
 		return nil, err
 	}
 	if currentRevision != revision {
@@ -219,21 +242,35 @@ func (c *CountsCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, toke
 	}
 	value, err := json.Marshal(countsValueEnvelope{SchemaVersion: countsCacheSchemaVersion, Counts: result.Counts})
 	if err != nil {
+		c.record("error")
 		return nil, fmt.Errorf("encode work item counts cache value: %w", err)
 	}
-	_ = c.set(ctx, key, value, c.valueTTL())
+	if err := c.set(ctx, key, value, c.valueTTL()); err != nil {
+		c.record("error")
+	}
 	return result.Counts, nil
 }
 
 func (c *CountsCache) loadAuthoritative(ctx context.Context, loader CountsLoader) (*CountsResponse, error) {
-	result, err := loader(ctx)
+	result, err := c.runLoader(ctx, loader)
 	if err != nil {
 		return nil, err
 	}
-	if result.Counts == nil {
-		return nil, fmt.Errorf("work item counts loader returned nil counts")
-	}
 	return result.Counts, nil
+}
+
+func (c *CountsCache) runLoader(ctx context.Context, loader CountsLoader) (CountsLoadResult, error) {
+	c.record("refresh")
+	result, err := loader(ctx)
+	if err != nil {
+		c.record("error")
+		return CountsLoadResult{}, err
+	}
+	if result.Counts == nil {
+		c.record("error")
+		return CountsLoadResult{}, fmt.Errorf("work item counts loader returned nil counts")
+	}
+	return result, nil
 }
 
 func (c *CountsCache) currentRevision(ctx context.Context) (string, error) {
@@ -301,7 +338,19 @@ func (c *CountsCache) set(ctx context.Context, key string, value []byte, ttl tim
 func (c *CountsCache) releaseLease(key, token string) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.options.ReleaseTimeout)
 	defer cancel()
-	_, _ = c.store.ReleaseLease(ctx, key, token)
+	released, err := c.store.ReleaseLease(ctx, key, token)
+	if err != nil {
+		c.record("error")
+	}
+	if err != nil || !released {
+		c.record("lease_failed")
+	}
+}
+
+func (c *CountsCache) record(outcome string) {
+	if c != nil && c.options.Metrics != nil {
+		c.options.Metrics.Record(outcome)
+	}
 }
 
 func (c *CountsCache) valueTTL() time.Duration {

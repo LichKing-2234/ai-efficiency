@@ -350,6 +350,69 @@ func TestDependencyTelemetryDelegatesCloseIdleConnections(t *testing.T) {
 	}
 }
 
+func TestDependencyTelemetryReportsOneNormalizedMetricAfterBodyCompletion(t *testing.T) {
+	metrics := &recordingDependencyObserver{}
+	next := &fakeDependencyTransport{roundTrip: func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("ok")),
+			Request:    request,
+		}, nil
+	}}
+	request, err := http.NewRequest(http.MethodGet, "https://relay.example.com/private?email=alice@example.com", nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+
+	response, err := WrapDependency(zap.NewNop(), "test-release", "relay", "http_request", metrics)(next).RoundTrip(request)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	if len(metrics.observations) != 0 {
+		t.Fatalf("observations after headers = %#v, want none before body completion", metrics.observations)
+	}
+	if _, err := io.ReadAll(response.Body); err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	if len(metrics.observations) != 1 {
+		t.Fatalf("observations = %#v, want one", metrics.observations)
+	}
+	got := metrics.observations[0]
+	if got.dependency != "relay" || got.operation != "http_request" || got.method != "GET" || got.statusClass != "2xx" {
+		t.Fatalf("observation = %#v, want fixed dependency fields", got)
+	}
+	if got.duration < 0 {
+		t.Fatalf("duration = %s, want non-negative", got.duration)
+	}
+}
+
+type recordingDependencyObserver struct {
+	observations []dependencyMetricObservation
+}
+
+type dependencyMetricObservation struct {
+	dependency  string
+	operation   string
+	method      string
+	statusClass string
+	duration    time.Duration
+}
+
+func (o *recordingDependencyObserver) Observe(dependency, operation, method, statusClass string, duration time.Duration) {
+	o.observations = append(o.observations, dependencyMetricObservation{
+		dependency:  dependency,
+		operation:   operation,
+		method:      method,
+		statusClass: statusClass,
+		duration:    duration,
+	})
+}
+
 type fakeDependencyTransport struct {
 	roundTrip             func(*http.Request) (*http.Response, error)
 	closedIdleConnections bool
