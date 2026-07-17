@@ -220,6 +220,11 @@ var (
 				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[5]},
 			},
 			{
+				Name:    "directorymember_source_id_matched_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[8]},
+			},
+			{
 				Name:    "directorymember_matched_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectoryMembersColumns[8]},
@@ -258,6 +263,11 @@ var (
 				Name:    "directorymemberdepartment_source_id_department_external_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectoryMemberDepartmentsColumns[1], DirectoryMemberDepartmentsColumns[5]},
+			},
+			{
+				Name:    "directorymemberdepartment_source_id_directory_member_id_department_external_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMemberDepartmentsColumns[1], DirectoryMemberDepartmentsColumns[2], DirectoryMemberDepartmentsColumns[5]},
 			},
 			{
 				Name:    "directorymemberdepartment_directory_member_id",
