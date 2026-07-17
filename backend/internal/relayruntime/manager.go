@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
@@ -104,8 +104,9 @@ func NewManager(client *ent.Client, encryptionKey string, logger *zap.Logger, op
 		options.Sleep = readcache.Sleep
 	}
 	if options.Factory == nil {
+		client := httpclient.NewDefault(30 * time.Second)
 		options.Factory = func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
-			return relay.NewSub2apiProvider(http.DefaultClient, row.BaseURL, adminAPIKey, row.DefaultModel, logger), nil
+			return relay.NewSub2apiProvider(client, row.BaseURL, adminAPIKey, row.DefaultModel, logger), nil
 		}
 	}
 	if options.Store != nil && !namespacePattern.MatchString(options.Namespace) {
@@ -197,6 +198,30 @@ func (m *Manager) ResolveEntity(row *ent.RelayProvider) (relay.Provider, error) 
 	}
 	m.latestVersion[row.ID] = row.ConfigurationVersion
 	m.clients[key] = clientEntry{provider: created, createdAt: now}
+	return created, nil
+}
+
+// NewUserScopedProvider creates an uncached provider for one user credential.
+func (m *Manager) NewUserScopedProvider(row *ent.RelayProvider, apiKey, model string) (relay.Provider, error) {
+	if m == nil {
+		return nil, fmt.Errorf("relay runtime is not configured")
+	}
+	if row == nil || row.ID <= 0 || row.ConfigurationVersion <= 0 {
+		return nil, fmt.Errorf("valid relay provider row is required")
+	}
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("user API key is required")
+	}
+
+	scopedRow := *row
+	scopedRow.DefaultModel = strings.TrimSpace(model)
+	created, err := m.options.Factory(&scopedRow, apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("create user-scoped relay provider %d version %d: %w", row.ID, row.ConfigurationVersion, err)
+	}
+	if created == nil {
+		return nil, fmt.Errorf("create user-scoped relay provider %d version %d: nil provider", row.ID, row.ConfigurationVersion)
+	}
 	return created, nil
 }
 

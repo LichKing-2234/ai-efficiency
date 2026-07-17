@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type staticCredentialResolver map[string]string
@@ -15,6 +17,47 @@ type staticCredentialResolver map[string]string
 func (r staticCredentialResolver) ResolveCredential(_ context.Context, ref string) (string, bool, error) {
 	value, ok := r[ref]
 	return value, ok, nil
+}
+
+func TestExecutorUsesInjectedHTTPClient(t *testing.T) {
+	var calls int
+	injected := &http.Client{
+		Timeout: 23 * time.Second,
+		Transport: directoryRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			calls++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(`{
+					"data":{"departments":[{"id":"dept-alpha","name":"Department Alpha","path":"Department Alpha"}]}
+				}`)),
+				Request: req,
+			}, nil
+		}),
+	}
+	cfg, err := ParseDSL(validDirectoryDSL)
+	if err != nil {
+		t.Fatalf("ParseDSL() error = %v", err)
+	}
+	cfg.Steps = cfg.Steps[:1]
+
+	executor := NewExecutor(ExecutorOptions{HTTPClient: injected})
+	result, err := executor.Execute(context.Background(), cfg, staticCredentialResolver{"directory_api_key": "test-directory-secret"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if calls != 1 || result.HTTPRequestCount != 1 {
+		t.Fatalf("HTTP calls = %d, result count = %d; want one injected request", calls, result.HTTPRequestCount)
+	}
+	if executor.client != injected || executor.client.Timeout != 23*time.Second {
+		t.Fatal("NewExecutor() did not retain the injected HTTP client")
+	}
+}
+
+type directoryRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn directoryRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }
 
 func TestExecutorRunsForeachAndNormalizesMembers(t *testing.T) {

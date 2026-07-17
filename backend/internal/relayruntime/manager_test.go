@@ -138,6 +138,37 @@ func TestRelayRuntimeReusesVersionedClientUntilMaximumLifetime(t *testing.T) {
 	}
 }
 
+func TestRelayRuntimeCreatesUncachedUserScopedProvidersThroughConfiguredFactory(t *testing.T) {
+	client := testdb.Open(t)
+	row := createProviderRow(t, client)
+	created := 0
+	manager, err := NewManager(client, testEncryptionKey, zap.NewNop(), Options{
+		Factory: func(factoryRow *ent.RelayProvider, apiKey string) (relay.Provider, error) {
+			created++
+			return &taggedProvider{tag: apiKey + "/" + factoryRow.DefaultModel}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	first, err := manager.NewUserScopedProvider(row, "user-key", "model-user")
+	if err != nil {
+		t.Fatalf("first user-scoped provider: %v", err)
+	}
+	second, err := manager.NewUserScopedProvider(row, "user-key", "model-user")
+	if err != nil {
+		t.Fatalf("second user-scoped provider: %v", err)
+	}
+
+	if first == second || created != 2 {
+		t.Fatalf("user-scoped provider was cached: first=%p second=%p creates=%d", first, second, created)
+	}
+	if got := first.(*taggedProvider).tag; got != "user-key/model-user" {
+		t.Fatalf("user-scoped factory inputs = %q", got)
+	}
+}
+
 func TestRelayRuntimeRevalidatesPersistedVersionAfterMissedInvalidation(t *testing.T) {
 	client := testdb.Open(t)
 	row := createProviderRow(t, client)
