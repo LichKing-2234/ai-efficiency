@@ -14,8 +14,8 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/teamusage"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 type teamUsageService interface {
@@ -170,9 +170,7 @@ func (h *TeamUsageHandler) Summary(c *gin.Context) {
 		writeTeamUsageError(c, err)
 		return
 	}
-	requestID := uuid.NewString()
-	resp.RequestID = requestID
-	c.Header("X-Request-ID", requestID)
+	resp.RequestID = telemetry.RequestID(c.Request.Context())
 	pkg.Success(c, resp)
 }
 
@@ -195,9 +193,7 @@ func (h *TeamUsageHandler) Trend(c *gin.Context) {
 		writeTeamUsageError(c, err)
 		return
 	}
-	requestID := uuid.NewString()
-	resp.RequestID = requestID
-	c.Header("X-Request-ID", requestID)
+	resp.RequestID = telemetry.RequestID(c.Request.Context())
 	pkg.Success(c, resp)
 }
 
@@ -232,9 +228,7 @@ func (h *TeamUsageHandler) Members(c *gin.Context) {
 		writeTeamUsageError(c, err)
 		return
 	}
-	requestID := uuid.NewString()
-	resp.RequestID = requestID
-	c.Header("X-Request-ID", requestID)
+	resp.RequestID = telemetry.RequestID(c.Request.Context())
 	pkg.Success(c, resp)
 }
 
@@ -280,9 +274,7 @@ func (h *TeamUsageHandler) Organization(c *gin.Context) {
 		writeTeamUsageError(c, err)
 		return
 	}
-	requestID := uuid.NewString()
-	resp.RequestID = requestID
-	c.Header("X-Request-ID", requestID)
+	resp.RequestID = telemetry.RequestID(c.Request.Context())
 	pkg.Success(c, resp)
 }
 

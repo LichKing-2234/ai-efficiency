@@ -13,9 +13,11 @@ import (
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
 	authpkg "github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/teamusage"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -124,6 +126,7 @@ func newTeamUsageTestRouter(t *testing.T, service *fakeTeamUsageService) *teamUs
 	}
 
 	router := gin.New()
+	router.Use(middleware.RequestTelemetry(logger, "test-release"))
 	userGroup := router.Group("/api/v1/user")
 	userGroup.Use(authpkg.RequireAuth(authSvc))
 	teamHandler := NewTeamUsageHandler(service)
@@ -149,6 +152,60 @@ func newTeamUsageTestRouter(t *testing.T, service *fakeTeamUsageService) *teamUs
 		adminToken: adminPair.AccessToken,
 		userID:     user.ID,
 		adminID:    admin.ID,
+	}
+}
+
+func TestTeamUsageSplitEndpointsPreserveMiddlewareRequestID(t *testing.T) {
+	const requestID = "client_Request-161.valid"
+	assertContextRequestID := func(ctx context.Context) {
+		t.Helper()
+		if got := telemetry.RequestID(ctx); got != requestID {
+			t.Fatalf("service context request ID = %q, want %q", got, requestID)
+		}
+	}
+
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		summaryFn: func(ctx context.Context, _ int, _ teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
+			assertContextRequestID(ctx)
+			return &teamusage.SummaryResponse{}, nil
+		},
+		trendFn: func(ctx context.Context, _ int, _ teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+			assertContextRequestID(ctx)
+			return &teamusage.TrendResponse{}, nil
+		},
+		membersFn: func(ctx context.Context, _ int, _ teamusage.MembersParams) (*teamusage.MembersResponse, error) {
+			assertContextRequestID(ctx)
+			return &teamusage.MembersResponse{}, nil
+		},
+		organizationFn: func(ctx context.Context, _ int, _ teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+			assertContextRequestID(ctx)
+			return &teamusage.OrganizationResponse{}, nil
+		},
+	})
+
+	for _, path := range []string{
+		"/api/v1/user/team-usage/summary",
+		"/api/v1/user/team-usage/trend",
+		"/api/v1/user/team-usage/members",
+		"/api/v1/user/team-usage/organization",
+	} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.Header.Set("Authorization", "Bearer "+env.token)
+			request.Header.Set(telemetry.HeaderRequestID, requestID)
+			response := httptest.NewRecorder()
+			env.router.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d body = %s, want 200", response.Code, response.Body.String())
+			}
+			if got := response.Header().Get(telemetry.HeaderRequestID); got != requestID {
+				t.Fatalf("response request ID = %q, want %q", got, requestID)
+			}
+			if expected := `"request_id":"` + requestID + `"`; !strings.Contains(response.Body.String(), expected) {
+				t.Fatalf("response body = %s, want %s", response.Body.String(), expected)
+			}
+		})
 	}
 }
 
