@@ -5,17 +5,55 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
+
+func TestWebhookNotifierUsesInjectedHTTPClientAndPreservesTimeout(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	client.QuotaResetNotificationSetting.Create().
+		SetEnabled(true).
+		SetURL("https://hooks.example.com/quota-reset").
+		SetAuthType("none").
+		SetCreatedByUserID(1).
+		SetUpdatedByUserID(1).
+		SaveX(ctx)
+
+	var calls int
+	injected := &http.Client{
+		Timeout: defaultWebhookTimeout,
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			calls++
+			return &http.Response{
+				StatusCode: http.StatusNoContent,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("")),
+				Request:    req,
+			}, nil
+		}),
+	}
+	notifier := NewWebhookNotifier(client, "", "https://ai-efficiency.example.com", injected)
+	if err := notifier.NotifyRequestEvent(ctx, "quota_reset_request_created", createNotificationQuotaResetRequest(t, ctx, client)); err != nil {
+		t.Fatalf("NotifyRequestEvent() error = %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("injected transport calls = %d, want 1", calls)
+	}
+	if notifier.httpClient != injected || notifier.httpClient.Timeout != 5*time.Second {
+		t.Fatal("NewWebhookNotifier() did not retain the injected 5s HTTP client")
+	}
+}
 
 func TestWebhookNotifierSendsBearerTokenAndWritesNoSecretToPayload(t *testing.T) {
 	ctx := context.Background()
