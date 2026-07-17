@@ -14,6 +14,7 @@ const (
 	departmentTrendTeamTotal  = "team_total"
 	departmentTrendDepartment = "department"
 	teamTotalDisplayName      = "Team total"
+	maxDepartmentComparisons  = 12
 )
 
 func BuildOverviewUnavailableForLargeScope(subjects []representativescope.Subject, limit int) OverviewResponse {
@@ -348,11 +349,13 @@ func BuildOverviewDepartmentTrend(departments []representativescope.DepartmentSc
 		if leftCost != rightCost {
 			return leftCost > rightCost
 		}
-		if departmentSeries[i].DisplayName != departmentSeries[j].DisplayName {
-			return departmentSeries[i].DisplayName < departmentSeries[j].DisplayName
-		}
 		return departmentSeries[i].DepartmentExternalID < departmentSeries[j].DepartmentExternalID
 	})
+	state.ComparisonTotalCount = len(departmentSeries)
+	if len(departmentSeries) > maxDepartmentComparisons {
+		state.ComparisonTruncated = true
+		departmentSeries = departmentSeries[:maxDepartmentComparisons]
+	}
 	for i := range departmentSeries {
 		departmentSeries[i].Rank = i + 1
 		state.Series = append(state.Series, departmentSeries[i])

@@ -20,6 +20,7 @@ import { getDashboard } from '@/api/efficiency'
 import { getSystemVersion, checkSystemUpdate } from '@/api/system'
 import { getUserProviders, createGroupCredential, regenerateGroupCredential, getUserProviderModels, testUserProvider } from '@/api/user'
 import { listDirectoryRuns } from '@/api/directory'
+import type { DirectoryRunPage, DirectoryRunSummary, DirectorySyncRun } from '@/types'
 import {
   disableAdminUserAccess,
   startAdminUserSubscriptionJob,
@@ -316,11 +317,55 @@ describe('admin users API', () => {
 })
 
 describe('directory API', () => {
-  it('lists directory runs for a source', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: { items: [] } } })
+  it('lists a typed lightweight directory run page with limit and offset', async () => {
+    const summary: DirectoryRunSummary = {
+      id: 41,
+      source_id: 7,
+      mode: 'preview',
+      trigger: 'manual',
+      status: 'completed_with_warnings',
+      phase: 'completed',
+      started_at: '2026-07-15T01:00:00Z',
+      completed_at: '2026-07-15T01:01:00Z',
+      http_request_count: 2,
+      department_count: 4,
+      member_count: 12,
+      invalid_member_count: 1,
+      warning_count: 1,
+    }
+    const page: DirectoryRunPage = {
+      items: [summary],
+      total: 41,
+      page: 2,
+      page_size: 20,
+      latest_active_run: null,
+    }
+    mockClient.get.mockResolvedValue({ data: { data: page } })
 
-    await listDirectoryRuns(7)
+    const response = await listDirectoryRuns(7, { limit: 20, offset: 40 })
+    const typedPage: DirectoryRunPage | undefined = response.data.data
 
-    expect(mockClient.get).toHaveBeenCalledWith('/admin/directory/sources/7/runs')
+    expect(mockClient.get).toHaveBeenCalledWith('/admin/directory/sources/7/runs', {
+      params: { limit: 20, offset: 40 },
+    })
+    expect(typedPage?.items[0]).not.toHaveProperty('warnings')
+    expect(typedPage?.items[0]).not.toHaveProperty('summary')
+    expect(typedPage?.items[0]).not.toHaveProperty('preview_diff')
+    expect(typedPage?.items[0]).not.toHaveProperty('error_message')
+  })
+
+  it('keeps queued run detail compatible with omitted Ent omitempty fields', () => {
+    const queuedDetail: DirectorySyncRun = {
+      id: 42,
+      source_id: 7,
+      mode: 'apply',
+      trigger: 'manual',
+      status: 'queued',
+      phase: 'validating',
+    }
+
+    expect(queuedDetail).toEqual(expect.objectContaining({ id: 42, status: 'queued' }))
+    expect(queuedDetail).not.toHaveProperty('started_at')
+    expect(queuedDetail).not.toHaveProperty('http_request_count')
   })
 })

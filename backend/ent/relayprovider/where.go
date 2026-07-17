@@ -94,6 +94,11 @@ func Enabled(v bool) predicate.RelayProvider {
 	return predicate.RelayProvider(sql.FieldEQ(FieldEnabled, v))
 }
 
+// ConfigurationVersion applies equality check predicate on the "configuration_version" field. It's identical to ConfigurationVersionEQ.
+func ConfigurationVersion(v int64) predicate.RelayProvider {
+	return predicate.RelayProvider(sql.FieldEQ(FieldConfigurationVersion, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.RelayProvider {
 	return predicate.RelayProvider(sql.FieldEQ(FieldCreatedAt, v))
@@ -512,6 +517,46 @@ func EnabledEQ(v bool) predicate.RelayProvider {
 // EnabledNEQ applies the NEQ predicate on the "enabled" field.
 func EnabledNEQ(v bool) predicate.RelayProvider {
 	return predicate.RelayProvider(sql.FieldNEQ(FieldEnabled, v))
+}
+
+// ConfigurationVersionEQ applies the EQ predicate on the "configuration_version" field.
+func ConfigurationVersionEQ(v int64) predicate.RelayProvider {
+	return predicate.RelayProvider(sql.FieldEQ(FieldConfigurationVersion, v))
+}
+
+// ConfigurationVersionNEQ applies the NEQ predicate on the "configuration_version" field.
+func ConfigurationVersionNEQ(v int64) predicate.RelayProvider {
+	return predicate.RelayProvider(sql.FieldNEQ(FieldConfigurationVersion, v))
+}
+
+// ConfigurationVersionIn applies the In predicate on the "configuration_version" field.
+func ConfigurationVersionIn(vs ...int64) predicate.RelayProvider {
+	return predicate.RelayProvider(sql.FieldIn(FieldConfigurationVersion, vs...))
+}
+
+// ConfigurationVersionNotIn applies the NotIn predicate on the "configuration_version" field.
+func ConfigurationVersionNotIn(vs ...int64) predicate.RelayProvider {
+	return predicate.RelayProvider(sql.FieldNotIn(FieldConfigurationVersion, vs...))
+}
+
+// ConfigurationVersionGT applies the GT predicate on the "configuration_version" field.
+func ConfigurationVersionGT(v int64) predicate.RelayProvider {
+	return predicate.RelayProvider(sql.FieldGT(FieldConfigurationVersion, v))
+}
+
+// ConfigurationVersionGTE applies the GTE predicate on the "configuration_version" field.
+func ConfigurationVersionGTE(v int64) predicate.RelayProvider {
+	return predicate.RelayProvider(sql.FieldGTE(FieldConfigurationVersion, v))
+}
+
+// ConfigurationVersionLT applies the LT predicate on the "configuration_version" field.
+func ConfigurationVersionLT(v int64) predicate.RelayProvider {
+	return predicate.RelayProvider(sql.FieldLT(FieldConfigurationVersion, v))
+}
+
+// ConfigurationVersionLTE applies the LTE predicate on the "configuration_version" field.
+func ConfigurationVersionLTE(v int64) predicate.RelayProvider {
+	return predicate.RelayProvider(sql.FieldLTE(FieldConfigurationVersion, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

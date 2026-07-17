@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -52,7 +54,7 @@ func seedEventsFixture(t *testing.T, env *fullTestEnv) seededEventActors {
 		SetObservedStartAt(time.Now().Add(-29 * time.Minute).UTC()).
 		SetObservedEndAt(time.Now().Add(-29 * time.Minute).UTC()).
 		SetCommitCheckpointID(cp.ID).
-		SetRawSourcePath("/Users/admin/.claude/projects/user-bound.jsonl").
+		SetRawSourcePath("/synthetic/users/alice/.claude/projects/user-bound.jsonl").
 		SetRawSourceLocator("line:10").
 		SetRawPayload(map[string]any{"kind": "assistant", "scope": "user-bound"}).
 		SaveX(ctx)
@@ -69,7 +71,7 @@ func seedEventsFixture(t *testing.T, env *fullTestEnv) seededEventActors {
 		SetCreditUsage(1.2).
 		SetObservedStartAt(time.Now().Add(-20 * time.Minute).UTC()).
 		SetObservedEndAt(time.Now().Add(-20 * time.Minute).UTC()).
-		SetRawSourcePath("/Users/admin/Library/Application Support/kiro-cli/data.sqlite3").
+		SetRawSourcePath("/synthetic/users/alice/Library/Application Support/kiro-cli/data.sqlite3").
 		SetRawSourceLocator("conversation:1").
 		SetRawPayload(map[string]any{"kind": "turn", "scope": "user-unbound"}).
 		SaveX(ctx)
@@ -87,7 +89,7 @@ func seedEventsFixture(t *testing.T, env *fullTestEnv) seededEventActors {
 		SetOutputTokens(11).
 		SetObservedStartAt(time.Now().Add(-10 * time.Minute).UTC()).
 		SetObservedEndAt(time.Now().Add(-10 * time.Minute).UTC()).
-		SetRawSourcePath("/Users/admin/.codex/sessions/admin.jsonl").
+		SetRawSourcePath("/synthetic/users/bob/.codex/sessions/admin.jsonl").
 		SaveX(ctx)
 
 	return seededEventActors{
@@ -97,21 +99,107 @@ func seedEventsFixture(t *testing.T, env *fullTestEnv) seededEventActors {
 	}
 }
 
-func TestEventsListScopesNonAdminToOwnRows(t *testing.T) {
+func TestEventsListDefaultsToTwenty(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	createFullNonAdminToken(t, env)
+	seedEventsFixture(t, env)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/events", nil)
+	data := requireEventsListData(t, w)
+	if got := int(data["page_size"].(float64)); got != 20 {
+		t.Fatalf("page_size = %d, want 20", got)
+	}
+	if got := int(data["page"].(float64)); got != 0 {
+		t.Fatalf("page = %d, want 0", got)
+	}
+}
+
+func TestEventsListClampsLimitToOneHundred(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	createFullNonAdminToken(t, env)
+	seedEventsFixture(t, env)
+
+	for _, limit := range []string{"101", "1000"} {
+		t.Run("limit="+limit, func(t *testing.T) {
+			w := doFullRequest(env, http.MethodGet, "/api/v1/events?limit="+limit, nil)
+			data := requireEventsListData(t, w)
+			if got := int(data["page_size"].(float64)); got != 100 {
+				t.Fatalf("page_size = %d, want 100", got)
+			}
+			if got := int(data["page"].(float64)); got != 0 {
+				t.Fatalf("page = %d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestEventsListNormalizesInvalidAndNegativePaging(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	createFullNonAdminToken(t, env)
+	seedEventsFixture(t, env)
+
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "zero limit and negative offset", query: "limit=0&offset=-20"},
+		{name: "invalid limit and offset", query: "limit=invalid&offset=invalid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := doFullRequest(env, http.MethodGet, "/api/v1/events?"+tt.query, nil)
+			data := requireEventsListData(t, w)
+			if got := int(data["page_size"].(float64)); got != 20 {
+				t.Fatalf("page_size = %d, want 20", got)
+			}
+			if got := int(data["page"].(float64)); got != 0 {
+				t.Fatalf("page = %d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestEventsListPreservesZeroBasedPageMetadata(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	createFullNonAdminToken(t, env)
+	seedEventsFixture(t, env)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/events?limit=20&offset=40", nil)
+	data := requireEventsListData(t, w)
+	if got := int(data["page_size"].(float64)); got != 20 {
+		t.Fatalf("page_size = %d, want 20", got)
+	}
+	if got := int(data["page"].(float64)); got != 2 {
+		t.Fatalf("page = %d, want 2", got)
+	}
+}
+
+func TestEventsListOmitsRawPayloadAndRegularUsername(t *testing.T) {
 	t.Parallel()
 
 	env := setupFullTestEnv(t)
 	nonAdminToken := createFullNonAdminToken(t, env)
 	actors := seedEventsFixture(t, env)
 
-	path := fmt.Sprintf("/api/v1/events?from=%s&to=%s&user_id=%d", time.Now().Add(-24*time.Hour).UTC().Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339), actors.adminUserID)
-	w := doFullRequestWithToken(env, http.MethodGet, path, nil, nonAdminToken)
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	adminData := requireEventsListData(t, doFullRequest(env, http.MethodGet, "/api/v1/events", nil))
+	for _, raw := range adminData["items"].([]interface{}) {
+		row := raw.(map[string]interface{})
+		if _, ok := row["raw_payload"]; ok {
+			t.Fatalf("admin list unexpectedly exposes raw_payload: %+v", row)
+		}
 	}
 
-	resp := parseFullResponse(t, w)
-	data := resp["data"].(map[string]interface{})
+	path := fmt.Sprintf("/api/v1/events?from=%s&to=%s&user_id=%d", time.Now().Add(-24*time.Hour).UTC().Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339), actors.adminUserID)
+	w := doFullRequestWithToken(env, http.MethodGet, path, nil, nonAdminToken)
+	data := requireEventsListData(t, w)
 	if got := int(data["total"].(float64)); got != 2 {
 		t.Fatalf("total = %d, want 2", got)
 	}
@@ -127,7 +215,19 @@ func TestEventsListScopesNonAdminToOwnRows(t *testing.T) {
 		if _, ok := row["username"]; ok {
 			t.Fatalf("non-admin response unexpectedly exposes username: %+v", row)
 		}
+		if _, ok := row["raw_payload"]; ok {
+			t.Fatalf("non-admin list unexpectedly exposes raw_payload: %+v", row)
+		}
 	}
+}
+
+func requireEventsListData(t *testing.T, w *httptest.ResponseRecorder) map[string]interface{} {
+	t.Helper()
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	return parseFullResponse(t, w)["data"].(map[string]interface{})
 }
 
 func TestEventsUsersSearchAdminOnly(t *testing.T) {
@@ -171,7 +271,7 @@ func TestEventsUsersSearchReturnsUsersWithEventsForAdmin(t *testing.T) {
 	}
 }
 
-func TestEventDetailReturnsRawFieldsOnlyForAdmin(t *testing.T) {
+func TestEventDetailPreservesAdminPayloadAndRegularRedaction(t *testing.T) {
 	t.Parallel()
 
 	env := setupFullTestEnv(t)
@@ -187,12 +287,6 @@ func TestEventDetailReturnsRawFieldsOnlyForAdmin(t *testing.T) {
 		t.Fatalf("user status = %d, want 200, body=%s", userResp.Code, userResp.Body.String())
 	}
 	userData := parseFullResponse(t, userResp)["data"].(map[string]interface{})
-	if _, ok := userData["raw_source_path"]; ok {
-		t.Fatalf("regular user detail unexpectedly exposes raw_source_path: %+v", userData)
-	}
-	if _, ok := userData["raw_payload"]; ok {
-		t.Fatalf("regular user detail unexpectedly exposes raw_payload: %+v", userData)
-	}
 	matchedPRs := userData["matched_prs"].([]interface{})
 	if len(matchedPRs) != 0 {
 		t.Fatalf("matched_prs = %d, want 0 for fixture without PR snapshot", len(matchedPRs))
@@ -203,12 +297,28 @@ func TestEventDetailReturnsRawFieldsOnlyForAdmin(t *testing.T) {
 		t.Fatalf("admin status = %d, want 200, body=%s", adminResp.Code, adminResp.Body.String())
 	}
 	adminData := parseFullResponse(t, adminResp)["data"].(map[string]interface{})
-	if adminData["raw_source_path"] != "/Users/admin/.claude/projects/user-bound.jsonl" {
-		t.Fatalf("raw_source_path = %v, want full path", adminData["raw_source_path"])
+
+	adminOnlyFields := []struct {
+		name string
+		want interface{}
+	}{
+		{name: "username", want: "covuser"},
+		{name: "raw_source_path", want: "/synthetic/users/alice/.claude/projects/user-bound.jsonl"},
+		{name: "raw_source_locator", want: "line:10"},
+		{name: "raw_payload", want: map[string]interface{}{"kind": "assistant", "scope": "user-bound"}},
 	}
-	rawPayload := adminData["raw_payload"].(map[string]interface{})
-	if rawPayload["scope"] != "user-bound" {
-		t.Fatalf("raw_payload.scope = %v, want user-bound", rawPayload["scope"])
+	for _, field := range adminOnlyFields {
+		if _, ok := userData[field.name]; ok {
+			t.Errorf("regular user detail unexpectedly exposes %s: %+v", field.name, userData)
+		}
+		got, ok := adminData[field.name]
+		if !ok {
+			t.Errorf("admin detail omits %s: %+v", field.name, adminData)
+			continue
+		}
+		if !reflect.DeepEqual(got, field.want) {
+			t.Errorf("admin detail %s = %#v, want %#v", field.name, got, field.want)
+		}
 	}
 }
 
