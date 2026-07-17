@@ -245,10 +245,12 @@ not trigger this refresh. The offboarding view consumes the bounded
 `{items,page,page_size,total}` contract, resets search to page 1, clamps an empty
 last page, and keeps exact normalized-email confirmation before disable.
 
-## Team Usage Snapshot Read Model
+## Team Usage Read Models
 
-`backend/internal/teamusage` owns one shared authorized snapshot generation for the
-split summary, split trend, split members, split organization, and the one-release compatibility overview adapter:
+`backend/internal/teamusage` owns the common authorization and cache guardrails for
+two current read-model lanes. Summary has an independent typed origin and cache;
+split trend, split members, split organization, and the one-release compatibility
+overview adapter temporarily retain the shared authorized overview generation:
 
 - Every request normalizes and validates start/end dates, `day|hour` granularity,
   and an IANA timezone, then resolves the current representative scope and enabled
@@ -256,18 +258,22 @@ split summary, split trend, split members, split organization, and the one-relea
   checked the current token-revocation floor. A cache hit therefore never bypasses
   current authorization, scope version, actor role, Directory Sync run, or
   provider configuration checks.
-- The Redis key hashes deployment namespace, provider id and persisted
+- Each Redis key hashes deployment namespace, provider id and persisted
   `configuration_version`, actor id, opaque scope version, a deterministic hash of
   the complete effective scope, and the normalized range/granularity/timezone.
+  Summary and overview use distinct versioned key spaces, so neither payload can
+  satisfy the other lane.
   Legacy `page` and `page_size` remain accepted but ineffective and do not create
   separate cache generations.
-- The value contains only a schema-versioned reconstructible `OverviewResponse`
-  generation plus its generation/fresh/stale timestamps. It contains no request
-  id, JWT, token-revocation state, provider credential, quota fact, or mutation
-  decision. The summary and trend handlers create new request ids after projection,
-  so request-local metadata is never shared through Redis. The current envelope is
-  schema v2; pre-bound v1 values are rejected and rebuilt authoritatively so they
-  cannot bypass the comparison limit or omit its truncation metadata.
+- A Summary value contains only a typed normalized window and summary aggregate.
+  An overview value contains the schema-versioned reconstructible
+  `OverviewResponse` used by trend, members, organization, and compatibility
+  projections. Neither contains a request id, JWT, token-revocation state,
+  provider credential, quota fact, or mutation decision. Request middleware owns
+  the validated request id, and each handler copies that same id into its response
+  header and DTO after projection. The overview envelope is schema v2; pre-bound
+  v1 values are rejected and rebuilt authoritatively so they cannot bypass the
+  comparison limit or omit its truncation metadata.
 - Values are fresh for 48-54 seconds and have a hard stale deadline 4-4.5 minutes
   after generation, both using 10-20 percent jitter below the documented 60-second
   and five-minute maxima. Only an eligible transient origin failure may reuse a
@@ -277,14 +283,18 @@ split summary, split trend, split members, split organization, and the one-relea
 - Identical reads collapse through a waiter-counted local flight and a
   token-protected 30-second Redis lease. Redis read, write, lease, or release
   failure bypasses the optimization and performs the bounded authoritative read.
-- Selected-window `range_actual_cost` and `range_total_tokens` are aggregated from
-  the requested per-member trend window because the upstream batch endpoint has no
-  range input. Batch stats supply only the explicitly separate today and historical
-  comparison totals. The trend projection preserves the complete independent team
-  total, limits top members and department comparisons to 12, and reports comparison
-  truncation metadata. Summary, trend, members, organization, and compatibility overview call the same
-  internal snapshot service and never make internal HTTP calls or perform a second
-  Relay aggregate.
+- Summary calls only the Relay summary capability with the normalized range,
+  granularity, and timezone. Complete per-member range fields produce selected-window
+  totals; missing range fields produce null range totals and the section-local
+  `range_aggregation_unavailable` reason while retaining member counts plus today
+  and historical comparison totals. Summary does not call trend capability, rank
+  members, project chart series, or construct an organization tree.
+- The retained overview generation aggregates selected-window
+  `range_actual_cost` and `range_total_tokens` from the requested per-member trend
+  window. Its trend projection preserves the complete independent team total,
+  limits top members and department comparisons to 12, and reports comparison
+  truncation metadata. Trend, members, organization, and compatibility overview
+  call that same internal snapshot service and never make internal HTTP calls.
 - The members projection re-ranks the complete snapshot by selected-window token
   total descending and stable subject identity, assigns global ranks before slicing,
   defaults to 50 rows, and rejects limits above 100. Its response contains only the
@@ -684,7 +694,7 @@ flowchart LR
 | Read-model coordination | `backend/internal/readcache` | Shared Redis value and token-protected lease adapter, waiter-counted cancellation-aware process-local flight, and context-aware sleep; domain modules retain their own key dimensions, freshness windows, payload validation, fallback eligibility, and invalidation policy |
 | Work items | `backend/internal/workitems` | Auth-scoped pending work counters, the PostgreSQL UUID revision, and the namespace/revision/actor/role-isolated Redis read model with bounded authoritative fallback; counts include best-effort relay-derived personal AI access setup plus locally derived quota reset and count-only injected Directory offboarding dependencies |
 | Administrator users | `backend/internal/adminusers`, `backend/internal/adminsubscription` | Source-scoped effective-department SQL and effective-subtree-to-user eligibility shared by targets, count/page, page-local enrichment, bounded options, immediate-child navigation, and summaries; one current-filter target reader preserves list, persisted-job, and compatibility-batch predicate parity |
-| Representative scope and team usage | `backend/internal/representativescope`, `backend/internal/readcache`, `backend/internal/teamusage` | Resolve representative subtree scope from current directory metadata and member-department memberships, derive and twice-check opaque scope versions, reuse namespace/provider/actor/scope/range-isolated Redis team snapshots with bounded stale-if-error and authoritative fallback, serve split summary, bounded split trend, snapshot-bound paged members, shallow paged organization branches, and the legacy overview adapter from one generation, enforce delegated subject visibility and ancestor-only multiplier policy, and persist local `team_usage_rate_multiplier_audits` |
+| Representative scope and team usage | `backend/internal/representativescope`, `backend/internal/readcache`, `backend/internal/teamusage` | Resolve representative subtree scope from current directory metadata and member-department memberships, derive and twice-check opaque scope versions, reuse namespace/provider/actor/scope/range-isolated Redis read models with bounded stale-if-error and authoritative fallback, serve Summary from its independent aggregate lane while bounded trend, snapshot-bound paged members, shallow paged organization branches, and the legacy adapter temporarily share the overview generation, enforce delegated subject visibility and ancestor-only multiplier policy, and persist local `team_usage_rate_multiplier_audits` |
 | HTTP runtime and telemetry | `backend/internal/httpclient`, `backend/internal/health`, `backend/internal/telemetry`, `backend/internal/middleware` | Bounded reusable downstream transports, parallel deadline-bounded readiness, validated request IDs, normalized request/Relay logs and Prometheus histograms, database/Redis pool collectors, closed application-cache events, fixed-memory Web Vitals aggregation, and the internal-only scrape registry |
 | SCM integration | `backend/internal/scm`, `backend/internal/webhook`, `backend/internal/prsync` | SCM provider abstraction, webhook ingestion, PR synchronization, and active-PR usage snapshot refresh |
 | Repo and efficiency | `backend/internal/repo`, `backend/internal/efficiency` | Explicit repo registration, read-only hook eligibility resolution, deterministic repo binding from configured SCM metadata, bounded SQL inventory aggregation, transactionally versioned optional Redis inventory reads, PR labeling, and dashboard-facing summary inputs |

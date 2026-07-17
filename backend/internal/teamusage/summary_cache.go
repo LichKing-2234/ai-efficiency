@@ -18,23 +18,48 @@ import (
 	"github.com/google/uuid"
 )
 
-const snapshotCacheSchemaVersion = 2
+const (
+	snapshotCacheSchemaVersion = 2
+	summaryCacheSchemaVersion  = 1
+)
 
 var snapshotCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
 type SnapshotCache struct {
-	store   readcache.Store
-	options SnapshotCacheOptions
-	flights readcache.FlightGroup[*SnapshotCacheResult]
+	overview *readModelCache[*OverviewResponse]
+	summary  *readModelCache[*SummarySnapshot]
 }
 
-type snapshotValueEnvelope struct {
-	SchemaVersion int               `json:"schema_version"`
-	GeneratedAt   time.Time         `json:"generated_at"`
-	FreshUntil    time.Time         `json:"fresh_until"`
-	StaleUntil    time.Time         `json:"stale_until"`
-	Snapshot      *OverviewResponse `json:"snapshot"`
+type readModelCache[T any] struct {
+	store         readcache.Store
+	options       SnapshotCacheOptions
+	keyPrefix     string
+	schemaVersion int
+	validate      func(T) bool
+	flights       readcache.FlightGroup[*readModelCacheResult[T]]
 }
+
+type readModelCacheResult[T any] struct {
+	Snapshot  T
+	Freshness SnapshotFreshness
+}
+
+type readModelOriginLoadResult[T any] struct {
+	Snapshot    T
+	SnapshotErr error
+}
+
+type readModelOriginLoader[T any] func(context.Context) (readModelOriginLoadResult[T], error)
+
+type readModelValueEnvelope[T any] struct {
+	SchemaVersion int       `json:"schema_version"`
+	GeneratedAt   time.Time `json:"generated_at"`
+	FreshUntil    time.Time `json:"fresh_until"`
+	StaleUntil    time.Time `json:"stale_until"`
+	Snapshot      T         `json:"snapshot"`
+}
+
+type snapshotValueEnvelope = readModelValueEnvelope[*OverviewResponse]
 
 type snapshotCacheKeyDimensions struct {
 	Namespace       string `json:"namespace"`
@@ -57,7 +82,16 @@ func NewSnapshotCache(store readcache.Store, options SnapshotCacheOptions) (*Sna
 		return nil, fmt.Errorf("invalid Redis namespace %q", options.Namespace)
 	}
 	applySnapshotCacheDefaults(&options)
-	return &SnapshotCache{store: store, options: options}, nil
+	return &SnapshotCache{
+		overview: &readModelCache[*OverviewResponse]{
+			store: store, options: options, keyPrefix: "team-usage-snapshot",
+			schemaVersion: snapshotCacheSchemaVersion, validate: validOverviewSnapshot,
+		},
+		summary: &readModelCache[*SummarySnapshot]{
+			store: store, options: options, keyPrefix: "team-usage-summary",
+			schemaVersion: summaryCacheSchemaVersion, validate: validSummarySnapshot,
+		},
+	}, nil
 }
 
 func applySnapshotCacheDefaults(options *SnapshotCacheOptions) {
@@ -91,6 +125,14 @@ func applySnapshotCacheDefaults(options *SnapshotCacheOptions) {
 }
 
 func snapshotCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
+	return readModelCacheKey(namespace, "team-usage-snapshot", key)
+}
+
+func summaryCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
+	return readModelCacheKey(namespace, "team-usage-summary", key)
+}
+
+func readModelCacheKey(namespace, keyPrefix string, key SnapshotCacheKey) (string, error) {
 	dimensions := snapshotCacheKeyDimensions{
 		Namespace: namespace, ProviderID: key.ProviderID, ProviderVersion: key.ProviderVersion,
 		ActorID: key.ActorID, ScopeVersion: key.ScopeVersion, ScopeHash: key.ScopeHash,
@@ -102,7 +144,7 @@ func snapshotCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
 		return "", fmt.Errorf("encode team usage snapshot cache dimensions: %w", err)
 	}
 	digest := sha256.Sum256(encoded)
-	return fmt.Sprintf("ae:%s:team-usage-snapshot:v1:%x", namespace, digest), nil
+	return fmt.Sprintf("ae:%s:%s:v1:%x", namespace, keyPrefix, digest), nil
 }
 
 func effectiveScopeHash(scope *representativescope.Scope) (string, error) {
@@ -118,11 +160,42 @@ func effectiveScopeHash(scope *representativescope.Scope) (string, error) {
 }
 
 func (c *SnapshotCache) GetOrLoad(ctx context.Context, key SnapshotCacheKey, loader SnapshotOriginLoader) (*SnapshotCacheResult, error) {
-	if c == nil || c.store == nil {
+	if c == nil || c.overview == nil {
 		return nil, fmt.Errorf("team usage snapshot cache is not configured")
 	}
 	if loader == nil {
 		return nil, fmt.Errorf("team usage snapshot origin loader is required")
+	}
+	result, err := c.overview.getOrLoad(ctx, key, func(ctx context.Context) (readModelOriginLoadResult[*OverviewResponse], error) {
+		loaded, err := loader(ctx)
+		return readModelOriginLoadResult[*OverviewResponse]{Snapshot: loaded.Snapshot, SnapshotErr: loaded.SnapshotErr}, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &SnapshotCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
+}
+
+func (c *SnapshotCache) GetSummaryOrLoad(ctx context.Context, key SnapshotCacheKey, loader SummaryOriginLoader) (*SummaryCacheResult, error) {
+	if c == nil || c.summary == nil {
+		return nil, fmt.Errorf("team usage summary cache is not configured")
+	}
+	if loader == nil {
+		return nil, fmt.Errorf("team usage summary origin loader is required")
+	}
+	result, err := c.summary.getOrLoad(ctx, key, func(ctx context.Context) (readModelOriginLoadResult[*SummarySnapshot], error) {
+		loaded, err := loader(ctx)
+		return readModelOriginLoadResult[*SummarySnapshot]{Snapshot: loaded.Snapshot, SnapshotErr: loaded.SnapshotErr}, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &SummaryCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
+}
+
+func (c *readModelCache[T]) getOrLoad(ctx context.Context, key SnapshotCacheKey, loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
+	if c == nil || c.store == nil {
+		return nil, fmt.Errorf("team usage read model cache is not configured")
 	}
 	if err := validateSnapshotCacheKey(key); err != nil {
 		return nil, err
@@ -130,11 +203,11 @@ func (c *SnapshotCache) GetOrLoad(ctx context.Context, key SnapshotCacheKey, loa
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	encodedKey, err := snapshotCacheKey(c.options.Namespace, key)
+	encodedKey, err := readModelCacheKey(c.options.Namespace, c.keyPrefix, key)
 	if err != nil {
 		return nil, err
 	}
-	return c.flights.Do(ctx, encodedKey, c.options.RefreshTimeout, func(sharedCtx context.Context) (*SnapshotCacheResult, error) {
+	return c.flights.Do(ctx, encodedKey, c.options.RefreshTimeout, func(sharedCtx context.Context) (*readModelCacheResult[T], error) {
 		return c.loadWithLease(sharedCtx, encodedKey, loader)
 	})
 }
@@ -151,8 +224,8 @@ func validateSnapshotCacheKey(key SnapshotCacheKey) error {
 	return nil
 }
 
-func (c *SnapshotCache) loadWithLease(ctx context.Context, key string, loader SnapshotOriginLoader) (*SnapshotCacheResult, error) {
-	var stale *snapshotValueEnvelope
+func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
+	var stale *readModelValueEnvelope[T]
 	for {
 		envelope, found, err := c.read(ctx, key)
 		if err != nil {
@@ -161,7 +234,7 @@ func (c *SnapshotCache) loadWithLease(ctx context.Context, key string, loader Sn
 		if found {
 			now := c.now()
 			if !now.After(envelope.FreshUntil) {
-				return snapshotResultFromEnvelope(envelope, "fresh", "ok"), nil
+				return readModelResultFromEnvelope(envelope, "fresh", "ok"), nil
 			}
 			if !now.After(envelope.StaleUntil) {
 				stale = envelope
@@ -186,7 +259,7 @@ func (c *SnapshotCache) loadWithLease(ctx context.Context, key string, loader Sn
 			if found {
 				now := c.now()
 				if !now.After(envelope.FreshUntil) {
-					return snapshotResultFromEnvelope(envelope, "fresh", "ok"), nil
+					return readModelResultFromEnvelope(envelope, "fresh", "ok"), nil
 				}
 				if !now.After(envelope.StaleUntil) {
 					stale = envelope
@@ -208,12 +281,12 @@ func (c *SnapshotCache) loadWithLease(ctx context.Context, key string, loader Sn
 			}
 		}
 		if stale != nil && !c.now().After(stale.StaleUntil) {
-			return snapshotResultFromEnvelope(stale, "stale", "error"), nil
+			return readModelResultFromEnvelope(stale, "stale", "error"), nil
 		}
 	}
 }
 
-func (c *SnapshotCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, token string, stale *snapshotValueEnvelope, loader SnapshotOriginLoader) (*SnapshotCacheResult, error) {
+func (c *readModelCache[T]) loadAsLeaseHolder(ctx context.Context, key, leaseKey, token string, stale *readModelValueEnvelope[T], loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
 	defer c.releaseLease(leaseKey, token)
 
 	envelope, found, err := c.read(ctx, key)
@@ -223,7 +296,7 @@ func (c *SnapshotCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, to
 	if found {
 		now := c.now()
 		if !now.After(envelope.FreshUntil) {
-			return snapshotResultFromEnvelope(envelope, "fresh", "ok"), nil
+			return readModelResultFromEnvelope(envelope, "fresh", "ok"), nil
 		}
 		if !now.After(envelope.StaleUntil) {
 			stale = envelope
@@ -232,7 +305,7 @@ func (c *SnapshotCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, to
 	return c.loadAuthoritative(ctx, key, stale, loader, true)
 }
 
-func (c *SnapshotCache) loadAuthoritative(ctx context.Context, key string, stale *snapshotValueEnvelope, loader SnapshotOriginLoader, write bool) (*SnapshotCacheResult, error) {
+func (c *readModelCache[T]) loadAuthoritative(ctx context.Context, key string, stale *readModelValueEnvelope[T], loader readModelOriginLoader[T], write bool) (*readModelCacheResult[T], error) {
 	loaded, err := loader(ctx)
 	if err != nil {
 		return nil, err
@@ -244,9 +317,9 @@ func (c *SnapshotCache) loadAuthoritative(ctx context.Context, key string, stale
 		if stale == nil || c.now().After(stale.StaleUntil) {
 			return nil, loaded.SnapshotErr
 		}
-		return snapshotResultFromEnvelope(stale, "stale", "error"), nil
+		return readModelResultFromEnvelope(stale, "stale", "error"), nil
 	}
-	if !validOverviewSnapshot(loaded.Snapshot) {
+	if c.validate == nil || !c.validate(loaded.Snapshot) {
 		return nil, fmt.Errorf("team usage origin returned an invalid snapshot")
 	}
 
@@ -261,11 +334,11 @@ func (c *SnapshotCache) loadAuthoritative(ctx context.Context, key string, stale
 			_ = c.set(ctx, key, encoded, ttl)
 		}
 	}
-	return snapshotResultFromEnvelope(envelope, "miss", "ok"), nil
+	return readModelResultFromEnvelope(envelope, "miss", "ok"), nil
 }
 
-func (c *SnapshotCache) newEnvelope(snapshot *OverviewResponse) *snapshotValueEnvelope {
-	generatedAt := c.now().UTC()
+func (c *readModelCache[T]) newEnvelope(snapshot T) *readModelValueEnvelope[T] {
+	generatedAt := c.now()
 	random := c.options.RandFloat64()
 	if random < 0 {
 		random = 0
@@ -275,14 +348,16 @@ func (c *SnapshotCache) newEnvelope(snapshot *OverviewResponse) *snapshotValueEn
 	jitter := 0.1 + 0.1*random
 	freshWindow := time.Minute - time.Duration(jitter*float64(time.Minute))
 	staleWindow := 5*time.Minute - time.Duration(jitter*float64(5*time.Minute))
-	return &snapshotValueEnvelope{
-		SchemaVersion: snapshotCacheSchemaVersion,
-		GeneratedAt:   generatedAt, FreshUntil: generatedAt.Add(freshWindow), StaleUntil: generatedAt.Add(staleWindow),
-		Snapshot: snapshot,
+	return &readModelValueEnvelope[T]{
+		SchemaVersion: c.schemaVersion,
+		GeneratedAt:   generatedAt,
+		FreshUntil:    generatedAt.Add(freshWindow),
+		StaleUntil:    generatedAt.Add(staleWindow),
+		Snapshot:      snapshot,
 	}
 }
 
-func (c *SnapshotCache) read(ctx context.Context, key string) (*snapshotValueEnvelope, bool, error) {
+func (c *readModelCache[T]) read(ctx context.Context, key string) (*readModelValueEnvelope[T], bool, error) {
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.CommandTimeout)
 	defer cancel()
 	value, err := c.store.Get(commandCtx, key)
@@ -295,8 +370,8 @@ func (c *SnapshotCache) read(ctx context.Context, key string) (*snapshotValueEnv
 
 	decoder := json.NewDecoder(bytes.NewReader(value))
 	decoder.DisallowUnknownFields()
-	var envelope snapshotValueEnvelope
-	if err := decoder.Decode(&envelope); err != nil || !validSnapshotEnvelope(&envelope) {
+	var envelope readModelValueEnvelope[T]
+	if err := decoder.Decode(&envelope); err != nil || !c.validEnvelope(&envelope) {
 		return nil, false, nil
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
@@ -305,8 +380,8 @@ func (c *SnapshotCache) read(ctx context.Context, key string) (*snapshotValueEnv
 	return &envelope, true, nil
 }
 
-func validSnapshotEnvelope(envelope *snapshotValueEnvelope) bool {
-	if envelope == nil || envelope.SchemaVersion != snapshotCacheSchemaVersion || envelope.GeneratedAt.IsZero() {
+func (c *readModelCache[T]) validEnvelope(envelope *readModelValueEnvelope[T]) bool {
+	if envelope == nil || envelope.SchemaVersion != c.schemaVersion || envelope.GeneratedAt.IsZero() {
 		return false
 	}
 	freshWindow := envelope.FreshUntil.Sub(envelope.GeneratedAt)
@@ -315,23 +390,31 @@ func validSnapshotEnvelope(envelope *snapshotValueEnvelope) bool {
 		staleWindow < 4*time.Minute || staleWindow > 4*time.Minute+30*time.Second || staleWindow <= freshWindow {
 		return false
 	}
-	return validOverviewSnapshot(envelope.Snapshot)
+	return c.validate != nil && c.validate(envelope.Snapshot)
 }
 
 func validOverviewSnapshot(snapshot *OverviewResponse) bool {
 	if snapshot == nil || !snapshot.Configured || !snapshot.IsRepresentative || strings.TrimSpace(snapshot.Summary.UnitLabel) == "" {
 		return false
 	}
-	if strings.TrimSpace(snapshot.Window.StartDate) == "" || strings.TrimSpace(snapshot.Window.EndDate) == "" ||
-		strings.TrimSpace(snapshot.Window.Granularity) == "" || strings.TrimSpace(snapshot.Window.Timezone) == "" {
+	if !validOverviewWindow(snapshot.Window) {
 		return false
 	}
 	return snapshot.TopMembers != nil && snapshot.TopMemberTrend.Series != nil && snapshot.DepartmentTrend.Series != nil &&
 		snapshot.Members != nil && snapshot.MemberTree != nil
 }
 
-func snapshotResultFromEnvelope(envelope *snapshotValueEnvelope, cacheStatus, sourceStatus string) *SnapshotCacheResult {
-	return &SnapshotCacheResult{
+func validSummarySnapshot(snapshot *SummarySnapshot) bool {
+	return snapshot != nil && validOverviewWindow(snapshot.Window) && strings.TrimSpace(snapshot.Summary.UnitLabel) != ""
+}
+
+func validOverviewWindow(window OverviewWindow) bool {
+	return strings.TrimSpace(window.StartDate) != "" && strings.TrimSpace(window.EndDate) != "" &&
+		strings.TrimSpace(window.Granularity) != "" && strings.TrimSpace(window.Timezone) != ""
+}
+
+func readModelResultFromEnvelope[T any](envelope *readModelValueEnvelope[T], cacheStatus, sourceStatus string) *readModelCacheResult[T] {
+	return &readModelCacheResult[T]{
 		Snapshot: envelope.Snapshot,
 		Freshness: SnapshotFreshness{
 			AsOf: envelope.GeneratedAt, FreshUntil: envelope.FreshUntil, StaleUntil: envelope.StaleUntil,
@@ -340,30 +423,30 @@ func snapshotResultFromEnvelope(envelope *snapshotValueEnvelope, cacheStatus, so
 	}
 }
 
-func (c *SnapshotCache) acquireLease(ctx context.Context, key, token string) (bool, error) {
+func (c *readModelCache[T]) acquireLease(ctx context.Context, key, token string) (bool, error) {
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.CommandTimeout)
 	defer cancel()
 	return c.store.TryAcquireLease(commandCtx, key, token, c.options.LeaseTTL)
 }
 
-func (c *SnapshotCache) leaseTTL(ctx context.Context, key string) (time.Duration, error) {
+func (c *readModelCache[T]) leaseTTL(ctx context.Context, key string) (time.Duration, error) {
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.CommandTimeout)
 	defer cancel()
 	return c.store.LeaseTTL(commandCtx, key)
 }
 
-func (c *SnapshotCache) set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+func (c *readModelCache[T]) set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.CommandTimeout)
 	defer cancel()
 	return c.store.Set(commandCtx, key, value, ttl)
 }
 
-func (c *SnapshotCache) releaseLease(key, token string) {
+func (c *readModelCache[T]) releaseLease(key, token string) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.options.ReleaseTimeout)
 	defer cancel()
 	_, _ = c.store.ReleaseLease(ctx, key, token)
 }
 
-func (c *SnapshotCache) now() time.Time {
+func (c *readModelCache[T]) now() time.Time {
 	return c.options.Now().UTC()
 }

@@ -2185,8 +2185,11 @@ func (s *sub2apiRelay) GetUsageDashboardForUser(ctx context.Context, relayUserID
 
 func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params TeamUsageSummaryParams) (map[int64]TeamUserUsageStats, error) {
 	payload, err := json.Marshal(map[string]any{
-		"user_ids": userIDs,
-		"timezone": strings.TrimSpace(params.Timezone),
+		"user_ids":    userIDs,
+		"start_date":  strings.TrimSpace(params.StartDate),
+		"end_date":    strings.TrimSpace(params.EndDate),
+		"granularity": strings.TrimSpace(params.Granularity),
+		"timezone":    strings.TrimSpace(params.Timezone),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("relay: batch user usage stats: marshal: %w", err)

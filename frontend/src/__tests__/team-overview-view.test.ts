@@ -918,6 +918,41 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(true)
   })
 
+  it('renders available summary values and its local warning while trend is delayed', async () => {
+    mockGetTeamUsageSummary.mockResolvedValue({
+      data: {
+        data: {
+          ...summaryFixture,
+          summary: {
+            ...summaryFixture.summary,
+            unavailable: true,
+            unavailable_reason: 'range_aggregation_unavailable',
+            range_actual_cost: null,
+            range_total_tokens: null,
+          },
+        },
+      },
+    } as any)
+    mockGetTeamUsageTrend.mockImplementation(() => new Promise(() => {}) as any)
+    const router = createTestRouter()
+    await router.push('/usage/team')
+    await router.isReady()
+
+    const wrapper = mount(TeamOverviewView, {
+      global: { plugins: [createPinia(), router] },
+    })
+    await flushPromises()
+
+    const summary = wrapper.get('[data-testid="team-overview-summary"]')
+    expect(summary.text()).toContain('Team members')
+    expect(summary.text()).toContain('3')
+    expect(summary.text()).toContain('Connected members')
+    expect(summary.text()).toContain('2')
+    expect(summary.text()).toContain('Selected range totals are temporarily unavailable.')
+    expect(wrapper.find('[data-testid="team-overview-trend-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(false)
+  })
+
   it('keeps successful summary and trend visible when organization root fails', async () => {
     mockGetTeamUsageOrganization.mockRejectedValue(new Error('synthetic organization failure'))
     const router = createTestRouter()

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,12 +15,15 @@ import (
 	"github.com/ai-efficiency/backend/internal/auth"
 	authpkg "github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/testdb"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	redis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -227,7 +231,7 @@ func TestTeamUsageSummaryReturnsFreshnessScopeAndUniqueRequestID(t *testing.T) {
 				Window: teamusage.OverviewWindow{
 					StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
 				},
-				Summary: teamusage.OverviewSummary{MemberCount: 2, RangeActualCost: &rangeCost, UnitLabel: "USD"},
+				Summary: teamusage.SummaryAggregate{MemberCount: 2, RangeActualCost: &rangeCost, UnitLabel: "USD"},
 			}, nil
 		},
 	})
@@ -288,6 +292,177 @@ func TestTeamUsageSummaryRequiresAuthentication(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("response = %d %s, want 401", rec.Code, rec.Body.String())
 	}
+}
+
+func TestTeamUsageSummaryIndependentFromTrendOverRealHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := testdb.Open(t)
+	client.RelayProvider.Create().
+		SetName("summary-http-relay").
+		SetDisplayName("Summary HTTP Relay").
+		SetBaseURL("https://relay.example.com").
+		SetRelayType("sub2api").
+		SetAdminAPIKey("test-admin-api-key").
+		SetDefaultModel("test-model").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(context.Background())
+
+	rangeAlice, rangeBob := 15.0, 30.0
+	tokensAlice, tokensBob := int64(1500), int64(4500)
+	releaseTrend := make(chan struct{})
+	defer close(releaseTrend)
+	provider := &teamUsageHTTPRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {
+				UserID: 1002, RangeActualCost: &rangeAlice, RangeTotalTokens: &tokensAlice,
+				TodayActualCost: 1, TotalActualCost: 10,
+			},
+			1003: {
+				UserID: 1003, RangeActualCost: &rangeBob, RangeTotalTokens: &tokensBob,
+				TodayActualCost: 2, TotalActualCost: 99,
+			},
+		},
+		trendStarted: make(chan struct{}, 1),
+		trendRelease: releaseTrend,
+	}
+	scope := &representativescope.Scope{
+		Version: "scope-http-summary", ActorUserID: 101, IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 102, DisplayName: "Alice", RelayUserID: handlerIntPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 103, DisplayName: "Bob", RelayUserID: handlerIntPtr(1003), Selectable: true},
+		},
+	}
+	server := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() {
+		if err := redisClient.Close(); err != nil {
+			t.Errorf("close test Redis client: %v", err)
+		}
+	})
+	cache, err := teamusage.NewSnapshotCache(
+		readcache.NewRedisStore(redisClient),
+		teamusage.SnapshotCacheOptions{Namespace: "summary-http-independent"},
+	)
+	if err != nil {
+		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	service, err := teamusage.NewService(
+		client,
+		teamUsageHTTPScopeResolver{scope: scope},
+		teamUsageHTTPProviderResolver{provider: provider},
+		nil,
+		teamusage.ServiceOptions{SnapshotCache: cache, CursorSecret: "test-summary-http-cursor-secret"},
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	router := gin.New()
+	router.Use(withAuthUser(101, "user"))
+	router.GET("/api/v1/user/team-usage/summary", NewTeamUsageHandler(service).Summary)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/user/team-usage/summary?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=Asia%2FShanghai",
+		nil,
+	)
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		router.ServeHTTP(response, request)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-provider.trendStarted:
+		t.Fatal("summary HTTP request reached trend provider")
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("summary HTTP request did not complete independently of trend provider")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s, want 200", response.Code, response.Body.String())
+	}
+	for _, expected := range []string{
+		`"member_count":2`, `"relay_member_count":2`, `"range_actual_cost":45`, `"range_total_tokens":6000`,
+		`"today_actual_cost":3`, `"total_actual_cost":109`, `"unit_label":"USD"`,
+	} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("summary body = %s, want %s", response.Body.String(), expected)
+		}
+	}
+	if provider.trendCalls.Load() != 0 {
+		t.Fatalf("trend calls = %d, want 0", provider.trendCalls.Load())
+	}
+
+	incompleteBob := provider.summaryStats[1003]
+	incompleteBob.RangeTotalTokens = nil
+	provider.summaryStats[1003] = incompleteBob
+	incompleteRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/user/team-usage/summary?start_date=2026-07-01&end_date=2026-07-08&granularity=day&timezone=Asia%2FShanghai",
+		nil,
+	)
+	incompleteResponse := httptest.NewRecorder()
+	router.ServeHTTP(incompleteResponse, incompleteRequest)
+	if incompleteResponse.Code != http.StatusOK {
+		t.Fatalf("incomplete range status = %d body = %s, want 200", incompleteResponse.Code, incompleteResponse.Body.String())
+	}
+	for _, expected := range []string{
+		`"unavailable":true`, `"unavailable_reason":"range_aggregation_unavailable"`,
+		`"range_actual_cost":null`, `"range_total_tokens":null`,
+		`"member_count":2`, `"relay_member_count":2`, `"today_actual_cost":3`, `"total_actual_cost":109`,
+	} {
+		if !strings.Contains(incompleteResponse.Body.String(), expected) {
+			t.Fatalf("incomplete range body = %s, want %s", incompleteResponse.Body.String(), expected)
+		}
+	}
+}
+
+type teamUsageHTTPScopeResolver struct {
+	scope *representativescope.Scope
+}
+
+func (r teamUsageHTTPScopeResolver) Resolve(context.Context, int) (*representativescope.Scope, error) {
+	return r.scope, nil
+}
+
+type teamUsageHTTPProviderResolver struct {
+	provider relay.Provider
+}
+
+func (r teamUsageHTTPProviderResolver) Resolve(context.Context, int) (relay.Provider, error) {
+	return r.provider, nil
+}
+
+type teamUsageHTTPRelayProvider struct {
+	relay.Provider
+	summaryStats map[int64]relay.TeamUserUsageStats
+	trendCalls   atomic.Int32
+	trendStarted chan struct{}
+	trendRelease <-chan struct{}
+}
+
+func (p *teamUsageHTTPRelayProvider) GetBatchUserUsageStats(context.Context, []int64, relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+	return p.summaryStats, nil
+}
+
+func (p *teamUsageHTTPRelayProvider) GetUsageTrendForUsers(ctx context.Context, _ []int64, _ relay.TeamMemberTrendParams) (map[int64][]relay.UsageTrendPoint, error) {
+	p.trendCalls.Add(1)
+	select {
+	case p.trendStarted <- struct{}{}:
+	default:
+	}
+	select {
+	case <-p.trendRelease:
+		return map[int64][]relay.UsageTrendPoint{}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func handlerIntPtr(value int) *int {
+	return &value
 }
 
 func TestTeamUsageTrendReturnsBoundedFreshnessScopeAndUniqueRequestID(t *testing.T) {
@@ -658,6 +833,29 @@ func TestTeamOverviewEmitsCompatibilityHeadersOnSuccessAndFailure(t *testing.T) 
 				t.Fatalf("compatibility headers = Deprecation %q Sunset %q Link %q", rec.Header().Get("Deprecation"), rec.Header().Get("Sunset"), rec.Header().Get("Link"))
 			}
 		})
+	}
+}
+
+func TestTeamOverviewOmitsUnavailableRangeTokenTotalForCompatibility(t *testing.T) {
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		overviewFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error) {
+			return &teamusage.OverviewResponse{
+				Configured:       true,
+				IsRepresentative: true,
+				Summary: teamusage.OverviewSummary{
+					Unavailable: true,
+					UnitLabel:   "USD",
+				},
+			}, nil
+		},
+	})
+
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/overview", env.token, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response = %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"range_total_tokens"`) {
+		t.Fatalf("compatibility response changed absent range token total to null: %s", rec.Body.String())
 	}
 }
 
