@@ -35,6 +35,10 @@ type allowedGroupLister interface {
 	ListAllowedGroupsForUser(ctx context.Context, userID int64) ([]relay.Group, error)
 }
 
+type versionedAllowedGroupLister interface {
+	ListAllowedGroupsForUser(ctx context.Context, providerID int, configurationVersion, userID int64) ([]relay.Group, error)
+}
+
 type Service struct {
 	entClient     *ent.Client
 	resolver      ProviderResolver
@@ -136,7 +140,7 @@ func (s *Service) ListProviders(ctx context.Context, req ListProvidersRequest) (
 		if err != nil {
 			return nil, fmt.Errorf("list user api keys for provider %d: %w", p.ID, err)
 		}
-		groups, err := s.summarizeGroups(ctx, rp, int64(*u.RelayUserID), u.Username, u.Email, keys)
+		groups, err := s.summarizeGroups(ctx, p, rp, int64(*u.RelayUserID), u.Username, u.Email, keys)
 		if err != nil {
 			return nil, fmt.Errorf("summarize provider %d groups: %w", p.ID, err)
 		}
@@ -255,12 +259,16 @@ func (s *Service) RegenerateGroupCredential(ctx context.Context, req RegenerateG
 	return toCreateResult(created), nil
 }
 
-func (s *Service) summarizeGroups(ctx context.Context, rp relay.Provider, relayUserID int64, username, email string, keys []relay.APIKey) ([]GroupCredentialSummary, error) {
-	lister, ok := rp.(allowedGroupLister)
-	if !ok {
+func (s *Service) summarizeGroups(ctx context.Context, provider *ent.RelayProvider, rp relay.Provider, relayUserID int64, username, email string, keys []relay.APIKey) ([]GroupCredentialSummary, error) {
+	var allowedGroups []relay.Group
+	var err error
+	if lister, ok := s.resolver.(versionedAllowedGroupLister); ok {
+		allowedGroups, err = lister.ListAllowedGroupsForUser(ctx, provider.ID, provider.ConfigurationVersion, relayUserID)
+	} else if lister, ok := rp.(allowedGroupLister); ok {
+		allowedGroups, err = lister.ListAllowedGroupsForUser(ctx, relayUserID)
+	} else {
 		return []GroupCredentialSummary{}, nil
 	}
-	allowedGroups, err := lister.ListAllowedGroupsForUser(ctx, relayUserID)
 	if err != nil {
 		return nil, fmt.Errorf("list allowed groups: %w", err)
 	}

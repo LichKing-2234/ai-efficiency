@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import QuotaResetApprovalSettings from '@/components/settings/QuotaResetApprovalSettings.vue'
 import { setLocale } from '@/i18n'
 
@@ -28,6 +29,7 @@ function deferred<T>() {
 }
 
 beforeEach(async () => {
+  setActivePinia(createPinia())
   setLocale('en-US')
   vi.clearAllMocks()
   const api = await import('@/api/quotaReset') as any
