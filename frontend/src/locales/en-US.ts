@@ -321,6 +321,7 @@ const enUS = {
   'teamUsage.organizationView': 'Organization View',
   'teamUsage.scopeTooLarge': 'Team usage is unavailable for this scope size.',
   'teamUsage.unavailable': 'Team usage is temporarily unavailable.',
+  'teamUsage.multiplierUnavailable': 'Multiplier unavailable',
   'teamUsage.summaryUnavailable': 'Selected range totals are temporarily unavailable.',
   'teamUsage.updating': 'Updating team usage...',
   'teamUsage.noScope': 'No delegated team scope',

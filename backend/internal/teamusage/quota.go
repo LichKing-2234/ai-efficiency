@@ -1,26 +1,42 @@
 package teamusage
 
 type SubscriptionInput struct {
-	GroupID                 string
-	GroupName               string
-	Platform                string
-	SubscriptionStatus      string
-	GroupDefaultMultiplier  *float64
-	SystemDefaultMultiplier float64
-	UserMultiplier          *float64
-	DailyLimitUSD           *float64
-	WeeklyLimitUSD          *float64
-	MonthlyLimitUSD         *float64
-	DailyUsageUSD           float64
-	WeeklyUsageUSD          float64
-	MonthlyUsageUSD         float64
-	UsageValueBasis         string
-	Editable                bool
-	EditableReason          *string
+	GroupID                   string
+	GroupName                 string
+	Platform                  string
+	SubscriptionStatus        string
+	GroupDefaultMultiplier    *float64
+	SystemDefaultMultiplier   float64
+	UserMultiplier            *float64
+	DailyLimitUSD             *float64
+	WeeklyLimitUSD            *float64
+	MonthlyLimitUSD           *float64
+	DailyUsageUSD             float64
+	WeeklyUsageUSD            float64
+	MonthlyUsageUSD           float64
+	UsageValueBasis           string
+	Editable                  bool
+	EditableReason            *string
+	MultiplierMetadataStatus  string
+	MultiplierMetadataMessage *string
 }
 
 func BuildSubscriptionRow(input SubscriptionInput) SubscriptionRow {
-	effective, source := effectiveMultiplier(input.UserMultiplier, input.GroupDefaultMultiplier, input.SystemDefaultMultiplier)
+	metadataStatus := input.MultiplierMetadataStatus
+	if metadataStatus != MultiplierMetadataStatusUnavailable {
+		metadataStatus = MultiplierMetadataStatusOK
+		input.MultiplierMetadataMessage = nil
+	}
+	userMultiplier := input.UserMultiplier
+	var effective *float64
+	source := "unknown"
+	if metadataStatus == MultiplierMetadataStatusUnavailable {
+		userMultiplier = nil
+	} else {
+		value, valueSource := effectiveMultiplier(userMultiplier, input.GroupDefaultMultiplier, input.SystemDefaultMultiplier)
+		effective = &value
+		source = valueSource
+	}
 	inherited, _ := effectiveMultiplier(nil, input.GroupDefaultMultiplier, input.SystemDefaultMultiplier)
 	dailyAllowance, dailyUnlimited := displayQuota(input.DailyLimitUSD)
 	weeklyAllowance, weeklyUnlimited := displayQuota(input.WeeklyLimitUSD)
@@ -33,9 +49,11 @@ func BuildSubscriptionRow(input SubscriptionInput) SubscriptionRow {
 		GroupDefaultMultiplier:             input.GroupDefaultMultiplier,
 		SystemDefaultMultiplier:            input.SystemDefaultMultiplier,
 		InheritedDefaultMultiplier:         inherited,
-		UserMultiplier:                     input.UserMultiplier,
+		UserMultiplier:                     userMultiplier,
 		EffectiveMultiplier:                effective,
 		MultiplierSource:                   source,
+		MultiplierMetadataStatus:           metadataStatus,
+		MultiplierMetadataMessage:          input.MultiplierMetadataMessage,
 		DailyLimitUSD:                      input.DailyLimitUSD,
 		WeeklyLimitUSD:                     input.WeeklyLimitUSD,
 		MonthlyLimitUSD:                    input.MonthlyLimitUSD,
