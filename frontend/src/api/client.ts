@@ -11,7 +11,7 @@ const apiBaseURL = import.meta.env.VITE_API_URL || '/api/v1'
 
 const client = axios.create({
   baseURL: apiBaseURL,
-  timeout: 15000,
+  timeout: 45000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -65,9 +65,13 @@ async function refreshAccessToken(captured: BrowserSessionSnapshot): Promise<str
     return null
   }
 
-  const res = await axios.post(`${apiBaseURL}/auth/refresh`, {
-    refresh_token: captured.refreshToken,
-  })
+  const res = await axios.post(
+    `${apiBaseURL}/auth/refresh`,
+    {
+      refresh_token: captured.refreshToken,
+    },
+    { timeout: 45000 }
+  )
   const data = res.data?.data
   const accessToken = data?.tokens?.access_token || data?.token
   if (!accessToken) {

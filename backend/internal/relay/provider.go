@@ -86,6 +86,12 @@ type SubjectUsageDashboardProvider interface {
 	GetUsageDashboardForUser(ctx context.Context, relayUserID int64, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error)
 }
 
+// UserUsageOriginReader reads explicitly selected current-user usage branches
+// under one request-scoped Relay session and deadline.
+type UserUsageOriginReader interface {
+	ReadUserUsageOrigin(ctx context.Context, request UserUsageOriginRequest) (*UserUsageOriginResult, error)
+}
+
 type TeamUsageSummaryProvider interface {
 	GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params TeamUsageSummaryParams) (map[int64]TeamUserUsageStats, error)
 }
@@ -109,4 +115,14 @@ type UserSubscriptionQuotaResetter interface {
 type GroupRateMultiplierManager interface {
 	ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
 	ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error
+}
+
+type GroupRateMultiplierReadResult struct {
+	GroupID int64
+	Entries []UserGroupRateEntry
+	Err     error
+}
+
+type GroupRateMultiplierBatchReader interface {
+	GroupRateMultipliersForGroups(ctx context.Context, groupIDs []int64) []GroupRateMultiplierReadResult
 }

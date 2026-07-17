@@ -8,6 +8,7 @@ const axiosHarness = vi.hoisted(() => ({
   responseErrFn: null as ((error: any) => Promise<any>) | null,
   axiosPost: vi.fn(),
   clientInstance: null as any,
+  clientConfig: null as any,
   getHandler: null as ((config: any) => any) | null,
   postHandler: null as ((url: string, data?: unknown, config?: any) => any) | null,
   retryHandler: null as ((config: any) => any) | null,
@@ -73,7 +74,10 @@ vi.mock('axios', () => {
 
   return {
     default: {
-      create: vi.fn(() => mockInstance),
+      create: vi.fn((config: any) => {
+        axiosHarness.clientConfig = config
+        return mockInstance
+      }),
       getAdapter: vi.fn((adapter: any) => (
         typeof adapter === 'function'
           ? adapter
@@ -233,6 +237,10 @@ describe('Axios client interceptors', () => {
       routeDisposers.pop()!()
     }
     disposePinia(pinia)
+  })
+
+  it('uses the 45 second browser request budget', () => {
+    expect(axiosHarness.clientConfig.timeout).toBe(45000)
   })
 
   describe('request interceptor', () => {
@@ -464,9 +472,11 @@ describe('Axios client interceptors', () => {
       await expect(first).resolves.toEqual({ status: 200, data: { url: '/repos' } })
       await expect(second).resolves.toEqual({ status: 200, data: { url: '/events' } })
       expect(axiosHarness.clientInstance).toHaveBeenCalledTimes(2)
-      expect(axiosHarness.axiosPost).toHaveBeenCalledWith('/api/v1/auth/refresh', {
-        refresh_token: 'refresh-a',
-      })
+      expect(axiosHarness.axiosPost).toHaveBeenCalledWith(
+        '/api/v1/auth/refresh',
+        { refresh_token: 'refresh-a' },
+        { timeout: 45000 },
+      )
     })
 
     it('expires a matching session once after final refresh failure without navigating', async () => {

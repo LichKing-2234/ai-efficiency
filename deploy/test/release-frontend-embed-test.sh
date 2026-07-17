@@ -34,5 +34,5 @@ test -z "$(git status --short --untracked-files=all -- backend/internal/web/dist
 
 (
   cd backend
-  AE_ASSERT_EMBEDDED_FRONTEND=1 go test ./internal/web -run TestHasEmbeddedFrontendForReleaseBuilds -count=1
+  AE_ASSERT_EMBEDDED_FRONTEND=1 go test ./internal/web -run 'Test(HasEmbeddedFrontendForReleaseBuilds|EmbeddedFrontendReleaseBuildHTTPPolicy)$' -count=1 -v
 )
