@@ -18,6 +18,20 @@ import (
 	redis "github.com/redis/go-redis/v9"
 )
 
+func TestIndexMemberDepartmentIDsSortsStablePrimaryDepartment(t *testing.T) {
+	memberships := []*ent.DirectoryMemberDepartment{
+		{DirectoryMemberID: 7, DepartmentExternalID: "department-zeta"},
+		{DirectoryMemberID: 7, DepartmentExternalID: "department-alpha"},
+		{DirectoryMemberID: 7, DepartmentExternalID: "department-beta"},
+	}
+
+	got := indexMemberDepartmentIDs(memberships)[7]
+	want := []string{"department-alpha", "department-beta", "department-zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("member department IDs = %#v, want stable order %#v", got, want)
+	}
+}
+
 func TestResolveRepresentativeScopeFromDepartmentMetadataIncludesSubtree(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()

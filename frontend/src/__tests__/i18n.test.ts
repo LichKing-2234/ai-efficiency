@@ -212,12 +212,12 @@ describe('i18n locale loading', () => {
     expect(documentElement.lang).toBe('en-US')
   })
 
-  it('keeps both real dictionaries at the complete 1028-key contract', () => {
+  it('keeps both real dictionaries at the complete 1031-key contract', () => {
     const englishKeys = Object.keys(enUS).sort()
     const chineseKeys = Object.keys(zhCN).sort()
 
-    expect(englishKeys).toHaveLength(1028)
-    expect(chineseKeys).toHaveLength(1028)
+    expect(englishKeys).toHaveLength(1031)
+    expect(chineseKeys).toHaveLength(1031)
     expect(chineseKeys).toEqual(englishKeys)
   })
 

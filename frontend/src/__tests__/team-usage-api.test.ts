@@ -10,6 +10,7 @@ vi.mock('@/api/client', () => ({
 import client from '@/api/client'
 import {
   getTeamUsageAudit,
+  getTeamUsageMembers,
   getTeamUsageOverview,
   getTeamUsageSummary,
   getTeamUsageTrend,
@@ -22,6 +23,7 @@ import type {
   TeamUsageAuditParams,
   TeamUsageAuditRecord,
   TeamUsageOverviewParams,
+  TeamUsageMembersResponse,
   TeamUsageSummaryResponse,
   TeamUsageTrendResponse,
 } from '@/types'
@@ -69,6 +71,13 @@ describe('team usage API', () => {
         comparison_total_count: number
         comparison_truncated: boolean
       }
+    }>()
+    expectTypeOf<TeamUsageMembersResponse>().toMatchTypeOf<{
+      scope_version: string
+      request_id: string
+      items: unknown[]
+      total_count: number
+      next_cursor?: string
     }>()
   })
 
@@ -171,6 +180,31 @@ describe('team usage API', () => {
         end_date: '2026-06-30',
         granularity: 'day',
         timezone: 'Asia/Shanghai',
+      },
+      timeout: 45000,
+    })
+  })
+
+  it('fetches one bounded team member page with the shared-origin budget', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { total_count: 500, items: [] } } })
+
+    await getTeamUsageMembers({
+      start_date: '2026-06-01',
+      end_date: '2026-06-30',
+      granularity: 'day',
+      timezone: 'Asia/Shanghai',
+      limit: 50,
+      cursor: 'cursor-page-2',
+    })
+
+    expect(mockClient.get).toHaveBeenCalledWith('/user/team-usage/members', {
+      params: {
+        start_date: '2026-06-01',
+        end_date: '2026-06-30',
+        granularity: 'day',
+        timezone: 'Asia/Shanghai',
+        limit: 50,
+        cursor: 'cursor-page-2',
       },
       timeout: 45000,
     })

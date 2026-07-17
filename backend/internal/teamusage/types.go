@@ -21,6 +21,8 @@ var (
 	ErrMultiplierMetadataUnavailable = errors.New("multiplier_metadata_unavailable")
 	ErrPartialFailed                 = errors.New("partial_failed")
 	ErrInvalidOverviewParams         = errors.New("invalid_overview_params")
+	ErrInvalidMemberCursor           = errors.New("invalid_cursor")
+	ErrMemberSnapshotExpired         = errors.New("snapshot_expired")
 )
 
 const (
@@ -141,6 +143,22 @@ type TrendResponse struct {
 	TopMembers      []OverviewMember     `json:"top_members"`
 	TopMemberTrend  TopMemberTrendState  `json:"top_member_trend"`
 	DepartmentTrend DepartmentTrendState `json:"department_trend"`
+}
+
+type MembersParams struct {
+	OverviewParams
+	Cursor string
+	Limit  int
+}
+
+type MembersResponse struct {
+	SnapshotFreshness
+	ScopeVersion string           `json:"scope_version"`
+	RequestID    string           `json:"request_id"`
+	Window       OverviewWindow   `json:"window"`
+	Items        []OverviewMember `json:"items"`
+	TotalCount   int              `json:"total_count"`
+	NextCursor   string           `json:"next_cursor,omitempty"`
 }
 
 type SnapshotCacheKey struct {
