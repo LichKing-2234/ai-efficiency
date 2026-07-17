@@ -23,7 +23,7 @@
 - Tests and examples use only synthetic departments, users, emails, credentials, and URLs.
 - Maintain this file as a live ledger and check a step only after its command or edit actually completes.
 
-**Status:** In progress. Contract and execution plan are defined; implementation has not started.
+**Status:** In progress. Task 1 is committed as `12ce1fa0`; Task 2 implementation and focused verification are complete, with review/commit pending. Tasks 3-4 have not started.
 
 ---
 
@@ -132,7 +132,7 @@
 - A missing map value or empty returned parent means effective root.
 - Returns an error for blank or duplicate applied department external IDs.
 
-- [ ] **Step 1: Write RED semantic tests**
+- [x] **Step 1: Write RED semantic tests**
 
   Add table tests for:
 
@@ -174,7 +174,7 @@
   - blank/duplicate ID error tests;
   - a 10,000-department chain test that proves completion without recursive stack growth.
 
-- [ ] **Step 2: Run the hierarchy tests and record RED**
+- [x] **Step 2: Run the hierarchy tests and record RED**
 
   ```bash
   cd backend
@@ -183,7 +183,17 @@
 
   Expected: compile failure because `resolveEffectiveParents` does not exist.
 
-- [ ] **Step 3: Implement the private hierarchy module**
+  RED evidence (2026-07-17):
+
+  ```text
+  internal/directorysync/effective_hierarchy_test.go:42:16: undefined: resolveEffectiveParents
+  internal/directorysync/effective_hierarchy_test.go:65:15: undefined: resolveEffectiveParents
+  internal/directorysync/effective_hierarchy_test.go:88:17: undefined: resolveEffectiveParents
+  internal/directorysync/effective_hierarchy_test.go:109:14: undefined: resolveEffectiveParents
+  FAIL github.com/ai-efficiency/backend/internal/directorysync [build failed]
+  ```
+
+- [x] **Step 3: Implement the private hierarchy module**
 
   Implement `resolveEffectiveParents` with these steps:
 
@@ -206,7 +216,7 @@
   }
   ```
 
-- [ ] **Step 4: Run GREEN, race, and repeatability verification**
+- [x] **Step 4: Run GREEN, race, and repeatability verification**
 
   ```bash
   cd backend
@@ -217,7 +227,17 @@
   git diff --check
   ```
 
-- [ ] **Step 5: Review and commit**
+  GREEN evidence (2026-07-17):
+
+  ```text
+  go test ./internal/directorysync -run '^TestResolveEffectiveParents' -count=20
+  ok  github.com/ai-efficiency/backend/internal/directorysync  0.739s
+  go test -race ./internal/directorysync -run '^TestResolveEffectiveParents' -count=1
+  ok  github.com/ai-efficiency/backend/internal/directorysync  1.768s
+  git diff --check: exit 0
+  ```
+
+- [x] **Step 5: Review and commit**
 
   Review the Task 2 range against issue #165 and the active specs. Resolve every Critical/Important finding, rerun Step 4, then:
 
@@ -225,6 +245,14 @@
   git add backend/internal/directorysync/effective_hierarchy.go backend/internal/directorysync/effective_hierarchy_test.go
   git commit -m "feat(directorysync): resolve effective department hierarchy"
   ```
+
+  Review evidence (2026-07-17): initial Spec review found only the stale plan
+  status. Initial Standards review found two Important test gaps: the large chain
+  was root-first, and no tail entered a closed cycle. The status was corrected,
+  the 10,000-row fixture became leaf-first, and a name-sorted tail-to-cycle case
+  now proves `cycleStart > 0` excludes the tail from anchor selection. Focused
+  repeat and race tests passed again. Spec re-review: PASS. Standards re-review:
+  PASS, with no Critical/Important findings and no over-design finding.
 
 ---
 
