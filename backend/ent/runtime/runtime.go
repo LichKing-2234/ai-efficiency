@@ -624,12 +624,18 @@ func init() {
 	relayproviderDescEnabled := relayproviderFields[7].Descriptor()
 	// relayprovider.DefaultEnabled holds the default value on creation for the enabled field.
 	relayprovider.DefaultEnabled = relayproviderDescEnabled.Default.(bool)
+	// relayproviderDescConfigurationVersion is the schema descriptor for configuration_version field.
+	relayproviderDescConfigurationVersion := relayproviderFields[8].Descriptor()
+	// relayprovider.DefaultConfigurationVersion holds the default value on creation for the configuration_version field.
+	relayprovider.DefaultConfigurationVersion = relayproviderDescConfigurationVersion.Default.(int64)
+	// relayprovider.ConfigurationVersionValidator is a validator for the "configuration_version" field. It is called by the builders before save.
+	relayprovider.ConfigurationVersionValidator = relayproviderDescConfigurationVersion.Validators[0].(func(int64) error)
 	// relayproviderDescCreatedAt is the schema descriptor for created_at field.
-	relayproviderDescCreatedAt := relayproviderFields[8].Descriptor()
+	relayproviderDescCreatedAt := relayproviderFields[9].Descriptor()
 	// relayprovider.DefaultCreatedAt holds the default value on creation for the created_at field.
 	relayprovider.DefaultCreatedAt = relayproviderDescCreatedAt.Default.(func() time.Time)
 	// relayproviderDescUpdatedAt is the schema descriptor for updated_at field.
-	relayproviderDescUpdatedAt := relayproviderFields[9].Descriptor()
+	relayproviderDescUpdatedAt := relayproviderFields[10].Descriptor()
 	// relayprovider.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	relayprovider.DefaultUpdatedAt = relayproviderDescUpdatedAt.Default.(func() time.Time)
 	// relayprovider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

@@ -15,8 +15,10 @@ import (
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/middleware"
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/ai-efficiency/backend/internal/workitems"
@@ -86,6 +88,105 @@ func TestSetupRouterInjectsWorkItemsCacheAndSharedDirectoryService(t *testing.T)
 	}
 	if directoryService.countCall != 1 {
 		t.Fatalf("directory CountOffboardingCandidates calls = %d, want 1", directoryService.countCall)
+	}
+}
+
+func TestSetupRouterInjectsRepresentativeScopeCache(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	logger := zap.NewNop()
+	authService := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
+	repoService := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
+	webhookHandler := webhook.NewHandler(client, nil, logger)
+
+	redisServer := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	t.Cleanup(func() { _ = redisClient.Close() })
+	scopeCache, err := representativescope.NewCache(
+		readcache.NewRedisStore(redisClient),
+		representativescope.CacheOptions{Namespace: "test"},
+	)
+	if err != nil {
+		t.Fatalf("NewCache: %v", err)
+	}
+
+	actor := client.User.Create().
+		SetUsername("representative").
+		SetEmail("representative@example.com").
+		SetAuthSource("ldap").
+		SetRole("user").
+		SaveX(ctx)
+	completedAt := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	source := client.DirectorySource.Create().
+		SetName("Example Directory").
+		SetDescription("Synthetic organization directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		SaveX(ctx)
+	run := client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetCompletedAt(completedAt).
+		SaveX(ctx)
+	client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		ExecX(ctx)
+	client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("department-alpha").
+		SetName("Department Alpha").
+		SetLastSeenRunID(run.ID).
+		SetMetadata(map[string]any{"representative_external_ids": []string{"member-representative"}}).
+		SaveX(ctx)
+	client.DirectoryMember.Create().
+		SetSourceID(source.ID).
+		SetExternalID("member-representative").
+		SetEmailNormalized(actor.Email).
+		SetDisplayName("Representative").
+		SetDepartmentExternalID("department-alpha").
+		SetMatchedUserID(actor.ID).
+		SetLastSeenRunID(run.ID).
+		SaveX(ctx)
+
+	router := SetupRouter(
+		client,
+		nil,
+		authService,
+		repoService,
+		webhookHandler,
+		nil,
+		nil,
+		"0000000000000000000000000000000000000000000000000000000000000000",
+		"",
+		middleware.CORS(nil),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		RouterRuntimeOptions{RepresentativeScopeCache: scopeCache},
+	)
+	token := workItemsTestAccessToken(t, authService, actor.ID, actor.Username, "user")
+	for requestIndex := 0; requestIndex < 2; requestIndex++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/user/team-usage/scope", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"is_representative":true`) {
+			t.Fatalf("request %d response = %d %s", requestIndex+1, recorder.Code, recorder.Body.String())
+		}
+	}
+	valueKeys := 0
+	for _, key := range redisServer.Keys() {
+		if strings.Contains(key, ":representative-scope:") && !strings.HasSuffix(key, ":lease") {
+			valueKeys++
+		}
+	}
+	if valueKeys != 1 {
+		t.Fatalf("representative scope value keys = %d, want 1", valueKeys)
 	}
 }
 

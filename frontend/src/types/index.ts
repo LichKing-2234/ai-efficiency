@@ -503,20 +503,47 @@ export interface AdminDirectoryDepartmentSummary {
   external_id: string
   parent_external_id?: string | null
   name: string
-  path?: string
-  display_path?: string
-  depth?: number
-  child_count?: number
+  path: string
+  display_path: string
+  depth: number
+  child_count: number
+  has_children: boolean
   member_count: number
   matched_user_count: number
-  subtree_member_count?: number
-  subtree_matched_user_count?: number
-  representative_count?: number
-  matched_representative_count?: number
+  subtree_member_count: number
+  subtree_matched_user_count: number
+  representative_count: number
+  matched_representative_count: number
+}
+
+export interface AdminDepartmentOption {
+  external_id: string
+  name: string
+  display_path: string
+}
+
+export interface AdminDepartmentOptionsResponse {
+  items: AdminDepartmentOption[]
+  selected: AdminDepartmentOption | null
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface AdminDepartmentChildrenResponse {
+  items: AdminDirectoryDepartmentSummary[]
+  parent_department_id: string
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface AdminLegacyDirectoryDepartmentSummary extends Omit<AdminDirectoryDepartmentSummary, 'has_children'> {
+  has_children?: boolean
 }
 
 export interface AdminUserDepartmentsResponse {
-  items: AdminDirectoryDepartmentSummary[]
+  items: AdminLegacyDirectoryDepartmentSummary[]
 }
 
 export interface AdminRelayPasswordRevealResponse {
@@ -598,20 +625,52 @@ export interface DirectorySyncWarning {
   step_id?: string
 }
 
-export interface DirectorySyncRun {
+export interface DirectoryRunSummary {
   id: number
   source_id: number
   mode: 'validate' | 'preview' | 'apply'
-  trigger?: 'manual' | 'schedule'
+  trigger: 'manual' | 'schedule'
   status: 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed'
-  phase?: string
+  phase: 'validating' | 'executing' | 'normalizing' | 'applying' | 'completed' | 'failed'
+  started_at: string | null
+  completed_at: string | null
+  http_request_count: number
+  department_count: number
+  member_count: number
+  invalid_member_count: number
+  warning_count: number
+}
+
+export interface DirectorySyncRun
+  extends Omit<DirectoryRunSummary,
+    | 'started_at'
+    | 'completed_at'
+    | 'http_request_count'
+    | 'department_count'
+    | 'member_count'
+    | 'invalid_member_count'
+    | 'warning_count'> {
+  started_at?: string | null
+  completed_at?: string | null
+  http_request_count?: number
   department_count?: number
   member_count?: number
+  invalid_member_count?: number
   warning_count?: number
   warnings?: DirectorySyncWarning[]
+  summary?: Record<string, unknown>
+  preview_diff?: Record<string, unknown>
   error_message?: string | null
   created_at?: string
   updated_at?: string
+}
+
+export interface DirectoryRunPage {
+  items: DirectoryRunSummary[]
+  total: number
+  page: number
+  page_size: number
+  latest_active_run: DirectoryRunSummary | null
 }
 
 export interface DirectoryDepartment {
@@ -823,13 +882,34 @@ export interface UserUsageGroupQuotaState {
   groups: UserUsageGroupQuotaItem[]
 }
 
+export interface UserUsageFreshness {
+  as_of: string
+  fresh_until: string
+  stale_until: string
+  cache_status: 'miss' | 'fresh' | 'stale' | string
+  source_status: 'ok' | 'error' | string
+}
+
+export interface UserQuotaFreshness {
+  as_of: string | null
+  cache_status: 'uncached' | string
+  source_status: 'ok' | 'error' | string
+}
+
+export interface UserUsageGroupQuotaResponse {
+  group_quotas: UserUsageGroupQuotaState
+  quota_freshness: UserQuotaFreshness
+}
+
 export interface UserUsageDashboardSnapshot {
   configured: boolean
   range: UserUsageDashboardRange
   stats: UserUsageDashboardStats | null
   trend: UserUsageTrendPoint[]
   models: UserUsageModelStat[]
+  usage_freshness?: UserUsageFreshness
   group_quotas?: UserUsageGroupQuotaState
+  quota_freshness?: UserQuotaFreshness
 }
 
 export interface TeamUsageDepartment {
@@ -862,8 +942,10 @@ export interface SubjectSubscriptionGroup {
   system_default_multiplier: number
   inherited_default_multiplier: number
   user_multiplier?: number | null
-  effective_multiplier: number
+  effective_multiplier: number | null
   multiplier_source: 'user' | 'group' | 'system' | 'unknown'
+  multiplier_metadata_status?: 'ok' | 'unavailable'
+  multiplier_metadata_message?: string | null
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
@@ -909,6 +991,21 @@ export interface TeamOverviewSummary {
   today_actual_cost?: number | null
   total_actual_cost?: number | null
   unit_label: string
+}
+
+export interface TeamUsageSnapshotFreshness {
+  as_of: string
+  fresh_until: string
+  stale_until: string
+  cache_status: 'miss' | 'fresh' | 'stale' | string
+  source_status: 'ok' | 'error' | string
+}
+
+export interface TeamUsageSummaryResponse extends TeamUsageSnapshotFreshness {
+  scope_version: string
+  request_id: string
+  window: TeamOverviewWindow
+  summary: TeamOverviewSummary
 }
 
 export interface TeamOverviewMember {
@@ -982,7 +1079,53 @@ export interface TeamDepartmentTrendState {
   unit_label: string
   unavailable: boolean
   unavailable_reason?: string | null
+  comparison_total_count: number
+  comparison_truncated: boolean
   series: TeamDepartmentTrendSeries[]
+}
+
+export interface TeamUsageTrendResponse extends TeamUsageSnapshotFreshness {
+  scope_version: string
+  request_id: string
+  window: TeamOverviewWindow
+  top_members: TeamOverviewMember[]
+  top_member_trend: TeamMemberTrendState
+  department_trend: TeamDepartmentTrendState
+}
+
+export interface TeamUsageMembersResponse extends TeamUsageSnapshotFreshness {
+  scope_version: string
+  request_id: string
+  window: TeamOverviewWindow
+  items: TeamOverviewMember[]
+  total_count: number
+  next_cursor?: string
+}
+
+export interface TeamUsageOrganizationDepartment {
+  department_external_id: string
+  parent_external_id?: string | null
+  name: string
+  display_path: string
+  depth: number
+  child_count: number
+  has_children: boolean
+  direct_member_count: number
+  aggregate_member_count: number
+  connected_member_count: number
+  range_actual_cost: number
+  range_total_tokens?: number | null
+}
+
+export interface TeamUsageOrganizationResponse extends TeamUsageSnapshotFreshness {
+  scope_version: string
+  request_id: string
+  window: TeamOverviewWindow
+  parent_department_external_id: string | null
+  departments: TeamUsageOrganizationDepartment[]
+  members: TeamOverviewMember[]
+  next_department_cursor?: string
+  next_member_cursor?: string
 }
 
 export interface TeamOverviewResponse {
@@ -1016,6 +1159,19 @@ export interface TeamUsageOverviewParams {
   timezone?: string
   page?: number
   page_size?: number
+}
+
+export interface TeamUsageMembersParams extends TeamUsageOverviewParams {
+  cursor?: string
+  limit?: number
+}
+
+export interface TeamUsageOrganizationParams extends TeamUsageOverviewParams {
+  parent_department_external_id?: string
+  department_cursor?: string
+  department_limit?: number
+  member_cursor?: string
+  member_limit?: number
 }
 
 export interface TeamUsageAuditParams {

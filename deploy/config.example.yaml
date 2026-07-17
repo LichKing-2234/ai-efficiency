@@ -7,6 +7,30 @@ server:
   # Public backend origin reachable by GitHub/Bitbucket webhooks.
   # Production deployments should set this to the externally routed HTTPS origin.
   public_url: "http://localhost:8081"
+  read_header_timeout_seconds: 5  # supported range: 1-60
+  idle_timeout_seconds: 120       # supported range: 1-3600
+  # Supported range: 1-30; must remain below request_timeout_seconds.
+  readiness_timeout_seconds: 2
+  # During the monolithic Team Overview migration, the reverse proxy upstream
+  # timeout must be at least 60 seconds. The fixed browser timeout is 45s.
+  # Supported range: 12-44; must remain above http_client.overall_timeout_seconds.
+  request_timeout_seconds: 35
+
+# Shared downstream HTTP defaults. Version checks and quota notification webhooks
+# retain fixed 10-second and 5-second overall budgets. Shared overall supports
+# 11-43 seconds and must remain below server.request_timeout_seconds. Connect and
+# TLS support 1-30 seconds. Response header has a 60-second field cap, but the
+# strict phase order makes 1-42 the effective accepted range. Every phase must
+# remain below shared overall. Idle supports 1-3600; pool fields support 1-10000.
+http_client:
+  connect_timeout_seconds: 5
+  tls_handshake_timeout_seconds: 5
+  response_header_timeout_seconds: 15
+  overall_timeout_seconds: 30
+  idle_conn_timeout_seconds: 90
+  max_idle_conns: 100
+  max_idle_conns_per_host: 20
+  max_conns_per_host: 50
 
 # AI Efficiency platform database (read-write)
 db:

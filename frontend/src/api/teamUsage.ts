@@ -5,7 +5,13 @@ import type {
   ListTeamUsageSubjectsResponse,
   SelectedSubjectUsageSnapshot,
   TeamUsageAuditParams,
+  TeamUsageMembersParams,
+  TeamUsageMembersResponse,
+  TeamUsageOrganizationParams,
+  TeamUsageOrganizationResponse,
   TeamUsageOverviewParams,
+  TeamUsageSummaryResponse,
+  TeamUsageTrendResponse,
   TeamOverviewResponse,
   TeamUsageScopeResponse,
   UpdateTeamUsageRateMultiplierRequest,
@@ -27,6 +33,31 @@ export function getTeamUsageSubjectDashboard(userID: number, params: UserUsageDa
 
 export function getTeamUsageOverview(params?: TeamUsageOverviewParams) {
   return client.get<ApiResponse<TeamOverviewResponse>>('/user/team-usage/overview', {
+    params,
+    timeout: 45000,
+  })
+}
+
+export function getTeamUsageSummary(params?: TeamUsageOverviewParams) {
+  return client.get<ApiResponse<TeamUsageSummaryResponse>>('/user/team-usage/summary', { params })
+}
+
+export function getTeamUsageTrend(params?: TeamUsageOverviewParams) {
+  return client.get<ApiResponse<TeamUsageTrendResponse>>('/user/team-usage/trend', {
+    params,
+    timeout: 45000,
+  })
+}
+
+export function getTeamUsageMembers(params?: TeamUsageMembersParams) {
+  return client.get<ApiResponse<TeamUsageMembersResponse>>('/user/team-usage/members', {
+    params,
+    timeout: 45000,
+  })
+}
+
+export function getTeamUsageOrganization(params?: TeamUsageOrganizationParams) {
+  return client.get<ApiResponse<TeamUsageOrganizationResponse>>('/user/team-usage/organization', {
     params,
     timeout: 45000,
   })

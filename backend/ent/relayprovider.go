@@ -33,6 +33,8 @@ type RelayProvider struct {
 	IsPrimary bool `json:"is_primary,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
+	// ConfigurationVersion holds the value of the "configuration_version" field.
+	ConfigurationVersion int64 `json:"configuration_version,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -47,7 +49,7 @@ func (*RelayProvider) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case relayprovider.FieldIsPrimary, relayprovider.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case relayprovider.FieldID:
+		case relayprovider.FieldID, relayprovider.FieldConfigurationVersion:
 			values[i] = new(sql.NullInt64)
 		case relayprovider.FieldName, relayprovider.FieldDisplayName, relayprovider.FieldBaseURL, relayprovider.FieldRelayType, relayprovider.FieldAdminAPIKey, relayprovider.FieldDefaultModel:
 			values[i] = new(sql.NullString)
@@ -122,6 +124,12 @@ func (rp *RelayProvider) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				rp.Enabled = value.Bool
 			}
+		case relayprovider.FieldConfigurationVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field configuration_version", values[i])
+			} else if value.Valid {
+				rp.ConfigurationVersion = value.Int64
+			}
 		case relayprovider.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -192,6 +200,9 @@ func (rp *RelayProvider) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("enabled=")
 	builder.WriteString(fmt.Sprintf("%v", rp.Enabled))
+	builder.WriteString(", ")
+	builder.WriteString("configuration_version=")
+	builder.WriteString(fmt.Sprintf("%v", rp.ConfigurationVersion))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(rp.CreatedAt.Format(time.ANSIC))

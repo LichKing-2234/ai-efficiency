@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/scm"
 	gh "github.com/google/go-github/v60/github"
 	"go.uber.org/zap"
@@ -23,32 +25,42 @@ type Provider struct {
 
 // New creates a new GitHub SCM provider.
 func New(baseURL, token string, logger *zap.Logger, webhookCallbackURL ...string) (*Provider, error) {
-	cbURL := ""
-	if len(webhookCallbackURL) > 0 {
-		cbURL = strings.TrimSpace(webhookCallbackURL[0])
+	return newProvider(baseURL, token, logger, nil, webhookCallbackURL...)
+}
+
+// NewWithHTTPClient creates a GitHub provider with an injected reusable HTTP client.
+func NewWithHTTPClient(baseURL, token string, logger *zap.Logger, client *http.Client, webhookCallbackURL ...string) (*Provider, error) {
+	return newProvider(baseURL, token, logger, client, webhookCallbackURL...)
+}
+
+func newProvider(baseURL, token string, logger *zap.Logger, client *http.Client, webhookCallbackURL ...string) (*Provider, error) {
+	if client == nil {
+		client = httpclient.NewDefault(30 * time.Second)
 	}
-	var client *gh.Client
+	callbackURL := ""
+	if len(webhookCallbackURL) > 0 {
+		callbackURL = strings.TrimSpace(webhookCallbackURL[0])
+	}
+	githubClient := gh.NewClient(client)
 	if token != "" {
-		client = gh.NewClient(nil).WithAuthToken(token)
-	} else {
-		client = gh.NewClient(nil)
+		githubClient = githubClient.WithAuthToken(token)
 	}
 
 	// If custom base URL (GitHub Enterprise), configure it
 	if baseURL != "" && baseURL != "https://api.github.com" {
 		var err error
-		client, err = client.WithEnterpriseURLs(baseURL, baseURL)
+		githubClient, err = githubClient.WithEnterpriseURLs(baseURL, baseURL)
 		if err != nil {
 			return nil, fmt.Errorf("github enterprise url: %w", err)
 		}
 	}
 
 	return &Provider{
-		client:             client,
+		client:             githubClient,
 		baseURL:            baseURL,
 		logger:             logger,
 		token:              token,
-		webhookCallbackURL: cbURL,
+		webhookCallbackURL: callbackURL,
 	}, nil
 }
 

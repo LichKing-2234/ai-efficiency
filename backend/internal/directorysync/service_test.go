@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
+	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/relay"
@@ -86,6 +88,549 @@ type fakeRelayDisabler struct {
 func (f *fakeRelayDisabler) DisableUser(_ context.Context, userID int64) error {
 	f.disabled = append(f.disabled, userID)
 	return nil
+}
+
+type runListTestFixture struct {
+	client            *ent.Client
+	service           *Service
+	sourceID          int
+	expectedIDs       []int
+	latestActiveCases []latestActiveTestCase
+	seededSummary     RunSummary
+	detailRunID       int
+}
+
+type latestActiveTestCase struct {
+	name     string
+	sourceID int
+	want     RunSummary
+}
+
+func newRunListTestFixture(t *testing.T) runListTestFixture {
+	t.Helper()
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := client.DirectorySource.Create().
+		SetName("Example Directory").
+		SetDescription("Synthetic run history").
+		SetScope("full_company").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		SetScheduleEnabled(false).
+		SetScheduleInterval("daily").
+		SetScheduleTimezone("UTC").
+		SaveX(ctx)
+
+	base := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
+	runningStartedAt := base.Add(48 * time.Hour)
+	terminalPreviewStartedAt := base.Add(50 * time.Hour)
+	terminalApplyStartedAt := base.Add(49 * time.Hour)
+	creates := make([]*ent.DirectorySyncRunCreate, 0, 125)
+	for i := 0; i < 125; i++ {
+		mode := []directorysyncrun.Mode{
+			directorysyncrun.ModeValidate,
+			directorysyncrun.ModePreview,
+			directorysyncrun.ModeApply,
+		}[i%3]
+		create := client.DirectorySyncRun.Create().
+			SetSourceID(source.ID).
+			SetMode(mode).
+			SetTrigger(directorysyncrun.TriggerManual).
+			SetHTTPRequestCount(i + 1).
+			SetDepartmentCount(i + 2).
+			SetMemberCount(i + 3).
+			SetInvalidMemberCount(i % 4).
+			SetWarningCount((i % 5) + 1).
+			SetWarnings([]map[string]any{{"message": fmt.Sprintf("warning-marker-%03d", i)}}).
+			SetSummary(map[string]any{"summary_marker": fmt.Sprintf("summary-marker-%03d", i)}).
+			SetPreviewDiff(map[string]any{"diff_marker": fmt.Sprintf("diff-marker-%03d", i)}).
+			SetErrorMessage(fmt.Sprintf("error-marker-%03d", i))
+
+		switch i {
+		case 0:
+			create.SetMode(directorysyncrun.ModeApply).
+				SetStatus(directorysyncrun.StatusRunning).
+				SetPhase(directorysyncrun.PhaseExecuting).
+				SetStartedAt(runningStartedAt)
+		case 1:
+			create.SetMode(directorysyncrun.ModePreview).
+				SetStatus(directorysyncrun.StatusCompleted).
+				SetPhase(directorysyncrun.PhaseCompleted).
+				SetStartedAt(terminalPreviewStartedAt).
+				SetCompletedAt(terminalPreviewStartedAt.Add(30 * time.Second))
+		case 2:
+			create.SetMode(directorysyncrun.ModeApply).
+				SetStatus(directorysyncrun.StatusFailed).
+				SetPhase(directorysyncrun.PhaseFailed).
+				SetStartedAt(terminalApplyStartedAt).
+				SetCompletedAt(terminalApplyStartedAt.Add(30 * time.Second))
+		case 3, 4, 5:
+			create.SetMode(directorysyncrun.ModeValidate).
+				SetStatus(directorysyncrun.StatusQueued).
+				SetPhase(directorysyncrun.PhaseValidating)
+		default:
+			startedAt := base.Add(time.Duration((i-3)/4) * time.Minute)
+			status := directorysyncrun.StatusCompleted
+			phase := directorysyncrun.PhaseCompleted
+			if i%11 == 0 {
+				status = directorysyncrun.StatusFailed
+				phase = directorysyncrun.PhaseFailed
+			} else if i%7 == 0 {
+				status = directorysyncrun.StatusCompletedWithWarnings
+			}
+			create.SetStatus(status).
+				SetPhase(phase).
+				SetStartedAt(startedAt).
+				SetCompletedAt(startedAt.Add(30 * time.Second))
+		}
+		creates = append(creates, create)
+	}
+
+	runs := client.DirectorySyncRun.CreateBulk(creates...).SaveX(ctx)
+	queuedSource := client.DirectorySource.Create().
+		SetName("Queued Active Example Directory").
+		SetDescription("Synthetic queued active eligibility history").
+		SetScope("full_company").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		SetScheduleEnabled(false).
+		SetScheduleInterval("daily").
+		SetScheduleTimezone("UTC").
+		SaveX(ctx)
+	queuedRunningStartedAt := base.Add(46 * time.Hour)
+	queuedTerminalStartedAt := base.Add(47 * time.Hour)
+	queuedSourceRuns := client.DirectorySyncRun.CreateBulk(
+		client.DirectorySyncRun.Create().
+			SetSourceID(queuedSource.ID).
+			SetMode(directorysyncrun.ModePreview).
+			SetTrigger(directorysyncrun.TriggerSchedule).
+			SetStatus(directorysyncrun.StatusRunning).
+			SetPhase(directorysyncrun.PhaseExecuting).
+			SetStartedAt(queuedRunningStartedAt),
+		client.DirectorySyncRun.Create().
+			SetSourceID(queuedSource.ID).
+			SetMode(directorysyncrun.ModeApply).
+			SetTrigger(directorysyncrun.TriggerSchedule).
+			SetStatus(directorysyncrun.StatusQueued).
+			SetPhase(directorysyncrun.PhaseValidating).
+			SetHTTPRequestCount(211).
+			SetDepartmentCount(212).
+			SetMemberCount(213).
+			SetInvalidMemberCount(214).
+			SetWarningCount(215),
+		client.DirectorySyncRun.Create().
+			SetSourceID(queuedSource.ID).
+			SetMode(directorysyncrun.ModePreview).
+			SetTrigger(directorysyncrun.TriggerSchedule).
+			SetStatus(directorysyncrun.StatusCompleted).
+			SetPhase(directorysyncrun.PhaseCompleted).
+			SetStartedAt(queuedTerminalStartedAt).
+			SetCompletedAt(queuedTerminalStartedAt.Add(30*time.Second)),
+		client.DirectorySyncRun.Create().
+			SetSourceID(queuedSource.ID).
+			SetMode(directorysyncrun.ModeValidate).
+			SetTrigger(directorysyncrun.TriggerSchedule).
+			SetStatus(directorysyncrun.StatusQueued).
+			SetPhase(directorysyncrun.PhaseValidating),
+	).SaveX(ctx)
+	sorted := append([]*ent.DirectorySyncRun(nil), runs...)
+	sort.Slice(sorted, func(i, j int) bool {
+		left, right := sorted[i], sorted[j]
+		if left.StartedAt == nil || right.StartedAt == nil {
+			if left.StartedAt == nil && right.StartedAt == nil {
+				return left.ID > right.ID
+			}
+			return left.StartedAt == nil
+		}
+		if left.StartedAt.Equal(*right.StartedAt) {
+			return left.ID > right.ID
+		}
+		return left.StartedAt.After(*right.StartedAt)
+	})
+	expectedIDs := make([]int, len(sorted))
+	for i, run := range sorted {
+		expectedIDs[i] = run.ID
+	}
+
+	seededStartedAt := base.Add(15 * time.Minute)
+	seededCompletedAt := seededStartedAt.Add(30 * time.Second)
+	return runListTestFixture{
+		client:      client,
+		service:     NewService(client, ServiceOptions{}),
+		sourceID:    source.ID,
+		expectedIDs: expectedIDs,
+		latestActiveCases: []latestActiveTestCase{
+			{
+				name:     "running apply",
+				sourceID: source.ID,
+				want: RunSummary{
+					ID:                 runs[0].ID,
+					SourceID:           source.ID,
+					Mode:               directorysyncrun.ModeApply,
+					Trigger:            directorysyncrun.TriggerManual,
+					Status:             directorysyncrun.StatusRunning,
+					Phase:              directorysyncrun.PhaseExecuting,
+					StartedAt:          &runningStartedAt,
+					HTTPRequestCount:   1,
+					DepartmentCount:    2,
+					MemberCount:        3,
+					InvalidMemberCount: 0,
+					WarningCount:       1,
+				},
+			},
+			{
+				name:     "queued apply",
+				sourceID: queuedSource.ID,
+				want: RunSummary{
+					ID:                 queuedSourceRuns[1].ID,
+					SourceID:           queuedSource.ID,
+					Mode:               directorysyncrun.ModeApply,
+					Trigger:            directorysyncrun.TriggerSchedule,
+					Status:             directorysyncrun.StatusQueued,
+					Phase:              directorysyncrun.PhaseValidating,
+					HTTPRequestCount:   211,
+					DepartmentCount:    212,
+					MemberCount:        213,
+					InvalidMemberCount: 214,
+					WarningCount:       215,
+				},
+			},
+		},
+		seededSummary: RunSummary{
+			ID:                 runs[65].ID,
+			SourceID:           source.ID,
+			Mode:               directorysyncrun.ModeApply,
+			Trigger:            directorysyncrun.TriggerManual,
+			Status:             directorysyncrun.StatusCompleted,
+			Phase:              directorysyncrun.PhaseCompleted,
+			StartedAt:          &seededStartedAt,
+			CompletedAt:        &seededCompletedAt,
+			HTTPRequestCount:   66,
+			DepartmentCount:    67,
+			MemberCount:        68,
+			InvalidMemberCount: 1,
+			WarningCount:       1,
+		},
+		detailRunID: runs[64].ID,
+	}
+}
+
+func requireRunSummaryIDs(t *testing.T, items []RunSummary, want []int) {
+	t.Helper()
+	if len(items) != len(want) {
+		t.Fatalf("items = %d, want %d", len(items), len(want))
+	}
+	for i := range want {
+		if items[i].ID != want[i] {
+			t.Fatalf("items[%d].id = %d, want %d", i, items[i].ID, want[i])
+		}
+	}
+}
+
+func requireRunSummary(t *testing.T, got, want RunSummary) {
+	t.Helper()
+	if got.ID != want.ID {
+		t.Errorf("id = %d, want %d", got.ID, want.ID)
+	}
+	if got.SourceID != want.SourceID {
+		t.Errorf("source_id = %d, want %d", got.SourceID, want.SourceID)
+	}
+	if got.Mode != want.Mode {
+		t.Errorf("mode = %q, want %q", got.Mode, want.Mode)
+	}
+	if got.Trigger != want.Trigger {
+		t.Errorf("trigger = %q, want %q", got.Trigger, want.Trigger)
+	}
+	if got.Status != want.Status {
+		t.Errorf("status = %q, want %q", got.Status, want.Status)
+	}
+	if got.Phase != want.Phase {
+		t.Errorf("phase = %q, want %q", got.Phase, want.Phase)
+	}
+	if !optionalTimeEqual(got.StartedAt, want.StartedAt) {
+		t.Errorf("started_at = %v, want %v", got.StartedAt, want.StartedAt)
+	}
+	if !optionalTimeEqual(got.CompletedAt, want.CompletedAt) {
+		t.Errorf("completed_at = %v, want %v", got.CompletedAt, want.CompletedAt)
+	}
+	if got.HTTPRequestCount != want.HTTPRequestCount {
+		t.Errorf("http_request_count = %d, want %d", got.HTTPRequestCount, want.HTTPRequestCount)
+	}
+	if got.DepartmentCount != want.DepartmentCount {
+		t.Errorf("department_count = %d, want %d", got.DepartmentCount, want.DepartmentCount)
+	}
+	if got.MemberCount != want.MemberCount {
+		t.Errorf("member_count = %d, want %d", got.MemberCount, want.MemberCount)
+	}
+	if got.InvalidMemberCount != want.InvalidMemberCount {
+		t.Errorf("invalid_member_count = %d, want %d", got.InvalidMemberCount, want.InvalidMemberCount)
+	}
+	if got.WarningCount != want.WarningCount {
+		t.Errorf("warning_count = %d, want %d", got.WarningCount, want.WarningCount)
+	}
+}
+
+func optionalTimeEqual(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
+}
+
+var runSummaryJSONKeyAllowlist = []string{
+	"id",
+	"source_id",
+	"mode",
+	"trigger",
+	"status",
+	"phase",
+	"started_at",
+	"completed_at",
+	"http_request_count",
+	"department_count",
+	"member_count",
+	"invalid_member_count",
+	"warning_count",
+}
+
+func requireRunSummaryJSONKeys(t *testing.T, summary RunSummary) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("marshal summary %d: %v", summary.ID, err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatalf("decode summary %d: %v", summary.ID, err)
+	}
+	if len(fields) != len(runSummaryJSONKeyAllowlist) {
+		t.Errorf("summary %d key count = %d, want %d: %s", summary.ID, len(fields), len(runSummaryJSONKeyAllowlist), encoded)
+	}
+	allowed := make(map[string]struct{}, len(runSummaryJSONKeyAllowlist))
+	for _, key := range runSummaryJSONKeyAllowlist {
+		allowed[key] = struct{}{}
+		if _, ok := fields[key]; !ok {
+			t.Errorf("summary %d missing key %q: %s", summary.ID, key, encoded)
+		}
+	}
+	for key := range fields {
+		if _, ok := allowed[key]; !ok {
+			t.Errorf("summary %d contains unagreed key %q: %s", summary.ID, key, encoded)
+		}
+	}
+	return encoded
+}
+
+func TestListRunsDefaultsToTwenty(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	for _, request := range []RunListRequest{
+		{SourceID: fixture.sourceID},
+		{SourceID: fixture.sourceID, Limit: -1},
+	} {
+		page, err := fixture.service.ListRuns(context.Background(), request)
+		if err != nil {
+			t.Fatalf("ListRuns(%+v): %v", request, err)
+		}
+		if page.PageSize != DefaultRunPageSize || page.Page != 0 || page.Total != 125 {
+			t.Fatalf("page = %+v, want page_size=%d page=0 total=125", page, DefaultRunPageSize)
+		}
+		requireRunSummaryIDs(t, page.Items, fixture.expectedIDs[:DefaultRunPageSize])
+	}
+}
+
+func TestListRunsClampsLimitToOneHundred(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	for _, limit := range []int{101, 1000} {
+		page, err := fixture.service.ListRuns(context.Background(), RunListRequest{
+			SourceID: fixture.sourceID,
+			Limit:    limit,
+		})
+		if err != nil {
+			t.Fatalf("ListRuns(limit=%d): %v", limit, err)
+		}
+		if page.PageSize != MaxRunPageSize || len(page.Items) != MaxRunPageSize {
+			t.Fatalf("limit %d returned page_size/items = %d/%d, want %d", limit, page.PageSize, len(page.Items), MaxRunPageSize)
+		}
+	}
+}
+
+func TestListRunsNormalizesNegativeOffset(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{
+		SourceID: fixture.sourceID,
+		Limit:    20,
+		Offset:   -7,
+	})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if page.Page != 0 {
+		t.Fatalf("page = %d, want 0", page.Page)
+	}
+	requireRunSummaryIDs(t, page.Items, fixture.expectedIDs[:20])
+}
+
+func TestListRunsOrdersStartedAtThenIDDescending(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{
+		SourceID: fixture.sourceID,
+		Limit:    100,
+		Offset:   3,
+	})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	requireRunSummaryIDs(t, page.Items, fixture.expectedIDs[3:103])
+	for i := 1; i < len(page.Items); i++ {
+		previous, current := page.Items[i-1], page.Items[i]
+		if previous.StartedAt != nil && current.StartedAt != nil && previous.StartedAt.Equal(*current.StartedAt) && previous.ID <= current.ID {
+			t.Fatalf("equal started_at tie ordered ids %d then %d, want descending ids", previous.ID, current.ID)
+		}
+	}
+}
+
+func TestListRunsOrdersQueuedNullStartedAtFirst(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	requireRunSummaryIDs(t, page.Items[:3], fixture.expectedIDs[:3])
+	for i := 0; i < 3; i++ {
+		if page.Items[i].StartedAt != nil {
+			t.Fatalf("items[%d].started_at = %v, want nil", i, page.Items[i].StartedAt)
+		}
+	}
+}
+
+func TestListRunsPagesTiesWithoutDuplicates(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	first, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListRuns first page: %v", err)
+	}
+	second, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID, Limit: 20, Offset: 20})
+	if err != nil {
+		t.Fatalf("ListRuns second page: %v", err)
+	}
+	unaligned, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID, Limit: 20, Offset: 21})
+	if err != nil {
+		t.Fatalf("ListRuns unaligned page: %v", err)
+	}
+	requireRunSummaryIDs(t, first.Items, fixture.expectedIDs[:20])
+	requireRunSummaryIDs(t, second.Items, fixture.expectedIDs[20:40])
+	requireRunSummaryIDs(t, unaligned.Items, fixture.expectedIDs[21:41])
+	if unaligned.Page != 1 {
+		t.Fatalf("unaligned page = %d, want floor(21/20)=1", unaligned.Page)
+	}
+	seen := make(map[int]struct{}, len(first.Items))
+	for _, item := range first.Items {
+		seen[item.ID] = struct{}{}
+	}
+	for _, item := range second.Items {
+		if _, ok := seen[item.ID]; ok {
+			t.Fatalf("run %d appears on adjacent pages", item.ID)
+		}
+	}
+}
+
+func TestListRunsSummaryOmitsDiagnosticBlobs(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID, Limit: 100})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	for _, item := range page.Items {
+		encoded := requireRunSummaryJSONKeys(t, item)
+		for _, marker := range []string{"warning-marker-", "summary-marker-", "diff-marker-", "error-marker-"} {
+			if strings.Contains(string(encoded), marker) {
+				t.Fatalf("summary %d contains diagnostic marker %q: %s", item.ID, marker, encoded)
+			}
+		}
+	}
+	for _, item := range page.Items {
+		if item.ID == fixture.seededSummary.ID {
+			requireRunSummary(t, item, fixture.seededSummary)
+			return
+		}
+	}
+	t.Fatalf("seeded summary %d not found in first 100 items", fixture.seededSummary.ID)
+}
+
+func TestListRunsReturnsLatestActiveOutsideRequestedPage(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	for _, tt := range fixture.latestActiveCases {
+		t.Run(tt.name, func(t *testing.T) {
+			page, err := fixture.service.ListRuns(context.Background(), RunListRequest{
+				SourceID: tt.sourceID,
+				Limit:    20,
+				Offset:   100,
+			})
+			if err != nil {
+				t.Fatalf("ListRuns: %v", err)
+			}
+			if page.LatestActiveRun == nil {
+				t.Fatalf("latest_active_run = nil, want id=%d mode=%q status=%q", tt.want.ID, tt.want.Mode, tt.want.Status)
+			}
+			requireRunSummary(t, *page.LatestActiveRun, tt.want)
+			requireRunSummaryJSONKeys(t, *page.LatestActiveRun)
+			for _, item := range page.Items {
+				if item.ID == tt.want.ID {
+					t.Fatalf("latest active run %d unexpectedly appears on requested history page", item.ID)
+				}
+			}
+		})
+	}
+}
+
+func TestListRunsReturnsEmptyItemsNotNull(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	page, err := fixture.service.ListRuns(context.Background(), RunListRequest{SourceID: fixture.sourceID + 1000})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if page.Items == nil || len(page.Items) != 0 {
+		t.Fatalf("items = %#v, want non-nil empty slice", page.Items)
+	}
+	if page.LatestActiveRun != nil || page.Total != 0 {
+		t.Fatalf("empty page = %+v, want total=0 latest_active_run=nil", page)
+	}
+}
+
+func TestListRunsRejectsInvalidSourceID(t *testing.T) {
+	client := testdb.Open(t)
+	service := NewService(client, ServiceOptions{})
+	if _, err := service.ListRuns(context.Background(), RunListRequest{}); err == nil {
+		t.Fatal("ListRuns succeeded with source_id=0")
+	} else if _, ok := err.(*ValidationError); !ok {
+		t.Fatalf("ListRuns error = %T %v, want ValidationError", err, err)
+	}
+}
+
+func TestGetRunKeepsCompleteDiagnostics(t *testing.T) {
+	fixture := newRunListTestFixture(t)
+	run, err := fixture.service.GetRun(context.Background(), fixture.detailRunID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	encoded, err := json.Marshal(run)
+	if err != nil {
+		t.Fatalf("marshal run detail: %v", err)
+	}
+	for _, key := range []string{"warnings", "summary", "preview_diff", "error_message"} {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &fields); err != nil {
+			t.Fatalf("decode run detail: %v", err)
+		}
+		if _, ok := fields[key]; !ok {
+			t.Fatalf("run detail missing diagnostic key %q: %s", key, encoded)
+		}
+	}
+	for _, marker := range []string{"warning-marker-064", "summary-marker-064", "diff-marker-064", "error-marker-064"} {
+		if !strings.Contains(string(encoded), marker) {
+			t.Fatalf("run detail missing marker %q: %s", marker, encoded)
+		}
+	}
 }
 
 func TestServicePreviewDoesNotUpdateFactsAndApplyDoes(t *testing.T) {
@@ -447,6 +992,33 @@ func TestCurrentSourceIDUsesLatestSuccessfulApplyRun(t *testing.T) {
 	}
 	if !ok || sourceID != newSource.ID {
 		t.Fatalf("current source = %d/%v, want new source %d", sourceID, ok, newSource.ID)
+	}
+}
+
+func TestCurrentSnapshotReturnsLatestSuccessfulApplyRunVersion(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	oldCompletedAt := time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC)
+	newCompletedAt := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+	createDirectorySnapshot(t, ctx, client, "Old Directory", "dept-old", "alice@example.com", oldCompletedAt)
+	newSource := createDirectorySnapshot(t, ctx, client, "New Directory", "dept-new", "bob@example.org", newCompletedAt)
+
+	snapshot, ok, err := CurrentSnapshot(ctx, client)
+	if err != nil {
+		t.Fatalf("CurrentSnapshot: %v", err)
+	}
+	if !ok {
+		t.Fatal("CurrentSnapshot ok = false, want true")
+	}
+	if snapshot.SourceID != newSource.ID {
+		t.Fatalf("snapshot source ID = %d, want %d", snapshot.SourceID, newSource.ID)
+	}
+	persistedSource, err := client.DirectorySource.Get(ctx, newSource.ID)
+	if err != nil {
+		t.Fatalf("reload new source: %v", err)
+	}
+	if persistedSource.LastSuccessfulRunID == nil || snapshot.RunID != *persistedSource.LastSuccessfulRunID {
+		t.Fatalf("snapshot run ID = %d, want %v", snapshot.RunID, persistedSource.LastSuccessfulRunID)
 	}
 }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import QuotaResetRequestList from '@/components/quota-reset/QuotaResetRequestList.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
@@ -27,52 +27,116 @@ const auth = useAuthStore()
 const workItems = useWorkItemsStore()
 
 type QueueMode = 'mine' | 'approvals' | 'admin'
+type QueueStatus = 'idle' | 'loading' | 'loaded' | 'error'
 type FilterMode = 'all' | 'pending' | 'processed' | 'failed'
 
 const activeQueue = ref<QueueMode>('mine')
 const activeFilter = ref<FilterMode>('all')
-const myRequests = ref<QuotaResetRequestSummary[]>([])
-const approvalRequests = ref<QuotaResetRequestSummary[]>([])
-const adminRequests = ref<QuotaResetRequestSummary[]>([])
-const myTotal = ref(0)
-const loading = ref(false)
-const actionBusy = ref(false)
-const loadError = ref('')
+
+interface QueueState {
+  status: QueueStatus
+  items: QuotaResetRequestSummary[]
+  total: number
+  error: string
+  actionBusy: boolean
+}
+
+function createQueueState(): QueueState {
+  return {
+    status: 'idle',
+    items: [],
+    total: 0,
+    error: '',
+    actionBusy: false,
+  }
+}
+
+const queues = reactive<Record<QueueMode, QueueState>>({
+  mine: createQueueState(),
+  approvals: createQueueState(),
+  admin: createQueueState(),
+})
+const queueGenerations: Record<QueueMode, number> = { mine: 0, approvals: 0, admin: 0 }
+
+interface ActiveQueueRequest {
+  generation: number
+  promise: Promise<void>
+}
+
+const activeRequests: Partial<Record<QueueMode, ActiveQueueRequest>> = {}
 const filters: FilterMode[] = ['all', 'pending', 'processed', 'failed']
+const currentQueue = computed(() => queues[activeQueue.value])
+const myTotal = computed(() => queues.mine.total)
 const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : workItems.counts.quota_reset_approval_count)
 const adminTotal = computed(() => workItems.loading || workItems.error || !auth.isAdmin ? 0 : workItems.counts.quota_reset_admin_count)
+const visibleItems = computed(() => currentQueue.value.items.filter((item) => filterMatches(item.status, activeFilter.value)))
 
-const queueItems = computed(() => {
-  if (activeQueue.value === 'approvals') return approvalRequests.value
-  if (activeQueue.value === 'admin') return adminRequests.value
-  return myRequests.value
-})
+function listQueue(mode: QueueMode) {
+  if (mode === 'approvals') return listQuotaResetApprovals()
+  if (mode === 'admin') return listAdminQuotaResetRequests()
+  return listMyQuotaResetRequests()
+}
 
-const visibleItems = computed(() => queueItems.value.filter((item) => filterMatches(item.status, activeFilter.value)))
+function invalidateQueue(mode: QueueMode) {
+  queueGenerations[mode] += 1
+  delete activeRequests[mode]
+  const state = queues[mode]
+  state.status = 'idle'
+  state.items = []
+  state.total = 0
+  state.error = ''
+}
 
-async function loadQueues() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const requests = [
-      listMyQuotaResetRequests(),
-      listQuotaResetApprovals(),
-    ] as const
-    const [mine, approvals] = await Promise.all(requests)
-    myRequests.value = mine.data.data?.items ?? []
-    approvalRequests.value = approvals.data.data?.items ?? []
-    myTotal.value = mine.data.data?.total ?? myRequests.value.length
-    if (auth.isAdmin) {
-      const admin = await listAdminQuotaResetRequests()
-      adminRequests.value = admin.data.data?.items ?? []
-    } else {
-      adminRequests.value = []
-    }
-  } catch {
-    loadError.value = t('quotaReset.loadFailed')
-  } finally {
-    loading.value = false
+function loadQueue(mode: QueueMode, options: { force?: boolean } = {}): Promise<void> {
+  if (mode === 'admin' && !auth.isAdmin) return Promise.resolve()
+
+  const state = queues[mode]
+  const activeRequest = activeRequests[mode]
+  if (!options.force) {
+    if (activeRequest) return activeRequest.promise
+    if (state.status !== 'idle') return Promise.resolve()
   }
+
+  const generation = ++queueGenerations[mode]
+  state.status = 'loading'
+  state.items = []
+  state.total = 0
+  state.error = ''
+
+  const request: ActiveQueueRequest = {
+    generation,
+    promise: Promise.resolve(),
+  }
+  activeRequests[mode] = request
+  request.promise = (async () => {
+    try {
+      const response = await listQueue(mode)
+      if (queueGenerations[mode] !== generation) return
+      const items = response.data.data?.items ?? []
+      state.items = items
+      state.total = response.data.data?.total ?? items.length
+      state.status = 'loaded'
+    } catch {
+      if (queueGenerations[mode] !== generation) return
+      state.items = []
+      state.total = 0
+      state.error = t('quotaReset.loadFailed')
+      state.status = 'error'
+    } finally {
+      if (activeRequests[mode] === request) delete activeRequests[mode]
+    }
+  })()
+  return request.promise
+}
+
+function selectQueue(mode: QueueMode) {
+  if (mode === 'admin' && !auth.isAdmin) return
+  activeQueue.value = mode
+  void loadQueue(mode)
+}
+
+function refreshActiveQueue() {
+  void loadQueue(activeQueue.value, { force: true })
 }
 
 function filterMatches(status: QuotaResetStatus, filter: FilterMode) {
@@ -118,20 +182,31 @@ function filterButtonClass(active: boolean) {
   ]
 }
 
-async function withAction(action: () => Promise<unknown>) {
-  actionBusy.value = true
+const overlappingQueues: Record<QueueMode, QueueMode[]> = {
+  mine: ['admin'],
+  approvals: ['admin'],
+  admin: ['mine', 'approvals'],
+}
+
+async function withAction(sourceQueue: QueueMode, action: () => Promise<unknown>) {
+  const sourceState = queues[sourceQueue]
+  sourceState.actionBusy = true
   try {
     await action()
+    const refreshTargets = new Set<QueueMode>([sourceQueue])
+    for (const mode of overlappingQueues[sourceQueue]) {
+      if (mode === 'admin' && !auth.isAdmin) continue
+      invalidateQueue(mode)
+      if (activeQueue.value === mode) refreshTargets.add(mode)
+    }
     workItems.invalidateCounts()
-    await Promise.all([
-      loadQueues(),
-      workItems.loadCounts({ force: true }),
-    ])
+    void workItems.loadCounts({ force: true })
+    await Promise.all(Array.from(refreshTargets, (mode) => loadQueue(mode, { force: true })))
     showToast({ message: t('quotaReset.actionSucceeded'), tone: 'success' })
   } catch {
     showToast({ message: t('quotaReset.actionFailed'), tone: 'error' })
   } finally {
-    actionBusy.value = false
+    sourceState.actionBusy = false
   }
 }
 
@@ -140,38 +215,41 @@ function rejectReason() {
 }
 
 function handleCancel(item: QuotaResetRequestSummary) {
-  void withAction(() => cancelQuotaResetRequest(item.id))
+  void withAction('mine', () => cancelQuotaResetRequest(item.id))
 }
 
 function handleApprove(item: QuotaResetRequestSummary) {
-  if (activeQueue.value === 'admin') {
-    void withAction(() => adminApproveQuotaResetRequest(item.id, {}))
+  const sourceQueue = activeQueue.value
+  if (sourceQueue === 'admin') {
+    void withAction(sourceQueue, () => adminApproveQuotaResetRequest(item.id, {}))
     return
   }
-  void withAction(() => approveQuotaResetRequest(item.id, {}))
+  void withAction(sourceQueue, () => approveQuotaResetRequest(item.id, {}))
 }
 
 function handleReject(item: QuotaResetRequestSummary) {
   const decisionReason = rejectReason()
   if (!decisionReason) return
-  if (activeQueue.value === 'admin') {
-    void withAction(() => adminRejectQuotaResetRequest(item.id, { decision_reason: decisionReason }))
+  const sourceQueue = activeQueue.value
+  if (sourceQueue === 'admin') {
+    void withAction(sourceQueue, () => adminRejectQuotaResetRequest(item.id, { decision_reason: decisionReason }))
     return
   }
-  void withAction(() => rejectQuotaResetRequest(item.id, { decision_reason: decisionReason }))
+  void withAction(sourceQueue, () => rejectQuotaResetRequest(item.id, { decision_reason: decisionReason }))
 }
 
 function handleRetry(item: QuotaResetRequestSummary) {
-  if (activeQueue.value === 'admin') {
-    void withAction(() => adminRetryQuotaResetRequest(item.id))
+  const sourceQueue = activeQueue.value
+  if (sourceQueue === 'admin') {
+    void withAction(sourceQueue, () => adminRetryQuotaResetRequest(item.id))
     return
   }
-  void withAction(() => retryQuotaResetRequest(item.id))
+  void withAction(sourceQueue, () => retryQuotaResetRequest(item.id))
 }
 
 onMounted(() => {
   void workItems.loadCounts()
-  void loadQueues()
+  void loadQueue('mine')
 })
 </script>
 
@@ -193,7 +271,7 @@ onMounted(() => {
             type="button"
             data-testid="quota-reset-tab-mine"
             :class="queueButtonClass(activeQueue === 'mine')"
-            @click="activeQueue = 'mine'"
+            @click="selectQueue('mine')"
           >
             {{ t('quotaReset.myRequests') }}
             <span
@@ -208,7 +286,7 @@ onMounted(() => {
             type="button"
             data-testid="quota-reset-tab-approvals"
             :class="queueButtonClass(activeQueue === 'approvals')"
-            @click="activeQueue = 'approvals'"
+            @click="selectQueue('approvals')"
           >
             {{ t('quotaReset.myApprovals') }}
             <span
@@ -224,7 +302,7 @@ onMounted(() => {
             type="button"
             data-testid="quota-reset-tab-admin"
             :class="queueButtonClass(activeQueue === 'admin')"
-            @click="activeQueue = 'admin'"
+            @click="selectQueue('admin')"
           >
             {{ t('quotaReset.adminQueue') }}
             <span
@@ -237,27 +315,38 @@ onMounted(() => {
           </button>
         </div>
 
-        <div data-testid="quota-reset-status-filters" class="flex w-fit max-w-full flex-wrap gap-1 rounded-full bg-slate-100 p-1">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div data-testid="quota-reset-status-filters" class="flex w-fit max-w-full flex-wrap gap-1 rounded-full bg-slate-100 p-1">
+            <button
+              v-for="filter in filters"
+              :key="filter"
+              type="button"
+              :data-testid="`quota-reset-filter-${filter}`"
+              :class="filterButtonClass(activeFilter === filter)"
+              @click="activeFilter = filter"
+            >
+              {{ filterLabel(filter) }}
+            </button>
+          </div>
           <button
-            v-for="filter in filters"
-            :key="filter"
             type="button"
-            :data-testid="`quota-reset-filter-${filter}`"
-            :class="filterButtonClass(activeFilter === filter)"
-            @click="activeFilter = filter"
+            data-testid="quota-reset-refresh"
+            class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="currentQueue.status === 'loading' || currentQueue.actionBusy"
+            @click="refreshActiveQueue"
           >
-            {{ filterLabel(filter) }}
+            {{ t('quotaReset.refresh') }}
           </button>
         </div>
       </section>
 
-      <div v-if="loadError" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        {{ loadError }}
+      <div v-if="currentQueue.error" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        {{ currentQueue.error }}
       </div>
 
       <QuotaResetRequestList
         :items="visibleItems"
-        :loading="loading || actionBusy"
+        :loading="currentQueue.status === 'loading' || currentQueue.actionBusy"
         :mode="activeQueue"
         @cancel="handleCancel"
         @approve="handleApprove"

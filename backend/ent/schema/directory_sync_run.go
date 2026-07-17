@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	entsql "entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
@@ -45,5 +46,13 @@ func (DirectorySyncRun) Indexes() []ent.Index {
 		index.Fields("source_id", "created_at"),
 		index.Fields("source_id", "status"),
 		index.Fields("status", "created_at"),
+		index.Fields("source_id", "started_at", "id").
+			Annotations(entsql.DescColumns("started_at", "id")),
+		index.Fields("source_id", "started_at", "id").
+			StorageKey("directory_sync_runs_active_started_id").
+			Annotations(
+				entsql.DescColumns("started_at", "id"),
+				entsql.IndexWhere("mode IN ('preview', 'apply') AND status IN ('queued', 'running')"),
+			),
 	}
 }
