@@ -9,80 +9,20 @@ import (
 	"io"
 	"math/rand/v2"
 	"regexp"
-	"sync"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/google/uuid"
-	redis "github.com/redis/go-redis/v9"
 )
 
 const inventoryCacheSchemaVersion = 1
 
-var (
-	ErrInventoryCacheMiss = errors.New("repository inventory cache miss")
-	inventoryNamespaceRE  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
-	releaseInventoryLease = redis.NewScript(`
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-  return redis.call("DEL", KEYS[1])
-end
-return 0`)
-)
+var inventoryNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
 type InventoryLoader func(context.Context) ([]InventoryProviderSummary, error)
 
-type InventoryStore interface {
-	Get(ctx context.Context, key string) ([]byte, error)
-	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
-	TryAcquireLease(ctx context.Context, key, token string, ttl time.Duration) (bool, error)
-	LeaseTTL(ctx context.Context, key string) (time.Duration, error)
-	ReleaseLease(ctx context.Context, key, token string) (bool, error)
-}
-
 type InventoryRevisionReader interface {
 	Current(context.Context) (string, error)
-}
-
-type RedisInventoryStore struct {
-	client redis.UniversalClient
-}
-
-func NewRedisInventoryStore(client redis.UniversalClient) *RedisInventoryStore {
-	return &RedisInventoryStore{client: client}
-}
-
-func (s *RedisInventoryStore) Get(ctx context.Context, key string) ([]byte, error) {
-	value, err := s.client.Get(ctx, key).Bytes()
-	if errors.Is(err, redis.Nil) {
-		return nil, ErrInventoryCacheMiss
-	}
-	return value, err
-}
-
-func (s *RedisInventoryStore) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return s.client.Set(ctx, key, value, ttl).Err()
-}
-
-func (s *RedisInventoryStore) TryAcquireLease(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
-	return s.client.SetNX(ctx, key, token, ttl).Result()
-}
-
-func (s *RedisInventoryStore) LeaseTTL(ctx context.Context, key string) (time.Duration, error) {
-	ttl, err := s.client.PTTL(ctx, key).Result()
-	if err != nil {
-		return 0, err
-	}
-	if ttl <= 0 {
-		return 0, ErrInventoryCacheMiss
-	}
-	return ttl, nil
-}
-
-func (s *RedisInventoryStore) ReleaseLease(ctx context.Context, key, token string) (bool, error) {
-	result, err := releaseInventoryLease.Run(ctx, s.client, []string{key}, token).Int64()
-	if err != nil {
-		return false, err
-	}
-	return result == 1, nil
 }
 
 type InventoryCacheOptions struct {
@@ -98,10 +38,10 @@ type InventoryCacheOptions struct {
 }
 
 type InventoryCache struct {
-	store     InventoryStore
+	store     readcache.Store
 	revisions InventoryRevisionReader
 	options   InventoryCacheOptions
-	flights   inventoryFlightGroup
+	flights   readcache.FlightGroup[[]InventoryProviderSummary]
 }
 
 type inventoryValueEnvelope struct {
@@ -109,7 +49,7 @@ type inventoryValueEnvelope struct {
 	Inventory     []InventoryProviderSummary `json:"inventory"`
 }
 
-func NewInventoryCache(store InventoryStore, revisions InventoryRevisionReader, options InventoryCacheOptions) (*InventoryCache, error) {
+func NewInventoryCache(store readcache.Store, revisions InventoryRevisionReader, options InventoryCacheOptions) (*InventoryCache, error) {
 	if store == nil {
 		return nil, fmt.Errorf("repository inventory store is required")
 	}
@@ -146,7 +86,7 @@ func applyInventoryCacheDefaults(options *InventoryCacheOptions) {
 		options.NewToken = uuid.NewString
 	}
 	if options.Sleep == nil {
-		options.Sleep = sleepForInventory
+		options.Sleep = readcache.Sleep
 	}
 }
 
@@ -211,7 +151,7 @@ func (c *InventoryCache) loadWithLease(ctx context.Context, key, revision string
 				return c.loadAuthoritative(ctx, loader)
 			}
 			ttl, err := c.leaseTTL(ctx, leaseKey)
-			if errors.Is(err, ErrInventoryCacheMiss) || ttl <= 0 {
+			if errors.Is(err, readcache.ErrMiss) || ttl <= 0 {
 				break
 			}
 			if err != nil {
@@ -283,7 +223,7 @@ func (c *InventoryCache) read(ctx context.Context, key string) ([]InventoryProvi
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.CommandTimeout)
 	defer cancel()
 	value, err := c.store.Get(commandCtx, key)
-	if errors.Is(err, ErrInventoryCacheMiss) {
+	if errors.Is(err, readcache.ErrMiss) {
 		return nil, false, nil
 	}
 	if err != nil {
@@ -370,96 +310,4 @@ func (c *InventoryCache) valueTTL() time.Duration {
 
 func inventoryCacheKey(namespace, revision string) string {
 	return fmt.Sprintf("ae:%s:repos:inventory:v1:rev:%s", namespace, revision)
-}
-
-func sleepForInventory(ctx context.Context, duration time.Duration) error {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-type inventoryFlightGroup struct {
-	mu    sync.Mutex
-	calls map[string]*inventoryFlightCall
-}
-
-type inventoryFlightCall struct {
-	done      chan struct{}
-	cancel    context.CancelFunc
-	waiters   int
-	completed bool
-	inventory []InventoryProviderSummary
-	err       error
-}
-
-func (g *inventoryFlightGroup) Do(ctx context.Context, key string, timeout time.Duration, load func(context.Context) ([]InventoryProviderSummary, error)) ([]InventoryProviderSummary, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	g.mu.Lock()
-	if g.calls == nil {
-		g.calls = make(map[string]*inventoryFlightCall)
-	}
-	if call := g.calls[key]; call != nil {
-		call.waiters++
-		g.mu.Unlock()
-		return g.wait(ctx, key, call)
-	}
-
-	sharedCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
-	call := &inventoryFlightCall{done: make(chan struct{}), cancel: cancel, waiters: 1}
-	g.calls[key] = call
-	g.mu.Unlock()
-
-	go func() {
-		inventory, err := load(sharedCtx)
-		cancel()
-		g.mu.Lock()
-		call.inventory = inventory
-		call.err = err
-		call.completed = true
-		if g.calls[key] == call {
-			delete(g.calls, key)
-		}
-		close(call.done)
-		g.mu.Unlock()
-	}()
-
-	return g.wait(ctx, key, call)
-}
-
-func (g *inventoryFlightGroup) wait(ctx context.Context, key string, call *inventoryFlightCall) ([]InventoryProviderSummary, error) {
-	select {
-	case <-call.done:
-		return call.inventory, call.err
-	case <-ctx.Done():
-		select {
-		case <-call.done:
-			return call.inventory, call.err
-		default:
-		}
-		g.leave(key, call)
-		return nil, ctx.Err()
-	}
-}
-
-func (g *inventoryFlightGroup) leave(key string, call *inventoryFlightCall) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if call.completed {
-		return
-	}
-	call.waiters--
-	if call.waiters > 0 {
-		return
-	}
-	if g.calls[key] == call {
-		delete(g.calls, key)
-	}
-	call.cancel()
 }
