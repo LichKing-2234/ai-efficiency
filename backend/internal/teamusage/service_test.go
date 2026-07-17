@@ -45,7 +45,7 @@ func TestSubjectDashboardReadsUniqueActiveGroupMultiplierMetadataInOneBatch(t *t
 		},
 	}
 
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
 	if err != nil {
 		t.Fatalf("SubjectDashboard() error = %v", err)
@@ -112,7 +112,7 @@ func TestSubjectDashboardIsolatesFailedAndMissingBatchMultiplierMetadata(t *test
 		},
 	}
 
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{StartDate: "2026-07-13", EndDate: "2026-07-16"})
 	if err != nil {
 		t.Fatalf("SubjectDashboard() error = %v", err)
@@ -178,7 +178,7 @@ func TestSubjectDashboardTreatsDuplicateBatchMultiplierResultsAsUnavailableRegar
 				batchRateResults: tt.results,
 			}
 
-			svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+			svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 			resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
 			if err != nil {
 				t.Fatalf("SubjectDashboard() error = %v", err)
@@ -228,7 +228,7 @@ func TestSubjectDashboardWithoutBatchCapabilityMarksMetadataUnavailableAndPreser
 		t.Fatal("fallback provider must intentionally omit the multiplier batch capability")
 	}
 
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
 	if err != nil {
 		t.Fatalf("SubjectDashboard() error = %v", err)
@@ -308,7 +308,7 @@ func TestSubjectDashboardMarksPeerRepresentativeAsNonEditable(t *testing.T) {
 		},
 	}
 
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
 	if err != nil {
 		t.Fatalf("SubjectDashboard() error = %v", err)
@@ -345,7 +345,7 @@ func TestSubjectDashboardRejectsOutOfScopeTargetBeforeRelayLookup(t *testing.T) 
 		},
 	}
 	provider := &fakeRelayProvider{}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	_, err := svc.SubjectDashboard(ctx, 1, 999, relay.UserUsageDashboardParams{})
 	if err == nil {
@@ -363,7 +363,7 @@ func TestSubjectDashboardRejectsOutOfScopeTargetBeforeRelayLookup(t *testing.T) 
 func TestUpdateMultiplierClosesAuditOnScopeResolutionFailure(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
-	svc := NewService(client, fakeScopeResolver{err: errors.New("scope backend down")}, fakeProviderResolver{}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{err: errors.New("scope backend down")}, fakeProviderResolver{}, nil)
 
 	_, err := svc.UpdateMultiplier(ctx, 11, 22, 42, UpdateMultiplierRequest{Mode: "reset"})
 	if err == nil {
@@ -399,7 +399,7 @@ func TestOverviewReturnsHardErrorForTrendAuthorizationFailure(t *testing.T) {
 		},
 		trendErr: relay.ErrInvalidCredentials,
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	_, err := svc.Overview(ctx, 1, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -444,7 +444,7 @@ func TestSummaryAndOverviewShareCachedSnapshotAndPreserveComparisonTotals(t *tes
 	cache, _ := testSnapshotCache(t, clock, 0)
 	scopeResolver := &countingTeamScopeResolver{scope: scope}
 	providerResolver := &countingTeamProviderResolver{provider: provider}
-	svc := NewServiceWithSnapshotCache(client, scopeResolver, providerResolver, nil, cache)
+	svc := newServiceWithSnapshotCacheForTest(client, scopeResolver, providerResolver, nil, cache)
 	params := OverviewParams{
 		StartDate: " 2026-07-01 ", EndDate: "2026-07-07", Granularity: " day ", Timezone: " Asia/Shanghai ",
 	}
@@ -519,7 +519,7 @@ func TestTrendProjectsEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
 	}
 	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
 	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
-	svc := NewServiceWithSnapshotCache(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache)
 	params := OverviewParams{StartDate: "2026-07-16", EndDate: "2026-07-16", Granularity: "hour", Timezone: "UTC"}
 
 	first, err := svc.Trend(ctx, 1, params)
@@ -556,7 +556,7 @@ func TestSummaryLargeScopeDoesNotRequireProviderOriginCapabilities(t *testing.T)
 	}
 	providerResolver := &countingTeamProviderResolver{err: errors.New("provider origin must not resolve for unsupported scope size")}
 	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC), 0)
-	svc := NewServiceWithSnapshotCache(client, fakeScopeResolver{scope: scope}, providerResolver, nil, cache)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, providerResolver, nil, cache)
 
 	result, err := svc.Summary(ctx, 1, OverviewParams{
 		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "UTC",
@@ -586,7 +586,7 @@ func TestSummaryRejectsInvalidNormalizedWindowBeforeRelayReads(t *testing.T) {
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
 	provider := &fakeRelayProvider{}
-	svc := NewServiceWithSnapshotCache(
+	svc := newServiceWithSnapshotCacheForTest(
 		client,
 		fakeScopeResolver{scope: &representativescope.Scope{Version: "scope-v1", ActorUserID: 1, IsRepresentative: true}},
 		fakeProviderResolver{provider: provider},
@@ -630,7 +630,7 @@ func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
 			1003: {{Date: "2026-06-28", ActualCost: 5, TotalTokens: &tokenBob}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -681,7 +681,7 @@ func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{
 		StartDate:   "2026-06-18",
@@ -765,7 +765,7 @@ func TestOverviewBuildsMemberTreeFromRepresentativeDepartments(t *testing.T) {
 			1003: {{Date: "2026-06-28", ActualCost: 30, TotalTokens: &tokenBob}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{StartDate: "2026-06-01", EndDate: "2026-06-30", Granularity: "day", Timezone: "UTC"})
 	if err != nil {
@@ -841,7 +841,7 @@ func TestOverviewBuildsTeamAndSubteamTokenTrendFromRepresentativeDepartments(t *
 			},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{StartDate: "2026-06-01", EndDate: "2026-06-30", Granularity: "day", Timezone: "UTC"})
 	if err != nil {
@@ -900,7 +900,7 @@ func TestOverviewMemberDetailsIncludesScopedMembersWithoutRelayUsage(t *testing.
 			1002: {{Date: "2026-06-28", ActualCost: 8}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -968,7 +968,7 @@ func TestOverviewResolvesDirectoryOnlyMembersByEmailForUsage(t *testing.T) {
 			2002: {{Date: "2026-06-28", ActualCost: 12, TotalTokens: int64Ptr(1200)}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -1070,7 +1070,7 @@ func TestSubjectDashboardReconcilesStaleRelayUserIDFromPrimaryProviderEmail(t *t
 			},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.SubjectDashboard(ctx, 999, target.ID, relay.UserUsageDashboardParams{})
 	if err != nil {
@@ -1129,7 +1129,7 @@ func TestOverviewReconcilesStaleRelayUserIDBeforeBatchUsageAndTrend(t *testing.T
 			2: {{Date: "2026-06-28", ActualCost: 2.8071306}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 999, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -1207,7 +1207,7 @@ func TestOverviewUsesRelayUserDirectoryForCachedRelayBindings(t *testing.T) {
 			2002: {{Date: "2026-06-28", ActualCost: 6}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 999, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -1265,7 +1265,7 @@ func TestOverviewReturnsUnavailableSummaryWhenTrendFetchTimesOut(t *testing.T) {
 		},
 		trendWait: 200 * time.Millisecond,
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 	svc.teamOverviewTrendTimeout = 10 * time.Millisecond
 
 	start := time.Now()
@@ -1325,7 +1325,7 @@ func TestSubjectDashboardBatchReadDoesNotChangeAuthoritativeMultiplierEditAndAud
 		return nil
 	}
 	locker := &fakeLocker{}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, locker)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, locker)
 
 	dashboard, err := svc.SubjectDashboard(ctx, 999, target.ID, relay.UserUsageDashboardParams{})
 	if err != nil {
@@ -1429,7 +1429,7 @@ func TestUpdateMultiplierReconcilesStaleRelayUserIDBeforeWrite(t *testing.T) {
 		}
 		return nil
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
 
 	resp, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
 		Mode:           "set",
@@ -1479,7 +1479,7 @@ func TestAuditListRedactsOutOfScopeMetadataForRepresentativeView(t *testing.T) {
 		SetReason("Synthetic reason").
 		SaveX(ctx)
 
-	svc := NewService(client, nil, nil, nil)
+	svc := newUncachedServiceForTest(client, nil, nil, nil)
 
 	userResp, err := svc.ListAudit(ctx, 1, AuditListParams{Page: 1, PageSize: 20})
 	if err != nil {
@@ -1534,7 +1534,7 @@ func TestUpdateMultiplierOutOfScopeExistingTargetRedactsRepresentativeAuditButKe
 			},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{}, nil)
 
 	_, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{Mode: "reset"})
 	if err == nil {
@@ -1625,7 +1625,7 @@ func TestUpdateMultiplierLockTimeProviderFailureMarksAuditFailed(t *testing.T) {
 		},
 		replaceErr: errors.New("relay replace exploded"),
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
 
 	_, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
 		Mode:           "set",
@@ -1687,7 +1687,7 @@ func TestUpdateMultiplierLockTimeAuditUpdateFailureIsSurfaced(t *testing.T) {
 			return errors.New("relay replace exploded")
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
 
 	_, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
 		Mode:           "set",
@@ -1743,7 +1743,7 @@ func TestUpdateMultiplierNoOpSkipsRelayReplacementAndSucceeds(t *testing.T) {
 		},
 	}
 	locker := &fakeLocker{}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, locker)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, locker)
 
 	resp, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
 		Mode:           "set",
@@ -1805,7 +1805,7 @@ func TestUpdateMultiplierReturnsErrorWhenAuditEndsPartialFailed(t *testing.T) {
 	provider.replaceFn = func(_ context.Context, _ int64, _ []relay.GroupRateMultiplierInput) error {
 		return nil
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
 
 	_, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
 		Mode:           "set",

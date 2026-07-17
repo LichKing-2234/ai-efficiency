@@ -61,7 +61,7 @@ func setupTestEnvWithOAuth(t *testing.T, oauthHandler *oauth.Handler) *testEnv {
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authSvc,
@@ -859,12 +859,12 @@ func setupTestEnvWithProviderRuntime(t *testing.T, runtimeFactory func(*ent.Clie
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 	var providerHandler *ProviderHandler
 	if runtimeFactory == nil {
-		providerHandler = NewProviderHandler(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
+		providerHandler = newProviderHandlerForTest(t, client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	} else {
-		providerHandler = NewProviderHandler(client, "0000000000000000000000000000000000000000000000000000000000000000", logger, runtimeFactory(client))
+		providerHandler = newProviderHandlerForTest(t, client, "0000000000000000000000000000000000000000000000000000000000000000", logger, runtimeFactory(client))
 	}
 
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authSvc,

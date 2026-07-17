@@ -146,7 +146,7 @@ func TestMembersCursorContinuesAcrossRedisOutageWhenAuthoritativeContentMatches(
 	createPrimaryRelayProvider(t, client)
 	scope, provider := membersTestData(3)
 	cache := newTestSnapshotCache(t, failingSnapshotStore{err: errors.New("Redis unavailable")}, time.Now, 0)
-	svc := NewServiceWithSnapshotCache(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret)
 	params := testMembersParams()
 	params.Limit = 1
 
@@ -196,7 +196,7 @@ func newMembersTestService(t *testing.T, count int, now func() time.Time) (*Serv
 		now = func() time.Time { return fixed }
 	}
 	cache, _ := testSnapshotCacheWithClock(t, now, 0)
-	svc := NewServiceWithSnapshotCache(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret)
 	return svc, provider, scope
 }
 

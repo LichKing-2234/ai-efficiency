@@ -33,25 +33,23 @@ type ProviderHandler struct {
 	runtime       *relayruntime.Manager
 }
 
-// NewProviderHandler creates a new provider handler.
-func NewProviderHandler(entClient *ent.Client, encryptionKey string, logger *zap.Logger, runtimes ...*relayruntime.Manager) *ProviderHandler {
-	var runtime *relayruntime.Manager
-	if len(runtimes) > 0 {
-		runtime = runtimes[0]
+// NewProviderHandler creates a provider handler with an explicit Relay runtime.
+func NewProviderHandler(entClient *ent.Client, encryptionKey string, logger *zap.Logger, runtime *relayruntime.Manager) (*ProviderHandler, error) {
+	if entClient == nil {
+		return nil, fmt.Errorf("provider handler Ent client is required")
+	}
+	if logger == nil {
+		return nil, fmt.Errorf("provider handler logger is required")
 	}
 	if runtime == nil {
-		var err error
-		runtime, err = relayruntime.NewManager(entClient, encryptionKey, logger, relayruntime.Options{})
-		if err != nil {
-			panic(fmt.Sprintf("initialize relay runtime: %v", err))
-		}
+		return nil, fmt.Errorf("provider handler relay runtime is required")
 	}
 	return &ProviderHandler{
 		entClient:     entClient,
 		encryptionKey: encryptionKey,
 		logger:        logger,
 		runtime:       runtime,
-	}
+	}, nil
 }
 
 func (h *ProviderHandler) getOrCreateRelayProvider(p *ent.RelayProvider) (relay.Provider, error) {

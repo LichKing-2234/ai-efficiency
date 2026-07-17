@@ -47,7 +47,7 @@ func TestSetupRouterInjectsWorkItemsCacheAndSharedDirectoryService(t *testing.T)
 		t.Fatalf("NewCountsCache() error = %v", err)
 	}
 	directoryService := &fakeDirectoryService{}
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authService,
@@ -63,7 +63,7 @@ func TestSetupRouterInjectsWorkItemsCacheAndSharedDirectoryService(t *testing.T)
 		nil,
 		nil,
 		nil,
-		RouterRuntimeOptions{DirectoryService: directoryService, WorkItemsCache: cache},
+		RouterOptions{DirectoryService: directoryService, WorkItemsCache: cache},
 	)
 
 	admin := client.User.Create().
@@ -151,7 +151,7 @@ func TestSetupRouterInjectsRepresentativeScopeCache(t *testing.T) {
 		SetLastSeenRunID(run.ID).
 		SaveX(ctx)
 
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authService,
@@ -167,7 +167,7 @@ func TestSetupRouterInjectsRepresentativeScopeCache(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		RouterRuntimeOptions{RepresentativeScopeCache: scopeCache},
+		RouterOptions{RepresentativeScopeCache: scopeCache},
 	)
 	token := workItemsTestAccessToken(t, authService, actor.ID, actor.Username, "user")
 	for requestIndex := 0; requestIndex < 2; requestIndex++ {
@@ -197,7 +197,7 @@ func TestSetupRouterQuotaMutationInvalidatesWarmWorkItemCounts(t *testing.T) {
 	authService := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 	repoService := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
-	providerHandler := NewProviderHandler(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
+	providerHandler := newProviderHandlerForTest(t, client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 
 	revisions := workitems.NewRevisionStore(client)
 	if err := revisions.Ensure(ctx); err != nil {
@@ -215,7 +215,7 @@ func TestSetupRouterQuotaMutationInvalidatesWarmWorkItemCounts(t *testing.T) {
 		t.Fatalf("NewCountsCache() error = %v", err)
 	}
 	directoryService := &fakeDirectoryService{}
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authService,
@@ -231,7 +231,7 @@ func TestSetupRouterQuotaMutationInvalidatesWarmWorkItemCounts(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		RouterRuntimeOptions{
+		RouterOptions{
 			DirectoryService:       directoryService,
 			WorkItemsCache:         cache,
 			WorkItemsRevisionStore: revisions,
@@ -383,7 +383,7 @@ func TestSetupRouterDirectoryMutationsInvalidateWarmCountsAcrossRedisOutage(t *t
 		WorkItemCountsInvalidator: revisions,
 		Now:                       func() time.Time { return time.Date(2026, 7, 14, 10, 0, 0, 0, time.UTC) },
 	})
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authService,
@@ -399,7 +399,7 @@ func TestSetupRouterDirectoryMutationsInvalidateWarmCountsAcrossRedisOutage(t *t
 		nil,
 		nil,
 		nil,
-		RouterRuntimeOptions{
+		RouterOptions{
 			DirectoryService:       directoryService,
 			WorkItemsCache:         cache,
 			WorkItemsRevisionStore: revisions,

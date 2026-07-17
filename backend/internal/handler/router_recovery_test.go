@@ -33,7 +33,7 @@ func TestSetupRouterRecoveryUsesSanitizedFixedZapFields(t *testing.T) {
 
 	env := setupTestEnv(t)
 	core, observed := observer.New(zap.InfoLevel)
-	router := SetupRouterWithOptions(
+	router := setupRouterForTest(t,
 		env.client,
 		nil,
 		env.authSvc,
