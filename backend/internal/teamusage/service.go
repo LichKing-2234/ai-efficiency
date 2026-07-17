@@ -44,11 +44,32 @@ type Service struct {
 	organizationCursorCodec  *organizationCursorCodec
 }
 
-func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker) *Service {
-	return NewServiceWithSnapshotCache(client, scopeResolver, providerResolver, locker, nil)
+type ServiceOptions struct {
+	SnapshotCache *SnapshotCache
+	CursorSecret  string
 }
 
-func NewServiceWithSnapshotCache(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, memberCursorSecrets ...string) *Service {
+func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, options ServiceOptions) (*Service, error) {
+	if client == nil {
+		return nil, fmt.Errorf("team usage Ent client is required")
+	}
+	if scopeResolver == nil {
+		return nil, fmt.Errorf("team usage scope resolver is required")
+	}
+	if providerResolver == nil {
+		return nil, fmt.Errorf("team usage provider resolver is required")
+	}
+	if options.SnapshotCache == nil {
+		return nil, fmt.Errorf("team usage snapshot cache is required")
+	}
+	cursorSecret := strings.TrimSpace(options.CursorSecret)
+	if cursorSecret == "" {
+		return nil, fmt.Errorf("team usage cursor secret is required")
+	}
+	return newService(client, scopeResolver, providerResolver, locker, options.SnapshotCache, cursorSecret), nil
+}
+
+func newService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, cursorSecret string) *Service {
 	if locker == nil {
 		locker = &PostgresAdvisoryLocker{}
 	}
@@ -62,9 +83,9 @@ func NewServiceWithSnapshotCache(client *ent.Client, scopeResolver ScopeResolver
 		maxMultiplier:            defaultMaxMultiplier,
 		snapshotCache:            snapshotCache,
 	}
-	if len(memberCursorSecrets) > 0 && strings.TrimSpace(memberCursorSecrets[0]) != "" {
-		service.memberCursorCodec = newMemberCursorCodec(memberCursorSecrets[0])
-		service.organizationCursorCodec = newOrganizationCursorCodec(memberCursorSecrets[0])
+	if cursorSecret != "" {
+		service.memberCursorCodec = newMemberCursorCodec(cursorSecret)
+		service.organizationCursorCodec = newOrganizationCursorCodec(cursorSecret)
 	}
 	return service
 }

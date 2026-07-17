@@ -33,7 +33,7 @@ func TestSetupRouterPropagatesConfiguredRequestTimeout(t *testing.T) {
 	const requestTimeout = 35 * time.Second
 
 	env := setupTestEnv(t)
-	router := SetupRouterWithOptions(
+	router := setupRouterForTest(t,
 		env.client,
 		nil,
 		env.authSvc,
@@ -139,7 +139,7 @@ func TestSetupRouterServesEmbeddedFrontendAtOAuthDevice(t *testing.T) {
 func TestSetupRouterFinalizesUnmatched404BeforeRequestTelemetry(t *testing.T) {
 	env := setupTestEnv(t)
 	core, observed := observer.New(zap.InfoLevel)
-	router := SetupRouterWithOptions(
+	router := setupRouterForTest(t,
 		env.client,
 		nil,
 		env.authSvc,
@@ -443,7 +443,7 @@ func TestSetupRouterTelemetryReportsZeroBytesForEmbeddedHEAD(t *testing.T) {
 func setupRouterWithRequestLogger(t *testing.T, corsMiddleware gin.HandlerFunc, logger *zap.Logger) *gin.Engine {
 	t.Helper()
 	env := setupTestEnv(t)
-	return SetupRouterWithOptions(
+	return setupRouterForTest(t,
 		env.client,
 		nil,
 		env.authSvc,

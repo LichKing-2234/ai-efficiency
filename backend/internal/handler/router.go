@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
@@ -29,7 +31,7 @@ var prAttributionService prAttributionSettler
 var prUsageService prUsageRefresher
 var ginDefaultNotFoundBody = []byte("404 page not found")
 
-// RouterOptions supplies production dependencies while SetupRouter preserves its legacy call shape.
+// RouterOptions supplies the runtime dependencies required by the production router.
 type RouterOptions struct {
 	DirectoryService         DirectoryAdminService
 	PersonalUsageCache       *personalusage.Cache
@@ -37,6 +39,7 @@ type RouterOptions struct {
 	WorkItemsRevisionStore   *workitems.RevisionStore
 	RepresentativeScopeCache *representativescope.Cache
 	TeamUsageSnapshotCache   *teamusage.SnapshotCache
+	TeamUsageCursorSecret    string
 	WebhookHTTPClient        *http.Client
 	RequestLogger            *zap.Logger
 	RequestObserver          telemetry.RequestObserver
@@ -45,7 +48,55 @@ type RouterOptions struct {
 	RequestTimeout           time.Duration
 }
 
-type RouterRuntimeOptions = RouterOptions
+func validateRouterDependencies(providerHandler *ProviderHandler, options RouterOptions) error {
+	missing := make([]string, 0, 14)
+	if providerHandler == nil || providerHandler.runtime == nil {
+		missing = append(missing, "provider runtime")
+	}
+	if strings.TrimSpace(options.TeamUsageCursorSecret) == "" {
+		missing = append(missing, "cursor secret")
+	}
+	if options.DirectoryService == nil {
+		missing = append(missing, "directory service")
+	}
+	if options.PersonalUsageCache == nil {
+		missing = append(missing, "personal usage cache")
+	}
+	if options.WorkItemsCache == nil {
+		missing = append(missing, "work items cache")
+	}
+	if options.WorkItemsRevisionStore == nil {
+		missing = append(missing, "work items revision store")
+	}
+	if options.RepresentativeScopeCache == nil {
+		missing = append(missing, "representative scope cache")
+	}
+	if options.TeamUsageSnapshotCache == nil {
+		missing = append(missing, "team usage snapshot cache")
+	}
+	if options.WebhookHTTPClient == nil {
+		missing = append(missing, "webhook HTTP client")
+	}
+	if options.RequestLogger == nil {
+		missing = append(missing, "request logger")
+	}
+	if options.RequestObserver == nil {
+		missing = append(missing, "request observer")
+	}
+	if options.WebVitalsHandler == nil {
+		missing = append(missing, "Web Vitals handler")
+	}
+	if strings.TrimSpace(options.Release) == "" {
+		missing = append(missing, "release")
+	}
+	if options.RequestTimeout <= 0 {
+		missing = append(missing, "request timeout")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing production router dependencies: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
 
 func SetPRAttributionService(service prAttributionSettler) {
 	prAttributionService = service
@@ -55,7 +106,7 @@ func SetPRUsageService(service prUsageRefresher) {
 	prUsageService = service
 }
 
-// SetupRouter creates and configures the Gin router with all route groups.
+// SetupRouter validates production dependencies and configures all route groups.
 func SetupRouter(
 	entClient *ent.Client,
 	sqlDB *sql.DB,
@@ -72,51 +123,11 @@ func SetupRouter(
 	adminSettingsHandler *AdminSettingsHandler,
 	checkpointHandler *CheckpointHandler,
 	healthHandler *HealthHandler,
-	runtimeOptions ...RouterRuntimeOptions,
-) *gin.Engine {
-	var options RouterOptions
-	if len(runtimeOptions) > 0 {
-		options = runtimeOptions[0]
-	}
-	return setupRouter(
-		entClient,
-		sqlDB,
-		authService,
-		repoService,
-		webhookHandler,
-		syncService,
-		settingsHandler,
-		encryptionKey,
-		publicURL,
-		corsMiddleware,
-		oauthHandler,
-		providerHandler,
-		adminSettingsHandler,
-		checkpointHandler,
-		healthHandler,
-		options,
-	)
-}
-
-// SetupRouterWithOptions configures the router with explicit production dependencies.
-func SetupRouterWithOptions(
-	entClient *ent.Client,
-	sqlDB *sql.DB,
-	authService *auth.Service,
-	repoService *repo.Service,
-	webhookHandler *webhook.Handler,
-	syncService prSyncer,
-	settingsHandler *SettingsHandler,
-	encryptionKey string,
-	publicURL string,
-	corsMiddleware gin.HandlerFunc,
-	oauthHandler *oauth.Handler,
-	providerHandler *ProviderHandler,
-	adminSettingsHandler *AdminSettingsHandler,
-	checkpointHandler *CheckpointHandler,
-	healthHandler *HealthHandler,
 	options RouterOptions,
-) *gin.Engine {
+) (*gin.Engine, error) {
+	if err := validateRouterDependencies(providerHandler, options); err != nil {
+		return nil, err
+	}
 	return setupRouter(
 		entClient,
 		sqlDB,
@@ -154,7 +165,7 @@ func setupRouter(
 	checkpointHandler *CheckpointHandler,
 	healthHandler *HealthHandler,
 	options RouterOptions,
-) *gin.Engine {
+) (*gin.Engine, error) {
 	r := gin.New()
 	// Keep canonical redirects inside the correlation and telemetry chain.
 	r.RedirectTrailingSlash = false
@@ -339,7 +350,11 @@ func setupRouter(
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
 
-	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, encryptionKey))
+	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageCursorSecret)
+	if err != nil {
+		return nil, fmt.Errorf("initialize team usage service: %w", err)
+	}
+	teamUsageHandler := NewTeamUsageHandler(teamUsageService)
 
 	userGroup := protected.Group("/user")
 	{
@@ -478,5 +493,5 @@ func setupRouter(
 		}
 	}
 
-	return r
+	return r, nil
 }

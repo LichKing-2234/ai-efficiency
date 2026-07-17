@@ -60,7 +60,7 @@ func TestProviderConfigurationVersionStartsAtOneAndIncrementsWithUpdate(t *testi
 	}
 
 	bus := &providerInvalidationRecorder{}
-	h := NewProviderHandler(env.client, userUsageTestEncryptionKey, zap.NewNop(), newProviderRuntimeForHandlerTest(t, env, bus))
+	h := newProviderHandlerForTest(t, env.client, userUsageTestEncryptionKey, zap.NewNop(), newProviderRuntimeForHandlerTest(t, env, bus))
 	router := gin.New()
 	router.PUT("/providers/:id", h.Update)
 
@@ -105,7 +105,7 @@ func TestProviderConfigurationVersionDoesNotChangeWhenUpdateBindingFails(t *test
 	}
 
 	bus := &providerInvalidationRecorder{}
-	h := NewProviderHandler(env.client, userUsageTestEncryptionKey, zap.NewNop(), newProviderRuntimeForHandlerTest(t, env, bus))
+	h := newProviderHandlerForTest(t, env.client, userUsageTestEncryptionKey, zap.NewNop(), newProviderRuntimeForHandlerTest(t, env, bus))
 	router := gin.New()
 	router.PUT("/providers/:id", h.Update)
 	req := httptest.NewRequest(http.MethodPut, "/providers/"+providerIDString(provider.ID), bytes.NewBufferString(`{"enabled":`))
@@ -143,7 +143,7 @@ func TestProviderInvalidationPublishFailureDoesNotRollBackUpdate(t *testing.T) {
 	}
 
 	bus := &providerInvalidationRecorder{err: fmt.Errorf("redis unavailable")}
-	h := NewProviderHandler(env.client, userUsageTestEncryptionKey, zap.NewNop(), newProviderRuntimeForHandlerTest(t, env, bus))
+	h := newProviderHandlerForTest(t, env.client, userUsageTestEncryptionKey, zap.NewNop(), newProviderRuntimeForHandlerTest(t, env, bus))
 	router := gin.New()
 	router.PUT("/providers/:id", h.Update)
 	req := httptest.NewRequest(http.MethodPut, "/providers/"+providerIDString(provider.ID), bytes.NewBufferString(`{"display_name":"Updated"}`))
@@ -168,7 +168,7 @@ func TestProviderInvalidationPublishFailureDoesNotRollBackUpdate(t *testing.T) {
 func TestProviderInvalidationPublishesAfterCreateAndDelete(t *testing.T) {
 	env := setupTestEnv(t)
 	bus := &providerInvalidationRecorder{}
-	h := NewProviderHandler(env.client, userUsageTestEncryptionKey, zap.NewNop(), newProviderRuntimeForHandlerTest(t, env, bus))
+	h := newProviderHandlerForTest(t, env.client, userUsageTestEncryptionKey, zap.NewNop(), newProviderRuntimeForHandlerTest(t, env, bus))
 	router := gin.New()
 	router.POST("/providers", h.Create)
 	router.DELETE("/providers/:id", h.Delete)
