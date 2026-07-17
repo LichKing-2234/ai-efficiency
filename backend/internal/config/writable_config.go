@@ -59,10 +59,24 @@ func EnsureWritableConfigFile(path string, cfg *Config) error {
 func configToYAMLMap(cfg *Config) map[string]any {
 	return map[string]any{
 		"server": map[string]any{
-			"port":         cfg.Server.Port,
-			"mode":         cfg.Server.Mode,
-			"frontend_url": cfg.Server.FrontendURL,
-			"public_url":   cfg.Server.PublicURL,
+			"port":                        cfg.Server.Port,
+			"mode":                        cfg.Server.Mode,
+			"frontend_url":                cfg.Server.FrontendURL,
+			"public_url":                  cfg.Server.PublicURL,
+			"read_header_timeout_seconds": cfg.Server.ReadHeaderTimeoutSeconds,
+			"idle_timeout_seconds":        cfg.Server.IdleTimeoutSeconds,
+			"readiness_timeout_seconds":   cfg.Server.ReadinessTimeoutSeconds,
+			"request_timeout_seconds":     cfg.Server.RequestTimeoutSeconds,
+		},
+		"http_client": map[string]any{
+			"connect_timeout_seconds":         cfg.HTTPClient.ConnectTimeoutSeconds,
+			"tls_handshake_timeout_seconds":   cfg.HTTPClient.TLSHandshakeTimeoutSeconds,
+			"response_header_timeout_seconds": cfg.HTTPClient.ResponseHeaderTimeoutSeconds,
+			"overall_timeout_seconds":         cfg.HTTPClient.OverallTimeoutSeconds,
+			"idle_conn_timeout_seconds":       cfg.HTTPClient.IdleConnTimeoutSeconds,
+			"max_idle_conns":                  cfg.HTTPClient.MaxIdleConns,
+			"max_idle_conns_per_host":         cfg.HTTPClient.MaxIdleConnsPerHost,
+			"max_conns_per_host":              cfg.HTTPClient.MaxConnsPerHost,
 		},
 		"db": map[string]any{
 			"dsn":               cfg.DB.DSN,
@@ -71,9 +85,10 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"conn_max_lifetime": cfg.DB.ConnMaxLifetime,
 		},
 		"redis": map[string]any{
-			"addr":     cfg.Redis.Addr,
-			"password": cfg.Redis.Password,
-			"db":       cfg.Redis.DB,
+			"addr":      cfg.Redis.Addr,
+			"password":  cfg.Redis.Password,
+			"db":        cfg.Redis.DB,
+			"namespace": cfg.Redis.Namespace,
 		},
 		"relay": map[string]any{
 			"provider":         cfg.Relay.Provider,

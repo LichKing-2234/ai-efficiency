@@ -1,8 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createPinia, setActivePinia } from 'pinia'
-import { createRouter, createMemoryHistory } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, disposePinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { getMe } from '@/api/auth'
+import {
+  clearBrowserSession,
+  readBrowserSession,
+  replaceBrowserSession,
+} from '@/auth/browserSession'
 import router, { handleRouterError } from '@/router'
+import { installAuthNavigationGuards } from '@/router/authGuard'
+import { useAuthStore } from '@/stores/auth'
+import type { User } from '@/types'
 
 vi.mock('@/api/auth', () => ({
   login: vi.fn(),
@@ -16,122 +24,120 @@ vi.mock('@/utils/chunkReload', () => ({
 
 type ReloadOnceMock = ReturnType<typeof vi.fn> & ((error: unknown, options?: any) => boolean)
 
-function createTestRouter() {
-  return createRouter({
+const alice: User = {
+  id: 1,
+  username: 'alice',
+  email: 'alice@example.com',
+  role: 'admin',
+  auth_source: 'sso',
+}
+
+const bob: User = {
+  id: 2,
+  username: 'bob',
+  email: 'bob@example.org',
+  role: 'user',
+  auth_source: 'ldap',
+}
+
+const activeHarnesses: Array<{
+  pinia: ReturnType<typeof createPinia>
+  disposeGuards: () => void
+}> = []
+
+function createGuardedRouter() {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const adminLoader = vi.fn(() => Promise.resolve({ template: '<div>Admin</div>' }))
+  const localRouter = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/login', name: 'Login', component: { template: '<div>Login</div>' }, meta: { public: true } },
+      { path: '/oauth/device', name: 'OAuthDevice', component: { template: '<div>Device</div>' }, meta: { public: true, redirectOnAuthExpiry: true } },
       { path: '/', name: 'Dashboard', component: { template: '<div>Dashboard</div>' } },
       { path: '/repos', name: 'RepoList', component: { template: '<div>Repos</div>' } },
+      { path: '/admin/users', name: 'AdminUsers', component: adminLoader, meta: { requireAdmin: true } },
     ],
   })
+  const disposeGuards = installAuthNavigationGuards(localRouter)
+  const harness = { pinia, router: localRouter, adminLoader, disposeGuards }
+  activeHarnesses.push(harness)
+  return harness
 }
 
 describe('Router Guards', () => {
   beforeEach(() => {
-    setActivePinia(createPinia())
     localStorage.clear()
+    clearBrowserSession()
+    vi.clearAllMocks()
   })
 
-  it('redirects to login when not authenticated', async () => {
-    const localRouter = createTestRouter()
-    const pinia = createPinia()
+  afterEach(() => {
+    while (activeHarnesses.length) {
+      const harness = activeHarnesses.pop()!
+      harness.disposeGuards()
+      disposePinia(harness.pinia)
+    }
+  })
 
-    localRouter.beforeEach((to) => {
-      const auth = useAuthStore(pinia)
-      if (!to.meta.public && !auth.isAuthenticated) {
-        return { path: '/login', query: { redirect: to.fullPath } }
-      }
-    })
+  it('redirects to login with the protected full path when not authenticated', async () => {
+    const harness = createGuardedRouter()
 
-    await localRouter.push('/')
-    await localRouter.isReady()
+    await harness.router.push('/repos?tab=active')
 
-    expect(localRouter.currentRoute.value.path).toBe('/login')
-    expect(localRouter.currentRoute.value.query.redirect).toBe('/')
+    expect(harness.router.currentRoute.value.path).toBe('/login')
+    expect(harness.router.currentRoute.value.query.redirect).toBe('/repos?tab=active')
   })
 
   it('allows access to login page without auth', async () => {
-    const localRouter = createTestRouter()
-    const pinia = createPinia()
+    const harness = createGuardedRouter()
 
-    localRouter.beforeEach((to) => {
-      const auth = useAuthStore(pinia)
-      if (!to.meta.public && !auth.isAuthenticated) {
-        return { path: '/login', query: { redirect: to.fullPath } }
-      }
-    })
+    await harness.router.push('/login')
 
-    await localRouter.push('/login')
-    await localRouter.isReady()
-
-    expect(localRouter.currentRoute.value.path).toBe('/login')
+    expect(harness.router.currentRoute.value.path).toBe('/login')
+    expect(getMe).not.toHaveBeenCalled()
   })
 
   it('allows access to protected routes when authenticated', async () => {
-    localStorage.setItem('token', 'valid-token')
-    const localRouter = createTestRouter()
-    const pinia = createPinia()
+    replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+    vi.mocked(getMe).mockResolvedValue({ data: { data: alice } } as any)
+    const harness = createGuardedRouter()
 
-    localRouter.beforeEach((to) => {
-      const auth = useAuthStore(pinia)
-      if (!to.meta.public && !auth.isAuthenticated) {
-        return { path: '/login', query: { redirect: to.fullPath } }
-      }
-    })
+    await harness.router.push('/repos')
 
-    await localRouter.push('/repos')
-    await localRouter.isReady()
-
-    expect(localRouter.currentRoute.value.path).toBe('/repos')
-  })
-
-  it('redirects to repos with redirect query when not authenticated', async () => {
-    const localRouter = createTestRouter()
-    const pinia = createPinia()
-
-    localRouter.beforeEach((to) => {
-      const auth = useAuthStore(pinia)
-      if (!to.meta.public && !auth.isAuthenticated) {
-        return { path: '/login', query: { redirect: to.fullPath } }
-      }
-    })
-
-    await localRouter.push('/repos')
-    await localRouter.isReady()
-
-    expect(localRouter.currentRoute.value.path).toBe('/login')
-    expect(localRouter.currentRoute.value.query.redirect).toBe('/repos')
+    expect(harness.router.currentRoute.value.path).toBe('/repos')
+    await vi.waitFor(() => expect(getMe).toHaveBeenCalledTimes(1))
   })
 
   it('does not include legacy session routes in the router', () => {
-    const sessionList = router.getRoutes().find((r) => r.name === 'SessionList')
-    const sessionDetail = router.getRoutes().find((r) => r.name === 'SessionDetail')
+    const sessionList = router.getRoutes().find((route) => route.name === 'SessionList')
+    const sessionDetail = router.getRoutes().find((route) => route.name === 'SessionDetail')
     expect(sessionList).toBeUndefined()
     expect(sessionDetail).toBeUndefined()
   })
 
-  it('includes oauth device route in the router', () => {
-    const oauthDevice = router.getRoutes().find((r) => r.name === 'OAuthDevice')
+  it('includes oauth device route with destination-owned expiry policy', () => {
+    const oauthDevice = router.getRoutes().find((route) => route.name === 'OAuthDevice')
     expect(oauthDevice?.path).toBe('/oauth/device')
     expect(oauthDevice?.meta.public).toBe(true)
+    expect(oauthDevice?.meta.redirectOnAuthExpiry).toBe(true)
   })
 
   it('includes events route in the router', () => {
-    const eventsRoute = router.getRoutes().find((r) => r.name === 'Events')
+    const eventsRoute = router.getRoutes().find((route) => route.name === 'Events')
     expect(eventsRoute?.path).toBe('/events')
   })
 
   it('includes user route in the router', () => {
-    const userRoute = router.getRoutes().find((r) => r.name === 'User')
+    const userRoute = router.getRoutes().find((route) => route.name === 'User')
     expect(userRoute?.path).toBe('/user')
   })
 
   it('includes canonical AI Usage Center routes in the router', () => {
-    const usageRoute = router.getRoutes().find((r) => r.name === 'Usage')
-    const memberUsageRoute = router.getRoutes().find((r) => r.name === 'UsageMember')
-    const teamUsageRoute = router.getRoutes().find((r) => r.name === 'UsageTeam')
-    const quotaResetRoute = router.getRoutes().find((r) => r.name === 'UsageQuotaReset')
+    const usageRoute = router.getRoutes().find((route) => route.name === 'Usage')
+    const memberUsageRoute = router.getRoutes().find((route) => route.name === 'UsageMember')
+    const teamUsageRoute = router.getRoutes().find((route) => route.name === 'UsageTeam')
+    const quotaResetRoute = router.getRoutes().find((route) => route.name === 'UsageQuotaReset')
     expect(usageRoute?.path).toBe('/usage')
     expect(memberUsageRoute?.path).toBe('/usage/members/:user_id')
     expect(teamUsageRoute?.path).toBe('/usage/team')
@@ -139,68 +145,61 @@ describe('Router Guards', () => {
   })
 
   it('includes Work Items route for authenticated users', () => {
-    const route = router.getRoutes().find((r) => r.name === 'WorkItems')
+    const route = router.getRoutes().find((candidate) => candidate.name === 'WorkItems')
     expect(route?.path).toBe('/work-items')
     expect(route?.meta.requireAdmin).toBeUndefined()
   })
 
   it('does not expose user usage as a separate page route', () => {
-    const userUsageRoute = router.getRoutes().find((r) => r.name === 'UserUsage' || r.path === '/user/usage')
+    const userUsageRoute = router.getRoutes().find((route) => route.name === 'UserUsage' || route.path === '/user/usage')
     expect(userUsageRoute).toBeUndefined()
   })
 
   it('includes admin users route requiring admin access', () => {
-    const adminUsersRoute = router.getRoutes().find((r) => r.name === 'AdminUsers')
+    const adminUsersRoute = router.getRoutes().find((route) => route.name === 'AdminUsers')
     expect(adminUsersRoute?.path).toBe('/admin/users')
     expect(adminUsersRoute?.meta.requireAdmin).toBe(true)
   })
 
   it('includes directory offboarding route requiring admin access', () => {
-    const route = router.getRoutes().find((r) => r.name === 'DirectoryOffboarding')
+    const route = router.getRoutes().find((candidate) => candidate.name === 'DirectoryOffboarding')
     expect(route?.path).toBe('/admin/directory/offboarding')
     expect(route?.meta.requireAdmin).toBe(true)
   })
 
-  it('redirects authenticated users away from login using a safe redirect target', async () => {
-    const { getMe: mockGetMe } = await import('@/api/auth')
-    ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin', auth_source: 'sso' } },
-    })
+  it('redirects verified users away from login using a safe redirect target', async () => {
+    replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+    const harness = createGuardedRouter()
+    const auth = useAuthStore(harness.pinia)
+    auth.user = alice
 
-    localStorage.setItem('token', 'valid-token')
+    await harness.router.push('/login?redirect=/repos')
 
-    await router.push('/login?redirect=/repos&case=authenticated')
-
-    expect(router.currentRoute.value.path).toBe('/repos')
+    expect(harness.router.currentRoute.value.path).toBe('/repos')
   })
 
   it('keeps invalid-token users on login after hydration fails with 401', async () => {
-    const { getMe: mockGetMe } = await import('@/api/auth')
-    ;(mockGetMe as any).mockRejectedValue({
-      response: { status: 401 },
-    })
+    replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+    vi.mocked(getMe).mockRejectedValue({ response: { status: 401 } })
+    const harness = createGuardedRouter()
 
-    localStorage.setItem('token', 'expired-token')
-    localStorage.setItem('refresh_token', 'expired-refresh')
+    await harness.router.push('/login?case=expired')
+    await vi.waitFor(() => expect(readBrowserSession().accessToken).toBeNull())
 
-    await router.push('/login?case=expired')
-
-    expect(router.currentRoute.value.path).toBe('/login')
-    expect(localStorage.getItem('token')).toBeNull()
-    expect(localStorage.getItem('refresh_token')).toBeNull()
+    expect(harness.router.currentRoute.value.path).toBe('/login')
+    expect(harness.router.currentRoute.value.query.case).toBe('expired')
+    expect(readBrowserSession().refreshToken).toBeNull()
   })
 
-  it('redirects non-admin users away from admin users route', async () => {
-    const { getMe: mockGetMe } = await import('@/api/auth')
-    ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 2, username: 'alice', email: 'alice@example.com', role: 'user', auth_source: 'ldap' } },
-    })
+  it('redirects non-admin users away from admin routes without loading their chunk', async () => {
+    replaceBrowserSession({ accessToken: 'token-a', refreshToken: 'refresh-a' })
+    vi.mocked(getMe).mockResolvedValue({ data: { data: bob } } as any)
+    const harness = createGuardedRouter()
 
-    localStorage.setItem('token', 'valid-token')
+    await harness.router.push('/admin/users')
 
-    await router.push('/admin/users?case=non-admin')
-
-    expect(router.currentRoute.value.path).toBe('/usage')
+    expect(harness.router.currentRoute.value.path).toBe('/')
+    expect(harness.adminLoader).not.toHaveBeenCalled()
   })
 })
 

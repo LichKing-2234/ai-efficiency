@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import LoginView from '@/views/LoginView.vue'
 import { setLocale } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 
 // Mock auth API
 vi.mock('@/api/auth', () => ({
@@ -139,21 +140,33 @@ describe('LoginView', () => {
     expect(wrapper.text()).toContain('Invalid credentials')
   })
 
-  it('dev login stores token and redirects', async () => {
+  it('dev login uses the store transition, hydrates the user, and redirects', async () => {
     const { devLogin: mockDevLogin, getMe: mockGetMe } = await import('@/api/auth')
     ;(mockDevLogin as any).mockResolvedValue({
       data: { data: { token: 'dev-token', refresh_token: 'dev-refresh' } },
     })
     ;(mockGetMe as any).mockResolvedValue({
-      data: { data: { id: 1, username: 'admin', email: 'admin@example.com', role: 'admin' } },
+      data: {
+        data: {
+          id: 1,
+          username: 'alice',
+          email: 'alice@example.com',
+          role: 'admin',
+          auth_source: 'dev',
+        },
+      },
     })
 
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const auth = useAuthStore(pinia)
+    const devLoginTransition = vi.spyOn(auth, 'devLogin')
     const router = createTestRouter()
     await router.push('/login')
     await router.isReady()
 
     const wrapper = mount(LoginView, {
-      global: { plugins: [createPinia(), router] },
+      global: { plugins: [pinia, router] },
     })
     await flushPromises()
 
@@ -163,8 +176,19 @@ describe('LoginView', () => {
 
     await flushPromises()
 
+    expect(devLoginTransition).toHaveBeenCalledTimes(1)
+    expect(mockDevLogin).toHaveBeenCalledTimes(1)
     expect(localStorage.getItem('token')).toBe('dev-token')
     expect(localStorage.getItem('refresh_token')).toBe('dev-refresh')
+    expect(auth.token).toBe('dev-token')
+    expect(auth.user).toEqual({
+      id: 1,
+      username: 'alice',
+      email: 'alice@example.com',
+      role: 'admin',
+      auth_source: 'dev',
+    })
+    expect(router.currentRoute.value.path).toBe('/')
   })
 
   // --- New tests for uncovered lines ---

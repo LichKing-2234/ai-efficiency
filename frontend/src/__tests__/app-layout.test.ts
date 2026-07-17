@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { createRouter, createMemoryHistory } from 'vue-router'
+import { defineComponent } from 'vue'
+import { createRouter, createMemoryHistory, RouterView } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { setLocale } from '@/i18n'
 
@@ -10,6 +11,24 @@ vi.mock('@/api/auth', () => ({
   getMe: vi.fn(),
   devLogin: vi.fn(),
 }))
+
+vi.mock('@/api/workItems', () => ({
+  getWorkItemCounts: vi.fn(),
+}))
+
+function countsResponse(total = 0) {
+  return {
+    data: {
+      data: {
+        quota_reset_approval_count: total,
+        quota_reset_admin_count: 0,
+        ai_access_setup_count: 0,
+        offboarding_count: 0,
+        total_count: total,
+      },
+    },
+  }
+}
 
 function createTestRouter() {
   return createRouter({
@@ -23,6 +42,24 @@ function createTestRouter() {
       { path: '/settings', component: { template: '<div>Settings</div>' } },
       { path: '/login', component: { template: '<div>Login</div>' } },
     ],
+  })
+}
+
+function layoutView(name: string) {
+  return defineComponent({
+    name,
+    components: { AppLayout },
+    template: `<AppLayout><div>${name}</div></AppLayout>`,
+  })
+}
+
+function createLayoutRouter() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [1, 2, 3, 4, 5].map((id) => ({
+      path: `/view-${id}`,
+      component: layoutView(`View${id}`),
+    })),
   })
 }
 
@@ -58,5 +95,79 @@ describe('AppLayout', () => {
     expect(main.classes()).toContain('overflow-auto')
     expect(main.classes()).toContain('md:h-screen')
     expect(main.classes()).toContain('md:min-h-0')
+  })
+
+  it('bounds count loads across five protected route layout identities', async () => {
+    vi.useFakeTimers()
+    const pinia = createPinia()
+    const router = createLayoutRouter()
+    const api = await import('@/api/workItems') as any
+    api.getWorkItemCounts.mockResolvedValue(countsResponse(1))
+    vi.setSystemTime(1_000)
+
+    await router.push('/view-1')
+    await router.isReady()
+    const wrapper = mount(defineComponent({
+      components: { RouterView },
+      template: '<RouterView />',
+    }), {
+      global: { plugins: [pinia, router] },
+    })
+
+    try {
+      await flushPromises()
+      for (const path of ['/view-2', '/view-3', '/view-4', '/view-5']) {
+        await router.push(path)
+        await flushPromises()
+      }
+
+      vi.setSystemTime(20_999)
+      await router.push('/view-1')
+      await flushPromises()
+      expect(api.getWorkItemCounts).toHaveBeenCalledTimes(1)
+
+      vi.setSystemTime(21_000)
+      await router.push('/view-2')
+      await flushPromises()
+      expect(api.getWorkItemCounts).toHaveBeenCalledTimes(2)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('bounds count loads across repeated mobile sidebar mounts', async () => {
+    vi.useFakeTimers()
+    const pinia = createPinia()
+    const router = createTestRouter()
+    const api = await import('@/api/workItems') as any
+    api.getWorkItemCounts.mockResolvedValue(countsResponse(1))
+    vi.setSystemTime(1_000)
+
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(AppLayout, {
+      global: { plugins: [pinia, router] },
+    })
+
+    try {
+      await flushPromises()
+      const menuButton = wrapper.get('[aria-controls="mobile-navigation"]')
+      for (let i = 0; i < 5; i += 1) {
+        await menuButton.trigger('click')
+        await flushPromises()
+        await wrapper.get('#mobile-navigation > button').trigger('click')
+        await flushPromises()
+      }
+      expect(api.getWorkItemCounts).toHaveBeenCalledTimes(1)
+
+      vi.setSystemTime(21_000)
+      await menuButton.trigger('click')
+      await flushPromises()
+      expect(api.getWorkItemCounts).toHaveBeenCalledTimes(2)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
   })
 })
