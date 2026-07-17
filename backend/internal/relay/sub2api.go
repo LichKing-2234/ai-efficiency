@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,8 @@ import (
 
 	"go.uber.org/zap"
 )
+
+const maxPingResponseBodyBytes int64 = 4 * 1024
 
 type sub2apiRelay struct {
 	mu       sync.RWMutex
@@ -136,6 +139,9 @@ func (s *sub2apiRelay) Ping(ctx context.Context) error {
 		return fmt.Errorf("relay: ping: %w", err)
 	}
 	defer resp.Body.Close()
+	if _, err := io.CopyN(io.Discard, resp.Body, maxPingResponseBodyBytes+1); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("relay: ping: read body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("relay: ping: unexpected status %d", resp.StatusCode)
 	}

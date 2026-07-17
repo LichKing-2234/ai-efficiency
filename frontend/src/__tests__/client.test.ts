@@ -7,6 +7,7 @@ const interceptors = vi.hoisted(() => ({
   responseErrFn: null as ((err: any) => any) | null,
   axiosPost: vi.fn(),
   clientInstance: null as any,
+  clientConfig: null as any,
 }))
 
 vi.mock('axios', () => {
@@ -32,7 +33,10 @@ vi.mock('axios', () => {
 
   return {
     default: {
-      create: vi.fn(() => mockInstance),
+      create: vi.fn((config: any) => {
+        interceptors.clientConfig = config
+        return mockInstance
+      }),
       post: interceptors.axiosPost,
     },
   }
@@ -45,6 +49,10 @@ describe('Axios client interceptors', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
+  })
+
+  it('uses the 45 second browser request budget', () => {
+    expect(interceptors.clientConfig.timeout).toBe(45000)
   })
 
   describe('request interceptor', () => {
@@ -69,7 +77,7 @@ describe('Axios client interceptors', () => {
       expect(result).toBe(response)
     })
 
-    it('refreshes token and retries the original request on 401 response', async () => {
+    it('refreshes token with the 45 second raw request budget and retries the original request', async () => {
       localStorage.setItem('token', 'old-token')
       localStorage.setItem('refresh_token', 'refresh-token')
 
@@ -91,9 +99,13 @@ describe('Axios client interceptors', () => {
         config: { url: '/repos', headers: {} },
       })
 
-      expect(interceptors.axiosPost).toHaveBeenCalledWith('/api/v1/auth/refresh', {
-        refresh_token: 'refresh-token',
-      })
+      expect(interceptors.axiosPost).toHaveBeenCalledWith(
+        '/api/v1/auth/refresh',
+        {
+          refresh_token: 'refresh-token',
+        },
+        { timeout: 45000 }
+      )
       expect(interceptors.clientInstance).toHaveBeenCalledWith(
         expect.objectContaining({
           url: '/repos',
@@ -189,9 +201,13 @@ describe('Axios client interceptors', () => {
         config: { url: '/auth/me', headers: {} },
       })
 
-      expect(interceptors.axiosPost).toHaveBeenCalledWith('/api/v1/auth/refresh', {
-        refresh_token: 'refresh-token',
-      })
+      expect(interceptors.axiosPost).toHaveBeenCalledWith(
+        '/api/v1/auth/refresh',
+        {
+          refresh_token: 'refresh-token',
+        },
+        { timeout: 45000 }
+      )
       expect(interceptors.clientInstance).toHaveBeenCalledWith(
         expect.objectContaining({
           url: '/auth/me',

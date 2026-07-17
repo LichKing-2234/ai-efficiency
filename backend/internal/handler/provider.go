@@ -15,9 +15,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	authpkg "github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/usersetup"
@@ -30,17 +32,26 @@ type ProviderHandler struct {
 	entClient     *ent.Client
 	encryptionKey string
 	logger        *zap.Logger
+	httpClient    *http.Client
 
 	mu            sync.RWMutex
 	providerCache map[int]relay.Provider
 }
 
 // NewProviderHandler creates a new provider handler.
-func NewProviderHandler(entClient *ent.Client, encryptionKey string, logger *zap.Logger) *ProviderHandler {
+func NewProviderHandler(entClient *ent.Client, encryptionKey string, logger *zap.Logger, clients ...*http.Client) *ProviderHandler {
+	var httpClient *http.Client
+	if len(clients) > 0 && clients[0] != nil {
+		httpClient = clients[0]
+	}
+	if httpClient == nil {
+		httpClient = httpclient.NewDefault(30 * time.Second)
+	}
 	return &ProviderHandler{
 		entClient:     entClient,
 		encryptionKey: encryptionKey,
 		logger:        logger,
+		httpClient:    httpClient,
 		providerCache: make(map[int]relay.Provider),
 	}
 }
@@ -60,7 +71,7 @@ func (h *ProviderHandler) getOrCreateRelayProvider(p *ent.RelayProvider) relay.P
 	}
 
 	rp = relay.NewSub2apiProvider(
-		http.DefaultClient,
+		h.httpClient,
 		p.BaseURL,
 		adminKey,
 		p.DefaultModel,
@@ -458,7 +469,7 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 
 	maxTokens := 64
 	testProvider := relay.NewSub2apiProvider(
-		http.DefaultClient,
+		h.httpClient,
 		provider.BaseURL,
 		selected.Key,
 		model,
@@ -568,7 +579,7 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 	}
 
 	userScopedProvider := relay.NewSub2apiProvider(
-		http.DefaultClient,
+		h.httpClient,
 		provider.BaseURL,
 		selected.Key,
 		"",
