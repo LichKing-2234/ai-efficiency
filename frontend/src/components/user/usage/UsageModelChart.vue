@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
-import { Doughnut } from 'vue-chartjs'
+import { computed, defineAsyncComponent } from 'vue'
 import type { UserUsageModelStat } from '@/types'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
 
-ChartJS.register(ArcElement, Tooltip, Legend)
+const DoughnutChartCanvas = defineAsyncComponent(() => import('@/components/charts/DoughnutChartCanvas.vue'))
 
 const props = withDefaults(defineProps<{
   data: UserUsageModelStat[]
@@ -40,7 +38,7 @@ const chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { 
     </div>
     <div v-else class="grid min-w-0 gap-4 2xl:grid-cols-[180px_minmax(0,1fr)]">
       <div class="h-44">
-        <Doughnut :data="chartData" :options="chartOptions" />
+        <DoughnutChartCanvas :data="chartData" :options="chartOptions" />
       </div>
       <div data-testid="usage-model-table-scroll" class="min-w-0 overflow-x-auto pb-2">
         <table class="min-w-[36rem] w-full text-sm">
