@@ -24,7 +24,7 @@
 - Tests and examples use only synthetic departments, users, emails, credentials, and URLs.
 - Maintain this file as a live ledger and check a step only after its command or edit actually completes.
 
-**Status:** In progress. Tasks 1-3 are committed as `12ce1fa0`, `0c7cbcb8`, and `5098cd62`; final-review ordering fix `e52accb7` is also committed. Complete local verification and final Spec/Standards re-reviews are GREEN on the current tree. Publication and exact-head CI remain. Environment-sensitive role E2E was not run.
+**Status:** Complete. Tasks 1-3 are committed as `12ce1fa0`, `0c7cbcb8`, and `5098cd62`; final-review ordering fix `e52accb7` and architecture reconciliation `c07b2011` are also committed. PR #178 targets `feat/platform-loading-performance`, issue #165 is `in-review`, and delivery-head CI passed. Environment-sensitive role E2E was not run.
 
 ---
 
@@ -456,7 +456,7 @@
   PASS. Final Standards re-review: PASS, with no Critical/Important findings,
   reader migration, duplicate abstraction, or over-design finding.
 
-- [ ] **Step 4: Commit documentation and publish**
+- [x] **Step 4: Commit documentation and publish**
 
   ```bash
   git add docs/architecture.md docs/superpowers/plans/2026-07-17-directory-effective-hierarchy.md
@@ -466,3 +466,10 @@
 
   Create a non-Draft PR targeting `feat/platform-loading-performance` with
   `Closes #165`, mark #165 `in-review`, and wait for backend/frontend/ae-cli/deploy-static CI on the exact PR head. Do not merge to main, release, tag, deploy, or run Helm.
+
+  Publication evidence (2026-07-17): `c07b2011` was pushed and opened as
+  non-Draft PR #178 with base `feat/platform-loading-performance` and
+  `Closes #165`; issue #165 now has only the `in-review` workflow label. CI on
+  delivery head `c07b2011e65a9eb151871de9beb302882106bc2b` passed backend,
+  frontend, ae-cli, and deploy-static. This final live-ledger-only update must
+  also receive exact-head CI before completion is reported externally.
