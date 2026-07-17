@@ -4,7 +4,7 @@
 
 **Goal:** Deliver issue #165 by persisting one deterministic, applied-run-versioned effective parent relation for every current Directory Sync department without migrating existing readers in this ticket.
 
-**Architecture:** Add one nullable `effective_parent_external_id` field to the existing current `directory_departments` snapshot; `source_id` and `last_seen_run_id` remain its source and applied-run version. A private pure hierarchy module resolves missing parents and breaks one deterministic edge per closed cycle before facts are mutated, and `replaceFactsTx` persists the result in the existing atomic apply transaction. Administrator, representative-scope, offboarding, and directory readers continue using their current response-compatible paths until issues #169 and #171 migrate them.
+**Architecture:** Add one nullable `effective_parent_external_id` field to the existing current `directory_departments` snapshot; `source_id` and `last_seen_run_id` remain its source and applied-run version. A private pure hierarchy module resolves missing parents and breaks one deterministic edge per closed cycle before facts are mutated, and `replaceFactsTx` persists the result in the existing atomic apply transaction. Administrator, representative-scope, offboarding, and directory readers keep their current response-compatible paths in this ticket. Issue #169 later migrates only the administrator hierarchy reader, and #171 removes that reader's transitional reconstruction.
 
 **Tech Stack:** Go 1.23/1.24, Ent 0.14, PostgreSQL 16, existing `directorysync` apply transaction, Go testing, `internal/testdb`.
 
@@ -15,6 +15,7 @@
 - Persist the relation on `directory_departments`; do not add a hierarchy history table, Redis cache, new process, direct Sub2API coupling, or reader migration.
 - Keep `parent_external_id` as the upstream fact. Null, blank, or missing same-source parents have no effective parent; do not rewrite the raw field.
 - For each closed cycle, remove only the edge owned by the row ordered first by `LOWER(BTRIM(name)), external_id`. Preserve every other valid effective edge.
+- Make that order independent of the database locale: trim ASCII spaces, fold ASCII `A-Z`, and compare UTF-8 bytes; transitional SQL reconstruction must pin the equivalent expressions to `C` collation.
 - Use `source_id` and `last_seen_run_id` as the applied hierarchy scope/version. Every department inserted by a successful apply must carry that run id.
 - Resolve hierarchy in bounded, deterministic, non-recursive application work. Do not use recursion whose stack depth grows with the number of departments.
 - Resolve the complete effective-parent map before deleting current facts so hierarchy validation errors leave the previous snapshot authoritative.
@@ -23,7 +24,7 @@
 - Tests and examples use only synthetic departments, users, emails, credentials, and URLs.
 - Maintain this file as a live ledger and check a step only after its command or edit actually completes.
 
-**Status:** In progress. Task 1 is committed as `12ce1fa0`; Task 2 implementation and focused verification are complete, with review/commit pending. Tasks 3-4 have not started.
+**Status:** In progress. Tasks 1-3 are committed as `12ce1fa0`, `0c7cbcb8`, and `5098cd62`; final-review ordering fix `e52accb7` is also committed. Complete local verification and final Spec/Standards re-reviews are GREEN on the current tree. Publication and exact-head CI remain. Environment-sensitive role E2E was not run.
 
 ---
 
@@ -207,12 +208,22 @@
 
   ```go
   func effectiveHierarchyLess(left, right DepartmentRecord) bool {
-      leftName := strings.ToLower(strings.TrimSpace(left.Name))
-      rightName := strings.ToLower(strings.TrimSpace(right.Name))
+      leftName := effectiveHierarchyOrderKey(left.Name)
+      rightName := effectiveHierarchyOrderKey(right.Name)
       if leftName != rightName {
           return leftName < rightName
       }
       return left.ExternalID < right.ExternalID
+  }
+
+  func effectiveHierarchyOrderKey(name string) string {
+      key := []byte(strings.Trim(name, " "))
+      for index, value := range key {
+          if value >= 'A' && value <= 'Z' {
+              key[index] = value + ('a' - 'A')
+          }
+      }
+      return string(key)
   }
   ```
 
@@ -268,7 +279,7 @@
 - Every new department row persists the raw parent, effective parent, source ID, and `last_seen_run_id`.
 - No handler, frontend, `adminusers`, `representativescope`, or offboarding interface changes.
 
-- [ ] **Step 1: Write RED apply persistence tests**
+- [x] **Step 1: Write RED apply persistence tests**
 
   Add `TestCompleteApplyPersistsVersionedEffectiveHierarchy` using a synthetic
   `ExecutionResult` containing an acyclic child, an orphan, and the three-row cycle
@@ -280,7 +291,7 @@
   - source `last_run_id` and `last_successful_run_id` both equal the run;
   - applying the same departments in reverse order under a second run produces the same effective map and replaces every hierarchy row's version with the second run ID.
 
-- [ ] **Step 2: Extend rollback and compatibility regressions**
+- [x] **Step 2: Extend rollback and compatibility regressions**
 
   Seed `TestServiceApplyRollsBackFactsWhenSourcePointerUpdateFails` with a completed
   baseline run and department whose effective parent is persisted. After the
@@ -291,7 +302,7 @@
   and run ID so preview/failed apply preservation and successful replacement cover
   hierarchy state without changing offboarding facts.
 
-- [ ] **Step 3: Run RED apply tests**
+- [x] **Step 3: Run RED apply tests**
 
   ```bash
   cd backend
@@ -300,7 +311,15 @@
 
   Expected: runtime assertions fail because `replaceFactsTx` does not persist effective parents.
 
-- [ ] **Step 4: Wire the builder before destructive writes**
+  RED evidence (2026-07-17):
+
+  ```text
+  --- FAIL: TestCompleteApplyPersistsVersionedEffectiveHierarchy
+      service_test.go:753: department dept-child effective parent = "", want "dept-root"
+  FAIL github.com/ai-efficiency/backend/internal/directorysync
+  ```
+
+- [x] **Step 4: Wire the builder before destructive writes**
 
   At the start of `replaceFactsTx`, before any `DELETE`, resolve the map:
 
@@ -319,7 +338,7 @@
   }
   ```
 
-- [ ] **Step 5: Run GREEN apply and compatibility verification**
+- [x] **Step 5: Run GREEN apply and compatibility verification**
 
   ```bash
   cd backend
@@ -331,7 +350,21 @@
   git diff --check
   ```
 
-- [ ] **Step 6: Review and commit**
+  GREEN evidence (2026-07-17):
+
+  ```text
+  go test ./internal/directorysync -run 'EffectiveHierarchy|Apply|LargeHistory|Department' -count=1
+  ok  github.com/ai-efficiency/backend/internal/directorysync  5.202s
+  go test ./internal/adminusers ./internal/representativescope ./internal/handler -count=1
+  ok  github.com/ai-efficiency/backend/internal/adminusers  11.049s
+  ok  github.com/ai-efficiency/backend/internal/representativescope  7.111s
+  ok  github.com/ai-efficiency/backend/internal/handler  57.186s
+  go test -race ./internal/directorysync -run 'EffectiveHierarchy|ApplyRollsBackFactsWhenSourcePointerUpdateFails' -count=1
+  ok  github.com/ai-efficiency/backend/internal/directorysync  2.615s
+  git diff --check: exit 0
+  ```
+
+- [x] **Step 6: Review and commit**
 
   Review Task 3 against the issue acceptance criteria, atomic apply contract, and
   response compatibility. Resolve every Critical/Important finding, rerun Step 5,
@@ -341,6 +374,11 @@
   git add backend/internal/directorysync/service.go backend/internal/directorysync/service_test.go backend/internal/directorysync/run_query_plan_test.go
   git commit -m "feat(directorysync): persist effective hierarchy on apply"
   ```
+
+  Review evidence (2026-07-17): Spec review found only a stale live-ledger
+  status and otherwise passed the functional contract. Standards review passed
+  with no Critical/Important findings and no over-design finding. The ledger
+  status was corrected before commit.
 
 ---
 
@@ -352,15 +390,15 @@
 
 **Interfaces:**
 - Architecture identifies Directory Sync apply as the owner of persisted effective hierarchy.
-- Existing readers remain explicitly transitional and unchanged until #169/#171.
+- All existing readers remain unchanged here; only the administrator hierarchy reader is explicitly transitional for #169/#171.
 
-- [ ] **Step 1: Update current architecture**
+- [x] **Step 1: Update current architecture**
 
   Document the nullable persisted effective-parent relation, source/run versioning,
-  deterministic orphan/cycle handling, atomic apply ownership, and staged reader
-  migration. Do not claim #169 or #171 behavior has landed.
+  deterministic orphan/cycle handling, atomic apply ownership, and the staged
+  administrator reader migration. Do not claim #169 or #171 behavior has landed.
 
-- [ ] **Step 2: Run complete local verification**
+- [x] **Step 2: Run complete local verification**
 
   ```bash
   cd backend
@@ -379,12 +417,44 @@
 
   Report environment-sensitive role E2E separately and leave it unclaimed unless run.
 
-- [ ] **Step 3: Run final Standards and Spec reviews**
+  Verification evidence (2026-07-17):
+
+  ```text
+  GOPROXY=https://goproxy.cn,direct go generate ./ent: PASS, no generated diff
+  go test ./... -count=1: PASS (backend)
+  go vet ./...: PASS
+  npm test: PASS, 47 files / 673 tests
+  npm run build: PASS
+  go test ./... -count=1: PASS (ae-cli)
+  bash deploy/test/release-frontend-embed-test.sh: PASS
+  git diff --check: PASS
+  ```
+
+  The worktree initially had no `frontend/node_modules`, so the first `npm test`
+  exited 127 with `vitest: command not found`. `npm ci` installed the locked
+  dependencies, after which the complete frontend verification passed. The
+  environment-sensitive role E2E was not run and is not claimed.
+
+  Rerun note (2026-07-17): final Standards review subsequently found that Go
+  Unicode ordering could disagree with PostgreSQL's database collation for
+  non-ASCII cycle names. Step 2 was reset, the locale-independent parity fix was
+  committed as `e52accb7`, and every command above then passed again on the
+  current tree. The environment-sensitive role E2E remains unrun and unclaimed.
+
+- [x] **Step 3: Run final Standards and Spec reviews**
 
   Compare the complete branch with `e95277d0`. Require both reviews to confirm no
   Critical/Important findings, no reader migration, raw-parent preservation,
   deterministic parity with the existing read-side effective relation, atomic
   rollback, and bounded non-recursive scale behavior.
+
+  Review evidence (2026-07-17): the initial final Standards review found that
+  Go Unicode lower/byte ordering could disagree with PostgreSQL's default
+  collation for non-ASCII cycle names. Commit `e52accb7` pinned both apply-time
+  and transitional SQL ordering to equivalent locale-independent semantics and
+  added resolver plus ICU-collated read-side regressions. Final Spec re-review:
+  PASS. Final Standards re-review: PASS, with no Critical/Important findings,
+  reader migration, duplicate abstraction, or over-design finding.
 
 - [ ] **Step 4: Commit documentation and publish**
 

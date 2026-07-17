@@ -244,10 +244,14 @@ repair hierarchy defects. Each successful apply derives exactly one
 `effective_parent_external_id` for every department in that run: null/blank or
 missing parents become effective roots, and one deterministic anchor per closed
 cycle becomes an effective root. The anchor is the cycle row ordered first by
-`LOWER(BTRIM(name)), external_id`; every other valid edge is preserved. The
-existing `source_id` and `last_seen_run_id` fields scope and version the derived
-relation with the applied snapshot. Existing readers may continue reconstructing
-the same relation from upstream facts during staged migration.
+`LOWER(BTRIM(name)), external_id` under explicit `C` collation semantics: trim
+ASCII spaces, fold ASCII `A-Z`, then compare UTF-8 bytes. PostgreSQL readers use
+`LOWER(BTRIM(name) COLLATE "C") COLLATE "C", external_id COLLATE "C"` so the
+result does not change with the database default collation. Every other valid
+edge is preserved. The existing `source_id` and `last_seen_run_id` fields scope
+and version the derived relation with the applied snapshot. Existing readers may
+continue reconstructing the same relation from upstream facts during staged
+migration.
 
 ### `directory_members`
 
@@ -938,8 +942,8 @@ Backend tests:
 - Successful apply stores one deterministic effective parent per department,
   preserves upstream parent facts, and versions every relation with the applied
   run id.
-- Acyclic, missing-parent, self-cycle, multi-row cycle, input-order, rollback, and
-  large non-recursive hierarchy fixtures pass.
+- Acyclic, missing-parent, self-cycle, multi-row cycle, input-order, non-ASCII
+  collation parity, rollback, and large non-recursive hierarchy fixtures pass.
 - Source update/delete and successful apply advance the shared work-item revision atomically with their local state; validation, preview, conflict, and failed apply paths do not.
 - Email matching is case-insensitive and trims whitespace.
 - Invalid emails are warnings and excluded.
