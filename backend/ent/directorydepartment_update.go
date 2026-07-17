@@ -83,6 +83,26 @@ func (ddu *DirectoryDepartmentUpdate) ClearParentExternalID() *DirectoryDepartme
 	return ddu
 }
 
+// SetEffectiveParentExternalID sets the "effective_parent_external_id" field.
+func (ddu *DirectoryDepartmentUpdate) SetEffectiveParentExternalID(s string) *DirectoryDepartmentUpdate {
+	ddu.mutation.SetEffectiveParentExternalID(s)
+	return ddu
+}
+
+// SetNillableEffectiveParentExternalID sets the "effective_parent_external_id" field if the given value is not nil.
+func (ddu *DirectoryDepartmentUpdate) SetNillableEffectiveParentExternalID(s *string) *DirectoryDepartmentUpdate {
+	if s != nil {
+		ddu.SetEffectiveParentExternalID(*s)
+	}
+	return ddu
+}
+
+// ClearEffectiveParentExternalID clears the value of the "effective_parent_external_id" field.
+func (ddu *DirectoryDepartmentUpdate) ClearEffectiveParentExternalID() *DirectoryDepartmentUpdate {
+	ddu.mutation.ClearEffectiveParentExternalID()
+	return ddu
+}
+
 // SetName sets the "name" field.
 func (ddu *DirectoryDepartmentUpdate) SetName(s string) *DirectoryDepartmentUpdate {
 	ddu.mutation.SetName(s)
@@ -247,6 +267,12 @@ func (ddu *DirectoryDepartmentUpdate) sqlSave(ctx context.Context) (n int, err e
 	if ddu.mutation.ParentExternalIDCleared() {
 		_spec.ClearField(directorydepartment.FieldParentExternalID, field.TypeString)
 	}
+	if value, ok := ddu.mutation.EffectiveParentExternalID(); ok {
+		_spec.SetField(directorydepartment.FieldEffectiveParentExternalID, field.TypeString, value)
+	}
+	if ddu.mutation.EffectiveParentExternalIDCleared() {
+		_spec.ClearField(directorydepartment.FieldEffectiveParentExternalID, field.TypeString)
+	}
 	if value, ok := ddu.mutation.Name(); ok {
 		_spec.SetField(directorydepartment.FieldName, field.TypeString, value)
 	}
@@ -343,6 +369,26 @@ func (dduo *DirectoryDepartmentUpdateOne) SetNillableParentExternalID(s *string)
 // ClearParentExternalID clears the value of the "parent_external_id" field.
 func (dduo *DirectoryDepartmentUpdateOne) ClearParentExternalID() *DirectoryDepartmentUpdateOne {
 	dduo.mutation.ClearParentExternalID()
+	return dduo
+}
+
+// SetEffectiveParentExternalID sets the "effective_parent_external_id" field.
+func (dduo *DirectoryDepartmentUpdateOne) SetEffectiveParentExternalID(s string) *DirectoryDepartmentUpdateOne {
+	dduo.mutation.SetEffectiveParentExternalID(s)
+	return dduo
+}
+
+// SetNillableEffectiveParentExternalID sets the "effective_parent_external_id" field if the given value is not nil.
+func (dduo *DirectoryDepartmentUpdateOne) SetNillableEffectiveParentExternalID(s *string) *DirectoryDepartmentUpdateOne {
+	if s != nil {
+		dduo.SetEffectiveParentExternalID(*s)
+	}
+	return dduo
+}
+
+// ClearEffectiveParentExternalID clears the value of the "effective_parent_external_id" field.
+func (dduo *DirectoryDepartmentUpdateOne) ClearEffectiveParentExternalID() *DirectoryDepartmentUpdateOne {
+	dduo.mutation.ClearEffectiveParentExternalID()
 	return dduo
 }
 
@@ -539,6 +585,12 @@ func (dduo *DirectoryDepartmentUpdateOne) sqlSave(ctx context.Context) (_node *D
 	}
 	if dduo.mutation.ParentExternalIDCleared() {
 		_spec.ClearField(directorydepartment.FieldParentExternalID, field.TypeString)
+	}
+	if value, ok := dduo.mutation.EffectiveParentExternalID(); ok {
+		_spec.SetField(directorydepartment.FieldEffectiveParentExternalID, field.TypeString, value)
+	}
+	if dduo.mutation.EffectiveParentExternalIDCleared() {
+		_spec.ClearField(directorydepartment.FieldEffectiveParentExternalID, field.TypeString)
 	}
 	if value, ok := dduo.mutation.Name(); ok {
 		_spec.SetField(directorydepartment.FieldName, field.TypeString, value)

@@ -19,6 +19,8 @@ const (
 	FieldExternalID = "external_id"
 	// FieldParentExternalID holds the string denoting the parent_external_id field in the database.
 	FieldParentExternalID = "parent_external_id"
+	// FieldEffectiveParentExternalID holds the string denoting the effective_parent_external_id field in the database.
+	FieldEffectiveParentExternalID = "effective_parent_external_id"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldPath holds the string denoting the path field in the database.
@@ -41,6 +43,7 @@ var Columns = []string{
 	FieldSourceID,
 	FieldExternalID,
 	FieldParentExternalID,
+	FieldEffectiveParentExternalID,
 	FieldName,
 	FieldPath,
 	FieldMetadata,
@@ -95,6 +98,11 @@ func ByExternalID(opts ...sql.OrderTermOption) OrderOption {
 // ByParentExternalID orders the results by the parent_external_id field.
 func ByParentExternalID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldParentExternalID, opts...).ToFunc()
+}
+
+// ByEffectiveParentExternalID orders the results by the effective_parent_external_id field.
+func ByEffectiveParentExternalID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEffectiveParentExternalID, opts...).ToFunc()
 }
 
 // ByName orders the results by the name field.

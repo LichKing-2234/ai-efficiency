@@ -32,6 +32,7 @@
 **Files:**
 - Modify: `backend/ent/schema/directory_department.go`
 - Regenerate: `backend/ent/`
+- Modify: `backend/go.sum`
 - Modify: `backend/internal/directorysync/schema_test.go`
 
 **Interfaces:**
@@ -39,13 +40,13 @@
 - Produces Ent builders/predicates/selectors for `effective_parent_external_id`.
 - Adds index `(source_id, effective_parent_external_id)` for the dependent reader migrations.
 
-- [ ] **Step 1: Write the RED schema regression**
+- [x] **Step 1: Write the RED schema regression**
 
   Extend `TestDirectorySyncSchemaPersistsFactsAndRevocationFloor` so the synthetic
   department calls `SetEffectiveParentExternalID("dept-root")` and asserts both
   `ParentExternalID` and `EffectiveParentExternalID` remain `dept-root` after reload.
 
-- [ ] **Step 2: Run the schema test and record RED**
+- [x] **Step 2: Run the schema test and record RED**
 
   ```bash
   cd backend
@@ -54,7 +55,15 @@
 
   Expected: compile failure because the generated Ent builder and entity do not yet expose `EffectiveParentExternalID`.
 
-- [ ] **Step 3: Add the Ent field and index**
+  RED evidence (2026-07-17):
+
+  ```text
+  internal/directorysync/schema_test.go:73:3: ...
+  SetEffectiveParentExternalID undefined
+  FAIL github.com/ai-efficiency/backend/internal/directorysync [build failed]
+  ```
+
+- [x] **Step 3: Add the Ent field and index**
 
   Add to `DirectoryDepartment.Fields()`:
 
@@ -68,7 +77,7 @@
   index.Fields("source_id", "effective_parent_external_id"),
   ```
 
-- [ ] **Step 4: Regenerate Ent twice and verify no drift**
+- [x] **Step 4: Regenerate Ent twice and verify no drift**
 
   ```bash
   cd backend
@@ -80,7 +89,17 @@
 
   Expected: the second generation produces no additional tracked diff.
 
-- [ ] **Step 5: Run GREEN schema verification and commit**
+  Evidence (2026-07-17): the default `proxy.golang.org` route timed out before
+  generation, while `https://goproxy.cn` returned 200. Running both generations
+  with a command-local `GOPROXY=https://goproxy.cn,direct` succeeded without
+  changing global Go configuration. The diff SHA-256 before and after the second
+  generation was identical:
+
+  ```text
+  87702453cf10fcf21717cc9ac2040fdfb197c756796456b587824b5af2005af7
+  ```
+
+- [x] **Step 5: Run GREEN schema verification and commit**
 
   ```bash
   cd backend
@@ -90,6 +109,14 @@
   git diff --check
   git add backend/ent backend/internal/directorysync/schema_test.go
   git commit -m "feat(directorysync): add effective hierarchy storage"
+  ```
+
+  GREEN evidence (2026-07-17):
+
+  ```text
+  ok  github.com/ai-efficiency/backend/internal/directorysync  0.979s
+  go test ./ent/... -count=1: PASS
+  git diff --check: exit 0
   ```
 
 ---
@@ -341,4 +368,3 @@
 
   Create a non-Draft PR targeting `feat/platform-loading-performance` with
   `Closes #165`, mark #165 `in-review`, and wait for backend/frontend/ae-cli/deploy-static CI on the exact PR head. Do not merge to main, release, tag, deploy, or run Helm.
-
