@@ -5,6 +5,7 @@ import type {
   DirectoryMember,
   DirectoryOffboardingAction,
   DirectoryOffboardingCandidateListResponse,
+  DirectoryRunPage,
   DirectorySource,
   DirectorySourceListResponse,
   DirectorySourceRequest,
@@ -40,8 +41,8 @@ export function startDirectoryRun(id: number, data: { mode: 'apply' | 'preview' 
   return client.post<ApiResponse<DirectorySyncRun>>(`/admin/directory/sources/${id}/runs`, data)
 }
 
-export function listDirectoryRuns(id: number) {
-  return client.get<ApiResponse<{ items: DirectorySyncRun[] }>>(`/admin/directory/sources/${id}/runs`)
+export function listDirectoryRuns(id: number, params: { limit: number; offset: number }) {
+  return client.get<ApiResponse<DirectoryRunPage>>(`/admin/directory/sources/${id}/runs`, { params })
 }
 
 export function getDirectoryRun(id: number) {
