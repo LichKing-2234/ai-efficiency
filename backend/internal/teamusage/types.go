@@ -265,7 +265,7 @@ type OverviewSummary struct {
 	MemberCount       int      `json:"member_count"`
 	RelayMemberCount  int      `json:"relay_member_count"`
 	RangeActualCost   *float64 `json:"range_actual_cost"`
-	RangeTotalTokens  *int64   `json:"range_total_tokens,omitempty"`
+	RangeTotalTokens  *int64   `json:"range_total_tokens"`
 	TodayActualCost   *float64 `json:"today_actual_cost"`
 	TotalActualCost   *float64 `json:"total_actual_cost"`
 	UnitLabel         string   `json:"unit_label"`

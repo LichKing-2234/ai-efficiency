@@ -178,7 +178,7 @@ func (s *Service) SubjectDashboard(ctx context.Context, actorUserID, targetUserI
 }
 
 func (s *Service) Summary(ctx context.Context, actorUserID int, params OverviewParams) (*SummaryResponse, error) {
-	result, scopeVersion, err := s.readOverviewSnapshot(ctx, actorUserID, params)
+	result, scopeVersion, err := s.readSummarySnapshot(ctx, actorUserID, params)
 	if err != nil {
 		return nil, err
 	}
@@ -211,6 +211,74 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		return nil, err
 	}
 	return result.Snapshot, nil
+}
+
+func (s *Service) readSummarySnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*SummaryCacheResult, string, error) {
+	normalized, err := normalizeOverviewParams(params)
+	if err != nil {
+		return nil, "", err
+	}
+	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+	if err != nil {
+		return nil, "", err
+	}
+	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
+	}
+
+	loader := func(loadCtx context.Context) (SummaryOriginLoadResult, error) {
+		var provider relay.Provider
+		overviewSubjects := scope.OverviewSubjects
+		if len(overviewSubjects) == 0 {
+			overviewSubjects = scope.Subjects
+		}
+		if len(overviewSubjects) <= s.fullScopeCap {
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
+			if resolveErr != nil {
+				return SummaryOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
+			}
+			provider = resolvedProvider
+		}
+		snapshot, loadErr := s.generateSummarySnapshot(loadCtx, scope, provider, normalized)
+		if loadErr == nil {
+			return SummaryOriginLoadResult{Snapshot: snapshot}, nil
+		}
+		if isHardSnapshotOriginError(loadErr) {
+			return SummaryOriginLoadResult{}, loadErr
+		}
+		return SummaryOriginLoadResult{SnapshotErr: loadErr}, nil
+	}
+
+	if s.snapshotCache == nil {
+		loaded, loadErr := loader(ctx)
+		if loadErr != nil {
+			return nil, "", loadErr
+		}
+		if loaded.SnapshotErr != nil {
+			return nil, "", loaded.SnapshotErr
+		}
+		now := time.Now().UTC()
+		return &SummaryCacheResult{
+			Snapshot: loaded.Snapshot,
+			Freshness: SnapshotFreshness{
+				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
+			},
+		}, scope.Version, nil
+	}
+
+	scopeHash, err := effectiveScopeHash(scope)
+	if err != nil {
+		return nil, "", err
+	}
+	result, err := s.snapshotCache.GetSummaryOrLoad(ctx, SnapshotCacheKey{
+		ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
+		ActorID: actorUserID, ScopeVersion: scope.Version, ScopeHash: scopeHash, Params: normalized,
+	}, loader)
+	if err != nil {
+		return nil, "", err
+	}
+	return result, scope.Version, nil
 }
 
 func (s *Service) readOverviewSnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*SnapshotCacheResult, string, error) {
@@ -281,6 +349,76 @@ func (s *Service) readOverviewSnapshot(ctx context.Context, actorUserID int, par
 	return result, scope.Version, nil
 }
 
+func (s *Service) generateSummarySnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*SummarySnapshot, error) {
+	overviewSubjects := scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = scope.Subjects
+	}
+	if len(overviewSubjects) > s.fullScopeCap {
+		reason := "scope_too_large"
+		return &SummarySnapshot{
+			Window: buildOverviewWindow(params),
+			Summary: OverviewSummary{
+				Unavailable: true, UnavailableReason: &reason,
+				MemberCount: len(overviewSubjects), UnitLabel: teamOverviewCostUnitLabel,
+			},
+		}, nil
+	}
+	summaryProvider, ok := provider.(relay.TeamUsageSummaryProvider)
+	if !ok {
+		return nil, ErrProviderUnsupported
+	}
+	_, relayUserIDs, err := s.resolveOverviewSubjects(ctx, scope, provider)
+	if err != nil {
+		return nil, err
+	}
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	rangeCostValue := 0.0
+	rangeTokensValue := int64(0)
+	rangeComplete := true
+	for _, relayUserID := range uniqueInt64s(relayUserIDs) {
+		stat, found := statsByRelayUserID[relayUserID]
+		if !found || stat.RangeActualCost == nil || stat.RangeTotalTokens == nil {
+			rangeComplete = false
+			break
+		}
+		rangeCostValue += *stat.RangeActualCost
+		rangeTokensValue += *stat.RangeTotalTokens
+	}
+	var rangeCost *float64
+	var rangeTokens *int64
+	var unavailableReason *string
+	if rangeComplete {
+		rangeCost = &rangeCostValue
+		rangeTokens = &rangeTokensValue
+	} else {
+		reason := "range_aggregation_unavailable"
+		unavailableReason = &reason
+	}
+	todayCost, totalCost := sumOverviewComparisonCosts(statsByRelayUserID)
+	return &SummarySnapshot{
+		Window: buildOverviewWindow(params),
+		Summary: OverviewSummary{
+			Unavailable:       !rangeComplete,
+			UnavailableReason: unavailableReason,
+			MemberCount:       len(overviewSubjects),
+			RelayMemberCount:  len(relayUserIDs),
+			RangeActualCost:   rangeCost,
+			RangeTotalTokens:  rangeTokens,
+			TodayActualCost:   todayCost,
+			TotalActualCost:   totalCost,
+			UnitLabel:         teamOverviewCostUnitLabel,
+		},
+	}, nil
+}
+
 func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*OverviewResponse, error) {
 
 	overviewSubjects := scope.OverviewSubjects
@@ -300,35 +438,16 @@ func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *represent
 	if !ok {
 		return nil, ErrProviderUnsupported
 	}
-	overviewRelayResolver, err := s.newOverviewRelayUserResolver(ctx, provider)
+	subjects, relayUserIDs, err := s.resolveOverviewSubjects(ctx, scope, provider)
 	if err != nil {
 		return nil, err
 	}
-
-	subjects := make([]representativescope.Subject, 0, len(overviewSubjects))
-	relayUserIDs := make([]int64, 0, len(overviewSubjects))
-	for _, subject := range overviewSubjects {
-		relayUserID, resolvedSubject, err := overviewRelayResolver.Resolve(ctx, subject)
-		if err != nil {
-			if errors.Is(err, ErrNoRelayMapping) {
-				subjects = append(subjects, subject)
-				continue
-			}
-			return nil, err
-		}
-		subjects = append(subjects, resolvedSubject)
-		relayUserIDs = append(relayUserIDs, relayUserID)
-	}
-
-	statsByRelayUserID := make(map[int64]relay.TeamUserUsageStats, len(relayUserIDs))
-	for _, chunk := range chunkInt64s(relayUserIDs, 100) {
-		stats, err := summaryProvider.GetBatchUserUsageStats(ctx, chunk, relay.TeamUsageSummaryParams{Timezone: strings.TrimSpace(params.Timezone)})
-		if err != nil {
-			return nil, fmt.Errorf("get batch team usage stats: %w", err)
-		}
-		for relayUserID, stat := range stats {
-			statsByRelayUserID[relayUserID] = stat
-		}
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	trendState := TopMemberTrendState{
@@ -438,6 +557,54 @@ func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *represent
 		Members:         members,
 		MemberTree:      memberTree,
 	}, nil
+}
+
+func (s *Service) resolveOverviewSubjects(ctx context.Context, scope *representativescope.Scope, provider relay.Provider) ([]representativescope.Subject, []int64, error) {
+	overviewSubjects := scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = scope.Subjects
+	}
+	overviewRelayResolver, err := s.newOverviewRelayUserResolver(ctx, provider)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	subjects := make([]representativescope.Subject, 0, len(overviewSubjects))
+	relayUserIDs := make([]int64, 0, len(overviewSubjects))
+	for _, subject := range overviewSubjects {
+		relayUserID, resolvedSubject, err := overviewRelayResolver.Resolve(ctx, subject)
+		if err != nil {
+			if errors.Is(err, ErrNoRelayMapping) {
+				subjects = append(subjects, subject)
+				continue
+			}
+			return nil, nil, err
+		}
+		subjects = append(subjects, resolvedSubject)
+		relayUserIDs = append(relayUserIDs, relayUserID)
+	}
+	return subjects, relayUserIDs, nil
+}
+
+func (s *Service) loadTeamUsageStats(ctx context.Context, provider relay.TeamUsageSummaryProvider, relayUserIDs []int64, params relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+	uniqueRelayUserIDs := uniqueInt64s(relayUserIDs)
+	statsByRelayUserID := make(map[int64]relay.TeamUserUsageStats, len(uniqueRelayUserIDs))
+	for _, chunk := range chunkInt64s(uniqueRelayUserIDs, 100) {
+		stats, err := provider.GetBatchUserUsageStats(ctx, chunk, params)
+		if err != nil {
+			return nil, fmt.Errorf("get batch team usage stats: %w", err)
+		}
+		requested := make(map[int64]struct{}, len(chunk))
+		for _, relayUserID := range chunk {
+			requested[relayUserID] = struct{}{}
+		}
+		for relayUserID, stat := range stats {
+			if _, ok := requested[relayUserID]; ok {
+				statsByRelayUserID[relayUserID] = stat
+			}
+		}
+	}
+	return statsByRelayUserID, nil
 }
 
 type overviewRelayUserResolver struct {
@@ -1662,6 +1829,19 @@ func chunkInt64s(values []int64, chunkSize int) [][]int64 {
 		out = append(out, values[start:end])
 	}
 	return out
+}
+
+func uniqueInt64s(values []int64) []int64 {
+	unique := make([]int64, 0, len(values))
+	seen := make(map[int64]struct{}, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		unique = append(unique, value)
+	}
+	return unique
 }
 
 func normalizePage(page, pageSize int) (int, int) {

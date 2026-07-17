@@ -182,7 +182,7 @@
 - The summary origin may call `relay.TeamUsageSummaryProvider` but never `relay.TeamMemberTrendProvider`.
 - Stable partial reason: `range_aggregation_unavailable`.
 
-- [ ] **Step 1: Write RED service tests for independent work**
+- [x] **Step 1: Write RED service tests for independent work**
 
   Add tests that use one fake provider implementing both capabilities and assert:
 
@@ -195,11 +195,11 @@
 
   Cover complete range values, missing/incomplete range fields producing null range totals plus `range_aggregation_unavailable`, correct today/historical comparison totals, canonical member and connected-member counts, a delayed trend provider not delaying Summary, a failed trend provider not failing Summary, warm Summary guards plus cache hit, Summary/Overview cache isolation, and Redis outage fallback.
 
-- [ ] **Step 2: Write a RED real-HTTP regression**
+- [x] **Step 2: Write a RED real-HTTP regression**
 
   Mount `TeamUsageHandler` with a real `teamusage.Service`, synthetic auth context, miniredis cache, a summary response, and a trend fake blocked on a channel. Issue `GET /api/v1/user/team-usage/summary` and assert HTTP 200 with summary cards' DTO fields before releasing the trend channel; assert `trendCalls == 0`.
 
-- [ ] **Step 3: Run RED commands**
+- [x] **Step 3: Run RED commands**
 
   Run:
 
@@ -211,7 +211,36 @@
 
   Expected: failures because `Summary` still calls `readOverviewSnapshot` and therefore reaches trend work.
 
-- [ ] **Step 4: Implement the summary-only loader**
+  RED evidence (2026-07-17):
+
+  ```text
+  $ cd backend && go test ./internal/teamusage -run 'Summary.*Independent|Summary.*Range|Summary.*CacheIsolation' -count=1
+  --- FAIL: TestSummaryRangeIndependentFromTrendAndPreservesComparisonTotals (0.31s)
+      service_test.go:465: summary range_actual_cost = (*float64)(0x1400000f0a0), want selected-window 45
+  --- FAIL: TestSummaryRangeUnavailableWhenProviderFieldsIncomplete (0.52s)
+      --- FAIL: TestSummaryRangeUnavailableWhenProviderFieldsIncomplete/range_fields_missing (0.27s)
+          service_test.go:529: summary unavailable = false/(*string)(nil), want range_aggregation_unavailable
+      --- FAIL: TestSummaryRangeUnavailableWhenProviderFieldsIncomplete/one_member_incomplete (0.25s)
+          service_test.go:529: summary unavailable = false/(*string)(nil), want range_aggregation_unavailable
+  --- FAIL: TestSummaryIndependentFromDelayedTrendProvider (0.30s)
+      service_test.go:573: Summary reached delayed trend provider
+  --- FAIL: TestSummaryIndependentFromFailedTrendProvider (0.23s)
+      service_test.go:595: summary = {Unavailable:true UnavailableReason:0x140001c8ae0 MemberCount:2 RelayMemberCount:2 RangeActualCost:<nil> RangeTotalTokens:<nil> TodayActualCost:0x140002a6950 TotalActualCost:0x140002a6958 UnitLabel:USD}, want complete range despite failed trend capability
+  --- FAIL: TestSummaryOverviewCacheIsolation (0.22s)
+      service_test.go:658: summary range cost = (*float64)(0x14000356a28), want summary-batch 45
+  --- FAIL: TestSummaryIndependentRedisOutageFallsBackAuthoritatively (0.22s)
+      service_test.go:681: Summary() call 1 = &{SnapshotFreshness:{AsOf:2026-07-17 13:00:28.430628 +0000 UTC FreshUntil:2026-07-17 13:01:22.430628 +0000 UTC StaleUntil:2026-07-17 13:04:58.430628 +0000 UTC CacheStatus:miss SourceStatus:ok} ScopeVersion:scope-version-summary RequestID: Window:{StartDate:2026-07-01 EndDate:2026-07-07 Granularity:day Today:2026-07-17 RollingDays:7 Timezone:Asia/Shanghai} Summary:{Unavailable:false UnavailableReason:<nil> MemberCount:2 RelayMemberCount:2 RangeActualCost:0x1400019b210 RangeTotalTokens:<nil> TodayActualCost:0x1400019b260 TotalActualCost:0x1400019b268 UnitLabel:USD}}, want authoritative miss with range 45
+  FAIL
+  FAIL github.com/ai-efficiency/backend/internal/teamusage 2.723s
+
+  $ cd backend && go test ./internal/handler -run 'TeamUsageSummary.*Independent' -count=1
+  --- FAIL: TestTeamUsageSummaryIndependentFromTrendOverRealHTTP (0.30s)
+      team_usage_test.go:379: summary HTTP request reached trend provider
+  FAIL
+  FAIL github.com/ai-efficiency/backend/internal/handler 1.042s
+  ```
+
+- [x] **Step 4: Implement the summary-only loader**
 
   Add `readSummarySnapshot` with the same normalization, current scope/provider guard, scope hash, cache key, hard-error classification, and Redis fallback used by overview. Extract and reuse only the narrow helpers needed by both paths:
 
@@ -222,7 +251,7 @@
 
   Aggregate range values only when every connected member has both range fields. Always preserve member counts and comparison totals when the batch stats call succeeds. Do not call or type-assert `TeamMemberTrendProvider` from this path.
 
-- [ ] **Step 5: Verify Task 2 GREEN and commit**
+- [x] **Step 5: Verify Task 2 GREEN and commit**
 
   Run:
 
@@ -233,6 +262,57 @@
   go test -race ./internal/teamusage -run 'Summary|SnapshotCache' -count=1
   git diff --check
   ```
+
+  Review-fix RED evidence (2026-07-17):
+
+  ```text
+  $ cd backend && go test ./internal/teamusage -run '^TestSummaryRangeDeduplicatesSharedRelayBindings$' -count=1
+  --- FAIL: TestSummaryRangeDeduplicatesSharedRelayBindings (0.24s)
+      service_test.go:578: summary range totals = (*float64)(0x1400000f000)/(*int64)(0x1400000f008), want deduplicated 15/1500
+  FAIL
+  FAIL github.com/ai-efficiency/backend/internal/teamusage 0.911s
+
+  $ cd backend && go test ./internal/handler -run '^TestTeamUsageSummaryIndependentFromTrendOverRealHTTP$' -count=1
+  --- FAIL: TestTeamUsageSummaryIndependentFromTrendOverRealHTTP (0.25s)
+      team_usage_test.go:417: incomplete range body = {"code":200,"data":{"as_of":"2026-07-17T13:11:01.96503Z","fresh_until":"2026-07-17T13:11:54.658668104Z","stale_until":"2026-07-17T13:15:25.43322052Z","cache_status":"miss","source_status":"ok","scope_version":"scope-http-summary","request_id":"","window":{"start_date":"2026-07-01","end_date":"2026-07-08","granularity":"day","today":"2026-07-17","rolling_days":8,"timezone":"Asia/Shanghai"},"summary":{"unavailable":true,"unavailable_reason":"range_aggregation_unavailable","member_count":2,"relay_member_count":2,"range_actual_cost":null,"today_actual_cost":3,"total_actual_cost":109,"unit_label":"USD"}}}, want "range_total_tokens":null
+  FAIL
+  FAIL github.com/ai-efficiency/backend/internal/handler 1.016s
+  ```
+
+  GREEN evidence (2026-07-17, final pre-commit diff):
+
+  ```text
+  $ cd backend && gofmt -w internal/teamusage/service*.go internal/teamusage/types.go internal/handler/team_usage_test.go
+  exit 0
+
+  $ cd backend && go test ./internal/teamusage ./internal/handler -run 'Summary|Overview.*Snapshot|TeamUsageSummary' -count=1
+  ok  github.com/ai-efficiency/backend/internal/teamusage 4.147s
+  ok  github.com/ai-efficiency/backend/internal/handler 3.502s
+
+  $ cd backend && go test -race ./internal/teamusage -run 'Summary|SnapshotCache' -count=1
+  ok  github.com/ai-efficiency/backend/internal/teamusage 5.123s
+
+  $ git diff --check
+  exit 0
+  ```
+
+  Review-fix GREEN evidence (2026-07-17):
+
+  ```text
+  $ cd backend && go test ./internal/teamusage -run '^TestSummaryRangeDeduplicatesSharedRelayBindings$' -count=1
+  ok  github.com/ai-efficiency/backend/internal/teamusage 0.911s
+
+  $ cd backend && go test ./internal/handler -run '^TestTeamUsageSummaryIndependentFromTrendOverRealHTTP$' -count=1
+  ok  github.com/ai-efficiency/backend/internal/handler 1.043s
+
+  $ cd backend && go test ./internal/teamusage -count=1
+  ok  github.com/ai-efficiency/backend/internal/teamusage 11.589s
+
+  $ cd backend && go test ./internal/handler -run '^TestTeamUsageSummaryIndependentFromTrendOverRealHTTP$' -count=20
+  ok  github.com/ai-efficiency/backend/internal/handler 5.373s
+  ```
+
+  Self-review: initial review found duplicate Relay bindings could double-count selected-window totals and nil `range_total_tokens` was omitted on the wire. Both Important findings were fixed with RED/GREEN regressions. Re-review: PASS, no remaining Critical/Important findings.
 
   Commit: `perf(teamusage): make summary cold path independent`
 
