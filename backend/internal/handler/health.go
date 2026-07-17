@@ -30,7 +30,12 @@ func (h *HealthHandler) Live(c *gin.Context) {
 }
 
 func (h *HealthHandler) Ready(c *gin.Context) {
-	c.JSON(http.StatusOK, h.health.Ready(c.Request.Context()))
+	report := h.health.Ready(c.Request.Context())
+	status := http.StatusOK
+	if report.Status == "not_ready" {
+		status = http.StatusServiceUnavailable
+	}
+	c.JSON(status, report)
 }
 
 func (h *HealthHandler) Version(c *gin.Context) {

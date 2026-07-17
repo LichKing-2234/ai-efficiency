@@ -1,12 +1,61 @@
 package teamusage
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
+
+func TestBuildOverviewDepartmentTrendBoundsAndReportsComparisons(t *testing.T) {
+	departments := make([]representativescope.DepartmentScope, 0, 14)
+	rootIDs := make([]string, 0, 14)
+	subjects := make([]representativescope.Subject, 0, 14)
+	pointsByUser := make(map[int64][]relay.UsageTrendPoint, 14)
+	for index := 0; index < 14; index++ {
+		departmentID := fmt.Sprintf("department-%02d", index)
+		relayUserID := int64(1000 + index)
+		tokens := int64(100)
+		cost := float64(index)
+		if index == 13 {
+			cost = 12
+		}
+		departments = append(departments, representativescope.DepartmentScope{ExternalID: departmentID, Name: "Shared Name"})
+		rootIDs = append(rootIDs, departmentID)
+		subjects = append(subjects, representativescope.Subject{
+			SubjectType: "member", UserID: index + 1, DepartmentExternalID: departmentID, RelayUserID: intPtr(int(relayUserID)),
+		})
+		pointsByUser[relayUserID] = []relay.UsageTrendPoint{{Date: "2026-07-16", ActualCost: cost, TotalTokens: &tokens}}
+	}
+
+	trend := BuildOverviewDepartmentTrend(departments, rootIDs, subjects, pointsByUser)
+
+	if trend.ComparisonTotalCount != 14 || !trend.ComparisonTruncated {
+		t.Fatalf("comparison metadata = %d/%v, want 14/true", trend.ComparisonTotalCount, trend.ComparisonTruncated)
+	}
+	if len(trend.Series) != 13 {
+		t.Fatalf("series count = %d, want one team total plus 12 comparisons", len(trend.Series))
+	}
+	if trend.Series[0].SeriesType != "team_total" || trend.Series[0].Points[0].TotalTokens == nil || *trend.Series[0].Points[0].TotalTokens != 1400 {
+		t.Fatalf("team total = %#v, want complete 1400 tokens", trend.Series[0])
+	}
+	wantIDs := []string{
+		"department-12", "department-13", "department-11", "department-10", "department-09", "department-08",
+		"department-07", "department-06", "department-05", "department-04", "department-03", "department-02",
+	}
+	gotIDs := make([]string, 0, 12)
+	for index, series := range trend.Series[1:] {
+		gotIDs = append(gotIDs, series.DepartmentExternalID)
+		if series.Rank != index+1 {
+			t.Fatalf("series %q rank = %d, want %d", series.DepartmentExternalID, series.Rank, index+1)
+		}
+	}
+	if !reflect.DeepEqual(gotIDs, wantIDs) {
+		t.Fatalf("comparison IDs = %#v, want %#v", gotIDs, wantIDs)
+	}
+}
 
 func TestOverviewScopeTooLargeDoesNotRankTruncatedTop12(t *testing.T) {
 	subjects := make([]representativescope.Subject, 0, 501)

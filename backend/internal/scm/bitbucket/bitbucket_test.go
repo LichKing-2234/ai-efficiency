@@ -8,14 +8,61 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/internal/scm"
 	"go.uber.org/zap"
 )
+
+func TestNewUsesInjectedHTTPClient(t *testing.T) {
+	var calls int
+	injected := &http.Client{
+		Timeout: 25 * time.Second,
+		Transport: bitbucketRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			calls++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"slug":"project","name":"Project","project":{"key":"PROJ"},"links":{"clone":[]}}`)),
+				Request:    req,
+			}, nil
+		}),
+	}
+	provider, err := NewWithHTTPClient("https://bitbucket.example.com", "test-token", zap.NewNop(), injected)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if provider.client != injected || provider.client.Timeout != 25*time.Second {
+		t.Fatal("NewWithHTTPClient() did not retain the injected HTTP client")
+	}
+	if _, err := provider.GetRepo(context.Background(), "PROJ/project"); err != nil {
+		t.Fatalf("GetRepo() error = %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("injected transport calls = %d, want 1", calls)
+	}
+}
+
+func TestNewPreservesWebhookCallbackArgument(t *testing.T) {
+	provider, err := New("https://bitbucket.example.com", "test-token", zap.NewNop(), "https://ai-efficiency.example.com/api/v1/webhooks/bitbucket")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if provider.webhookCallbackURL != "https://ai-efficiency.example.com/api/v1/webhooks/bitbucket" {
+		t.Fatalf("webhookCallbackURL = %q", provider.webhookCallbackURL)
+	}
+}
+
+type bitbucketRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn bitbucketRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
 
 // helper: create a test server + provider pointing at it.
 func setup(t *testing.T, handler http.HandlerFunc) (*Provider, *httptest.Server) {

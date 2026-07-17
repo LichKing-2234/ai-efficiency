@@ -3,6 +3,7 @@ package repo
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/scm"
@@ -41,7 +42,7 @@ func normalizeAPIPayload(input any) (credential.Payload, error) {
 }
 
 // newGitHubProvider creates a GitHub SCM provider from an API credential payload.
-func newGitHubProvider(baseURL string, apiCredential any, logger *zap.Logger, callbackURL string) (scm.SCMProvider, error) {
+func newGitHubProvider(baseURL string, apiCredential any, logger *zap.Logger, callbackURL string, clients ...*http.Client) (scm.SCMProvider, error) {
 	apiPayload, err := normalizeAPIPayload(apiCredential)
 	if err != nil {
 		return nil, err
@@ -50,11 +51,11 @@ func newGitHubProvider(baseURL string, apiCredential any, logger *zap.Logger, ca
 	if err != nil {
 		return nil, err
 	}
-	return github.New(baseURL, secret, logger, callbackURL)
+	return github.NewWithHTTPClient(baseURL, secret, logger, optionalHTTPClient(clients), callbackURL)
 }
 
 // newBitbucketProvider creates a Bitbucket Server SCM provider from an API credential payload.
-func newBitbucketProvider(baseURL string, apiCredential any, logger *zap.Logger, callbackURL string) (scm.SCMProvider, error) {
+func newBitbucketProvider(baseURL string, apiCredential any, logger *zap.Logger, callbackURL string, clients ...*http.Client) (scm.SCMProvider, error) {
 	apiPayload, err := normalizeAPIPayload(apiCredential)
 	if err != nil {
 		return nil, err
@@ -63,5 +64,12 @@ func newBitbucketProvider(baseURL string, apiCredential any, logger *zap.Logger,
 	if err != nil {
 		return nil, err
 	}
-	return bitbucket.New(baseURL, secret, logger, callbackURL)
+	return bitbucket.NewWithHTTPClient(baseURL, secret, logger, optionalHTTPClient(clients), callbackURL)
+}
+
+func optionalHTTPClient(clients []*http.Client) *http.Client {
+	if len(clients) == 0 {
+		return nil
+	}
+	return clients[0]
 }

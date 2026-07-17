@@ -135,8 +135,20 @@ async function resetApiMocks() {
   directoryApi.createDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   directoryApi.updateDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1 } } })
   directoryApi.validateDirectorySource.mockReset().mockResolvedValue({ data: { data: { valid: true, issues: [] } } })
+  directoryApi.listDirectoryRuns.mockReset().mockResolvedValue({
+    data: {
+      data: {
+        items: [],
+        total: 0,
+        page: 0,
+        page_size: 20,
+        latest_active_run: null,
+      },
+    },
+  })
   directoryApi.previewDirectorySource.mockReset().mockResolvedValue({ data: { data: { id: 1, status: 'completed' } } })
   directoryApi.startDirectoryRun.mockReset().mockResolvedValue({ data: { data: { id: 2, status: 'completed' } } })
+  directoryApi.getDirectoryRun.mockReset().mockResolvedValue({ data: { data: null } })
 
   const quotaResetApi = await import('@/api/quotaReset') as any
   quotaResetApi.getQuotaResetApproverConfigs.mockReset().mockResolvedValue({ data: { data: { items: [] } } })
