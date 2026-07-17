@@ -27,6 +27,8 @@ type sub2apiRelay struct {
 	logger   *zap.Logger
 }
 
+const userUsageOriginTimeout = 12 * time.Second
+
 type envelopeStatus struct {
 	Success *bool  `json:"success"`
 	Code    *int   `json:"code"`
@@ -2330,36 +2332,168 @@ func (s *sub2apiRelay) ReplaceGroupRateMultipliers(ctx context.Context, groupID 
 }
 
 func (s *sub2apiRelay) GetUserUsageDashboard(ctx context.Context, login, password string, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error) {
-	token, _, err := s.loginSessionToken(ctx, login, password)
+	result, err := s.ReadUserUsageOrigin(ctx, UserUsageOriginRequest{
+		Login:    login,
+		Password: password,
+		Params:   params,
+		Branches: UserUsageOriginBranches{Usage: true},
+	})
 	if err != nil {
-		return nil, fmt.Errorf("relay: login for usage dashboard: %w", err)
+		return nil, err
+	}
+	if result == nil {
+		return nil, fmt.Errorf("relay: usage origin returned an empty result")
+	}
+	if result.UsageErr != nil {
+		return nil, result.UsageErr
+	}
+	if result.Usage == nil {
+		return nil, fmt.Errorf("relay: usage origin returned no usage data")
+	}
+	return result.Usage, nil
+}
+
+func (s *sub2apiRelay) ReadUserUsageOrigin(ctx context.Context, request UserUsageOriginRequest) (*UserUsageOriginResult, error) {
+	if !request.Branches.Usage && !request.Branches.Quota {
+		return nil, fmt.Errorf("relay: user usage origin requires at least one branch")
+	}
+	if request.Branches.Quota && request.RelayUserID <= 0 {
+		return nil, fmt.Errorf("relay: user usage quota branch requires a relay user ID")
 	}
 
-	stats, err := s.getUserUsageDashboardStats(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	trend, err := s.getUserUsageDashboardTrend(ctx, token, params)
-	if err != nil {
-		return nil, err
-	}
-	models, err := s.getUserUsageDashboardModels(ctx, token, params)
-	if err != nil {
-		return nil, err
+	originCtx, cancel := context.WithTimeout(ctx, userUsageOriginTimeout)
+	defer cancel()
+
+	var token string
+	if request.Branches.Usage {
+		var authenticatedUser *User
+		var err error
+		token, authenticatedUser, err = s.loginSessionToken(originCtx, request.Login, request.Password)
+		if err != nil {
+			return nil, fmt.Errorf("relay: login for usage origin: %w", err)
+		}
+		if request.RelayUserID > 0 && authenticatedUser != nil && authenticatedUser.ID != request.RelayUserID {
+			return nil, fmt.Errorf("relay: usage origin authenticated user %d does not match requested user %d", authenticatedUser.ID, request.RelayUserID)
+		}
 	}
 
-	return &UserUsageDashboardResponse{
-		Configured: true,
-		Range: UserUsageDashboardRange{
-			StartDate:   firstNonEmpty(trend.StartDate, params.StartDate),
-			EndDate:     firstNonEmpty(trend.EndDate, params.EndDate),
-			Granularity: firstNonEmpty(trend.Granularity, params.Granularity, "day"),
-			Timezone:    strings.TrimSpace(params.Timezone),
-		},
-		Stats:  stats,
-		Trend:  trend.Trend,
-		Models: models.Models,
-	}, nil
+	type branchKind int
+	const (
+		usageStatsBranch branchKind = iota
+		usageTrendBranch
+		usageModelsBranch
+		usageKeysBranch
+		usageSubscriptionsBranch
+	)
+	type branchResult struct {
+		kind  branchKind
+		value any
+		err   error
+	}
+	type branchTask struct {
+		kind branchKind
+		run  func() (any, error)
+	}
+
+	tasks := make([]branchTask, 0, 5)
+	if request.Branches.Usage {
+		tasks = append(tasks,
+			branchTask{kind: usageStatsBranch, run: func() (any, error) {
+				return s.getUserUsageDashboardStats(originCtx, token)
+			}},
+			branchTask{kind: usageTrendBranch, run: func() (any, error) {
+				return s.getUserUsageDashboardTrend(originCtx, token, request.Params)
+			}},
+			branchTask{kind: usageModelsBranch, run: func() (any, error) {
+				return s.getUserUsageDashboardModels(originCtx, token, request.Params)
+			}},
+		)
+	}
+	if request.Branches.Quota {
+		tasks = append(tasks,
+			branchTask{kind: usageKeysBranch, run: func() (any, error) {
+				return s.ListUserAPIKeys(originCtx, request.RelayUserID)
+			}},
+			branchTask{kind: usageSubscriptionsBranch, run: func() (any, error) {
+				return s.ListUserSubscriptions(originCtx, request.RelayUserID)
+			}},
+		)
+	}
+
+	results := make(chan branchResult, len(tasks))
+	for _, task := range tasks {
+		task := task
+		go func() {
+			value, err := task.run()
+			results <- branchResult{kind: task.kind, value: value, err: err}
+		}()
+	}
+
+	result := &UserUsageOriginResult{}
+	var stats *UserUsageDashboardStats
+	var trend *userUsageTrendEnvelope
+	var models *userUsageModelsEnvelope
+	var statsErr, trendErr, modelsErr error
+	var keysErr, subscriptionsErr error
+	for range tasks {
+		branch := <-results
+		switch branch.kind {
+		case usageStatsBranch:
+			stats, _ = branch.value.(*UserUsageDashboardStats)
+			statsErr = branch.err
+		case usageTrendBranch:
+			trend, _ = branch.value.(*userUsageTrendEnvelope)
+			trendErr = branch.err
+		case usageModelsBranch:
+			models, _ = branch.value.(*userUsageModelsEnvelope)
+			modelsErr = branch.err
+		case usageKeysBranch:
+			result.APIKeys, _ = branch.value.([]APIKey)
+			keysErr = branch.err
+		case usageSubscriptionsBranch:
+			result.Subscriptions, _ = branch.value.([]UserSubscription)
+			subscriptionsErr = branch.err
+		}
+	}
+
+	if request.Branches.Usage {
+		result.UsageErr = firstError(statsErr, trendErr, modelsErr)
+		if result.UsageErr == nil {
+			if stats == nil || trend == nil || models == nil {
+				result.UsageErr = fmt.Errorf("relay: usage origin returned an incomplete generation")
+			} else {
+				result.Usage = &UserUsageDashboardResponse{
+					Configured: true,
+					Range: UserUsageDashboardRange{
+						StartDate:   firstNonEmpty(trend.StartDate, request.Params.StartDate),
+						EndDate:     firstNonEmpty(trend.EndDate, request.Params.EndDate),
+						Granularity: firstNonEmpty(trend.Granularity, request.Params.Granularity, "day"),
+						Timezone:    strings.TrimSpace(request.Params.Timezone),
+					},
+					Stats:  stats,
+					Trend:  trend.Trend,
+					Models: models.Models,
+				}
+			}
+		}
+	}
+	if request.Branches.Quota {
+		result.QuotaErr = firstError(keysErr, subscriptionsErr)
+		if result.QuotaErr != nil {
+			result.APIKeys = nil
+			result.Subscriptions = nil
+		}
+	}
+	return result, nil
+}
+
+func firstError(errors ...error) error {
+	for _, err := range errors {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *sub2apiRelay) getUserUsageDashboardStats(ctx context.Context, token string) (*UserUsageDashboardStats, error) {

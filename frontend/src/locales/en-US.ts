@@ -255,6 +255,7 @@ const enUS = {
   'usageDashboard.credentialError': 'Relay credentials need attention',
   'usageDashboard.unavailable': 'Usage dashboard is temporarily unavailable',
   'usageDashboard.retryHelp': 'Try refreshing after checking your setup.',
+  'usageDashboard.staleSnapshot': 'Showing a recent snapshot while live usage is temporarily unavailable.',
   'usageDashboard.todayCost': 'Today Cost',
   'usageDashboard.todayRequests': 'Today Requests',
   'usageDashboard.todayTokens': 'Today Tokens',
