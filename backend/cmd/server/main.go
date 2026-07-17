@@ -206,19 +206,19 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize work item counts cache", zap.Error(err))
 	}
-	representativeScopeCache, err := representativescope.NewCache(
-		redisStore,
-		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace},
-	)
-	if err != nil {
-		logger.Fatal("initialize representative scope cache", zap.Error(err))
-	}
 	personalUsageCache, err := personalusage.NewCache(
 		redisStore,
 		personalusage.CacheOptions{Namespace: cfg.Redis.Namespace},
 	)
 	if err != nil {
 		logger.Fatal("initialize personal usage cache", zap.Error(err))
+	}
+	representativeScopeCache, err := representativescope.NewCache(
+		redisStore,
+		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize representative scope cache", zap.Error(err))
 	}
 	teamUsageSnapshotCache, err := teamusage.NewSnapshotCache(
 		redisStore,

@@ -48,11 +48,23 @@ const sampleRow = {
   binding_status: 'bound' as const,
 }
 
+const sampleRows = [
+  sampleRow,
+  { ...sampleRow, id: 13, tool: 'codex', tool_session_id: 'codex-sess-2', dedupe_key: 'codex:2' },
+  { ...sampleRow, id: 14, tool: 'kiro', tool_session_id: 'kiro-sess-3', dedupe_key: 'kiro:3' },
+]
+
 const sampleSummary = {
-  total_events: 2,
+  total_events: 3,
   bound_events: 1,
-  unbound_events: 1,
+  unbound_events: 2,
   tool_counts: [{ tool: 'claude', count: 1 }, { tool: 'kiro', count: 1 }],
+}
+
+const largeRawPayload = {
+  scope: 'admin-only',
+  marker: 'large-payload-marker',
+  content: 'x'.repeat(4096),
 }
 
 const sampleDetail = {
@@ -81,15 +93,19 @@ const sampleDetail = {
   source_basename: 'detail.jsonl',
   raw_source_path: '/tmp/example-ai-events/detail.jsonl',
   raw_source_locator: 'line:10',
-  raw_payload: { scope: 'admin-only' },
+  raw_payload: largeRawPayload,
   binding_status: 'bound' as const,
   matched_prs: [{ pr_record_id: 1769, scm_pr_id: 38, title: 'Events page', status: 'open', scm_pr_url: 'https://example.com/pr/38' }],
 }
 
-async function mountEvents(isAdmin = false, path = '/events') {
+async function mountEvents(
+  isAdmin = false,
+  path = '/events',
+  listData = { items: sampleRows, total: 45, page: 0, page_size: 20 },
+) {
   const { getEventSummary, listEvents, getEventDetail, searchEventUsers } = await import('@/api/events')
   ;(getEventSummary as any).mockResolvedValue({ data: { data: sampleSummary } })
-  ;(listEvents as any).mockResolvedValue({ data: { data: { items: [sampleRow], total: 45, page: 0, page_size: 20 } } })
+  ;(listEvents as any).mockResolvedValue({ data: { data: listData } })
   ;(getEventDetail as any).mockResolvedValue({ data: { data: isAdmin ? sampleDetail : { ...sampleDetail, raw_source_path: undefined, raw_source_locator: undefined, raw_payload: undefined } } })
   ;(searchEventUsers as any).mockResolvedValue({
     data: {
@@ -125,11 +141,70 @@ async function mountEvents(isAdmin = false, path = '/events') {
   return { wrapper, router, getEventSummary, listEvents, getEventDetail, searchEventUsers }
 }
 
+function installMatchMedia(initialMatches: boolean) {
+  const listeners = new Set<EventListenerOrEventListenerObject>()
+  const mediaQueryList = {
+    matches: initialMatches,
+    media: '(min-width: 768px)',
+    onchange: null,
+    addEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+      if (type === 'change') listeners.add(listener)
+    }),
+    removeEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+      if (type === 'change') listeners.delete(listener)
+    }),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }
+  const matchMedia = vi.fn(() => mediaQueryList as unknown as MediaQueryList)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: matchMedia,
+  })
+
+  return {
+    addEventListener: mediaQueryList.addEventListener,
+    removeEventListener: mediaQueryList.removeEventListener,
+    listenerCount: () => listeners.size,
+    matchMedia,
+    setMatches(matches: boolean) {
+      mediaQueryList.matches = matches
+      const event = { matches, media: mediaQueryList.media } as MediaQueryListEvent
+      for (const listener of listeners) {
+        if (typeof listener === 'function') listener(event)
+        else listener.handleEvent(event)
+      }
+    },
+  }
+}
+
+async function openAdvancedDetails(wrapper: Awaited<ReturnType<typeof mountEvents>>['wrapper']) {
+  const details = wrapper.get('details')
+  Object.defineProperty(details.element, 'open', {
+    configurable: true,
+    value: true,
+  })
+  await details.trigger('toggle')
+  await wrapper.vm.$nextTick()
+}
+
+function rawPayloadStringifyCount(spy: ReturnType<typeof vi.spyOn>) {
+  return spy.mock.calls.filter((call: unknown[]) => {
+    const value = call[0]
+    return typeof value === 'object'
+      && value != null
+      && 'marker' in value
+      && value.marker === largeRawPayload.marker
+  }).length
+}
+
 describe('EventsView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     setLocale('en-US')
     vi.clearAllMocks()
+    installMatchMedia(true)
   })
 
   it('loads summary and event rows on mount with a 7-day default range', async () => {
@@ -151,7 +226,6 @@ describe('EventsView', () => {
     expect(wrapper.text()).toContain('Token usage')
     expect(wrapper.text()).toContain('1,700')
     expect(wrapper.text()).not.toContain('2,000')
-    expect(wrapper.text()).toContain('View details')
     expect(wrapper.text()).toContain('Linked')
     expect(wrapper.text()).not.toContain('detail.jsonl')
   })
@@ -171,6 +245,46 @@ describe('EventsView', () => {
 
     expect(toggle.attributes('aria-expanded')).toBe('true')
     expect(wrapper.get('#events-filter-panel').classes()).toContain('block')
+  })
+
+  it('renders exactly one mobile row subtree per event below 768px', async () => {
+    const media = installMatchMedia(false)
+    const { wrapper } = await mountEvents()
+
+    expect(wrapper.findAll('[data-event-row="mobile"]')).toHaveLength(3)
+    expect(wrapper.findAll('[data-event-row="desktop"]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('View details')
+    expect(media.matchMedia).toHaveBeenCalledTimes(1)
+    expect(media.matchMedia).toHaveBeenCalledWith('(min-width: 768px)')
+  })
+
+  it('renders exactly one desktop row subtree per event at or above 768px', async () => {
+    const media = installMatchMedia(true)
+    const { wrapper } = await mountEvents()
+
+    expect(wrapper.findAll('[data-event-row="mobile"]')).toHaveLength(0)
+    expect(wrapper.findAll('[data-event-row="desktop"]')).toHaveLength(3)
+    expect(media.matchMedia).toHaveBeenCalledTimes(1)
+    expect(media.matchMedia).toHaveBeenCalledWith('(min-width: 768px)')
+  })
+
+  it('switches representation once when the media query changes', async () => {
+    const media = installMatchMedia(false)
+    const { wrapper } = await mountEvents()
+
+    expect(media.addEventListener).toHaveBeenCalledTimes(1)
+    expect(media.listenerCount()).toBe(1)
+    expect(wrapper.findAll('[data-event-row="mobile"]')).toHaveLength(3)
+
+    media.setMatches(true)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('[data-event-row="mobile"]')).toHaveLength(0)
+    expect(wrapper.findAll('[data-event-row="desktop"]')).toHaveLength(3)
+
+    wrapper.unmount()
+    expect(media.removeEventListener).toHaveBeenCalledTimes(1)
+    expect(media.listenerCount()).toBe(0)
   })
 
   it('summarizes restored filters while the mobile filter panel is collapsed', async () => {
@@ -217,8 +331,68 @@ describe('EventsView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Raw Payload')
+    await openAdvancedDetails(wrapper)
     expect(wrapper.text()).toContain('admin-only')
     expect(wrapper.text()).toContain('Events page')
+  })
+
+  it('does not stringify raw payload while advanced details are closed', async () => {
+    const { wrapper } = await mountEvents(true)
+    const stringifySpy = vi.spyOn(JSON, 'stringify')
+
+    try {
+      await wrapper.find('tbody tr').trigger('click')
+      await flushPromises()
+
+      expect(rawPayloadStringifyCount(stringifySpy)).toBe(0)
+      expect(wrapper.text()).not.toContain(largeRawPayload.marker)
+    } finally {
+      stringifySpy.mockRestore()
+    }
+  })
+
+  it('formats raw payload once after advanced details opens', async () => {
+    const { wrapper } = await mountEvents(true)
+    const stringifySpy = vi.spyOn(JSON, 'stringify')
+
+    try {
+      await wrapper.find('tbody tr').trigger('click')
+      await flushPromises()
+      expect(rawPayloadStringifyCount(stringifySpy)).toBe(0)
+
+      await openAdvancedDetails(wrapper)
+
+      expect(rawPayloadStringifyCount(stringifySpy)).toBe(1)
+      expect(wrapper.text()).toContain(largeRawPayload.marker)
+    } finally {
+      stringifySpy.mockRestore()
+    }
+  })
+
+  it('resets formatting state when the detail drawer closes', async () => {
+    const { wrapper } = await mountEvents(true)
+    const stringifySpy = vi.spyOn(JSON, 'stringify')
+
+    try {
+      await wrapper.find('tbody tr').trigger('click')
+      await flushPromises()
+      await openAdvancedDetails(wrapper)
+      expect(rawPayloadStringifyCount(stringifySpy)).toBe(1)
+      expect(wrapper.text()).toContain(largeRawPayload.marker)
+
+      await wrapper.get('[role="dialog"] button').trigger('click')
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+
+      await wrapper.find('tbody tr').trigger('click')
+      await flushPromises()
+
+      expect((wrapper.get('details').element as HTMLDetailsElement).open).toBe(false)
+      expect(rawPayloadStringifyCount(stringifySpy)).toBe(1)
+      expect(wrapper.text()).not.toContain(largeRawPayload.marker)
+    } finally {
+      stringifySpy.mockRestore()
+    }
   })
 
   it('shows admin-only searchable user selector and applies selected user id', async () => {
@@ -289,6 +463,51 @@ describe('EventsView', () => {
     const latestParams = (listEvents as any).mock.calls.at(-1)[0]
     expect(latestParams.limit).toBe(50)
     expect(latestParams.offset).toBe(0)
+  })
+
+  it('clamps a restored page size above 100 and advances without a gap', async () => {
+    const { wrapper, router, listEvents } = await mountEvents(
+      false,
+      '/events?limit=101&offset=0',
+      { items: sampleRows, total: 205, page: 0, page_size: 100 },
+    )
+
+    await wrapper.get('[data-testid="events-next-page"]').trigger('click')
+    await flushPromises()
+
+    expect((listEvents as any).mock.calls.slice(-2).map(([params]: [{ limit: number; offset: number }]) => ({
+      limit: params.limit,
+      offset: params.offset,
+    }))).toEqual([
+      { limit: 100, offset: 0 },
+      { limit: 100, offset: 100 },
+    ])
+    expect(router.currentRoute.value.query).toMatchObject({ limit: '100', offset: '100' })
+  })
+
+  it('normalizes decimal pagination before the first request and next page', async () => {
+    const { wrapper, router, listEvents } = await mountEvents(
+      false,
+      '/events?limit=20.5&offset=10.5',
+      { items: sampleRows, total: 45, page: 0, page_size: 20 },
+    )
+
+    expect((wrapper.get('[data-testid="events-page-size"]').element as HTMLSelectElement).value).toBe('20')
+    expect(router.currentRoute.value.query.limit).toBeUndefined()
+    expect(router.currentRoute.value.query.offset).toBeUndefined()
+
+    await wrapper.get('[data-testid="events-next-page"]').trigger('click')
+    await flushPromises()
+
+    expect((listEvents as any).mock.calls.slice(-2).map(([params]: [{ limit: number; offset: number }]) => ({
+      limit: params.limit,
+      offset: params.offset,
+    }))).toEqual([
+      { limit: 20, offset: 0 },
+      { limit: 20, offset: 20 },
+    ])
+    expect(router.currentRoute.value.query.limit).toBeUndefined()
+    expect(router.currentRoute.value.query.offset).toBe('20')
   })
 
   it('restores filters and pagination from the URL query', async () => {
