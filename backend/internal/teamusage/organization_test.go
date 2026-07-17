@@ -201,10 +201,10 @@ func newOrganizationTestService(t *testing.T, childCount, directMemberCount int,
 	}
 	if store == nil {
 		cache, _ := testSnapshotCacheWithClock(t, now, 0)
-		return NewServiceWithSnapshotCache(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret), provider, scope
+		return newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret), provider, scope
 	}
 	cache := newTestSnapshotCache(t, store, now, 0)
-	return NewServiceWithSnapshotCache(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret), provider, scope
+	return newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret), provider, scope
 }
 
 func testOrganizationParams(parent string) OrganizationParams {

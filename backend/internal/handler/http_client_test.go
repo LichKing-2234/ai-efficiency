@@ -41,7 +41,7 @@ func TestProviderHandlerUsesInjectedHTTPClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}
-	h := NewProviderHandler(client, encryptionKey, zap.NewNop(), runtime)
+	h := newProviderHandlerForTest(t, client, encryptionKey, zap.NewNop(), runtime)
 	provider, err := h.getOrCreateRelayProvider(&ent.RelayProvider{
 		ID:                   1,
 		Name:                 "Relay Alpha",

@@ -90,7 +90,7 @@ func TestRouterRequiresAuthenticationForWebVitals(t *testing.T) {
 	repoService := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 	webVitalsHandler := NewWebVitalsHandler(&recordingWebVitalsRecorder{}, WebVitalsOptions{})
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authService,
@@ -106,7 +106,7 @@ func TestRouterRequiresAuthenticationForWebVitals(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		RouterRuntimeOptions{WebVitalsHandler: webVitalsHandler},
+		RouterOptions{WebVitalsHandler: webVitalsHandler},
 	)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/telemetry/web-vitals", strings.NewReader(

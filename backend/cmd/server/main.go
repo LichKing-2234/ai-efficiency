@@ -417,7 +417,10 @@ func main() {
 	oauthHandler := oauth.NewHandler(oauthServer, cfg.Server.FrontendURL, &authTokenAdapter{authService: authService})
 
 	// Init provider handler
-	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger, providerRuntime)
+	providerHandler, err := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger, providerRuntime)
+	if err != nil {
+		logger.Fatal("initialize relay provider handler", zap.Error(err))
+	}
 	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
 		Executor:                  directorysync.NewExecutor(directorysync.ExecutorOptions{HTTPClient: httpClients.directory}),
 		Credentials:               directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
@@ -471,7 +474,7 @@ func main() {
 	healthHandler := handler.NewHealthHandler(healthService, versionCheckService)
 	webVitalsHandler := handler.NewWebVitalsHandler(metrics, handler.WebVitalsOptions{})
 
-	r := handler.SetupRouterWithOptions(
+	r, err := handler.SetupRouter(
 		entClient,
 		sqlDB,
 		authService,
@@ -494,6 +497,7 @@ func main() {
 			WorkItemsRevisionStore:   workItemsRevisionStore,
 			RepresentativeScopeCache: representativeScopeCache,
 			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
+			TeamUsageCursorSecret:    cfg.Encryption.Key,
 			WebhookHTTPClient:        httpClients.webhook,
 			RequestLogger:            logger,
 			RequestObserver:          metrics.RequestObserver(),
@@ -502,6 +506,9 @@ func main() {
 			RequestTimeout:           time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
 	)
+	if err != nil {
+		logger.Fatal("initialize HTTP router", zap.Error(err))
+	}
 
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
