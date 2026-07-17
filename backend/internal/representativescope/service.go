@@ -45,17 +45,18 @@ type DepartmentScope struct {
 }
 
 type Scope struct {
-	ActorUserID              int
-	ActorMemberExternalID    string
-	IsRepresentative         bool
-	RepresentedDepartmentIDs []string
-	RepresentedSubtreeIDs    map[string]map[string]struct{}
-	Departments              []DepartmentScope
-	MemberTreeRootIDs        []string
-	MemberTreeDepartments    []DepartmentScope
-	Subjects                 []Subject
-	OverviewSubjects         []Subject
-	TargetRepresentedRoots   map[int][]string
+	Version                  string                         `json:"version"`
+	ActorUserID              int                            `json:"actor_user_id"`
+	ActorMemberExternalID    string                         `json:"actor_member_external_id"`
+	IsRepresentative         bool                           `json:"is_representative"`
+	RepresentedDepartmentIDs []string                       `json:"represented_department_ids"`
+	RepresentedSubtreeIDs    map[string]map[string]struct{} `json:"represented_subtree_ids"`
+	Departments              []DepartmentScope              `json:"departments"`
+	MemberTreeRootIDs        []string                       `json:"member_tree_root_ids"`
+	MemberTreeDepartments    []DepartmentScope              `json:"member_tree_departments"`
+	Subjects                 []Subject                      `json:"subjects"`
+	OverviewSubjects         []Subject                      `json:"overview_subjects"`
+	TargetRepresentedRoots   map[int][]string               `json:"target_represented_roots"`
 }
 
 func (s Scope) AllowedUserIDs() []int {
@@ -77,23 +78,85 @@ func (s Scope) AllowedUserIDs() []int {
 
 type Service struct {
 	client *ent.Client
+	cache  *Cache
 }
 
 func New(client *ent.Client) *Service {
 	return &Service{client: client}
 }
 
+func NewWithCache(client *ent.Client, cache *Cache) *Service {
+	return &Service{client: client, cache: cache}
+}
+
 func (s *Service) Resolve(ctx context.Context, actorUserID int) (*Scope, error) {
-	sourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
-	if err != nil {
-		return nil, fmt.Errorf("resolve current directory source: %w", err)
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("representative scope service is not configured")
 	}
-	if !ok {
-		return &Scope{ActorUserID: actorUserID}, nil
+	if actorUserID <= 0 {
+		return nil, fmt.Errorf("representative scope actor ID must be positive")
 	}
+	for {
+		guard, actor, ok, err := s.currentGuard(ctx, actorUserID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return &Scope{ActorUserID: actorUserID}, nil
+		}
+
+		loader := func(loadCtx context.Context) (*Scope, error) {
+			return s.loadAuthoritativeScope(loadCtx, guard.DirectorySourceID, actor)
+		}
+		var scope *Scope
+		if s.cache == nil {
+			scope, err = loader(ctx)
+			if err == nil && scope != nil {
+				scope.Version = scopeVersion(guard)
+			}
+		} else {
+			scope, err = s.cache.GetOrLoad(ctx, guard, loader)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		currentGuard, _, current, err := s.currentGuard(ctx, actorUserID)
+		if err != nil {
+			return nil, err
+		}
+		if !current {
+			return &Scope{ActorUserID: actorUserID}, nil
+		}
+		if currentGuard == guard {
+			return scope, nil
+		}
+	}
+}
+
+func (s *Service) currentGuard(ctx context.Context, actorUserID int) (scopeGuard, *ent.User, bool, error) {
 	actor, err := s.client.User.Get(ctx, actorUserID)
 	if err != nil {
-		return nil, fmt.Errorf("get actor user: %w", err)
+		return scopeGuard{}, nil, false, fmt.Errorf("get actor user: %w", err)
+	}
+	snapshot, ok, err := directorysync.CurrentSnapshot(ctx, s.client)
+	if err != nil {
+		return scopeGuard{}, nil, false, fmt.Errorf("resolve current directory snapshot: %w", err)
+	}
+	if !ok {
+		return scopeGuard{}, actor, false, nil
+	}
+	return scopeGuard{
+		ActorUserID:       actor.ID,
+		ActorRole:         string(actor.Role),
+		DirectorySourceID: snapshot.SourceID,
+		DirectoryRunID:    snapshot.RunID,
+	}, actor, true, nil
+}
+
+func (s *Service) loadAuthoritativeScope(ctx context.Context, sourceID int, actor *ent.User) (*Scope, error) {
+	if actor == nil {
+		return nil, fmt.Errorf("representative scope actor is required")
 	}
 	members, err := s.client.DirectoryMember.Query().
 		Where(directorymember.SourceIDEQ(sourceID)).
@@ -274,6 +337,9 @@ func indexMemberDepartmentIDs(memberships []*ent.DirectoryMemberDepartment) map[
 			continue
 		}
 		out[memberID] = appendUniqueStrings(out[memberID], membership.DepartmentExternalID)
+	}
+	for memberID := range out {
+		sort.Strings(out[memberID])
 	}
 	return out
 }

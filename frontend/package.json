@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
+    "build:measure": "vue-tsc -b && vite build --mode measure && node scripts/measure-build.mjs",
     "preview": "vite preview",
     "test": "vitest --run",
     "test:e2e:role": "python3 e2e_role_test.py"

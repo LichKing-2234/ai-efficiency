@@ -11,6 +11,9 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/config"
+	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/relayruntime"
+	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -29,17 +32,27 @@ func TestProviderHandlerUsesInjectedHTTPClient(t *testing.T) {
 			return syntheticHandlerResponse(req, http.StatusOK, ""), nil
 		}),
 	}
-	h := NewProviderHandler(nil, encryptionKey, zap.NewNop(), injected)
-	if h.httpClient != injected || h.httpClient.Timeout != 19*time.Second {
-		t.Fatal("NewProviderHandler() did not retain the injected HTTP client")
-	}
-	provider := h.getOrCreateRelayProvider(&ent.RelayProvider{
-		ID:           1,
-		Name:         "Relay Alpha",
-		BaseURL:      "https://relay.example.com",
-		AdminAPIKey:  encryptedKey,
-		DefaultModel: "model-alpha",
+	client := testdb.Open(t)
+	runtime, err := relayruntime.NewManager(client, encryptionKey, zap.NewNop(), relayruntime.Options{
+		Factory: func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
+			return relay.NewSub2apiProvider(injected, row.BaseURL, adminAPIKey, row.DefaultModel, zap.NewNop()), nil
+		},
 	})
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	h := NewProviderHandler(client, encryptionKey, zap.NewNop(), runtime)
+	provider, err := h.getOrCreateRelayProvider(&ent.RelayProvider{
+		ID:                   1,
+		Name:                 "Relay Alpha",
+		BaseURL:              "https://relay.example.com",
+		AdminAPIKey:          encryptedKey,
+		DefaultModel:         "model-alpha",
+		ConfigurationVersion: 1,
+	})
+	if err != nil {
+		t.Fatalf("getOrCreateRelayProvider() error = %v", err)
+	}
 
 	if err := provider.Ping(context.Background()); err != nil {
 		t.Fatalf("Ping() error = %v", err)

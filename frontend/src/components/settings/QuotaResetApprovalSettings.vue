@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import {
   getQuotaResetApproverConfigs,
   getQuotaResetNotificationSettings,
@@ -8,12 +9,12 @@ import {
   testQuotaResetNotificationSettings,
   updateQuotaResetNotificationSettings,
 } from '@/api/quotaReset'
-import { listDirectoryDepartments, listDirectorySources } from '@/api/directory'
+import { listDirectoryDepartments } from '@/api/directory'
 import { useI18n } from '@/i18n'
+import { useSettingsResourcesStore } from '@/stores/settingsResources'
 import type {
   Credential,
   DirectoryDepartment,
-  DirectorySource,
   QuotaResetApproverCandidate,
   QuotaResetApproverConfig,
   QuotaResetApproverConfigInput,
@@ -26,6 +27,8 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const settingsResources = useSettingsResourcesStore()
+const { directorySources: departmentSources, directorySourcesError } = storeToRefs(settingsResources)
 const configs = ref<QuotaResetApproverConfig[]>([])
 const loading = ref(false)
 const savingConfigs = ref(false)
@@ -35,7 +38,6 @@ const searchingDepartments = ref(false)
 const loadingApproverCandidates = ref(false)
 const message = ref('')
 const error = ref('')
-const departmentSources = ref<DirectorySource[]>([])
 const selectedDirectorySourceID = ref<number | null>(null)
 const departmentSearch = ref('')
 const departmentDropdownOpen = ref(false)
@@ -90,15 +92,13 @@ async function loadSettings() {
 }
 
 async function loadDirectorySourceOptions() {
-  try {
-    const res = await listDirectorySources()
-    departmentSources.value = res.data.data?.items ?? []
-    const current = departmentSources.value.find((source) => source.last_successful_run_id) ?? departmentSources.value[0]
-    selectedDirectorySourceID.value = current?.id ?? null
-  } catch {
-    departmentSources.value = []
+  await settingsResources.loadDirectorySources()
+  if (directorySourcesError.value) {
     selectedDirectorySourceID.value = null
+    return
   }
+  const current = departmentSources.value.find((source) => source.last_successful_run_id) ?? departmentSources.value[0]
+  selectedDirectorySourceID.value = current?.id ?? null
 }
 
 function departmentDisplayPath(department: DirectoryDepartment) {

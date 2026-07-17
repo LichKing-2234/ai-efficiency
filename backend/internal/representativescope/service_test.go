@@ -2,15 +2,35 @@ package representativescope
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	entuser "github.com/ai-efficiency/backend/ent/user"
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/testdb"
+	"github.com/alicebob/miniredis/v2"
+	redis "github.com/redis/go-redis/v9"
 )
+
+func TestIndexMemberDepartmentIDsSortsStablePrimaryDepartment(t *testing.T) {
+	memberships := []*ent.DirectoryMemberDepartment{
+		{DirectoryMemberID: 7, DepartmentExternalID: "department-zeta"},
+		{DirectoryMemberID: 7, DepartmentExternalID: "department-alpha"},
+		{DirectoryMemberID: 7, DepartmentExternalID: "department-beta"},
+	}
+
+	got := indexMemberDepartmentIDs(memberships)[7]
+	want := []string{"department-alpha", "department-beta", "department-zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("member department IDs = %#v, want stable order %#v", got, want)
+	}
+}
 
 func TestResolveRepresentativeScopeFromDepartmentMetadataIncludesSubtree(t *testing.T) {
 	client := testdb.Open(t)
@@ -404,6 +424,276 @@ func TestResolveRepresentativeScopeFailsClosedWithoutCurrentSource(t *testing.T)
 	if scope.IsRepresentative || len(scope.Subjects) != 0 {
 		t.Fatalf("scope = %#v, want non-representative empty scope", scope)
 	}
+}
+
+func TestResolveRepresentativeScopeCacheSelectsNewDirectoryRunAndRoleImmediately(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	oldCompletedAt := time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC)
+	newCompletedAt := oldCompletedAt.Add(time.Hour)
+	oldSource := createScopeSourceWithCompletedAt(t, client, true, &oldCompletedAt)
+	actorRelayID := 1100
+	oldTargetRelayID := 1101
+	newTargetRelayID := 1102
+	actor := createScopeUser(t, client, "actor-cache", "actor-cache@example.com", &actorRelayID)
+	oldTarget := createScopeUser(t, client, "old-target-cache", "old-target-cache@example.org", &oldTargetRelayID)
+	createScopeDepartment(t, client, oldSource.ID, "department-old-cache", "Department Old Cache", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	createScopeMember(t, client, oldSource.ID, "member-actor", actor.Email, "department-old-cache", &actor.ID, nil)
+	createScopeMember(t, client, oldSource.ID, "member-old-target", oldTarget.Email, "department-old-cache", &oldTarget.ID, nil)
+
+	cache, server := testScopeCache(t, "test")
+	service := NewWithCache(client, cache)
+	oldScope, err := service.Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("Resolve old scope: %v", err)
+	}
+	if got, want := oldScope.AllowedUserIDs(), []int{oldTarget.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("old allowed users = %#v, want %#v", got, want)
+	}
+	if _, err := service.Resolve(ctx, actor.ID); err != nil {
+		t.Fatalf("Resolve cached old scope: %v", err)
+	}
+
+	newTarget := createScopeUser(t, client, "new-target-cache", "new-target-cache@example.net", &newTargetRelayID)
+	newSource := createScopeSourceWithCompletedAt(t, client, true, &newCompletedAt)
+	createScopeDepartment(t, client, newSource.ID, "department-new-cache", "Department New Cache", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	createScopeMember(t, client, newSource.ID, "member-actor", actor.Email, "department-new-cache", &actor.ID, nil)
+	createScopeMember(t, client, newSource.ID, "member-new-target", newTarget.Email, "department-new-cache", &newTarget.ID, nil)
+
+	newScope, err := service.Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("Resolve new directory scope: %v", err)
+	}
+	if got, want := newScope.AllowedUserIDs(), []int{newTarget.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("new allowed users = %#v, want %#v", got, want)
+	}
+	if err := client.User.UpdateOneID(actor.ID).SetRole(entuser.RoleAdmin).Exec(ctx); err != nil {
+		t.Fatalf("update actor role: %v", err)
+	}
+	roleScope, err := service.Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("Resolve new role scope: %v", err)
+	}
+	if got, want := roleScope.AllowedUserIDs(), []int{newTarget.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("new-role allowed users = %#v, want %#v", got, want)
+	}
+
+	valueKeys := 0
+	for _, key := range server.Keys() {
+		if strings.Contains(key, ":representative-scope:") && !strings.HasSuffix(key, ":lease") {
+			valueKeys++
+		}
+	}
+	if valueKeys != 3 {
+		t.Fatalf("representative scope value keys = %d, want 3 for old run, new run, and new role", valueKeys)
+	}
+}
+
+func TestResolveRepresentativeScopeCacheStillValidatesCurrentActor(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := createScopeSource(t, client, true)
+	actor := createScopeUser(t, client, "actor-current-guard", "actor-current-guard@example.com", nil)
+	createScopeDepartment(t, client, source.ID, "department-current-guard", "Department Current Guard", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	createScopeMember(t, client, source.ID, "member-actor", actor.Email, "department-current-guard", &actor.ID, nil)
+	cache, _ := testScopeCache(t, "test")
+	service := NewWithCache(client, cache)
+	if _, err := service.Resolve(ctx, actor.ID); err != nil {
+		t.Fatalf("initial Resolve: %v", err)
+	}
+	if err := client.User.DeleteOneID(actor.ID).Exec(ctx); err != nil {
+		t.Fatalf("delete current actor: %v", err)
+	}
+	if scope, err := service.Resolve(ctx, actor.ID); err == nil || scope != nil {
+		t.Fatalf("Resolve deleted actor = %#v, %v; want nil error result", scope, err)
+	}
+}
+
+func TestResolveRepresentativeScopeRechecksGuardAfterCacheRead(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	oldCompletedAt := time.Date(2026, 6, 26, 10, 0, 0, 0, time.UTC)
+	newCompletedAt := oldCompletedAt.Add(time.Hour)
+	oldSource := createScopeSourceWithCompletedAt(t, client, true, &oldCompletedAt)
+	actorRelayID := 1200
+	oldTargetRelayID := 1201
+	newTargetRelayID := 1202
+	actor := createScopeUser(t, client, "actor-race", "actor-race@example.com", &actorRelayID)
+	oldTarget := createScopeUser(t, client, "old-target-race", "old-target-race@example.org", &oldTargetRelayID)
+	createScopeDepartment(t, client, oldSource.ID, "department-old-race", "Department Old Race", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	createScopeMember(t, client, oldSource.ID, "member-actor", actor.Email, "department-old-race", &actor.ID, nil)
+	createScopeMember(t, client, oldSource.ID, "member-old-target", oldTarget.Email, "department-old-race", &oldTarget.ID, nil)
+
+	server := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = redisClient.Close() })
+	store := &blockingScopeGetStore{
+		Store:   readcache.NewRedisStore(redisClient),
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	cache := newTestScopeCache(t, store, "test")
+	service := NewWithCache(client, cache)
+	if _, err := service.Resolve(ctx, actor.ID); err != nil {
+		t.Fatalf("initial Resolve: %v", err)
+	}
+
+	store.armed.Store(true)
+	type resolveResult struct {
+		scope *Scope
+		err   error
+	}
+	resultCh := make(chan resolveResult, 1)
+	go func() {
+		scope, err := service.Resolve(ctx, actor.ID)
+		resultCh <- resolveResult{scope: scope, err: err}
+	}()
+	select {
+	case <-store.started:
+	case <-time.After(time.Second):
+		t.Fatal("cached read did not reach blocking store")
+	}
+
+	newTarget := createScopeUser(t, client, "new-target-race", "new-target-race@example.net", &newTargetRelayID)
+	newSource := createScopeSourceWithCompletedAt(t, client, true, &newCompletedAt)
+	createScopeDepartment(t, client, newSource.ID, "department-new-race", "Department New Race", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	createScopeMember(t, client, newSource.ID, "member-actor", actor.Email, "department-new-race", &actor.ID, nil)
+	createScopeMember(t, client, newSource.ID, "member-new-target", newTarget.Email, "department-new-race", &newTarget.ID, nil)
+	close(store.release)
+
+	select {
+	case result := <-resultCh:
+		if result.err != nil {
+			t.Fatalf("Resolve after guard change: %v", result.err)
+		}
+		if got, want := result.scope.AllowedUserIDs(), []int{newTarget.ID}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("allowed users after guard race = %#v, want new snapshot %#v", got, want)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Resolve did not finish after guard change")
+	}
+}
+
+func TestResolveRepresentativeScopeWarmHitAvoidsFullDirectoryReadsAtScale(t *testing.T) {
+	client, dsn := testdb.OpenWithDSN(t)
+	ctx := context.Background()
+	source := createScopeSource(t, client, true)
+	actorRelayID := 1300
+	actor := createScopeUser(t, client, "actor-scale", "actor-scale@example.com", &actorRelayID)
+	createScopeDepartment(t, client, source.ID, "department-scale", "Department Scale", nil, map[string]any{"representative_external_ids": []string{"member-actor"}})
+	createScopeMember(t, client, source.ID, "member-actor", actor.Email, "department-scale", &actor.ID, nil)
+
+	const representedMembers = 500
+	userCreates := make([]*ent.UserCreate, 0, representedMembers)
+	for index := 0; index < representedMembers; index++ {
+		userCreates = append(userCreates, client.User.Create().
+			SetUsername(fmt.Sprintf("member-scale-%03d", index)).
+			SetEmail(fmt.Sprintf("member-scale-%03d@example.org", index)).
+			SetAuthSource(entuser.AuthSourceLdap).
+			SetRole(entuser.RoleUser).
+			SetRelayUserID(2000+index))
+	}
+	users, err := client.User.CreateBulk(userCreates...).Save(ctx)
+	if err != nil {
+		t.Fatalf("create scale users: %v", err)
+	}
+	memberCreates := make([]*ent.DirectoryMemberCreate, 0, representedMembers)
+	for index, user := range users {
+		memberCreates = append(memberCreates, client.DirectoryMember.Create().
+			SetSourceID(source.ID).
+			SetExternalID(fmt.Sprintf("directory-member-scale-%03d", index)).
+			SetEmailNormalized(user.Email).
+			SetDisplayName(user.Username).
+			SetDepartmentExternalID("department-scale").
+			SetMatchedUserID(user.ID).
+			SetLastSeenRunID(*source.LastSuccessfulRunID))
+	}
+	if _, err := client.DirectoryMember.CreateBulk(memberCreates...).Save(ctx); err != nil {
+		t.Fatalf("create scale directory members: %v", err)
+	}
+
+	recorder := &representativeScopeQueryRecorder{}
+	loggedClient, err := ent.Open("postgres", dsn, ent.Debug(), ent.Log(recorder.Log))
+	if err != nil {
+		t.Fatalf("open logged ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = loggedClient.Close() })
+	cache, _ := testScopeCache(t, "test")
+	service := NewWithCache(loggedClient, cache)
+	coldScope, err := service.Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("cold Resolve: %v", err)
+	}
+	if got := len(coldScope.AllowedUserIDs()); got != representedMembers {
+		t.Fatalf("cold allowed users = %d, want %d", got, representedMembers)
+	}
+
+	recorder.Reset()
+	warmScope, err := service.Resolve(ctx, actor.ID)
+	if err != nil {
+		t.Fatalf("warm Resolve: %v", err)
+	}
+	if got := len(warmScope.AllowedUserIDs()); got != representedMembers {
+		t.Fatalf("warm allowed users = %d, want %d", got, representedMembers)
+	}
+	if got := recorder.Count(); got != 6 {
+		t.Fatalf("warm query count = %d, want two three-query guards; queries:\n%s", got, recorder.Joined())
+	}
+	queries := recorder.Joined()
+	for _, table := range []string{`"directory_members"`, `"directory_member_departments"`, `"directory_departments"`} {
+		if strings.Contains(queries, table) {
+			t.Fatalf("warm scope queried full table %s; queries:\n%s", table, queries)
+		}
+	}
+}
+
+type blockingScopeGetStore struct {
+	readcache.Store
+	armed   atomic.Bool
+	blocked atomic.Bool
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingScopeGetStore) Get(ctx context.Context, key string) ([]byte, error) {
+	if s.armed.Load() && s.blocked.CompareAndSwap(false, true) {
+		close(s.started)
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return s.Store.Get(ctx, key)
+}
+
+type representativeScopeQueryRecorder struct {
+	mu      sync.Mutex
+	queries []string
+}
+
+func (r *representativeScopeQueryRecorder) Log(values ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.queries = append(r.queries, fmt.Sprint(values...))
+}
+
+func (r *representativeScopeQueryRecorder) Reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.queries = nil
+}
+
+func (r *representativeScopeQueryRecorder) Count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.queries)
+}
+
+func (r *representativeScopeQueryRecorder) Joined() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return strings.Join(r.queries, "\n")
 }
 
 func createScopeUser(t *testing.T, client *ent.Client, username, email string, relayID *int) *ent.User {

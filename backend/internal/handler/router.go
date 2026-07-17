@@ -10,8 +10,11 @@ import (
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/ai-efficiency/backend/internal/usersetup"
@@ -28,15 +31,18 @@ var ginDefaultNotFoundBody = []byte("404 page not found")
 
 // RouterOptions supplies production dependencies while SetupRouter preserves its legacy call shape.
 type RouterOptions struct {
-	DirectoryService       DirectoryAdminService
-	WorkItemsCache         *workitems.CountsCache
-	WorkItemsRevisionStore *workitems.RevisionStore
-	WebhookHTTPClient      *http.Client
-	RequestLogger          *zap.Logger
-	RequestObserver        telemetry.RequestObserver
-	WebVitalsHandler       *WebVitalsHandler
-	Release                string
-	RequestTimeout         time.Duration
+	DirectoryService         DirectoryAdminService
+	PersonalUsageCache       *personalusage.Cache
+	WorkItemsCache           *workitems.CountsCache
+	WorkItemsRevisionStore   *workitems.RevisionStore
+	RepresentativeScopeCache *representativescope.Cache
+	TeamUsageSnapshotCache   *teamusage.SnapshotCache
+	WebhookHTTPClient        *http.Client
+	RequestLogger            *zap.Logger
+	RequestObserver          telemetry.RequestObserver
+	WebVitalsHandler         *WebVitalsHandler
+	Release                  string
+	RequestTimeout           time.Duration
 }
 
 type RouterRuntimeOptions = RouterOptions
@@ -171,7 +177,9 @@ func setupRouter(
 	// OAuth endpoints — at root /oauth/* (not under /api/v1)
 	if oauthHandler != nil {
 		r.GET("/oauth/authorize", oauthHandler.Authorize)
+		r.HEAD("/oauth/authorize", oauthHandler.Authorize)
 		r.GET("/oauth/device", oauthHandler.DevicePage)
+		r.HEAD("/oauth/device", oauthHandler.DevicePage)
 		r.POST("/oauth/device/code", oauthHandler.DeviceCode)
 		r.POST("/oauth/token", oauthHandler.Token)
 
@@ -184,7 +192,7 @@ func setupRouter(
 	// Handlers
 	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
-	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
+	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey, repoService)
 	repoHandler := NewRepoHandler(repoService)
 	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService, prUsageService)
 	efficiencyHandler := NewEfficiencyHandler(entClient)
@@ -331,7 +339,7 @@ func setupRouter(
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
 
-	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler))
+	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, encryptionKey))
 
 	userGroup := protected.Group("/user")
 	{
@@ -350,6 +358,10 @@ func setupRouter(
 		userGroup.GET("/team-usage/subjects", teamUsageHandler.Subjects)
 		userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamUsageHandler.SubjectDashboard)
 		userGroup.PUT("/team-usage/subjects/:user_id/groups/:group_id/rate-multiplier", teamUsageHandler.UpdateMultiplier)
+		userGroup.GET("/team-usage/summary", teamUsageHandler.Summary)
+		userGroup.GET("/team-usage/trend", teamUsageHandler.Trend)
+		userGroup.GET("/team-usage/members", teamUsageHandler.Members)
+		userGroup.GET("/team-usage/organization", teamUsageHandler.Organization)
 		userGroup.GET("/team-usage/overview", teamUsageHandler.Overview)
 		userGroup.GET("/team-usage/audit", teamUsageHandler.Audit)
 		if providerHandler != nil {
@@ -357,8 +369,10 @@ func setupRouter(
 			userGroup.POST("/providers/:id/test", providerHandler.Test)
 
 			// User usage dashboard
-			userUsageHandler := NewUserUsageHandler(entClient, providerHandler, encryptionKey)
+			userUsageService := personalusage.NewService(entClient, providerHandler, encryptionKey, options.PersonalUsageCache)
+			userUsageHandler := NewUserUsageHandler(userUsageService)
 			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
+			userGroup.GET("/usage/group-quotas", userUsageHandler.GroupQuotas)
 		}
 		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
 		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)
@@ -390,6 +404,8 @@ func setupRouter(
 	adminUsersGroup.Use(auth.RequireAdmin())
 	{
 		adminUsersGroup.GET("", adminUsersHandler.List)
+		adminUsersGroup.GET("/department-options", adminUsersHandler.ListDepartmentOptions)
+		adminUsersGroup.GET("/department-children", adminUsersHandler.ListDepartmentChildren)
 		adminUsersGroup.GET("/departments", adminUsersHandler.ListDepartments)
 		adminUsersGroup.GET("/subscription-options", adminUsersHandler.ListSubscriptionOptions)
 		adminUsersGroup.POST("/subscription-jobs", adminUsersHandler.StartSubscriptionJob)

@@ -27,10 +27,15 @@ import (
 	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/relayruntime"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
@@ -118,6 +123,22 @@ func newRuntimeHTTPClients(cfg config.HTTPClientConfig, relayWrappers ...httpcli
 		version:       version,
 		webhook:       webhook,
 	}
+}
+
+func initializeRepoInventory(ctx context.Context, entClient *ent.Client, redisClient redis.UniversalClient, namespace string) (*repo.InventoryCache, *repo.InventoryRevisionStore, error) {
+	revisions := repo.NewInventoryRevisionStore(entClient)
+	if err := revisions.Ensure(ctx); err != nil {
+		return nil, nil, fmt.Errorf("initialize repository inventory revision: %w", err)
+	}
+	cache, err := repo.NewInventoryCache(
+		repo.NewRedisInventoryStore(redisClient),
+		revisions,
+		repo.InventoryCacheOptions{Namespace: namespace},
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize repository inventory cache: %w", err)
+	}
+	return cache, revisions, nil
 }
 
 func (a *authTokenAdapter) GenerateAccessToken(userID int, username, role string) (string, string, int, error) {
@@ -266,8 +287,33 @@ func main() {
 	if err := metrics.RegisterRedisPool(redisClient); err != nil {
 		logger.Fatal("register Redis pool metrics", zap.Error(err))
 	}
+	redisStore := readcache.NewRedisStore(redisClient)
+	providerInvalidationBus, err := relayruntime.NewRedisInvalidationBus(redisClient, cfg.Redis.Namespace)
+	if err != nil {
+		logger.Fatal("initialize relay provider invalidation bus", zap.Error(err))
+	}
+	providerRuntime, err := relayruntime.NewManager(entClient, cfg.Encryption.Key, logger, relayruntime.Options{
+		Namespace: cfg.Redis.Namespace,
+		Store:     redisStore,
+		Bus:       providerInvalidationBus,
+		Factory: func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
+			return relay.NewSub2apiProvider(
+				httpClients.providerRelay,
+				row.BaseURL,
+				adminAPIKey,
+				row.DefaultModel,
+				logger,
+			), nil
+		},
+	})
+	if err != nil {
+		logger.Fatal("initialize relay provider runtime", zap.Error(err))
+	}
+	providerRuntimeCtx, stopProviderRuntime := context.WithCancel(context.Background())
+	defer stopProviderRuntime()
+	providerRuntime.Start(providerRuntimeCtx)
 	workItemsCache, err := workitems.NewCountsCache(
-		workitems.NewRedisCountsStore(redisClient),
+		redisStore,
 		workItemsRevisionStore,
 		workitems.CountsCacheOptions{
 			Namespace: cfg.Redis.Namespace,
@@ -276,6 +322,36 @@ func main() {
 	)
 	if err != nil {
 		logger.Fatal("initialize work item counts cache", zap.Error(err))
+	}
+	personalUsageCache, err := personalusage.NewCache(
+		redisStore,
+		personalusage.CacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize personal usage cache", zap.Error(err))
+	}
+	representativeScopeCache, err := representativescope.NewCache(
+		redisStore,
+		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize representative scope cache", zap.Error(err))
+	}
+	teamUsageSnapshotCache, err := teamusage.NewSnapshotCache(
+		redisStore,
+		teamusage.SnapshotCacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize team usage snapshot cache", zap.Error(err))
+	}
+	repoInventoryCache, repoInventoryRevisions, err := initializeRepoInventory(
+		context.Background(),
+		entClient,
+		redisClient,
+		cfg.Redis.Namespace,
+	)
+	if err != nil {
+		logger.Fatal("initialize repository inventory", zap.Error(err))
 	}
 
 	// Init LDAP config (shared between auth service and admin settings handler)
@@ -307,10 +383,12 @@ func main() {
 
 	// Init repo service
 	repoService := repo.NewService(entClient, cfg.Encryption.Key, logger, repo.ServiceOptions{
-		WebhookPublicURL: cfg.Server.PublicURL,
-		FrontendURL:      cfg.Server.FrontendURL,
-		ServerMode:       cfg.Server.Mode,
-		HTTPClient:       httpClients.scm,
+		WebhookPublicURL:       cfg.Server.PublicURL,
+		FrontendURL:            cfg.Server.FrontendURL,
+		ServerMode:             cfg.Server.Mode,
+		HTTPClient:             httpClients.scm,
+		InventoryCache:         repoInventoryCache,
+		InventoryRevisionStore: repoInventoryRevisions,
 	})
 
 	// Init PR labeler (with optional relay usage stats lookup)
@@ -339,7 +417,7 @@ func main() {
 	oauthHandler := oauth.NewHandler(oauthServer, cfg.Server.FrontendURL, &authTokenAdapter{authService: authService})
 
 	// Init provider handler
-	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger, httpClients.providerRelay)
+	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger, providerRuntime)
 	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
 		Executor:                  directorysync.NewExecutor(directorysync.ExecutorOptions{HTTPClient: httpClients.directory}),
 		Credentials:               directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
@@ -354,7 +432,10 @@ func main() {
 	// Init admin settings handler
 	adminSettingsHandler := handler.NewAdminSettingsHandler(settingsConfigPath, &ldapConfig)
 
-	checkpointService := checkpoint.NewService(entClient)
+	checkpointService := checkpoint.NewService(entClient, checkpoint.ServiceOptions{
+		InventoryRevisionStore: repoInventoryRevisions,
+		RepoService:            repoService,
+	})
 	checkpointHandler := handler.NewCheckpointHandler(checkpointService)
 	attributionService := attribution.NewService(entClient, relayProvider)
 	handler.SetPRAttributionService(attributionService)
@@ -407,15 +488,18 @@ func main() {
 		checkpointHandler,
 		healthHandler,
 		handler.RouterOptions{
-			DirectoryService:       directoryService,
-			WorkItemsCache:         workItemsCache,
-			WorkItemsRevisionStore: workItemsRevisionStore,
-			WebhookHTTPClient:      httpClients.webhook,
-			RequestLogger:          logger,
-			RequestObserver:        metrics.RequestObserver(),
-			WebVitalsHandler:       webVitalsHandler,
-			Release:                versionInfo.Version,
-			RequestTimeout:         time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
+			DirectoryService:         directoryService,
+			PersonalUsageCache:       personalUsageCache,
+			WorkItemsCache:           workItemsCache,
+			WorkItemsRevisionStore:   workItemsRevisionStore,
+			RepresentativeScopeCache: representativeScopeCache,
+			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
+			WebhookHTTPClient:        httpClients.webhook,
+			RequestLogger:            logger,
+			RequestObserver:          metrics.RequestObserver(),
+			WebVitalsHandler:         webVitalsHandler,
+			Release:                  versionInfo.Version,
+			RequestTimeout:           time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
 	)
 

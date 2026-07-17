@@ -1,21 +1,21 @@
 import client from './client'
 import type {
   ApiResponse,
-  PagedResponse,
   RepoAutoBindResult,
   RepoConfig,
   RepoInventoryProviderSummary,
   RepoListParams,
+  RepoListResponse,
   RepoWebhookRepairBatchResult,
   RepoWebhookRepairItem,
   RepoWebhookRepairRequest,
 } from '@/types'
 
-export function listRepos(page?: number, pageSize?: number): Promise<{ data: ApiResponse<PagedResponse<RepoConfig>> }>
-export function listRepos(params?: RepoListParams): Promise<{ data: ApiResponse<PagedResponse<RepoConfig>> }>
+export function listRepos(page?: number, pageSize?: number): Promise<{ data: ApiResponse<RepoListResponse> }>
+export function listRepos(params?: RepoListParams): Promise<{ data: ApiResponse<RepoListResponse> }>
 export function listRepos(paramsOrPage: RepoListParams | number = {}, pageSize = 20) {
   const params = normalizeRepoListParams(paramsOrPage, pageSize)
-  return client.get<ApiResponse<PagedResponse<RepoConfig>>>('/repos', {
+  return client.get<ApiResponse<RepoListResponse>>('/repos', {
     params,
   })
 }

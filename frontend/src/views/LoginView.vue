@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { devLogin as apiDevLogin, getAuthOptions } from '@/api/auth'
+import { getAuthOptions } from '@/api/auth'
 import AuthShell from '@/components/AuthShell.vue'
 import { useI18n } from '@/i18n'
 
@@ -56,15 +56,8 @@ async function handleDevLogin() {
   error.value = ''
   loading.value = true
   try {
-    const res = await apiDevLogin()
-    const data = res.data.data
-    if (data && data.token) {
-      localStorage.setItem('token', data.token)
-      if (data.refresh_token) {
-        localStorage.setItem('refresh_token', data.refresh_token)
-      }
-      auth.token = data.token
-      await auth.fetchMe()
+    const user = await auth.devLogin()
+    if (user) {
       router.push('/')
     }
   } catch (e: any) {
