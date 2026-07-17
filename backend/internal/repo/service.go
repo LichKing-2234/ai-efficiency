@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -105,6 +106,7 @@ type ServiceOptions struct {
 	FrontendURL      string
 	ServerMode       string
 	SCMFactory       scmProviderFactory
+	HTTPClient       *http.Client
 }
 
 // Service handles repo configuration business logic.
@@ -117,6 +119,7 @@ type Service struct {
 	frontendURL      string
 	serverMode       string
 	scmFactory       scmProviderFactory
+	httpClient       *http.Client
 }
 
 // NewService creates a new repo service.
@@ -133,6 +136,7 @@ func NewService(entClient *ent.Client, encryptionKey string, logger *zap.Logger,
 		frontendURL:      strings.TrimSpace(opt.FrontendURL),
 		serverMode:       strings.TrimSpace(opt.ServerMode),
 		scmFactory:       opt.SCMFactory,
+		httpClient:       opt.HTTPClient,
 	}
 }
 
@@ -741,9 +745,9 @@ func (s *Service) newSCMProviderWithCallback(providerType, baseURL string, apiCr
 	}
 	switch providerType {
 	case string(scmprovider.TypeGithub):
-		return newGitHubProvider(baseURL, apiCredential, s.logger, callbackURL)
+		return newGitHubProvider(baseURL, apiCredential, s.logger, callbackURL, s.httpClient)
 	case string(scmprovider.TypeBitbucketServer):
-		return newBitbucketProvider(baseURL, apiCredential, s.logger, callbackURL)
+		return newBitbucketProvider(baseURL, apiCredential, s.logger, callbackURL, s.httpClient)
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", providerType)
 	}

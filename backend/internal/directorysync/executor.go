@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ai-efficiency/backend/internal/httpclient"
 )
 
 const (
@@ -36,7 +38,7 @@ type Executor struct {
 func NewExecutor(options ExecutorOptions) *Executor {
 	client := options.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.NewDefault(defaultTimeoutSeconds * time.Second)
 	}
 	return &Executor{client: client, allowHTTP: options.AllowHTTP}
 }

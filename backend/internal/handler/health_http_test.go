@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ai-efficiency/backend/internal/buildinfo"
 	"github.com/ai-efficiency/backend/internal/health"
@@ -13,17 +15,70 @@ import (
 )
 
 func TestHealthLiveRouteReturns200(t *testing.T) {
+	var calls atomic.Int32
+	blocker := health.FuncPinger(func(ctx context.Context) error {
+		calls.Add(1)
+		timer := time.NewTimer(100 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+			return errors.New("dependency unavailable")
+		}
+	})
 	env := setupFullTestEnvWithHealth(t, NewHealthHandler(
 		health.NewService(
-			health.FuncPinger(func(context.Context) error { return nil }),
-			health.FuncPinger(func(context.Context) error { return nil }),
-			health.FuncPinger(func(context.Context) error { return nil }),
+			blocker,
+			blocker,
+			blocker,
 			buildinfo.CurrentVersion(),
 		),
 	))
 	w := doFullRequestWithToken(env, http.MethodGet, "/api/v1/health/live", nil, "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("liveness invoked dependency pingers %d times", got)
+	}
+}
+
+func TestHealthReadyRouteStatusSemantics(t *testing.T) {
+	tests := []struct {
+		name       string
+		database   error
+		redis      error
+		relay      error
+		wantCode   int
+		wantStatus string
+	}{
+		{name: "database down", database: errors.New("database unavailable"), wantCode: http.StatusServiceUnavailable, wantStatus: "not_ready"},
+		{name: "redis down", redis: errors.New("redis unavailable"), wantCode: http.StatusOK, wantStatus: "degraded"},
+		{name: "relay down", relay: errors.New("relay unavailable"), wantCode: http.StatusOK, wantStatus: "degraded"},
+		{name: "all up", wantCode: http.StatusOK, wantStatus: "ready"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := setupFullTestEnvWithHealth(t, NewHealthHandler(
+				health.NewService(
+					health.FuncPinger(func(context.Context) error { return tt.database }),
+					health.FuncPinger(func(context.Context) error { return tt.redis }),
+					health.FuncPinger(func(context.Context) error { return tt.relay }),
+					buildinfo.CurrentVersion(),
+				),
+			))
+
+			w := doFullRequestWithToken(env, http.MethodGet, "/api/v1/health/ready", nil, "")
+			if w.Code != tt.wantCode {
+				t.Fatalf("status code = %d, want %d: %s", w.Code, tt.wantCode, w.Body.String())
+			}
+			resp := parseFullResponse(t, w)
+			if got, _ := resp["status"].(string); got != tt.wantStatus {
+				t.Fatalf("status = %q, want %q", got, tt.wantStatus)
+			}
+		})
 	}
 }
 

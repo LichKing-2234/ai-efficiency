@@ -17,9 +17,7 @@ defineEmits<{
 const { t } = useI18n()
 
 const shouldHide = computed(() => {
-  if (props.loading) {
-    return (props.quotas?.groups?.length ?? 0) === 0
-  }
+  if (props.loading) return false
   if (!props.quotas) return true
   if (props.quotas.status === 'empty') return true
   if ((props.quotas.groups?.length ?? 0) === 0 && props.quotas.status !== 'unavailable') return true
