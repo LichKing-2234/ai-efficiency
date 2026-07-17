@@ -396,9 +396,19 @@ func TestProviderMetadataFallsBackWhenForeignLeaseOutlivesRefreshBudget(t *testi
 }
 
 func TestProviderMetadataCollapsesConcurrentModelsWithoutRedis(t *testing.T) {
+	const callers = 8
+
 	client := testdbClient(t)
 	row := createProviderRow(t, client)
 	manager := metadataManager(t, client, nil, &taggedProvider{})
+	var versionReads atomic.Int32
+	client.RelayProvider.Intercept(ent.InterceptFunc(func(next ent.Querier) ent.Querier {
+		return ent.QuerierFunc(func(ctx context.Context, query ent.Query) (ent.Value, error) {
+			value, err := next.Query(ctx, query)
+			versionReads.Add(1)
+			return value, err
+		})
+	}))
 
 	var loads atomic.Int32
 	started := make(chan struct{})
@@ -418,15 +428,28 @@ func TestProviderMetadataCollapsesConcurrentModelsWithoutRedis(t *testing.T) {
 		}
 	}
 
-	const callers = 8
 	results := make(chan error, callers)
+	var ready sync.WaitGroup
+	ready.Add(callers)
+	start := make(chan struct{})
 	for range callers {
 		go func() {
+			ready.Done()
+			<-start
 			_, err := manager.Models(context.Background(), row, "openai", "5", loader)
 			results <- err
 		}()
 	}
+	ready.Wait()
+	close(start)
 	<-started
+	deadline := time.Now().Add(5 * time.Second)
+	for versionReads.Load() != callers {
+		if time.Now().After(deadline) {
+			t.Fatalf("provider version reads = %d, want %d", versionReads.Load(), callers)
+		}
+		time.Sleep(time.Millisecond)
+	}
 	time.Sleep(50 * time.Millisecond)
 	close(release)
 	for range callers {

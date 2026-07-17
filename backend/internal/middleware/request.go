@@ -9,13 +9,19 @@ import (
 	"go.uber.org/zap"
 )
 
-func RequestTelemetry(logger *zap.Logger, release string) gin.HandlerFunc {
+func RequestTelemetry(logger *zap.Logger, release string, observers ...telemetry.RequestObserver) gin.HandlerFunc {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 
 	return func(c *gin.Context) {
 		startedAt := time.Now()
+		method := telemetry.HTTPMethod(c.Request.Method)
+		for _, observer := range observers {
+			if observer != nil {
+				observer.Start(method)
+			}
+		}
 		requestID := selectRequestID(c.GetHeader(telemetry.HeaderRequestID))
 		c.Request = c.Request.Clone(telemetry.WithRequestID(c.Request.Context(), requestID))
 		c.Writer.Header().Set(telemetry.HeaderRequestID, requestID)
@@ -30,13 +36,20 @@ func RequestTelemetry(logger *zap.Logger, release string) gin.HandlerFunc {
 		if responseBytes < 0 {
 			responseBytes = 0
 		}
+		duration := time.Since(startedAt)
+		statusClass := telemetry.HTTPStatusClass(c.Writer.Status())
+		for _, observer := range observers {
+			if observer != nil {
+				observer.Finish(route, method, statusClass, duration, responseBytes)
+			}
+		}
 		logger.Info(
 			"http_request",
 			zap.String("event", "http_request"),
 			zap.String("route", route),
-			zap.String("method", telemetry.HTTPMethod(c.Request.Method)),
-			zap.String("status_class", telemetry.HTTPStatusClass(c.Writer.Status())),
-			zap.Int64("duration_ms", time.Since(startedAt).Milliseconds()),
+			zap.String("method", method),
+			zap.String("status_class", statusClass),
+			zap.Int64("duration_ms", duration.Milliseconds()),
 			zap.Int("response_bytes", responseBytes),
 			zap.String("release", release),
 			zap.String("request_id", requestID),
