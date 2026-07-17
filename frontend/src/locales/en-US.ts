@@ -174,6 +174,7 @@ const enUS = {
   'quotaReset.optionsLoadFailed': 'Failed to load subscription groups',
   'quotaReset.requestSubmitted': 'Quota reset request submitted',
   'quotaReset.requestSubmitFailed': 'Failed to submit quota reset request',
+  'quotaReset.refresh': 'Refresh',
   'quotaReset.myRequests': 'My requests',
   'quotaReset.myApprovals': 'My approvals',
   'quotaReset.adminQueue': 'Admin queue',

@@ -176,6 +176,7 @@ const zhCN = {
   'quotaReset.optionsLoadFailed': '加载订阅组失败',
   'quotaReset.requestSubmitted': '额度重置申请已提交',
   'quotaReset.requestSubmitFailed': '提交额度重置申请失败',
+  'quotaReset.refresh': '刷新',
   'quotaReset.myRequests': '我的申请',
   'quotaReset.myApprovals': '待我审批',
   'quotaReset.adminQueue': '管理员队列',

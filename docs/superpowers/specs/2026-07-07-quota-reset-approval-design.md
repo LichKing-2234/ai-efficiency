@@ -551,8 +551,12 @@ Queue badge semantics:
 4. Approval queue badges therefore count only actionable `pending` and `approved_reset_failed` requests. Completed history remains available under the `All` filter but does not keep a work badge visible.
 5. The workbench refreshes shared Work Items counts with its queue data, including after approval, rejection, cancellation, or reset retry, so its badges and the sidebar stay aligned. A post-action refresh queues a fresh count request after any already in-flight pre-action request completes.
 6. Work Items count loading is supplemental: slow or failed count requests do not block quota-reset history. The workbench hides approval badges while counts are unavailable instead of reporting stale values as current.
-7. Shared frontend counts reset when the authenticated session changes, and late responses from a previous session are ignored.
-8. Backend counts cache keys include the persisted PostgreSQL revision. A committed actionable-state mutation therefore makes every old Redis value unreachable immediately; Redis availability is not required for the mutation or revision commit.
+7. The requester, assigned-approval, and administrator queues have independent `idle`, `loading`, `loaded`, and `error` lifecycles. Initial route entry loads only the requester queue; an assigned-approval or administrator queue loads on first selection, and the administrator queue is never requested for a non-admin.
+8. Loaded queue history is reused across tab visits until explicit refresh or a related mutation invalidates it. Explicit refresh reloads only the active queue. A forced or invalidated read clears prior rows before requesting, and a read failure exposes an empty error state rather than stale-if-error history.
+9. Queue requests use generation identity and one in-flight promise per queue. A delayed or failed hidden queue cannot block or replace visible queue content, and switching tabs while an action is pending does not apply the hidden queue's loading state to the newly visible queue.
+10. Successful cancellation, approval, rejection, and retry refresh the source queue and the shared Work Items counts. Other queues that may contain the changed request are invalidated and reload on their next selection; if such a queue is already visible when the mutation commits, it refreshes immediately. Mutation decisions and reset results remain authoritative and uncached.
+11. Shared frontend counts reset when the authenticated session changes, and late responses from a previous session are ignored.
+12. Backend counts cache keys include the persisted PostgreSQL revision. A committed actionable-state mutation therefore makes every old Redis value unreachable immediately; Redis availability is not required for the mutation or revision commit.
 
 First-version filters:
 
