@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	systemDefaultMultiplier         = 1.0
-	defaultTeamOverviewTrendTimeout = 20 * time.Second
+	systemDefaultMultiplier              = 1.0
+	defaultTeamOverviewTrendTimeout      = 20 * time.Second
+	multiplierMetadataUnavailableMessage = "Multiplier metadata is temporarily unavailable."
 )
 
 type ProviderResolver interface {
@@ -38,13 +39,20 @@ type Service struct {
 	fullScopeCap             int
 	teamOverviewTrendTimeout time.Duration
 	maxMultiplier            float64
+	snapshotCache            *SnapshotCache
+	memberCursorCodec        *memberCursorCodec
+	organizationCursorCodec  *organizationCursorCodec
 }
 
 func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker) *Service {
+	return NewServiceWithSnapshotCache(client, scopeResolver, providerResolver, locker, nil)
+}
+
+func NewServiceWithSnapshotCache(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, memberCursorSecrets ...string) *Service {
 	if locker == nil {
 		locker = &PostgresAdvisoryLocker{}
 	}
-	return &Service{
+	service := &Service{
 		client:                   client,
 		scopeResolver:            scopeResolver,
 		providerResolver:         providerResolver,
@@ -52,7 +60,13 @@ func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolve
 		fullScopeCap:             500,
 		teamOverviewTrendTimeout: defaultTeamOverviewTrendTimeout,
 		maxMultiplier:            defaultMaxMultiplier,
+		snapshotCache:            snapshotCache,
 	}
+	if len(memberCursorSecrets) > 0 && strings.TrimSpace(memberCursorSecrets[0]) != "" {
+		service.memberCursorCodec = newMemberCursorCodec(memberCursorSecrets[0])
+		service.organizationCursorCodec = newOrganizationCursorCodec(memberCursorSecrets[0])
+	}
+	return service
 }
 
 func (s *Service) Scope(ctx context.Context, actorUserID int) (*ScopeResponse, error) {
@@ -142,11 +156,111 @@ func (s *Service) SubjectDashboard(ctx context.Context, actorUserID, targetUserI
 	}, nil
 }
 
-func (s *Service) Overview(ctx context.Context, actorUserID int, params OverviewParams) (*OverviewResponse, error) {
-	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+func (s *Service) Summary(ctx context.Context, actorUserID int, params OverviewParams) (*SummaryResponse, error) {
+	result, scopeVersion, err := s.readOverviewSnapshot(ctx, actorUserID, params)
 	if err != nil {
 		return nil, err
 	}
+	return &SummaryResponse{
+		SnapshotFreshness: result.Freshness,
+		ScopeVersion:      scopeVersion,
+		Window:            result.Snapshot.Window,
+		Summary:           result.Snapshot.Summary,
+	}, nil
+}
+
+func (s *Service) Trend(ctx context.Context, actorUserID int, params OverviewParams) (*TrendResponse, error) {
+	result, scopeVersion, err := s.readOverviewSnapshot(ctx, actorUserID, params)
+	if err != nil {
+		return nil, err
+	}
+	return &TrendResponse{
+		SnapshotFreshness: result.Freshness,
+		ScopeVersion:      scopeVersion,
+		Window:            result.Snapshot.Window,
+		TopMembers:        append([]OverviewMember(nil), result.Snapshot.TopMembers...),
+		TopMemberTrend:    result.Snapshot.TopMemberTrend,
+		DepartmentTrend:   result.Snapshot.DepartmentTrend,
+	}, nil
+}
+
+func (s *Service) Overview(ctx context.Context, actorUserID int, params OverviewParams) (*OverviewResponse, error) {
+	result, _, err := s.readOverviewSnapshot(ctx, actorUserID, params)
+	if err != nil {
+		return nil, err
+	}
+	return result.Snapshot, nil
+}
+
+func (s *Service) readOverviewSnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*SnapshotCacheResult, string, error) {
+	normalized, err := normalizeOverviewParams(params)
+	if err != nil {
+		return nil, "", err
+	}
+	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+	if err != nil {
+		return nil, "", err
+	}
+	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
+	}
+
+	loader := func(loadCtx context.Context) (SnapshotOriginLoadResult, error) {
+		var provider relay.Provider
+		overviewSubjects := scope.OverviewSubjects
+		if len(overviewSubjects) == 0 {
+			overviewSubjects = scope.Subjects
+		}
+		if len(overviewSubjects) <= s.fullScopeCap {
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
+			if resolveErr != nil {
+				return SnapshotOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
+			}
+			provider = resolvedProvider
+		}
+		snapshot, loadErr := s.generateOverviewSnapshot(loadCtx, scope, provider, normalized)
+		if loadErr == nil {
+			return SnapshotOriginLoadResult{Snapshot: snapshot}, nil
+		}
+		if isHardSnapshotOriginError(loadErr) {
+			return SnapshotOriginLoadResult{}, loadErr
+		}
+		return SnapshotOriginLoadResult{SnapshotErr: loadErr}, nil
+	}
+
+	if s.snapshotCache == nil {
+		loaded, loadErr := loader(ctx)
+		if loadErr != nil {
+			return nil, "", loadErr
+		}
+		if loaded.SnapshotErr != nil {
+			return nil, "", loaded.SnapshotErr
+		}
+		now := time.Now().UTC()
+		return &SnapshotCacheResult{
+			Snapshot: loaded.Snapshot,
+			Freshness: SnapshotFreshness{
+				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
+			},
+		}, scope.Version, nil
+	}
+
+	scopeHash, err := effectiveScopeHash(scope)
+	if err != nil {
+		return nil, "", err
+	}
+	result, err := s.snapshotCache.GetOrLoad(ctx, SnapshotCacheKey{
+		ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
+		ActorID: actorUserID, ScopeVersion: scope.Version, ScopeHash: scopeHash, Params: normalized,
+	}, loader)
+	if err != nil {
+		return nil, "", err
+	}
+	return result, scope.Version, nil
+}
+
+func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*OverviewResponse, error) {
 
 	overviewSubjects := scope.OverviewSubjects
 	if len(overviewSubjects) == 0 {
@@ -156,11 +270,6 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		response := BuildOverviewUnavailableForLargeScope(overviewSubjects, s.fullScopeCap)
 		response.Window = buildOverviewWindow(params)
 		return &response, nil
-	}
-
-	_, provider, err := s.resolvePrimaryProvider(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve primary relay provider: %w", err)
 	}
 	summaryProvider, ok := provider.(relay.TeamUsageSummaryProvider)
 	if !ok {
@@ -286,6 +395,7 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		rangeCost = sumOverviewWindowCosts(windowTotals)
 		rangeTokens = sumOverviewWindowTokens(windowTotals)
 	}
+	todayCost, totalCost := sumOverviewComparisonCosts(statsByRelayUserID)
 	return &OverviewResponse{
 		Configured:       true,
 		IsRepresentative: true,
@@ -297,8 +407,8 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 			RelayMemberCount:  len(relayUserIDs),
 			RangeActualCost:   rangeCost,
 			RangeTotalTokens:  rangeTokens,
-			TodayActualCost:   nil,
-			TotalActualCost:   nil,
+			TodayActualCost:   todayCost,
+			TotalActualCost:   totalCost,
 			UnitLabel:         teamOverviewCostUnitLabel,
 		},
 		TopMembers:      topMembers,
@@ -640,40 +750,73 @@ func (s *Service) buildSubjectSubscriptionRows(ctx context.Context, provider rel
 	if err != nil {
 		return nil, relay.UserUsageGroupQuotaState{}, fmt.Errorf("list subject subscriptions: %w", err)
 	}
-	manager, managerOK := provider.(relay.GroupRateMultiplierManager)
-
-	rows := make([]SubscriptionRow, 0, len(subscriptions))
+	activeSubscriptions := make([]relay.UserSubscription, 0, len(subscriptions))
+	groupIDs := make([]int64, 0, len(subscriptions))
+	seenGroupIDs := make(map[int64]struct{}, len(subscriptions))
 	for _, subscription := range subscriptions {
 		if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") || subscription.Group == nil {
 			continue
 		}
+		activeSubscriptions = append(activeSubscriptions, subscription)
+		if _, seen := seenGroupIDs[subscription.GroupID]; seen {
+			continue
+		}
+		seenGroupIDs[subscription.GroupID] = struct{}{}
+		groupIDs = append(groupIDs, subscription.GroupID)
+	}
+
+	metadataByGroup := make(map[int64]relay.GroupRateMultiplierReadResult, len(groupIDs))
+	duplicateMetadataGroupIDs := make(map[int64]struct{})
+	batchReader, batchReaderOK := provider.(relay.GroupRateMultiplierBatchReader)
+	if batchReaderOK && len(groupIDs) > 0 {
+		for _, result := range batchReader.GroupRateMultipliersForGroups(ctx, groupIDs) {
+			if _, requested := seenGroupIDs[result.GroupID]; !requested {
+				continue
+			}
+			if _, duplicate := metadataByGroup[result.GroupID]; duplicate {
+				duplicateMetadataGroupIDs[result.GroupID] = struct{}{}
+				continue
+			}
+			metadataByGroup[result.GroupID] = result
+		}
+	}
+
+	rows := make([]SubscriptionRow, 0, len(activeSubscriptions))
+	for _, subscription := range activeSubscriptions {
 		var editableReason *string
 		editable := canManageTarget
-		switch {
-		case !canManageTarget:
+		if !canManageTarget {
 			reason := manageReason
 			if strings.TrimSpace(reason) == "" {
 				reason = ErrPolicyDenied.Error()
 			}
 			editableReason = &reason
-		case !managerOK:
-			editable = false
-			reason := ErrProviderUnsupported.Error()
-			editableReason = &reason
 		}
 
+		metadataStatus := MultiplierMetadataStatusUnavailable
+		var metadataMessage *string
 		var currentEntry *relay.UserGroupRateEntry
-		if managerOK {
-			entries, err := manager.ListGroupRateMultipliers(ctx, subscription.GroupID)
-			if err != nil {
+		_, duplicateMetadata := duplicateMetadataGroupIDs[subscription.GroupID]
+		if result, found := metadataByGroup[subscription.GroupID]; batchReaderOK && found && !duplicateMetadata && result.Err == nil {
+			metadataStatus = MultiplierMetadataStatusOK
+			currentEntry = findRateEntry(result.Entries, int64(relayUserID))
+		} else {
+			message := multiplierMetadataUnavailableMessage
+			metadataMessage = &message
+			if editable {
 				editable = false
-				reason := ErrProviderUnsupported.Error()
+				reason := ErrMultiplierMetadataUnavailable.Error()
 				editableReason = &reason
-			} else {
-				currentEntry = findRateEntry(entries, int64(relayUserID))
 			}
 		}
-		rows = append(rows, buildSubscriptionRowFromSubscription(subscription, currentEntry, editable, editableReason))
+		rows = append(rows, buildSubscriptionRowFromSubscriptionWithMultiplierMetadata(
+			subscription,
+			currentEntry,
+			editable,
+			editableReason,
+			metadataStatus,
+			metadataMessage,
+		))
 	}
 
 	sort.Slice(rows, func(i, j int) bool {
@@ -711,25 +854,59 @@ func (s *Service) requireRepresentativeScope(ctx context.Context, actorUserID in
 }
 
 func (s *Service) resolvePrimaryProvider(ctx context.Context) (int, relay.Provider, error) {
-	if s.client == nil {
-		return 0, nil, errors.New("teamusage ent client is not configured")
-	}
-	if s.providerResolver == nil {
-		return 0, nil, errors.New("teamusage provider resolver is not configured")
-	}
-	providers, err := s.client.RelayProvider.Query().
-		Where(relayprovider.IsPrimary(true)).
-		All(ctx)
+	binding, err := s.resolvePrimaryProviderBinding(ctx)
 	if err != nil {
 		return 0, nil, err
 	}
-	if len(providers) == 0 {
-		provider, err := s.providerResolver.Resolve(ctx, 1)
-		return 1, provider, err
+	return binding.ID, binding.Provider, nil
+}
+
+type primaryProviderBinding struct {
+	ID                   int
+	ConfigurationVersion int64
+	Provider             relay.Provider
+}
+
+type primaryProviderConfig struct {
+	ID                   int
+	ConfigurationVersion int64
+}
+
+func (s *Service) resolvePrimaryProviderBinding(ctx context.Context) (*primaryProviderBinding, error) {
+	config, err := s.resolvePrimaryProviderConfig(ctx)
+	if err != nil {
+		return nil, err
 	}
-	providerID := providers[0].ID
-	provider, err := s.providerResolver.Resolve(ctx, providerID)
-	return providerID, provider, err
+	provider, err := s.providerResolver.Resolve(ctx, config.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &primaryProviderBinding{
+		ID: config.ID, ConfigurationVersion: config.ConfigurationVersion, Provider: provider,
+	}, nil
+}
+
+func (s *Service) resolvePrimaryProviderConfig(ctx context.Context) (*primaryProviderConfig, error) {
+	if s.client == nil {
+		return nil, errors.New("teamusage ent client is not configured")
+	}
+	if s.providerResolver == nil {
+		return nil, errors.New("teamusage provider resolver is not configured")
+	}
+	providers, err := s.client.RelayProvider.Query().
+		Where(relayprovider.IsPrimary(true), relayprovider.Enabled(true)).
+		Order(ent.Asc(relayprovider.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(providers) == 0 {
+		return &primaryProviderConfig{ID: 1, ConfigurationVersion: 1}, nil
+	}
+	providerRow := providers[0]
+	return &primaryProviderConfig{
+		ID: providerRow.ID, ConfigurationVersion: providerRow.ConfigurationVersion,
+	}, nil
 }
 
 func (s *Service) resolveSubjectRelayUserID(ctx context.Context, provider relay.Provider, subject representativescope.Subject) (int64, representativescope.Subject, error) {
@@ -943,24 +1120,37 @@ func (s *Service) markAuditOutcome(ctx context.Context, auditID int, status team
 }
 
 func buildSubscriptionRowFromSubscription(subscription relay.UserSubscription, entry *relay.UserGroupRateEntry, editable bool, editableReason *string) SubscriptionRow {
+	return buildSubscriptionRowFromSubscriptionWithMultiplierMetadata(
+		subscription,
+		entry,
+		editable,
+		editableReason,
+		MultiplierMetadataStatusOK,
+		nil,
+	)
+}
+
+func buildSubscriptionRowFromSubscriptionWithMultiplierMetadata(subscription relay.UserSubscription, entry *relay.UserGroupRateEntry, editable bool, editableReason *string, metadataStatus string, metadataMessage *string) SubscriptionRow {
 	var userMultiplier *float64
 	if entry != nil {
 		userMultiplier = entry.RateMultiplier
 	}
 	input := SubscriptionInput{
-		GroupID:                 strconv.FormatInt(subscription.GroupID, 10),
-		GroupName:               "",
-		Platform:                "",
-		SubscriptionStatus:      strings.TrimSpace(subscription.Status),
-		GroupDefaultMultiplier:  nil,
-		SystemDefaultMultiplier: systemDefaultMultiplier,
-		UserMultiplier:          userMultiplier,
-		DailyUsageUSD:           subscription.DailyUsageUSD,
-		WeeklyUsageUSD:          subscription.WeeklyUsageUSD,
-		MonthlyUsageUSD:         subscription.MonthlyUsageUSD,
-		UsageValueBasis:         "raw_actual_cost",
-		Editable:                editable,
-		EditableReason:          editableReason,
+		GroupID:                   strconv.FormatInt(subscription.GroupID, 10),
+		GroupName:                 "",
+		Platform:                  "",
+		SubscriptionStatus:        strings.TrimSpace(subscription.Status),
+		GroupDefaultMultiplier:    nil,
+		SystemDefaultMultiplier:   systemDefaultMultiplier,
+		UserMultiplier:            userMultiplier,
+		DailyUsageUSD:             subscription.DailyUsageUSD,
+		WeeklyUsageUSD:            subscription.WeeklyUsageUSD,
+		MonthlyUsageUSD:           subscription.MonthlyUsageUSD,
+		UsageValueBasis:           "raw_actual_cost",
+		Editable:                  editable,
+		EditableReason:            editableReason,
+		MultiplierMetadataStatus:  metadataStatus,
+		MultiplierMetadataMessage: metadataMessage,
 	}
 	if subscription.Group != nil {
 		input.GroupName = strings.TrimSpace(subscription.Group.Name)
@@ -1042,6 +1232,36 @@ func quotaWindowFromDashboardParams(params relay.UserUsageDashboardParams) strin
 	return "monthly"
 }
 
+func normalizeOverviewParams(params OverviewParams) (OverviewParams, error) {
+	normalized := OverviewParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.ToLower(strings.TrimSpace(params.Granularity)), Timezone: strings.TrimSpace(params.Timezone),
+		Page: params.Page, PageSize: params.PageSize,
+	}
+	if normalized.Timezone == "" {
+		normalized.Timezone = "UTC"
+	}
+	if normalized.Granularity != "day" && normalized.Granularity != "hour" {
+		return OverviewParams{}, fmt.Errorf("%w: granularity must be day or hour", ErrInvalidOverviewParams)
+	}
+	location, err := time.LoadLocation(normalized.Timezone)
+	if err != nil {
+		return OverviewParams{}, fmt.Errorf("%w: invalid timezone", ErrInvalidOverviewParams)
+	}
+	start, err := time.ParseInLocation("2006-01-02", normalized.StartDate, location)
+	if err != nil {
+		return OverviewParams{}, fmt.Errorf("%w: invalid start date", ErrInvalidOverviewParams)
+	}
+	end, err := time.ParseInLocation("2006-01-02", normalized.EndDate, location)
+	if err != nil {
+		return OverviewParams{}, fmt.Errorf("%w: invalid end date", ErrInvalidOverviewParams)
+	}
+	if end.Before(start) {
+		return OverviewParams{}, fmt.Errorf("%w: end date precedes start date", ErrInvalidOverviewParams)
+	}
+	return normalized, nil
+}
+
 func buildOverviewWindow(params OverviewParams) OverviewWindow {
 	location := time.UTC
 	if timezone := strings.TrimSpace(params.Timezone); timezone != "" {
@@ -1115,6 +1335,16 @@ func sumOverviewWindowTokens(totals map[int64]overviewWindowTotal) *int64 {
 		return nil
 	}
 	return &total
+}
+
+func sumOverviewComparisonCosts(stats map[int64]relay.TeamUserUsageStats) (*float64, *float64) {
+	today := 0.0
+	total := 0.0
+	for _, item := range stats {
+		today += item.TodayActualCost
+		total += item.TotalActualCost
+	}
+	return &today, &total
 }
 
 func filterSubjects(subjects []representativescope.Subject, q string) []representativescope.Subject {
@@ -1322,6 +1552,14 @@ func isHardOverviewTrendError(err error) bool {
 		}
 	}
 	return false
+}
+
+func isHardSnapshotOriginError(err error) bool {
+	return errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, relay.ErrInvalidCredentials) ||
+		errors.Is(err, ErrProviderUnsupported) ||
+		errors.Is(err, ErrInvalidOverviewParams)
 }
 
 func cloneMap(values map[string]any) map[string]any {

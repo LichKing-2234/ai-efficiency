@@ -4,33 +4,71 @@ import { useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { disableDirectoryRelayUser, listDirectoryOffboardingCandidates } from '@/api/directory'
 import { useI18n } from '@/i18n'
+import { useWorkItemsStore } from '@/stores/workItems'
 import type { DirectoryOffboardingCandidate } from '@/types'
 
 const route = useRoute()
 const { t } = useI18n()
+const workItems = useWorkItemsStore()
 const candidates = ref<DirectoryOffboardingCandidate[]>([])
 const q = ref(typeof route.query.q === 'string' ? route.query.q : '')
+const page = ref(1)
+const pageSize = 20
+const total = ref(0)
 const confirmations = ref<Record<number, string>>({})
+const disablingUserIDs = ref(new Set<number>())
 const loading = ref(false)
 const message = ref('')
 const error = ref('')
+let loadGeneration = 0
 
 const hasCandidates = computed(() => candidates.value.length > 0)
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const canGoPrevious = computed(() => page.value > 1)
+const canGoNext = computed(() => page.value < totalPages.value)
 
 onMounted(loadCandidates)
 
-async function loadCandidates() {
+async function loadCandidates(allowPageClamp = true) {
+  const generation = ++loadGeneration
   loading.value = true
   error.value = ''
   try {
-    const params = { q: q.value.trim() }
+    const params = { q: q.value.trim(), page: page.value, page_size: pageSize }
     const res = await listDirectoryOffboardingCandidates(params)
-    candidates.value = res.data.data?.items ?? []
+    if (generation !== loadGeneration) return
+    const data = res.data.data
+    candidates.value = data?.items ?? []
+    total.value = data?.total ?? candidates.value.length
+    page.value = data?.page ?? page.value
+    const lastPage = Math.max(1, Math.ceil(total.value / pageSize))
+    if (allowPageClamp && page.value > lastPage) {
+      page.value = lastPage
+      await loadCandidates(false)
+    }
   } catch (e: any) {
+    if (generation !== loadGeneration) return
     error.value = e?.response?.data?.message || e?.message || t('directoryOffboarding.loadFailed')
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
+}
+
+async function searchCandidates() {
+  page.value = 1
+  await loadCandidates()
+}
+
+async function previousPage() {
+  if (!canGoPrevious.value || loading.value) return
+  page.value -= 1
+  await loadCandidates()
+}
+
+async function nextPage() {
+  if (!canGoNext.value || loading.value) return
+  page.value += 1
+  await loadCandidates()
 }
 
 function confirmed(candidate: DirectoryOffboardingCandidate) {
@@ -38,7 +76,8 @@ function confirmed(candidate: DirectoryOffboardingCandidate) {
 }
 
 async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
-  if (!confirmed(candidate)) return
+  if (!confirmed(candidate) || disablingUserIDs.value.has(candidate.user_id)) return
+  disablingUserIDs.value = new Set(disablingUserIDs.value).add(candidate.user_id)
   message.value = ''
   error.value = ''
   try {
@@ -47,9 +86,19 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
       reason: 'missing_from_latest_full_company_directory',
     })
     message.value = t('directoryOffboarding.disabled', { email: candidate.email })
-    await loadCandidates()
+    const remainingTotal = Math.max(0, total.value - 1)
+    page.value = Math.min(page.value, Math.max(1, Math.ceil(remainingTotal / pageSize)))
+    workItems.invalidateCounts()
+    await Promise.all([
+      loadCandidates(),
+      workItems.loadCounts({ force: true }),
+    ])
   } catch (e: any) {
     error.value = e?.response?.data?.message || e?.message || t('directoryOffboarding.disableFailed')
+  } finally {
+    const pending = new Set(disablingUserIDs.value)
+    pending.delete(candidate.user_id)
+    disablingUserIDs.value = pending
   }
 }
 </script>
@@ -64,7 +113,7 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
         </div>
         <div class="flex flex-wrap gap-2">
           <input v-model="q" type="search" class="w-56 rounded-md border border-gray-300 px-3 py-2 text-sm" :placeholder="t('directoryOffboarding.searchPlaceholder')" />
-          <button type="button" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="loadCandidates">{{ t('adminUsers.search') }}</button>
+          <button data-testid="offboarding-search" type="button" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="searchCandidates">{{ t('adminUsers.search') }}</button>
         </div>
       </div>
 
@@ -114,7 +163,7 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
                   :data-testid="`disable-relay-user-${candidate.user_id}`"
                   type="button"
                   class="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
-                  :disabled="!confirmed(candidate)"
+                  :disabled="!confirmed(candidate) || disablingUserIDs.has(candidate.user_id)"
                   @click="disableCandidate(candidate)"
                 >
                   {{ t('directoryOffboarding.disableRelayUser') }}
@@ -123,6 +172,28 @@ async function disableCandidate(candidate: DirectoryOffboardingCandidate) {
             </tr>
           </tbody>
         </table>
+      </div>
+      <div class="flex flex-wrap items-center justify-end gap-2 text-xs text-gray-500">
+        <span>{{ total }} {{ t('adminUsers.totalSuffix') }}</span>
+        <button
+          data-testid="offboarding-prev-page"
+          type="button"
+          class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
+          :disabled="!canGoPrevious || loading"
+          @click="previousPage"
+        >
+          {{ t('adminUsers.prev') }}
+        </button>
+        <span data-testid="offboarding-page-status">{{ t('adminUsers.page') }} {{ page }} / {{ totalPages }}</span>
+        <button
+          data-testid="offboarding-next-page"
+          type="button"
+          class="rounded border border-gray-200 px-2 py-1 disabled:opacity-40"
+          :disabled="!canGoNext || loading"
+          @click="nextPage"
+        >
+          {{ t('adminUsers.next') }}
+        </button>
       </div>
     </div>
   </AppLayout>

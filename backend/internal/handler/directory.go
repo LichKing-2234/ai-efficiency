@@ -24,10 +24,11 @@ type DirectoryAdminService interface {
 	RunSource(ctx context.Context, sourceID int, mode, trigger string) (*ent.DirectorySyncRun, error)
 	ExecuteRun(ctx context.Context, runID int) (*ent.DirectorySyncRun, error)
 	GetRun(ctx context.Context, runID int) (*ent.DirectorySyncRun, error)
-	ListRuns(ctx context.Context, sourceID int) ([]*ent.DirectorySyncRun, error)
+	ListRuns(ctx context.Context, request directorysync.RunListRequest) (directorysync.RunPage, error)
 	ListDepartments(ctx context.Context, sourceID int, q string) ([]directorysync.DepartmentOption, error)
 	ListMembers(ctx context.Context, sourceID int, q string) ([]*ent.DirectoryMember, error)
-	ListOffboardingCandidates(ctx context.Context, sourceID int, q string) ([]directorysync.OffboardingCandidate, error)
+	ListOffboardingCandidates(ctx context.Context, params directorysync.OffboardingCandidateListParams) (*directorysync.OffboardingCandidatePage, error)
+	CountOffboardingCandidates(ctx context.Context, sourceID int) (int, error)
 	DisableRelayUserForCandidate(ctx context.Context, req directorysync.DisableCandidateRequest) (*ent.DirectoryOffboardingAction, error)
 }
 
@@ -194,12 +195,25 @@ func (h *DirectoryHandler) ListRuns(c *gin.Context) {
 	if !ok {
 		return
 	}
-	runs, err := h.service.ListRuns(c.Request.Context(), id)
+	limit, err := strconv.Atoi(c.Query("limit"))
+	if err != nil {
+		limit = 0
+	}
+	offset, err := strconv.Atoi(c.Query("offset"))
+	if err != nil {
+		offset = 0
+	}
+	limit, offset = directorysync.NormalizeRunPage(limit, offset)
+	page, err := h.service.ListRuns(c.Request.Context(), directorysync.RunListRequest{
+		SourceID: id,
+		Limit:    limit,
+		Offset:   offset,
+	})
 	if err != nil {
 		writeDirectoryError(c, err)
 		return
 	}
-	pkg.Success(c, gin.H{"items": runs})
+	pkg.Success(c, page)
 }
 
 func (h *DirectoryHandler) GetRun(c *gin.Context) {
@@ -246,12 +260,25 @@ func (h *DirectoryHandler) ListOffboardingCandidates(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, err := h.service.ListOffboardingCandidates(c.Request.Context(), sourceID, c.Query("q"))
+	page, ok := directoryOptionalPositiveQueryInt(c, "page", 1, 0)
+	if !ok {
+		return
+	}
+	pageSize, ok := directoryOptionalPositiveQueryInt(c, "page_size", 20, 100)
+	if !ok {
+		return
+	}
+	result, err := h.service.ListOffboardingCandidates(c.Request.Context(), directorysync.OffboardingCandidateListParams{
+		SourceID: sourceID,
+		Query:    c.Query("q"),
+		Page:     page,
+		PageSize: pageSize,
+	})
 	if err != nil {
 		writeDirectoryError(c, err)
 		return
 	}
-	pkg.Success(c, gin.H{"items": items})
+	pkg.Success(c, result)
 }
 
 func (h *DirectoryHandler) DisableRelayUser(c *gin.Context) {
@@ -328,6 +355,22 @@ func directoryOptionalQueryID(c *gin.Context, name string) (int, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+func directoryOptionalPositiveQueryInt(c *gin.Context, name string, defaultValue, maxValue int) (int, bool) {
+	raw := strings.TrimSpace(c.Query(name))
+	if raw == "" {
+		return defaultValue, true
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		pkg.Error(c, http.StatusBadRequest, "invalid "+name)
+		return 0, false
+	}
+	if maxValue > 0 && value > maxValue {
+		value = maxValue
+	}
+	return value, true
 }
 
 func writeDirectoryError(c *gin.Context, err error) {

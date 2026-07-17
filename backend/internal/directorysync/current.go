@@ -9,9 +9,22 @@ import (
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
 )
 
+type CurrentDirectorySnapshot struct {
+	SourceID int
+	RunID    int
+}
+
 func CurrentSourceID(ctx context.Context, client *ent.Client) (int, bool, error) {
+	snapshot, ok, err := CurrentSnapshot(ctx, client)
+	if err != nil || !ok {
+		return 0, ok, err
+	}
+	return snapshot.SourceID, true, nil
+}
+
+func CurrentSnapshot(ctx context.Context, client *ent.Client) (CurrentDirectorySnapshot, bool, error) {
 	if client == nil {
-		return 0, false, fmt.Errorf("directory source resolver is not configured")
+		return CurrentDirectorySnapshot{}, false, fmt.Errorf("directory source resolver is not configured")
 	}
 	sources, err := client.DirectorySource.Query().
 		Where(
@@ -21,10 +34,10 @@ func CurrentSourceID(ctx context.Context, client *ent.Client) (int, bool, error)
 		).
 		All(ctx)
 	if err != nil {
-		return 0, false, fmt.Errorf("list directory sources with successful sync: %w", err)
+		return CurrentDirectorySnapshot{}, false, fmt.Errorf("list directory sources with successful sync: %w", err)
 	}
 	if len(sources) == 0 {
-		return 0, false, nil
+		return CurrentDirectorySnapshot{}, false, nil
 	}
 
 	sourceByRunID := make(map[int]int, len(sources))
@@ -38,7 +51,7 @@ func CurrentSourceID(ctx context.Context, client *ent.Client) (int, bool, error)
 		runIDs = append(runIDs, runID)
 	}
 	if len(runIDs) == 0 {
-		return 0, false, nil
+		return CurrentDirectorySnapshot{}, false, nil
 	}
 
 	run, err := client.DirectorySyncRun.Query().
@@ -51,14 +64,14 @@ func CurrentSourceID(ctx context.Context, client *ent.Client) (int, bool, error)
 		Order(ent.Desc(directorysyncrun.FieldCompletedAt), ent.Desc(directorysyncrun.FieldID)).
 		First(ctx)
 	if ent.IsNotFound(err) {
-		return 0, false, nil
+		return CurrentDirectorySnapshot{}, false, nil
 	}
 	if err != nil {
-		return 0, false, fmt.Errorf("resolve latest successful directory sync run: %w", err)
+		return CurrentDirectorySnapshot{}, false, fmt.Errorf("resolve latest successful directory sync run: %w", err)
 	}
 	sourceID, ok := sourceByRunID[run.ID]
 	if !ok {
-		return 0, false, nil
+		return CurrentDirectorySnapshot{}, false, nil
 	}
-	return sourceID, true, nil
+	return CurrentDirectorySnapshot{SourceID: sourceID, RunID: run.ID}, true, nil
 }

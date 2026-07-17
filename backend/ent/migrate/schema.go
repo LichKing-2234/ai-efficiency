@@ -398,6 +398,31 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{DirectorySyncRunsColumns[4], DirectorySyncRunsColumns[17]},
 			},
+			{
+				Name:    "directorysyncrun_source_id_started_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncRunsColumns[1], DirectorySyncRunsColumns[6], DirectorySyncRunsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						DirectorySyncRunsColumns[0].Name: true,
+
+						DirectorySyncRunsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "directory_sync_runs_active_started_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncRunsColumns[1], DirectorySyncRunsColumns[6], DirectorySyncRunsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						DirectorySyncRunsColumns[0].Name: true,
+
+						DirectorySyncRunsColumns[6].Name: true,
+					},
+					Where: "mode IN ('preview', 'apply') AND status IN ('queued', 'running')",
+				},
+			},
 		},
 	}
 	// PrCommitUsageSnapshotsColumns holds the columns for the "pr_commit_usage_snapshots" table.
@@ -694,6 +719,15 @@ var (
 				Columns: []*schema.Column{QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4], QuotaResetRequestsColumns[8]},
 			},
 			{
+				Name:    "quotaresetrequest_resolved_approver_user_ids",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestsColumns[9]},
+				Annotation: &entsql.IndexAnnotation{
+					OpClass: "jsonb_path_ops",
+					Type:    "GIN",
+				},
+			},
+			{
 				Name:    "quotaresetrequest_requester_user_id_provider_id_group_id",
 				Unique:  true,
 				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4]},
@@ -752,6 +786,7 @@ var (
 		{Name: "default_model", Type: field.TypeString, Default: "claude-sonnet-4-20250514"},
 		{Name: "is_primary", Type: field.TypeBool, Default: false},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "configuration_version", Type: field.TypeInt64, Default: 1},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
@@ -973,6 +1008,54 @@ var (
 				Name:    "toolusageevent_tool_tool_session_id",
 				Unique:  false,
 				Columns: []*schema.Column{ToolUsageEventsColumns[1], ToolUsageEventsColumns[3]},
+			},
+			{
+				Name:    "toolusageevent_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "toolusageevent_user_id_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[22], ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "toolusageevent_repo_config_id_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[21], ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "toolusageevent_tool_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[1], ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
 			},
 		},
 	}

@@ -2,10 +2,13 @@ package directorysync
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+
+	entsql "entgo.io/ent/dialect/sql"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
@@ -22,6 +25,29 @@ import (
 )
 
 const offboardingReasonMissingFromDirectory = "missing_from_latest_full_company_directory"
+
+const (
+	DefaultRunPageSize         = 20
+	MaxRunPageSize             = 100
+	defaultOffboardingPageSize = 20
+	maxOffboardingPageSize     = 100
+)
+
+var runSummaryFields = []string{
+	directorysyncrun.FieldID,
+	directorysyncrun.FieldSourceID,
+	directorysyncrun.FieldMode,
+	directorysyncrun.FieldTrigger,
+	directorysyncrun.FieldStatus,
+	directorysyncrun.FieldPhase,
+	directorysyncrun.FieldStartedAt,
+	directorysyncrun.FieldCompletedAt,
+	directorysyncrun.FieldHTTPRequestCount,
+	directorysyncrun.FieldDepartmentCount,
+	directorysyncrun.FieldMemberCount,
+	directorysyncrun.FieldInvalidMemberCount,
+	directorysyncrun.FieldWarningCount,
+}
 
 type ValidationError struct {
 	Message string
@@ -50,7 +76,11 @@ func (e *UpstreamError) Error() string {
 func (e *UpstreamError) Unwrap() error { return e.Err }
 
 type TokenRevoker interface {
-	RevokeUserTokens(ctx context.Context, userID int, revokedAt time.Time) error
+	RevokeUserTokensTx(ctx context.Context, tx *ent.Tx, userID int, revokedAt time.Time) error
+}
+
+type workItemCountsInvalidator interface {
+	InvalidateWorkItemCountsTx(ctx context.Context, tx *ent.Tx) error
 }
 
 type RelayDisablerResolver interface {
@@ -58,11 +88,12 @@ type RelayDisablerResolver interface {
 }
 
 type ServiceOptions struct {
-	Executor       *Executor
-	Credentials    CredentialResolver
-	RelayDisablers RelayDisablerResolver
-	TokenRevoker   TokenRevoker
-	Now            func() time.Time
+	Executor                  *Executor
+	Credentials               CredentialResolver
+	RelayDisablers            RelayDisablerResolver
+	TokenRevoker              TokenRevoker
+	WorkItemCountsInvalidator workItemCountsInvalidator
+	Now                       func() time.Time
 }
 
 type Service struct {
@@ -71,6 +102,7 @@ type Service struct {
 	credentials    CredentialResolver
 	relayDisablers RelayDisablerResolver
 	tokenRevoker   TokenRevoker
+	invalidator    workItemCountsInvalidator
 	now            func() time.Time
 	runningMu      sync.Mutex
 	runningSources map[int]struct{}
@@ -105,6 +137,7 @@ func NewService(client *ent.Client, options ServiceOptions) *Service {
 		credentials:    options.Credentials,
 		relayDisablers: options.RelayDisablers,
 		tokenRevoker:   options.TokenRevoker,
+		invalidator:    options.WorkItemCountsInvalidator,
 		now:            now,
 		runningSources: make(map[int]struct{}),
 	}
@@ -119,6 +152,48 @@ type SourceInput struct {
 	ScheduleEnabled  bool
 	ScheduleInterval string
 	ScheduleTimezone string
+}
+
+type RunListRequest struct {
+	SourceID int
+	Limit    int
+	Offset   int
+}
+
+type RunSummary struct {
+	ID                 int                      `json:"id"`
+	SourceID           int                      `json:"source_id"`
+	Mode               directorysyncrun.Mode    `json:"mode"`
+	Trigger            directorysyncrun.Trigger `json:"trigger"`
+	Status             directorysyncrun.Status  `json:"status"`
+	Phase              directorysyncrun.Phase   `json:"phase"`
+	StartedAt          *time.Time               `json:"started_at"`
+	CompletedAt        *time.Time               `json:"completed_at"`
+	HTTPRequestCount   int                      `json:"http_request_count"`
+	DepartmentCount    int                      `json:"department_count"`
+	MemberCount        int                      `json:"member_count"`
+	InvalidMemberCount int                      `json:"invalid_member_count"`
+	WarningCount       int                      `json:"warning_count"`
+}
+
+type RunPage struct {
+	Items           []RunSummary `json:"items"`
+	Total           int          `json:"total"`
+	Page            int          `json:"page"`
+	PageSize        int          `json:"page_size"`
+	LatestActiveRun *RunSummary  `json:"latest_active_run"`
+}
+
+func NormalizeRunPage(limit, offset int) (int, int) {
+	if limit <= 0 {
+		limit = DefaultRunPageSize
+	} else if limit > MaxRunPageSize {
+		limit = MaxRunPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
 }
 
 func (s *Service) ListSources(ctx context.Context) ([]*ent.DirectorySource, error) {
@@ -158,7 +233,12 @@ func (s *Service) UpdateSource(ctx context.Context, id int, input SourceInput) (
 	if issues := s.validateConfig(ctx, cfg); len(issues) > 0 {
 		return nil, &ValidationError{Message: validationIssuesMessage(issues)}
 	}
-	return s.client.DirectorySource.UpdateOneID(id).
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin directory source update tx: %w", err)
+	}
+	defer tx.Rollback()
+	updated, err := tx.DirectorySource.UpdateOneID(id).
 		SetName(input.Name).
 		SetDescription(input.Description).
 		SetScope(directorysource.Scope(input.Scope)).
@@ -168,15 +248,39 @@ func (s *Service) UpdateSource(ctx context.Context, id int, input SourceInput) (
 		SetScheduleInterval(directorysource.ScheduleInterval(input.ScheduleInterval)).
 		SetScheduleTimezone(input.ScheduleTimezone).
 		Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("update directory source: %w", err)
+	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit directory source update: %w", err)
+	}
+	updated.Unwrap()
+	return updated, nil
 }
 
 func (s *Service) DeleteSource(ctx context.Context, id int) error {
-	_, err := s.client.DirectorySource.UpdateOneID(id).
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin directory source delete tx: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.DirectorySource.UpdateOneID(id).
 		SetDeleted(true).
 		SetEnabled(false).
 		SetScheduleEnabled(false).
-		Save(ctx)
-	return err
+		Save(ctx); err != nil {
+		return fmt.Errorf("mark directory source deleted: %w", err)
+	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit directory source delete: %w", err)
+	}
+	return nil
 }
 
 func normalizeSourceInput(input SourceInput) SourceInput {
@@ -455,10 +559,24 @@ func (s *Service) completeApplyRun(ctx context.Context, runID, sourceID int, res
 		Save(ctx); err != nil {
 		return nil, err
 	}
+	if err := s.invalidateWorkItemCountsTx(ctx, tx); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
+	run.Unwrap()
 	return run, nil
+}
+
+func (s *Service) invalidateWorkItemCountsTx(ctx context.Context, tx *ent.Tx) error {
+	if s.invalidator == nil {
+		return nil
+	}
+	if err := s.invalidator.InvalidateWorkItemCountsTx(ctx, tx); err != nil {
+		return fmt.Errorf("invalidate work item counts: %w", err)
+	}
+	return nil
 }
 
 func warningsToMaps(warnings []ExecutionWarning) []map[string]any {
@@ -554,11 +672,64 @@ func (s *Service) GetRun(ctx context.Context, runID int) (*ent.DirectorySyncRun,
 	return s.client.DirectorySyncRun.Get(ctx, runID)
 }
 
-func (s *Service) ListRuns(ctx context.Context, sourceID int) ([]*ent.DirectorySyncRun, error) {
-	return s.client.DirectorySyncRun.Query().
-		Where(directorysyncrun.SourceIDEQ(sourceID)).
-		Order(ent.Desc(directorysyncrun.FieldCreatedAt)).
-		All(ctx)
+func (s *Service) ListRuns(ctx context.Context, request RunListRequest) (RunPage, error) {
+	if request.SourceID <= 0 {
+		return RunPage{}, &ValidationError{Message: "directory source id must be positive"}
+	}
+	limit, offset := NormalizeRunPage(request.Limit, request.Offset)
+	page := RunPage{
+		Items:    make([]RunSummary, 0, limit),
+		Page:     offset / limit,
+		PageSize: limit,
+	}
+	tx, err := s.client.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	})
+	if err != nil {
+		return RunPage{}, fmt.Errorf("begin directory sync run list snapshot: %w", err)
+	}
+	defer tx.Rollback()
+
+	total, err := tx.DirectorySyncRun.Query().
+		Where(directorysyncrun.SourceIDEQ(request.SourceID)).
+		Count(ctx)
+	if err != nil {
+		return RunPage{}, fmt.Errorf("count directory sync runs: %w", err)
+	}
+	page.Total = total
+
+	if err := tx.DirectorySyncRun.Query().
+		Where(directorysyncrun.SourceIDEQ(request.SourceID)).
+		Order(ent.Desc(directorysyncrun.FieldStartedAt), ent.Desc(directorysyncrun.FieldID)).
+		Offset(offset).
+		Limit(limit).
+		Select(runSummaryFields...).
+		Scan(ctx, &page.Items); err != nil {
+		return RunPage{}, fmt.Errorf("list directory sync run summaries: %w", err)
+	}
+
+	active := make([]RunSummary, 0, 1)
+	if err := tx.DirectorySyncRun.Query().
+		Where(
+			directorysyncrun.SourceIDEQ(request.SourceID),
+			directorysyncrun.ModeIn(directorysyncrun.ModePreview, directorysyncrun.ModeApply),
+			directorysyncrun.StatusIn(directorysyncrun.StatusQueued, directorysyncrun.StatusRunning),
+		).
+		Order(ent.Desc(directorysyncrun.FieldStartedAt), ent.Desc(directorysyncrun.FieldID)).
+		Limit(1).
+		Select(runSummaryFields...).
+		Scan(ctx, &active); err != nil {
+		return RunPage{}, fmt.Errorf("get latest active directory sync run: %w", err)
+	}
+	if len(active) > 0 {
+		page.LatestActiveRun = &active[0]
+	}
+	if err := tx.Commit(); err != nil {
+		return RunPage{}, fmt.Errorf("commit directory sync run list snapshot: %w", err)
+	}
+
+	return page, nil
 }
 
 func (s *Service) ListDepartments(ctx context.Context, sourceID int, q string) ([]DepartmentOption, error) {
@@ -647,89 +818,236 @@ type OffboardingCandidate struct {
 	OffboardingActionID *int       `json:"offboarding_action_id,omitempty"`
 }
 
-func (s *Service) ListOffboardingCandidates(ctx context.Context, sourceID int, q string) ([]OffboardingCandidate, error) {
-	var ok bool
-	var err error
-	if sourceID <= 0 {
-		sourceID, ok, err = CurrentSourceID(ctx, s.client)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return []OffboardingCandidate{}, nil
-		}
+type OffboardingCandidateListParams struct {
+	SourceID int
+	Query    string
+	Page     int
+	PageSize int
+}
+
+type OffboardingCandidatePage struct {
+	Items    []OffboardingCandidate `json:"items"`
+	Page     int                    `json:"page"`
+	PageSize int                    `json:"page_size"`
+	Total    int                    `json:"total"`
+}
+
+type offboardingSnapshot struct {
+	SourceID int
+	RunID    int
+	RunAt    *time.Time
+}
+
+func (s *Service) ListOffboardingCandidates(ctx context.Context, params OffboardingCandidateListParams) (*OffboardingCandidatePage, error) {
+	params = normalizeOffboardingCandidateListParams(params)
+	page := &OffboardingCandidatePage{
+		Items:    []OffboardingCandidate{},
+		Page:     params.Page,
+		PageSize: params.PageSize,
 	}
-	source, err := s.client.DirectorySource.Get(ctx, sourceID)
+	snapshot, err := s.resolveOffboardingSnapshot(ctx, params.SourceID)
 	if err != nil {
 		return nil, err
 	}
-	if source.LastSuccessfulRunID == nil {
-		return []OffboardingCandidate{}, nil
-	}
-	run, err := s.client.DirectorySyncRun.Get(ctx, *source.LastSuccessfulRunID)
-	if err != nil {
-		return nil, err
+	if snapshot == nil {
+		return page, nil
 	}
 
-	userQuery := s.client.User.Query().Where(entuser.RelayUserIDNotNil())
-	if strings.TrimSpace(q) != "" {
-		userQuery = userQuery.Where(entuser.Or(
-			entuser.UsernameContainsFold(q),
-			entuser.EmailContainsFold(q),
-		))
-	}
-	users, err := userQuery.Order(ent.Asc(entuser.FieldUsername)).All(ctx)
+	total, err := s.offboardingCandidateUsers(snapshot.SourceID, params.Query).Count(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("count directory offboarding candidates: %w", err)
+	}
+	page.Total = total
+	if total == 0 {
+		return page, nil
+	}
+	if params.Page > (total-1)/params.PageSize+1 {
+		return page, nil
 	}
 
-	candidates := make([]OffboardingCandidate, 0)
+	offset := (params.Page - 1) * params.PageSize
+	users, err := s.offboardingCandidateUsers(snapshot.SourceID, params.Query).
+		Order(ent.Asc(entuser.FieldUsername), ent.Asc(entuser.FieldID)).
+		Offset(offset).
+		Limit(params.PageSize).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list directory offboarding candidate page: %w", err)
+	}
+	if len(users) == 0 {
+		return page, nil
+	}
+
+	userIDs := make([]int, 0, len(users))
 	for _, u := range users {
-		email := normalizeEmail(u.Email)
-		if email == "" {
-			continue
-		}
-		count, err := s.client.DirectoryMember.Query().
-			Where(directorymember.SourceIDEQ(sourceID), directorymember.EmailNormalizedEQ(email)).
-			Count(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if count > 0 {
-			continue
-		}
-		action, err := s.latestOffboardingAction(ctx, sourceID, u.ID)
-		if err != nil {
-			return nil, err
-		}
-		if action != nil && action.Status == directoryoffboardingaction.StatusSucceeded {
-			continue
-		}
-		relayUserID := 0
-		if u.RelayUserID != nil {
-			relayUserID = *u.RelayUserID
-		}
+		userIDs = append(userIDs, u.ID)
+	}
+	actions, err := s.client.DirectoryOffboardingAction.Query().
+		Where(
+			directoryoffboardingaction.SourceIDEQ(snapshot.SourceID),
+			directoryoffboardingaction.UserIDIn(userIDs...),
+			directoryoffboardingaction.ActionEQ(directoryoffboardingaction.ActionDisableRelayUser),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load directory offboarding actions for candidate page: %w", err)
+	}
+	actionByUserID := make(map[int]*ent.DirectoryOffboardingAction, len(actions))
+	for _, action := range actions {
+		actionByUserID[action.UserID] = action
+	}
+
+	page.Items = make([]OffboardingCandidate, 0, len(users))
+	for _, u := range users {
 		candidate := OffboardingCandidate{
 			UserID:          u.ID,
 			Username:        u.Username,
 			Email:           u.Email,
 			AuthSource:      string(u.AuthSource),
-			RelayUserID:     relayUserID,
+			RelayUserID:     *u.RelayUserID,
 			Reason:          offboardingReasonMissingFromDirectory,
-			DirectoryRunID:  run.ID,
+			DirectoryRunID:  snapshot.RunID,
+			DirectoryRunAt:  snapshot.RunAt,
 			TokenValidAfter: u.TokenValidAfter,
 		}
-		if run.CompletedAt != nil {
-			candidate.DirectoryRunAt = run.CompletedAt
-		}
-		if action != nil {
+		if action := actionByUserID[u.ID]; action != nil {
 			candidate.OffboardingStatus = string(action.Status)
-			id := action.ID
-			candidate.OffboardingActionID = &id
+			actionID := action.ID
+			candidate.OffboardingActionID = &actionID
 		}
-		candidates = append(candidates, candidate)
+		page.Items = append(page.Items, candidate)
 	}
-	return candidates, nil
+	return page, nil
+}
+
+func (s *Service) CountOffboardingCandidates(ctx context.Context, sourceID int) (int, error) {
+	snapshot, err := s.resolveOffboardingSnapshot(ctx, sourceID)
+	if err != nil {
+		return 0, err
+	}
+	if snapshot == nil {
+		return 0, nil
+	}
+	count, err := s.offboardingCandidateUsers(snapshot.SourceID, "").Count(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count directory offboarding candidates: %w", err)
+	}
+	return count, nil
+}
+
+func normalizeOffboardingCandidateListParams(params OffboardingCandidateListParams) OffboardingCandidateListParams {
+	params.Query = strings.TrimSpace(params.Query)
+	if params.Page <= 0 {
+		params.Page = 1
+	}
+	if params.PageSize <= 0 {
+		params.PageSize = defaultOffboardingPageSize
+	}
+	if params.PageSize > maxOffboardingPageSize {
+		params.PageSize = maxOffboardingPageSize
+	}
+	return params
+}
+
+func (s *Service) resolveOffboardingSnapshot(ctx context.Context, sourceID int) (*offboardingSnapshot, error) {
+	if s == nil || s.client == nil {
+		return nil, fmt.Errorf("directory sync service is not configured")
+	}
+	runQuery := s.client.DirectorySyncRun.Query().
+		Where(
+			directorysyncrun.ModeEQ(directorysyncrun.ModeApply),
+			directorysyncrun.StatusIn(directorysyncrun.StatusCompleted, directorysyncrun.StatusCompletedWithWarnings),
+			directorysyncrun.CompletedAtNotNil(),
+			offboardingSnapshotSourcePredicate(sourceID),
+		)
+	if sourceID > 0 {
+		runQuery = runQuery.Where(directorysyncrun.SourceIDEQ(sourceID))
+	}
+	run, err := runQuery.
+		Order(ent.Desc(directorysyncrun.FieldCompletedAt), ent.Desc(directorysyncrun.FieldID)).
+		First(ctx)
+	if ent.IsNotFound(err) {
+		if sourceID > 0 {
+			if _, sourceErr := s.client.DirectorySource.Get(ctx, sourceID); sourceErr != nil {
+				return nil, sourceErr
+			}
+		}
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("resolve directory offboarding snapshot: %w", err)
+	}
+	return &offboardingSnapshot{SourceID: run.SourceID, RunID: run.ID, RunAt: run.CompletedAt}, nil
+}
+
+func offboardingSnapshotSourcePredicate(sourceID int) predicate.DirectorySyncRun {
+	return func(runs *entsql.Selector) {
+		sources := entsql.Table(directorysource.Table)
+		conditions := []*entsql.Predicate{
+			entsql.ColumnsEQ(sources.C(directorysource.FieldID), runs.C(directorysyncrun.FieldSourceID)),
+			entsql.ColumnsEQ(sources.C(directorysource.FieldLastSuccessfulRunID), runs.C(directorysyncrun.FieldID)),
+			entsql.EQ(sources.C(directorysource.FieldScope), string(directorysource.ScopeFullCompany)),
+			entsql.EQ(sources.C(directorysource.FieldDeleted), false),
+		}
+		if sourceID > 0 {
+			conditions = append(conditions, entsql.EQ(sources.C(directorysource.FieldID), sourceID))
+		}
+		runs.Where(entsql.Exists(
+			entsql.SelectExpr(entsql.Expr("1")).
+				From(sources).
+				Where(entsql.And(conditions...)),
+		))
+	}
+}
+
+func (s *Service) offboardingCandidateUsers(sourceID int, q string) *ent.UserQuery {
+	query := s.client.User.Query().Where(
+		entuser.RelayUserIDNotNil(),
+		offboardingCandidateAntiJoin(sourceID),
+	)
+	if q != "" {
+		query = query.Where(userSearchPredicate(q))
+	}
+	return query
+}
+
+func offboardingCandidateAntiJoin(sourceID int) predicate.User {
+	return func(users *entsql.Selector) {
+		members := entsql.Table(directorymember.Table)
+		memberEmailMatchesUser := entsql.P(func(builder *entsql.Builder) {
+			builder.Ident(members.C(directorymember.FieldEmailNormalized)).
+				WriteOp(entsql.OpEQ).
+				WriteString("LOWER(BTRIM(").
+				Ident(users.C(entuser.FieldEmail)).
+				WriteString("))")
+		})
+		memberExists := entsql.SelectExpr(entsql.Expr("1")).
+			From(members).
+			Where(entsql.And(
+				entsql.EQ(members.C(directorymember.FieldSourceID), sourceID),
+				memberEmailMatchesUser,
+			))
+
+		actions := entsql.Table(directoryoffboardingaction.Table)
+		succeededActionExists := entsql.SelectExpr(entsql.Expr("1")).
+			From(actions).
+			Where(entsql.And(
+				entsql.EQ(actions.C(directoryoffboardingaction.FieldSourceID), sourceID),
+				entsql.ColumnsEQ(actions.C(directoryoffboardingaction.FieldUserID), users.C(entuser.FieldID)),
+				entsql.EQ(actions.C(directoryoffboardingaction.FieldAction), string(directoryoffboardingaction.ActionDisableRelayUser)),
+				entsql.EQ(actions.C(directoryoffboardingaction.FieldStatus), string(directoryoffboardingaction.StatusSucceeded)),
+			))
+
+		users.Where(entsql.And(
+			entsql.P(func(builder *entsql.Builder) {
+				builder.WriteString("BTRIM(").
+					Ident(users.C(entuser.FieldEmail)).
+					WriteString(") <> ''")
+			}),
+			entsql.NotExists(memberExists),
+			entsql.NotExists(succeededActionExists),
+		))
+	}
 }
 
 type DisableCandidateRequest struct {
@@ -812,15 +1130,49 @@ func (s *Service) DisableRelayUserForCandidate(ctx context.Context, req DisableC
 		}
 		return failed, &UpstreamError{Message: "disable relay user", Err: err}
 	}
-	revokedAt := s.now()
-	if err := s.tokenRevoker.RevokeUserTokens(ctx, u.ID, revokedAt); err != nil {
-		partial, saveErr := s.upsertOffboardingAction(ctx, req, *u.RelayUserID, *source.LastSuccessfulRunID, directoryoffboardingaction.StatusPartialFailed, err)
-		if saveErr != nil {
-			return nil, saveErr
-		}
-		return partial, err
+	return s.finalizeOffboarding(ctx, req, u.ID, *u.RelayUserID, *source.LastSuccessfulRunID, s.now())
+}
+
+func (s *Service) finalizeOffboarding(ctx context.Context, req DisableCandidateRequest, userID, relayUserID, runID int, revokedAt time.Time) (*ent.DirectoryOffboardingAction, error) {
+	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	recordPartialFailure := func(cause error) (*ent.DirectoryOffboardingAction, error) {
+		failureCtx, failureCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer failureCancel()
+		return s.recordPartialOffboardingFailure(failureCtx, req, relayUserID, runID, cause)
 	}
-	return s.upsertOffboardingAction(ctx, req, *u.RelayUserID, *source.LastSuccessfulRunID, directoryoffboardingaction.StatusSucceeded, nil)
+
+	tx, err := s.client.Tx(finalizeCtx)
+	if err != nil {
+		return recordPartialFailure(fmt.Errorf("begin offboarding finalization tx: %w", err))
+	}
+	fail := func(cause error) (*ent.DirectoryOffboardingAction, error) {
+		_ = tx.Rollback()
+		return recordPartialFailure(cause)
+	}
+	if err := s.tokenRevoker.RevokeUserTokensTx(finalizeCtx, tx, userID, revokedAt); err != nil {
+		return fail(err)
+	}
+	action, err := s.upsertOffboardingActionTx(finalizeCtx, tx, req, relayUserID, runID, directoryoffboardingaction.StatusSucceeded, nil)
+	if err != nil {
+		return fail(err)
+	}
+	if err := s.invalidateWorkItemCountsTx(finalizeCtx, tx); err != nil {
+		return fail(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fail(fmt.Errorf("commit offboarding finalization: %w", err))
+	}
+	action.Unwrap()
+	return action, nil
+}
+
+func (s *Service) recordPartialOffboardingFailure(ctx context.Context, req DisableCandidateRequest, relayUserID, runID int, cause error) (*ent.DirectoryOffboardingAction, error) {
+	partial, saveErr := s.upsertOffboardingAction(ctx, req, relayUserID, runID, directoryoffboardingaction.StatusPartialFailed, cause)
+	if saveErr != nil {
+		return nil, fmt.Errorf("record partial offboarding failure after %v: %w", cause, saveErr)
+	}
+	return partial, cause
 }
 
 func (s *Service) primaryRelayProviderID(ctx context.Context) (int, error) {
@@ -851,7 +1203,15 @@ func (s *Service) primaryRelayProviderID(ctx context.Context) (int, error) {
 }
 
 func (s *Service) upsertOffboardingAction(ctx context.Context, req DisableCandidateRequest, relayUserID, runID int, status directoryoffboardingaction.Status, cause error) (*ent.DirectoryOffboardingAction, error) {
-	action, err := s.client.DirectoryOffboardingAction.Query().
+	return upsertOffboardingAction(ctx, s.client.DirectoryOffboardingAction, req, relayUserID, runID, status, cause)
+}
+
+func (s *Service) upsertOffboardingActionTx(ctx context.Context, tx *ent.Tx, req DisableCandidateRequest, relayUserID, runID int, status directoryoffboardingaction.Status, cause error) (*ent.DirectoryOffboardingAction, error) {
+	return upsertOffboardingAction(ctx, tx.DirectoryOffboardingAction, req, relayUserID, runID, status, cause)
+}
+
+func upsertOffboardingAction(ctx context.Context, actions *ent.DirectoryOffboardingActionClient, req DisableCandidateRequest, relayUserID, runID int, status directoryoffboardingaction.Status, cause error) (*ent.DirectoryOffboardingAction, error) {
+	action, err := actions.Query().
 		Where(
 			directoryoffboardingaction.SourceIDEQ(req.SourceID),
 			directoryoffboardingaction.UserIDEQ(req.UserID),
@@ -866,7 +1226,7 @@ func (s *Service) upsertOffboardingAction(ctx context.Context, req DisableCandid
 		errorMessage = cause.Error()
 	}
 	if ent.IsNotFound(err) {
-		create := s.client.DirectoryOffboardingAction.Create().
+		create := actions.Create().
 			SetSourceID(req.SourceID).
 			SetUserID(req.UserID).
 			SetRelayUserID(relayUserID).
@@ -880,7 +1240,7 @@ func (s *Service) upsertOffboardingAction(ctx context.Context, req DisableCandid
 		}
 		return create.Save(ctx)
 	}
-	update := s.client.DirectoryOffboardingAction.UpdateOne(action).
+	update := actions.UpdateOne(action).
 		SetRelayUserID(relayUserID).
 		SetDirectoryRunID(runID).
 		SetStatus(status).
@@ -892,21 +1252,6 @@ func (s *Service) upsertOffboardingAction(ctx context.Context, req DisableCandid
 		update.ClearErrorMessage()
 	}
 	return update.Save(ctx)
-}
-
-func (s *Service) latestOffboardingAction(ctx context.Context, sourceID, userID int) (*ent.DirectoryOffboardingAction, error) {
-	action, err := s.client.DirectoryOffboardingAction.Query().
-		Where(
-			directoryoffboardingaction.SourceIDEQ(sourceID),
-			directoryoffboardingaction.UserIDEQ(userID),
-			directoryoffboardingaction.ActionEQ(directoryoffboardingaction.ActionDisableRelayUser),
-		).
-		Order(ent.Desc(directoryoffboardingaction.FieldUpdatedAt)).
-		First(ctx)
-	if ent.IsNotFound(err) {
-		return nil, nil
-	}
-	return action, err
 }
 
 func userSearchPredicate(q string) predicate.User {
