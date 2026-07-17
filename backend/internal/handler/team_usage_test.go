@@ -231,7 +231,7 @@ func TestTeamUsageSummaryReturnsFreshnessScopeAndUniqueRequestID(t *testing.T) {
 				Window: teamusage.OverviewWindow{
 					StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
 				},
-				Summary: teamusage.OverviewSummary{MemberCount: 2, RangeActualCost: &rangeCost, UnitLabel: "USD"},
+				Summary: teamusage.SummaryAggregate{MemberCount: 2, RangeActualCost: &rangeCost, UnitLabel: "USD"},
 			}, nil
 		},
 	})
@@ -833,6 +833,29 @@ func TestTeamOverviewEmitsCompatibilityHeadersOnSuccessAndFailure(t *testing.T) 
 				t.Fatalf("compatibility headers = Deprecation %q Sunset %q Link %q", rec.Header().Get("Deprecation"), rec.Header().Get("Sunset"), rec.Header().Get("Link"))
 			}
 		})
+	}
+}
+
+func TestTeamOverviewOmitsUnavailableRangeTokenTotalForCompatibility(t *testing.T) {
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		overviewFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error) {
+			return &teamusage.OverviewResponse{
+				Configured:       true,
+				IsRepresentative: true,
+				Summary: teamusage.OverviewSummary{
+					Unavailable: true,
+					UnitLabel:   "USD",
+				},
+			}, nil
+		},
+	})
+
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/overview", env.token, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response = %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"range_total_tokens"`) {
+		t.Fatalf("compatibility response changed absent range token total to null: %s", rec.Body.String())
 	}
 }
 

@@ -672,7 +672,16 @@ func testOverviewSnapshot(rangeCost float64) *OverviewResponse {
 
 func testSummarySnapshot(rangeCost float64) *SummarySnapshot {
 	overview := testOverviewSnapshot(rangeCost)
-	return &SummarySnapshot{Window: overview.Window, Summary: overview.Summary}
+	return &SummarySnapshot{
+		Window: overview.Window,
+		Summary: SummaryAggregate{
+			Unavailable: overview.Summary.Unavailable, UnavailableReason: overview.Summary.UnavailableReason,
+			MemberCount: overview.Summary.MemberCount, RelayMemberCount: overview.Summary.RelayMemberCount,
+			RangeActualCost: overview.Summary.RangeActualCost, RangeTotalTokens: overview.Summary.RangeTotalTokens,
+			TodayActualCost: overview.Summary.TodayActualCost, TotalActualCost: overview.Summary.TotalActualCost,
+			UnitLabel: overview.Summary.UnitLabel,
+		},
+	}
 }
 
 func testEffectiveScope() *representativescope.Scope {

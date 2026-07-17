@@ -358,7 +358,7 @@ func (s *Service) generateSummarySnapshot(ctx context.Context, scope *representa
 		reason := "scope_too_large"
 		return &SummarySnapshot{
 			Window: buildOverviewWindow(params),
-			Summary: OverviewSummary{
+			Summary: SummaryAggregate{
 				Unavailable: true, UnavailableReason: &reason,
 				MemberCount: len(overviewSubjects), UnitLabel: teamOverviewCostUnitLabel,
 			},
@@ -405,7 +405,7 @@ func (s *Service) generateSummarySnapshot(ctx context.Context, scope *representa
 	todayCost, totalCost := sumOverviewComparisonCosts(statsByRelayUserID)
 	return &SummarySnapshot{
 		Window: buildOverviewWindow(params),
-		Summary: OverviewSummary{
+		Summary: SummaryAggregate{
 			Unavailable:       !rangeComplete,
 			UnavailableReason: unavailableReason,
 			MemberCount:       len(overviewSubjects),

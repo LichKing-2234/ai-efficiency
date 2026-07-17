@@ -22,7 +22,7 @@
 - Tests and examples use only synthetic identities and credentials.
 - Update each checkbox immediately after the action is actually complete.
 
-**Status:** In progress. The active performance spec was updated and committed as `88b22871`; implementation and verification remain open below.
+**Status:** In progress. Implementation and full verification are complete; final review and PR publication remain open below.
 
 ---
 
@@ -328,11 +328,11 @@
 - No new frontend API or state abstraction.
 - The existing Summary section renders counts/comparison data and `teamUsage.summaryUnavailable` while trend, members, or organization are independently pending/failed.
 
-- [ ] **Step 1: Add the focused frontend regression**
+- [x] **Step 1: Add the focused frontend regression**
 
   Return a Summary response with `unavailable_reason: 'range_aggregation_unavailable'`, null range fields, and valid member/comparison fields while the trend promise remains unresolved. Assert the Summary section and available values render, the local unavailable message is visible, and the trend loading state remains separate.
 
-- [ ] **Step 2: Run the focused frontend test**
+- [x] **Step 2: Run the focused frontend test**
 
   Run:
 
@@ -343,11 +343,19 @@
 
   Expected: PASS after the backend-only lifecycle change because the existing UI already owns section-local state; if it fails, make only the minimal view/copy correction required by the committed contract.
 
-- [ ] **Step 3: Update architecture and current plan status**
+  Evidence (2026-07-17):
+
+  ```text
+  $ cd frontend && npm test -- src/__tests__/team-overview-view.test.ts
+  Test Files  1 passed (1)
+  Tests       51 passed (51)
+  ```
+
+- [x] **Step 3: Update architecture and current plan status**
 
   Replace the claim that Summary and compatibility reuse one snapshot generation with the independent Summary origin/cache contract, incomplete-range degradation, and unchanged compatibility path. Record completed RED/GREEN commands immediately in this plan and keep unrun full/environment checks unchecked.
 
-- [ ] **Step 4: Run full verification**
+- [x] **Step 4: Run full verification**
 
   Run:
 
@@ -361,6 +369,44 @@
 
   Also run focused race tests for `readcache`, `teamusage`, and the new handler selection. Report environment-sensitive role E2E separately; do not mark it complete unless actually run.
 
+  Evidence (2026-07-17):
+
+  ```text
+  $ cd backend && go test ./... -count=1 && go vet ./...
+  PASS (all backend packages); go vet exit 0
+
+  $ cd frontend && npm test && npm run build
+  Test Files  47 passed (47)
+  Tests       673 passed (673)
+  vite: 204 modules transformed, built in 2.31s
+
+  $ cd ae-cli && go test ./... -count=1
+  PASS (all ae-cli packages)
+
+  $ cd backend && go test -race ./internal/readcache ./internal/teamusage ./internal/handler -run 'Summary|SnapshotCache|TeamUsageSummary' -count=1
+  ok  github.com/ai-efficiency/backend/internal/readcache
+  ok  github.com/ai-efficiency/backend/internal/teamusage
+  ok  github.com/ai-efficiency/backend/internal/handler
+
+  $ bash deploy/test/release-frontend-embed-test.sh
+  PASS: TestHasEmbeddedFrontendForReleaseBuilds
+  PASS: TestEmbeddedFrontendReleaseBuildHTTPPolicy
+
+  $ git diff --check
+  exit 0
+  ```
+
+  Environment-sensitive role E2E was not run for this ticket.
+
 - [ ] **Step 5: Review, commit documentation, and publish**
 
   Run independent Standards and Spec reviews against issue #164 and the active performance spec. Fix every Critical/Important finding and rerun affected tests. Commit the plan/architecture/test evidence with Conventional Commits, push `perf/team-summary-independent-164`, create a non-Draft PR targeting `feat/platform-loading-performance` with `Closes #164`, mark #164 `in-review`, and wait for exact-head backend/frontend/ae-cli/deploy-static CI.
+
+  Review evidence (2026-07-17):
+
+  - Initial Standards and Spec reviews found one Important compatibility issue: removing `omitempty` from the shared `OverviewSummary.RangeTotalTokens` changed the legacy overview wire shape from an absent field to `null`.
+  - RED: `go test ./internal/handler -run '^TestTeamOverviewOmitsUnavailableRangeTokenTotalForCompatibility$' -count=1` failed because the compatibility response contained `"range_total_tokens":null`.
+  - Fix: restore the legacy `OverviewSummary` tag and use a Summary-only `SummaryAggregate` DTO whose range token field remains explicitly nullable.
+  - GREEN: the compatibility regression, Summary HTTP regressions, focused Team Usage tests, focused race tests, final backend suite, `go vet`, and `git diff --check` pass.
+  - Standards re-review: PASS, no Critical/Important findings; the split DTO is a necessary wire-contract boundary rather than speculative generality.
+  - Spec re-review: PASS, no Critical/Important findings.

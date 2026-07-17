@@ -131,10 +131,10 @@ type SnapshotFreshness struct {
 
 type SummaryResponse struct {
 	SnapshotFreshness
-	ScopeVersion string          `json:"scope_version"`
-	RequestID    string          `json:"request_id"`
-	Window       OverviewWindow  `json:"window"`
-	Summary      OverviewSummary `json:"summary"`
+	ScopeVersion string           `json:"scope_version"`
+	RequestID    string           `json:"request_id"`
+	Window       OverviewWindow   `json:"window"`
+	Summary      SummaryAggregate `json:"summary"`
 }
 
 type TrendResponse struct {
@@ -221,8 +221,8 @@ type SnapshotCacheResult struct {
 }
 
 type SummarySnapshot struct {
-	Window  OverviewWindow  `json:"window"`
-	Summary OverviewSummary `json:"summary"`
+	Window  OverviewWindow   `json:"window"`
+	Summary SummaryAggregate `json:"summary"`
 }
 
 type SummaryOriginLoadResult struct {
@@ -260,6 +260,18 @@ type OverviewWindow struct {
 }
 
 type OverviewSummary struct {
+	Unavailable       bool     `json:"unavailable"`
+	UnavailableReason *string  `json:"unavailable_reason"`
+	MemberCount       int      `json:"member_count"`
+	RelayMemberCount  int      `json:"relay_member_count"`
+	RangeActualCost   *float64 `json:"range_actual_cost"`
+	RangeTotalTokens  *int64   `json:"range_total_tokens,omitempty"`
+	TodayActualCost   *float64 `json:"today_actual_cost"`
+	TotalActualCost   *float64 `json:"total_actual_cost"`
+	UnitLabel         string   `json:"unit_label"`
+}
+
+type SummaryAggregate struct {
 	Unavailable       bool     `json:"unavailable"`
 	UnavailableReason *string  `json:"unavailable_reason"`
 	MemberCount       int      `json:"member_count"`
