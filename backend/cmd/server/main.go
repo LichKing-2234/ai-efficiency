@@ -27,10 +27,14 @@ import (
 	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
@@ -259,13 +263,35 @@ func main() {
 
 	redisClient := redis.NewClient(redisClientOptions(cfg.Redis))
 	defer redisClient.Close()
+	redisStore := readcache.NewRedisStore(redisClient)
 	workItemsCache, err := workitems.NewCountsCache(
-		workitems.NewRedisCountsStore(redisClient),
+		redisStore,
 		workItemsRevisionStore,
 		workitems.CountsCacheOptions{Namespace: cfg.Redis.Namespace},
 	)
 	if err != nil {
 		logger.Fatal("initialize work item counts cache", zap.Error(err))
+	}
+	personalUsageCache, err := personalusage.NewCache(
+		redisStore,
+		personalusage.CacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize personal usage cache", zap.Error(err))
+	}
+	representativeScopeCache, err := representativescope.NewCache(
+		redisStore,
+		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize representative scope cache", zap.Error(err))
+	}
+	teamUsageSnapshotCache, err := teamusage.NewSnapshotCache(
+		redisStore,
+		teamusage.SnapshotCacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize team usage snapshot cache", zap.Error(err))
 	}
 
 	// Init LDAP config (shared between auth service and admin settings handler)
@@ -396,13 +422,16 @@ func main() {
 		checkpointHandler,
 		healthHandler,
 		handler.RouterOptions{
-			DirectoryService:       directoryService,
-			WorkItemsCache:         workItemsCache,
-			WorkItemsRevisionStore: workItemsRevisionStore,
-			WebhookHTTPClient:      httpClients.webhook,
-			RequestLogger:          logger,
-			Release:                versionInfo.Version,
-			RequestTimeout:         time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
+			DirectoryService:         directoryService,
+			PersonalUsageCache:       personalUsageCache,
+			WorkItemsCache:           workItemsCache,
+			WorkItemsRevisionStore:   workItemsRevisionStore,
+			RepresentativeScopeCache: representativeScopeCache,
+			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
+			WebhookHTTPClient:        httpClients.webhook,
+			RequestLogger:            logger,
+			Release:                  versionInfo.Version,
+			RequestTimeout:           time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
 	)
 

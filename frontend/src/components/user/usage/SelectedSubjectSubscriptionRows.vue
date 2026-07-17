@@ -51,6 +51,10 @@ function subscriptionStatusLabel(status: string) {
   }
 }
 
+function isMultiplierMetadataUnavailable(row: SubjectSubscriptionGroup) {
+  return row.multiplier_metadata_status === 'unavailable'
+}
+
 async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
   if (!activeRow.value) return
   const event = { subjectUserId: props.subjectUserId, groupID: activeRow.value.group_id, payload }
@@ -94,7 +98,17 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
               <div class="text-xs text-slate-500">{{ row.platform }}</div>
             </td>
             <td class="px-4 py-3 text-slate-700">{{ subscriptionStatusLabel(row.subscription_status) }}</td>
-            <td class="px-4 py-3 text-slate-700">{{ row.effective_multiplier }}x</td>
+            <td class="px-4 py-3 text-slate-700">
+              <span
+                v-if="isMultiplierMetadataUnavailable(row)"
+                role="status"
+                class="text-xs font-medium text-amber-700"
+                :data-testid="`multiplier-metadata-warning-${row.group_id}`"
+              >
+                {{ t('teamUsage.multiplierUnavailable') }}
+              </span>
+              <template v-else>{{ row.effective_multiplier }}x</template>
+            </td>
             <td class="px-4 py-3 font-medium text-slate-950">
               {{ formatCurrency(row.monthly_display_used_usd) }} /
               {{ formatCurrency(row.monthly_effective_allowance_usd, row.monthly_effective_allowance_unlimited) }}
@@ -104,7 +118,7 @@ async function confirm(payload: UpdateTeamUsageRateMultiplierRequest) {
                 type="button"
                 class="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 :data-testid="`edit-multiplier-${row.group_id}`"
-                :disabled="!row.editable"
+                :disabled="!row.editable || isMultiplierMetadataUnavailable(row)"
                 @click="openModal(row)"
               >
                 {{ t('teamUsage.editMultiplier') }}

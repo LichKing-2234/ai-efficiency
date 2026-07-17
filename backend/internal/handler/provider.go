@@ -315,7 +315,8 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	update := h.entClient.RelayProvider.UpdateOneID(id)
+	update := h.entClient.RelayProvider.UpdateOneID(id).
+		AddConfigurationVersion(1)
 
 	if req.DisplayName != "" {
 		update.SetDisplayName(req.DisplayName)
