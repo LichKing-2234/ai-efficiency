@@ -1,21 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Tooltip,
-  Legend,
-  Filler,
-} from 'chart.js'
-import { Line } from 'vue-chartjs'
+import { computed, defineAsyncComponent } from 'vue'
 import type { UserUsageTrendPoint } from '@/types'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
+const LineChartCanvas = defineAsyncComponent(() => import('@/components/charts/LineChartCanvas.vue'))
 
 const props = defineProps<{
   data: UserUsageTrendPoint[]
@@ -73,7 +62,7 @@ const chartOptions = computed(() => ({
       {{ t('usageDashboard.noTrendData') }}
     </div>
     <div v-else class="h-72">
-      <Line :data="chartData" :options="chartOptions" />
+      <LineChartCanvas :data="chartData" :options="chartOptions" />
     </div>
   </section>
 </template>
