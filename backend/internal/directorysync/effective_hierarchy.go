@@ -64,10 +64,20 @@ func resolveEffectiveParents(departments []DepartmentRecord) (map[string]string,
 }
 
 func effectiveHierarchyLess(left, right DepartmentRecord) bool {
-	leftName := strings.ToLower(strings.TrimSpace(left.Name))
-	rightName := strings.ToLower(strings.TrimSpace(right.Name))
+	leftName := effectiveHierarchyOrderKey(left.Name)
+	rightName := effectiveHierarchyOrderKey(right.Name)
 	if leftName != rightName {
 		return leftName < rightName
 	}
 	return left.ExternalID < right.ExternalID
+}
+
+func effectiveHierarchyOrderKey(name string) string {
+	key := []byte(strings.Trim(name, " "))
+	for index, value := range key {
+		if value >= 'A' && value <= 'Z' {
+			key[index] = value + ('a' - 'A')
+		}
+	}
+	return string(key)
 }

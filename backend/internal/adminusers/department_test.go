@@ -2,6 +2,7 @@ package adminusers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"reflect"
 	"sort"
@@ -228,6 +229,33 @@ func TestDepartmentChildrenClosedCycleNavigation(t *testing.T) {
 	}
 	if !reflect.DeepEqual(walks[0], walks[1]) {
 		t.Fatalf("cycle walk changed with insertion order: normal=%v reverse=%v", walks[0], walks[1])
+	}
+}
+
+func TestDepartmentChildrenUsesLocaleIndependentCycleAnchor(t *testing.T) {
+	client, dsn := testdb.OpenWithDSN(t)
+	ctx := context.Background()
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("open raw postgres connection: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.ExecContext(ctx, `ALTER TABLE directory_departments ALTER COLUMN name TYPE varchar COLLATE "en-US-x-icu"`); err != nil {
+		t.Fatalf("set synthetic ICU name collation: %v", err)
+	}
+
+	source, run := createTargetSourceSnapshot(t, client, "Locale Independent Directory", time.Date(2026, 7, 17, 10, 0, 0, 0, time.UTC))
+	createDepartmentSeeds(t, client, source.ID, run.ID, []departmentSeed{
+		{id: "dept-zulu", parentID: "dept-dotted-i", name: "  Zulu  "},
+		{id: "dept-dotted-i", parentID: "dept-zulu", name: "İstanbul"},
+	}, false)
+
+	roots, err := NewService(client).DepartmentChildren(ctx, DepartmentChildrenRequest{PageSize: 100})
+	if err != nil {
+		t.Fatalf("DepartmentChildren roots: %v", err)
+	}
+	if got := departmentSummaryIDs(roots.Items); !reflect.DeepEqual(got, []string{"dept-zulu"}) {
+		t.Fatalf("cycle root ids = %v, want locale-independent anchor dept-zulu", got)
 	}
 }
 

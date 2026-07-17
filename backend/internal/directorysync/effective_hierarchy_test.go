@@ -85,6 +85,22 @@ func TestResolveEffectiveParentsDeterministicAcrossInputOrder(t *testing.T) {
 	}
 }
 
+func TestResolveEffectiveParentsUsesLocaleIndependentCycleAnchor(t *testing.T) {
+	departments := []DepartmentRecord{
+		{ExternalID: "dept-zulu", ParentExternalID: "dept-dotted-i", Name: "  Zulu  "},
+		{ExternalID: "dept-dotted-i", ParentExternalID: "dept-zulu", Name: "İstanbul"},
+	}
+
+	got, err := resolveEffectiveParents(departments)
+	if err != nil {
+		t.Fatalf("resolveEffectiveParents() error = %v", err)
+	}
+	want := map[string]string{"dept-zulu": "", "dept-dotted-i": "dept-zulu"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("effective parents = %#v, want locale-independent order %#v", got, want)
+	}
+}
+
 func TestResolveEffectiveParentsRejectsInvalidIDs(t *testing.T) {
 	tests := []struct {
 		name        string
