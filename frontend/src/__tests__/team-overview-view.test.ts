@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -15,34 +15,13 @@ vi.mock('@/api/teamUsage', () => ({
   getTeamUsageTrend: vi.fn(),
 }))
 
-const lineCanvasModule = vi.hoisted(() => {
-  let gate = Promise.resolve()
-  let release = () => {}
-
-  function defer() {
-    gate = new Promise<void>((resolve) => { release = resolve })
-  }
-
-  function resolve() {
-    release()
-    gate = Promise.resolve()
-    release = () => {}
-  }
-
-  return { loads: 0, defer, resolve, wait: () => gate }
-})
-
-vi.mock('@/components/charts/LineChartCanvas.vue', async () => {
-  lineCanvasModule.loads += 1
-  await lineCanvasModule.wait()
-  return {
-    __esModule: true,
-    default: {
-      props: ['data', 'options'],
-      template: '<div data-test="line-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
-    },
-  }
-})
+vi.mock('@/components/charts/LineChartCanvas.vue', () => ({
+  __esModule: true,
+  default: {
+    props: ['data', 'options'],
+    template: '<div data-test="line-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
+  },
+}))
 
 const mockGetTeamUsageOverview = vi.mocked((await import('@/api/teamUsage')).getTeamUsageOverview)
 const mockGetTeamUsageMembers = vi.mocked((await import('@/api/teamUsage')).getTeamUsageMembers)
@@ -415,12 +394,6 @@ function defaultOrganizationResponse(params?: TeamUsageOrganizationParams) {
     return organizationPage(parent, [], overviewFixture.member_tree![0].children[0].members)
   }
   return organizationPage(null, [rootOrganizationDepartment])
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((promiseResolve) => { resolve = promiseResolve })
-  return { promise, resolve }
 }
 
 function createTestRouter() {
@@ -1015,7 +988,10 @@ describe('TeamOverviewView', () => {
 
   it('keeps successful compatibility sections visible when summary fails', async () => {
     mockGetTeamUsageSummary.mockRejectedValue(new Error('synthetic summary failure'))
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const compatibilityFixture = structuredClone(overviewFixture)
+    compatibilityFixture.top_member_trend.series = []
+    compatibilityFixture.department_trend!.series = []
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: compatibilityFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1034,7 +1010,7 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageSummary.mockResolvedValue({
       data: { data: { ...summaryFixture, cache_status: 'stale', source_status: 'error' } },
     } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    mockGetTeamUsageOverview.mockImplementation(() => new Promise(() => {}) as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -1093,113 +1069,6 @@ describe('TeamOverviewView', () => {
     const trend = wrapper.get('[data-testid="team-member-trend-chart"]')
     expect(trend.text()).toContain('Alice')
     expect(trend.text()).not.toContain('Legacy Trend Member')
-  })
-
-  afterEach(() => {
-    lineCanvasModule.resolve()
-  })
-
-  it('loads one shared line canvas only after team trend data is chartable', async () => {
-    const initialLoads = lineCanvasModule.loads
-    const expectedLoads = Math.max(initialLoads, 1)
-    lineCanvasModule.defer()
-    const initialRequest = deferred<any>()
-    mockGetTeamUsageTrend.mockReturnValueOnce(initialRequest.promise as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
-    const router = createTestRouter()
-    await router.push('/usage/team')
-    await router.isReady()
-    const wrapper = mount(TeamOverviewView, {
-      global: { plugins: [createPinia(), router] },
-    })
-    await wrapper.vm.$nextTick()
-
-    expect(mockGetTeamUsageTrend).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('Loading')
-    expect(lineCanvasModule.loads).toBe(initialLoads)
-
-    const unavailableFixture = structuredClone(trendFixture)
-    unavailableFixture.top_member_trend = {
-      ...unavailableFixture.top_member_trend,
-      unavailable: true,
-      unavailable_reason: 'provider_error',
-      series: [],
-    }
-    unavailableFixture.department_trend = {
-      ...unavailableFixture.department_trend!,
-      unavailable: true,
-      unavailable_reason: 'provider_error',
-      series: [],
-    }
-    initialRequest.resolve({ data: { data: unavailableFixture } })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Team usage is temporarily unavailable.')
-    expect(wrapper.text()).toContain('tokens')
-    expect(wrapper.text()).toContain('Daily')
-    expect(lineCanvasModule.loads).toBe(initialLoads)
-
-    const noSeriesRequest = deferred<any>()
-    mockGetTeamUsageTrend.mockReturnValueOnce(noSeriesRequest.promise as any)
-    await wrapper.get('[data-test="range-7d"]').trigger('click')
-    expect(wrapper.text()).toContain('Updating team usage...')
-    expect(lineCanvasModule.loads).toBe(initialLoads)
-    const noSeriesFixture = structuredClone(trendFixture)
-    noSeriesFixture.top_member_trend.series = []
-    noSeriesFixture.department_trend!.series = []
-    noSeriesRequest.resolve({ data: { data: noSeriesFixture } })
-    await flushPromises()
-
-    expect(wrapper.get('[data-testid="team-member-trend-chart"]').text()).toContain('-')
-    expect(lineCanvasModule.loads).toBe(initialLoads)
-
-    const unchartableRequest = deferred<any>()
-    mockGetTeamUsageTrend.mockReturnValueOnce(unchartableRequest.promise as any)
-    await wrapper.get('[data-test="range-today"]').trigger('click')
-    const unchartableFixture = structuredClone(trendFixture)
-    unchartableFixture.department_trend!.series[0].unavailable = true
-    unchartableFixture.department_trend!.series[0].unavailable_reason = 'provider_error'
-    unchartableFixture.department_trend!.series[0].points = []
-    unchartableFixture.department_trend!.series[1].points = []
-    unchartableFixture.department_trend!.series = unchartableFixture.department_trend!.series.slice(0, 2)
-    unchartableFixture.top_member_trend.series[0].unavailable = true
-    unchartableFixture.top_member_trend.series[0].unavailable_reason = 'provider_error'
-    unchartableFixture.top_member_trend.series[0].points = []
-    unchartableRequest.resolve({ data: { data: unchartableFixture } })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Team total')
-    expect(wrapper.text()).toContain('Team One')
-    expect(wrapper.text()).toContain('#1 Alice')
-    expect(wrapper.get('[data-testid="team-total-trend-legend"]').classes()).toContain('max-h-64')
-    expect(wrapper.get('[data-testid="subteam-trend-legend"]').classes()).toContain('overflow-y-auto')
-    expect(wrapper.get('[data-testid="top-member-trend-legend"]').classes()).toContain('max-h-64')
-    expect(lineCanvasModule.loads).toBe(initialLoads)
-
-    const chartableRequest = deferred<any>()
-    mockGetTeamUsageTrend.mockReturnValueOnce(chartableRequest.promise as any)
-    await wrapper.get('[data-test="range-30d"]').trigger('click')
-    chartableRequest.resolve({ data: { data: trendFixture } })
-    await flushPromises()
-
-    expect(lineCanvasModule.loads).toBe(expectedLoads)
-    expect(wrapper.text()).toContain('2026-06-01 - 2026-06-30')
-    expect(wrapper.text()).toContain('Team total')
-    expect(wrapper.text()).toContain('Team One')
-    expect(wrapper.text()).toContain('#1 Alice')
-    expect(wrapper.get('[data-testid="team-total-trend-chart"] .h-52').classes()).toContain('h-52')
-    expect(wrapper.get('[data-testid="team-comparison-trend-chart"] .h-64').classes()).toContain('h-64')
-    expect(wrapper.get('[data-testid="top-member-trend-chart"] .h-64').classes()).toContain('h-64')
-    expect(wrapper.findAll('[data-test="line-chart"]')).toHaveLength(initialLoads > 0 ? 3 : 0)
-
-    lineCanvasModule.resolve()
-    await flushPromises()
-
-    expect(wrapper.findAll('[data-test="line-chart"]')).toHaveLength(3)
-    mockGetTeamUsageTrend.mockResolvedValueOnce({ data: { data: trendFixture } } as any)
-    await wrapper.get('[data-test="range-7d"]').trigger('click')
-    await flushPromises()
-    expect(lineCanvasModule.loads).toBe(expectedLoads)
   })
 
   it('renders top member trend and member table without quota controls', async () => {

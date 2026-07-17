@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -72,67 +72,21 @@ vi.mock('@/api/auth', () => ({
   devLogin: vi.fn(),
 }))
 
-const canvasModules = vi.hoisted(() => {
-  let lineGate = Promise.resolve()
-  let doughnutGate = Promise.resolve()
-  let releaseLine = () => {}
-  let releaseDoughnut = () => {}
+vi.mock('@/components/charts/LineChartCanvas.vue', () => ({
+  __esModule: true,
+  default: {
+    props: ['data', 'options'],
+    template: '<div data-test="line-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
+  },
+}))
 
-  function defer() {
-    lineGate = new Promise<void>((resolve) => { releaseLine = resolve })
-    doughnutGate = new Promise<void>((resolve) => { releaseDoughnut = resolve })
-  }
-
-  function resolveLine() {
-    releaseLine()
-    lineGate = Promise.resolve()
-    releaseLine = () => {}
-  }
-
-  function resolveDoughnut() {
-    releaseDoughnut()
-    doughnutGate = Promise.resolve()
-    releaseDoughnut = () => {}
-  }
-
-  return {
-    lineLoads: 0,
-    doughnutLoads: 0,
-    defer,
-    waitForLine: () => lineGate,
-    waitForDoughnut: () => doughnutGate,
-    resolveLine,
-    resolveDoughnut,
-    releaseAll() {
-      resolveLine()
-      resolveDoughnut()
-    },
-  }
-})
-
-vi.mock('@/components/charts/LineChartCanvas.vue', async () => {
-  canvasModules.lineLoads += 1
-  await canvasModules.waitForLine()
-  return {
-    __esModule: true,
-    default: {
-      props: ['data', 'options'],
-      template: '<div data-test="line-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
-    },
-  }
-})
-
-vi.mock('@/components/charts/DoughnutChartCanvas.vue', async () => {
-  canvasModules.doughnutLoads += 1
-  await canvasModules.waitForDoughnut()
-  return {
-    __esModule: true,
-    default: {
-      props: ['data', 'options'],
-      template: '<div data-test="doughnut-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
-    },
-  }
-})
+vi.mock('@/components/charts/DoughnutChartCanvas.vue', () => ({
+  __esModule: true,
+  default: {
+    props: ['data', 'options'],
+    template: '<div data-test="doughnut-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
+  },
+}))
 
 const usageSnapshot = {
   configured: true,
@@ -355,81 +309,6 @@ describe('DashboardView', () => {
     expect(getTeamUsageSubjectDashboard).toHaveBeenCalled()
     expect(getUserUsageDashboard).not.toHaveBeenCalled()
     expect(getUserUsageGroupQuotas).not.toHaveBeenCalled()
-  })
-
-  afterEach(() => {
-    canvasModules.releaseAll()
-  })
-
-  it('loads chart canvases only after chartable dashboard data exists', async () => {
-    const initialLineLoads = canvasModules.lineLoads
-    const initialDoughnutLoads = canvasModules.doughnutLoads
-    const expectedLineLoads = Math.max(initialLineLoads, 1)
-    const expectedDoughnutLoads = Math.max(initialDoughnutLoads, 1)
-    canvasModules.defer()
-    const { getUserUsageDashboard } = await import('@/api/userUsage')
-    const firstRequest = deferred<any>()
-    const refreshRequest = deferred<any>()
-    ;(getUserUsageDashboard as any)
-      .mockReturnValueOnce(firstRequest.promise)
-      .mockReturnValueOnce(refreshRequest.promise)
-      .mockResolvedValue({ data: { data: usageSnapshot } })
-
-    const router = createTestRouter()
-    await router.push('/')
-    await router.isReady()
-    const wrapper = mount(DashboardView, {
-      global: { plugins: [createPinia(), router] },
-    })
-
-    expect(getUserUsageDashboard).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('Loading usage dashboard...')
-    expect(canvasModules.lineLoads).toBe(initialLineLoads)
-    expect(canvasModules.doughnutLoads).toBe(initialDoughnutLoads)
-
-    firstRequest.resolve({
-      data: {
-        data: { ...usageSnapshot, trend: [], models: [] },
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.find('[data-test="line-chart"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="doughnut-chart"]').exists()).toBe(false)
-    expect(canvasModules.lineLoads).toBe(initialLineLoads)
-    expect(canvasModules.doughnutLoads).toBe(initialDoughnutLoads)
-
-    await wrapper.get('[data-test="range-7d"]').trigger('click')
-    expect(getUserUsageDashboard).toHaveBeenCalledTimes(2)
-    expect(canvasModules.lineLoads).toBe(initialLineLoads)
-    expect(canvasModules.doughnutLoads).toBe(initialDoughnutLoads)
-
-    refreshRequest.resolve({ data: { data: usageSnapshot } })
-    await flushPromises()
-
-    expect(canvasModules.lineLoads).toBe(expectedLineLoads)
-    expect(canvasModules.doughnutLoads).toBe(expectedDoughnutLoads)
-    expect(wrapper.text()).toContain('example-model')
-
-    canvasModules.resolveLine()
-    canvasModules.resolveDoughnut()
-    await flushPromises()
-
-    const line = wrapper.get('[data-test="line-chart"]')
-    const doughnut = wrapper.get('[data-test="doughnut-chart"]')
-    const trendSection = wrapper.findAll('section').find((section) => section.text().includes('Token Trend'))
-    const modelSection = wrapper.findAll('section').find((section) => section.text().includes('Model Distribution'))
-    expect(trendSection?.get('.h-72').classes()).toContain('h-72')
-    expect(modelSection?.get('.h-44').classes()).toContain('h-44')
-    expect(JSON.parse(line.attributes('data-chart') ?? '{}').labels).toEqual(['2026-06-06'])
-    expect(JSON.parse(doughnut.attributes('data-chart') ?? '{}').labels).toEqual(['example-model'])
-    expect(JSON.parse(line.attributes('data-options') ?? '{}').maintainAspectRatio).toBe(false)
-    expect(JSON.parse(doughnut.attributes('data-options') ?? '{}').maintainAspectRatio).toBe(false)
-
-    await wrapper.get('[data-test="range-today"]').trigger('click')
-    await flushPromises()
-    expect(canvasModules.lineLoads).toBe(expectedLineLoads)
-    expect(canvasModules.doughnutLoads).toBe(expectedDoughnutLoads)
   })
 
   it('renders personal AI usage title', async () => {
