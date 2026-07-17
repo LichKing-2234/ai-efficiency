@@ -133,6 +133,16 @@ type SummaryResponse struct {
 	Summary      OverviewSummary `json:"summary"`
 }
 
+type TrendResponse struct {
+	SnapshotFreshness
+	ScopeVersion    string               `json:"scope_version"`
+	RequestID       string               `json:"request_id"`
+	Window          OverviewWindow       `json:"window"`
+	TopMembers      []OverviewMember     `json:"top_members"`
+	TopMemberTrend  TopMemberTrendState  `json:"top_member_trend"`
+	DepartmentTrend DepartmentTrendState `json:"department_trend"`
+}
+
 type SnapshotCacheKey struct {
 	ProviderID      int
 	ProviderVersion int64
@@ -240,10 +250,12 @@ type TopMemberTrendSeries struct {
 }
 
 type DepartmentTrendState struct {
-	UnitLabel         string                  `json:"unit_label"`
-	Unavailable       bool                    `json:"unavailable"`
-	UnavailableReason *string                 `json:"unavailable_reason"`
-	Series            []DepartmentTrendSeries `json:"series"`
+	UnitLabel            string                  `json:"unit_label"`
+	Unavailable          bool                    `json:"unavailable"`
+	UnavailableReason    *string                 `json:"unavailable_reason"`
+	ComparisonTotalCount int                     `json:"comparison_total_count"`
+	ComparisonTruncated  bool                    `json:"comparison_truncated"`
+	Series               []DepartmentTrendSeries `json:"series"`
 }
 
 type DepartmentTrendSeries struct {

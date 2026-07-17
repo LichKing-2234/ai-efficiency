@@ -12,12 +12,19 @@ import {
   getTeamUsageAudit,
   getTeamUsageOverview,
   getTeamUsageSummary,
+  getTeamUsageTrend,
   getTeamUsageScope,
   getTeamUsageSubjectDashboard,
   listTeamUsageSubjects,
   updateTeamUsageRateMultiplier,
 } from '@/api/teamUsage'
-import type { TeamUsageAuditParams, TeamUsageAuditRecord, TeamUsageOverviewParams, TeamUsageSummaryResponse } from '@/types'
+import type {
+  TeamUsageAuditParams,
+  TeamUsageAuditRecord,
+  TeamUsageOverviewParams,
+  TeamUsageSummaryResponse,
+  TeamUsageTrendResponse,
+} from '@/types'
 
 const mockClient = client as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -54,6 +61,14 @@ describe('team usage API', () => {
       source_status: string
       scope_version: string
       request_id: string
+    }>()
+    expectTypeOf<TeamUsageTrendResponse>().toMatchTypeOf<{
+      scope_version: string
+      request_id: string
+      department_trend: {
+        comparison_total_count: number
+        comparison_truncated: boolean
+      }
     }>()
   })
 
@@ -137,6 +152,27 @@ describe('team usage API', () => {
         granularity: 'day',
         timezone: 'Asia/Shanghai',
       },
+    })
+  })
+
+  it('fetches the split team trend with the existing 45 second budget', async () => {
+    mockClient.get.mockResolvedValue({ data: { data: { scope_version: 'scope-v1' } } })
+
+    await getTeamUsageTrend({
+      start_date: '2026-06-01',
+      end_date: '2026-06-30',
+      granularity: 'day',
+      timezone: 'Asia/Shanghai',
+    })
+
+    expect(mockClient.get).toHaveBeenCalledWith('/user/team-usage/trend', {
+      params: {
+        start_date: '2026-06-01',
+        end_date: '2026-06-30',
+        granularity: 'day',
+        timezone: 'Asia/Shanghai',
+      },
+      timeout: 45000,
     })
   })
 
