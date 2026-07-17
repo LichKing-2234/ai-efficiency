@@ -585,20 +585,52 @@ export interface DirectorySyncWarning {
   step_id?: string
 }
 
-export interface DirectorySyncRun {
+export interface DirectoryRunSummary {
   id: number
   source_id: number
   mode: 'validate' | 'preview' | 'apply'
-  trigger?: 'manual' | 'schedule'
+  trigger: 'manual' | 'schedule'
   status: 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed'
-  phase?: string
+  phase: 'validating' | 'executing' | 'normalizing' | 'applying' | 'completed' | 'failed'
+  started_at: string | null
+  completed_at: string | null
+  http_request_count: number
+  department_count: number
+  member_count: number
+  invalid_member_count: number
+  warning_count: number
+}
+
+export interface DirectorySyncRun
+  extends Omit<DirectoryRunSummary,
+    | 'started_at'
+    | 'completed_at'
+    | 'http_request_count'
+    | 'department_count'
+    | 'member_count'
+    | 'invalid_member_count'
+    | 'warning_count'> {
+  started_at?: string | null
+  completed_at?: string | null
+  http_request_count?: number
   department_count?: number
   member_count?: number
+  invalid_member_count?: number
   warning_count?: number
   warnings?: DirectorySyncWarning[]
+  summary?: Record<string, unknown>
+  preview_diff?: Record<string, unknown>
   error_message?: string | null
   created_at?: string
   updated_at?: string
+}
+
+export interface DirectoryRunPage {
+  items: DirectoryRunSummary[]
+  total: number
+  page: number
+  page_size: number
+  latest_active_run: DirectoryRunSummary | null
 }
 
 export interface DirectoryDepartment {
@@ -870,8 +902,10 @@ export interface SubjectSubscriptionGroup {
   system_default_multiplier: number
   inherited_default_multiplier: number
   user_multiplier?: number | null
-  effective_multiplier: number
+  effective_multiplier: number | null
   multiplier_source: 'user' | 'group' | 'system' | 'unknown'
+  multiplier_metadata_status?: 'ok' | 'unavailable'
+  multiplier_metadata_message?: string | null
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null

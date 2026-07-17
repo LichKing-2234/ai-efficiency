@@ -13,8 +13,9 @@ vi.mock('@/api/teamUsage', () => ({
   getTeamUsageTrend: vi.fn(),
 }))
 
-vi.mock('vue-chartjs', () => ({
-  Line: {
+vi.mock('@/components/charts/LineChartCanvas.vue', () => ({
+  __esModule: true,
+  default: {
     props: ['data', 'options'],
     template: '<div data-test="line-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
   },
@@ -406,7 +407,10 @@ describe('TeamOverviewView', () => {
 
   it('keeps successful compatibility sections visible when summary fails', async () => {
     mockGetTeamUsageSummary.mockRejectedValue(new Error('synthetic summary failure'))
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    const compatibilityFixture = structuredClone(overviewFixture)
+    compatibilityFixture.top_member_trend.series = []
+    compatibilityFixture.department_trend!.series = []
+    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: compatibilityFixture } } as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -425,7 +429,7 @@ describe('TeamOverviewView', () => {
     mockGetTeamUsageSummary.mockResolvedValue({
       data: { data: { ...summaryFixture, cache_status: 'stale', source_status: 'error' } },
     } as any)
-    mockGetTeamUsageOverview.mockResolvedValue({ data: { data: overviewFixture } } as any)
+    mockGetTeamUsageOverview.mockImplementation(() => new Promise(() => {}) as any)
     const router = createTestRouter()
     await router.push('/usage/team')
     await router.isReady()
@@ -582,7 +586,7 @@ describe('TeamOverviewView', () => {
     expect(memberChartData.datasets[0].data).toEqual([5000, 7000])
   })
 
-  it('keeps a single leaf team trend as an independent team total chart', () => {
+  it('keeps a single leaf team trend as an independent team total chart', async () => {
     const leafFixture: TeamOverviewResponse = structuredClone(overviewFixture)
     leafFixture.department_trend = {
       unit_label: 'USD',
@@ -615,6 +619,7 @@ describe('TeamOverviewView', () => {
         window: leafFixture.window,
       },
     })
+    await flushPromises()
 
     expect(wrapper.find('[data-testid="team-total-trend-chart"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-comparison-trend-chart"]').exists()).toBe(false)
@@ -1152,7 +1157,7 @@ describe('TeamOverviewMemberTrendChart', () => {
     expect(wrapper.text()).not.toContain('provider_error')
   })
 
-  it('uses selected-window token totals for the Top 12 trend chart data and axis', () => {
+  it('uses selected-window token totals for the Top 12 trend chart data and axis', async () => {
     const wrapper = mount(TeamOverviewMemberTrendChart, {
       props: {
         state: overviewFixture.top_member_trend,
@@ -1160,6 +1165,7 @@ describe('TeamOverviewMemberTrendChart', () => {
         window: overviewFixture.window,
       },
     })
+    await flushPromises()
 
     const chart = wrapper.get('[data-testid="top-member-trend-chart"] [data-test="line-chart"]')
     const chartData = JSON.parse(chart.attributes('data-chart') ?? '{}') as {
