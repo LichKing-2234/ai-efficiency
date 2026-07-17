@@ -8,10 +8,19 @@ import (
 	"strings"
 	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/prcommitusagesnapshot"
+	"github.com/ai-efficiency/backend/ent/predicate"
+	"github.com/ai-efficiency/backend/ent/repoconfig"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
 	"github.com/ai-efficiency/backend/ent/user"
+)
+
+const (
+	DefaultEventPageSize = 20
+	MaxEventPageSize     = 100
 )
 
 type QueryService struct {
@@ -223,79 +232,116 @@ func (s *QueryService) SearchEventUsers(ctx context.Context, req EventUserSearch
 }
 
 func (s *QueryService) GetSummary(ctx context.Context, req SummaryRequest) (*SummaryResponse, error) {
-	events, err := s.queryEvents(ctx, queryFilter{
-		ActorUserID:   req.ActorUserID,
-		ActorRole:     req.ActorRole,
-		From:          req.From,
-		To:            req.To,
-		Tool:          req.Tool,
-		RepoID:        req.RepoID,
-		BindingStatus: req.BindingStatus,
-		UserID:        req.UserID,
-		Q:             req.Q,
-	})
+	base, err := s.filteredEventsQuery(filterFromSummary(req))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get event summary: %w", err)
 	}
 
-	out := &SummaryResponse{
-		ToolCounts: make([]ToolCountDTO, 0),
+	total, err := base.Clone().Count(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get event summary: count total events: %w", err)
 	}
-	toolCounts := map[string]int{}
-	for _, item := range events {
-		out.TotalEvents++
-		if item.CommitCheckpointID != nil {
-			out.BoundEvents++
-		} else {
-			out.UnboundEvents++
-		}
-		toolCounts[item.Tool]++
+	bound, err := base.Clone().
+		Where(toolusageevent.CommitCheckpointIDNotNil()).
+		Count(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get event summary: count bound events: %w", err)
 	}
-	keys := make([]string, 0, len(toolCounts))
-	for tool := range toolCounts {
-		keys = append(keys, tool)
+	unbound, err := base.Clone().
+		Where(toolusageevent.CommitCheckpointIDIsNil()).
+		Count(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get event summary: count unbound events: %w", err)
 	}
-	sort.Strings(keys)
-	for _, tool := range keys {
-		out.ToolCounts = append(out.ToolCounts, ToolCountDTO{Tool: tool, Count: toolCounts[tool]})
+	tools := make([]ToolCountDTO, 0)
+	if err := base.Clone().
+		Order(ent.Asc(toolusageevent.FieldTool)).
+		GroupBy(toolusageevent.FieldTool).
+		Aggregate(ent.As(ent.Count(), "count")).
+		Scan(ctx, &tools); err != nil {
+		return nil, fmt.Errorf("get event summary: count events by tool: %w", err)
 	}
-	return out, nil
+
+	return &SummaryResponse{
+		TotalEvents:   total,
+		BoundEvents:   bound,
+		UnboundEvents: unbound,
+		ToolCounts:    tools,
+	}, nil
 }
 
 func (s *QueryService) ListEvents(ctx context.Context, req ListEventsRequest) ([]EventListRow, int, error) {
-	events, err := s.queryEvents(ctx, queryFilter{
-		ActorUserID:   req.ActorUserID,
-		ActorRole:     req.ActorRole,
-		From:          req.From,
-		To:            req.To,
-		Tool:          req.Tool,
-		RepoID:        req.RepoID,
-		BindingStatus: req.BindingStatus,
-		UserID:        req.UserID,
-		Q:             req.Q,
-	})
+	base, err := s.filteredEventsQuery(filterFromList(req))
 	if err != nil {
 		return nil, 0, err
+	}
+	total, err := base.Clone().Count(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list events: count filtered events: %w", err)
+	}
+
+	limit, offset := normalizeEventPage(req.Limit, req.Offset)
+	page := base.
+		Order(
+			ent.Desc(toolusageevent.FieldObservedEndAt),
+			ent.Desc(toolusageevent.FieldID),
+		).
+		Offset(offset).
+		Limit(limit)
+	page.WithRepoConfig(func(query *ent.RepoConfigQuery) {
+		query.Select(
+			repoconfig.FieldName,
+			repoconfig.FieldFullName,
+		)
+	})
+	if isAdminRole(req.ActorRole) {
+		page.WithUser(func(query *ent.UserQuery) {
+			query.Select(user.FieldUsername)
+		})
+	}
+	page.WithCommitCheckpoint(func(query *ent.CommitCheckpointQuery) {
+		query.Select(commitcheckpoint.FieldCommitSha)
+	})
+	events, err := page.Select(
+		toolusageevent.FieldID,
+		toolusageevent.FieldTool,
+		toolusageevent.FieldRepoConfigID,
+		toolusageevent.FieldUserID,
+		toolusageevent.FieldToolSessionID,
+		toolusageevent.FieldToolEventID,
+		toolusageevent.FieldObservedEndAt,
+		toolusageevent.FieldRequestCount,
+		toolusageevent.FieldInputTokens,
+		toolusageevent.FieldOutputTokens,
+		toolusageevent.FieldCachedInputTokens,
+		toolusageevent.FieldReasoningTokens,
+		toolusageevent.FieldCreditUsage,
+		toolusageevent.FieldCommitCheckpointID,
+		toolusageevent.FieldDedupeKey,
+		toolusageevent.FieldRawSourcePath,
+		toolusageevent.FieldRawSourceLocator,
+	).All(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list events: load page: %w", err)
 	}
 
 	rows := make([]EventListRow, 0, len(events))
 	for _, item := range events {
 		rows = append(rows, toEventListRow(item))
 	}
+	return rows, total, nil
+}
 
-	total := len(rows)
-	start := req.Offset
-	if start < 0 {
-		start = 0
+func normalizeEventPage(limit, offset int) (normalizedLimit, normalizedOffset int) {
+	if limit <= 0 {
+		limit = DefaultEventPageSize
+	} else if limit > MaxEventPageSize {
+		limit = MaxEventPageSize
 	}
-	if start > total {
-		start = total
+	if offset < 0 {
+		offset = 0
 	}
-	end := total
-	if req.Limit > 0 && start+req.Limit < end {
-		end = start + req.Limit
-	}
-	return rows[start:end], total, nil
+	return limit, offset
 }
 
 func (s *QueryService) GetEventDetail(ctx context.Context, req GetEventDetailRequest) (*EventDetail, error) {
@@ -345,9 +391,6 @@ func (s *QueryService) GetEventDetail(ctx context.Context, req GetEventDetailReq
 		BindingStatus:     bindingStatus(item.CommitCheckpointID),
 		MatchedPRs:        []MatchedPR{},
 	}
-	if userEdge := item.Edges.User; userEdge != nil {
-		detail.Username = userEdge.Username
-	}
 	if cp := item.Edges.CommitCheckpoint; cp != nil {
 		detail.CommitCheckpointID = &cp.ID
 		detail.CommitSHA = cp.CommitSha
@@ -355,6 +398,9 @@ func (s *QueryService) GetEventDetail(ctx context.Context, req GetEventDetailReq
 		detail.CheckpointCapturedAt = &capturedAt
 	}
 	if isAdminRole(req.ActorRole) {
+		if userEdge := item.Edges.User; userEdge != nil {
+			detail.Username = userEdge.Username
+		}
 		detail.RawSourcePath = valueOrEmpty(item.RawSourcePath)
 		detail.RawSourceLocator = valueOrEmpty(item.RawSourceLocator)
 		if len(item.RawPayload) > 0 {
@@ -383,7 +429,35 @@ type queryFilter struct {
 	Q             string
 }
 
-func (s *QueryService) queryEvents(ctx context.Context, filter queryFilter) ([]*ent.ToolUsageEvent, error) {
+func filterFromSummary(req SummaryRequest) queryFilter {
+	return queryFilter{
+		ActorUserID:   req.ActorUserID,
+		ActorRole:     req.ActorRole,
+		From:          req.From,
+		To:            req.To,
+		Tool:          req.Tool,
+		RepoID:        req.RepoID,
+		BindingStatus: req.BindingStatus,
+		UserID:        req.UserID,
+		Q:             req.Q,
+	}
+}
+
+func filterFromList(req ListEventsRequest) queryFilter {
+	return queryFilter{
+		ActorUserID:   req.ActorUserID,
+		ActorRole:     req.ActorRole,
+		From:          req.From,
+		To:            req.To,
+		Tool:          req.Tool,
+		RepoID:        req.RepoID,
+		BindingStatus: req.BindingStatus,
+		UserID:        req.UserID,
+		Q:             req.Q,
+	}
+}
+
+func (s *QueryService) filteredEventsQuery(filter queryFilter) (*ent.ToolUsageEventQuery, error) {
 	if s == nil || s.entClient == nil {
 		return nil, fmt.Errorf("query events: ent client is required")
 	}
@@ -391,11 +465,7 @@ func (s *QueryService) queryEvents(ctx context.Context, filter queryFilter) ([]*
 		return nil, fmt.Errorf("query events: actor user is required")
 	}
 
-	query := s.entClient.ToolUsageEvent.Query().
-		WithRepoConfig().
-		WithCommitCheckpoint().
-		WithUser().
-		Order(ent.Desc(toolusageevent.FieldObservedEndAt))
+	query := s.entClient.ToolUsageEvent.Query()
 
 	if !isAdminRole(filter.ActorRole) {
 		query.Where(toolusageevent.UserIDEQ(filter.ActorUserID))
@@ -420,23 +490,51 @@ func (s *QueryService) queryEvents(ctx context.Context, filter queryFilter) ([]*
 	case "unbound":
 		query.Where(toolusageevent.CommitCheckpointIDIsNil())
 	}
-
-	items, err := query.All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("query events: %w", err)
+	if q := strings.TrimSpace(filter.Q); q != "" {
+		query.Where(eventSearchPredicate(q))
 	}
+	return query, nil
+}
 
-	if q := strings.ToLower(strings.TrimSpace(filter.Q)); q != "" {
-		filtered := make([]*ent.ToolUsageEvent, 0, len(items))
-		for _, item := range items {
-			row := toEventListRow(item)
-			if containsQuery(row, q) {
-				filtered = append(filtered, item)
-			}
+func eventSearchPredicate(q string) predicate.ToolUsageEvent {
+	q = strings.TrimSpace(q)
+	sourceBasenameMatches := predicate.ToolUsageEvent(func(selector *entsql.Selector) {
+		rawSourcePath := selector.C(toolusageevent.FieldRawSourcePath)
+		rawSourceLocator := selector.C(toolusageevent.FieldRawSourceLocator)
+		toolSessionID := selector.C(toolusageevent.FieldToolSessionID)
+		expression := fmt.Sprintf(`CASE
+			WHEN BTRIM(COALESCE(%s, '')) <> ''
+				THEN REGEXP_REPLACE(RTRIM(BTRIM(%s), '/'), '^.*/', '')
+			WHEN BTRIM(COALESCE(%s, '')) <> ''
+				THEN BTRIM(%s)
+			ELSE BTRIM(%s)
+		END ILIKE `, rawSourcePath, rawSourcePath, rawSourceLocator, rawSourceLocator, toolSessionID)
+		selector.Where(entsql.P(func(builder *entsql.Builder) {
+			builder.WriteString(expression).Arg(eventSearchPattern(q))
+		}))
+	})
+
+	return toolusageevent.Or(
+		toolusageevent.ToolSessionIDContainsFold(q),
+		toolusageevent.ToolEventIDContainsFold(q),
+		toolusageevent.DedupeKeyContainsFold(q),
+		toolusageevent.HasCommitCheckpointWith(commitcheckpoint.CommitShaContainsFold(q)),
+		sourceBasenameMatches,
+	)
+}
+
+func eventSearchPattern(q string) string {
+	var pattern strings.Builder
+	pattern.Grow(len(q) + 2)
+	pattern.WriteByte('%')
+	for _, r := range q {
+		if r == '%' || r == '_' || r == '\\' {
+			pattern.WriteByte('\\')
 		}
-		items = filtered
+		pattern.WriteRune(r)
 	}
-	return items, nil
+	pattern.WriteByte('%')
+	return pattern.String()
 }
 
 func (s *QueryService) findMatchedPRs(ctx context.Context, commitSHA string) ([]MatchedPR, error) {
@@ -498,22 +596,6 @@ func toEventListRow(item *ent.ToolUsageEvent) EventListRow {
 		row.CommitSHA = cp.CommitSha
 	}
 	return row
-}
-
-func containsQuery(row EventListRow, q string) bool {
-	fields := []string{
-		strings.ToLower(row.ToolSessionID),
-		strings.ToLower(row.ToolEventID),
-		strings.ToLower(row.DedupeKey),
-		strings.ToLower(row.CommitSHA),
-		strings.ToLower(row.SourceBasename),
-	}
-	for _, field := range fields {
-		if strings.Contains(field, q) {
-			return true
-		}
-	}
-	return false
 }
 
 func repoDisplayName(item *ent.ToolUsageEvent) string {
