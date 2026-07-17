@@ -6,8 +6,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ai-efficiency/backend/internal/config"
+	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -18,6 +20,7 @@ type SettingsHandler struct {
 	relayCfg     config.RelayConfig
 	relayRuntime relayRuntimeUpdater
 	logger       *zap.Logger
+	httpClient   *http.Client
 }
 
 type relayRuntimeUpdater interface {
@@ -27,10 +30,23 @@ type relayRuntimeUpdater interface {
 
 // NewSettingsHandler creates a new SettingsHandler.
 func NewSettingsHandler(configPath string, relayCfg config.RelayConfig, logger *zap.Logger, relayRuntimes ...relayRuntimeUpdater) *SettingsHandler {
+	return newSettingsHandler(configPath, relayCfg, logger, nil, relayRuntimes...)
+}
+
+// NewSettingsHandlerWithHTTPClient creates a settings handler with an injected reusable HTTP client.
+func NewSettingsHandlerWithHTTPClient(configPath string, relayCfg config.RelayConfig, logger *zap.Logger, client *http.Client, relayRuntimes ...relayRuntimeUpdater) *SettingsHandler {
+	return newSettingsHandler(configPath, relayCfg, logger, client, relayRuntimes...)
+}
+
+func newSettingsHandler(configPath string, relayCfg config.RelayConfig, logger *zap.Logger, client *http.Client, relayRuntimes ...relayRuntimeUpdater) *SettingsHandler {
+	if client == nil {
+		client = httpclient.NewDefault(30 * time.Second)
+	}
 	h := &SettingsHandler{
 		configPath: configPath,
 		relayCfg:   relayCfg,
 		logger:     logger,
+		httpClient: client,
 	}
 	if len(relayRuntimes) > 0 {
 		h.relayRuntime = relayRuntimes[0]
@@ -152,7 +168,6 @@ func (h *SettingsHandler) TestLLMConnection(c *gin.Context) {
 		}
 	}
 
-	client := &http.Client{}
 	type chatMsg struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -185,7 +200,7 @@ func (h *SettingsHandler) TestLLMConnection(c *gin.Context) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+inferenceAPIKey)
 
-	resp, err := client.Do(req)
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{"success": false, "message": err.Error()}})
 		return

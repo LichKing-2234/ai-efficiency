@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/scm"
 	"go.uber.org/zap"
 )
@@ -43,15 +44,27 @@ type Provider struct {
 // New creates a new Bitbucket Server SCM provider.
 // webhookCallbackURL is the base URL for webhook callbacks (e.g., "https://ae.example.com/api/v1/webhooks/bitbucket").
 func New(baseURL, token string, logger *zap.Logger, webhookCallbackURL ...string) (*Provider, error) {
-	cbURL := ""
+	return newProvider(baseURL, token, logger, nil, webhookCallbackURL...)
+}
+
+// NewWithHTTPClient creates a Bitbucket provider with an injected reusable HTTP client.
+func NewWithHTTPClient(baseURL, token string, logger *zap.Logger, client *http.Client, webhookCallbackURL ...string) (*Provider, error) {
+	return newProvider(baseURL, token, logger, client, webhookCallbackURL...)
+}
+
+func newProvider(baseURL, token string, logger *zap.Logger, client *http.Client, webhookCallbackURL ...string) (*Provider, error) {
+	if client == nil {
+		client = httpclient.NewDefault(30 * time.Second)
+	}
+	callbackURL := ""
 	if len(webhookCallbackURL) > 0 {
-		cbURL = webhookCallbackURL[0]
+		callbackURL = webhookCallbackURL[0]
 	}
 	return &Provider{
 		baseURL:            strings.TrimRight(baseURL, "/"),
 		token:              token,
-		webhookCallbackURL: cbURL,
-		client:             &http.Client{},
+		webhookCallbackURL: callbackURL,
+		client:             client,
 		logger:             logger,
 	}, nil
 }

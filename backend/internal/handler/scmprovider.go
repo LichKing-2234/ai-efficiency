@@ -13,6 +13,7 @@ import (
 	"github.com/ai-efficiency/backend/ent/scmprovider"
 	"github.com/ai-efficiency/backend/internal/credential"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	reposvc "github.com/ai-efficiency/backend/internal/repo"
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,15 +21,21 @@ var errEncryptSCMCredentials = errors.New("encrypt scm credentials")
 
 // SCMProviderHandler handles SCM provider CRUD operations.
 type SCMProviderHandler struct {
-	entClient     *ent.Client
-	encryptionKey string
+	entClient       *ent.Client
+	encryptionKey   string
+	repoInventoryTx *reposvc.Service
 }
 
 // NewSCMProviderHandler creates a new SCM provider handler.
-func NewSCMProviderHandler(entClient *ent.Client, encryptionKey string) *SCMProviderHandler {
+func NewSCMProviderHandler(entClient *ent.Client, encryptionKey string, repoServices ...*reposvc.Service) *SCMProviderHandler {
+	repoService := reposvc.NewService(entClient, "", nil)
+	if len(repoServices) > 0 && repoServices[0] != nil {
+		repoService = repoServices[0]
+	}
 	return &SCMProviderHandler{
-		entClient:     entClient,
-		encryptionKey: encryptionKey,
+		entClient:       entClient,
+		encryptionKey:   encryptionKey,
+		repoInventoryTx: repoService,
 	}
 }
 
@@ -145,30 +152,14 @@ func (h *SCMProviderHandler) Update(c *gin.Context) {
 		return
 	}
 
-	update := h.entClient.ScmProvider.UpdateOne(current)
-	if req.Name != "" {
-		update.SetName(req.Name)
-	}
-	if req.BaseURL != "" {
-		update.SetBaseURL(req.BaseURL)
-	}
-	if req.SSHHost != nil {
-		if sshHost := strings.TrimSpace(*req.SSHHost); sshHost != "" {
-			update.SetSSHHost(sshHost)
-		} else {
-			update.ClearSSHHost()
-		}
-	}
 	cloneCredentialID := current.CloneCredentialID
 	if req.CloneCredentialID != nil {
 		cloneCredentialID = req.CloneCredentialID
-		update.SetNillableCloneCredentialID(req.CloneCredentialID)
 	}
 
 	cloneProtocol := current.CloneProtocol.String()
 	if req.CloneProtocol != "" {
 		cloneProtocol = req.CloneProtocol
-		update.SetCloneProtocol(scmprovider.CloneProtocol(req.CloneProtocol))
 	}
 
 	apiCredentialID, apiPayload, err := h.resolveAPICredentialForUpdate(c, current, req.APICredentialID, req.Credentials)
@@ -180,7 +171,6 @@ func (h *SCMProviderHandler) Update(c *gin.Context) {
 		pkg.Error(c, code, err.Error())
 		return
 	}
-	update.SetAPICredentialID(apiCredentialID)
 	var clonePayload credential.Payload
 	if cloneCredentialID != nil {
 		_, clonePayload, err = h.loadCredential(c, *cloneCredentialID)
@@ -193,11 +183,36 @@ func (h *SCMProviderHandler) Update(c *gin.Context) {
 		pkg.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.Status != "" {
-		update.SetStatus(scmprovider.Status(req.Status))
-	}
-
-	provider, err := update.Save(c.Request.Context())
+	var provider *ent.ScmProvider
+	err = h.repoInventoryTx.TransactInventoryMutation(c.Request.Context(), "update scm provider", func(tx *ent.Tx) error {
+		update := tx.ScmProvider.UpdateOneID(current.ID)
+		if req.Name != "" {
+			update.SetName(req.Name)
+		}
+		if req.BaseURL != "" {
+			update.SetBaseURL(req.BaseURL)
+		}
+		if req.SSHHost != nil {
+			if sshHost := strings.TrimSpace(*req.SSHHost); sshHost != "" {
+				update.SetSSHHost(sshHost)
+			} else {
+				update.ClearSSHHost()
+			}
+		}
+		if req.CloneCredentialID != nil {
+			update.SetNillableCloneCredentialID(req.CloneCredentialID)
+		}
+		if req.CloneProtocol != "" {
+			update.SetCloneProtocol(scmprovider.CloneProtocol(req.CloneProtocol))
+		}
+		update.SetAPICredentialID(apiCredentialID)
+		if req.Status != "" {
+			update.SetStatus(scmprovider.Status(req.Status))
+		}
+		var saveErr error
+		provider, saveErr = update.Save(c.Request.Context())
+		return saveErr
+	})
 	if err != nil {
 		if ent.IsNotFound(err) {
 			pkg.Error(c, http.StatusNotFound, "provider not found")
@@ -218,7 +233,10 @@ func (h *SCMProviderHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.entClient.ScmProvider.DeleteOneID(id).Exec(c.Request.Context()); err != nil {
+	err = h.repoInventoryTx.TransactInventoryMutation(c.Request.Context(), "delete scm provider", func(tx *ent.Tx) error {
+		return tx.ScmProvider.DeleteOneID(id).Exec(c.Request.Context())
+	})
+	if err != nil {
 		if ent.IsNotFound(err) {
 			pkg.Error(c, http.StatusNotFound, "provider not found")
 			return

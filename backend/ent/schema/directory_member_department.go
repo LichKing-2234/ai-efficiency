@@ -27,6 +27,7 @@ func (DirectoryMemberDepartment) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("source_id", "member_email_normalized", "department_external_id").Unique(),
 		index.Fields("source_id", "department_external_id"),
+		index.Fields("source_id", "directory_member_id", "department_external_id"),
 		index.Fields("directory_member_id"),
 		index.Fields("last_seen_run_id"),
 	}

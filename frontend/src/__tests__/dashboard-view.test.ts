@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -72,9 +72,20 @@ vi.mock('@/api/auth', () => ({
   devLogin: vi.fn(),
 }))
 
-vi.mock('vue-chartjs', () => ({
-  Line: { template: '<div data-test="line-chart" />' },
-  Doughnut: { template: '<div data-test="doughnut-chart" />' },
+vi.mock('@/components/charts/LineChartCanvas.vue', () => ({
+  __esModule: true,
+  default: {
+    props: ['data', 'options'],
+    template: '<div data-test="line-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
+  },
+}))
+
+vi.mock('@/components/charts/DoughnutChartCanvas.vue', () => ({
+  __esModule: true,
+  default: {
+    props: ['data', 'options'],
+    template: '<div data-test="doughnut-chart" :data-chart="JSON.stringify(data)" :data-options="JSON.stringify(options)" />',
+  },
 }))
 
 const usageSnapshot = {

@@ -2,6 +2,10 @@ package checkpoint
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -9,7 +13,10 @@ import (
 	"github.com/ai-efficiency/backend/ent/commitcheckpoint"
 	"github.com/ai-efficiency/backend/ent/commitrewrite"
 	"github.com/ai-efficiency/backend/ent/toolusageevent"
+	"github.com/ai-efficiency/backend/internal/pkg"
+	reposvc "github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/testdb"
+	"go.uber.org/zap"
 )
 
 func createCheckpointTestRepo(t *testing.T) (*ent.Client, context.Context, int, string, string) {
@@ -179,8 +186,16 @@ func TestRecordCheckpointForUser_AutoCreatesRepoOnRemoteMiss(t *testing.T) {
 		SetAuthSource("ldap").
 		SaveX(ctx).ID
 
-	svc := NewService(client)
-	err := svc.RecordCheckpointForUser(ctx, userID, CommitCheckpointRequest{
+	revisions := reposvc.NewInventoryRevisionStore(client)
+	if err := revisions.Ensure(ctx); err != nil {
+		t.Fatalf("ensure repository inventory revision: %v", err)
+	}
+	before, err := revisions.Current(ctx)
+	if err != nil {
+		t.Fatalf("current repository inventory revision: %v", err)
+	}
+	svc := NewService(client, ServiceOptions{InventoryRevisionStore: revisions})
+	err = svc.RecordCheckpointForUser(ctx, userID, CommitCheckpointRequest{
 		EventID:        "cp-auto-create",
 		RepoFullName:   "https://github.com/acme/platform.git",
 		WorkspaceID:    "ws-1",
@@ -196,6 +211,184 @@ func TestRecordCheckpointForUser_AutoCreatesRepoOnRemoteMiss(t *testing.T) {
 	if rc.RepoKey != "github.com/acme/platform" {
 		t.Fatalf("RepoKey = %q, want %q", rc.RepoKey, "github.com/acme/platform")
 	}
+	after, err := revisions.Current(ctx)
+	if err != nil {
+		t.Fatalf("current repository inventory revision after checkpoint: %v", err)
+	}
+	if after == before {
+		t.Fatalf("repository inventory revision = %q, want change after auto-create", after)
+	}
+}
+
+func TestRecordCheckpointAutoCreatedRepoAndInventoryRevisionRollBackTogether(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	revisions := reposvc.NewInventoryRevisionStore(client)
+	if err := revisions.Ensure(ctx); err != nil {
+		t.Fatalf("ensure repository inventory revision: %v", err)
+	}
+	before, err := revisions.Current(ctx)
+	if err != nil {
+		t.Fatalf("current repository inventory revision: %v", err)
+	}
+
+	err = NewService(client, ServiceOptions{InventoryRevisionStore: revisions}).RecordCheckpointForUser(ctx, 999999, CommitCheckpointRequest{
+		EventID:        "cp-auto-create-rollback",
+		RepoFullName:   "https://github.com/acme/rollback.git",
+		WorkspaceID:    "ws-rollback",
+		CommitSHA:      "abc123",
+		BranchSnapshot: "main",
+		BindingSource:  "marker",
+	})
+	if err == nil {
+		t.Fatal("RecordCheckpointForUser() error = nil, want invalid user foreign-key failure")
+	}
+	if count := client.RepoConfig.Query().CountX(ctx); count != 0 {
+		t.Fatalf("repository count after checkpoint rollback = %d, want 0", count)
+	}
+	after, currentErr := revisions.Current(ctx)
+	if currentErr != nil {
+		t.Fatalf("current repository inventory revision after rollback: %v", currentErr)
+	}
+	if after != before {
+		t.Fatalf("repository inventory revision after rollback = %q, want %q", after, before)
+	}
+}
+
+func TestRecordCheckpointDefersAutoBindUntilAfterCommit(t *testing.T) {
+	const encryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
+	var webhookCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/acme/rollback":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"name":           "rollback",
+				"full_name":      "acme/rollback",
+				"clone_url":      serverURL(r) + "/acme/rollback.git",
+				"default_branch": "main",
+			})
+		case "/api/v3/repos/acme/rollback/hooks":
+			webhookCalls.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 42})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	client := testdb.Open(t)
+	ctx := context.Background()
+	revisions := reposvc.NewInventoryRevisionStore(client)
+	if err := revisions.Ensure(ctx); err != nil {
+		t.Fatalf("ensure repository inventory revision: %v", err)
+	}
+	encrypted, err := pkg.Encrypt(`{"token":"test-token"}`, encryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt provider credential: %v", err)
+	}
+	client.ScmProvider.Create().
+		SetName("GitHub Test").
+		SetType("github").
+		SetBaseURL(server.URL).
+		SetCredentials(encrypted).
+		SaveX(ctx)
+	repoService := reposvc.NewService(client, encryptionKey, zap.NewNop(), reposvc.ServiceOptions{
+		InventoryRevisionStore: revisions,
+	})
+
+	err = NewService(client, ServiceOptions{
+		InventoryRevisionStore: revisions,
+		RepoService:            repoService,
+	}).RecordCheckpointForUser(ctx, 999999, CommitCheckpointRequest{
+		EventID:        "cp-auto-bind-rollback",
+		RepoFullName:   server.URL + "/acme/rollback.git",
+		WorkspaceID:    "ws-auto-bind-rollback",
+		CommitSHA:      "abc123",
+		BranchSnapshot: "main",
+		BindingSource:  "marker",
+	})
+	if err == nil {
+		t.Fatal("RecordCheckpointForUser() error = nil, want invalid user foreign-key failure")
+	}
+	if got := webhookCalls.Load(); got != 0 {
+		t.Fatalf("webhook calls before rolled-back checkpoint commit = %d, want 0", got)
+	}
+	if count := client.RepoConfig.Query().CountX(ctx); count != 0 {
+		t.Fatalf("repository count after checkpoint rollback = %d, want 0", count)
+	}
+}
+
+func TestRecordCheckpointRunsDeferredAutoBindAfterCommit(t *testing.T) {
+	const encryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
+	var webhookCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/acme/platform":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"name":           "platform",
+				"full_name":      "acme/platform",
+				"clone_url":      serverURL(r) + "/acme/platform.git",
+				"default_branch": "main",
+			})
+		case "/api/v3/repos/acme/platform/hooks":
+			webhookCalls.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 43})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	client := testdb.Open(t)
+	ctx := context.Background()
+	userID := client.User.Create().
+		SetUsername("checkpoint-auto-bind-owner").
+		SetEmail("checkpoint-auto-bind-owner@example.com").
+		SetAuthSource("ldap").
+		SaveX(ctx).ID
+	revisions := reposvc.NewInventoryRevisionStore(client)
+	if err := revisions.Ensure(ctx); err != nil {
+		t.Fatalf("ensure repository inventory revision: %v", err)
+	}
+	encrypted, err := pkg.Encrypt(`{"token":"test-token"}`, encryptionKey)
+	if err != nil {
+		t.Fatalf("encrypt provider credential: %v", err)
+	}
+	provider := client.ScmProvider.Create().
+		SetName("GitHub Test").
+		SetType("github").
+		SetBaseURL(server.URL).
+		SetCredentials(encrypted).
+		SaveX(ctx)
+	repoService := reposvc.NewService(client, encryptionKey, zap.NewNop(), reposvc.ServiceOptions{
+		InventoryRevisionStore: revisions,
+	})
+
+	err = NewService(client, ServiceOptions{
+		InventoryRevisionStore: revisions,
+		RepoService:            repoService,
+	}).RecordCheckpointForUser(ctx, userID, CommitCheckpointRequest{
+		EventID:        "cp-auto-bind-commit",
+		RepoFullName:   server.URL + "/acme/platform.git",
+		WorkspaceID:    "ws-auto-bind-commit",
+		CommitSHA:      "abc123",
+		BranchSnapshot: "main",
+		BindingSource:  "marker",
+	})
+	if err != nil {
+		t.Fatalf("RecordCheckpointForUser() error = %v", err)
+	}
+	if got := webhookCalls.Load(); got != 1 {
+		t.Fatalf("webhook calls after checkpoint commit = %d, want 1", got)
+	}
+	repository := client.RepoConfig.Query().WithScmProvider().OnlyX(ctx)
+	if repository.Edges.ScmProvider == nil || repository.Edges.ScmProvider.ID != provider.ID {
+		t.Fatalf("repository provider after deferred auto-bind = %#v, want provider %d", repository.Edges.ScmProvider, provider.ID)
+	}
+}
+
+func serverURL(r *http.Request) string {
+	return "http://" + r.Host
 }
 
 func TestRecordCheckpointWithRepoConfigIDDoesNotAutoCreateOnRemoteMiss(t *testing.T) {

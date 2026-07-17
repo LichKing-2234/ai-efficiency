@@ -3,9 +3,12 @@ package handler
 import (
 	"context"
 	"database/sql"
+	"net/http"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
 	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/quotareset"
@@ -18,19 +21,28 @@ import (
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/ai-efficiency/backend/internal/workitems"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 var prAttributionService prAttributionSettler
 var prUsageService prUsageRefresher
+var ginDefaultNotFoundBody = []byte("404 page not found")
 
-type RouterRuntimeOptions struct {
+// RouterOptions supplies production dependencies while SetupRouter preserves its legacy call shape.
+type RouterOptions struct {
 	DirectoryService         DirectoryAdminService
 	PersonalUsageCache       *personalusage.Cache
 	WorkItemsCache           *workitems.CountsCache
 	WorkItemsRevisionStore   *workitems.RevisionStore
 	RepresentativeScopeCache *representativescope.Cache
 	TeamUsageSnapshotCache   *teamusage.SnapshotCache
+	WebhookHTTPClient        *http.Client
+	RequestLogger            *zap.Logger
+	Release                  string
+	RequestTimeout           time.Duration
 }
+
+type RouterRuntimeOptions = RouterOptions
 
 func SetPRAttributionService(service prAttributionSettler) {
 	prAttributionService = service
@@ -59,23 +71,112 @@ func SetupRouter(
 	healthHandler *HealthHandler,
 	runtimeOptions ...RouterRuntimeOptions,
 ) *gin.Engine {
-	var runtime RouterRuntimeOptions
+	var options RouterOptions
 	if len(runtimeOptions) > 0 {
-		runtime = runtimeOptions[0]
+		options = runtimeOptions[0]
 	}
+	return setupRouter(
+		entClient,
+		sqlDB,
+		authService,
+		repoService,
+		webhookHandler,
+		syncService,
+		settingsHandler,
+		encryptionKey,
+		publicURL,
+		corsMiddleware,
+		oauthHandler,
+		providerHandler,
+		adminSettingsHandler,
+		checkpointHandler,
+		healthHandler,
+		options,
+	)
+}
+
+// SetupRouterWithOptions configures the router with explicit production dependencies.
+func SetupRouterWithOptions(
+	entClient *ent.Client,
+	sqlDB *sql.DB,
+	authService *auth.Service,
+	repoService *repo.Service,
+	webhookHandler *webhook.Handler,
+	syncService prSyncer,
+	settingsHandler *SettingsHandler,
+	encryptionKey string,
+	publicURL string,
+	corsMiddleware gin.HandlerFunc,
+	oauthHandler *oauth.Handler,
+	providerHandler *ProviderHandler,
+	adminSettingsHandler *AdminSettingsHandler,
+	checkpointHandler *CheckpointHandler,
+	healthHandler *HealthHandler,
+	options RouterOptions,
+) *gin.Engine {
+	return setupRouter(
+		entClient,
+		sqlDB,
+		authService,
+		repoService,
+		webhookHandler,
+		syncService,
+		settingsHandler,
+		encryptionKey,
+		publicURL,
+		corsMiddleware,
+		oauthHandler,
+		providerHandler,
+		adminSettingsHandler,
+		checkpointHandler,
+		healthHandler,
+		options,
+	)
+}
+
+func setupRouter(
+	entClient *ent.Client,
+	sqlDB *sql.DB,
+	authService *auth.Service,
+	repoService *repo.Service,
+	webhookHandler *webhook.Handler,
+	syncService prSyncer,
+	settingsHandler *SettingsHandler,
+	encryptionKey string,
+	publicURL string,
+	corsMiddleware gin.HandlerFunc,
+	oauthHandler *oauth.Handler,
+	providerHandler *ProviderHandler,
+	adminSettingsHandler *AdminSettingsHandler,
+	checkpointHandler *CheckpointHandler,
+	healthHandler *HealthHandler,
+	options RouterOptions,
+) *gin.Engine {
 	r := gin.New()
+	// Keep canonical redirects inside the correlation and telemetry chain.
+	r.RedirectTrailingSlash = false
 	r.RemoveExtraSlash = true
-	r.Use(gin.Recovery())
+	r.Use(middleware.RequestTelemetry(options.RequestLogger, options.Release))
+	r.Use(middleware.Recovery(options.RequestLogger, options.Release))
+	if options.RequestTimeout > 0 {
+		r.Use(middleware.RequestTimeout(options.RequestTimeout))
+	}
 	r.Use(corsMiddleware)
 	r.Use(web.RedirectCanonicalBrowserPath())
 	if web.HasEmbeddedFrontend() {
 		r.Use(web.ServeEmbeddedFrontend())
 	}
+	// Finalize Gin's default body before request telemetry unwinds.
+	r.NoRoute(func(c *gin.Context) {
+		c.Data(http.StatusNotFound, gin.MIMEPlain, ginDefaultNotFoundBody)
+	})
 
 	// OAuth endpoints — at root /oauth/* (not under /api/v1)
 	if oauthHandler != nil {
 		r.GET("/oauth/authorize", oauthHandler.Authorize)
+		r.HEAD("/oauth/authorize", oauthHandler.Authorize)
 		r.GET("/oauth/device", oauthHandler.DevicePage)
+		r.HEAD("/oauth/device", oauthHandler.DevicePage)
 		r.POST("/oauth/device/code", oauthHandler.DeviceCode)
 		r.POST("/oauth/token", oauthHandler.Token)
 
@@ -88,7 +189,7 @@ func SetupRouter(
 	// Handlers
 	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
-	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
+	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey, repoService)
 	repoHandler := NewRepoHandler(repoService)
 	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService, prUsageService)
 	efficiencyHandler := NewEfficiencyHandler(entClient)
@@ -100,14 +201,14 @@ func SetupRouter(
 	var offboardingCounter interface {
 		CountOffboardingCandidates(context.Context, int) (int, error)
 	}
-	if runtime.DirectoryService != nil {
-		offboardingCounter = runtime.DirectoryService
+	if options.DirectoryService != nil {
+		offboardingCounter = options.DirectoryService
 	}
 	workItemsService := workitems.NewService(entClient, offboardingCounter)
 	if providerHandler != nil {
 		workItemsService = workitems.NewService(entClient, offboardingCounter, userSetupService)
 	}
-	workItemsService.WithCountsCache(runtime.WorkItemsCache)
+	workItemsService.WithCountsCache(options.WorkItemsCache)
 	workItemsHandler := NewWorkItemsHandler(workItemsService)
 	var quotaResetHandler *QuotaResetHandler
 	if providerHandler != nil {
@@ -117,8 +218,8 @@ func SetupRouter(
 			entClient,
 			providerHandler,
 			quotareset.NewApproverResolver(entClient),
-			quotareset.NewWebhookNotifier(entClient, encryptionKey, publicURL),
-			runtime.WorkItemsRevisionStore,
+			quotareset.NewWebhookNotifier(entClient, encryptionKey, publicURL, options.WebhookHTTPClient),
+			options.WorkItemsRevisionStore,
 		)
 		quotaResetHandler = NewQuotaResetHandler(quotaResetService)
 	}
@@ -234,7 +335,7 @@ func SetupRouter(
 
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 
-	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler, runtime.RepresentativeScopeCache, runtime.TeamUsageSnapshotCache, encryptionKey))
+	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, encryptionKey))
 
 	userGroup := protected.Group("/user")
 	{
@@ -264,7 +365,7 @@ func SetupRouter(
 			userGroup.POST("/providers/:id/test", providerHandler.Test)
 
 			// User usage dashboard
-			userUsageService := personalusage.NewService(entClient, providerHandler, encryptionKey, runtime.PersonalUsageCache)
+			userUsageService := personalusage.NewService(entClient, providerHandler, encryptionKey, options.PersonalUsageCache)
 			userUsageHandler := NewUserUsageHandler(userUsageService)
 			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
 			userGroup.GET("/usage/group-quotas", userUsageHandler.GroupQuotas)
@@ -299,6 +400,8 @@ func SetupRouter(
 	adminUsersGroup.Use(auth.RequireAdmin())
 	{
 		adminUsersGroup.GET("", adminUsersHandler.List)
+		adminUsersGroup.GET("/department-options", adminUsersHandler.ListDepartmentOptions)
+		adminUsersGroup.GET("/department-children", adminUsersHandler.ListDepartmentChildren)
 		adminUsersGroup.GET("/departments", adminUsersHandler.ListDepartments)
 		adminUsersGroup.GET("/subscription-options", adminUsersHandler.ListSubscriptionOptions)
 		adminUsersGroup.POST("/subscription-jobs", adminUsersHandler.StartSubscriptionJob)
@@ -354,10 +457,10 @@ func SetupRouter(
 		}
 	}
 
-	if runtime.DirectoryService != nil {
+	if options.DirectoryService != nil {
 		directoryGroup := protected.Group("/admin/directory")
 		directoryGroup.Use(auth.RequireAdmin())
-		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(runtime.DirectoryService))
+		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(options.DirectoryService))
 	}
 
 	// Settings — admin only

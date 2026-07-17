@@ -468,13 +468,11 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 	}
 
 	maxTokens := 64
-	testProvider := relay.NewSub2apiProvider(
-		http.DefaultClient,
-		provider.BaseURL,
-		selected.Key,
-		model,
-		h.logger,
-	)
+	testProvider, err := h.runtime.NewUserScopedProvider(provider, selected.Key, model)
+	if err != nil {
+		pkg.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
 	testReq := relay.ChatCompletionRequest{
 		Model: model,
 		Messages: []relay.ChatMessage{
@@ -591,13 +589,11 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 		return
 	}
 
-	userScopedProvider := relay.NewSub2apiProvider(
-		http.DefaultClient,
-		provider.BaseURL,
-		selected.Key,
-		"",
-		h.logger,
-	)
+	userScopedProvider, err := h.runtime.NewUserScopedProvider(provider, selected.Key, "")
+	if err != nil {
+		pkg.Success(c, gin.H{"models": []relay.ModelOption{}, "message": err.Error()})
+		return
+	}
 	lister, ok := userScopedProvider.(relay.PlatformModelLister)
 	if !ok {
 		pkg.Success(c, gin.H{
