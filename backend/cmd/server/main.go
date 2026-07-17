@@ -131,7 +131,7 @@ func initializeRepoInventory(ctx context.Context, entClient *ent.Client, redisCl
 		return nil, nil, fmt.Errorf("initialize repository inventory revision: %w", err)
 	}
 	cache, err := repo.NewInventoryCache(
-		repo.NewRedisInventoryStore(redisClient),
+		readcache.NewRedisStore(redisClient),
 		revisions,
 		repo.InventoryCacheOptions{Namespace: namespace},
 	)
