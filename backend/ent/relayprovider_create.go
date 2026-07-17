@@ -100,6 +100,20 @@ func (rpc *RelayProviderCreate) SetNillableEnabled(b *bool) *RelayProviderCreate
 	return rpc
 }
 
+// SetConfigurationVersion sets the "configuration_version" field.
+func (rpc *RelayProviderCreate) SetConfigurationVersion(i int64) *RelayProviderCreate {
+	rpc.mutation.SetConfigurationVersion(i)
+	return rpc
+}
+
+// SetNillableConfigurationVersion sets the "configuration_version" field if the given value is not nil.
+func (rpc *RelayProviderCreate) SetNillableConfigurationVersion(i *int64) *RelayProviderCreate {
+	if i != nil {
+		rpc.SetConfigurationVersion(*i)
+	}
+	return rpc
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (rpc *RelayProviderCreate) SetCreatedAt(t time.Time) *RelayProviderCreate {
 	rpc.mutation.SetCreatedAt(t)
@@ -179,6 +193,10 @@ func (rpc *RelayProviderCreate) defaults() {
 		v := relayprovider.DefaultEnabled
 		rpc.mutation.SetEnabled(v)
 	}
+	if _, ok := rpc.mutation.ConfigurationVersion(); !ok {
+		v := relayprovider.DefaultConfigurationVersion
+		rpc.mutation.SetConfigurationVersion(v)
+	}
 	if _, ok := rpc.mutation.CreatedAt(); !ok {
 		v := relayprovider.DefaultCreatedAt()
 		rpc.mutation.SetCreatedAt(v)
@@ -229,6 +247,14 @@ func (rpc *RelayProviderCreate) check() error {
 	}
 	if _, ok := rpc.mutation.Enabled(); !ok {
 		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "RelayProvider.enabled"`)}
+	}
+	if _, ok := rpc.mutation.ConfigurationVersion(); !ok {
+		return &ValidationError{Name: "configuration_version", err: errors.New(`ent: missing required field "RelayProvider.configuration_version"`)}
+	}
+	if v, ok := rpc.mutation.ConfigurationVersion(); ok {
+		if err := relayprovider.ConfigurationVersionValidator(v); err != nil {
+			return &ValidationError{Name: "configuration_version", err: fmt.Errorf(`ent: validator failed for field "RelayProvider.configuration_version": %w`, err)}
+		}
 	}
 	if _, ok := rpc.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "RelayProvider.created_at"`)}
@@ -293,6 +319,10 @@ func (rpc *RelayProviderCreate) createSpec() (*RelayProvider, *sqlgraph.CreateSp
 	if value, ok := rpc.mutation.Enabled(); ok {
 		_spec.SetField(relayprovider.FieldEnabled, field.TypeBool, value)
 		_node.Enabled = value
+	}
+	if value, ok := rpc.mutation.ConfigurationVersion(); ok {
+		_spec.SetField(relayprovider.FieldConfigurationVersion, field.TypeInt64, value)
+		_node.ConfigurationVersion = value
 	}
 	if value, ok := rpc.mutation.CreatedAt(); ok {
 		_spec.SetField(relayprovider.FieldCreatedAt, field.TypeTime, value)

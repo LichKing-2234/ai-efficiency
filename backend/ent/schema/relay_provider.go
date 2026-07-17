@@ -29,6 +29,9 @@ func (RelayProvider) Fields() []ent.Field {
 			Default(false),
 		field.Bool("enabled").
 			Default(true),
+		field.Int64("configuration_version").
+			Default(1).
+			Positive(),
 		field.Time("created_at").
 			Immutable().
 			Default(timeNow),

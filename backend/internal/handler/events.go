@@ -60,11 +60,6 @@ func (h *EventsHandler) List(c *gin.Context) {
 		pkg.Error(c, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	if !isAdminRole(uc.Role) {
-		for i := range rows {
-			rows[i].Username = ""
-		}
-	}
 
 	pkg.Success(c, gin.H{
 		"items":     rows,
@@ -167,9 +162,11 @@ func parseEventsListRequest(c *gin.Context, uc *auth.UserContext) (toolusage.Lis
 	if err != nil {
 		return toolusage.ListEventsRequest{}, err
 	}
-	limit := parseOptionalInt(c.DefaultQuery("limit", "20"))
+	limit := parseOptionalInt(c.DefaultQuery("limit", strconv.Itoa(toolusage.DefaultEventPageSize)))
 	if limit <= 0 {
-		limit = 20
+		limit = toolusage.DefaultEventPageSize
+	} else if limit > toolusage.MaxEventPageSize {
+		limit = toolusage.MaxEventPageSize
 	}
 	offset := parseOptionalInt(c.DefaultQuery("offset", "0"))
 	if offset < 0 {
