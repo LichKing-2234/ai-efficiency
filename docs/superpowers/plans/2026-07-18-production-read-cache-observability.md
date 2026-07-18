@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress on `feat/read-cache-metrics-166` from `feat/platform-loading-performance@8db50f91`. All production cache recorders and review remediations are implemented. Local full/focused/race verification is green; the updated PR head still needs CI and integration into `feat/platform-loading-performance`.
+**Status:** Complete. PR #179 was squash-merged into `feat/platform-loading-performance` at `51f75c366839298831ddac24f4ebf3ef8ca5f70a`; exact implementation head `0ef57291e251569fbd87ce4da8116208c9b88335` passed all required CI jobs, and issue #166 is closed.
 
 **Goal:** Complete issue #166 by emitting privacy-safe, low-cardinality outcomes for every production Redis read model and proving the dashboard receives more than work-item cache data.
 
@@ -207,7 +207,7 @@
 
   Full verification evidence (2026-07-18): `git diff --check`, backend `go test ./... -count=1`, backend `go vet ./...`, the listed race-enabled cache/telemetry packages, frontend 46 files / 680 tests, frontend production build, ae-cli `go test ./... -count=1`, and the embedded release frontend policy all passed. After review remediation, all six affected cache packages passed twice, their metrics/lease tests passed under `-race`, and backend `go test ./... -count=1` plus `go vet ./...` passed again on `0cb8fda3`. The first frontend attempt failed before tests because the new worktree had no `node_modules`; `npm ci` restored the lockfile-defined environment and the rerun passed without dependency or lockfile changes.
 
-- [ ] **Step 4: Review the exact branch and deliver**
+- [x] **Step 4: Review the exact branch and deliver**
 
   Verify every #166 acceptance criterion, commit the plan/documentation, push the branch, open a PR targeting `feat/platform-loading-performance`, wait for all CI checks, merge, close #166 with exact-head evidence, and update #173 dependency state.
 
@@ -216,4 +216,4 @@
   git commit -m "docs(architecture): document read cache observability"
   ```
 
-  Review evidence (2026-07-18): independent review found no Critical issues and three Important accounting/fallback issues plus one Minor encoding-error gap. RED regressions reproduced `LeaseTTL` errors being treated as expiry in five caches, missing Work Items `fresh` events on waiter/double-check hits, repeated Personal/Team `miss` events across one logical retry, and missing encode-error events. Commit `0cb8fda3` fixes all findings; focused tests, double package tests, race tests, full backend tests, and vet are green. PR #179 exists and its original head CI passed; updated-head CI and merge remain unchecked.
+  Review evidence (2026-07-18): independent review found no Critical issues and three Important accounting/fallback issues plus one Minor encoding-error gap. RED regressions reproduced `LeaseTTL` errors being treated as expiry in five caches, missing Work Items `fresh` events on waiter/double-check hits, repeated Personal/Team `miss` events across one logical retry, and missing encode-error events. Commit `0cb8fda3` fixes all findings; focused tests, double package tests, race tests, full backend tests, and vet are green. Exact implementation head `0ef57291e251569fbd87ce4da8116208c9b88335` passed backend, frontend, ae-cli, and deploy-static CI in run `29652128444`. PR #179 was squash-merged into `feat/platform-loading-performance` at `51f75c366839298831ddac24f4ebf3ef8ca5f70a`, issue #166 was closed with exact-head evidence, and #173 received the dependency update.
