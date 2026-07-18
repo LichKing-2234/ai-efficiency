@@ -101,13 +101,16 @@ function createTestRouter() {
   })
 }
 
-async function mountQuotaResetView(role: 'user' | 'admin' = 'user') {
+async function mountQuotaResetView(
+  role: 'user' | 'admin' = 'user',
+  initialPath = '/usage/quota-reset',
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
   auth.user = { id: role === 'admin' ? 99 : 20, username: role, email: `${role}@example.com`, role, auth_source: 'ldap' }
   const router = createTestRouter()
-  await router.push('/usage/quota-reset')
+  await router.push(initialPath)
   await router.isReady()
   const wrapper = mount(QuotaResetView, {
     global: { plugins: [pinia, router] },
@@ -139,6 +142,27 @@ beforeEach(async () => {
 })
 
 describe('QuotaResetView', () => {
+  it('opens approval deep links in the approval queue and selects the request', async () => {
+    const wrapper = await mountQuotaResetView(
+      'user',
+      '/usage/quota-reset?queue=approvals&request_id=2',
+    )
+
+    expect(wrapper.get('[data-testid="quota-reset-tab-approvals"]').classes()).toContain('bg-white')
+    expect(wrapper.find('[data-testid="quota-reset-workflow-timeline"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Group Beta')
+  })
+
+  it('falls back to my requests for invalid deep-link parameters', async () => {
+    const wrapper = await mountQuotaResetView(
+      'user',
+      '/usage/quota-reset?queue=unknown&request_id=invalid',
+    )
+
+    expect(wrapper.get('[data-testid="quota-reset-tab-mine"]').classes()).toContain('bg-white')
+    expect(wrapper.text()).toContain('Group Alpha')
+  })
+
   it('loads my requests and approval queue, then approves a pending request', async () => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any

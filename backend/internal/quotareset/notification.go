@@ -159,8 +159,8 @@ func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx 
 		"workflow":    workflowPayload,
 		"occurred_at": time.Now().UTC().Format(time.RFC3339),
 	}
-	if n.frontendURL != "" {
-		payload["action_url"] = fmt.Sprintf("%s/usage/quota-reset?request_id=%d", n.frontendURL, req.ID)
+	if actionURL := n.actionURL(req.ID); actionURL != "" {
+		payload["action_url"] = actionURL
 	}
 	return payload
 }
@@ -248,10 +248,21 @@ func (n *WebhookNotifier) weComRobotMarkdown(event string, req *ent.QuotaResetRe
 	if len(mentions) > 0 {
 		lines = append(lines, "审批人："+strings.Join(mentions, " "))
 	}
-	if n.frontendURL != "" {
-		lines = append(lines, "[前往处理]("+fmt.Sprintf("%s/usage/quota-reset?request_id=%d", n.frontendURL, req.ID)+")")
+	if actionURL := n.actionURL(req.ID); actionURL != "" {
+		lines = append(lines, "[前往处理]("+actionURL+")")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (n *WebhookNotifier) actionURL(requestID int) string {
+	if strings.TrimSpace(n.frontendURL) == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"%s/usage/quota-reset?queue=approvals&request_id=%d",
+		strings.TrimRight(n.frontendURL, "/"),
+		requestID,
+	)
 }
 
 func notificationContextForRequest(req *ent.QuotaResetRequest) (quotaResetNotificationContext, error) {

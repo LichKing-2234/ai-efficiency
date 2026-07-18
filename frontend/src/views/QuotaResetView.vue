@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import QuotaResetRequestList from '@/components/quota-reset/QuotaResetRequestList.vue'
 import QuotaResetDecisionDialog from '@/components/quota-reset/QuotaResetDecisionDialog.vue'
@@ -28,11 +29,12 @@ const { t } = useI18n()
 const { showToast } = useToast()
 const auth = useAuthStore()
 const workItems = useWorkItemsStore()
+const route = useRoute()
 
 type QueueMode = 'mine' | 'approvals' | 'admin'
 type FilterMode = 'all' | 'pending' | 'processed' | 'failed'
 
-const activeQueue = ref<QueueMode>('mine')
+const activeQueue = ref<QueueMode>(initialQueue())
 const activeFilter = ref<FilterMode>('all')
 const myRequests = ref<QuotaResetRequestSummary[]>([])
 const approvalRequests = ref<QuotaResetRequestSummary[]>([])
@@ -48,6 +50,23 @@ const filters: FilterMode[] = ['all', 'pending', 'processed', 'failed']
 const queuePageSize = 100
 const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : workItems.counts.quota_reset_approval_count)
 const adminTotal = computed(() => workItems.loading || workItems.error || !auth.isAdmin ? 0 : workItems.counts.quota_reset_admin_count)
+
+function firstQueryValue(value: unknown) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function initialQueue(): QueueMode {
+  const value = firstQueryValue(route.query.queue)
+  if (value === 'approvals' || value === 'mine') return value
+  if (value === 'admin' && auth.isAdmin) return value
+  return 'mine'
+}
+
+function initialRequestID() {
+  const value = firstQueryValue(route.query.request_id)
+  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null
+  return Number(value)
+}
 
 const queueItems = computed(() => {
   if (activeQueue.value === 'approvals') return approvalRequests.value
@@ -83,6 +102,13 @@ async function loadQueues(forceCounts = false) {
     adminRequests.value = auth.isAdmin
       ? (await loadAllQueuePages(listAdminQuotaResetRequests)).items
       : []
+    const requestID = initialRequestID()
+    const request = requestID === null
+      ? null
+      : queueItems.value.find((item) => item.id === requestID)
+    if (request?.workflow_steps?.length) {
+      selectedRequest.value = request
+    }
   } catch {
     loadError.value = t('quotaReset.loadFailed')
   } finally {

@@ -192,8 +192,12 @@ func TestGenericWebhookPayloadExcludesInternalWorkflowFields(t *testing.T) {
 	if payload["status"] != "pending" || payload["group_name"] != "Group Alpha" || payload["reason"] != "Need reset for a build investigation" {
 		t.Fatalf("public request fields = %#v", payload)
 	}
-	if payload["action_url"] != fmt.Sprintf("https://ai-efficiency.example.com/usage/quota-reset?request_id=%d", request.ID) {
-		t.Fatalf("action_url = %#v", payload["action_url"])
+	want := fmt.Sprintf(
+		"https://ai-efficiency.example.com/usage/quota-reset?queue=approvals&request_id=%d",
+		request.ID,
+	)
+	if payload["action_url"] != want {
+		t.Fatalf("action_url = %#v, want %q", payload["action_url"], want)
 	}
 	requester, ok := payload["requester"].(map[string]any)
 	if !ok || requester["display_name"] != "Alice Example" || requester["email"] != "alice@example.com" {
@@ -333,7 +337,7 @@ func TestWebhookNotifierSendsWeComMarkdownWithRequesterAndMentions(t *testing.T)
 		"Need reset for a build investigation",
 		"1/2",
 		"<@bob-wecom>",
-		"https://ai-efficiency.example.com/usage/quota-reset?request_id=",
+		"https://ai-efficiency.example.com/usage/quota-reset?queue=approvals&request_id=",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("content = %q, want substring %q", content, want)
