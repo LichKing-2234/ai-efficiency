@@ -193,6 +193,10 @@ sequenceDiagram
 
 ### Runtime Boundaries
 
+- Quota-reset WeCom mentions require an explicit Directory Sync
+  `member.metadata.wecom_userid` mapping. The workflow snapshots only that
+  allowlisted notification identity and never treats a generic member external
+  id, local user id, or email address as a WeCom userid.
 - `ae-cli` owns the sessionless CLI workflow: explicit repo registration, hook management, short-lived attribution sync, and diagnostics.
 - `ae-cli discover` is intentionally deterministic in the current codebase: no backend LLM loop and no `/api/v1/tools/discover` endpoint. It uses the selected provider directly (primary by default, `--provider` to override), maps installed tools to the backend-returned `group.platform`, and writes only the matching tool-native config files or environment hooks.
 - `ae-cli` login selection is split between browser PKCE and device flow, but both paths still end in the same backend-issued JWT and `~/.ae-cli/token.json` storage model, with automatic refresh against `/api/v1/auth/refresh` when the stored token is nearing expiry.

@@ -20,6 +20,12 @@ worker observed no browser runtime.
 for browser verification, which remains blocked and unchecked because the
 required browser runtime is unavailable.
 
+**WeCom Mention Remediation Status (2026-07-18):** Runtime directory identity
+data is repaired in production and staging. The Directory Sync prompt and
+current contracts now make the required `member.metadata.wecom_userid` mapping
+explicit. Focused/full verification and independent code review are complete
+below; the pre-existing browser verification gap remains unchanged.
+
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
 identifies the quota to reset.
@@ -671,6 +677,42 @@ current. Do not rewrite the historical 2026-07-07 spec.
   successful external relay call as the explicitly deferred provider outcome
   recovery risk, not an in-scope blocker; automatic relay replay remains
   prohibited because it can reset newly accumulated usage.
+
+---
+
+### Task 7: Repair Missing WeCom Mention Identities
+
+- [x] **Step 1: Trace the live notification identity**
+
+  The completed staging request snapshotted no approver notification id. Both
+  production and staging Directory Sync rows mapped `$.wechatUserId` to
+  `member.external_id` but omitted `member.metadata.wecom_userid`. The WeCom
+  directory lookup confirmed the affected approver's external id is the real
+  WeCom userid. The notifier correctly refused to guess a generic external id.
+
+- [x] **Step 2: Add a failing prompt contract and document the mapping**
+
+  The focused frontend test failed because the copied Directory Sync AI prompt
+  did not mention `member.metadata.wecom_userid`. The prompt, current Directory
+  Sync spec, multi-stage approval spec, and architecture now define that
+  explicit allowlisted mapping and retain the no-guessing boundary.
+
+- [x] **Step 3: Repair production and staging directory facts**
+
+  Guarded transactions updated the single enabled source DSL with
+  `wecom_userid: $.wechatUserId` and backfilled 634 active members in each
+  database. Follow-up checks reported one valid source mapping, zero active
+  members missing the metadata field, and an exact target identity match in
+  both environments. The already completed request and its historical
+  notification snapshot were not rewritten or resent.
+
+- [x] **Step 4: Complete verification and review**
+
+  The focused Directory Sync settings suite passed 17/17, the full frontend
+  suite passed 435/435, and the production frontend build passed. Full backend
+  tests and `go vet ./...` passed, `git diff --check` was clean, and the final
+  independent review reported no Critical or Important findings. Browser
+  workflow verification remains unchecked in its original task above.
 
 ## Deferred
 

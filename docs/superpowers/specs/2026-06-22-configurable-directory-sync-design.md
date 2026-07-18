@@ -380,7 +380,9 @@ Supported first-version features:
   `member.metadata.*` entries are allowlisted JSONPath/template mappings for
   non-sensitive ids or role flags that the platform needs. Known organization
   representative fields are `department.metadata.representative_external_ids`
-  and `member.metadata.leader_department_ids`.
+  and `member.metadata.leader_department_ids`. The known notification identity
+  field is `member.metadata.wecom_userid`; WeCom-backed sources must map it
+  explicitly when quota-reset robot notifications should mention approvers.
 - Templates: `{{ item.field }}` and `{{ source.field }}` only. In a `foreach` member step, `item` refers to the member row and `source` refers to the outer iteration item, such as the department row.
 - Limits: timeout, response size, and total item caps
 

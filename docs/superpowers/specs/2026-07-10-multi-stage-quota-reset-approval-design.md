@@ -177,7 +177,9 @@ Keep the existing explicit channel setting:
 Active-step notifications include requester name/email, exact department paths,
 subscription group, application reason, step progress, previous comment, action
 URL, and active approvers. WeCom mentions use only snapshotted
-`metadata.wecom_userid`; local ids and emails are never guessed as WeCom ids.
+`metadata.wecom_userid`; the Directory Sync source must map this metadata field
+explicitly from its WeCom userid field. Member external ids, local ids, and
+emails are never guessed as WeCom ids.
 
 Automatically satisfied steps send no notification. Notification failures are
 non-blocking and persist only sanitized status/error-code information.
