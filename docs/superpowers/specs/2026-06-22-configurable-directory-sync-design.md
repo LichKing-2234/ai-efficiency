@@ -229,6 +229,7 @@ Fields:
 - `source_id`
 - `external_id`
 - `parent_external_id`
+- `effective_parent_external_id`: nullable derived parent for the applied hierarchy
 - `name`
 - `path`
 - `metadata`: redacted JSON
@@ -237,6 +238,20 @@ Fields:
 - `updated_at`
 
 Unique index: `(source_id, external_id)`.
+
+`parent_external_id` remains the normalized upstream fact and is never rewritten to
+repair hierarchy defects. Each successful apply derives exactly one
+`effective_parent_external_id` for every department in that run: null/blank or
+missing parents become effective roots, and one deterministic anchor per closed
+cycle becomes an effective root. The anchor is the cycle row ordered first by
+`LOWER(BTRIM(name)), external_id` under explicit `C` collation semantics: trim
+ASCII spaces, fold ASCII `A-Z`, then compare UTF-8 bytes. PostgreSQL readers use
+`LOWER(BTRIM(name) COLLATE "C") COLLATE "C", external_id COLLATE "C"` so the
+result does not change with the database default collation. Every other valid
+edge is preserved. The existing `source_id` and `last_seen_run_id` fields scope
+and version the derived relation with the applied snapshot. Existing readers may
+continue reconstructing the same relation from upstream facts during staged
+migration.
 
 ### `directory_members`
 
@@ -835,7 +850,10 @@ Apply behavior:
 4. Normalize departments/members.
 5. Validate required member emails.
 6. Compute diff.
-7. In a transaction, replace current facts for the source, mark the run
+7. Resolve the effective department hierarchy in bounded, deterministic,
+   non-recursive application work before mutating current facts.
+8. In a transaction, replace current facts for the source, including each
+   department's effective parent, mark the run
    `completed` or `completed_with_warnings`, and set source `last_run_id` /
    `last_successful_run_id`, then advance the work-item counts revision before
    commit.
@@ -879,6 +897,10 @@ External HTTP errors:
 Mapping warnings:
 
 - missing optional department parent is allowed
+- a parent missing from the same applied source becomes an effective root while
+  the upstream parent fact remains stored
+- a closed department cycle is accepted after removing only its deterministic
+  anchor edge from the effective hierarchy
 - missing member email excludes that row and records a warning
 - invalid email excludes that row and records a warning
 - duplicate member email keeps one deterministic row and records a warning
@@ -917,6 +939,11 @@ Backend tests:
 - Preview run does not update `directory_members`.
 - Failed apply run does not change current facts or offboarding candidates.
 - Successful full-company apply updates departments, members, and `last_successful_run_id`.
+- Successful apply stores one deterministic effective parent per department,
+  preserves upstream parent facts, and versions every relation with the applied
+  run id.
+- Acyclic, missing-parent, self-cycle, multi-row cycle, input-order, non-ASCII
+  collation parity, rollback, and large non-recursive hierarchy fixtures pass.
 - Source update/delete and successful apply advance the shared work-item revision atomically with their local state; validation, preview, conflict, and failed apply paths do not.
 - Email matching is case-insensitive and trims whitespace.
 - Invalid emails are warnings and excluded.

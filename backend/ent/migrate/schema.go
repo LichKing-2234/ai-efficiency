@@ -158,6 +158,7 @@ var (
 		{Name: "source_id", Type: field.TypeInt},
 		{Name: "external_id", Type: field.TypeString},
 		{Name: "parent_external_id", Type: field.TypeString, Nullable: true},
+		{Name: "effective_parent_external_id", Type: field.TypeString, Nullable: true},
 		{Name: "name", Type: field.TypeString},
 		{Name: "path", Type: field.TypeString, Default: ""},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
@@ -182,9 +183,14 @@ var (
 				Columns: []*schema.Column{DirectoryDepartmentsColumns[1], DirectoryDepartmentsColumns[3]},
 			},
 			{
-				Name:    "directorydepartment_source_id_name",
+				Name:    "directorydepartment_source_id_effective_parent_external_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectoryDepartmentsColumns[1], DirectoryDepartmentsColumns[4]},
+			},
+			{
+				Name:    "directorydepartment_source_id_name",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryDepartmentsColumns[1], DirectoryDepartmentsColumns[5]},
 			},
 		},
 	}

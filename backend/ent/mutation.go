@@ -5011,24 +5011,25 @@ func (m *CredentialMutation) ResetEdge(name string) error {
 // DirectoryDepartmentMutation represents an operation that mutates the DirectoryDepartment nodes in the graph.
 type DirectoryDepartmentMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int
-	source_id           *int
-	addsource_id        *int
-	external_id         *string
-	parent_external_id  *string
-	name                *string
-	_path               *string
-	metadata            *map[string]interface{}
-	last_seen_run_id    *int
-	addlast_seen_run_id *int
-	created_at          *time.Time
-	updated_at          *time.Time
-	clearedFields       map[string]struct{}
-	done                bool
-	oldValue            func(context.Context) (*DirectoryDepartment, error)
-	predicates          []predicate.DirectoryDepartment
+	op                           Op
+	typ                          string
+	id                           *int
+	source_id                    *int
+	addsource_id                 *int
+	external_id                  *string
+	parent_external_id           *string
+	effective_parent_external_id *string
+	name                         *string
+	_path                        *string
+	metadata                     *map[string]interface{}
+	last_seen_run_id             *int
+	addlast_seen_run_id          *int
+	created_at                   *time.Time
+	updated_at                   *time.Time
+	clearedFields                map[string]struct{}
+	done                         bool
+	oldValue                     func(context.Context) (*DirectoryDepartment, error)
+	predicates                   []predicate.DirectoryDepartment
 }
 
 var _ ent.Mutation = (*DirectoryDepartmentMutation)(nil)
@@ -5268,6 +5269,55 @@ func (m *DirectoryDepartmentMutation) ParentExternalIDCleared() bool {
 func (m *DirectoryDepartmentMutation) ResetParentExternalID() {
 	m.parent_external_id = nil
 	delete(m.clearedFields, directorydepartment.FieldParentExternalID)
+}
+
+// SetEffectiveParentExternalID sets the "effective_parent_external_id" field.
+func (m *DirectoryDepartmentMutation) SetEffectiveParentExternalID(s string) {
+	m.effective_parent_external_id = &s
+}
+
+// EffectiveParentExternalID returns the value of the "effective_parent_external_id" field in the mutation.
+func (m *DirectoryDepartmentMutation) EffectiveParentExternalID() (r string, exists bool) {
+	v := m.effective_parent_external_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEffectiveParentExternalID returns the old "effective_parent_external_id" field's value of the DirectoryDepartment entity.
+// If the DirectoryDepartment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DirectoryDepartmentMutation) OldEffectiveParentExternalID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEffectiveParentExternalID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEffectiveParentExternalID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEffectiveParentExternalID: %w", err)
+	}
+	return oldValue.EffectiveParentExternalID, nil
+}
+
+// ClearEffectiveParentExternalID clears the value of the "effective_parent_external_id" field.
+func (m *DirectoryDepartmentMutation) ClearEffectiveParentExternalID() {
+	m.effective_parent_external_id = nil
+	m.clearedFields[directorydepartment.FieldEffectiveParentExternalID] = struct{}{}
+}
+
+// EffectiveParentExternalIDCleared returns if the "effective_parent_external_id" field was cleared in this mutation.
+func (m *DirectoryDepartmentMutation) EffectiveParentExternalIDCleared() bool {
+	_, ok := m.clearedFields[directorydepartment.FieldEffectiveParentExternalID]
+	return ok
+}
+
+// ResetEffectiveParentExternalID resets all changes to the "effective_parent_external_id" field.
+func (m *DirectoryDepartmentMutation) ResetEffectiveParentExternalID() {
+	m.effective_parent_external_id = nil
+	delete(m.clearedFields, directorydepartment.FieldEffectiveParentExternalID)
 }
 
 // SetName sets the "name" field.
@@ -5553,7 +5603,7 @@ func (m *DirectoryDepartmentMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *DirectoryDepartmentMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	if m.source_id != nil {
 		fields = append(fields, directorydepartment.FieldSourceID)
 	}
@@ -5562,6 +5612,9 @@ func (m *DirectoryDepartmentMutation) Fields() []string {
 	}
 	if m.parent_external_id != nil {
 		fields = append(fields, directorydepartment.FieldParentExternalID)
+	}
+	if m.effective_parent_external_id != nil {
+		fields = append(fields, directorydepartment.FieldEffectiveParentExternalID)
 	}
 	if m.name != nil {
 		fields = append(fields, directorydepartment.FieldName)
@@ -5595,6 +5648,8 @@ func (m *DirectoryDepartmentMutation) Field(name string) (ent.Value, bool) {
 		return m.ExternalID()
 	case directorydepartment.FieldParentExternalID:
 		return m.ParentExternalID()
+	case directorydepartment.FieldEffectiveParentExternalID:
+		return m.EffectiveParentExternalID()
 	case directorydepartment.FieldName:
 		return m.Name()
 	case directorydepartment.FieldPath:
@@ -5622,6 +5677,8 @@ func (m *DirectoryDepartmentMutation) OldField(ctx context.Context, name string)
 		return m.OldExternalID(ctx)
 	case directorydepartment.FieldParentExternalID:
 		return m.OldParentExternalID(ctx)
+	case directorydepartment.FieldEffectiveParentExternalID:
+		return m.OldEffectiveParentExternalID(ctx)
 	case directorydepartment.FieldName:
 		return m.OldName(ctx)
 	case directorydepartment.FieldPath:
@@ -5663,6 +5720,13 @@ func (m *DirectoryDepartmentMutation) SetField(name string, value ent.Value) err
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetParentExternalID(v)
+		return nil
+	case directorydepartment.FieldEffectiveParentExternalID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEffectiveParentExternalID(v)
 		return nil
 	case directorydepartment.FieldName:
 		v, ok := value.(string)
@@ -5766,6 +5830,9 @@ func (m *DirectoryDepartmentMutation) ClearedFields() []string {
 	if m.FieldCleared(directorydepartment.FieldParentExternalID) {
 		fields = append(fields, directorydepartment.FieldParentExternalID)
 	}
+	if m.FieldCleared(directorydepartment.FieldEffectiveParentExternalID) {
+		fields = append(fields, directorydepartment.FieldEffectiveParentExternalID)
+	}
 	if m.FieldCleared(directorydepartment.FieldMetadata) {
 		fields = append(fields, directorydepartment.FieldMetadata)
 	}
@@ -5786,6 +5853,9 @@ func (m *DirectoryDepartmentMutation) ClearField(name string) error {
 	case directorydepartment.FieldParentExternalID:
 		m.ClearParentExternalID()
 		return nil
+	case directorydepartment.FieldEffectiveParentExternalID:
+		m.ClearEffectiveParentExternalID()
+		return nil
 	case directorydepartment.FieldMetadata:
 		m.ClearMetadata()
 		return nil
@@ -5805,6 +5875,9 @@ func (m *DirectoryDepartmentMutation) ResetField(name string) error {
 		return nil
 	case directorydepartment.FieldParentExternalID:
 		m.ResetParentExternalID()
+		return nil
+	case directorydepartment.FieldEffectiveParentExternalID:
+		m.ResetEffectiveParentExternalID()
 		return nil
 	case directorydepartment.FieldName:
 		m.ResetName()

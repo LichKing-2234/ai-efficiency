@@ -69,6 +69,11 @@ func ParentExternalID(v string) predicate.DirectoryDepartment {
 	return predicate.DirectoryDepartment(sql.FieldEQ(FieldParentExternalID, v))
 }
 
+// EffectiveParentExternalID applies equality check predicate on the "effective_parent_external_id" field. It's identical to EffectiveParentExternalIDEQ.
+func EffectiveParentExternalID(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldEQ(FieldEffectiveParentExternalID, v))
+}
+
 // Name applies equality check predicate on the "name" field. It's identical to NameEQ.
 func Name(v string) predicate.DirectoryDepartment {
 	return predicate.DirectoryDepartment(sql.FieldEQ(FieldName, v))
@@ -272,6 +277,81 @@ func ParentExternalIDEqualFold(v string) predicate.DirectoryDepartment {
 // ParentExternalIDContainsFold applies the ContainsFold predicate on the "parent_external_id" field.
 func ParentExternalIDContainsFold(v string) predicate.DirectoryDepartment {
 	return predicate.DirectoryDepartment(sql.FieldContainsFold(FieldParentExternalID, v))
+}
+
+// EffectiveParentExternalIDEQ applies the EQ predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDEQ(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldEQ(FieldEffectiveParentExternalID, v))
+}
+
+// EffectiveParentExternalIDNEQ applies the NEQ predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDNEQ(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldNEQ(FieldEffectiveParentExternalID, v))
+}
+
+// EffectiveParentExternalIDIn applies the In predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDIn(vs ...string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldIn(FieldEffectiveParentExternalID, vs...))
+}
+
+// EffectiveParentExternalIDNotIn applies the NotIn predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDNotIn(vs ...string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldNotIn(FieldEffectiveParentExternalID, vs...))
+}
+
+// EffectiveParentExternalIDGT applies the GT predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDGT(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldGT(FieldEffectiveParentExternalID, v))
+}
+
+// EffectiveParentExternalIDGTE applies the GTE predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDGTE(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldGTE(FieldEffectiveParentExternalID, v))
+}
+
+// EffectiveParentExternalIDLT applies the LT predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDLT(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldLT(FieldEffectiveParentExternalID, v))
+}
+
+// EffectiveParentExternalIDLTE applies the LTE predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDLTE(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldLTE(FieldEffectiveParentExternalID, v))
+}
+
+// EffectiveParentExternalIDContains applies the Contains predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDContains(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldContains(FieldEffectiveParentExternalID, v))
+}
+
+// EffectiveParentExternalIDHasPrefix applies the HasPrefix predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDHasPrefix(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldHasPrefix(FieldEffectiveParentExternalID, v))
+}
+
+// EffectiveParentExternalIDHasSuffix applies the HasSuffix predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDHasSuffix(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldHasSuffix(FieldEffectiveParentExternalID, v))
+}
+
+// EffectiveParentExternalIDIsNil applies the IsNil predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDIsNil() predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldIsNull(FieldEffectiveParentExternalID))
+}
+
+// EffectiveParentExternalIDNotNil applies the NotNil predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDNotNil() predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldNotNull(FieldEffectiveParentExternalID))
+}
+
+// EffectiveParentExternalIDEqualFold applies the EqualFold predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDEqualFold(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldEqualFold(FieldEffectiveParentExternalID, v))
+}
+
+// EffectiveParentExternalIDContainsFold applies the ContainsFold predicate on the "effective_parent_external_id" field.
+func EffectiveParentExternalIDContainsFold(v string) predicate.DirectoryDepartment {
+	return predicate.DirectoryDepartment(sql.FieldContainsFold(FieldEffectiveParentExternalID, v))
 }
 
 // NameEQ applies the EQ predicate on the "name" field.

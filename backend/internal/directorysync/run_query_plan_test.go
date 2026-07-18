@@ -789,7 +789,7 @@ func TestLargeRunHistoryPreservesPreviewAndApplyStateSemantics(t *testing.T) {
 	successfulApply := runAndExecuteLargeHistorySource(t, service, source.ID, directorysyncrun.ModeApply, false)
 	successFacts := captureDirectoryFacts(t, client, source.ID)
 	wantSuccessFacts := directoryFactsState{
-		Departments: []string{fmt.Sprintf("dept-alpha|Department Alpha|Department Alpha|%d", successfulApply.ID)},
+		Departments: []string{fmt.Sprintf("dept-alpha|||Department Alpha|Department Alpha|%d", successfulApply.ID)},
 		Members:     []string{fmt.Sprintf("alice@example.com|dept-alpha|%d", successfulApply.ID)},
 		Memberships: []string{fmt.Sprintf("alice@example.com|dept-alpha|%d", successfulApply.ID)},
 	}
@@ -838,7 +838,14 @@ func captureDirectoryFacts(t *testing.T, client *ent.Client, sourceID int) direc
 		Order(ent.Asc(directorydepartment.FieldExternalID)).
 		AllX(ctx)
 	for _, department := range departments {
-		state.Departments = append(state.Departments, fmt.Sprintf("%s|%s|%s|%d", department.ExternalID, department.Name, department.Path, department.LastSeenRunID))
+		state.Departments = append(state.Departments, fmt.Sprintf("%s|%s|%s|%s|%s|%d",
+			department.ExternalID,
+			optionalString(department.ParentExternalID),
+			optionalString(department.EffectiveParentExternalID),
+			department.Name,
+			department.Path,
+			department.LastSeenRunID,
+		))
 	}
 	members := client.DirectoryMember.Query().
 		Where(directorymember.SourceIDEQ(sourceID)).

@@ -131,10 +131,11 @@ cycle_anchors(external_id) AS MATERIALIZED (
   SELECT ranked.external_id
   FROM (
     SELECT cycle_members.external_id,
-           ROW_NUMBER() OVER (
-             PARTITION BY cycle_members.cycle_key
-             ORDER BY LOWER(BTRIM(department.name)), cycle_members.external_id
-           ) AS anchor_rank
+	           ROW_NUMBER() OVER (
+	             PARTITION BY cycle_members.cycle_key
+	             ORDER BY LOWER(BTRIM(department.name) COLLATE "C") COLLATE "C",
+	                      cycle_members.external_id COLLATE "C"
+	           ) AS anchor_rank
     FROM cycle_members
     JOIN source_departments AS department
       ON department.external_id = cycle_members.external_id

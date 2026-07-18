@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/directoryoffboardingaction"
 	"github.com/ai-efficiency/backend/ent/directorysyncrun"
@@ -693,6 +694,75 @@ func TestServicePreviewDoesNotUpdateFactsAndApplyDoes(t *testing.T) {
 	}
 }
 
+func TestCompleteApplyPersistsVersionedEffectiveHierarchy(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source := client.DirectorySource.Create().
+		SetName("Synthetic Directory").
+		SetScope("full_company").
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		SaveX(ctx)
+	svc := NewService(client, ServiceOptions{})
+	departments := []DepartmentRecord{
+		{ExternalID: "dept-root", Name: "Root"},
+		{ExternalID: "dept-child", ParentExternalID: "dept-root", Name: "Child"},
+		{ExternalID: "dept-orphan", ParentExternalID: "dept-missing", Name: "Orphan"},
+		{ExternalID: "dept-a", ParentExternalID: "dept-b", Name: "Zulu"},
+		{ExternalID: "dept-b", ParentExternalID: "dept-c", Name: "Alpha"},
+		{ExternalID: "dept-c", ParentExternalID: "dept-a", Name: "Alpha"},
+	}
+	wantRawParents := map[string]string{
+		"dept-root": "", "dept-child": "dept-root", "dept-orphan": "dept-missing",
+		"dept-a": "dept-b", "dept-b": "dept-c", "dept-c": "dept-a",
+	}
+	wantEffectiveParents := map[string]string{
+		"dept-root": "", "dept-child": "dept-root", "dept-orphan": "",
+		"dept-a": "dept-b", "dept-b": "", "dept-c": "dept-a",
+	}
+
+	assertAppliedHierarchy := func(runID int) {
+		t.Helper()
+		stored := client.DirectoryDepartment.Query().
+			Where(directorydepartment.SourceIDEQ(source.ID)).
+			AllX(ctx)
+		if len(stored) != len(departments) {
+			t.Fatalf("stored departments = %d, want %d", len(stored), len(departments))
+		}
+		for _, department := range stored {
+			if department.LastSeenRunID != runID {
+				t.Fatalf("department %s last_seen_run_id = %d, want %d", department.ExternalID, department.LastSeenRunID, runID)
+			}
+			if got := optionalString(department.ParentExternalID); got != wantRawParents[department.ExternalID] {
+				t.Fatalf("department %s raw parent = %q, want %q", department.ExternalID, got, wantRawParents[department.ExternalID])
+			}
+			if got := optionalString(department.EffectiveParentExternalID); got != wantEffectiveParents[department.ExternalID] {
+				t.Fatalf("department %s effective parent = %q, want %q", department.ExternalID, got, wantEffectiveParents[department.ExternalID])
+			}
+		}
+		reloadedSource := client.DirectorySource.GetX(ctx, source.ID)
+		if reloadedSource.LastRunID == nil || *reloadedSource.LastRunID != runID ||
+			reloadedSource.LastSuccessfulRunID == nil || *reloadedSource.LastSuccessfulRunID != runID {
+			t.Fatalf("source pointers = %v/%v, want %d/%d", reloadedSource.LastRunID, reloadedSource.LastSuccessfulRunID, runID, runID)
+		}
+	}
+
+	firstRun := createRunningDirectoryApplyRun(t, client, source.ID)
+	if _, err := svc.completeApplyRun(ctx, firstRun.ID, source.ID, &ExecutionResult{Departments: departments}); err != nil {
+		t.Fatalf("complete first apply: %v", err)
+	}
+	assertAppliedHierarchy(firstRun.ID)
+
+	reversed := append([]DepartmentRecord(nil), departments...)
+	for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
+		reversed[left], reversed[right] = reversed[right], reversed[left]
+	}
+	secondRun := createRunningDirectoryApplyRun(t, client, source.ID)
+	if _, err := svc.completeApplyRun(ctx, secondRun.ID, source.ID, &ExecutionResult{Departments: reversed}); err != nil {
+		t.Fatalf("complete second apply: %v", err)
+	}
+	assertAppliedHierarchy(secondRun.ID)
+}
+
 func TestServiceRunSourceRejectsOverlappingApply(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -780,6 +850,23 @@ func TestServiceApplyRollsBackFactsWhenSourcePointerUpdateFails(t *testing.T) {
 	ctx := context.Background()
 	server := newDirectoryServiceTestServer(t, []string{"alice@example.com"})
 	source := createDirectoryTestSource(t, ctx, client, server.URL)
+	baselineRun := client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetStartedAt(time.Now().UTC()).
+		SetCompletedAt(time.Now().UTC()).
+		SaveX(ctx)
+	source = source.Update().SetLastRunID(baselineRun.ID).SetLastSuccessfulRunID(baselineRun.ID).SaveX(ctx)
+	client.DirectoryDepartment.Create().
+		SetSourceID(source.ID).
+		SetExternalID("dept-baseline-child").
+		SetParentExternalID("dept-baseline-root").
+		SetEffectiveParentExternalID("dept-baseline-root").
+		SetName("Baseline Child").
+		SetLastSeenRunID(baselineRun.ID).
+		SaveX(ctx)
 	client.DirectorySource.Use(func(next ent.Mutator) ent.Mutator {
 		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
 			mutation, ok := m.(*ent.DirectorySourceMutation)
@@ -806,10 +893,36 @@ func TestServiceApplyRollsBackFactsWhenSourcePointerUpdateFails(t *testing.T) {
 	if count := client.DirectoryMember.Query().Where(directorymember.SourceIDEQ(source.ID)).CountX(ctx); count != 0 {
 		t.Fatalf("member count after failed apply = %d, want 0", count)
 	}
-	reloaded := client.DirectorySource.GetX(ctx, source.ID)
-	if reloaded.LastSuccessfulRunID != nil {
-		t.Fatalf("last_successful_run_id = %v, want nil", reloaded.LastSuccessfulRunID)
+	departments := client.DirectoryDepartment.Query().Where(directorydepartment.SourceIDEQ(source.ID)).AllX(ctx)
+	if len(departments) != 1 || departments[0].ExternalID != "dept-baseline-child" ||
+		optionalString(departments[0].ParentExternalID) != "dept-baseline-root" ||
+		optionalString(departments[0].EffectiveParentExternalID) != "dept-baseline-root" ||
+		departments[0].LastSeenRunID != baselineRun.ID {
+		t.Fatalf("departments after rollback = %+v, want baseline hierarchy", departments)
 	}
+	reloaded := client.DirectorySource.GetX(ctx, source.ID)
+	if reloaded.LastRunID == nil || *reloaded.LastRunID != baselineRun.ID ||
+		reloaded.LastSuccessfulRunID == nil || *reloaded.LastSuccessfulRunID != baselineRun.ID {
+		t.Fatalf("source pointers after rollback = %v/%v, want %d/%d", reloaded.LastRunID, reloaded.LastSuccessfulRunID, baselineRun.ID, baselineRun.ID)
+	}
+}
+
+func createRunningDirectoryApplyRun(t *testing.T, client *ent.Client, sourceID int) *ent.DirectorySyncRun {
+	t.Helper()
+	return client.DirectorySyncRun.Create().
+		SetSourceID(sourceID).
+		SetMode("apply").
+		SetStatus("running").
+		SetPhase("applying").
+		SetStartedAt(time.Now().UTC()).
+		SaveX(context.Background())
+}
+
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func TestServiceSourceUpdateAndDeleteInvalidateInSameTransaction(t *testing.T) {

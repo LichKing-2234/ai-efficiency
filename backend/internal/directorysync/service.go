@@ -605,6 +605,10 @@ func (s *Service) replaceFacts(ctx context.Context, sourceID, runID int, result 
 }
 
 func (s *Service) replaceFactsTx(ctx context.Context, tx *ent.Tx, sourceID, runID int, result *ExecutionResult) error {
+	effectiveParents, err := resolveEffectiveParents(result.Departments)
+	if err != nil {
+		return fmt.Errorf("resolve effective department hierarchy: %w", err)
+	}
 	if _, err := tx.DirectoryDepartment.Delete().Where(directorydepartment.SourceIDEQ(sourceID)).Exec(ctx); err != nil {
 		return err
 	}
@@ -624,6 +628,9 @@ func (s *Service) replaceFactsTx(ctx context.Context, tx *ent.Tx, sourceID, runI
 			SetLastSeenRunID(runID)
 		if strings.TrimSpace(department.ParentExternalID) != "" {
 			create.SetParentExternalID(department.ParentExternalID)
+		}
+		if effectiveParentID := effectiveParents[department.ExternalID]; effectiveParentID != "" {
+			create.SetEffectiveParentExternalID(effectiveParentID)
 		}
 		if _, err := create.Save(ctx); err != nil {
 			return err
