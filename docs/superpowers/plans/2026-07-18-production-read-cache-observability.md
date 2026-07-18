@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress on `feat/read-cache-metrics-166` from `feat/platform-loading-performance@8db50f91`. The clean backend baseline passed on 2026-07-18. All production cache recorders are implemented and focused/double/race verification is green; full repository verification, review, PR CI, and integration remain.
+**Status:** In progress on `feat/read-cache-metrics-166` from `feat/platform-loading-performance@8db50f91`. All production cache recorders and review remediations are implemented. Local full/focused/race verification is green; the updated PR head still needs CI and integration into `feat/platform-loading-performance`.
 
 **Goal:** Complete issue #166 by emitting privacy-safe, low-cardinality outcomes for every production Redis read model and proving the dashboard receives more than work-item cache data.
 
@@ -205,7 +205,7 @@
   cd .. && bash deploy/test/release-frontend-embed-test.sh
   ```
 
-  Full verification evidence (2026-07-18): `git diff --check`, backend `go test ./... -count=1`, backend `go vet ./...`, the listed race-enabled cache/telemetry packages, frontend 46 files / 680 tests, frontend production build, ae-cli `go test ./... -count=1`, and the embedded release frontend policy all passed. The first frontend attempt failed before tests because the new worktree had no `node_modules`; `npm ci` restored the lockfile-defined environment and the rerun passed without dependency or lockfile changes.
+  Full verification evidence (2026-07-18): `git diff --check`, backend `go test ./... -count=1`, backend `go vet ./...`, the listed race-enabled cache/telemetry packages, frontend 46 files / 680 tests, frontend production build, ae-cli `go test ./... -count=1`, and the embedded release frontend policy all passed. After review remediation, all six affected cache packages passed twice, their metrics/lease tests passed under `-race`, and backend `go test ./... -count=1` plus `go vet ./...` passed again on `0cb8fda3`. The first frontend attempt failed before tests because the new worktree had no `node_modules`; `npm ci` restored the lockfile-defined environment and the rerun passed without dependency or lockfile changes.
 
 - [ ] **Step 4: Review the exact branch and deliver**
 
@@ -215,3 +215,5 @@
   git add docs deploy backend/internal/telemetry
   git commit -m "docs(architecture): document read cache observability"
   ```
+
+  Review evidence (2026-07-18): independent review found no Critical issues and three Important accounting/fallback issues plus one Minor encoding-error gap. RED regressions reproduced `LeaseTTL` errors being treated as expiry in five caches, missing Work Items `fresh` events on waiter/double-check hits, repeated Personal/Team `miss` events across one logical retry, and missing encode-error events. Commit `0cb8fda3` fixes all findings; focused tests, double package tests, race tests, full backend tests, and vet are green. PR #179 exists and its original head CI passed; updated-head CI and merge remain unchecked.
