@@ -2251,6 +2251,7 @@ type fakeRelayProvider struct {
 	summaryStats               map[int64]relay.TeamUserUsageStats
 	summaryErr                 error
 	summaryRequestUserIDs      []int64
+	summaryRequestBatches      [][]int64
 	summaryRequestParams       []relay.TeamUsageSummaryParams
 	trendPoints                map[int64][]relay.UsageTrendPoint
 	trendErr                   error
@@ -2390,6 +2391,7 @@ func (f *fakeRelayProvider) GetBatchUserUsageStats(_ context.Context, relayUserI
 		return nil, f.summaryErr
 	}
 	f.summaryRequestUserIDs = append(f.summaryRequestUserIDs, relayUserIDs...)
+	f.summaryRequestBatches = append(f.summaryRequestBatches, append([]int64(nil), relayUserIDs...))
 	f.summaryRequestParams = append(f.summaryRequestParams, params)
 	return f.summaryStats, nil
 }

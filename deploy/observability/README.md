@@ -28,8 +28,8 @@ sufficiency and route-specific budget ratification.
 
 The application cache panel groups the closed outcome set by the stable
 production names `work_items_counts`, `personal_usage`, `representative_scope`,
-`team_usage_summary`, `team_usage_trend`, `team_usage_overview`, `repository_inventory`, and
-`provider_metadata`. The backend preinitializes every name/outcome pair, so a
+`team_usage_summary`, `team_usage_trend`, `team_usage_members`, `team_usage_overview`,
+`repository_inventory`, and `provider_metadata`. The backend preinitializes every name/outcome pair, so a
 scrape distinguishes a quiet cache from missing instrumentation without adding
 keys, actors, scopes, providers, ranges, credentials, or cached values as
 labels.

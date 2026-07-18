@@ -524,6 +524,94 @@ func TestTeamUsageTrendStaleAndSummaryIsolationOverRealHTTP(t *testing.T) {
 	}
 }
 
+func TestTeamUsageMembersUsesIndependentBoundedOriginOverRealHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := testdb.Open(t)
+	client.RelayProvider.Create().
+		SetName("members-http-relay").
+		SetDisplayName("Members HTTP Relay").
+		SetBaseURL("https://relay.example.com").
+		SetRelayType("sub2api").
+		SetAdminAPIKey("test-admin-api-key").
+		SetDefaultModel("test-model").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(context.Background())
+
+	subjects := make([]representativescope.Subject, 0, 500)
+	stats := make(map[int64]relay.TeamUserUsageStats, 500)
+	for index := 1; index <= 500; index++ {
+		relayUserID := 10000 + index
+		rangeCost := float64(501 - index)
+		rangeTokens := int64((501 - index) * 1000)
+		subjects = append(subjects, representativescope.Subject{
+			SubjectType: "member", UserID: index, DisplayName: fmt.Sprintf("Member %03d", index),
+			DirectoryMemberExternalID: fmt.Sprintf("member-%03d", index), RelayUserID: handlerIntPtr(relayUserID), Selectable: true,
+		})
+		stats[int64(relayUserID)] = relay.TeamUserUsageStats{
+			UserID: int64(relayUserID), RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
+		}
+	}
+	provider := &teamUsageHTTPRelayProvider{summaryStats: stats}
+	scope := &representativescope.Scope{
+		Version: "scope-http-members", ActorUserID: 101, IsRepresentative: true, OverviewSubjects: subjects,
+	}
+	server := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() {
+		if err := redisClient.Close(); err != nil {
+			t.Errorf("close test Redis client: %v", err)
+		}
+	})
+	cache, err := teamusage.NewSnapshotCache(
+		readcache.NewRedisStore(redisClient),
+		teamusage.SnapshotCacheOptions{Namespace: "members-http-independent"},
+	)
+	if err != nil {
+		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	service, err := teamusage.NewService(
+		client,
+		teamUsageHTTPScopeResolver{scope: scope},
+		teamUsageHTTPProviderResolver{provider: provider},
+		nil,
+		teamusage.ServiceOptions{SnapshotCache: cache, CursorSecret: "test-members-http-cursor-secret"},
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	router := gin.New()
+	router.Use(withAuthUser(101, "user"))
+	router.GET("/api/v1/user/team-usage/members", NewTeamUsageHandler(service).Members)
+
+	path := "/api/v1/user/team-usage/members?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=Asia%2FShanghai"
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s, want 200", response.Code, response.Body.String())
+	}
+	for _, expected := range []string{`"total_count":500`, `"rank":1`, `"rank":50`, `"next_cursor":"`} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("members body is missing %s: %s", expected, response.Body.String())
+		}
+	}
+	if strings.Contains(response.Body.String(), `"rank":51`) || strings.Contains(response.Body.String(), `"member_tree"`) || strings.Contains(response.Body.String(), `"top_member_trend"`) {
+		t.Fatalf("members body exceeded the first page or leaked compatibility fields: %s", response.Body.String())
+	}
+	if provider.trendCalls.Load() != 0 || provider.summaryCalls.Load() != 5 {
+		t.Fatalf("origin calls = trend/stats %d/%d, want 0/5", provider.trendCalls.Load(), provider.summaryCalls.Load())
+	}
+	for index, batch := range provider.summaryBatches {
+		if len(batch) != 100 || !provider.summaryParams[index].RequireCompleteRange {
+			t.Fatalf("stats batch %d = users %d complete_range %v, want 100/true", index, len(batch), provider.summaryParams[index].RequireCompleteRange)
+		}
+	}
+	keys := server.Keys()
+	if len(keys) != 1 || !strings.HasPrefix(keys[0], "ae:members-http-independent:team-usage-members:v1:") {
+		t.Fatalf("Redis keys = %v, want only independent Members lane", keys)
+	}
+}
+
 type teamUsageHTTPScopeResolver struct {
 	scope *representativescope.Scope
 }
@@ -542,17 +630,21 @@ func (r teamUsageHTTPProviderResolver) Resolve(context.Context, int) (relay.Prov
 
 type teamUsageHTTPRelayProvider struct {
 	relay.Provider
-	summaryStats map[int64]relay.TeamUserUsageStats
-	summaryCalls atomic.Int32
-	trendPoints  map[int64][]relay.UsageTrendPoint
-	trendErr     error
-	trendCalls   atomic.Int32
-	trendStarted chan struct{}
-	trendRelease <-chan struct{}
+	summaryStats   map[int64]relay.TeamUserUsageStats
+	summaryCalls   atomic.Int32
+	summaryBatches [][]int64
+	summaryParams  []relay.TeamUsageSummaryParams
+	trendPoints    map[int64][]relay.UsageTrendPoint
+	trendErr       error
+	trendCalls     atomic.Int32
+	trendStarted   chan struct{}
+	trendRelease   <-chan struct{}
 }
 
-func (p *teamUsageHTTPRelayProvider) GetBatchUserUsageStats(context.Context, []int64, relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+func (p *teamUsageHTTPRelayProvider) GetBatchUserUsageStats(_ context.Context, userIDs []int64, params relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
 	p.summaryCalls.Add(1)
+	p.summaryBatches = append(p.summaryBatches, append([]int64(nil), userIDs...))
+	p.summaryParams = append(p.summaryParams, params)
 	return p.summaryStats, nil
 }
 

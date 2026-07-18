@@ -22,6 +22,7 @@ const (
 	snapshotCacheSchemaVersion = 2
 	summaryCacheSchemaVersion  = 1
 	trendCacheSchemaVersion    = 1
+	membersCacheSchemaVersion  = 1
 )
 
 var snapshotCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
@@ -30,6 +31,7 @@ type SnapshotCache struct {
 	overview *readModelCache[*OverviewResponse]
 	summary  *readModelCache[*SummarySnapshot]
 	trend    *readModelCache[*TrendSnapshot]
+	members  *readModelCache[*MembersSnapshot]
 }
 
 type readModelCache[T any] struct {
@@ -98,6 +100,10 @@ func NewSnapshotCache(store readcache.Store, options SnapshotCacheOptions) (*Sna
 			store: store, options: options, keyPrefix: "team-usage-trend",
 			schemaVersion: trendCacheSchemaVersion, validate: validTrendSnapshot, metrics: options.TrendMetrics,
 		},
+		members: &readModelCache[*MembersSnapshot]{
+			store: store, options: options, keyPrefix: "team-usage-members",
+			schemaVersion: membersCacheSchemaVersion, validate: validMembersSnapshot, metrics: options.MembersMetrics,
+		},
 	}, nil
 }
 
@@ -141,6 +147,10 @@ func summaryCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
 
 func trendCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
 	return readModelCacheKey(namespace, "team-usage-trend", key)
+}
+
+func membersCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
+	return readModelCacheKey(namespace, "team-usage-members", key)
 }
 
 func readModelCacheKey(namespace, keyPrefix string, key SnapshotCacheKey) (string, error) {
@@ -219,6 +229,23 @@ func (c *SnapshotCache) GetTrendOrLoad(ctx context.Context, key SnapshotCacheKey
 		return nil, err
 	}
 	return &TrendCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
+}
+
+func (c *SnapshotCache) GetMembersOrLoad(ctx context.Context, key SnapshotCacheKey, loader MembersOriginLoader) (*MembersCacheResult, error) {
+	if c == nil || c.members == nil {
+		return nil, fmt.Errorf("team usage members cache is not configured")
+	}
+	if loader == nil {
+		return nil, fmt.Errorf("team usage members snapshot origin loader is required")
+	}
+	result, err := c.members.getOrLoad(ctx, key, func(ctx context.Context) (readModelOriginLoadResult[*MembersSnapshot], error) {
+		loaded, err := loader(ctx)
+		return readModelOriginLoadResult[*MembersSnapshot]{Snapshot: loaded.Snapshot, SnapshotErr: loaded.SnapshotErr}, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read team usage members cache: %w", err)
+	}
+	return &MembersCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
 }
 
 func (c *readModelCache[T]) getOrLoad(ctx context.Context, key SnapshotCacheKey, loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
@@ -518,6 +545,48 @@ func validTrendSnapshot(snapshot *TrendSnapshot) bool {
 	}
 	return snapshot.DepartmentTrend.ComparisonTotalCount >= comparisonCount &&
 		snapshot.DepartmentTrend.ComparisonTruncated == (snapshot.DepartmentTrend.ComparisonTotalCount > comparisonCount)
+}
+
+func validMembersSnapshot(snapshot *MembersSnapshot) bool {
+	if snapshot == nil || !validOverviewWindow(snapshot.Window) || snapshot.Members == nil {
+		return false
+	}
+	seen := make(map[string]struct{}, len(snapshot.Members))
+	for index, member := range snapshot.Members {
+		if member.UserID < 0 || member.Rank != index+1 {
+			return false
+		}
+		identity := pagedMemberStableIdentity(member)
+		if identity == "" {
+			return false
+		}
+		if _, exists := seen[identity]; exists {
+			return false
+		}
+		seen[identity] = struct{}{}
+		if index > 0 && pagedMemberIdentityLess(member, snapshot.Members[index-1]) {
+			leftTokens := overviewMemberTokenTotal(member)
+			rightTokens := overviewMemberTokenTotal(snapshot.Members[index-1])
+			if leftTokens >= rightTokens {
+				return false
+			}
+		}
+		if index > 0 && overviewMemberTokenTotal(member) > overviewMemberTokenTotal(snapshot.Members[index-1]) {
+			return false
+		}
+	}
+	return true
+}
+
+func pagedMemberStableIdentity(member OverviewMember) string {
+	if member.UserID > 0 {
+		return fmt.Sprintf("user:%d", member.UserID)
+	}
+	externalID := strings.TrimSpace(member.DirectoryMemberExternalID)
+	if externalID == "" {
+		return ""
+	}
+	return "directory:" + externalID
 }
 
 func sameStableTrendSubject(member OverviewMember, series TopMemberTrendSeries) bool {

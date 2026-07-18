@@ -257,6 +257,23 @@ type TrendCacheResult struct {
 	Freshness SnapshotFreshness
 }
 
+type MembersSnapshot struct {
+	Window  OverviewWindow   `json:"window"`
+	Members []OverviewMember `json:"members"`
+}
+
+type MembersOriginLoadResult struct {
+	Snapshot    *MembersSnapshot
+	SnapshotErr error
+}
+
+type MembersOriginLoader func(context.Context) (MembersOriginLoadResult, error)
+
+type MembersCacheResult struct {
+	Snapshot  *MembersSnapshot
+	Freshness SnapshotFreshness
+}
+
 type SnapshotCacheOptions struct {
 	Namespace       string
 	CommandTimeout  time.Duration
@@ -270,6 +287,7 @@ type SnapshotCacheOptions struct {
 	Sleep           func(context.Context, time.Duration) error
 	SummaryMetrics  readcache.Metrics
 	TrendMetrics    readcache.Metrics
+	MembersMetrics  readcache.Metrics
 	OverviewMetrics readcache.Metrics
 }
 

@@ -417,6 +417,113 @@ func (s *Service) readOverviewSnapshot(ctx context.Context, actorUserID int, par
 	return result, scope.Version, nil
 }
 
+func (s *Service) readMembersSnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*MembersCacheResult, string, error) {
+	normalized, err := normalizeOverviewParams(params)
+	if err != nil {
+		return nil, "", fmt.Errorf("normalize team members snapshot params: %w", err)
+	}
+	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve team members representative scope: %w", err)
+	}
+	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
+	}
+
+	loader := func(loadCtx context.Context) (MembersOriginLoadResult, error) {
+		var provider relay.Provider
+		overviewSubjects := scope.OverviewSubjects
+		if len(overviewSubjects) == 0 {
+			overviewSubjects = scope.Subjects
+		}
+		if len(overviewSubjects) <= s.fullScopeCap {
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
+			if resolveErr != nil {
+				return MembersOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
+			}
+			provider = resolvedProvider
+		}
+		snapshot, loadErr := s.generateMembersSnapshot(loadCtx, scope, provider, normalized)
+		if loadErr == nil {
+			return MembersOriginLoadResult{Snapshot: snapshot}, nil
+		}
+		if isHardSnapshotOriginError(loadErr) {
+			return MembersOriginLoadResult{}, loadErr
+		}
+		return MembersOriginLoadResult{SnapshotErr: loadErr}, nil
+	}
+
+	if s.snapshotCache == nil {
+		loaded, loadErr := loader(ctx)
+		if loadErr != nil {
+			return nil, "", fmt.Errorf("load team members snapshot origin: %w", loadErr)
+		}
+		if loaded.SnapshotErr != nil {
+			return nil, "", fmt.Errorf("load team members snapshot origin: %w", loaded.SnapshotErr)
+		}
+		now := time.Now().UTC()
+		return &MembersCacheResult{
+			Snapshot: loaded.Snapshot,
+			Freshness: SnapshotFreshness{
+				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
+			},
+		}, scope.Version, nil
+	}
+
+	scopeHash, err := effectiveScopeHash(scope)
+	if err != nil {
+		return nil, "", fmt.Errorf("hash team members representative scope: %w", err)
+	}
+	result, err := s.snapshotCache.GetMembersOrLoad(ctx, SnapshotCacheKey{
+		ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
+		ActorID: actorUserID, ScopeVersion: scope.Version, ScopeHash: scopeHash, Params: normalized,
+	}, loader)
+	if err != nil {
+		return nil, "", fmt.Errorf("read team members snapshot: %w", err)
+	}
+	return result, scope.Version, nil
+}
+
+func (s *Service) generateMembersSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*MembersSnapshot, error) {
+	overviewSubjects := scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = scope.Subjects
+	}
+	if len(overviewSubjects) > s.fullScopeCap {
+		return &MembersSnapshot{Window: buildOverviewWindow(params), Members: []OverviewMember{}}, nil
+	}
+	summaryProvider, ok := provider.(relay.TeamUsageSummaryProvider)
+	if !ok {
+		return nil, fmt.Errorf("team members summary capability: %w", ErrProviderUnsupported)
+	}
+	subjects, relayUserIDs, err := s.resolveOverviewSubjects(ctx, scope, provider)
+	if err != nil {
+		return nil, fmt.Errorf("resolve team members Relay subjects: %w", err)
+	}
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+		RequireCompleteRange: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load team members usage stats: %w", err)
+	}
+	windowTotals := make(map[int64]overviewWindowTotal, len(statsByRelayUserID))
+	for relayUserID, stat := range statsByRelayUserID {
+		total := overviewWindowTotal{TotalTokens: stat.RangeTotalTokens}
+		if stat.RangeActualCost != nil {
+			total.ActualCost = *stat.RangeActualCost
+		}
+		windowTotals[relayUserID] = total
+	}
+	members := BuildOverviewMemberDetails(subjects, statsByRelayUserID, windowTotals)
+	return &MembersSnapshot{
+		Window:  buildOverviewWindow(params),
+		Members: rankMembersForPagination(members),
+	}, nil
+}
+
 func (s *Service) generateSummarySnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*SummarySnapshot, error) {
 	overviewSubjects := scope.OverviewSubjects
 	if len(overviewSubjects) == 0 {
