@@ -1,7 +1,7 @@
 # ae-cli Deterministic Tool Configuration Design
 
 **Date:** 2026-05-19  
-**Status:** Implemented current contract; 2026-07-18 explicit tool-selection follow-up approved, implementation pending
+**Status:** Implemented current contract
 **Scope:** `ae-cli/`, `backend/internal/handler/provider.go`, `docs/`  
 **Related:**  
 - [2026-03-24-ae-cli-smart-tool-discovery-design.md](./2026-03-24-ae-cli-smart-tool-discovery-design.md)  
@@ -29,15 +29,14 @@ ae-cli discover
 2. 选择一个 provider
    - 默认取 `is_primary=true`
    - 可通过 `--provider <name>` 显式覆盖
-3. 在本机检测受支持工具
-   - `codex`：优先检测 `PATH` 中的 CLI；若 CLI 不存在，也识别 macOS `Codex.app`
-   - `claude`
-   - `gemini`
+3. 选择受支持工具
+   - 默认通过 `PATH` 自动检测 `codex`、`claude`、`gemini`；若 `codex` CLI 不存在，还会依次识别 macOS `ChatGPT.app` 和旧 `Codex.app`
+   - 可通过可重复的 `--tool <codex|claude|gemini>` 显式选择工具并跳过安装检测
 4. 按工具对应的 relay `group.platform` 选择 credential
    - `codex` -> `openai`
    - `claude` -> `anthropic`
    - `gemini` -> `gemini`
-5. 仅对已安装且存在匹配 platform credential 的工具写入本地配置
+5. 仅对已检测或显式选择且存在匹配 platform credential 的工具写入本地配置
 
 ## Goals
 
@@ -66,13 +65,14 @@ ae-cli discover
 ### Tool detection
 
 - CLI 优先通过 `exec.LookPath` 检测本机是否安装 `codex`、`claude`、`gemini`。
-- 对 Codex，若 `codex` CLI 不在 `PATH` 中，CLI 会继续检测 `~/Applications/Codex.app` 和 `/Applications/Codex.app`。只安装 Codex App 时也应写入 `~/.codex/config.toml` 和 `~/.codex/auth.json`，因为 App 与 CLI 共用 `~/.codex` 配置目录。
-- 未安装的工具不会报错，只会跳过。
+- 对 Codex，若 `codex` CLI 不在 `PATH` 中，CLI 会按顺序继续检测 `~/Applications/ChatGPT.app`、`/Applications/ChatGPT.app`、`~/Applications/Codex.app` 和 `/Applications/Codex.app`。只安装当前 ChatGPT App 或旧 Codex App 时也应写入 `~/.codex/config.toml` 和 `~/.codex/auth.json`，因为 App 与 CLI 共用 `~/.codex` 配置目录。
+- 一个或多个 `--tool` 值会显式选择受支持工具并跳过安装检测；该参数可重复，也接受逗号分隔值。显式选择仍要求存在匹配的 platform credential。
+- 未传 `--tool` 时，未安装的工具不会报错，只会跳过。
 - 已安装但没有匹配 platform credential 的工具也会跳过。例如选中的 provider 只有 `openai` group 时，CLI 只配置 Codex，不会改 Claude 或 Gemini。
 
 ## 2026-07-18 Explicit Tool Selection Follow-up
 
-本节定义已批准、待实现的当前合同扩展。实现完成后，它将并入上方 Current Contract；在此之前，现有无参数自动检测行为仍是代码现状。
+本节记录 2026-07-18 已实现并已并入上方 Current Contract 的显式工具选择与 ChatGPT app 检测扩展。
 
 ### Command contract
 

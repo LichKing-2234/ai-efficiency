@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** The original rollout and the 2026-05-29 Codex app-only follow-up are complete. The 2026-07-18 explicit tool-selection and ChatGPT app follow-up is approved and ready for execution; its unchecked steps are the active work ledger.
+**Status:** The original rollout, the 2026-05-29 Codex app-only follow-up, and the 2026-07-18 explicit tool-selection and ChatGPT app follow-up are complete.
 
 **Goal:** Keep deterministic provider configuration intact while allowing users to explicitly configure supported tools that are not locally detectable and recognizing the renamed macOS `ChatGPT.app` as Codex.
 
@@ -317,7 +317,7 @@ git commit -m "fix(ae-cli): detect Codex through ChatGPT app"
 - Consumes: the built `ae-cli` binary, mock `/api/v1/user/providers`, and the Task 1/2 CLI contracts.
 - Produces: executable proof for ChatGPT app-only detection and explicit Codex configuration with no detectable Codex binary or app.
 
-- [ ] **Step 1: Extend the mock E2E fixture to exercise both paths**
+- [x] **Step 1: Extend the mock E2E fixture to exercise both paths**
 
 In `ae-cli/test/discover-e2e.sh`:
 
@@ -339,7 +339,7 @@ grep -F "Configured provider relay.main for 1 tool(s):" "${EXPLICIT_OUTPUT_FILE}
 grep -F "  - codex" "${EXPLICIT_OUTPUT_FILE}" >/dev/null
 ```
 
-- [ ] **Step 2: Build a temporary CLI and run the E2E script**
+- [x] **Step 2: Build a temporary CLI and run the E2E script**
 
 Run:
 
@@ -349,7 +349,7 @@ cd ae-cli && go build -o /tmp/ae-cli-discover-followup . && bash test/discover-e
 
 Expected: exit code 0 with both default ChatGPT app detection and explicit `--tool codex` assertions passing.
 
-- [ ] **Step 3: Update current architecture and contract status**
+- [x] **Step 3: Update current architecture and contract status**
 
 In `docs/architecture.md`, update the `ae-cli discover` runtime bullets to state that:
 
@@ -363,7 +363,7 @@ In `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-de
 - Update the Overview and Tool detection sections to describe `ChatGPT.app` and `--tool` as current behavior.
 - Change the 2026-07-18 follow-up introduction from approved/pending language to implemented language.
 
-- [ ] **Step 4: Run full CLI verification and diff hygiene**
+- [x] **Step 4: Run full CLI verification and diff hygiene**
 
 Run:
 
@@ -374,7 +374,7 @@ cd .. && git diff --check
 
 Expected: all ae-cli packages pass and `git diff --check` prints no errors.
 
-- [ ] **Step 5: Confirm the built help surface**
+- [x] **Step 5: Confirm the built help surface**
 
 Run:
 
@@ -384,7 +384,7 @@ Run:
 
 Expected: output contains `--tool strings` and documents supported tools plus repeatability.
 
-- [ ] **Step 6: Mark the follow-up complete and commit verification/docs**
+- [x] **Step 6: Mark the follow-up complete and commit verification/docs**
 
 After Steps 1-5 actually pass, change the plan Status to state that the 2026-07-18 follow-up is complete and check every completed step above. Then run:
 
