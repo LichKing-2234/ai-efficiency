@@ -507,7 +507,10 @@ func (s *Service) generateTrendSnapshot(ctx context.Context, scope *representati
 	}
 	data, err := s.loadTeamTrendOrigin(ctx, scope, provider, params)
 	if err != nil {
-		return nil, err
+		if isHardTrendSnapshotOriginError(ctx, err) {
+			return nil, err
+		}
+		return trendUnavailableSnapshot(params, "provider_error"), err
 	}
 	return buildTrendSnapshot(scope, params, data), data.sourceErr
 }
@@ -668,7 +671,11 @@ func buildTrendSnapshot(scope *representativescope.Scope, params OverviewParams,
 }
 
 func trendUnavailableForLargeScope(params OverviewParams) *TrendSnapshot {
-	reason := "scope_too_large"
+	return trendUnavailableSnapshot(params, "scope_too_large")
+}
+
+func trendUnavailableSnapshot(params OverviewParams, unavailableReason string) *TrendSnapshot {
+	reason := unavailableReason
 	return &TrendSnapshot{
 		Window:     buildOverviewWindow(params),
 		TopMembers: []OverviewMember{},

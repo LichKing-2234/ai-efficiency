@@ -836,8 +836,13 @@ func TestTrendProjectsEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
 	}
 
 	now = now.Add(4*time.Minute + 16*time.Second)
-	if _, err := svc.Trend(ctx, 1, params); !errors.Is(err, transient) {
-		t.Fatalf("expired Trend() error = %v, want transient origin error", err)
+	unavailable, err := svc.Trend(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("expired Trend() error = %v", err)
+	}
+	if unavailable.CacheStatus != "miss" || !unavailable.TopMemberTrend.Unavailable ||
+		unavailable.TopMemberTrend.UnavailableReason == nil || *unavailable.TopMemberTrend.UnavailableReason != "provider_error" {
+		t.Fatalf("expired Trend() = %+v, want cold provider_error state", unavailable)
 	}
 }
 
