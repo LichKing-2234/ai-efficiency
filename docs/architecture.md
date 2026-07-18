@@ -500,14 +500,17 @@ Pull-based pool collectors export current database open/in-use/idle
 connections, wait count/duration, and max-idle/max-idle-time/max-lifetime
 closures. Redis pool metrics separately expose current total/idle connections
 and pending requests plus cumulative waits, wait duration, timeouts, and stale
-connections removed. These pool measurements are
-separate from the application cache counter. The work-item cache binds that
-counter once to `work_items_counts` and the closed outcomes `fresh`, `miss`,
-`stale`, `error`, `refresh`, `lease_acquired`, `lease_wait`, and
-`lease_failed`; it never sends a revision, actor, role, Redis key/token, or
-value. Redis failure still uses the authoritative #119 fallback. A non-miss
-lease-TTL error now follows that fallback immediately instead of being treated
-as lease expiry.
+connections removed. These pool measurements are separate from the application
+cache counter. Production startup binds that counter once to each stable read
+model name: `work_items_counts`, `personal_usage`, `representative_scope`,
+`team_usage_summary`, `team_usage_overview`, `repository_inventory`, and
+`provider_metadata`. Every domain records only the closed outcomes `fresh`,
+`miss`, `stale`, `error`, `refresh`, `lease_acquired`, `lease_wait`, and
+`lease_failed`; fresh-only caches do not fabricate stale events. No observer
+receives a revision, actor, role, provider, scope, date range, Redis key/token,
+or cached value. Redis failure still uses each domain's existing authoritative
+fallback. A non-miss lease-TTL error follows that fallback immediately instead
+of being treated as lease expiry.
 
 Authenticated frontend pages make one 10-percent sampling decision by default.
 Sampling waits for Vue Router's initial redirects and authorization guards to

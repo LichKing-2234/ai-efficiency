@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress on `feat/read-cache-metrics-166` from `feat/platform-loading-performance@8db50f91`. The clean backend baseline passed on 2026-07-18. No implementation or focused RED/GREEN evidence has been recorded yet.
+**Status:** In progress on `feat/read-cache-metrics-166` from `feat/platform-loading-performance@8db50f91`. The clean backend baseline passed on 2026-07-18. All production cache recorders are implemented and focused/double/race verification is green; full repository verification, review, PR CI, and integration remain.
 
 **Goal:** Complete issue #166 by emitting privacy-safe, low-cardinality outcomes for every production Redis read model and proving the dashboard receives more than work-item cache data.
 
@@ -37,11 +37,13 @@
 - Every domain option struct accepts one or more `readcache.Metrics` values without importing `telemetry`.
 - Team Usage options expose distinct observers for Summary and Overview.
 
-- [ ] **Step 1: Add focused tests that express the constructor contracts**
+- [x] **Step 1: Add focused tests that express the constructor contracts**
 
   Add recording metrics fakes and compile-time constructor usage for each domain. Tests must assert cold `miss`/`refresh`/`lease_acquired`, warm `fresh`, distributed `lease_wait`, Redis or release `error`/`lease_failed`, and eligible personal/team `stale` behavior. Assert observer snapshots contain only outcome strings.
 
-- [ ] **Step 2: Run focused tests and record RED**
+  RED test evidence (2026-07-18): real cold/warm tests were added for Personal Usage, Team Summary/Overview, Representative Scope, Repository Inventory, and provider metadata. Team tests require distinct observers for Summary and Overview.
+
+- [x] **Step 2: Run focused tests and record RED**
 
   ```bash
   cd backend
@@ -50,7 +52,9 @@
 
   Expected: compile failures because the domain option structs do not expose metrics observers.
 
-- [ ] **Step 3: Add the shared interface and adapt the existing work-item alias**
+  RED evidence (2026-07-18): the focused command failed only on missing `Metrics`, `SummaryMetrics`, `OverviewMetrics`, and `MetadataMetrics` option fields in the five owning packages.
+
+- [x] **Step 3: Add the shared interface and adapt the existing work-item alias**
 
   ```go
   package readcache
@@ -62,12 +66,16 @@
 
   Keep `workitems.CountsCacheMetrics` as an alias so existing callers and tests retain source compatibility.
 
-- [ ] **Step 4: Commit the RED contract checkpoint**
+  Implementation evidence (2026-07-18): `readcache.Metrics` is the shared domain-facing interface, and `workitems.CountsCacheMetrics` remains a source-compatible alias.
+
+- [x] **Step 4: Commit the RED contract checkpoint**
 
   ```bash
   git add backend/internal/readcache/metrics.go backend/internal/*/*metrics_test.go backend/internal/workitems/cache.go
   git commit -m "test(observability): define production cache metric contracts"
   ```
+
+  Execution note (2026-07-18): the RED contracts and minimal instrumentation were kept together through the behavior GREEN checkpoint rather than creating a deliberately failing intermediate commit.
 
 ### Task 2: Instrument Personal, Team, Scope, And Repository Read Models
 
@@ -87,11 +95,13 @@
 - `representativescope.CacheOptions.Metrics readcache.Metrics`
 - `repo.InventoryCacheOptions.Metrics readcache.Metrics`
 
-- [ ] **Step 1: Record outcomes only at existing state decisions**
+- [x] **Step 1: Record outcomes only at existing state decisions**
 
   Add nil-safe `record` helpers. Record valid decoded hits as `fresh`, misses/malformed envelopes as `miss`, authoritative calls as `refresh`, eligible stale fallback as `stale`, and Redis/loader/write/release failures as `error`. Record lease acquisition, observed contention, and acquire/TTL/release failures with the closed lease outcomes.
 
-- [ ] **Step 2: Verify focused GREEN**
+  Implementation evidence (2026-07-18): Personal Usage, both current Team Usage lanes, Representative Scope, and Repository Inventory record at their existing cache decisions. Tests cover cold/warm reads, eligible stale, Redis read fallback, distributed lease wait, lease acquire failure, and release failure.
+
+- [x] **Step 2: Verify focused GREEN**
 
   ```bash
   cd backend
@@ -102,12 +112,16 @@
 
   Expected: all focused tests pass and existing cache result/fallback assertions remain unchanged.
 
-- [ ] **Step 3: Commit domain instrumentation**
+  GREEN evidence (2026-07-18): the affected readcache/domain/workitems/telemetry/server packages passed twice; focused metrics tests passed under `-race` for all five newly instrumented domain packages.
+
+- [x] **Step 3: Commit domain instrumentation**
 
   ```bash
   git add backend/internal/readcache backend/internal/personalusage backend/internal/teamusage backend/internal/representativescope backend/internal/repo
   git commit -m "feat(observability): instrument production read caches"
   ```
+
+  Commit evidence (2026-07-18): `754e43e3 feat(observability): instrument production read caches` includes the domain state machines, provider metadata, production wiring, and focused tests as one reviewable behavior checkpoint.
 
 ### Task 3: Instrument Provider Metadata And Production Wiring
 
@@ -122,15 +136,19 @@
 - `relayruntime.Options.MetadataMetrics readcache.Metrics`
 - `initializeRepoInventory(..., metrics readcache.Metrics)` passes the repository recorder into its cache.
 
-- [ ] **Step 1: Add a server wiring RED test**
+- [x] **Step 1: Add a server wiring RED test**
 
   Assert startup binds the seven stable names and that Team Summary and Overview receive different recorders. Keep the assertion at the constructor/wiring source boundary rather than starting a real server.
 
-- [ ] **Step 2: Record provider metadata outcomes and wire stable names**
+  RED evidence (2026-07-18): `cmd/server` failed only because `newProductionCacheMetrics` was absent.
+
+- [x] **Step 2: Record provider metadata outcomes and wire stable names**
 
   Provider metadata records the same fresh/miss/refresh/lease/error lifecycle without caching membership or introducing identity labels. In `main.go`, bind all stable recorder names once and inject them through domain options.
 
-- [ ] **Step 3: Verify focused GREEN**
+  Implementation evidence (2026-07-18): provider group/model metadata uses one stable observer, and startup injects all seven preinitialized recorders. The wiring test gathers every name with exactly `cache` and `outcome` labels.
+
+- [x] **Step 3: Verify focused GREEN**
 
   ```bash
   cd backend
@@ -139,12 +157,16 @@
   go test -race ./internal/relayruntime -run 'MetadataMetrics' -count=1
   ```
 
-- [ ] **Step 4: Commit provider and startup wiring**
+  GREEN evidence (2026-07-18): provider metadata, telemetry, and server wiring tests pass, including the focused race run within the combined domain command.
+
+- [x] **Step 4: Commit provider and startup wiring**
 
   ```bash
   git add backend/internal/relayruntime backend/cmd/server
   git commit -m "feat(observability): wire all read cache metrics"
   ```
+
+  Commit evidence (2026-07-18): provider/startup wiring is included in `754e43e3` so no intermediate commit can construct partially instrumented production caches.
 
 ### Task 4: Dashboard, Architecture, Full Verification, And Delivery
 
@@ -158,15 +180,19 @@
 **Interfaces:**
 - Grafana exposes application cache rates grouped by stable cache and outcome and demonstrates the complete production name set.
 
-- [ ] **Step 1: Add RED dashboard/name coverage**
+- [x] **Step 1: Add RED dashboard/name coverage**
 
   Require the dashboard or its documented variables to identify every stable production cache name while retaining generic `cache`/`outcome` queries and prohibited-label checks.
 
-- [ ] **Step 2: Update the dashboard, operator documentation, and architecture**
+  Evidence (2026-07-18): the existing dashboard contract already requires a generic `sum by (cache, outcome)` application-cache panel and prohibited-label scan. The new server wiring RED/GREEN test gathers every stable production cache name with exactly those two labels.
+
+- [x] **Step 2: Update the dashboard, operator documentation, and architecture**
 
   Record the complete cache name set, per-domain lifecycle coverage, privacy boundary, Redis fallback behavior, and that Summary/Overview are distinct current read models. Do not claim #167/#168 independent read models in this ticket.
 
-- [ ] **Step 3: Run full verification**
+  Documentation evidence (2026-07-18): the operator README and current architecture list all seven names, the closed outcome set, preinitialized series, privacy exclusions, and authoritative fallback. The generic Grafana JSON needs no query change to render the new series.
+
+- [x] **Step 3: Run full verification**
 
   ```bash
   git diff --check
@@ -178,6 +204,8 @@
   cd ../ae-cli && go test ./... -count=1
   cd .. && bash deploy/test/release-frontend-embed-test.sh
   ```
+
+  Full verification evidence (2026-07-18): `git diff --check`, backend `go test ./... -count=1`, backend `go vet ./...`, the listed race-enabled cache/telemetry packages, frontend 46 files / 680 tests, frontend production build, ae-cli `go test ./... -count=1`, and the embedded release frontend policy all passed. The first frontend attempt failed before tests because the new worktree had no `node_modules`; `npm ci` restored the lockfile-defined environment and the rerun passed without dependency or lockfile changes.
 
 - [ ] **Step 4: Review the exact branch and deliver**
 
