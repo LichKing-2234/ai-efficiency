@@ -37,9 +37,7 @@ type RevisionReader interface {
 
 type RedisCountsStore = readcache.RedisStore
 
-type CountsCacheMetrics interface {
-	Record(outcome string)
-}
+type CountsCacheMetrics = readcache.Metrics
 
 func NewRedisCountsStore(client redis.UniversalClient) *RedisCountsStore {
 	return readcache.NewRedisStore(client)

@@ -17,7 +17,7 @@ func TestInitializeRepoInventoryWiresRevisionAndCache(t *testing.T) {
 	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
 	t.Cleanup(func() { _ = redisClient.Close() })
 
-	cache, revisions, err := initializeRepoInventory(context.Background(), client, redisClient, "test")
+	cache, revisions, err := initializeRepoInventory(context.Background(), client, redisClient, "test", nil)
 	if err != nil {
 		t.Fatalf("initializeRepoInventory() error = %v", err)
 	}

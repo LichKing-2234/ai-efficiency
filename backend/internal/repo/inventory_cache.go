@@ -35,6 +35,7 @@ type InventoryCacheOptions struct {
 	RandFloat64    func() float64
 	NewToken       func() string
 	Sleep          func(context.Context, time.Duration) error
+	Metrics        readcache.Metrics
 }
 
 type InventoryCache struct {
@@ -128,26 +129,35 @@ func (c *InventoryCache) GetOrLoad(ctx context.Context, loader InventoryLoader) 
 
 func (c *InventoryCache) loadWithLease(ctx context.Context, key, revision string, loader InventoryLoader) ([]InventoryProviderSummary, error) {
 	if inventory, hit, err := c.read(ctx, key); hit {
+		c.record("fresh")
 		return inventory, nil
 	} else if err != nil {
+		c.record("error")
 		return c.loadAuthoritative(ctx, loader)
 	}
+	c.record("miss")
 
 	leaseKey := key + ":lease"
 	for {
 		token := c.options.NewToken()
 		acquired, err := c.acquireLease(ctx, leaseKey, token)
 		if err != nil {
+			c.record("error")
+			c.record("lease_failed")
 			return c.loadAuthoritative(ctx, loader)
 		}
 		if acquired {
+			c.record("lease_acquired")
 			return c.loadAsLeaseHolder(ctx, key, leaseKey, token, revision, loader)
 		}
+		c.record("lease_wait")
 
 		for {
 			if inventory, hit, err := c.read(ctx, key); hit {
+				c.record("fresh")
 				return inventory, nil
 			} else if err != nil {
+				c.record("error")
 				return c.loadAuthoritative(ctx, loader)
 			}
 			ttl, err := c.leaseTTL(ctx, leaseKey)
@@ -155,6 +165,8 @@ func (c *InventoryCache) loadWithLease(ctx context.Context, key, revision string
 				break
 			}
 			if err != nil {
+				c.record("error")
+				c.record("lease_failed")
 				return c.loadAuthoritative(ctx, loader)
 			}
 			wait := c.options.PollInterval
@@ -172,8 +184,10 @@ func (c *InventoryCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, t
 	defer c.releaseLease(leaseKey, token)
 
 	if inventory, hit, err := c.read(ctx, key); hit {
+		c.record("fresh")
 		return inventory, nil
 	} else if err != nil {
+		c.record("error")
 		return c.loadAuthoritative(ctx, loader)
 	}
 
@@ -192,16 +206,21 @@ func (c *InventoryCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, t
 	if err != nil {
 		return nil, fmt.Errorf("encode repository inventory cache value: %w", err)
 	}
-	_ = c.set(ctx, key, value, c.valueTTL())
+	if err := c.set(ctx, key, value, c.valueTTL()); err != nil {
+		c.record("error")
+	}
 	return inventory, nil
 }
 
 func (c *InventoryCache) loadAuthoritative(ctx context.Context, loader InventoryLoader) ([]InventoryProviderSummary, error) {
+	c.record("refresh")
 	inventory, err := loader(ctx)
 	if err != nil {
+		c.record("error")
 		return nil, err
 	}
 	if inventory == nil {
+		c.record("error")
 		return nil, fmt.Errorf("repository inventory loader returned nil inventory")
 	}
 	return inventory, nil
@@ -295,7 +314,19 @@ func (c *InventoryCache) set(ctx context.Context, key string, value []byte, ttl 
 func (c *InventoryCache) releaseLease(key, token string) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.options.ReleaseTimeout)
 	defer cancel()
-	_, _ = c.store.ReleaseLease(ctx, key, token)
+	released, err := c.store.ReleaseLease(ctx, key, token)
+	if err != nil {
+		c.record("error")
+	}
+	if err != nil || !released {
+		c.record("lease_failed")
+	}
+}
+
+func (c *InventoryCache) record(outcome string) {
+	if c != nil && c.options.Metrics != nil {
+		c.options.Metrics.Record(outcome)
+	}
 }
 
 func (c *InventoryCache) valueTTL() time.Duration {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
@@ -84,6 +85,7 @@ type CacheOptions struct {
 	RandFloat64    func() float64
 	NewToken       func() string
 	Sleep          func(context.Context, time.Duration) error
+	Metrics        readcache.Metrics
 }
 
 type ProviderResolver interface {

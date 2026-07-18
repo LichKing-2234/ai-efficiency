@@ -197,7 +197,7 @@ func (m *Manager) loadMetadata(ctx context.Context, key string, valid func([]byt
 	}
 	return m.metadataFlights.Do(ctx, key, m.options.RefreshTimeout, func(sharedCtx context.Context) ([]byte, error) {
 		if m.options.Store == nil {
-			return loader(sharedCtx)
+			return m.loadMetadataAuthoritative(sharedCtx, loader)
 		}
 		return m.loadMetadataWithLease(sharedCtx, key, valid, loader)
 	})
@@ -205,10 +205,13 @@ func (m *Manager) loadMetadata(ctx context.Context, key string, valid func([]byt
 
 func (m *Manager) loadMetadataWithLease(ctx context.Context, key string, valid func([]byte) bool, loader func(context.Context) ([]byte, error)) ([]byte, error) {
 	if raw, hit, err := m.readMetadata(ctx, key, valid); hit {
+		m.recordMetadata("fresh")
 		return raw, nil
 	} else if err != nil {
-		return loader(ctx)
+		m.recordMetadata("error")
+		return m.loadMetadataAuthoritative(ctx, loader)
 	}
+	m.recordMetadata("miss")
 
 	leaseKey := key + ":lease"
 	waitLimit := m.options.RefreshTimeout / 3
@@ -220,27 +223,35 @@ func (m *Manager) loadMetadataWithLease(ctx context.Context, key string, valid f
 		token := m.options.NewToken()
 		acquired, err := m.acquireMetadataLease(ctx, leaseKey, token)
 		if err != nil {
-			return loader(ctx)
+			m.recordMetadata("error")
+			m.recordMetadata("lease_failed")
+			return m.loadMetadataAuthoritative(ctx, loader)
 		}
 		if acquired {
+			m.recordMetadata("lease_acquired")
 			return m.loadMetadataAsLeaseHolder(ctx, key, leaseKey, token, valid, loader)
 		}
+		m.recordMetadata("lease_wait")
 		for {
 			if raw, hit, err := m.readMetadata(ctx, key, valid); hit {
+				m.recordMetadata("fresh")
 				return raw, nil
 			} else if err != nil {
-				return loader(ctx)
+				m.recordMetadata("error")
+				return m.loadMetadataAuthoritative(ctx, loader)
 			}
 			ttl, err := m.metadataLeaseTTL(ctx, leaseKey)
 			if errors.Is(err, readcache.ErrMiss) || ttl <= 0 {
 				break
 			}
 			if err != nil {
-				return loader(ctx)
+				m.recordMetadata("error")
+				m.recordMetadata("lease_failed")
+				return m.loadMetadataAuthoritative(ctx, loader)
 			}
 			remaining := waitLimit - waited
 			if remaining <= 0 {
-				return loader(ctx)
+				return m.loadMetadataAuthoritative(ctx, loader)
 			}
 			wait := m.options.PollInterval
 			if ttl < wait {
@@ -260,19 +271,34 @@ func (m *Manager) loadMetadataWithLease(ctx context.Context, key string, valid f
 func (m *Manager) loadMetadataAsLeaseHolder(ctx context.Context, key, leaseKey, token string, valid func([]byte) bool, loader func(context.Context) ([]byte, error)) ([]byte, error) {
 	defer m.releaseMetadataLease(leaseKey, token)
 	if raw, hit, err := m.readMetadata(ctx, key, valid); hit {
+		m.recordMetadata("fresh")
 		return raw, nil
 	} else if err != nil {
-		return loader(ctx)
+		m.recordMetadata("error")
+		return m.loadMetadataAuthoritative(ctx, loader)
 	}
-	raw, err := loader(ctx)
+	raw, err := m.loadMetadataAuthoritative(ctx, loader)
 	if err != nil {
 		return nil, err
 	}
 	if !valid(raw) {
+		m.recordMetadata("error")
 		return nil, fmt.Errorf("provider metadata loader returned invalid content")
 	}
-	_ = m.setMetadata(ctx, key, raw)
+	if err := m.setMetadata(ctx, key, raw); err != nil {
+		m.recordMetadata("error")
+	}
 	return append([]byte(nil), raw...), nil
+}
+
+func (m *Manager) loadMetadataAuthoritative(ctx context.Context, loader func(context.Context) ([]byte, error)) ([]byte, error) {
+	m.recordMetadata("refresh")
+	raw, err := loader(ctx)
+	if err != nil {
+		m.recordMetadata("error")
+		return nil, err
+	}
+	return raw, nil
 }
 
 func (m *Manager) readMetadata(ctx context.Context, key string, valid func([]byte) bool) ([]byte, bool, error) {
@@ -318,7 +344,19 @@ func (m *Manager) metadataLeaseTTL(ctx context.Context, key string) (time.Durati
 func (m *Manager) releaseMetadataLease(key, token string) {
 	ctx, cancel := context.WithTimeout(context.Background(), m.options.ReleaseTimeout)
 	defer cancel()
-	_, _ = m.options.Store.ReleaseLease(ctx, key, token)
+	released, err := m.options.Store.ReleaseLease(ctx, key, token)
+	if err != nil {
+		m.recordMetadata("error")
+	}
+	if err != nil || !released {
+		m.recordMetadata("lease_failed")
+	}
+}
+
+func (m *Manager) recordMetadata(outcome string) {
+	if m != nil && m.options.MetadataMetrics != nil {
+		m.options.MetadataMetrics.Record(outcome)
+	}
 }
 
 func validGroupEnvelope(raw []byte) bool {
