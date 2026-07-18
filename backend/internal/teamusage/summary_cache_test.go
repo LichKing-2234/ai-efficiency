@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -135,6 +136,81 @@ func TestTrendCacheUsesEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
 		return TrendOriginLoadResult{SnapshotErr: transient}, nil
 	}); !errors.Is(err, transient) {
 		t.Fatalf("expired stale error = %v, want transient origin error", err)
+	}
+}
+
+func TestTrendCacheRejectsOldSchemaAndMalformedContracts(t *testing.T) {
+	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		schemaVersion int
+		mutate        func(*TrendSnapshot)
+	}{
+		{name: "old schema", schemaVersion: 0, mutate: func(*TrendSnapshot) {}},
+		{name: "missing top member identity", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			snapshot.TopMembers = []OverviewMember{{Rank: 1, DisplayName: "Unknown"}}
+			snapshot.TopMemberTrend.Series = []TopMemberTrendSeries{{Rank: 1, DisplayName: "Unknown", Points: []relay.UsageTrendPoint{}}}
+		}},
+		{name: "invalid unavailable reason", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			reason := "unexpected_reason"
+			snapshot.TopMemberTrend.Unavailable = true
+			snapshot.TopMemberTrend.UnavailableReason = &reason
+		}},
+		{name: "wrong rank basis", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			snapshot.TopMemberTrend.RankBasis = "range_actual_cost"
+		}},
+		{name: "too many department comparisons", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			snapshot.DepartmentTrend.Series = make([]DepartmentTrendSeries, 13)
+			for index := range snapshot.DepartmentTrend.Series {
+				snapshot.DepartmentTrend.Series[index] = DepartmentTrendSeries{
+					SeriesType: departmentTrendDepartment, DepartmentExternalID: fmt.Sprintf("department-%02d", index),
+					DisplayName: fmt.Sprintf("Department %02d", index), Rank: index + 1, Points: []relay.UsageTrendPoint{},
+				}
+			}
+		}},
+		{name: "duplicate team total", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			snapshot.DepartmentTrend.Series = []DepartmentTrendSeries{
+				{SeriesType: departmentTrendTeamTotal, DisplayName: "Team total", Points: []relay.UsageTrendPoint{}},
+				{SeriesType: departmentTrendTeamTotal, DisplayName: "Duplicate total", Points: []relay.UsageTrendPoint{}},
+			}
+		}},
+		{name: "unknown department series type", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			snapshot.DepartmentTrend.Series = []DepartmentTrendSeries{{SeriesType: "unknown", DisplayName: "Unknown", Points: []relay.UsageTrendPoint{}}}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache, server := testSnapshotCache(t, now, 0)
+			key := testSnapshotCacheKey()
+			encodedKey, err := trendCacheKey("test", key)
+			if err != nil {
+				t.Fatalf("trendCacheKey() error = %v", err)
+			}
+			snapshot := testTrendSnapshot()
+			tt.mutate(snapshot)
+			envelope := readModelValueEnvelope[*TrendSnapshot]{
+				SchemaVersion: tt.schemaVersion,
+				GeneratedAt:   now, FreshUntil: now.Add(54 * time.Second), StaleUntil: now.Add(4*time.Minute + 30*time.Second),
+				Snapshot: snapshot,
+			}
+			encoded, err := json.Marshal(envelope)
+			if err != nil {
+				t.Fatalf("encode malformed envelope: %v", err)
+			}
+			server.Set(encodedKey, string(encoded))
+			server.SetTTL(encodedKey, 5*time.Minute)
+			var loads atomic.Int32
+			result, err := cache.GetTrendOrLoad(context.Background(), key, func(context.Context) (TrendOriginLoadResult, error) {
+				loads.Add(1)
+				return TrendOriginLoadResult{Snapshot: testTrendSnapshot()}, nil
+			})
+			if err != nil {
+				t.Fatalf("GetTrendOrLoad() error = %v", err)
+			}
+			if loads.Load() != 1 || result.Freshness.CacheStatus != "miss" {
+				t.Fatalf("loads/status = %d/%q, want authoritative miss", loads.Load(), result.Freshness.CacheStatus)
+			}
+		})
 	}
 }
 

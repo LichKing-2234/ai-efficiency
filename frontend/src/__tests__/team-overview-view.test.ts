@@ -910,6 +910,10 @@ describe('TeamOverviewView', () => {
     expect(wrapper.find('[data-testid="team-overview-member-user-101"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-overview-trend-loading"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="team-member-trend-chart"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="range-today"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="team-overview-content"]').attributes('aria-busy')).toBe('false')
+    expect(wrapper.get('[data-testid="team-overview-content"]').classes()).toContain('opacity-100')
+    expect(wrapper.find('[data-testid="team-overview-refreshing"]').exists()).toBe(false)
 
     resolveTrend({ data: { data: trendFixture } })
     await flushPromises()

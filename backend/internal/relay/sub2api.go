@@ -2247,6 +2247,9 @@ func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int
 		}
 		out[item.UserID] = item
 	}
+	if !params.RequireCompleteRange {
+		return out, nil
+	}
 
 	missingRangeUserIDs := make([]int64, 0)
 	for _, userID := range userIDs {

@@ -365,13 +365,15 @@ func (c *readModelCache[T]) loadAuthoritative(ctx context.Context, key string, s
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if stale == nil || c.now().After(stale.StaleUntil) {
-			c.record("error")
-			return nil, loaded.SnapshotErr
-		}
 		c.record("error")
-		c.record("stale")
-		return readModelResultFromEnvelope(stale, "stale", "error"), nil
+		if stale != nil && !c.now().After(stale.StaleUntil) {
+			c.record("stale")
+			return readModelResultFromEnvelope(stale, "stale", "error"), nil
+		}
+		if c.validate != nil && c.validate(loaded.Snapshot) {
+			return readModelResultFromEnvelope(c.newEnvelope(loaded.Snapshot), "miss", "ok"), nil
+		}
+		return nil, loaded.SnapshotErr
 	}
 	if c.validate == nil || !c.validate(loaded.Snapshot) {
 		c.record("error")
@@ -471,10 +473,74 @@ func validTrendSnapshot(snapshot *TrendSnapshot) bool {
 		snapshot.TopMemberTrend.Series == nil || snapshot.DepartmentTrend.Series == nil {
 		return false
 	}
-	return len(snapshot.TopMembers) <= 12 && len(snapshot.TopMemberTrend.Series) <= 12 &&
-		len(snapshot.DepartmentTrend.Series) <= maxDepartmentComparisons+1 &&
-		strings.TrimSpace(snapshot.TopMemberTrend.UnitLabel) != "" &&
-		strings.TrimSpace(snapshot.DepartmentTrend.UnitLabel) != ""
+	if len(snapshot.TopMembers) > 12 || len(snapshot.TopMemberTrend.Series) > 12 ||
+		len(snapshot.TopMembers) != len(snapshot.TopMemberTrend.Series) ||
+		strings.TrimSpace(snapshot.TopMemberTrend.UnitLabel) == "" ||
+		snapshot.TopMemberTrend.RankBasis != topMemberRankBasisTokens ||
+		!validTrendUnavailable(snapshot.TopMemberTrend.Unavailable, snapshot.TopMemberTrend.UnavailableReason) ||
+		strings.TrimSpace(snapshot.DepartmentTrend.UnitLabel) == "" ||
+		!validTrendUnavailable(snapshot.DepartmentTrend.Unavailable, snapshot.DepartmentTrend.UnavailableReason) {
+		return false
+	}
+	for index := range snapshot.TopMembers {
+		member := snapshot.TopMembers[index]
+		series := snapshot.TopMemberTrend.Series[index]
+		if member.Rank != index+1 || series.Rank != member.Rank || strings.TrimSpace(member.DisplayName) == "" ||
+			strings.TrimSpace(series.DisplayName) == "" || !sameStableTrendSubject(member, series) || series.Points == nil ||
+			!validTrendUnavailable(series.Unavailable, series.UnavailableReason) {
+			return false
+		}
+	}
+	teamTotalCount := 0
+	comparisonCount := 0
+	for _, series := range snapshot.DepartmentTrend.Series {
+		if strings.TrimSpace(series.DisplayName) == "" || series.Points == nil ||
+			!validTrendUnavailable(series.Unavailable, series.UnavailableReason) {
+			return false
+		}
+		switch series.SeriesType {
+		case departmentTrendTeamTotal:
+			teamTotalCount++
+			if teamTotalCount > 1 || strings.TrimSpace(series.DepartmentExternalID) != "" || series.Rank != 0 {
+				return false
+			}
+		case departmentTrendDepartment:
+			comparisonCount++
+			if comparisonCount > maxDepartmentComparisons || strings.TrimSpace(series.DepartmentExternalID) == "" || series.Rank != comparisonCount {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	if len(snapshot.DepartmentTrend.Series) > 0 && teamTotalCount != 1 {
+		return false
+	}
+	return snapshot.DepartmentTrend.ComparisonTotalCount >= comparisonCount &&
+		snapshot.DepartmentTrend.ComparisonTruncated == (snapshot.DepartmentTrend.ComparisonTotalCount > comparisonCount)
+}
+
+func sameStableTrendSubject(member OverviewMember, series TopMemberTrendSeries) bool {
+	if member.UserID > 0 {
+		return series.UserID == member.UserID
+	}
+	memberExternalID := strings.TrimSpace(member.DirectoryMemberExternalID)
+	return memberExternalID != "" && strings.TrimSpace(series.DirectoryMemberExternalID) == memberExternalID && series.UserID == 0
+}
+
+func validTrendUnavailable(unavailable bool, reason *string) bool {
+	if !unavailable {
+		return reason == nil
+	}
+	if reason == nil {
+		return false
+	}
+	switch strings.TrimSpace(*reason) {
+	case "scope_too_large", "provider_error":
+		return true
+	default:
+		return false
+	}
 }
 
 func validOverviewWindow(window OverviewWindow) bool {

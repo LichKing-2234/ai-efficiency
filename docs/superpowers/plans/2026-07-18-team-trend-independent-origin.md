@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress on `feat/team-trend-independent-167` from `feat/platform-loading-performance@7c8401d3`. Baseline teamusage/handler/server and focused Team Overview frontend tests pass. The Trend cache/origin/metrics RED contract is confirmed; implementation is next.
+**Status:** In progress on `feat/team-trend-independent-167` from `feat/platform-loading-performance@7c8401d3`. The independent Trend lane is implemented. Independent review found five Important gaps; their RED regressions and GREEN remediations are complete, affected package/race/frontend verification passes, and exact-head full verification plus re-review remain.
 
 **Goal:** Complete issue #167 by giving Team Usage Trend its own bounded authoritative origin, versioned Redis read model, cache telemetry, and failure lifecycle without changing the existing response or frontend chart contracts.
 
@@ -170,6 +170,8 @@
   cd ..
   bash deploy/test/release-frontend-embed-test.sh
   ```
+
+  Pre-review evidence (2026-07-18): `git diff --check`; backend `go test ./... -count=1`, `go vet ./...`, and race-enabled `readcache`/`teamusage`/`telemetry`; frontend 46 files / 680 tests and production build; ae-cli `go test ./... -count=1`; and the embedded release frontend policy all passed. The embed script emitted its known synthetic unresolved-hook warning before completing successfully. Review remediation changed runtime behavior, so exact-head full verification must be rerun before this step is complete.
 
 - [ ] **Step 3: Review exact branch against issue #167 and the active spec**
 

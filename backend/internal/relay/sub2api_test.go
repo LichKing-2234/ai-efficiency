@@ -3773,6 +3773,39 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 	}
 }
 
+func TestSub2APIGetBatchUserUsageStatsSkipsRangeBackfillWhenNotRequired(t *testing.T) {
+	var trendCalls atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{"stats": map[string]any{
+				"1001": map[string]any{"user_id": 1001, "today_actual_cost": 1.5, "total_actual_cost": 12.5},
+			}},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, _ *http.Request) {
+		trendCalls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []any{}})
+	})
+	p := newTestProvider(t, mux)
+	summary := p.(relay.TeamUsageSummaryProvider)
+
+	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "UTC",
+		RequireCompleteRange: false,
+	})
+	if err != nil {
+		t.Fatalf("GetBatchUserUsageStats() error = %v", err)
+	}
+	if trendCalls.Load() != 0 {
+		t.Fatalf("trend fallback calls = %d, want 0", trendCalls.Load())
+	}
+	if got[1001].RangeActualCost != nil || got[1001].RangeTotalTokens != nil {
+		t.Fatalf("range fields = %#v/%#v, want incomplete stats without fallback", got[1001].RangeActualCost, got[1001].RangeTotalTokens)
+	}
+}
+
 func TestSub2APIGetBatchUserUsageStatsBackfillsMissingRangeFromTrend(t *testing.T) {
 	var requestedTrend []map[string]string
 	mux := http.NewServeMux()
@@ -3813,7 +3846,7 @@ func TestSub2APIGetBatchUserUsageStatsBackfillsMissingRangeFromTrend(t *testing.
 	summary := p.(relay.TeamUsageSummaryProvider)
 	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001, 1002}, relay.TeamUsageSummaryParams{
 		StartDate: "2026-07-01", EndDate: "2026-07-07",
-		Granularity: "day", Timezone: "Asia/Shanghai",
+		Granularity: "day", Timezone: "Asia/Shanghai", RequireCompleteRange: true,
 	})
 	if err != nil {
 		t.Fatalf("GetBatchUserUsageStats() error = %v", err)
@@ -3859,7 +3892,7 @@ func TestSub2APIGetBatchUserUsageStatsKeepsIncompleteRangeWhenTrendFails(t *test
 	summary := p.(relay.TeamUsageSummaryProvider)
 	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{
 		StartDate: "2026-07-01", EndDate: "2026-07-07",
-		Granularity: "day", Timezone: "Asia/Shanghai",
+		Granularity: "day", Timezone: "Asia/Shanghai", RequireCompleteRange: true,
 	})
 	if err != nil {
 		t.Fatalf("GetBatchUserUsageStats() fallback error = %v, want nil", err)
@@ -3917,7 +3950,7 @@ func TestSub2APIGetBatchUserUsageStatsRequiresCompleteTrendTokens(t *testing.T) 
 
 			p := newTestProvider(t, mux)
 			summary := p.(relay.TeamUsageSummaryProvider)
-			got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{})
+			got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{RequireCompleteRange: true})
 			if err != nil {
 				t.Fatalf("GetBatchUserUsageStats() error = %v", err)
 			}

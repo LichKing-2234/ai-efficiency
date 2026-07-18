@@ -472,10 +472,11 @@ Series use stable department external IDs or stable subject identities. Team tot
 The #167 refinement makes Trend an independent read model rather than a projection of the compatibility overview snapshot:
 
 1. Trend owns a versioned `team-usage-trend` Redis key space, process-local flight, distributed lease, freshness window, stale-if-error window, and stable `team_usage_trend` metrics name.
-2. Its origin resolves only current representative scope, provider binding, Relay subject identities, batch summary stats required for ranking/comparison values, and the trend capability. It does not compose the Summary DTO, rank a full member page, or construct an organization tree.
+2. Its origin resolves only current representative scope, provider binding, Relay subject identities, batch summary stats required for comparison values, and the trend capability. The stats request does not require range backfill because Trend ranks from the separately fetched points; this prevents the Relay compatibility adapter from performing the same per-user trend fan-out twice. It does not compose the Summary DTO, rank a full member page, or construct an organization tree.
 3. The cached value contains only normalized window, bounded `top_members`, `top_member_trend`, and `department_trend`. It cannot satisfy Summary, Members, Organization, or compatibility Overview, and none of those values can satisfy Trend.
 4. Compatibility Overview may reuse the same pure trend projection to preserve series semantics, but it retains a separate origin invocation and `team_usage_overview` cache until #172 composes/removes that adapter.
-5. The first-party frontend retains its independent Trend request/error/loading/stale state and async chart chunk. A delayed, failed, stale, or expired Trend request changes only the Trend section and never clears an available Summary or Members section.
+5. The first-party frontend retains its independent Trend request/error/loading/stale state and async chart chunk. A delayed, failed, stale, or expired Trend request changes only the Trend section, does not set the page-wide busy/dim/disabled state after sibling sections settle, and never clears an available Summary or Members section.
+6. A transient whole-origin Trend failure returns an eligible stale generation before its hard deadline. With no eligible stale generation, the endpoint returns the explicit `provider_error` Trend state without persisting that outage snapshot as a fresh cache value.
 
 ### Members
 

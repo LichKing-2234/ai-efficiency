@@ -288,14 +288,20 @@ compatibility overview adapter temporarily retain the authorized overview genera
   totals; missing range fields produce null range totals and the section-local
   `range_aggregation_unavailable` reason while retaining member counts plus today
   and historical comparison totals. Summary does not call trend capability, rank
-  members, project chart series, or construct an organization tree.
+  members, project chart series, or construct an organization tree. It is the only
+  Team Usage read lane that sets `RequireCompleteRange`; the Relay compatibility
+  adapter may then backfill missing range totals once. Trend and compatibility
+  Overview already fetch trend points for their own projection, so their stats read
+  explicitly skips that range fallback and cannot double the per-user trend fan-out.
 - Trend resolves only the current authorized scope, Relay identities, batch stats,
   and trend points required for its bounded DTO. It does not compose Summary,
   rank the complete member page, or construct an organization tree. Its projection
   preserves the complete independent team total, caps top members and department
   comparisons at 12, retains stable subject/department identities and unavailable
   reasons, and uses `team_usage_trend` telemetry independently from Summary and
-  compatibility Overview.
+  compatibility Overview. A whole-origin transient Trend failure prefers an eligible
+  stale Trend generation; a cold request still returns the explicit `provider_error`
+  section state without storing that outage snapshot over a good generation.
 - The retained overview generation aggregates selected-window
   `range_actual_cost` and `range_total_tokens` from the requested per-member trend
   window. Its shared pure trend projection preserves the same bounds and series

@@ -236,10 +236,10 @@ func (s *Service) readTrendSnapshot(ctx context.Context, actorUserID int, params
 		if loadErr == nil {
 			return TrendOriginLoadResult{Snapshot: snapshot}, nil
 		}
-		if isHardSnapshotOriginError(loadErr) {
+		if isHardTrendSnapshotOriginError(loadCtx, loadErr) {
 			return TrendOriginLoadResult{}, loadErr
 		}
-		return TrendOriginLoadResult{SnapshotErr: loadErr}, nil
+		return TrendOriginLoadResult{Snapshot: snapshot, SnapshotErr: loadErr}, nil
 	}
 
 	if s.snapshotCache == nil {
@@ -247,7 +247,7 @@ func (s *Service) readTrendSnapshot(ctx context.Context, actorUserID int, params
 		if loadErr != nil {
 			return nil, "", loadErr
 		}
-		if loaded.SnapshotErr != nil {
+		if loaded.SnapshotErr != nil && !validTrendSnapshot(loaded.Snapshot) {
 			return nil, "", loaded.SnapshotErr
 		}
 		now := time.Now().UTC()
@@ -443,6 +443,7 @@ func (s *Service) generateSummarySnapshot(ctx context.Context, scope *representa
 	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+		RequireCompleteRange: true,
 	})
 	if err != nil {
 		return nil, err
@@ -493,6 +494,7 @@ type teamTrendOriginData struct {
 	statsByRelayUserID map[int64]relay.TeamUserUsageStats
 	pointsByUser       map[int64][]relay.UsageTrendPoint
 	unavailableReason  *string
+	sourceErr          error
 }
 
 func (s *Service) generateTrendSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*TrendSnapshot, error) {
@@ -507,7 +509,7 @@ func (s *Service) generateTrendSnapshot(ctx context.Context, scope *representati
 	if err != nil {
 		return nil, err
 	}
-	return buildTrendSnapshot(scope, params, data), nil
+	return buildTrendSnapshot(scope, params, data), data.sourceErr
 }
 
 func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*OverviewResponse, error) {
@@ -609,6 +611,7 @@ func (s *Service) loadTeamTrendOrigin(ctx context.Context, scope *representative
 	}
 	reason := "provider_error"
 	data.unavailableReason = &reason
+	data.sourceErr = err
 	data.pointsByUser = map[int64][]relay.UsageTrendPoint{}
 	return data, nil
 }
@@ -1861,6 +1864,16 @@ func isHardOverviewTrendError(err error) bool {
 		}
 	}
 	return false
+}
+
+func isHardTrendSnapshotOriginError(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	return errors.Is(err, relay.ErrInvalidCredentials) ||
+		errors.Is(err, ErrProviderUnsupported) ||
+		errors.Is(err, ErrInvalidOverviewParams) ||
+		isHardOverviewTrendError(err)
 }
 
 func isHardSnapshotOriginError(err error) bool {
