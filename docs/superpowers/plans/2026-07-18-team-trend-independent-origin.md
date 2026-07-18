@@ -148,9 +148,11 @@
 - Modify: `deploy/observability/README.md`
 - Modify: this plan
 
-- [ ] **Step 1: Update current architecture and the active contract**
+- [x] **Step 1: Update current architecture and the active contract**
 
   Record the independent Trend origin/cache/value boundary, stable metric name, compatibility Overview separation, stale/failure behavior, and unchanged frontend async chart lifecycle. Do not rewrite historical Team Usage specs.
+
+  Documentation evidence (2026-07-18): current architecture, the active 2026-07-14 performance contract, and the observability operator README now record the independent Trend lane and `team_usage_trend`; historical Team Usage specs remain unchanged.
 
 - [ ] **Step 2: Run full verification**
 
