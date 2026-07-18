@@ -63,17 +63,22 @@ type EventType string
 
 // EventType values.
 const (
-	EventTypeCreated            EventType = "created"
-	EventTypeApproverResolved   EventType = "approver_resolved"
-	EventTypeNotificationSent   EventType = "notification_sent"
-	EventTypeNotificationFailed EventType = "notification_failed"
-	EventTypeApproved           EventType = "approved"
-	EventTypeResetStarted       EventType = "reset_started"
-	EventTypeResetSucceeded     EventType = "reset_succeeded"
-	EventTypeResetFailed        EventType = "reset_failed"
-	EventTypeRejected           EventType = "rejected"
-	EventTypeCancelled          EventType = "cancelled"
-	EventTypeResetRetried       EventType = "reset_retried"
+	EventTypeCreated                EventType = "created"
+	EventTypeApproverResolved       EventType = "approver_resolved"
+	EventTypeNotificationSent       EventType = "notification_sent"
+	EventTypeNotificationFailed     EventType = "notification_failed"
+	EventTypeApproved               EventType = "approved"
+	EventTypeResetStarted           EventType = "reset_started"
+	EventTypeResetSucceeded         EventType = "reset_succeeded"
+	EventTypeResetFailed            EventType = "reset_failed"
+	EventTypeRejected               EventType = "rejected"
+	EventTypeCancelled              EventType = "cancelled"
+	EventTypeResetRetried           EventType = "reset_retried"
+	EventTypeWorkflowCreated        EventType = "workflow_created"
+	EventTypeStepApproved           EventType = "step_approved"
+	EventTypeStepSatisfied          EventType = "step_satisfied"
+	EventTypeStepActivated          EventType = "step_activated"
+	EventTypeAdminFallbackActivated EventType = "admin_fallback_activated"
 )
 
 func (et EventType) String() string {
@@ -83,7 +88,7 @@ func (et EventType) String() string {
 // EventTypeValidator is a validator for the "event_type" field enum values. It is called by the builders before save.
 func EventTypeValidator(et EventType) error {
 	switch et {
-	case EventTypeCreated, EventTypeApproverResolved, EventTypeNotificationSent, EventTypeNotificationFailed, EventTypeApproved, EventTypeResetStarted, EventTypeResetSucceeded, EventTypeResetFailed, EventTypeRejected, EventTypeCancelled, EventTypeResetRetried:
+	case EventTypeCreated, EventTypeApproverResolved, EventTypeNotificationSent, EventTypeNotificationFailed, EventTypeApproved, EventTypeResetStarted, EventTypeResetSucceeded, EventTypeResetFailed, EventTypeRejected, EventTypeCancelled, EventTypeResetRetried, EventTypeWorkflowCreated, EventTypeStepApproved, EventTypeStepSatisfied, EventTypeStepActivated, EventTypeAdminFallbackActivated:
 		return nil
 	default:
 		return fmt.Errorf("quotaresetrequestevent: invalid enum value for event_type field: %q", et)

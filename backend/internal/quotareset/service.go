@@ -15,8 +15,6 @@ import (
 
 	"github.com/ai-efficiency/backend/ent"
 	entcredential "github.com/ai-efficiency/backend/ent/credential"
-	"github.com/ai-efficiency/backend/ent/directorydepartment"
-	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
 	"github.com/ai-efficiency/backend/ent/quotaresetnotificationsetting"
 	"github.com/ai-efficiency/backend/ent/quotaresetrequest"
@@ -37,21 +35,22 @@ const (
 	ApproverConfigSaveModeReplaceAll         = "replace_all"
 
 	quotaResetNotificationSettingsLockKey = "quota_reset_notification_settings"
+	defaultResetExecutionTimeout          = 30 * time.Second
 )
 
 type Service struct {
-	client           *ent.Client
-	providerResolver ProviderResolver
-	approverResolver *ApproverResolver
-	notifier         Notifier
+	client                *ent.Client
+	providerResolver      ProviderResolver
+	notifier              Notifier
+	resetExecutionTimeout time.Duration
 }
 
-func NewService(client *ent.Client, providerResolver ProviderResolver, approverResolver *ApproverResolver, notifier Notifier) *Service {
+func NewService(client *ent.Client, providerResolver ProviderResolver, _ *ApproverResolver, notifier Notifier) *Service {
 	return &Service{
-		client:           client,
-		providerResolver: providerResolver,
-		approverResolver: approverResolver,
-		notifier:         notifier,
+		client:                client,
+		providerResolver:      providerResolver,
+		notifier:              notifier,
+		resetExecutionTimeout: defaultResetExecutionTimeout,
 	}
 }
 
@@ -98,48 +97,11 @@ func (s *Service) CreateRequest(ctx context.Context, input CreateRequestInput) (
 	if err := activeRequestExists(ctx, s.client, requester.ID, providerRow.ID, input.GroupID); err != nil {
 		return nil, err
 	}
-	resolution := &ApproverResolution{}
-	if s.approverResolver != nil {
-		resolution, err = s.approverResolver.Resolve(ctx, requester.ID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	pathMaps, err := departmentPathEvidenceToMaps(resolution.Paths)
+	workflow, paths, err := s.resolveWorkflowSnapshot(ctx, requester)
 	if err != nil {
 		return nil, err
 	}
-	relayUserID := int64(*requester.RelayUserID)
-	req, err := s.client.QuotaResetRequest.Create().
-		SetRequesterUserID(requester.ID).
-		SetRequesterRelayUserID(relayUserID).
-		SetProviderID(providerRow.ID).
-		SetGroupID(input.GroupID).
-		SetGroupName(subscriptionGroupName(subscription)).
-		SetGroupPlatform(subscriptionGroupPlatform(subscription)).
-		SetReason(input.Reason).
-		SetResolvedApproverUserIds(resolution.ApproverUserIDs).
-		SetMatchedDepartmentPaths(pathMaps).
-		Save(ctx)
-	if err != nil {
-		if activeRequestCreateWasDuplicate(ctx, s.client, err, requester.ID, providerRow.ID, input.GroupID) {
-			return nil, ErrActiveRequestExists
-		}
-		return nil, fmt.Errorf("create quota reset request: %w", err)
-	}
-	if err := s.writeEvent(ctx, req.ID, &requester.ID, quotaresetrequestevent.EventTypeCreated, map[string]any{
-		"group_id": input.GroupID,
-	}, ""); err != nil {
-		return nil, err
-	}
-	if err := s.writeEvent(ctx, req.ID, nil, quotaresetrequestevent.EventTypeApproverResolved, map[string]any{
-		"approver_user_ids": resolution.ApproverUserIDs,
-		"path_count":        len(resolution.Paths),
-	}, ""); err != nil {
-		return nil, err
-	}
-	_ = s.notify(ctx, "quota_reset_request_created", req)
-	return req, nil
+	return s.createWorkflowRequest(ctx, requester, providerRow, subscription, input, workflow, paths)
 }
 
 func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.QuotaResetRequest, error) {
@@ -150,27 +112,61 @@ func (s *Service) Cancel(ctx context.Context, actorUserID, requestID int) (*ent.
 	if req.RequesterUserID != actorUserID {
 		return nil, ErrNotApprover
 	}
-	if req.Status != quotaresetrequest.StatusPending {
+	if req.Status != quotaresetrequest.StatusPending && req.Status != quotaresetrequest.StatusWorkflowPending {
 		return nil, ErrInvalidStatus
 	}
-	updated, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
-		Where(quotaresetrequest.StatusEQ(quotaresetrequest.StatusPending)).
+	eventWriter := s
+	var tx *ent.Tx
+	if req.WorkflowVersion == workflowVersionV2 {
+		tx, err = s.client.Tx(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("start quota reset cancellation transaction: %w", err)
+		}
+		defer tx.Rollback()
+		transactional := *s
+		transactional.client = tx.Client()
+		eventWriter = &transactional
+	}
+	update := eventWriter.client.QuotaResetRequest.UpdateOneID(requestID).
+		Where(quotaresetrequest.StatusEQ(req.Status))
+	if tx != nil {
+		update.Where(quotaresetrequest.WorkflowRevisionEQ(req.WorkflowRevision))
+	}
+	updated, err := update.
 		SetStatus(quotaresetrequest.StatusCancelled).
 		Save(ctx)
+	if ent.IsNotFound(err) && tx != nil {
+		return nil, ErrInvalidStatus
+	}
 	if err != nil {
 		return nil, fmt.Errorf("cancel quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeCancelled, nil, ""); err != nil {
+	var metadata map[string]any
+	if tx != nil {
+		metadata = map[string]any{"workflow_revision": req.WorkflowRevision}
+	}
+	if err := eventWriter.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeCancelled, metadata, ""); err != nil {
 		return nil, err
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit quota reset workflow cancellation: %w", err)
+		}
 	}
 	_ = s.notify(ctx, "quota_reset_request_cancelled", updated)
 	return updated, nil
 }
 
 func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
-	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
+	if input.DecisionReason = strings.TrimSpace(input.DecisionReason); input.DecisionReason == "" {
+		return nil, ErrDecisionRequired
+	}
+	request, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
 		return nil, err
+	}
+	if request.WorkflowVersion == workflowVersionV2 {
+		return s.decideWorkflowRequest(ctx, request, input, true)
 	}
 	now := time.Now()
 	updated, err := s.client.QuotaResetRequest.UpdateOneID(input.RequestID).
@@ -183,7 +179,7 @@ func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaR
 	if err != nil {
 		return nil, fmt.Errorf("approve quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, req.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeApproved, map[string]any{
+	if err := s.writeEvent(ctx, request.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeApproved, map[string]any{
 		"admin": input.Admin,
 	}, ""); err != nil {
 		return s.storeResetFailure(ctx, updated.ID, input.ActorUserID, err)
@@ -192,13 +188,15 @@ func (s *Service) Approve(ctx context.Context, input DecisionInput) (*ent.QuotaR
 }
 
 func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
-	input.DecisionReason = strings.TrimSpace(input.DecisionReason)
-	if input.DecisionReason == "" {
+	if input.DecisionReason = strings.TrimSpace(input.DecisionReason); input.DecisionReason == "" {
 		return nil, ErrDecisionRequired
 	}
-	req, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
+	request, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusPending)
 	if err != nil {
 		return nil, err
+	}
+	if request.WorkflowVersion == workflowVersionV2 {
+		return s.decideWorkflowRequest(ctx, request, input, false)
 	}
 	now := time.Now()
 	updated, err := s.client.QuotaResetRequest.UpdateOneID(input.RequestID).
@@ -211,7 +209,7 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 	if err != nil {
 		return nil, fmt.Errorf("reject quota reset request: %w", err)
 	}
-	if err := s.writeEvent(ctx, req.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeRejected, map[string]any{
+	if err := s.writeEvent(ctx, request.ID, &input.ActorUserID, quotaresetrequestevent.EventTypeRejected, map[string]any{
 		"admin": input.Admin,
 	}, ""); err != nil {
 		return nil, err
@@ -221,8 +219,7 @@ func (s *Service) Reject(ctx context.Context, input DecisionInput) (*ent.QuotaRe
 }
 
 func (s *Service) RetryReset(ctx context.Context, input DecisionInput) (*ent.QuotaResetRequest, error) {
-	_, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusApprovedResetFailed)
-	if err != nil {
+	if _, err := s.requireDecisionAllowed(ctx, input, quotaresetrequest.StatusApprovedResetFailed); err != nil {
 		return nil, err
 	}
 	return s.executeReset(ctx, input.RequestID, input.ActorUserID, true, input.Admin)
@@ -235,13 +232,21 @@ func (s *Service) ListMine(ctx context.Context, actorUserID int, params ListPara
 }
 
 func (s *Service) ListApprovals(ctx context.Context, actorUserID int, params ListParams) (*RequestListResponse, error) {
+	decisionNeedle := fmt.Sprintf(`{"steps":[{"decision":{"actor_user_id":%d}}]}`, actorUserID)
 	return s.list(ctx, params, func(q *ent.QuotaResetRequestQuery) *ent.QuotaResetRequestQuery {
 		return q.Where(func(selector *sql.Selector) {
-			selector.Where(sql.P(func(builder *sql.Builder) {
-				builder.WriteString(selector.C(quotaresetrequest.FieldResolvedApproverUserIds)).
-					WriteString("::jsonb @> ").
-					Arg(fmt.Sprintf("[%d]", actorUserID))
-			}))
+			selector.Where(sql.Or(
+				sql.P(func(builder *sql.Builder) {
+					builder.WriteString(selector.C(quotaresetrequest.FieldResolvedApproverUserIds)).
+						WriteString("::jsonb @> ").
+						Arg(fmt.Sprintf("[%d]", actorUserID))
+				}),
+				sql.P(func(builder *sql.Builder) {
+					builder.WriteString(selector.C(quotaresetrequest.FieldWorkflow)).
+						WriteString("::jsonb @> ").
+						Arg(decisionNeedle)
+				}),
+			))
 		})
 	})
 }
@@ -265,7 +270,12 @@ func (s *Service) ListApproverConfigs(ctx context.Context) (*ApproverConfigListR
 	if err != nil {
 		return nil, fmt.Errorf("list quota reset approver configs: %w", err)
 	}
-	return s.approverConfigResponse(ctx, rows)
+	response, err := s.approverConfigResponse(ctx, rows)
+	if err != nil {
+		return nil, err
+	}
+	response.CurrentDirectorySourceID = &sourceID
+	return response, nil
 }
 
 func (s *Service) ListApproverCandidates(ctx context.Context, sourceID int, departmentExternalID string) (*ApproverCandidateListResponse, error) {
@@ -342,16 +352,28 @@ func (s *Service) GetNotificationSettings(ctx context.Context) (*NotificationSet
 		Order(ent.Asc(quotaresetnotificationsetting.FieldID)).
 		First(ctx)
 	if ent.IsNotFound(err) {
-		return &NotificationSettings{AuthType: quotaresetnotificationsetting.AuthTypeNone.String()}, nil
+		return notificationSettingsResponse(nil), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load quota reset notification settings: %w", err)
+	}
+	row, err = s.backfillLegacyNotificationChannel(ctx, row)
+	if err != nil {
+		return nil, err
 	}
 	return notificationSettingsResponse(row), nil
 }
 
 func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNotificationSettingsInput) (*NotificationSettings, error) {
 	input.URL = strings.TrimSpace(input.URL)
+	input.Channel = strings.TrimSpace(input.Channel)
+	if input.Channel == "" {
+		input.Channel = quotaresetnotificationsetting.ChannelGenericWebhook.String()
+	}
+	channel := quotaresetnotificationsetting.Channel(input.Channel)
+	if channel != quotaresetnotificationsetting.ChannelGenericWebhook && channel != quotaresetnotificationsetting.ChannelWecomGroupRobot {
+		return nil, fmt.Errorf("%w: invalid notification channel", ErrInvalidNotification)
+	}
 	input.AuthType = strings.TrimSpace(input.AuthType)
 	if input.AuthType == "" {
 		input.AuthType = quotaresetnotificationsetting.AuthTypeNone.String()
@@ -387,6 +409,7 @@ func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNo
 	if len(rows) == 0 {
 		create := tx.QuotaResetNotificationSetting.Create().
 			SetEnabled(input.Enabled).
+			SetChannel(channel).
 			SetURL(input.URL).
 			SetAuthType(authType).
 			SetCreatedByUserID(input.ActorUserID).
@@ -398,6 +421,7 @@ func (s *Service) UpdateNotificationSettings(ctx context.Context, input UpdateNo
 	} else {
 		update := tx.QuotaResetNotificationSetting.UpdateOneID(rows[0].ID).
 			SetEnabled(input.Enabled).
+			SetChannel(channel).
 			SetURL(input.URL).
 			SetAuthType(authType).
 			SetUpdatedByUserID(input.ActorUserID)
@@ -445,13 +469,11 @@ func (s *Service) TestNotificationSettings(ctx context.Context, actorUserID int)
 		return fmt.Errorf("%w: enabled webhook url is required before sending test notification", ErrInvalidNotification)
 	}
 	return s.notifier.NotifyRequestEvent(ctx, "quota_reset_notification_test", &ent.QuotaResetRequest{
-		ID:                      0,
 		RequesterUserID:         actorUserID,
-		ProviderID:              0,
 		GroupID:                 "0",
 		GroupName:               "Group Alpha",
 		GroupPlatform:           "openai",
-		Reason:                  "Notification test",
+		Reason:                  "Synthetic quota reset notification test",
 		Status:                  quotaresetrequest.StatusPending,
 		ResolvedApproverUserIds: []int{actorUserID},
 	})
@@ -531,6 +553,7 @@ func activeRequestExists(ctx context.Context, client *ent.Client, requesterUserI
 			quotaresetrequest.GroupIDEQ(groupID),
 			quotaresetrequest.StatusIn(
 				quotaresetrequest.StatusPending,
+				quotaresetrequest.StatusWorkflowPending,
 				quotaresetrequest.StatusApprovedResetting,
 				quotaresetrequest.StatusApprovedResetFailed,
 			),
@@ -557,14 +580,30 @@ func (s *Service) requireDecisionAllowed(ctx context.Context, input DecisionInpu
 	if err != nil {
 		return nil, err
 	}
-	if req.Status != requiredStatus {
+	if req.WorkflowVersion != 1 && req.WorkflowVersion != workflowVersionV2 {
+		return nil, fmt.Errorf("%w: unsupported version %d", ErrInvalidWorkflow, req.WorkflowVersion)
+	}
+	expectedStatus := requiredStatus
+	if req.WorkflowVersion == workflowVersionV2 && requiredStatus == quotaresetrequest.StatusPending {
+		expectedStatus = quotaresetrequest.StatusWorkflowPending
+	}
+	if req.Status != expectedStatus {
 		return nil, ErrInvalidStatus
+	}
+	if req.WorkflowVersion == workflowVersionV2 && requiredStatus == quotaresetrequest.StatusPending {
+		return req, nil
 	}
 	if input.Admin {
 		return req, nil
 	}
 	if req.RequesterUserID == input.ActorUserID {
 		return nil, ErrSelfApprovalForbidden
+	}
+	if req.WorkflowVersion == workflowVersionV2 && requiredStatus == quotaresetrequest.StatusApprovedResetFailed {
+		if req.ApprovedByUserID == nil || *req.ApprovedByUserID != input.ActorUserID {
+			return nil, ErrNotApprover
+		}
+		return req, nil
 	}
 	if !isResolvedApprover(req, input.ActorUserID) {
 		return nil, ErrNotApprover
@@ -585,6 +624,7 @@ func isResolvedApprover(request *ent.QuotaResetRequest, actorUserID int) bool {
 }
 
 func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID int, retry bool, admin bool) (*ent.QuotaResetRequest, error) {
+	ctx = context.WithoutCancel(ctx)
 	req, err := s.client.QuotaResetRequest.Get(ctx, requestID)
 	if err != nil {
 		return nil, err
@@ -600,31 +640,12 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	if err != nil || groupID <= 0 {
 		return nil, ErrInactiveSubscription
 	}
-	now := time.Now()
-	running, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
-		Where(quotaresetrequest.StatusEQ(requiredStatus)).
-		SetStatus(quotaresetrequest.StatusApprovedResetting).
-		SetResetError("").
-		SetResetStartedAt(now).
-		ClearResetCompletedAt().
-		Save(ctx)
-	if ent.IsNotFound(err) {
-		return nil, ErrInvalidStatus
-	}
+	running, err := s.transitionReset(ctx, requestID, actorUserID, requiredStatus, quotaresetrequest.StatusApprovedResetting, retry, admin, "")
 	if err != nil {
-		return nil, fmt.Errorf("mark reset started: %w", err)
-	}
-	if retry {
-		if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetRetried, map[string]any{
-			"admin": admin,
-		}, ""); err != nil {
+		if !retry {
 			return s.storeResetFailure(ctx, requestID, actorUserID, err)
 		}
-	}
-	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetStarted, map[string]any{
-		"retry": retry,
-	}, ""); err != nil {
-		return s.storeResetFailure(ctx, requestID, actorUserID, err)
+		return nil, err
 	}
 	provider, err := s.providerResolver.Resolve(ctx, running.ProviderID)
 	if err != nil {
@@ -634,18 +655,13 @@ func (s *Service) executeReset(ctx context.Context, requestID int, actorUserID i
 	if !ok {
 		return s.storeResetFailure(ctx, requestID, actorUserID, ErrProviderUnsupported)
 	}
-	if err := resetter.ResetSubscriptionQuotaForUser(ctx, running.RequesterRelayUserID, groupID); err != nil {
+	resetCtx, cancelReset := context.WithTimeout(ctx, s.resetExecutionTimeout)
+	defer cancelReset()
+	if err := resetter.ResetSubscriptionQuotaForUser(resetCtx, running.RequesterRelayUserID, groupID); err != nil {
 		return s.storeResetFailure(ctx, requestID, actorUserID, err)
 	}
-	succeeded, err := s.client.QuotaResetRequest.UpdateOneID(requestID).
-		SetStatus(quotaresetrequest.StatusApprovedResetSucceeded).
-		SetResetError("").
-		SetResetCompletedAt(time.Now()).
-		Save(ctx)
+	succeeded, err := s.transitionReset(ctx, requestID, actorUserID, quotaresetrequest.StatusApprovedResetting, quotaresetrequest.StatusApprovedResetSucceeded, false, false, "")
 	if err != nil {
-		return nil, fmt.Errorf("store reset success: %w", err)
-	}
-	if err := s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetSucceeded, nil, ""); err != nil {
 		return nil, err
 	}
 	_ = s.notify(ctx, "quota_reset_request_reset_succeeded", succeeded)
@@ -657,17 +673,50 @@ func (s *Service) storeResetFailure(ctx context.Context, requestID int, actorUse
 	if resetErr != nil {
 		errorMessage = resetErr.Error()
 	}
-	failed, saveErr := s.client.QuotaResetRequest.UpdateOneID(requestID).
-		SetStatus(quotaresetrequest.StatusApprovedResetFailed).
-		SetResetError(errorMessage).
-		SetResetCompletedAt(time.Now()).
-		Save(ctx)
+	failed, saveErr := s.transitionReset(ctx, requestID, actorUserID, quotaresetrequest.StatusApprovedResetting, quotaresetrequest.StatusApprovedResetFailed, false, false, errorMessage)
 	if saveErr != nil {
 		return nil, fmt.Errorf("store reset failure: %w", saveErr)
 	}
-	_ = s.writeEvent(ctx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetFailed, nil, errorMessage)
 	_ = s.notify(ctx, "quota_reset_request_reset_failed", failed)
 	return failed, nil
+}
+
+func (s *Service) transitionReset(ctx context.Context, requestID, actorUserID int, from, to quotaresetrequest.Status, retry, admin bool, errorMessage string) (*ent.QuotaResetRequest, error) {
+	tx, err := s.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("start reset transaction: %w", err)
+	}
+	defer tx.Rollback()
+	update := tx.QuotaResetRequest.UpdateOneID(requestID).Where(quotaresetrequest.StatusEQ(from)).SetStatus(to)
+	events := []*ent.QuotaResetRequestEventCreate{}
+	if to == quotaresetrequest.StatusApprovedResetting {
+		update.SetResetError("").SetResetStartedAt(time.Now()).ClearResetCompletedAt()
+		if retry {
+			events = append(events, newWorkflowEvent(tx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetRetried, map[string]any{"admin": admin}))
+		}
+		events = append(events, newWorkflowEvent(tx, requestID, &actorUserID, quotaresetrequestevent.EventTypeResetStarted, map[string]any{"retry": retry}))
+	} else {
+		update.SetResetError(errorMessage).SetResetCompletedAt(time.Now())
+		eventType := quotaresetrequestevent.EventTypeResetSucceeded
+		if to == quotaresetrequest.StatusApprovedResetFailed {
+			eventType = quotaresetrequestevent.EventTypeResetFailed
+		}
+		events = append(events, newWorkflowEvent(tx, requestID, &actorUserID, eventType, map[string]any{}).SetErrorMessage(strings.TrimSpace(errorMessage)))
+	}
+	request, err := update.Save(ctx)
+	if ent.IsNotFound(err) {
+		return nil, ErrInvalidStatus
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store reset state: %w", err)
+	}
+	if _, err := tx.QuotaResetRequestEvent.CreateBulk(events...).Save(ctx); err != nil {
+		return nil, fmt.Errorf("write quota reset event: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit reset transaction: %w", err)
+	}
+	return request, nil
 }
 
 func (s *Service) writeEvent(ctx context.Context, requestID int, actorUserID *int, eventType quotaresetrequestevent.EventType, metadata map[string]any, errorMessage string) error {
@@ -710,7 +759,9 @@ func (s *Service) list(ctx context.Context, params ListParams, filter func(*ent.
 		query = filter(query)
 	}
 	status := strings.TrimSpace(params.Status)
-	if status != "" {
+	if status == quotaresetrequest.StatusPending.String() {
+		query = query.Where(quotaresetrequest.StatusIn(quotaresetrequest.StatusPending, quotaresetrequest.StatusWorkflowPending))
+	} else if status != "" {
 		query = query.Where(quotaresetrequest.StatusEQ(quotaresetrequest.Status(status)))
 	}
 	total, err := query.Clone().Count(ctx)
@@ -803,7 +854,8 @@ func requestSummary(req *ent.QuotaResetRequest, requester *ent.User) (RequestSum
 		GroupName:               req.GroupName,
 		GroupPlatform:           req.GroupPlatform,
 		Reason:                  req.Reason,
-		Status:                  req.Status.String(),
+		Status:                  publicQuotaResetStatus(req.Status),
+		WorkflowVersion:         req.WorkflowVersion,
 		ResolvedApproverUserIDs: req.ResolvedApproverUserIds,
 		MatchedDepartmentPaths:  paths,
 		ApprovedByUserID:        req.ApprovedByUserID,
@@ -813,11 +865,26 @@ func requestSummary(req *ent.QuotaResetRequest, requester *ent.User) (RequestSum
 		CreatedAt:               req.CreatedAt,
 		UpdatedAt:               req.UpdatedAt,
 	}
+	if req.WorkflowVersion == workflowVersionV2 {
+		workflow, err := DecodeWorkflow(req.Workflow)
+		if err != nil {
+			return RequestSummary{}, err
+		}
+		item.CurrentStep = &workflow.CurrentStep
+		item.WorkflowSteps = genericWebhookSteps(workflow.Steps)
+	}
 	if requester != nil {
 		item.RequesterDisplayName = requester.Username
 		item.RequesterEmail = requester.Email
 	}
 	return item, nil
+}
+
+func publicQuotaResetStatus(status quotaresetrequest.Status) string {
+	if status == quotaresetrequest.StatusWorkflowPending {
+		return quotaresetrequest.StatusPending.String()
+	}
+	return status.String()
 }
 
 func requestEventSummary(event *ent.QuotaResetRequestEvent) RequestEvent {
@@ -836,13 +903,9 @@ func departmentPathEvidenceToMaps(paths []DepartmentPathEvidence) ([]map[string]
 	if len(paths) == 0 {
 		return []map[string]any{}, nil
 	}
-	raw, err := json.Marshal(paths)
+	result, err := convertJSON[[]map[string]any](paths)
 	if err != nil {
-		return nil, fmt.Errorf("marshal department path evidence: %w", err)
-	}
-	var result []map[string]any
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal department path evidence: %w", err)
+		return nil, fmt.Errorf("normalize department path evidence: %w", err)
 	}
 	return result, nil
 }
@@ -851,13 +914,9 @@ func mapsToDepartmentPathEvidence(rawPaths []map[string]any) ([]DepartmentPathEv
 	if len(rawPaths) == 0 {
 		return []DepartmentPathEvidence{}, nil
 	}
-	raw, err := json.Marshal(rawPaths)
+	result, err := convertJSON[[]DepartmentPathEvidence](rawPaths)
 	if err != nil {
-		return nil, fmt.Errorf("marshal stored department path evidence: %w", err)
-	}
-	var result []DepartmentPathEvidence
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("unmarshal stored department path evidence: %w", err)
+		return nil, fmt.Errorf("decode stored department path evidence: %w", err)
 	}
 	return result, nil
 }
@@ -894,35 +953,25 @@ func subscriptionGroupPlatform(subscription relay.UserSubscription) string {
 }
 
 func (s *Service) approverCandidates(ctx context.Context, sourceID int, departmentExternalID string) ([]ApproverCandidate, []UnmatchedApproverRepresentative, error) {
-	userIDsByDepartment, memberByUserID, unmatchedByDepartment, err := s.approverCandidateUserIDsByDepartment(ctx, sourceID)
+	facts, err := s.currentWorkflowDirectoryFacts(ctx, sourceID)
 	if err != nil {
 		return nil, nil, err
 	}
 	departmentExternalID = strings.TrimSpace(departmentExternalID)
-	unmatched := unmatchedByDepartment[departmentExternalID]
-	userIDSet := userIDsByDepartment[departmentExternalID]
-	if len(userIDSet) == 0 {
-		return []ApproverCandidate{}, unmatched, nil
-	}
-	userIDs := make([]int, 0, len(userIDSet))
-	for userID := range userIDSet {
-		userIDs = append(userIDs, userID)
-	}
-	sort.Ints(userIDs)
-	users, err := s.client.User.Query().Where(entuser.IDIn(userIDs...)).All(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("load quota reset approver candidate users: %w", err)
-	}
-	usersByID := make(map[int]*ent.User, len(users))
-	for _, user := range users {
-		usersByID[user.ID] = user
-	}
-	candidates := make([]ApproverCandidate, 0, len(userIDs))
-	for _, userID := range userIDs {
-		user := usersByID[userID]
-		member := memberByUserID[userID]
-		if user == nil || member == nil {
+	representativeIDs := facts.representativesByDept[departmentExternalID]
+	mappedRepresentativeIDs := map[string]struct{}{}
+	candidates := make([]ApproverCandidate, 0)
+	for userID, member := range facts.membersByUserID {
+		if _, belongs := facts.departmentIDsByMember[member.ID][departmentExternalID]; !belongs {
 			continue
+		}
+		user := facts.usersByID[userID]
+		if !workflowCandidateUsable(user, member) {
+			continue
+		}
+		_, representative := representativeIDs[member.ExternalID]
+		if representative {
+			mappedRepresentativeIDs[member.ExternalID] = struct{}{}
 		}
 		candidates = append(candidates, ApproverCandidate{
 			UserID:                    user.ID,
@@ -930,44 +979,44 @@ func (s *Service) approverCandidates(ctx context.Context, sourceID int, departme
 			Email:                     user.Email,
 			DisplayName:               strings.TrimSpace(member.DisplayName),
 			DirectoryMemberExternalID: strings.TrimSpace(member.ExternalID),
+			Representative:            representative,
 		})
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
-		left := strings.ToLower(strings.TrimSpace(candidates[i].DisplayName))
-		if left == "" {
-			left = strings.ToLower(strings.TrimSpace(candidates[i].Username))
-		}
-		right := strings.ToLower(strings.TrimSpace(candidates[j].DisplayName))
-		if right == "" {
-			right = strings.ToLower(strings.TrimSpace(candidates[j].Username))
-		}
-		if left != right {
-			return left < right
-		}
-		return candidates[i].UserID < candidates[j].UserID
+		left := quotaResetSortLabel(candidates[i].DisplayName, candidates[i].Username)
+		right := quotaResetSortLabel(candidates[j].DisplayName, candidates[j].Username)
+		return left < right || (left == right && candidates[i].UserID < candidates[j].UserID)
 	})
+	unmatched := make([]UnmatchedApproverRepresentative, 0)
+	for externalID := range representativeIDs {
+		if _, mapped := mappedRepresentativeIDs[externalID]; mapped {
+			continue
+		}
+		member := facts.membersByExternalID[externalID]
+		item := UnmatchedApproverRepresentative{DirectoryMemberExternalID: externalID}
+		if member != nil {
+			item.DisplayName = strings.TrimSpace(member.DisplayName)
+			item.Email = strings.TrimSpace(member.EmailNormalized)
+		}
+		unmatched = append(unmatched, item)
+	}
 	sort.SliceStable(unmatched, func(i, j int) bool {
-		left := strings.ToLower(strings.TrimSpace(unmatched[i].DisplayName))
-		if left == "" {
-			left = strings.ToLower(strings.TrimSpace(unmatched[i].DirectoryMemberExternalID))
-		}
-		right := strings.ToLower(strings.TrimSpace(unmatched[j].DisplayName))
-		if right == "" {
-			right = strings.ToLower(strings.TrimSpace(unmatched[j].DirectoryMemberExternalID))
-		}
-		if left != right {
-			return left < right
-		}
-		return unmatched[i].DirectoryMemberExternalID < unmatched[j].DirectoryMemberExternalID
+		left := quotaResetSortLabel(unmatched[i].DisplayName, unmatched[i].DirectoryMemberExternalID)
+		right := quotaResetSortLabel(unmatched[j].DisplayName, unmatched[j].DirectoryMemberExternalID)
+		return left < right || (left == right && unmatched[i].DirectoryMemberExternalID < unmatched[j].DirectoryMemberExternalID)
 	})
 	return candidates, unmatched, nil
+}
+
+func quotaResetSortLabel(values ...string) string {
+	return strings.ToLower(firstWorkflowValue(values...))
 }
 
 func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, items []ApproverConfigInput) error {
 	if len(items) == 0 {
 		return nil
 	}
-	userIDsByDepartment, _, _, err := s.approverCandidateUserIDsByDepartment(ctx, sourceID)
+	facts, err := s.currentWorkflowDirectoryFacts(ctx, sourceID)
 	if err != nil {
 		return err
 	}
@@ -976,115 +1025,28 @@ func (s *Service) validateApproverConfigs(ctx context.Context, sourceID int, ite
 		if departmentID == "" || item.ApproverUserID <= 0 {
 			continue
 		}
-		if _, ok := userIDsByDepartment[departmentID][item.ApproverUserID]; !ok {
-			return fmt.Errorf("%w: approver_user_id %d is not a representative for department %s", ErrInvalidApproverConfig, item.ApproverUserID, departmentID)
+		member := facts.membersByUserID[item.ApproverUserID]
+		user := facts.usersByID[item.ApproverUserID]
+		belongs := false
+		if member != nil {
+			_, belongs = facts.departmentIDsByMember[member.ID][departmentID]
+		}
+		if !belongs || !workflowCandidateUsable(user, member) {
+			return fmt.Errorf("%w: approver_user_id %d is not an active member of department %s", ErrInvalidApproverConfig, item.ApproverUserID, departmentID)
 		}
 	}
 	return nil
 }
 
-func (s *Service) approverCandidateUserIDsByDepartment(ctx context.Context, sourceID int) (map[string]map[int]struct{}, map[int]*ent.DirectoryMember, map[string][]UnmatchedApproverRepresentative, error) {
-	departments, err := s.client.DirectoryDepartment.Query().
-		Where(directorydepartment.SourceIDEQ(sourceID)).
-		All(ctx)
+func (s *Service) currentWorkflowDirectoryFacts(ctx context.Context, sourceID int) (*workflowDirectoryFacts, error) {
+	currentSourceID, ok, err := directorysync.CurrentSourceID(ctx, s.client)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("query approver candidate departments: %w", err)
+		return nil, fmt.Errorf("current directory source: %w", err)
 	}
-	members, err := s.client.DirectoryMember.Query().
-		Where(directorymember.SourceIDEQ(sourceID)).
-		All(ctx)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("query approver candidate members: %w", err)
+	if !ok || sourceID != currentSourceID {
+		return nil, ErrDirectoryUnavailable
 	}
-	representatives := representativeExternalIDsByDepartment(departments, members)
-	membersByExternalID := make(map[string]*ent.DirectoryMember, len(members))
-	for _, member := range members {
-		if member == nil {
-			continue
-		}
-		externalID := strings.TrimSpace(member.ExternalID)
-		if externalID != "" {
-			membersByExternalID[externalID] = member
-		}
-	}
-	usersByEmail, err := s.approverCandidateUsersByEmail(ctx, representatives, membersByExternalID)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	userIDsByDepartment := make(map[string]map[int]struct{}, len(representatives))
-	memberByUserID := map[int]*ent.DirectoryMember{}
-	unmatchedByDepartment := map[string][]UnmatchedApproverRepresentative{}
-	for departmentID, representativeExternalIDs := range representatives {
-		for representativeExternalID := range representativeExternalIDs {
-			member := membersByExternalID[representativeExternalID]
-			if member == nil {
-				unmatchedByDepartment[departmentID] = append(unmatchedByDepartment[departmentID], UnmatchedApproverRepresentative{
-					DirectoryMemberExternalID: representativeExternalID,
-				})
-				continue
-			}
-			userID := 0
-			if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-				userID = *member.MatchedUserID
-			} else if user := usersByEmail[strings.TrimSpace(strings.ToLower(member.EmailNormalized))]; user != nil {
-				userID = user.ID
-			}
-			if userID <= 0 {
-				unmatchedByDepartment[departmentID] = append(unmatchedByDepartment[departmentID], UnmatchedApproverRepresentative{
-					DirectoryMemberExternalID: strings.TrimSpace(member.ExternalID),
-					DisplayName:               strings.TrimSpace(member.DisplayName),
-					Email:                     strings.TrimSpace(member.EmailNormalized),
-				})
-				continue
-			}
-			if userIDsByDepartment[departmentID] == nil {
-				userIDsByDepartment[departmentID] = map[int]struct{}{}
-			}
-			userIDsByDepartment[departmentID][userID] = struct{}{}
-			memberByUserID[userID] = member
-		}
-	}
-	return userIDsByDepartment, memberByUserID, unmatchedByDepartment, nil
-}
-
-func (s *Service) approverCandidateUsersByEmail(ctx context.Context, representatives map[string]map[string]struct{}, membersByExternalID map[string]*ent.DirectoryMember) (map[string]*ent.User, error) {
-	emails := make([]string, 0)
-	seen := map[string]struct{}{}
-	for _, representativeExternalIDs := range representatives {
-		for representativeExternalID := range representativeExternalIDs {
-			member := membersByExternalID[representativeExternalID]
-			if member == nil || member.MatchedUserID != nil {
-				continue
-			}
-			email := strings.TrimSpace(strings.ToLower(member.EmailNormalized))
-			if email == "" {
-				continue
-			}
-			if _, ok := seen[email]; ok {
-				continue
-			}
-			seen[email] = struct{}{}
-			emails = append(emails, email)
-		}
-	}
-	if len(emails) == 0 {
-		return map[string]*ent.User{}, nil
-	}
-	users, err := s.client.User.Query().Where(entuser.EmailIn(emails...)).All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("load quota reset approver candidate users by email: %w", err)
-	}
-	usersByEmail := make(map[string]*ent.User, len(users))
-	for _, user := range users {
-		if user == nil {
-			continue
-		}
-		email := strings.TrimSpace(strings.ToLower(user.Email))
-		if email != "" {
-			usersByEmail[email] = user
-		}
-	}
-	return usersByEmail, nil
+	return NewApproverResolver(s.client).loadWorkflowDirectoryFacts(ctx, sourceID)
 }
 
 func representativeExternalIDsByDepartment(departments []*ent.DirectoryDepartment, members []*ent.DirectoryMember) map[string]map[string]struct{} {
@@ -1316,13 +1278,32 @@ func (s *Service) validateNotificationSettings(ctx context.Context, input Update
 
 func notificationSettingsResponse(row *ent.QuotaResetNotificationSetting) *NotificationSettings {
 	if row == nil {
-		return &NotificationSettings{AuthType: quotaresetnotificationsetting.AuthTypeNone.String()}
+		return &NotificationSettings{
+			Channel:  quotaresetnotificationsetting.ChannelGenericWebhook.String(),
+			AuthType: quotaresetnotificationsetting.AuthTypeNone.String(),
+		}
 	}
 	return &NotificationSettings{
 		Enabled:      row.Enabled,
+		Channel:      row.Channel.String(),
 		URL:          row.URL,
 		AuthType:     row.AuthType.String(),
 		CredentialID: row.CredentialID,
 		UpdatedAt:    row.UpdatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+func (s *Service) backfillLegacyNotificationChannel(ctx context.Context, row *ent.QuotaResetNotificationSetting) (*ent.QuotaResetNotificationSetting, error) {
+	if row == nil || row.Channel != quotaresetnotificationsetting.ChannelLegacyAuto {
+		return row, nil
+	}
+	channel := quotaresetnotificationsetting.ChannelGenericWebhook
+	if parsed, err := url.Parse(strings.TrimSpace(row.URL)); err == nil && isWeComRobotWebhookURL(parsed) {
+		channel = quotaresetnotificationsetting.ChannelWecomGroupRobot
+	}
+	updated, err := s.client.QuotaResetNotificationSetting.UpdateOneID(row.ID).SetChannel(channel).Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("backfill quota reset notification channel: %w", err)
+	}
+	return updated, nil
 }

@@ -3,6 +3,7 @@ package quotareset
 import (
 	"context"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -12,75 +13,332 @@ import (
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
 
-func TestResolveApproversUsesNearestConfiguredDepartmentPerPath(t *testing.T) {
-	client := testdb.Open(t)
+func TestResolveWorkflowMergesExactDepartments(t *testing.T) {
 	ctx := context.Background()
+	client := testdb.Open(t)
 	source := createQuotaResetDirectorySource(t, ctx, client)
-	root := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
-	child := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha-team", "Team One", &root.ExternalID)
+	alpha := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-alpha", "Group Alpha", nil)
+	beta := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-beta", "Group Beta", nil)
 	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
-	approverRoot := createQuotaResetUser(t, ctx, client, "lead-root", "lead-root@example.com", nil, "user")
-	approverChild := createQuotaResetUser(t, ctx, client, "lead-child", "lead-child@example.com", nil, "user")
-	member := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, child.ExternalID, &requester.ID)
-	createQuotaResetMemberDepartment(t, ctx, client, source.ID, member, child.ExternalID)
-	createQuotaResetApproverConfig(t, ctx, client, source.ID, root.ExternalID, root.Name, approverRoot.ID)
-	createQuotaResetApproverConfig(t, ctx, client, source.ID, child.ExternalID, "Department Alpha / Team One", approverChild.ID)
+	configured := createQuotaResetUser(t, ctx, client, "configured", "configured@example.org", nil, "user")
+	alphaRepresentative := createQuotaResetUser(t, ctx, client, "alpha-representative", "alpha-representative@example.org", nil, "user")
+	betaRepresentative := createQuotaResetUser(t, ctx, client, "beta-representative", "beta-representative@example.org", nil, "user")
 
-	resolved, err := NewApproverResolver(client).Resolve(ctx, requester.ID)
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, alpha.ExternalID, &requester.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, alpha.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, beta.ExternalID)
+	createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-configured", configured, alpha.ExternalID)
+	alphaRepresentativeMember := createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-alpha-representative", alphaRepresentative, alpha.ExternalID)
+	betaRepresentativeMember := createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-beta-representative", betaRepresentative, beta.ExternalID)
+	client.DirectoryDepartment.UpdateOneID(alpha.ID).SetMetadata(map[string]any{
+		"representative_external_ids": []any{alphaRepresentativeMember.ExternalID},
+	}).SaveX(ctx)
+	client.DirectoryDepartment.UpdateOneID(beta.ID).SetMetadata(map[string]any{
+		"representative_external_ids": []any{betaRepresentativeMember.ExternalID},
+	}).SaveX(ctx)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, alpha.ExternalID, alpha.Name, configured.ID)
+
+	workflow, paths, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("ResolveWorkflow() error = %v", err)
 	}
-	if got, want := resolved.ApproverUserIDs, []int{approverChild.ID}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("approvers = %#v, want nearest child approver %#v", got, want)
+	if len(workflow.Steps) != 1 {
+		t.Fatalf("steps = %#v, want one exact-department step", workflow.Steps)
 	}
-	if len(resolved.Paths) != 1 || resolved.Paths[0].MatchedDepartmentExternalID != child.ExternalID {
-		t.Fatalf("paths = %#v, want child match", resolved.Paths)
+	if got, want := workflowApproverIDs(workflow.Steps[0]), []int{configured.ID, betaRepresentative.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("exact approvers = %v, want %v", got, want)
+	}
+	if got, want := paths[0].Resolution, "matched"; got != want {
+		t.Fatalf("alpha resolution = %q, want %q", got, want)
+	}
+	if got, want := paths[1].Resolution, "no_config_found"; got != want {
+		t.Fatalf("beta resolution = %q, want %q", got, want)
 	}
 }
 
-func TestResolveApproversMergesMultiDepartmentPathsAndExcludesRequester(t *testing.T) {
-	client := testdb.Open(t)
+func TestResolveWorkflowPreservesExactDepartmentEvidencePaths(t *testing.T) {
 	ctx := context.Background()
+	client := testdb.Open(t)
 	source := createQuotaResetDirectorySource(t, ctx, client)
-	alpha := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
-	beta := createQuotaResetDepartment(t, ctx, client, source.ID, "department-beta", "Department Beta", nil)
+	root := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-root", "Company", nil)
+	parent := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-parent", "Parent", &root.ExternalID)
+	configured := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-configured", "Configured", &parent.ExternalID)
+	unconfigured := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-unconfigured", "Unconfigured", &parent.ExternalID)
 	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
-	approverAlpha := createQuotaResetUser(t, ctx, client, "lead-alpha", "lead-alpha@example.com", nil, "user")
-	approverBeta := createQuotaResetUser(t, ctx, client, "lead-beta", "lead-beta@example.com", nil, "user")
-	member := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, alpha.ExternalID, &requester.ID)
-	createQuotaResetMemberDepartment(t, ctx, client, source.ID, member, alpha.ExternalID)
-	createQuotaResetMemberDepartment(t, ctx, client, source.ID, member, beta.ExternalID)
-	createQuotaResetApproverConfig(t, ctx, client, source.ID, alpha.ExternalID, alpha.Name, approverAlpha.ID)
-	createQuotaResetApproverConfig(t, ctx, client, source.ID, beta.ExternalID, beta.Name, approverBeta.ID)
-	createQuotaResetApproverConfig(t, ctx, client, source.ID, beta.ExternalID, beta.Name, requester.ID)
+	configuredApprover := createQuotaResetUser(t, ctx, client, "configured-approver", "configured-approver@example.org", nil, "user")
+	representative := createQuotaResetUser(t, ctx, client, "representative", "representative@example.org", nil, "user")
 
-	resolved, err := NewApproverResolver(client).Resolve(ctx, requester.ID)
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, configured.ExternalID, &requester.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, configured.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, unconfigured.ExternalID)
+	createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-configured-approver", configuredApprover, configured.ExternalID)
+	representativeMember := createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-representative", representative, unconfigured.ExternalID)
+	client.DirectoryDepartment.UpdateOneID(unconfigured.ID).SetMetadata(map[string]any{
+		"representative_external_ids": []any{representativeMember.ExternalID},
+	}).SaveX(ctx)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, configured.ExternalID, configured.Name, configuredApprover.ID)
+
+	_, paths, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("ResolveWorkflow() error = %v", err)
 	}
-	if got, want := resolved.ApproverUserIDs, []int{approverAlpha.ID, approverBeta.ID}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("approvers = %#v, want merged approvers %#v", got, want)
+	gotByStart := make(map[string][]DepartmentPathNode, len(paths))
+	for _, path := range paths {
+		gotByStart[path.StartDepartmentExternalID] = path.Path
 	}
-	if len(resolved.Paths) != 2 {
-		t.Fatalf("paths = %#v, want two membership paths", resolved.Paths)
+	wantConfiguredPath := []DepartmentPathNode{
+		{ExternalID: configured.ExternalID, DisplayPath: "Company / Parent / Configured"},
+		{ExternalID: parent.ExternalID, DisplayPath: "Company / Parent"},
+		{ExternalID: root.ExternalID, DisplayPath: "Company"},
+	}
+	if got := gotByStart[configured.ExternalID]; !reflect.DeepEqual(got, wantConfiguredPath) {
+		t.Fatalf("configured exact path = %#v, want %#v", got, wantConfiguredPath)
+	}
+	wantUnconfiguredPath := []DepartmentPathNode{
+		{ExternalID: unconfigured.ExternalID, DisplayPath: "Company / Parent / Unconfigured"},
+		{ExternalID: parent.ExternalID, DisplayPath: "Company / Parent"},
+		{ExternalID: root.ExternalID, DisplayPath: "Company"},
+	}
+	if got := gotByStart[unconfigured.ExternalID]; !reflect.DeepEqual(got, wantUnconfiguredPath) {
+		t.Fatalf("unconfigured exact path = %#v, want %#v", got, wantUnconfiguredPath)
 	}
 }
 
-func TestResolveApproversReturnsEmptyWhenNoConfigExists(t *testing.T) {
-	client := testdb.Open(t)
+func TestResolveWorkflowWalksMergedAncestorRounds(t *testing.T) {
 	ctx := context.Background()
+	client := testdb.Open(t)
 	source := createQuotaResetDirectorySource(t, ctx, client)
-	dept := createQuotaResetDepartment(t, ctx, client, source.ID, "department-alpha", "Department Alpha", nil)
+	root := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-root", "Company", nil)
+	alpha := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-alpha", "Group Alpha", &root.ExternalID)
+	beta := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-beta", "Group Beta", &root.ExternalID)
+	alphaTeam := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-alpha-team", "Alpha Team", &alpha.ExternalID)
+	betaTeam := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-beta-team", "Beta Team", &beta.ExternalID)
 	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
-	member := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, dept.ExternalID, &requester.ID)
-	createQuotaResetMemberDepartment(t, ctx, client, source.ID, member, dept.ExternalID)
+	alphaApprover := createQuotaResetUser(t, ctx, client, "alpha-approver", "alpha-approver@example.org", nil, "user")
+	betaApprover := createQuotaResetUser(t, ctx, client, "beta-approver", "beta-approver@example.org", nil, "user")
+	rootApprover := createQuotaResetUser(t, ctx, client, "root-approver", "root-approver@example.org", nil, "user")
 
-	resolved, err := NewApproverResolver(client).Resolve(ctx, requester.ID)
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, alphaTeam.ExternalID, &requester.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, alphaTeam.ExternalID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, betaTeam.ExternalID)
+	createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-alpha-approver", alphaApprover, alpha.ExternalID)
+	createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-beta-approver", betaApprover, beta.ExternalID)
+	createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-root-approver", rootApprover, root.ExternalID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, alpha.ExternalID, "Company / Group Alpha", alphaApprover.ID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, beta.ExternalID, "Company / Group Beta", betaApprover.ID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, root.ExternalID, "Company", rootApprover.ID)
+
+	workflow, _, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
 	if err != nil {
-		t.Fatalf("Resolve() error = %v", err)
+		t.Fatalf("ResolveWorkflow() error = %v", err)
 	}
-	if len(resolved.ApproverUserIDs) != 0 || len(resolved.Paths) != 1 || resolved.Paths[0].Resolution != "no_config_found" {
-		t.Fatalf("resolved = %#v, want admin fallback evidence", resolved)
+	if len(workflow.Steps) != 2 {
+		t.Fatalf("steps = %#v, want merged parent and root rounds", workflow.Steps)
+	}
+	if got, want := workflow.Steps[0].DepartmentExternalIDs, []string{alpha.ExternalID, beta.ExternalID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("first round departments = %v, want %v", got, want)
+	}
+	if got, want := workflowApproverIDs(workflow.Steps[0]), []int{alphaApprover.ID, betaApprover.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("first round approvers = %v, want %v", got, want)
+	}
+	if got, want := workflow.Steps[1].DepartmentExternalIDs, []string{root.ExternalID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root round departments = %v, want %v", got, want)
+	}
+	if got, want := workflowApproverIDs(workflow.Steps[1]), []int{rootApprover.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root approvers = %v, want %v", got, want)
+	}
+}
+
+func TestResolveWorkflowSkipsUnconfiguredAncestors(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	root := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-root", "Company", nil)
+	parent := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-parent", "Parent", &root.ExternalID)
+	exact := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-exact", "Exact", &parent.ExternalID)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	exactApprover := createQuotaResetUser(t, ctx, client, "exact-approver", "exact-approver@example.org", nil, "user")
+	parentRepresentative := createQuotaResetUser(t, ctx, client, "parent-representative", "parent-representative@example.org", nil, "user")
+	rootApprover := createQuotaResetUser(t, ctx, client, "root-approver", "root-approver@example.org", nil, "user")
+
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, exact.ExternalID, &requester.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, exact.ExternalID)
+	createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-exact-approver", exactApprover, exact.ExternalID)
+	parentRepresentativeMember := createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-parent-representative", parentRepresentative, parent.ExternalID)
+	createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-root-approver", rootApprover, root.ExternalID)
+	client.DirectoryDepartment.UpdateOneID(parent.ID).SetMetadata(map[string]any{
+		"representative_external_ids": []any{parentRepresentativeMember.ExternalID},
+	}).SaveX(ctx)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, exact.ExternalID, exact.Name, exactApprover.ID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, root.ExternalID, root.Name, rootApprover.ID)
+
+	workflow, _, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
+	if err != nil {
+		t.Fatalf("ResolveWorkflow() error = %v", err)
+	}
+	if len(workflow.Steps) != 2 {
+		t.Fatalf("steps = %#v, want exact and configured root only", workflow.Steps)
+	}
+	if got, want := workflowApproverIDs(workflow.Steps[1]), []int{rootApprover.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root approvers = %v, want %v", got, want)
+	}
+	if got := workflowApproverIDs(workflow.Steps[1]); reflect.DeepEqual(got, []int{parentRepresentative.ID}) {
+		t.Fatalf("parent representative incorrectly retained in ancestor round: %v", got)
+	}
+}
+
+func TestResolveWorkflowUsesAdminFallbacks(t *testing.T) {
+	t.Run("unusable exact config retains first fallback", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+		source := createQuotaResetDirectorySource(t, ctx, client)
+		exact := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-exact", "Exact", nil)
+		requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+		unusable := createQuotaResetUser(t, ctx, client, "unusable", "unusable@example.org", nil, "user")
+		requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, exact.ExternalID, &requester.ID)
+		createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, exact.ExternalID)
+		createQuotaResetApproverConfig(t, ctx, client, source.ID, exact.ExternalID, exact.Name, unusable.ID)
+
+		workflow, paths, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
+		if err != nil {
+			t.Fatalf("ResolveWorkflow() error = %v", err)
+		}
+		if len(workflow.Steps) != 1 || !workflow.Steps[0].AdminFallback || len(workflow.Steps[0].Approvers) != 0 {
+			t.Fatalf("steps = %#v, want exact admin fallback", workflow.Steps)
+		}
+		if got, want := paths[0].Resolution, "matched"; got != want {
+			t.Fatalf("exact resolution = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("unusable ancestor config retains later fallback", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+		source := createQuotaResetDirectorySource(t, ctx, client)
+		parent := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-parent", "Parent", nil)
+		exact := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-exact", "Exact", &parent.ExternalID)
+		requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+		exactApprover := createQuotaResetUser(t, ctx, client, "exact-approver", "exact-approver@example.org", nil, "user")
+		unusable := createQuotaResetUser(t, ctx, client, "unusable", "unusable@example.org", nil, "user")
+		requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, exact.ExternalID, &requester.ID)
+		createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, exact.ExternalID)
+		createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-exact-approver", exactApprover, exact.ExternalID)
+		createQuotaResetApproverConfig(t, ctx, client, source.ID, exact.ExternalID, exact.Name, exactApprover.ID)
+		createQuotaResetApproverConfig(t, ctx, client, source.ID, parent.ExternalID, parent.Name, unusable.ID)
+
+		workflow, _, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
+		if err != nil {
+			t.Fatalf("ResolveWorkflow() error = %v", err)
+		}
+		if len(workflow.Steps) != 2 || !workflow.Steps[1].AdminFallback || len(workflow.Steps[1].Approvers) != 0 {
+			t.Fatalf("steps = %#v, want ancestor admin fallback", workflow.Steps)
+		}
+	})
+
+	t.Run("no exact config or representative skips first step", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+		source := createQuotaResetDirectorySource(t, ctx, client)
+		parent := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-parent", "Parent", nil)
+		exact := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-exact", "Exact", &parent.ExternalID)
+		requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+		parentApprover := createQuotaResetUser(t, ctx, client, "parent-approver", "parent-approver@example.org", nil, "user")
+		requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, exact.ExternalID, &requester.ID)
+		createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, exact.ExternalID)
+		createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-parent-approver", parentApprover, parent.ExternalID)
+		createQuotaResetApproverConfig(t, ctx, client, source.ID, parent.ExternalID, parent.Name, parentApprover.ID)
+
+		workflow, paths, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
+		if err != nil {
+			t.Fatalf("ResolveWorkflow() error = %v", err)
+		}
+		if len(workflow.Steps) != 1 || workflow.Steps[0].DepartmentExternalIDs[0] != parent.ExternalID {
+			t.Fatalf("steps = %#v, want parent as first retained step", workflow.Steps)
+		}
+		if got, want := paths[0].Resolution, "no_config_found"; got != want {
+			t.Fatalf("exact resolution = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("no resolved steps creates final fallback", func(t *testing.T) {
+		ctx := context.Background()
+		client := testdb.Open(t)
+		requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+
+		workflow, _, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
+		if err != nil {
+			t.Fatalf("ResolveWorkflow() error = %v", err)
+		}
+		if len(workflow.Steps) != 1 || !workflow.Steps[0].AdminFallback || workflow.Steps[0].Status != WorkflowStepActive {
+			t.Fatalf("steps = %#v, want final active admin fallback", workflow.Steps)
+		}
+	})
+}
+
+func TestResolveWorkflowRejectsStaleConfiguredMembership(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	configuredDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-configured", "Configured", nil)
+	staleDepartment := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-stale", "Stale", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	staleConfigured := createQuotaResetUser(t, ctx, client, "stale-configured", "stale-configured@example.org", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, configuredDepartment.ExternalID, &requester.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, configuredDepartment.ExternalID)
+	createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-stale-configured", staleConfigured, staleDepartment.ExternalID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, configuredDepartment.ExternalID, configuredDepartment.Name, staleConfigured.ID)
+
+	workflow, _, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
+	if err != nil {
+		t.Fatalf("ResolveWorkflow() error = %v", err)
+	}
+	if len(workflow.Steps) != 1 || !workflow.Steps[0].AdminFallback || len(workflow.Steps[0].Approvers) != 0 {
+		t.Fatalf("steps = %#v, want configured-department fallback without stale user", workflow.Steps)
+	}
+}
+
+func TestNormalizedEmailFallbackCandidateCanBeConfiguredAndResolved(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	exact := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-exact", "Exact", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	approver := createQuotaResetUser(t, ctx, client, "bob", "bob@example.org", nil, "user")
+	requesterMember := createQuotaResetMember(t, ctx, client, source.ID, "member-alice", requester.Email, exact.ExternalID, &requester.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, requesterMember, exact.ExternalID)
+	approverMember := createQuotaResetMember(t, ctx, client, source.ID, "member-bob", strings.ToUpper(approver.Email), exact.ExternalID, nil)
+	createQuotaResetMemberDepartment(t, ctx, client, source.ID, approverMember, exact.ExternalID)
+	svc := NewService(client, nil, nil, nil)
+
+	candidates, err := svc.ListApproverCandidates(ctx, source.ID, exact.ExternalID)
+	if err != nil {
+		t.Fatalf("ListApproverCandidates() = %+v, %v, want email-matched approver %d", candidates, err, approver.ID)
+	}
+	found := false
+	for _, candidate := range candidates.Items {
+		found = found || candidate.UserID == approver.ID
+	}
+	if !found {
+		t.Fatalf("ListApproverCandidates() = %+v, want email-matched approver %d", candidates, approver.ID)
+	}
+	saved, err := svc.SaveApproverConfigs(ctx, SaveApproverConfigsInput{
+		ActorUserID: requester.ID,
+		Items: []ApproverConfigInput{{
+			DepartmentExternalID:  exact.ExternalID,
+			DepartmentDisplayPath: exact.Name,
+			ApproverUserID:        approver.ID,
+			Enabled:               true,
+		}},
+	})
+	if err != nil || len(saved.Items) != 1 || saved.Items[0].ApproverUserID != approver.ID {
+		t.Fatalf("SaveApproverConfigs() = %+v, %v, want saved approver %d", saved, err, approver.ID)
+	}
+	workflow, _, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
+	if err != nil {
+		t.Fatalf("ResolveWorkflow() error = %v", err)
+	}
+	if got := workflowApproverIDs(workflow.Steps[0]); !reflect.DeepEqual(got, []int{approver.ID}) || workflow.Steps[0].AdminFallback {
+		t.Fatalf("resolved step = %+v, approvers %v, want email-matched normal candidate", workflow.Steps[0], got)
 	}
 }
 
@@ -175,6 +433,13 @@ func createQuotaResetMember(t *testing.T, ctx context.Context, client *ent.Clien
 	return member
 }
 
+func createQuotaResetMemberInDepartment(t *testing.T, ctx context.Context, client *ent.Client, sourceID int, externalID string, user *ent.User, departmentID string) *ent.DirectoryMember {
+	t.Helper()
+	member := createQuotaResetMember(t, ctx, client, sourceID, externalID, user.Email, departmentID, &user.ID)
+	createQuotaResetMemberDepartment(t, ctx, client, sourceID, member, departmentID)
+	return member
+}
+
 func createQuotaResetMemberDepartment(t *testing.T, ctx context.Context, client *ent.Client, sourceID int, member *ent.DirectoryMember, departmentID string) {
 	t.Helper()
 	if _, err := client.DirectoryMemberDepartment.Create().
@@ -202,6 +467,15 @@ func createQuotaResetApproverConfig(t *testing.T, ctx context.Context, client *e
 		Save(ctx); err != nil {
 		t.Fatalf("create approver config %s/%d: %v", departmentID, approverUserID, err)
 	}
+}
+
+func workflowApproverIDs(step WorkflowStep) []int {
+	ids := make([]int, 0, len(step.Approvers))
+	for _, approver := range step.Approvers {
+		ids = append(ids, approver.UserID)
+	}
+	sort.Ints(ids)
+	return ids
 }
 
 func intPtr(v int) *int {

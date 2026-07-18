@@ -535,6 +535,7 @@ steps:
     '- member.department_external_ids: optional array of department ids; use this when one member row returns all department memberships, while department_external_id can remain the primary or first department',
     '- member.status: optional employment status',
     '- member.metadata.leader_department_ids: optional array of department ids where this member is the representative or leader',
+    '- member.metadata.wecom_userid: required when quota reset approval notifications must @ approvers through WeCom; map only the source authoritative WeCom userid, never member.external_id, local user ids, or email addresses',
     '- metadata mappings are explicit allowlists; include only non-sensitive ids or role flags needed by this system',
     '',
     t('directorySync.aiPromptEvidenceTitle'),

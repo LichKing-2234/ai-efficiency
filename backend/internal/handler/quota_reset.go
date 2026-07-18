@@ -59,6 +59,7 @@ type quotaResetSaveApproverConfigsRequest struct {
 
 type quotaResetNotificationSettingsRequest struct {
 	Enabled      bool   `json:"enabled"`
+	Channel      string `json:"channel"`
 	URL          string `json:"url"`
 	AuthType     string `json:"auth_type"`
 	CredentialID *int   `json:"credential_id"`
@@ -264,6 +265,7 @@ func (h *QuotaResetHandler) UpdateNotificationSettings(c *gin.Context) {
 	resp, err := h.service.UpdateNotificationSettings(c.Request.Context(), quotareset.UpdateNotificationSettingsInput{
 		ActorUserID:  uc.UserID,
 		Enabled:      req.Enabled,
+		Channel:      req.Channel,
 		URL:          req.URL,
 		AuthType:     req.AuthType,
 		CredentialID: req.CredentialID,
@@ -381,6 +383,10 @@ func quotaResetEntResponse(req *ent.QuotaResetRequest) quotaResetRequestResponse
 	if req == nil {
 		return quotaResetRequestResponse{}
 	}
+	status := req.Status.String()
+	if req.WorkflowVersion == 2 && status == "workflow_pending" {
+		status = "pending"
+	}
 	return quotaResetRequestResponse{
 		ID:                      req.ID,
 		RequesterUserID:         req.RequesterUserID,
@@ -389,7 +395,7 @@ func quotaResetEntResponse(req *ent.QuotaResetRequest) quotaResetRequestResponse
 		GroupName:               req.GroupName,
 		GroupPlatform:           req.GroupPlatform,
 		Reason:                  req.Reason,
-		Status:                  req.Status.String(),
+		Status:                  status,
 		ResolvedApproverUserIDs: req.ResolvedApproverUserIds,
 		ApprovedByUserID:        req.ApprovedByUserID,
 		RejectedByUserID:        req.RejectedByUserID,

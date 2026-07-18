@@ -20338,6 +20338,7 @@ type QuotaResetNotificationSettingMutation struct {
 	typ                   string
 	id                    *int
 	enabled               *bool
+	channel               *quotaresetnotificationsetting.Channel
 	url                   *string
 	auth_type             *quotaresetnotificationsetting.AuthType
 	credential_id         *int
@@ -20486,6 +20487,42 @@ func (m *QuotaResetNotificationSettingMutation) OldEnabled(ctx context.Context) 
 // ResetEnabled resets all changes to the "enabled" field.
 func (m *QuotaResetNotificationSettingMutation) ResetEnabled() {
 	m.enabled = nil
+}
+
+// SetChannel sets the "channel" field.
+func (m *QuotaResetNotificationSettingMutation) SetChannel(q quotaresetnotificationsetting.Channel) {
+	m.channel = &q
+}
+
+// Channel returns the value of the "channel" field in the mutation.
+func (m *QuotaResetNotificationSettingMutation) Channel() (r quotaresetnotificationsetting.Channel, exists bool) {
+	v := m.channel
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChannel returns the old "channel" field's value of the QuotaResetNotificationSetting entity.
+// If the QuotaResetNotificationSetting object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetNotificationSettingMutation) OldChannel(ctx context.Context) (v quotaresetnotificationsetting.Channel, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChannel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChannel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChannel: %w", err)
+	}
+	return oldValue.Channel, nil
+}
+
+// ResetChannel resets all changes to the "channel" field.
+func (m *QuotaResetNotificationSettingMutation) ResetChannel() {
+	m.channel = nil
 }
 
 // SetURL sets the "url" field.
@@ -20848,9 +20885,12 @@ func (m *QuotaResetNotificationSettingMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *QuotaResetNotificationSettingMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 9)
 	if m.enabled != nil {
 		fields = append(fields, quotaresetnotificationsetting.FieldEnabled)
+	}
+	if m.channel != nil {
+		fields = append(fields, quotaresetnotificationsetting.FieldChannel)
 	}
 	if m.url != nil {
 		fields = append(fields, quotaresetnotificationsetting.FieldURL)
@@ -20883,6 +20923,8 @@ func (m *QuotaResetNotificationSettingMutation) Field(name string) (ent.Value, b
 	switch name {
 	case quotaresetnotificationsetting.FieldEnabled:
 		return m.Enabled()
+	case quotaresetnotificationsetting.FieldChannel:
+		return m.Channel()
 	case quotaresetnotificationsetting.FieldURL:
 		return m.URL()
 	case quotaresetnotificationsetting.FieldAuthType:
@@ -20908,6 +20950,8 @@ func (m *QuotaResetNotificationSettingMutation) OldField(ctx context.Context, na
 	switch name {
 	case quotaresetnotificationsetting.FieldEnabled:
 		return m.OldEnabled(ctx)
+	case quotaresetnotificationsetting.FieldChannel:
+		return m.OldChannel(ctx)
 	case quotaresetnotificationsetting.FieldURL:
 		return m.OldURL(ctx)
 	case quotaresetnotificationsetting.FieldAuthType:
@@ -20937,6 +20981,13 @@ func (m *QuotaResetNotificationSettingMutation) SetField(name string, value ent.
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetEnabled(v)
+		return nil
+	case quotaresetnotificationsetting.FieldChannel:
+		v, ok := value.(quotaresetnotificationsetting.Channel)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChannel(v)
 		return nil
 	case quotaresetnotificationsetting.FieldURL:
 		v, ok := value.(string)
@@ -21087,6 +21138,9 @@ func (m *QuotaResetNotificationSettingMutation) ResetField(name string) error {
 	case quotaresetnotificationsetting.FieldEnabled:
 		m.ResetEnabled()
 		return nil
+	case quotaresetnotificationsetting.FieldChannel:
+		m.ResetChannel()
+		return nil
 	case quotaresetnotificationsetting.FieldURL:
 		m.ResetURL()
 		return nil
@@ -21176,6 +21230,11 @@ type QuotaResetRequestMutation struct {
 	group_name                       *string
 	group_platform                   *string
 	reason                           *string
+	workflow_version                 *int
+	addworkflow_version              *int
+	workflow                         *map[string]interface{}
+	workflow_revision                *int
+	addworkflow_revision             *int
 	status                           *quotaresetrequest.Status
 	resolved_approver_user_ids       *[]int
 	appendresolved_approver_user_ids []int
@@ -21606,6 +21665,167 @@ func (m *QuotaResetRequestMutation) OldReason(ctx context.Context) (v string, er
 // ResetReason resets all changes to the "reason" field.
 func (m *QuotaResetRequestMutation) ResetReason() {
 	m.reason = nil
+}
+
+// SetWorkflowVersion sets the "workflow_version" field.
+func (m *QuotaResetRequestMutation) SetWorkflowVersion(i int) {
+	m.workflow_version = &i
+	m.addworkflow_version = nil
+}
+
+// WorkflowVersion returns the value of the "workflow_version" field in the mutation.
+func (m *QuotaResetRequestMutation) WorkflowVersion() (r int, exists bool) {
+	v := m.workflow_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWorkflowVersion returns the old "workflow_version" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldWorkflowVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWorkflowVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWorkflowVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWorkflowVersion: %w", err)
+	}
+	return oldValue.WorkflowVersion, nil
+}
+
+// AddWorkflowVersion adds i to the "workflow_version" field.
+func (m *QuotaResetRequestMutation) AddWorkflowVersion(i int) {
+	if m.addworkflow_version != nil {
+		*m.addworkflow_version += i
+	} else {
+		m.addworkflow_version = &i
+	}
+}
+
+// AddedWorkflowVersion returns the value that was added to the "workflow_version" field in this mutation.
+func (m *QuotaResetRequestMutation) AddedWorkflowVersion() (r int, exists bool) {
+	v := m.addworkflow_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetWorkflowVersion resets all changes to the "workflow_version" field.
+func (m *QuotaResetRequestMutation) ResetWorkflowVersion() {
+	m.workflow_version = nil
+	m.addworkflow_version = nil
+}
+
+// SetWorkflow sets the "workflow" field.
+func (m *QuotaResetRequestMutation) SetWorkflow(value map[string]interface{}) {
+	m.workflow = &value
+}
+
+// Workflow returns the value of the "workflow" field in the mutation.
+func (m *QuotaResetRequestMutation) Workflow() (r map[string]interface{}, exists bool) {
+	v := m.workflow
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWorkflow returns the old "workflow" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldWorkflow(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWorkflow is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWorkflow requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWorkflow: %w", err)
+	}
+	return oldValue.Workflow, nil
+}
+
+// ClearWorkflow clears the value of the "workflow" field.
+func (m *QuotaResetRequestMutation) ClearWorkflow() {
+	m.workflow = nil
+	m.clearedFields[quotaresetrequest.FieldWorkflow] = struct{}{}
+}
+
+// WorkflowCleared returns if the "workflow" field was cleared in this mutation.
+func (m *QuotaResetRequestMutation) WorkflowCleared() bool {
+	_, ok := m.clearedFields[quotaresetrequest.FieldWorkflow]
+	return ok
+}
+
+// ResetWorkflow resets all changes to the "workflow" field.
+func (m *QuotaResetRequestMutation) ResetWorkflow() {
+	m.workflow = nil
+	delete(m.clearedFields, quotaresetrequest.FieldWorkflow)
+}
+
+// SetWorkflowRevision sets the "workflow_revision" field.
+func (m *QuotaResetRequestMutation) SetWorkflowRevision(i int) {
+	m.workflow_revision = &i
+	m.addworkflow_revision = nil
+}
+
+// WorkflowRevision returns the value of the "workflow_revision" field in the mutation.
+func (m *QuotaResetRequestMutation) WorkflowRevision() (r int, exists bool) {
+	v := m.workflow_revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWorkflowRevision returns the old "workflow_revision" field's value of the QuotaResetRequest entity.
+// If the QuotaResetRequest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *QuotaResetRequestMutation) OldWorkflowRevision(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWorkflowRevision is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWorkflowRevision requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWorkflowRevision: %w", err)
+	}
+	return oldValue.WorkflowRevision, nil
+}
+
+// AddWorkflowRevision adds i to the "workflow_revision" field.
+func (m *QuotaResetRequestMutation) AddWorkflowRevision(i int) {
+	if m.addworkflow_revision != nil {
+		*m.addworkflow_revision += i
+	} else {
+		m.addworkflow_revision = &i
+	}
+}
+
+// AddedWorkflowRevision returns the value that was added to the "workflow_revision" field in this mutation.
+func (m *QuotaResetRequestMutation) AddedWorkflowRevision() (r int, exists bool) {
+	v := m.addworkflow_revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetWorkflowRevision resets all changes to the "workflow_revision" field.
+func (m *QuotaResetRequestMutation) ResetWorkflowRevision() {
+	m.workflow_revision = nil
+	m.addworkflow_revision = nil
 }
 
 // SetStatus sets the "status" field.
@@ -22239,7 +22459,7 @@ func (m *QuotaResetRequestMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *QuotaResetRequestMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 22)
 	if m.requester_user_id != nil {
 		fields = append(fields, quotaresetrequest.FieldRequesterUserID)
 	}
@@ -22260,6 +22480,15 @@ func (m *QuotaResetRequestMutation) Fields() []string {
 	}
 	if m.reason != nil {
 		fields = append(fields, quotaresetrequest.FieldReason)
+	}
+	if m.workflow_version != nil {
+		fields = append(fields, quotaresetrequest.FieldWorkflowVersion)
+	}
+	if m.workflow != nil {
+		fields = append(fields, quotaresetrequest.FieldWorkflow)
+	}
+	if m.workflow_revision != nil {
+		fields = append(fields, quotaresetrequest.FieldWorkflowRevision)
 	}
 	if m.status != nil {
 		fields = append(fields, quotaresetrequest.FieldStatus)
@@ -22319,6 +22548,12 @@ func (m *QuotaResetRequestMutation) Field(name string) (ent.Value, bool) {
 		return m.GroupPlatform()
 	case quotaresetrequest.FieldReason:
 		return m.Reason()
+	case quotaresetrequest.FieldWorkflowVersion:
+		return m.WorkflowVersion()
+	case quotaresetrequest.FieldWorkflow:
+		return m.Workflow()
+	case quotaresetrequest.FieldWorkflowRevision:
+		return m.WorkflowRevision()
 	case quotaresetrequest.FieldStatus:
 		return m.Status()
 	case quotaresetrequest.FieldResolvedApproverUserIds:
@@ -22366,6 +22601,12 @@ func (m *QuotaResetRequestMutation) OldField(ctx context.Context, name string) (
 		return m.OldGroupPlatform(ctx)
 	case quotaresetrequest.FieldReason:
 		return m.OldReason(ctx)
+	case quotaresetrequest.FieldWorkflowVersion:
+		return m.OldWorkflowVersion(ctx)
+	case quotaresetrequest.FieldWorkflow:
+		return m.OldWorkflow(ctx)
+	case quotaresetrequest.FieldWorkflowRevision:
+		return m.OldWorkflowRevision(ctx)
 	case quotaresetrequest.FieldStatus:
 		return m.OldStatus(ctx)
 	case quotaresetrequest.FieldResolvedApproverUserIds:
@@ -22447,6 +22688,27 @@ func (m *QuotaResetRequestMutation) SetField(name string, value ent.Value) error
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetReason(v)
+		return nil
+	case quotaresetrequest.FieldWorkflowVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWorkflowVersion(v)
+		return nil
+	case quotaresetrequest.FieldWorkflow:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWorkflow(v)
+		return nil
+	case quotaresetrequest.FieldWorkflowRevision:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWorkflowRevision(v)
 		return nil
 	case quotaresetrequest.FieldStatus:
 		v, ok := value.(quotaresetrequest.Status)
@@ -22549,6 +22811,12 @@ func (m *QuotaResetRequestMutation) AddedFields() []string {
 	if m.addprovider_id != nil {
 		fields = append(fields, quotaresetrequest.FieldProviderID)
 	}
+	if m.addworkflow_version != nil {
+		fields = append(fields, quotaresetrequest.FieldWorkflowVersion)
+	}
+	if m.addworkflow_revision != nil {
+		fields = append(fields, quotaresetrequest.FieldWorkflowRevision)
+	}
 	if m.addapproved_by_user_id != nil {
 		fields = append(fields, quotaresetrequest.FieldApprovedByUserID)
 	}
@@ -22569,6 +22837,10 @@ func (m *QuotaResetRequestMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedRequesterRelayUserID()
 	case quotaresetrequest.FieldProviderID:
 		return m.AddedProviderID()
+	case quotaresetrequest.FieldWorkflowVersion:
+		return m.AddedWorkflowVersion()
+	case quotaresetrequest.FieldWorkflowRevision:
+		return m.AddedWorkflowRevision()
 	case quotaresetrequest.FieldApprovedByUserID:
 		return m.AddedApprovedByUserID()
 	case quotaresetrequest.FieldRejectedByUserID:
@@ -22603,6 +22875,20 @@ func (m *QuotaResetRequestMutation) AddField(name string, value ent.Value) error
 		}
 		m.AddProviderID(v)
 		return nil
+	case quotaresetrequest.FieldWorkflowVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddWorkflowVersion(v)
+		return nil
+	case quotaresetrequest.FieldWorkflowRevision:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddWorkflowRevision(v)
+		return nil
 	case quotaresetrequest.FieldApprovedByUserID:
 		v, ok := value.(int)
 		if !ok {
@@ -22625,6 +22911,9 @@ func (m *QuotaResetRequestMutation) AddField(name string, value ent.Value) error
 // mutation.
 func (m *QuotaResetRequestMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(quotaresetrequest.FieldWorkflow) {
+		fields = append(fields, quotaresetrequest.FieldWorkflow)
+	}
 	if m.FieldCleared(quotaresetrequest.FieldResolvedApproverUserIds) {
 		fields = append(fields, quotaresetrequest.FieldResolvedApproverUserIds)
 	}
@@ -22660,6 +22949,9 @@ func (m *QuotaResetRequestMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *QuotaResetRequestMutation) ClearField(name string) error {
 	switch name {
+	case quotaresetrequest.FieldWorkflow:
+		m.ClearWorkflow()
+		return nil
 	case quotaresetrequest.FieldResolvedApproverUserIds:
 		m.ClearResolvedApproverUserIds()
 		return nil
@@ -22709,6 +23001,15 @@ func (m *QuotaResetRequestMutation) ResetField(name string) error {
 		return nil
 	case quotaresetrequest.FieldReason:
 		m.ResetReason()
+		return nil
+	case quotaresetrequest.FieldWorkflowVersion:
+		m.ResetWorkflowVersion()
+		return nil
+	case quotaresetrequest.FieldWorkflow:
+		m.ResetWorkflow()
+		return nil
+	case quotaresetrequest.FieldWorkflowRevision:
+		m.ResetWorkflowRevision()
 		return nil
 	case quotaresetrequest.FieldStatus:
 		m.ResetStatus()

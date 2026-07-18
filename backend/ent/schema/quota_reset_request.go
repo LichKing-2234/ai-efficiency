@@ -20,8 +20,12 @@ func (QuotaResetRequest) Fields() []ent.Field {
 		field.String("group_name").Default(""),
 		field.String("group_platform").Default(""),
 		field.String("reason").NotEmpty(),
+		field.Int("workflow_version").Default(1),
+		field.JSON("workflow", map[string]any{}).Optional(),
+		field.Int("workflow_revision").Default(0),
 		field.Enum("status").Values(
 			"pending",
+			"workflow_pending",
 			"approved_resetting",
 			"approved_reset_succeeded",
 			"approved_reset_failed",
@@ -47,9 +51,15 @@ func (QuotaResetRequest) Indexes() []ent.Index {
 		index.Fields("requester_user_id", "created_at"),
 		index.Fields("status", "created_at"),
 		index.Fields("provider_id", "group_id", "status"),
+		// Keep the original index stable so older binaries do not rewrite it
+		// during a rolling rollback. The second index spans both workflow versions.
 		index.Fields("requester_user_id", "provider_id", "group_id").
 			Unique().
 			Annotations(entsql.IndexWhere("status IN ('pending', 'approved_resetting', 'approved_reset_failed')")),
+		index.Fields("requester_user_id", "provider_id", "group_id").
+			Unique().
+			StorageKey("quotaresetrequest_workflow_active_unique").
+			Annotations(entsql.IndexWhere("status IN ('pending', 'workflow_pending', 'approved_resetting', 'approved_reset_failed')")),
 		index.Fields("updated_at"),
 	}
 }

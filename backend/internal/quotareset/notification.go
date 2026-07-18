@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -22,6 +23,18 @@ const (
 	defaultWebhookTimeout       = 5 * time.Second
 	maxWebhookResponseBodyBytes = 4096
 )
+
+var validWeComUserID = regexp.MustCompile(`^[A-Za-z0-9_.@-]{1,128}$`)
+
+type quotaResetNotificationContext struct {
+	Requester        WorkflowPerson
+	ActiveApprovers  []WorkflowApprover
+	WorkflowSteps    []WorkflowStep
+	StepIndex        int
+	StepCount        int
+	StepLabel        string
+	PreviousDecision *WorkflowDecision
+}
 
 type WebhookNotifier struct {
 	client        *ent.Client
@@ -59,7 +72,18 @@ func (n *WebhookNotifier) NotifyRequestEvent(ctx context.Context, event string, 
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return fmt.Errorf("invalid webhook url")
 	}
-	payload := n.payloadForURL(parsed, event, req)
+	channel := setting.Channel
+	if channel == quotaresetnotificationsetting.ChannelLegacyAuto {
+		channel = quotaresetnotificationsetting.ChannelGenericWebhook
+		if isWeComRobotWebhookURL(parsed) {
+			channel = quotaresetnotificationsetting.ChannelWecomGroupRobot
+		}
+	}
+	notificationContext, err := notificationContextForRequest(req)
+	if err != nil {
+		return err
+	}
+	payload := n.payloadForChannel(channel, event, req, notificationContext)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal webhook payload: %w", err)
@@ -78,7 +102,7 @@ func (n *WebhookNotifier) NotifyRequestEvent(ctx context.Context, event string, 
 	}
 	resp, err := n.httpClient.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("send webhook: %w", err)
+		return fmt.Errorf("send webhook: request failed")
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxWebhookResponseBodyBytes))
@@ -91,53 +115,203 @@ func (n *WebhookNotifier) NotifyRequestEvent(ctx context.Context, event string, 
 	return nil
 }
 
-func (n *WebhookNotifier) payloadForURL(parsed *url.URL, event string, req *ent.QuotaResetRequest) any {
-	if isWeComRobotWebhookURL(parsed) {
+func (n *WebhookNotifier) payloadForChannel(channel quotaresetnotificationsetting.Channel, event string, req *ent.QuotaResetRequest, ctx quotaResetNotificationContext) any {
+	if channel == quotaresetnotificationsetting.ChannelWecomGroupRobot {
 		return map[string]any{
-			"msgtype": "text",
-			"text": map[string]string{
-				"content": n.weComRobotTextContent(event, req),
+			"msgtype": "markdown",
+			"markdown": map[string]string{
+				"content": n.weComRobotMarkdown(event, req, ctx),
 			},
 		}
 	}
-	return n.payload(event, req)
+	return n.payload(event, req, ctx)
 }
 
-func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest) map[string]any {
+func (n *WebhookNotifier) payload(event string, req *ent.QuotaResetRequest, ctx quotaResetNotificationContext) map[string]any {
+	workflowPayload := map[string]any{
+		"step_number":      min(ctx.StepIndex+1, ctx.StepCount),
+		"step_count":       ctx.StepCount,
+		"step_label":       ctx.StepLabel,
+		"active_approvers": genericWebhookApprovers(ctx.ActiveApprovers),
+		"steps":            genericWebhookSteps(ctx.WorkflowSteps),
+	}
+	if ctx.PreviousDecision != nil {
+		workflowPayload["previous_decision"] = genericWebhookDecision(ctx.PreviousDecision)
+	}
 	payload := map[string]any{
 		"event":                      event,
 		"request_id":                 req.ID,
-		"status":                     req.Status.String(),
+		"status":                     publicQuotaResetStatus(req.Status),
 		"requester_user_id":          req.RequesterUserID,
 		"provider_id":                req.ProviderID,
 		"group_id":                   req.GroupID,
 		"group_name":                 req.GroupName,
 		"group_platform":             req.GroupPlatform,
+		"reason":                     reasonPreview(req.Reason),
 		"reason_preview":             reasonPreview(req.Reason),
 		"resolved_approver_user_ids": req.ResolvedApproverUserIds,
-		"occurred_at":                time.Now().UTC().Format(time.RFC3339),
+		"requester": map[string]any{
+			"user_id":          ctx.Requester.UserID,
+			"display_name":     ctx.Requester.DisplayName,
+			"email":            ctx.Requester.Email,
+			"department_paths": ctx.Requester.DepartmentPaths,
+		},
+		"workflow":    workflowPayload,
+		"occurred_at": time.Now().UTC().Format(time.RFC3339),
 	}
-	if n.frontendURL != "" {
-		payload["action_url"] = fmt.Sprintf("%s/usage/quota-reset?request_id=%d", n.frontendURL, req.ID)
+	if actionURL := n.actionURL(req.ID); actionURL != "" {
+		payload["action_url"] = actionURL
 	}
 	return payload
 }
 
-func (n *WebhookNotifier) weComRobotTextContent(event string, req *ent.QuotaResetRequest) string {
+func genericWebhookApprovers(approvers []WorkflowApprover) []map[string]any {
+	result := make([]map[string]any, len(approvers))
+	for index, approver := range approvers {
+		result[index] = map[string]any{
+			"user_id":      approver.UserID,
+			"display_name": approver.DisplayName,
+			"email":        approver.Email,
+		}
+	}
+	return result
+}
+
+func genericWebhookDecision(decision *WorkflowDecision) map[string]any {
+	return map[string]any{
+		"actor_user_id":      decision.ActorUserID,
+		"actor_display_name": decision.ActorDisplayName,
+		"comment":            decision.Comment,
+		"decided_at":         decision.DecidedAt,
+	}
+}
+
+func genericWebhookSteps(steps []WorkflowStep) []map[string]any {
+	result := make([]map[string]any, len(steps))
+	for index, step := range steps {
+		item := map[string]any{
+			"step_number":    index + 1,
+			"label":          step.Label,
+			"admin_fallback": step.AdminFallback,
+			"status":         step.Status,
+		}
+		if step.Decision != nil {
+			item["decision"] = genericWebhookDecision(step.Decision)
+		}
+		if step.SatisfiedByStep != nil {
+			item["satisfied_by_step_number"] = *step.SatisfiedByStep + 1
+		}
+		result[index] = item
+	}
+	return result
+}
+
+func (n *WebhookNotifier) weComRobotMarkdown(event string, req *ent.QuotaResetRequest, ctx quotaResetNotificationContext) string {
+	title := "# 额度重置审批通知"
+	if event == "quota_reset_request_created" || event == "quota_reset_step_activated" || event == "quota_reset_notification_test" {
+		title = "# 额度重置待审批"
+	}
+	requester := firstWorkflowValue(ctx.Requester.DisplayName, "未知用户")
+	if email := strings.TrimSpace(ctx.Requester.Email); email != "" {
+		requester += " (" + email + ")"
+	}
+	team := strings.Join(ctx.Requester.DepartmentPaths, ", ")
+	if team == "" {
+		team = "未同步"
+	}
 	lines := []string{
-		"AI Efficiency 额度重置审批通知",
-		"事件：" + quotaResetWebhookEventLabel(event),
-		fmt.Sprintf("申请ID：%d", req.ID),
-		"订阅组：" + req.GroupName,
-		"状态：" + req.Status.String(),
+		title,
+		"> 事件：" + safeWeComText(quotaResetWebhookEventLabel(event)),
+		"> 申请人：" + safeWeComText(requester),
+		"> 所属团队：" + safeWeComText(team),
+		"> 订阅组：" + safeWeComText(firstWorkflowValue(req.GroupName, req.GroupID)),
+		fmt.Sprintf("> 审批进度：%d/%d", min(ctx.StepIndex+1, ctx.StepCount), ctx.StepCount),
+	}
+	if label := strings.TrimSpace(ctx.StepLabel); label != "" {
+		lines = append(lines, "> 当前节点："+safeWeComText(label))
 	}
 	if reason := reasonPreview(req.Reason); reason != "" {
-		lines = append(lines, "原因："+reason)
+		lines = append(lines, "> 申请原因："+safeWeComText(reason))
 	}
-	if n.frontendURL != "" {
-		lines = append(lines, "处理入口："+fmt.Sprintf("%s/usage/quota-reset?request_id=%d", n.frontendURL, req.ID))
+	if ctx.PreviousDecision != nil {
+		lines = append(lines, "> 上一审批："+safeWeComText(firstWorkflowValue(ctx.PreviousDecision.ActorDisplayName, "未知用户"))+"："+safeWeComText(ctx.PreviousDecision.Comment))
+	}
+	mentions := make([]string, 0, len(ctx.ActiveApprovers))
+	for _, approver := range ctx.ActiveApprovers {
+		userID := strings.TrimSpace(approver.NotificationIDs["wecom"])
+		if validWeComUserID.MatchString(userID) && !strings.EqualFold(userID, "all") {
+			mentions = append(mentions, "<@"+userID+">")
+			continue
+		}
+		mentions = append(mentions, safeWeComText(firstWorkflowValue(approver.DisplayName, approver.Email, fmt.Sprintf("User #%d", approver.UserID)))+"（无法@）")
+	}
+	if len(mentions) > 0 {
+		lines = append(lines, "审批人："+strings.Join(mentions, " "))
+	}
+	if actionURL := n.actionURL(req.ID); actionURL != "" {
+		lines = append(lines, "[前往处理]("+actionURL+")")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (n *WebhookNotifier) actionURL(requestID int) string {
+	if strings.TrimSpace(n.frontendURL) == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"%s/usage/quota-reset?queue=approvals&request_id=%d",
+		strings.TrimRight(n.frontendURL, "/"),
+		requestID,
+	)
+}
+
+func notificationContextForRequest(req *ent.QuotaResetRequest) (quotaResetNotificationContext, error) {
+	ctx := quotaResetNotificationContext{
+		Requester: WorkflowPerson{UserID: req.RequesterUserID, DepartmentPaths: []string{}},
+		StepCount: 1,
+	}
+	if req.WorkflowVersion != workflowVersionV2 {
+		for _, userID := range req.ResolvedApproverUserIds {
+			ctx.ActiveApprovers = append(ctx.ActiveApprovers, WorkflowApprover{UserID: userID})
+		}
+		return ctx, nil
+	}
+	workflow, err := DecodeWorkflow(req.Workflow)
+	if err != nil {
+		return quotaResetNotificationContext{}, err
+	}
+	ctx.Requester = workflow.Requester
+	ctx.WorkflowSteps = workflow.Steps
+	ctx.StepCount = len(workflow.Steps)
+	ctx.StepIndex = workflow.CurrentStep
+	if workflow.CurrentStep < len(workflow.Steps) {
+		step := workflow.Steps[workflow.CurrentStep]
+		ctx.StepLabel = step.Label
+		ctx.ActiveApprovers = append([]WorkflowApprover(nil), step.Approvers...)
+	}
+	for index := min(workflow.CurrentStep, len(workflow.Steps)) - 1; index >= 0; index-- {
+		if workflow.Steps[index].Decision != nil {
+			ctx.PreviousDecision = workflow.Steps[index].Decision
+			break
+		}
+	}
+	return ctx, nil
+}
+
+func safeWeComText(value string) string {
+	return strings.NewReplacer(
+		"\r\n", " ",
+		"\r", " ",
+		"\n", " ",
+		"<", "＜",
+		">", "＞",
+		"&", "＆",
+		"`", "｀",
+		"[", "［",
+		"]", "］",
+		"(", "（",
+		")", "）",
+	).Replace(strings.TrimSpace(value))
 }
 
 func isWeComRobotWebhookURL(parsed *url.URL) bool {
@@ -178,11 +352,7 @@ func webhookResponseBusinessError(body []byte) error {
 	if err := json.Unmarshal(body, &response); err != nil || response.ErrCode == nil || *response.ErrCode == 0 {
 		return nil
 	}
-	errmsg := strings.TrimSpace(response.ErrMsg)
-	if errmsg == "" {
-		return fmt.Errorf("webhook returned errcode %d", *response.ErrCode)
-	}
-	return fmt.Errorf("webhook returned errcode %d: %s", *response.ErrCode, errmsg)
+	return fmt.Errorf("webhook returned errcode %d", *response.ErrCode)
 }
 
 func (n *WebhookNotifier) bearerToken(ctx context.Context, setting *ent.QuotaResetNotificationSetting) (string, error) {

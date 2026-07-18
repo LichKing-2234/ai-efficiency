@@ -43,8 +43,8 @@ export function listQuotaResetApprovals(params?: QuotaResetListParams) {
   return client.get<ApiResponse<QuotaResetRequestListResponse>>('/user/quota-reset/approvals', { params })
 }
 
-export function approveQuotaResetRequest(id: number, data?: { decision_reason?: string }) {
-  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/user/quota-reset/approvals/${id}/approve`, data ?? {})
+export function approveQuotaResetRequest(id: number, data: { decision_reason: string }) {
+  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/user/quota-reset/approvals/${id}/approve`, data)
 }
 
 export function rejectQuotaResetRequest(id: number, data: { decision_reason: string }) {
@@ -59,8 +59,8 @@ export function listAdminQuotaResetRequests(params?: QuotaResetListParams) {
   return client.get<ApiResponse<QuotaResetRequestListResponse>>('/admin/quota-reset/requests', { params })
 }
 
-export function adminApproveQuotaResetRequest(id: number, data?: { decision_reason?: string }) {
-  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/admin/quota-reset/requests/${id}/approve`, data ?? {})
+export function adminApproveQuotaResetRequest(id: number, data: { decision_reason: string }) {
+  return client.post<ApiResponse<QuotaResetRequestSummary>>(`/admin/quota-reset/requests/${id}/approve`, data)
 }
 
 export function adminRejectQuotaResetRequest(id: number, data: { decision_reason: string }) {

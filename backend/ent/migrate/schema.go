@@ -635,6 +635,7 @@ var (
 	QuotaResetNotificationSettingsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "enabled", Type: field.TypeBool, Default: false},
+		{Name: "channel", Type: field.TypeEnum, Enums: []string{"legacy_auto", "generic_webhook", "wecom_group_robot"}, Default: "legacy_auto"},
 		{Name: "url", Type: field.TypeString, Default: ""},
 		{Name: "auth_type", Type: field.TypeEnum, Enums: []string{"none", "bearer_token"}, Default: "none"},
 		{Name: "credential_id", Type: field.TypeInt, Nullable: true},
@@ -659,7 +660,10 @@ var (
 		{Name: "group_name", Type: field.TypeString, Default: ""},
 		{Name: "group_platform", Type: field.TypeString, Default: ""},
 		{Name: "reason", Type: field.TypeString},
-		{Name: "status", Type: field.TypeEnum, Enums: []string{"pending", "approved_resetting", "approved_reset_succeeded", "approved_reset_failed", "rejected", "cancelled"}, Default: "pending"},
+		{Name: "workflow_version", Type: field.TypeInt, Default: 1},
+		{Name: "workflow", Type: field.TypeJSON, Nullable: true},
+		{Name: "workflow_revision", Type: field.TypeInt, Default: 0},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"pending", "workflow_pending", "approved_resetting", "approved_reset_succeeded", "approved_reset_failed", "rejected", "cancelled"}, Default: "pending"},
 		{Name: "resolved_approver_user_ids", Type: field.TypeJSON, Nullable: true},
 		{Name: "matched_department_paths", Type: field.TypeJSON, Nullable: true},
 		{Name: "approved_by_user_id", Type: field.TypeInt, Nullable: true},
@@ -681,17 +685,17 @@ var (
 			{
 				Name:    "quotaresetrequest_requester_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[18]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[21]},
 			},
 			{
 				Name:    "quotaresetrequest_status_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[8], QuotaResetRequestsColumns[18]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[11], QuotaResetRequestsColumns[21]},
 			},
 			{
 				Name:    "quotaresetrequest_provider_id_group_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4], QuotaResetRequestsColumns[8]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4], QuotaResetRequestsColumns[11]},
 			},
 			{
 				Name:    "quotaresetrequest_requester_user_id_provider_id_group_id",
@@ -702,9 +706,17 @@ var (
 				},
 			},
 			{
+				Name:    "quotaresetrequest_workflow_active_unique",
+				Unique:  true,
+				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "status IN ('pending', 'workflow_pending', 'approved_resetting', 'approved_reset_failed')",
+				},
+			},
+			{
 				Name:    "quotaresetrequest_updated_at",
 				Unique:  false,
-				Columns: []*schema.Column{QuotaResetRequestsColumns[19]},
+				Columns: []*schema.Column{QuotaResetRequestsColumns[22]},
 			},
 		},
 	}
@@ -713,7 +725,7 @@ var (
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "request_id", Type: field.TypeInt},
 		{Name: "actor_user_id", Type: field.TypeInt, Nullable: true},
-		{Name: "event_type", Type: field.TypeEnum, Enums: []string{"created", "approver_resolved", "notification_sent", "notification_failed", "approved", "reset_started", "reset_succeeded", "reset_failed", "rejected", "cancelled", "reset_retried"}},
+		{Name: "event_type", Type: field.TypeEnum, Enums: []string{"created", "approver_resolved", "notification_sent", "notification_failed", "approved", "reset_started", "reset_succeeded", "reset_failed", "rejected", "cancelled", "reset_retried", "workflow_created", "step_approved", "step_satisfied", "step_activated", "admin_fallback_activated"}},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
 		{Name: "error_message", Type: field.TypeString, Default: ""},
 		{Name: "created_at", Type: field.TypeTime},

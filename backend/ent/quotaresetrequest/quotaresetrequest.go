@@ -28,6 +28,12 @@ const (
 	FieldGroupPlatform = "group_platform"
 	// FieldReason holds the string denoting the reason field in the database.
 	FieldReason = "reason"
+	// FieldWorkflowVersion holds the string denoting the workflow_version field in the database.
+	FieldWorkflowVersion = "workflow_version"
+	// FieldWorkflow holds the string denoting the workflow field in the database.
+	FieldWorkflow = "workflow"
+	// FieldWorkflowRevision holds the string denoting the workflow_revision field in the database.
+	FieldWorkflowRevision = "workflow_revision"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
 	// FieldResolvedApproverUserIds holds the string denoting the resolved_approver_user_ids field in the database.
@@ -66,6 +72,9 @@ var Columns = []string{
 	FieldGroupName,
 	FieldGroupPlatform,
 	FieldReason,
+	FieldWorkflowVersion,
+	FieldWorkflow,
+	FieldWorkflowRevision,
 	FieldStatus,
 	FieldResolvedApproverUserIds,
 	FieldMatchedDepartmentPaths,
@@ -99,6 +108,10 @@ var (
 	DefaultGroupPlatform string
 	// ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
 	ReasonValidator func(string) error
+	// DefaultWorkflowVersion holds the default value on creation for the "workflow_version" field.
+	DefaultWorkflowVersion int
+	// DefaultWorkflowRevision holds the default value on creation for the "workflow_revision" field.
+	DefaultWorkflowRevision int
 	// DefaultDecisionReason holds the default value on creation for the "decision_reason" field.
 	DefaultDecisionReason string
 	// DefaultResetError holds the default value on creation for the "reset_error" field.
@@ -120,6 +133,7 @@ const DefaultStatus = StatusPending
 // Status values.
 const (
 	StatusPending                Status = "pending"
+	StatusWorkflowPending        Status = "workflow_pending"
 	StatusApprovedResetting      Status = "approved_resetting"
 	StatusApprovedResetSucceeded Status = "approved_reset_succeeded"
 	StatusApprovedResetFailed    Status = "approved_reset_failed"
@@ -134,7 +148,7 @@ func (s Status) String() string {
 // StatusValidator is a validator for the "status" field enum values. It is called by the builders before save.
 func StatusValidator(s Status) error {
 	switch s {
-	case StatusPending, StatusApprovedResetting, StatusApprovedResetSucceeded, StatusApprovedResetFailed, StatusRejected, StatusCancelled:
+	case StatusPending, StatusWorkflowPending, StatusApprovedResetting, StatusApprovedResetSucceeded, StatusApprovedResetFailed, StatusRejected, StatusCancelled:
 		return nil
 	default:
 		return fmt.Errorf("quotaresetrequest: invalid enum value for status field: %q", s)
@@ -182,6 +196,16 @@ func ByGroupPlatform(opts ...sql.OrderTermOption) OrderOption {
 // ByReason orders the results by the reason field.
 func ByReason(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReason, opts...).ToFunc()
+}
+
+// ByWorkflowVersion orders the results by the workflow_version field.
+func ByWorkflowVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWorkflowVersion, opts...).ToFunc()
+}
+
+// ByWorkflowRevision orders the results by the workflow_revision field.
+func ByWorkflowRevision(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWorkflowRevision, opts...).ToFunc()
 }
 
 // ByStatus orders the results by the status field.

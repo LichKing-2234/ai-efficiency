@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import QuotaResetRequestList from '@/components/quota-reset/QuotaResetRequestList.vue'
+import QuotaResetDecisionDialog from '@/components/quota-reset/QuotaResetDecisionDialog.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
 import {
   adminApproveQuotaResetRequest,
@@ -14,6 +16,7 @@ import {
   listQuotaResetApprovals,
   rejectQuotaResetRequest,
   retryQuotaResetRequest,
+  type QuotaResetListParams,
 } from '@/api/quotaReset'
 import { useToast } from '@/composables/useToast'
 import { useI18n } from '@/i18n'
@@ -25,22 +28,43 @@ const { t } = useI18n()
 const { showToast } = useToast()
 const auth = useAuthStore()
 const workItems = useWorkItemsStore()
+const route = useRoute()
 
 type QueueMode = 'mine' | 'approvals' | 'admin'
 type FilterMode = 'all' | 'pending' | 'processed' | 'failed'
 
-const activeQueue = ref<QueueMode>('mine')
+const activeQueue = ref<QueueMode>(initialQueue())
 const activeFilter = ref<FilterMode>('all')
 const myRequests = ref<QuotaResetRequestSummary[]>([])
 const approvalRequests = ref<QuotaResetRequestSummary[]>([])
 const adminRequests = ref<QuotaResetRequestSummary[]>([])
-const myTotal = ref(0)
 const loading = ref(false)
 const actionBusy = ref(false)
+const selectedRequest = ref<QuotaResetRequestSummary | null>(null)
+const decisionRequest = ref<QuotaResetRequestSummary | null>(null)
+const decisionAction = ref<'approve' | 'reject'>('approve')
 const loadError = ref('')
 const filters: FilterMode[] = ['all', 'pending', 'processed', 'failed']
+const queuePageSize = 100
 const approvalTotal = computed(() => workItems.loading || workItems.error ? 0 : workItems.counts.quota_reset_approval_count)
 const adminTotal = computed(() => workItems.loading || workItems.error || !auth.isAdmin ? 0 : workItems.counts.quota_reset_admin_count)
+
+function firstQueryValue(value: unknown) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function initialQueue(): QueueMode {
+  const value = firstQueryValue(route.query.queue)
+  if (value === 'approvals' || value === 'mine') return value
+  if (value === 'admin' && auth.isAdmin) return value
+  return 'mine'
+}
+
+function initialRequestID() {
+  const value = firstQueryValue(route.query.request_id)
+  if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null
+  return Number(value)
+}
 
 const queueItems = computed(() => {
   if (activeQueue.value === 'approvals') return approvalRequests.value
@@ -50,24 +74,37 @@ const queueItems = computed(() => {
 
 const visibleItems = computed(() => queueItems.value.filter((item) => filterMatches(item.status, activeFilter.value)))
 
+async function loadAllQueuePages(loader: (params: QuotaResetListParams) => ReturnType<typeof listMyQuotaResetRequests>) {
+  const items: QuotaResetRequestSummary[] = []
+  for (let page = 1; ; page += 1) {
+    const response = await loader({ page, page_size: queuePageSize })
+    const data = response.data.data
+    const pageItems = data?.items ?? []
+    items.push(...pageItems)
+    const total = data?.total ?? items.length
+    if (items.length >= total || pageItems.length < queuePageSize) return { items, total }
+  }
+}
 async function loadQueues(forceCounts = false) {
   loading.value = true
   loadError.value = ''
   void workItems.loadCounts({ force: forceCounts })
   try {
-    const requests = [
-      listMyQuotaResetRequests(),
-      listQuotaResetApprovals(),
-    ] as const
-    const [mine, approvals] = await Promise.all(requests)
-    myRequests.value = mine.data.data?.items ?? []
-    approvalRequests.value = approvals.data.data?.items ?? []
-    myTotal.value = mine.data.data?.total ?? myRequests.value.length
-    if (auth.isAdmin) {
-      const admin = await listAdminQuotaResetRequests()
-      adminRequests.value = admin.data.data?.items ?? []
-    } else {
-      adminRequests.value = []
+    const [mine, approvals] = await Promise.all([
+      loadAllQueuePages(listMyQuotaResetRequests),
+      loadAllQueuePages(listQuotaResetApprovals),
+    ])
+    myRequests.value = mine.items
+    approvalRequests.value = approvals.items
+    adminRequests.value = auth.isAdmin
+      ? (await loadAllQueuePages(listAdminQuotaResetRequests)).items
+      : []
+    const requestID = initialRequestID()
+    const request = requestID === null
+      ? null
+      : queueItems.value.find((item) => item.id === requestID)
+    if (request?.workflow_steps?.length) {
+      selectedRequest.value = request
     }
   } catch {
     loadError.value = t('quotaReset.loadFailed')
@@ -125,45 +162,47 @@ async function withAction(action: () => Promise<unknown>) {
     await action()
     await loadQueues(true)
     showToast({ message: t('quotaReset.actionSucceeded'), tone: 'success' })
+    return true
   } catch {
     showToast({ message: t('quotaReset.actionFailed'), tone: 'error' })
+    return false
   } finally {
     actionBusy.value = false
   }
-}
-
-function rejectReason() {
-  return window.prompt(t('quotaReset.rejectPrompt'))?.trim() ?? ''
 }
 
 function handleCancel(item: QuotaResetRequestSummary) {
   void withAction(() => cancelQuotaResetRequest(item.id))
 }
 
-function handleApprove(item: QuotaResetRequestSummary) {
-  if (activeQueue.value === 'admin') {
-    void withAction(() => adminApproveQuotaResetRequest(item.id, {}))
-    return
-  }
-  void withAction(() => approveQuotaResetRequest(item.id, {}))
+function handleDecision(item: QuotaResetRequestSummary, action: 'approve' | 'reject') {
+  decisionRequest.value = item
+  decisionAction.value = action
 }
 
-function handleReject(item: QuotaResetRequestSummary) {
-  const decisionReason = rejectReason()
-  if (!decisionReason) return
-  if (activeQueue.value === 'admin') {
-    void withAction(() => adminRejectQuotaResetRequest(item.id, { decision_reason: decisionReason }))
-    return
+function submitDecision(item: QuotaResetRequestSummary, comment: string) {
+  const submit = decisionAction.value === 'approve'
+    ? (activeQueue.value === 'admin' ? adminApproveQuotaResetRequest : approveQuotaResetRequest)
+    : (activeQueue.value === 'admin' ? adminRejectQuotaResetRequest : rejectQuotaResetRequest)
+  return submit(item.id, { decision_reason: comment })
+}
+
+async function confirmDecision(comment: string) {
+  const item = decisionRequest.value
+  if (!item) return
+  if (await withAction(() => submitDecision(item, comment))) {
+    decisionRequest.value = null
+    selectedRequest.value = queueItems.value.find((request) => request.id === item.id) ?? null
   }
-  void withAction(() => rejectQuotaResetRequest(item.id, { decision_reason: decisionReason }))
+}
+
+function handleSelect(item: QuotaResetRequestSummary) {
+  selectedRequest.value = selectedRequest.value?.id === item.id ? null : item
 }
 
 function handleRetry(item: QuotaResetRequestSummary) {
-  if (activeQueue.value === 'admin') {
-    void withAction(() => adminRetryQuotaResetRequest(item.id))
-    return
-  }
-  void withAction(() => retryQuotaResetRequest(item.id))
+  const retry = activeQueue.value === 'admin' ? adminRetryQuotaResetRequest : retryQuotaResetRequest
+  void withAction(() => retry(item.id))
 }
 
 onMounted(loadQueues)
@@ -190,13 +229,6 @@ onMounted(loadQueues)
             @click="activeQueue = 'mine'"
           >
             {{ t('quotaReset.myRequests') }}
-            <span
-              v-if="myTotal > 0"
-              data-testid="quota-reset-tab-mine-count"
-              :class="queueBadgeClass(activeQueue === 'mine')"
-            >
-              {{ countBadge(myTotal) }}
-            </span>
           </button>
           <button
             type="button"
@@ -253,11 +285,21 @@ onMounted(loadQueues)
         :items="visibleItems"
         :loading="loading || actionBusy"
         :mode="activeQueue"
+        :actor-user-id="auth.user?.id"
+        :selected-request-id="selectedRequest?.id"
         @cancel="handleCancel"
-        @approve="handleApprove"
-        @reject="handleReject"
+        @approve="handleDecision($event, 'approve')"
+        @reject="handleDecision($event, 'reject')"
         @retry="handleRetry"
+        @select="handleSelect"
       />
     </div>
+    <QuotaResetDecisionDialog
+      v-if="decisionRequest"
+      :action="decisionAction"
+      :busy="actionBusy"
+      @confirm="confirmDecision"
+      @cancel="decisionRequest = null"
+    />
   </AppLayout>
 </template>

@@ -16,6 +16,8 @@ const (
 	FieldID = "id"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
+	// FieldChannel holds the string denoting the channel field in the database.
+	FieldChannel = "channel"
 	// FieldURL holds the string denoting the url field in the database.
 	FieldURL = "url"
 	// FieldAuthType holds the string denoting the auth_type field in the database.
@@ -38,6 +40,7 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldEnabled,
+	FieldChannel,
 	FieldURL,
 	FieldAuthType,
 	FieldCredentialID,
@@ -73,6 +76,33 @@ var (
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
 )
+
+// Channel defines the type for the "channel" enum field.
+type Channel string
+
+// ChannelLegacyAuto is the default value of the Channel enum.
+const DefaultChannel = ChannelLegacyAuto
+
+// Channel values.
+const (
+	ChannelLegacyAuto      Channel = "legacy_auto"
+	ChannelGenericWebhook  Channel = "generic_webhook"
+	ChannelWecomGroupRobot Channel = "wecom_group_robot"
+)
+
+func (c Channel) String() string {
+	return string(c)
+}
+
+// ChannelValidator is a validator for the "channel" field enum values. It is called by the builders before save.
+func ChannelValidator(c Channel) error {
+	switch c {
+	case ChannelLegacyAuto, ChannelGenericWebhook, ChannelWecomGroupRobot:
+		return nil
+	default:
+		return fmt.Errorf("quotaresetnotificationsetting: invalid enum value for channel field: %q", c)
+	}
+}
 
 // AuthType defines the type for the "auth_type" enum field.
 type AuthType string
@@ -111,6 +141,11 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 // ByEnabled orders the results by the enabled field.
 func ByEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEnabled, opts...).ToFunc()
+}
+
+// ByChannel orders the results by the channel field.
+func ByChannel(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldChannel, opts...).ToFunc()
 }
 
 // ByURL orders the results by the url field.

@@ -12,6 +12,7 @@ type QuotaResetNotificationSetting struct {
 func (QuotaResetNotificationSetting) Fields() []ent.Field {
 	return []ent.Field{
 		field.Bool("enabled").Default(false),
+		field.Enum("channel").Values("legacy_auto", "generic_webhook", "wecom_group_robot").Default("legacy_auto"),
 		field.String("url").Default(""),
 		field.Enum("auth_type").Values("none", "bearer_token").Default("none"),
 		field.Int("credential_id").Optional().Nillable(),

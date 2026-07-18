@@ -89,6 +89,16 @@ func Reason(v string) predicate.QuotaResetRequest {
 	return predicate.QuotaResetRequest(sql.FieldEQ(FieldReason, v))
 }
 
+// WorkflowVersion applies equality check predicate on the "workflow_version" field. It's identical to WorkflowVersionEQ.
+func WorkflowVersion(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldEQ(FieldWorkflowVersion, v))
+}
+
+// WorkflowRevision applies equality check predicate on the "workflow_revision" field. It's identical to WorkflowRevisionEQ.
+func WorkflowRevision(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldEQ(FieldWorkflowRevision, v))
+}
+
 // ApprovedByUserID applies equality check predicate on the "approved_by_user_id" field. It's identical to ApprovedByUserIDEQ.
 func ApprovedByUserID(v int) predicate.QuotaResetRequest {
 	return predicate.QuotaResetRequest(sql.FieldEQ(FieldApprovedByUserID, v))
@@ -512,6 +522,96 @@ func ReasonEqualFold(v string) predicate.QuotaResetRequest {
 // ReasonContainsFold applies the ContainsFold predicate on the "reason" field.
 func ReasonContainsFold(v string) predicate.QuotaResetRequest {
 	return predicate.QuotaResetRequest(sql.FieldContainsFold(FieldReason, v))
+}
+
+// WorkflowVersionEQ applies the EQ predicate on the "workflow_version" field.
+func WorkflowVersionEQ(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldEQ(FieldWorkflowVersion, v))
+}
+
+// WorkflowVersionNEQ applies the NEQ predicate on the "workflow_version" field.
+func WorkflowVersionNEQ(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldNEQ(FieldWorkflowVersion, v))
+}
+
+// WorkflowVersionIn applies the In predicate on the "workflow_version" field.
+func WorkflowVersionIn(vs ...int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldIn(FieldWorkflowVersion, vs...))
+}
+
+// WorkflowVersionNotIn applies the NotIn predicate on the "workflow_version" field.
+func WorkflowVersionNotIn(vs ...int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldNotIn(FieldWorkflowVersion, vs...))
+}
+
+// WorkflowVersionGT applies the GT predicate on the "workflow_version" field.
+func WorkflowVersionGT(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldGT(FieldWorkflowVersion, v))
+}
+
+// WorkflowVersionGTE applies the GTE predicate on the "workflow_version" field.
+func WorkflowVersionGTE(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldGTE(FieldWorkflowVersion, v))
+}
+
+// WorkflowVersionLT applies the LT predicate on the "workflow_version" field.
+func WorkflowVersionLT(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldLT(FieldWorkflowVersion, v))
+}
+
+// WorkflowVersionLTE applies the LTE predicate on the "workflow_version" field.
+func WorkflowVersionLTE(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldLTE(FieldWorkflowVersion, v))
+}
+
+// WorkflowIsNil applies the IsNil predicate on the "workflow" field.
+func WorkflowIsNil() predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldIsNull(FieldWorkflow))
+}
+
+// WorkflowNotNil applies the NotNil predicate on the "workflow" field.
+func WorkflowNotNil() predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldNotNull(FieldWorkflow))
+}
+
+// WorkflowRevisionEQ applies the EQ predicate on the "workflow_revision" field.
+func WorkflowRevisionEQ(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldEQ(FieldWorkflowRevision, v))
+}
+
+// WorkflowRevisionNEQ applies the NEQ predicate on the "workflow_revision" field.
+func WorkflowRevisionNEQ(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldNEQ(FieldWorkflowRevision, v))
+}
+
+// WorkflowRevisionIn applies the In predicate on the "workflow_revision" field.
+func WorkflowRevisionIn(vs ...int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldIn(FieldWorkflowRevision, vs...))
+}
+
+// WorkflowRevisionNotIn applies the NotIn predicate on the "workflow_revision" field.
+func WorkflowRevisionNotIn(vs ...int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldNotIn(FieldWorkflowRevision, vs...))
+}
+
+// WorkflowRevisionGT applies the GT predicate on the "workflow_revision" field.
+func WorkflowRevisionGT(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldGT(FieldWorkflowRevision, v))
+}
+
+// WorkflowRevisionGTE applies the GTE predicate on the "workflow_revision" field.
+func WorkflowRevisionGTE(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldGTE(FieldWorkflowRevision, v))
+}
+
+// WorkflowRevisionLT applies the LT predicate on the "workflow_revision" field.
+func WorkflowRevisionLT(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldLT(FieldWorkflowRevision, v))
+}
+
+// WorkflowRevisionLTE applies the LTE predicate on the "workflow_revision" field.
+func WorkflowRevisionLTE(v int) predicate.QuotaResetRequest {
+	return predicate.QuotaResetRequest(sql.FieldLTE(FieldWorkflowRevision, v))
 }
 
 // StatusEQ applies the EQ predicate on the "status" field.

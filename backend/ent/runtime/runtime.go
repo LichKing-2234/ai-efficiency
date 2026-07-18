@@ -527,23 +527,23 @@ func init() {
 	// quotaresetnotificationsetting.DefaultEnabled holds the default value on creation for the enabled field.
 	quotaresetnotificationsetting.DefaultEnabled = quotaresetnotificationsettingDescEnabled.Default.(bool)
 	// quotaresetnotificationsettingDescURL is the schema descriptor for url field.
-	quotaresetnotificationsettingDescURL := quotaresetnotificationsettingFields[1].Descriptor()
+	quotaresetnotificationsettingDescURL := quotaresetnotificationsettingFields[2].Descriptor()
 	// quotaresetnotificationsetting.DefaultURL holds the default value on creation for the url field.
 	quotaresetnotificationsetting.DefaultURL = quotaresetnotificationsettingDescURL.Default.(string)
 	// quotaresetnotificationsettingDescCreatedByUserID is the schema descriptor for created_by_user_id field.
-	quotaresetnotificationsettingDescCreatedByUserID := quotaresetnotificationsettingFields[4].Descriptor()
+	quotaresetnotificationsettingDescCreatedByUserID := quotaresetnotificationsettingFields[5].Descriptor()
 	// quotaresetnotificationsetting.DefaultCreatedByUserID holds the default value on creation for the created_by_user_id field.
 	quotaresetnotificationsetting.DefaultCreatedByUserID = quotaresetnotificationsettingDescCreatedByUserID.Default.(int)
 	// quotaresetnotificationsettingDescUpdatedByUserID is the schema descriptor for updated_by_user_id field.
-	quotaresetnotificationsettingDescUpdatedByUserID := quotaresetnotificationsettingFields[5].Descriptor()
+	quotaresetnotificationsettingDescUpdatedByUserID := quotaresetnotificationsettingFields[6].Descriptor()
 	// quotaresetnotificationsetting.DefaultUpdatedByUserID holds the default value on creation for the updated_by_user_id field.
 	quotaresetnotificationsetting.DefaultUpdatedByUserID = quotaresetnotificationsettingDescUpdatedByUserID.Default.(int)
 	// quotaresetnotificationsettingDescCreatedAt is the schema descriptor for created_at field.
-	quotaresetnotificationsettingDescCreatedAt := quotaresetnotificationsettingFields[6].Descriptor()
+	quotaresetnotificationsettingDescCreatedAt := quotaresetnotificationsettingFields[7].Descriptor()
 	// quotaresetnotificationsetting.DefaultCreatedAt holds the default value on creation for the created_at field.
 	quotaresetnotificationsetting.DefaultCreatedAt = quotaresetnotificationsettingDescCreatedAt.Default.(func() time.Time)
 	// quotaresetnotificationsettingDescUpdatedAt is the schema descriptor for updated_at field.
-	quotaresetnotificationsettingDescUpdatedAt := quotaresetnotificationsettingFields[7].Descriptor()
+	quotaresetnotificationsettingDescUpdatedAt := quotaresetnotificationsettingFields[8].Descriptor()
 	// quotaresetnotificationsetting.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	quotaresetnotificationsetting.DefaultUpdatedAt = quotaresetnotificationsettingDescUpdatedAt.Default.(func() time.Time)
 	// quotaresetnotificationsetting.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -566,20 +566,28 @@ func init() {
 	quotaresetrequestDescReason := quotaresetrequestFields[6].Descriptor()
 	// quotaresetrequest.ReasonValidator is a validator for the "reason" field. It is called by the builders before save.
 	quotaresetrequest.ReasonValidator = quotaresetrequestDescReason.Validators[0].(func(string) error)
+	// quotaresetrequestDescWorkflowVersion is the schema descriptor for workflow_version field.
+	quotaresetrequestDescWorkflowVersion := quotaresetrequestFields[7].Descriptor()
+	// quotaresetrequest.DefaultWorkflowVersion holds the default value on creation for the workflow_version field.
+	quotaresetrequest.DefaultWorkflowVersion = quotaresetrequestDescWorkflowVersion.Default.(int)
+	// quotaresetrequestDescWorkflowRevision is the schema descriptor for workflow_revision field.
+	quotaresetrequestDescWorkflowRevision := quotaresetrequestFields[9].Descriptor()
+	// quotaresetrequest.DefaultWorkflowRevision holds the default value on creation for the workflow_revision field.
+	quotaresetrequest.DefaultWorkflowRevision = quotaresetrequestDescWorkflowRevision.Default.(int)
 	// quotaresetrequestDescDecisionReason is the schema descriptor for decision_reason field.
-	quotaresetrequestDescDecisionReason := quotaresetrequestFields[12].Descriptor()
+	quotaresetrequestDescDecisionReason := quotaresetrequestFields[15].Descriptor()
 	// quotaresetrequest.DefaultDecisionReason holds the default value on creation for the decision_reason field.
 	quotaresetrequest.DefaultDecisionReason = quotaresetrequestDescDecisionReason.Default.(string)
 	// quotaresetrequestDescResetError is the schema descriptor for reset_error field.
-	quotaresetrequestDescResetError := quotaresetrequestFields[14].Descriptor()
+	quotaresetrequestDescResetError := quotaresetrequestFields[17].Descriptor()
 	// quotaresetrequest.DefaultResetError holds the default value on creation for the reset_error field.
 	quotaresetrequest.DefaultResetError = quotaresetrequestDescResetError.Default.(string)
 	// quotaresetrequestDescCreatedAt is the schema descriptor for created_at field.
-	quotaresetrequestDescCreatedAt := quotaresetrequestFields[17].Descriptor()
+	quotaresetrequestDescCreatedAt := quotaresetrequestFields[20].Descriptor()
 	// quotaresetrequest.DefaultCreatedAt holds the default value on creation for the created_at field.
 	quotaresetrequest.DefaultCreatedAt = quotaresetrequestDescCreatedAt.Default.(func() time.Time)
 	// quotaresetrequestDescUpdatedAt is the schema descriptor for updated_at field.
-	quotaresetrequestDescUpdatedAt := quotaresetrequestFields[18].Descriptor()
+	quotaresetrequestDescUpdatedAt := quotaresetrequestFields[21].Descriptor()
 	// quotaresetrequest.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	quotaresetrequest.DefaultUpdatedAt = quotaresetrequestDescUpdatedAt.Default.(func() time.Time)
 	// quotaresetrequest.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

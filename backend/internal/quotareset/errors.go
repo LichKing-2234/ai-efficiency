@@ -15,4 +15,5 @@ var (
 	ErrDecisionRequired      = errors.New("decision_reason_required")
 	ErrInvalidNotification   = errors.New("invalid_notification_settings")
 	ErrInvalidApproverConfig = errors.New("invalid_approver_config")
+	ErrInvalidWorkflow       = errors.New("invalid_quota_reset_workflow")
 )

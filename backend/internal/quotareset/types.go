@@ -8,11 +8,6 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 )
 
-type ApproverResolution struct {
-	ApproverUserIDs []int                    `json:"approver_user_ids"`
-	Paths           []DepartmentPathEvidence `json:"paths"`
-}
-
 type DepartmentPathEvidence struct {
 	StartDepartmentExternalID   string               `json:"start_department_external_id"`
 	Path                        []DepartmentPathNode `json:"path"`
@@ -64,6 +59,7 @@ type ListParams struct {
 
 type NotificationSettings struct {
 	Enabled      bool   `json:"enabled"`
+	Channel      string `json:"channel"`
 	URL          string `json:"url"`
 	AuthType     string `json:"auth_type"`
 	CredentialID *int   `json:"credential_id,omitempty"`
@@ -71,7 +67,8 @@ type NotificationSettings struct {
 }
 
 type ApproverConfigListResponse struct {
-	Items []ApproverConfig `json:"items"`
+	CurrentDirectorySourceID *int             `json:"current_directory_source_id,omitempty"`
+	Items                    []ApproverConfig `json:"items"`
 }
 
 type ApproverCandidateListResponse struct {
@@ -85,6 +82,7 @@ type ApproverCandidate struct {
 	Email                     string `json:"email"`
 	DisplayName               string `json:"display_name"`
 	DirectoryMemberExternalID string `json:"directory_member_external_id"`
+	Representative            bool   `json:"representative"`
 }
 
 type UnmatchedApproverRepresentative struct {
@@ -122,6 +120,7 @@ type ApproverConfigInput struct {
 type UpdateNotificationSettingsInput struct {
 	ActorUserID  int
 	Enabled      bool
+	Channel      string
 	URL          string
 	AuthType     string
 	CredentialID *int
@@ -163,6 +162,9 @@ type RequestSummary struct {
 	GroupPlatform           string                   `json:"group_platform"`
 	Reason                  string                   `json:"reason"`
 	Status                  string                   `json:"status"`
+	WorkflowVersion         int                      `json:"workflow_version"`
+	CurrentStep             *int                     `json:"current_step,omitempty"`
+	WorkflowSteps           []map[string]any         `json:"workflow_steps,omitempty"`
 	ResolvedApproverUserIDs []int                    `json:"resolved_approver_user_ids"`
 	MatchedDepartmentPaths  []DepartmentPathEvidence `json:"matched_department_paths"`
 	ApprovedByUserID        *int                     `json:"approved_by_user_id,omitempty"`

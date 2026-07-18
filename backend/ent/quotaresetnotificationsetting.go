@@ -19,6 +19,8 @@ type QuotaResetNotificationSetting struct {
 	ID int `json:"id,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
+	// Channel holds the value of the "channel" field.
+	Channel quotaresetnotificationsetting.Channel `json:"channel,omitempty"`
 	// URL holds the value of the "url" field.
 	URL string `json:"url,omitempty"`
 	// AuthType holds the value of the "auth_type" field.
@@ -45,7 +47,7 @@ func (*QuotaResetNotificationSetting) scanValues(columns []string) ([]any, error
 			values[i] = new(sql.NullBool)
 		case quotaresetnotificationsetting.FieldID, quotaresetnotificationsetting.FieldCredentialID, quotaresetnotificationsetting.FieldCreatedByUserID, quotaresetnotificationsetting.FieldUpdatedByUserID:
 			values[i] = new(sql.NullInt64)
-		case quotaresetnotificationsetting.FieldURL, quotaresetnotificationsetting.FieldAuthType:
+		case quotaresetnotificationsetting.FieldChannel, quotaresetnotificationsetting.FieldURL, quotaresetnotificationsetting.FieldAuthType:
 			values[i] = new(sql.NullString)
 		case quotaresetnotificationsetting.FieldCreatedAt, quotaresetnotificationsetting.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -75,6 +77,12 @@ func (qrns *QuotaResetNotificationSetting) assignValues(columns []string, values
 				return fmt.Errorf("unexpected type %T for field enabled", values[i])
 			} else if value.Valid {
 				qrns.Enabled = value.Bool
+			}
+		case quotaresetnotificationsetting.FieldChannel:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field channel", values[i])
+			} else if value.Valid {
+				qrns.Channel = quotaresetnotificationsetting.Channel(value.String)
 			}
 		case quotaresetnotificationsetting.FieldURL:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -157,6 +165,9 @@ func (qrns *QuotaResetNotificationSetting) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", qrns.ID))
 	builder.WriteString("enabled=")
 	builder.WriteString(fmt.Sprintf("%v", qrns.Enabled))
+	builder.WriteString(", ")
+	builder.WriteString("channel=")
+	builder.WriteString(fmt.Sprintf("%v", qrns.Channel))
 	builder.WriteString(", ")
 	builder.WriteString("url=")
 	builder.WriteString(qrns.URL)
