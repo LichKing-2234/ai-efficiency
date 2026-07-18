@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, non-environment-sensitive verification, and Standards/Spec review are complete on `feat/admin-users-effective-hierarchy-169`. Exact-head CI and merge for #169 remain outstanding; the environment-sensitive role E2E gap is recorded below.
+**Status:** Complete. PR #182 was squash-merged into `feat/platform-loading-performance` at `44351cc79b109e4a957083fa1c7de18993026005`; exact PR head `deffbf018d013f7fa8e152a919ea6e937bdad548` passed all required CI jobs, issue #169 is closed, and #173 has the dependency update. The environment-sensitive role E2E gap is recorded below.
 
 **Known Remaining Gap:** `npm run test:e2e:role` was attempted but no application was listening on its required `http://localhost:5173`, so all three cases ended at navigation with `ERR_CONNECTION_REFUSED`. This environment-sensitive item remains unchecked; backend/full frontend unit/build, ae-cli, embedded-static, and diff-hygiene verification passed.
 
@@ -125,6 +125,8 @@
 
   Review evidence (2026-07-18): the first two-axis review found one Important plan-status contradiction and one Minor active-spec overview drift. Commit `ccf8679d` corrected both. Standards and Spec re-reviews of `303291c4...ccf8679d` report no remaining Critical, Important, or actionable Minor findings; the documented post-schema apply requirement and unavailable role E2E remain explicit residual operational gaps.
 
-- [ ] **Step 4: Deliver to the performance feature branch**
+- [x] **Step 4: Deliver to the performance feature branch**
 
   Push `feat/admin-users-effective-hierarchy-169`, open a PR targeting `feat/platform-loading-performance`, wait for exact-head backend/frontend/ae-cli/deploy-static CI, squash-merge, close #169, update #173, and record the final SHAs and CI run here. Do not release or deploy.
+
+  Delivery evidence (2026-07-18): PR #182 targeted `feat/platform-loading-performance`; exact head `deffbf018d013f7fa8e152a919ea6e937bdad548` passed backend, frontend, ae-cli, and deploy-static in run `29657148081`. The PR was squash-merged as `44351cc79b109e4a957083fa1c7de18993026005`; issue #169 was closed manually because the base is non-default, and #173 received the dependency evidence. No release or deployment occurred.
