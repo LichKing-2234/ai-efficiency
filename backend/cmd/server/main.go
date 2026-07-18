@@ -345,6 +345,7 @@ func main() {
 			Namespace:       cfg.Redis.Namespace,
 			SummaryMetrics:  cacheMetrics.teamUsageSummary,
 			TrendMetrics:    cacheMetrics.teamUsageTrend,
+			MembersMetrics:  cacheMetrics.teamUsageMembers,
 			OverviewMetrics: cacheMetrics.teamUsageOverview,
 		},
 	)

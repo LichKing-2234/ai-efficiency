@@ -37,11 +37,11 @@ func (s *Service) Members(ctx context.Context, actorUserID int, params MembersPa
 		cursor = &decoded
 	}
 
-	result, scopeVersion, err := s.readOverviewSnapshot(ctx, actorUserID, normalized)
+	result, scopeVersion, err := s.readMembersSnapshot(ctx, actorUserID, normalized)
 	if err != nil {
 		return nil, err
 	}
-	members := rankMembersForPagination(result.Snapshot.Members)
+	members := result.Snapshot.Members
 	snapshotID, err := memberSnapshotIdentity(members)
 	if err != nil {
 		return nil, err

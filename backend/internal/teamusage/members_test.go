@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,12 +13,13 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/testdb"
+	"github.com/alicebob/miniredis/v2"
 )
 
 const testMemberCursorSecret = "test-member-cursor-secret"
 
 func TestMembersBoundsStableOrderAndResponseSize(t *testing.T) {
-	svc, provider, _ := newMembersTestService(t, 500, nil)
+	svc, provider, _, server := newMembersTestServiceWithServer(t, 500, nil)
 	params := testMembersParams()
 
 	first, err := svc.Members(context.Background(), 1, params)
@@ -39,6 +41,10 @@ func TestMembersBoundsStableOrderAndResponseSize(t *testing.T) {
 	}
 	if string(encoded) == "" || containsJSONField(encoded, "member_tree") || containsJSONField(encoded, "members") || containsJSONField(encoded, "top_members") {
 		t.Fatalf("members response contains compatibility collections: %s", encoded)
+	}
+	keys := server.Keys()
+	if len(keys) != 1 || !strings.Contains(keys[0], ":team-usage-members:") {
+		t.Fatalf("first-page cache keys = %v, want only the Members lane", keys)
 	}
 
 	secondParams := params
@@ -73,8 +79,13 @@ func TestMembersBoundsStableOrderAndResponseSize(t *testing.T) {
 	if fourth.Items[0].UserID != 1 || fourth.Items[0].Rank != 251 || fourth.Items[99].UserID != 100 || fourth.Items[99].Rank != 350 {
 		t.Fatalf("numeric user tie order = first %+v last %+v", fourth.Items[0], fourth.Items[99])
 	}
-	if provider.trendCalls != 1 || len(provider.summaryRequestUserIDs) != 500 {
-		t.Fatalf("shared origin calls = trend %d stats %d, want 1/500", provider.trendCalls, len(provider.summaryRequestUserIDs))
+	if provider.trendCalls != 0 || len(provider.summaryRequestBatches) != 5 || len(provider.summaryRequestUserIDs) != 500 {
+		t.Fatalf("members origin calls = trend %d stats batches/users %d/%d, want 0/5/500", provider.trendCalls, len(provider.summaryRequestBatches), len(provider.summaryRequestUserIDs))
+	}
+	for index, batch := range provider.summaryRequestBatches {
+		if len(batch) != 100 || !provider.summaryRequestParams[index].RequireCompleteRange {
+			t.Fatalf("stats batch %d = users %d complete_range %v, want 100/true", index, len(batch), provider.summaryRequestParams[index].RequireCompleteRange)
+		}
 	}
 
 	tooLarge := params
@@ -102,8 +113,8 @@ func TestMembersCursorRejectsCrossActorAndRangeBeforeOriginRead(t *testing.T) {
 	if _, err := svc.Members(context.Background(), 1, next); !errors.Is(err, ErrInvalidMemberCursor) {
 		t.Fatalf("Members(cross range) error = %v, want ErrInvalidMemberCursor", err)
 	}
-	if provider.trendCalls != 1 {
-		t.Fatalf("origin trend calls = %d, want invalid cursors rejected before a second read", provider.trendCalls)
+	if len(provider.summaryRequestBatches) != 1 || provider.trendCalls != 0 {
+		t.Fatalf("origin calls = stats %d trend %d, want invalid cursors rejected before a second read", len(provider.summaryRequestBatches), provider.trendCalls)
 	}
 }
 
@@ -133,7 +144,10 @@ func TestMembersCursorExpiresWhenScopeOrSnapshotChanges(t *testing.T) {
 			t.Fatalf("Members(first) error = %v", err)
 		}
 		now = now.Add(55 * time.Second)
-		provider.trendPoints[10001][0].TotalTokens = int64Ptr(999999)
+		changedTokens := int64(999999)
+		changed := provider.summaryStats[10001]
+		changed.RangeTotalTokens = &changedTokens
+		provider.summaryStats[10001] = changed
 		params.Cursor = first.NextCursor
 		if _, err := svc.Members(context.Background(), 1, params); !errors.Is(err, ErrMemberSnapshotExpired) {
 			t.Fatalf("Members(changed content) error = %v, want ErrMemberSnapshotExpired", err)
@@ -159,8 +173,72 @@ func TestMembersCursorContinuesAcrossRedisOutageWhenAuthoritativeContentMatches(
 	if err != nil {
 		t.Fatalf("Members(second) error = %v", err)
 	}
-	if len(second.Items) != 1 || second.Items[0].Rank != 2 || provider.trendCalls != 2 {
-		t.Fatalf("second page = items %+v origin calls %d, want rank 2 after two authoritative reads", second.Items, provider.trendCalls)
+	if len(second.Items) != 1 || second.Items[0].Rank != 2 || len(provider.summaryRequestBatches) != 2 || provider.trendCalls != 0 {
+		t.Fatalf("second page = items %+v stats/trend calls %d/%d, want rank 2 after two authoritative reads", second.Items, len(provider.summaryRequestBatches), provider.trendCalls)
+	}
+}
+
+func TestMembersIgnoresTrendFailureAndRanksFromCompleteRangeStats(t *testing.T) {
+	svc, provider, _ := newMembersTestService(t, 3, nil)
+	provider.trendErr = errors.New("synthetic Trend outage")
+	for relayUserID, tokens := range map[int64]int64{10001: 3000, 10002: 1000, 10003: 2000} {
+		stat := provider.summaryStats[relayUserID]
+		stat.RangeTotalTokens = int64Ptr(tokens)
+		provider.summaryStats[relayUserID] = stat
+	}
+
+	response, err := svc.Members(context.Background(), 1, testMembersParams())
+	if err != nil {
+		t.Fatalf("Members() error = %v", err)
+	}
+	if len(response.Items) != 3 || response.Items[0].DirectoryMemberExternalID != "member-001" || response.Items[1].UserID != 2 || response.Items[2].UserID != 1 {
+		t.Fatalf("ranked items = %+v, want selected-window token order", response.Items)
+	}
+	if provider.trendCalls != 0 || len(provider.summaryRequestBatches) != 1 {
+		t.Fatalf("origin calls = trend/stats %d/%d, want 0/1", provider.trendCalls, len(provider.summaryRequestBatches))
+	}
+}
+
+func TestMembersRemainsAvailableAfterCompatibilityOverviewTrendFailure(t *testing.T) {
+	svc, provider, _ := newMembersTestService(t, 3, nil)
+	provider.trendErr = relay.ErrInvalidCredentials
+	params := testMembersParams()
+
+	if _, err := svc.Overview(context.Background(), 1, params.OverviewParams); !errors.Is(err, relay.ErrInvalidCredentials) {
+		t.Fatalf("Overview() error = %v, want isolated Trend credential failure", err)
+	}
+	response, err := svc.Members(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("Members() error = %v, want independent stats origin", err)
+	}
+	if len(response.Items) != 3 || len(provider.summaryRequestBatches) != 2 {
+		t.Fatalf("Members() response/calls = items %d stats %d, want 3/2", len(response.Items), len(provider.summaryRequestBatches))
+	}
+}
+
+func TestMembersRemainsAvailableWhenSummaryRangeIsUnavailable(t *testing.T) {
+	svc, provider, _ := newMembersTestService(t, 3, nil)
+	incomplete := provider.summaryStats[10002]
+	incomplete.RangeTotalTokens = nil
+	provider.summaryStats[10002] = incomplete
+	params := testMembersParams()
+
+	summary, err := svc.Summary(context.Background(), 1, params.OverviewParams)
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if !summary.Summary.Unavailable || summary.Summary.UnavailableReason == nil || *summary.Summary.UnavailableReason != "range_aggregation_unavailable" {
+		t.Fatalf("Summary() aggregate = %+v, want section-local range unavailable", summary.Summary)
+	}
+	response, err := svc.Members(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("Members() error = %v, want independent available rows", err)
+	}
+	if len(response.Items) != 3 || response.Items[2].UserID != 1 || response.Items[2].TotalTokens != nil {
+		t.Fatalf("Members() items = %+v, want incomplete range row ranked as available zero/nil", response.Items)
+	}
+	if provider.trendCalls != 0 || len(provider.summaryRequestBatches) != 2 {
+		t.Fatalf("origin calls = trend/stats %d/%d, want 0/2", provider.trendCalls, len(provider.summaryRequestBatches))
 	}
 }
 
@@ -188,6 +266,12 @@ func TestMemberSnapshotIdentityIgnoresDepartmentMembershipOrder(t *testing.T) {
 
 func newMembersTestService(t *testing.T, count int, now func() time.Time) (*Service, *fakeRelayProvider, *representativescope.Scope) {
 	t.Helper()
+	svc, provider, scope, _ := newMembersTestServiceWithServer(t, count, now)
+	return svc, provider, scope
+}
+
+func newMembersTestServiceWithServer(t *testing.T, count int, now func() time.Time) (*Service, *fakeRelayProvider, *representativescope.Scope, *miniredis.Miniredis) {
+	t.Helper()
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
 	scope, provider := membersTestData(count)
@@ -195,9 +279,9 @@ func newMembersTestService(t *testing.T, count int, now func() time.Time) (*Serv
 		fixed := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
 		now = func() time.Time { return fixed }
 	}
-	cache, _ := testSnapshotCacheWithClock(t, now, 0)
+	cache, server := testSnapshotCacheWithClock(t, now, 0)
 	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret)
-	return svc, provider, scope
+	return svc, provider, scope, server
 }
 
 func membersTestData(count int) (*representativescope.Scope, *fakeRelayProvider) {
@@ -217,8 +301,12 @@ func membersTestData(count int) (*representativescope.Scope, *fakeRelayProvider)
 			subject.UserID = index - count/2
 		}
 		tokens := int64(1000)
+		rangeCost := 1.0
 		subjects = append(subjects, subject)
-		stats[int64(relayUserID)] = relay.TeamUserUsageStats{UserID: int64(relayUserID), TodayActualCost: 1, TotalActualCost: 2}
+		stats[int64(relayUserID)] = relay.TeamUserUsageStats{
+			UserID: int64(relayUserID), RangeActualCost: &rangeCost, RangeTotalTokens: &tokens,
+			TodayActualCost: 1, TotalActualCost: 2,
+		}
 		trends[int64(relayUserID)] = []relay.UsageTrendPoint{{Date: "2026-07-07", ActualCost: 1, TotalTokens: &tokens}}
 	}
 	return &representativescope.Scope{

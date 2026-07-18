@@ -214,6 +214,152 @@ func TestTrendCacheRejectsOldSchemaAndMalformedContracts(t *testing.T) {
 	}
 }
 
+func TestMembersCacheUsesIndependentKeyAndStoresOnlyRankedMemberFields(t *testing.T) {
+	now := time.Date(2026, 7, 18, 9, 0, 0, 0, time.UTC)
+	cache, server := testSnapshotCache(t, now, 0)
+	key := testSnapshotCacheKey()
+	membersKey, err := membersCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("membersCacheKey() error = %v", err)
+	}
+	for name, other := range map[string]func(string, SnapshotCacheKey) (string, error){
+		"summary":  summaryCacheKey,
+		"trend":    trendCacheKey,
+		"overview": snapshotCacheKey,
+	} {
+		otherKey, keyErr := other("test", key)
+		if keyErr != nil {
+			t.Fatalf("%s key error = %v", name, keyErr)
+		}
+		if membersKey == otherKey {
+			t.Fatalf("members key %q aliases %s key", membersKey, name)
+		}
+	}
+
+	var loads atomic.Int32
+	loader := func(context.Context) (MembersOriginLoadResult, error) {
+		loads.Add(1)
+		return MembersOriginLoadResult{Snapshot: testMembersSnapshot()}, nil
+	}
+	first, err := cache.GetMembersOrLoad(context.Background(), key, loader)
+	if err != nil {
+		t.Fatalf("cold GetMembersOrLoad() error = %v", err)
+	}
+	second, err := cache.GetMembersOrLoad(context.Background(), key, loader)
+	if err != nil {
+		t.Fatalf("warm GetMembersOrLoad() error = %v", err)
+	}
+	if loads.Load() != 1 || first.Freshness.CacheStatus != "miss" || second.Freshness.CacheStatus != "fresh" {
+		t.Fatalf("loads/status = %d %q/%q, want 1 miss/fresh", loads.Load(), first.Freshness.CacheStatus, second.Freshness.CacheStatus)
+	}
+	stored, err := server.Get(membersKey)
+	if err != nil {
+		t.Fatalf("read stored members snapshot: %v", err)
+	}
+	for _, forbidden := range []string{`"summary"`, `"top_members"`, `"top_member_trend"`, `"department_trend"`, `"member_tree"`, `"configured"`, `"is_representative"`} {
+		if strings.Contains(stored, forbidden) {
+			t.Fatalf("members cache value contains unrelated field %s: %s", forbidden, stored)
+		}
+	}
+	for _, required := range []string{`"window"`, `"members"`, `"rank"`, `"total_tokens"`} {
+		if !strings.Contains(stored, required) {
+			t.Fatalf("members cache value is missing field %s: %s", required, stored)
+		}
+	}
+}
+
+func TestMembersCacheUsesEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
+	now := time.Date(2026, 7, 18, 9, 0, 0, 0, time.UTC)
+	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
+	key := testSnapshotCacheKey()
+	if _, err := cache.GetMembersOrLoad(context.Background(), key, func(context.Context) (MembersOriginLoadResult, error) {
+		return MembersOriginLoadResult{Snapshot: testMembersSnapshot()}, nil
+	}); err != nil {
+		t.Fatalf("prime members cache: %v", err)
+	}
+
+	now = now.Add(55 * time.Second)
+	transient := errors.New("synthetic members origin outage")
+	stale, err := cache.GetMembersOrLoad(context.Background(), key, func(context.Context) (MembersOriginLoadResult, error) {
+		return MembersOriginLoadResult{SnapshotErr: transient}, nil
+	})
+	if err != nil {
+		t.Fatalf("eligible stale GetMembersOrLoad() error = %v", err)
+	}
+	if stale.Freshness.CacheStatus != "stale" || stale.Freshness.SourceStatus != "error" {
+		t.Fatalf("stale members freshness = %+v", stale.Freshness)
+	}
+
+	now = now.Add(4*time.Minute + 16*time.Second)
+	if _, err := cache.GetMembersOrLoad(context.Background(), key, func(context.Context) (MembersOriginLoadResult, error) {
+		return MembersOriginLoadResult{SnapshotErr: transient}, nil
+	}); !errors.Is(err, transient) {
+		t.Fatalf("expired stale error = %v, want transient origin error", err)
+	}
+}
+
+func TestMembersCacheRejectsOldSchemaAndMalformedRankings(t *testing.T) {
+	now := time.Date(2026, 7, 18, 9, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		schemaVersion int
+		mutate        func(*MembersSnapshot)
+	}{
+		{name: "old schema", schemaVersion: 0, mutate: func(*MembersSnapshot) {}},
+		{name: "missing members collection", schemaVersion: membersCacheSchemaVersion, mutate: func(snapshot *MembersSnapshot) {
+			snapshot.Members = nil
+		}},
+		{name: "missing member identity", schemaVersion: membersCacheSchemaVersion, mutate: func(snapshot *MembersSnapshot) {
+			snapshot.Members[0].UserID = 0
+			snapshot.Members[0].DirectoryMemberExternalID = ""
+		}},
+		{name: "negative user id", schemaVersion: membersCacheSchemaVersion, mutate: func(snapshot *MembersSnapshot) {
+			snapshot.Members[0].UserID = -1
+		}},
+		{name: "non contiguous ranks", schemaVersion: membersCacheSchemaVersion, mutate: func(snapshot *MembersSnapshot) {
+			snapshot.Members[1].Rank = 3
+		}},
+		{name: "wrong token order", schemaVersion: membersCacheSchemaVersion, mutate: func(snapshot *MembersSnapshot) {
+			firstTokens := int64(100)
+			snapshot.Members[0].TotalTokens = &firstTokens
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache, server := testSnapshotCache(t, now, 0)
+			key := testSnapshotCacheKey()
+			encodedKey, err := membersCacheKey("test", key)
+			if err != nil {
+				t.Fatalf("membersCacheKey() error = %v", err)
+			}
+			snapshot := testMembersSnapshot()
+			tt.mutate(snapshot)
+			envelope := readModelValueEnvelope[*MembersSnapshot]{
+				SchemaVersion: tt.schemaVersion,
+				GeneratedAt:   now, FreshUntil: now.Add(54 * time.Second), StaleUntil: now.Add(4*time.Minute + 30*time.Second),
+				Snapshot: snapshot,
+			}
+			encoded, err := json.Marshal(envelope)
+			if err != nil {
+				t.Fatalf("encode malformed envelope: %v", err)
+			}
+			server.Set(encodedKey, string(encoded))
+			server.SetTTL(encodedKey, 5*time.Minute)
+			var loads atomic.Int32
+			result, err := cache.GetMembersOrLoad(context.Background(), key, func(context.Context) (MembersOriginLoadResult, error) {
+				loads.Add(1)
+				return MembersOriginLoadResult{Snapshot: testMembersSnapshot()}, nil
+			})
+			if err != nil {
+				t.Fatalf("GetMembersOrLoad() error = %v", err)
+			}
+			if loads.Load() != 1 || result.Freshness.CacheStatus != "miss" {
+				t.Fatalf("loads/status = %d/%q, want authoritative miss", loads.Load(), result.Freshness.CacheStatus)
+			}
+		})
+	}
+}
+
 func TestEffectiveScopeHashIsDeterministicAndContentSensitive(t *testing.T) {
 	first := testEffectiveScope()
 	second := testEffectiveScope()
@@ -849,6 +995,18 @@ func testTrendSnapshot() *TrendSnapshot {
 		TopMembers:      []OverviewMember{},
 		TopMemberTrend:  overview.TopMemberTrend,
 		DepartmentTrend: overview.DepartmentTrend,
+	}
+}
+
+func testMembersSnapshot() *MembersSnapshot {
+	firstTokens := int64(2000)
+	secondTokens := int64(1000)
+	return &MembersSnapshot{
+		Window: OverviewWindow{StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Today: "2026-07-07", RollingDays: 7, Timezone: "Asia/Shanghai"},
+		Members: []OverviewMember{
+			{Rank: 1, UserID: 101, DirectoryMemberExternalID: "member-alice", DisplayName: "Alice", Email: "alice@example.com", TotalTokens: &firstTokens},
+			{Rank: 2, UserID: 102, DirectoryMemberExternalID: "member-bob", DisplayName: "Bob", Email: "bob@example.org", TotalTokens: &secondTokens},
+		},
 	}
 }
 
