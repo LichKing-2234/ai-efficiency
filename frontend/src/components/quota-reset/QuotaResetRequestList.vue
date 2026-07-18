@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import QuotaResetWorkflowTimeline from '@/components/quota-reset/QuotaResetWorkflowTimeline.vue'
 import { useI18n } from '@/i18n'
 import type { QuotaResetRequestSummary, QuotaResetStatus } from '@/types'
 
@@ -8,6 +9,7 @@ const props = defineProps<{
   loading?: boolean
   mode: 'mine' | 'approvals' | 'admin'
   actorUserId?: number
+  selectedRequestId?: number
 }>()
 
 const emit = defineEmits<{
@@ -72,6 +74,14 @@ function workflowProgress(item: QuotaResetRequestSummary) {
   const active = steps[item.current_step ?? 0]
   return `${current}/${steps.length}${active?.label ? ` · ${active.label}` : ''}`
 }
+
+function canExpand(item: QuotaResetRequestSummary) {
+  return item.workflow_version === 2 && !!item.workflow_steps?.length
+}
+
+function isSelected(item: QuotaResetRequestSummary) {
+  return canExpand(item) && props.selectedRequestId === item.id
+}
 </script>
 
 <template>
@@ -82,62 +92,77 @@ function workflowProgress(item: QuotaResetRequestSummary) {
       <article
         v-for="item in props.items"
         :key="item.id"
-        class="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto]"
+        :class="[
+          'p-3',
+          isSelected(item)
+            ? 'bg-cyan-50 ring-1 ring-inset ring-cyan-200'
+            : canExpand(item) ? 'cursor-pointer hover:bg-slate-50' : '',
+        ]"
         :data-testid="`quota-reset-row-${item.id}`"
-        @click="emit('select', item)"
+        :aria-expanded="canExpand(item) ? isSelected(item) : undefined"
+        @click="canExpand(item) && emit('select', item)"
       >
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <h3 class="break-words text-sm font-semibold text-slate-950">{{ item.group_name || item.group_id }}</h3>
-            <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(item.status)">
-              {{ statusLabel(item.status) }}
-            </span>
+        <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="break-words text-sm font-semibold text-slate-950">{{ item.group_name || item.group_id }}</h3>
+              <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(item.status)">
+                {{ statusLabel(item.status) }}
+              </span>
+            </div>
+            <p class="mt-1 text-xs text-slate-500">
+              <span>{{ item.group_platform || '-' }}</span>
+              <span v-if="item.requester_email"> · {{ item.requester_display_name || item.requester_email }}</span>
+            </p>
+            <p :data-testid="`quota-reset-reason-${item.id}`" class="mt-2 line-clamp-1 break-words text-sm text-slate-700">{{ item.reason }}</p>
+            <p v-if="workflowProgress(item)" class="mt-2 break-words text-xs font-medium text-cyan-800">{{ workflowProgress(item) }}</p>
+            <p v-if="item.reset_error" class="mt-2 break-words text-xs font-medium text-red-600">{{ item.reset_error }}</p>
           </div>
-          <p class="mt-1 text-xs text-slate-500">
-            <span>{{ item.group_platform || '-' }}</span>
-            <span v-if="item.requester_email"> · {{ item.requester_display_name || item.requester_email }}</span>
-          </p>
-          <p class="mt-2 line-clamp-2 break-words text-sm text-slate-700">{{ item.reason }}</p>
-          <p v-if="workflowProgress(item)" class="mt-2 break-words text-xs font-medium text-cyan-800">{{ workflowProgress(item) }}</p>
-          <p v-if="item.reset_error" class="mt-2 break-words text-xs font-medium text-red-600">{{ item.reset_error }}</p>
+          <div class="flex flex-wrap items-start gap-2 md:justify-end">
+            <button
+              v-if="canCancel(item)"
+              type="button"
+              class="rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              :data-testid="`quota-reset-cancel-${item.id}`"
+              @click.stop="emit('cancel', item)"
+            >
+              {{ t('quotaReset.cancelRequest') }}
+            </button>
+            <button
+              v-if="canDecide(item)"
+              type="button"
+              class="rounded-md bg-cyan-700 px-2.5 py-1.5 text-sm font-medium text-white hover:bg-cyan-800"
+              :data-testid="`quota-reset-approve-${item.id}`"
+              @click.stop="emit('approve', item)"
+            >
+              {{ t('quotaReset.approve') }}
+            </button>
+            <button
+              v-if="canDecide(item)"
+              type="button"
+              class="rounded-md border border-red-300 px-2.5 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+              :data-testid="`quota-reset-reject-${item.id}`"
+              @click.stop="emit('reject', item)"
+            >
+              {{ t('quotaReset.reject') }}
+            </button>
+            <button
+              v-if="canRetry(item)"
+              type="button"
+              class="rounded-md border border-blue-300 px-2.5 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50"
+              :data-testid="`quota-reset-retry-${item.id}`"
+              @click.stop="emit('retry', item)"
+            >
+              {{ t('quotaReset.retryReset') }}
+            </button>
+          </div>
         </div>
-        <div class="flex flex-wrap items-start gap-2 md:justify-end">
-          <button
-            v-if="canCancel(item)"
-            type="button"
-            class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            :data-testid="`quota-reset-cancel-${item.id}`"
-            @click.stop="emit('cancel', item)"
-          >
-            {{ t('quotaReset.cancelRequest') }}
-          </button>
-          <button
-            v-if="canDecide(item)"
-            type="button"
-            class="rounded-md bg-cyan-700 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-800"
-            :data-testid="`quota-reset-approve-${item.id}`"
-            @click.stop="emit('approve', item)"
-          >
-            {{ t('quotaReset.approve') }}
-          </button>
-          <button
-            v-if="canDecide(item)"
-            type="button"
-            class="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
-            :data-testid="`quota-reset-reject-${item.id}`"
-            @click.stop="emit('reject', item)"
-          >
-            {{ t('quotaReset.reject') }}
-          </button>
-          <button
-            v-if="canRetry(item)"
-            type="button"
-            class="rounded-md border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
-            :data-testid="`quota-reset-retry-${item.id}`"
-            @click.stop="emit('retry', item)"
-          >
-            {{ t('quotaReset.retryReset') }}
-          </button>
+        <div
+          v-if="isSelected(item)"
+          :data-testid="`quota-reset-inline-workflow-${item.id}`"
+          class="border-t border-cyan-200 px-3 pb-3 pt-3"
+        >
+          <QuotaResetWorkflowTimeline :steps="item.workflow_steps ?? []" />
         </div>
       </article>
     </div>

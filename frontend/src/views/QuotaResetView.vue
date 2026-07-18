@@ -4,7 +4,6 @@ import { useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import QuotaResetRequestList from '@/components/quota-reset/QuotaResetRequestList.vue'
 import QuotaResetDecisionDialog from '@/components/quota-reset/QuotaResetDecisionDialog.vue'
-import QuotaResetWorkflowTimeline from '@/components/quota-reset/QuotaResetWorkflowTimeline.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
 import {
   adminApproveQuotaResetRequest,
@@ -39,7 +38,6 @@ const activeFilter = ref<FilterMode>('all')
 const myRequests = ref<QuotaResetRequestSummary[]>([])
 const approvalRequests = ref<QuotaResetRequestSummary[]>([])
 const adminRequests = ref<QuotaResetRequestSummary[]>([])
-const myTotal = ref(0)
 const loading = ref(false)
 const actionBusy = ref(false)
 const selectedRequest = ref<QuotaResetRequestSummary | null>(null)
@@ -98,7 +96,6 @@ async function loadQueues(forceCounts = false) {
     ])
     myRequests.value = mine.items
     approvalRequests.value = approvals.items
-    myTotal.value = mine.total
     adminRequests.value = auth.isAdmin
       ? (await loadAllQueuePages(listAdminQuotaResetRequests)).items
       : []
@@ -232,13 +229,6 @@ onMounted(loadQueues)
             @click="activeQueue = 'mine'"
           >
             {{ t('quotaReset.myRequests') }}
-            <span
-              v-if="myTotal > 0"
-              data-testid="quota-reset-tab-mine-count"
-              :class="queueBadgeClass(activeQueue === 'mine')"
-            >
-              {{ countBadge(myTotal) }}
-            </span>
           </button>
           <button
             type="button"
@@ -296,19 +286,13 @@ onMounted(loadQueues)
         :loading="loading || actionBusy"
         :mode="activeQueue"
         :actor-user-id="auth.user?.id"
+        :selected-request-id="selectedRequest?.id"
         @cancel="handleCancel"
         @approve="handleDecision($event, 'approve')"
         @reject="handleDecision($event, 'reject')"
         @retry="handleRetry"
         @select="handleSelect"
       />
-      <section v-if="selectedRequest?.workflow_version === 2 && selectedRequest.workflow_steps?.length" class="space-y-3" aria-label="Quota reset workflow details">
-        <div>
-          <h2 class="text-base font-semibold text-slate-950">{{ t('quotaReset.workflow') }}</h2>
-          <p class="mt-1 text-sm text-slate-600">{{ selectedRequest.group_name || selectedRequest.group_id }}</p>
-        </div>
-        <QuotaResetWorkflowTimeline :steps="selectedRequest.workflow_steps" />
-      </section>
     </div>
     <QuotaResetDecisionDialog
       v-if="decisionRequest"

@@ -304,7 +304,7 @@ describe('QuotaResetView', () => {
     expect(wrapper.text()).toContain('Archived Group')
   })
 
-  it('uses historical totals for my requests and actionable counts for approval queues', async () => {
+  it('shows actionable counts only for approval queues', async () => {
     const api = await import('@/api/quotaReset') as any
     api.listMyQuotaResetRequests.mockResolvedValue({ data: { data: { items: [mineRequest], page: 1, page_size: 20, total: 4 } } })
     api.listQuotaResetApprovals.mockResolvedValue({ data: { data: { items: [approvalRequest], page: 1, page_size: 20, total: 7 } } })
@@ -312,9 +312,27 @@ describe('QuotaResetView', () => {
 
     const wrapper = await mountQuotaResetView('admin')
 
-    expect(wrapper.get('[data-testid="quota-reset-tab-mine-count"]').text()).toBe('4')
+    expect(wrapper.find('[data-testid="quota-reset-tab-mine-count"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="quota-reset-tab-approvals-count"]').text()).toBe('2')
     expect(wrapper.get('[data-testid="quota-reset-tab-admin-count"]').text()).toBe('3')
+  })
+
+  it('expands workflow details inline from a compact approval row', async () => {
+    const wrapper = await mountQuotaResetView()
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    const row = wrapper.get('[data-testid="quota-reset-row-2"]')
+    expect(row.classes()).toContain('p-3')
+    expect(row.get('[data-testid="quota-reset-reason-2"]').classes()).toContain('line-clamp-1')
+
+    await row.trigger('click')
+    expect(row.attributes('aria-expanded')).toBe('true')
+    expect(row.classes()).toContain('bg-cyan-50')
+    expect(row.find('[data-testid="quota-reset-inline-workflow-2"]').exists()).toBe(true)
+
+    await row.trigger('click')
+    expect(row.attributes('aria-expanded')).toBe('false')
+    expect(row.find('[data-testid="quota-reset-inline-workflow-2"]').exists()).toBe(false)
   })
 
   it('does not show approval badges for completed history when actionable counts are zero', async () => {
@@ -344,7 +362,7 @@ describe('QuotaResetView', () => {
 
     const wrapper = await mountQuotaResetView('admin')
 
-    expect(wrapper.get('[data-testid="quota-reset-tab-mine-count"]').text()).toBe('1')
+    expect(wrapper.find('[data-testid="quota-reset-tab-mine-count"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="quota-reset-tab-approvals-count"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="quota-reset-tab-admin-count"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Group Alpha')
