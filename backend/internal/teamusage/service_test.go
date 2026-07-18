@@ -716,6 +716,62 @@ func TestSummaryOverviewCacheIsolation(t *testing.T) {
 	}
 }
 
+func TestTrendUsesIndependentOriginAndCacheLane(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	provider := newCompleteSummaryIndependentProvider()
+	provider.fakeRelayProvider.trendPoints = map[int64][]relay.UsageTrendPoint{
+		1002: {{Date: "2026-07-06", ActualCost: 7, TotalTokens: int64Ptr(1200)}},
+		1003: {{Date: "2026-07-07", ActualCost: 5, TotalTokens: int64Ptr(800)}},
+	}
+	cache, server := testSnapshotCache(t, time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC), 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: summaryTestScope()}, fakeProviderResolver{provider: provider}, nil, cache)
+	params := summaryTestParams()
+
+	firstTrend, err := svc.Trend(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("cold Trend() error = %v", err)
+	}
+	warmTrend, err := svc.Trend(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("warm Trend() error = %v", err)
+	}
+	summary, err := svc.Summary(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	overview, _, err := svc.readOverviewSnapshot(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("readOverviewSnapshot() error = %v", err)
+	}
+	if firstTrend.CacheStatus != "miss" || warmTrend.CacheStatus != "fresh" || summary.CacheStatus != "miss" || overview.Freshness.CacheStatus != "miss" {
+		t.Fatalf("cache statuses trend=%q/%q summary=%q overview=%q", firstTrend.CacheStatus, warmTrend.CacheStatus, summary.CacheStatus, overview.Freshness.CacheStatus)
+	}
+	if len(firstTrend.TopMembers) > 12 || len(firstTrend.TopMemberTrend.Series) > 12 || len(firstTrend.DepartmentTrend.Series) > 13 {
+		t.Fatalf("trend bounds = top %d series %d departments %d", len(firstTrend.TopMembers), len(firstTrend.TopMemberTrend.Series), len(firstTrend.DepartmentTrend.Series))
+	}
+	if len(provider.summaryRequestParams) != 3 || provider.trendCalls.Load() != 2 {
+		t.Fatalf("origin calls = summary %d trend %d, want 3/2 for independent trend, summary, overview misses", len(provider.summaryRequestParams), provider.trendCalls.Load())
+	}
+	prefixes := map[string]bool{
+		"ae:test:team-usage-summary:v1:":  false,
+		"ae:test:team-usage-trend:v1:":    false,
+		"ae:test:team-usage-snapshot:v1:": false,
+	}
+	for _, key := range server.Keys() {
+		for prefix := range prefixes {
+			if strings.HasPrefix(key, prefix) {
+				prefixes[prefix] = true
+			}
+		}
+	}
+	for prefix, found := range prefixes {
+		if !found {
+			t.Fatalf("Redis keys %v are missing independent lane %q", server.Keys(), prefix)
+		}
+	}
+}
+
 func TestSummaryIndependentRedisOutageFallsBackAuthoritatively(t *testing.T) {
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)

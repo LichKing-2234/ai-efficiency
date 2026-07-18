@@ -21,6 +21,7 @@ import (
 const (
 	snapshotCacheSchemaVersion = 2
 	summaryCacheSchemaVersion  = 1
+	trendCacheSchemaVersion    = 1
 )
 
 var snapshotCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
@@ -28,6 +29,7 @@ var snapshotCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,
 type SnapshotCache struct {
 	overview *readModelCache[*OverviewResponse]
 	summary  *readModelCache[*SummarySnapshot]
+	trend    *readModelCache[*TrendSnapshot]
 }
 
 type readModelCache[T any] struct {
@@ -92,6 +94,10 @@ func NewSnapshotCache(store readcache.Store, options SnapshotCacheOptions) (*Sna
 			store: store, options: options, keyPrefix: "team-usage-summary",
 			schemaVersion: summaryCacheSchemaVersion, validate: validSummarySnapshot, metrics: options.SummaryMetrics,
 		},
+		trend: &readModelCache[*TrendSnapshot]{
+			store: store, options: options, keyPrefix: "team-usage-trend",
+			schemaVersion: trendCacheSchemaVersion, validate: validTrendSnapshot, metrics: options.TrendMetrics,
+		},
 	}, nil
 }
 
@@ -131,6 +137,10 @@ func snapshotCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
 
 func summaryCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
 	return readModelCacheKey(namespace, "team-usage-summary", key)
+}
+
+func trendCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
+	return readModelCacheKey(namespace, "team-usage-trend", key)
 }
 
 func readModelCacheKey(namespace, keyPrefix string, key SnapshotCacheKey) (string, error) {
@@ -192,6 +202,23 @@ func (c *SnapshotCache) GetSummaryOrLoad(ctx context.Context, key SnapshotCacheK
 		return nil, err
 	}
 	return &SummaryCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
+}
+
+func (c *SnapshotCache) GetTrendOrLoad(ctx context.Context, key SnapshotCacheKey, loader TrendOriginLoader) (*TrendCacheResult, error) {
+	if c == nil || c.trend == nil {
+		return nil, fmt.Errorf("team usage trend cache is not configured")
+	}
+	if loader == nil {
+		return nil, fmt.Errorf("team usage trend origin loader is required")
+	}
+	result, err := c.trend.getOrLoad(ctx, key, func(ctx context.Context) (readModelOriginLoadResult[*TrendSnapshot], error) {
+		loaded, err := loader(ctx)
+		return readModelOriginLoadResult[*TrendSnapshot]{Snapshot: loaded.Snapshot, SnapshotErr: loaded.SnapshotErr}, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &TrendCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
 }
 
 func (c *readModelCache[T]) getOrLoad(ctx context.Context, key SnapshotCacheKey, loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
@@ -437,6 +464,17 @@ func validOverviewSnapshot(snapshot *OverviewResponse) bool {
 
 func validSummarySnapshot(snapshot *SummarySnapshot) bool {
 	return snapshot != nil && validOverviewWindow(snapshot.Window) && strings.TrimSpace(snapshot.Summary.UnitLabel) != ""
+}
+
+func validTrendSnapshot(snapshot *TrendSnapshot) bool {
+	if snapshot == nil || !validOverviewWindow(snapshot.Window) || snapshot.TopMembers == nil ||
+		snapshot.TopMemberTrend.Series == nil || snapshot.DepartmentTrend.Series == nil {
+		return false
+	}
+	return len(snapshot.TopMembers) <= 12 && len(snapshot.TopMemberTrend.Series) <= 12 &&
+		len(snapshot.DepartmentTrend.Series) <= maxDepartmentComparisons+1 &&
+		strings.TrimSpace(snapshot.TopMemberTrend.UnitLabel) != "" &&
+		strings.TrimSpace(snapshot.DepartmentTrend.UnitLabel) != ""
 }
 
 func validOverviewWindow(window OverviewWindow) bool {

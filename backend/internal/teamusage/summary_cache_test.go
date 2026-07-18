@@ -56,6 +56,88 @@ func TestSnapshotCacheKeyIsolatesEveryAuthoritativeDimension(t *testing.T) {
 	}
 }
 
+func TestTrendCacheUsesIndependentKeyAndStoresOnlyTrendFields(t *testing.T) {
+	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	cache, server := testSnapshotCache(t, now, 0)
+	key := testSnapshotCacheKey()
+	trendKey, err := trendCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("trendCacheKey() error = %v", err)
+	}
+	summaryKey, err := summaryCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("summaryCacheKey() error = %v", err)
+	}
+	overviewKey, err := snapshotCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("snapshotCacheKey() error = %v", err)
+	}
+	if trendKey == summaryKey || trendKey == overviewKey {
+		t.Fatalf("trend key %q aliases summary/overview keys %q/%q", trendKey, summaryKey, overviewKey)
+	}
+
+	var loads atomic.Int32
+	loader := func(context.Context) (TrendOriginLoadResult, error) {
+		loads.Add(1)
+		return TrendOriginLoadResult{Snapshot: testTrendSnapshot()}, nil
+	}
+	first, err := cache.GetTrendOrLoad(context.Background(), key, loader)
+	if err != nil {
+		t.Fatalf("cold GetTrendOrLoad() error = %v", err)
+	}
+	second, err := cache.GetTrendOrLoad(context.Background(), key, loader)
+	if err != nil {
+		t.Fatalf("warm GetTrendOrLoad() error = %v", err)
+	}
+	if loads.Load() != 1 || first.Freshness.CacheStatus != "miss" || second.Freshness.CacheStatus != "fresh" {
+		t.Fatalf("loads/status = %d %q/%q, want 1 miss/fresh", loads.Load(), first.Freshness.CacheStatus, second.Freshness.CacheStatus)
+	}
+	stored, err := server.Get(trendKey)
+	if err != nil {
+		t.Fatalf("read stored trend snapshot: %v", err)
+	}
+	for _, forbidden := range []string{`"summary"`, `"members"`, `"member_tree"`, `"configured"`, `"is_representative"`} {
+		if strings.Contains(stored, forbidden) {
+			t.Fatalf("trend cache value contains unrelated field %s: %s", forbidden, stored)
+		}
+	}
+	for _, required := range []string{`"window"`, `"top_members"`, `"top_member_trend"`, `"department_trend"`} {
+		if !strings.Contains(stored, required) {
+			t.Fatalf("trend cache value is missing field %s: %s", required, stored)
+		}
+	}
+}
+
+func TestTrendCacheUsesEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
+	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
+	key := testSnapshotCacheKey()
+	if _, err := cache.GetTrendOrLoad(context.Background(), key, func(context.Context) (TrendOriginLoadResult, error) {
+		return TrendOriginLoadResult{Snapshot: testTrendSnapshot()}, nil
+	}); err != nil {
+		t.Fatalf("prime trend cache: %v", err)
+	}
+
+	now = now.Add(55 * time.Second)
+	transient := errors.New("synthetic trend origin outage")
+	stale, err := cache.GetTrendOrLoad(context.Background(), key, func(context.Context) (TrendOriginLoadResult, error) {
+		return TrendOriginLoadResult{SnapshotErr: transient}, nil
+	})
+	if err != nil {
+		t.Fatalf("eligible stale GetTrendOrLoad() error = %v", err)
+	}
+	if stale.Freshness.CacheStatus != "stale" || stale.Freshness.SourceStatus != "error" {
+		t.Fatalf("stale trend freshness = %+v", stale.Freshness)
+	}
+
+	now = now.Add(4*time.Minute + 16*time.Second)
+	if _, err := cache.GetTrendOrLoad(context.Background(), key, func(context.Context) (TrendOriginLoadResult, error) {
+		return TrendOriginLoadResult{SnapshotErr: transient}, nil
+	}); !errors.Is(err, transient) {
+		t.Fatalf("expired stale error = %v, want transient origin error", err)
+	}
+}
+
 func TestEffectiveScopeHashIsDeterministicAndContentSensitive(t *testing.T) {
 	first := testEffectiveScope()
 	second := testEffectiveScope()
@@ -681,6 +763,16 @@ func testSummarySnapshot(rangeCost float64) *SummarySnapshot {
 			TodayActualCost: overview.Summary.TodayActualCost, TotalActualCost: overview.Summary.TotalActualCost,
 			UnitLabel: overview.Summary.UnitLabel,
 		},
+	}
+}
+
+func testTrendSnapshot() *TrendSnapshot {
+	overview := testOverviewSnapshot(12.5)
+	return &TrendSnapshot{
+		Window:          overview.Window,
+		TopMembers:      []OverviewMember{},
+		TopMemberTrend:  overview.TopMemberTrend,
+		DepartmentTrend: overview.DepartmentTrend,
 	}
 }
 

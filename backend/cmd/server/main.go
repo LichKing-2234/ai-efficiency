@@ -344,6 +344,7 @@ func main() {
 		teamusage.SnapshotCacheOptions{
 			Namespace:       cfg.Redis.Namespace,
 			SummaryMetrics:  cacheMetrics.teamUsageSummary,
+			TrendMetrics:    cacheMetrics.teamUsageTrend,
 			OverviewMetrics: cacheMetrics.teamUsageOverview,
 		},
 	)

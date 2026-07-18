@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress on `feat/team-trend-independent-167` from `feat/platform-loading-performance@7c8401d3`. Baseline teamusage/handler/server and focused Team Overview frontend tests pass; implementation has not started.
+**Status:** In progress on `feat/team-trend-independent-167` from `feat/platform-loading-performance@7c8401d3`. Baseline teamusage/handler/server and focused Team Overview frontend tests pass. The Trend cache/origin/metrics RED contract is confirmed; implementation is next.
 
 **Goal:** Complete issue #167 by giving Team Usage Trend its own bounded authoritative origin, versioned Redis read model, cache telemetry, and failure lifecycle without changing the existing response or frontend chart contracts.
 
@@ -39,19 +39,19 @@
 - Produces `SnapshotCache.GetTrendOrLoad(context.Context, SnapshotCacheKey, TrendOriginLoader)`.
 - Extends `SnapshotCacheOptions` with `TrendMetrics readcache.Metrics`.
 
-- [ ] **Step 1: Add RED cache tests for the Trend-only value and key space**
+- [x] **Step 1: Add RED cache tests for the Trend-only value and key space**
 
   Add focused tests that require a `team-usage-trend` key distinct from `team-usage-summary` and `team-usage-snapshot`, validate cold/fresh/stale/expired behavior, reject malformed or old-schema values, and assert serialized Trend values do not contain `summary`, `members`, or `member_tree`.
 
-- [ ] **Step 2: Add RED service isolation tests**
+- [x] **Step 2: Add RED service isolation tests**
 
   Require `Service.Trend` to use its own cache lane, make only summary-stats and trend capability calls on a cold miss, cap Top 12/comparison series, avoid satisfying or warming compatibility Overview, and preserve Summary results while Trend is delayed or fails. Keep the 501-subject no-origin `scope_too_large` case.
 
-- [ ] **Step 3: Add RED metrics and production-name tests**
+- [x] **Step 3: Add RED metrics and production-name tests**
 
   Require a distinct `TrendMetrics` recorder, exactly one `fresh` event per logical warm read, and stable server recorder name `team_usage_trend` with labels exactly `cache` and `outcome`.
 
-- [ ] **Step 4: Run focused RED and record the expected failures**
+- [x] **Step 4: Run focused RED and record the expected failures**
 
   ```bash
   cd backend
@@ -59,6 +59,8 @@
   ```
 
   Expected: compile failures for the missing Trend snapshot/cache interfaces, missing `TrendMetrics`, and absent production recorder.
+
+  RED evidence (2026-07-18): the focused command failed only on missing `TrendSnapshot`, `TrendOriginLoadResult`, `GetTrendOrLoad`, `TrendMetrics`, and the absent `team_usage_trend` production recorder.
 
 ### Task 2: Implement The Independent Trend Origin And Cache Lane
 
@@ -73,23 +75,23 @@
 - `generateTrendSnapshot(context.Context, *representativescope.Scope, relay.Provider, OverviewParams) (*TrendSnapshot, error)` owns the bounded Trend origin.
 - A shared internal projection builds Trend series for both Trend and compatibility Overview without generating other DTO sections.
 
-- [ ] **Step 1: Add the Trend cache lane**
+- [x] **Step 1: Add the Trend cache lane**
 
   Add schema version 1, key prefix `team-usage-trend`, validation for window/non-nil bounded series, `GetTrendOrLoad`, and the same two-window/lease/fallback policy used by Summary and Overview. Remove the duplicate `fresh` metric record currently present in the generic cache warm-hit path.
 
-- [ ] **Step 2: Implement `readTrendSnapshot`**
+- [x] **Step 2: Implement `readTrendSnapshot`**
 
   Normalize input, require current representative scope, read current provider configuration, resolve the provider only for supported scope sizes, classify hard versus stale-eligible origin failures, and use a key containing provider/actor/scope/range dimensions.
 
-- [ ] **Step 3: Implement the bounded Trend origin**
+- [x] **Step 3: Implement the bounded Trend origin**
 
   For scopes at or below the existing cap, resolve Relay identities, load batch summary stats and trend points under the existing timeout, then build at most 12 ranked members, Top 12 series, one team-total series, and at most 12 department comparisons. Return a Trend-only unavailable snapshot for `scope_too_large` without resolving a provider.
 
-- [ ] **Step 4: Keep compatibility behavior aligned without cache coupling**
+- [x] **Step 4: Keep compatibility behavior aligned without cache coupling**
 
   Reuse the internal Trend projection from `generateOverviewSnapshot`, but keep Overview on `team_usage_overview` and keep its summary/full members/tree composition unchanged until #172.
 
-- [ ] **Step 5: Verify focused GREEN**
+- [x] **Step 5: Verify focused GREEN**
 
   ```bash
   cd backend
@@ -100,6 +102,8 @@
   ```
 
   Expected: Trend cache/origin/isolation tests pass twice and focused race tests report no races.
+
+  GREEN evidence (2026-07-18): focused Trend/cache/metrics tests passed, the broader Trend and Summary/Overview isolation set passed twice, focused `readcache`/`teamusage` race verification passed, and `git diff --check` was clean.
 
 ### Task 3: Wire Production Telemetry And Revalidate HTTP/Frontend Boundaries
 
@@ -118,11 +122,11 @@
 - Production startup injects `team_usage_trend` into `SnapshotCacheOptions.TrendMetrics`.
 - Existing authenticated Trend route and DTO remain source compatible.
 
-- [ ] **Step 1: Wire and verify `team_usage_trend` telemetry**
+- [x] **Step 1: Wire and verify `team_usage_trend` telemetry**
 
   Bind the stable recorder once in `newProductionCacheMetrics`, expose it through `recorders()`, inject it into the Team Usage cache constructor, and keep the label contract privacy-safe.
 
-- [ ] **Step 2: Run focused handler and frontend contract tests**
+- [x] **Step 2: Run focused handler and frontend contract tests**
 
   ```bash
   cd backend
@@ -133,6 +137,8 @@
   ```
 
   Confirm the build still emits `TeamOverviewMemberTrendChart-*.js` separately and that delayed/failed/stale Trend states do not hide Summary or Members.
+
+  Verification evidence (2026-07-18): handler/server tests passed twice, the focused Team Usage API/View suite passed 62/62, and the production build emitted `TeamOverviewMemberTrendChart-DE5PmGTa.js` separately from `TeamOverviewView-NDhRMd6b.js`.
 
 ### Task 4: Document, Verify, Review, And Deliver
 
