@@ -44,13 +44,12 @@ const (
 	departmentFinalSummaryRole         departmentReadPlanRole = "final summary"
 )
 
-func TestDepartmentReadPlanCycleWalkBoundsAcrossScales(t *testing.T) {
+func TestDepartmentReadPlanUsesPersistedEffectiveHierarchyAcrossScales(t *testing.T) {
 	scales := []targetPlanScale{
 		{name: "small", users: 24, members: 22, departments: 12, memberships: 36},
 		{name: "large", users: 2400, members: 2200, departments: 120, memberships: 3600},
 	}
 	for _, scale := range scales {
-		var wantAnchor string
 		for _, reverse := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/reverse=%v", scale.name, reverse), func(t *testing.T) {
 				client, dsn := testdb.OpenWithDSN(t)
@@ -61,30 +60,19 @@ func TestDepartmentReadPlanCycleWalkBoundsAcrossScales(t *testing.T) {
 				}
 				t.Cleanup(func() { _ = db.Close() })
 				query := effectiveDepartmentCTEs("$1") + `
-SELECT source_cardinality.row_count AS source_rows,
-       (SELECT COUNT(*) FROM cycle_walk) AS cycle_walk_rows,
-       COALESCE((SELECT MAX(CARDINALITY(cycle_walk.path_ids)) FROM cycle_walk), 0) AS max_cycle_walk_path,
-       (SELECT COUNT(*) FROM cycle_anchors) AS cycle_anchor_rows
-FROM source_cardinality`
-				var sourceRows, cycleWalkRows, maxCycleWalkPath, cycleAnchorRows int
-				if err := db.QueryRowContext(context.Background(), query, sourceID).Scan(&sourceRows, &cycleWalkRows, &maxCycleWalkPath, &cycleAnchorRows); err != nil {
+SELECT COUNT(*) AS source_rows,
+       (SELECT effective_parent_external_id FROM navigation_departments WHERE external_id = 'dept-cycle-a') AS cycle_a_parent,
+       (SELECT effective_parent_external_id FROM navigation_departments WHERE external_id = 'dept-cycle-b') AS cycle_b_parent,
+       (SELECT effective_parent_external_id FROM navigation_departments WHERE external_id = 'dept-orphan') AS orphan_parent
+FROM navigation_departments`
+				assertNoSourceWideHierarchyReconstruction(t, query)
+				var sourceRows int
+				var cycleAParent, cycleBParent, orphanParent stdsql.NullString
+				if err := db.QueryRowContext(context.Background(), query, sourceID).Scan(&sourceRows, &cycleAParent, &cycleBParent, &orphanParent); err != nil {
 					t.Fatalf("run department diagnostic: %v", err)
 				}
-				if sourceRows != scale.departments || cycleWalkRows > scale.departments*scale.departments || maxCycleWalkPath > scale.departments || cycleAnchorRows != 1 {
-					t.Fatalf("diagnostic = source %d walk %d max_path %d anchors %d, want source %d/walk <= %d/max_path <= %d/anchors 1", sourceRows, cycleWalkRows, maxCycleWalkPath, cycleAnchorRows, scale.departments, scale.departments*scale.departments, scale.departments)
-				}
-				anchorQuery := effectiveDepartmentCTEs("$1") + ` SELECT external_id FROM cycle_anchors ORDER BY external_id`
-				var anchor string
-				if err := db.QueryRowContext(context.Background(), anchorQuery, sourceID).Scan(&anchor); err != nil {
-					t.Fatalf("load cycle anchor: %v", err)
-				}
-				if anchor != "dept-cycle-a" {
-					t.Fatalf("anchor = %q, want dept-cycle-a", anchor)
-				}
-				if wantAnchor == "" {
-					wantAnchor = anchor
-				} else if anchor != wantAnchor {
-					t.Fatalf("anchor changed with insertion order: first=%q reverse=%q", wantAnchor, anchor)
+				if sourceRows != scale.departments || cycleAParent.Valid || !cycleBParent.Valid || cycleBParent.String != "dept-cycle-a" || orphanParent.Valid {
+					t.Fatalf("persisted hierarchy diagnostic = rows %d cycle-a %v cycle-b %v orphan %v, want %d/null/dept-cycle-a/null", sourceRows, cycleAParent, cycleBParent, orphanParent, scale.departments)
 				}
 			})
 		}
@@ -143,6 +131,7 @@ func TestDepartmentReadPlanBoundedRolesAcrossScales(t *testing.T) {
 			for _, role := range roles {
 				planRole := classifyDepartmentReadPlanRole(t, role.query)
 				roleCounts[planRole]++
+				assertNoSourceWideHierarchyReconstruction(t, role.query)
 				sourcePlaceholder := placeholderForBoundValue(t, role.args, int64(sourceID))
 				prefix := canonicalEffectivePrefix(t, role.query, sourcePlaceholder)
 				if canonical == "" {
@@ -154,7 +143,6 @@ func TestDepartmentReadPlanBoundedRolesAcrossScales(t *testing.T) {
 					t.Fatalf("bounded role selected full department entities:\n%s", role.query)
 				}
 				plan := explainTargetPlan(t, dsn, role.query, role.args)
-				assertNamedRecursiveUnionLoopsOnce(t, plan, "cycle_walk")
 				switch planRole {
 				case departmentOptionPageRole, departmentChildPageRole, departmentFinalSummaryRole:
 					if rows := planActualRows(t, plan); rows > 100 {
@@ -253,7 +241,7 @@ func TestTargetPlanRecursiveRelationsRunOnceAcrossScales(t *testing.T) {
 			}
 
 			plan := explainTargetPlan(t, dsn, query, args)
-			assertNamedRecursiveUnionLoopsOnce(t, plan, "cycle_walk")
+			assertNoSourceWideHierarchyReconstruction(t, query)
 			assertNamedRecursiveUnionLoopsOnce(t, plan, "subtree")
 		})
 	}
@@ -318,9 +306,9 @@ func TestCountPlanAndPagePlanReuseEffectivePredicatesAcrossScales(t *testing.T) 
 				sourcePlaceholder := placeholderForBoundValue(t, role.args, int64(sourceID))
 				departmentPlaceholder := placeholderForBoundValue(t, role.args, "dept-cycle-b")
 				assertExactEffectivePrefix(t, role.query, sourcePlaceholder, departmentPlaceholder)
+				assertNoSourceWideHierarchyReconstruction(t, role.query)
 				prefixes = append(prefixes, canonicalEffectivePrefix(t, role.query, sourcePlaceholder))
 				plan := explainTargetPlan(t, dsn, role.query, role.args)
-				assertNamedRecursiveUnionLoopsOnce(t, plan, "cycle_walk")
 				assertNamedRecursiveUnionLoopsOnce(t, plan, "subtree")
 				if role.query == pageQuery.query {
 					assertPlanMaterializesAtMost(t, plan, "Limit", 100)
@@ -350,7 +338,7 @@ func TestCountPlanAndPagePlanReuseEffectivePredicatesAcrossScales(t *testing.T) 
 				t.Fatalf("ancestor query does not use one shared effective closure:\n%s", ancestorQuery.query)
 			}
 			ancestorPlan := explainTargetPlan(t, dsn, ancestorQuery.query, ancestorQuery.args)
-			assertNamedRecursiveUnionLoopsOnce(t, ancestorPlan, "cycle_walk")
+			assertNoSourceWideHierarchyReconstruction(t, ancestorQuery.query)
 			assertNamedRecursiveUnionLoopsOnce(t, ancestorPlan, "ancestors")
 			if got := planActualRows(t, ancestorPlan); scale.name == "large" && got >= float64(scale.departments) {
 				t.Fatalf("large ancestor output rows = %.0f, want candidates plus ancestors below all %d departments", got, scale.departments)
@@ -416,6 +404,24 @@ func assertExactEffectivePrefix(t *testing.T, query, sourcePlaceholder, departme
 	}
 	if got := query[start : start+len(want)]; got != want {
 		t.Fatalf("effective prefix drifted\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func assertNoSourceWideHierarchyReconstruction(t *testing.T, query string) {
+	t.Helper()
+	for _, forbidden := range []string{
+		"source_cardinality",
+		"cycle_walk",
+		"closed_cycle_paths",
+		"cycle_members",
+		"cycle_anchors",
+	} {
+		if strings.Contains(query, forbidden) {
+			t.Fatalf("department read SQL still contains source-wide hierarchy reconstruction %q:\n%s", forbidden, query)
+		}
+	}
+	if !strings.Contains(query, "department.effective_parent_external_id") {
+		t.Fatalf("department read SQL does not project the persisted effective parent:\n%s", query)
 	}
 }
 
@@ -727,7 +733,7 @@ func seedTargetPlanFixtureOrdered(t *testing.T, client *ent.Client, scale target
 	t.Helper()
 	ctx := context.Background()
 	staleSource, staleRun := createTargetSourceSnapshot(t, client, "Stale Plan Directory "+scale.name, time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC))
-	createTargetDepartment(t, client, staleSource.ID, staleRun.ID, "dept-missing", "", "Stale Missing Parent")
+	createTargetDepartment(t, client, staleSource.ID, staleRun.ID, "dept-missing", "", "", "Stale Missing Parent")
 	source, run := createTargetSourceSnapshot(t, client, "Plan Directory "+scale.name, time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC))
 	if _, err := client.DirectorySyncRun.UpdateOneID(run.ID).
 		SetDepartmentCount(scale.departments).
@@ -756,18 +762,22 @@ func seedTargetPlanFixtureOrdered(t *testing.T, client *ent.Client, scale target
 		externalID := fmt.Sprintf("dept-%03d", i)
 		name := fmt.Sprintf("Department %03d", i)
 		parentID := ""
+		effectiveParentID := ""
 		switch i {
 		case 0:
 			externalID, parentID, name = "dept-cycle-a", "dept-cycle-c", "Cycle Alpha"
 		case 1:
 			externalID, parentID, name = "dept-cycle-b", "dept-cycle-a", "Cycle Beta"
+			effectiveParentID = "dept-cycle-a"
 		case 2:
 			externalID, parentID, name = "dept-cycle-c", "dept-cycle-b", "Cycle Gamma"
+			effectiveParentID = "dept-cycle-b"
 		case 3:
 			externalID, parentID, name = "dept-orphan", "dept-missing", "Current Orphan"
 		default:
 			if i == scale.departments-1 {
 				parentID = fmt.Sprintf("dept-%03d", i-1)
+				effectiveParentID = parentID
 			}
 		}
 		departmentIDs = append(departmentIDs, externalID)
@@ -779,6 +789,9 @@ func seedTargetPlanFixtureOrdered(t *testing.T, client *ent.Client, scale target
 			SetLastSeenRunID(run.ID)
 		if parentID != "" {
 			builder.SetParentExternalID(parentID)
+		}
+		if effectiveParentID != "" {
+			builder.SetEffectiveParentExternalID(effectiveParentID)
 		}
 		departmentBuilders = append(departmentBuilders, builder)
 	}

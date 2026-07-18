@@ -262,6 +262,7 @@ func seedAdminUsersHierarchicalDirectorySnapshot(t *testing.T, env *fullTestEnv,
 		SetSourceID(source.ID).
 		SetExternalID("dept-alpha-team-one").
 		SetParentExternalID("dept-alpha").
+		SetEffectiveParentExternalID("dept-alpha").
 		SetName("Team One").
 		SetPath("1.781448.1683962").
 		SetMetadata(map[string]any{"representative_external_ids": []any{"member-alpha-child", "member-missing"}}).
@@ -417,23 +418,27 @@ func seedAdminUsersEffectiveCycleSnapshot(t *testing.T, env *fullTestEnv) (map[s
 	}
 
 	departments := []struct {
-		id     string
-		parent string
-		name   string
+		id              string
+		parent          string
+		effectiveParent string
+		name            string
 	}{
 		{id: "dept-cycle-a", parent: "dept-cycle-c", name: "Cycle Alpha"},
-		{id: "dept-cycle-b", parent: "dept-cycle-a", name: "Cycle Beta"},
-		{id: "dept-cycle-c", parent: "dept-cycle-b", name: "Cycle Gamma"},
+		{id: "dept-cycle-b", parent: "dept-cycle-a", effectiveParent: "dept-cycle-a", name: "Cycle Beta"},
+		{id: "dept-cycle-c", parent: "dept-cycle-b", effectiveParent: "dept-cycle-b", name: "Cycle Gamma"},
 	}
 	for _, department := range departments {
-		if _, err := env.client.DirectoryDepartment.Create().
+		builder := env.client.DirectoryDepartment.Create().
 			SetSourceID(source.ID).
 			SetExternalID(department.id).
 			SetParentExternalID(department.parent).
 			SetName(department.name).
 			SetPath("synthetic/" + department.id).
-			SetLastSeenRunID(run.ID).
-			Save(ctx); err != nil {
+			SetLastSeenRunID(run.ID)
+		if department.effectiveParent != "" {
+			builder.SetEffectiveParentExternalID(department.effectiveParent)
+		}
+		if _, err := builder.Save(ctx); err != nil {
 			t.Fatalf("create cycle department %s: %v", department.id, err)
 		}
 	}
