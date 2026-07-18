@@ -57,7 +57,7 @@
 - Consumes: `defaultDiscoverToolNames`, `discoverInstalledTools`, and `toolconfig.InstalledTool`.
 - Produces: `resolveDiscoverTools(explicit []string) ([]toolconfig.InstalledTool, error)` and a Cobra string-slice `--tool` flag.
 
-- [ ] **Step 1: Add focused failing tests for explicit selection, validation, deduplication, and default detection**
+- [x] **Step 1: Add focused failing tests for explicit selection, validation, deduplication, and default detection**
 
 Add `reflect` to the imports in `ae-cli/cmd/discover_test.go`, then add:
 
@@ -110,7 +110,7 @@ func TestResolveDiscoverToolsUsesDetectionByDefault(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -120,7 +120,7 @@ cd ae-cli && go test ./cmd -run 'TestResolveDiscoverTools' -count=1 -v
 
 Expected: build failure because `resolveDiscoverTools` is undefined.
 
-- [ ] **Step 3: Implement the minimal explicit-selection helper and Cobra flag**
+- [x] **Step 3: Implement the minimal explicit-selection helper and Cobra flag**
 
 In `ae-cli/cmd/discover.go`, import `strings`, add `discoverToolNames []string`, and register:
 
@@ -165,7 +165,7 @@ func resolveDiscoverTools(explicit []string) ([]toolconfig.InstalledTool, error)
 
 Reset `discoverToolNames` to `nil` in every existing `runDiscover` test setup and restore its previous value in cleanup so Cobra global state cannot leak between tests.
 
-- [ ] **Step 4: Run focused command tests and verify GREEN**
+- [x] **Step 4: Run focused command tests and verify GREEN**
 
 Run:
 
@@ -175,7 +175,7 @@ cd ae-cli && go test ./cmd -run 'TestResolveDiscoverTools|TestDiscoverCommand' -
 
 Expected: all selected tests pass.
 
-- [ ] **Step 5: Commit the command behavior**
+- [x] **Step 5: Commit the command behavior**
 
 ```bash
 git add ae-cli/cmd/discover.go ae-cli/cmd/discover_test.go docs/superpowers/plans/2026-05-19-ae-cli-deterministic-tool-configuration.md

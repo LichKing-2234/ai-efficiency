@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,11 +15,14 @@ import (
 func TestDiscoverCommandRequiresLogin(t *testing.T) {
 	oldCfg := cfg
 	oldClient := apiClient
+	oldToolNames := discoverToolNames
 	cfg = nil
 	apiClient = nil
+	discoverToolNames = nil
 	t.Cleanup(func() {
 		cfg = oldCfg
 		apiClient = oldClient
+		discoverToolNames = oldToolNames
 	})
 
 	if err := runDiscover(discoverCmd, nil); err == nil {
@@ -33,6 +37,7 @@ func TestDiscoverCommandConfiguresDetectedTools(t *testing.T) {
 	oldConfigurer := configureDiscoveredTools
 	oldProviderName := discoverProviderName
 	oldDryRun := discoverDryRun
+	oldToolNames := discoverToolNames
 	t.Cleanup(func() {
 		cfg = oldCfg
 		apiClient = oldClient
@@ -40,10 +45,12 @@ func TestDiscoverCommandConfiguresDetectedTools(t *testing.T) {
 		configureDiscoveredTools = oldConfigurer
 		discoverProviderName = oldProviderName
 		discoverDryRun = oldDryRun
+		discoverToolNames = oldToolNames
 	})
 
 	cfg = &config.Config{Server: config.ServerConfig{Token: "tok"}}
 	apiClient = client.New("http://example.com", "tok")
+	discoverToolNames = nil
 	discoverInstalledTools = func([]string) ([]toolconfig.InstalledTool, error) {
 		return []toolconfig.InstalledTool{{Name: "codex", Path: "/usr/local/bin/codex"}}, nil
 	}
@@ -94,6 +101,7 @@ func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 	oldConfigurer := configureDiscoveredTools
 	oldProviderName := discoverProviderName
 	oldDryRun := discoverDryRun
+	oldToolNames := discoverToolNames
 	oldProviderLister := listProvidersForDiscover
 	t.Cleanup(func() {
 		cfg = oldCfg
@@ -102,6 +110,7 @@ func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 		configureDiscoveredTools = oldConfigurer
 		discoverProviderName = oldProviderName
 		discoverDryRun = oldDryRun
+		discoverToolNames = oldToolNames
 		listProvidersForDiscover = oldProviderLister
 	})
 
@@ -109,6 +118,7 @@ func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 	apiClient = &client.Client{}
 	discoverProviderName = ""
 	discoverDryRun = false
+	discoverToolNames = nil
 	discoverInstalledTools = func([]string) ([]toolconfig.InstalledTool, error) {
 		return []toolconfig.InstalledTool{{Name: "gemini", Path: "/usr/local/bin/gemini"}}, nil
 	}
@@ -147,5 +157,52 @@ func TestDiscoverCommandPrintsGeminiModelGuidance(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("discover output missing %q\n%s", want, out)
 		}
+	}
+}
+
+func TestResolveDiscoverToolsUsesExplicitSelection(t *testing.T) {
+	oldLister := discoverInstalledTools
+	discoverInstalledTools = func([]string) ([]toolconfig.InstalledTool, error) {
+		t.Fatal("explicit selection must bypass installation detection")
+		return nil, nil
+	}
+	t.Cleanup(func() { discoverInstalledTools = oldLister })
+
+	got, err := resolveDiscoverTools([]string{"claude", "codex", "claude"})
+	if err != nil {
+		t.Fatalf("resolveDiscoverTools: %v", err)
+	}
+	want := []toolconfig.InstalledTool{{Name: "claude"}, {Name: "codex"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tools = %+v, want %+v", got, want)
+	}
+}
+
+func TestResolveDiscoverToolsRejectsUnsupportedOrBlankTools(t *testing.T) {
+	for _, explicit := range [][]string{{"cursor"}, {" "}} {
+		_, err := resolveDiscoverTools(explicit)
+		if err == nil || !strings.Contains(err.Error(), "supported tools: codex, claude, gemini") {
+			t.Fatalf("resolveDiscoverTools(%q) error = %v", explicit, err)
+		}
+	}
+}
+
+func TestResolveDiscoverToolsUsesDetectionByDefault(t *testing.T) {
+	oldLister := discoverInstalledTools
+	want := []toolconfig.InstalledTool{{Name: "gemini", Path: "/usr/local/bin/gemini"}}
+	discoverInstalledTools = func(names []string) ([]toolconfig.InstalledTool, error) {
+		if !reflect.DeepEqual(names, defaultDiscoverToolNames) {
+			t.Fatalf("tool names = %v, want %v", names, defaultDiscoverToolNames)
+		}
+		return want, nil
+	}
+	t.Cleanup(func() { discoverInstalledTools = oldLister })
+
+	got, err := resolveDiscoverTools(nil)
+	if err != nil {
+		t.Fatalf("resolveDiscoverTools: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tools = %+v, want %+v", got, want)
 	}
 }
