@@ -227,6 +227,7 @@ func validateSnapshotCacheKey(key SnapshotCacheKey) error {
 
 func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
 	var stale *readModelValueEnvelope[T]
+	missRecorded := false
 	for {
 		envelope, found, err := c.read(ctx, key)
 		if err != nil {
@@ -243,7 +244,10 @@ func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loade
 				stale = envelope
 			}
 		}
-		c.record("miss")
+		if !missRecorded {
+			c.record("miss")
+			missRecorded = true
+		}
 
 		leaseKey := key + ":lease"
 		token := c.options.NewToken()
@@ -276,13 +280,16 @@ func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loade
 				}
 			}
 			ttl, ttlErr := c.leaseTTL(ctx, leaseKey)
-			if errors.Is(ttlErr, readcache.ErrMiss) || ttl <= 0 {
+			if errors.Is(ttlErr, readcache.ErrMiss) {
 				break
 			}
 			if ttlErr != nil {
 				c.record("error")
 				c.record("lease_failed")
 				return c.loadAuthoritative(ctx, key, stale, loader, false)
+			}
+			if ttl <= 0 {
+				break
 			}
 			wait := c.options.PollInterval
 			if ttl < wait {
@@ -348,6 +355,7 @@ func (c *readModelCache[T]) loadAuthoritative(ctx context.Context, key string, s
 	if write {
 		encoded, encodeErr := json.Marshal(envelope)
 		if encodeErr != nil {
+			c.record("error")
 			return nil, fmt.Errorf("encode team usage snapshot cache value: %w", encodeErr)
 		}
 		ttl := envelope.StaleUntil.Sub(c.now())

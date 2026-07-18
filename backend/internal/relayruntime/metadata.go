@@ -241,13 +241,16 @@ func (m *Manager) loadMetadataWithLease(ctx context.Context, key string, valid f
 				return m.loadMetadataAuthoritative(ctx, loader)
 			}
 			ttl, err := m.metadataLeaseTTL(ctx, leaseKey)
-			if errors.Is(err, readcache.ErrMiss) || ttl <= 0 {
+			if errors.Is(err, readcache.ErrMiss) {
 				break
 			}
 			if err != nil {
 				m.recordMetadata("error")
 				m.recordMetadata("lease_failed")
 				return m.loadMetadataAuthoritative(ctx, loader)
+			}
+			if ttl <= 0 {
+				break
 			}
 			remaining := waitLimit - waited
 			if remaining <= 0 {

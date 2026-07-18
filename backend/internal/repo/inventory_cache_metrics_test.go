@@ -2,15 +2,64 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ai-efficiency/backend/internal/readcache"
 )
 
 type recordingInventoryCacheMetrics struct {
 	mu     sync.Mutex
 	counts map[string]int
+}
+
+type inventoryTTLFailureStore struct {
+	mu           sync.Mutex
+	acquireCalls int
+}
+
+func (s *inventoryTTLFailureStore) Get(context.Context, string) ([]byte, error) {
+	return nil, readcache.ErrMiss
+}
+func (s *inventoryTTLFailureStore) Set(context.Context, string, []byte, time.Duration) error {
+	return nil
+}
+func (s *inventoryTTLFailureStore) TryAcquireLease(context.Context, string, string, time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.acquireCalls++
+	return s.acquireCalls > 1, nil
+}
+func (s *inventoryTTLFailureStore) LeaseTTL(context.Context, string) (time.Duration, error) {
+	return 0, errors.New("Redis TTL unavailable")
+}
+func (s *inventoryTTLFailureStore) ReleaseLease(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+
+func TestRepositoryInventoryCacheMetricsLeaseTTLErrorFallsBackAuthoritatively(t *testing.T) {
+	revisions := &fakeInventoryRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
+	recorder := &recordingInventoryCacheMetrics{}
+	cache := testInventoryCache(t, &inventoryTTLFailureStore{}, revisions, "test", func(options *InventoryCacheOptions) {
+		options.Metrics = recorder
+	})
+	result, err := cache.GetOrLoad(context.Background(), func(context.Context) ([]InventoryProviderSummary, error) {
+		return testInventory(1), nil
+	})
+	if err != nil || inventoryTotal(result) != 1 {
+		t.Fatalf("fallback result = %+v, error = %v", result, err)
+	}
+	for outcome, want := range map[string]int{"miss": 1, "lease_wait": 1, "error": 1, "lease_failed": 1, "refresh": 1} {
+		if got := recorder.count(outcome); got != want {
+			t.Fatalf("outcome %s = %d, want %d", outcome, got, want)
+		}
+	}
+	if recorder.count("lease_acquired") != 0 {
+		t.Fatalf("lease_acquired = %d, want immediate fallback", recorder.count("lease_acquired"))
+	}
 }
 
 func TestRepositoryInventoryCacheMetricsRecordDistributedLeaseWait(t *testing.T) {

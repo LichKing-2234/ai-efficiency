@@ -2,6 +2,7 @@ package relayruntime
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -67,5 +68,33 @@ func TestProviderMetadataCacheMetricsRecordColdAndWarmReads(t *testing.T) {
 		if got := recorder.count(outcome); got != want {
 			t.Fatalf("outcome %s = %d, want %d", outcome, got, want)
 		}
+	}
+}
+
+func TestProviderMetadataCacheMetricsLeaseTTLErrorFallsBackAuthoritatively(t *testing.T) {
+	client := testdbClient(t)
+	row := createProviderRow(t, client)
+	recorder := &recordingMetadataCacheMetrics{}
+	store := &metadataFaultStore{leaseHeld: true, ttlErr: errors.New("Redis TTL unavailable")}
+	manager, err := NewManager(client, testEncryptionKey, zap.NewNop(), Options{
+		Namespace: "test", Store: store, MetadataTTL: 5 * time.Minute, MetadataMetrics: recorder,
+		Factory: func(*ent.RelayProvider, string) (relay.Provider, error) { return &taggedProvider{}, nil },
+	})
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	models, err := manager.Models(context.Background(), row, "openai", "group-alpha", func(context.Context) ([]relay.ModelOption, error) {
+		return []relay.ModelOption{{ID: "model-1", DisplayName: "Model 1"}}, nil
+	})
+	if err != nil || len(models) != 1 {
+		t.Fatalf("fallback models = %+v, error = %v", models, err)
+	}
+	for outcome, want := range map[string]int{"miss": 1, "lease_wait": 1, "error": 1, "lease_failed": 1, "refresh": 1} {
+		if got := recorder.count(outcome); got != want {
+			t.Fatalf("outcome %s = %d, want %d", outcome, got, want)
+		}
+	}
+	if recorder.count("lease_acquired") != 0 {
+		t.Fatalf("lease_acquired = %d, want immediate fallback", recorder.count("lease_acquired"))
 	}
 }

@@ -161,13 +161,16 @@ func (c *InventoryCache) loadWithLease(ctx context.Context, key, revision string
 				return c.loadAuthoritative(ctx, loader)
 			}
 			ttl, err := c.leaseTTL(ctx, leaseKey)
-			if errors.Is(err, readcache.ErrMiss) || ttl <= 0 {
+			if errors.Is(err, readcache.ErrMiss) {
 				break
 			}
 			if err != nil {
 				c.record("error")
 				c.record("lease_failed")
 				return c.loadAuthoritative(ctx, loader)
+			}
+			if ttl <= 0 {
+				break
 			}
 			wait := c.options.PollInterval
 			if ttl < wait {
@@ -204,6 +207,7 @@ func (c *InventoryCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, t
 	}
 	value, err := json.Marshal(inventoryValueEnvelope{SchemaVersion: inventoryCacheSchemaVersion, Inventory: inventory})
 	if err != nil {
+		c.record("error")
 		return nil, fmt.Errorf("encode repository inventory cache value: %w", err)
 	}
 	if err := c.set(ctx, key, value, c.valueTTL()); err != nil {

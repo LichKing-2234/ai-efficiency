@@ -29,11 +29,13 @@ type metadataRelayProvider struct {
 }
 
 type metadataFaultStore struct {
-	mu       sync.Mutex
-	value    []byte
-	getErr   error
-	setErr   error
-	leaseErr error
+	mu        sync.Mutex
+	value     []byte
+	getErr    error
+	setErr    error
+	leaseErr  error
+	ttlErr    error
+	leaseHeld bool
 }
 
 func (s *metadataFaultStore) Get(context.Context, string) ([]byte, error) {
@@ -59,13 +61,22 @@ func (s *metadataFaultStore) Set(_ context.Context, _ string, value []byte, _ ti
 }
 
 func (s *metadataFaultStore) TryAcquireLease(context.Context, string, string, time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.leaseErr != nil {
 		return false, s.leaseErr
+	}
+	if s.leaseHeld {
+		s.leaseHeld = false
+		return false, nil
 	}
 	return true, nil
 }
 
 func (s *metadataFaultStore) LeaseTTL(context.Context, string) (time.Duration, error) {
+	if s.ttlErr != nil {
+		return 0, s.ttlErr
+	}
 	return 0, readcache.ErrMiss
 }
 
