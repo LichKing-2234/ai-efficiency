@@ -72,7 +72,8 @@ type DepartmentChildrenPage struct {
 
 func effectiveDepartmentCTEs(sourcePlaceholder string) string {
 	return fmt.Sprintf(`WITH RECURSIVE
-source_departments(
+navigation_departments(
+  %s,
   %s,
   %s,
   %s,
@@ -83,101 +84,20 @@ source_departments(
          department.%s,
          department.%s,
          department.%s,
+         department.%s,
          department.%s
   FROM %s AS department
   WHERE department.%s = %s
-),
-source_cardinality(row_count) AS MATERIALIZED (
-  SELECT COUNT(*) FROM source_departments
-),
-cycle_walk(seed_external_id, external_id, parent_external_id, path_ids) AS (
-  SELECT department.external_id,
-         department.external_id,
-         NULLIF(BTRIM(department.parent_external_id), ''),
-         ARRAY[department.external_id]::text[]
-  FROM source_departments AS department
-  UNION ALL
-  SELECT cycle_walk.seed_external_id,
-         parent.external_id,
-         NULLIF(BTRIM(parent.parent_external_id), ''),
-         cycle_walk.path_ids || parent.external_id
-  FROM cycle_walk
-  JOIN source_departments AS parent
-    ON parent.external_id = cycle_walk.parent_external_id
-  WHERE NOT parent.external_id = ANY(cycle_walk.path_ids)
-    AND CARDINALITY(cycle_walk.path_ids) < (
-      SELECT source_cardinality.row_count FROM source_cardinality
-    )
-),
-closed_cycle_paths(cycle_path) AS MATERIALIZED (
-  SELECT DISTINCT cycle_walk.path_ids[
-    ARRAY_POSITION(cycle_walk.path_ids, cycle_walk.parent_external_id):
-    CARDINALITY(cycle_walk.path_ids)
-  ]
-  FROM cycle_walk
-  WHERE cycle_walk.parent_external_id = ANY(cycle_walk.path_ids)
-),
-cycle_members(cycle_key, external_id) AS MATERIALIZED (
-  SELECT DISTINCT
-         (
-           SELECT MIN(component.external_id)
-           FROM UNNEST(closed_cycle_paths.cycle_path) AS component(external_id)
-         ),
-         member.external_id
-  FROM closed_cycle_paths
-  CROSS JOIN LATERAL UNNEST(closed_cycle_paths.cycle_path) AS member(external_id)
-),
-cycle_anchors(external_id) AS MATERIALIZED (
-  SELECT ranked.external_id
-  FROM (
-    SELECT cycle_members.external_id,
-	           ROW_NUMBER() OVER (
-	             PARTITION BY cycle_members.cycle_key
-	             ORDER BY LOWER(BTRIM(department.name) COLLATE "C") COLLATE "C",
-	                      cycle_members.external_id COLLATE "C"
-	           ) AS anchor_rank
-    FROM cycle_members
-    JOIN source_departments AS department
-      ON department.external_id = cycle_members.external_id
-  ) AS ranked
-  WHERE ranked.anchor_rank = 1
-),
-navigation_departments(
-  external_id,
-  parent_external_id,
-  effective_parent_external_id,
-  name,
-  path,
-  metadata
-) AS MATERIALIZED (
-  SELECT department.external_id,
-         department.parent_external_id,
-         CASE
-           WHEN NULLIF(BTRIM(department.parent_external_id), '') IS NULL THEN NULL
-           WHEN NOT EXISTS (
-             SELECT 1
-             FROM source_departments AS current_parent
-             WHERE current_parent.external_id = BTRIM(department.parent_external_id)
-           ) THEN NULL
-           WHEN EXISTS (
-             SELECT 1
-             FROM cycle_anchors
-             WHERE cycle_anchors.external_id = department.external_id
-           ) THEN NULL
-           ELSE BTRIM(department.parent_external_id)
-         END,
-         department.name,
-         department.path,
-         department.metadata
-  FROM source_departments AS department
 )`,
 		directorydepartment.FieldExternalID,
 		directorydepartment.FieldParentExternalID,
+		directorydepartment.FieldEffectiveParentExternalID,
 		directorydepartment.FieldName,
 		directorydepartment.FieldPath,
 		directorydepartment.FieldMetadata,
 		directorydepartment.FieldExternalID,
 		directorydepartment.FieldParentExternalID,
+		directorydepartment.FieldEffectiveParentExternalID,
 		directorydepartment.FieldName,
 		directorydepartment.FieldPath,
 		directorydepartment.FieldMetadata,
@@ -996,7 +916,7 @@ func (parameter departmentChildParentParameter) FormatParam(placeholder string, 
 func departmentChildCandidateCTEs(parentPlaceholder string) string {
 	return fmt.Sprintf(`, supplied_parent(external_id) AS MATERIALIZED (
   SELECT parent.external_id
-  FROM source_departments AS parent
+  FROM navigation_departments AS parent
   WHERE %[1]s::text IS NOT NULL
     AND parent.external_id = %[1]s
 ),
@@ -1115,7 +1035,7 @@ department_representatives(root_external_id, representative_external_id) AS MATE
   SELECT requested_roots.root_external_id,
          BTRIM(representative_value.external_id)
   FROM requested_roots
-  JOIN source_departments AS department
+  JOIN navigation_departments AS department
     ON department.external_id = requested_roots.root_external_id
   CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(
     CASE

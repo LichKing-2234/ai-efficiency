@@ -22,10 +22,11 @@ type departmentReadFixture struct {
 }
 
 type departmentSeed struct {
-	id       string
-	parentID string
-	name     string
-	metadata map[string]any
+	id                string
+	parentID          string
+	effectiveParentID string
+	name              string
+	metadata          map[string]any
 }
 
 func TestDepartmentOptionsPagingSelectionAndBounds(t *testing.T) {
@@ -232,7 +233,7 @@ func TestDepartmentChildrenClosedCycleNavigation(t *testing.T) {
 	}
 }
 
-func TestDepartmentChildrenUsesLocaleIndependentCycleAnchor(t *testing.T) {
+func TestDepartmentChildrenUsesPersistedCycleAnchorUnderICUCollation(t *testing.T) {
 	client, dsn := testdb.OpenWithDSN(t)
 	ctx := context.Background()
 	db, err := sql.Open("postgres", dsn)
@@ -247,7 +248,7 @@ func TestDepartmentChildrenUsesLocaleIndependentCycleAnchor(t *testing.T) {
 	source, run := createTargetSourceSnapshot(t, client, "Locale Independent Directory", time.Date(2026, 7, 17, 10, 0, 0, 0, time.UTC))
 	createDepartmentSeeds(t, client, source.ID, run.ID, []departmentSeed{
 		{id: "dept-zulu", parentID: "dept-dotted-i", name: "  Zulu  "},
-		{id: "dept-dotted-i", parentID: "dept-zulu", name: "İstanbul"},
+		{id: "dept-dotted-i", parentID: "dept-zulu", effectiveParentID: "dept-zulu", name: "İstanbul"},
 	}, false)
 
 	roots, err := NewService(client).DepartmentChildren(ctx, DepartmentChildrenRequest{PageSize: 100})
@@ -255,7 +256,68 @@ func TestDepartmentChildrenUsesLocaleIndependentCycleAnchor(t *testing.T) {
 		t.Fatalf("DepartmentChildren roots: %v", err)
 	}
 	if got := departmentSummaryIDs(roots.Items); !reflect.DeepEqual(got, []string{"dept-zulu"}) {
-		t.Fatalf("cycle root ids = %v, want locale-independent anchor dept-zulu", got)
+		t.Fatalf("cycle root ids = %v, want persisted locale-independent anchor dept-zulu", got)
+	}
+}
+
+func TestAdministratorReadsUsePersistedEffectiveParents(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	source, run := createTargetSourceSnapshot(t, client, "Persisted Hierarchy Directory", time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC))
+	createDepartmentSeeds(t, client, source.ID, run.ID, []departmentSeed{
+		{id: "dept-persisted-root", parentID: "dept-persisted-child", name: "Persisted Root"},
+		{id: "dept-persisted-child", parentID: "dept-missing", effectiveParentID: "dept-persisted-root", name: "Persisted Child"},
+		{id: "dept-persisted-leaf", effectiveParentID: "dept-persisted-child", name: "Persisted Leaf"},
+	}, false)
+
+	users := make(map[string]*ent.User, 3)
+	for _, departmentID := range []string{"dept-persisted-root", "dept-persisted-child", "dept-persisted-leaf"} {
+		key := strings.TrimPrefix(departmentID, "dept-persisted-")
+		user := createTargetUser(t, client, "persisted-"+key, "persisted-"+key+"@example.org", nil, "", nil)
+		member := createTargetMember(t, client, source.ID, run.ID, "member-persisted-"+key, "directory-persisted-"+key+"@example.org", departmentID, &user.ID)
+		createTargetMembership(t, client, source.ID, run.ID, member, departmentID)
+		users[key] = user
+	}
+
+	service := NewService(client)
+	roots, err := service.DepartmentChildren(ctx, DepartmentChildrenRequest{PageSize: 100})
+	if err != nil {
+		t.Fatalf("DepartmentChildren roots: %v", err)
+	}
+	if got := departmentSummaryIDs(roots.Items); !reflect.DeepEqual(got, []string{"dept-persisted-root"}) {
+		t.Fatalf("persisted root ids = %v, want only dept-persisted-root", got)
+	}
+	children, err := service.DepartmentChildren(ctx, DepartmentChildrenRequest{ParentDepartmentID: "dept-persisted-root", PageSize: 100})
+	if err != nil {
+		t.Fatalf("DepartmentChildren persisted root: %v", err)
+	}
+	child := requireDepartmentSummary(t, children.Items, "dept-persisted-child")
+	if child.DisplayPath != "Persisted Root / Persisted Child" || child.SubtreeMemberCount != 2 || child.SubtreeMatchedUserCount != 2 {
+		t.Fatalf("persisted child summary = %+v, want persisted path and child/leaf totals", child)
+	}
+
+	options, err := service.DepartmentOptions(ctx, DepartmentOptionRequest{SelectedID: "dept-persisted-leaf", PageSize: 100})
+	if err != nil {
+		t.Fatalf("DepartmentOptions persisted leaf: %v", err)
+	}
+	if options.Selected == nil || options.Selected.DisplayPath != "Persisted Root / Persisted Child / Persisted Leaf" {
+		t.Fatalf("persisted selected option = %+v", options.Selected)
+	}
+
+	wantIDs := targetIDs(users["child"], users["leaf"])
+	page, err := service.List(ctx, ListRequest{Filters: Filters{DepartmentID: "dept-persisted-child"}, Page: 1, PageSize: 100})
+	if err != nil {
+		t.Fatalf("List persisted child: %v", err)
+	}
+	if got := targetIDs(page.Users...); !reflect.DeepEqual(got, wantIDs) {
+		t.Fatalf("persisted child List ids = %v, want %v", got, wantIDs)
+	}
+	targets, err := service.Targets(ctx, Filters{DepartmentID: "dept-persisted-child"}, 100)
+	if err != nil {
+		t.Fatalf("Targets persisted child: %v", err)
+	}
+	if got := targetIDs(targets...); !reflect.DeepEqual(got, wantIDs) {
+		t.Fatalf("persisted child Targets ids = %v, want %v", got, wantIDs)
 	}
 }
 
@@ -367,12 +429,12 @@ func seedDepartmentReadFixture(t *testing.T, reverse bool) departmentReadFixture
 	currentSource, currentRun := createTargetSourceSnapshot(t, client, "Current Department Read Directory", time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC))
 	departments := []departmentSeed{
 		{id: "dept-alpha", name: "  Alpha Department  "},
-		{id: "dept-alpha-child", parentID: "dept-alpha", name: "Alpha Child"},
-		{id: "dept-alpha-grandchild", parentID: "dept-alpha-child", name: "Alpha Grandchild"},
+		{id: "dept-alpha-child", parentID: "dept-alpha", effectiveParentID: "dept-alpha", name: "Alpha Child"},
+		{id: "dept-alpha-grandchild", parentID: "dept-alpha-child", effectiveParentID: "dept-alpha-child", name: "Alpha Grandchild"},
 		{id: "dept-orphan", parentID: "dept-missing", name: "Current Orphan"},
 		{id: "dept-cycle-a", parentID: "dept-cycle-c", name: "Cycle Alpha"},
-		{id: "dept-cycle-b", parentID: "dept-cycle-a", name: "Cycle Beta"},
-		{id: "dept-cycle-c", parentID: "dept-cycle-b", name: "Cycle Gamma"},
+		{id: "dept-cycle-b", parentID: "dept-cycle-a", effectiveParentID: "dept-cycle-a", name: "Cycle Beta"},
+		{id: "dept-cycle-c", parentID: "dept-cycle-b", effectiveParentID: "dept-cycle-b", name: "Cycle Gamma"},
 		{id: "dept-representative-main", name: "Current Representative Main", metadata: map[string]any{"representative_external_ids": []any{"rep-department-matched", "rep-department-unmatched", "rep-duplicate", "rep-duplicate"}}},
 		{id: "dept-representative-scalar", name: "Current Representative Scalar", metadata: map[string]any{"representative_external_ids": "rep-scalar-unmatched"}},
 		{id: "dept-order-z", name: "same"},
@@ -432,6 +494,9 @@ func createDepartmentSeeds(t *testing.T, client *ent.Client, sourceID, runID int
 			SetLastSeenRunID(runID)
 		if department.parentID != "" {
 			builder.SetParentExternalID(department.parentID)
+		}
+		if department.effectiveParentID != "" {
+			builder.SetEffectiveParentExternalID(department.effectiveParentID)
 		}
 		if department.metadata != nil {
 			builder.SetMetadata(department.metadata)

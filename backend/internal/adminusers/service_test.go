@@ -493,14 +493,14 @@ func seedListEnrichmentFixture(t *testing.T) listEnrichmentFixture {
 	}
 
 	foreignSource, foreignRun := createTargetSourceSnapshot(t, client, "Foreign Directory", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC))
-	createTargetDepartment(t, client, foreignSource.ID, foreignRun.ID, "dept-alpha", "dept-foreign", "Foreign Alpha")
-	createTargetDepartment(t, client, foreignSource.ID, foreignRun.ID, "dept-alpha-one", "dept-alpha", "Foreign Alpha One")
-	createTargetDepartment(t, client, foreignSource.ID, foreignRun.ID, "dept-beta", "dept-alpha-one", "Foreign Beta")
+	createTargetDepartment(t, client, foreignSource.ID, foreignRun.ID, "dept-alpha", "dept-foreign", "", "Foreign Alpha")
+	createTargetDepartment(t, client, foreignSource.ID, foreignRun.ID, "dept-alpha-one", "dept-alpha", "dept-alpha", "Foreign Alpha One")
+	createTargetDepartment(t, client, foreignSource.ID, foreignRun.ID, "dept-beta", "dept-alpha-one", "dept-alpha-one", "Foreign Beta")
 
 	currentSource, currentRun := createTargetSourceSnapshot(t, client, "Current Directory", time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC))
-	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-alpha", "", "Current Alpha")
-	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-alpha-one", "dept-alpha", "Current Alpha One")
-	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-beta", "", "Current Beta")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-alpha", "", "", "Current Alpha")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-alpha-one", "dept-alpha", "dept-alpha", "Current Alpha One")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-beta", "", "", "Current Beta")
 
 	dual := createTargetMember(t, client, currentSource.ID, currentRun.ID, "member-dual", users["dual-email"].Email, "dept-aaa-missing", &users["dual-id"].ID)
 	createTargetMembership(t, client, currentSource.ID, currentRun.ID, dual, "dept-aaa-missing")
@@ -558,18 +558,18 @@ func seedTargetSemanticFixture(t *testing.T) targetSemanticFixture {
 	}
 
 	staleSource, staleRun := createTargetSourceSnapshot(t, client, "Stale Directory", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC))
-	createTargetDepartment(t, client, staleSource.ID, staleRun.ID, "dept-alpha", "", "Department Alpha")
-	createTargetDepartment(t, client, staleSource.ID, staleRun.ID, "dept-alpha-one", "dept-alpha", "Team Alpha One")
+	createTargetDepartment(t, client, staleSource.ID, staleRun.ID, "dept-alpha", "", "", "Department Alpha")
+	createTargetDepartment(t, client, staleSource.ID, staleRun.ID, "dept-alpha-one", "dept-alpha", "dept-alpha", "Team Alpha One")
 	staleFrank := createTargetMember(t, client, staleSource.ID, staleRun.ID, "stale-frank", "stale-frank@example.com", "dept-alpha-one", &users["frank"].ID)
 	createTargetMembership(t, client, staleSource.ID, staleRun.ID, staleFrank, "dept-alpha-one")
 
 	currentSource, currentRun := createTargetSourceSnapshot(t, client, "Current Directory", time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC))
-	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-alpha", "", "Department Alpha")
-	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-alpha-one", "dept-alpha", "Team Alpha One")
-	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-beta", "", "Department Beta")
-	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-cycle-a", "dept-cycle-c", "Cycle Alpha")
-	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-cycle-b", "dept-cycle-a", "Cycle Beta")
-	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-cycle-c", "dept-cycle-b", "Cycle Gamma")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-alpha", "", "", "Department Alpha")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-alpha-one", "dept-alpha", "dept-alpha", "Team Alpha One")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-beta", "", "", "Department Beta")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-cycle-a", "dept-cycle-c", "", "Cycle Alpha")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-cycle-b", "dept-cycle-a", "dept-cycle-a", "Cycle Beta")
+	createTargetDepartment(t, client, currentSource.ID, currentRun.ID, "dept-cycle-c", "dept-cycle-b", "dept-cycle-b", "Cycle Gamma")
 
 	alice := createTargetMember(t, client, currentSource.ID, currentRun.ID, "member-alice", "alice-directory@example.com", "dept-alpha-one", &users["alice"].ID)
 	createTargetMembership(t, client, currentSource.ID, currentRun.ID, alice, "dept-alpha-one")
@@ -648,7 +648,7 @@ func createTargetSourceSnapshot(t *testing.T, client *ent.Client, name string, c
 	return source, run
 }
 
-func createTargetDepartment(t *testing.T, client *ent.Client, sourceID, runID int, externalID, parentID, name string) {
+func createTargetDepartment(t *testing.T, client *ent.Client, sourceID, runID int, externalID, parentID, effectiveParentID, name string) {
 	t.Helper()
 	builder := client.DirectoryDepartment.Create().
 		SetSourceID(sourceID).
@@ -658,6 +658,9 @@ func createTargetDepartment(t *testing.T, client *ent.Client, sourceID, runID in
 		SetLastSeenRunID(runID)
 	if parentID != "" {
 		builder.SetParentExternalID(parentID)
+	}
+	if effectiveParentID != "" {
+		builder.SetEffectiveParentExternalID(effectiveParentID)
 	}
 	if _, err := builder.Save(context.Background()); err != nil {
 		t.Fatalf("create department %s: %v", externalID, err)

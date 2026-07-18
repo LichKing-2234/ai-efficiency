@@ -1304,16 +1304,17 @@ func seedAdminUsersCurrentFilterMutationFixture(t *testing.T) adminUsersCurrentF
 	client.DirectorySource.UpdateOneID(source.ID).SetLastRunID(run.ID).SetLastSuccessfulRunID(run.ID).SaveX(ctx)
 
 	for _, department := range []struct {
-		id     string
-		parent string
-		name   string
+		id              string
+		parent          string
+		effectiveParent string
+		name            string
 	}{
 		{id: "dept-alpha", name: "Department Alpha"},
-		{id: "dept-alpha-one", parent: "dept-alpha", name: "Team Alpha One"},
+		{id: "dept-alpha-one", parent: "dept-alpha", effectiveParent: "dept-alpha", name: "Team Alpha One"},
 		{id: "dept-beta", name: "Department Beta"},
 		{id: "dept-cycle-a", parent: "dept-cycle-c", name: "Cycle Alpha"},
-		{id: "dept-cycle-b", parent: "dept-cycle-a", name: "Cycle Beta"},
-		{id: "dept-cycle-c", parent: "dept-cycle-b", name: "Cycle Gamma"},
+		{id: "dept-cycle-b", parent: "dept-cycle-a", effectiveParent: "dept-cycle-a", name: "Cycle Beta"},
+		{id: "dept-cycle-c", parent: "dept-cycle-b", effectiveParent: "dept-cycle-b", name: "Cycle Gamma"},
 	} {
 		builder := client.DirectoryDepartment.Create().
 			SetSourceID(source.ID).
@@ -1323,6 +1324,9 @@ func seedAdminUsersCurrentFilterMutationFixture(t *testing.T) adminUsersCurrentF
 			SetLastSeenRunID(run.ID)
 		if department.parent != "" {
 			builder.SetParentExternalID(department.parent)
+		}
+		if department.effectiveParent != "" {
+			builder.SetEffectiveParentExternalID(department.effectiveParent)
 		}
 		builder.SaveX(ctx)
 	}
