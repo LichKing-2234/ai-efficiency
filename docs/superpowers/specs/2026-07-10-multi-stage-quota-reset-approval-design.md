@@ -176,7 +176,9 @@ Keep the existing explicit channel setting:
 
 Active-step notifications include requester name/email, exact department paths,
 subscription group, application reason, step progress, previous comment, action
-URL, and active approvers. WeCom mentions use only snapshotted
+URL, and active approvers. The action URL targets the existing quota-reset route
+with `queue=approvals` and `request_id=<id>` so an approver lands in their
+approval queue with the referenced request expanded. WeCom mentions use only snapshotted
 `metadata.wecom_userid`; the Directory Sync source must map this metadata field
 explicitly from its WeCom userid field. Member external ids, local ids, and
 emails are never guessed as WeCom ids.
@@ -212,6 +214,19 @@ step/progress, comments, automatically satisfied steps, and a required-comment
 decision dialog. Show actions only when the backend marks the current viewer as
 eligible for the active step. Processed history remains readable across API
 pages.
+
+The route accepts only the known `queue` values and a positive `request_id`.
+For `queue=approvals`, the page switches to the approval queue, resets the
+status filter to all, and expands the matching loaded request inline. Invalid
+or unavailable deep-link parameters must not hide the queue or prevent normal
+page loading.
+
+Only actionable approval and admin queues show count badges. My Requests is
+historical context, so it does not show a badge. Request rows remain compact by
+default, clamp the reason to one line, and expose an expandable affordance only
+when workflow steps exist. The selected row has an explicit visual state and
+renders its workflow timeline directly below its summary; selecting it again
+collapses the timeline.
 
 ## Compatibility
 
