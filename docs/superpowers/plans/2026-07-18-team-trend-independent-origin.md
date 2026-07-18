@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Ready for integration on `feat/team-trend-independent-167` from `feat/platform-loading-performance@7c8401d3`. The independent Trend lane and all review remediations are implemented. Exact-head full verification passes, and two-axis re-review reports no Critical or Important findings; PR/CI/merge/issue close remain.
+**Status:** Complete. PR #180 was squash-merged into `feat/platform-loading-performance` at `3ea4b5ad1404398948afc82e6973d0a0eda2412a`; exact PR head `cf2a09e9a242f47f4d4faca68b39cb86883e2b54` passed all required CI jobs, issue #167 is closed, and #173 has the dependency update.
 
 **Goal:** Complete issue #167 by giving Team Usage Trend its own bounded authoritative origin, versioned Redis read model, cache telemetry, and failure lifecycle without changing the existing response or frontend chart contracts.
 
@@ -179,6 +179,8 @@
 
   Review evidence (2026-07-18): the first two-axis review found no Critical issues and six Important findings: duplicate Relay trend fallback, stale replacement by outage snapshots, loose cached-series validation, page-wide Trend loading, missing real-Service HTTP coverage, and cold transient origin errors escaping the Trend section. RED regressions reproduced each issue. Commits `56294528` and `9fbc2dca` fix them, affected/full verification passes, and both standards and spec re-reviews report no remaining Critical or Important findings. The duplicated typed-lane orchestration remains a Minor maintainability observation and is not expanded into a generic abstraction in this focused ticket.
 
-- [ ] **Step 4: Deliver to the performance feature branch**
+- [x] **Step 4: Deliver to the performance feature branch**
 
   Push `feat/team-trend-independent-167`, open a PR targeting `feat/platform-loading-performance`, wait for exact-head backend/frontend/ae-cli/deploy-static CI, squash-merge, close #167 with exact evidence, update #173, and record the integration state in this plan.
+
+  Delivery evidence (2026-07-18): PR #180 targeted `feat/platform-loading-performance` and exact head `cf2a09e9a242f47f4d4faca68b39cb86883e2b54` passed backend, frontend, ae-cli, and deploy-static in run `29653817241`. The PR was squash-merged at `3ea4b5ad1404398948afc82e6973d0a0eda2412a`; issue #167 was closed manually because the base is non-default, and #173 received the dependency evidence.
