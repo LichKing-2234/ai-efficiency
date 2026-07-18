@@ -35,9 +35,9 @@ no current remote, browser, release, or deployment check is claimed. These
 tasks add no routes, tables, dependencies, or standalone components.
 
 **Post-merge Performance Follow-up Status (2026-07-18):** Task 10 implementation
-and full local verification are complete. Rewritten-branch delivery remains
-pending and unchecked below. The pre-existing browser verification gap remains
-unchanged.
+and full local verification are complete. The rewritten performance branch and
+dependent PR #178 branch are published. The pre-existing browser verification
+gap remains unchanged.
 
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
@@ -1091,11 +1091,16 @@ current. Do not rewrite the historical 2026-07-07 spec.
   `bash deploy/test/release-frontend-embed-test.sh` passed both embedded frontend
   release tests. `git diff --check` passed.
 
-- [ ] **Step 6: Publish rewritten branches**
+- [x] **Step 6: Publish rewritten branches**
 
   Publish `feat/platform-loading-performance` with `--force-with-lease`, rebase
   PR #178 onto the rewritten base, and publish its head with
   `--force-with-lease`.
+
+  Evidence: `feat/platform-loading-performance` was lease-updated to
+  `d7978c74`. PR #178 was replayed with exactly its seven commits on that base;
+  Directory Sync, admin-users, and quota-reset package tests plus `go vet ./...`
+  passed before its head was lease-updated to `91020b2d`.
 
 ## Deferred
 
