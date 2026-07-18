@@ -335,6 +335,32 @@ describe('QuotaResetView', () => {
     expect(row.find('[data-testid="quota-reset-inline-workflow-2"]').exists()).toBe(false)
   })
 
+  it('shows a workflow toggle that expands and collapses from the keyboard', async () => {
+    const wrapper = await mountQuotaResetView()
+
+    await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+    const row = wrapper.get('[data-testid="quota-reset-row-2"]')
+    const toggle = row.get('[data-testid="quota-reset-workflow-toggle-2"]')
+    expect(toggle.element.tagName).toBe('BUTTON')
+    expect(toggle.attributes('type')).toBe('button')
+    expect(toggle.text()).toBe('Approval progress')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+
+    await toggle.trigger('keydown', { key: 'Enter' })
+    await toggle.trigger('keyup', { key: 'Enter' })
+    toggle.element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+    await flushPromises()
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(row.find('[data-testid="quota-reset-inline-workflow-2"]').exists()).toBe(true)
+
+    await toggle.trigger('keydown', { key: ' ' })
+    await toggle.trigger('keyup', { key: ' ' })
+    toggle.element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+    await flushPromises()
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(row.find('[data-testid="quota-reset-inline-workflow-2"]').exists()).toBe(false)
+  })
+
   it('does not show approval badges for completed history when actionable counts are zero', async () => {
     const api = await import('@/api/quotaReset') as any
     const workItemsApi = await import('@/api/workItems') as any

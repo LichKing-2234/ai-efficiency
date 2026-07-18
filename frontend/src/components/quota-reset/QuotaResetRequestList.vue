@@ -120,6 +120,16 @@ function isSelected(item: QuotaResetRequestSummary) {
           </div>
           <div class="flex flex-wrap items-start gap-2 md:justify-end">
             <button
+              v-if="canExpand(item)"
+              type="button"
+              class="rounded-md border border-cyan-300 px-2.5 py-1.5 text-sm font-medium text-cyan-800 hover:bg-cyan-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700"
+              :data-testid="`quota-reset-workflow-toggle-${item.id}`"
+              :aria-expanded="isSelected(item)"
+              @click.stop="emit('select', item)"
+            >
+              {{ t('quotaReset.workflow') }}
+            </button>
+            <button
               v-if="canCancel(item)"
               type="button"
               class="rounded-md border border-slate-300 px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"

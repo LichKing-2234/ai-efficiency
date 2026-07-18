@@ -431,6 +431,48 @@ func TestWeComMarkdownLabelsApproverWithoutMentionID(t *testing.T) {
 	}
 }
 
+func TestWeComMarkdownFlattensAndNeutralizesHostileReasonAndComment(t *testing.T) {
+	notifier := NewWebhookNotifier(nil, "", "https://ai-efficiency.example.com")
+	content := notifier.weComRobotMarkdown("quota_reset_step_activated", &ent.QuotaResetRequest{
+		ID:        7,
+		GroupID:   "42",
+		GroupName: "Group Alpha",
+		Reason:    "Need reset\r\n[malicious](https://evil.example)\n> forged reason",
+	}, quotaResetNotificationContext{
+		Requester: WorkflowPerson{
+			DisplayName:     "Alice Example",
+			Email:           "alice@example.com",
+			DepartmentPaths: []string{"Company / Group Alpha"},
+		},
+		StepIndex: 0,
+		StepCount: 1,
+		StepLabel: "Company / Group Alpha",
+		PreviousDecision: &WorkflowDecision{
+			ActorDisplayName: "Bob Example",
+			Comment:          "Approved\r[malicious](https://evil.example)\n# forged comment",
+		},
+	})
+
+	for _, want := range []string{
+		"> 申请原因：Need reset ［malicious］（https://evil.example） ＞ forged reason",
+		"> 上一审批：Bob Example：Approved ［malicious］（https://evil.example） # forged comment",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("content = %q, want flattened safe text %q", content, want)
+		}
+	}
+	for _, hostile := range []string{
+		"\r",
+		"[malicious](https://evil.example)",
+		"\n> forged reason",
+		"\n# forged comment",
+	} {
+		if strings.Contains(content, hostile) {
+			t.Fatalf("content retained hostile markdown %q: %q", hostile, content)
+		}
+	}
+}
+
 func createNotificationQuotaResetRequest(t *testing.T, ctx context.Context, client *ent.Client) *ent.QuotaResetRequest {
 	t.Helper()
 	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")

@@ -299,7 +299,19 @@ func notificationContextForRequest(req *ent.QuotaResetRequest) (quotaResetNotifi
 }
 
 func safeWeComText(value string) string {
-	return strings.NewReplacer("<", "＜", ">", "＞", "&", "＆", "`", "｀").Replace(strings.TrimSpace(value))
+	return strings.NewReplacer(
+		"\r\n", " ",
+		"\r", " ",
+		"\n", " ",
+		"<", "＜",
+		">", "＞",
+		"&", "＆",
+		"`", "｀",
+		"[", "［",
+		"]", "］",
+		"(", "（",
+		")", "）",
+	).Replace(strings.TrimSpace(value))
 }
 
 func isWeComRobotWebhookURL(parsed *url.URL) bool {

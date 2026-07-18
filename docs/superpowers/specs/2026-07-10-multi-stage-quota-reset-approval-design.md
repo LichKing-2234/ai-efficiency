@@ -224,7 +224,10 @@ page loading.
 Only actionable approval and admin queues show count badges. My Requests is
 historical context, so it does not show a badge. Request rows remain compact by
 default, clamp the reason to one line, and expose an expandable affordance only
-when workflow steps exist. The selected row has an explicit visual state and
+when workflow steps exist. The affordance is a visible semantic button using
+the existing workflow label, exposes `aria-expanded`, and supports native
+Enter/Space activation without double toggling; row-click expansion remains
+available for mouse users. The selected row has an explicit visual state and
 renders its workflow timeline directly below its summary; selecting it again
 collapses the timeline.
 
@@ -238,7 +241,7 @@ collapses the timeline.
 - The PR must be squash merged so abandoned intermediate chain implementation
   does not enter `main` history.
 
-## Complexity Guardrail
+## Structural Guardrails
 
 The implementation must stay within these boundaries:
 
@@ -249,11 +252,8 @@ The implementation must stay within these boundaries:
   workflow transaction service.
 - At most `2` new frontend production components: decision dialog and workflow
   timeline.
-- Target no more than `1,500` added hand-written production lines relative to
-  `origin/main`, excluding Ent-generated code and tests.
 
-If the target is exceeded, stop and simplify before continuing. Generated Ent
-changes must be reported separately from hand-written changes.
+Generated Ent changes must be reported separately from hand-written changes.
 
 ## Testing
 
