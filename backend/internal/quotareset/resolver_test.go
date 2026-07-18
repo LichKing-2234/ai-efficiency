@@ -2,6 +2,7 @@ package quotareset
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -12,6 +13,141 @@ import (
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
+
+func TestResolveWorkflowDoesNotMaterializeUnrelatedDirectoryFacts(t *testing.T) {
+	ctx := context.Background()
+	client, dsn := testdb.OpenWithDSN(t)
+	source := createQuotaResetDirectorySource(t, ctx, client)
+	root := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-root", "Company", nil)
+	exact := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-exact", "Exact", &root.ExternalID)
+	unrelated := createQuotaResetDepartment(t, ctx, client, source.ID, "dept-unrelated", "Unrelated", nil)
+	requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+	representative := createQuotaResetUser(t, ctx, client, "exact-representative", "exact-representative@example.org", nil, "user")
+	rootApprover := createQuotaResetUser(t, ctx, client, "root-approver", "root-approver@example.org", nil, "user")
+
+	requesterMember := createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-alice", requester, exact.ExternalID)
+	_ = requesterMember
+	representativeMember := createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-exact-representative", representative, exact.ExternalID)
+	client.DirectoryMember.UpdateOneID(representativeMember.ID).SetMetadata(map[string]any{
+		"leader_department_ids": []any{exact.ExternalID},
+	}).SaveX(ctx)
+	createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-root-approver", rootApprover, root.ExternalID)
+	createQuotaResetApproverConfig(t, ctx, client, source.ID, root.ExternalID, root.Name, rootApprover.ID)
+
+	for index := 0; index < 40; index++ {
+		user := createQuotaResetUser(t, ctx, client,
+			fmt.Sprintf("unrelated-%02d", index), fmt.Sprintf("unrelated-%02d@example.net", index), nil, "user")
+		member := createQuotaResetMemberInDepartment(t, ctx, client, source.ID,
+			fmt.Sprintf("member-unrelated-%02d", index), user, unrelated.ExternalID)
+		if index == 0 {
+			createQuotaResetApproverConfig(t, ctx, client, source.ID, unrelated.ExternalID, unrelated.Name, user.ID)
+			client.DirectoryMember.UpdateOneID(member.ID).SetMetadata(map[string]any{
+				"leader_department_ids": []any{unrelated.ExternalID},
+			}).SaveX(ctx)
+		}
+	}
+
+	recorder := &quotaResetQueryRecorder{}
+	loggedClient, err := ent.Open("postgres", dsn, ent.Debug(), ent.Log(recorder.Log))
+	if err != nil {
+		t.Fatalf("open logged ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = loggedClient.Close() })
+	workflow, _, err := NewApproverResolver(loggedClient).ResolveWorkflow(ctx, requester)
+	if err != nil {
+		t.Fatalf("ResolveWorkflow() error = %v", err)
+	}
+	if len(workflow.Steps) != 2 {
+		t.Fatalf("workflow steps = %#v, want exact representative and configured root", workflow.Steps)
+	}
+	if got, want := workflowApproverIDs(workflow.Steps[0]), []int{representative.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("exact approvers = %v, want %v", got, want)
+	}
+	if got, want := workflowApproverIDs(workflow.Steps[1]), []int{rootApprover.ID}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("root approvers = %v, want %v", got, want)
+	}
+
+	checks := []struct {
+		table     string
+		boundedBy []string
+	}{
+		{table: `"users"`, boundedBy: []string{`"id"`, `"email"`}},
+		{table: `"directory_members"`, boundedBy: []string{`"matched_user_id"`, `"email_normalized"`, `"external_id"`, `"metadata"`}},
+		{table: `"directory_member_departments"`, boundedBy: []string{`"directory_member_id"`}},
+		{table: `"quota_reset_approver_configs"`, boundedBy: []string{`"department_external_id"`}},
+	}
+	for _, check := range checks {
+		if query := recorder.firstUnboundedQuery(check.table, check.boundedBy...); query != "" {
+			t.Fatalf("workflow resolver materialized unrelated %s rows:\n%s\nall queries:\n%s", check.table, query, recorder.Joined())
+		}
+	}
+}
+
+func TestResolveWorkflowMatchesNumericLeaderDepartmentMetadata(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		metadata any
+	}{
+		{name: "scalar", metadata: float64(1684078)},
+		{name: "array", metadata: []any{float64(1684078)}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			source := createQuotaResetDirectorySource(t, ctx, client)
+			exact := createQuotaResetDepartment(t, ctx, client, source.ID, "1684078", "Numeric Department", nil)
+			requester := createQuotaResetUser(t, ctx, client, "alice", "alice@example.com", intPtr(1001), "user")
+			representative := createQuotaResetUser(t, ctx, client, "representative", "representative@example.org", nil, "user")
+			createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-alice", requester, exact.ExternalID)
+			representativeMember := createQuotaResetMemberInDepartment(t, ctx, client, source.ID, "member-representative", representative, exact.ExternalID)
+			client.DirectoryMember.UpdateOneID(representativeMember.ID).SetMetadata(map[string]any{
+				"leader_department_ids": testCase.metadata,
+			}).SaveX(ctx)
+
+			workflow, _, err := NewApproverResolver(client).ResolveWorkflow(ctx, requester)
+			if err != nil {
+				t.Fatalf("ResolveWorkflow() error = %v", err)
+			}
+			if got, want := workflowApproverIDs(workflow.Steps[0]), []int{representative.ID}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("numeric leader approvers = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+type quotaResetQueryRecorder struct {
+	queries []string
+}
+
+func (r *quotaResetQueryRecorder) Log(values ...any) {
+	r.queries = append(r.queries, fmt.Sprint(values...))
+}
+
+func (r *quotaResetQueryRecorder) firstUnboundedQuery(table string, boundedBy ...string) string {
+	for _, query := range r.queries {
+		lower := strings.ToLower(query)
+		if !strings.Contains(lower, "from "+strings.ToLower(table)) {
+			continue
+		}
+		whereIndex := strings.Index(lower, " where ")
+		if whereIndex < 0 {
+			return query
+		}
+		where := lower[whereIndex:]
+		bounded := false
+		for _, field := range boundedBy {
+			bounded = bounded || strings.Contains(where, strings.ToLower(field))
+		}
+		if !bounded {
+			return query
+		}
+	}
+	return ""
+}
+
+func (r *quotaResetQueryRecorder) Joined() string {
+	return strings.Join(r.queries, "\n")
+}
 
 func TestResolveWorkflowMergesExactDepartments(t *testing.T) {
 	ctx := context.Background()

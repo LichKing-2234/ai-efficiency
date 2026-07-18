@@ -215,6 +215,11 @@ var (
 				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[3]},
 			},
 			{
+				Name:    "directorymember_source_id_external_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[2]},
+			},
+			{
 				Name:    "directorymember_source_id_department_external_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[5]},
@@ -228,6 +233,15 @@ var (
 				Name:    "directorymember_matched_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectoryMembersColumns[8]},
+			},
+			{
+				Name:    "directorymember_metadata",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMembersColumns[7]},
+				Annotation: &entsql.IndexAnnotation{
+					OpClass: "jsonb_path_ops",
+					Type:    "GIN",
+				},
 			},
 			{
 				Name:    "directorymember_last_seen_run_id",
@@ -736,6 +750,15 @@ var (
 				Name:    "quotaresetrequest_resolved_approver_user_ids",
 				Unique:  false,
 				Columns: []*schema.Column{QuotaResetRequestsColumns[12]},
+				Annotation: &entsql.IndexAnnotation{
+					OpClass: "jsonb_path_ops",
+					Type:    "GIN",
+				},
+			},
+			{
+				Name:    "quotaresetrequest_workflow",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestsColumns[9]},
 				Annotation: &entsql.IndexAnnotation{
 					OpClass: "jsonb_path_ops",
 					Type:    "GIN",

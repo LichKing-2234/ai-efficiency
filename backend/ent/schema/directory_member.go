@@ -2,6 +2,7 @@ package schema
 
 import (
 	"entgo.io/ent"
+	entsql "entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
@@ -29,9 +30,12 @@ func (DirectoryMember) Fields() []ent.Field {
 func (DirectoryMember) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("source_id", "email_normalized").Unique(),
+		index.Fields("source_id", "external_id"),
 		index.Fields("source_id", "department_external_id"),
 		index.Fields("source_id", "matched_user_id"),
 		index.Fields("matched_user_id"),
+		index.Fields("metadata").
+			Annotations(entsql.IndexType("GIN"), entsql.OpClass("jsonb_path_ops")),
 		index.Fields("last_seen_run_id"),
 	}
 }
