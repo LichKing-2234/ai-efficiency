@@ -21,7 +21,7 @@
 - Update each checkbox immediately after the action is actually complete.
 - Deploy only `ai-efficiency-staging` in namespace `la3-ai-efficiency-prod`; do not upgrade, restart, or retag `ai-efficiency-prod`.
 
-**Status:** Approved for implementation. The design update is committed as `564c2f82`; code, verification, image publication, and staging rollout remain pending.
+**Status:** In progress. Task 1 RED and Task 2 focused/full/race verification passed. The application fix is ready to commit; image publication and staging rollout remain pending.
 
 ---
 
@@ -35,7 +35,7 @@
 - Consumes: `relay.TeamUsageSummaryProvider.GetBatchUserUsageStats(context.Context, []int64, relay.TeamUsageSummaryParams)`.
 - Produces: regression coverage for selective trend fallback, range-parameter propagation, direct-field fast path, and fallback-error degradation.
 
-- [ ] **Step 1: Add a RED selective fallback test**
+- [x] **Step 1: Add a RED selective fallback test**
 
 Add `TestSub2APIGetBatchUserUsageStatsBackfillsMissingRangeFromTrend`. Its batch handler returns user `1001` with complete range fields and user `1002` without them. Its trend handler records the request and returns two selected-window points:
 
@@ -77,7 +77,7 @@ Assert user `1001` keeps its direct batch totals, user `1002` receives `3.75` co
 }}
 ```
 
-- [ ] **Step 2: Add fast-path and fallback-error assertions**
+- [x] **Step 2: Add fast-path, incomplete-token, empty-trend, and fallback-error assertions**
 
 Extend `TestSub2APIGetBatchUserUsageStatsPostsUserIDs` with an atomic trend-request counter and a trend handler, then assert `trendRequests.Load() == 0` because the batch response is complete.
 
@@ -98,7 +98,9 @@ if got[1001].TodayActualCost != 1 || got[1001].TotalActualCost != 10 {
 }
 ```
 
-- [ ] **Step 3: Run the focused tests and record RED**
+Add `TestSub2APIGetBatchUserUsageStatsRequiresCompleteTrendTokens` with two cases: a successful trend containing one point without `total_tokens` must fill cost but leave tokens nil, while an empty successful trend must fill both range values with zero.
+
+- [x] **Step 3: Run the focused tests and record RED**
 
 Run:
 
@@ -108,6 +110,8 @@ go test ./internal/relay -run '^TestSub2APIGetBatchUserUsageStats' -count=1
 ```
 
 Expected: the selective fallback test fails because range fields remain nil, the fallback-error test fails because no trend request occurs, and the existing complete-field test passes.
+
+RED evidence (2026-07-18): `TestSub2APIGetBatchUserUsageStatsBackfillsMissingRangeFromTrend` observed nil range fields for user `1002`; `TestSub2APIGetBatchUserUsageStatsKeepsIncompleteRangeWhenTrendFails` observed zero trend requests; both incomplete-token and empty-trend cases observed nil range cost.
 
 ---
 
@@ -122,7 +126,7 @@ Expected: the selective fallback test fails because range fields remain nil, the
 - Consumes: `sub2apiRelay.GetUsageTrendForUsers(context.Context, []int64, TeamMemberTrendParams)` and `UsageTrendPoint{ActualCost float64; TotalTokens *int64}`.
 - Produces: batch result entries whose range pointers are filled only when the trend response can authoritatively supply them.
 
-- [ ] **Step 1: Add the minimal aggregation helper**
+- [x] **Step 1: Add the minimal aggregation helper**
 
 Add this private helper near `GetBatchUserUsageStats`:
 
@@ -143,7 +147,7 @@ func summarizeTeamUsageRange(points []UsageTrendPoint) (float64, int64, bool) {
 }
 ```
 
-- [ ] **Step 2: Fill missing users after the primary batch decode**
+- [x] **Step 2: Fill missing users after the primary batch decode**
 
 After building `out`, retain requested user order while collecting only returned incomplete entries, then run the existing bounded trend method:
 
@@ -184,7 +188,7 @@ return out, nil
 
 Do not change `TeamUsageSummaryProvider`, `TeamMemberTrendProvider`, or Team Usage service code.
 
-- [ ] **Step 3: Format and run focused GREEN tests**
+- [x] **Step 3: Format and run focused GREEN tests**
 
 Run:
 
@@ -197,7 +201,9 @@ go test ./internal/teamusage -run 'SummaryRangeUnavailable|SummaryRangeIndepende
 
 Expected: all focused tests pass. The service tests confirm incomplete adapter results still map to `range_aggregation_unavailable`.
 
-- [ ] **Step 4: Run backend regression and race checks**
+GREEN evidence (2026-07-18): all `TestSub2APIGetBatchUserUsageStats*` tests passed in `internal/relay`; the `SummaryRangeUnavailable|SummaryRangeIndependent` selection passed in `internal/teamusage`.
+
+- [x] **Step 4: Run backend regression and race checks**
 
 Run:
 
@@ -210,6 +216,8 @@ git diff --check
 ```
 
 Expected: all packages pass, race checks pass, and `git diff --check` exits zero.
+
+Verification evidence (2026-07-18): `go test ./...` passed; `go test -race ./internal/relay ./internal/teamusage` passed.
 
 - [ ] **Step 5: Commit and push the application fix**
 

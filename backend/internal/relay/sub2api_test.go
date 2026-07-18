@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3709,6 +3710,7 @@ func TestSub2APIGetUsageDashboardForUserUsesAdminFilteredEndpoints(t *testing.T)
 
 func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 	var body map[string]any
+	var trendRequests atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -3729,6 +3731,10 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 				},
 			},
 		})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		trendRequests.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []any{}})
 	})
 	p := newTestProvider(t, mux)
 	summary := p.(relay.TeamUsageSummaryProvider)
@@ -3761,5 +3767,166 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 	if got[1001].RangeActualCost == nil || *got[1001].RangeActualCost != 7.5 ||
 		got[1001].RangeTotalTokens == nil || *got[1001].RangeTotalTokens != 987 {
 		t.Fatalf("batch stats = %#v, want independent range_actual_cost 7.5 range_total_tokens 987", got)
+	}
+	if trendRequests.Load() != 0 {
+		t.Fatalf("trend requests = %d, want 0 for complete batch fields", trendRequests.Load())
+	}
+}
+
+func TestSub2APIGetBatchUserUsageStatsBackfillsMissingRangeFromTrend(t *testing.T) {
+	var requestedTrend []map[string]string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"stats": map[string]any{
+					"1001": map[string]any{
+						"user_id": 1001, "today_actual_cost": 1.0, "total_actual_cost": 10.0,
+						"range_actual_cost": 7.5, "range_total_tokens": 987,
+					},
+					"1002": map[string]any{
+						"user_id": 1002, "today_actual_cost": 2.0, "total_actual_cost": 20.0,
+					},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		requestedTrend = append(requestedTrend, map[string]string{
+			"user_id":     r.URL.Query().Get("user_id"),
+			"start_date":  r.URL.Query().Get("start_date"),
+			"end_date":    r.URL.Query().Get("end_date"),
+			"granularity": r.URL.Query().Get("granularity"),
+			"timezone":    r.URL.Query().Get("timezone"),
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": []map[string]any{
+				{"date": "2026-07-01", "actual_cost": 1.25, "total_tokens": 100},
+				{"date": "2026-07-02", "actual_cost": 2.50, "total_tokens": 200},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	summary := p.(relay.TeamUsageSummaryProvider)
+	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001, 1002}, relay.TeamUsageSummaryParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07",
+		Granularity: "day", Timezone: "Asia/Shanghai",
+	})
+	if err != nil {
+		t.Fatalf("GetBatchUserUsageStats() error = %v", err)
+	}
+	if got[1001].RangeActualCost == nil || *got[1001].RangeActualCost != 7.5 ||
+		got[1001].RangeTotalTokens == nil || *got[1001].RangeTotalTokens != 987 {
+		t.Fatalf("batch stats[1001] = %#v, want direct range totals 7.5/987", got[1001])
+	}
+	if got[1002].RangeActualCost == nil || *got[1002].RangeActualCost != 3.75 ||
+		got[1002].RangeTotalTokens == nil || *got[1002].RangeTotalTokens != 300 {
+		t.Fatalf("batch stats[1002] = %#v, want fallback range totals 3.75/300", got[1002])
+	}
+	if diff := cmp.Diff([]map[string]string{{
+		"user_id": "1002", "start_date": "2026-07-01", "end_date": "2026-07-07",
+		"granularity": "day", "timezone": "Asia/Shanghai",
+	}}, requestedTrend); diff != "" {
+		t.Fatalf("trend requests mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGetBatchUserUsageStatsKeepsIncompleteRangeWhenTrendFails(t *testing.T) {
+	var trendRequests atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"stats": map[string]any{
+					"1001": map[string]any{
+						"user_id": 1001, "today_actual_cost": 1.0, "total_actual_cost": 10.0,
+					},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		trendRequests.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "upstream failed"})
+	})
+
+	p := newTestProvider(t, mux)
+	summary := p.(relay.TeamUsageSummaryProvider)
+	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07",
+		Granularity: "day", Timezone: "Asia/Shanghai",
+	})
+	if err != nil {
+		t.Fatalf("GetBatchUserUsageStats() fallback error = %v, want nil", err)
+	}
+	if trendRequests.Load() != 1 {
+		t.Fatalf("trend requests = %d, want 1", trendRequests.Load())
+	}
+	if got[1001].RangeActualCost != nil || got[1001].RangeTotalTokens != nil {
+		t.Fatalf("range fields = %#v/%#v, want incomplete", got[1001].RangeActualCost, got[1001].RangeTotalTokens)
+	}
+	if got[1001].TodayActualCost != 1 || got[1001].TotalActualCost != 10 {
+		t.Fatalf("comparison totals changed: %#v", got[1001])
+	}
+}
+
+func TestSub2APIGetBatchUserUsageStatsRequiresCompleteTrendTokens(t *testing.T) {
+	tests := []struct {
+		name       string
+		trend      []map[string]any
+		wantCost   float64
+		wantTokens *int64
+	}{
+		{
+			name: "missing token point",
+			trend: []map[string]any{
+				{"date": "2026-07-01", "actual_cost": 1.25, "total_tokens": 100},
+				{"date": "2026-07-02", "actual_cost": 2.50},
+			},
+			wantCost: 3.75,
+		},
+		{
+			name:       "empty trend",
+			trend:      []map[string]any{},
+			wantCost:   0,
+			wantTokens: func() *int64 { value := int64(0); return &value }(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"success": true,
+					"data": map[string]any{
+						"stats": map[string]any{
+							"1001": map[string]any{"user_id": 1001},
+						},
+					},
+				})
+			})
+			mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": tt.trend})
+			})
+
+			p := newTestProvider(t, mux)
+			summary := p.(relay.TeamUsageSummaryProvider)
+			got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{})
+			if err != nil {
+				t.Fatalf("GetBatchUserUsageStats() error = %v", err)
+			}
+			if got[1001].RangeActualCost == nil || *got[1001].RangeActualCost != tt.wantCost {
+				t.Fatalf("range actual cost = %#v, want %v", got[1001].RangeActualCost, tt.wantCost)
+			}
+			if diff := cmp.Diff(tt.wantTokens, got[1001].RangeTotalTokens); diff != "" {
+				t.Fatalf("range total tokens mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

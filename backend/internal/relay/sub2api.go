@@ -2183,6 +2183,21 @@ func (s *sub2apiRelay) GetUsageDashboardForUser(ctx context.Context, relayUserID
 	}, nil
 }
 
+func summarizeTeamUsageRange(points []UsageTrendPoint) (float64, int64, bool) {
+	var actualCost float64
+	var totalTokens int64
+	tokensComplete := true
+	for _, point := range points {
+		actualCost += point.ActualCost
+		if point.TotalTokens == nil {
+			tokensComplete = false
+			continue
+		}
+		totalTokens += *point.TotalTokens
+	}
+	return actualCost, totalTokens, tokensComplete
+}
+
 func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params TeamUsageSummaryParams) (map[int64]TeamUserUsageStats, error) {
 	payload, err := json.Marshal(map[string]any{
 		"user_ids":    userIDs,
@@ -2231,6 +2246,38 @@ func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int
 			item.UserID = parsedUserID
 		}
 		out[item.UserID] = item
+	}
+
+	missingRangeUserIDs := make([]int64, 0)
+	for _, userID := range userIDs {
+		item, ok := out[userID]
+		if ok && (item.RangeActualCost == nil || item.RangeTotalTokens == nil) {
+			missingRangeUserIDs = append(missingRangeUserIDs, userID)
+		}
+	}
+	if len(missingRangeUserIDs) == 0 {
+		return out, nil
+	}
+
+	pointsByUser, fallbackErr := s.GetUsageTrendForUsers(ctx, missingRangeUserIDs, TeamMemberTrendParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+	})
+	if fallbackErr != nil {
+		return out, nil
+	}
+	for _, userID := range missingRangeUserIDs {
+		points, ok := pointsByUser[userID]
+		if !ok {
+			continue
+		}
+		actualCost, totalTokens, tokensComplete := summarizeTeamUsageRange(points)
+		item := out[userID]
+		item.RangeActualCost = &actualCost
+		if tokensComplete {
+			item.RangeTotalTokens = &totalTokens
+		}
+		out[userID] = item
 	}
 	return out, nil
 }
