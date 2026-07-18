@@ -21,7 +21,7 @@
 - Update each checkbox immediately after the action is actually complete.
 - Deploy only `ai-efficiency-staging` in namespace `la3-ai-efficiency-prod`; do not upgrade, restart, or retag `ai-efficiency-prod`.
 
-**Status:** In progress. Task 1 RED and Task 2 focused/full/race verification passed. The application fix is committed and published; image publication and staging rollout remain pending.
+**Status:** In progress. Task 1 RED and Task 2 focused/full/race verification passed. Image `staging-35153d0430f3299a507b234b86da55a4ddad6736` is deployed as staging revision 22 and all health checks pass. Authenticated Team Usage summary verification remains pending.
 
 ---
 
@@ -245,7 +245,7 @@ Delivery evidence (2026-07-18): application commit `23db57cb` was published to `
 - Consumes: the exact application commit from `feat/platform-loading-performance`.
 - Produces: immutable image `ghcr.io/lichking-2234/ai-efficiency:staging-<full-commit>` and Helm release `ai-efficiency-staging` using the matching restore snapshot ID.
 
-- [ ] **Step 1: Build and verify the immutable multi-architecture image**
+- [x] **Step 1: Build and verify the immutable multi-architecture image**
 
 Run from `/Users/admin/helm`:
 
@@ -276,7 +276,9 @@ docker buildx imagetools inspect "${IMAGE}"
 
 Expected: the remote manifest contains both `linux/amd64` and `linux/arm64`.
 
-- [ ] **Step 2: Update and commit only the static staging selectors**
+Publication evidence (2026-07-18): the exact image was published with manifest digest `sha256:deabe0e4227e6cee2236778f90306e70d6c4504adca19c44924d49445973bb86`; remote inspection reported `linux/amd64` and `linux/arm64`. The planned staging builder did not advertise amd64, so the already configured `static-spaces-release-builder` was used after verifying both required platforms.
+
+- [x] **Step 2: Update and commit only the static staging selectors**
 
 Run from `/Users/admin/helm`:
 
@@ -295,7 +297,9 @@ git push origin main
 
 Expected: only the staging image tag and restore snapshot ID change.
 
-- [ ] **Step 3: Execute the required paused and restore-enabled Helm phases**
+Helm delivery evidence (2026-07-18): `/Users/admin/helm` commit `eb50c36` changed only the two staging selectors and was pushed to `origin/main`.
+
+- [x] **Step 3: Execute the required paused and restore-enabled Helm phases**
 
 Run from `/Users/admin/helm`:
 
@@ -343,6 +347,8 @@ helm upgrade --install ai-efficiency-staging ./ai-efficiency \
 ```
 
 Expected: Helm records a paused revision before the restore-enabled revision, the restore Job completes, and the application Deployment becomes ready.
+
+Rollout evidence (2026-07-18): paused revision 21 completed with no application Pod; restore-enabled revision 22 completed after Job `ai-efficiency-staging-postgres-restore-35153d0430f3` reached `1/1` and the application Deployment became ready.
 
 - [ ] **Step 4: Verify staging health, image identity, and the original failing API contract**
 
