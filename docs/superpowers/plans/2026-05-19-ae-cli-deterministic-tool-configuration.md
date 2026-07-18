@@ -192,7 +192,7 @@ git commit -m "feat(ae-cli): allow explicit discover tool selection"
 - Consumes: `codexAppBundleCandidates() []string` and `firstExistingDir(paths []string)`.
 - Produces: ordered ChatGPT-first app candidates without changing `DetectInstalledTools` or `InstalledTool` signatures.
 
-- [ ] **Step 1: Add failing ChatGPT-only and deterministic candidate-order tests**
+- [x] **Step 1: Add failing ChatGPT-only and deterministic candidate-order tests**
 
 Replace the existing `TestDetectInstalledToolsFindsCodexAppWithoutCLI` with a pure candidate-order regression. This avoids allowing a real `/Applications/ChatGPT.app` on the test machine to change the expected legacy result:
 
@@ -259,7 +259,7 @@ func TestDetectInstalledToolsPrefersChatGPTAppOverLegacyCodexApp(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -269,7 +269,7 @@ cd ae-cli && go test ./internal/toolconfig -run 'TestCodexAppBundleCandidatesPre
 
 Expected: the selected tests fail because `ChatGPT.app` is absent from the candidate list.
 
-- [ ] **Step 3: Add ordered ChatGPT and legacy Codex candidates**
+- [x] **Step 3: Add ordered ChatGPT and legacy Codex candidates**
 
 Replace `codexAppBundleCandidates` with:
 
@@ -288,7 +288,7 @@ func codexAppBundleCandidates() []string {
 }
 ```
 
-- [ ] **Step 4: Run all toolconfig tests and verify GREEN**
+- [x] **Step 4: Run all toolconfig tests and verify GREEN**
 
 Run:
 
@@ -298,7 +298,7 @@ cd ae-cli && go test ./internal/toolconfig -count=1 -v
 
 Expected: all toolconfig tests pass; the candidate-order test proves both legacy paths remain present without depending on real system app installations.
 
-- [ ] **Step 5: Commit app detection**
+- [x] **Step 5: Commit app detection**
 
 ```bash
 git add ae-cli/internal/toolconfig/toolconfig.go ae-cli/internal/toolconfig/toolconfig_test.go docs/superpowers/plans/2026-05-19-ae-cli-deterministic-tool-configuration.md

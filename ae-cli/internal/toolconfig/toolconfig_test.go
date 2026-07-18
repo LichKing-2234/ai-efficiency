@@ -67,19 +67,30 @@ func TestDetectInstalledToolsFindsKnownCommands(t *testing.T) {
 	}
 }
 
-func TestDetectInstalledToolsFindsCodexAppWithoutCLI(t *testing.T) {
-	tmpBin := t.TempDir()
-	origPath := os.Getenv("PATH")
-	if err := os.Setenv("PATH", tmpBin); err != nil {
-		t.Fatalf("Setenv(PATH): %v", err)
-	}
-	t.Cleanup(func() { _ = os.Setenv("PATH", origPath) })
-
+func TestCodexAppBundleCandidatesPreferChatGPTAndRetainLegacyCodex(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
-	appPath := filepath.Join(tmpHome, "Applications", "Codex.app")
+
+	got := codexAppBundleCandidates()
+	want := []string{
+		filepath.Join(tmpHome, "Applications", "ChatGPT.app"),
+		"/Applications/ChatGPT.app",
+		filepath.Join(tmpHome, "Applications", "Codex.app"),
+		"/Applications/Codex.app",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("candidates = %v, want %v", got, want)
+	}
+}
+
+func TestDetectInstalledToolsFindsChatGPTAppWithoutCLI(t *testing.T) {
+	tmpBin := t.TempDir()
+	t.Setenv("PATH", tmpBin)
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	appPath := filepath.Join(tmpHome, "Applications", "ChatGPT.app")
 	if err := os.MkdirAll(appPath, 0o755); err != nil {
-		t.Fatalf("MkdirAll(Codex.app): %v", err)
+		t.Fatalf("MkdirAll(ChatGPT.app): %v", err)
 	}
 
 	got, err := DetectInstalledTools([]string{"codex", "claude"})
@@ -88,6 +99,28 @@ func TestDetectInstalledToolsFindsCodexAppWithoutCLI(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Name != "codex" || got[0].Path != appPath {
 		t.Fatalf("tools = %+v, want codex app at %s", got, appPath)
+	}
+}
+
+func TestDetectInstalledToolsPrefersChatGPTAppOverLegacyCodexApp(t *testing.T) {
+	tmpBin := t.TempDir()
+	t.Setenv("PATH", tmpBin)
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	chatGPTPath := filepath.Join(tmpHome, "Applications", "ChatGPT.app")
+	legacyPath := filepath.Join(tmpHome, "Applications", "Codex.app")
+	for _, path := range []string{chatGPTPath, legacyPath} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s): %v", path, err)
+		}
+	}
+
+	got, err := DetectInstalledTools([]string{"codex"})
+	if err != nil {
+		t.Fatalf("DetectInstalledTools: %v", err)
+	}
+	if len(got) != 1 || got[0].Path != chatGPTPath {
+		t.Fatalf("tools = %+v, want ChatGPT app at %s", got, chatGPTPath)
 	}
 }
 
