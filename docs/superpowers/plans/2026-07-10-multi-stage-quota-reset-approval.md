@@ -26,6 +26,10 @@ current contracts now make the required `member.metadata.wecom_userid` mapping
 explicit. Focused/full verification and independent code review are complete
 below; the pre-existing browser verification gap remains unchanged.
 
+**Approval Workbench Follow-up Status (2026-07-18):** Design is approved and
+recorded in the current spec. Tasks 8-9 are pending implementation; they add no
+routes, tables, dependencies, or standalone components.
+
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
 identifies the quota to reset.
@@ -713,6 +717,308 @@ current. Do not rewrite the historical 2026-07-07 spec.
   tests and `go vet ./...` passed, `git diff --check` was clean, and the final
   independent review reported no Critical or Important findings. Browser
   workflow verification remains unchecked in its original task above.
+
+---
+
+### Task 8: Route Approval Notifications To The Referenced Request
+
+**Files:**
+
+- Modify: `backend/internal/quotareset/notification.go`
+- Test: `backend/internal/quotareset/notification_test.go`
+- Modify: `frontend/src/views/QuotaResetView.vue`
+- Test: `frontend/src/__tests__/quota-reset-view.test.ts`
+
+**Interfaces:**
+
+- Produces notification URLs in the form
+  `/usage/quota-reset?queue=approvals&request_id=<positive id>`.
+- Consumes only the existing Vue route query, existing queue loaders, and the
+  existing `selectedRequest` state; no API contract changes.
+
+- [ ] **Step 1: Write failing notification deep-link assertions**
+
+  Update both generic-webhook and WeCom markdown assertions to require the
+  approval queue and request id:
+
+  ```go
+  want := fmt.Sprintf(
+      "https://ai-efficiency.example.com/usage/quota-reset?queue=approvals&request_id=%d",
+      request.ID,
+  )
+  if payload["action_url"] != want {
+      t.Fatalf("action_url = %#v, want %q", payload["action_url"], want)
+  }
+
+  if !strings.Contains(content, "?queue=approvals&request_id=") {
+      t.Fatalf("markdown action URL = %q", content)
+  }
+  ```
+
+- [ ] **Step 2: Run the backend regression and verify RED**
+
+  Run:
+
+  ```bash
+  cd backend
+  go test ./internal/quotareset -run 'TestWebhookNotifier' -count=1
+  ```
+
+  Expected: FAIL because current URLs contain only `request_id`.
+
+- [ ] **Step 3: Centralize and use the approval action URL**
+
+  Add one private helper and use it from both outward payload formats:
+
+  ```go
+  func (n *WebhookNotifier) actionURL(requestID int) string {
+      if strings.TrimSpace(n.frontendURL) == "" {
+          return ""
+      }
+      return fmt.Sprintf(
+          "%s/usage/quota-reset?queue=approvals&request_id=%d",
+          strings.TrimRight(n.frontendURL, "/"),
+          requestID,
+      )
+  }
+  ```
+
+  Keep notification formatting and delivery behavior otherwise unchanged.
+
+- [ ] **Step 4: Write failing frontend route-query tests**
+
+  Let the mount helper accept an initial path, then cover valid and invalid
+  deep links:
+
+  ```ts
+  async function mountQuotaResetView(
+    role: 'user' | 'admin' = 'user',
+    initialPath = '/usage/quota-reset',
+  ) {
+    // existing setup
+    await router.push(initialPath)
+    // existing mount and flush
+  }
+
+  it('opens approval deep links in the approval queue and selects the request', async () => {
+    const wrapper = await mountQuotaResetView(
+      'user',
+      '/usage/quota-reset?queue=approvals&request_id=2',
+    )
+
+    expect(wrapper.get('[data-testid="quota-reset-tab-approvals"]').classes()).toContain('bg-white')
+    expect(wrapper.find('[data-testid="quota-reset-workflow-timeline"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Group Beta')
+  })
+
+  it('falls back to my requests for invalid deep-link parameters', async () => {
+    const wrapper = await mountQuotaResetView(
+      'user',
+      '/usage/quota-reset?queue=unknown&request_id=invalid',
+    )
+
+    expect(wrapper.get('[data-testid="quota-reset-tab-mine"]').classes()).toContain('bg-white')
+    expect(wrapper.text()).toContain('Group Alpha')
+  })
+  ```
+
+- [ ] **Step 5: Run the frontend regression and verify RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  npm test -- src/__tests__/quota-reset-view.test.ts
+  ```
+
+  Expected: the valid deep link still opens My Requests and does not select
+  request `2`.
+
+- [ ] **Step 6: Parse the allowlisted queue and positive request id**
+
+  Import `useRoute`, initialize `activeQueue` from only `mine`, `approvals`, or
+  admin-authorized `admin`, and parse a single positive integer request id:
+
+  ```ts
+  const route = useRoute()
+
+  function firstQueryValue(value: unknown) {
+    return Array.isArray(value) ? value[0] : value
+  }
+
+  function initialQueue(): QueueMode {
+    const value = firstQueryValue(route.query.queue)
+    if (value === 'approvals' || value === 'mine') return value
+    if (value === 'admin' && auth.isAdmin) return value
+    return 'mine'
+  }
+
+  function initialRequestID() {
+    const value = firstQueryValue(route.query.request_id)
+    if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null
+    return Number(value)
+  }
+  ```
+
+  After all queues load, select the matching item from the active queue when it
+  has workflow steps. Leave normal loading and invalid-link fallback intact.
+
+- [ ] **Step 7: Verify and commit the deep-link task**
+
+  Run:
+
+  ```bash
+  cd backend && go test ./internal/quotareset -count=1
+  cd ../frontend && npm test -- src/__tests__/quota-reset-view.test.ts
+  git diff --check
+  git add backend/internal/quotareset/notification.go \
+    backend/internal/quotareset/notification_test.go \
+    frontend/src/views/QuotaResetView.vue \
+    frontend/src/__tests__/quota-reset-view.test.ts
+  git commit -m "fix(quotareset): route notification links to approvals"
+  ```
+
+  Expected: both focused suites pass and the commit contains only the four
+  listed files.
+
+---
+
+### Task 9: Remove Historical Badges And Expand Compact Rows Inline
+
+**Files:**
+
+- Modify: `frontend/src/views/QuotaResetView.vue`
+- Modify: `frontend/src/components/quota-reset/QuotaResetRequestList.vue`
+- Test: `frontend/src/__tests__/quota-reset-view.test.ts`
+
+**Interfaces:**
+
+- `QuotaResetRequestList` consumes `selectedRequestId?: number` and continues
+  to emit the existing `select` event.
+- Workflow rendering reuses `QuotaResetWorkflowTimeline`; no new component,
+  translation key, dependency, or backend field.
+
+- [ ] **Step 1: Write failing badge, compact-row, and inline-detail tests**
+
+  Replace historical My Requests badge expectations and add explicit UI-state
+  assertions:
+
+  ```ts
+  expect(wrapper.find('[data-testid="quota-reset-tab-mine-count"]').exists()).toBe(false)
+  expect(wrapper.get('[data-testid="quota-reset-tab-approvals-count"]').text()).toBe('2')
+  expect(wrapper.get('[data-testid="quota-reset-tab-admin-count"]').text()).toBe('3')
+
+  await wrapper.get('[data-testid="quota-reset-tab-approvals"]').trigger('click')
+  const row = wrapper.get('[data-testid="quota-reset-row-2"]')
+  expect(row.classes()).toContain('p-3')
+  expect(row.get('[data-testid="quota-reset-reason-2"]').classes()).toContain('line-clamp-1')
+
+  await row.trigger('click')
+  expect(row.attributes('aria-expanded')).toBe('true')
+  expect(row.classes()).toContain('bg-cyan-50')
+  expect(row.find('[data-testid="quota-reset-inline-workflow-2"]').exists()).toBe(true)
+
+  await row.trigger('click')
+  expect(row.attributes('aria-expanded')).toBe('false')
+  expect(row.find('[data-testid="quota-reset-inline-workflow-2"]').exists()).toBe(false)
+  ```
+
+- [ ] **Step 2: Run the focused frontend suite and verify RED**
+
+  Run:
+
+  ```bash
+  cd frontend
+  npm test -- src/__tests__/quota-reset-view.test.ts
+  ```
+
+  Expected: FAIL because My Requests still has a badge, rows use `p-4`, and
+  the timeline renders below the whole list without a selected row state.
+
+- [ ] **Step 3: Remove the non-actionable My Requests badge**
+
+  Delete `myTotal`, its assignment, and the `quota-reset-tab-mine-count`
+  element. Keep approval/admin badges based only on Work Items actionable
+  counts.
+
+- [ ] **Step 4: Move workflow rendering into the selected row**
+
+  Import `QuotaResetWorkflowTimeline` into the list, add the selected id prop,
+  and use small helpers:
+
+  ```ts
+  function canExpand(item: QuotaResetRequestSummary) {
+    return item.workflow_version === 2 && !!item.workflow_steps?.length
+  }
+
+  function isSelected(item: QuotaResetRequestSummary) {
+    return canExpand(item) && props.selectedRequestId === item.id
+  }
+  ```
+
+  Pass `:selected-request-id="selectedRequest?.id"` from the view and remove
+  its old list-bottom timeline section. The row must expose
+  `:aria-expanded="canExpand(item) ? isSelected(item) : undefined"`, emit
+  `select` only when expandable, and render:
+
+  ```vue
+  <div
+    v-if="isSelected(item)"
+    :data-testid="`quota-reset-inline-workflow-${item.id}`"
+    class="border-t border-cyan-200 px-3 pb-3 pt-3"
+  >
+    <QuotaResetWorkflowTimeline :steps="item.workflow_steps ?? []" />
+  </div>
+  ```
+
+- [ ] **Step 5: Compact the default row and show selection clearly**
+
+  Use `p-3`, `gap-2`, one-line reason clamping, and compact action padding.
+  Apply `bg-cyan-50 ring-1 ring-inset ring-cyan-200` to the selected row and a
+  restrained hover background only to expandable unselected rows. Add
+  `quota-reset-reason-<id>` test ids without changing visible copy.
+
+- [ ] **Step 6: Run focused GREEN and full frontend verification**
+
+  Run:
+
+  ```bash
+  cd frontend
+  npm test -- src/__tests__/quota-reset-view.test.ts
+  npm test
+  npm run build
+  ```
+
+  Expected: focused tests pass, all frontend tests pass, and Vite production
+  build exits `0`.
+
+- [ ] **Step 7: Run backend/static checks, review, commit, and push**
+
+  Run:
+
+  ```bash
+  cd backend
+  go test ./internal/quotareset -count=1
+  go vet ./...
+  cd ..
+  git diff --check
+  git status --short
+  ```
+
+  Request a final read-only code review against the approved spec. Resolve any
+  verified Critical or Important findings, rerun affected checks, then commit
+  and push only the tracked follow-up files:
+
+  ```bash
+  git add docs/superpowers/plans/2026-07-10-multi-stage-quota-reset-approval.md \
+    frontend/src/views/QuotaResetView.vue \
+    frontend/src/components/quota-reset/QuotaResetRequestList.vue \
+    frontend/src/__tests__/quota-reset-view.test.ts
+  git commit -m "fix(frontend): refine quota reset approval workbench"
+  git push origin codex/multi-stage-quota-reset-approval
+  ```
+
+  Wait for all PR checks. Do not merge, tag, release, or deploy in this task.
 
 ## Deferred
 
