@@ -2,6 +2,7 @@ package workitems
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -171,7 +172,29 @@ func TestCountsCacheMetricsShowDistributedLeaseWait(t *testing.T) {
 	}
 
 	holderMetrics.require(t, map[string]int{"miss": 1, "lease_acquired": 1, "refresh": 1})
-	waiterMetrics.require(t, map[string]int{"miss": 1, "lease_wait": 1})
+	waiterMetrics.require(t, map[string]int{"miss": 1, "lease_wait": 1, "fresh": 1})
+}
+
+func TestCountsCacheMetricsRecordLeaseHolderDoubleCheckHitAsFresh(t *testing.T) {
+	store := newFakeCountsStore()
+	revisions := &fakeRevisionReader{revision: "11111111-1111-4111-8111-111111111111"}
+	value, err := json.Marshal(countsValueEnvelope{SchemaVersion: countsCacheSchemaVersion, Counts: &CountsResponse{TotalCount: 7}})
+	if err != nil {
+		t.Fatalf("marshal cached counts: %v", err)
+	}
+	store.onAcquire = func(store *fakeCountsStore, leaseKey string) {
+		store.values[leaseKey[:len(leaseKey)-len(":lease")]] = fakeCountsStoreValue{value: value, ttl: time.Minute}
+	}
+	recorder := newRecordingCountsCacheMetrics()
+	cache := testCountsCache(t, store, revisions, "test", func(options *CountsCacheOptions) { options.Metrics = recorder })
+
+	counts, err := cache.GetOrLoad(context.Background(), 7, "user", func(context.Context) (CountsLoadResult, error) {
+		return CountsLoadResult{}, errors.New("loader must not run after double-check hit")
+	})
+	if err != nil || counts.TotalCount != 7 {
+		t.Fatalf("GetOrLoad() = %+v, %v, want cached total 7", counts, err)
+	}
+	recorder.require(t, map[string]int{"miss": 1, "lease_acquired": 1, "fresh": 1})
 }
 
 func TestCountsCacheMetricsShowMalformedWriteReleaseAndLoaderErrors(t *testing.T) {

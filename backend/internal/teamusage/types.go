@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
@@ -238,16 +239,18 @@ type SummaryCacheResult struct {
 }
 
 type SnapshotCacheOptions struct {
-	Namespace      string
-	CommandTimeout time.Duration
-	RefreshTimeout time.Duration
-	LeaseTTL       time.Duration
-	PollInterval   time.Duration
-	ReleaseTimeout time.Duration
-	Now            func() time.Time
-	RandFloat64    func() float64
-	NewToken       func() string
-	Sleep          func(context.Context, time.Duration) error
+	Namespace       string
+	CommandTimeout  time.Duration
+	RefreshTimeout  time.Duration
+	LeaseTTL        time.Duration
+	PollInterval    time.Duration
+	ReleaseTimeout  time.Duration
+	Now             func() time.Time
+	RandFloat64     func() float64
+	NewToken        func() string
+	Sleep           func(context.Context, time.Duration) error
+	SummaryMetrics  readcache.Metrics
+	OverviewMetrics readcache.Metrics
 }
 
 type OverviewWindow struct {

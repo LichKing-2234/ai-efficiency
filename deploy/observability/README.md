@@ -26,6 +26,14 @@ cache event rates. HTTP API routes and browser routes use separate filters so
 one route namespace cannot hide the other. Issue #136 owns production sampling
 sufficiency and route-specific budget ratification.
 
+The application cache panel groups the closed outcome set by the stable
+production names `work_items_counts`, `personal_usage`, `representative_scope`,
+`team_usage_summary`, `team_usage_overview`, `repository_inventory`, and
+`provider_metadata`. The backend preinitializes every name/outcome pair, so a
+scrape distinguishes a quiet cache from missing instrumentation without adding
+keys, actors, scopes, providers, ranges, credentials, or cached values as
+labels.
+
 The browser defaults to a 10 percent page sample. Custom frontend builds can
 set `VITE_WEB_VITALS_SAMPLE_RATE` from `0` to `1`; invalid values return to the
 10 percent default. Sampling starts after the initial Vue Router redirects and

@@ -37,9 +37,7 @@ type RevisionReader interface {
 
 type RedisCountsStore = readcache.RedisStore
 
-type CountsCacheMetrics interface {
-	Record(outcome string)
-}
+type CountsCacheMetrics = readcache.Metrics
 
 func NewRedisCountsStore(client redis.UniversalClient) *RedisCountsStore {
 	return readcache.NewRedisStore(client)
@@ -186,6 +184,7 @@ func (c *CountsCache) loadWithLease(ctx context.Context, key, revision string, l
 				return nil, err
 			}
 			if counts, hit, err := c.read(ctx, key); hit {
+				c.record("fresh")
 				return counts, nil
 			} else if err != nil {
 				c.record("error")
@@ -218,6 +217,7 @@ func (c *CountsCache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, toke
 	defer c.releaseLease(leaseKey, token)
 
 	if counts, hit, err := c.read(ctx, key); hit {
+		c.record("fresh")
 		return counts, nil
 	} else if err != nil {
 		c.record("error")

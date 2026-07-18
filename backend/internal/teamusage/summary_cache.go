@@ -33,6 +33,7 @@ type SnapshotCache struct {
 type readModelCache[T any] struct {
 	store         readcache.Store
 	options       SnapshotCacheOptions
+	metrics       readcache.Metrics
 	keyPrefix     string
 	schemaVersion int
 	validate      func(T) bool
@@ -85,11 +86,11 @@ func NewSnapshotCache(store readcache.Store, options SnapshotCacheOptions) (*Sna
 	return &SnapshotCache{
 		overview: &readModelCache[*OverviewResponse]{
 			store: store, options: options, keyPrefix: "team-usage-snapshot",
-			schemaVersion: snapshotCacheSchemaVersion, validate: validOverviewSnapshot,
+			schemaVersion: snapshotCacheSchemaVersion, validate: validOverviewSnapshot, metrics: options.OverviewMetrics,
 		},
 		summary: &readModelCache[*SummarySnapshot]{
 			store: store, options: options, keyPrefix: "team-usage-summary",
-			schemaVersion: summaryCacheSchemaVersion, validate: validSummarySnapshot,
+			schemaVersion: summaryCacheSchemaVersion, validate: validSummarySnapshot, metrics: options.SummaryMetrics,
 		},
 	}, nil
 }
@@ -226,39 +227,52 @@ func validateSnapshotCacheKey(key SnapshotCacheKey) error {
 
 func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
 	var stale *readModelValueEnvelope[T]
+	missRecorded := false
 	for {
 		envelope, found, err := c.read(ctx, key)
 		if err != nil {
+			c.record("error")
 			return c.loadAuthoritative(ctx, key, nil, loader, false)
 		}
 		if found {
 			now := c.now()
 			if !now.After(envelope.FreshUntil) {
+				c.record("fresh")
 				return readModelResultFromEnvelope(envelope, "fresh", "ok"), nil
 			}
 			if !now.After(envelope.StaleUntil) {
 				stale = envelope
 			}
 		}
+		if !missRecorded {
+			c.record("miss")
+			missRecorded = true
+		}
 
 		leaseKey := key + ":lease"
 		token := c.options.NewToken()
 		acquired, err := c.acquireLease(ctx, leaseKey, token)
 		if err != nil {
+			c.record("error")
+			c.record("lease_failed")
 			return c.loadAuthoritative(ctx, key, stale, loader, false)
 		}
 		if acquired {
+			c.record("lease_acquired")
 			return c.loadAsLeaseHolder(ctx, key, leaseKey, token, stale, loader)
 		}
+		c.record("lease_wait")
 
 		for {
 			envelope, found, err = c.read(ctx, key)
 			if err != nil {
+				c.record("error")
 				return c.loadAuthoritative(ctx, key, stale, loader, false)
 			}
 			if found {
 				now := c.now()
 				if !now.After(envelope.FreshUntil) {
+					c.record("fresh")
 					return readModelResultFromEnvelope(envelope, "fresh", "ok"), nil
 				}
 				if !now.After(envelope.StaleUntil) {
@@ -266,11 +280,16 @@ func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loade
 				}
 			}
 			ttl, ttlErr := c.leaseTTL(ctx, leaseKey)
-			if errors.Is(ttlErr, readcache.ErrMiss) || ttl <= 0 {
+			if errors.Is(ttlErr, readcache.ErrMiss) {
 				break
 			}
 			if ttlErr != nil {
+				c.record("error")
+				c.record("lease_failed")
 				return c.loadAuthoritative(ctx, key, stale, loader, false)
+			}
+			if ttl <= 0 {
+				break
 			}
 			wait := c.options.PollInterval
 			if ttl < wait {
@@ -281,6 +300,7 @@ func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loade
 			}
 		}
 		if stale != nil && !c.now().After(stale.StaleUntil) {
+			c.record("stale")
 			return readModelResultFromEnvelope(stale, "stale", "error"), nil
 		}
 	}
@@ -291,11 +311,13 @@ func (c *readModelCache[T]) loadAsLeaseHolder(ctx context.Context, key, leaseKey
 
 	envelope, found, err := c.read(ctx, key)
 	if err != nil {
+		c.record("error")
 		return c.loadAuthoritative(ctx, key, stale, loader, false)
 	}
 	if found {
 		now := c.now()
 		if !now.After(envelope.FreshUntil) {
+			c.record("fresh")
 			return readModelResultFromEnvelope(envelope, "fresh", "ok"), nil
 		}
 		if !now.After(envelope.StaleUntil) {
@@ -306,8 +328,10 @@ func (c *readModelCache[T]) loadAsLeaseHolder(ctx context.Context, key, leaseKey
 }
 
 func (c *readModelCache[T]) loadAuthoritative(ctx context.Context, key string, stale *readModelValueEnvelope[T], loader readModelOriginLoader[T], write bool) (*readModelCacheResult[T], error) {
+	c.record("refresh")
 	loaded, err := loader(ctx)
 	if err != nil {
+		c.record("error")
 		return nil, err
 	}
 	if loaded.SnapshotErr != nil {
@@ -315,11 +339,15 @@ func (c *readModelCache[T]) loadAuthoritative(ctx context.Context, key string, s
 			return nil, err
 		}
 		if stale == nil || c.now().After(stale.StaleUntil) {
+			c.record("error")
 			return nil, loaded.SnapshotErr
 		}
+		c.record("error")
+		c.record("stale")
 		return readModelResultFromEnvelope(stale, "stale", "error"), nil
 	}
 	if c.validate == nil || !c.validate(loaded.Snapshot) {
+		c.record("error")
 		return nil, fmt.Errorf("team usage origin returned an invalid snapshot")
 	}
 
@@ -327,11 +355,14 @@ func (c *readModelCache[T]) loadAuthoritative(ctx context.Context, key string, s
 	if write {
 		encoded, encodeErr := json.Marshal(envelope)
 		if encodeErr != nil {
+			c.record("error")
 			return nil, fmt.Errorf("encode team usage snapshot cache value: %w", encodeErr)
 		}
 		ttl := envelope.StaleUntil.Sub(c.now())
 		if ttl > 0 {
-			_ = c.set(ctx, key, encoded, ttl)
+			if err := c.set(ctx, key, encoded, ttl); err != nil {
+				c.record("error")
+			}
 		}
 	}
 	return readModelResultFromEnvelope(envelope, "miss", "ok"), nil
@@ -444,7 +475,19 @@ func (c *readModelCache[T]) set(ctx context.Context, key string, value []byte, t
 func (c *readModelCache[T]) releaseLease(key, token string) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.options.ReleaseTimeout)
 	defer cancel()
-	_, _ = c.store.ReleaseLease(ctx, key, token)
+	released, err := c.store.ReleaseLease(ctx, key, token)
+	if err != nil {
+		c.record("error")
+	}
+	if err != nil || !released {
+		c.record("lease_failed")
+	}
+}
+
+func (c *readModelCache[T]) record(outcome string) {
+	if c != nil && c.metrics != nil {
+		c.metrics.Record(outcome)
+	}
 }
 
 func (c *readModelCache[T]) now() time.Time {

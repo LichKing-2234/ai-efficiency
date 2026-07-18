@@ -148,39 +148,52 @@ func validateCacheKey(key CacheKey) error {
 
 func (c *Cache) loadWithLease(ctx context.Context, key string, includeQuota bool, loader OriginLoader) (*CacheResult, error) {
 	var stale *usageValueEnvelope
+	missRecorded := false
 	for {
 		envelope, found, err := c.read(ctx, key)
 		if err != nil {
+			c.record("error")
 			return c.loadAuthoritative(ctx, key, nil, includeQuota, loader, false)
 		}
 		if found {
 			now := c.now()
 			if !now.After(envelope.FreshUntil) {
+				c.record("fresh")
 				return cacheResultFromEnvelope(envelope, "fresh", "ok"), nil
 			}
 			if !now.After(envelope.StaleUntil) {
 				stale = envelope
 			}
 		}
+		if !missRecorded {
+			c.record("miss")
+			missRecorded = true
+		}
 
 		leaseKey := key + ":lease"
 		token := c.options.NewToken()
 		acquired, err := c.acquireLease(ctx, leaseKey, token)
 		if err != nil {
+			c.record("error")
+			c.record("lease_failed")
 			return c.loadAuthoritative(ctx, key, stale, includeQuota, loader, false)
 		}
 		if acquired {
+			c.record("lease_acquired")
 			return c.loadAsLeaseHolder(ctx, key, leaseKey, token, stale, includeQuota, loader)
 		}
+		c.record("lease_wait")
 
 		for {
 			envelope, found, err = c.read(ctx, key)
 			if err != nil {
+				c.record("error")
 				return c.loadAuthoritative(ctx, key, stale, includeQuota, loader, false)
 			}
 			if found {
 				now := c.now()
 				if !now.After(envelope.FreshUntil) {
+					c.record("fresh")
 					return cacheResultFromEnvelope(envelope, "fresh", "ok"), nil
 				}
 				if !now.After(envelope.StaleUntil) {
@@ -188,11 +201,16 @@ func (c *Cache) loadWithLease(ctx context.Context, key string, includeQuota bool
 				}
 			}
 			ttl, ttlErr := c.leaseTTL(ctx, leaseKey)
-			if errors.Is(ttlErr, readcache.ErrMiss) || ttl <= 0 {
+			if errors.Is(ttlErr, readcache.ErrMiss) {
 				break
 			}
 			if ttlErr != nil {
+				c.record("error")
+				c.record("lease_failed")
 				return c.loadAuthoritative(ctx, key, stale, includeQuota, loader, false)
+			}
+			if ttl <= 0 {
+				break
 			}
 			wait := c.options.PollInterval
 			if ttl < wait {
@@ -203,6 +221,7 @@ func (c *Cache) loadWithLease(ctx context.Context, key string, includeQuota bool
 			}
 		}
 		if stale != nil && !c.now().After(stale.StaleUntil) {
+			c.record("stale")
 			return cacheResultFromEnvelope(stale, "stale", "error"), nil
 		}
 	}
@@ -213,11 +232,13 @@ func (c *Cache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, token stri
 
 	envelope, found, err := c.read(ctx, key)
 	if err != nil {
+		c.record("error")
 		return c.loadAuthoritative(ctx, key, stale, includeQuota, loader, false)
 	}
 	if found {
 		now := c.now()
 		if !now.After(envelope.FreshUntil) {
+			c.record("fresh")
 			return cacheResultFromEnvelope(envelope, "fresh", "ok"), nil
 		}
 		if !now.After(envelope.StaleUntil) {
@@ -228,8 +249,10 @@ func (c *Cache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, token stri
 }
 
 func (c *Cache) loadAuthoritative(ctx context.Context, key string, stale *usageValueEnvelope, includeQuota bool, loader OriginLoader, write bool) (*CacheResult, error) {
+	c.record("refresh")
 	loaded, err := loader(ctx, includeQuota)
 	if err != nil {
+		c.record("error")
 		return nil, err
 	}
 	if loaded.UsageErr != nil {
@@ -237,28 +260,36 @@ func (c *Cache) loadAuthoritative(ctx context.Context, key string, stale *usageV
 			return nil, err
 		}
 		if stale == nil || c.now().After(stale.StaleUntil) {
+			c.record("error")
 			return nil, loaded.UsageErr
 		}
+		c.record("error")
+		c.record("stale")
 		result := cacheResultFromEnvelope(stale, "stale", "error")
 		applyLoadedQuota(result, loaded)
 		return result, nil
 	}
 	if loaded.Usage == nil {
+		c.record("error")
 		return nil, fmt.Errorf("personal usage origin returned no usage generation")
 	}
 
 	envelope, err := c.newEnvelope(loaded.Usage)
 	if err != nil {
+		c.record("error")
 		return nil, err
 	}
 	if write {
 		encoded, encodeErr := json.Marshal(envelope)
 		if encodeErr != nil {
+			c.record("error")
 			return nil, fmt.Errorf("encode personal usage cache value: %w", encodeErr)
 		}
 		ttl := envelope.StaleUntil.Sub(c.now())
 		if ttl > 0 {
-			_ = c.set(ctx, key, encoded, ttl)
+			if err := c.set(ctx, key, encoded, ttl); err != nil {
+				c.record("error")
+			}
 		}
 	}
 
@@ -379,7 +410,19 @@ func (c *Cache) set(ctx context.Context, key string, value []byte, ttl time.Dura
 func (c *Cache) releaseLease(key, token string) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.options.ReleaseTimeout)
 	defer cancel()
-	_, _ = c.store.ReleaseLease(ctx, key, token)
+	released, err := c.store.ReleaseLease(ctx, key, token)
+	if err != nil {
+		c.record("error")
+	}
+	if err != nil || !released {
+		c.record("lease_failed")
+	}
+}
+
+func (c *Cache) record(outcome string) {
+	if c != nil && c.options.Metrics != nil {
+		c.options.Metrics.Record(outcome)
+	}
 }
 
 func (c *Cache) now() time.Time {

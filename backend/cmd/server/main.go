@@ -125,7 +125,7 @@ func newRuntimeHTTPClients(cfg config.HTTPClientConfig, relayWrappers ...httpcli
 	}
 }
 
-func initializeRepoInventory(ctx context.Context, entClient *ent.Client, redisClient redis.UniversalClient, namespace string) (*repo.InventoryCache, *repo.InventoryRevisionStore, error) {
+func initializeRepoInventory(ctx context.Context, entClient *ent.Client, redisClient redis.UniversalClient, namespace string, metrics readcache.Metrics) (*repo.InventoryCache, *repo.InventoryRevisionStore, error) {
 	revisions := repo.NewInventoryRevisionStore(entClient)
 	if err := revisions.Ensure(ctx); err != nil {
 		return nil, nil, fmt.Errorf("initialize repository inventory revision: %w", err)
@@ -133,7 +133,7 @@ func initializeRepoInventory(ctx context.Context, entClient *ent.Client, redisCl
 	cache, err := repo.NewInventoryCache(
 		readcache.NewRedisStore(redisClient),
 		revisions,
-		repo.InventoryCacheOptions{Namespace: namespace},
+		repo.InventoryCacheOptions{Namespace: namespace, Metrics: metrics},
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("initialize repository inventory cache: %w", err)
@@ -198,6 +198,7 @@ func main() {
 		logger.Fatal("DB.DSN is required and must point to PostgreSQL")
 	}
 	metrics := telemetry.NewMetrics(versionInfo.Version)
+	cacheMetrics := newProductionCacheMetrics(metrics)
 	httpClients := newRuntimeHTTPClients(
 		cfg.HTTPClient,
 		telemetry.WrapDependency(logger, versionInfo.Version, "relay", "http_request", metrics.DependencyObserver()),
@@ -293,9 +294,10 @@ func main() {
 		logger.Fatal("initialize relay provider invalidation bus", zap.Error(err))
 	}
 	providerRuntime, err := relayruntime.NewManager(entClient, cfg.Encryption.Key, logger, relayruntime.Options{
-		Namespace: cfg.Redis.Namespace,
-		Store:     redisStore,
-		Bus:       providerInvalidationBus,
+		Namespace:       cfg.Redis.Namespace,
+		Store:           redisStore,
+		Bus:             providerInvalidationBus,
+		MetadataMetrics: cacheMetrics.providerMetadata,
 		Factory: func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
 			return relay.NewSub2apiProvider(
 				httpClients.providerRelay,
@@ -317,7 +319,7 @@ func main() {
 		workItemsRevisionStore,
 		workitems.CountsCacheOptions{
 			Namespace: cfg.Redis.Namespace,
-			Metrics:   metrics.CacheRecorder("work_items_counts"),
+			Metrics:   cacheMetrics.workItemsCounts,
 		},
 	)
 	if err != nil {
@@ -325,21 +327,25 @@ func main() {
 	}
 	personalUsageCache, err := personalusage.NewCache(
 		redisStore,
-		personalusage.CacheOptions{Namespace: cfg.Redis.Namespace},
+		personalusage.CacheOptions{Namespace: cfg.Redis.Namespace, Metrics: cacheMetrics.personalUsage},
 	)
 	if err != nil {
 		logger.Fatal("initialize personal usage cache", zap.Error(err))
 	}
 	representativeScopeCache, err := representativescope.NewCache(
 		redisStore,
-		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace},
+		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace, Metrics: cacheMetrics.representativeScope},
 	)
 	if err != nil {
 		logger.Fatal("initialize representative scope cache", zap.Error(err))
 	}
 	teamUsageSnapshotCache, err := teamusage.NewSnapshotCache(
 		redisStore,
-		teamusage.SnapshotCacheOptions{Namespace: cfg.Redis.Namespace},
+		teamusage.SnapshotCacheOptions{
+			Namespace:       cfg.Redis.Namespace,
+			SummaryMetrics:  cacheMetrics.teamUsageSummary,
+			OverviewMetrics: cacheMetrics.teamUsageOverview,
+		},
 	)
 	if err != nil {
 		logger.Fatal("initialize team usage snapshot cache", zap.Error(err))
@@ -349,6 +355,7 @@ func main() {
 		entClient,
 		redisClient,
 		cfg.Redis.Namespace,
+		cacheMetrics.repositoryInventory,
 	)
 	if err != nil {
 		logger.Fatal("initialize repository inventory", zap.Error(err))

@@ -27,20 +27,21 @@ var ErrStaleProviderConfiguration = errors.New("relay provider configuration is 
 type ProviderFactory func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error)
 
 type Options struct {
-	Namespace      string
-	Store          readcache.Store
-	Bus            InvalidationBus
-	ClientTTL      time.Duration
-	MetadataTTL    time.Duration
-	CommandTimeout time.Duration
-	RefreshTimeout time.Duration
-	LeaseTTL       time.Duration
-	PollInterval   time.Duration
-	ReleaseTimeout time.Duration
-	Now            func() time.Time
-	Factory        ProviderFactory
-	NewToken       func() string
-	Sleep          func(context.Context, time.Duration) error
+	Namespace       string
+	Store           readcache.Store
+	Bus             InvalidationBus
+	ClientTTL       time.Duration
+	MetadataTTL     time.Duration
+	CommandTimeout  time.Duration
+	RefreshTimeout  time.Duration
+	LeaseTTL        time.Duration
+	PollInterval    time.Duration
+	ReleaseTimeout  time.Duration
+	Now             func() time.Time
+	Factory         ProviderFactory
+	NewToken        func() string
+	Sleep           func(context.Context, time.Duration) error
+	MetadataMetrics readcache.Metrics
 }
 
 type clientKey struct {

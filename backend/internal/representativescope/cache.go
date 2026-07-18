@@ -48,6 +48,7 @@ type CacheOptions struct {
 	RandFloat64    func() float64
 	NewToken       func() string
 	Sleep          func(context.Context, time.Duration) error
+	Metrics        readcache.Metrics
 }
 
 type Cache struct {
@@ -147,34 +148,48 @@ func scopeVersion(guard scopeGuard) string {
 
 func (c *Cache) loadWithLease(ctx context.Context, key string, guard scopeGuard, loader ScopeLoader) (*Scope, error) {
 	if scope, hit, err := c.read(ctx, key, guard); hit {
+		c.record("fresh")
 		return scope, nil
 	} else if err != nil {
+		c.record("error")
 		return c.loadAuthoritative(ctx, guard, loader)
 	}
+	c.record("miss")
 
 	leaseKey := key + ":lease"
 	for {
 		token := c.options.NewToken()
 		acquired, err := c.acquireLease(ctx, leaseKey, token)
 		if err != nil {
+			c.record("error")
+			c.record("lease_failed")
 			return c.loadAuthoritative(ctx, guard, loader)
 		}
 		if acquired {
+			c.record("lease_acquired")
 			return c.loadAsLeaseHolder(ctx, key, leaseKey, token, guard, loader)
 		}
+		c.record("lease_wait")
 
 		for {
 			if scope, hit, err := c.read(ctx, key, guard); hit {
+				c.record("fresh")
 				return scope, nil
 			} else if err != nil {
+				c.record("error")
 				return c.loadAuthoritative(ctx, guard, loader)
 			}
 			ttl, err := c.leaseTTL(ctx, leaseKey)
-			if errors.Is(err, readcache.ErrMiss) || ttl <= 0 {
+			if errors.Is(err, readcache.ErrMiss) {
 				break
 			}
 			if err != nil {
+				c.record("error")
+				c.record("lease_failed")
 				return c.loadAuthoritative(ctx, guard, loader)
+			}
+			if ttl <= 0 {
+				break
 			}
 			wait := c.options.PollInterval
 			if ttl < wait {
@@ -191,8 +206,10 @@ func (c *Cache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, token stri
 	defer c.releaseLease(leaseKey, token)
 
 	if scope, hit, err := c.read(ctx, key, guard); hit {
+		c.record("fresh")
 		return scope, nil
 	} else if err != nil {
+		c.record("error")
 		return c.loadAuthoritative(ctx, guard, loader)
 	}
 
@@ -206,21 +223,27 @@ func (c *Cache) loadAsLeaseHolder(ctx context.Context, key, leaseKey, token stri
 		Scope:         scope,
 	})
 	if err != nil {
+		c.record("error")
 		return nil, fmt.Errorf("encode representative scope cache value: %w", err)
 	}
-	_ = c.set(ctx, key, value, c.valueTTL())
+	if err := c.set(ctx, key, value, c.valueTTL()); err != nil {
+		c.record("error")
+	}
 	return scope, nil
 }
 
 func (c *Cache) loadAuthoritative(ctx context.Context, guard scopeGuard, loader ScopeLoader) (*Scope, error) {
+	c.record("refresh")
 	scope, err := loader(ctx)
 	if err != nil {
+		c.record("error")
 		return nil, err
 	}
 	if scope != nil {
 		scope.Version = scopeVersion(guard)
 	}
 	if !validScopeForGuard(scope, guard) {
+		c.record("error")
 		return nil, fmt.Errorf("representative scope loader returned an invalid scope")
 	}
 	return scope, nil
@@ -302,7 +325,19 @@ func (c *Cache) set(ctx context.Context, key string, value []byte, ttl time.Dura
 func (c *Cache) releaseLease(key, token string) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.options.ReleaseTimeout)
 	defer cancel()
-	_, _ = c.store.ReleaseLease(ctx, key, token)
+	released, err := c.store.ReleaseLease(ctx, key, token)
+	if err != nil {
+		c.record("error")
+	}
+	if err != nil || !released {
+		c.record("lease_failed")
+	}
+}
+
+func (c *Cache) record(outcome string) {
+	if c != nil && c.options.Metrics != nil {
+		c.options.Metrics.Record(outcome)
+	}
 }
 
 func (c *Cache) valueTTL() time.Duration {
