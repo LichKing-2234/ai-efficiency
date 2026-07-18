@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** In progress on `feat/team-trend-independent-167` from `feat/platform-loading-performance@7c8401d3`. The independent Trend lane is implemented. Independent review found five Important gaps; their RED regressions and GREEN remediations are complete, affected package/race/frontend verification passes, and exact-head full verification plus re-review remain.
+**Status:** Ready for integration on `feat/team-trend-independent-167` from `feat/platform-loading-performance@7c8401d3`. The independent Trend lane and all review remediations are implemented. Exact-head full verification passes, and two-axis re-review reports no Critical or Important findings; PR/CI/merge/issue close remain.
 
 **Goal:** Complete issue #167 by giving Team Usage Trend its own bounded authoritative origin, versioned Redis read model, cache telemetry, and failure lifecycle without changing the existing response or frontend chart contracts.
 
@@ -154,7 +154,7 @@
 
   Documentation evidence (2026-07-18): current architecture, the active 2026-07-14 performance contract, and the observability operator README now record the independent Trend lane and `team_usage_trend`; historical Team Usage specs remain unchanged.
 
-- [ ] **Step 2: Run full verification**
+- [x] **Step 2: Run full verification**
 
   ```bash
   git diff --check
@@ -171,11 +171,13 @@
   bash deploy/test/release-frontend-embed-test.sh
   ```
 
-  Pre-review evidence (2026-07-18): `git diff --check`; backend `go test ./... -count=1`, `go vet ./...`, and race-enabled `readcache`/`teamusage`/`telemetry`; frontend 46 files / 680 tests and production build; ae-cli `go test ./... -count=1`; and the embedded release frontend policy all passed. The embed script emitted its known synthetic unresolved-hook warning before completing successfully. Review remediation changed runtime behavior, so exact-head full verification must be rerun before this step is complete.
+  Exact-head evidence (2026-07-18): on `9fbc2dca`, `git diff --check`; backend `go test ./... -count=1`, `go vet ./...`, and focused race-enabled `readcache`/`teamusage`/`relay`/`handler`/`telemetry`; frontend 46 files / 680 tests and production build; ae-cli `go test ./... -count=1`; and the embedded release frontend policy all passed. The embed script emitted its known synthetic unresolved-hook warning before completing successfully.
 
-- [ ] **Step 3: Review exact branch against issue #167 and the active spec**
+- [x] **Step 3: Review exact branch against issue #167 and the active spec**
 
   Confirm the Trend endpoint never reads the Overview or Summary key, the cached payload contains no unrelated sections, every series bound/identity/unavailable reason is preserved, Summary remains independent in delay/error/stale/expiry scenarios, and all cache labels remain low-cardinality. Fix every finding and rerun affected verification.
+
+  Review evidence (2026-07-18): the first two-axis review found no Critical issues and six Important findings: duplicate Relay trend fallback, stale replacement by outage snapshots, loose cached-series validation, page-wide Trend loading, missing real-Service HTTP coverage, and cold transient origin errors escaping the Trend section. RED regressions reproduced each issue. Commits `56294528` and `9fbc2dca` fix them, affected/full verification passes, and both standards and spec re-reviews report no remaining Critical or Important findings. The duplicated typed-lane orchestration remains a Minor maintainability observation and is not expanded into a generic abstraction in this focused ticket.
 
 - [ ] **Step 4: Deliver to the performance feature branch**
 
