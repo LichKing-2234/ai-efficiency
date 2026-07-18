@@ -45,7 +45,7 @@ const {
   loadMoreMembers: loadMoreOrganizationMembers,
 } = useTeamUsageOrganization()
 
-const loading = computed(() => summaryLoading.value || trendLoading.value || membersLoading.value)
+const loading = computed(() => summaryLoading.value || membersLoading.value)
 
 const scopeTooLarge = computed(() => {
   return summary.value?.summary.unavailable_reason === 'scope_too_large'

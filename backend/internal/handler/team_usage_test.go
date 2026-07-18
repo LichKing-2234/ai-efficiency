@@ -419,6 +419,111 @@ func TestTeamUsageSummaryIndependentFromTrendOverRealHTTP(t *testing.T) {
 	}
 }
 
+func TestTeamUsageTrendStaleAndSummaryIsolationOverRealHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := testdb.Open(t)
+	client.RelayProvider.Create().
+		SetName("trend-http-relay").
+		SetDisplayName("Trend HTTP Relay").
+		SetBaseURL("https://relay.example.com").
+		SetRelayType("sub2api").
+		SetAdminAPIKey("test-admin-api-key").
+		SetDefaultModel("test-model").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(context.Background())
+
+	rangeCost := 15.0
+	rangeTokens := int64(1500)
+	trendTokens := int64(1200)
+	provider := &teamUsageHTTPRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {
+				UserID: 1002, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
+				TodayActualCost: 1, TotalActualCost: 10,
+			},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			1002: {{Date: "2026-07-18", ActualCost: 3, TotalTokens: &trendTokens}},
+		},
+	}
+	scope := &representativescope.Scope{
+		Version: "scope-http-trend", ActorUserID: 101, IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{{
+			SubjectType: "member", UserID: 102, DirectoryMemberExternalID: "member-alice",
+			DisplayName: "Alice", DepartmentExternalID: "department-alpha", RelayUserID: handlerIntPtr(1002), Selectable: true,
+		}},
+		MemberTreeRootIDs:     []string{"department-alpha"},
+		MemberTreeDepartments: []representativescope.DepartmentScope{{ExternalID: "department-alpha", Name: "Department Alpha"}},
+	}
+	server := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() {
+		if err := redisClient.Close(); err != nil {
+			t.Errorf("close test Redis client: %v", err)
+		}
+	})
+	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	cache, err := teamusage.NewSnapshotCache(
+		readcache.NewRedisStore(redisClient),
+		teamusage.SnapshotCacheOptions{
+			Namespace: "trend-http-independent", Now: func() time.Time { return now }, RandFloat64: func() float64 { return 0 },
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	service, err := teamusage.NewService(
+		client,
+		teamUsageHTTPScopeResolver{scope: scope},
+		teamUsageHTTPProviderResolver{provider: provider},
+		nil,
+		teamusage.ServiceOptions{SnapshotCache: cache, CursorSecret: "test-trend-http-cursor-secret"},
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	router := gin.New()
+	router.Use(withAuthUser(101, "user"))
+	handler := NewTeamUsageHandler(service)
+	router.GET("/api/v1/user/team-usage/trend", handler.Trend)
+	router.GET("/api/v1/user/team-usage/summary", handler.Summary)
+	trendPath := "/api/v1/user/team-usage/trend?start_date=2026-07-18&end_date=2026-07-18&granularity=hour&timezone=UTC"
+	summaryPath := "/api/v1/user/team-usage/summary?start_date=2026-07-18&end_date=2026-07-18&granularity=hour&timezone=UTC"
+
+	prime := httptest.NewRecorder()
+	router.ServeHTTP(prime, httptest.NewRequest(http.MethodGet, trendPath, nil))
+	if prime.Code != http.StatusOK || !strings.Contains(prime.Body.String(), `"cache_status":"miss"`) || !strings.Contains(prime.Body.String(), `"display_name":"Alice"`) {
+		t.Fatalf("prime trend HTTP response = %d %s", prime.Code, prime.Body.String())
+	}
+
+	now = now.Add(55 * time.Second)
+	provider.trendErr = errors.New("synthetic trend HTTP outage")
+	stale := httptest.NewRecorder()
+	router.ServeHTTP(stale, httptest.NewRequest(http.MethodGet, trendPath, nil))
+	if stale.Code != http.StatusOK || !strings.Contains(stale.Body.String(), `"cache_status":"stale"`) ||
+		!strings.Contains(stale.Body.String(), `"source_status":"error"`) || !strings.Contains(stale.Body.String(), `"display_name":"Alice"`) {
+		t.Fatalf("stale trend HTTP response = %d %s", stale.Code, stale.Body.String())
+	}
+
+	summary := httptest.NewRecorder()
+	router.ServeHTTP(summary, httptest.NewRequest(http.MethodGet, summaryPath, nil))
+	if summary.Code != http.StatusOK || !strings.Contains(summary.Body.String(), `"cache_status":"miss"`) || !strings.Contains(summary.Body.String(), `"range_actual_cost":15`) {
+		t.Fatalf("summary HTTP response = %d %s", summary.Code, summary.Body.String())
+	}
+	seenTrend, seenSummary := false, false
+	for _, key := range server.Keys() {
+		seenTrend = seenTrend || strings.HasPrefix(key, "ae:trend-http-independent:team-usage-trend:v1:")
+		seenSummary = seenSummary || strings.HasPrefix(key, "ae:trend-http-independent:team-usage-summary:v1:")
+		if strings.HasPrefix(key, "ae:trend-http-independent:team-usage-snapshot:v1:") {
+			t.Fatalf("Trend/Summary HTTP requests unexpectedly populated compatibility key %q", key)
+		}
+	}
+	if !seenTrend || !seenSummary {
+		t.Fatalf("Redis keys = %v, want independent trend and summary lanes", server.Keys())
+	}
+}
+
 type teamUsageHTTPScopeResolver struct {
 	scope *representativescope.Scope
 }
@@ -438,27 +543,36 @@ func (r teamUsageHTTPProviderResolver) Resolve(context.Context, int) (relay.Prov
 type teamUsageHTTPRelayProvider struct {
 	relay.Provider
 	summaryStats map[int64]relay.TeamUserUsageStats
+	summaryCalls atomic.Int32
+	trendPoints  map[int64][]relay.UsageTrendPoint
+	trendErr     error
 	trendCalls   atomic.Int32
 	trendStarted chan struct{}
 	trendRelease <-chan struct{}
 }
 
 func (p *teamUsageHTTPRelayProvider) GetBatchUserUsageStats(context.Context, []int64, relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+	p.summaryCalls.Add(1)
 	return p.summaryStats, nil
 }
 
 func (p *teamUsageHTTPRelayProvider) GetUsageTrendForUsers(ctx context.Context, _ []int64, _ relay.TeamMemberTrendParams) (map[int64][]relay.UsageTrendPoint, error) {
 	p.trendCalls.Add(1)
+	if p.trendErr != nil {
+		return nil, p.trendErr
+	}
 	select {
 	case p.trendStarted <- struct{}{}:
 	default:
 	}
-	select {
-	case <-p.trendRelease:
-		return map[int64][]relay.UsageTrendPoint{}, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	if p.trendRelease != nil {
+		select {
+		case <-p.trendRelease:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
+	return p.trendPoints, nil
 }
 
 func handlerIntPtr(value int) *int {

@@ -328,10 +328,11 @@ type TeamUserUsageStats struct {
 }
 
 type TeamUsageSummaryParams struct {
-	StartDate   string `json:"start_date"`
-	EndDate     string `json:"end_date"`
-	Granularity string `json:"granularity"`
-	Timezone    string `json:"timezone"`
+	StartDate            string `json:"start_date"`
+	EndDate              string `json:"end_date"`
+	Granularity          string `json:"granularity"`
+	Timezone             string `json:"timezone"`
+	RequireCompleteRange bool   `json:"-"`
 }
 
 type TeamMemberTrendParams struct {

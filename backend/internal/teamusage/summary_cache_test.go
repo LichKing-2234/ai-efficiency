@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -53,6 +54,163 @@ func TestSnapshotCacheKeyIsolatesEveryAuthoritativeDimension(t *testing.T) {
 	}
 	if pageEncoded != baseEncoded {
 		t.Fatalf("legacy ineffective page params changed snapshot key: %q != %q", pageEncoded, baseEncoded)
+	}
+}
+
+func TestTrendCacheUsesIndependentKeyAndStoresOnlyTrendFields(t *testing.T) {
+	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	cache, server := testSnapshotCache(t, now, 0)
+	key := testSnapshotCacheKey()
+	trendKey, err := trendCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("trendCacheKey() error = %v", err)
+	}
+	summaryKey, err := summaryCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("summaryCacheKey() error = %v", err)
+	}
+	overviewKey, err := snapshotCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("snapshotCacheKey() error = %v", err)
+	}
+	if trendKey == summaryKey || trendKey == overviewKey {
+		t.Fatalf("trend key %q aliases summary/overview keys %q/%q", trendKey, summaryKey, overviewKey)
+	}
+
+	var loads atomic.Int32
+	loader := func(context.Context) (TrendOriginLoadResult, error) {
+		loads.Add(1)
+		return TrendOriginLoadResult{Snapshot: testTrendSnapshot()}, nil
+	}
+	first, err := cache.GetTrendOrLoad(context.Background(), key, loader)
+	if err != nil {
+		t.Fatalf("cold GetTrendOrLoad() error = %v", err)
+	}
+	second, err := cache.GetTrendOrLoad(context.Background(), key, loader)
+	if err != nil {
+		t.Fatalf("warm GetTrendOrLoad() error = %v", err)
+	}
+	if loads.Load() != 1 || first.Freshness.CacheStatus != "miss" || second.Freshness.CacheStatus != "fresh" {
+		t.Fatalf("loads/status = %d %q/%q, want 1 miss/fresh", loads.Load(), first.Freshness.CacheStatus, second.Freshness.CacheStatus)
+	}
+	stored, err := server.Get(trendKey)
+	if err != nil {
+		t.Fatalf("read stored trend snapshot: %v", err)
+	}
+	for _, forbidden := range []string{`"summary"`, `"members"`, `"member_tree"`, `"configured"`, `"is_representative"`} {
+		if strings.Contains(stored, forbidden) {
+			t.Fatalf("trend cache value contains unrelated field %s: %s", forbidden, stored)
+		}
+	}
+	for _, required := range []string{`"window"`, `"top_members"`, `"top_member_trend"`, `"department_trend"`} {
+		if !strings.Contains(stored, required) {
+			t.Fatalf("trend cache value is missing field %s: %s", required, stored)
+		}
+	}
+}
+
+func TestTrendCacheUsesEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
+	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
+	key := testSnapshotCacheKey()
+	if _, err := cache.GetTrendOrLoad(context.Background(), key, func(context.Context) (TrendOriginLoadResult, error) {
+		return TrendOriginLoadResult{Snapshot: testTrendSnapshot()}, nil
+	}); err != nil {
+		t.Fatalf("prime trend cache: %v", err)
+	}
+
+	now = now.Add(55 * time.Second)
+	transient := errors.New("synthetic trend origin outage")
+	stale, err := cache.GetTrendOrLoad(context.Background(), key, func(context.Context) (TrendOriginLoadResult, error) {
+		return TrendOriginLoadResult{SnapshotErr: transient}, nil
+	})
+	if err != nil {
+		t.Fatalf("eligible stale GetTrendOrLoad() error = %v", err)
+	}
+	if stale.Freshness.CacheStatus != "stale" || stale.Freshness.SourceStatus != "error" {
+		t.Fatalf("stale trend freshness = %+v", stale.Freshness)
+	}
+
+	now = now.Add(4*time.Minute + 16*time.Second)
+	if _, err := cache.GetTrendOrLoad(context.Background(), key, func(context.Context) (TrendOriginLoadResult, error) {
+		return TrendOriginLoadResult{SnapshotErr: transient}, nil
+	}); !errors.Is(err, transient) {
+		t.Fatalf("expired stale error = %v, want transient origin error", err)
+	}
+}
+
+func TestTrendCacheRejectsOldSchemaAndMalformedContracts(t *testing.T) {
+	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		schemaVersion int
+		mutate        func(*TrendSnapshot)
+	}{
+		{name: "old schema", schemaVersion: 0, mutate: func(*TrendSnapshot) {}},
+		{name: "missing top member identity", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			snapshot.TopMembers = []OverviewMember{{Rank: 1, DisplayName: "Unknown"}}
+			snapshot.TopMemberTrend.Series = []TopMemberTrendSeries{{Rank: 1, DisplayName: "Unknown", Points: []relay.UsageTrendPoint{}}}
+		}},
+		{name: "invalid unavailable reason", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			reason := "unexpected_reason"
+			snapshot.TopMemberTrend.Unavailable = true
+			snapshot.TopMemberTrend.UnavailableReason = &reason
+		}},
+		{name: "wrong rank basis", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			snapshot.TopMemberTrend.RankBasis = "range_actual_cost"
+		}},
+		{name: "too many department comparisons", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			snapshot.DepartmentTrend.Series = make([]DepartmentTrendSeries, 13)
+			for index := range snapshot.DepartmentTrend.Series {
+				snapshot.DepartmentTrend.Series[index] = DepartmentTrendSeries{
+					SeriesType: departmentTrendDepartment, DepartmentExternalID: fmt.Sprintf("department-%02d", index),
+					DisplayName: fmt.Sprintf("Department %02d", index), Rank: index + 1, Points: []relay.UsageTrendPoint{},
+				}
+			}
+		}},
+		{name: "duplicate team total", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			snapshot.DepartmentTrend.Series = []DepartmentTrendSeries{
+				{SeriesType: departmentTrendTeamTotal, DisplayName: "Team total", Points: []relay.UsageTrendPoint{}},
+				{SeriesType: departmentTrendTeamTotal, DisplayName: "Duplicate total", Points: []relay.UsageTrendPoint{}},
+			}
+		}},
+		{name: "unknown department series type", schemaVersion: trendCacheSchemaVersion, mutate: func(snapshot *TrendSnapshot) {
+			snapshot.DepartmentTrend.Series = []DepartmentTrendSeries{{SeriesType: "unknown", DisplayName: "Unknown", Points: []relay.UsageTrendPoint{}}}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cache, server := testSnapshotCache(t, now, 0)
+			key := testSnapshotCacheKey()
+			encodedKey, err := trendCacheKey("test", key)
+			if err != nil {
+				t.Fatalf("trendCacheKey() error = %v", err)
+			}
+			snapshot := testTrendSnapshot()
+			tt.mutate(snapshot)
+			envelope := readModelValueEnvelope[*TrendSnapshot]{
+				SchemaVersion: tt.schemaVersion,
+				GeneratedAt:   now, FreshUntil: now.Add(54 * time.Second), StaleUntil: now.Add(4*time.Minute + 30*time.Second),
+				Snapshot: snapshot,
+			}
+			encoded, err := json.Marshal(envelope)
+			if err != nil {
+				t.Fatalf("encode malformed envelope: %v", err)
+			}
+			server.Set(encodedKey, string(encoded))
+			server.SetTTL(encodedKey, 5*time.Minute)
+			var loads atomic.Int32
+			result, err := cache.GetTrendOrLoad(context.Background(), key, func(context.Context) (TrendOriginLoadResult, error) {
+				loads.Add(1)
+				return TrendOriginLoadResult{Snapshot: testTrendSnapshot()}, nil
+			})
+			if err != nil {
+				t.Fatalf("GetTrendOrLoad() error = %v", err)
+			}
+			if loads.Load() != 1 || result.Freshness.CacheStatus != "miss" {
+				t.Fatalf("loads/status = %d/%q, want authoritative miss", loads.Load(), result.Freshness.CacheStatus)
+			}
+		})
 	}
 }
 
@@ -681,6 +839,16 @@ func testSummarySnapshot(rangeCost float64) *SummarySnapshot {
 			TodayActualCost: overview.Summary.TodayActualCost, TotalActualCost: overview.Summary.TotalActualCost,
 			UnitLabel: overview.Summary.UnitLabel,
 		},
+	}
+}
+
+func testTrendSnapshot() *TrendSnapshot {
+	overview := testOverviewSnapshot(12.5)
+	return &TrendSnapshot{
+		Window:          overview.Window,
+		TopMembers:      []OverviewMember{},
+		TopMemberTrend:  overview.TopMemberTrend,
+		DepartmentTrend: overview.DepartmentTrend,
 	}
 }
 

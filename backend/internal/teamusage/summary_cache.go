@@ -21,6 +21,7 @@ import (
 const (
 	snapshotCacheSchemaVersion = 2
 	summaryCacheSchemaVersion  = 1
+	trendCacheSchemaVersion    = 1
 )
 
 var snapshotCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
@@ -28,6 +29,7 @@ var snapshotCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,
 type SnapshotCache struct {
 	overview *readModelCache[*OverviewResponse]
 	summary  *readModelCache[*SummarySnapshot]
+	trend    *readModelCache[*TrendSnapshot]
 }
 
 type readModelCache[T any] struct {
@@ -92,6 +94,10 @@ func NewSnapshotCache(store readcache.Store, options SnapshotCacheOptions) (*Sna
 			store: store, options: options, keyPrefix: "team-usage-summary",
 			schemaVersion: summaryCacheSchemaVersion, validate: validSummarySnapshot, metrics: options.SummaryMetrics,
 		},
+		trend: &readModelCache[*TrendSnapshot]{
+			store: store, options: options, keyPrefix: "team-usage-trend",
+			schemaVersion: trendCacheSchemaVersion, validate: validTrendSnapshot, metrics: options.TrendMetrics,
+		},
 	}, nil
 }
 
@@ -131,6 +137,10 @@ func snapshotCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
 
 func summaryCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
 	return readModelCacheKey(namespace, "team-usage-summary", key)
+}
+
+func trendCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
+	return readModelCacheKey(namespace, "team-usage-trend", key)
 }
 
 func readModelCacheKey(namespace, keyPrefix string, key SnapshotCacheKey) (string, error) {
@@ -192,6 +202,23 @@ func (c *SnapshotCache) GetSummaryOrLoad(ctx context.Context, key SnapshotCacheK
 		return nil, err
 	}
 	return &SummaryCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
+}
+
+func (c *SnapshotCache) GetTrendOrLoad(ctx context.Context, key SnapshotCacheKey, loader TrendOriginLoader) (*TrendCacheResult, error) {
+	if c == nil || c.trend == nil {
+		return nil, fmt.Errorf("team usage trend cache is not configured")
+	}
+	if loader == nil {
+		return nil, fmt.Errorf("team usage trend origin loader is required")
+	}
+	result, err := c.trend.getOrLoad(ctx, key, func(ctx context.Context) (readModelOriginLoadResult[*TrendSnapshot], error) {
+		loaded, err := loader(ctx)
+		return readModelOriginLoadResult[*TrendSnapshot]{Snapshot: loaded.Snapshot, SnapshotErr: loaded.SnapshotErr}, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &TrendCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
 }
 
 func (c *readModelCache[T]) getOrLoad(ctx context.Context, key SnapshotCacheKey, loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
@@ -338,13 +365,15 @@ func (c *readModelCache[T]) loadAuthoritative(ctx context.Context, key string, s
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if stale == nil || c.now().After(stale.StaleUntil) {
-			c.record("error")
-			return nil, loaded.SnapshotErr
-		}
 		c.record("error")
-		c.record("stale")
-		return readModelResultFromEnvelope(stale, "stale", "error"), nil
+		if stale != nil && !c.now().After(stale.StaleUntil) {
+			c.record("stale")
+			return readModelResultFromEnvelope(stale, "stale", "error"), nil
+		}
+		if c.validate != nil && c.validate(loaded.Snapshot) {
+			return readModelResultFromEnvelope(c.newEnvelope(loaded.Snapshot), "miss", "ok"), nil
+		}
+		return nil, loaded.SnapshotErr
 	}
 	if c.validate == nil || !c.validate(loaded.Snapshot) {
 		c.record("error")
@@ -437,6 +466,81 @@ func validOverviewSnapshot(snapshot *OverviewResponse) bool {
 
 func validSummarySnapshot(snapshot *SummarySnapshot) bool {
 	return snapshot != nil && validOverviewWindow(snapshot.Window) && strings.TrimSpace(snapshot.Summary.UnitLabel) != ""
+}
+
+func validTrendSnapshot(snapshot *TrendSnapshot) bool {
+	if snapshot == nil || !validOverviewWindow(snapshot.Window) || snapshot.TopMembers == nil ||
+		snapshot.TopMemberTrend.Series == nil || snapshot.DepartmentTrend.Series == nil {
+		return false
+	}
+	if len(snapshot.TopMembers) > 12 || len(snapshot.TopMemberTrend.Series) > 12 ||
+		len(snapshot.TopMembers) != len(snapshot.TopMemberTrend.Series) ||
+		strings.TrimSpace(snapshot.TopMemberTrend.UnitLabel) == "" ||
+		snapshot.TopMemberTrend.RankBasis != topMemberRankBasisTokens ||
+		!validTrendUnavailable(snapshot.TopMemberTrend.Unavailable, snapshot.TopMemberTrend.UnavailableReason) ||
+		strings.TrimSpace(snapshot.DepartmentTrend.UnitLabel) == "" ||
+		!validTrendUnavailable(snapshot.DepartmentTrend.Unavailable, snapshot.DepartmentTrend.UnavailableReason) {
+		return false
+	}
+	for index := range snapshot.TopMembers {
+		member := snapshot.TopMembers[index]
+		series := snapshot.TopMemberTrend.Series[index]
+		if member.Rank != index+1 || series.Rank != member.Rank || strings.TrimSpace(member.DisplayName) == "" ||
+			strings.TrimSpace(series.DisplayName) == "" || !sameStableTrendSubject(member, series) || series.Points == nil ||
+			!validTrendUnavailable(series.Unavailable, series.UnavailableReason) {
+			return false
+		}
+	}
+	teamTotalCount := 0
+	comparisonCount := 0
+	for _, series := range snapshot.DepartmentTrend.Series {
+		if strings.TrimSpace(series.DisplayName) == "" || series.Points == nil ||
+			!validTrendUnavailable(series.Unavailable, series.UnavailableReason) {
+			return false
+		}
+		switch series.SeriesType {
+		case departmentTrendTeamTotal:
+			teamTotalCount++
+			if teamTotalCount > 1 || strings.TrimSpace(series.DepartmentExternalID) != "" || series.Rank != 0 {
+				return false
+			}
+		case departmentTrendDepartment:
+			comparisonCount++
+			if comparisonCount > maxDepartmentComparisons || strings.TrimSpace(series.DepartmentExternalID) == "" || series.Rank != comparisonCount {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	if len(snapshot.DepartmentTrend.Series) > 0 && teamTotalCount != 1 {
+		return false
+	}
+	return snapshot.DepartmentTrend.ComparisonTotalCount >= comparisonCount &&
+		snapshot.DepartmentTrend.ComparisonTruncated == (snapshot.DepartmentTrend.ComparisonTotalCount > comparisonCount)
+}
+
+func sameStableTrendSubject(member OverviewMember, series TopMemberTrendSeries) bool {
+	if member.UserID > 0 {
+		return series.UserID == member.UserID
+	}
+	memberExternalID := strings.TrimSpace(member.DirectoryMemberExternalID)
+	return memberExternalID != "" && strings.TrimSpace(series.DirectoryMemberExternalID) == memberExternalID && series.UserID == 0
+}
+
+func validTrendUnavailable(unavailable bool, reason *string) bool {
+	if !unavailable {
+		return reason == nil
+	}
+	if reason == nil {
+		return false
+	}
+	switch strings.TrimSpace(*reason) {
+	case "scope_too_large", "provider_error":
+		return true
+	default:
+		return false
+	}
 }
 
 func validOverviewWindow(window OverviewWindow) bool {

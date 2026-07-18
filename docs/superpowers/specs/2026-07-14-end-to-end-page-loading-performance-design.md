@@ -1,7 +1,7 @@
 # End-to-End Page Loading Performance Design
 
 - **Date:** 2026-07-14
-- **Status:** Approved target design; the #123 personal usage slice is implemented on its feature branch, while unrelated slices remain pending
+- **Status:** Approved target design; implementation status is recorded inline per ticket, while production sampling and final compatibility cleanup remain pending
 - **Parent issue:** [#115](https://github.com/LichKing-2234/ai-efficiency/issues/115)
 - **Contract ticket:** [#116](https://github.com/LichKing-2234/ai-efficiency/issues/116)
 - **Audit baseline:** commit `70eb6ebe32298c333d4bebf144edd1b474a039dc`, production `v0.1.0-preview.71`
@@ -468,6 +468,15 @@ The top-level DTO contains common freshness metadata, `window`, `top_members`, `
 5. Stable unavailable reasons are `scope_too_large` and `provider_error`. A failed member or department series has `unavailable=true`, an explicit reason, and empty points. Authentication or authorization failure is an endpoint-level 401/403 and never a partial DTO.
 
 Series use stable department external IDs or stable subject identities. Team total, group comparison, and top-member series remain separate chart areas. Partial provider failure is encoded inside the trend response without affecting a successful summary response; authorization still fails closed.
+
+The #167 refinement makes Trend an independent read model rather than a projection of the compatibility overview snapshot:
+
+1. Trend owns a versioned `team-usage-trend` Redis key space, process-local flight, distributed lease, freshness window, stale-if-error window, and stable `team_usage_trend` metrics name.
+2. Its origin resolves only current representative scope, provider binding, Relay subject identities, batch summary stats required for comparison values, and the trend capability. The stats request does not require range backfill because Trend ranks from the separately fetched points; this prevents the Relay compatibility adapter from performing the same per-user trend fan-out twice. It does not compose the Summary DTO, rank a full member page, or construct an organization tree.
+3. The cached value contains only normalized window, bounded `top_members`, `top_member_trend`, and `department_trend`. It cannot satisfy Summary, Members, Organization, or compatibility Overview, and none of those values can satisfy Trend.
+4. Compatibility Overview may reuse the same pure trend projection to preserve series semantics, but it retains a separate origin invocation and `team_usage_overview` cache until #172 composes/removes that adapter.
+5. The first-party frontend retains its independent Trend request/error/loading/stale state and async chart chunk. A delayed, failed, stale, or expired Trend request changes only the Trend section, does not set the page-wide busy/dim/disabled state after sibling sections settle, and never clears an available Summary or Members section.
+6. A transient whole-origin Trend failure returns an eligible stale generation before its hard deadline. With no eligible stale generation, the endpoint returns the explicit `provider_error` Trend state without persisting that outage snapshot as a fresh cache value.
 
 ### Members
 

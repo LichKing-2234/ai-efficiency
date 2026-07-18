@@ -191,7 +191,7 @@ func (s *Service) Summary(ctx context.Context, actorUserID int, params OverviewP
 }
 
 func (s *Service) Trend(ctx context.Context, actorUserID int, params OverviewParams) (*TrendResponse, error) {
-	result, scopeVersion, err := s.readOverviewSnapshot(ctx, actorUserID, params)
+	result, scopeVersion, err := s.readTrendSnapshot(ctx, actorUserID, params)
 	if err != nil {
 		return nil, err
 	}
@@ -203,6 +203,74 @@ func (s *Service) Trend(ctx context.Context, actorUserID int, params OverviewPar
 		TopMemberTrend:    result.Snapshot.TopMemberTrend,
 		DepartmentTrend:   result.Snapshot.DepartmentTrend,
 	}, nil
+}
+
+func (s *Service) readTrendSnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*TrendCacheResult, string, error) {
+	normalized, err := normalizeOverviewParams(params)
+	if err != nil {
+		return nil, "", err
+	}
+	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+	if err != nil {
+		return nil, "", err
+	}
+	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
+	}
+
+	loader := func(loadCtx context.Context) (TrendOriginLoadResult, error) {
+		var provider relay.Provider
+		overviewSubjects := scope.OverviewSubjects
+		if len(overviewSubjects) == 0 {
+			overviewSubjects = scope.Subjects
+		}
+		if len(overviewSubjects) <= s.fullScopeCap {
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
+			if resolveErr != nil {
+				return TrendOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
+			}
+			provider = resolvedProvider
+		}
+		snapshot, loadErr := s.generateTrendSnapshot(loadCtx, scope, provider, normalized)
+		if loadErr == nil {
+			return TrendOriginLoadResult{Snapshot: snapshot}, nil
+		}
+		if isHardTrendSnapshotOriginError(loadCtx, loadErr) {
+			return TrendOriginLoadResult{}, loadErr
+		}
+		return TrendOriginLoadResult{Snapshot: snapshot, SnapshotErr: loadErr}, nil
+	}
+
+	if s.snapshotCache == nil {
+		loaded, loadErr := loader(ctx)
+		if loadErr != nil {
+			return nil, "", loadErr
+		}
+		if loaded.SnapshotErr != nil && !validTrendSnapshot(loaded.Snapshot) {
+			return nil, "", loaded.SnapshotErr
+		}
+		now := time.Now().UTC()
+		return &TrendCacheResult{
+			Snapshot: loaded.Snapshot,
+			Freshness: SnapshotFreshness{
+				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
+			},
+		}, scope.Version, nil
+	}
+
+	scopeHash, err := effectiveScopeHash(scope)
+	if err != nil {
+		return nil, "", err
+	}
+	result, err := s.snapshotCache.GetTrendOrLoad(ctx, SnapshotCacheKey{
+		ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
+		ActorID: actorUserID, ScopeVersion: scope.Version, ScopeHash: scopeHash, Params: normalized,
+	}, loader)
+	if err != nil {
+		return nil, "", err
+	}
+	return result, scope.Version, nil
 }
 
 func (s *Service) Overview(ctx context.Context, actorUserID int, params OverviewParams) (*OverviewResponse, error) {
@@ -375,6 +443,7 @@ func (s *Service) generateSummarySnapshot(ctx context.Context, scope *representa
 	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+		RequireCompleteRange: true,
 	})
 	if err != nil {
 		return nil, err
@@ -419,8 +488,34 @@ func (s *Service) generateSummarySnapshot(ctx context.Context, scope *representa
 	}, nil
 }
 
-func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*OverviewResponse, error) {
+type teamTrendOriginData struct {
+	subjects           []representativescope.Subject
+	relayUserIDs       []int64
+	statsByRelayUserID map[int64]relay.TeamUserUsageStats
+	pointsByUser       map[int64][]relay.UsageTrendPoint
+	unavailableReason  *string
+	sourceErr          error
+}
 
+func (s *Service) generateTrendSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*TrendSnapshot, error) {
+	overviewSubjects := scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = scope.Subjects
+	}
+	if len(overviewSubjects) > s.fullScopeCap {
+		return trendUnavailableForLargeScope(params), nil
+	}
+	data, err := s.loadTeamTrendOrigin(ctx, scope, provider, params)
+	if err != nil {
+		if isHardTrendSnapshotOriginError(ctx, err) {
+			return nil, err
+		}
+		return trendUnavailableSnapshot(params, "provider_error"), err
+	}
+	return buildTrendSnapshot(scope, params, data), data.sourceErr
+}
+
+func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*OverviewResponse, error) {
 	overviewSubjects := scope.OverviewSubjects
 	if len(overviewSubjects) == 0 {
 		overviewSubjects = scope.Subjects
@@ -430,6 +525,46 @@ func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *represent
 		response.Window = buildOverviewWindow(params)
 		return &response, nil
 	}
+	data, err := s.loadTeamTrendOrigin(ctx, scope, provider, params)
+	if err != nil {
+		return nil, err
+	}
+	trendSnapshot := buildTrendSnapshot(scope, params, data)
+	windowTotals := buildOverviewWindowTotals(data.pointsByUser)
+	members := BuildOverviewMemberDetails(data.subjects, data.statsByRelayUserID, windowTotals)
+	memberTree := BuildOverviewMemberTree(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, members)
+
+	var rangeCost *float64
+	var rangeTokens *int64
+	if data.unavailableReason == nil {
+		rangeCost = sumOverviewWindowCosts(windowTotals)
+		rangeTokens = sumOverviewWindowTokens(windowTotals)
+	}
+	todayCost, totalCost := sumOverviewComparisonCosts(data.statsByRelayUserID)
+	return &OverviewResponse{
+		Configured:       true,
+		IsRepresentative: true,
+		Window:           trendSnapshot.Window,
+		Summary: OverviewSummary{
+			Unavailable:       data.unavailableReason != nil,
+			UnavailableReason: data.unavailableReason,
+			MemberCount:       len(overviewSubjects),
+			RelayMemberCount:  len(data.relayUserIDs),
+			RangeActualCost:   rangeCost,
+			RangeTotalTokens:  rangeTokens,
+			TodayActualCost:   todayCost,
+			TotalActualCost:   totalCost,
+			UnitLabel:         teamOverviewCostUnitLabel,
+		},
+		TopMembers:      trendSnapshot.TopMembers,
+		TopMemberTrend:  trendSnapshot.TopMemberTrend,
+		DepartmentTrend: trendSnapshot.DepartmentTrend,
+		Members:         members,
+		MemberTree:      memberTree,
+	}, nil
+}
+
+func (s *Service) loadTeamTrendOrigin(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*teamTrendOriginData, error) {
 	summaryProvider, ok := provider.(relay.TeamUsageSummaryProvider)
 	if !ok {
 		return nil, ErrProviderUnsupported
@@ -450,6 +585,41 @@ func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *represent
 		return nil, err
 	}
 
+	data := &teamTrendOriginData{
+		subjects: subjects, relayUserIDs: relayUserIDs, statsByRelayUserID: statsByRelayUserID,
+		pointsByUser: map[int64][]relay.UsageTrendPoint{},
+	}
+	if len(relayUserIDs) == 0 {
+		return data, nil
+	}
+	trendCtx := ctx
+	var cancel context.CancelFunc
+	if s.teamOverviewTrendTimeout > 0 {
+		trendCtx, cancel = context.WithTimeout(ctx, s.teamOverviewTrendTimeout)
+	}
+	if cancel != nil {
+		defer cancel()
+	}
+	data.pointsByUser, err = trendProvider.GetUsageTrendForUsers(trendCtx, relayUserIDs, relay.TeamMemberTrendParams{
+		StartDate:   strings.TrimSpace(params.StartDate),
+		EndDate:     strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity),
+		Timezone:    strings.TrimSpace(params.Timezone),
+	})
+	if err == nil {
+		return data, nil
+	}
+	if isHardOverviewTrendError(err) {
+		return nil, fmt.Errorf("get usage trend for top members: %w", err)
+	}
+	reason := "provider_error"
+	data.unavailableReason = &reason
+	data.sourceErr = err
+	data.pointsByUser = map[int64][]relay.UsageTrendPoint{}
+	return data, nil
+}
+
+func buildTrendSnapshot(scope *representativescope.Scope, params OverviewParams, data *teamTrendOriginData) *TrendSnapshot {
 	trendState := TopMemberTrendState{
 		UnitLabel: teamOverviewCostUnitLabel,
 		RankBasis: topMemberRankBasisTokens,
@@ -459,50 +629,22 @@ func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *represent
 		UnitLabel: teamOverviewCostUnitLabel,
 		Series:    []DepartmentTrendSeries{},
 	}
-	pointsByUser := map[int64][]relay.UsageTrendPoint{}
-	var trendUnavailableReason *string
-	if len(relayUserIDs) > 0 {
-		trendCtx := ctx
-		var cancel context.CancelFunc
-		if s.teamOverviewTrendTimeout > 0 {
-			trendCtx, cancel = context.WithTimeout(ctx, s.teamOverviewTrendTimeout)
-		}
-		if cancel != nil {
-			defer cancel()
-		}
-
-		var err error
-		pointsByUser, err = trendProvider.GetUsageTrendForUsers(trendCtx, relayUserIDs, relay.TeamMemberTrendParams{
-			StartDate:   strings.TrimSpace(params.StartDate),
-			EndDate:     strings.TrimSpace(params.EndDate),
-			Granularity: strings.TrimSpace(params.Granularity),
-			Timezone:    strings.TrimSpace(params.Timezone),
-		})
-		if err != nil {
-			if isHardOverviewTrendError(err) {
-				return nil, fmt.Errorf("get usage trend for top members: %w", err)
-			}
-			reason := "provider_error"
-			trendState.Unavailable = true
-			trendState.UnavailableReason = &reason
-			trendUnavailableReason = &reason
-		}
-	}
-
-	windowTotals := buildOverviewWindowTotals(pointsByUser)
-	members := BuildOverviewMemberDetails(subjects, statsByRelayUserID, windowTotals)
-	memberTree := BuildOverviewMemberTree(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, members)
-	if trendUnavailableReason == nil {
-		departmentTrendState = BuildOverviewDepartmentTrend(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, subjects, pointsByUser)
-	} else {
-		departmentTrendState.Unavailable = true
-		departmentTrendState.UnavailableReason = trendUnavailableReason
-	}
+	windowTotals := buildOverviewWindowTotals(data.pointsByUser)
 	topMembers := []OverviewMember{}
-	if trendUnavailableReason == nil {
-		topMembers = RankTopMembers(subjects, statsByRelayUserID, windowTotals, 12)
+	if data.unavailableReason == nil {
+		topMembers = RankTopMembers(data.subjects, data.statsByRelayUserID, windowTotals, 12)
+		departmentTrendState = BuildOverviewDepartmentTrend(
+			scope.MemberTreeDepartments,
+			scope.MemberTreeRootIDs,
+			data.subjects,
+			data.pointsByUser,
+		)
+	} else {
+		trendState.Unavailable = true
+		trendState.UnavailableReason = data.unavailableReason
+		departmentTrendState.Unavailable = true
+		departmentTrendState.UnavailableReason = data.unavailableReason
 	}
-
 	for _, member := range topMembers {
 		series := TopMemberTrendSeries{
 			UserID:                    member.UserID,
@@ -515,48 +657,37 @@ func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *represent
 			reason := "provider_error"
 			series.Unavailable = true
 			series.UnavailableReason = &reason
-			trendState.Series = append(trendState.Series, series)
-			continue
+		} else {
+			series.Points = append(series.Points, data.pointsByUser[int64(*member.RelayUserID)]...)
 		}
-		if trendState.Unavailable {
-			reason := "provider_error"
-			series.Unavailable = true
-			series.UnavailableReason = &reason
-			trendState.Series = append(trendState.Series, series)
-			continue
-		}
-		series.Points = append(series.Points, pointsByUser[int64(*member.RelayUserID)]...)
 		trendState.Series = append(trendState.Series, series)
 	}
-
-	var rangeCost *float64
-	var rangeTokens *int64
-	if trendUnavailableReason == nil {
-		rangeCost = sumOverviewWindowCosts(windowTotals)
-		rangeTokens = sumOverviewWindowTokens(windowTotals)
-	}
-	todayCost, totalCost := sumOverviewComparisonCosts(statsByRelayUserID)
-	return &OverviewResponse{
-		Configured:       true,
-		IsRepresentative: true,
-		Window:           buildOverviewWindow(params),
-		Summary: OverviewSummary{
-			Unavailable:       trendUnavailableReason != nil,
-			UnavailableReason: trendUnavailableReason,
-			MemberCount:       len(overviewSubjects),
-			RelayMemberCount:  len(relayUserIDs),
-			RangeActualCost:   rangeCost,
-			RangeTotalTokens:  rangeTokens,
-			TodayActualCost:   todayCost,
-			TotalActualCost:   totalCost,
-			UnitLabel:         teamOverviewCostUnitLabel,
-		},
+	return &TrendSnapshot{
+		Window:          buildOverviewWindow(params),
 		TopMembers:      topMembers,
 		TopMemberTrend:  trendState,
 		DepartmentTrend: departmentTrendState,
-		Members:         members,
-		MemberTree:      memberTree,
-	}, nil
+	}
+}
+
+func trendUnavailableForLargeScope(params OverviewParams) *TrendSnapshot {
+	return trendUnavailableSnapshot(params, "scope_too_large")
+}
+
+func trendUnavailableSnapshot(params OverviewParams, unavailableReason string) *TrendSnapshot {
+	reason := unavailableReason
+	return &TrendSnapshot{
+		Window:     buildOverviewWindow(params),
+		TopMembers: []OverviewMember{},
+		TopMemberTrend: TopMemberTrendState{
+			UnitLabel: teamOverviewCostUnitLabel, RankBasis: topMemberRankBasisTokens,
+			Unavailable: true, UnavailableReason: &reason, Series: []TopMemberTrendSeries{},
+		},
+		DepartmentTrend: DepartmentTrendState{
+			UnitLabel:   teamOverviewCostUnitLabel,
+			Unavailable: true, UnavailableReason: &reason, Series: []DepartmentTrendSeries{},
+		},
+	}
 }
 
 func (s *Service) resolveOverviewSubjects(ctx context.Context, scope *representativescope.Scope, provider relay.Provider) ([]representativescope.Subject, []int64, error) {
@@ -1740,6 +1871,16 @@ func isHardOverviewTrendError(err error) bool {
 		}
 	}
 	return false
+}
+
+func isHardTrendSnapshotOriginError(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	return errors.Is(err, relay.ErrInvalidCredentials) ||
+		errors.Is(err, ErrProviderUnsupported) ||
+		errors.Is(err, ErrInvalidOverviewParams) ||
+		isHardOverviewTrendError(err)
 }
 
 func isHardSnapshotOriginError(err error) bool {

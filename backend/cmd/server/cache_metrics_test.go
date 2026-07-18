@@ -18,6 +18,7 @@ func TestProductionCacheMetricsBindStablePrivacySafeNames(t *testing.T) {
 		"repository_inventory",
 		"team_usage_overview",
 		"team_usage_summary",
+		"team_usage_trend",
 		"work_items_counts",
 	}
 	sort.Strings(wantNames)

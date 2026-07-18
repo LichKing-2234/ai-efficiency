@@ -481,6 +481,7 @@ func TestSummaryRangeIndependentFromTrendAndPreservesComparisonTotals(t *testing
 	}
 	wantSummaryParams := relay.TeamUsageSummaryParams{
 		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
+		RequireCompleteRange: true,
 	}
 	if len(provider.summaryRequestParams) != 1 || provider.summaryRequestParams[0] != wantSummaryParams {
 		t.Fatalf("summary params = %#v, want %#v", provider.summaryRequestParams, wantSummaryParams)
@@ -716,6 +717,65 @@ func TestSummaryOverviewCacheIsolation(t *testing.T) {
 	}
 }
 
+func TestTrendUsesIndependentOriginAndCacheLane(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	provider := newCompleteSummaryIndependentProvider()
+	provider.fakeRelayProvider.trendPoints = map[int64][]relay.UsageTrendPoint{
+		1002: {{Date: "2026-07-06", ActualCost: 7, TotalTokens: int64Ptr(1200)}},
+		1003: {{Date: "2026-07-07", ActualCost: 5, TotalTokens: int64Ptr(800)}},
+	}
+	cache, server := testSnapshotCache(t, time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC), 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: summaryTestScope()}, fakeProviderResolver{provider: provider}, nil, cache)
+	params := summaryTestParams()
+
+	firstTrend, err := svc.Trend(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("cold Trend() error = %v", err)
+	}
+	warmTrend, err := svc.Trend(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("warm Trend() error = %v", err)
+	}
+	summary, err := svc.Summary(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	overview, _, err := svc.readOverviewSnapshot(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("readOverviewSnapshot() error = %v", err)
+	}
+	if firstTrend.CacheStatus != "miss" || warmTrend.CacheStatus != "fresh" || summary.CacheStatus != "miss" || overview.Freshness.CacheStatus != "miss" {
+		t.Fatalf("cache statuses trend=%q/%q summary=%q overview=%q", firstTrend.CacheStatus, warmTrend.CacheStatus, summary.CacheStatus, overview.Freshness.CacheStatus)
+	}
+	if len(firstTrend.TopMembers) > 12 || len(firstTrend.TopMemberTrend.Series) > 12 || len(firstTrend.DepartmentTrend.Series) > 13 {
+		t.Fatalf("trend bounds = top %d series %d departments %d", len(firstTrend.TopMembers), len(firstTrend.TopMemberTrend.Series), len(firstTrend.DepartmentTrend.Series))
+	}
+	if len(provider.summaryRequestParams) != 3 || provider.trendCalls.Load() != 2 {
+		t.Fatalf("origin calls = summary %d trend %d, want 3/2 for independent trend, summary, overview misses", len(provider.summaryRequestParams), provider.trendCalls.Load())
+	}
+	if provider.summaryRequestParams[0].RequireCompleteRange || !provider.summaryRequestParams[1].RequireCompleteRange || provider.summaryRequestParams[2].RequireCompleteRange {
+		t.Fatalf("range completion flags = trend %v summary %v overview %v, want false/true/false", provider.summaryRequestParams[0].RequireCompleteRange, provider.summaryRequestParams[1].RequireCompleteRange, provider.summaryRequestParams[2].RequireCompleteRange)
+	}
+	prefixes := map[string]bool{
+		"ae:test:team-usage-summary:v1:":  false,
+		"ae:test:team-usage-trend:v1:":    false,
+		"ae:test:team-usage-snapshot:v1:": false,
+	}
+	for _, key := range server.Keys() {
+		for prefix := range prefixes {
+			if strings.HasPrefix(key, prefix) {
+				prefixes[prefix] = true
+			}
+		}
+	}
+	for prefix, found := range prefixes {
+		if !found {
+			t.Fatalf("Redis keys %v are missing independent lane %q", server.Keys(), prefix)
+		}
+	}
+}
+
 func TestSummaryIndependentRedisOutageFallsBackAuthoritatively(t *testing.T) {
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
@@ -776,8 +836,61 @@ func TestTrendProjectsEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
 	}
 
 	now = now.Add(4*time.Minute + 16*time.Second)
-	if _, err := svc.Trend(ctx, 1, params); !errors.Is(err, transient) {
-		t.Fatalf("expired Trend() error = %v, want transient origin error", err)
+	unavailable, err := svc.Trend(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("expired Trend() error = %v", err)
+	}
+	if unavailable.CacheStatus != "miss" || !unavailable.TopMemberTrend.Unavailable ||
+		unavailable.TopMemberTrend.UnavailableReason == nil || *unavailable.TopMemberTrend.UnavailableReason != "provider_error" {
+		t.Fatalf("expired Trend() = %+v, want cold provider_error state", unavailable)
+	}
+}
+
+func TestTrendUsesEligibleStaleWhenTrendProviderFails(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	scope := &representativescope.Scope{
+		Version: "scope-version-trend-stale", ActorUserID: 1, IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{{
+			SubjectType: "member", UserID: 2, DirectoryMemberExternalID: "member-alice",
+			DisplayName: "Alice", Email: "alice@example.com", DepartmentExternalID: "department-alpha",
+			RelayUserID: intPtr(1002), Selectable: true,
+		}},
+		MemberTreeRootIDs:     []string{"department-alpha"},
+		MemberTreeDepartments: []representativescope.DepartmentScope{{ExternalID: "department-alpha", Name: "Department Alpha"}},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{1002: {UserID: 1002, TodayActualCost: 1, TotalActualCost: 10}},
+		trendPoints:  map[int64][]relay.UsageTrendPoint{1002: {{Date: "2026-07-18", ActualCost: 3, TotalTokens: int64Ptr(1200)}}},
+	}
+	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache)
+	params := OverviewParams{StartDate: "2026-07-18", EndDate: "2026-07-18", Granularity: "hour", Timezone: "UTC"}
+
+	prime, err := svc.Trend(ctx, 1, params)
+	if err != nil || prime.CacheStatus != "miss" || len(prime.TopMemberTrend.Series) != 1 {
+		t.Fatalf("prime Trend() = %+v, %v", prime, err)
+	}
+	now = now.Add(55 * time.Second)
+	provider.trendErr = errors.New("synthetic trend provider outage")
+	stale, err := svc.Trend(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("stale Trend() error = %v", err)
+	}
+	if stale.CacheStatus != "stale" || stale.SourceStatus != "error" || len(stale.TopMemberTrend.Series) != 1 {
+		t.Fatalf("stale trend = %+v", stale)
+	}
+
+	now = now.Add(4*time.Minute + 16*time.Second)
+	unavailable, err := svc.Trend(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("cold unavailable Trend() error = %v", err)
+	}
+	if unavailable.CacheStatus != "miss" || !unavailable.TopMemberTrend.Unavailable ||
+		unavailable.TopMemberTrend.UnavailableReason == nil || *unavailable.TopMemberTrend.UnavailableReason != "provider_error" {
+		t.Fatalf("cold unavailable trend = %+v", unavailable)
 	}
 }
 
