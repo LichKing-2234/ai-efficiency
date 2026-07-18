@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, full local verification, and review are complete on `feat/team-members-independent-168`; PR CI and integration remain open.
+**Status:** Complete. PR #181 was squash-merged into `feat/platform-loading-performance` at `c5566cb9d62f37dd7f0ff5acc4dd9cca8d40e3ee`; exact PR head `67925f4689646982241562ac7317e3dcad377842` passed all required CI jobs, issue #168 is closed, and #173 has the dependency update.
 
 **Goal:** Complete issue #168 by serving Team Usage member pages from a ranking-specific immutable snapshot without building Trend DTOs or a recursive organization tree before pagination.
 
@@ -174,6 +174,8 @@
 
   Review evidence (2026-07-18): the first two-axis review found two Important documentation/ledger drifts and three Minor implementation observations. Commits `c246307b` and `70ae3455` align both architecture locations and the live plan status, reject negative cached user IDs with RED/GREEN coverage, and add contextual `%w` wrapping on the new Members path. Focused and full verification pass afterward; both Standards and Spec re-reviews report no remaining Critical, Important, or actionable Minor findings. The repeated typed-lane orchestration remains an existing maintainability observation and is not expanded into a generic abstraction in this focused ticket.
 
-- [ ] **Step 4: Deliver to the performance feature branch**
+- [x] **Step 4: Deliver to the performance feature branch**
 
   Push `feat/team-members-independent-168`, open a PR targeting `feat/platform-loading-performance`, wait for exact-head backend/frontend/ae-cli/deploy-static CI, squash-merge, close #168 with exact evidence, update #173, and record the integration state in this plan.
+
+  Delivery evidence (2026-07-18): PR #181 targeted `feat/platform-loading-performance`; exact head `67925f4689646982241562ac7317e3dcad377842` passed backend, frontend, ae-cli, and deploy-static in run `29655717466`. The PR was squash-merged at `c5566cb9d62f37dd7f0ff5acc4dd9cca8d40e3ee`; issue #168 was closed manually because the base is non-default, and #173 received the dependency evidence.
