@@ -21,7 +21,7 @@
 - Update each checkbox immediately after the action is actually complete.
 - Deploy only `ai-efficiency-staging` in namespace `la3-ai-efficiency-prod`; do not upgrade, restart, or retag `ai-efficiency-prod`.
 
-**Status:** Complete. Task 1 RED and Task 2 focused/full/race verification passed. Image `staging-35153d0430f3299a507b234b86da55a4ddad6736` is deployed as staging revision 22. Authenticated cold and warm Team Usage summary checks pass, and production remains unchanged.
+**Status:** Complete. Task 1 RED and Task 2 focused/full/race verification passed. The integration branch application head `868ac93fa905c35e438b3845a335428d4e435e1f` is deployed as staging revision 24. Authenticated cold and warm Team Usage summary checks pass, and production remains unchanged.
 
 ---
 
@@ -278,6 +278,8 @@ Expected: the remote manifest contains both `linux/amd64` and `linux/arm64`.
 
 Publication evidence (2026-07-18): the exact image was published with manifest digest `sha256:deabe0e4227e6cee2236778f90306e70d6c4504adca19c44924d49445973bb86`; remote inspection reported `linux/amd64` and `linux/arm64`. The planned staging builder did not advertise amd64, so the already configured `static-spaces-release-builder` was used after verifying both required platforms.
 
+Latest-branch synchronization evidence (2026-07-19): image `staging-868ac93fa905c35e438b3845a335428d4e435e1f` was published with manifest digest `sha256:ee121998d6710e47e4663c85c77677fcd7614c2dde7018382186d5d8bf53a231`; remote inspection again reported both required platforms.
+
 - [x] **Step 2: Update and commit only the static staging selectors**
 
 Run from `/Users/admin/helm`:
@@ -298,6 +300,8 @@ git push origin main
 Expected: only the staging image tag and restore snapshot ID change.
 
 Helm delivery evidence (2026-07-18): `/Users/admin/helm` commit `eb50c36` changed only the two staging selectors and was pushed to `origin/main`.
+
+Latest-branch Helm evidence (2026-07-19): `/Users/admin/helm` commit `bf01c7a` updated the same two selectors to image `868ac93fa905c35e438b3845a335428d4e435e1f` and snapshot `868ac93fa905`, then was pushed to `origin/main`.
 
 - [x] **Step 3: Execute the required paused and restore-enabled Helm phases**
 
@@ -350,6 +354,8 @@ Expected: Helm records a paused revision before the restore-enabled revision, th
 
 Rollout evidence (2026-07-18): paused revision 21 completed with no application Pod; restore-enabled revision 22 completed after Job `ai-efficiency-staging-postgres-restore-35153d0430f3` reached `1/1` and the application Deployment became ready.
 
+Latest-branch rollout evidence (2026-07-19): paused revision 23 completed with no application Pod; restore-enabled revision 24 completed after Job `ai-efficiency-staging-postgres-restore-868ac93fa905` reached `1/1` and the application Deployment became ready.
+
 - [x] **Step 4: Verify staging health, image identity, and the original failing API contract**
 
 Run:
@@ -379,6 +385,8 @@ jq -e '
 Expected: the Deployment image equals `${IMAGE}`, both health endpoints succeed, and the original four-member range returns complete non-null totals.
 
 Runtime evidence (2026-07-19): staging live/ready checks passed with build commit `35153d0430f3299a507b234b86da55a4ddad6736`. Authenticated cold requests for both `2026-06-19..2026-07-18` and `2026-06-20..2026-07-19` returned HTTP 200, `cache_status=miss`, `source_status=ok`, `unavailable=false`, 4/4 members, and non-null range cost/tokens. A repeated current-range request returned `cache_status=fresh` with the same available range contract in 0.58 seconds.
+
+Latest-branch runtime evidence (2026-07-19): staging live/ready checks reported build commit `868ac93fa905c35e438b3845a335428d4e435e1f`. The authenticated current-range cold request returned HTTP 200, `cache_status=miss`, `source_status=ok`, `unavailable=false`, 4/4 members, and non-null range cost/tokens in 4.33 seconds; the warm request returned `cache_status=fresh` with the same contract in 0.58 seconds.
 
 - [x] **Step 5: Confirm production was not changed**
 
