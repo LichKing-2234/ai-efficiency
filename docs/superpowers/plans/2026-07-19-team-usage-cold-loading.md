@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Independent review, full local verification, and reviewed-head CI are complete on PR #189; the PR is at the merge gate, and staging A/B remains pending after merge.
+**Status:** PR #189 was squash-merged as `2af810226431a83e8eb229ee0c3fdbce67800c29` and released to staging through Helm revisions 29 and 30. Deployment and contract checks passed, but the staging performance acceptance failed: both cold rounds exceeded nine seconds, both warm rounds exceeded 1.5 seconds, and transient Redis cache-read errors prevented dependency-free warm hits. Concurrency remains sixteen; Redis GET retry is a separate follow-up and production remains unchanged.
 
 **Goal:** Reduce large-team cold page completion by raising bounded per-user trend concurrency to a provider-wide sixteen slots and keep Team Usage response snapshots fresh for a three-minute pre-jitter maximum.
 
@@ -488,18 +488,61 @@
 - Advances only `ai-efficiency-staging` in `la3-ai-efficiency-prod` through the existing two-phase restore rollout.
 - Produces two comparable 16-slot cold/warm audits against the recorded 8-slot revision-28 baseline.
 
-- [ ] **Step 1: Verify merge, publish, and inspect the exact image**
+- [x] **Step 1: Verify merge, publish, and inspect the exact image**
 
   Fast-forward `feat/platform-loading-performance`, build and push the exact commit for `linux/amd64,linux/arm64`, and verify its remote manifest digest and both platforms.
 
-- [ ] **Step 2: Update only staging selectors and execute the two-phase rollout**
+  Publish evidence (2026-07-19): PR #189 was squash-merged into
+  `feat/platform-loading-performance` as
+  `2af810226431a83e8eb229ee0c3fdbce67800c29`, and the merge tree matched the
+  reviewed PR head exactly. Image
+  `ghcr.io/lichking-2234/ai-efficiency:staging-2af810226431a83e8eb229ee0c3fdbce67800c29`
+  was published with manifest digest
+  `sha256:907fd79ada472713e6a6c071315b9adc51485202f779c57f5d364ea8d63f61f0`;
+  remote inspection confirmed both `linux/amd64` and `linux/arm64` manifests.
+
+- [x] **Step 2: Update only staging selectors and execute the two-phase rollout**
 
   Commit only the staging image tag and 12-character restore snapshot selector in `/Users/admin/helm`. Run server-side dry-runs, Phase A at zero replicas with restore disabled, confirm no application Pod, then Phase B with `--atomic --wait --wait-for-jobs --timeout 20m`.
 
-- [ ] **Step 3: Repeat two cold/warm audits and enforce acceptance**
+  Rollout evidence (2026-07-19): Helm commit `777ca327bee96cb29dbc1a58073bb8cdc9192fa8`
+  changed only the staging release selectors. Phase A completed as revision 29
+  with zero application replicas, restore disabled, and no application Pod.
+  Phase B completed as revision 30; the restore Job succeeded `1/1`, the
+  application rollout became Ready, and staging health reported commit
+  `2af81022` with database, Redis, and Relay all `up`.
+
+- [x] **Step 3: Repeat two cold/warm audits and enforce acceptance**
 
   Use the same 251/235 scope, range, granularity, timezone, four concurrent endpoints, limits, request IDs, and dependency-log aggregation as revision 28. Require both cold rounds at or below nine seconds, no more than 255 Relay calls, zero 429/5xx/transport/timeouts, warm at or below 1.5 seconds with zero Relay, and no Redis/cache error regression.
 
-- [ ] **Step 4: Record evidence and verify production isolation**
+  Audit evidence (2026-07-19): both comparisons retained the 251-member scope,
+  235 Relay-mapped members, four concurrent endpoints, and HTTP 200 response
+  contracts. Cold round 1 completed in 13.47 seconds with 255 Relay calls, all
+  2xx, totaling 80.727 seconds of dependency time. Warm round 1 completed in
+  7.69 seconds; all four snapshots reported `miss` and made 20 Relay calls.
+  After 170 seconds, cold round 2 completed in 10.73 seconds with 255 Relay
+  calls, all 2xx, totaling 65.074 seconds. Warm round 2 completed in 5.99
+  seconds; Summary, Trend, and Organization were fresh, while Members reported
+  `miss` and made five Relay calls.
+
+  Acceptance failed: neither cold round met the nine-second target, neither
+  warm round met 1.5 seconds, and neither warm round was dependency-free. No
+  Relay 429, 5xx, transport error, or timeout occurred.
+
+- [x] **Step 4: Record evidence and verify production isolation**
 
   Record the exact image digest, staging revision, cold/warm timings, dependency counts/durations, cache/Redis counters, and acceptance result. Confirm production revision 68 and `v0.1.0-preview.72` remain ready and unchanged unless a later explicit production release supersedes that baseline. If the nine-second target fails, record the failure and stop without raising concurrency to 24.
+
+  Isolation and failure evidence (2026-07-19): cache-error counters increased
+  by one for Summary, Trend, and Organization and by two for Members; Redis
+  stale-connection errors increased by two. Redis timeout/wait counters and
+  lease-failure counters remained unchanged at zero. This matches the existing
+  cache-read error path, which falls back to authoritative loading without a
+  cache write and reports `miss`; the 60-second primitive trend cache explains
+  why warm round 1 still needed only 20 Relay calls rather than repeating 235
+  trend origins. Redis GET retry remains explicitly outside this change.
+
+  Production remained healthy and unchanged at Helm revision 68 on
+  `v0.1.0-preview.72`. Per the stop condition, the provider-wide concurrency
+  remains sixteen and was not raised to 24.
