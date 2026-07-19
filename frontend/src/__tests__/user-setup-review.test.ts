@@ -5,6 +5,7 @@ import {
   buildDeviceLoginCommand,
   buildDiscoverCommand,
   buildDoctorCommand,
+  resolveDiscoverToolForPlatform,
   resolveCCSwitchAppForPlatform,
   buildClaudeSettingsSnippet,
   buildCodexAuthSnippet,
@@ -437,6 +438,19 @@ describe('userSetupReview command builders', () => {
     expect(buildDiscoverCommand('https://ae.example.com', 'sub2api-prod')).toBe(
       'ae-cli discover --provider sub2api-prod'
     )
+  })
+
+  it('buildDiscoverCommand can bypass installation detection for an explicit tool', () => {
+    expect(buildDiscoverCommand('https://ae.example.com', 'sub2api-prod', 'codex')).toBe(
+      'ae-cli discover --provider sub2api-prod --tool codex'
+    )
+  })
+
+  it('maps provider platforms to discover tool names', () => {
+    expect(resolveDiscoverToolForPlatform('openai')).toBe('codex')
+    expect(resolveDiscoverToolForPlatform(' Anthropic ')).toBe('claude')
+    expect(resolveDiscoverToolForPlatform('GEMINI')).toBe('gemini')
+    expect(resolveDiscoverToolForPlatform('unknown')).toBeNull()
   })
 
   it('buildInstallCommand passes AE_CLI_INSTALL_SERVER_URL to bash', () => {

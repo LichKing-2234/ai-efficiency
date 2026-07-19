@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** The original rollout, the 2026-05-29 Codex app-only follow-up, the 2026-07-18 explicit tool-selection and ChatGPT app follow-up, and the 2026-07-19 final-review fix for explicit blank `--tool` values are complete.
+**Status:** The original rollout, the 2026-05-29 Codex app-only follow-up, the 2026-07-18 explicit tool-selection and ChatGPT app follow-up, and the 2026-07-19 explicit blank-value fix are complete. A frontend onboarding review fix is in progress.
 
 **Goal:** Keep deterministic provider configuration intact while allowing users to explicitly configure supported tools that are not locally detectable and recognizing the renamed macOS `ChatGPT.app` as Codex.
 
@@ -401,3 +401,13 @@ git commit -m "test(ae-cli): verify explicit discover configuration"
 - [x] Update the current spec to describe raw occurrence preservation and command-layer comma splitting rather than string-slice semantics.
 - [x] Run focused command tests, full `ae-cli` tests, mock discover E2E, built help verification, and `git diff --check`.
 - [x] Mark this final-review fix complete and commit the code, tests, spec, and live plan update.
+
+## 2026-07-19 Frontend Review Fix: Discover Fallback Guidance
+
+- [x] Add failing frontend helper and view tests for a provider-only primary command plus a collapsed platform-specific `--tool` fallback.
+- [x] Add a discover-specific platform mapping and optional explicit-tool command builder without coupling CLI behavior to CC Switch imports.
+- [x] Render the existing automatic-configuration command-card fallback for undetected Codex, Claude, and Gemini tools while keeping the primary command unchanged.
+- [x] Add concise English and Chinese guidance for when to use `--tool`, including repeatable and comma-separated support.
+- [x] Update `docs/architecture.md` to record the `/user` fallback guidance as the current frontend behavior.
+- [x] Run focused frontend tests, the full frontend suite, frontend build, and `git diff --check`.
+- [ ] Mark the frontend review fix complete, commit it, request code review, and push the reviewed commit to PR `#183`.
