@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation commits `bade4a33` and `26907c85`, full local verification, and branch self-review are complete. PR CI is pending; PR delivery, merge, and staging verification have not started.
+**Status:** Implementation commits `bade4a33` and `26907c85`, documentation repair `ded38d19`, required post-fix full local verification, and branch review are complete. PR CI is pending; PR delivery, merge, and staging verification have not started.
 
 **Goal:** Recover one transient Redis read failure without leaving the bounded command budget, and reduce large-team cold latency by raising the single provider-wide trend origin limit from sixteen to 24.
 
@@ -499,6 +499,17 @@
   `ok github.com/ai-efficiency/backend/cmd/server 1.034s`; `git diff --check`
   produced no output.
 
+  Required post-fix verification (2026-07-19): reran the affected and complete
+  Task 3 gate after the Important documentation fix. The two-count
+  `readcache`, `relay`, and `teamusage` suites passed in `0.883s`, `18.298s`,
+  and `25.930s`. The focused race suites passed in `1.589s`, `3.803s`, and
+  `3.835s` with no race report. `go test ./... -count=1` passed every backend
+  package, including `cmd/server` in `1.474s`, `internal/handler` in `91.717s`,
+  `internal/repo` in `55.150s`, and `internal/teamusage` in `36.279s`.
+  `go vet ./...`, `go build ./...`, and the repository-root
+  `git diff --check` all exited 0 with no output. PR CI, delivery, merge, and
+  staging verification remain pending.
+
 - [x] **Step 4: Record verification and commit current documentation**
 
   Update this plan with exact test, race, vet, build, and review evidence. Set
@@ -519,7 +530,8 @@
   pending; no PR delivery, merge, image publish, Helm action, staging audit, or
   production action is claimed. Follow-up review evidence records the one
   Important architecture omission, its documentation-only fix, and the focused
-  runtime-options regression plus clean diff verification.
+  runtime-options regression plus the required post-fix affected, race, full
+  backend, vet, build, and clean diff verification.
 
 ### Task 4: Deliver A Reviewed PR And Stop At The Merge Gate
 
