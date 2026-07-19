@@ -27,6 +27,9 @@ func (l *teamTrendOriginLimiter) Do(
 	select {
 	case l.slots <- struct{}{}:
 		defer func() { <-l.slots }()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return load(ctx)
 	case <-ctx.Done():
 		return nil, ctx.Err()

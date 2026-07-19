@@ -344,6 +344,48 @@ func TestTeamTrendOriginLimiterRejectsPreCanceledContextWithAvailableSlot(t *tes
 	}
 }
 
+func TestTeamTrendOriginLimiterRejectsCancellationAtSlotHandoff(t *testing.T) {
+	for attempt := 0; attempt < 100; attempt++ {
+		var limiter teamTrendOriginLimiter
+		limiter.once.Do(func() {
+			limiter.slots = make(chan struct{}, maxConcurrentTeamTrendOrigins)
+		})
+		for range maxConcurrentTeamTrendOrigins {
+			limiter.slots <- struct{}{}
+		}
+
+		baseCtx, cancel := context.WithCancel(context.Background())
+		ctx := &gatedDoneContext{
+			Context: baseCtx,
+			entered: make(chan struct{}),
+			resume:  make(chan struct{}),
+		}
+		started := make(chan struct{}, 1)
+		result := make(chan error, 1)
+		go func() {
+			_, err := limiter.Do(ctx, func(context.Context) ([]UsageTrendPoint, error) {
+				started <- struct{}{}
+				return nil, nil
+			})
+			result <- err
+		}()
+
+		<-ctx.entered
+		cancel()
+		<-limiter.slots
+		close(ctx.resume)
+
+		if err := <-result; !errors.Is(err, context.Canceled) {
+			t.Fatalf("attempt %d Do() error = %v, want context.Canceled", attempt, err)
+		}
+		select {
+		case <-started:
+			t.Fatalf("attempt %d started an origin after cancellation at slot handoff", attempt)
+		default:
+		}
+	}
+}
+
 func TestTeamTrendOriginLimiterDoesNotStartCanceledWaiter(t *testing.T) {
 	var limiter teamTrendOriginLimiter
 	release := make(chan struct{})
@@ -386,6 +428,19 @@ func TestTeamTrendOriginLimiterDoesNotStartCanceledWaiter(t *testing.T) {
 	for range maxConcurrentTeamTrendOrigins {
 		<-done
 	}
+}
+
+type gatedDoneContext struct {
+	context.Context
+	entered chan struct{}
+	resume  chan struct{}
+	once    sync.Once
+}
+
+func (c *gatedDoneContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.entered) })
+	<-c.resume
+	return c.Context.Done()
 }
 
 func TestTeamTrendOriginLimiterSpansCredentialGenerations(t *testing.T) {
