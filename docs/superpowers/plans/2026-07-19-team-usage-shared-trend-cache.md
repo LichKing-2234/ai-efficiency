@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Ready for implementation. The design is approved and committed on `perf/team-usage-shared-trend-cache`; no production code has been changed.
+**Status:** Implementation and full backend verification are complete on `perf/team-usage-shared-trend-cache`. Final branch review, PR CI, merge, and staging re-audit remain pending; production is unchanged.
 
 **Goal:** Collapse duplicate per-user Relay trend reads across concurrent Team Usage lanes and reuse successful results for 60 seconds without coupling their response caches.
 
@@ -257,12 +257,14 @@
   matching race run passed for `internal/readcache` and `internal/relay`, and
   `git diff --check` was clean.
 
-- [ ] **Step 5: Commit the adapter integration**
+- [x] **Step 5: Commit the adapter integration**
 
   ```bash
   git add backend/internal/relay/sub2api.go backend/internal/relay/sub2api_team_trend_cache.go backend/internal/relay/sub2api_team_trend_cache_test.go docs/superpowers/plans/2026-07-19-team-usage-shared-trend-cache.md
   git commit -m "perf(teamusage): collapse duplicate trend reads"
   ```
+
+  Adapter integration commit (2026-07-19): `5265292b`.
 
 ### Task 3: Synchronize Current Architecture And Verify The Backend
 
@@ -278,11 +280,11 @@
 - Records the 60-second provider-local primitive cache as current runtime behavior.
 - Does not change HTTP or frontend contracts.
 
-- [ ] **Step 1: Update the current architecture description**
+- [x] **Step 1: Update the current architecture description**
 
   Extend the Representative scope and Team Usage module description in `docs/architecture.md` to state that split response caches remain independent while the Sub2API Relay adapter shares successful per-user trend origins for 60 seconds inside one provider instance, with bounded capacity and configuration/credential invalidation.
 
-- [ ] **Step 2: Run service and handler compatibility verification**
+- [x] **Step 2: Run service and handler compatibility verification**
 
   Run:
 
@@ -294,7 +296,12 @@
 
   Expected: split endpoint cache/isolation tests, compatibility Overview tests, production metrics wiring, and races all pass without expectation changes.
 
-- [ ] **Step 3: Run the full backend verification gate**
+  Compatibility evidence (2026-07-19): the focused `internal/teamusage`,
+  `internal/handler`, and `cmd/server` set passed twice. The race-enabled
+  `internal/readcache`, `internal/relay`, and `internal/teamusage` set passed
+  with the shared trend, Team Usage, cache metrics, and flight filters.
+
+- [x] **Step 3: Run the full backend verification gate**
 
   Run:
 
@@ -308,6 +315,10 @@
   ```
 
   Expected: every command exits zero. No frontend build is required because no frontend source or API contract changes; GitHub CI remains the complete repository gate.
+
+  Full backend evidence (2026-07-19): `go test ./... -count=1`, `go vet
+  ./...`, `go build ./...`, and `git diff --check` all exited zero after the
+  adapter integration.
 
 - [ ] **Step 4: Record evidence and commit documentation**
 
