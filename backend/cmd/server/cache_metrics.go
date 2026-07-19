@@ -14,6 +14,7 @@ type productionCacheMetrics struct {
 	teamUsageSummary    readcache.Metrics
 	teamUsageTrend      readcache.Metrics
 	teamUsageMembers    readcache.Metrics
+	teamUsageOrg        readcache.Metrics
 	workItemsCounts     readcache.Metrics
 }
 
@@ -27,20 +28,22 @@ func newProductionCacheMetrics(metrics *telemetry.Metrics) productionCacheMetric
 		teamUsageSummary:    metrics.CacheRecorder("team_usage_summary"),
 		teamUsageTrend:      metrics.CacheRecorder("team_usage_trend"),
 		teamUsageMembers:    metrics.CacheRecorder("team_usage_members"),
+		teamUsageOrg:        metrics.CacheRecorder("team_usage_organization"),
 		workItemsCounts:     metrics.CacheRecorder("work_items_counts"),
 	}
 }
 
 func (m productionCacheMetrics) recorders() map[string]readcache.Metrics {
 	return map[string]readcache.Metrics{
-		"personal_usage":       m.personalUsage,
-		"provider_metadata":    m.providerMetadata,
-		"representative_scope": m.representativeScope,
-		"repository_inventory": m.repositoryInventory,
-		"team_usage_overview":  m.teamUsageOverview,
-		"team_usage_summary":   m.teamUsageSummary,
-		"team_usage_trend":     m.teamUsageTrend,
-		"team_usage_members":   m.teamUsageMembers,
-		"work_items_counts":    m.workItemsCounts,
+		"personal_usage":          m.personalUsage,
+		"provider_metadata":       m.providerMetadata,
+		"representative_scope":    m.representativeScope,
+		"repository_inventory":    m.repositoryInventory,
+		"team_usage_overview":     m.teamUsageOverview,
+		"team_usage_summary":      m.teamUsageSummary,
+		"team_usage_trend":        m.teamUsageTrend,
+		"team_usage_members":      m.teamUsageMembers,
+		"team_usage_organization": m.teamUsageOrg,
+		"work_items_counts":       m.workItemsCounts,
 	}
 }

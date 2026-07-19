@@ -171,7 +171,7 @@ func (r *recordingTeamCacheMetrics) count(outcome string) int {
 	return r.counts[outcome]
 }
 
-func TestTeamUsageCacheMetricsKeepSummaryTrendMembersAndOverviewSeparate(t *testing.T) {
+func TestTeamUsageCacheMetricsKeepSummaryTrendMembersOrganizationAndOverviewSeparate(t *testing.T) {
 	server := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
@@ -179,10 +179,11 @@ func TestTeamUsageCacheMetricsKeepSummaryTrendMembersAndOverviewSeparate(t *test
 	summaryMetrics := newRecordingTeamCacheMetrics()
 	trendMetrics := newRecordingTeamCacheMetrics()
 	membersMetrics := newRecordingTeamCacheMetrics()
+	organizationMetrics := newRecordingTeamCacheMetrics()
 	overviewMetrics := newRecordingTeamCacheMetrics()
 	cache, err := NewSnapshotCache(readcache.NewRedisStore(client), SnapshotCacheOptions{
 		Namespace: "test", Now: func() time.Time { return now },
-		SummaryMetrics: summaryMetrics, TrendMetrics: trendMetrics, MembersMetrics: membersMetrics, OverviewMetrics: overviewMetrics,
+		SummaryMetrics: summaryMetrics, TrendMetrics: trendMetrics, MembersMetrics: membersMetrics, OrganizationMetrics: organizationMetrics, OverviewMetrics: overviewMetrics,
 		CommandTimeout: time.Second, RefreshTimeout: 2 * time.Second, LeaseTTL: time.Second,
 		PollInterval: time.Millisecond, ReleaseTimeout: time.Second,
 		RandFloat64: func() float64 { return 0 }, NewToken: func() string { return "metrics-token" },
@@ -207,13 +208,20 @@ func TestTeamUsageCacheMetricsKeepSummaryTrendMembersAndOverviewSeparate(t *test
 		}); err != nil {
 			t.Fatalf("members read %d error = %v", index, err)
 		}
+		if _, err := cache.GetOrganizationOrLoad(context.Background(), OrganizationCacheKey{SnapshotCacheKey: key}, func(context.Context) (OrganizationOriginLoadResult, error) {
+			return OrganizationOriginLoadResult{Snapshot: &OrganizationSnapshot{
+				Window: testTrendSnapshot().Window, Departments: []OrganizationDepartment{}, Members: []OverviewMember{},
+			}}, nil
+		}); err != nil {
+			t.Fatalf("organization read %d error = %v", index, err)
+		}
 		if _, err := cache.GetOrLoad(context.Background(), key, func(context.Context) (SnapshotOriginLoadResult, error) {
 			return SnapshotOriginLoadResult{Snapshot: testOverviewSnapshot(1)}, nil
 		}); err != nil {
 			t.Fatalf("overview read %d error = %v", index, err)
 		}
 	}
-	for name, recorder := range map[string]*recordingTeamCacheMetrics{"summary": summaryMetrics, "trend": trendMetrics, "members": membersMetrics, "overview": overviewMetrics} {
+	for name, recorder := range map[string]*recordingTeamCacheMetrics{"summary": summaryMetrics, "trend": trendMetrics, "members": membersMetrics, "organization": organizationMetrics, "overview": overviewMetrics} {
 		for outcome, want := range map[string]int{"miss": 1, "refresh": 1, "lease_acquired": 1, "fresh": 1} {
 			if got := recorder.count(outcome); got != want {
 				t.Fatalf("%s outcome %s = %d, want %d", name, outcome, got, want)

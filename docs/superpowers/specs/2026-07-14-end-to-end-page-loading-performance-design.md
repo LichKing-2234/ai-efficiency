@@ -503,7 +503,7 @@ The #168 refinement makes Members an independent immutable ranking read model ra
 4. The cached value contains only normalized window plus complete immutable ranked member rows. It contains no summary, top-member or department series, recursive `member_tree`, request ID, scope version, or cursor. It cannot satisfy Summary, Trend, Organization, or compatibility Overview, and none of those values can satisfy Members.
 5. The existing HMAC cursor still binds actor, normalized range, scope version, complete ranked-content identity, and next offset. An unchanged authoritative rebuild during Redis failure preserves pagination, while a changed `RangeTotalTokens`, roster, identity, display, or membership generation returns `snapshot_expired`.
 6. A first-page request never reads or writes the Summary, Trend, or compatibility Overview lanes. Summary or Trend section failure therefore does not change an otherwise available Members response; a transient failure of the Members origin itself prefers an eligible stale Members generation until its hard deadline.
-7. Compatibility Overview and Organization retain their current overview origin/cache until #170/#172. The first-party frontend keeps its existing Members-only loading/error/stale/pagination lifecycle and renders only the returned 50 rows from a 500-member result.
+7. Compatibility Overview alone retains its monolithic origin/cache until #172; Organization has owned its independent branch origin/cache since #170. The first-party frontend keeps its existing Members-only loading/error/stale/pagination lifecycle and renders only the returned 50 rows from a 500-member result.
 
 ### Organization
 
@@ -526,6 +526,17 @@ Contract:
 11. Both cursors bind to scope and snapshot version and use the same invalid/expired behavior as the members endpoint.
 
 The omitted parent identifier represents authorized root nodes. A supplied parent outside the current scope returns the generic scoped error.
+
+The #170 refinement makes Organization an independent branch read model rather than a projection of compatibility Overview:
+
+1. Organization owns a versioned `team-usage-organization` Redis key space, process-local flight, distributed lease, freshness window, stale-if-error window, and stable `team_usage_organization` metrics name. The key adds the normalized nullable parent to the common provider, actor, scope, and range dimensions.
+2. Each origin selects the requested parent from the current authorized flat scope, returns only its immediate department rows, and ranks only that parent's direct members. It never calls `TeamMemberTrendProvider`, invokes the compatibility Overview origin, builds `OverviewMemberNode`, or serializes a recursive tree.
+3. Department aggregate facts resolve only the requested child subtrees plus the parent's direct subjects. The origin calls `TeamUsageSummaryProvider` with `RequireCompleteRange=true` in batches of at most 100 Relay user IDs, deduplicates multi-membership subjects inside each child aggregate, and preserves membership in each directly joined department. A virtual-root request returns no direct members.
+4. Direct-member ranks are dense and branch-local: selected-window total tokens descending, then the same stable subject key as Members ascending. They intentionally do not preserve sparse full-scope ranks, because doing so would require loading unrelated branch usage facts or consuming the Members value, which cannot satisfy Organization.
+5. The cached value contains only normalized window, nullable parent, immediate departments, and complete immutable ranked direct-member rows. The parent stored in the value must exactly match the root/child key; a root/child or child/child mismatch is rejected and rebuilt before return. Organization values cannot satisfy Summary, Trend, Members, or compatibility Overview, and none of those values can satisfy Organization.
+6. Department and member cursors remain collection-tagged, opaque HMAC values bound to actor, normalized range, parent, scope version, branch content identity, and next offset. Redis failure may rebuild identical branch content and continue pagination. A changed scope or branch identity returns `snapshot_expired` only to the requested branch.
+7. A transient branch-origin failure prefers only that branch's eligible stale value. A cold failure does not populate an outage snapshot and cannot remove available Summary, Trend, Members, root, or sibling Organization responses.
+8. The first-party frontend retains one generation-safe state record per nullable parent. Expiration replaces only the affected branch, invalidates only loaded descendants reachable from its current immediate departments, preserves unrelated siblings and split sections, and ignores late responses from invalidated descendants.
 
 ### Legacy overview compatibility
 

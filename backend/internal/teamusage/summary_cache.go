@@ -19,19 +19,21 @@ import (
 )
 
 const (
-	snapshotCacheSchemaVersion = 2
-	summaryCacheSchemaVersion  = 1
-	trendCacheSchemaVersion    = 1
-	membersCacheSchemaVersion  = 1
+	snapshotCacheSchemaVersion     = 2
+	summaryCacheSchemaVersion      = 1
+	trendCacheSchemaVersion        = 1
+	membersCacheSchemaVersion      = 1
+	organizationCacheSchemaVersion = 1
 )
 
 var snapshotCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
 type SnapshotCache struct {
-	overview *readModelCache[*OverviewResponse]
-	summary  *readModelCache[*SummarySnapshot]
-	trend    *readModelCache[*TrendSnapshot]
-	members  *readModelCache[*MembersSnapshot]
+	overview     *readModelCache[*OverviewResponse]
+	summary      *readModelCache[*SummarySnapshot]
+	trend        *readModelCache[*TrendSnapshot]
+	members      *readModelCache[*MembersSnapshot]
+	organization *readModelCache[*OrganizationSnapshot]
 }
 
 type readModelCache[T any] struct {
@@ -104,6 +106,10 @@ func NewSnapshotCache(store readcache.Store, options SnapshotCacheOptions) (*Sna
 			store: store, options: options, keyPrefix: "team-usage-members",
 			schemaVersion: membersCacheSchemaVersion, validate: validMembersSnapshot, metrics: options.MembersMetrics,
 		},
+		organization: &readModelCache[*OrganizationSnapshot]{
+			store: store, options: options, keyPrefix: "team-usage-organization",
+			schemaVersion: organizationCacheSchemaVersion, validate: validOrganizationSnapshot, metrics: options.OrganizationMetrics,
+		},
 	}, nil
 }
 
@@ -153,19 +159,39 @@ func membersCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
 	return readModelCacheKey(namespace, "team-usage-members", key)
 }
 
-func readModelCacheKey(namespace, keyPrefix string, key SnapshotCacheKey) (string, error) {
-	dimensions := snapshotCacheKeyDimensions{
-		Namespace: namespace, ProviderID: key.ProviderID, ProviderVersion: key.ProviderVersion,
-		ActorID: key.ActorID, ScopeVersion: key.ScopeVersion, ScopeHash: key.ScopeHash,
-		StartDate: key.Params.StartDate, EndDate: key.Params.EndDate,
-		Granularity: key.Params.Granularity, Timezone: key.Params.Timezone,
+func organizationCacheKey(namespace string, key OrganizationCacheKey) (string, error) {
+	dimensions := struct {
+		snapshotCacheKeyDimensions
+		ParentDepartmentExternalID string `json:"parent_department_external_id"`
+	}{
+		snapshotCacheKeyDimensions: snapshotCacheKeyDimensionsFor(namespace, key.SnapshotCacheKey),
+		ParentDepartmentExternalID: strings.TrimSpace(key.ParentDepartmentExternalID),
 	}
+	encoded, err := json.Marshal(dimensions)
+	if err != nil {
+		return "", fmt.Errorf("encode team usage organization cache dimensions: %w", err)
+	}
+	digest := sha256.Sum256(encoded)
+	return fmt.Sprintf("ae:%s:team-usage-organization:v1:%x", namespace, digest), nil
+}
+
+func readModelCacheKey(namespace, keyPrefix string, key SnapshotCacheKey) (string, error) {
+	dimensions := snapshotCacheKeyDimensionsFor(namespace, key)
 	encoded, err := json.Marshal(dimensions)
 	if err != nil {
 		return "", fmt.Errorf("encode team usage snapshot cache dimensions: %w", err)
 	}
 	digest := sha256.Sum256(encoded)
 	return fmt.Sprintf("ae:%s:%s:v1:%x", namespace, keyPrefix, digest), nil
+}
+
+func snapshotCacheKeyDimensionsFor(namespace string, key SnapshotCacheKey) snapshotCacheKeyDimensions {
+	return snapshotCacheKeyDimensions{
+		Namespace: namespace, ProviderID: key.ProviderID, ProviderVersion: key.ProviderVersion,
+		ActorID: key.ActorID, ScopeVersion: key.ScopeVersion, ScopeHash: key.ScopeHash,
+		StartDate: key.Params.StartDate, EndDate: key.Params.EndDate,
+		Granularity: key.Params.Granularity, Timezone: key.Params.Timezone,
+	}
 }
 
 func effectiveScopeHash(scope *representativescope.Scope) (string, error) {
@@ -248,6 +274,34 @@ func (c *SnapshotCache) GetMembersOrLoad(ctx context.Context, key SnapshotCacheK
 	return &MembersCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
 }
 
+func (c *SnapshotCache) GetOrganizationOrLoad(ctx context.Context, key OrganizationCacheKey, loader OrganizationOriginLoader) (*OrganizationCacheResult, error) {
+	if c == nil || c.organization == nil {
+		return nil, fmt.Errorf("team usage organization cache is not configured")
+	}
+	if loader == nil {
+		return nil, fmt.Errorf("team usage organization snapshot origin loader is required")
+	}
+	if err := validateSnapshotCacheKey(key.SnapshotCacheKey); err != nil {
+		return nil, err
+	}
+	encodedKey, err := organizationCacheKey(c.organization.options.Namespace, key)
+	if err != nil {
+		return nil, err
+	}
+	wrappedLoader := func(ctx context.Context) (readModelOriginLoadResult[*OrganizationSnapshot], error) {
+		loaded, loadErr := loader(ctx)
+		return readModelOriginLoadResult[*OrganizationSnapshot]{Snapshot: loaded.Snapshot, SnapshotErr: loaded.SnapshotErr}, loadErr
+	}
+	validate := func(snapshot *OrganizationSnapshot) bool {
+		return validOrganizationSnapshot(snapshot) && organizationSnapshotMatchesParent(snapshot, key.ParentDepartmentExternalID)
+	}
+	result, err := c.organization.getOrLoadEncodedWithValidator(ctx, encodedKey, wrappedLoader, validate)
+	if err != nil {
+		return nil, fmt.Errorf("read team usage organization cache: %w", err)
+	}
+	return &OrganizationCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
+}
+
 func (c *readModelCache[T]) getOrLoad(ctx context.Context, key SnapshotCacheKey, loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
 	if c == nil || c.store == nil {
 		return nil, fmt.Errorf("team usage read model cache is not configured")
@@ -262,8 +316,25 @@ func (c *readModelCache[T]) getOrLoad(ctx context.Context, key SnapshotCacheKey,
 	if err != nil {
 		return nil, err
 	}
+	return c.getOrLoadEncoded(ctx, encodedKey, loader)
+}
+
+func (c *readModelCache[T]) getOrLoadEncoded(ctx context.Context, encodedKey string, loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
+	return c.getOrLoadEncodedWithValidator(ctx, encodedKey, loader, c.validate)
+}
+
+func (c *readModelCache[T]) getOrLoadEncodedWithValidator(ctx context.Context, encodedKey string, loader readModelOriginLoader[T], validate func(T) bool) (*readModelCacheResult[T], error) {
+	if c == nil || c.store == nil {
+		return nil, fmt.Errorf("team usage read model cache is not configured")
+	}
+	if validate == nil {
+		return nil, fmt.Errorf("team usage read model validator is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return c.flights.Do(ctx, encodedKey, c.options.RefreshTimeout, func(sharedCtx context.Context) (*readModelCacheResult[T], error) {
-		return c.loadWithLease(sharedCtx, encodedKey, loader)
+		return c.loadWithLease(sharedCtx, encodedKey, loader, validate)
 	})
 }
 
@@ -279,14 +350,14 @@ func validateSnapshotCacheKey(key SnapshotCacheKey) error {
 	return nil
 }
 
-func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
+func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loader readModelOriginLoader[T], validate func(T) bool) (*readModelCacheResult[T], error) {
 	var stale *readModelValueEnvelope[T]
 	missRecorded := false
 	for {
-		envelope, found, err := c.read(ctx, key)
+		envelope, found, err := c.read(ctx, key, validate)
 		if err != nil {
 			c.record("error")
-			return c.loadAuthoritative(ctx, key, nil, loader, false)
+			return c.loadAuthoritative(ctx, key, nil, loader, validate, false)
 		}
 		if found {
 			now := c.now()
@@ -309,19 +380,19 @@ func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loade
 		if err != nil {
 			c.record("error")
 			c.record("lease_failed")
-			return c.loadAuthoritative(ctx, key, stale, loader, false)
+			return c.loadAuthoritative(ctx, key, stale, loader, validate, false)
 		}
 		if acquired {
 			c.record("lease_acquired")
-			return c.loadAsLeaseHolder(ctx, key, leaseKey, token, stale, loader)
+			return c.loadAsLeaseHolder(ctx, key, leaseKey, token, stale, loader, validate)
 		}
 		c.record("lease_wait")
 
 		for {
-			envelope, found, err = c.read(ctx, key)
+			envelope, found, err = c.read(ctx, key, validate)
 			if err != nil {
 				c.record("error")
-				return c.loadAuthoritative(ctx, key, stale, loader, false)
+				return c.loadAuthoritative(ctx, key, stale, loader, validate, false)
 			}
 			if found {
 				now := c.now()
@@ -340,7 +411,7 @@ func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loade
 			if ttlErr != nil {
 				c.record("error")
 				c.record("lease_failed")
-				return c.loadAuthoritative(ctx, key, stale, loader, false)
+				return c.loadAuthoritative(ctx, key, stale, loader, validate, false)
 			}
 			if ttl <= 0 {
 				break
@@ -360,13 +431,13 @@ func (c *readModelCache[T]) loadWithLease(ctx context.Context, key string, loade
 	}
 }
 
-func (c *readModelCache[T]) loadAsLeaseHolder(ctx context.Context, key, leaseKey, token string, stale *readModelValueEnvelope[T], loader readModelOriginLoader[T]) (*readModelCacheResult[T], error) {
+func (c *readModelCache[T]) loadAsLeaseHolder(ctx context.Context, key, leaseKey, token string, stale *readModelValueEnvelope[T], loader readModelOriginLoader[T], validate func(T) bool) (*readModelCacheResult[T], error) {
 	defer c.releaseLease(leaseKey, token)
 
-	envelope, found, err := c.read(ctx, key)
+	envelope, found, err := c.read(ctx, key, validate)
 	if err != nil {
 		c.record("error")
-		return c.loadAuthoritative(ctx, key, stale, loader, false)
+		return c.loadAuthoritative(ctx, key, stale, loader, validate, false)
 	}
 	if found {
 		now := c.now()
@@ -378,10 +449,10 @@ func (c *readModelCache[T]) loadAsLeaseHolder(ctx context.Context, key, leaseKey
 			stale = envelope
 		}
 	}
-	return c.loadAuthoritative(ctx, key, stale, loader, true)
+	return c.loadAuthoritative(ctx, key, stale, loader, validate, true)
 }
 
-func (c *readModelCache[T]) loadAuthoritative(ctx context.Context, key string, stale *readModelValueEnvelope[T], loader readModelOriginLoader[T], write bool) (*readModelCacheResult[T], error) {
+func (c *readModelCache[T]) loadAuthoritative(ctx context.Context, key string, stale *readModelValueEnvelope[T], loader readModelOriginLoader[T], validate func(T) bool, write bool) (*readModelCacheResult[T], error) {
 	c.record("refresh")
 	loaded, err := loader(ctx)
 	if err != nil {
@@ -397,12 +468,12 @@ func (c *readModelCache[T]) loadAuthoritative(ctx context.Context, key string, s
 			c.record("stale")
 			return readModelResultFromEnvelope(stale, "stale", "error"), nil
 		}
-		if c.validate != nil && c.validate(loaded.Snapshot) {
+		if validate(loaded.Snapshot) {
 			return readModelResultFromEnvelope(c.newEnvelope(loaded.Snapshot), "miss", "ok"), nil
 		}
 		return nil, loaded.SnapshotErr
 	}
-	if c.validate == nil || !c.validate(loaded.Snapshot) {
+	if !validate(loaded.Snapshot) {
 		c.record("error")
 		return nil, fmt.Errorf("team usage origin returned an invalid snapshot")
 	}
@@ -444,7 +515,7 @@ func (c *readModelCache[T]) newEnvelope(snapshot T) *readModelValueEnvelope[T] {
 	}
 }
 
-func (c *readModelCache[T]) read(ctx context.Context, key string) (*readModelValueEnvelope[T], bool, error) {
+func (c *readModelCache[T]) read(ctx context.Context, key string, validate func(T) bool) (*readModelValueEnvelope[T], bool, error) {
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.CommandTimeout)
 	defer cancel()
 	value, err := c.store.Get(commandCtx, key)
@@ -458,7 +529,7 @@ func (c *readModelCache[T]) read(ctx context.Context, key string) (*readModelVal
 	decoder := json.NewDecoder(bytes.NewReader(value))
 	decoder.DisallowUnknownFields()
 	var envelope readModelValueEnvelope[T]
-	if err := decoder.Decode(&envelope); err != nil || !c.validEnvelope(&envelope) {
+	if err := decoder.Decode(&envelope); err != nil || !c.validEnvelope(&envelope, validate) {
 		return nil, false, nil
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
@@ -467,7 +538,7 @@ func (c *readModelCache[T]) read(ctx context.Context, key string) (*readModelVal
 	return &envelope, true, nil
 }
 
-func (c *readModelCache[T]) validEnvelope(envelope *readModelValueEnvelope[T]) bool {
+func (c *readModelCache[T]) validEnvelope(envelope *readModelValueEnvelope[T], validate func(T) bool) bool {
 	if envelope == nil || envelope.SchemaVersion != c.schemaVersion || envelope.GeneratedAt.IsZero() {
 		return false
 	}
@@ -477,7 +548,7 @@ func (c *readModelCache[T]) validEnvelope(envelope *readModelValueEnvelope[T]) b
 		staleWindow < 4*time.Minute || staleWindow > 4*time.Minute+30*time.Second || staleWindow <= freshWindow {
 		return false
 	}
-	return c.validate != nil && c.validate(envelope.Snapshot)
+	return validate != nil && validate(envelope.Snapshot)
 }
 
 func validOverviewSnapshot(snapshot *OverviewResponse) bool {
@@ -576,6 +647,58 @@ func validMembersSnapshot(snapshot *MembersSnapshot) bool {
 		}
 	}
 	return true
+}
+
+func validOrganizationSnapshot(snapshot *OrganizationSnapshot) bool {
+	if snapshot == nil || !validOverviewWindow(snapshot.Window) || snapshot.Departments == nil || snapshot.Members == nil {
+		return false
+	}
+	if snapshot.ParentDepartmentExternalID != nil && strings.TrimSpace(*snapshot.ParentDepartmentExternalID) == "" {
+		return false
+	}
+	parentID := ""
+	if snapshot.ParentDepartmentExternalID != nil {
+		parentID = strings.TrimSpace(*snapshot.ParentDepartmentExternalID)
+	} else if len(snapshot.Members) > 0 {
+		return false
+	}
+	seenDepartments := make(map[string]struct{}, len(snapshot.Departments))
+	for _, department := range snapshot.Departments {
+		id := strings.TrimSpace(department.DepartmentExternalID)
+		if id == "" || strings.TrimSpace(department.Name) == "" || department.Depth < 0 || department.ChildCount < 0 ||
+			department.HasChildren != (department.ChildCount > 0) || department.DirectMemberCount < 0 ||
+			department.AggregateMemberCount < department.DirectMemberCount || department.ConnectedMemberCount < 0 ||
+			department.ConnectedMemberCount > department.AggregateMemberCount {
+			return false
+		}
+		if _, exists := seenDepartments[id]; exists {
+			return false
+		}
+		if parentID != "" && (department.ParentExternalID == nil || strings.TrimSpace(*department.ParentExternalID) != parentID) {
+			return false
+		}
+		seenDepartments[id] = struct{}{}
+	}
+	if !validMembersSnapshot(&MembersSnapshot{Window: snapshot.Window, Members: snapshot.Members}) {
+		return false
+	}
+	for _, member := range snapshot.Members {
+		if !overviewMemberInDepartment(member, parentID) {
+			return false
+		}
+	}
+	return true
+}
+
+func organizationSnapshotMatchesParent(snapshot *OrganizationSnapshot, parentID string) bool {
+	parentID = strings.TrimSpace(parentID)
+	if snapshot == nil {
+		return false
+	}
+	if parentID == "" {
+		return snapshot.ParentDepartmentExternalID == nil
+	}
+	return snapshot.ParentDepartmentExternalID != nil && strings.TrimSpace(*snapshot.ParentDepartmentExternalID) == parentID
 }
 
 func pagedMemberStableIdentity(member OverviewMember) string {

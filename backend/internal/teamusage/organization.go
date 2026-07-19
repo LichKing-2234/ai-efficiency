@@ -8,6 +8,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/representativescope"
 )
 
 const (
@@ -43,12 +47,11 @@ func (s *Service) Organization(ctx context.Context, actorUserID int, params Orga
 		return nil, err
 	}
 
-	result, scopeVersion, err := s.readOverviewSnapshot(ctx, actorUserID, normalized)
+	result, scopeVersion, err := s.readOrganizationSnapshot(ctx, actorUserID, normalized, parentID)
 	if err != nil {
 		return nil, err
 	}
-	rankedMembers := rankMembersForPagination(result.Snapshot.Members)
-	snapshotID, err := organizationSnapshotIdentity(result.Snapshot.MemberTree, rankedMembers)
+	snapshotID, err := organizationSnapshotIdentity(result.Snapshot.Departments, result.Snapshot.Members)
 	if err != nil {
 		return nil, err
 	}
@@ -56,10 +59,8 @@ func (s *Service) Organization(ctx context.Context, actorUserID int, params Orga
 		return nil, ErrOrganizationSnapshotExpired
 	}
 
-	departments, members, found := organizationBranch(result.Snapshot.MemberTree, rankedMembers, parentID)
-	if !found {
-		return nil, ErrOutOfScope
-	}
+	departments := result.Snapshot.Departments
+	members := result.Snapshot.Members
 	departmentOffset, err := organizationCursorOffset(departmentCursor, len(departments))
 	if err != nil {
 		return nil, err
@@ -94,6 +95,309 @@ func (s *Service) Organization(ctx context.Context, actorUserID int, params Orga
 		}
 	}
 	return response, nil
+}
+
+func (s *Service) readOrganizationSnapshot(ctx context.Context, actorUserID int, params OverviewParams, parentID string) (*OrganizationCacheResult, string, error) {
+	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve team organization representative scope: %w", err)
+	}
+	branch, found := selectOrganizationBranch(scope, parentID)
+	if !found {
+		return nil, "", ErrOutOfScope
+	}
+	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
+	}
+
+	loader := func(loadCtx context.Context) (OrganizationOriginLoadResult, error) {
+		var provider relay.Provider
+		if len(branch.subjects) > 0 {
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
+			if resolveErr != nil {
+				return OrganizationOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
+			}
+			provider = resolvedProvider
+		}
+		snapshot, loadErr := s.generateOrganizationSnapshot(loadCtx, branch, provider, params)
+		if loadErr == nil {
+			return OrganizationOriginLoadResult{Snapshot: snapshot}, nil
+		}
+		if isHardSnapshotOriginError(loadErr) {
+			return OrganizationOriginLoadResult{}, loadErr
+		}
+		return OrganizationOriginLoadResult{SnapshotErr: loadErr}, nil
+	}
+
+	if s.snapshotCache == nil {
+		loaded, loadErr := loader(ctx)
+		if loadErr != nil {
+			return nil, "", fmt.Errorf("load team organization snapshot origin: %w", loadErr)
+		}
+		if loaded.SnapshotErr != nil {
+			return nil, "", fmt.Errorf("load team organization snapshot origin: %w", loaded.SnapshotErr)
+		}
+		now := time.Now().UTC()
+		return &OrganizationCacheResult{
+			Snapshot:  loaded.Snapshot,
+			Freshness: SnapshotFreshness{AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok"},
+		}, scope.Version, nil
+	}
+
+	scopeHash, err := effectiveScopeHash(scope)
+	if err != nil {
+		return nil, "", fmt.Errorf("hash team organization representative scope: %w", err)
+	}
+	result, err := s.snapshotCache.GetOrganizationOrLoad(ctx, OrganizationCacheKey{
+		SnapshotCacheKey: SnapshotCacheKey{
+			ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
+			ActorID: actorUserID, ScopeVersion: scope.Version, ScopeHash: scopeHash, Params: params,
+		},
+		ParentDepartmentExternalID: parentID,
+	}, loader)
+	if err != nil {
+		return nil, "", fmt.Errorf("read team organization snapshot: %w", err)
+	}
+	return result, scope.Version, nil
+}
+
+type organizationBranchSelection struct {
+	parentID         string
+	rootDepthByID    map[string]int
+	departmentsByID  map[string]representativescope.DepartmentScope
+	childrenByParent map[string][]string
+	childIDs         []string
+	subjects         []representativescope.Subject
+}
+
+func selectOrganizationBranch(scope *representativescope.Scope, parentID string) (organizationBranchSelection, bool) {
+	selection := organizationBranchSelection{
+		parentID: parentID, rootDepthByID: map[string]int{}, departmentsByID: map[string]representativescope.DepartmentScope{},
+		childrenByParent: map[string][]string{}, childIDs: []string{}, subjects: []representativescope.Subject{},
+	}
+	if scope == nil {
+		return selection, false
+	}
+	for _, department := range scope.MemberTreeDepartments {
+		id := strings.TrimSpace(department.ExternalID)
+		if id == "" {
+			continue
+		}
+		selection.departmentsByID[id] = department
+		if department.ParentExternalID != nil {
+			parent := strings.TrimSpace(*department.ParentExternalID)
+			if parent != "" {
+				selection.childrenByParent[parent] = append(selection.childrenByParent[parent], id)
+			}
+		}
+	}
+	for _, rootID := range scope.MemberTreeRootIDs {
+		rootID = strings.TrimSpace(rootID)
+		if root, ok := selection.departmentsByID[rootID]; ok {
+			selection.rootDepthByID[rootID] = root.Depth
+			if parentID == "" {
+				selection.childIDs = append(selection.childIDs, rootID)
+			}
+		}
+	}
+	if parentID != "" {
+		if _, ok := selection.departmentsByID[parentID]; !ok {
+			return selection, false
+		}
+		selection.childIDs = append(selection.childIDs, selection.childrenByParent[parentID]...)
+	}
+
+	relevantDepartments := map[string]struct{}{}
+	if parentID != "" {
+		relevantDepartments[parentID] = struct{}{}
+	}
+	for _, childID := range selection.childIDs {
+		for departmentID := range organizationDepartmentSubtree(childID, selection.childrenByParent) {
+			relevantDepartments[departmentID] = struct{}{}
+		}
+	}
+	source := scope.OverviewSubjects
+	if len(source) == 0 {
+		source = scope.Subjects
+	}
+	for _, subject := range source {
+		if subject.SubjectType != "member" || !subjectIntersectsDepartments(subject, relevantDepartments) {
+			continue
+		}
+		selection.subjects = append(selection.subjects, subject)
+	}
+	return selection, true
+}
+
+func (s *Service) generateOrganizationSnapshot(ctx context.Context, branch organizationBranchSelection, provider relay.Provider, params OverviewParams) (*OrganizationSnapshot, error) {
+	resolvedSubjects := append([]representativescope.Subject(nil), branch.subjects...)
+	statsByRelayUserID := map[int64]relay.TeamUserUsageStats{}
+	if len(branch.subjects) > 0 {
+		summaryProvider, ok := provider.(relay.TeamUsageSummaryProvider)
+		if !ok {
+			return nil, fmt.Errorf("team organization summary capability: %w", ErrProviderUnsupported)
+		}
+		var relayUserIDs []int64
+		var err error
+		resolvedSubjects, relayUserIDs, err = s.resolveSubjects(ctx, branch.subjects, provider)
+		if err != nil {
+			return nil, fmt.Errorf("resolve team organization Relay subjects: %w", err)
+		}
+		statsByRelayUserID, err = s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+			StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+			Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone), RequireCompleteRange: true,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("load team organization usage stats: %w", err)
+		}
+	}
+	windowTotals := make(map[int64]overviewWindowTotal, len(statsByRelayUserID))
+	for relayUserID, stat := range statsByRelayUserID {
+		total := overviewWindowTotal{TotalTokens: stat.RangeTotalTokens}
+		if stat.RangeActualCost != nil {
+			total.ActualCost = *stat.RangeActualCost
+		}
+		windowTotals[relayUserID] = total
+	}
+	allMembers := BuildOverviewMemberDetails(resolvedSubjects, statsByRelayUserID, windowTotals)
+	directMembers := []OverviewMember{}
+	if branch.parentID != "" {
+		for _, member := range allMembers {
+			if overviewMemberInDepartment(member, branch.parentID) {
+				directMembers = append(directMembers, member)
+			}
+		}
+	}
+	directMembers = rankMembersForPagination(directMembers)
+	if directMembers == nil {
+		directMembers = []OverviewMember{}
+	}
+
+	departments := make([]OrganizationDepartment, 0, len(branch.childIDs))
+	for _, childID := range branch.childIDs {
+		department, ok := branch.departmentsByID[childID]
+		if !ok {
+			continue
+		}
+		subtree := organizationDepartmentSubtree(childID, branch.childrenByParent)
+		aggregateMembers := map[string]OverviewMember{}
+		directCount := 0
+		for _, member := range allMembers {
+			if overviewMemberInDepartment(member, childID) {
+				directCount++
+			}
+			if memberIntersectsDepartments(member, subtree) {
+				if identity := overviewMemberIdentityKey(member); identity != "" {
+					aggregateMembers[identity] = member
+				}
+			}
+		}
+		aggregateCount, connectedCount, rangeCost, rangeTokens := organizationMemberTotals(aggregateMembers)
+		childCount := len(branch.childrenByParent[childID])
+		departments = append(departments, OrganizationDepartment{
+			DepartmentExternalID: childID, ParentExternalID: cloneStringPointer(department.ParentExternalID),
+			Name: department.Name, DisplayPath: department.DisplayPath, Depth: organizationDisplayDepth(childID, branch),
+			ChildCount: childCount, HasChildren: childCount > 0, DirectMemberCount: directCount,
+			AggregateMemberCount: aggregateCount, ConnectedMemberCount: connectedCount,
+			RangeActualCost: rangeCost, RangeTotalTokens: cloneInt64Pointer(rangeTokens),
+		})
+	}
+	sort.Slice(departments, func(i, j int) bool {
+		leftName := strings.ToLower(strings.TrimSpace(departments[i].Name))
+		rightName := strings.ToLower(strings.TrimSpace(departments[j].Name))
+		if leftName != rightName {
+			return leftName < rightName
+		}
+		return departments[i].DepartmentExternalID < departments[j].DepartmentExternalID
+	})
+	snapshot := &OrganizationSnapshot{
+		Window: buildOverviewWindow(params), Departments: departments, Members: directMembers,
+	}
+	if branch.parentID != "" {
+		snapshot.ParentDepartmentExternalID = &branch.parentID
+	}
+	return snapshot, nil
+}
+
+func organizationMemberTotals(members map[string]OverviewMember) (count, connected int, rangeCost float64, rangeTokens *int64) {
+	identities := make([]string, 0, len(members))
+	for identity := range members {
+		identities = append(identities, identity)
+	}
+	sort.Strings(identities)
+	for _, identity := range identities {
+		member := members[identity]
+		if member.RelayUserID != nil {
+			connected++
+		}
+		rangeCost += member.RangeActualCost
+		rangeTokens = addOptionalInt64(rangeTokens, member.TotalTokens)
+	}
+	return len(members), connected, rangeCost, rangeTokens
+}
+
+func organizationDepartmentSubtree(rootID string, childrenByParent map[string][]string) map[string]struct{} {
+	result := map[string]struct{}{}
+	pending := []string{rootID}
+	for len(pending) > 0 {
+		last := len(pending) - 1
+		departmentID := pending[last]
+		pending = pending[:last]
+		if _, seen := result[departmentID]; seen {
+			continue
+		}
+		result[departmentID] = struct{}{}
+		pending = append(pending, childrenByParent[departmentID]...)
+	}
+	return result
+}
+
+func subjectIntersectsDepartments(subject representativescope.Subject, departments map[string]struct{}) bool {
+	for _, departmentID := range overviewSubjectDepartmentIDs(subject) {
+		if _, ok := departments[departmentID]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func memberIntersectsDepartments(member OverviewMember, departments map[string]struct{}) bool {
+	for _, departmentID := range overviewMemberDepartmentIDs(member) {
+		if _, ok := departments[departmentID]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func organizationDisplayDepth(departmentID string, branch organizationBranchSelection) int {
+	department, ok := branch.departmentsByID[departmentID]
+	if !ok {
+		return 0
+	}
+	currentID := departmentID
+	for {
+		if rootDepth, root := branch.rootDepthByID[currentID]; root {
+			depth := department.Depth - rootDepth
+			if depth < 0 {
+				return 0
+			}
+			return depth
+		}
+		current, found := branch.departmentsByID[currentID]
+		if !found || current.ParentExternalID == nil {
+			break
+		}
+		currentID = strings.TrimSpace(*current.ParentExternalID)
+		if currentID == "" {
+			break
+		}
+	}
+	if department.Depth < 0 {
+		return 0
+	}
+	return department.Depth
 }
 
 func (s *Service) decodeOrganizationCursor(cursor, collection string, actorUserID int, params OverviewParams, parentID string) (*organizationCursorPayload, error) {
@@ -151,69 +455,6 @@ func boundedPageEnd(offset, limit, total int) int {
 	return end
 }
 
-func organizationBranch(roots []OverviewMemberNode, rankedMembers []OverviewMember, parentID string) ([]OrganizationDepartment, []OverviewMember, bool) {
-	index := indexOrganizationNodes(roots)
-	source := roots
-	if parentID != "" {
-		parent, ok := index[parentID]
-		if !ok {
-			return nil, nil, false
-		}
-		source = parent.Children
-	}
-	departments := make([]OrganizationDepartment, 0, len(source))
-	for _, node := range source {
-		departments = append(departments, organizationDepartmentFromNode(node))
-	}
-	sort.Slice(departments, func(i, j int) bool {
-		leftName := strings.ToLower(strings.TrimSpace(departments[i].Name))
-		rightName := strings.ToLower(strings.TrimSpace(departments[j].Name))
-		if leftName != rightName {
-			return leftName < rightName
-		}
-		return departments[i].DepartmentExternalID < departments[j].DepartmentExternalID
-	})
-	members := []OverviewMember{}
-	if parentID != "" {
-		for _, member := range rankedMembers {
-			if overviewMemberInDepartment(member, parentID) {
-				members = append(members, member)
-			}
-		}
-	}
-	return departments, members, true
-}
-
-func indexOrganizationNodes(roots []OverviewMemberNode) map[string]OverviewMemberNode {
-	index := make(map[string]OverviewMemberNode)
-	var visit func([]OverviewMemberNode)
-	visit = func(nodes []OverviewMemberNode) {
-		for _, node := range nodes {
-			index[node.DepartmentExternalID] = node
-			visit(node.Children)
-		}
-	}
-	visit(roots)
-	return index
-}
-
-func organizationDepartmentFromNode(node OverviewMemberNode) OrganizationDepartment {
-	return OrganizationDepartment{
-		DepartmentExternalID: node.DepartmentExternalID,
-		ParentExternalID:     cloneStringPointer(node.ParentExternalID),
-		Name:                 node.Name,
-		DisplayPath:          node.DisplayPath,
-		Depth:                node.Depth,
-		ChildCount:           len(node.Children),
-		HasChildren:          len(node.Children) > 0,
-		DirectMemberCount:    len(node.Members),
-		AggregateMemberCount: node.MemberCount,
-		ConnectedMemberCount: node.ConnectedMemberCount,
-		RangeActualCost:      node.RangeActualCost,
-		RangeTotalTokens:     cloneInt64Pointer(node.RangeTotalTokens),
-	}
-}
-
 func overviewMemberInDepartment(member OverviewMember, departmentID string) bool {
 	for _, candidate := range overviewMemberDepartmentIDs(member) {
 		if candidate == departmentID {
@@ -223,12 +464,8 @@ func overviewMemberInDepartment(member OverviewMember, departmentID string) bool
 	return false
 }
 
-func organizationSnapshotIdentity(roots []OverviewMemberNode, rankedMembers []OverviewMember) (string, error) {
-	index := indexOrganizationNodes(roots)
-	departments := make([]OrganizationDepartment, 0, len(index))
-	for _, node := range index {
-		departments = append(departments, organizationDepartmentFromNode(node))
-	}
+func organizationSnapshotIdentity(source []OrganizationDepartment, rankedMembers []OverviewMember) (string, error) {
+	departments := append([]OrganizationDepartment(nil), source...)
 	sort.Slice(departments, func(i, j int) bool {
 		return departments[i].DepartmentExternalID < departments[j].DepartmentExternalID
 	})

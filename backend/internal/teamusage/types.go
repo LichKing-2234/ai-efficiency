@@ -274,21 +274,46 @@ type MembersCacheResult struct {
 	Freshness SnapshotFreshness
 }
 
+type OrganizationSnapshot struct {
+	Window                     OverviewWindow           `json:"window"`
+	ParentDepartmentExternalID *string                  `json:"parent_department_external_id"`
+	Departments                []OrganizationDepartment `json:"departments"`
+	Members                    []OverviewMember         `json:"members"`
+}
+
+type OrganizationCacheKey struct {
+	SnapshotCacheKey
+	ParentDepartmentExternalID string
+}
+
+type OrganizationOriginLoadResult struct {
+	Snapshot    *OrganizationSnapshot
+	SnapshotErr error
+}
+
+type OrganizationOriginLoader func(context.Context) (OrganizationOriginLoadResult, error)
+
+type OrganizationCacheResult struct {
+	Snapshot  *OrganizationSnapshot
+	Freshness SnapshotFreshness
+}
+
 type SnapshotCacheOptions struct {
-	Namespace       string
-	CommandTimeout  time.Duration
-	RefreshTimeout  time.Duration
-	LeaseTTL        time.Duration
-	PollInterval    time.Duration
-	ReleaseTimeout  time.Duration
-	Now             func() time.Time
-	RandFloat64     func() float64
-	NewToken        func() string
-	Sleep           func(context.Context, time.Duration) error
-	SummaryMetrics  readcache.Metrics
-	TrendMetrics    readcache.Metrics
-	MembersMetrics  readcache.Metrics
-	OverviewMetrics readcache.Metrics
+	Namespace           string
+	CommandTimeout      time.Duration
+	RefreshTimeout      time.Duration
+	LeaseTTL            time.Duration
+	PollInterval        time.Duration
+	ReleaseTimeout      time.Duration
+	Now                 func() time.Time
+	RandFloat64         func() float64
+	NewToken            func() string
+	Sleep               func(context.Context, time.Duration) error
+	SummaryMetrics      readcache.Metrics
+	TrendMetrics        readcache.Metrics
+	MembersMetrics      readcache.Metrics
+	OrganizationMetrics readcache.Metrics
+	OverviewMetrics     readcache.Metrics
 }
 
 type OverviewWindow struct {

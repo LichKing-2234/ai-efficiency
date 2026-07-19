@@ -360,6 +360,258 @@ func TestMembersCacheRejectsOldSchemaAndMalformedRankings(t *testing.T) {
 	}
 }
 
+func TestOrganizationCacheUsesParentBoundIndependentKeyAndStoresOnlyBranchFields(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	cache, err := NewSnapshotCache(readcache.NewRedisStore(client), SnapshotCacheOptions{
+		Namespace: "test", Now: func() time.Time { return time.Date(2026, 7, 19, 8, 0, 0, 0, time.UTC) }, RandFloat64: func() float64 { return 0 },
+	})
+	if err != nil {
+		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	parent := "department-alpha"
+	key := OrganizationCacheKey{SnapshotCacheKey: testSnapshotCacheKey(), ParentDepartmentExternalID: parent}
+	loads := 0
+	loader := func(context.Context) (OrganizationOriginLoadResult, error) {
+		loads++
+		return OrganizationOriginLoadResult{Snapshot: &OrganizationSnapshot{
+			Window: buildOverviewWindow(key.Params), ParentDepartmentExternalID: &parent,
+			Departments: []OrganizationDepartment{}, Members: []OverviewMember{},
+		}}, nil
+	}
+	first, err := cache.GetOrganizationOrLoad(context.Background(), key, loader)
+	if err != nil {
+		t.Fatalf("GetOrganizationOrLoad(first) error = %v", err)
+	}
+	second, err := cache.GetOrganizationOrLoad(context.Background(), key, loader)
+	if err != nil {
+		t.Fatalf("GetOrganizationOrLoad(second) error = %v", err)
+	}
+	if loads != 1 || first.Freshness.CacheStatus != "miss" || second.Freshness.CacheStatus != "fresh" {
+		t.Fatalf("organization cache loads/status = %d %q/%q, want 1 miss/fresh", loads, first.Freshness.CacheStatus, second.Freshness.CacheStatus)
+	}
+
+	otherParent := "department-beta"
+	otherKey := key
+	otherKey.ParentDepartmentExternalID = otherParent
+	if _, err := cache.GetOrganizationOrLoad(context.Background(), otherKey, func(context.Context) (OrganizationOriginLoadResult, error) {
+		return OrganizationOriginLoadResult{Snapshot: &OrganizationSnapshot{
+			Window: buildOverviewWindow(otherKey.Params), ParentDepartmentExternalID: &otherParent,
+			Departments: []OrganizationDepartment{}, Members: []OverviewMember{},
+		}}, nil
+	}); err != nil {
+		t.Fatalf("GetOrganizationOrLoad(other parent) error = %v", err)
+	}
+	keys := server.Keys()
+	if len(keys) != 2 {
+		t.Fatalf("organization cache keys = %v, want one key per parent", keys)
+	}
+	for _, cacheKey := range keys {
+		if !strings.Contains(cacheKey, ":team-usage-organization:") || strings.Contains(cacheKey, ":team-usage-snapshot:") {
+			t.Fatalf("organization cache key = %q, want Organization lane only", cacheKey)
+		}
+		value, getErr := server.Get(cacheKey)
+		if getErr != nil {
+			t.Fatalf("read organization cache value %q: %v", cacheKey, getErr)
+		}
+		if strings.Contains(value, "member_tree") || strings.Contains(value, "top_member_trend") || strings.Contains(value, "summary") {
+			t.Fatalf("organization cache value contains unrelated sections: %s", value)
+		}
+	}
+}
+
+func TestOrganizationCacheRejectsSnapshotWhoseParentDoesNotMatchKey(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	now := time.Date(2026, 7, 19, 8, 0, 0, 0, time.UTC)
+	cache, err := NewSnapshotCache(readcache.NewRedisStore(client), SnapshotCacheOptions{
+		Namespace: "test", Now: func() time.Time { return now }, RandFloat64: func() float64 { return 0 },
+	})
+	if err != nil {
+		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	alpha, beta := "department-alpha", "department-beta"
+	tests := []struct {
+		name        string
+		keyParent   string
+		valueParent *string
+	}{
+		{name: "root key rejects child snapshot", keyParent: "", valueParent: &alpha},
+		{name: "child key rejects root snapshot", keyParent: alpha, valueParent: nil},
+		{name: "child key rejects another child snapshot", keyParent: alpha, valueParent: &beta},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := OrganizationCacheKey{SnapshotCacheKey: testSnapshotCacheKey(), ParentDepartmentExternalID: tt.keyParent}
+			encodedKey, keyErr := organizationCacheKey("test", key)
+			if keyErr != nil {
+				t.Fatalf("organizationCacheKey() error = %v", keyErr)
+			}
+			bad := &OrganizationSnapshot{
+				Window: buildOverviewWindow(key.Params), ParentDepartmentExternalID: tt.valueParent,
+				Departments: []OrganizationDepartment{}, Members: []OverviewMember{},
+			}
+			encoded, encodeErr := json.Marshal(cache.organization.newEnvelope(bad))
+			if encodeErr != nil {
+				t.Fatalf("encode malformed organization envelope: %v", encodeErr)
+			}
+			server.Set(encodedKey, string(encoded))
+
+			loads := 0
+			result, getErr := cache.GetOrganizationOrLoad(context.Background(), key, func(context.Context) (OrganizationOriginLoadResult, error) {
+				loads++
+				fresh := &OrganizationSnapshot{Window: buildOverviewWindow(key.Params), Departments: []OrganizationDepartment{}, Members: []OverviewMember{}}
+				if key.ParentDepartmentExternalID != "" {
+					parent := key.ParentDepartmentExternalID
+					fresh.ParentDepartmentExternalID = &parent
+				}
+				return OrganizationOriginLoadResult{Snapshot: fresh}, nil
+			})
+			if getErr != nil {
+				t.Fatalf("GetOrganizationOrLoad() error = %v", getErr)
+			}
+			if loads != 1 || !organizationSnapshotMatchesParent(result.Snapshot, tt.keyParent) {
+				t.Fatalf("organization mismatch recovery = loads %d snapshot %+v", loads, result.Snapshot)
+			}
+			second, secondErr := cache.GetOrganizationOrLoad(context.Background(), key, func(context.Context) (OrganizationOriginLoadResult, error) {
+				loads++
+				return OrganizationOriginLoadResult{}, errors.New("corrected cache should be reused")
+			})
+			if secondErr != nil || loads != 1 || second.Freshness.CacheStatus != "fresh" || !organizationSnapshotMatchesParent(second.Snapshot, tt.keyParent) {
+				t.Fatalf("organization corrected cache = result %+v error %v loads %d", second, secondErr, loads)
+			}
+		})
+	}
+}
+
+func TestOrganizationCacheRejectsBranchContentOutsideSnapshotParent(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	now := time.Date(2026, 7, 19, 8, 0, 0, 0, time.UTC)
+	cache, err := NewSnapshotCache(readcache.NewRedisStore(client), SnapshotCacheOptions{
+		Namespace: "test", Now: func() time.Time { return now }, RandFloat64: func() float64 { return 0 },
+	})
+	if err != nil {
+		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	alpha, beta := "department-alpha", "department-beta"
+	tests := []struct {
+		name      string
+		configure func(*OrganizationSnapshot)
+	}{
+		{name: "foreign immediate department", configure: func(snapshot *OrganizationSnapshot) {
+			snapshot.Departments = []OrganizationDepartment{{
+				DepartmentExternalID: "department-beta-child", ParentExternalID: &beta, Name: "Beta Child",
+			}}
+		}},
+		{name: "foreign direct member", configure: func(snapshot *OrganizationSnapshot) {
+			snapshot.Members = []OverviewMember{{
+				Rank: 1, UserID: 7, DisplayName: "Bob", Email: "bob@example.org",
+				DepartmentExternalID: beta, DepartmentExternalIDs: []string{beta},
+			}}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := OrganizationCacheKey{SnapshotCacheKey: testSnapshotCacheKey(), ParentDepartmentExternalID: alpha}
+			encodedKey, keyErr := organizationCacheKey("test", key)
+			if keyErr != nil {
+				t.Fatalf("organizationCacheKey() error = %v", keyErr)
+			}
+			bad := &OrganizationSnapshot{
+				Window: buildOverviewWindow(key.Params), ParentDepartmentExternalID: &alpha,
+				Departments: []OrganizationDepartment{}, Members: []OverviewMember{},
+			}
+			tt.configure(bad)
+			encoded, encodeErr := json.Marshal(cache.organization.newEnvelope(bad))
+			if encodeErr != nil {
+				t.Fatalf("encode foreign organization envelope: %v", encodeErr)
+			}
+			server.Set(encodedKey, string(encoded))
+
+			loads := 0
+			result, getErr := cache.GetOrganizationOrLoad(context.Background(), key, func(context.Context) (OrganizationOriginLoadResult, error) {
+				loads++
+				return OrganizationOriginLoadResult{Snapshot: &OrganizationSnapshot{
+					Window: buildOverviewWindow(key.Params), ParentDepartmentExternalID: &alpha,
+					Departments: []OrganizationDepartment{}, Members: []OverviewMember{},
+				}}, nil
+			})
+			if getErr != nil || loads != 1 || len(result.Snapshot.Departments) != 0 || len(result.Snapshot.Members) != 0 {
+				t.Fatalf("foreign branch recovery = result %+v error %v loads %d", result, getErr, loads)
+			}
+		})
+	}
+}
+
+func TestOrganizationCacheCollapsesConcurrentParentMismatchRecovery(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	now := time.Date(2026, 7, 19, 8, 0, 0, 0, time.UTC)
+	cache, err := NewSnapshotCache(readcache.NewRedisStore(client), SnapshotCacheOptions{
+		Namespace: "test", Now: func() time.Time { return now }, RandFloat64: func() float64 { return 0 },
+	})
+	if err != nil {
+		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	alpha, beta := "department-alpha", "department-beta"
+	key := OrganizationCacheKey{SnapshotCacheKey: testSnapshotCacheKey(), ParentDepartmentExternalID: alpha}
+	encodedKey, err := organizationCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("organizationCacheKey() error = %v", err)
+	}
+	bad := &OrganizationSnapshot{
+		Window: buildOverviewWindow(key.Params), ParentDepartmentExternalID: &beta,
+		Departments: []OrganizationDepartment{}, Members: []OverviewMember{},
+	}
+	encoded, err := json.Marshal(cache.organization.newEnvelope(bad))
+	if err != nil {
+		t.Fatalf("encode mismatched organization envelope: %v", err)
+	}
+	server.Set(encodedKey, string(encoded))
+
+	const readers = 12
+	start := make(chan struct{})
+	var loads atomic.Int32
+	errs := make(chan error, readers)
+	var wg sync.WaitGroup
+	for range readers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			result, getErr := cache.GetOrganizationOrLoad(context.Background(), key, func(context.Context) (OrganizationOriginLoadResult, error) {
+				loads.Add(1)
+				time.Sleep(20 * time.Millisecond)
+				return OrganizationOriginLoadResult{Snapshot: &OrganizationSnapshot{
+					Window: buildOverviewWindow(key.Params), ParentDepartmentExternalID: &alpha,
+					Departments: []OrganizationDepartment{}, Members: []OverviewMember{},
+				}}, nil
+			})
+			if getErr != nil {
+				errs <- getErr
+				return
+			}
+			if !organizationSnapshotMatchesParent(result.Snapshot, alpha) {
+				errs <- fmt.Errorf("mismatched recovered snapshot: %+v", result.Snapshot)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for readErr := range errs {
+		t.Errorf("concurrent mismatch recovery: %v", readErr)
+	}
+	if got := loads.Load(); got != 1 {
+		t.Fatalf("concurrent mismatch origin loads = %d, want 1 coordinated rebuild", got)
+	}
+}
+
 func TestEffectiveScopeHashIsDeterministicAndContentSensitive(t *testing.T) {
 	first := testEffectiveScope()
 	second := testEffectiveScope()
