@@ -2,7 +2,7 @@
 
 **Issue:** [#170](https://github.com/LichKing-2234/ai-efficiency/issues/170)
 
-**Status:** Implementation and verification complete. Only final self-review and the requested local commit remain.
+**Status:** Complete. Implementation, documentation, verification, self-review, and local commits are finished; no environment gaps remain.
 
 **Goal:** Replace the Team Usage Organization compatibility-Overview dependency with an independently cached, branch-bounded origin while preserving the existing HTTP and frontend contracts.
 
@@ -48,6 +48,8 @@
 
   Exact-head evidence (2026-07-19): focused Organization/cache/handler/server tests passed twice; the mismatch/concurrent-rebuild regressions passed; `go test ./... -count=1`, `go vet ./...`, and `go build ./...` passed under `backend`; affected `readcache`/`teamusage`/`handler` race tests passed with only the known macOS linker `LC_DYSYMTAB` warning. Frontend focused Team Usage API/View tests passed 62/62, the full suite passed 46 files / 680 tests with only existing jsdom canvas warnings, and the production build passed. `git diff --check`, generated-artifact hygiene, and the synthetic-data/secret scan were clean. Initial frontend commands encountered a missing worktree `node_modules` and one duplicate `--run` invocation; `npm ci` restored the lockfile-defined environment and the corrected commands passed, so no environment gap remains.
 
-- [ ] **Step 8: Self-review and commit**
+- [x] **Step 8: Self-review and commit**
 
   Review standards and issue acceptance criteria, fix all Critical/Important findings, rerun affected verification, then commit all completed changes using Conventional Commits without pushing or opening a PR.
+
+  Review and delivery evidence (2026-07-19): self-review found and fixed four Important boundary risks: top-level parent/key mismatch, foreign department/member content under a matching parent, uncoordinated concurrent mismatch rebuilds, and ambiguous direct-member rank semantics. Key-specific validation now stays inside the existing flight/lease/stale path, concurrent corrupt reads collapse to one rebuild, and the active contract explicitly records dense branch-local ranks. No Critical or Important findings remain. Commit `d0a50a68` records the implementation, tests, current architecture/spec, observability contract, and execution ledger without pushing or opening a PR.
