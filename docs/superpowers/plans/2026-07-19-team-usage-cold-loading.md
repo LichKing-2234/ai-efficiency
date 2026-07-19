@@ -416,9 +416,13 @@
 - Produces one non-Draft PR from `perf/team-usage-cold-loading` to `feat/platform-loading-performance`.
 - Keeps staging and production unchanged until review and merge.
 
-- [ ] **Step 1: Push and open the PR**
+- [x] **Step 1: Push and open the PR**
 
   Push the branch and open a non-Draft PR titled `perf(teamusage): reduce cold trend latency`. The body must include the 12.34-13.69 second baseline, 235/8 bottleneck, provider-wide sixteen-slot safety, 144-162 second freshness contract, exact test matrix, explicit no-Sub2API/no-frontend boundary, rollback by reverting either behavior commit, and staging acceptance target.
+
+  Delivery evidence (2026-07-19): pushed `perf/team-usage-cold-loading`
+  and opened non-Draft PR #189 against `feat/platform-loading-performance`
+  from initial reviewed head `4afe0d02`.
 
 - [ ] **Step 2: Wait for exact-final-head CI**
 
