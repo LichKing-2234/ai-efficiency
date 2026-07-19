@@ -224,7 +224,7 @@ func TestTeamUsageSummaryReturnsFreshnessScopeAndUniqueRequestID(t *testing.T) {
 			rangeCost := 12.5
 			return &teamusage.SummaryResponse{
 				SnapshotFreshness: teamusage.SnapshotFreshness{
-					AsOf: asOf, FreshUntil: asOf.Add(54 * time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
+					AsOf: asOf, FreshUntil: asOf.Add(2*time.Minute + 42*time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
 					CacheStatus: "miss", SourceStatus: "ok",
 				},
 				ScopeVersion: "scope-version-1",
@@ -499,7 +499,7 @@ func TestTeamOverviewCompatibilityUsesSplitLanesOverRealHTTP(t *testing.T) {
 		t.Fatalf("prime trend HTTP response = %d %s", prime.Code, prime.Body.String())
 	}
 
-	now = now.Add(55 * time.Second)
+	now = now.Add(2*time.Minute + 43*time.Second)
 	provider.trendErr = errors.New("synthetic trend HTTP outage")
 	stale := httptest.NewRecorder()
 	router.ServeHTTP(stale, httptest.NewRequest(http.MethodGet, trendPath, nil))
@@ -692,7 +692,7 @@ func TestTeamUsageTrendReturnsBoundedFreshnessScopeAndUniqueRequestID(t *testing
 			}
 			return &teamusage.TrendResponse{
 				SnapshotFreshness: teamusage.SnapshotFreshness{
-					AsOf: asOf, FreshUntil: asOf.Add(54 * time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
+					AsOf: asOf, FreshUntil: asOf.Add(2*time.Minute + 42*time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
 					CacheStatus: "hit", SourceStatus: "ok",
 				},
 				ScopeVersion: "scope-version-trend-1",
@@ -787,7 +787,7 @@ func TestTeamUsageMembersReturnsBoundedMetadataAndUniqueRequestID(t *testing.T) 
 			tokens := int64(1234)
 			return &teamusage.MembersResponse{
 				SnapshotFreshness: teamusage.SnapshotFreshness{
-					AsOf: asOf, FreshUntil: asOf.Add(54 * time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
+					AsOf: asOf, FreshUntil: asOf.Add(2*time.Minute + 42*time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
 					CacheStatus: "fresh", SourceStatus: "ok",
 				},
 				ScopeVersion: "scope-version-members-1",
@@ -915,7 +915,7 @@ func TestTeamUsageOrganizationReturnsShallowCollectionsAndUniqueRequestID(t *tes
 			tokens := int64(1234)
 			return &teamusage.OrganizationResponse{
 				SnapshotFreshness: teamusage.SnapshotFreshness{
-					AsOf: asOf, FreshUntil: asOf.Add(54 * time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second), CacheStatus: "fresh", SourceStatus: "ok",
+					AsOf: asOf, FreshUntil: asOf.Add(2*time.Minute + 42*time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second), CacheStatus: "fresh", SourceStatus: "ok",
 				},
 				ScopeVersion: "scope-version-organization-1", ParentDepartmentExternalID: &parentID,
 				Window:               teamusage.OverviewWindow{StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai"},

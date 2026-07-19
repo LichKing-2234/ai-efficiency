@@ -142,7 +142,7 @@ func TestTeamUsageCacheMetricsRecordEligibleStale(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("prime summary: %v", err)
 	}
-	now = now.Add(55 * time.Second)
+	now = now.Add(2*time.Minute + 43*time.Second)
 	transient := errors.New("relay unavailable")
 	result, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
 		return SummaryOriginLoadResult{SnapshotErr: transient}, nil

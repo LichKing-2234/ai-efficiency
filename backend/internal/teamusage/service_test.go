@@ -834,7 +834,7 @@ func TestTrendProjectsEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
 	if err != nil || first.CacheStatus != "miss" {
 		t.Fatalf("prime Trend() = %+v, %v", first, err)
 	}
-	now = now.Add(55 * time.Second)
+	now = now.Add(2*time.Minute + 43*time.Second)
 	transient := errors.New("synthetic trend origin outage")
 	provider.summaryErr = transient
 	stale, err := svc.Trend(ctx, 1, params)
@@ -883,7 +883,7 @@ func TestTrendUsesEligibleStaleWhenTrendProviderFails(t *testing.T) {
 	if err != nil || prime.CacheStatus != "miss" || len(prime.TopMemberTrend.Series) != 1 {
 		t.Fatalf("prime Trend() = %+v, %v", prime, err)
 	}
-	now = now.Add(55 * time.Second)
+	now = now.Add(2*time.Minute + 43*time.Second)
 	provider.trendErr = errors.New("synthetic trend provider outage")
 	stale, err := svc.Trend(ctx, 1, params)
 	if err != nil {

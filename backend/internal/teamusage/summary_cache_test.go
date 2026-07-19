@@ -115,7 +115,7 @@ func TestTrendCacheUsesEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
 		t.Fatalf("prime trend cache: %v", err)
 	}
 
-	now = now.Add(55 * time.Second)
+	now = now.Add(2*time.Minute + 43*time.Second)
 	transient := errors.New("synthetic trend origin outage")
 	stale, err := cache.GetTrendOrLoad(context.Background(), key, func(context.Context) (TrendOriginLoadResult, error) {
 		return TrendOriginLoadResult{SnapshotErr: transient}, nil
@@ -186,7 +186,7 @@ func TestTrendCacheRejectsOldSchemaAndMalformedContracts(t *testing.T) {
 			tt.mutate(snapshot)
 			envelope := readModelValueEnvelope[*TrendSnapshot]{
 				SchemaVersion: tt.schemaVersion,
-				GeneratedAt:   now, FreshUntil: now.Add(54 * time.Second), StaleUntil: now.Add(4*time.Minute + 30*time.Second),
+				GeneratedAt:   now, FreshUntil: now.Add(2*time.Minute + 42*time.Second), StaleUntil: now.Add(4*time.Minute + 30*time.Second),
 				Snapshot: snapshot,
 			}
 			encoded, err := json.Marshal(envelope)
@@ -273,7 +273,7 @@ func TestMembersCacheUsesEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
 		t.Fatalf("prime members cache: %v", err)
 	}
 
-	now = now.Add(55 * time.Second)
+	now = now.Add(2*time.Minute + 43*time.Second)
 	transient := errors.New("synthetic members origin outage")
 	stale, err := cache.GetMembersOrLoad(context.Background(), key, func(context.Context) (MembersOriginLoadResult, error) {
 		return MembersOriginLoadResult{SnapshotErr: transient}, nil
@@ -331,7 +331,7 @@ func TestMembersCacheRejectsOldSchemaAndMalformedRankings(t *testing.T) {
 			tt.mutate(snapshot)
 			envelope := readModelValueEnvelope[*MembersSnapshot]{
 				SchemaVersion: tt.schemaVersion,
-				GeneratedAt:   now, FreshUntil: now.Add(54 * time.Second), StaleUntil: now.Add(4*time.Minute + 30*time.Second),
+				GeneratedAt:   now, FreshUntil: now.Add(2*time.Minute + 42*time.Second), StaleUntil: now.Add(4*time.Minute + 30*time.Second),
 				Snapshot: snapshot,
 			}
 			encoded, err := json.Marshal(envelope)
@@ -644,8 +644,8 @@ func TestSummaryCacheColdMissWarmHitAndJitterBounds(t *testing.T) {
 		freshWindow time.Duration
 		staleWindow time.Duration
 	}{
-		{name: "minimum jitter", random: 0, freshWindow: 54 * time.Second, staleWindow: 4*time.Minute + 30*time.Second},
-		{name: "maximum jitter", random: 1, freshWindow: 48 * time.Second, staleWindow: 4 * time.Minute},
+		{name: "minimum jitter", random: 0, freshWindow: 2*time.Minute + 42*time.Second, staleWindow: 4*time.Minute + 30*time.Second},
+		{name: "maximum jitter", random: 1, freshWindow: 2*time.Minute + 24*time.Second, staleWindow: 4 * time.Minute},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -687,6 +687,55 @@ func TestSummaryCacheColdMissWarmHitAndJitterBounds(t *testing.T) {
 	}
 }
 
+func TestSummaryCacheReadsLegacyFreshWindowAndUsesEligibleStale(t *testing.T) {
+	generatedAt := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	now := generatedAt.Add(30 * time.Second)
+	cache, server := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
+	key := testSnapshotCacheKey()
+	redisKey, err := summaryCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("summaryCacheKey() error = %v", err)
+	}
+	envelope := readModelValueEnvelope[*SummarySnapshot]{
+		SchemaVersion: summaryCacheSchemaVersion,
+		GeneratedAt:   generatedAt,
+		FreshUntil:    generatedAt.Add(54 * time.Second),
+		StaleUntil:    generatedAt.Add(4*time.Minute + 30*time.Second),
+		Snapshot:      testSummarySnapshot(12.5),
+	}
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("encode legacy envelope: %v", err)
+	}
+	server.Set(redisKey, string(encoded))
+
+	loads := 0
+	fresh, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		loads++
+		return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(99)}, nil
+	})
+	if err != nil {
+		t.Fatalf("fresh legacy GetSummaryOrLoad() error = %v", err)
+	}
+	if loads != 0 || fresh.Freshness.CacheStatus != "fresh" || *fresh.Snapshot.Summary.RangeActualCost != 12.5 {
+		t.Fatalf("fresh legacy loads/status/value = %d/%q/%v, want 0/fresh/12.5", loads, fresh.Freshness.CacheStatus, fresh.Snapshot.Summary.RangeActualCost)
+	}
+
+	now = generatedAt.Add(55 * time.Second)
+	transient := errors.New("synthetic Relay outage")
+	stale, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		loads++
+		return SummaryOriginLoadResult{SnapshotErr: transient}, nil
+	})
+	if err != nil {
+		t.Fatalf("stale legacy GetSummaryOrLoad() error = %v", err)
+	}
+	if loads != 1 || stale.Freshness.CacheStatus != "stale" || stale.Freshness.SourceStatus != "error" ||
+		*stale.Snapshot.Summary.RangeActualCost != 12.5 {
+		t.Fatalf("stale legacy loads/status/source/value = %d/%q/%q/%v, want 1/stale/error/12.5", loads, stale.Freshness.CacheStatus, stale.Freshness.SourceStatus, stale.Snapshot.Summary.RangeActualCost)
+	}
+}
+
 func TestSummaryCacheUsesEligibleStaleButRejectsHardFailures(t *testing.T) {
 	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
 	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
@@ -697,7 +746,7 @@ func TestSummaryCacheUsesEligibleStaleButRejectsHardFailures(t *testing.T) {
 		t.Fatalf("prime cache: %v", err)
 	}
 
-	now = now.Add(55 * time.Second)
+	now = now.Add(2*time.Minute + 43*time.Second)
 	transient := errors.New("synthetic Relay outage")
 	stale, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
 		return SummaryOriginLoadResult{SnapshotErr: transient}, nil
@@ -944,7 +993,7 @@ func TestSummaryCacheUsesEligibleStaleAndRejectsHardStale(t *testing.T) {
 		t.Fatalf("prime summary cache: %v", err)
 	}
 
-	now = now.Add(55 * time.Second)
+	now = now.Add(2*time.Minute + 43*time.Second)
 	transient := errors.New("synthetic Relay outage")
 	stale, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
 		return SummaryOriginLoadResult{SnapshotErr: transient}, nil
