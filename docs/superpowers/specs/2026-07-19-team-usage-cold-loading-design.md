@@ -1,6 +1,6 @@
 # Team Usage Cold Loading Design
 
-**Status:** Proposed on `perf/team-usage-cold-loading`; verbal scope approved, written review pending
+**Status:** Approved for implementation on `perf/team-usage-cold-loading`
 
 **Refines:**
 
