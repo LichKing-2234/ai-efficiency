@@ -107,6 +107,10 @@ func detectAppBackedTool(name string) (string, bool) {
 func codexAppBundleCandidates() []string {
 	candidates := []string{}
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		candidates = append(candidates, filepath.Join(home, "Applications", "ChatGPT.app"))
+	}
+	candidates = append(candidates, "/Applications/ChatGPT.app")
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
 		candidates = append(candidates, filepath.Join(home, "Applications", "Codex.app"))
 	}
 	candidates = append(candidates, "/Applications/Codex.app")

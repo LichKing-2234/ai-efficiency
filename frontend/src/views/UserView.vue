@@ -28,6 +28,7 @@ import {
   buildWindowsInstallCommand,
   detectInstallPlatform,
   isAgentAccessGroup,
+  resolveDiscoverToolForPlatform,
 } from '@/utils/userSetupReview'
 import type { ManualConfigSnippet } from '@/utils/userSetupReview'
 
@@ -78,6 +79,12 @@ const githubConnectivityCommand = computed(() => buildPreferredGithubConnectivit
 const loginCommand = computed(() => buildLoginCommand(currentOrigin.value))
 const deviceLoginCommand = computed(() => buildDeviceLoginCommand(currentOrigin.value))
 const discoverCommand = computed(() => selectedProvider.value ? buildDiscoverCommand(currentOrigin.value, selectedProvider.value.name) : '')
+const discoverTool = computed(() => resolveDiscoverToolForPlatform(selectedGroup.value?.platform ?? ''))
+const discoverFallbackCommand = computed(() =>
+  selectedProvider.value && discoverTool.value
+    ? buildDiscoverCommand(currentOrigin.value, selectedProvider.value.name, discoverTool.value)
+    : ''
+)
 const hooksGlobalCommand = computed(() => buildHooksGlobalCommand())
 const repoInitCommand = computed(() => buildRepoInitCommand())
 const doctorCommand = computed(() => buildDoctorCommand())
@@ -160,7 +167,21 @@ const automaticMachineCommands = computed(() => [
       copyKey: 'device-login',
     },
   },
-  { key: 'auto-discover', label: t('user.setupStepConfigureTitle'), value: discoverCommand.value || t('user.selectProviderCommand') },
+  {
+    key: 'auto-discover',
+    label: t('user.setupStepConfigureTitle'),
+    value: discoverCommand.value || t('user.selectProviderCommand'),
+    fallback: discoverFallbackCommand.value
+      ? {
+          detailsTestId: 'auto-discover-fallback',
+          title: t('user.discoverToolFallback'),
+          help: t('user.automaticConfigDiscoverToolHelp'),
+          label: t('user.fallbackCommand'),
+          value: discoverFallbackCommand.value,
+          copyKey: 'discover-tool',
+        }
+      : undefined,
+  },
   { key: 'auto-hooks', label: t('user.setupStepHooksTitle'), value: hooksGlobalCommand.value },
 ])
 const automaticRepoCommands = computed(() => [
