@@ -11,16 +11,11 @@ import (
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/directorydepartment"
-	"github.com/ai-efficiency/backend/ent/directorymember"
-	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
 	"github.com/ai-efficiency/backend/ent/relayprovider"
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/adminsubscription"
 	"github.com/ai-efficiency/backend/internal/adminuseraccess"
 	"github.com/ai-efficiency/backend/internal/adminusers"
-	"github.com/ai-efficiency/backend/internal/directorysync"
-	"github.com/ai-efficiency/backend/internal/directorytree"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/gin-gonic/gin"
@@ -61,11 +56,6 @@ type adminRelaySubscriptionQuotaResetter interface {
 }
 
 const adminSubscriptionBatchMaxUsers = 500
-
-const (
-	directoryDepartmentRepresentativeIDsKey = "representative_external_ids"
-	directoryMemberLeaderDepartmentIDsKey   = "leader_department_ids"
-)
 
 type adminUserRow struct {
 	ID                int                     `json:"id"`
@@ -393,160 +383,30 @@ func (h *AdminUsersHandler) ListDepartmentChildren(c *gin.Context) {
 }
 
 func (h *AdminUsersHandler) ListDepartments(c *gin.Context) {
-	sourceID, ok, err := h.currentDirectorySourceID(c.Request.Context())
+	departments, err := h.users.Departments(c.Request.Context())
 	if err != nil {
 		pkg.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if !ok {
-		pkg.Success(c, gin.H{"items": []adminDirectoryDepartmentSummaryRow{}})
-		return
-	}
-	departments, err := h.entClient.DirectoryDepartment.Query().
-		Where(directorydepartment.SourceIDEQ(sourceID)).
-		Order(ent.Asc(directorydepartment.FieldName), ent.Asc(directorydepartment.FieldExternalID)).
-		All(c.Request.Context())
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "list directory departments: "+err.Error())
-		return
-	}
-	members, err := h.entClient.DirectoryMember.Query().
-		Where(directorymember.SourceIDEQ(sourceID)).
-		All(c.Request.Context())
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, "list directory members: "+err.Error())
-		return
-	}
-	memberDepartmentIDs, err := h.memberDepartmentIDsByMember(c.Request.Context(), sourceID, members)
-	if err != nil {
-		pkg.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-	memberKeys := make(map[string]map[string]struct{}, len(departments))
-	matchedKeys := make(map[string]map[string]struct{}, len(departments))
-	membersByExternalID := make(map[string]*ent.DirectoryMember, len(members))
-	for _, member := range members {
-		externalID := strings.TrimSpace(member.ExternalID)
-		if externalID != "" {
-			membersByExternalID[externalID] = member
-		}
-		for _, departmentID := range adminDirectoryMemberDepartmentIDs(member, memberDepartmentIDs) {
-			addAdminStringSetValue(memberKeys, departmentID, strconv.Itoa(member.ID))
-			if member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-				addAdminStringSetValue(matchedKeys, departmentID, strconv.Itoa(*member.MatchedUserID))
-			}
-		}
-	}
-	representativeIDs := representativeExternalIDsByDepartment(departments, members)
-	tree := directorytree.New(departments)
 	rows := make([]adminDirectoryDepartmentSummaryRow, 0, len(departments))
-	for _, department := range tree.Ordered() {
-		subtreeIDs := tree.SubtreeIDs(department.ExternalID)
-		departmentRepresentativeIDs := representativeIDs[department.ExternalID]
+	for _, department := range departments {
 		rows = append(rows, adminDirectoryDepartmentSummaryRow{
 			ExternalID:                 department.ExternalID,
 			ParentExternalID:           department.ParentExternalID,
 			Name:                       department.Name,
 			Path:                       department.Path,
-			DisplayPath:                tree.DisplayPath(department.ExternalID),
-			Depth:                      tree.Depth(department.ExternalID),
-			ChildCount:                 tree.ChildCount(department.ExternalID),
-			MemberCount:                len(memberKeys[department.ExternalID]),
-			MatchedUserCount:           len(matchedKeys[department.ExternalID]),
-			SubtreeMemberCount:         countAdminStringSetUnion(subtreeIDs, memberKeys),
-			SubtreeMatchedUserCount:    countAdminStringSetUnion(subtreeIDs, matchedKeys),
-			RepresentativeCount:        len(departmentRepresentativeIDs),
-			MatchedRepresentativeCount: matchedRepresentativeCount(departmentRepresentativeIDs, membersByExternalID),
+			DisplayPath:                department.DisplayPath,
+			Depth:                      department.Depth,
+			ChildCount:                 department.ChildCount,
+			MemberCount:                department.MemberCount,
+			MatchedUserCount:           department.MatchedUserCount,
+			SubtreeMemberCount:         department.SubtreeMemberCount,
+			SubtreeMatchedUserCount:    department.SubtreeMatchedUserCount,
+			RepresentativeCount:        department.RepresentativeCount,
+			MatchedRepresentativeCount: department.MatchedRepresentativeCount,
 		})
 	}
 	pkg.Success(c, gin.H{"items": rows})
-}
-
-func representativeExternalIDsByDepartment(departments []*ent.DirectoryDepartment, members []*ent.DirectoryMember) map[string]map[string]struct{} {
-	representatives := make(map[string]map[string]struct{}, len(departments))
-	add := func(departmentID, representativeExternalID string) {
-		departmentID = strings.TrimSpace(departmentID)
-		representativeExternalID = strings.TrimSpace(representativeExternalID)
-		if departmentID == "" || representativeExternalID == "" {
-			return
-		}
-		if representatives[departmentID] == nil {
-			representatives[departmentID] = map[string]struct{}{}
-		}
-		representatives[departmentID][representativeExternalID] = struct{}{}
-	}
-
-	for _, department := range departments {
-		for _, representativeExternalID := range metadataStringValues(department.Metadata[directoryDepartmentRepresentativeIDsKey]) {
-			add(department.ExternalID, representativeExternalID)
-		}
-	}
-	for _, member := range members {
-		for _, departmentID := range metadataStringValues(member.Metadata[directoryMemberLeaderDepartmentIDsKey]) {
-			add(departmentID, member.ExternalID)
-		}
-	}
-	return representatives
-}
-
-func matchedRepresentativeCount(representativeExternalIDs map[string]struct{}, membersByExternalID map[string]*ent.DirectoryMember) int {
-	count := 0
-	for representativeExternalID := range representativeExternalIDs {
-		member := membersByExternalID[representativeExternalID]
-		if member != nil && member.MatchedUserID != nil && *member.MatchedUserID > 0 {
-			count++
-		}
-	}
-	return count
-}
-
-func metadataStringValues(value any) []string {
-	switch typed := value.(type) {
-	case nil:
-		return nil
-	case []any:
-		values := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if value := metadataScalarString(item); value != "" {
-				values = append(values, value)
-			}
-		}
-		return values
-	case []string:
-		values := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if value := strings.TrimSpace(item); value != "" {
-				values = append(values, value)
-			}
-		}
-		return values
-	default:
-		if value := metadataScalarString(typed); value != "" {
-			return []string{value}
-		}
-		return nil
-	}
-}
-
-func metadataScalarString(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return strings.TrimSpace(typed)
-	case json.Number:
-		return strings.TrimSpace(typed.String())
-	case float64:
-		return strings.TrimSpace(strconv.FormatFloat(typed, 'f', -1, 64))
-	case float32:
-		return strings.TrimSpace(strconv.FormatFloat(float64(typed), 'f', -1, 32))
-	case int:
-		return strconv.Itoa(typed)
-	case int64:
-		return strconv.FormatInt(typed, 10)
-	case int32:
-		return strconv.FormatInt(int64(typed), 10)
-	default:
-		return strings.TrimSpace(fmt.Sprint(typed))
-	}
 }
 
 func (h *AdminUsersHandler) ListSubscriptionOptions(c *gin.Context) {
@@ -1314,95 +1174,6 @@ func uniquePositiveInts(values []int) []int {
 		ids = append(ids, value)
 	}
 	return ids
-}
-
-func (h *AdminUsersHandler) currentDirectorySourceID(ctx context.Context) (int, bool, error) {
-	return directorysync.CurrentSourceID(ctx, h.entClient)
-}
-
-func (h *AdminUsersHandler) memberDepartmentIDsByMember(ctx context.Context, sourceID int, members []*ent.DirectoryMember) (map[int][]string, error) {
-	out := make(map[int][]string, len(members))
-	if len(members) == 0 {
-		return out, nil
-	}
-	memberIDs := make([]int, 0, len(members))
-	for _, member := range members {
-		memberIDs = append(memberIDs, member.ID)
-	}
-	memberships, err := h.entClient.DirectoryMemberDepartment.Query().
-		Where(
-			directorymemberdepartment.SourceIDEQ(sourceID),
-			directorymemberdepartment.DirectoryMemberIDIn(memberIDs...),
-		).
-		Order(ent.Asc(directorymemberdepartment.FieldDepartmentExternalID), ent.Asc(directorymemberdepartment.FieldID)).
-		All(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list directory member departments: %w", err)
-	}
-	for _, membership := range memberships {
-		out[membership.DirectoryMemberID] = appendAdminUniqueStrings(out[membership.DirectoryMemberID], membership.DepartmentExternalID)
-	}
-	return out, nil
-}
-
-func adminDirectoryMemberDepartmentIDs(member *ent.DirectoryMember, indexed map[int][]string) []string {
-	membershipIDs := indexed[member.ID]
-	if len(membershipIDs) > 0 {
-		out := make([]string, 0, len(membershipIDs))
-		primaryDepartmentID := strings.TrimSpace(member.DepartmentExternalID)
-		if primaryDepartmentID != "" && adminStringSliceContains(membershipIDs, primaryDepartmentID) {
-			out = append(out, primaryDepartmentID)
-		}
-		return appendAdminUniqueStrings(out, membershipIDs...)
-	}
-	departmentID := strings.TrimSpace(member.DepartmentExternalID)
-	if departmentID == "" {
-		return nil
-	}
-	return []string{departmentID}
-}
-
-func addAdminStringSetValue(sets map[string]map[string]struct{}, key, value string) {
-	key = strings.TrimSpace(key)
-	value = strings.TrimSpace(value)
-	if key == "" || value == "" {
-		return
-	}
-	if sets[key] == nil {
-		sets[key] = map[string]struct{}{}
-	}
-	sets[key][value] = struct{}{}
-}
-
-func countAdminStringSetUnion(keys []string, sets map[string]map[string]struct{}) int {
-	union := map[string]struct{}{}
-	for _, key := range keys {
-		for value := range sets[key] {
-			union[value] = struct{}{}
-		}
-	}
-	return len(union)
-}
-
-func appendAdminUniqueStrings(current []string, values ...string) []string {
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || adminStringSliceContains(current, value) {
-			continue
-		}
-		current = append(current, value)
-	}
-	return current
-}
-
-func adminStringSliceContains(values []string, target string) bool {
-	target = strings.TrimSpace(target)
-	for _, value := range values {
-		if strings.TrimSpace(value) == target {
-			return true
-		}
-	}
-	return false
 }
 
 func parseAdminUsersListRequest(c *gin.Context) adminUsersListRequest {

@@ -260,6 +260,37 @@ func TestDepartmentChildrenUsesPersistedCycleAnchorUnderICUCollation(t *testing.
 	}
 }
 
+func TestHierarchyCleanupCompleteDepartmentsUsesLocaleIndependentTieBreak(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reverse=%v", reverse), func(t *testing.T) {
+			client, dsn := testdb.OpenWithDSN(t)
+			ctx := context.Background()
+			db, err := sql.Open("postgres", dsn)
+			if err != nil {
+				t.Fatalf("open raw postgres connection: %v", err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			if _, err := db.ExecContext(ctx, `ALTER TABLE directory_departments ALTER COLUMN external_id TYPE varchar COLLATE "en-US-x-icu"`); err != nil {
+				t.Fatalf("set synthetic ICU external-id collation: %v", err)
+			}
+
+			source, run := createTargetSourceSnapshot(t, client, "Complete Locale Directory", time.Date(2026, 7, 19, 10, 0, 0, 0, time.UTC))
+			createDepartmentSeeds(t, client, source.ID, run.ID, []departmentSeed{
+				{id: "dept-Zulu", name: "Same Department"},
+				{id: "dept-İstanbul", name: "Same Department"},
+			}, reverse)
+
+			departments, err := NewService(client).Departments(ctx)
+			if err != nil {
+				t.Fatalf("Departments: %v", err)
+			}
+			if got := departmentSummaryIDs(departments); !reflect.DeepEqual(got, []string{"dept-Zulu", "dept-İstanbul"}) {
+				t.Fatalf("complete department order = %v, want UTF-8/C tie-break independent of insertion order", got)
+			}
+		})
+	}
+}
+
 func TestAdministratorReadsUsePersistedEffectiveParents(t *testing.T) {
 	client := testdb.Open(t)
 	ctx := context.Background()

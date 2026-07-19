@@ -1054,6 +1054,83 @@ func TestAdminUsersDepartmentSummaries(t *testing.T) {
 	}
 }
 
+func TestHierarchyCleanupCompleteDepartmentsUsesPersistedEffectiveParents(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	sourceID, runID := seedAdminUsersBareDirectorySource(t, env, "Persisted Hierarchy Directory", time.Date(2026, 7, 19, 9, 0, 0, 0, time.UTC))
+	ctx := context.Background()
+	for _, department := range []struct {
+		externalID      string
+		parentID        string
+		effectiveParent string
+		name            string
+	}{
+		{externalID: "dept-persisted-root", parentID: "dept-persisted-leaf", name: "Persisted Root"},
+		{externalID: "dept-persisted-child", effectiveParent: "dept-persisted-root", name: "Persisted Child"},
+		{externalID: "dept-persisted-leaf", effectiveParent: "dept-persisted-child", name: "Persisted Leaf"},
+	} {
+		builder := env.client.DirectoryDepartment.Create().
+			SetSourceID(sourceID).
+			SetExternalID(department.externalID).
+			SetName(department.name).
+			SetPath("synthetic/" + department.externalID).
+			SetLastSeenRunID(runID)
+		if department.parentID != "" {
+			builder.SetParentExternalID(department.parentID)
+		}
+		if department.effectiveParent != "" {
+			builder.SetEffectiveParentExternalID(department.effectiveParent)
+		}
+		if _, err := builder.Save(ctx); err != nil {
+			t.Fatalf("create %s: %v", department.externalID, err)
+		}
+	}
+	for index, member := range []struct {
+		externalID   string
+		departmentID string
+		matchedUser  int
+	}{
+		{externalID: "member-persisted-root", departmentID: "dept-persisted-root", matchedUser: fixture.aliceID},
+		{externalID: "member-persisted-child", departmentID: "dept-persisted-child", matchedUser: fixture.bobID},
+		{externalID: "member-persisted-leaf", departmentID: "dept-persisted-leaf", matchedUser: fixture.carolID},
+	} {
+		if _, err := env.client.DirectoryMember.Create().
+			SetSourceID(sourceID).
+			SetExternalID(member.externalID).
+			SetEmailNormalized(fmt.Sprintf("persisted-member-%d@example.org", index)).
+			SetDisplayName(member.externalID).
+			SetDepartmentExternalID(member.departmentID).
+			SetMatchedUserID(member.matchedUser).
+			SetLastSeenRunID(runID).
+			Save(ctx); err != nil {
+			t.Fatalf("create %s: %v", member.externalID, err)
+		}
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/departments", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	items := parseFullResponse(t, w)["data"].(map[string]interface{})["items"].([]interface{})
+	if len(items) != 3 {
+		t.Fatalf("items = %d, want 3", len(items))
+	}
+	wantIDs := []string{"dept-persisted-root", "dept-persisted-child", "dept-persisted-leaf"}
+	wantPaths := []string{"Persisted Root", "Persisted Root / Persisted Child", "Persisted Root / Persisted Child / Persisted Leaf"}
+	wantSubtreeCounts := []int{3, 2, 1}
+	for index, item := range items {
+		row := item.(map[string]interface{})
+		if row["external_id"] != wantIDs[index] || row["display_path"] != wantPaths[index] || int(row["depth"].(float64)) != index {
+			t.Fatalf("row %d = %+v, want id/path/depth %s/%s/%d", index, row, wantIDs[index], wantPaths[index], index)
+		}
+		if int(row["member_count"].(float64)) != 1 || int(row["matched_user_count"].(float64)) != 1 || int(row["subtree_member_count"].(float64)) != wantSubtreeCounts[index] || int(row["subtree_matched_user_count"].(float64)) != wantSubtreeCounts[index] {
+			t.Fatalf("row %d counts = %+v, want direct 1/1 and subtree %d/%d", index, row, wantSubtreeCounts[index], wantSubtreeCounts[index])
+		}
+	}
+}
+
 func TestAdminUsersDepartmentSummariesUseDirectoryMemberDepartments(t *testing.T) {
 	t.Parallel()
 
