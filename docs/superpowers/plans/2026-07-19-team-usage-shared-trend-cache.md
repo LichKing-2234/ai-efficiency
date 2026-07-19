@@ -318,7 +318,12 @@
 
   Full backend evidence (2026-07-19): `go test ./... -count=1`, `go vet
   ./...`, `go build ./...`, and `git diff --check` all exited zero after the
-  adapter integration.
+  adapter integration. Final inline review then found that an origin which
+  ignored a canceled shared context could still return success and populate the
+  cache. A focused RED reproduced that write; the implementation now rejects a
+  successful load when `loadCtx.Err()` is non-nil. The regression passed twice,
+  the complete Relay package passed twice, the focused race run passed, and the
+  full backend test/vet/build gate passed again after the fix.
 
 - [x] **Step 4: Record evidence and commit documentation**
 

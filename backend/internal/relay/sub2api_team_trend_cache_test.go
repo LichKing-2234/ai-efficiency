@@ -434,6 +434,45 @@ func TestTeamTrendCacheDoesNotStoreWhenOnlyWaiterCancels(t *testing.T) {
 	}
 }
 
+func TestTeamTrendCacheDoesNotStoreSuccessReturnedAfterOnlyWaiterCancels(t *testing.T) {
+	cache := teamTrendCache{}
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	release := make(chan struct{})
+	originReturned := make(chan struct{})
+	calls := 0
+	done := make(chan error, 1)
+	go func() {
+		_, err := cache.GetOrLoad(ctx, 101, testTeamTrendCacheParams(), func(context.Context) ([]UsageTrendPoint, error) {
+			calls++
+			close(started)
+			<-release
+			close(originReturned)
+			return []UsageTrendPoint{{Date: "2026-07-19", ActualCost: 1}}, nil
+		})
+		done <- err
+	}()
+	<-started
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled request error = %v, want context.Canceled", err)
+	}
+	close(release)
+	<-originReturned
+	time.Sleep(10 * time.Millisecond)
+
+	points, err := cache.GetOrLoad(context.Background(), 101, testTeamTrendCacheParams(), func(context.Context) ([]UsageTrendPoint, error) {
+		calls++
+		return []UsageTrendPoint{{Date: "2026-07-19", ActualCost: 2}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || points[0].ActualCost != 2 {
+		t.Fatalf("calls/points = %d/%#v, want uncached second origin", calls, points)
+	}
+}
+
 func TestTeamTrendCacheSeparatesCredentialGenerations(t *testing.T) {
 	var calls atomic.Int64
 	oldStarted := make(chan struct{}, 1)

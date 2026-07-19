@@ -69,6 +69,9 @@ func (c *teamTrendCache) GetOrLoad(
 		if loadErr != nil {
 			return nil, loadErr
 		}
+		if err := loadCtx.Err(); err != nil {
+			return nil, err
+		}
 		c.store(key, generation, loaded)
 		return cloneUsageTrendPoints(loaded), nil
 	})
