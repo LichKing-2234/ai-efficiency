@@ -166,6 +166,35 @@ func TestOrganizationCursorContinuesAcrossRedisOutageWhenContentMatches(t *testi
 	}
 }
 
+func TestOrganizationCursorContinuesAcrossRedisOutageWithStableMixedMagnitudeAggregates(t *testing.T) {
+	store := failingSnapshotStore{err: errors.New("Redis unavailable")}
+	svc, provider, scope := newOrganizationTestService(t, 1, 3, time.Now, store)
+	for index := range scope.OverviewSubjects {
+		scope.OverviewSubjects[index].DepartmentExternalIDs = []string{"department-root", "department-alpha-01"}
+	}
+	for index, cost := range []float64{1e16, 1, 1} {
+		stat := provider.summaryStats[int64(10001+index)]
+		stat.RangeActualCost = &cost
+		provider.summaryStats[int64(10001+index)] = stat
+	}
+
+	params := testOrganizationParams("department-root")
+	params.MemberLimit = 1
+	first, err := svc.Organization(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("Organization(first) error = %v", err)
+	}
+	if first.NextMemberCursor == "" {
+		t.Fatal("Organization(first) next member cursor is empty")
+	}
+	params.MemberCursor = first.NextMemberCursor
+	for attempt := 0; attempt < 128; attempt++ {
+		if _, err := svc.Organization(context.Background(), 1, params); err != nil {
+			t.Fatalf("Organization(rebuild %d) error = %v, want stable cursor continuity", attempt+1, err)
+		}
+	}
+}
+
 func TestOrganizationReadsOnlyRequestedDeepBranchAndDeduplicatesMultiMembership(t *testing.T) {
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)

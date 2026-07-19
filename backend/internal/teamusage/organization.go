@@ -321,7 +321,13 @@ func (s *Service) generateOrganizationSnapshot(ctx context.Context, branch organ
 }
 
 func organizationMemberTotals(members map[string]OverviewMember) (count, connected int, rangeCost float64, rangeTokens *int64) {
-	for _, member := range members {
+	identities := make([]string, 0, len(members))
+	for identity := range members {
+		identities = append(identities, identity)
+	}
+	sort.Strings(identities)
+	for _, identity := range identities {
+		member := members[identity]
 		if member.RelayUserID != nil {
 			connected++
 		}

@@ -503,7 +503,7 @@ The #168 refinement makes Members an independent immutable ranking read model ra
 4. The cached value contains only normalized window plus complete immutable ranked member rows. It contains no summary, top-member or department series, recursive `member_tree`, request ID, scope version, or cursor. It cannot satisfy Summary, Trend, Organization, or compatibility Overview, and none of those values can satisfy Members.
 5. The existing HMAC cursor still binds actor, normalized range, scope version, complete ranked-content identity, and next offset. An unchanged authoritative rebuild during Redis failure preserves pagination, while a changed `RangeTotalTokens`, roster, identity, display, or membership generation returns `snapshot_expired`.
 6. A first-page request never reads or writes the Summary, Trend, or compatibility Overview lanes. Summary or Trend section failure therefore does not change an otherwise available Members response; a transient failure of the Members origin itself prefers an eligible stale Members generation until its hard deadline.
-7. Compatibility Overview and Organization retain their current overview origin/cache until #170/#172. The first-party frontend keeps its existing Members-only loading/error/stale/pagination lifecycle and renders only the returned 50 rows from a 500-member result.
+7. Compatibility Overview alone retains its monolithic origin/cache until #172; Organization has owned its independent branch origin/cache since #170. The first-party frontend keeps its existing Members-only loading/error/stale/pagination lifecycle and renders only the returned 50 rows from a 500-member result.
 
 ### Organization
 
