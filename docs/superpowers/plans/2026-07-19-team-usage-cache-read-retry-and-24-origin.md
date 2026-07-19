@@ -285,7 +285,7 @@
 - Preserves `teamTrendOriginLimiter.Do` and `TeamMemberTrendProvider.GetUsageTrendForUsers`.
 - Keeps one provider-owned limiter after cache/singleflight collapse.
 
-- [ ] **Step 1: Add a numeric RED assertion and remove sixteen from test names**
+- [x] **Step 1: Add a numeric RED assertion and remove sixteen from test names**
 
   Rename `TestTeamTrendOriginsUseSixteenProviderWideSlots` to
   `TestTeamTrendOriginsUseTwentyFourProviderWideSlots` and add this assertion
@@ -304,7 +304,12 @@
   wording to explicitly report the current constant, without changing its
   dynamic setup.
 
-- [ ] **Step 2: Run the focused test and record RED**
+  Evidence (2026-07-19): renamed the provider-wide capacity test for 24 slots,
+  added the exact numeric assertion before server setup, and made the
+  credential-generation timeout report `maxConcurrentTeamTrendOrigins` while
+  retaining its constant-driven setup.
+
+- [x] **Step 2: Run the focused test and record RED**
 
   Run:
 
@@ -319,7 +324,12 @@
   credential-generation, cache-hit, and shared-flight regressions remain
   green.
 
-- [ ] **Step 3: Change the one shared capacity constant**
+  RED evidence (2026-07-19): after `gofmt`, the focused command failed only
+  `TestTeamTrendOriginsUseTwentyFourProviderWideSlots` with
+  `maxConcurrentTeamTrendOrigins = 16, want 24`; all selected cancellation,
+  credential-generation, and cache regressions passed.
+
+- [x] **Step 3: Change the one shared capacity constant**
 
   In `sub2api_team_trend_limiter.go` change only:
 
@@ -330,7 +340,11 @@
   Do not add another limiter, change the HTTP transport maximum, or modify
   `SetAdminAPIKey`.
 
-- [ ] **Step 4: Run GREEN, high-contention regressions, race checks, and commit**
+  Evidence (2026-07-19): changed only the shared
+  `maxConcurrentTeamTrendOrigins` declaration from 16 to 24; limiter
+  ownership and provider interfaces remain unchanged.
+
+- [x] **Step 4: Run GREEN, high-contention regressions, race checks, and commit**
 
   Run:
 
@@ -347,6 +361,11 @@
   Expected: one caller fills 24, concurrent callers never exceed 24, all
   cancellation and credential-generation regressions pass, the saturation
   case passes 20 times, and the race detector reports no race.
+
+  GREEN evidence (2026-07-19): the focused Relay regression suite passed
+  twice, `TestTeamTrendOriginsUseTwentyFourProviderWideSlots` passed 20 times,
+  and the focused `readcache`/Relay race command passed with no race reports;
+  `git diff --check` was clean.
 
   Record RED/GREEN evidence in this plan, then commit:
 
