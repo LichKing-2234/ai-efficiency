@@ -209,13 +209,16 @@
 - Modify: `backend/internal/teamusage/summary_cache.go:469-523`
 - Modify: `backend/internal/teamusage/summary_cache_test.go`
 - Modify: `backend/internal/teamusage/cache_metrics_test.go:130-156`
+- Modify: `backend/internal/teamusage/members_test.go`
+- Modify: `backend/internal/teamusage/organization_test.go`
+- Modify: `backend/internal/teamusage/service_test.go`
 
 **Interfaces:**
 - Produces `teamUsageSnapshotFreshMaxAge = 3 * time.Minute` and retains `teamUsageSnapshotStaleMaxAge = 5 * time.Minute`.
 - Preserves all four `SnapshotCache.Get*OrLoad` interfaces and the `SnapshotFreshness` DTO.
 - Applies the same fresh/stale envelope validation to Summary, Trend, Members, and Organization.
 
-- [ ] **Step 1: Change the contract tests to RED for 144-162 second freshness**
+- [x] **Step 1: Change the contract tests to RED for 144-162 second freshness**
 
   Change `TestSummaryCacheColdMissWarmHitAndJitterBounds` cases to:
 
@@ -226,9 +229,15 @@
   }
   ```
 
-  Change valid stale-transition tests for Summary, Trend, Members, Organization, and cache metrics from `now.Add(55 * time.Second)` to `now.Add(2*time.Minute + 43*time.Second)`. Keep hard-expiry assertions beyond their current stale deadline. Update manually encoded valid envelopes from a 54-second fresh window to 162 seconds; wrong-schema fixtures may retain arbitrary old timing because schema rejection is the assertion.
+  Change every valid stale-transition test for Summary, Trend, Members,
+  Organization, service projection, and cache metrics from
+  `now.Add(55 * time.Second)` to
+  `now.Add(2*time.Minute + 43*time.Second)`. Keep hard-expiry assertions beyond
+  their current stale deadline. Update manually encoded valid envelopes from a
+  54-second fresh window to 162 seconds; wrong-schema fixtures may retain
+  arbitrary old timing because schema rejection is the assertion.
 
-- [ ] **Step 2: Run the focused cache tests and record RED**
+- [x] **Step 2: Run the focused cache tests and record RED**
 
   Run:
 
@@ -237,9 +246,17 @@
   go test ./internal/teamusage -run 'Cache.*(Jitter|Stale|Metrics)|SummaryCacheColdMissWarmHitAndJitterBounds' -count=1 -v
   ```
 
-  Expected: the jitter test reports 54 seconds instead of 162 seconds, and the new stale-transition tests receive `fresh` because the current implementation has not yet reached the requested window. Failures must be freshness-specific.
+  Expected: the jitter contract test reports the current 54/48-second windows
+  instead of 162/144 seconds. The re-anchored stale-transition, lease, and
+  metrics tests may remain green because both contracts are expired at 163
+  seconds; the RED signal must remain specific to the exact fresh bounds.
 
-- [ ] **Step 3: Implement named fresh/stale maxima and envelope validation**
+  RED evidence (2026-07-19): the minimum- and maximum-jitter cases failed with
+  actual fresh windows of 54 and 48 seconds instead of 162 and 144 seconds.
+  All focused stale, lease, and metrics cases passed, isolating the failure to
+  the planned fresh-window change.
+
+- [x] **Step 3: Implement named fresh/stale maxima and envelope validation**
 
   Add shared constants beside the schema constants:
 
@@ -259,13 +276,13 @@
 
   Update `validEnvelope` to accept only fresh windows from 144 through 162 seconds and stale windows from 240 through 270 seconds, with `staleWindow > freshWindow`. Do not change key versions, payload schema versions, Redis TTL assignment, or cache statuses.
 
-- [ ] **Step 4: Run focused GREEN and all Team Usage cache regressions**
+- [x] **Step 4: Run focused GREEN and all Team Usage cache regressions**
 
   Run:
 
   ```bash
   cd backend
-  gofmt -w internal/teamusage/summary_cache.go internal/teamusage/summary_cache_test.go internal/teamusage/cache_metrics_test.go
+  gofmt -w internal/teamusage/summary_cache.go internal/teamusage/summary_cache_test.go internal/teamusage/cache_metrics_test.go internal/teamusage/members_test.go internal/teamusage/organization_test.go internal/teamusage/service_test.go
   go test ./internal/teamusage -run 'Cache|Summary|Trend|Members|Organization' -count=2
   go test -race ./internal/readcache ./internal/teamusage -run 'Cache|FlightGroup' -count=1
   cd ..
@@ -274,7 +291,14 @@
 
   Expected: all four lanes retain fresh/miss/stale/error semantics, jitter bounds are 144-162 and 240-270 seconds, Redis TTL remains the stale deadline, focused tests pass twice, race checks pass, and the diff is clean.
 
-- [ ] **Step 5: Record evidence and commit the freshness change**
+  GREEN evidence (2026-07-19): the filtered Team Usage cache, Summary, Trend,
+  Members, and Organization suite passed twice with exact 144-162 second fresh
+  bounds and unchanged 240-270 second stale bounds. Eligible stale, hard
+  expiry, Redis TTL, cache metrics, and service projection regressions passed.
+  The race-enabled `internal/readcache` and `internal/teamusage` run passed, and
+  `git diff --check` was clean.
+
+- [x] **Step 5: Record evidence and commit the freshness change**
 
   Update this plan immediately with RED/GREEN evidence and commit:
 
@@ -282,6 +306,9 @@
   git add backend/internal/teamusage/summary_cache.go \
     backend/internal/teamusage/summary_cache_test.go \
     backend/internal/teamusage/cache_metrics_test.go \
+    backend/internal/teamusage/members_test.go \
+    backend/internal/teamusage/organization_test.go \
+    backend/internal/teamusage/service_test.go \
     docs/superpowers/plans/2026-07-19-team-usage-cold-loading.md
   git commit -m "perf(teamusage): extend response cache freshness"
   ```

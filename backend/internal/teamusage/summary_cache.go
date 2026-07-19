@@ -23,6 +23,8 @@ const (
 	trendCacheSchemaVersion        = 1
 	membersCacheSchemaVersion      = 1
 	organizationCacheSchemaVersion = 1
+	teamUsageSnapshotFreshMaxAge   = 3 * time.Minute
+	teamUsageSnapshotStaleMaxAge   = 5 * time.Minute
 )
 
 var snapshotCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
@@ -475,8 +477,8 @@ func (c *readModelCache[T]) newEnvelope(snapshot T) *readModelValueEnvelope[T] {
 		random = 1
 	}
 	jitter := 0.1 + 0.1*random
-	freshWindow := time.Minute - time.Duration(jitter*float64(time.Minute))
-	staleWindow := 5*time.Minute - time.Duration(jitter*float64(5*time.Minute))
+	freshWindow := teamUsageSnapshotFreshMaxAge - time.Duration(jitter*float64(teamUsageSnapshotFreshMaxAge))
+	staleWindow := teamUsageSnapshotStaleMaxAge - time.Duration(jitter*float64(teamUsageSnapshotStaleMaxAge))
 	return &readModelValueEnvelope[T]{
 		SchemaVersion: c.schemaVersion,
 		GeneratedAt:   generatedAt,
@@ -515,8 +517,8 @@ func (c *readModelCache[T]) validEnvelope(envelope *readModelValueEnvelope[T], v
 	}
 	freshWindow := envelope.FreshUntil.Sub(envelope.GeneratedAt)
 	staleWindow := envelope.StaleUntil.Sub(envelope.GeneratedAt)
-	if freshWindow < 48*time.Second || freshWindow > 54*time.Second ||
-		staleWindow < 4*time.Minute || staleWindow > 4*time.Minute+30*time.Second || staleWindow <= freshWindow {
+	if freshWindow < 8*teamUsageSnapshotFreshMaxAge/10 || freshWindow > 9*teamUsageSnapshotFreshMaxAge/10 ||
+		staleWindow < 8*teamUsageSnapshotStaleMaxAge/10 || staleWindow > 9*teamUsageSnapshotStaleMaxAge/10 || staleWindow <= freshWindow {
 		return false
 	}
 	return validate != nil && validate(envelope.Snapshot)

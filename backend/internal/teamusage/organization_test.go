@@ -138,7 +138,7 @@ func TestOrganizationCursorsRejectWrongRequestAndExpireOnScopeOrContentChange(t 
 		t.Fatalf("Organization(changed scope) error = %v, want ErrOrganizationSnapshotExpired", err)
 	}
 	scope.Version = "scope-version-1"
-	now = now.Add(55 * time.Second)
+	now = now.Add(2*time.Minute + 43*time.Second)
 	changed := provider.summaryStats[10001]
 	changed.RangeTotalTokens = int64Ptr(999999)
 	provider.summaryStats[10001] = changed

@@ -143,7 +143,7 @@ func TestMembersCursorExpiresWhenScopeOrSnapshotChanges(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Members(first) error = %v", err)
 		}
-		now = now.Add(55 * time.Second)
+		now = now.Add(2*time.Minute + 43*time.Second)
 		changedTokens := int64(999999)
 		changed := provider.summaryStats[10001]
 		changed.RangeTotalTokens = &changedTokens
