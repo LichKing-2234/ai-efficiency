@@ -41,7 +41,7 @@
 - Adds `teamTrendOrigins teamTrendOriginLimiter` to `sub2apiRelay`.
 - Preserves `TeamMemberTrendProvider.GetUsageTrendForUsers` and all existing cache/error contracts.
 
-- [ ] **Step 1: Add RED tests for one-caller saturation and the provider-wide bound**
+- [x] **Step 1: Add RED tests for one-caller saturation and the provider-wide bound**
 
   Replace `TestTeamTrendCachePreservesEightWorkerCallerLimit` with an integration test named `TestTeamTrendOriginsUseSixteenProviderWideSlots`. Use one provider backed by one blocking `httptest.Server`, two disjoint 32-user slices, and a mutex-protected active/request/max counter.
 
@@ -62,7 +62,7 @@
 
   This single test must fail on the current code because one caller starts only eight requests. A naive per-caller-only increase must fail its second assertion by starting more than sixteen origins.
 
-- [ ] **Step 2: Add RED tests for canceled slot wait and credential-generation sharing**
+- [x] **Step 2: Add RED tests for canceled slot wait and credential-generation sharing**
 
   Add a direct limiter test named `TestTeamTrendOriginLimiterDoesNotStartCanceledWaiter`:
 
@@ -104,7 +104,7 @@
 
   Add `TestTeamTrendOriginLimiterSpansCredentialGenerations`. Saturate all sixteen slots with old-key origins, call `SetAdminAPIKey("new-admin-key")`, start a new-generation user request, and prove it does not reach the handler until one old origin is released. This locks down that invalidation never replaces the limiter.
 
-- [ ] **Step 3: Run the focused tests and record RED**
+- [x] **Step 3: Run the focused tests and record RED**
 
   Run:
 
@@ -115,7 +115,12 @@
 
   Expected: compile failures for the absent limiter symbols and/or the saturation test times out after seeing only eight origins. No unrelated fixture or syntax failure is acceptable.
 
-- [ ] **Step 4: Implement the minimal zero-value-safe limiter and wire it after singleflight**
+  RED evidence (2026-07-19): the focused command failed only because
+  `maxConcurrentTeamTrendOrigins` and `teamTrendOriginLimiter` were absent.
+  The new tests compiled far enough to identify the planned production symbols
+  without fixture, handler, or syntax failures.
+
+- [x] **Step 4: Implement the minimal zero-value-safe limiter and wire it after singleflight**
 
   Create the limiter module:
 
@@ -163,7 +168,7 @@
 
   Do not reinitialize the limiter in `SetAdminAPIKey` or provider invalidation.
 
-- [ ] **Step 5: Run focused GREEN, integration regressions, and race checks**
+- [x] **Step 5: Run focused GREEN, integration regressions, and race checks**
 
   Run:
 
@@ -178,7 +183,14 @@
 
   Expected: one caller fills sixteen slots, disjoint callers remain globally bounded at sixteen, shared callers still collapse, cancellation and credential generation remain safe, the focused suite passes twice, the race detector reports no races, and the diff is clean.
 
-- [ ] **Step 6: Record evidence and commit the limiter**
+  GREEN evidence (2026-07-19): the focused Relay suite passed twice with one
+  caller filling sixteen slots, two disjoint callers remaining globally
+  bounded at sixteen, and shared callers retaining one origin per user.
+  Canceled slot waits and credential generation changes remained bounded. The
+  race-enabled `internal/readcache` and `internal/relay` run passed, and
+  `git diff --check` was clean.
+
+- [x] **Step 6: Record evidence and commit the limiter**
 
   Update this plan immediately with RED/GREEN evidence and commit:
 

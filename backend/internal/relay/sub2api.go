@@ -21,14 +21,15 @@ import (
 const maxPingResponseBodyBytes int64 = 4 * 1024
 
 type sub2apiRelay struct {
-	mu         sync.RWMutex
-	client     *http.Client
-	baseURL    string // LLM API endpoint, e.g. http://localhost:3000/v1
-	adminURL   string // Admin API endpoint, e.g. http://localhost:3000
-	apiKey     string // Relay API key used for both admin and inference requests.
-	model      string
-	logger     *zap.Logger
-	teamTrends teamTrendCache
+	mu               sync.RWMutex
+	client           *http.Client
+	baseURL          string // LLM API endpoint, e.g. http://localhost:3000/v1
+	adminURL         string // Admin API endpoint, e.g. http://localhost:3000
+	apiKey           string // Relay API key used for both admin and inference requests.
+	model            string
+	logger           *zap.Logger
+	teamTrends       teamTrendCache
+	teamTrendOrigins teamTrendOriginLimiter
 }
 
 const userUsageOriginTimeout = 12 * time.Second
@@ -2292,8 +2293,6 @@ func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int
 }
 
 func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error) {
-	const maxConcurrentTrendRequests = 8
-
 	out := make(map[int64][]UsageTrendPoint, len(relayUserIDs))
 	if len(relayUserIDs) == 0 {
 		return out, nil
@@ -2301,7 +2300,7 @@ func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs [
 	trendCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	workers := maxConcurrentTrendRequests
+	workers := maxConcurrentTeamTrendOrigins
 	if len(relayUserIDs) < workers {
 		workers = len(relayUserIDs)
 	}
@@ -2321,7 +2320,9 @@ func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs [
 			defer wg.Done()
 			for relayUserID := range jobs {
 				trend, err := s.teamTrends.GetOrLoad(trendCtx, relayUserID, params, func(loadCtx context.Context) ([]UsageTrendPoint, error) {
-					return s.getTeamMemberTrend(loadCtx, relayUserID, params)
+					return s.teamTrendOrigins.Do(loadCtx, func(originCtx context.Context) ([]UsageTrendPoint, error) {
+						return s.getTeamMemberTrend(originCtx, relayUserID, params)
+					})
 				})
 				results <- trendResult{relayUserID: relayUserID, points: trend, err: err}
 			}
