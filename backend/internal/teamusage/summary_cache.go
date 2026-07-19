@@ -23,6 +23,7 @@ const (
 	trendCacheSchemaVersion        = 1
 	membersCacheSchemaVersion      = 1
 	organizationCacheSchemaVersion = 1
+	legacyTeamUsageFreshMaxAge     = time.Minute
 	teamUsageSnapshotFreshMaxAge   = 3 * time.Minute
 	teamUsageSnapshotStaleMaxAge   = 5 * time.Minute
 )
@@ -517,7 +518,9 @@ func (c *readModelCache[T]) validEnvelope(envelope *readModelValueEnvelope[T], v
 	}
 	freshWindow := envelope.FreshUntil.Sub(envelope.GeneratedAt)
 	staleWindow := envelope.StaleUntil.Sub(envelope.GeneratedAt)
-	if freshWindow < 8*teamUsageSnapshotFreshMaxAge/10 || freshWindow > 9*teamUsageSnapshotFreshMaxAge/10 ||
+	validFreshWindow := (freshWindow >= 8*legacyTeamUsageFreshMaxAge/10 && freshWindow <= 9*legacyTeamUsageFreshMaxAge/10) ||
+		(freshWindow >= 8*teamUsageSnapshotFreshMaxAge/10 && freshWindow <= 9*teamUsageSnapshotFreshMaxAge/10)
+	if !validFreshWindow ||
 		staleWindow < 8*teamUsageSnapshotStaleMaxAge/10 || staleWindow > 9*teamUsageSnapshotStaleMaxAge/10 || staleWindow <= freshWindow {
 		return false
 	}

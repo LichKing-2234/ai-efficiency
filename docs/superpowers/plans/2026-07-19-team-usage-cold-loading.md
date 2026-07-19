@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation and reviewed-head PR CI are complete on PR #189; the PR is at the merge gate, and staging A/B remains pending after merge.
+**Status:** Independent review fixes are locally green on PR #189; documentation sync, full verification, exact-head CI, merge, and staging A/B remain pending.
 
 **Goal:** Reduce large-team cold page completion by raising bounded per-user trend concurrency to a provider-wide sixteen slots and keep Team Usage response snapshots fresh for a three-minute pre-jitter maximum.
 
@@ -424,11 +424,27 @@
   and opened non-Draft PR #189 against `feat/platform-loading-performance`
   from initial reviewed head `4afe0d02`.
 
-- [x] **Step 2: Wait for exact-final-head CI**
+- [x] **Step 2: Close independent code-review findings**
+
+  Add RED regressions for cancellation becoming ready at the same time as an
+  origin slot and for reading a valid historical 48-54 second envelope during
+  its stale window. After RED, recheck cancellation immediately after slot
+  acquisition and accept both historical and current fresh-window bounds when
+  reading, while writing only 144-162 second envelopes. Keep keys, schema,
+  stale bounds, and origin behavior unchanged.
+
+  Review-fix evidence (2026-07-19): the slot-handoff regression failed on
+  attempt 0 because the loader returned nil after cancellation, and the legacy
+  envelope regression loaded a new miss instead of reading the old value.
+  After the minimal fixes, both exact regressions passed twice. The current
+  writer still emits only 144-162 second freshness, while the reader preserves
+  eligible stale fallback for historical 48-54 second envelopes.
+
+- [ ] **Step 3: Wait for exact-final-head CI**
 
   Require backend, frontend, ae-cli, and deploy-static success on the exact final head. Record the PR number, head SHA, run ID, and results in this plan; push a ledger-only commit if tracked content changes, then verify that final head as well.
 
-  CI evidence (2026-07-19): PR #189 run `29683613560` completed
+  Prior CI evidence (2026-07-19): PR #189 run `29683613560` completed
   successfully on reviewed head
   `19f8ad91078abc0e9796c014773e7c5cfe4d534c`. Backend job
   `88184049969`, frontend job `88184049979`, ae-cli job `88184049983`,
@@ -436,7 +452,7 @@
   commit recording this evidence must receive the same exact-head four-job
   verification before the merge-gate report.
 
-- [x] **Step 3: Stop at the merge gate**
+- [ ] **Step 4: Stop at the merge gate**
 
   Do not merge automatically. Report the exact PR and CI state and wait for explicit user confirmation or observed merge before staging deployment.
 

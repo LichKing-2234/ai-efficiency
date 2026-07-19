@@ -687,6 +687,55 @@ func TestSummaryCacheColdMissWarmHitAndJitterBounds(t *testing.T) {
 	}
 }
 
+func TestSummaryCacheReadsLegacyFreshWindowAndUsesEligibleStale(t *testing.T) {
+	generatedAt := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	now := generatedAt.Add(30 * time.Second)
+	cache, server := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
+	key := testSnapshotCacheKey()
+	redisKey, err := summaryCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("summaryCacheKey() error = %v", err)
+	}
+	envelope := readModelValueEnvelope[*SummarySnapshot]{
+		SchemaVersion: summaryCacheSchemaVersion,
+		GeneratedAt:   generatedAt,
+		FreshUntil:    generatedAt.Add(54 * time.Second),
+		StaleUntil:    generatedAt.Add(4*time.Minute + 30*time.Second),
+		Snapshot:      testSummarySnapshot(12.5),
+	}
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("encode legacy envelope: %v", err)
+	}
+	server.Set(redisKey, string(encoded))
+
+	loads := 0
+	fresh, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		loads++
+		return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(99)}, nil
+	})
+	if err != nil {
+		t.Fatalf("fresh legacy GetSummaryOrLoad() error = %v", err)
+	}
+	if loads != 0 || fresh.Freshness.CacheStatus != "fresh" || *fresh.Snapshot.Summary.RangeActualCost != 12.5 {
+		t.Fatalf("fresh legacy loads/status/value = %d/%q/%v, want 0/fresh/12.5", loads, fresh.Freshness.CacheStatus, fresh.Snapshot.Summary.RangeActualCost)
+	}
+
+	now = generatedAt.Add(55 * time.Second)
+	transient := errors.New("synthetic Relay outage")
+	stale, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		loads++
+		return SummaryOriginLoadResult{SnapshotErr: transient}, nil
+	})
+	if err != nil {
+		t.Fatalf("stale legacy GetSummaryOrLoad() error = %v", err)
+	}
+	if loads != 1 || stale.Freshness.CacheStatus != "stale" || stale.Freshness.SourceStatus != "error" ||
+		*stale.Snapshot.Summary.RangeActualCost != 12.5 {
+		t.Fatalf("stale legacy loads/status/source/value = %d/%q/%q/%v, want 1/stale/error/12.5", loads, stale.Freshness.CacheStatus, stale.Freshness.SourceStatus, stale.Snapshot.Summary.RangeActualCost)
+	}
+}
+
 func TestSummaryCacheUsesEligibleStaleButRejectsHardFailures(t *testing.T) {
 	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
 	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
