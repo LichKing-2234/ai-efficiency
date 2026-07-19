@@ -802,14 +802,18 @@ func (s *Service) resolveOverviewSubjects(ctx context.Context, scope *representa
 	if len(overviewSubjects) == 0 {
 		overviewSubjects = scope.Subjects
 	}
+	return s.resolveSubjects(ctx, overviewSubjects, provider)
+}
+
+func (s *Service) resolveSubjects(ctx context.Context, source []representativescope.Subject, provider relay.Provider) ([]representativescope.Subject, []int64, error) {
 	overviewRelayResolver, err := s.newOverviewRelayUserResolver(ctx, provider)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	subjects := make([]representativescope.Subject, 0, len(overviewSubjects))
-	relayUserIDs := make([]int64, 0, len(overviewSubjects))
-	for _, subject := range overviewSubjects {
+	subjects := make([]representativescope.Subject, 0, len(source))
+	relayUserIDs := make([]int64, 0, len(source))
+	for _, subject := range source {
 		relayUserID, resolvedSubject, err := overviewRelayResolver.Resolve(ctx, subject)
 		if err != nil {
 			if errors.Is(err, ErrNoRelayMapping) {

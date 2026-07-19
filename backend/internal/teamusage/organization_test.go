@@ -73,8 +73,8 @@ func TestOrganizationProjectsRootAndIndependentlyPagedBranchCollections(t *testi
 	if len(encoded) >= 64*1024 || strings.Contains(string(encoded), `"children"`) || strings.Contains(string(encoded), `"member_tree"`) {
 		t.Fatalf("organization response bytes/shape = %d %s", len(encoded), encoded)
 	}
-	if provider.trendCalls != 1 {
-		t.Fatalf("shared origin trend calls = %d, want 1", provider.trendCalls)
+	if provider.trendCalls != 0 || len(provider.summaryRequestBatches) != 4 {
+		t.Fatalf("organization origin calls = trend %d stats %d, want 0/4 for independently batched root and child branches", provider.trendCalls, len(provider.summaryRequestBatches))
 	}
 }
 
@@ -139,7 +139,9 @@ func TestOrganizationCursorsRejectWrongRequestAndExpireOnScopeOrContentChange(t 
 	}
 	scope.Version = "scope-version-1"
 	now = now.Add(55 * time.Second)
-	provider.trendPoints[10001][0].TotalTokens = int64Ptr(999999)
+	changed := provider.summaryStats[10001]
+	changed.RangeTotalTokens = int64Ptr(999999)
+	provider.summaryStats[10001] = changed
 	if _, err := svc.Organization(context.Background(), 1, expired); !errors.Is(err, ErrOrganizationSnapshotExpired) {
 		t.Fatalf("Organization(changed content) error = %v, want ErrOrganizationSnapshotExpired", err)
 	}
@@ -159,9 +161,117 @@ func TestOrganizationCursorContinuesAcrossRedisOutageWhenContentMatches(t *testi
 	if err != nil {
 		t.Fatalf("Organization(second) error = %v", err)
 	}
-	if len(second.Members) != 1 || second.Members[0].Rank != 2 || provider.trendCalls != 2 {
-		t.Fatalf("second page = members %+v origin calls %d", second.Members, provider.trendCalls)
+	if len(second.Members) != 1 || second.Members[0].Rank != 2 || provider.trendCalls != 0 || len(provider.summaryRequestBatches) != 2 {
+		t.Fatalf("second page = members %+v origin calls trend/stats %d/%d", second.Members, provider.trendCalls, len(provider.summaryRequestBatches))
 	}
+}
+
+func TestOrganizationReadsOnlyRequestedDeepBranchAndDeduplicatesMultiMembership(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	rootID, childID, grandchildID, siblingID := "department-root", "department-child", "department-grandchild", "department-sibling"
+	departments := []representativescope.DepartmentScope{
+		{ExternalID: rootID, Name: "Root", DisplayPath: "Root", Depth: 5, ChildCount: 1},
+		{ExternalID: childID, ParentExternalID: &rootID, Name: "Child", DisplayPath: "Root / Child", Depth: 6, ChildCount: 1},
+		{ExternalID: grandchildID, ParentExternalID: &childID, Name: "Grandchild", DisplayPath: "Root / Child / Grandchild", Depth: 7},
+		{ExternalID: siblingID, Name: "Sibling", DisplayPath: "Sibling", Depth: 2},
+	}
+	subjects := []representativescope.Subject{
+		organizationSubject(1, 10001, "member-alice", "alice@example.com", childID, []string{childID, grandchildID}),
+		organizationSubject(2, 10002, "member-bob", "bob@example.org", grandchildID, []string{grandchildID}),
+		organizationSubject(3, 10003, "member-carol", "carol@example.net", rootID, []string{rootID}),
+		organizationSubject(4, 10004, "member-dana", "dana@example.net", siblingID, []string{siblingID}),
+	}
+	stats := map[int64]relay.TeamUserUsageStats{}
+	for relayUserID := int64(10001); relayUserID <= 10004; relayUserID++ {
+		cost, tokens := float64(relayUserID-10000), relayUserID-10000
+		stats[relayUserID] = relay.TeamUserUsageStats{UserID: relayUserID, RangeActualCost: &cost, RangeTotalTokens: &tokens}
+	}
+	scope := &representativescope.Scope{
+		Version: "scope-version-1", ActorUserID: 1, IsRepresentative: true,
+		MemberTreeRootIDs: []string{rootID, siblingID}, MemberTreeDepartments: departments, OverviewSubjects: subjects,
+	}
+	provider := &fakeRelayProvider{summaryStats: stats}
+	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return time.Date(2026, 7, 19, 8, 0, 0, 0, time.UTC) }, 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret)
+
+	rootBranch, err := svc.Organization(context.Background(), 1, testOrganizationParams(rootID))
+	if err != nil {
+		t.Fatalf("Organization(root department) error = %v", err)
+	}
+	if len(rootBranch.Departments) != 1 || rootBranch.Departments[0].DepartmentExternalID != childID || rootBranch.Departments[0].Depth != 1 {
+		t.Fatalf("root branch departments = %+v, want immediate normalized child only", rootBranch.Departments)
+	}
+	if len(rootBranch.Members) != 1 || rootBranch.Members[0].DirectoryMemberExternalID != "member-carol" || rootBranch.Members[0].Rank != 1 {
+		t.Fatalf("root direct members = %+v, want branch-local rank 1 for Carol only", rootBranch.Members)
+	}
+	child := rootBranch.Departments[0]
+	if child.DirectMemberCount != 1 || child.AggregateMemberCount != 2 || child.ConnectedMemberCount != 2 || child.RangeTotalTokens == nil || *child.RangeTotalTokens != 3 {
+		t.Fatalf("multi-membership child aggregate = %+v, want Alice deduplicated plus Bob", child)
+	}
+	if len(provider.summaryRequestBatches) != 1 || containsInt64(provider.summaryRequestBatches[0], 10004) {
+		t.Fatalf("requested branch Relay IDs = %v, want no sibling member", provider.summaryRequestBatches)
+	}
+
+	deepBranch, err := svc.Organization(context.Background(), 1, testOrganizationParams(childID))
+	if err != nil {
+		t.Fatalf("Organization(child department) error = %v", err)
+	}
+	if len(deepBranch.Departments) != 1 || deepBranch.Departments[0].DepartmentExternalID != grandchildID || deepBranch.Departments[0].Depth != 2 || len(deepBranch.Members) != 1 || deepBranch.Members[0].DirectoryMemberExternalID != "member-alice" {
+		t.Fatalf("deep branch = departments %+v members %+v", deepBranch.Departments, deepBranch.Members)
+	}
+	if provider.trendCalls != 0 {
+		t.Fatalf("organization trend calls = %d, want 0", provider.trendCalls)
+	}
+}
+
+func TestOrganizationBranchFailureLeavesCachedSectionsAndSiblingUsable(t *testing.T) {
+	svc, provider, scope := newOrganizationTestService(t, 2, 3, nil, nil)
+	scope.OverviewSubjects[0].DepartmentExternalID = "department-alpha-01"
+	scope.OverviewSubjects[0].DepartmentExternalIDs = []string{"department-alpha-01"}
+	scope.OverviewSubjects[1].DepartmentExternalID = "department-alpha-02"
+	scope.OverviewSubjects[1].DepartmentExternalIDs = []string{"department-alpha-02"}
+	params := testMembersParams().OverviewParams
+	if _, err := svc.Summary(context.Background(), 1, params); err != nil {
+		t.Fatalf("Summary(warm) error = %v", err)
+	}
+	if _, err := svc.Trend(context.Background(), 1, params); err != nil {
+		t.Fatalf("Trend(warm) error = %v", err)
+	}
+	alphaParams := testOrganizationParams("department-alpha-01")
+	if _, err := svc.Organization(context.Background(), 1, alphaParams); err != nil {
+		t.Fatalf("Organization(alpha warm) error = %v", err)
+	}
+	provider.summaryErr = errors.New("synthetic beta branch failure")
+	if _, err := svc.Organization(context.Background(), 1, testOrganizationParams("department-alpha-02")); err == nil {
+		t.Fatal("Organization(beta failure) error = nil, want branch-local origin failure")
+	}
+	if _, err := svc.Summary(context.Background(), 1, params); err != nil {
+		t.Fatalf("Summary(after branch failure) error = %v", err)
+	}
+	if _, err := svc.Trend(context.Background(), 1, params); err != nil {
+		t.Fatalf("Trend(after branch failure) error = %v", err)
+	}
+	if _, err := svc.Organization(context.Background(), 1, alphaParams); err != nil {
+		t.Fatalf("Organization(alpha after sibling failure) error = %v", err)
+	}
+}
+
+func organizationSubject(userID, relayUserID int, externalID, email, primaryDepartmentID string, departmentIDs []string) representativescope.Subject {
+	return representativescope.Subject{
+		SubjectType: "member", UserID: userID, DirectoryMemberExternalID: externalID, DisplayName: externalID, Email: email,
+		DepartmentExternalID: primaryDepartmentID, DepartmentExternalIDs: departmentIDs, DepartmentDisplayPath: primaryDepartmentID,
+		RelayUserID: &relayUserID, Selectable: true,
+	}
+}
+
+func containsInt64(values []int64, target int64) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func newOrganizationTestService(t *testing.T, childCount, directMemberCount int, now func() time.Time, store readcache.Store) (*Service, *fakeRelayProvider, *representativescope.Scope) {
@@ -182,12 +292,13 @@ func newOrganizationTestService(t *testing.T, childCount, directMemberCount int,
 	for index := 1; index <= directMemberCount; index++ {
 		relayUserID := 10000 + index
 		tokens := int64(directMemberCount - index + 1)
+		rangeCost := float64(tokens)
 		subjects = append(subjects, representativescope.Subject{
 			SubjectType: "member", UserID: index, DirectoryMemberExternalID: fmt.Sprintf("member-%03d", index),
 			DisplayName: fmt.Sprintf("Member %03d", index), Email: fmt.Sprintf("member-%03d@example.com", index),
 			DepartmentExternalID: rootID, DepartmentExternalIDs: []string{rootID}, DepartmentDisplayPath: "Root", RelayUserID: &relayUserID, Selectable: true,
 		})
-		stats[int64(relayUserID)] = relay.TeamUserUsageStats{UserID: int64(relayUserID), TodayActualCost: 1, TotalActualCost: 2}
+		stats[int64(relayUserID)] = relay.TeamUserUsageStats{UserID: int64(relayUserID), RangeActualCost: &rangeCost, RangeTotalTokens: &tokens, TodayActualCost: 1, TotalActualCost: 2}
 		trends[int64(relayUserID)] = []relay.UsageTrendPoint{{Date: "2026-07-07", ActualCost: 1, TotalTokens: &tokens}}
 	}
 	scope := &representativescope.Scope{

@@ -342,11 +342,12 @@ func main() {
 	teamUsageSnapshotCache, err := teamusage.NewSnapshotCache(
 		redisStore,
 		teamusage.SnapshotCacheOptions{
-			Namespace:       cfg.Redis.Namespace,
-			SummaryMetrics:  cacheMetrics.teamUsageSummary,
-			TrendMetrics:    cacheMetrics.teamUsageTrend,
-			MembersMetrics:  cacheMetrics.teamUsageMembers,
-			OverviewMetrics: cacheMetrics.teamUsageOverview,
+			Namespace:           cfg.Redis.Namespace,
+			SummaryMetrics:      cacheMetrics.teamUsageSummary,
+			TrendMetrics:        cacheMetrics.teamUsageTrend,
+			MembersMetrics:      cacheMetrics.teamUsageMembers,
+			OrganizationMetrics: cacheMetrics.teamUsageOrg,
+			OverviewMetrics:     cacheMetrics.teamUsageOverview,
 		},
 	)
 	if err != nil {
