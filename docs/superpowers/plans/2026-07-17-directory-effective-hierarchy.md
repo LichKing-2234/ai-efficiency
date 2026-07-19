@@ -24,7 +24,7 @@
 - Tests and examples use only synthetic departments, users, emails, credentials, and URLs.
 - Maintain this file as a live ledger and check a step only after its command or edit actually completes.
 
-**Status:** Complete. Tasks 1-3 are committed as `12ce1fa0`, `0c7cbcb8`, and `5098cd62`; final-review ordering fix `e52accb7` and architecture reconciliation `c07b2011` are also committed. PR #178 targets `feat/platform-loading-performance`, issue #165 is `in-review`, and delivery-head CI passed. Environment-sensitive role E2E was not run.
+**Status:** Complete. PR #178 was merged into `feat/platform-loading-performance` at `8db50f91`; issue #165 is closed, and administrator reader/removal follow-ups #169/#171 are present at the exact integration head `d2bc2694`. The ticket-local role E2E gap is superseded by #173's fresh exact-head 16/16 role regression. A successful post-storage Directory apply remains a deployment prerequisite, not a missing code step.
 
 ---
 

@@ -1,7 +1,7 @@
 # End-to-End Page Loading Performance Design
 
 - **Date:** 2026-07-14
-- **Status:** Approved target design; implementation status is recorded inline per ticket, while production sampling and final compatibility cleanup remain pending
+- **Status:** Implemented and review-remediated on `feat/platform-loading-performance@d2bc2694`; not merged to `main` or production-verified; #136 production sampling and #137 compatibility removal remain blocked
 - **Parent issue:** [#115](https://github.com/LichKing-2234/ai-efficiency/issues/115)
 - **Contract ticket:** [#116](https://github.com/LichKing-2234/ai-efficiency/issues/116)
 - **Audit baseline:** commit `70eb6ebe32298c333d4bebf144edd1b474a039dc`, production `v0.1.0-preview.71`
@@ -10,12 +10,25 @@
 
 This document is the active design contract for reducing end-to-end page loading latency across AI Efficiency Platform. It covers browser critical paths, API composition, database query shape, Relay calls, Redis read models, embedded static serving, runtime deadlines, readiness, and performance telemetry.
 
+### Current integration boundary at 2026-07-19
+
+The exact implementation boundary is `feat/platform-loading-performance@d2bc26941d6c966c8117a038b770450f7b201ed4`:
+
+1. Issues #117-#135 are implemented on that integration branch through source PRs #139-#158, excluding unrelated quota approval PR #146.
+2. PR #160 review remediations #161-#172 are also closed and integrated through PRs #174-#186. The branch therefore contains the bounded read paths, split page lifecycles, explicit runtime dependencies, shared cache coordination and metrics, persisted effective hierarchy, bounded Team Usage origins, and split-backed compatibility adapter described below.
+3. `GET /api/v1/user/team-usage/overview` is intentionally still implemented as a temporary compatibility adapter. It owns no monolithic Relay origin, Redis lane, or production metric, but its historical DTO, recursive tree, deprecation headers, and ineffective `page`/`page_size` inputs remain until the expand-contract release window is proven.
+4. Some earlier intermediate heads and individual slices have staging evidence. That does not prove the exact `d2bc2694` integration head has completed a normal platform release or the comparable production measurements required by #136.
+5. Issue #136 remains blocked until the full integrated stack is released and deployed normally, then sampled in production with the required cold/warm, cache, transfer, dependency, and Web Vitals evidence. Issue #137 remains blocked by #136 and the one-complete-release compatibility requirement.
+
+This boundary distinguishes code integration from runtime rollout. It does not claim a merge to `main`, a platform release, deployment of the exact head, production budget ratification, or compatibility removal.
+
 The code at the audit baseline does **not** implement most target behavior in this document. To keep project documentation honest:
 
 1. `Current State at the Audit Commit` and statements explicitly labeled **Current** describe verified behavior at the audit commit.
 2. Every other behavioral contract in this document is an approved **Target** for child tickets of #115 unless it explicitly says otherwise; `Target` in a heading is a reminder, not a requirement for that status to apply.
 3. `docs/architecture.md` continues to describe current runtime behavior. Each implementation ticket updates it only after that slice becomes real.
 4. This ticket changes documentation only. It does not change business behavior, API behavior, deployment, or production configuration.
+5. The current integration boundary above is authoritative for implementation status after the audit baseline. `Target` language retained below records the design contract relative to that historical baseline; it is not evidence that the integrated implementation is still missing.
 
 ## Related Documents and Supersession
 
@@ -748,15 +761,15 @@ Initial comparative acceptance includes:
 
 Implementation is tracked by #115 child tickets:
 
-| Stage | Tickets | Outcome |
-| --- | --- | --- |
-| Contract | #116 | This target design |
-| Independent foundations and P0 slices | #117-#122 | Static delivery, runtime/request spine, work items, events, Directory runs, route hydration |
-| Usage and team split | #123-#129 | Personal snapshot, versioned scope, summary, trend, members, organization, member detail |
-| Remaining page/query slices | #130-#134 | Settings/provider, quota queues, repositories, PR freshness, admin users |
-| Telemetry | #135 | Pool/cache metrics and Web Vitals baseline |
-| Production verification | #136 | Cold/warm evidence, route budgets, one-release team compatibility proof |
-| Contract cleanup | #137 | Remove legacy Team Overview adapter |
+| Stage | Tickets | Outcome | Current state |
+| --- | --- | --- | --- |
+| Contract | #116 | This target design | Integrated through PR #138 |
+| Independent foundations and P0 slices | #117-#122 | Static delivery, runtime/request spine, work items, events, Directory runs, route hydration | Implemented on `feat/platform-loading-performance` |
+| Usage and team split | #123-#129 | Personal snapshot, versioned scope, summary, trend, members, organization, member detail | Implemented and remediated through #172; legacy Overview remains compatibility-only |
+| Remaining page/query slices | #130-#134 | Settings/provider, quota queues, repositories, PR freshness, admin users | Implemented and remediated through #171 |
+| Telemetry | #135 | Pool/cache metrics and Web Vitals baseline | Instrumentation implemented and remediated through #166; production evidence not yet collected |
+| Production verification | #136 | Cold/warm evidence, route budgets, one-release team compatibility proof | Blocked on a normal release/deployment of the full exact integration state |
+| Contract cleanup | #137 | Remove legacy Team Overview adapter | Blocked on #136 and the complete compatibility release window |
 
 Rollout rules:
 

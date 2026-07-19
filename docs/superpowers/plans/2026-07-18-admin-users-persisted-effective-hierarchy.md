@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Complete. PR #182 was squash-merged into `feat/platform-loading-performance` at `44351cc79b109e4a957083fa1c7de18993026005`; exact PR head `deffbf018d013f7fa8e152a919ea6e937bdad548` passed all required CI jobs, issue #169 is closed, and #173 has the dependency update. The environment-sensitive role E2E gap is recorded below.
+**Status:** Complete. PR #182 was squash-merged into `feat/platform-loading-performance` at `44351cc79b109e4a957083fa1c7de18993026005`; exact PR head `deffbf018d013f7fa8e152a919ea6e937bdad548` passed all required CI jobs, issue #169 is closed, and the exact integration head `d2bc2694` includes #170-#172. The earlier environment-sensitive gap is superseded by #173's fresh exact-head full matrix and 16/16 role regression. No `main` merge, release, or production verification is claimed.
 
 **Known Remaining Gap:** `npm run test:e2e:role` was attempted but no application was listening on its required `http://localhost:5173`, so all three cases ended at navigation with `ERR_CONNECTION_REFUSED`. This environment-sensitive item remains unchecked; backend/full frontend unit/build, ae-cli, embedded-static, and diff-hygiene verification passed.
 
@@ -98,7 +98,7 @@
 
   Documentation evidence (2026-07-18): current architecture and the active loading-performance contract now describe the persisted `navigation_departments` projection, the three bounded recursive result roles, #171 cleanup ownership, and the required successful apply between storage expansion and reader activation for legacy snapshots.
 
-- [ ] **Step 2: Run full verification**
+- [x] **Step 2: Run full verification**
 
   ```bash
   git diff --check
@@ -117,7 +117,9 @@
 
   Report environment-sensitive role E2E separately if its required runtime is unavailable.
 
-  Verification evidence (2026-07-18): `git diff --check`; backend `go test ./... -count=1` and `go vet ./...`; frontend 46 files / 680 tests and production build; ae-cli `go test ./... -count=1`; and `bash deploy/test/release-frontend-embed-test.sh` passed. The embed script emitted its known synthetic unresolved-hook warning before passing. Role E2E remains unchecked for the connection-refused environment gap recorded above.
+  Verification evidence (2026-07-18): `git diff --check`; backend `go test ./... -count=1` and `go vet ./...`; frontend 46 files / 680 tests and production build; ae-cli `go test ./... -count=1`; and `bash deploy/test/release-frontend-embed-test.sh` passed. The embed script emitted its known synthetic unresolved-hook warning before passing. The ticket-local role E2E attempt could not start without a listener.
+
+  Integration evidence (2026-07-19, #173): the exact integrated implementation plus reconciliation-only documentation passed `git diff --check`; backend `go test ./... -count=1`, `go vet ./...`, and `go build ./...`; frontend clean `npm ci`, 46 files / 680 tests, production build, and 16/16 role E2E against an owned strict-port `127.0.0.1:5173` Vite listener; ae-cli `go test ./... -count=1`; and the release frontend embed harness. The listener was stopped and port 5173 was confirmed free. Expected unmocked proxy warnings and the embed harness's synthetic unresolved-hook warning did not affect the passing assertions.
 
 - [x] **Step 3: Review the exact branch against issue #169 and active specs**
 

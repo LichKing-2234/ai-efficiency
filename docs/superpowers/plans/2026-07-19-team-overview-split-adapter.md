@@ -4,7 +4,7 @@
 
 **Issue:** [#172](https://github.com/LichKing-2234/ai-efficiency/issues/172)
 
-**Status:** Complete. Implementation, contract synchronization, full verification, acceptance review, and commit are finished; push, PR, CI, and integration are tracked in GitHub rather than this implementation ledger.
+**Status:** Complete. PR #186 was squash-merged into `feat/platform-loading-performance` at `d2bc26941d6c966c8117a038b770450f7b201ed4`; issue #172 is closed and exact PR head `157e4fb8870e282c2cea3f1870e4565969c46b14` passed the required CI. The legacy route remains a one-release compatibility adapter; #136 still owns production evidence and #137 owns later removal. No `main` merge, release, or production verification is claimed.
 
 **Goal:** Make the deprecated Team Overview endpoint assemble its historical response only from the current split read models and shared organization projection, then delete the monolithic Overview Relay origin, Redis lane, and production metric.
 

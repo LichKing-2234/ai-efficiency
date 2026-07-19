@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Complete. Tasks 1-5, full local verification, independent reviews, and the first two CI rounds are complete. Draft PR #143 is open against `docs/performance-contracts-116`; the final ledger-head CI remains an explicit post-commit confirmation gate.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #143 at `5d5eae06`; request-correlation and explicit-runtime-dependency review remediations #161/#163 are also integrated at the exact head `d2bc2694`. Draft-PR and ledger-CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
 

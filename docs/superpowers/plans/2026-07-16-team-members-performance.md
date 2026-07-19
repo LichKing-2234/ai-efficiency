@@ -24,7 +24,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** Complete. Draft PR #155 targets `perf/team-trend-126`, depends directly on Draft PR #154, and the implementation-head CI passed all required jobs. The worktree remains available for review; no merge, release, tag, deployment, Helm action, or `sub2api` change was performed.
+**Status:** The original split Members implementation is integrated into `feat/platform-loading-performance` through PR #155 at `1098c709`; bounded independent-origin and compatibility-adapter remediations #168/#172 are also present at the exact head `d2bc2694`. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open, and #137 still owns later compatibility removal.
 
 ---
 

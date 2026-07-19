@@ -22,7 +22,7 @@
 - Tests and examples use only synthetic identities and credentials.
 - Update each checkbox immediately after its action is actually complete.
 
-**Status:** Complete for issue #125. Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/153. Local verification and all required CI jobs passed.
+**Status:** The original split Summary implementation is integrated into `feat/platform-loading-performance` through PR #153 at `25cf7d6f`; independent cold-origin and compatibility-adapter remediations #164/#172 are also present at the exact head `d2bc2694`. Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open, and #137 still owns later compatibility removal.
 
 ---
 

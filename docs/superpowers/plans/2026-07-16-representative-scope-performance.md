@@ -18,7 +18,7 @@
 - Tests and examples use only synthetic users, domains, credentials, and group names.
 - Every completed step updates this file in the same execution turn.
 
-**Status:** Complete for issue #124. Draft PR: https://github.com/LichKing-2234/ai-efficiency/pull/149. Local verification and all required CI checks passed.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #149 at `9225ed87`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 ---
 
