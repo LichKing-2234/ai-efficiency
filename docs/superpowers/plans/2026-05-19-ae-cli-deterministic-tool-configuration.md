@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** The original rollout, the 2026-05-29 Codex app-only follow-up, and the 2026-07-18 explicit tool-selection and ChatGPT app follow-up are complete.
+**Status:** The original rollout, the 2026-05-29 Codex app-only follow-up, the 2026-07-18 explicit tool-selection and ChatGPT app follow-up, and the 2026-07-19 final-review fix for explicit blank `--tool` values are complete.
 
 **Goal:** Keep deterministic provider configuration intact while allowing users to explicitly configure supported tools that are not locally detectable and recognizing the renamed macOS `ChatGPT.app` as Codex.
 
@@ -392,3 +392,12 @@ After Steps 1-5 actually pass, change the plan Status to state that the 2026-07-
 git add ae-cli/test/discover-e2e.sh docs/architecture.md docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md docs/superpowers/plans/2026-05-19-ae-cli-deterministic-tool-configuration.md
 git commit -m "test(ae-cli): verify explicit discover configuration"
 ```
+
+## 2026-07-19 Final Review Fix: Preserve Explicit Blank Tool Values
+
+- [x] Reproduce at the Cobra command boundary that `StringSliceVar` drops `--tool=` and blank repeated values.
+- [x] Replace `StringSliceVar` with `StringArrayVar`, split comma-separated values in the command layer, and validate every element before deduplication.
+- [x] Cover `--tool=`, blank repeated values, repeated values, comma-separated values, and mixed duplicate ordering with focused tests.
+- [x] Update the current spec to describe raw occurrence preservation and command-layer comma splitting rather than string-slice semantics.
+- [x] Run focused command tests, full `ae-cli` tests, mock discover E2E, built help verification, and `git diff --check`.
+- [x] Mark this final-review fix complete and commit the code, tests, spec, and live plan update.

@@ -31,7 +31,7 @@ ae-cli discover
    - 可通过 `--provider <name>` 显式覆盖
 3. 选择受支持工具
    - 默认通过 `PATH` 自动检测 `codex`、`claude`、`gemini`；若 `codex` CLI 不存在，还会依次识别 macOS `ChatGPT.app` 和旧 `Codex.app`
-   - 可通过可重复的 `--tool <codex|claude|gemini>` 显式选择工具并跳过安装检测
+   - 可通过可重复或逗号分隔的 `--tool <codex|claude|gemini>` 显式选择工具并跳过安装检测
 4. 按工具对应的 relay `group.platform` 选择 credential
    - `codex` -> `openai`
    - `claude` -> `anthropic`
@@ -77,7 +77,7 @@ ae-cli discover
 ### Command contract
 
 - `ae-cli discover` 新增可重复的 `--tool` 参数，只接受 `codex`、`claude`、`gemini`。
-- Cobra 使用 string-slice 语义，因此以下两种写法等价：
+- Cobra/pflag 使用 string-array 语义原样保留每次 `--tool` occurrence；命令层再按逗号拆分、trim 并逐元素校验，因此以下两种写法等价：
 
   ```bash
   ae-cli discover --tool codex --tool claude
@@ -86,8 +86,8 @@ ae-cli discover
 
 - 未传 `--tool` 时，保持现有自动检测流程不变。
 - 传入一个或多个 `--tool` 时，CLI 跳过本次安装检测，直接尝试配置显式指定的工具。该行为只覆盖工具选择，不改变 provider 或 credential 合同。
-- 重复的工具名去重，并保持首次出现的顺序。
-- 未知或空白工具名必须返回明确错误，并列出支持的工具；不能静默跳过。
+- 所有拆分后的元素都必须先完成校验；随后对重复工具名去重，并保持首次出现的顺序。
+- 未知或空白工具名（包括 `--tool=`、逗号间的空元素、以及重复 flag 中的空白 occurrence）必须返回明确错误并列出支持的工具，不能静默跳过或回退到安装检测。
 - 显式选择不能绕过 credential 校验。指定工具缺少匹配 platform credential 时，继续沿用现有跳过行为，不写对应配置。
 - `--dry-run` 与 `--tool` 可以组合；此时输出目标路径但不写文件。
 
@@ -103,13 +103,13 @@ ae-cli discover
 
 ### Implementation boundary
 
-- 显式工具名的解析、校验和去重位于 `ae-cli/cmd/discover.go`，命令层负责把用户意图转换为 `toolconfig.InstalledTool` 列表。
+- `ae-cli/cmd/discover.go` 使用 `StringArrayVar` 保留每次 `--tool` 的原始 occurrence，并在命令层完成逗号拆分、校验和去重，把用户意图转换为 `toolconfig.InstalledTool` 列表。
 - `ae-cli/internal/toolconfig.DetectInstalledTools` 只负责真实安装检测，不增加 force mode，避免把检测事实与显式用户选择混在同一个接口中。
 - `ae-cli/internal/toolconfig.ConfigureTools` 继续只消费工具列表和 provider credential，不关心工具来自自动检测还是显式选择。
 
 ### Verification
 
-- 命令测试覆盖单工具、多工具、逗号分隔、去重、未知工具、显式选择绕过安装检测，以及无 `--tool` 时继续自动检测。
+- 命令测试通过 Cobra/pflag 边界覆盖单工具、多工具、逗号分隔、混合输入去重顺序、未知或显式空白工具、显式选择绕过安装检测，以及无 `--tool` 时继续自动检测。
 - toolconfig 测试覆盖只安装 `ChatGPT.app` 时识别 Codex，并保留旧 `Codex.app` 回归。
 - CLI help 和 mock discover E2E 必须展示并验证新的 `--tool` 合同。
 
