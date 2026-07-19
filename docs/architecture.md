@@ -279,7 +279,10 @@ is a response adapter over those lanes and owns no origin or cache:
   and expire under their existing Redis TTL.
 - Values are fresh for 144-162 seconds and have a hard stale deadline 4-4.5
   minutes after generation, both using 10-20 percent jitter below the documented
-  three-minute and five-minute maxima. Only an eligible transient origin failure may reuse a
+  three-minute and five-minute maxima. Writers emit only that current fresh
+  window; readers also accept same-schema historical 48-54 second envelopes
+  through their original deadlines so an upgrade does not discard eligible
+  stale fallback. Only an eligible transient origin failure may reuse a
   stale generation; invalid input, invalid credentials, provider capability or
   configuration failure, authorization failure, caller cancellation, and hard
   expiry do not use stale data.

@@ -1,6 +1,6 @@
 # Team Usage Cold Loading Design
 
-**Status:** Implemented through `perf/team-usage-cold-loading@45c6beac`; local branch verification is complete and staging A/B remains pending
+**Status:** Implemented through `perf/team-usage-cold-loading@2147142a`; independent re-review and full local verification are complete, while exact-head PR CI and staging A/B remain pending
 
 **Refines:**
 
@@ -73,7 +73,9 @@ the HTTP origin finishes. The limiter therefore has these semantics:
 3. Disjoint users, ranges, actors, and credential generations share the same
    sixteen slots within one provider instance.
 4. A caller canceled while waiting for a slot returns its context error and
-   never starts an origin.
+   never starts an origin. The limiter checks cancellation before waiting and
+   again after slot acquisition so a simultaneous cancellation and slot
+   handoff cannot start the HTTP loader.
 5. Credential invalidation clears cached trend values and separates flights,
    but it does not replace the limiter or temporarily double origin capacity.
 6. Invalid non-positive Relay user IDs keep their existing cache/flight bypass,
@@ -115,6 +117,14 @@ data while a successful refresh is still running, does not extend hidden
 per-user trend freshness, and does not claim a newly generated `as_of` time for
 old origin data.
 
+The writer emits only the new 144-162 second fresh window. To preserve an
+eligible stale fallback across an application upgrade, the reader also accepts
+same-schema historical envelopes whose actual fresh window is 48-54 seconds
+and whose stale window remains 240-270 seconds. Their stored `fresh_until` and
+`stale_until` remain authoritative, so compatibility neither refreshes nor
+extends old values. All other fresh-window ranges remain invalid, and Redis
+keys and payload schema versions do not change.
+
 The three-minute window is scoped only to Summary, Trend, Members, and
 Organization read models in `backend/internal/teamusage`. Personal usage,
 representative scope, work-item, provider metadata, and other caches retain
@@ -142,12 +152,14 @@ Focused tests must prove:
    than per-caller.
 3. Two callers sharing user/range keys still collapse to one origin per user
    while using no more than sixteen slots.
-4. Cancellation while waiting for a limiter slot returns promptly and does not
-   start an extra origin.
+4. Cancellation while waiting for a limiter slot, including cancellation at
+   slot handoff, returns promptly and does not start an extra origin.
 5. Credential invalidation does not create a second limiter capacity pool.
 6. The minimum-jitter Team Usage fresh window is 162 seconds and the
    maximum-jitter window is 144 seconds.
-7. Existing 240-270 second stale bounds, Redis hard TTL, cache statuses,
+7. Same-schema historical 48-54 second envelopes remain readable through
+   their original stale deadline, while new writes use only 144-162 seconds.
+8. Existing 240-270 second stale bounds, Redis hard TTL, cache statuses,
    response contracts, and race tests remain unchanged.
 
 The complete backend test, vet, build, and race gates must pass. No frontend

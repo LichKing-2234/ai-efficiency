@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Independent review fixes are locally green on PR #189; documentation sync, full verification, exact-head CI, merge, and staging A/B remain pending.
+**Status:** Independent review and full local verification are complete on PR #189; exact-head CI, merge, and staging A/B remain pending.
 
 **Goal:** Reduce large-team cold page completion by raising bounded per-user trend concurrency to a provider-wide sixteen slots and keep Team Usage response snapshots fresh for a three-minute pre-jitter maximum.
 
-**Architecture:** Add a zero-value-safe origin limiter owned by each `sub2apiRelay` provider and route every per-user trend origin through it after cache/singleflight collapse. Increase caller workers to the same capacity so one large caller can fill the limiter. Change only the shared Team Usage read-model envelope fresh maximum from one minute to three minutes while preserving its existing jitter, stale deadline, Redis hard TTL, cache identities, and stale-if-error flow.
+**Architecture:** Add a zero-value-safe origin limiter owned by each `sub2apiRelay` provider and route every per-user trend origin through it after cache/singleflight collapse. Increase caller workers to the same capacity so one large caller can fill the limiter. Change only the shared Team Usage read-model envelope writer fresh maximum from one minute to three minutes while preserving its existing jitter, stale deadline, Redis hard TTL, cache identities, and stale-if-error flow; readers retain same-schema 48-54 second envelope compatibility through the historical value's original deadline.
 
 **Tech Stack:** Go 1.24, `net/http`, `httptest`, `sync`, existing `readcache.FlightGroup`, existing Redis read-model cache and miniredis tests.
 
@@ -19,6 +19,8 @@
 - Cache hits and shared-flight waiters do not consume origin slots; all actual origins, including invalid-ID bypass origins, do.
 - Credential invalidation does not replace the limiter or create another sixteen-slot pool.
 - Team Usage fresh lifetime is `3m - 10-20% jitter`, exactly 144-162 seconds.
+- New readers also accept historical 48-54 second same-schema envelopes without
+  extending their stored fresh or stale deadlines.
 - Team Usage stale lifetime remains `5m - 10-20% jitter`, exactly 240-270 seconds after generation.
 - The per-user trend cache remains 60 seconds with 4096 entries and a 20-second flight timeout.
 - Redis GET retry, user-directory caching, batch-stat caching, concurrency above sixteen, and production deployment remain out of scope.
@@ -439,6 +441,14 @@
   After the minimal fixes, both exact regressions passed twice. The current
   writer still emits only 144-162 second freshness, while the reader preserves
   eligible stale fallback for historical 48-54 second envelopes.
+
+  Re-review and verification evidence (2026-07-19): the original reviewer
+  marked both Important findings closed, found no new Critical or Important
+  issue, and found no over-design; it also passed the handoff regression 50
+  times and the legacy/current freshness regressions 20 times. Fresh local
+  `internal/relay` and `internal/teamusage` double runs, the focused race run,
+  full `go test ./... -count=1`, `go vet ./...`, `go build ./...`, and
+  `git diff --check` all exited zero.
 
 - [ ] **Step 3: Wait for exact-final-head CI**
 
