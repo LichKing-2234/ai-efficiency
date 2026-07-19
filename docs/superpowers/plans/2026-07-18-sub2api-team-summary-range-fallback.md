@@ -21,7 +21,7 @@
 - Update each checkbox immediately after the action is actually complete.
 - Deploy only `ai-efficiency-staging` in namespace `la3-ai-efficiency-prod`; do not upgrade, restart, or retag `ai-efficiency-prod`.
 
-**Status:** In progress. Task 1 RED and Task 2 focused/full/race verification passed. Image `staging-35153d0430f3299a507b234b86da55a4ddad6736` is deployed as staging revision 22 and all health checks pass. Authenticated Team Usage summary verification remains pending.
+**Status:** Complete. Task 1 RED and Task 2 focused/full/race verification passed. Image `staging-35153d0430f3299a507b234b86da55a4ddad6736` is deployed as staging revision 22. Authenticated cold and warm Team Usage summary checks pass, and production remains unchanged.
 
 ---
 
@@ -350,7 +350,7 @@ Expected: Helm records a paused revision before the restore-enabled revision, th
 
 Rollout evidence (2026-07-18): paused revision 21 completed with no application Pod; restore-enabled revision 22 completed after Job `ai-efficiency-staging-postgres-restore-35153d0430f3` reached `1/1` and the application Deployment became ready.
 
-- [ ] **Step 4: Verify staging health, image identity, and the original failing API contract**
+- [x] **Step 4: Verify staging health, image identity, and the original failing API contract**
 
 Run:
 
@@ -378,7 +378,9 @@ jq -e '
 
 Expected: the Deployment image equals `${IMAGE}`, both health endpoints succeed, and the original four-member range returns complete non-null totals.
 
-- [ ] **Step 5: Confirm production was not changed**
+Runtime evidence (2026-07-19): staging live/ready checks passed with build commit `35153d0430f3299a507b234b86da55a4ddad6736`. Authenticated cold requests for both `2026-06-19..2026-07-18` and `2026-06-20..2026-07-19` returned HTTP 200, `cache_status=miss`, `source_status=ok`, `unavailable=false`, 4/4 members, and non-null range cost/tokens. A repeated current-range request returned `cache_status=fresh` with the same available range contract in 0.58 seconds.
+
+- [x] **Step 5: Confirm production was not changed**
 
 Run:
 
@@ -390,3 +392,5 @@ git -C /Users/admin/helm status --short --branch
 ```
 
 Expected: production remains on its pre-existing release and is ready; both repositories are clean and synchronized with their remotes.
+
+Isolation evidence (2026-07-19): production remained ready at Helm revision 68 on `v0.1.0-preview.72`; the staging release alone advanced to revision 22.
