@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation commits `bade4a33` and `26907c85`, documentation repair `ded38d19`, required post-fix full local verification, whole-branch review, PR delivery, and exact reviewed-head CI are complete. The final plan-ledger head still requires the same four repository CI jobs before Task 4 is reported complete externally. PR #190 remains open and unmerged; image publication, Helm changes, staging verification, and production work have not started.
+**Status:** Implementation commits `bade4a33` and `26907c85`, documentation repair `ded38d19`, required post-fix full local verification, whole-branch review, and PR delivery are complete. Prior plan-ledger head `653bb5b3cab0abafff55401efb299bd974e9c7bf` later passed all four jobs in CI run `29689122313`, but that commit had already checked Task 4 Steps 3 and 4 before the run existed. Task 4 is therefore reopened: this corrective plan commit will become the new PR head, and backend, frontend, ae-cli, and deploy-static CI on that exact head are pending. PR #190 remains open and unmerged; image publication, Helm changes, staging verification, and production work have not started.
 
 **Goal:** Recover one transient Redis read failure without leaving the bounded command budget, and reduce large-team cold latency by raising the single provider-wide trend origin limit from sixteen to 24.
 
@@ -587,7 +587,7 @@
   staging gate all conformant. The verdict was ready subject to exact-head CI;
   no actionable finding or behavioral follow-up remained.
 
-- [x] **Step 3: Require exact-final-head repository CI**
+- [ ] **Step 3: Require exact-final-head repository CI**
 
   Require backend, frontend, ae-cli, and deploy-static success on the exact
   reviewed PR head. If a plan-only ledger commit records an earlier CI run,
@@ -605,27 +605,38 @@
   Task 4 is reported complete externally; this evidence does not pre-claim
   that final-ledger result.
 
-- [x] **Step 4: Stop at the merge gate**
+  Ledger-timing correction (2026-07-19): plan-ledger commit
+  `653bb5b3cab0abafff55401efb299bd974e9c7bf` was committed at
+  `2026-07-19T13:33:27Z` with Task 4 Steps 3 and 4 already checked, while its
+  CI run `29689122313` was not created until `2026-07-19T13:33:53Z`. Although
+  that run later completed successfully, the committed ledger pre-checked
+  exact-head CI and violated this plan's ordering rule. Steps 3 and 4 are
+  reopened. This corrective plan commit must be pushed as the new exact PR
+  head, and backend, frontend, ae-cli, and deploy-static must all be observed
+  successful on that unchanged head before either step is checked again.
+
+- [ ] **Step 4: Stop at the merge gate**
 
   Do not merge automatically. Report PR URL, base/head branches, reviewed head
   SHA, mergeability, review state, and exact-head CI. Wait for user merge or
   observe the merge before any image publish or Helm action.
 
-  Merge-gate evidence (2026-07-19): PR #190 remains OPEN and non-Draft with
+  Current merge-gate state before corrective-head CI (2026-07-19): PR #190
+  remains OPEN and non-Draft with
   base `feat/platform-loading-performance` and head
   `perf/team-usage-cache-read-retry-24`; independent Standards and Spec review
-  is clean and GitHub reports MERGEABLE/CLEAN after reviewed-head CI. No merge,
-  image publish, release, Helm, staging, or production command was run. Work is
-  stopped at the gate pending the final-ledger CI observation and then user
-  merge or an observed merge.
+  is clean and GitHub reports MERGEABLE/CLEAN. No merge, image publish,
+  release, Helm, staging, or production command was run. The completed merge
+  gate remains pending until the corrective plan commit receives all four
+  required CI successes on its exact unchanged head.
 
-  **Final external gate (intentionally not another branch-ledger update):**
-  after pushing this plan-only commit, require backend, frontend, ae-cli, and
-  deploy-static success on its exact head. Verify local HEAD, remote branch,
-  and live PR head are identical; record the final SHA, run and job IDs,
-  conclusions, mergeability, and review state in a PR comment and execution
-  report without changing tracked files or creating a self-invalidating
-  follow-up head.
+  **Corrective exact-head gate:** after pushing this plan-only commit, require
+  backend, frontend, ae-cli, and deploy-static success on its exact head.
+  Verify local HEAD, remote branch, and live PR head are identical. Only after
+  those observations may the working-tree ledger record the final SHA, run and
+  job IDs, conclusions, mergeability, and review state. Keep that live-ledger
+  carry-forward intentionally uncommitted so it cannot create another
+  self-invalidating follow-up head.
 
 ### Task 5: Publish Staging And Re-run The 16/24 Comparison
 
