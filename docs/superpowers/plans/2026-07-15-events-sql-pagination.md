@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Complete. Tasks 1-4 and all Task 5 steps are complete. Draft PR [#141](https://github.com/LichKing-2234/ai-efficiency/pull/141) is open, mergeable, and clean against `docs/performance-contracts-116`. Full local verification and zero-finding final reviews pass. First-round CI on `1e65675` and replacement CI on `a5db81d` both passed backend, frontend, ae-cli, and deploy-static. The final ledger-only head must also remain green; no merge, release, deploy, or Helm action is part of this plan.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #141 at `108419e1`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR and ledger-CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 ## Global Constraints
 

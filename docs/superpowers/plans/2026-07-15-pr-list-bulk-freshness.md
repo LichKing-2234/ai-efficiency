@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Complete. Tasks 1-3 and all Task 4 steps are complete. Draft PR #142 is open, mergeable, and clean against `docs/performance-contracts-116`. Full local verification and final reviews pass. First-round CI on `7053926` and replacement CI on `37509a6` both passed backend, frontend, ae-cli, and deploy-static. The final ledger-only head must also remain green; no merge, release, deploy, or Helm action is part of this plan.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #142 at `0ee4e014`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR and ledger-CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 

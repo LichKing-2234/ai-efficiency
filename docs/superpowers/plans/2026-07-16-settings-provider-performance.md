@@ -26,7 +26,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** Complete. Draft PR #157 targets `perf/team-organization-128`, depends directly on Draft PR #156, and the implementation-head CI passed all required jobs. The worktree remains available for review; no merge, release, tag, deployment, or Helm action was performed.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #157 at `37e43258`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 ---
 
