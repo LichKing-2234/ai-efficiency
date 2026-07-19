@@ -2,8 +2,16 @@ package relay
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 func TestTeamTrendCacheReusesNormalizedSuccessfulResult(t *testing.T) {
@@ -164,6 +172,354 @@ func TestTeamTrendCacheNeverExceedsCapacity(t *testing.T) {
 	}
 	if _, ok := cache.entries[normalizedTeamTrendCacheKey(1, params)]; ok {
 		t.Fatal("earliest-expiring entry was not evicted")
+	}
+}
+
+func TestTeamTrendCacheCollapsesFourLaneFanout(t *testing.T) {
+	var upstreamCalls atomic.Int64
+	started := make(chan struct{}, 64)
+	release := make(chan struct{})
+	provider := newTeamTrendCacheTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls.Add(1)
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		writeTeamTrendCacheResponse(t, w, 1.25, false)
+	}))
+	userIDs := make([]int64, 235)
+	for index := range userIDs {
+		userIDs[index] = int64(index + 1)
+	}
+
+	start := make(chan struct{})
+	type result struct {
+		points map[int64][]UsageTrendPoint
+		err    error
+	}
+	results := make(chan result, 4)
+	for range 4 {
+		go func() {
+			<-start
+			points, err := provider.GetUsageTrendForUsers(context.Background(), userIDs, testTeamTrendCacheParams())
+			results <- result{points: points, err: err}
+		}()
+	}
+	close(start)
+	for index := 0; index < 8; index++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatalf("only %d upstream requests started before timeout, want at least 8", index)
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+
+	for index := 0; index < 4; index++ {
+		select {
+		case got := <-results:
+			if got.err != nil {
+				t.Fatal(got.err)
+			}
+			if len(got.points) != len(userIDs) {
+				t.Fatalf("caller %d result size = %d, want %d", index, len(got.points), len(userIDs))
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("caller %d did not finish", index)
+		}
+	}
+	if got := upstreamCalls.Load(); got != int64(len(userIDs)) {
+		t.Fatalf("upstream trend calls = %d, want %d for four identical callers", got, len(userIDs))
+	}
+}
+
+func TestTeamTrendCachePreservesEightWorkerCallerLimit(t *testing.T) {
+	var mu sync.Mutex
+	active := 0
+	maxActive := 0
+	requestCount := 0
+	started := make(chan struct{}, 16)
+	release := make(chan struct{})
+	provider := newTeamTrendCacheTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		active++
+		requestCount++
+		if active > maxActive {
+			maxActive = active
+		}
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			active--
+			mu.Unlock()
+		}()
+		started <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		writeTeamTrendCacheResponse(t, w, 1.25, false)
+	}))
+	userIDs := make([]int64, 16)
+	for index := range userIDs {
+		userIDs[index] = int64(index + 1)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := provider.GetUsageTrendForUsers(context.Background(), userIDs, testTeamTrendCacheParams())
+		done <- err
+	}()
+	for index := 0; index < 8; index++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatalf("only %d requests started before timeout, want 8", index)
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	startedBeforeRelease := requestCount
+	maxBeforeRelease := maxActive
+	mu.Unlock()
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if startedBeforeRelease != 8 || maxBeforeRelease != 8 || maxActive != 8 || requestCount != 16 {
+		t.Fatalf("requests/max = before %d/%d final %d/%d, want 8/8 and 16/8", startedBeforeRelease, maxBeforeRelease, requestCount, maxActive)
+	}
+}
+
+func TestTeamTrendCacheDoesNotCacheErrors(t *testing.T) {
+	var calls atomic.Int64
+	provider := newTeamTrendCacheTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			http.Error(w, "synthetic failure", http.StatusBadGateway)
+			return
+		}
+		writeTeamTrendCacheResponse(t, w, 2.5, false)
+	}))
+
+	if _, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, testTeamTrendCacheParams()); err == nil {
+		t.Fatal("first request error = nil, want synthetic upstream failure")
+	}
+	points, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, testTeamTrendCacheParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 || len(points[101]) != 1 || points[101][0].ActualCost != 2.5 {
+		t.Fatalf("calls/points = %d/%#v, want 2/success", calls.Load(), points[101])
+	}
+}
+
+func TestTeamTrendCacheCachesSuccessfulEmptyTrend(t *testing.T) {
+	var calls atomic.Int64
+	provider := newTeamTrendCacheTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeTeamTrendCacheResponse(t, w, 0, true)
+	}))
+
+	for range 2 {
+		points, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, testTeamTrendCacheParams())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(points[101]) != 0 {
+			t.Fatalf("points = %#v, want successful empty trend", points[101])
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("upstream calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestTeamTrendCacheKeepsFlightForRemainingWaiterAfterCancel(t *testing.T) {
+	var calls atomic.Int64
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	provider := newTeamTrendCacheTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		started <- struct{}{}
+		select {
+		case <-release:
+			writeTeamTrendCacheResponse(t, w, 3.5, false)
+		case <-r.Context().Done():
+		}
+	}))
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	type result struct {
+		points map[int64][]UsageTrendPoint
+		err    error
+	}
+	results := make(chan result, 2)
+	go func() {
+		points, err := provider.GetUsageTrendForUsers(canceledCtx, []int64{101}, testTeamTrendCacheParams())
+		results <- result{points: points, err: err}
+	}()
+	go func() {
+		points, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, testTeamTrendCacheParams())
+		results <- result{points: points, err: err}
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("shared origin did not start")
+	}
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	close(release)
+
+	var canceledResult, successResult *result
+	for range 2 {
+		got := <-results
+		if errors.Is(got.err, context.Canceled) {
+			copy := got
+			canceledResult = &copy
+		} else if got.err == nil {
+			copy := got
+			successResult = &copy
+		} else {
+			t.Fatalf("unexpected waiter error: %v", got.err)
+		}
+	}
+	if canceledResult == nil || successResult == nil || len(successResult.points[101]) != 1 {
+		t.Fatalf("waiter results = canceled %#v success %#v", canceledResult, successResult)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("upstream calls = %d, want 1 shared origin", calls.Load())
+	}
+}
+
+func TestTeamTrendCacheDoesNotStoreWhenOnlyWaiterCancels(t *testing.T) {
+	var calls atomic.Int64
+	started := make(chan struct{}, 1)
+	provider := newTeamTrendCacheTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		if call == 1 {
+			started <- struct{}{}
+			<-r.Context().Done()
+			return
+		}
+		writeTeamTrendCacheResponse(t, w, 4.5, false)
+	}))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := provider.GetUsageTrendForUsers(ctx, []int64{101}, testTeamTrendCacheParams())
+		done <- err
+	}()
+	<-started
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled request error = %v, want context.Canceled", err)
+	}
+	points, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, testTeamTrendCacheParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 || len(points[101]) != 1 {
+		t.Fatalf("calls/points = %d/%#v, want 2/success", calls.Load(), points[101])
+	}
+}
+
+func TestTeamTrendCacheSeparatesCredentialGenerations(t *testing.T) {
+	var calls atomic.Int64
+	oldStarted := make(chan struct{}, 1)
+	releaseOld := make(chan struct{})
+	provider := newTeamTrendCacheTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		switch r.Header.Get("X-API-Key") {
+		case "test-admin-key":
+			oldStarted <- struct{}{}
+			select {
+			case <-releaseOld:
+				writeTeamTrendCacheResponse(t, w, 1, false)
+			case <-r.Context().Done():
+			}
+		case "new-admin-key":
+			writeTeamTrendCacheResponse(t, w, 2, false)
+		default:
+			http.Error(w, "unexpected synthetic key", http.StatusUnauthorized)
+		}
+	}))
+	oldDone := make(chan error, 1)
+	go func() {
+		_, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, testTeamTrendCacheParams())
+		oldDone <- err
+	}()
+	<-oldStarted
+	provider.SetAdminAPIKey("new-admin-key")
+	newPoints, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, testTeamTrendCacheParams())
+	if err != nil {
+		close(releaseOld)
+		t.Fatal(err)
+	}
+	close(releaseOld)
+	if err := <-oldDone; err != nil {
+		t.Fatal(err)
+	}
+	reused, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, testTeamTrendCacheParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 || newPoints[101][0].ActualCost != 2 || reused[101][0].ActualCost != 2 {
+		t.Fatalf("calls/new/reused = %d/%#v/%#v, want 2/new-generation values", calls.Load(), newPoints[101], reused[101])
+	}
+}
+
+func TestTeamTrendCacheKeepsEntriesForEquivalentCredentialAndModelChanges(t *testing.T) {
+	var calls atomic.Int64
+	provider := newTeamTrendCacheTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeTeamTrendCacheResponse(t, w, 5.5, false)
+	}))
+	if _, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, testTeamTrendCacheParams()); err != nil {
+		t.Fatal(err)
+	}
+	provider.SetAdminAPIKey(" test-admin-key ")
+	provider.SetModel("synthetic-model-v2")
+	if _, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, testTeamTrendCacheParams()); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("upstream calls = %d, want 1 after equivalent key and model change", calls.Load())
+	}
+}
+
+func newTeamTrendCacheTestProvider(t *testing.T, handler http.Handler) *sub2apiRelay {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return &sub2apiRelay{
+		client: server.Client(), adminURL: server.URL, baseURL: server.URL + "/v1",
+		apiKey: "test-admin-key", model: "synthetic-model-v1", logger: zap.NewNop(),
+	}
+}
+
+func writeTeamTrendCacheResponse(t *testing.T, w http.ResponseWriter, actualCost float64, empty bool) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	data := []map[string]any{}
+	if !empty {
+		tokens := int64(actualCost * 100)
+		data = append(data, map[string]any{
+			"date": "2026-07-19", "actual_cost": actualCost, "total_tokens": tokens,
+		})
+	}
+	if err := json.NewEncoder(w).Encode(map[string]any{"success": true, "data": data}); err != nil {
+		t.Errorf("encode synthetic trend response: %v", err)
 	}
 }
 

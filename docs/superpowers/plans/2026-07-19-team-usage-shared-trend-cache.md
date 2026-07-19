@@ -143,7 +143,7 @@
 
   Bypass cache and flights for non-positive IDs. For valid IDs, capture the current generation, check the cache, enter `FlightGroup.Do` on a miss, double-check inside the flight, store only on success and unchanged generation, then clone the flight result separately for every waiter.
 
-- [ ] **Step 4: Run focused GREEN and commit the primitive**
+- [x] **Step 4: Run focused GREEN and commit the primitive**
 
   Run:
 
@@ -170,6 +170,8 @@
   git commit -m "perf(relay): cache team usage trend origins"
   ```
 
+  Primitive commit (2026-07-19): `cc8c8d5e`.
+
 ### Task 2: Route Team Usage Trend Fan-Out Through The Cache
 
 **Files:**
@@ -182,7 +184,7 @@
 - Consumes `teamTrendCache.GetOrLoad` and `teamTrendCache.Invalidate` from Task 1.
 - Preserves `TeamMemberTrendProvider.GetUsageTrendForUsers` and `TeamUsageSummaryProvider.GetBatchUserUsageStats` signatures and response semantics.
 
-- [ ] **Step 1: Add RED HTTP tests for four-lane collapse and error behavior**
+- [x] **Step 1: Add RED HTTP tests for four-lane collapse and error behavior**
 
   Build an `httptest.Server` that handles `/api/v1/admin/dashboard/trend`, records `user_id`, and blocks the first wave until four callers have started. Run four concurrent `GetUsageTrendForUsers` calls over synthetic IDs 1 through 235 with the same range. Require:
 
@@ -204,7 +206,7 @@
   - reapplying the same trimmed key keeps the existing entry.
   - changing only the inference model keeps the existing entry.
 
-- [ ] **Step 2: Run the integration tests and record RED**
+- [x] **Step 2: Run the integration tests and record RED**
 
   Run:
 
@@ -215,7 +217,13 @@
 
   Expected: the four-lane test observes 940 upstream calls before integration, while cache reuse and credential-generation assertions fail because `GetUsageTrendForUsers` and `SetAdminAPIKey` do not yet use the cache.
 
-- [ ] **Step 3: Wire per-user reads and credential invalidation**
+  RED evidence (2026-07-19): the four-lane test observed exactly 940 upstream
+  requests for four identical 235-user callers; two cancelable waiters produced
+  two origins instead of one; credential generation produced a third request;
+  and equivalent credential/model updates did not reuse data. Existing error
+  non-caching and sole-waiter cancellation behavior already passed.
+
+- [x] **Step 3: Wire per-user reads and credential invalidation**
 
   Replace the worker origin call with:
 
@@ -227,7 +235,7 @@
 
   Refactor `SetAdminAPIKey` so it compares normalized values under `s.mu`, releases that mutex, and calls `s.teamTrends.Invalidate()` only when the value changed. `Invalidate` increments the generation and replaces the entry map while leaving old flights isolated by their generation-specific keys.
 
-- [ ] **Step 4: Run focused GREEN, broader Relay regressions, and race checks**
+- [x] **Step 4: Run focused GREEN, broader Relay regressions, and race checks**
 
   Run:
 
@@ -241,6 +249,13 @@
   ```
 
   Expected: all focused tests pass twice, race checks pass, and no existing Relay contract test changes its expected HTTP path or DTO.
+
+  GREEN evidence (2026-07-19): the four-lane 235-user test collapsed 940
+  origin requests to 235; credential-generation, cancellation, error, empty
+  result, equivalent-key, model-change, and eight-worker-bound tests passed.
+  `TeamTrendCache|UsageTrendForUsers|GetBatchUserUsageStats` passed twice, the
+  matching race run passed for `internal/readcache` and `internal/relay`, and
+  `git diff --check` was clean.
 
 - [ ] **Step 5: Commit the adapter integration**
 
