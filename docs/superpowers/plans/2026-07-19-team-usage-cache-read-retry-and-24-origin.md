@@ -41,7 +41,7 @@
 - Changes only `(*RedisStore).Get(context.Context, string) ([]byte, error)` to make at most two attempts.
 - Preserves `ErrMiss`, the supplied context, and every non-GET store method.
 
-- [ ] **Step 1: Verify the clean backend baseline**
+- [x] **Step 1: Verify the clean backend baseline**
 
   Run:
 
@@ -55,7 +55,9 @@
 
   Expected: all three packages pass and the only branch commit is the approved spec plus this plan. If the baseline fails, stop and diagnose before changing tests.
 
-- [ ] **Step 2: Add a deterministic go-redis command hook for retry tests**
+  Evidence (2026-07-19): `go mod download` and `go test ./internal/readcache ./internal/relay ./internal/teamusage -count=1` exited 0; all three packages passed. `git status --short --branch` reported only `## perf/team-usage-cache-read-retry-24`.
+
+- [x] **Step 2: Add a deterministic go-redis command hook for retry tests**
 
   Extend `store_test.go` imports with `net` and `sync`, then add this test-only hook:
 
@@ -117,7 +119,9 @@
 
   Keep the hook private to the test file. It must not inspect keys, values, or credentials.
 
-- [ ] **Step 3: Add RED tests for success, miss, terminal error, and cancellation**
+  Evidence (2026-07-19): added the private mutex-protected `scriptedRedisCommandHook` in `store_test.go`; it scripts failures and counts command names without inspecting command arguments.
+
+- [x] **Step 3: Add RED tests for success, miss, terminal error, and cancellation**
 
   Add tests using a fresh miniredis server and client per case:
 
@@ -199,7 +203,9 @@
   `TryAcquireLease` uses Redis command name `set`, so test it in a separate
   fresh case from `Set`.
 
-- [ ] **Step 4: Run the focused tests and record RED**
+  Evidence (2026-07-19): added fresh-client cases for retry-to-value, retry-to-miss, terminal second error, cancellation, pre-expired deadline, ordinary one-attempt hit/miss, and one-attempt `set`, `pttl`, and `evalsha` non-GET operations.
+
+- [x] **Step 4: Run the focused tests and record RED**
 
   Run:
 
@@ -211,7 +217,9 @@
 
   Expected: `TestRedisStoreGetRetriesOneCommandError`, the retry-to-miss case, and the terminal-second-error case fail because current code performs one GET. Ordinary hit/miss, cancellation, and non-GET characterization cases may pass. No fixture, hook, syntax, or miniredis failure is acceptable.
 
-- [ ] **Step 5: Implement the minimal bounded GET loop**
+  RED evidence (2026-07-19): after `gofmt`, the focused command failed only the three expected retry cases; each observed one GET and the first synthetic error. Ordinary hit/miss, cancellation, pre-expired deadline, and all non-GET characterization cases passed.
+
+- [x] **Step 5: Implement the minimal bounded GET loop**
 
   Replace only `RedisStore.Get`:
 
@@ -235,7 +243,9 @@
 
   Do not change `Store`, add options, reset the context, sleep, log, or touch another method.
 
-- [ ] **Step 6: Run GREEN, scope regressions, race checks, and commit**
+  Evidence (2026-07-19): replaced only `RedisStore.Get` with the approved two-attempt loop; both attempts use the supplied context, and success, miss, cancellation, and terminal-error exits remain explicit.
+
+- [x] **Step 6: Run GREEN, scope regressions, race checks, and commit**
 
   Run:
 
@@ -251,6 +261,8 @@
   ```
 
   Expected: retry tests pass twice, all `readcache.RedisStore` consumers retain their contracts, race checks pass, and `TestRedisClientOptionsBoundReadCacheLatency` proves `MaxRetries = -1` remains unchanged.
+
+  GREEN evidence (2026-07-19): the focused retry/non-GET suite passed after implementation. `go test ./internal/readcache -run 'RedisStore' -count=2`, the six listed consumer suites, the focused `-race` command, and `go test ./cmd/server -run 'RedisClientOptions' -count=1` all exited 0; `git diff --check` was clean.
 
   Record RED/GREEN evidence in this plan, then commit only the Redis behavior, tests, and current ledger update:
 

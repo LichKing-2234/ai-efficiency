@@ -33,11 +33,19 @@ func NewRedisStore(client redis.UniversalClient) *RedisStore {
 }
 
 func (s *RedisStore) Get(ctx context.Context, key string) ([]byte, error) {
-	value, err := s.client.Get(ctx, key).Bytes()
-	if errors.Is(err, redis.Nil) {
-		return nil, ErrMiss
+	for attempt := 0; attempt < 2; attempt++ {
+		value, err := s.client.Get(ctx, key).Bytes()
+		if err == nil {
+			return value, nil
+		}
+		if errors.Is(err, redis.Nil) {
+			return nil, ErrMiss
+		}
+		if ctx.Err() != nil || attempt == 1 {
+			return nil, err
+		}
 	}
-	return value, err
+	panic("unreachable")
 }
 
 func (s *RedisStore) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
