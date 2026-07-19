@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation commits `bade4a33` and `26907c85`, documentation repair `ded38d19`, required post-fix full local verification, and branch review are complete. PR CI is pending; PR delivery, merge, and staging verification have not started.
+**Status:** Implementation commits `bade4a33` and `26907c85`, documentation repair `ded38d19`, required post-fix full local verification, whole-branch review, PR delivery, and exact reviewed-head CI are complete. The final plan-ledger head still requires the same four repository CI jobs before Task 4 is reported complete externally. PR #190 remains open and unmerged; image publication, Helm changes, staging verification, and production work have not started.
 
 **Goal:** Recover one transient Redis read failure without leaving the bounded command budget, and reduce large-team cold latency by raising the single provider-wide trend origin limit from sixteen to 24.
 
@@ -542,7 +542,7 @@
 - Produces one non-Draft PR from `perf/team-usage-cache-read-retry-24` to `feat/platform-loading-performance`.
 - Keeps staging and production unchanged until review, exact-head CI, and observed merge.
 
-- [ ] **Step 1: Push and open the follow-up PR**
+- [x] **Step 1: Push and open the follow-up PR**
 
   Push the branch and open a non-Draft PR titled
   `perf(teamusage): recover cache reads and raise trend concurrency` against
@@ -556,7 +556,19 @@
   - no Sub2API, frontend, DTO, key, TTL, lease, or production change;
   - independent rollback commits and the unchanged staging acceptance gate.
 
-- [ ] **Step 2: Request code review and close actionable findings**
+  Delivery evidence (2026-07-19): pushed
+  `perf/team-usage-cache-read-retry-24` and opened non-Draft PR
+  [#190](https://github.com/LichKing-2234/ai-efficiency/pull/190) with the
+  exact title, base `feat/platform-loading-performance`, and initial head
+  `24ac1b806440a37a971a9e0df0e4b13f1fc9b9ca`. The PR body records revision-30
+  cold `13.47s/10.73s` and warm `7.69s/5.99s`, the bounded GET retry and
+  unchanged `MaxRetries = -1`, one shared 24-slot provider limit with
+  50-connection headroom, exact RED/GREEN/race/full-backend/vet/build
+  evidence, unchanged scope boundaries, independent behavior commits
+  `bade4a33` and `26907c85`, and the unchanged cold `9s` / warm `1.5s`
+  staging gate.
+
+- [x] **Step 2: Request code review and close actionable findings**
 
   Use the requesting-code-review workflow against merge-base
   `feat/platform-loading-performance`. Review Standards and Spec separately.
@@ -564,18 +576,56 @@
   ladder, and record findings without adding unrelated refactors. No subagent
   is required unless the user explicitly requests delegation.
 
-- [ ] **Step 3: Require exact-final-head repository CI**
+  Review evidence (2026-07-19): independent whole-branch review covered exact
+  merge-base range `0ab84076..24ac1b80` and reported Critical/Important/Minor
+  `0/0/0`. Standards review found the changes confined to the established
+  `readcache`, Relay, current architecture, and current follow-up-spec
+  boundaries with synthetic tests and Conventional Commits. Spec review found
+  the original-context two-attempt GET ceiling, miss/cancellation/non-GET
+  behavior, runtime `MaxRetries = -1`, provider-wide 24-slot ownership,
+  credential sharing, transport headroom, cache/DTO/TTL/lease boundaries, and
+  staging gate all conformant. The verdict was ready subject to exact-head CI;
+  no actionable finding or behavioral follow-up remained.
+
+- [x] **Step 3: Require exact-final-head repository CI**
 
   Require backend, frontend, ae-cli, and deploy-static success on the exact
   reviewed PR head. If a plan-only ledger commit records an earlier CI run,
   require the same four jobs again on that final ledger head. Do not treat a
   superseded run as sufficient.
 
-- [ ] **Step 4: Stop at the merge gate**
+  Reviewed-head CI evidence (2026-07-19): CI run `29688885139` completed
+  successfully on exact reviewed PR head
+  `24ac1b806440a37a971a9e0df0e4b13f1fc9b9ca`: backend job `88197968943`,
+  frontend job `88197968948`, ae-cli job `88197968938`, and deploy-static job
+  `88197968930` all succeeded. After completion, the live PR head still matched
+  the reviewed head and PR #190 was OPEN, non-Draft, MERGEABLE/CLEAN against
+  `feat/platform-loading-performance`. The following plan-only ledger commit
+  becomes the final PR head and must receive the same four green jobs before
+  Task 4 is reported complete externally; this evidence does not pre-claim
+  that final-ledger result.
+
+- [x] **Step 4: Stop at the merge gate**
 
   Do not merge automatically. Report PR URL, base/head branches, reviewed head
   SHA, mergeability, review state, and exact-head CI. Wait for user merge or
   observe the merge before any image publish or Helm action.
+
+  Merge-gate evidence (2026-07-19): PR #190 remains OPEN and non-Draft with
+  base `feat/platform-loading-performance` and head
+  `perf/team-usage-cache-read-retry-24`; independent Standards and Spec review
+  is clean and GitHub reports MERGEABLE/CLEAN after reviewed-head CI. No merge,
+  image publish, release, Helm, staging, or production command was run. Work is
+  stopped at the gate pending the final-ledger CI observation and then user
+  merge or an observed merge.
+
+  **Final external gate (intentionally not another branch-ledger update):**
+  after pushing this plan-only commit, require backend, frontend, ae-cli, and
+  deploy-static success on its exact head. Verify local HEAD, remote branch,
+  and live PR head are identical; record the final SHA, run and job IDs,
+  conclusions, mergeability, and review state in a PR comment and execution
+  report without changing tracked files or creating a self-invalidating
+  follow-up head.
 
 ### Task 5: Publish Staging And Re-run The 16/24 Comparison
 
