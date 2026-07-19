@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation and full backend verification are complete on `perf/team-usage-shared-trend-cache`. Final branch review, PR CI, merge, and staging re-audit remain pending; production is unchanged.
+**Status:** Implementation, full backend verification, final branch review, and PR CI are complete on `perf/team-usage-shared-trend-cache`. PR #188 is waiting at the merge gate; merge and staging re-audit remain pending, and production is unchanged.
 
 **Goal:** Collapse duplicate per-user Relay trend reads across concurrent Team Usage lanes and reuse successful results for 60 seconds without coupling their response caches.
 
@@ -387,7 +387,7 @@
   607-629 staging baseline, synthetic 940-to-235 collapse, safety contracts,
   verification matrix, and explicit no-Sub2API/no-Redis-retry boundary.
 
-- [ ] **Step 3: Wait for exact-head CI and record the result**
+- [x] **Step 3: Wait for exact-head CI and record the result**
 
   Run:
 
@@ -397,9 +397,19 @@
 
   Require backend, frontend, ae-cli, and deploy-static success on the exact PR head. Update this plan with the PR number, head SHA, run ID, and result, then commit and push that ledger update if it changes tracked content.
 
-- [ ] **Step 4: Stop at the merge gate**
+  CI evidence (2026-07-19): PR #188 run `29676205471` completed successfully
+  on exact implementation head
+  `6015fb4605cab5dd1996b1c409e9cc6be78283ee`. Backend, frontend, ae-cli,
+  and deploy-static all passed. The plan-only ledger commit remains subject to
+  the same exact-final-head CI gate before the PR is reported ready.
+
+- [x] **Step 4: Stop at the merge gate**
 
   Do not merge the PR automatically. Report the exact PR and CI state and wait for explicit user confirmation or observed merge before staging deployment.
+
+  Merge-gate evidence (2026-07-19): PR #188 remains open and mergeable against
+  `feat/platform-loading-performance`. No merge or staging command has been run;
+  after the ledger push, work is limited to verifying CI on its final head.
 
 ### Task 5: Re-Audit Staging After Integration
 
