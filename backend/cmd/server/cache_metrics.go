@@ -10,7 +10,6 @@ type productionCacheMetrics struct {
 	providerMetadata    readcache.Metrics
 	representativeScope readcache.Metrics
 	repositoryInventory readcache.Metrics
-	teamUsageOverview   readcache.Metrics
 	teamUsageSummary    readcache.Metrics
 	teamUsageTrend      readcache.Metrics
 	teamUsageMembers    readcache.Metrics
@@ -24,7 +23,6 @@ func newProductionCacheMetrics(metrics *telemetry.Metrics) productionCacheMetric
 		providerMetadata:    metrics.CacheRecorder("provider_metadata"),
 		representativeScope: metrics.CacheRecorder("representative_scope"),
 		repositoryInventory: metrics.CacheRecorder("repository_inventory"),
-		teamUsageOverview:   metrics.CacheRecorder("team_usage_overview"),
 		teamUsageSummary:    metrics.CacheRecorder("team_usage_summary"),
 		teamUsageTrend:      metrics.CacheRecorder("team_usage_trend"),
 		teamUsageMembers:    metrics.CacheRecorder("team_usage_members"),
@@ -39,7 +37,6 @@ func (m productionCacheMetrics) recorders() map[string]readcache.Metrics {
 		"provider_metadata":       m.providerMetadata,
 		"representative_scope":    m.representativeScope,
 		"repository_inventory":    m.repositoryInventory,
-		"team_usage_overview":     m.teamUsageOverview,
 		"team_usage_summary":      m.teamUsageSummary,
 		"team_usage_trend":        m.teamUsageTrend,
 		"team_usage_members":      m.teamUsageMembers,

@@ -19,7 +19,6 @@ import (
 )
 
 const (
-	snapshotCacheSchemaVersion     = 2
 	summaryCacheSchemaVersion      = 1
 	trendCacheSchemaVersion        = 1
 	membersCacheSchemaVersion      = 1
@@ -29,7 +28,6 @@ const (
 var snapshotCacheNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
 
 type SnapshotCache struct {
-	overview     *readModelCache[*OverviewResponse]
 	summary      *readModelCache[*SummarySnapshot]
 	trend        *readModelCache[*TrendSnapshot]
 	members      *readModelCache[*MembersSnapshot]
@@ -66,8 +64,6 @@ type readModelValueEnvelope[T any] struct {
 	Snapshot      T         `json:"snapshot"`
 }
 
-type snapshotValueEnvelope = readModelValueEnvelope[*OverviewResponse]
-
 type snapshotCacheKeyDimensions struct {
 	Namespace       string `json:"namespace"`
 	ProviderID      int    `json:"provider_id"`
@@ -90,10 +86,6 @@ func NewSnapshotCache(store readcache.Store, options SnapshotCacheOptions) (*Sna
 	}
 	applySnapshotCacheDefaults(&options)
 	return &SnapshotCache{
-		overview: &readModelCache[*OverviewResponse]{
-			store: store, options: options, keyPrefix: "team-usage-snapshot",
-			schemaVersion: snapshotCacheSchemaVersion, validate: validOverviewSnapshot, metrics: options.OverviewMetrics,
-		},
 		summary: &readModelCache[*SummarySnapshot]{
 			store: store, options: options, keyPrefix: "team-usage-summary",
 			schemaVersion: summaryCacheSchemaVersion, validate: validSummarySnapshot, metrics: options.SummaryMetrics,
@@ -141,10 +133,6 @@ func applySnapshotCacheDefaults(options *SnapshotCacheOptions) {
 	if options.Sleep == nil {
 		options.Sleep = readcache.Sleep
 	}
-}
-
-func snapshotCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
-	return readModelCacheKey(namespace, "team-usage-snapshot", key)
 }
 
 func summaryCacheKey(namespace string, key SnapshotCacheKey) (string, error) {
@@ -204,23 +192,6 @@ func effectiveScopeHash(scope *representativescope.Scope) (string, error) {
 	}
 	digest := sha256.Sum256(encoded)
 	return fmt.Sprintf("%x", digest), nil
-}
-
-func (c *SnapshotCache) GetOrLoad(ctx context.Context, key SnapshotCacheKey, loader SnapshotOriginLoader) (*SnapshotCacheResult, error) {
-	if c == nil || c.overview == nil {
-		return nil, fmt.Errorf("team usage snapshot cache is not configured")
-	}
-	if loader == nil {
-		return nil, fmt.Errorf("team usage snapshot origin loader is required")
-	}
-	result, err := c.overview.getOrLoad(ctx, key, func(ctx context.Context) (readModelOriginLoadResult[*OverviewResponse], error) {
-		loaded, err := loader(ctx)
-		return readModelOriginLoadResult[*OverviewResponse]{Snapshot: loaded.Snapshot, SnapshotErr: loaded.SnapshotErr}, err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &SnapshotCacheResult{Snapshot: result.Snapshot, Freshness: result.Freshness}, nil
 }
 
 func (c *SnapshotCache) GetSummaryOrLoad(ctx context.Context, key SnapshotCacheKey, loader SummaryOriginLoader) (*SummaryCacheResult, error) {
@@ -549,17 +520,6 @@ func (c *readModelCache[T]) validEnvelope(envelope *readModelValueEnvelope[T], v
 		return false
 	}
 	return validate != nil && validate(envelope.Snapshot)
-}
-
-func validOverviewSnapshot(snapshot *OverviewResponse) bool {
-	if snapshot == nil || !snapshot.Configured || !snapshot.IsRepresentative || strings.TrimSpace(snapshot.Summary.UnitLabel) == "" {
-		return false
-	}
-	if !validOverviewWindow(snapshot.Window) {
-		return false
-	}
-	return snapshot.TopMembers != nil && snapshot.TopMemberTrend.Series != nil && snapshot.DepartmentTrend.Series != nil &&
-		snapshot.Members != nil && snapshot.MemberTree != nil
 }
 
 func validSummarySnapshot(snapshot *SummarySnapshot) bool {

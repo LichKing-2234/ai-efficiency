@@ -419,7 +419,7 @@ func TestTeamUsageSummaryIndependentFromTrendOverRealHTTP(t *testing.T) {
 	}
 }
 
-func TestTeamUsageTrendStaleAndSummaryIsolationOverRealHTTP(t *testing.T) {
+func TestTeamOverviewCompatibilityUsesSplitLanesOverRealHTTP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	client := testdb.Open(t)
 	client.RelayProvider.Create().
@@ -488,8 +488,10 @@ func TestTeamUsageTrendStaleAndSummaryIsolationOverRealHTTP(t *testing.T) {
 	handler := NewTeamUsageHandler(service)
 	router.GET("/api/v1/user/team-usage/trend", handler.Trend)
 	router.GET("/api/v1/user/team-usage/summary", handler.Summary)
+	router.GET("/api/v1/user/team-usage/overview", handler.Overview)
 	trendPath := "/api/v1/user/team-usage/trend?start_date=2026-07-18&end_date=2026-07-18&granularity=hour&timezone=UTC"
 	summaryPath := "/api/v1/user/team-usage/summary?start_date=2026-07-18&end_date=2026-07-18&granularity=hour&timezone=UTC"
+	overviewPath := "/api/v1/user/team-usage/overview?start_date=2026-07-18&end_date=2026-07-18&granularity=hour&timezone=UTC&page=9&page_size=1"
 
 	prime := httptest.NewRecorder()
 	router.ServeHTTP(prime, httptest.NewRequest(http.MethodGet, trendPath, nil))
@@ -511,16 +513,25 @@ func TestTeamUsageTrendStaleAndSummaryIsolationOverRealHTTP(t *testing.T) {
 	if summary.Code != http.StatusOK || !strings.Contains(summary.Body.String(), `"cache_status":"miss"`) || !strings.Contains(summary.Body.String(), `"range_actual_cost":15`) {
 		t.Fatalf("summary HTTP response = %d %s", summary.Code, summary.Body.String())
 	}
-	seenTrend, seenSummary := false, false
+	overview := httptest.NewRecorder()
+	router.ServeHTTP(overview, httptest.NewRequest(http.MethodGet, overviewPath, nil))
+	if overview.Code != http.StatusOK || !strings.Contains(overview.Body.String(), `"range_actual_cost":15`) || !strings.Contains(overview.Body.String(), `"member_tree"`) {
+		t.Fatalf("overview HTTP response = %d %s", overview.Code, overview.Body.String())
+	}
+	if overview.Header().Get("Deprecation") != "@1783987200" || overview.Header().Get("Sunset") != "Tue, 15 Sep 2026 00:00:00 GMT" || overview.Header().Get("Link") != `</api/v1/user/team-usage/summary>; rel="successor-version"` {
+		t.Fatalf("overview compatibility headers = Deprecation %q Sunset %q Link %q", overview.Header().Get("Deprecation"), overview.Header().Get("Sunset"), overview.Header().Get("Link"))
+	}
+	seenTrend, seenSummary, seenMembers := false, false, false
 	for _, key := range server.Keys() {
 		seenTrend = seenTrend || strings.HasPrefix(key, "ae:trend-http-independent:team-usage-trend:v1:")
 		seenSummary = seenSummary || strings.HasPrefix(key, "ae:trend-http-independent:team-usage-summary:v1:")
+		seenMembers = seenMembers || strings.HasPrefix(key, "ae:trend-http-independent:team-usage-members:v1:")
 		if strings.HasPrefix(key, "ae:trend-http-independent:team-usage-snapshot:v1:") {
-			t.Fatalf("Trend/Summary HTTP requests unexpectedly populated compatibility key %q", key)
+			t.Fatalf("split and compatibility HTTP requests unexpectedly populated compatibility key %q", key)
 		}
 	}
-	if !seenTrend || !seenSummary {
-		t.Fatalf("Redis keys = %v, want independent trend and summary lanes", server.Keys())
+	if !seenTrend || !seenSummary || !seenMembers {
+		t.Fatalf("Redis keys = %v, want independent trend, summary, and members lanes", server.Keys())
 	}
 }
 

@@ -49,6 +49,46 @@ type ServiceOptions struct {
 	CursorSecret  string
 }
 
+type splitReadRequest struct {
+	actorUserID    int
+	params         OverviewParams
+	scope          *representativescope.Scope
+	providerConfig primaryProviderConfig
+	scopeHash      string
+}
+
+func (s *Service) newSplitReadRequest(ctx context.Context, actorUserID int, params OverviewParams) (*splitReadRequest, error) {
+	normalized, err := normalizeOverviewParams(params)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve primary relay provider configuration: %w", err)
+	}
+	request := &splitReadRequest{
+		actorUserID: actorUserID, params: normalized, scope: scope, providerConfig: *providerConfig,
+	}
+	if s.snapshotCache != nil {
+		request.scopeHash, err = effectiveScopeHash(scope)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return request, nil
+}
+
+func (r *splitReadRequest) snapshotCacheKey() SnapshotCacheKey {
+	return SnapshotCacheKey{
+		ProviderID: r.providerConfig.ID, ProviderVersion: r.providerConfig.ConfigurationVersion,
+		ActorID: r.actorUserID, ScopeVersion: r.scope.Version, ScopeHash: r.scopeHash, Params: r.params,
+	}
+}
+
 func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, options ServiceOptions) (*Service, error) {
 	if client == nil {
 		return nil, fmt.Errorf("team usage Ent client is required")
@@ -206,33 +246,29 @@ func (s *Service) Trend(ctx context.Context, actorUserID int, params OverviewPar
 }
 
 func (s *Service) readTrendSnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*TrendCacheResult, string, error) {
-	normalized, err := normalizeOverviewParams(params)
+	request, err := s.newSplitReadRequest(ctx, actorUserID, params)
 	if err != nil {
 		return nil, "", err
 	}
-	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
-	if err != nil {
-		return nil, "", err
-	}
-	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
-	}
+	result, err := s.readTrendSnapshotForRequest(ctx, request)
+	return result, request.scope.Version, err
+}
 
+func (s *Service) readTrendSnapshotForRequest(ctx context.Context, request *splitReadRequest) (*TrendCacheResult, error) {
 	loader := func(loadCtx context.Context) (TrendOriginLoadResult, error) {
 		var provider relay.Provider
-		overviewSubjects := scope.OverviewSubjects
+		overviewSubjects := request.scope.OverviewSubjects
 		if len(overviewSubjects) == 0 {
-			overviewSubjects = scope.Subjects
+			overviewSubjects = request.scope.Subjects
 		}
 		if len(overviewSubjects) <= s.fullScopeCap {
-			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
 			if resolveErr != nil {
 				return TrendOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
 			}
 			provider = resolvedProvider
 		}
-		snapshot, loadErr := s.generateTrendSnapshot(loadCtx, scope, provider, normalized)
+		snapshot, loadErr := s.generateTrendSnapshot(loadCtx, request.scope, provider, request.params)
 		if loadErr == nil {
 			return TrendOriginLoadResult{Snapshot: snapshot}, nil
 		}
@@ -245,10 +281,10 @@ func (s *Service) readTrendSnapshot(ctx context.Context, actorUserID int, params
 	if s.snapshotCache == nil {
 		loaded, loadErr := loader(ctx)
 		if loadErr != nil {
-			return nil, "", loadErr
+			return nil, loadErr
 		}
 		if loaded.SnapshotErr != nil && !validTrendSnapshot(loaded.Snapshot) {
-			return nil, "", loaded.SnapshotErr
+			return nil, loaded.SnapshotErr
 		}
 		now := time.Now().UTC()
 		return &TrendCacheResult{
@@ -256,59 +292,89 @@ func (s *Service) readTrendSnapshot(ctx context.Context, actorUserID int, params
 			Freshness: SnapshotFreshness{
 				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
 			},
-		}, scope.Version, nil
+		}, nil
 	}
 
-	scopeHash, err := effectiveScopeHash(scope)
-	if err != nil {
-		return nil, "", err
-	}
-	result, err := s.snapshotCache.GetTrendOrLoad(ctx, SnapshotCacheKey{
-		ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
-		ActorID: actorUserID, ScopeVersion: scope.Version, ScopeHash: scopeHash, Params: normalized,
-	}, loader)
-	if err != nil {
-		return nil, "", err
-	}
-	return result, scope.Version, nil
-}
-
-func (s *Service) Overview(ctx context.Context, actorUserID int, params OverviewParams) (*OverviewResponse, error) {
-	result, _, err := s.readOverviewSnapshot(ctx, actorUserID, params)
+	result, err := s.snapshotCache.GetTrendOrLoad(ctx, request.snapshotCacheKey(), loader)
 	if err != nil {
 		return nil, err
 	}
-	return result.Snapshot, nil
+	return result, nil
+}
+
+func (s *Service) Overview(ctx context.Context, actorUserID int, params OverviewParams) (*OverviewResponse, error) {
+	request, err := s.newSplitReadRequest(ctx, actorUserID, params)
+	if err != nil {
+		return nil, err
+	}
+	summary, err := s.readSummarySnapshotForRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	trend, err := s.readTrendSnapshotForRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	members, err := s.readMembersSnapshotForRequest(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	overviewSubjects := request.scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = request.scope.Subjects
+	}
+	memberTree := []OverviewMemberNode{}
+	if len(overviewSubjects) <= s.fullScopeCap {
+		memberTree = projectOverviewCompatibilityMemberTree(request.scope, members.Snapshot.Members)
+	}
+	return &OverviewResponse{
+		Configured:       true,
+		IsRepresentative: true,
+		Window:           summary.Snapshot.Window,
+		Summary:          overviewSummaryFromAggregate(summary.Snapshot.Summary),
+		TopMembers:       append([]OverviewMember{}, trend.Snapshot.TopMembers...),
+		TopMemberTrend:   trend.Snapshot.TopMemberTrend,
+		DepartmentTrend:  trend.Snapshot.DepartmentTrend,
+		Members:          append([]OverviewMember{}, members.Snapshot.Members...),
+		MemberTree:       memberTree,
+	}, nil
+}
+
+func overviewSummaryFromAggregate(summary SummaryAggregate) OverviewSummary {
+	return OverviewSummary{
+		Unavailable: summary.Unavailable, UnavailableReason: summary.UnavailableReason,
+		MemberCount: summary.MemberCount, RelayMemberCount: summary.RelayMemberCount,
+		RangeActualCost: summary.RangeActualCost, RangeTotalTokens: summary.RangeTotalTokens,
+		TodayActualCost: summary.TodayActualCost, TotalActualCost: summary.TotalActualCost,
+		UnitLabel: summary.UnitLabel,
+	}
 }
 
 func (s *Service) readSummarySnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*SummaryCacheResult, string, error) {
-	normalized, err := normalizeOverviewParams(params)
+	request, err := s.newSplitReadRequest(ctx, actorUserID, params)
 	if err != nil {
 		return nil, "", err
 	}
-	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
-	if err != nil {
-		return nil, "", err
-	}
-	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
-	}
+	result, err := s.readSummarySnapshotForRequest(ctx, request)
+	return result, request.scope.Version, err
+}
 
+func (s *Service) readSummarySnapshotForRequest(ctx context.Context, request *splitReadRequest) (*SummaryCacheResult, error) {
 	loader := func(loadCtx context.Context) (SummaryOriginLoadResult, error) {
 		var provider relay.Provider
-		overviewSubjects := scope.OverviewSubjects
+		overviewSubjects := request.scope.OverviewSubjects
 		if len(overviewSubjects) == 0 {
-			overviewSubjects = scope.Subjects
+			overviewSubjects = request.scope.Subjects
 		}
 		if len(overviewSubjects) <= s.fullScopeCap {
-			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
 			if resolveErr != nil {
 				return SummaryOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
 			}
 			provider = resolvedProvider
 		}
-		snapshot, loadErr := s.generateSummarySnapshot(loadCtx, scope, provider, normalized)
+		snapshot, loadErr := s.generateSummarySnapshot(loadCtx, request.scope, provider, request.params)
 		if loadErr == nil {
 			return SummaryOriginLoadResult{Snapshot: snapshot}, nil
 		}
@@ -321,10 +387,10 @@ func (s *Service) readSummarySnapshot(ctx context.Context, actorUserID int, para
 	if s.snapshotCache == nil {
 		loaded, loadErr := loader(ctx)
 		if loadErr != nil {
-			return nil, "", loadErr
+			return nil, loadErr
 		}
 		if loaded.SnapshotErr != nil {
-			return nil, "", loaded.SnapshotErr
+			return nil, loaded.SnapshotErr
 		}
 		now := time.Now().UTC()
 		return &SummaryCacheResult{
@@ -332,119 +398,40 @@ func (s *Service) readSummarySnapshot(ctx context.Context, actorUserID int, para
 			Freshness: SnapshotFreshness{
 				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
 			},
-		}, scope.Version, nil
+		}, nil
 	}
 
-	scopeHash, err := effectiveScopeHash(scope)
+	result, err := s.snapshotCache.GetSummaryOrLoad(ctx, request.snapshotCacheKey(), loader)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	result, err := s.snapshotCache.GetSummaryOrLoad(ctx, SnapshotCacheKey{
-		ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
-		ActorID: actorUserID, ScopeVersion: scope.Version, ScopeHash: scopeHash, Params: normalized,
-	}, loader)
-	if err != nil {
-		return nil, "", err
-	}
-	return result, scope.Version, nil
-}
-
-func (s *Service) readOverviewSnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*SnapshotCacheResult, string, error) {
-	normalized, err := normalizeOverviewParams(params)
-	if err != nil {
-		return nil, "", err
-	}
-	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
-	if err != nil {
-		return nil, "", err
-	}
-	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
-	}
-
-	loader := func(loadCtx context.Context) (SnapshotOriginLoadResult, error) {
-		var provider relay.Provider
-		overviewSubjects := scope.OverviewSubjects
-		if len(overviewSubjects) == 0 {
-			overviewSubjects = scope.Subjects
-		}
-		if len(overviewSubjects) <= s.fullScopeCap {
-			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
-			if resolveErr != nil {
-				return SnapshotOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
-			}
-			provider = resolvedProvider
-		}
-		snapshot, loadErr := s.generateOverviewSnapshot(loadCtx, scope, provider, normalized)
-		if loadErr == nil {
-			return SnapshotOriginLoadResult{Snapshot: snapshot}, nil
-		}
-		if isHardSnapshotOriginError(loadErr) {
-			return SnapshotOriginLoadResult{}, loadErr
-		}
-		return SnapshotOriginLoadResult{SnapshotErr: loadErr}, nil
-	}
-
-	if s.snapshotCache == nil {
-		loaded, loadErr := loader(ctx)
-		if loadErr != nil {
-			return nil, "", loadErr
-		}
-		if loaded.SnapshotErr != nil {
-			return nil, "", loaded.SnapshotErr
-		}
-		now := time.Now().UTC()
-		return &SnapshotCacheResult{
-			Snapshot: loaded.Snapshot,
-			Freshness: SnapshotFreshness{
-				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
-			},
-		}, scope.Version, nil
-	}
-
-	scopeHash, err := effectiveScopeHash(scope)
-	if err != nil {
-		return nil, "", err
-	}
-	result, err := s.snapshotCache.GetOrLoad(ctx, SnapshotCacheKey{
-		ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
-		ActorID: actorUserID, ScopeVersion: scope.Version, ScopeHash: scopeHash, Params: normalized,
-	}, loader)
-	if err != nil {
-		return nil, "", err
-	}
-	return result, scope.Version, nil
+	return result, nil
 }
 
 func (s *Service) readMembersSnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*MembersCacheResult, string, error) {
-	normalized, err := normalizeOverviewParams(params)
+	request, err := s.newSplitReadRequest(ctx, actorUserID, params)
 	if err != nil {
-		return nil, "", fmt.Errorf("normalize team members snapshot params: %w", err)
+		return nil, "", err
 	}
-	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
-	if err != nil {
-		return nil, "", fmt.Errorf("resolve team members representative scope: %w", err)
-	}
-	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
-	}
+	result, err := s.readMembersSnapshotForRequest(ctx, request)
+	return result, request.scope.Version, err
+}
 
+func (s *Service) readMembersSnapshotForRequest(ctx context.Context, request *splitReadRequest) (*MembersCacheResult, error) {
 	loader := func(loadCtx context.Context) (MembersOriginLoadResult, error) {
 		var provider relay.Provider
-		overviewSubjects := scope.OverviewSubjects
+		overviewSubjects := request.scope.OverviewSubjects
 		if len(overviewSubjects) == 0 {
-			overviewSubjects = scope.Subjects
+			overviewSubjects = request.scope.Subjects
 		}
 		if len(overviewSubjects) <= s.fullScopeCap {
-			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
 			if resolveErr != nil {
 				return MembersOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
 			}
 			provider = resolvedProvider
 		}
-		snapshot, loadErr := s.generateMembersSnapshot(loadCtx, scope, provider, normalized)
+		snapshot, loadErr := s.generateMembersSnapshot(loadCtx, request.scope, provider, request.params)
 		if loadErr == nil {
 			return MembersOriginLoadResult{Snapshot: snapshot}, nil
 		}
@@ -457,10 +444,10 @@ func (s *Service) readMembersSnapshot(ctx context.Context, actorUserID int, para
 	if s.snapshotCache == nil {
 		loaded, loadErr := loader(ctx)
 		if loadErr != nil {
-			return nil, "", fmt.Errorf("load team members snapshot origin: %w", loadErr)
+			return nil, fmt.Errorf("load team members snapshot origin: %w", loadErr)
 		}
 		if loaded.SnapshotErr != nil {
-			return nil, "", fmt.Errorf("load team members snapshot origin: %w", loaded.SnapshotErr)
+			return nil, fmt.Errorf("load team members snapshot origin: %w", loaded.SnapshotErr)
 		}
 		now := time.Now().UTC()
 		return &MembersCacheResult{
@@ -468,21 +455,14 @@ func (s *Service) readMembersSnapshot(ctx context.Context, actorUserID int, para
 			Freshness: SnapshotFreshness{
 				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
 			},
-		}, scope.Version, nil
+		}, nil
 	}
 
-	scopeHash, err := effectiveScopeHash(scope)
+	result, err := s.snapshotCache.GetMembersOrLoad(ctx, request.snapshotCacheKey(), loader)
 	if err != nil {
-		return nil, "", fmt.Errorf("hash team members representative scope: %w", err)
+		return nil, fmt.Errorf("read team members snapshot: %w", err)
 	}
-	result, err := s.snapshotCache.GetMembersOrLoad(ctx, SnapshotCacheKey{
-		ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
-		ActorID: actorUserID, ScopeVersion: scope.Version, ScopeHash: scopeHash, Params: normalized,
-	}, loader)
-	if err != nil {
-		return nil, "", fmt.Errorf("read team members snapshot: %w", err)
-	}
-	return result, scope.Version, nil
+	return result, nil
 }
 
 func (s *Service) generateMembersSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*MembersSnapshot, error) {
@@ -620,55 +600,6 @@ func (s *Service) generateTrendSnapshot(ctx context.Context, scope *representati
 		return trendUnavailableSnapshot(params, "provider_error"), err
 	}
 	return buildTrendSnapshot(scope, params, data), data.sourceErr
-}
-
-func (s *Service) generateOverviewSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*OverviewResponse, error) {
-	overviewSubjects := scope.OverviewSubjects
-	if len(overviewSubjects) == 0 {
-		overviewSubjects = scope.Subjects
-	}
-	if len(overviewSubjects) > s.fullScopeCap {
-		response := BuildOverviewUnavailableForLargeScope(overviewSubjects, s.fullScopeCap)
-		response.Window = buildOverviewWindow(params)
-		return &response, nil
-	}
-	data, err := s.loadTeamTrendOrigin(ctx, scope, provider, params)
-	if err != nil {
-		return nil, err
-	}
-	trendSnapshot := buildTrendSnapshot(scope, params, data)
-	windowTotals := buildOverviewWindowTotals(data.pointsByUser)
-	members := BuildOverviewMemberDetails(data.subjects, data.statsByRelayUserID, windowTotals)
-	memberTree := BuildOverviewMemberTree(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, members)
-
-	var rangeCost *float64
-	var rangeTokens *int64
-	if data.unavailableReason == nil {
-		rangeCost = sumOverviewWindowCosts(windowTotals)
-		rangeTokens = sumOverviewWindowTokens(windowTotals)
-	}
-	todayCost, totalCost := sumOverviewComparisonCosts(data.statsByRelayUserID)
-	return &OverviewResponse{
-		Configured:       true,
-		IsRepresentative: true,
-		Window:           trendSnapshot.Window,
-		Summary: OverviewSummary{
-			Unavailable:       data.unavailableReason != nil,
-			UnavailableReason: data.unavailableReason,
-			MemberCount:       len(overviewSubjects),
-			RelayMemberCount:  len(data.relayUserIDs),
-			RangeActualCost:   rangeCost,
-			RangeTotalTokens:  rangeTokens,
-			TodayActualCost:   todayCost,
-			TotalActualCost:   totalCost,
-			UnitLabel:         teamOverviewCostUnitLabel,
-		},
-		TopMembers:      trendSnapshot.TopMembers,
-		TopMemberTrend:  trendSnapshot.TopMemberTrend,
-		DepartmentTrend: trendSnapshot.DepartmentTrend,
-		Members:         members,
-		MemberTree:      memberTree,
-	}, nil
 }
 
 func (s *Service) loadTeamTrendOrigin(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*teamTrendOriginData, error) {

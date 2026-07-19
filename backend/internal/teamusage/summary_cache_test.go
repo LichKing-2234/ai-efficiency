@@ -18,11 +18,11 @@ import (
 	redis "github.com/redis/go-redis/v9"
 )
 
-func TestSnapshotCacheKeyIsolatesEveryAuthoritativeDimension(t *testing.T) {
+func TestSummaryCacheKeyIsolatesEveryAuthoritativeDimension(t *testing.T) {
 	base := testSnapshotCacheKey()
-	baseEncoded, err := snapshotCacheKey("test", base)
+	baseEncoded, err := summaryCacheKey("test", base)
 	if err != nil {
-		t.Fatalf("snapshotCacheKey() error = %v", err)
+		t.Fatalf("summaryCacheKey() error = %v", err)
 	}
 	variants := []SnapshotCacheKey{
 		func() SnapshotCacheKey { key := base; key.ProviderID++; return key }(),
@@ -36,21 +36,21 @@ func TestSnapshotCacheKeyIsolatesEveryAuthoritativeDimension(t *testing.T) {
 		func() SnapshotCacheKey { key := base; key.Params.Timezone = "UTC"; return key }(),
 	}
 	for _, variant := range variants {
-		encoded, keyErr := snapshotCacheKey("test", variant)
+		encoded, keyErr := summaryCacheKey("test", variant)
 		if keyErr != nil {
-			t.Fatalf("snapshotCacheKey(%+v) error = %v", variant, keyErr)
+			t.Fatalf("summaryCacheKey(%+v) error = %v", variant, keyErr)
 		}
 		if encoded == baseEncoded {
-			t.Fatalf("snapshotCacheKey(%+v) reused %q", variant, baseEncoded)
+			t.Fatalf("summaryCacheKey(%+v) reused %q", variant, baseEncoded)
 		}
 	}
 
 	pageVariant := base
 	pageVariant.Params.Page = 9
 	pageVariant.Params.PageSize = 99
-	pageEncoded, err := snapshotCacheKey("test", pageVariant)
+	pageEncoded, err := summaryCacheKey("test", pageVariant)
 	if err != nil {
-		t.Fatalf("page snapshotCacheKey() error = %v", err)
+		t.Fatalf("page summaryCacheKey() error = %v", err)
 	}
 	if pageEncoded != baseEncoded {
 		t.Fatalf("legacy ineffective page params changed snapshot key: %q != %q", pageEncoded, baseEncoded)
@@ -69,12 +69,8 @@ func TestTrendCacheUsesIndependentKeyAndStoresOnlyTrendFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("summaryCacheKey() error = %v", err)
 	}
-	overviewKey, err := snapshotCacheKey("test", key)
-	if err != nil {
-		t.Fatalf("snapshotCacheKey() error = %v", err)
-	}
-	if trendKey == summaryKey || trendKey == overviewKey {
-		t.Fatalf("trend key %q aliases summary/overview keys %q/%q", trendKey, summaryKey, overviewKey)
+	if trendKey == summaryKey {
+		t.Fatalf("trend key %q aliases summary key %q", trendKey, summaryKey)
 	}
 
 	var loads atomic.Int32
@@ -223,9 +219,8 @@ func TestMembersCacheUsesIndependentKeyAndStoresOnlyRankedMemberFields(t *testin
 		t.Fatalf("membersCacheKey() error = %v", err)
 	}
 	for name, other := range map[string]func(string, SnapshotCacheKey) (string, error){
-		"summary":  summaryCacheKey,
-		"trend":    trendCacheKey,
-		"overview": snapshotCacheKey,
+		"summary": summaryCacheKey,
+		"trend":   trendCacheKey,
 	} {
 		otherKey, keyErr := other("test", key)
 		if keyErr != nil {
@@ -641,7 +636,7 @@ func TestEffectiveScopeHashIsDeterministicAndContentSensitive(t *testing.T) {
 	}
 }
 
-func TestSnapshotCacheColdMissWarmHitAndJitterBounds(t *testing.T) {
+func TestSummaryCacheColdMissWarmHitAndJitterBounds(t *testing.T) {
 	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name        string
@@ -656,17 +651,17 @@ func TestSnapshotCacheColdMissWarmHitAndJitterBounds(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cache, server := testSnapshotCache(t, now, tt.random)
 			var loads atomic.Int32
-			loader := func(context.Context) (SnapshotOriginLoadResult, error) {
+			loader := func(context.Context) (SummaryOriginLoadResult, error) {
 				loads.Add(1)
-				return SnapshotOriginLoadResult{Snapshot: testOverviewSnapshot(12.5)}, nil
+				return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(12.5)}, nil
 			}
-			first, err := cache.GetOrLoad(context.Background(), testSnapshotCacheKey(), loader)
+			first, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), loader)
 			if err != nil {
-				t.Fatalf("cold GetOrLoad() error = %v", err)
+				t.Fatalf("cold GetSummaryOrLoad() error = %v", err)
 			}
-			second, err := cache.GetOrLoad(context.Background(), testSnapshotCacheKey(), loader)
+			second, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), loader)
 			if err != nil {
-				t.Fatalf("warm GetOrLoad() error = %v", err)
+				t.Fatalf("warm GetSummaryOrLoad() error = %v", err)
 			}
 			if loads.Load() != 1 || first.Freshness.CacheStatus != "miss" || second.Freshness.CacheStatus != "fresh" {
 				t.Fatalf("loads/status = %d %q/%q", loads.Load(), first.Freshness.CacheStatus, second.Freshness.CacheStatus)
@@ -692,20 +687,20 @@ func TestSnapshotCacheColdMissWarmHitAndJitterBounds(t *testing.T) {
 	}
 }
 
-func TestSnapshotCacheUsesEligibleStaleButRejectsHardFailures(t *testing.T) {
+func TestSummaryCacheUsesEligibleStaleButRejectsHardFailures(t *testing.T) {
 	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
 	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
 	key := testSnapshotCacheKey()
-	if _, err := cache.GetOrLoad(context.Background(), key, func(context.Context) (SnapshotOriginLoadResult, error) {
-		return SnapshotOriginLoadResult{Snapshot: testOverviewSnapshot(7.5)}, nil
+	if _, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(7.5)}, nil
 	}); err != nil {
 		t.Fatalf("prime cache: %v", err)
 	}
 
 	now = now.Add(55 * time.Second)
 	transient := errors.New("synthetic Relay outage")
-	stale, err := cache.GetOrLoad(context.Background(), key, func(context.Context) (SnapshotOriginLoadResult, error) {
-		return SnapshotOriginLoadResult{SnapshotErr: transient}, nil
+	stale, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		return SummaryOriginLoadResult{SnapshotErr: transient}, nil
 	})
 	if err != nil {
 		t.Fatalf("eligible stale GetOrLoad() error = %v", err)
@@ -714,21 +709,21 @@ func TestSnapshotCacheUsesEligibleStaleButRejectsHardFailures(t *testing.T) {
 		t.Fatalf("stale result = %+v", stale)
 	}
 
-	if _, err := cache.GetOrLoad(context.Background(), key, func(context.Context) (SnapshotOriginLoadResult, error) {
-		return SnapshotOriginLoadResult{}, relay.ErrInvalidCredentials
+	if _, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		return SummaryOriginLoadResult{}, relay.ErrInvalidCredentials
 	}); !errors.Is(err, relay.ErrInvalidCredentials) {
 		t.Fatalf("hard error = %v, want ErrInvalidCredentials", err)
 	}
 
 	now = now.Add(4*time.Minute + 16*time.Second)
-	if _, err := cache.GetOrLoad(context.Background(), key, func(context.Context) (SnapshotOriginLoadResult, error) {
-		return SnapshotOriginLoadResult{SnapshotErr: transient}, nil
+	if _, err := cache.GetSummaryOrLoad(context.Background(), key, func(context.Context) (SummaryOriginLoadResult, error) {
+		return SummaryOriginLoadResult{SnapshotErr: transient}, nil
 	}); !errors.Is(err, transient) {
 		t.Fatalf("expired stale error = %v, want transient origin error", err)
 	}
 }
 
-func TestSnapshotCacheRedisFailureFallsBackAndStillCollapsesLocally(t *testing.T) {
+func TestSummaryCacheRedisFailureFallsBackAndStillCollapsesLocally(t *testing.T) {
 	store := failingSnapshotStore{err: errors.New("synthetic Redis outage")}
 	cache, err := NewSnapshotCache(store, SnapshotCacheOptions{Namespace: "test"})
 	if err != nil {
@@ -737,15 +732,15 @@ func TestSnapshotCacheRedisFailureFallsBackAndStillCollapsesLocally(t *testing.T
 	var loads atomic.Int32
 	started := make(chan struct{})
 	release := make(chan struct{})
-	loader := func(ctx context.Context) (SnapshotOriginLoadResult, error) {
+	loader := func(ctx context.Context) (SummaryOriginLoadResult, error) {
 		if loads.Add(1) == 1 {
 			close(started)
 		}
 		select {
 		case <-release:
-			return SnapshotOriginLoadResult{Snapshot: testOverviewSnapshot(9)}, nil
+			return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(9)}, nil
 		case <-ctx.Done():
-			return SnapshotOriginLoadResult{}, ctx.Err()
+			return SummaryOriginLoadResult{}, ctx.Err()
 		}
 	}
 
@@ -758,7 +753,7 @@ func TestSnapshotCacheRedisFailureFallsBackAndStillCollapsesLocally(t *testing.T
 		go func() {
 			defer wg.Done()
 			<-start
-			result, loadErr := cache.GetOrLoad(context.Background(), testSnapshotCacheKey(), loader)
+			result, loadErr := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), loader)
 			if loadErr == nil && (result == nil || result.Snapshot == nil || result.Freshness.CacheStatus != "miss") {
 				loadErr = errors.New("unexpected authoritative fallback result")
 			}
@@ -781,7 +776,7 @@ func TestSnapshotCacheRedisFailureFallsBackAndStillCollapsesLocally(t *testing.T
 	}
 }
 
-func TestSnapshotCacheCollapsesRefreshAcrossInstances(t *testing.T) {
+func TestSummaryCacheCollapsesRefreshAcrossInstances(t *testing.T) {
 	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
 	server := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
@@ -793,30 +788,30 @@ func TestSnapshotCacheCollapsesRefreshAcrossInstances(t *testing.T) {
 	var loads atomic.Int32
 	started := make(chan struct{})
 	release := make(chan struct{})
-	loader := func(ctx context.Context) (SnapshotOriginLoadResult, error) {
+	loader := func(ctx context.Context) (SummaryOriginLoadResult, error) {
 		if loads.Add(1) == 1 {
 			close(started)
 		}
 		select {
 		case <-release:
-			return SnapshotOriginLoadResult{Snapshot: testOverviewSnapshot(11)}, nil
+			return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(11)}, nil
 		case <-ctx.Done():
-			return SnapshotOriginLoadResult{}, ctx.Err()
+			return SummaryOriginLoadResult{}, ctx.Err()
 		}
 	}
 
 	type outcome struct {
-		result *SnapshotCacheResult
+		result *SummaryCacheResult
 		err    error
 	}
 	outcomes := make(chan outcome, 2)
 	go func() {
-		result, loadErr := first.GetOrLoad(context.Background(), testSnapshotCacheKey(), loader)
+		result, loadErr := first.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), loader)
 		outcomes <- outcome{result: result, err: loadErr}
 	}()
 	<-started
 	go func() {
-		result, loadErr := second.GetOrLoad(context.Background(), testSnapshotCacheKey(), loader)
+		result, loadErr := second.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), loader)
 		outcomes <- outcome{result: result, err: loadErr}
 	}()
 	time.Sleep(50 * time.Millisecond)
@@ -832,40 +827,40 @@ func TestSnapshotCacheCollapsesRefreshAcrossInstances(t *testing.T) {
 	}
 }
 
-func TestSnapshotCacheTreatsMalformedValueAsMiss(t *testing.T) {
+func TestSummaryCacheTreatsMalformedValueAsMiss(t *testing.T) {
 	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
 	cache, server := testSnapshotCache(t, now, 0)
-	key, err := snapshotCacheKey("test", testSnapshotCacheKey())
+	key, err := summaryCacheKey("test", testSnapshotCacheKey())
 	if err != nil {
-		t.Fatalf("snapshotCacheKey() error = %v", err)
+		t.Fatalf("summaryCacheKey() error = %v", err)
 	}
 	server.Set(key, `{"schema_version":999,"snapshot":null}`)
 	var loads atomic.Int32
-	result, err := cache.GetOrLoad(context.Background(), testSnapshotCacheKey(), func(context.Context) (SnapshotOriginLoadResult, error) {
+	result, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), func(context.Context) (SummaryOriginLoadResult, error) {
 		loads.Add(1)
-		return SnapshotOriginLoadResult{Snapshot: testOverviewSnapshot(13)}, nil
+		return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(13)}, nil
 	})
 	if err != nil {
-		t.Fatalf("GetOrLoad() error = %v", err)
+		t.Fatalf("GetSummaryOrLoad() error = %v", err)
 	}
 	if loads.Load() != 1 || result.Freshness.CacheStatus != "miss" {
 		t.Fatalf("loads/status = %d/%q, want 1/miss", loads.Load(), result.Freshness.CacheStatus)
 	}
 }
 
-func TestSnapshotCacheRejectsPreviousOverviewSchema(t *testing.T) {
+func TestSummaryCacheRejectsWrongSchema(t *testing.T) {
 	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
 	cache, server := testSnapshotCache(t, now, 0)
-	key, err := snapshotCacheKey("test", testSnapshotCacheKey())
+	key, err := summaryCacheKey("test", testSnapshotCacheKey())
 	if err != nil {
-		t.Fatalf("snapshotCacheKey() error = %v", err)
+		t.Fatalf("summaryCacheKey() error = %v", err)
 	}
-	encoded, err := json.Marshal(snapshotValueEnvelope{
-		SchemaVersion: 1,
+	encoded, err := json.Marshal(readModelValueEnvelope[*SummarySnapshot]{
+		SchemaVersion: 0,
 		GeneratedAt:   now,
 		FreshUntil:    now.Add(54 * time.Second),
 		StaleUntil:    now.Add(4*time.Minute + 30*time.Second),
-		Snapshot:      testOverviewSnapshot(12),
+		Snapshot:      testSummarySnapshot(12),
 	})
 	if err != nil {
 		t.Fatalf("encode previous snapshot schema: %v", err)
@@ -873,9 +868,9 @@ func TestSnapshotCacheRejectsPreviousOverviewSchema(t *testing.T) {
 	server.Set(key, string(encoded))
 
 	var loads atomic.Int32
-	result, err := cache.GetOrLoad(context.Background(), testSnapshotCacheKey(), func(context.Context) (SnapshotOriginLoadResult, error) {
+	result, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), func(context.Context) (SummaryOriginLoadResult, error) {
 		loads.Add(1)
-		return SnapshotOriginLoadResult{Snapshot: testOverviewSnapshot(13)}, nil
+		return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(13)}, nil
 	})
 	if err != nil {
 		t.Fatalf("GetOrLoad() error = %v", err)
@@ -885,20 +880,10 @@ func TestSnapshotCacheRejectsPreviousOverviewSchema(t *testing.T) {
 	}
 }
 
-func TestSummaryCacheKeyIsolatedFromOverviewLane(t *testing.T) {
-	overviewKey, err := snapshotCacheKey("test", testSnapshotCacheKey())
-	if err != nil {
-		t.Fatalf("snapshotCacheKey() error = %v", err)
-	}
+func TestSummaryCacheKeyUsesSummaryLanePrefix(t *testing.T) {
 	summaryKey, err := summaryCacheKey("test", testSnapshotCacheKey())
 	if err != nil {
 		t.Fatalf("summaryCacheKey() error = %v", err)
-	}
-	if overviewKey == summaryKey {
-		t.Fatal("summary and overview cache keys must be isolated")
-	}
-	if !strings.HasPrefix(overviewKey, "ae:test:team-usage-snapshot:v1:") {
-		t.Fatalf("overview cache key = %q, want unchanged prefix", overviewKey)
 	}
 	if !strings.HasPrefix(summaryKey, "ae:test:team-usage-summary:v1:") {
 		t.Fatalf("summary cache key = %q, want summary prefix", summaryKey)

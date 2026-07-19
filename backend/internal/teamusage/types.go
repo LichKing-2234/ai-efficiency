@@ -209,18 +209,6 @@ type SnapshotCacheKey struct {
 	Params          OverviewParams
 }
 
-type SnapshotOriginLoadResult struct {
-	Snapshot    *OverviewResponse
-	SnapshotErr error
-}
-
-type SnapshotOriginLoader func(context.Context) (SnapshotOriginLoadResult, error)
-
-type SnapshotCacheResult struct {
-	Snapshot  *OverviewResponse
-	Freshness SnapshotFreshness
-}
-
 type SummarySnapshot struct {
 	Window  OverviewWindow   `json:"window"`
 	Summary SummaryAggregate `json:"summary"`
@@ -313,7 +301,6 @@ type SnapshotCacheOptions struct {
 	TrendMetrics        readcache.Metrics
 	MembersMetrics      readcache.Metrics
 	OrganizationMetrics readcache.Metrics
-	OverviewMetrics     readcache.Metrics
 }
 
 type OverviewWindow struct {
