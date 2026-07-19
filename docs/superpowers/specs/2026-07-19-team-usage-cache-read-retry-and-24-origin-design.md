@@ -1,6 +1,6 @@
 # Team Usage Cache Read Retry And 24-Origin Follow-Up Design
 
-**Status:** Approved; implementation pending on `perf/team-usage-cache-read-retry-24`
+**Status:** Implemented by `bade4a33` and `26907c85`; full local verification is complete and PR CI is pending
 
 **Refines:**
 

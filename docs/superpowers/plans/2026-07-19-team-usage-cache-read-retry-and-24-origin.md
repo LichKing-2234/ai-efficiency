@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Approved spec is committed at `4ccd781f`; implementation, review, PR CI, merge, and staging verification are pending.
+**Status:** Implementation commits `bade4a33` and `26907c85`, full local verification, and branch self-review are complete. PR CI is pending; PR delivery, merge, and staging verification have not started.
 
 **Goal:** Recover one transient Redis read failure without leaving the bounded command budget, and reduce large-team cold latency by raising the single provider-wide trend origin limit from sixteen to 24.
 
@@ -388,7 +388,7 @@
 - Records 24 as the current provider-wide trend origin maximum.
 - Preserves historical specs and documents this spec as their follow-up.
 
-- [ ] **Step 1: Update current architecture and spec status**
+- [x] **Step 1: Update current architecture and spec status**
 
   In `docs/architecture.md`:
 
@@ -403,7 +403,15 @@
   and awaiting full verification/PR CI. Do not rewrite either historical
   `2026-07-19` predecessor spec.
 
-- [ ] **Step 2: Run the complete backend verification gate**
+  Evidence (2026-07-19): updated the current `readcache` architecture contract
+  with the one immediate failed-GET retry inside the original context and the
+  unchanged miss/write/lease boundary; updated both current Team Usage
+  architecture descriptions from sixteen to 24 provider-wide origin slots.
+  The follow-up spec now records behavior commits `bade4a33` and `26907c85` as
+  implemented while full local verification and PR CI remain pending. The two
+  predecessor specs were not modified.
+
+- [x] **Step 2: Run the complete backend verification gate**
 
   Run fresh from `backend`:
 
@@ -421,7 +429,17 @@
   because frontend source and HTTP contracts are unchanged; GitHub CI remains
   the full repository gate.
 
-- [ ] **Step 3: Review the exact branch diff against the integration base**
+  Evidence (2026-07-19): all commands were run fresh from `backend` and exited
+  0. The `-count=2` readcache/relay/teamusage suites passed in `0.850s`,
+  `18.233s`, and `26.090s`; the focused race suites passed in `1.845s`,
+  `3.491s`, and `3.660s` with no race report. `go test ./... -count=1`
+  passed every backend package, including `internal/handler` in `91.104s`,
+  `internal/repo` in `58.549s`, and `internal/teamusage` in `36.535s`.
+  `go vet ./...`, `go build ./...`, and the repository-root
+  `git diff --check` all exited 0 with no output. No frontend command was run;
+  repository PR CI remains pending.
+
+- [x] **Step 3: Review the exact branch diff against the integration base**
 
   Run:
 
@@ -439,7 +457,32 @@
   change, Sub2API change, or relaxed staging criterion. Fix every Critical or
   Important finding and rerun affected RED/GREEN plus full verification.
 
-- [ ] **Step 4: Record verification and commit current documentation**
+  Evidence (2026-07-19): reviewed the complete diff against
+  `feat/platform-loading-performance` on behavior head `26907c85` and the
+  current three-file documentation update. The required branch commands all
+  exited 0; the committed diff contained six files with 1,065 insertions and
+  seven deletions across commits `4ccd781f`, `565883db`, `bade4a33`, and
+  `26907c85`. The current worktree diff contained only the expected seven files
+  after adding `docs/architecture.md`.
+
+  Standards review: no findings. Go changes stay inside the existing
+  `readcache` and Relay boundaries, test hooks and values are synthetic, all
+  commit subjects follow Conventional Commits, the plan was updated as a live
+  ledger, and neither historical predecessor spec changed. There is no
+  frontend or Sub2API source change and no real-data fixture.
+
+  Spec review: no findings. `RedisStore.Get` returns success and `redis.Nil`
+  without retry, stops after cancellation, reuses the supplied context with no
+  sleep/backoff, and makes at most two GET attempts; runtime
+  `redis.Options.MaxRetries` remains `-1`, and tests prove writes and leases
+  make one matching command attempt. The only Relay behavior change is the
+  shared constant from 16 to 24; the provider-owned limiter still runs after
+  cache/flight collapse, remains shared across callers and credential
+  generations, and preserves cancellation before HTTP origin start. Cache
+  identities, TTLs, HTTP contracts, and the nine-second cold / 1.5-second warm
+  staging criteria are unchanged. No Critical or Important fix was required.
+
+- [x] **Step 4: Record verification and commit current documentation**
 
   Update this plan with exact test, race, vet, build, and review evidence. Set
   the spec and plan status to implementation complete and awaiting PR CI,
@@ -451,6 +494,13 @@
     docs/superpowers/plans/2026-07-19-team-usage-cache-read-retry-and-24-origin.md
   git commit -m "docs(teamusage): record cache retry and 24-origin behavior"
   ```
+
+  Evidence (2026-07-19): the current architecture, follow-up spec, and this
+  live ledger record the implemented behavior and fresh local test, race, vet,
+  build, diff, and two-axis self-review evidence. Their statuses state that
+  implementation and full local verification are complete while PR CI is
+  pending; no PR delivery, merge, image publish, Helm action, staging audit, or
+  production action is claimed.
 
 ### Task 4: Deliver A Reviewed PR And Stop At The Merge Gate
 
