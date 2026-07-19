@@ -21,13 +21,14 @@ import (
 const maxPingResponseBodyBytes int64 = 4 * 1024
 
 type sub2apiRelay struct {
-	mu       sync.RWMutex
-	client   *http.Client
-	baseURL  string // LLM API endpoint, e.g. http://localhost:3000/v1
-	adminURL string // Admin API endpoint, e.g. http://localhost:3000
-	apiKey   string // Relay API key used for both admin and inference requests.
-	model    string
-	logger   *zap.Logger
+	mu         sync.RWMutex
+	client     *http.Client
+	baseURL    string // LLM API endpoint, e.g. http://localhost:3000/v1
+	adminURL   string // Admin API endpoint, e.g. http://localhost:3000
+	apiKey     string // Relay API key used for both admin and inference requests.
+	model      string
+	logger     *zap.Logger
+	teamTrends teamTrendCache
 }
 
 const userUsageOriginTimeout = 12 * time.Second
@@ -106,9 +107,14 @@ func (s *sub2apiRelay) adminAPIKey() string {
 }
 
 func (s *sub2apiRelay) SetAdminAPIKey(apiKey string) {
+	normalized := strings.TrimSpace(apiKey)
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.apiKey = strings.TrimSpace(apiKey)
+	changed := normalized != strings.TrimSpace(s.apiKey)
+	s.apiKey = normalized
+	s.mu.Unlock()
+	if changed {
+		s.teamTrends.Invalidate()
+	}
 }
 
 func (s *sub2apiRelay) SetModel(model string) {
@@ -2314,7 +2320,9 @@ func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs [
 		go func() {
 			defer wg.Done()
 			for relayUserID := range jobs {
-				trend, err := s.getTeamMemberTrend(trendCtx, relayUserID, params)
+				trend, err := s.teamTrends.GetOrLoad(trendCtx, relayUserID, params, func(loadCtx context.Context) ([]UsageTrendPoint, error) {
+					return s.getTeamMemberTrend(loadCtx, relayUserID, params)
+				})
 				results <- trendResult{relayUserID: relayUserID, points: trend, err: err}
 			}
 		}()
