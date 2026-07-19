@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Independent review and full local verification are complete on PR #189; exact-head CI, merge, and staging A/B remain pending.
+**Status:** Independent review, full local verification, and reviewed-head CI are complete on PR #189; the PR is at the merge gate, and staging A/B remains pending after merge.
 
 **Goal:** Reduce large-team cold page completion by raising bounded per-user trend concurrency to a provider-wide sixteen slots and keep Team Usage response snapshots fresh for a three-minute pre-jitter maximum.
 
@@ -450,7 +450,7 @@
   full `go test ./... -count=1`, `go vet ./...`, `go build ./...`, and
   `git diff --check` all exited zero.
 
-- [ ] **Step 3: Wait for exact-final-head CI**
+- [x] **Step 3: Wait for exact-final-head CI**
 
   Require backend, frontend, ae-cli, and deploy-static success on the exact final head. Record the PR number, head SHA, run ID, and results in this plan; push a ledger-only commit if tracked content changes, then verify that final head as well.
 
@@ -462,7 +462,14 @@
   commit recording this evidence must receive the same exact-head four-job
   verification before the merge-gate report.
 
-- [ ] **Step 4: Stop at the merge gate**
+  Final review-fix CI evidence (2026-07-19): run `29684743633` succeeded on
+  reviewed head `81202679ae767696cc3a774548b18422e6d2c90d`. Backend job
+  `88186980709`, frontend job `88186980725`, ae-cli job `88186980743`, and
+  deploy-static job `88186980710` all succeeded. The following plan-only
+  ledger commit is the sole remaining head change and must pass the same four
+  jobs before reporting the merge gate.
+
+- [x] **Step 4: Stop at the merge gate**
 
   Do not merge automatically. Report the exact PR and CI state and wait for explicit user confirmation or observed merge before staging deployment.
 
