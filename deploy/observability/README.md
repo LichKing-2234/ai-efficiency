@@ -28,11 +28,15 @@ sufficiency and route-specific budget ratification.
 
 The application cache panel groups the closed outcome set by the stable
 production names `work_items_counts`, `personal_usage`, `representative_scope`,
-`team_usage_summary`, `team_usage_trend`, `team_usage_members`, `team_usage_organization`, `team_usage_overview`,
+`team_usage_summary`, `team_usage_trend`, `team_usage_members`, `team_usage_organization`,
 `repository_inventory`, and `provider_metadata`. The backend preinitializes every name/outcome pair, so a
 scrape distinguishes a quiet cache from missing instrumentation without adding
 keys, actors, scopes, providers, ranges, credentials, or cached values as
 labels.
+
+The temporary Team Overview compatibility adapter intentionally has no dedicated
+cache name, Redis key, or metric. It consumes the split Summary, Trend, and Members
+lanes; unreachable legacy `team-usage-snapshot` values expire under their existing TTL.
 
 The browser defaults to a 10 percent page sample. Custom frontend builds can
 set `VITE_WEB_VITALS_SAMPLE_RATE` from `0` to `1`; invalid values return to the

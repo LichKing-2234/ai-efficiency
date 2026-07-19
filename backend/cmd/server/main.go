@@ -347,7 +347,6 @@ func main() {
 			TrendMetrics:        cacheMetrics.teamUsageTrend,
 			MembersMetrics:      cacheMetrics.teamUsageMembers,
 			OrganizationMetrics: cacheMetrics.teamUsageOrg,
-			OverviewMetrics:     cacheMetrics.teamUsageOverview,
 		},
 	)
 	if err != nil {

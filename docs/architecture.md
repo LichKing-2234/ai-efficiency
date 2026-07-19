@@ -66,7 +66,7 @@ flowchart LR
 - `ai-efficiency` is a standalone system. It integrates with `sub2api` through relay/provider HTTP APIs rather than direct database coupling.
 - Release units remain in one repository but are published separately. Platform releases use `v*` tags for the backend/frontend/deploy unit, GHCR image, and Helm-consumed image tags. `ae-cli` releases use `ae-cli/v*` tags and publish only CLI artifacts; CLI installer and updater discovery filters that tag namespace instead of using the platform-owned repository latest release. The exact `v0.2.0-cli.1` tag is a one-time bridge for older CLIs that still read repository `/releases/latest`; it publishes only CLI artifacts and is excluded from the platform release workflow.
 - The backend is the central orchestration point for auth, repo configuration, attribution, provider management, and SCM/webhook workflows.
-- PostgreSQL remains authoritative for Work Items state and persisted revisions, users, Relay provider configuration versions, and the current Directory Sync facts that guard representative scope. Redis is an optional performance layer for bounded work-item counts, personal usage snapshots, representative-scope read models, reconstructible team-usage snapshots, and Relay group/model display metadata; an unavailable Redis never becomes an authorization, mutation, credential, token-revocation, or fresh-quota dependency.
+- PostgreSQL remains authoritative for Work Items state and persisted revisions, users, Relay provider configuration versions, and the current Directory Sync facts that guard representative scope. Redis is an optional performance layer for bounded work-item counts, personal usage snapshots, representative-scope read models, reconstructible team-usage read models, and Relay group/model display metadata; an unavailable Redis never becomes an authorization, mutation, credential, token-revocation, or fresh-quota dependency.
 - PostgreSQL also remains authoritative for repository inventory. The repo module aggregates inventory by provider and scope in one SQL query, versions cached snapshots with a PostgreSQL UUID, and uses Redis only as a reconstructible approximately 60-second read model. Repository inventory reuses `backend/internal/readcache` for the Redis adapter, token-protected lease, cancellation-aware process-local flight, and context sleep while retaining its key, revision, envelope, fresh-only TTL, and authoritative fallback policy inside `backend/internal/repo`. Repository writes commit their local row change and revision advance in one transaction; Redis failure falls back to SQL and never blocks a mutation.
 - Runtime config remains a startup bootstrap input, not the user-facing provider source of truth. On first startup the backend can seed the primary `RelayProvider` row from `relay.*` config, but `/user`, settings, and normal provider surfaces operate on DB-backed `RelayProvider` records rather than a runtime fallback provider contract.
 - `backend/internal/relayruntime` owns process Relay clients and shared provider display metadata behind the existing `relay.Provider` boundary. Clients are keyed by provider ID plus persisted `configuration_version`, re-read the current provider row on resolution, and live for at most five minutes. Provider mutations increment the persisted version, evict the local client after commit, and publish a best-effort secret-free invalidation containing only schema version, provider ID, and configuration version; missed or unavailable Redis notifications recover through persisted version checks and the client lifetime bound.
@@ -81,7 +81,7 @@ flowchart LR
 - The embedded SPA also exposes representative-scoped team usage as ordinary authenticated user surfaces rather than as admin pages. `/usage` is the personal AI Usage page and no longer loads or renders a representative member subject selector. It starts current-user usage, current-request quota, and representative-scope discovery independently; usage can render before quota or Team-tab discovery finishes, and a range change aborts both superseded personal requests. The usage request sends `include_group_quotas=false`, while `/api/v1/user/usage/group-quotas` owns fresh-only quota state. Team comparison is separated into `/usage/team`, which starts the split summary, trend, members, and shallow organization requests independently without rendering quota cards or quota-edit controls. Scoped member drill-down is separated into `/usage/members/:user_id`, which calls `/api/v1/user/team-usage/subjects/:user_id/usage/dashboard` directly, never calls the personal quota endpoint, and relies on the backend as the authorization boundary. Team total is rendered independently from group comparison and deduplicates canonical members even when one member has multiple current department memberships. Group comparison uses represented root departments when a representative has multiple first-level groups, direct child departments when there is one represented root with child departments, and no comparison rows when there is only one leaf represented group; a multi-department member contributes to each matching comparison bucket while remaining single-counted in team total and parent aggregates. Delegated quota control stays inside the selected-member detail surface and is implemented as sub2api user-group `rate_multiplier` writes through the relay provider boundary, not as local quota enforcement and not as shared group-limit edits. Every delegated write attempt is also recorded locally in `team_usage_rate_multiplier_audits`, with representative-readable `/api/v1/user/team-usage/audit` and admin-visible `/api/v1/admin/team-usage/audit` API paths; current representative UI surfaces do not render audit history.
 - Representative scope resolution uses a versioned Redis read model instead of rebuilding all current departments, members, memberships, and local-user bindings on every team-usage request. Authentication still validates the JWT and authoritative `users.token_valid_after` first. The scope service then reads the current actor row plus latest successful Directory Sync apply source/run as a lightweight guard, derives an opaque scope version from that guard and the scope schema version, isolates values by deployment namespace, actor, source/run, and current role, and re-reads that guard before returning. A changed run or role therefore selects a new key and scope version immediately, including when it changes during a cache read. Values have a fresh-only 48-54 minute jittered TTL; malformed values, Redis command failure, or lease failure rebuild from PostgreSQL, and no stale scope is accepted for delegated writes or subject visibility.
 - Selected-member detail reads multiplier metadata for all unique active subscription groups through one optional Relay batch capability. The Sub2API adapter bounds its per-group upstream expansion to four workers, two seconds per group, and five seconds overall. Failed, missing, or ambiguous group metadata degrades only that row, returns a null effective multiplier, disables editing, and preserves current usage and quota fields. The authoritative mutation path still performs a single-group read, provider-group lock, whole-group replacement, readback verification, and local audit update; it never reuses the batch-read result.
-- Team summary, trend, members, and organization are served independently from the compatibility overview, each with its own authoritative origin, versioned Redis lane, lease, freshness, and stale-if-error boundary. Summary loads only aggregate stats; Trend loads only the stats and trend points needed for the complete team-total plus bounded Top 12 member and department-comparison series; Members loads complete-range batch stats in at-most-100-user chunks and ranks immutable rows once without acquiring the Trend capability or constructing an organization tree. Organization binds each cached value to one nullable parent and loads only that parent's immediate departments plus complete branch-local ranked direct-member facts, using complete-range batch stats for requested child-subtree aggregates without constructing a recursive tree. Summary, trend, members, organization, and compatibility requests start independently with the same normalized range; a delayed or failed request does not remove successful siblings. The trend chart stays behind an async component boundary until a Trend response renders. The compatibility route alone retains the complete historical JSON shape plus `Deprecation`, `Sunset`, and successor `Link` headers for the compatibility release.
+- Team summary, trend, members, and organization each own an authoritative origin, versioned Redis lane, lease, freshness, and stale-if-error boundary. Summary loads only aggregate stats; Trend loads only the stats and trend points needed for the complete team-total plus bounded Top 12 member and department-comparison series; Members loads complete-range batch stats in at-most-100-user chunks and ranks immutable rows once without acquiring the Trend capability or constructing an organization tree. Organization binds each cached value to one nullable parent and loads only that parent's immediate departments plus complete branch-local ranked direct-member facts, using complete-range batch stats for requested child-subtree aggregates without constructing a recursive tree. The first-party page starts those four requests independently, so a delayed or failed section does not remove successful siblings, and the trend chart stays behind an async component boundary until a Trend response renders. The temporary compatibility route owns no Relay origin, Redis lane, or cache metric: it resolves one authorized request context, sequentially reads Summary, Trend, and complete Members through their typed lanes, and projects the recursive historical tree from the same scope and Members value without calling paginated Organization branches. It retains the complete historical JSON shape, accepted ineffective `page`/`page_size`, and `Deprecation`, `Sunset`, and successor `Link` headers for the announced compatibility release.
 - Team members are served as an independent snapshot-bound ranking page, defaulting to 50 rows and capped at 100. Next/Previous cursor navigation restarts only the members section after `snapshot_expired`. The current frontend does not call the compatibility route, whose complete historical member and organization fields remain available only for legacy consumers during the announced window.
 - Team organization is the fourth independent split request. It initially returns only authorized roots and then loads one parent's immediate departments and direct members on first expansion. Department and member collections have independent cursors, cached collapse/re-expand state, and branch-local error and snapshot-expiry recovery. The current SPA no longer calls the compatibility overview; that route remains only for its announced one-release window.
 - The embedded SPA also exposes sequential quota reset approvals for user subscription groups. The selected subscription group identifies only the relay quota reset target and never affects approval routing. When a request is created, the backend resolves the current directory source, requester memberships, hierarchy, approver configs, representatives, and local-user matches in one repeatable-read transaction and snapshots one compact versioned JSON workflow on `quota_reset_requests`; later directory or config changes do not rewrite that request. The resolver retains the full current department set for deterministic hierarchy and cycle handling, while member, membership, user, and config queries are bounded to the requester, relevant ancestor rounds, and candidate identities. String or numeric, scalar or array leader metadata uses separate indexed containment reads, and department-declared representative ids use a source/external-id index. The first step merges candidates from every exact requester department: enabled config takes priority for each department, while an exact department with no config falls back only to its active synced representatives. Later steps walk all parent paths one edge per round, deduplicate converged departments, keep only departments with enabled config, and merge all usable configured approvers in the same round; representatives are not an ancestor fallback. Configured rounds with no usable candidate become admin-fallback steps, rounds with no config are skipped, and resolution with no steps creates one final admin-fallback step. Version 2 rows use the internal `workflow_pending` status, mapped to public `pending`, so an old Pod in a rolling deployment cannot process them as legacy single-stage requests. The original active-request partial unique index remains unchanged for rollback compatibility, while a second named index spans both pending states to prevent cross-version duplicates. `resolved_approver_user_ids` indexes only the current normal candidates for approval lists and Work Items, `workflow` has a separate GIN index for historical decision containment, and `workflow_revision` provides compare-and-swap decision concurrency. One commented approval completes each active step; an earlier approving actor automatically satisfies any later step containing that actor, records the reuse in workflow state and `quota_reset_request_events`, and does not receive a duplicate activation notification. Admins may decide whichever step is active but cannot jump ahead; admin fallback keeps the active step actionable when it has no normal candidate. Required decision comments and all workflow, decision, reset, cancellation, and notification transitions remain durable in the request JSON and append-only event audit; historical version 1 rows retain the previous single-stage path. The final winning approval starts exactly one existing relay quota reset after commit on a context detached from client cancellation, with a 30-second deadline so success or failure can still be persisted. Organization & Login settings expose department-member approvers and an explicit `generic_webhook` or `wecom_group_robot` channel; generic webhooks receive structured payloads with public statuses, while the WeCom preset uses request-time `wecom_userid` snapshots for active-approver mentions, and webhook failures persist only safe HTTP status or numeric business error codes.
@@ -248,36 +248,35 @@ last page, and keeps exact normalized-email confirmation before disable.
 
 `backend/internal/teamusage` owns the common authorization and cache guardrails for
 four current split read-model lanes. Summary, Trend, Members, and Organization each
-have an independent typed origin and cache. The one-release compatibility adapter
-alone retains the authorized complete overview generation:
+have an independent typed origin and cache. The one-release compatibility Overview
+is a response adapter over those lanes and owns no origin or cache:
 
-- Every request normalizes and validates start/end dates, `day|hour` granularity,
+- Every split request normalizes and validates start/end dates, `day|hour` granularity,
   and an IANA timezone, then resolves the current representative scope and enabled
-  primary Relay provider row before cache access. Auth middleware has already
-  checked the current token-revocation floor. A cache hit therefore never bypasses
-  current authorization, scope version, actor role, Directory Sync run, or
-  provider configuration checks.
+  primary Relay provider row before cache access. Compatibility Overview performs
+  that normalization and guarded resolution once, then shares the request-scoped
+  scope, provider configuration, and scope hash across its three typed reads. Auth
+  middleware has already checked the current token-revocation floor. A cache hit
+  therefore never bypasses current authorization, scope version, actor role,
+  Directory Sync run, or provider configuration checks.
 - Each Redis key hashes deployment namespace, provider id and persisted
   `configuration_version`, actor id, opaque scope version, a deterministic hash of
   the complete effective scope, and the normalized range/granularity/timezone.
-  Summary, Trend, Members, Organization, and overview use distinct versioned key
-  spaces, so no payload can satisfy another lane.
-  Legacy `page` and `page_size` remain accepted but ineffective and do not create
-  separate cache generations.
+  Summary, Trend, Members, and Organization use distinct versioned key spaces, so
+  no payload can satisfy another lane. Compatibility Overview creates no fifth key.
+  Legacy `page` and `page_size` remain accepted but ineffective and therefore do not
+  change any split cache generation.
 - A Summary value contains only a typed normalized window and summary aggregate.
   A Trend value contains only its normalized window, bounded `top_members`,
   `top_member_trend`, and `department_trend`. A Members value contains only its
   normalized window and complete immutable ranked member rows. An Organization
   value contains one nullable parent, its immediate department rows, and complete
   branch-local ranked direct-member rows. Its key additionally hashes the normalized
-  parent. An overview value contains the schema-versioned reconstructible
-  `OverviewResponse` used only by the compatibility projection. None contains a
-  request id, JWT,
+  parent. None contains a request id, JWT,
   token-revocation state, provider credential, quota fact, or mutation decision.
   Request middleware owns the validated request id, and each handler copies that same id into its response
-  header and DTO after projection. The overview envelope is schema v2; pre-bound
-  v1 values are rejected and rebuilt authoritatively so they cannot bypass the
-  comparison limit or omit its truncation metadata.
+  header and DTO after projection. Old `team-usage-snapshot` values are unreachable
+  and expire under their existing Redis TTL.
 - Values are fresh for 48-54 seconds and have a hard stale deadline 4-4.5 minutes
   after generation, both using 10-20 percent jitter below the documented 60-second
   and five-minute maxima. Only an eligible transient origin failure may reuse a
@@ -294,16 +293,16 @@ alone retains the authorized complete overview generation:
   and historical comparison totals. Summary does not call trend capability, rank
   members, project chart series, or construct an organization tree. Summary,
   Members, and Organization set `RequireCompleteRange`; the Relay compatibility adapter may then
-  backfill missing range totals internally. Trend and compatibility Overview already
-  fetch trend points for their own projection, so their stats read
-  explicitly skips that range fallback and cannot double the per-user trend fan-out.
+  backfill missing range totals internally. Trend fetches trend points for its own
+  projection, so its stats read explicitly skips that range fallback and cannot
+  double the per-user trend fan-out.
 - Trend resolves only the current authorized scope, Relay identities, batch stats,
   and trend points required for its bounded DTO. It does not compose Summary,
   rank the complete member page, or construct an organization tree. Its projection
   preserves the complete independent team total, caps top members and department
   comparisons at 12, retains stable subject/department identities and unavailable
-  reasons, and uses `team_usage_trend` telemetry independently from Summary and
-  compatibility Overview. A whole-origin transient Trend failure prefers an eligible
+  reasons, and uses `team_usage_trend` telemetry independently from the other split
+  lanes. A whole-origin transient Trend failure prefers an eligible
   stale Trend generation; a cold request still returns the explicit `provider_error`
   section state without storing that outage snapshot over a good generation.
 - Members resolves only the current authorized scope, Relay identities, and
@@ -315,11 +314,13 @@ alone retains the authorized complete overview generation:
   organization tree. Its independent cache uses `team-usage-members` values and
   `team_usage_members` telemetry; a transient origin failure prefers an eligible stale
   generation, while Redis failure performs the same bounded authoritative read.
-- The retained compatibility overview generation aggregates selected-window
-  `range_actual_cost` and `range_total_tokens` from the requested per-member trend
-  window. Its shared pure trend projection preserves the same bounds and series
-  semantics, but compatibility reads never populate or consume the Trend cache or
-  any split read lane.
+- Compatibility Overview creates one `splitReadRequest`, sequentially consumes the
+  Summary, Trend, and complete Members typed values, maps the historical summary and
+  trend fields, and projects `member_tree` from the same authorized scope plus Members
+  snapshot. It does not call internal HTTP or a paginated Organization branch. A soft
+  Trend `provider_error` changes only trend fields; available Summary and Members data
+  remain intact. The adapter has no `team-usage-snapshot` key or `team_usage_overview`
+  metric.
 - The Members lane assigns global ranks before caching and slicing, defaults to 50
   rows, and rejects limits above 100. Its response contains only the
   current page, total count, window/freshness metadata, and an optional next cursor;
@@ -541,8 +542,8 @@ and pending requests plus cumulative waits, wait duration, timeouts, and stale
 connections removed. These pool measurements are separate from the application
 cache counter. Production startup binds that counter once to each stable read
 model name: `work_items_counts`, `personal_usage`, `representative_scope`,
-`team_usage_summary`, `team_usage_trend`, `team_usage_members`, `team_usage_organization`,
-`team_usage_overview`, `repository_inventory`, and `provider_metadata`. Every
+`team_usage_summary`, `team_usage_trend`, `team_usage_members`,
+`team_usage_organization`, `repository_inventory`, and `provider_metadata`. Every
 domain records only the closed outcomes `fresh`,
 `miss`, `stale`, `error`, `refresh`, `lease_acquired`, `lease_wait`, and
 `lease_failed`; fresh-only caches do not fabricate stale events. No observer

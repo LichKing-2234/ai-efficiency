@@ -679,7 +679,7 @@ func TestSummaryIndependentWarmCacheRevalidatesGuards(t *testing.T) {
 	}
 }
 
-func TestSummaryOverviewCacheIsolation(t *testing.T) {
+func TestOverviewReusesTheSummaryCacheLane(t *testing.T) {
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
 	provider := newCompleteSummaryIndependentProvider()
@@ -709,15 +709,15 @@ func TestSummaryOverviewCacheIsolation(t *testing.T) {
 	if summary.Summary.RangeActualCost == nil || *summary.Summary.RangeActualCost != 45 {
 		t.Fatalf("summary range cost = %#v, want summary-batch 45", summary.Summary.RangeActualCost)
 	}
-	if overview.Summary.RangeActualCost == nil || *overview.Summary.RangeActualCost != 12 {
-		t.Fatalf("overview range cost = %#v, want trend-derived 12", overview.Summary.RangeActualCost)
+	if overview.Summary.RangeActualCost == nil || *overview.Summary.RangeActualCost != 45 {
+		t.Fatalf("overview range cost = %#v, want shared summary-lane 45", overview.Summary.RangeActualCost)
 	}
-	if len(provider.summaryRequestParams) != 2 || provider.trendCalls.Load() != 1 {
-		t.Fatalf("isolated origin calls = summary %d trend %d, want 2/1", len(provider.summaryRequestParams), provider.trendCalls.Load())
+	if len(provider.summaryRequestParams) != 3 || provider.trendCalls.Load() != 1 {
+		t.Fatalf("split origin calls = summary %d trend %d, want 3/1", len(provider.summaryRequestParams), provider.trendCalls.Load())
 	}
 }
 
-func TestTrendUsesIndependentOriginAndCacheLane(t *testing.T) {
+func TestOverviewUsesOnlySplitCacheLanesAndOneGuardedScopePerRequest(t *testing.T) {
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
 	provider := newCompleteSummaryIndependentProvider()
@@ -726,43 +726,53 @@ func TestTrendUsesIndependentOriginAndCacheLane(t *testing.T) {
 		1003: {{Date: "2026-07-07", ActualCost: 5, TotalTokens: int64Ptr(800)}},
 	}
 	cache, server := testSnapshotCache(t, time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC), 0)
-	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: summaryTestScope()}, fakeProviderResolver{provider: provider}, nil, cache)
+	scopeResolver := &countingTeamScopeResolver{scope: overviewAdapterTestScope()}
+	providerResolver := &countingTeamProviderResolver{provider: provider}
+	svc := newServiceWithSnapshotCacheForTest(client, scopeResolver, providerResolver, nil, cache)
 	params := summaryTestParams()
+	params.Page = 1
+	params.PageSize = 1
 
-	firstTrend, err := svc.Trend(context.Background(), 1, params)
+	first, err := svc.Overview(context.Background(), 1, params)
 	if err != nil {
-		t.Fatalf("cold Trend() error = %v", err)
+		t.Fatalf("cold Overview() error = %v", err)
 	}
-	warmTrend, err := svc.Trend(context.Background(), 1, params)
+	params.Page = 9
+	params.PageSize = 99
+	warm, err := svc.Overview(context.Background(), 1, params)
 	if err != nil {
-		t.Fatalf("warm Trend() error = %v", err)
+		t.Fatalf("warm Overview() error = %v", err)
 	}
-	summary, err := svc.Summary(context.Background(), 1, params)
-	if err != nil {
-		t.Fatalf("Summary() error = %v", err)
+	if !reflect.DeepEqual(first, warm) {
+		t.Fatalf("Overview() page variants differ:\nfirst = %#v\nwarm = %#v", first, warm)
 	}
-	overview, _, err := svc.readOverviewSnapshot(context.Background(), 1, params)
-	if err != nil {
-		t.Fatalf("readOverviewSnapshot() error = %v", err)
+	if !first.Configured || !first.IsRepresentative || first.Summary.RangeActualCost == nil || *first.Summary.RangeActualCost != 45 {
+		t.Fatalf("overview compatibility summary = %+v, want configured representative total 45", first.Summary)
 	}
-	if firstTrend.CacheStatus != "miss" || warmTrend.CacheStatus != "fresh" || summary.CacheStatus != "miss" || overview.Freshness.CacheStatus != "miss" {
-		t.Fatalf("cache statuses trend=%q/%q summary=%q overview=%q", firstTrend.CacheStatus, warmTrend.CacheStatus, summary.CacheStatus, overview.Freshness.CacheStatus)
+	if len(first.Members) != 2 || first.Members[0].Email != "bob@example.org" || first.Members[1].Email != "alice@example.com" {
+		t.Fatalf("overview members = %#v, want complete ranked split Members snapshot", first.Members)
 	}
-	if len(firstTrend.TopMembers) > 12 || len(firstTrend.TopMemberTrend.Series) > 12 || len(firstTrend.DepartmentTrend.Series) > 13 {
-		t.Fatalf("trend bounds = top %d series %d departments %d", len(firstTrend.TopMembers), len(firstTrend.TopMemberTrend.Series), len(firstTrend.DepartmentTrend.Series))
+	if len(first.MemberTree) != 1 || len(first.MemberTree[0].Children) != 1 || len(first.MemberTree[0].Children[0].Members) != 2 {
+		t.Fatalf("overview member tree = %#v, want recursive historical tree", first.MemberTree)
 	}
-	if len(provider.summaryRequestParams) != 3 || provider.trendCalls.Load() != 2 {
-		t.Fatalf("origin calls = summary %d trend %d, want 3/2 for independent trend, summary, overview misses", len(provider.summaryRequestParams), provider.trendCalls.Load())
+	if scopeResolver.calls.Load() != 2 {
+		t.Fatalf("scope resolutions = %d, want one per Overview request", scopeResolver.calls.Load())
 	}
-	if provider.summaryRequestParams[0].RequireCompleteRange || !provider.summaryRequestParams[1].RequireCompleteRange || provider.summaryRequestParams[2].RequireCompleteRange {
-		t.Fatalf("range completion flags = trend %v summary %v overview %v, want false/true/false", provider.summaryRequestParams[0].RequireCompleteRange, provider.summaryRequestParams[1].RequireCompleteRange, provider.summaryRequestParams[2].RequireCompleteRange)
+	if providerResolver.calls.Load() != 3 || len(provider.summaryRequestParams) != 3 || provider.trendCalls.Load() != 1 {
+		t.Fatalf("cold split origins = provider %d summary %d trend %d, want 3/3/1", providerResolver.calls.Load(), len(provider.summaryRequestParams), provider.trendCalls.Load())
+	}
+	if !provider.summaryRequestParams[0].RequireCompleteRange || provider.summaryRequestParams[1].RequireCompleteRange || !provider.summaryRequestParams[2].RequireCompleteRange {
+		t.Fatalf("range completion flags = summary %v trend %v members %v, want true/false/true", provider.summaryRequestParams[0].RequireCompleteRange, provider.summaryRequestParams[1].RequireCompleteRange, provider.summaryRequestParams[2].RequireCompleteRange)
 	}
 	prefixes := map[string]bool{
-		"ae:test:team-usage-summary:v1:":  false,
-		"ae:test:team-usage-trend:v1:":    false,
-		"ae:test:team-usage-snapshot:v1:": false,
+		"ae:test:team-usage-summary:v1:": false,
+		"ae:test:team-usage-trend:v1:":   false,
+		"ae:test:team-usage-members:v1:": false,
 	}
 	for _, key := range server.Keys() {
+		if strings.Contains(key, ":team-usage-snapshot:") || strings.Contains(key, ":team-usage-organization:") {
+			t.Fatalf("Overview() populated non-split compatibility key %q", key)
+		}
 		for prefix := range prefixes {
 			if strings.HasPrefix(key, prefix) {
 				prefixes[prefix] = true
@@ -771,7 +781,7 @@ func TestTrendUsesIndependentOriginAndCacheLane(t *testing.T) {
 	}
 	for prefix, found := range prefixes {
 		if !found {
-			t.Fatalf("Redis keys %v are missing independent lane %q", server.Keys(), prefix)
+			t.Fatalf("Redis keys %v are missing split lane %q", server.Keys(), prefix)
 		}
 	}
 }
@@ -1003,7 +1013,7 @@ func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
 	}
 }
 
-func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
+func TestOverviewComposesSummaryMembersAndTrendSelectedWindowValues(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
@@ -1021,8 +1031,14 @@ func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
 	}
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, TodayActualCost: 1, TotalActualCost: 10},
-			1003: {UserID: 1003, TodayActualCost: 2, TotalActualCost: 99},
+			1002: {
+				UserID: 1002, RangeActualCost: floatPtr(30), RangeTotalTokens: int64Ptr(1000),
+				TodayActualCost: 1, TotalActualCost: 10,
+			},
+			1003: {
+				UserID: 1003, RangeActualCost: floatPtr(15), RangeTotalTokens: int64Ptr(3500),
+				TodayActualCost: 2, TotalActualCost: 99,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			1002: {{Date: "2026-06-24", ActualCost: 30, TotalTokens: &token1002}},
@@ -1108,8 +1124,14 @@ func TestOverviewBuildsMemberTreeFromRepresentativeDepartments(t *testing.T) {
 	}
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
-			1003: {UserID: 1003, TodayActualCost: 3, TotalActualCost: 30},
+			1002: {
+				UserID: 1002, RangeActualCost: floatPtr(12), RangeTotalTokens: &tokenAlice,
+				TodayActualCost: 2, TotalActualCost: 20,
+			},
+			1003: {
+				UserID: 1003, RangeActualCost: floatPtr(30), RangeTotalTokens: &tokenBob,
+				TodayActualCost: 3, TotalActualCost: 30,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			1002: {{Date: "2026-06-28", ActualCost: 12, TotalTokens: &tokenAlice}},
@@ -1178,7 +1200,10 @@ func TestOverviewBuildsTeamAndSubteamTokenTrendFromRepresentativeDepartments(t *
 	}
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
+			1002: {
+				UserID: 1002, RangeActualCost: floatPtr(8), RangeTotalTokens: int64Ptr(800),
+				TodayActualCost: 2, TotalActualCost: 20,
+			},
 			1003: {UserID: 1003, TodayActualCost: 3, TotalActualCost: 30},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
@@ -1245,7 +1270,10 @@ func TestOverviewMemberDetailsIncludesScopedMembersWithoutRelayUsage(t *testing.
 	}
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
+			1002: {
+				UserID: 1002, RangeActualCost: floatPtr(8), RangeTotalTokens: int64Ptr(800),
+				TodayActualCost: 2, TotalActualCost: 20,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			1002: {{Date: "2026-06-28", ActualCost: 8}},
@@ -1281,8 +1309,8 @@ func TestOverviewMemberDetailsIncludesScopedMembersWithoutRelayUsage(t *testing.
 	if resp.Members[1].DirectoryMemberExternalID != "member-bob" || resp.Members[1].UserID != 0 || resp.Members[1].Selectable {
 		t.Fatalf("directory-only member = %#v, want directory id, user_id 0, and selectable false", resp.Members[1])
 	}
-	if got, want := provider.summaryRequestUserIDs, []int64{1002}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("summary user ids = %#v, want only relay-backed members %#v", got, want)
+	if got, want := provider.summaryRequestUserIDs, []int64{1002, 1002, 1002}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary user ids = %#v, want one relay-backed read per split lane %#v", got, want)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{1002}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("trend user ids = %#v, want only relay-backed members %#v", got, want)
@@ -1311,8 +1339,14 @@ func TestOverviewResolvesDirectoryOnlyMembersByEmailForUsage(t *testing.T) {
 			"bob@example.org": {ID: 2002, Email: "bob@example.org", Username: "bob"},
 		},
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
-			2002: {UserID: 2002, TodayActualCost: 3, TotalActualCost: 30},
+			1002: {
+				UserID: 1002, RangeActualCost: floatPtr(8), RangeTotalTokens: int64Ptr(800),
+				TodayActualCost: 2, TotalActualCost: 20,
+			},
+			2002: {
+				UserID: 2002, RangeActualCost: floatPtr(12), RangeTotalTokens: int64Ptr(1200),
+				TodayActualCost: 3, TotalActualCost: 30,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			1002: {{Date: "2026-06-28", ActualCost: 8, TotalTokens: int64Ptr(800)}},
@@ -1337,8 +1371,8 @@ func TestOverviewResolvesDirectoryOnlyMembersByEmailForUsage(t *testing.T) {
 	if resp.Summary.RelayMemberCount != 2 {
 		t.Fatalf("summary relay_member_count = %d, want two email-resolved relay users", resp.Summary.RelayMemberCount)
 	}
-	if got, want := provider.summaryRequestUserIDs, []int64{1002, 2002}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("summary user ids = %#v, want local and email-resolved members %#v", got, want)
+	if got, want := provider.summaryRequestUserIDs, []int64{1002, 2002, 1002, 2002, 1002, 2002}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary user ids = %#v, want local and email-resolved members across all split lanes %#v", got, want)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{1002, 2002}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("trend user ids = %#v, want local and email-resolved members %#v", got, want)
@@ -1474,7 +1508,10 @@ func TestOverviewReconcilesStaleRelayUserIDBeforeBatchUsageAndTrend(t *testing.T
 			"overview-target@example.com": {ID: 2, Email: "overview-target@example.com", Username: "overview-target"},
 		},
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			2: {UserID: 2, TotalActualCost: 113.6844942, TodayActualCost: 2.8071306},
+			2: {
+				UserID: 2, RangeActualCost: floatPtr(2.8071306), RangeTotalTokens: int64Ptr(280),
+				TotalActualCost: 113.6844942, TodayActualCost: 2.8071306,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			2: {{Date: "2026-06-28", ActualCost: 2.8071306}},
@@ -1501,7 +1538,7 @@ func TestOverviewReconcilesStaleRelayUserIDBeforeBatchUsageAndTrend(t *testing.T
 	if member.TotalActualCost != 113.6844942 {
 		t.Fatalf("member total_actual_cost = %.8f, want reconciled relay user 2 cost", member.TotalActualCost)
 	}
-	if got, want := provider.summaryRequestUserIDs, []int64{2}; !reflect.DeepEqual(got, want) {
+	if got, want := provider.summaryRequestUserIDs, []int64{2, 2, 2}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("summary user ids = %#v, want %#v", got, want)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{2}; !reflect.DeepEqual(got, want) {
@@ -1550,8 +1587,14 @@ func TestOverviewUsesRelayUserDirectoryForCachedRelayBindings(t *testing.T) {
 			"overview-stale@example.com": {ID: 2002, Email: "overview-stale@example.com", Username: "overview-stale"},
 		},
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1001: {UserID: 1001, TotalActualCost: 12, TodayActualCost: 1},
-			2002: {UserID: 2002, TotalActualCost: 24, TodayActualCost: 2},
+			1001: {
+				UserID: 1001, RangeActualCost: floatPtr(3), RangeTotalTokens: int64Ptr(300),
+				TotalActualCost: 12, TodayActualCost: 1,
+			},
+			2002: {
+				UserID: 2002, RangeActualCost: floatPtr(6), RangeTotalTokens: int64Ptr(600),
+				TotalActualCost: 24, TodayActualCost: 2,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			1001: {{Date: "2026-06-28", ActualCost: 3}},
@@ -1569,13 +1612,13 @@ func TestOverviewUsesRelayUserDirectoryForCachedRelayBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Overview() error = %v", err)
 	}
-	if provider.listUsersCalls != 1 {
-		t.Fatalf("list users calls = %d, want 1 batched directory lookup", provider.listUsersCalls)
+	if provider.listUsersCalls != 3 {
+		t.Fatalf("list users calls = %d, want one batched directory lookup per split lane", provider.listUsersCalls)
 	}
 	if len(provider.getUserRequestUserIDs) != 0 {
 		t.Fatalf("GetUser calls = %#v, want none in Team Overview hot path", provider.getUserRequestUserIDs)
 	}
-	if got, want := provider.summaryRequestUserIDs, []int64{1001, 2002}; !reflect.DeepEqual(got, want) {
+	if got, want := provider.summaryRequestUserIDs, []int64{1001, 2002, 1001, 2002, 1001, 2002}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("summary user ids = %#v, want %#v", got, want)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{1001, 2002}; !reflect.DeepEqual(got, want) {
@@ -1591,7 +1634,7 @@ func TestOverviewUsesRelayUserDirectoryForCachedRelayBindings(t *testing.T) {
 	}
 }
 
-func TestOverviewReturnsUnavailableSummaryWhenTrendFetchTimesOut(t *testing.T) {
+func TestOverviewKeepsSummaryAndMembersAvailableWhenTrendFetchTimesOut(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
@@ -1610,9 +1653,14 @@ func TestOverviewReturnsUnavailableSummaryWhenTrendFetchTimesOut(t *testing.T) {
 			},
 		},
 	}
+	rangeCost := 12.3
+	rangeTokens := int64(1200)
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1001: {UserID: 1001, TotalActualCost: 12.3, TodayActualCost: 1.2},
+			1001: {
+				UserID: 1001, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
+				TotalActualCost: 12.3, TodayActualCost: 1.2,
+			},
 		},
 		trendWait: 200 * time.Millisecond,
 	}
@@ -1632,17 +1680,20 @@ func TestOverviewReturnsUnavailableSummaryWhenTrendFetchTimesOut(t *testing.T) {
 	if elapsed := time.Since(start); elapsed >= 100*time.Millisecond {
 		t.Fatalf("Overview() elapsed = %s, want trend timeout to return quickly", elapsed)
 	}
-	if !resp.Summary.Unavailable || resp.Summary.UnavailableReason == nil || *resp.Summary.UnavailableReason != "provider_error" {
-		t.Fatalf("summary unavailable = %v reason = %#v, want provider_error", resp.Summary.Unavailable, resp.Summary.UnavailableReason)
+	if resp.Summary.Unavailable || resp.Summary.UnavailableReason != nil {
+		t.Fatalf("summary unavailable = %v reason = %#v, want independently available", resp.Summary.Unavailable, resp.Summary.UnavailableReason)
 	}
-	if resp.Summary.RangeActualCost != nil || resp.Summary.RangeTotalTokens != nil {
-		t.Fatalf("summary range totals = %#v/%#v, want nil when trend totals are unavailable", resp.Summary.RangeActualCost, resp.Summary.RangeTotalTokens)
+	if resp.Summary.RangeActualCost == nil || *resp.Summary.RangeActualCost != rangeCost || resp.Summary.RangeTotalTokens == nil || *resp.Summary.RangeTotalTokens != rangeTokens {
+		t.Fatalf("summary range totals = %#v/%#v, want independent %.1f/%d", resp.Summary.RangeActualCost, resp.Summary.RangeTotalTokens, rangeCost, rangeTokens)
 	}
 	if !resp.TopMemberTrend.Unavailable || resp.TopMemberTrend.UnavailableReason == nil || *resp.TopMemberTrend.UnavailableReason != "provider_error" {
 		t.Fatalf("trend unavailable = %v reason = %#v, want provider_error", resp.TopMemberTrend.Unavailable, resp.TopMemberTrend.UnavailableReason)
 	}
 	if len(resp.TopMembers) != 0 || len(resp.TopMemberTrend.Series) != 0 {
 		t.Fatalf("top members = %d trend series = %d, want no unavailable selected-window ranking", len(resp.TopMembers), len(resp.TopMemberTrend.Series))
+	}
+	if len(resp.Members) != 1 || resp.Members[0].RangeActualCost != rangeCost {
+		t.Fatalf("members = %#v, want independently available complete Members snapshot", resp.Members)
 	}
 }
 
@@ -2612,6 +2663,22 @@ func summaryTestScope() *representativescope.Scope {
 			{SubjectType: "member", UserID: 3, DisplayName: "Bob", Email: "bob@example.org", RelayUserID: intPtr(1003), Selectable: true},
 		},
 	}
+}
+
+func overviewAdapterTestScope() *representativescope.Scope {
+	scope := summaryTestScope()
+	scope.MemberTreeRootIDs = []string{"department-root"}
+	scope.MemberTreeDepartments = []representativescope.DepartmentScope{
+		{ExternalID: "department-root", Name: "Department Root", DisplayPath: "Department Root", Depth: 4, ChildCount: 1},
+		{ExternalID: "department-alpha", ParentExternalID: stringPtr("department-root"), Name: "Department Alpha", DisplayPath: "Department Root / Department Alpha", Depth: 5},
+	}
+	for index := range scope.OverviewSubjects {
+		scope.OverviewSubjects[index].DirectoryMemberExternalID = fmt.Sprintf("member-%d", index+1)
+		scope.OverviewSubjects[index].DepartmentExternalID = "department-alpha"
+		scope.OverviewSubjects[index].DepartmentExternalIDs = []string{"department-alpha"}
+		scope.OverviewSubjects[index].DepartmentDisplayPath = "Department Root / Department Alpha"
+	}
+	return scope
 }
 
 func summaryTestParams() OverviewParams {

@@ -211,8 +211,8 @@ func TestMembersRemainsAvailableAfterCompatibilityOverviewTrendFailure(t *testin
 	if err != nil {
 		t.Fatalf("Members() error = %v, want independent stats origin", err)
 	}
-	if len(response.Items) != 3 || len(provider.summaryRequestBatches) != 2 {
-		t.Fatalf("Members() response/calls = items %d stats %d, want 3/2", len(response.Items), len(provider.summaryRequestBatches))
+	if len(response.Items) != 3 || len(provider.summaryRequestBatches) != 3 {
+		t.Fatalf("Members() response/calls = items %d stats %d, want 3/3 across Summary, Trend, and Members lanes", len(response.Items), len(provider.summaryRequestBatches))
 	}
 }
 

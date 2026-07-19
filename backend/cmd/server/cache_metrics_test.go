@@ -16,7 +16,6 @@ func TestProductionCacheMetricsBindStablePrivacySafeNames(t *testing.T) {
 		"provider_metadata",
 		"representative_scope",
 		"repository_inventory",
-		"team_usage_overview",
 		"team_usage_summary",
 		"team_usage_trend",
 		"team_usage_members",
