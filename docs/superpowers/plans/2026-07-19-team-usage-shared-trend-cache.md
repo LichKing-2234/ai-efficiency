@@ -40,7 +40,7 @@
 - Produces `(*teamTrendCache).Invalidate()` for credential-generation changes.
 - Adds `teamTrends teamTrendCache` to `sub2apiRelay`.
 
-- [ ] **Step 1: Add RED tests for normalized identity, TTL, cloning, and capacity**
+- [x] **Step 1: Add RED tests for normalized identity, TTL, cloning, and capacity**
 
   Create internal-package tests that use an injected clock and direct cache origin functions:
 
@@ -79,7 +79,7 @@
 
   Add separate tests that advance the injected clock to exactly 60 seconds and require a second origin call, cache a successful nil/empty result, vary each identity dimension, prove a non-positive user ID bypasses both storage and flights, fill 4097 synthetic entries, and assert `len(cache.entries) <= teamTrendCacheCapacity` after every write.
 
-- [ ] **Step 2: Run the focused tests and record RED**
+- [x] **Step 2: Run the focused tests and record RED**
 
   Run:
 
@@ -90,7 +90,12 @@
 
   Expected: compile failures only for the absent `teamTrendCache` types, constants, and methods.
 
-- [ ] **Step 3: Implement the minimal cache data model and cloning**
+  RED evidence (2026-07-19): the focused command failed only because
+  `teamTrendCache`, `teamTrendCacheTTL`, `teamTrendCacheCapacity`, and their
+  planned methods did not exist. The new test file compiled far enough to
+  report those missing production symbols without fixture or syntax failures.
+
+- [x] **Step 3: Implement the minimal cache data model and cloning**
 
   Create the cache file with these constants and shapes:
 
@@ -152,6 +157,11 @@
   ```
 
   Expected: both focused runs pass, the race detector reports no races, and the diff is clean.
+
+  GREEN evidence (2026-07-19): `TeamTrendCache` tests passed twice; the
+  race-enabled `internal/readcache` and `internal/relay` run passed; and
+  `git diff --check` was clean. The primitive remains unused by the production
+  fan-out until Task 2.
 
   Commit:
 
