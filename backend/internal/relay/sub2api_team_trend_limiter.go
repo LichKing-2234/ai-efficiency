@@ -16,6 +16,10 @@ func (l *teamTrendOriginLimiter) Do(
 	ctx context.Context,
 	load func(context.Context) ([]UsageTrendPoint, error),
 ) ([]UsageTrendPoint, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	l.once.Do(func() {
 		l.slots = make(chan struct{}, maxConcurrentTeamTrendOrigins)
 	})

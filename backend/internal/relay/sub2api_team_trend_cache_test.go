@@ -324,6 +324,26 @@ func TestTeamTrendOriginsUseSixteenProviderWideSlots(t *testing.T) {
 	}
 }
 
+func TestTeamTrendOriginLimiterRejectsPreCanceledContextWithAvailableSlot(t *testing.T) {
+	var limiter teamTrendOriginLimiter
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for attempt := 0; attempt < 1000; attempt++ {
+		started := false
+		_, err := limiter.Do(ctx, func(context.Context) ([]UsageTrendPoint, error) {
+			started = true
+			return nil, nil
+		})
+		if started {
+			t.Fatalf("attempt %d started an origin for a pre-canceled context", attempt)
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("attempt %d Do() error = %v, want context.Canceled", attempt, err)
+		}
+	}
+}
+
 func TestTeamTrendOriginLimiterDoesNotStartCanceledWaiter(t *testing.T) {
 	var limiter teamTrendOriginLimiter
 	release := make(chan struct{})
