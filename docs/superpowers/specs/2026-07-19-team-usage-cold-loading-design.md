@@ -1,6 +1,6 @@
 # Team Usage Cold Loading Design
 
-**Status:** Approved for implementation on `perf/team-usage-cold-loading`
+**Status:** Implemented through `perf/team-usage-cold-loading@45c6beac`; local branch verification is complete and staging A/B remains pending
 
 **Refines:**
 

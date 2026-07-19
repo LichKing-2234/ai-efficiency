@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Approved design and clean backend baseline are complete on `perf/team-usage-cold-loading`; implementation, review, PR CI, merge, and staging A/B remain pending.
+**Status:** Implementation and local review are complete on `perf/team-usage-cold-loading`; PR CI, merge, and staging A/B remain pending.
 
 **Goal:** Reduce large-team cold page completion by raising bounded per-user trend concurrency to a provider-wide sixteen slots and keep Team Usage response snapshots fresh for a three-minute pre-jitter maximum.
 
@@ -143,6 +143,9 @@
       ctx context.Context,
       load func(context.Context) ([]UsageTrendPoint, error),
   ) ([]UsageTrendPoint, error) {
+      if err := ctx.Err(); err != nil {
+          return nil, err
+      }
       l.once.Do(func() {
           l.slots = make(chan struct{}, maxConcurrentTeamTrendOrigins)
       })
@@ -212,6 +215,7 @@
 - Modify: `backend/internal/teamusage/members_test.go`
 - Modify: `backend/internal/teamusage/organization_test.go`
 - Modify: `backend/internal/teamusage/service_test.go`
+- Modify: `backend/internal/handler/team_usage_test.go`
 
 **Interfaces:**
 - Produces `teamUsageSnapshotFreshMaxAge = 3 * time.Minute` and retains `teamUsageSnapshotStaleMaxAge = 5 * time.Minute`.
@@ -309,6 +313,7 @@
     backend/internal/teamusage/members_test.go \
     backend/internal/teamusage/organization_test.go \
     backend/internal/teamusage/service_test.go \
+    backend/internal/handler/team_usage_test.go \
     docs/superpowers/plans/2026-07-19-team-usage-cold-loading.md
   git commit -m "perf(teamusage): extend response cache freshness"
   ```
@@ -324,13 +329,13 @@
 - Records the provider-wide sixteen-slot limiter and 144-162 second Team Usage fresh window as current runtime behavior.
 - Does not change HTTP, frontend, provider, Redis key, or deployment interfaces.
 
-- [ ] **Step 1: Update current architecture and spec status**
+- [x] **Step 1: Update current architecture and spec status**
 
   In `docs/architecture.md`, replace the eight-worker per-caller description with a provider-wide sixteen-origin bound after cache/singleflight collapse. Replace Team Usage's 48-54 second fresh description with 144-162 seconds while keeping the 240-270 second stale deadline and current stale-if-error behavior.
 
   Set the approved spec status to implemented on the exact branch commit only after both code tasks are green. Do not modify the historical shared-trend-cache spec.
 
-- [ ] **Step 2: Run full backend verification**
+- [x] **Step 2: Run full backend verification**
 
   Run:
 
@@ -347,7 +352,26 @@
 
   Expected: every command exits zero. No frontend build is required locally because no frontend source or HTTP contract changes; GitHub CI remains the complete repository gate.
 
-- [ ] **Step 3: Review the exact branch diff**
+  Verification evidence (2026-07-19): `internal/relay` and
+  `internal/teamusage` passed twice, and the focused race run passed for
+  `internal/readcache`, `internal/relay`, and `internal/teamusage`. The first
+  full-backend run exposed one HTTP compatibility test that still advanced its
+  clock by the historical 55 seconds; the response correctly remained fresh
+  through 162 seconds. After re-anchoring that test and its synthetic DTO
+  freshness examples at 162/163 seconds, the exact failing test passed twice.
+  The complete `go test ./... -count=1`, `go vet ./...`, `go build ./...`, and
+  `git diff --check` gate then exited zero from a fresh rerun.
+
+  Final verification evidence (2026-07-19): review found that a pre-canceled
+  context and an available limiter slot were both selectable, so the loader
+  could start nondeterministically. The new regression failed on attempt 1,
+  the entry context check fixed it in `45c6beac`, and the exact regression
+  passed twice. After that fix, the Relay and Team Usage suites passed twice,
+  the focused race run passed across `internal/readcache`, `internal/relay`,
+  and `internal/teamusage`, and fresh full-backend test, vet, build, and
+  `git diff --check` runs all exited zero.
+
+- [x] **Step 3: Review the exact branch diff**
 
   Run:
 
@@ -359,6 +383,14 @@
   ```
 
   Review every changed limiter, worker, cache lifetime, validation, test, spec, and architecture line for cancellation leaks, double capacity, stale-deadline regression, real-data leakage, unrelated refactors, and contradictions. Fix every Critical or Important finding and rerun affected verification.
+
+  Review evidence (2026-07-19): inline Standards and Spec review covered the
+  complete branch diff from `feat/platform-loading-performance@b3375806`.
+  The pre-canceled-context race was the only Important finding and was fixed
+  in `45c6beac`; re-review found no remaining Critical or Important findings.
+  The diff retains one provider-wide capacity, the unchanged 240-270 second
+  stale deadline, synthetic-only test data, and no Sub2API, frontend, HTTP
+  contract, Redis identity, or unrelated runtime change.
 
 - [ ] **Step 4: Record verification and commit documentation**
 
