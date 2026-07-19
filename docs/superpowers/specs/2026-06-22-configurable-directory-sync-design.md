@@ -249,9 +249,10 @@ ASCII spaces, fold ASCII `A-Z`, then compare UTF-8 bytes. PostgreSQL readers use
 `LOWER(BTRIM(name) COLLATE "C") COLLATE "C", external_id COLLATE "C"` so the
 result does not change with the database default collation. Every other valid
 edge is preserved. The existing `source_id` and `last_seen_run_id` fields scope
-and version the derived relation with the applied snapshot. Existing readers may
-continue reconstructing the same relation from upstream facts during staged
-migration.
+and version the derived relation with the applied snapshot. Apply is the only
+owner of missing-parent and cycle-anchor repair. Administrator readers consume
+`effective_parent_external_id` directly and must not reconstruct or infer an
+alternative relation from `parent_external_id`.
 
 ### `directory_members`
 
@@ -581,7 +582,9 @@ When present, pagination and totals are computed after filtering local users by
 directory members whose current `directory_member_departments.department_external_id`
 is in the selected department's subtree, including the selected department itself,
 and whose normalized email matches the local user email. Older rows without
-membership links fall back to `directory_members.department_external_id`.
+membership links fall back to `directory_members.department_external_id`. The
+subtree follows the stored effective-parent relation for the current source; it
+does not walk source-wide raw parent paths or repair cycles during the request.
 Returned user rows may include a `department`
 object:
 
@@ -619,6 +622,12 @@ direct-only for compatibility; UI copy must distinguish direct counts from
 totals that include child departments. UI labels, department filters, and
 user-row department text must use `display_path` or `name`, not the source
 `path`, because source paths may be numeric ID chains.
+
+The complete compatibility response is owned by `backend/internal/adminusers`.
+It derives preorder, depth, display path, child relations, and subtree summaries
+from persisted effective parents with a constant query-role shape. The HTTP
+handler must not load the complete member graph or run a second raw-parent tree,
+cycle, membership, or representative aggregation algorithm.
 
 ### Offboarding Review
 

@@ -2,9 +2,7 @@ package adminusers
 
 import (
 	"context"
-	"database/sql/driver"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"entgo.io/ent/dialect/sql"
@@ -70,86 +68,53 @@ type DepartmentChildrenPage struct {
 	PageSize           int
 }
 
-func effectiveDepartmentCTEs(sourcePlaceholder string) string {
-	return fmt.Sprintf(`WITH RECURSIVE
-navigation_departments(
-  %s,
-  %s,
-  %s,
-  %s,
-  %s,
-  %s
-) AS MATERIALIZED (
-  SELECT department.%s,
-         department.%s,
-         department.%s,
-         department.%s,
-         department.%s,
-         department.%s
-  FROM %s AS department
-  WHERE department.%s = %s
-)`,
-		directorydepartment.FieldExternalID,
-		directorydepartment.FieldParentExternalID,
-		directorydepartment.FieldEffectiveParentExternalID,
-		directorydepartment.FieldName,
-		directorydepartment.FieldPath,
-		directorydepartment.FieldMetadata,
-		directorydepartment.FieldExternalID,
-		directorydepartment.FieldParentExternalID,
-		directorydepartment.FieldEffectiveParentExternalID,
-		directorydepartment.FieldName,
-		directorydepartment.FieldPath,
-		directorydepartment.FieldMetadata,
-		directorydepartment.Table,
-		directorydepartment.FieldSourceID,
-		sourcePlaceholder,
-	)
-}
-
-func effectiveSubtreeCTE(departmentPlaceholder string) string {
-	return fmt.Sprintf(`, subtree(%s) AS MATERIALIZED (
-  SELECT root.%s
-  FROM navigation_departments AS root
-  WHERE root.%s = %s
+func writeDepartmentUserCTEs(builder *sql.Builder, sourceID int, departmentID string) {
+	builder.WriteString(`WITH RECURSIVE
+hierarchy_parameters(source_id, department_id) AS MATERIALIZED (
+  SELECT `)
+	builder.Arg(sourceID)
+	builder.WriteString(`::bigint, `)
+	builder.Arg(departmentID)
+	builder.WriteString(`::text
+),
+subtree(external_id) AS MATERIALIZED (
+  SELECT root.external_id
+  FROM directory_departments AS root
+  JOIN hierarchy_parameters AS parameters
+    ON parameters.source_id = root.source_id
+   AND parameters.department_id = root.external_id
   UNION
-  SELECT child.%s
-  FROM navigation_departments AS child
+  SELECT child.external_id
+  FROM directory_departments AS child
+  JOIN hierarchy_parameters AS parameters
+    ON parameters.source_id = child.source_id
   JOIN subtree AS parent
-    ON child.effective_parent_external_id = parent.%s
-)`,
-		directorydepartment.FieldExternalID,
-		directorydepartment.FieldExternalID,
-		directorydepartment.FieldExternalID,
-		departmentPlaceholder,
-		directorydepartment.FieldExternalID,
-		directorydepartment.FieldExternalID,
-	)
-}
-
-func eligibleUserCTEs(sourcePlaceholder string) string {
-	return fmt.Sprintf(`,
+    ON child.effective_parent_external_id = parent.external_id
+),
 eligible_members(id, matched_user_id, email_normalized) AS MATERIALIZED (
-  SELECT member.%s, member.%s, member.%s
-  FROM %s AS member
-  WHERE member.%s = %s
-    AND (
+  SELECT member.id, member.matched_user_id, member.email_normalized
+  FROM directory_members AS member
+  JOIN hierarchy_parameters AS parameters
+    ON parameters.source_id = member.source_id
+  WHERE (
       EXISTS (
         SELECT 1
-        FROM %s AS membership
+        FROM directory_member_departments AS membership
+        JOIN hierarchy_parameters AS parameters
+          ON parameters.source_id = membership.source_id
         JOIN subtree
-          ON subtree.external_id = membership.%s
-        WHERE membership.%s = %s
-          AND membership.%s = member.%s
+          ON subtree.external_id = membership.department_external_id
+        WHERE membership.directory_member_id = member.id
       )
       OR (
         NOT EXISTS (
           SELECT 1
-          FROM %s AS current_membership
-          WHERE current_membership.%s = %s
-            AND current_membership.%s = member.%s
+          FROM directory_member_departments AS current_membership
+          JOIN hierarchy_parameters AS parameters
+            ON parameters.source_id = current_membership.source_id
+          WHERE current_membership.directory_member_id = member.id
         )
-        AND member.%s IN (SELECT external_id FROM subtree)
+        AND member.department_external_id IN (SELECT external_id FROM subtree)
       )
     )
 ),
@@ -158,80 +123,22 @@ eligible_user_ids(user_id) AS MATERIALIZED (
   FROM eligible_members
   WHERE eligible_members.matched_user_id > 0
   UNION
-  SELECT candidate.%s
-  FROM %s AS candidate
+  SELECT candidate.id
+  FROM users AS candidate
   JOIN eligible_members
-    ON eligible_members.email_normalized = LOWER(BTRIM(candidate.%s))
-)`,
-		directorymember.FieldID,
-		directorymember.FieldMatchedUserID,
-		directorymember.FieldEmailNormalized,
-		directorymember.Table,
-		directorymember.FieldSourceID,
-		sourcePlaceholder,
-		directorymemberdepartment.Table,
-		directorymemberdepartment.FieldDepartmentExternalID,
-		directorymemberdepartment.FieldSourceID,
-		sourcePlaceholder,
-		directorymemberdepartment.FieldDirectoryMemberID,
-		directorymember.FieldID,
-		directorymemberdepartment.Table,
-		directorymemberdepartment.FieldSourceID,
-		sourcePlaceholder,
-		directorymemberdepartment.FieldDirectoryMemberID,
-		directorymember.FieldID,
-		directorymember.FieldDepartmentExternalID,
-		entuser.FieldID,
-		entuser.Table,
-		entuser.FieldEmail,
-	)
+    ON eligible_members.email_normalized = LOWER(BTRIM(candidate.email))
+)`)
 }
 
 func departmentUserPredicate(sourceID int, departmentID string) predicate.User {
 	return func(selector *sql.Selector) {
 		selector.Where(sql.P(func(builder *sql.Builder) {
 			builder.Ident(selector.C(entuser.FieldID)).WriteString(" IN (")
-			builder.Arg(effectiveDepartmentParameter(sourceID))
-			builder.Arg(effectiveSubtreeParameter(departmentID))
+			writeDepartmentUserCTEs(builder, sourceID, departmentID)
 			builder.WriteString("\nSELECT eligible_user_ids.user_id\nFROM eligible_user_ids")
 			builder.WriteByte(')')
 		}))
 	}
-}
-
-// These parameters bind runtime values while rendering the shared SQL at the
-// exact placeholder positions assigned by Ent's PostgreSQL builder. The source
-// and department arguments stay consecutive so the subtree can reuse source.
-type effectiveDepartmentParameter int
-
-func (parameter effectiveDepartmentParameter) Value() (driver.Value, error) {
-	return int64(parameter), nil
-}
-
-func (parameter effectiveDepartmentParameter) FormatParam(placeholder string, _ *sql.StmtInfo) string {
-	return effectiveDepartmentCTEs(placeholder)
-}
-
-type effectiveSubtreeParameter string
-
-func (parameter effectiveSubtreeParameter) Value() (driver.Value, error) {
-	return string(parameter), nil
-}
-
-func (parameter effectiveSubtreeParameter) FormatParam(placeholder string, _ *sql.StmtInfo) string {
-	sourcePlaceholder := previousPostgresPlaceholder(placeholder)
-	return effectiveSubtreeCTE(placeholder) + eligibleUserCTEs(sourcePlaceholder)
-}
-
-func previousPostgresPlaceholder(placeholder string) string {
-	if !strings.HasPrefix(placeholder, "$") {
-		panic(fmt.Sprintf("adminusers: expected PostgreSQL placeholder, got %q", placeholder))
-	}
-	position, err := strconv.Atoi(strings.TrimPrefix(placeholder, "$"))
-	if err != nil || position <= 1 {
-		panic(fmt.Sprintf("adminusers: invalid subtree placeholder %q", placeholder))
-	}
-	return fmt.Sprintf("$%d", position-1)
 }
 
 type pageMemberRow struct {
@@ -538,11 +445,10 @@ func normalizeEmail(value string) string {
 
 func pageDepartmentClosurePredicate(sourceID int, candidateIDs []string) predicate.DirectoryDepartment {
 	return func(selector *sql.Selector) {
-		outerDepartment := sql.Table("navigation_departments").As("outer_department")
+		outerDepartment := sql.Table(directorydepartment.Table).As("outer_department")
 		ancestors := sql.Table("ancestors")
 		selector.Prefix(sql.ExprFunc(func(builder *sql.Builder) {
-			builder.Arg(effectiveDepartmentParameter(sourceID))
-			builder.Arg(pageDepartmentCandidatesParameter(candidateIDs))
+			writePageDepartmentAncestorCTEs(builder, sourceID, candidateIDs)
 		}))
 		selector.From(outerDepartment)
 		selector.Join(ancestors).On(
@@ -556,43 +462,38 @@ func pageDepartmentClosurePredicate(sourceID int, candidateIDs []string) predica
 			outerDepartment.C(directorydepartment.FieldPath),
 			ancestors.C("effective_parent_external_id"),
 		)
+		selector.Where(sql.EQ(outerDepartment.C(directorydepartment.FieldSourceID), sourceID))
 	}
 }
 
-type pageDepartmentCandidatesParameter []string
-
-func (parameter pageDepartmentCandidatesParameter) Value() (driver.Value, error) {
-	return pq.Array([]string(parameter)).Value()
-}
-
-func (parameter pageDepartmentCandidatesParameter) FormatParam(placeholder string, _ *sql.StmtInfo) string {
-	return pageDepartmentAncestorCTEs(placeholder)
-}
-
-func pageDepartmentAncestorCTEs(candidatePlaceholder string) string {
-	return fmt.Sprintf(`, requested_candidates(%s) AS MATERIALIZED (
-  SELECT UNNEST(%s::text[])
+func writePageDepartmentAncestorCTEs(builder *sql.Builder, sourceID int, candidateIDs []string) {
+	builder.WriteString(`WITH RECURSIVE
+hierarchy_parameters(source_id, candidate_ids) AS MATERIALIZED (
+  SELECT `)
+	builder.Arg(sourceID)
+	builder.WriteString(`::bigint, `)
+	builder.Arg(pq.Array(candidateIDs))
+	builder.WriteString(`::text[]
 ),
-ancestors(%s, effective_parent_external_id) AS MATERIALIZED (
-  SELECT seed.%s, seed.effective_parent_external_id
-  FROM navigation_departments AS seed
+requested_candidates(external_id) AS MATERIALIZED (
+  SELECT UNNEST(hierarchy_parameters.candidate_ids)
+  FROM hierarchy_parameters
+),
+ancestors(external_id, effective_parent_external_id) AS MATERIALIZED (
+  SELECT seed.external_id, seed.effective_parent_external_id
+  FROM directory_departments AS seed
+  JOIN hierarchy_parameters AS parameters
+    ON parameters.source_id = seed.source_id
   JOIN requested_candidates
-    ON requested_candidates.%s = seed.%s
+    ON requested_candidates.external_id = seed.external_id
   UNION
-  SELECT parent.%s, parent.effective_parent_external_id
-  FROM navigation_departments AS parent
+  SELECT parent.external_id, parent.effective_parent_external_id
+  FROM directory_departments AS parent
+  JOIN hierarchy_parameters AS parameters
+    ON parameters.source_id = parent.source_id
   JOIN ancestors AS child
-    ON child.effective_parent_external_id = parent.%s
-)`,
-		directorydepartment.FieldExternalID,
-		candidatePlaceholder,
-		directorydepartment.FieldExternalID,
-		directorydepartment.FieldExternalID,
-		directorydepartment.FieldExternalID,
-		directorydepartment.FieldExternalID,
-		directorydepartment.FieldExternalID,
-		directorydepartment.FieldExternalID,
-	)
+    ON child.effective_parent_external_id = parent.external_id
+)`)
 }
 
 type departmentOptionRow struct {
@@ -621,6 +522,16 @@ type departmentAggregateRow struct {
 
 type departmentCountRow struct {
 	Count int `json:"count"`
+}
+
+type completeDepartmentRow struct {
+	ExternalID                string  `json:"external_id"`
+	ParentExternalID          *string `json:"parent_external_id"`
+	EffectiveParentExternalID *string `json:"effective_parent_external_id"`
+	Name                      string  `json:"name"`
+	Path                      string  `json:"path"`
+	DisplayPath               string  `json:"display_path"`
+	Depth                     int     `json:"depth"`
 }
 
 func (s *Service) DepartmentOptions(ctx context.Context, request DepartmentOptionRequest) (*DepartmentOptionPage, error) {
@@ -776,6 +687,134 @@ func (s *Service) DepartmentChildren(ctx context.Context, request DepartmentChil
 	return page, nil
 }
 
+func (s *Service) Departments(ctx context.Context) ([]DepartmentSummary, error) {
+	source, err := s.currentSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !source.found {
+		return []DepartmentSummary{}, nil
+	}
+
+	var departments []completeDepartmentRow
+	if err := s.client.DirectoryDepartment.Query().
+		Where(completeDepartmentHierarchyPredicate(source.id)).
+		Select(
+			directorydepartment.FieldExternalID,
+			directorydepartment.FieldParentExternalID,
+			directorydepartment.FieldEffectiveParentExternalID,
+			directorydepartment.FieldName,
+			directorydepartment.FieldPath,
+		).
+		Scan(ctx, &departments); err != nil {
+		return nil, fmt.Errorf("list complete persisted department hierarchy: %w", err)
+	}
+	if len(departments) == 0 {
+		return []DepartmentSummary{}, nil
+	}
+
+	externalIDs := make([]string, 0, len(departments))
+	for _, department := range departments {
+		externalIDs = append(externalIDs, department.ExternalID)
+	}
+	aggregates, err := s.departmentAggregates(ctx, source.id, externalIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	rows := make([]DepartmentSummary, 0, len(departments))
+	for _, department := range departments {
+		aggregate := aggregates[department.ExternalID]
+		rows = append(rows, DepartmentSummary{
+			ExternalID:                 department.ExternalID,
+			ParentExternalID:           department.ParentExternalID,
+			Name:                       department.Name,
+			Path:                       department.Path,
+			DisplayPath:                department.DisplayPath,
+			Depth:                      department.Depth,
+			ChildCount:                 aggregate.ChildCount,
+			HasChildren:                aggregate.ChildCount > 0,
+			MemberCount:                aggregate.MemberCount,
+			MatchedUserCount:           aggregate.MatchedUserCount,
+			SubtreeMemberCount:         aggregate.SubtreeMemberCount,
+			SubtreeMatchedUserCount:    aggregate.SubtreeMatchedUserCount,
+			RepresentativeCount:        aggregate.RepresentativeCount,
+			MatchedRepresentativeCount: aggregate.MatchedRepresentativeCount,
+		})
+	}
+	return rows, nil
+}
+
+func completeDepartmentHierarchyPredicate(sourceID int) predicate.DirectoryDepartment {
+	return func(selector *sql.Selector) {
+		hierarchy := sql.Table("department_hierarchy")
+		selector.Prefix(sql.ExprFunc(func(builder *sql.Builder) {
+			writeCompleteDepartmentHierarchyCTEs(builder, sourceID)
+		}))
+		selector.From(hierarchy)
+		selector.Select(
+			hierarchy.C(directorydepartment.FieldExternalID),
+			hierarchy.C(directorydepartment.FieldParentExternalID),
+			hierarchy.C(directorydepartment.FieldEffectiveParentExternalID),
+			hierarchy.C(directorydepartment.FieldName),
+			hierarchy.C(directorydepartment.FieldPath),
+			hierarchy.C("display_path"),
+			hierarchy.C("depth"),
+		)
+		selector.OrderBy(hierarchy.C("traversal_order"))
+	}
+}
+
+func writeCompleteDepartmentHierarchyCTEs(builder *sql.Builder, sourceID int) {
+	builder.WriteString(`WITH RECURSIVE
+hierarchy_parameters(source_id) AS MATERIALIZED (
+  SELECT `)
+	builder.Arg(sourceID)
+	builder.WriteString(`::bigint
+),
+department_hierarchy(
+  external_id,
+  parent_external_id,
+  effective_parent_external_id,
+  name,
+  path,
+  display_path,
+  depth,
+  sort_name,
+  sort_external_id
+) AS MATERIALIZED (
+  SELECT department.external_id,
+         department.parent_external_id,
+         department.effective_parent_external_id,
+         department.name,
+         department.path,
+         COALESCE(NULLIF(BTRIM(department.name), ''), department.external_id),
+         0,
+         LOWER(BTRIM(department.name) COLLATE "C") COLLATE "C",
+         department.external_id COLLATE "C"
+  FROM directory_departments AS department
+  JOIN hierarchy_parameters AS parameters
+    ON parameters.source_id = department.source_id
+  WHERE department.effective_parent_external_id IS NULL
+  UNION ALL
+  SELECT child.external_id,
+         child.parent_external_id,
+         child.effective_parent_external_id,
+         child.name,
+         child.path,
+         parent.display_path || ' / ' || COALESCE(NULLIF(BTRIM(child.name), ''), child.external_id),
+         parent.depth + 1,
+         LOWER(BTRIM(child.name) COLLATE "C") COLLATE "C",
+         child.external_id COLLATE "C"
+  FROM directory_departments AS child
+  JOIN hierarchy_parameters AS parameters
+    ON parameters.source_id = child.source_id
+  JOIN department_hierarchy AS parent
+    ON child.effective_parent_external_id = parent.external_id
+)
+SEARCH DEPTH FIRST BY sort_name, sort_external_id SET traversal_order`)
+}
+
 func normalizeDepartmentOptionRequest(request DepartmentOptionRequest) DepartmentOptionRequest {
 	request.Query = strings.TrimSpace(request.Query)
 	request.SelectedID = strings.TrimSpace(request.SelectedID)
@@ -858,122 +897,49 @@ func (s *Service) departmentAggregates(ctx context.Context, sourceID int, candid
 	return out, nil
 }
 
-type departmentOptionQueryParameter string
-
-func (parameter departmentOptionQueryParameter) Value() (driver.Value, error) {
-	return string(parameter), nil
-}
-
-func (parameter departmentOptionQueryParameter) FormatParam(placeholder string, _ *sql.StmtInfo) string {
-	return departmentOptionCTEs(placeholder)
-}
-
-func departmentOptionCTEs(queryPlaceholder string) string {
-	return fmt.Sprintf(`, filtered_departments AS MATERIALIZED (
-  SELECT candidate.external_id,
-         candidate.parent_external_id,
-         candidate.name
-  FROM navigation_departments AS candidate
-  WHERE BTRIM(%[1]s::text) = ''
-     OR STRPOS(LOWER(BTRIM(candidate.name)), LOWER(BTRIM(%[1]s::text))) > 0
-     OR STRPOS(LOWER(BTRIM(candidate.external_id)), LOWER(BTRIM(%[1]s::text))) > 0
-)`, queryPlaceholder)
-}
-
 func departmentOptionsPredicate(sourceID int, query string, ordered bool) predicate.DirectoryDepartment {
 	return func(selector *sql.Selector) {
-		options := sql.Table("filtered_departments")
-		selector.Prefix(sql.ExprFunc(func(builder *sql.Builder) {
-			builder.Arg(effectiveDepartmentParameter(sourceID))
-			builder.Arg(departmentOptionQueryParameter(query))
-		}))
-		selector.From(options)
-		selector.Select(
-			options.C(directorydepartment.FieldExternalID),
-			options.C(directorydepartment.FieldParentExternalID),
-			options.C(directorydepartment.FieldName),
-		)
+		selector.Where(sql.EQ(selector.C(directorydepartment.FieldSourceID), sourceID))
+		if query != "" {
+			selector.Where(sql.Or(
+				sql.ContainsFold(selector.C(directorydepartment.FieldName), query),
+				sql.ContainsFold(selector.C(directorydepartment.FieldExternalID), query),
+			))
+		}
 		if ordered {
-			selector.OrderExpr(sql.Expr("LOWER(BTRIM(" + options.C(directorydepartment.FieldName) + "))"))
-			selector.OrderBy(options.C(directorydepartment.FieldExternalID))
+			selector.OrderExpr(sql.Expr("LOWER(BTRIM(" + selector.C(directorydepartment.FieldName) + "))"))
+			selector.OrderBy(selector.C(directorydepartment.FieldExternalID))
 		}
 	}
-}
-
-type departmentChildParentParameter string
-
-func (parameter departmentChildParentParameter) Value() (driver.Value, error) {
-	if strings.TrimSpace(string(parameter)) == "" {
-		return nil, nil
-	}
-	return strings.TrimSpace(string(parameter)), nil
-}
-
-func (parameter departmentChildParentParameter) FormatParam(placeholder string, _ *sql.StmtInfo) string {
-	return departmentChildCandidateCTEs(placeholder)
-}
-
-func departmentChildCandidateCTEs(parentPlaceholder string) string {
-	return fmt.Sprintf(`, supplied_parent(external_id) AS MATERIALIZED (
-  SELECT parent.external_id
-  FROM navigation_departments AS parent
-  WHERE %[1]s::text IS NOT NULL
-    AND parent.external_id = %[1]s
-),
-candidate_departments AS MATERIALIZED (
-  SELECT candidate.*
-  FROM navigation_departments AS candidate
-  WHERE (
-      %[1]s::text IS NULL
-      AND candidate.effective_parent_external_id IS NULL
-    )
-    OR (
-      %[1]s::text IS NOT NULL
-      AND EXISTS (SELECT 1 FROM supplied_parent)
-      AND candidate.effective_parent_external_id = (
-        SELECT supplied_parent.external_id FROM supplied_parent
-      )
-    )
-)`, parentPlaceholder)
 }
 
 func departmentChildrenPredicate(sourceID int, parentDepartmentID string, ordered bool) predicate.DirectoryDepartment {
 	return func(selector *sql.Selector) {
-		candidates := sql.Table("candidate_departments")
-		selector.Prefix(sql.ExprFunc(func(builder *sql.Builder) {
-			builder.Arg(effectiveDepartmentParameter(sourceID))
-			builder.Arg(departmentChildParentParameter(parentDepartmentID))
-		}))
-		selector.From(candidates)
-		selector.Select(
-			candidates.C(directorydepartment.FieldExternalID),
-			candidates.C(directorydepartment.FieldParentExternalID),
-			candidates.C(directorydepartment.FieldName),
-			candidates.C(directorydepartment.FieldPath),
-		)
+		selector.Where(sql.EQ(selector.C(directorydepartment.FieldSourceID), sourceID))
+		if parentDepartmentID == "" {
+			selector.Where(sql.IsNull(selector.C(directorydepartment.FieldEffectiveParentExternalID)))
+		} else {
+			parent := sql.Table(directorydepartment.Table).As("supplied_parent")
+			selector.Where(sql.EQ(selector.C(directorydepartment.FieldEffectiveParentExternalID), parentDepartmentID))
+			selector.Where(sql.Exists(sql.Select(parent.C(directorydepartment.FieldExternalID)).
+				From(parent).
+				Where(sql.And(
+					sql.EQ(parent.C(directorydepartment.FieldSourceID), sourceID),
+					sql.EQ(parent.C(directorydepartment.FieldExternalID), parentDepartmentID),
+				))))
+		}
 		if ordered {
-			selector.OrderExpr(sql.Expr("LOWER(BTRIM(" + candidates.C(directorydepartment.FieldName) + "))"))
-			selector.OrderBy(candidates.C(directorydepartment.FieldExternalID))
+			selector.OrderExpr(sql.Expr("LOWER(BTRIM(" + selector.C(directorydepartment.FieldName) + "))"))
+			selector.OrderBy(selector.C(directorydepartment.FieldExternalID))
 		}
 	}
-}
-
-type departmentSummaryRootsParameter []string
-
-func (parameter departmentSummaryRootsParameter) Value() (driver.Value, error) {
-	return pq.Array([]string(parameter)).Value()
-}
-
-func (parameter departmentSummaryRootsParameter) FormatParam(placeholder string, _ *sql.StmtInfo) string {
-	return departmentSummaryCTEs(placeholder)
 }
 
 func departmentSummaryPredicate(sourceID int, candidateIDs []string) predicate.DirectoryDepartment {
 	return func(selector *sql.Selector) {
 		summaries := sql.Table("department_summaries")
 		selector.Prefix(sql.ExprFunc(func(builder *sql.Builder) {
-			builder.Arg(effectiveDepartmentParameter(sourceID))
-			builder.Arg(departmentSummaryRootsParameter(candidateIDs))
+			writeDepartmentSummaryCTEs(builder, sourceID, candidateIDs)
 		}))
 		selector.From(summaries)
 		selector.Select(
@@ -989,19 +955,28 @@ func departmentSummaryPredicate(sourceID int, candidateIDs []string) predicate.D
 	}
 }
 
-func departmentSummaryCTEs(rootsPlaceholder string) string {
-	sourcePlaceholder := previousPostgresPlaceholder(rootsPlaceholder)
-	return fmt.Sprintf(`, requested_roots(root_external_id) AS MATERIALIZED (
-  SELECT UNNEST(%[1]s::text[])
+func writeDepartmentSummaryCTEs(builder *sql.Builder, sourceID int, candidateIDs []string) {
+	builder.WriteString(`WITH RECURSIVE
+hierarchy_parameters(source_id, root_ids) AS MATERIALIZED (
+  SELECT `)
+	builder.Arg(sourceID)
+	builder.WriteString(`::bigint, `)
+	builder.Arg(pq.Array(candidateIDs))
+	builder.WriteString(`::text[]
+),
+requested_roots(root_external_id) AS MATERIALIZED (
+  SELECT UNNEST(hierarchy_parameters.root_ids) COLLATE "C"
+  FROM hierarchy_parameters
 ),
 descendants(root_external_id, external_id) AS MATERIALIZED (
   SELECT requested_roots.root_external_id, requested_roots.root_external_id
   FROM requested_roots
   UNION
-  SELECT descendants.root_external_id, child.external_id
+  SELECT descendants.root_external_id, child.external_id COLLATE "C"
   FROM descendants
-  JOIN navigation_departments AS child
-    ON child.effective_parent_external_id = descendants.external_id
+  JOIN directory_departments AS child
+    ON child.effective_parent_external_id COLLATE "C" = descendants.external_id
+   AND child.source_id = (SELECT source_id FROM hierarchy_parameters)
 ),
 effective_assignments(root_external_id, member_id, matched_user_id, department_external_id) AS MATERIALIZED (
   SELECT descendants.root_external_id,
@@ -1010,10 +985,10 @@ effective_assignments(root_external_id, member_id, matched_user_id, department_e
          membership.department_external_id
   FROM descendants
   JOIN directory_member_departments AS membership
-    ON membership.source_id = %[2]s
-   AND membership.department_external_id = descendants.external_id
+    ON membership.source_id = (SELECT source_id FROM hierarchy_parameters)
+   AND membership.department_external_id COLLATE "C" = descendants.external_id
   JOIN directory_members AS member
-    ON member.source_id = %[2]s
+    ON member.source_id = (SELECT source_id FROM hierarchy_parameters)
    AND member.id = membership.directory_member_id
   UNION ALL
   SELECT descendants.root_external_id,
@@ -1022,12 +997,12 @@ effective_assignments(root_external_id, member_id, matched_user_id, department_e
          member.department_external_id
   FROM descendants
   JOIN directory_members AS member
-    ON member.source_id = %[2]s
-   AND member.department_external_id = descendants.external_id
+    ON member.source_id = (SELECT source_id FROM hierarchy_parameters)
+   AND member.department_external_id COLLATE "C" = descendants.external_id
   WHERE NOT EXISTS (
     SELECT 1
     FROM directory_member_departments AS current_membership
-    WHERE current_membership.source_id = %[2]s
+    WHERE current_membership.source_id = (SELECT source_id FROM hierarchy_parameters)
       AND current_membership.directory_member_id = member.id
   )
 ),
@@ -1035,8 +1010,9 @@ department_representatives(root_external_id, representative_external_id) AS MATE
   SELECT requested_roots.root_external_id,
          BTRIM(representative_value.external_id)
   FROM requested_roots
-  JOIN navigation_departments AS department
-    ON department.external_id = requested_roots.root_external_id
+  JOIN directory_departments AS department
+    ON department.external_id COLLATE "C" = requested_roots.root_external_id
+   AND department.source_id = (SELECT source_id FROM hierarchy_parameters)
   CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(
     CASE
       WHEN JSONB_TYPEOF(department.metadata -> 'representative_external_ids') = 'array'
@@ -1053,7 +1029,7 @@ leader_representatives(root_external_id, representative_external_id) AS MATERIAL
          BTRIM(member.external_id)
   FROM requested_roots
   JOIN directory_members AS member
-    ON member.source_id = %[2]s
+    ON member.source_id = (SELECT source_id FROM hierarchy_parameters)
   CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS_TEXT(
     CASE
       WHEN JSONB_TYPEOF(member.metadata -> 'leader_department_ids') = 'array'
@@ -1064,7 +1040,7 @@ leader_representatives(root_external_id, representative_external_id) AS MATERIAL
     END
   ) AS leader_department(department_external_id)
   WHERE BTRIM(member.external_id) <> ''
-    AND BTRIM(leader_department.department_external_id) = requested_roots.root_external_id
+    AND BTRIM(leader_department.department_external_id) COLLATE "C" = requested_roots.root_external_id
 ),
 representatives(root_external_id, representative_external_id) AS MATERIALIZED (
   SELECT root_external_id, representative_external_id
@@ -1076,7 +1052,7 @@ representatives(root_external_id, representative_external_id) AS MATERIALIZED (
 matched_representative_ids(representative_external_id) AS MATERIALIZED (
   SELECT DISTINCT BTRIM(member.external_id)
   FROM directory_members AS member
-  WHERE member.source_id = %[2]s
+  WHERE member.source_id = (SELECT source_id FROM hierarchy_parameters)
     AND BTRIM(member.external_id) <> ''
     AND member.matched_user_id > 0
 ),
@@ -1094,8 +1070,9 @@ representative_counts(root_external_id, representative_count, matched_representa
 child_counts(root_external_id, child_count) AS MATERIALIZED (
   SELECT requested_roots.root_external_id, COUNT(child.external_id)
   FROM requested_roots
-  LEFT JOIN navigation_departments AS child
-    ON child.effective_parent_external_id = requested_roots.root_external_id
+  LEFT JOIN directory_departments AS child
+    ON child.source_id = (SELECT source_id FROM hierarchy_parameters)
+   AND child.effective_parent_external_id COLLATE "C" = requested_roots.root_external_id
   GROUP BY requested_roots.root_external_id
 ),
 department_summaries(
@@ -1131,5 +1108,5 @@ department_summaries(
            child_counts.child_count,
            representative_counts.representative_count,
            representative_counts.matched_representative_count
-)`, rootsPlaceholder, sourcePlaceholder)
+)`)
 }
