@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-const maxConcurrentTeamTrendOrigins = 16
+const maxConcurrentTeamTrendOrigins = 24
 
 type teamTrendOriginLimiter struct {
 	once  sync.Once

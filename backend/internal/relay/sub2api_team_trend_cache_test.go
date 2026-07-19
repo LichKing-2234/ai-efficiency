@@ -240,7 +240,11 @@ func TestTeamTrendCacheCollapsesFourLaneFanout(t *testing.T) {
 	}
 }
 
-func TestTeamTrendOriginsUseSixteenProviderWideSlots(t *testing.T) {
+func TestTeamTrendOriginsUseTwentyFourProviderWideSlots(t *testing.T) {
+	if maxConcurrentTeamTrendOrigins != 24 {
+		t.Fatalf("maxConcurrentTeamTrendOrigins = %d, want 24", maxConcurrentTeamTrendOrigins)
+	}
+
 	var mu sync.Mutex
 	active := 0
 	maxActive := 0
@@ -474,7 +478,7 @@ func TestTeamTrendOriginLimiterSpansCredentialGenerations(t *testing.T) {
 		case <-oldStarted:
 		case <-time.After(time.Second):
 			close(releaseOld)
-			t.Fatal("old credential generation did not fill all origin slots")
+			t.Fatalf("old credential generation did not fill maxConcurrentTeamTrendOrigins=%d slots", maxConcurrentTeamTrendOrigins)
 		}
 	}
 
