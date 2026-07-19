@@ -394,7 +394,9 @@
 
   - update the shared Redis/readcache description to say one failed idempotent
     GET receives one immediate retry inside the original command context,
-    while misses, writes, and leases are not retried;
+    while misses, writes, and leases are not retried, and explicitly record
+    that the runtime go-redis client retains `MaxRetries = -1` so library-level
+    command retries stay disabled;
   - replace the current Team Usage provider-wide sixteen-slot description with
     24 slots, retaining the cache/singleflight, cancellation, credential, and
     HTTP-contract wording.
@@ -405,11 +407,13 @@
 
   Evidence (2026-07-19): updated the current `readcache` architecture contract
   with the one immediate failed-GET retry inside the original context and the
-  unchanged miss/write/lease boundary; updated both current Team Usage
-  architecture descriptions from sixteen to 24 provider-wide origin slots.
-  The follow-up spec now records behavior commits `bade4a33` and `26907c85` as
-  implemented while full local verification and PR CI remain pending. The two
-  predecessor specs were not modified.
+  unchanged miss/write/lease boundary. Follow-up review made the binding
+  runtime constraint explicit: go-redis retains `MaxRetries = -1`, so it does
+  not add implicit command retries. Updated both current Team Usage architecture
+  descriptions from sixteen to 24 provider-wide origin slots. The follow-up
+  spec now records behavior commits `bade4a33` and `26907c85` as implemented
+  while full local verification and PR CI remain pending. The two predecessor
+  specs were not modified.
 
 - [x] **Step 2: Run the complete backend verification gate**
 
@@ -471,16 +475,29 @@
   ledger, and neither historical predecessor spec changed. There is no
   frontend or Sub2API source change and no real-data fixture.
 
-  Spec review: no findings. `RedisStore.Get` returns success and `redis.Nil`
-  without retry, stops after cancellation, reuses the supplied context with no
-  sleep/backoff, and makes at most two GET attempts; runtime
+  Initial spec review found no runtime behavior defect. `RedisStore.Get`
+  returns success and `redis.Nil` without retry, stops after cancellation,
+  reuses the supplied context with no sleep/backoff, and makes at most two GET
+  attempts; runtime
   `redis.Options.MaxRetries` remains `-1`, and tests prove writes and leases
   make one matching command attempt. The only Relay behavior change is the
   shared constant from 16 to 24; the provider-owned limiter still runs after
   cache/flight collapse, remains shared across callers and credential
   generations, and preserves cancellation before HTTP origin start. Cache
   identities, TTLs, HTTP contracts, and the nine-second cold / 1.5-second warm
-  staging criteria are unchanged. No Critical or Important fix was required.
+  staging criteria are unchanged.
+
+  Follow-up review found one Important documentation omission: the current
+  `Read-model coordination` architecture row described the immediate GET retry
+  and unchanged miss/write/lease behavior without binding that behavior to the
+  runtime go-redis `MaxRetries = -1` constraint already implemented in
+  `backend/cmd/server/main.go` and specified by the follow-up design. Fixed the
+  row to state that the runtime client retains `MaxRetries = -1`, so
+  library-level command retries stay disabled. No historical spec or runtime
+  code changed. The focused runtime-options test and `git diff --check` both
+  exited 0 after the fix. Exact test output was
+  `ok github.com/ai-efficiency/backend/cmd/server 1.034s`; `git diff --check`
+  produced no output.
 
 - [x] **Step 4: Record verification and commit current documentation**
 
@@ -500,7 +517,9 @@
   build, diff, and two-axis self-review evidence. Their statuses state that
   implementation and full local verification are complete while PR CI is
   pending; no PR delivery, merge, image publish, Helm action, staging audit, or
-  production action is claimed.
+  production action is claimed. Follow-up review evidence records the one
+  Important architecture omission, its documentation-only fix, and the focused
+  runtime-options regression plus clean diff verification.
 
 ### Task 4: Deliver A Reviewed PR And Stop At The Merge Gate
 
