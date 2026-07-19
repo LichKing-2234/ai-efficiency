@@ -367,7 +367,7 @@
   fix. The branch diff and `git diff --check` are clean, and no frontend,
   Sub2API, Redis runtime, or unrelated module changed.
 
-- [ ] **Step 2: Push and open the PR**
+- [x] **Step 2: Push and open the PR**
 
   ```bash
   git push -u origin perf/team-usage-shared-trend-cache
@@ -380,6 +380,12 @@
   ```
 
   Compose the PR body in the command process or session-temporary `/tmp` file only. It must summarize the staging baseline, 60-second/4096-entry contract, credential-generation safety, exact verification commands, no-Sub2API boundary, and separate Redis-retry follow-up.
+
+  Delivery evidence (2026-07-19): branch
+  `perf/team-usage-shared-trend-cache` was pushed and non-Draft PR #188 was
+  opened with base `feat/platform-loading-performance`. Its body records the
+  607-629 staging baseline, synthetic 940-to-235 collapse, safety contracts,
+  verification matrix, and explicit no-Sub2API/no-Redis-retry boundary.
 
 - [ ] **Step 3: Wait for exact-head CI and record the result**
 
