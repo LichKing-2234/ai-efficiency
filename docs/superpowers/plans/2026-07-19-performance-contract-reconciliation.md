@@ -4,7 +4,7 @@
 
 **Issue:** [#173](https://github.com/LichKing-2234/ai-efficiency/issues/173)
 
-**Status:** In review. Repository/GitHub reconciliation, the full exact-head verification matrix, and final Standards/Spec review are complete against implementation baseline `feat/platform-loading-performance@d2bc26941d6c966c8117a038b770450f7b201ed4`. PR #187 targets that integration branch; final ledger-head CI, merge, and issue closeout remain pending.
+**Status:** Complete. PR #187 exact head `dd9dd38294eeadcd21d4cfcf3b71d3984e35b216` passed backend, frontend, ae-cli, and deploy-static in CI run `29671898905`, then squash-merged into `feat/platform-loading-performance` as `96825e505a07299680f8666934be02e5aae59514`. Issue #173 is closed with exact evidence. No `main` merge, release, tag, deployment, production sampling, or Helm action occurred.
 
 **Goal:** Reconcile the active loading-performance contract, every affected execution ledger, issues #117-#135, and PR #160 with the exact integrated implementation, then revalidate and deliver only to `feat/platform-loading-performance`.
 
@@ -132,10 +132,14 @@ The later review remediations #161-#172 are also closed and integrated through P
 
   Delivery evidence (2026-07-19): commit `0aad9000` was pushed on `chore/performance-reconciliation-173`, and non-Draft PR #187 was opened with base `feat/platform-loading-performance`. Its description records the complete verification/review evidence and the explicit no-main/no-release boundary.
 
-- [ ] **Step 2: Wait for exact-head GitHub CI and merge**
+- [x] **Step 2: Wait for exact-head GitHub CI and merge**
 
   Require backend, frontend, ae-cli, and deploy-static success on the exact PR head before squash-merging to `feat/platform-loading-performance`.
 
-- [ ] **Step 3: Close #173 with exact evidence**
+  Integration evidence (2026-07-19): run `29671898905` passed all four required jobs on exact PR head `dd9dd38294eeadcd21d4cfcf3b71d3984e35b216`. PR #187 was then squash-merged only into `feat/platform-loading-performance` as `96825e505a07299680f8666934be02e5aae59514`.
+
+- [x] **Step 3: Close #173 with exact evidence**
 
   Record the PR head, CI run, integration commit, verification matrix, review result, and the explicit absence of release/deployment/production actions.
+
+  Closeout evidence (2026-07-19): issue #173 comment `5014046497` records the PR head, CI run, squash merge, full local verification matrix, zero Critical/Important review result, reconciled GitHub/doc scope, and prohibited-action boundary. The issue was then closed as completed.
