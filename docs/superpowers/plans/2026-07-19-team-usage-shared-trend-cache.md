@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation, full backend verification, final branch review, and PR CI are complete on `perf/team-usage-shared-trend-cache`. PR #188 is waiting at the merge gate; merge and staging re-audit remain pending, and production is unchanged.
+**Status:** PR #188 is merged and staging revision 28 is deployed on the exact `b1e8ed56` image with manifest `sha256:2671eeae84a8aaf0050ebaaa2de2e3d945f44654fc3e0a827a19b15a17721c85`. Two large-team cold/warm audits completed successfully: duplicate Relay load fell to 255 calls per cold round, but the remaining single-batch fan-out still keeps cold page completion at 12-14 seconds. Production remains revision 68 on `v0.1.0-preview.72`; Redis GET retry remains separate future work.
 
 **Goal:** Collapse duplicate per-user Relay trend reads across concurrent Team Usage lanes and reuse successful results for 60 seconds without coupling their response caches.
 
@@ -422,15 +422,34 @@
 - Advances only Helm release `ai-efficiency-staging` in namespace `la3-ai-efficiency-prod`.
 - Produces comparable sanitized Team Usage audit evidence for the same 251-member scope.
 
-- [ ] **Step 1: Verify merge state and publish the exact integration image**
+- [x] **Step 1: Verify merge state and publish the exact integration image**
 
   After the PR is merged, fast-forward `feat/platform-loading-performance`, set `COMMIT="$(git rev-parse HEAD)"`, build and push `ghcr.io/lichking-2234/ai-efficiency:staging-${COMMIT}` for `linux/amd64,linux/arm64`, and verify the manifest with `docker buildx imagetools inspect`.
 
-- [ ] **Step 2: Update only staging selectors and perform the two-phase Helm rollout**
+  Publication evidence (2026-07-19): PR #188 merged as
+  `b1e8ed566dd6837acc0aac32d7b29cda8a40c8f3`, and the integration worktree
+  fast-forwarded to that exact commit. Image
+  `ghcr.io/lichking-2234/ai-efficiency:staging-b1e8ed566dd6837acc0aac32d7b29cda8a40c8f3`
+  was published with manifest digest
+  `sha256:2671eeae84a8aaf0050ebaaa2de2e3d945f44654fc3e0a827a19b15a17721c85`;
+  remote inspection reported both `linux/amd64` and `linux/arm64`.
+
+- [x] **Step 2: Update only staging selectors and perform the two-phase Helm rollout**
 
   Update the staging image tag and restore snapshot ID `${COMMIT:0:12}` in the Helm secret override, commit the selector change, run Phase A with the application scaled down, confirm the old Pod is gone, then run Phase B restore with `--atomic --wait --wait-for-jobs --timeout 20m`. Production must remain revision 68 on `v0.1.0-preview.72` unless a later explicit production release changes that source of truth.
 
-- [ ] **Step 3: Repeat cold, warm, and dependency-log sampling**
+  Rollout evidence (2026-07-19): Helm commit `f5e08ec` changed only the
+  staging image tag and restore snapshot ID and was pushed to Helm `main`.
+  Both server-side dry-runs passed. Phase A completed as revision 27 with
+  `replicaCount=0`, restore disabled, and no application Pod. Phase B completed
+  as revision 28 after Job
+  `ai-efficiency-staging-postgres-restore-b1e8ed566dd6` reached `1/1`; the
+  Deployment became `1/1` ready on the exact immutable image. Live and ready
+  health reported build commit `b1e8ed566dd6837acc0aac32d7b29cda8a40c8f3`
+  with database, Redis, and Relay up. Production remained revision 68 on
+  `v0.1.0-preview.72`.
+
+- [x] **Step 3: Repeat cold, warm, and dependency-log sampling**
 
   Use the same SSO account without persisting credentials. Request Summary, Trend, Members limit 50, and Organization limits 25/50 concurrently for `2026-06-20..2026-07-19`, then repeat immediately. Record only status, seconds, response bytes, cache/source status, counts, request IDs, dependency calls, dependency duration, and cache/Redis counters.
 
@@ -442,6 +461,34 @@
   - normal warm reads remain dependency-free;
   - production image, readiness, and Helm revision remain unchanged.
 
-- [ ] **Step 4: Record staging evidence and leave the plan honest**
+  Audit evidence (2026-07-19): two independent four-lane cold rounds over
+  `2026-06-20..2026-07-19`, `day`, and `Asia/Shanghai` completed in 13.69 and
+  12.34 seconds. Summary, Trend, Members limit 50, and Organization limits
+  25/50 all returned HTTP 200 with `cache_status=miss` and `source_status=ok`;
+  Summary consistently reported 251 members and 235 Relay-linked members.
+  Each cold round emitted 255 Relay dependency calls, all 2xx, with cumulative
+  dependency time of 67.48 and 60.33 seconds. This is 58-60% fewer calls than
+  the 607-629 baseline and 41-52% less cumulative dependency time than the
+  113.6-124.4 second baseline. It is consistent with one shared 235-user trend
+  fan-out plus the remaining non-trend Relay reads, while showing that the
+  single-batch fan-out remains the 12-14 second cold-path bottleneck.
+
+  The immediate warm rounds completed in 1.14 and 1.05 seconds with all four
+  responses `cache_status=fresh`, `source_status=ok`, and zero Relay calls.
+  Runtime cache counters recorded two misses, refreshes, lease acquisitions,
+  and fresh reads for each of the four Team Usage caches, with zero errors,
+  stale reads, or lease failures. Redis pool wait, timeout, and stale-connection
+  counters were zero, and no audit-scoped error log was emitted.
+
+- [x] **Step 4: Record staging evidence and leave the plan honest**
 
   Update the top Status with exact image digest, staging revision, request measurements, and remaining Redis-retry follow-up. Do not mark production verification or issue #136 complete.
+
+  Final staging evidence (2026-07-19): revision 28 runs image manifest
+  `sha256:2671eeae84a8aaf0050ebaaa2de2e3d945f44654fc3e0a827a19b15a17721c85`
+  for integration commit `b1e8ed566dd6837acc0aac32d7b29cda8a40c8f3`.
+  Live and ready checks pass with database, Redis, and Relay up. Production was
+  not upgraded or restarted and remains ready at revision 68 on
+  `v0.1.0-preview.72`. Redis GET retry and any further reduction of the
+  235-user cold fan-out latency remain explicitly outside this completed plan;
+  issue #136 is not marked complete here.
