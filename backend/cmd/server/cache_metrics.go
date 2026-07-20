@@ -14,6 +14,7 @@ type productionCacheMetrics struct {
 	teamUsageTrend      readcache.Metrics
 	teamUsageMembers    readcache.Metrics
 	teamUsageOrg        readcache.Metrics
+	teamUsageOrigin     readcache.Metrics
 	workItemsCounts     readcache.Metrics
 }
 
@@ -27,6 +28,7 @@ func newProductionCacheMetrics(metrics *telemetry.Metrics) productionCacheMetric
 		teamUsageTrend:      metrics.CacheRecorder("team_usage_trend"),
 		teamUsageMembers:    metrics.CacheRecorder("team_usage_members"),
 		teamUsageOrg:        metrics.CacheRecorder("team_usage_organization"),
+		teamUsageOrigin:     metrics.CacheRecorder("team_usage_origin"),
 		workItemsCounts:     metrics.CacheRecorder("work_items_counts"),
 	}
 }
@@ -41,6 +43,7 @@ func (m productionCacheMetrics) recorders() map[string]readcache.Metrics {
 		"team_usage_trend":        m.teamUsageTrend,
 		"team_usage_members":      m.teamUsageMembers,
 		"team_usage_organization": m.teamUsageOrg,
+		"team_usage_origin":       m.teamUsageOrigin,
 		"work_items_counts":       m.workItemsCounts,
 	}
 }

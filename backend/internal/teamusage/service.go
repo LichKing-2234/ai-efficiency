@@ -40,12 +40,14 @@ type Service struct {
 	teamOverviewTrendTimeout time.Duration
 	maxMultiplier            float64
 	snapshotCache            *SnapshotCache
+	originCache              *OriginCache
 	memberCursorCodec        *memberCursorCodec
 	organizationCursorCodec  *organizationCursorCodec
 }
 
 type ServiceOptions struct {
 	SnapshotCache *SnapshotCache
+	OriginCache   *OriginCache
 	CursorSecret  string
 }
 
@@ -73,7 +75,7 @@ func (s *Service) newSplitReadRequest(ctx context.Context, actorUserID int, para
 	request := &splitReadRequest{
 		actorUserID: actorUserID, params: normalized, scope: scope, providerConfig: *providerConfig,
 	}
-	if s.snapshotCache != nil {
+	if s.snapshotCache != nil || s.originCache != nil {
 		request.scopeHash, err = effectiveScopeHash(scope)
 		if err != nil {
 			return nil, err
@@ -102,14 +104,17 @@ func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolve
 	if options.SnapshotCache == nil {
 		return nil, fmt.Errorf("team usage snapshot cache is required")
 	}
+	if options.OriginCache == nil {
+		return nil, fmt.Errorf("team usage origin cache is required")
+	}
 	cursorSecret := strings.TrimSpace(options.CursorSecret)
 	if cursorSecret == "" {
 		return nil, fmt.Errorf("team usage cursor secret is required")
 	}
-	return newService(client, scopeResolver, providerResolver, locker, options.SnapshotCache, cursorSecret), nil
+	return newService(client, scopeResolver, providerResolver, locker, options.SnapshotCache, options.OriginCache, cursorSecret), nil
 }
 
-func newService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, cursorSecret string) *Service {
+func newService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, originCache *OriginCache, cursorSecret string) *Service {
 	if locker == nil {
 		locker = &PostgresAdvisoryLocker{}
 	}
@@ -122,6 +127,7 @@ func newService(client *ent.Client, scopeResolver ScopeResolver, providerResolve
 		teamOverviewTrendTimeout: defaultTeamOverviewTrendTimeout,
 		maxMultiplier:            defaultMaxMultiplier,
 		snapshotCache:            snapshotCache,
+		originCache:              originCache,
 	}
 	if cursorSecret != "" {
 		service.memberCursorCodec = newMemberCursorCodec(cursorSecret)
@@ -256,11 +262,22 @@ func (s *Service) readTrendSnapshot(ctx context.Context, actorUserID int, params
 
 func (s *Service) readTrendSnapshotForRequest(ctx context.Context, request *splitReadRequest) (*TrendCacheResult, error) {
 	loader := func(loadCtx context.Context) (TrendOriginLoadResult, error) {
-		var provider relay.Provider
 		overviewSubjects := request.scope.OverviewSubjects
 		if len(overviewSubjects) == 0 {
 			overviewSubjects = request.scope.Subjects
 		}
+		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
+			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+			if loadErr != nil {
+				if isHardTrendSnapshotOriginError(loadCtx, loadErr) {
+					return TrendOriginLoadResult{}, loadErr
+				}
+				return TrendOriginLoadResult{Snapshot: trendUnavailableSnapshot(request.params, "provider_error"), SnapshotErr: loadErr}, nil
+			}
+			snapshot, sourceErr := buildTrendSnapshotFromScopeOrigin(request.scope, request.params, origin)
+			return TrendOriginLoadResult{Snapshot: snapshot, SnapshotErr: sourceErr}, nil
+		}
+		var provider relay.Provider
 		if len(overviewSubjects) <= s.fullScopeCap {
 			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
 			if resolveErr != nil {
@@ -362,11 +379,21 @@ func (s *Service) readSummarySnapshot(ctx context.Context, actorUserID int, para
 
 func (s *Service) readSummarySnapshotForRequest(ctx context.Context, request *splitReadRequest) (*SummaryCacheResult, error) {
 	loader := func(loadCtx context.Context) (SummaryOriginLoadResult, error) {
-		var provider relay.Provider
 		overviewSubjects := request.scope.OverviewSubjects
 		if len(overviewSubjects) == 0 {
 			overviewSubjects = request.scope.Subjects
 		}
+		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
+			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+			if loadErr == nil {
+				return SummaryOriginLoadResult{Snapshot: buildSummarySnapshotFromScopeOrigin(request.scope, request.params, origin)}, nil
+			}
+			if isHardSnapshotOriginError(loadErr) {
+				return SummaryOriginLoadResult{}, loadErr
+			}
+			return SummaryOriginLoadResult{SnapshotErr: loadErr}, nil
+		}
+		var provider relay.Provider
 		if len(overviewSubjects) <= s.fullScopeCap {
 			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
 			if resolveErr != nil {
@@ -419,11 +446,21 @@ func (s *Service) readMembersSnapshot(ctx context.Context, actorUserID int, para
 
 func (s *Service) readMembersSnapshotForRequest(ctx context.Context, request *splitReadRequest) (*MembersCacheResult, error) {
 	loader := func(loadCtx context.Context) (MembersOriginLoadResult, error) {
-		var provider relay.Provider
 		overviewSubjects := request.scope.OverviewSubjects
 		if len(overviewSubjects) == 0 {
 			overviewSubjects = request.scope.Subjects
 		}
+		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
+			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+			if loadErr == nil {
+				return MembersOriginLoadResult{Snapshot: buildMembersSnapshotFromScopeOrigin(request.params, origin)}, nil
+			}
+			if isHardSnapshotOriginError(loadErr) {
+				return MembersOriginLoadResult{}, loadErr
+			}
+			return MembersOriginLoadResult{SnapshotErr: loadErr}, nil
+		}
+		var provider relay.Provider
 		if len(overviewSubjects) <= s.fullScopeCap {
 			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
 			if resolveErr != nil {
