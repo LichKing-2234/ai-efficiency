@@ -203,6 +203,9 @@ func (s *sub2apiRelay) waitForTeamTrendLease(
 			}
 		}
 
+		if !hasFullTeamTrendBatchBudget(ctx) {
+			return resolved, unresolvedTeamTrendIDs(misses, resolved), nil
+		}
 		batched, _, batchErr := s.runTeamTrendBatch(ctx, misses, pending, params, limit)
 		if batchErr != nil {
 			return nil, nil, batchErr

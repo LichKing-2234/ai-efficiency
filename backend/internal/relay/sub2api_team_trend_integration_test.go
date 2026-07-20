@@ -502,6 +502,69 @@ func TestSub2APITeamTrendRedisNearDeadlineWaiterSkipsSecondBatch(t *testing.T) {
 	}
 }
 
+func TestSub2APITeamTrendRedisDelayedReacquireFailureSkipsSecondBatch(t *testing.T) {
+	server := miniredis.RunT(t)
+	baseStore := newTeamTrendRedisTestStore(t, server)
+	params := testSub2APITeamTrendParams()
+	baseOptions := teamTrendRedisCacheOptions{Namespace: "wait-delayed-reacquire-error", ProviderID: 7, ProviderVersion: 3}
+	baseCache := newTeamTrendRedisTestCache(t, baseStore, baseOptions)
+	leaseKey, token, acquired, err := baseCache.TryAcquireBatchLease(context.Background(), []int64{447, 448}, params, 500)
+	if err != nil || !acquired {
+		t.Fatalf("pre-acquire lease = %v, %v", acquired, err)
+	}
+
+	faultStore := &teamTrendOrchestrationFaultStore{
+		MultiStore:        baseStore,
+		acquireErr:        errors.New("synthetic delayed SETNX failure"),
+		acquireErrAfter:   2,
+		acquireErrorDelay: teamTrendRedisCommandTimeout,
+	}
+	metrics := &teamTrendRedisTestMetrics{}
+	var releaseOnce sync.Once
+	baseOptions.Metrics = metrics
+	baseOptions.Sleep = func(context.Context, time.Duration) error {
+		releaseOnce.Do(func() { baseCache.ReleaseBatchLease(leaseKey, token) })
+		return nil
+	}
+	cache := newTeamTrendRedisTestCache(t, faultStore, baseOptions)
+	var batchCalls atomic.Int64
+	var individualCalls atomic.Int64
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/admin/dashboard/users-trend" {
+			batchCalls.Add(1)
+			writeSub2APITeamTrendBatchRows(t, w, []map[string]any{
+				{"date": "2026-07-19", "user_id": 447, "tokens": 47, "actual_cost": 4.47},
+				{"date": "2026-07-19", "user_id": 448, "tokens": 48, "actual_cost": 4.48},
+			})
+			return
+		}
+		individualCalls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data":    []map[string]any{{"date": "2026-07-19", "actual_cost": 4.5, "total_tokens": 45}},
+		})
+	}))
+	t.Cleanup(httpServer.Close)
+	provider := &sub2apiRelay{
+		client: httpServer.Client(), adminURL: httpServer.URL, baseURL: httpServer.URL + "/v1",
+		apiKey: "test-admin-key", model: "test-model", logger: zap.NewNop(), teamTrends: cache,
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(teamTrendBatchOriginTimeout+75*time.Millisecond))
+	defer cancel()
+
+	got, err := provider.GetUsageTrendForUsers(ctx, []int64{447, 448}, params)
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
+	}
+	if batchCalls.Load() != 0 || individualCalls.Load() != 2 || len(got) != 2 {
+		t.Fatalf("batch/individual/results = %d/%d/%#v, want 0/2/two", batchCalls.Load(), individualCalls.Load(), got)
+	}
+	if faultStore.acquireCalls.Load() != 2 || metrics.count("lease_failed") != 1 {
+		t.Fatalf("acquire calls/metrics = %d/%v, want delayed second acquire failure", faultStore.acquireCalls.Load(), metrics.outcomesSnapshot())
+	}
+}
+
 func TestSub2APITeamTrendRedisNearDeadlineInitialMissesStillUseBatch(t *testing.T) {
 	server := miniredis.RunT(t)
 	store := newTeamTrendRedisTestStore(t, server)
@@ -892,11 +955,14 @@ func waitForTeamTrendMetric(t *testing.T, metrics *teamTrendRedisTestMetrics, ou
 
 type teamTrendOrchestrationFaultStore struct {
 	readcache.MultiStore
-	mgetErr    error
-	setManyErr error
-	acquireErr error
-	ttlErr     error
-	releaseErr error
+	mgetErr           error
+	setManyErr        error
+	acquireErr        error
+	acquireErrAfter   int64
+	acquireErrorDelay time.Duration
+	acquireCalls      atomic.Int64
+	ttlErr            error
+	releaseErr        error
 }
 
 func (s *teamTrendOrchestrationFaultStore) MGet(ctx context.Context, keys []string) ([][]byte, error) {
@@ -914,7 +980,16 @@ func (s *teamTrendOrchestrationFaultStore) SetMany(ctx context.Context, items []
 }
 
 func (s *teamTrendOrchestrationFaultStore) TryAcquireLease(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
-	if s.acquireErr != nil {
+	call := s.acquireCalls.Add(1)
+	if s.acquireErr != nil && (s.acquireErrAfter <= 1 || call >= s.acquireErrAfter) {
+		if s.acquireErrorDelay > 0 {
+			timer := time.NewTimer(s.acquireErrorDelay)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+			}
+		}
 		return false, s.acquireErr
 	}
 	return s.MultiStore.TryAcquireLease(ctx, key, token, ttl)
