@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Redis via `github.com/redis/go-redis/v9`, `miniredis`, Gin HTTP adapters, zap structured logging, Prometheus cache metrics.
 
-**Status:** In progress. Task 4 implementation and verification are complete; the Task 4 commit and Tasks 5-7 remain.
+**Status:** In progress. Tasks 1-4 are complete; Tasks 5-7 remain.
 
 ## Global Constraints
 
@@ -584,7 +584,7 @@ go test -race ./internal/relay -run 'TeamTrend|TeamUsageTrendForUsers' -count=1
 
 Expected: both commands pass; an untruncated two-user cold test records one batch and no individual trend GET.
 
-- [ ] **Step 9: Commit Task 4**
+- [x] **Step 9: Commit Task 4**
 
 ```bash
 git add -A backend/internal/relay docs/superpowers/plans/2026-07-20-team-usage-redis-batch-trend.md
