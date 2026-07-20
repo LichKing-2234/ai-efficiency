@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Redis via `github.com/redis/go-redis/v9`, `miniredis`, Gin HTTP adapters, zap structured logging, Prometheus cache metrics.
 
-**Status:** Task 6 is complete and locally verified. Task 7 delivery is in progress through PR #191; merge, staging release, and acceptance remain.
+**Status:** Task 6 is complete and locally verified. PR #191 is merged and deployed to staging. The staging audit was executed on 2026-07-20, but the acceptance gate failed; Step 7 intentionally remains incomplete pending a separately approved follow-up.
 
 ## Global Constraints
 
@@ -843,7 +843,7 @@ Delivery evidence on 2026-07-20:
 - Merge, image publication, Helm rollout, Redis clearing, and staging acceptance
   remain pending.
 
-- [ ] **Step 3: Build and publish the exact staging image**
+- [x] **Step 3: Build and publish the exact staging image**
 
 After the PR is reviewed and merged, verify its merge tree and fast-forward the
 dedicated integration worktree before deriving the image tag:
@@ -873,7 +873,15 @@ docker buildx imagetools inspect "${image}:${tag}"
 
 Expected: manifest includes both `linux/amd64` and `linux/arm64`.
 
-- [ ] **Step 4: Deploy only `ai-efficiency-staging` through the existing Helm path**
+Image evidence on 2026-07-20:
+
+- PR #191 merged into `feat/platform-loading-performance` as `cb9728decd3f`.
+- Published `ghcr.io/lichking-2234/ai-efficiency:staging-cb9728decd3fb90ee807c8c8f87e19f2f17c752c`.
+- OCI index digest is
+  `sha256:2b2a1178cf196b91c7a8a0e45166aa20a39f3862eedcc7e8320214af92709942`.
+- Registry inspection contains both `linux/amd64` and `linux/arm64` manifests.
+
+- [x] **Step 4: Deploy only `ai-efficiency-staging` through the existing Helm path**
 
 In `/Users/admin/helm`, update only `.image.tag` and
 `.postgres.restore.snapshotId` in the tracked
@@ -954,7 +962,20 @@ curl -fsS --max-time 20 https://ai-efficiency.la3.agoralab.co/api/v1/health/read
 The Helm commit must contain only the metadata selectors. Verify production
 image/revision remain unchanged.
 
-- [ ] **Step 5: Clear only relevant staging Redis keys**
+Rollout evidence on 2026-07-20:
+
+- Helm metadata commit `a205c86` changed only the staging image tag and restore
+  snapshot selectors.
+- The two-phase rollout completed at staging revision 34; restore job
+  `ai-efficiency-staging-postgres-restore-cb9728decd3f` succeeded and both the
+  staging Postgres StatefulSet and application Deployment rolled out.
+- Staging readiness reports version `staging-cb9728d`, commit `cb9728decd3f`,
+  and database, Redis, and Relay checks up.
+- Production remained at Helm revision 69 and image
+  `ghcr.io/lichking-2234/ai-efficiency:v0.1.0-preview.73`; production readiness
+  also remained healthy.
+
+- [x] **Step 5: Clear only relevant staging Redis keys**
 
 Stop every staging audit client and issue no Personal Usage or four-lane Team
 Usage audit request for a quiescent window longer than the 15-second lease TTL;
@@ -1042,7 +1063,15 @@ The lease prefix is verification-only and must never be deleted by this
 procedure. Do not run `FLUSHDB`, delete auth/session/OAuth keys, use another
 Redis DB, or touch the production release.
 
-- [ ] **Step 6: Run four-lane cold and warm audits**
+Cold-cache preparation evidence on 2026-07-20:
+
+- Staging audit traffic was quiescent for 16 seconds before inspection.
+- The batch lease prefix count was zero.
+- All five approved value/response prefixes were already empty, so each
+  reported zero deletions; no other Redis key or database was touched.
+- The temporary Redis CLI Pod completed with exit code zero and was deleted.
+
+- [x] **Step 6: Run four-lane cold and warm audits**
 
 Start Summary, Trend, Members, and Organization concurrently for the same
 authorized 251-member/235-Relay-member scope and normalized range. Capture wall
@@ -1065,6 +1094,39 @@ Relay 429/5xx/transport/timeout = 0
 Compare selected-user dates, actual costs, token totals, and aggregates against
 the individual-origin evidence. Keep credentials, user records, and tokens out
 of the repository.
+
+Staging audit evidence on 2026-07-20:
+
+- Audited image
+  `ghcr.io/lichking-2234/ai-efficiency:staging-cb9728decd3fb90ee807c8c8f87e19f2f17c752c`
+  at OCI digest
+  `sha256:2b2a1178cf196b91c7a8a0e45166aa20a39f3862eedcc7e8320214af92709942`
+  and Helm revision 34.
+- Cold lane timings were Summary `16.705s`, Trend `16.672s`, Members
+  `16.986s`, and Organization `16.712s`; complete readiness was `16.986s`,
+  above the `9.0s` gate.
+- Warm lane timings were Summary `7.070s`, Trend `0.878s`, Members `7.320s`,
+  and Organization `7.300s`; only Trend met the `1.5s` gate and complete
+  readiness was `7.320s`.
+- Cold Relay evidence was 22 calls and `35.916s` cumulative dependency time,
+  all `2xx`; the primitive recorded 2 batch origins, 0 possible truncations,
+  and 0 individual fallbacks. Warm evidence was 15 Relay calls, `11.912s`
+  cumulative dependency time, all `2xx`, with 0 new batch origins and 0
+  individual fallbacks. Privacy-safe dependency telemetry exposes generic HTTP
+  timings but not Relay paths, so individual batch-origin durations cannot be
+  attributed from logs.
+- Both rounds returned 251 members and 236 Relay-linked members. The live scope
+  had increased from the approved 235-Relay-member fixture, so the fixed count
+  expectation also failed. Summary and Team Total cost/token aggregates matched
+  exactly across cold and warm rounds; no raw aggregate values or identities
+  were persisted.
+- The cold round recorded one error each for the Summary, Members, and
+  Organization response caches, one `relay_user_trend` error, and one Redis
+  stale-connection increment. Lease-failure, malformed, Redis wait, and Redis
+  timeout deltas were zero. The warm round added none of those errors.
+- The final verdict was `FAIL`. Per the gate, no second audit, longer TTL,
+  global snapshot, Pod-local completed-result cache, or Sub2API change was
+  attempted.
 
 - [ ] **Step 7: Record evidence and stop at the gate**
 
