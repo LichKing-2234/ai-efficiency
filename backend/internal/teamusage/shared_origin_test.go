@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -144,6 +145,56 @@ func TestSharedOriginOrganizationProjectsOnlyAuthorizedBranch(t *testing.T) {
 	if len(provider.summaryRequestBatches) != 1 || len(provider.summaryRequestBatches[0]) != 3 ||
 		provider.trendCalls != 1 || len(provider.trendRequestUserIDs) != 3 {
 		t.Fatalf("full-scope origin calls = stats %#v trend %d/%#v", provider.summaryRequestBatches, provider.trendCalls, provider.trendRequestUserIDs)
+	}
+}
+
+func TestSharedOriginOrganizationKeepsLargeScopeBranchBounded(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	scope, provider := membersTestData(501)
+	branchID, siblingID := "department-branch", "department-sibling"
+	scope.MemberTreeRootIDs = []string{branchID, siblingID}
+	scope.MemberTreeDepartments = []representativescope.DepartmentScope{
+		{ExternalID: branchID, Name: "Branch"},
+		{ExternalID: siblingID, Name: "Sibling"},
+	}
+	for index := range scope.OverviewSubjects {
+		departmentID := siblingID
+		if index == 0 {
+			departmentID = branchID
+		}
+		scope.OverviewSubjects[index].DepartmentExternalID = departmentID
+		scope.OverviewSubjects[index].DepartmentExternalIDs = []string{departmentID}
+		scope.OverviewSubjects[index].DepartmentDisplayPath = departmentID
+	}
+
+	responseCache, _ := testSnapshotCache(t, time.Date(2026, 7, 20, 8, 0, 0, 0, time.UTC), 0)
+	originCache, originServer := testOriginCache(t, time.Now, "large-branch-token")
+	service := newServiceWithSnapshotCacheForTest(
+		client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil,
+		responseCache, testMemberCursorSecret,
+	)
+	service.originCache = originCache
+
+	response, err := service.Organization(context.Background(), 1, OrganizationParams{
+		OverviewParams: testMembersParams().OverviewParams, ParentDepartmentExternalID: branchID,
+	})
+	if err != nil {
+		t.Fatalf("Organization() error = %v", err)
+	}
+	if len(response.Members) != 1 {
+		t.Fatalf("branch members = %d, want 1", len(response.Members))
+	}
+	if len(provider.summaryRequestBatches) != 1 || len(provider.summaryRequestBatches[0]) != 1 {
+		t.Fatalf("branch stats requests = %#v, want one single-user batch", provider.summaryRequestBatches)
+	}
+	if provider.trendCalls != 0 {
+		t.Fatalf("branch trend requests = %d, want 0", provider.trendCalls)
+	}
+	for _, key := range originServer.Keys() {
+		if strings.Contains(key, "team-usage-origin") {
+			t.Fatalf("large-scope Organization created full origin key %q", key)
+		}
 	}
 }
 

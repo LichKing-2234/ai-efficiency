@@ -113,6 +113,10 @@ func (s *Service) readOrganizationSnapshot(ctx context.Context, actorUserID int,
 	if !found {
 		return nil, "", ErrOutOfScope
 	}
+	overviewSubjects := scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = scope.Subjects
+	}
 	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
@@ -126,7 +130,7 @@ func (s *Service) readOrganizationSnapshot(ctx context.Context, actorUserID int,
 	}
 
 	loader := func(loadCtx context.Context) (OrganizationOriginLoadResult, error) {
-		if s.originCache != nil {
+		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
 			request := &splitReadRequest{
 				actorUserID: actorUserID, params: params, scope: scope, providerConfig: *providerConfig, scopeHash: scopeHash,
 			}

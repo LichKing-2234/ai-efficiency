@@ -2,9 +2,11 @@ package teamusage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -129,6 +131,51 @@ func TestOriginCacheMalformedAndOversizedValuesReload(t *testing.T) {
 	}
 }
 
+func TestOriginCacheIncompletePointsByAuthorizedUserReloads(t *testing.T) {
+	cache, server := testOriginCache(t, time.Now, "incomplete-points-token")
+	key := testOriginCacheKey()
+	var loads atomic.Int32
+	loader := func(context.Context) (*teamUsageScopeOrigin, error) {
+		loads.Add(1)
+		return testScopeOrigin(), nil
+	}
+	if _, err := cache.GetOrLoad(context.Background(), key, loader); err != nil {
+		t.Fatalf("prime GetOrLoad() error = %v", err)
+	}
+
+	encodedKey, err := originCacheKey("test", key)
+	if err != nil {
+		t.Fatalf("originCacheKey() error = %v", err)
+	}
+	stored, err := server.Get(encodedKey)
+	if err != nil {
+		t.Fatalf("read primed origin error = %v", err)
+	}
+	var envelope originCacheEnvelope
+	if err := json.Unmarshal([]byte(stored), &envelope); err != nil {
+		t.Fatalf("decode primed origin error = %v", err)
+	}
+	delete(envelope.Origin.PointsByUser, 102)
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("encode incomplete origin error = %v", err)
+	}
+	server.Set(encodedKey, string(encoded))
+	server.SetTTL(encodedKey, time.Minute)
+	loads.Store(0)
+
+	result, err := cache.GetOrLoad(context.Background(), key, loader)
+	if err != nil {
+		t.Fatalf("incomplete GetOrLoad() error = %v", err)
+	}
+	if loads.Load() != 1 {
+		t.Fatalf("authoritative reloads = %d, want 1", loads.Load())
+	}
+	if result.PointsByUser[102] == nil {
+		t.Fatalf("reloaded points = %#v, want authorized user 102 restored", result.PointsByUser)
+	}
+}
+
 func TestOriginPayloadBoundSkipsOversizedWrites(t *testing.T) {
 	if scopeOriginPayloadMaxBytes != 2<<20 {
 		t.Fatalf("scopeOriginPayloadMaxBytes = %d, want repository-aligned 2 MiB bound", scopeOriginPayloadMaxBytes)
@@ -201,10 +248,17 @@ func TestOriginCacheCrossPodLeaseCollapsesOneLoad(t *testing.T) {
 	clientB := redis.NewClient(&redis.Options{Addr: server.Addr()})
 	t.Cleanup(func() { _ = clientA.Close(); _ = clientB.Close() })
 	cacheA := newTestOriginCache(t, readcache.NewRedisStore(clientA), time.Now, "pod-a-token")
-	cacheB := newTestOriginCache(t, readcache.NewRedisStore(clientB), time.Now, "pod-b-token")
+	waiterStore := &countingOriginWaiterStore{
+		Store:            readcache.NewRedisStore(clientB),
+		positiveLeaseTTL: make(chan struct{}),
+	}
+	cacheB := newTestOriginCache(t, waiterStore, time.Now, "pod-b-token")
 
 	started := make(chan struct{})
 	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseHolder := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseHolder)
 	var loads atomic.Int32
 	loader := func(ctx context.Context) (*teamUsageScopeOrigin, error) {
 		if loads.Add(1) == 1 {
@@ -226,8 +280,25 @@ func TestOriginCacheCrossPodLeaseCollapsesOneLoad(t *testing.T) {
 		t.Fatal("first Pod did not start the origin")
 	}
 	go func() { _, err := cacheB.GetOrLoad(context.Background(), testOriginCacheKey(), loader); results <- err }()
-	time.Sleep(25 * time.Millisecond)
-	close(release)
+	select {
+	case <-waiterStore.positiveLeaseTTL:
+	case <-time.After(time.Second):
+		t.Fatal("waiter did not observe a positive lease TTL")
+	}
+	if got := waiterStore.getCalls.Load(); got != 1 {
+		t.Fatalf("waiter GET calls before holder release = %d, want initial miss only", got)
+	}
+	deadline := time.Now().Add(time.Second)
+	for waiterStore.leaseTTLCalls.Load() < 4 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := waiterStore.leaseTTLCalls.Load(); got < 4 {
+		t.Fatalf("waiter lease TTL polls = %d, want at least 4 before holder release", got)
+	}
+	if got := waiterStore.getCalls.Load(); got != 1 {
+		t.Fatalf("waiter GET calls during positive lease = %d, want 1", got)
+	}
+	releaseHolder()
 	for index := 0; index < 2; index++ {
 		if err := <-results; err != nil {
 			t.Fatalf("cross-Pod GetOrLoad() error = %v", err)
@@ -235,6 +306,9 @@ func TestOriginCacheCrossPodLeaseCollapsesOneLoad(t *testing.T) {
 	}
 	if loads.Load() != 1 {
 		t.Fatalf("cross-Pod origin loads = %d, want 1", loads.Load())
+	}
+	if got := waiterStore.getCalls.Load(); got != 2 {
+		t.Fatalf("waiter final GET calls = %d, want initial miss plus one post-release read", got)
 	}
 }
 
@@ -285,6 +359,28 @@ func testScopeOrigin() *teamUsageScopeOrigin {
 type countingOriginSetStore struct {
 	readcache.Store
 	setCalls atomic.Int32
+}
+
+type countingOriginWaiterStore struct {
+	readcache.Store
+	getCalls         atomic.Int32
+	leaseTTLCalls    atomic.Int32
+	positiveTTLOnce  sync.Once
+	positiveLeaseTTL chan struct{}
+}
+
+func (s *countingOriginWaiterStore) Get(ctx context.Context, key string) ([]byte, error) {
+	s.getCalls.Add(1)
+	return s.Store.Get(ctx, key)
+}
+
+func (s *countingOriginWaiterStore) LeaseTTL(ctx context.Context, key string) (time.Duration, error) {
+	s.leaseTTLCalls.Add(1)
+	ttl, err := s.Store.LeaseTTL(ctx, key)
+	if err == nil && ttl > 0 {
+		s.positiveTTLOnce.Do(func() { close(s.positiveLeaseTTL) })
+	}
+	return ttl, err
 }
 
 func (s *countingOriginSetStore) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {

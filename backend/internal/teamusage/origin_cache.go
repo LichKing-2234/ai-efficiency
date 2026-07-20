@@ -212,15 +212,6 @@ func (c *OriginCache) loadWithLease(
 		c.record("lease_wait")
 
 		for {
-			origin, found, err = c.read(ctx, encodedKey, key)
-			if err != nil {
-				c.record("error")
-				return c.loadAuthoritative(ctx, encodedKey, key, loader, false)
-			}
-			if found {
-				c.record("fresh")
-				return origin, nil
-			}
 			ttl, ttlErr := c.leaseTTL(ctx, leaseKey)
 			if errors.Is(ttlErr, readcache.ErrMiss) {
 				break
@@ -361,6 +352,11 @@ func validTeamUsageScopeOrigin(origin *teamUsageScopeOrigin) bool {
 	}
 	for relayUserID, stat := range origin.StatsByRelayUserID {
 		if _, ok := authorized[relayUserID]; !ok || stat.UserID != relayUserID || !validOriginStat(stat) {
+			return false
+		}
+	}
+	for _, relayUserID := range origin.RelayUserIDs {
+		if points, ok := origin.PointsByUser[relayUserID]; !ok || points == nil {
 			return false
 		}
 	}
