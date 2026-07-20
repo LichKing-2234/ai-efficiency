@@ -945,9 +945,14 @@ image/revision remain unchanged.
 
 - [ ] **Step 5: Clear only relevant staging Redis keys**
 
-Create one temporary Redis CLI Pod in the staging release namespace. Derive the
-non-secret address from the Deployment and read the password only through the
-existing Kubernetes Secret. Delete only the five exact cache prefixes in Redis
+Stop every staging audit client and issue no Personal Usage or four-lane Team
+Usage audit request for a quiescent window longer than the 15-second lease TTL;
+wait at least 16 seconds after the last request. Do not send another audit
+request between that window and the cleanup. Then create one temporary Redis
+CLI Pod in the staging release namespace. Derive the non-secret address from
+the Deployment and read the password only through the existing Kubernetes
+Secret. First verify that the batch lease prefix is absent. Only after that
+check succeeds, delete the five exact value/response cache prefixes in Redis
 DB 2 and print counts, never key values:
 
 ```bash
@@ -988,6 +993,13 @@ spec:
         - |
           host="\${REDIS_ADDR%:*}"
           port="\${REDIS_ADDR##*:}"
+          lease_pattern='ai-efficiency:relay-user-trend-batch-lease:v1:*'
+          lease_count=\$(redis-cli -h "\${host}" -p "\${port}" -n 2 --scan --pattern "\${lease_pattern}" | awk 'END { print NR + 0 }')
+          printf '%s %s\n' "\${lease_pattern}" "\${lease_count}"
+          if [[ "\${lease_count}" -ne 0 ]]; then
+            printf '%s\n' 'batch lease is still active; aborting without deleting cache values' >&2
+            exit 1
+          fi
           for pattern in \
             'ai-efficiency:relay-user-trend:v1:*' \
             'ae:ai-efficiency:team-usage-summary:v1:*' \
@@ -1015,8 +1027,9 @@ kubectl logs pod/ae-staging-cache-clean -n "${namespace}"
 kubectl delete pod ae-staging-cache-clean -n "${namespace}" --wait=true
 ```
 
-Do not run `FLUSHDB`, delete auth/session/OAuth keys, use another Redis DB, or
-touch the production release.
+The lease prefix is verification-only and must never be deleted by this
+procedure. Do not run `FLUSHDB`, delete auth/session/OAuth keys, use another
+Redis DB, or touch the production release.
 
 - [ ] **Step 6: Run four-lane cold and warm audits**
 

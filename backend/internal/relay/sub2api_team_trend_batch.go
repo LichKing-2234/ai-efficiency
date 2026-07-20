@@ -24,10 +24,10 @@ type teamTrendBatchResult struct {
 }
 
 type teamTrendBatchPoint struct {
-	Date       string  `json:"date"`
-	UserID     int64   `json:"user_id"`
-	Tokens     int64   `json:"tokens"`
-	ActualCost float64 `json:"actual_cost"`
+	Date       string   `json:"date"`
+	UserID     int64    `json:"user_id"`
+	Tokens     *int64   `json:"tokens"`
+	ActualCost *float64 `json:"actual_cost"`
 }
 
 type teamTrendBatchData struct {
@@ -120,10 +120,16 @@ func (s *sub2apiRelay) getTeamTrendBatch(
 		if strings.TrimSpace(row.Date) == "" {
 			return empty, fmt.Errorf("relay: team trend batch: row %d has blank date", index)
 		}
-		if row.Tokens < 0 {
+		if row.Tokens == nil {
+			return empty, fmt.Errorf("relay: team trend batch: row %d is missing tokens", index)
+		}
+		if *row.Tokens < 0 {
 			return empty, fmt.Errorf("relay: team trend batch: row %d has negative tokens", index)
 		}
-		if math.IsNaN(row.ActualCost) || math.IsInf(row.ActualCost, 0) {
+		if row.ActualCost == nil {
+			return empty, fmt.Errorf("relay: team trend batch: row %d is missing actual cost", index)
+		}
+		if math.IsNaN(*row.ActualCost) || math.IsInf(*row.ActualCost, 0) {
 			return empty, fmt.Errorf("relay: team trend batch: row %d has non-finite actual cost", index)
 		}
 
@@ -148,9 +154,9 @@ func (s *sub2apiRelay) getTeamTrendBatch(
 			continue
 		}
 		tokens := new(int64)
-		*tokens = row.Tokens
+		*tokens = *row.Tokens
 		pointsByUser[row.UserID] = append(pointsByUser[row.UserID], UsageTrendPoint{
-			Date: row.Date, ActualCost: row.ActualCost, TotalTokens: tokens,
+			Date: row.Date, ActualCost: *row.ActualCost, TotalTokens: tokens,
 		})
 	}
 	for userID := range pointsByUser {

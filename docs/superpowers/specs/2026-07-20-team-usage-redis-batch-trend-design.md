@@ -277,9 +277,12 @@ The lease holder double-checks `MGET`, calls the batch only for remaining
 misses, writes valid per-user entries with a pipeline, and releases the
 token-protected lease. A waiter polls `MGET` while the lease exists. If the
 lease disappears without satisfying every miss, it competes for the next lease
-only when its caller still has time; otherwise it proceeds directly to the
-individual fallback. Waiting and lease acquisition remain bounded by the
-caller context and the existing Team Usage origin deadline.
+only when the caller context has at least the full 12-second batch-origin budget
+remaining; otherwise it proceeds directly to the individual fallback. The same
+post-wait budget rule applies before fail-open batch work after a lease command
+failure. It does not change the initial batch-first attempt for two or more
+misses. Waiting and lease acquisition remain bounded by the caller context and
+the existing Team Usage origin deadline.
 
 If Redis commands fail, the adapter records the error and fails open to the
 batch or individual origin. Multiple Pods may then duplicate work, but no Pod

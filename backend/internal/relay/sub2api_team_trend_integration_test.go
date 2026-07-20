@@ -282,6 +282,7 @@ func TestSub2APITeamTrendRedisCommandFailuresAreFailOpen(t *testing.T) {
 		configure       func(*teamTrendOrchestrationFaultStore)
 		preAcquireLease bool
 		wantLeaseFailed bool
+		wantError       bool
 	}{
 		{name: "MGET", configure: func(store *teamTrendOrchestrationFaultStore) { store.mgetErr = errors.New("synthetic MGET failure") }},
 		{name: "pipeline", configure: func(store *teamTrendOrchestrationFaultStore) {
@@ -290,7 +291,7 @@ func TestSub2APITeamTrendRedisCommandFailuresAreFailOpen(t *testing.T) {
 		{name: "SETNX", configure: func(store *teamTrendOrchestrationFaultStore) {
 			store.acquireErr = errors.New("synthetic SETNX failure")
 		}, wantLeaseFailed: true},
-		{name: "PTTL", configure: func(store *teamTrendOrchestrationFaultStore) { store.ttlErr = errors.New("synthetic PTTL failure") }, preAcquireLease: true, wantLeaseFailed: true},
+		{name: "PTTL", configure: func(store *teamTrendOrchestrationFaultStore) { store.ttlErr = errors.New("synthetic PTTL failure") }, preAcquireLease: true, wantLeaseFailed: true, wantError: true},
 		{name: "release", configure: func(store *teamTrendOrchestrationFaultStore) {
 			store.releaseErr = errors.New("synthetic release failure")
 		}, wantLeaseFailed: true},
@@ -345,6 +346,9 @@ func TestSub2APITeamTrendRedisCommandFailuresAreFailOpen(t *testing.T) {
 			}
 			if test.wantLeaseFailed && metrics.count("lease_failed") == 0 {
 				t.Fatalf("metrics = %v, want lease_failed", metrics.outcomesSnapshot())
+			}
+			if test.wantError && metrics.count("error") == 0 {
+				t.Fatalf("metrics = %v, want error", metrics.outcomesSnapshot())
 			}
 		})
 	}
@@ -436,8 +440,106 @@ func TestSub2APITeamTrendRedisWaiterReacquiresAfterLeaseDisappears(t *testing.T)
 	if batchCalls.Load() != 1 || len(got) != 2 {
 		t.Fatalf("batch/results = %d/%#v, want 1/two", batchCalls.Load(), got)
 	}
-	if metrics.count("lease_wait") != 1 || metrics.count("lease_acquired") != 1 || metrics.count("lease_failed") != 0 {
-		t.Fatalf("metrics = %v, want one wait, one reacquire, no lease_failed", metrics.outcomesSnapshot())
+	if metrics.count("lease_wait") != 1 || metrics.count("lease_acquired") != 1 ||
+		metrics.count("lease_failed") != 0 || metrics.count("error") != 0 {
+		t.Fatalf("metrics = %v, want one wait, one reacquire, no lease_failed or error", metrics.outcomesSnapshot())
+	}
+}
+
+func TestSub2APITeamTrendRedisNearDeadlineWaiterSkipsSecondBatch(t *testing.T) {
+	server := miniredis.RunT(t)
+	store := newTeamTrendRedisTestStore(t, server)
+	params := testSub2APITeamTrendParams()
+	baseOptions := teamTrendRedisCacheOptions{Namespace: "wait-near-deadline", ProviderID: 7, ProviderVersion: 3}
+	baseCache := newTeamTrendRedisTestCache(t, store, baseOptions)
+	leaseKey, token, acquired, err := baseCache.TryAcquireBatchLease(context.Background(), []int64{437, 438}, params, 500)
+	if err != nil || !acquired {
+		t.Fatalf("pre-acquire lease = %v, %v", acquired, err)
+	}
+	metrics := &teamTrendRedisTestMetrics{}
+	var releaseOnce sync.Once
+	baseOptions.Metrics = metrics
+	baseOptions.Sleep = func(context.Context, time.Duration) error {
+		releaseOnce.Do(func() { baseCache.ReleaseBatchLease(leaseKey, token) })
+		return nil
+	}
+	cache := newTeamTrendRedisTestCache(t, store, baseOptions)
+	var batchCalls atomic.Int64
+	var individualCalls atomic.Int64
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/admin/dashboard/users-trend" {
+			batchCalls.Add(1)
+			writeSub2APITeamTrendBatchRows(t, w, []map[string]any{
+				{"date": "2026-07-19", "user_id": 437, "tokens": 37, "actual_cost": 4.37},
+				{"date": "2026-07-19", "user_id": 438, "tokens": 38, "actual_cost": 4.38},
+			})
+			return
+		}
+		individualCalls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data":    []map[string]any{{"date": "2026-07-19", "actual_cost": 4.5, "total_tokens": 45}},
+		})
+	}))
+	t.Cleanup(httpServer.Close)
+	provider := &sub2apiRelay{
+		client: httpServer.Client(), adminURL: httpServer.URL, baseURL: httpServer.URL + "/v1",
+		apiKey: "test-admin-key", model: "test-model", logger: zap.NewNop(), teamTrends: cache,
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(teamTrendBatchOriginTimeout-time.Second))
+	defer cancel()
+
+	got, err := provider.GetUsageTrendForUsers(ctx, []int64{437, 438}, params)
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
+	}
+	if batchCalls.Load() != 0 || individualCalls.Load() != 2 || len(got) != 2 {
+		t.Fatalf("batch/individual/results = %d/%d/%#v, want 0/2/two", batchCalls.Load(), individualCalls.Load(), got)
+	}
+	if metrics.count("lease_wait") != 1 || metrics.count("lease_acquired") != 0 {
+		t.Fatalf("metrics = %v, want initial lease wait without reacquire", metrics.outcomesSnapshot())
+	}
+}
+
+func TestSub2APITeamTrendRedisNearDeadlineInitialMissesStillUseBatch(t *testing.T) {
+	server := miniredis.RunT(t)
+	store := newTeamTrendRedisTestStore(t, server)
+	metrics := &teamTrendRedisTestMetrics{}
+	cache := newTeamTrendRedisTestCache(t, store, teamTrendRedisCacheOptions{
+		Namespace: "initial-near-deadline", ProviderID: 7, ProviderVersion: 3, Metrics: metrics,
+	})
+	var batchCalls atomic.Int64
+	var individualCalls atomic.Int64
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/admin/dashboard/users-trend" {
+			individualCalls.Add(1)
+			http.Error(w, "unexpected individual origin", http.StatusInternalServerError)
+			return
+		}
+		batchCalls.Add(1)
+		writeSub2APITeamTrendBatchRows(t, w, []map[string]any{
+			{"date": "2026-07-19", "user_id": 439, "tokens": 39, "actual_cost": 4.39},
+			{"date": "2026-07-19", "user_id": 440, "tokens": 40, "actual_cost": 4.40},
+		})
+	}))
+	t.Cleanup(httpServer.Close)
+	provider := &sub2apiRelay{
+		client: httpServer.Client(), adminURL: httpServer.URL, baseURL: httpServer.URL + "/v1",
+		apiKey: "test-admin-key", model: "test-model", logger: zap.NewNop(), teamTrends: cache,
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(teamTrendBatchOriginTimeout-time.Second))
+	defer cancel()
+
+	got, err := provider.GetUsageTrendForUsers(ctx, []int64{439, 440}, testSub2APITeamTrendParams())
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
+	}
+	if batchCalls.Load() != 1 || individualCalls.Load() != 0 || len(got) != 2 {
+		t.Fatalf("batch/individual/results = %d/%d/%#v, want 1/0/two", batchCalls.Load(), individualCalls.Load(), got)
+	}
+	if metrics.count("lease_acquired") != 1 || metrics.count("batch_origin") != 1 {
+		t.Fatalf("metrics = %v, want initial lease and batch origin", metrics.outcomesSnapshot())
 	}
 }
 

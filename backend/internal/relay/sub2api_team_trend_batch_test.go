@@ -193,6 +193,39 @@ func TestTeamTrendBatchRejectsInvalidRowsAndCardinality(t *testing.T) {
 	}
 }
 
+func TestTeamTrendBatchRejectsMissingOrNullNumericFields(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "omitted tokens",
+			body: `{"success":true,"data":{"trend":[{"date":"2026-07-01","user_id":101,"actual_cost":1}]}}`,
+		},
+		{
+			name: "null tokens",
+			body: `{"success":true,"data":{"trend":[{"date":"2026-07-01","user_id":101,"tokens":null,"actual_cost":1}]}}`,
+		},
+		{
+			name: "omitted actual cost",
+			body: `{"success":true,"data":{"trend":[{"date":"2026-07-01","user_id":101,"tokens":1}]}}`,
+		},
+		{
+			name: "null actual cost",
+			body: `{"success":true,"data":{"trend":[{"date":"2026-07-01","user_id":101,"tokens":1,"actual_cost":null}]}}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := newTeamTrendBatchResponseRelay(t, http.StatusOK, test.body)
+			if _, err := provider.getTeamTrendBatch(context.Background(), []int64{101}, TeamMemberTrendParams{}, 500); err == nil {
+				t.Fatal("getTeamTrendBatch() error = nil, want required-field rejection")
+			}
+		})
+	}
+}
+
 func TestTeamTrendBatchRejectsStatusEnvelopeAndJSONFailures(t *testing.T) {
 	tests := []struct {
 		name       string

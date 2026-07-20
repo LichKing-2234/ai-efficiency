@@ -107,7 +107,7 @@ func (s *sub2apiRelay) loadTeamTrendBatchMisses(
 	}
 	if acquired {
 		defer s.teamTrends.ReleaseBatchLease(leaseKey, token)
-		return s.loadTeamTrendLeaseHolder(ctx, misses, positiveMisses, params, limit)
+		return s.loadTeamTrendLeaseHolder(ctx, misses, positiveMisses, params, limit, false)
 	}
 	return s.waitForTeamTrendLease(ctx, misses, positiveMisses, params, limit, leaseKey)
 }
@@ -118,6 +118,7 @@ func (s *sub2apiRelay) loadTeamTrendLeaseHolder(
 	positiveMisses []int64,
 	params TeamMemberTrendParams,
 	limit int,
+	requireFullBatchBudget bool,
 ) (map[int64][]UsageTrendPoint, []int64, error) {
 	resolved, remaining := s.readTeamTrendCacheFailOpen(ctx, positiveMisses, params)
 	if err := ctx.Err(); err != nil {
@@ -125,6 +126,9 @@ func (s *sub2apiRelay) loadTeamTrendLeaseHolder(
 	}
 	remaining = uniquePositiveTeamTrendRedisIDs(remaining, false)
 	if len(remaining) < 2 {
+		return resolved, unresolvedTeamTrendIDs(misses, resolved), nil
+	}
+	if requireFullBatchBudget && !hasFullTeamTrendBatchBudget(ctx) {
 		return resolved, unresolvedTeamTrendIDs(misses, resolved), nil
 	}
 
@@ -165,44 +169,52 @@ func (s *sub2apiRelay) waitForTeamTrendLease(
 		}
 
 		ttl, err := s.teamTrends.LeaseTTL(ctx, leaseKey)
-		if err != nil && !errors.Is(err, readcache.ErrMiss) {
+		runDirectBatch := err != nil && !errors.Is(err, readcache.ErrMiss)
+		if runDirectBatch {
 			s.teamTrends.record("lease_failed")
-			batched, _, batchErr := s.runTeamTrendBatch(ctx, misses, pending, params, limit)
-			if batchErr != nil {
-				return nil, nil, batchErr
-			}
-			mergeUsageTrendMap(resolved, batched)
-			return resolved, unresolvedTeamTrendIDs(misses, resolved), nil
 		}
-		if ttl > 0 {
+		if !runDirectBatch && ttl > 0 {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
 		}
-
-		newLeaseKey, token, acquired, err := s.teamTrends.TryAcquireBatchLease(ctx, pending, params, limit)
-		if err != nil {
-			s.teamTrends.record("lease_failed")
-			batched, _, batchErr := s.runTeamTrendBatch(ctx, misses, pending, params, limit)
-			if batchErr != nil {
-				return nil, nil, batchErr
-			}
-			mergeUsageTrendMap(resolved, batched)
+		if !hasFullTeamTrendBatchBudget(ctx) {
 			return resolved, unresolvedTeamTrendIDs(misses, resolved), nil
 		}
-		leaseKey = newLeaseKey
-		if !acquired {
-			continue
+
+		if !runDirectBatch {
+			newLeaseKey, token, acquired, acquireErr := s.teamTrends.TryAcquireBatchLease(ctx, pending, params, limit)
+			if acquireErr != nil {
+				s.teamTrends.record("lease_failed")
+				runDirectBatch = true
+			} else {
+				leaseKey = newLeaseKey
+				if !acquired {
+					continue
+				}
+				defer s.teamTrends.ReleaseBatchLease(newLeaseKey, token)
+				holderValues, _, holderErr := s.loadTeamTrendLeaseHolder(ctx, misses, pending, params, limit, true)
+				if holderErr != nil {
+					return nil, nil, holderErr
+				}
+				mergeUsageTrendMap(resolved, holderValues)
+				return resolved, unresolvedTeamTrendIDs(misses, resolved), nil
+			}
 		}
-		defer s.teamTrends.ReleaseBatchLease(newLeaseKey, token)
-		holderValues, _, holderErr := s.loadTeamTrendLeaseHolder(ctx, misses, pending, params, limit)
-		if holderErr != nil {
-			return nil, nil, holderErr
+
+		batched, _, batchErr := s.runTeamTrendBatch(ctx, misses, pending, params, limit)
+		if batchErr != nil {
+			return nil, nil, batchErr
 		}
-		mergeUsageTrendMap(resolved, holderValues)
+		mergeUsageTrendMap(resolved, batched)
 		return resolved, unresolvedTeamTrendIDs(misses, resolved), nil
 	}
+}
+
+func hasFullTeamTrendBatchBudget(ctx context.Context) bool {
+	deadline, ok := ctx.Deadline()
+	return !ok || time.Until(deadline) >= teamTrendBatchOriginTimeout
 }
 
 func (s *sub2apiRelay) runTeamTrendBatch(

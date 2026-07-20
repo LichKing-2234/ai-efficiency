@@ -242,7 +242,9 @@ func (c *teamTrendRedisCache) LeaseTTL(ctx context.Context, leaseKey string) (ti
 	ttl, err := c.options.Store.LeaseTTL(commandCtx, leaseKey)
 	cancel()
 	if err != nil {
-		c.record("error")
+		if !errors.Is(err, readcache.ErrMiss) {
+			c.record("error")
+		}
 		return 0, fmt.Errorf("read Relay user trend batch lease TTL: %w", err)
 	}
 	return ttl, nil
