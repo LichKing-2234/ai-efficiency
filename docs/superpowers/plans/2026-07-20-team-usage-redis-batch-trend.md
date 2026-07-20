@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Redis via `github.com/redis/go-redis/v9`, `miniredis`, Gin HTTP adapters, zap structured logging, Prometheus cache metrics.
 
-**Status:** In progress. Tasks 1-4 are complete; Tasks 5-7 remain.
+**Status:** In progress. Tasks 1-5 are complete; Tasks 6-7 remain.
 
 ## Global Constraints
 
@@ -706,7 +706,7 @@ go test ./internal/readcache ./internal/relay ./internal/relayruntime ./internal
 
 Expected: all selected packages pass and production metrics include `relay_user_trend`.
 
-- [ ] **Step 8: Commit Task 5**
+- [x] **Step 8: Commit Task 5**
 
 ```bash
 git add backend/internal/relay/sub2api.go backend/internal/relay/sub2api_test.go backend/internal/telemetry/metrics.go backend/internal/telemetry/metrics_test.go backend/cmd/server/cache_metrics.go backend/cmd/server/cache_metrics_test.go backend/cmd/server/main.go backend/internal/relayruntime/manager_test.go docs/superpowers/plans/2026-07-20-team-usage-redis-batch-trend.md
