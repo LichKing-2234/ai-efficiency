@@ -77,6 +77,48 @@ func TestTeamTrendRedisCacheSharesNormalizedValuesAndClonesPoints(t *testing.T) 
 	}
 }
 
+func TestTeamTrendRedisCacheRoundTripsProvenEmptyTrend(t *testing.T) {
+	server := miniredis.RunT(t)
+	store := newTeamTrendRedisTestStore(t, server)
+	metrics := &teamTrendRedisTestMetrics{}
+	cache := newTeamTrendRedisTestCache(t, store, teamTrendRedisCacheOptions{
+		Namespace: "test", ProviderID: 7, ProviderVersion: 3, Metrics: metrics,
+	})
+	if err := cache.Write(context.Background(), map[int64][]UsageTrendPoint{101: nil}, testTeamTrendRedisParams(), "batch_origin"); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	keys := server.Keys()
+	if len(keys) != 1 {
+		t.Fatalf("Redis keys = %v", keys)
+	}
+	raw, err := server.Get(keys[0])
+	if err != nil {
+		t.Fatalf("Get(%q) error = %v", keys[0], err)
+	}
+	var encoded map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &encoded); err != nil {
+		t.Fatalf("decode Redis envelope: %v", err)
+	}
+	if string(encoded["points"]) != "[]" {
+		t.Fatalf("encoded points = %s, want []", encoded["points"])
+	}
+
+	values, misses, err := cache.Read(context.Background(), []int64{101}, testTeamTrendRedisParams())
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+	if len(misses) != 0 {
+		t.Fatalf("Read() misses = %v", misses)
+	}
+	points, ok := values[101]
+	if !ok || points == nil || len(points) != 0 {
+		t.Fatalf("Read() points/present = %#v/%v, want non-nil empty hit", points, ok)
+	}
+	if metrics.count("fresh") != 1 || metrics.count("malformed") != 0 {
+		t.Fatalf("metrics = %v", metrics.outcomesSnapshot())
+	}
+}
+
 func TestTeamTrendRedisCacheIdentityDimensionsDoNotCollide(t *testing.T) {
 	server := miniredis.RunT(t)
 	store := newTeamTrendRedisTestStore(t, server)
