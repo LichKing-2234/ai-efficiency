@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Redis via `github.com/redis/go-redis/v9`, `miniredis`, Gin HTTP adapters, zap structured logging, Prometheus cache metrics.
 
-**Status:** In progress. Tasks 1-2 are complete; Tasks 3-7 remain.
+**Status:** In progress. Tasks 1-2 are complete; Task 3 implementation and tests are complete with its commit pending; Tasks 4-7 remain.
 
 ## Global Constraints
 
@@ -385,7 +385,7 @@ func teamTrendBatchLimit(totalRequested int) int
 func (s *sub2apiRelay) getTeamTrendBatch(ctx context.Context, requestedUserIDs []int64, params TeamMemberTrendParams, limit int) (teamTrendBatchResult, error)
 ```
 
-- [ ] **Step 1: Write failing limit and mapping tests**
+- [x] **Step 1: Write failing limit and mapping tests**
 
 Table-test limits `(0,500)`, `(2,500)`, `(235,500)`, `(400,650)`,
 `(5000,5000)`, and `(9000,5000)`. Serve one successful envelope containing
@@ -394,7 +394,7 @@ the exact start/end/granularity/timezone/limit, unique count is three,
 `Complete=true` for limit 500, output contains only 101/102, dates are sorted,
 and `tokens` became independent `TotalTokens` pointers.
 
-- [ ] **Step 2: Run batch tests and verify RED**
+- [x] **Step 2: Run batch tests and verify RED**
 
 ```bash
 cd backend
@@ -403,7 +403,7 @@ go test ./internal/relay -run '^TestTeamTrendBatch' -count=1
 
 Expected: build failure because the batch types and methods do not exist.
 
-- [ ] **Step 3: Implement bounded private DTO decoding**
+- [x] **Step 3: Implement bounded private DTO decoding**
 
 Use private DTOs containing only `date`, `user_id`, `tokens`, and `actual_cost`.
 Issue one authenticated GET to `/api/v1/admin/dashboard/users-trend`. Send the
@@ -416,14 +416,14 @@ negative tokens, NaN/Inf costs, more unique users than limit, duplicate
 requested-ID set before building output. Set `Complete` only when unique count
 is less than limit.
 
-- [ ] **Step 4: Add truncation, malformed, filtering, and bound tests**
+- [x] **Step 4: Add truncation, malformed, filtering, and bound tests**
 
 Prove exactly `limit` yields `Complete=false`; fewer yields true; out-of-scope
 rows affect unique count but never output; duplicate keys fail; invalid fields,
 unsuccessful envelope, non-200, malformed/trailing/oversized bodies fail; and
 cancellation produces only one attempted HTTP request.
 
-- [ ] **Step 5: Run and format batch tests**
+- [x] **Step 5: Run and format batch tests**
 
 ```bash
 cd backend
