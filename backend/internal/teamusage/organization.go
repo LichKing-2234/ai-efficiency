@@ -176,6 +176,7 @@ type organizationBranchSelection struct {
 	childrenByParent map[string][]string
 	childIDs         []string
 	subjects         []representativescope.Subject
+	represented      []representativescope.Subject
 }
 
 func selectOrganizationBranch(scope *representativescope.Scope, parentID string) (organizationBranchSelection, bool) {
@@ -228,6 +229,7 @@ func selectOrganizationBranch(scope *representativescope.Scope, parentID string)
 	if len(source) == 0 {
 		source = scope.Subjects
 	}
+	selection.represented = append(selection.represented, source...)
 	for _, subject := range source {
 		if subject.SubjectType != "member" || !subjectIntersectsDepartments(subject, relevantDepartments) {
 			continue
@@ -245,13 +247,20 @@ func (s *Service) generateOrganizationSnapshot(ctx context.Context, branch organ
 		if !ok {
 			return nil, fmt.Errorf("team organization summary capability: %w", ErrProviderUnsupported)
 		}
+		resolver, err := s.newOverviewRelayUserResolver(ctx, provider)
+		if err != nil {
+			return nil, fmt.Errorf("resolve team organization Relay directory: %w", err)
+		}
 		var relayUserIDs []int64
-		var err error
-		resolvedSubjects, relayUserIDs, err = s.resolveSubjects(ctx, branch.subjects, provider)
+		resolvedSubjects, relayUserIDs, err = s.resolveSubjectsWithResolver(ctx, branch.subjects, resolver)
 		if err != nil {
 			return nil, fmt.Errorf("resolve team organization Relay subjects: %w", err)
 		}
-		statsByRelayUserID, err = s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+		_, representedRelayUserIDs, err := s.resolveSubjectsWithResolver(ctx, branch.represented, resolver)
+		if err != nil {
+			return nil, fmt.Errorf("resolve represented team organization Relay subjects: %w", err)
+		}
+		statsByRelayUserID, err = s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, representedRelayUserIDs, relay.TeamUsageSummaryParams{
 			StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 			Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone), RequireCompleteRange: true,
 		})

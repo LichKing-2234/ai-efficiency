@@ -481,7 +481,7 @@ func (s *Service) generateMembersSnapshot(ctx context.Context, scope *representa
 	if err != nil {
 		return nil, fmt.Errorf("resolve team members Relay subjects: %w", err)
 	}
-	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relayUserIDs, relay.TeamUsageSummaryParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
 		RequireCompleteRange: true,
@@ -527,7 +527,7 @@ func (s *Service) generateSummarySnapshot(ctx context.Context, scope *representa
 	if err != nil {
 		return nil, err
 	}
-	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relayUserIDs, relay.TeamUsageSummaryParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
 		RequireCompleteRange: true,
@@ -615,7 +615,7 @@ func (s *Service) loadTeamTrendOrigin(ctx context.Context, scope *representative
 	if err != nil {
 		return nil, err
 	}
-	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, nil, relay.TeamUsageSummaryParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
 	})
@@ -741,11 +741,14 @@ func (s *Service) resolveSubjects(ctx context.Context, source []representativesc
 	if err != nil {
 		return nil, nil, err
 	}
+	return s.resolveSubjectsWithResolver(ctx, source, overviewRelayResolver)
+}
 
+func (s *Service) resolveSubjectsWithResolver(ctx context.Context, source []representativescope.Subject, resolver *overviewRelayUserResolver) ([]representativescope.Subject, []int64, error) {
 	subjects := make([]representativescope.Subject, 0, len(source))
 	relayUserIDs := make([]int64, 0, len(source))
 	for _, subject := range source {
-		relayUserID, resolvedSubject, err := overviewRelayResolver.Resolve(ctx, subject)
+		relayUserID, resolvedSubject, err := resolver.Resolve(ctx, subject)
 		if err != nil {
 			if errors.Is(err, ErrNoRelayMapping) {
 				subjects = append(subjects, subject)
@@ -759,11 +762,19 @@ func (s *Service) resolveSubjects(ctx context.Context, source []representativesc
 	return subjects, relayUserIDs, nil
 }
 
-func (s *Service) loadTeamUsageStats(ctx context.Context, provider relay.TeamUsageSummaryProvider, relayUserIDs []int64, params relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+func (s *Service) loadTeamUsageStats(
+	ctx context.Context,
+	provider relay.TeamUsageSummaryProvider,
+	relayUserIDs []int64,
+	completeRangeUserIDs []int64,
+	params relay.TeamUsageSummaryParams,
+) (map[int64]relay.TeamUserUsageStats, error) {
 	uniqueRelayUserIDs := uniqueInt64s(relayUserIDs)
 	statsByRelayUserID := make(map[int64]relay.TeamUserUsageStats, len(uniqueRelayUserIDs))
+	statsParams := params
+	statsParams.RequireCompleteRange = false
 	for _, chunk := range chunkInt64s(uniqueRelayUserIDs, 100) {
-		stats, err := provider.GetBatchUserUsageStats(ctx, chunk, params)
+		stats, err := provider.GetBatchUserUsageStats(ctx, chunk, statsParams)
 		if err != nil {
 			return nil, fmt.Errorf("get batch team usage stats: %w", err)
 		}
@@ -777,7 +788,66 @@ func (s *Service) loadTeamUsageStats(ctx context.Context, provider relay.TeamUsa
 			}
 		}
 	}
+	if !params.RequireCompleteRange {
+		return statsByRelayUserID, nil
+	}
+
+	incompleteUserIDs := make([]int64, 0)
+	for _, relayUserID := range uniqueRelayUserIDs {
+		stat, found := statsByRelayUserID[relayUserID]
+		if found && (stat.RangeActualCost == nil || stat.RangeTotalTokens == nil) {
+			incompleteUserIDs = append(incompleteUserIDs, relayUserID)
+		}
+	}
+	if len(incompleteUserIDs) == 0 {
+		return statsByRelayUserID, nil
+	}
+	trendProvider, ok := provider.(relay.TeamMemberTrendProvider)
+	if !ok {
+		return statsByRelayUserID, nil
+	}
+	fullScopeUserIDs := uniqueInt64s(completeRangeUserIDs)
+	if len(fullScopeUserIDs) == 0 {
+		return statsByRelayUserID, nil
+	}
+	pointsByUser, err := trendProvider.GetUsageTrendForUsers(ctx, fullScopeUserIDs, relay.TeamMemberTrendParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+	})
+	if err != nil {
+		return statsByRelayUserID, nil
+	}
+	for _, relayUserID := range incompleteUserIDs {
+		points, found := pointsByUser[relayUserID]
+		if !found {
+			continue
+		}
+		actualCost, totalTokens, tokensComplete := summarizeTeamUsageRange(points)
+		stat := statsByRelayUserID[relayUserID]
+		if stat.RangeActualCost == nil {
+			stat.RangeActualCost = &actualCost
+		}
+		if stat.RangeTotalTokens == nil && tokensComplete {
+			stat.RangeTotalTokens = &totalTokens
+		}
+		statsByRelayUserID[relayUserID] = stat
+	}
 	return statsByRelayUserID, nil
+}
+
+func summarizeTeamUsageRange(points []relay.UsageTrendPoint) (float64, int64, bool) {
+	var actualCost float64
+	var totalTokens int64
+	tokensComplete := true
+	for _, point := range points {
+		actualCost += point.ActualCost
+		if point.TotalTokens == nil {
+			tokensComplete = false
+			continue
+		}
+		totalTokens += *point.TotalTokens
+	}
+	return actualCost, totalTokens, tokensComplete
 }
 
 type overviewRelayUserResolver struct {
