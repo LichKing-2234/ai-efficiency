@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Redis via `github.com/redis/go-redis/v9`, `miniredis`, Gin HTTP adapters, zap structured logging, Prometheus cache metrics.
 
-**Status:** In progress. Tasks 1-3 are complete; Tasks 4-7 remain.
+**Status:** In progress. Task 4 implementation and verification are complete; the Task 4 commit and Tasks 5-7 remain.
 
 ## Global Constraints
 
@@ -460,7 +460,7 @@ git commit -m "feat(backend): add Sub2API user trend batch adapter"
 func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error)
 ```
 
-- [ ] **Step 1: Write failing all-hit, one-miss, and batch-first tests**
+- [x] **Step 1: Write failing all-hit, one-miss, and batch-first tests**
 
 Construct providers with a shared miniredis cache and an HTTP server that counts
 `/users-trend` and `/trend?user_id=...` separately. Seed two users and assert an
@@ -473,7 +473,7 @@ unique count below the limit. Assert the returned user has data, the absent
 requested user has a successful empty slice, and a second call reads both from
 Redis without HTTP.
 
-- [ ] **Step 2: Run orchestration tests and verify RED**
+- [x] **Step 2: Run orchestration tests and verify RED**
 
 ```bash
 cd backend
@@ -483,7 +483,7 @@ go test ./internal/relay -run '^TestSub2APITeamTrendRedis' -count=1
 Expected: assertion failure because the current method still uses the Pod cache
 and individual fan-out rather than Redis and batch-first orchestration.
 
-- [ ] **Step 3: Move orchestration out of `sub2api.go` and implement cache-first flow**
+- [x] **Step 3: Move orchestration out of `sub2api.go` and implement cache-first flow**
 
 Move `GetUsageTrendForUsers` and `getTeamMemberTrend` into
 `sub2api_team_trend.go`. Use this exact control shape:
@@ -526,7 +526,7 @@ completed entries, capacity, expiry, generations, and Pod-local result reuse;
 retain all provider-wide limiter and cancellation coverage. Moving these
 changes together keeps both the Task 3 and Task 4 commits compilable.
 
-- [ ] **Step 4: Implement lease-holder and waiter paths**
+- [x] **Step 4: Implement lease-holder and waiter paths**
 
 For two or more misses:
 
@@ -547,7 +547,7 @@ actual transitions, `batch_origin` exactly once before each batch HTTP request,
 `possible_truncation` once for an exactly full batch, and
 `individual_fallback` once when at least one unresolved user enters fallback.
 
-- [ ] **Step 5: Add truncation, failure, and cancellation tests**
+- [x] **Step 5: Add truncation, failure, and cancellation tests**
 
 Prove a possibly truncated batch caches returned requested users and individually
 loads only absent users. Prove batch 500, transport, and decode failures
@@ -556,7 +556,7 @@ failures and prove fail-open behavior. Cancel while waiting for a lease and
 during a batch; neither path may start a later origin. Mutate a returned map,
 slice, and token pointer and prove a later Redis hit is unchanged.
 
-- [ ] **Step 6: Add a two-provider cross-Pod lease test**
+- [x] **Step 6: Add a two-provider cross-Pod lease test**
 
 Create two independent providers with separate `RedisStore` wrappers against
 one miniredis server and identical provider/version options. Start identical
@@ -565,7 +565,7 @@ the lease, then release. Assert exactly one batch, zero individual calls, and
 equal independent results. Repeat with different missing-ID sets to prove lease
 identity isolation, then prove overlapping users reuse per-user Redis entries.
 
-- [ ] **Step 7: Replace old public adapter fan-out expectations**
+- [x] **Step 7: Replace old public adapter fan-out expectations**
 
 Update `TestSub2APITeamUsageTrendForUsersFansOutByUserID` to expect one
 `/users-trend` request for two users through the simple uncached constructor.
@@ -573,7 +573,7 @@ Add a one-user test that expects `/dashboard/trend?user_id=...`. Preserve the
 individual concurrency test by returning a synthetic batch 500 before its two
 individual handlers synchronize.
 
-- [ ] **Step 8: Run focused Relay tests and race detection**
+- [x] **Step 8: Run focused Relay tests and race detection**
 
 ```bash
 cd backend

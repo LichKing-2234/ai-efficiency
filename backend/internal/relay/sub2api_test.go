@@ -3060,23 +3060,23 @@ func TestGetUserUsageDashboardFailsFastOnSub2APIError(t *testing.T) {
 	}
 }
 
-func TestSub2APITeamUsageTrendForUsersFansOutByUserID(t *testing.T) {
-	var mu sync.Mutex
+func TestSub2APITeamUsageTrendForUsersUsesBatchForTwoUsers(t *testing.T) {
 	var requested []map[string]string
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-trend", func(w http.ResponseWriter, r *http.Request) {
 		requested = append(requested, map[string]string{
-			"user_id":     r.URL.Query().Get("user_id"),
 			"start_date":  r.URL.Query().Get("start_date"),
 			"end_date":    r.URL.Query().Get("end_date"),
 			"granularity": r.URL.Query().Get("granularity"),
 			"timezone":    r.URL.Query().Get("timezone"),
+			"limit":       r.URL.Query().Get("limit"),
 		})
-		mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
-			"data":    []map[string]any{{"date": "2026-06-26", "actual_cost": 1.25}},
+			"data": map[string]any{"trend": []map[string]any{
+				{"date": "2026-06-26", "user_id": 1001, "tokens": 11, "actual_cost": 1.25},
+				{"date": "2026-06-26", "user_id": 1002, "tokens": 12, "actual_cost": 1.5},
+			}},
 		})
 	})
 	p := newTestProvider(t, mux)
@@ -3090,31 +3090,60 @@ func TestSub2APITeamUsageTrendForUsersFansOutByUserID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	sort.Slice(requested, func(i, j int) bool {
-		return requested[i]["user_id"] < requested[j]["user_id"]
-	})
 	if diff := cmp.Diff([]map[string]string{
 		{
-			"user_id":     "1001",
 			"start_date":  "2026-06-01",
 			"end_date":    "2026-06-26",
 			"granularity": "day",
 			"timezone":    "Asia/Shanghai",
-		},
-		{
-			"user_id":     "1002",
-			"start_date":  "2026-06-01",
-			"end_date":    "2026-06-26",
-			"granularity": "day",
-			"timezone":    "Asia/Shanghai",
+			"limit":       "500",
 		},
 	}, requested); diff != "" {
 		t.Fatalf("requested query mismatch (-want +got):\n%s", diff)
 	}
 	if len(got[1001]) != 1 || got[1001][0].ActualCost != 1.25 {
 		t.Fatalf("trend[1001] = %#v, want one actual_cost point", got[1001])
+	}
+}
+
+func TestSub2APITeamUsageTrendForUsersUsesIndividualOriginForOneUser(t *testing.T) {
+	var requested map[string]string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		requested = map[string]string{
+			"user_id":     r.URL.Query().Get("user_id"),
+			"start_date":  r.URL.Query().Get("start_date"),
+			"end_date":    r.URL.Query().Get("end_date"),
+			"granularity": r.URL.Query().Get("granularity"),
+			"timezone":    r.URL.Query().Get("timezone"),
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data":    []map[string]any{{"date": "2026-06-26", "actual_cost": 1.25}},
+		})
+	})
+	p := newTestProvider(t, mux)
+	trender := p.(relay.TeamMemberTrendProvider)
+	got, err := trender.GetUsageTrendForUsers(context.Background(), []int64{1001}, relay.TeamMemberTrendParams{
+		StartDate:   "2026-06-01",
+		EndDate:     "2026-06-26",
+		Granularity: "day",
+		Timezone:    "Asia/Shanghai",
+	})
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
+	}
+	if diff := cmp.Diff(map[string]string{
+		"user_id":     "1001",
+		"start_date":  "2026-06-01",
+		"end_date":    "2026-06-26",
+		"granularity": "day",
+		"timezone":    "Asia/Shanghai",
+	}, requested); diff != "" {
+		t.Fatalf("requested query mismatch (-want +got):\n%s", diff)
+	}
+	if len(got[1001]) != 1 || got[1001][0].ActualCost != 1.25 {
+		t.Fatalf("trend[1001] = %#v", got[1001])
 	}
 }
 
@@ -3125,6 +3154,9 @@ func TestSub2APITeamUsageTrendForUsersFetchesConcurrently(t *testing.T) {
 	closed := false
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-trend", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "synthetic batch failure", http.StatusInternalServerError)
+	})
 	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
 		userID := r.URL.Query().Get("user_id")
 		mu.Lock()
