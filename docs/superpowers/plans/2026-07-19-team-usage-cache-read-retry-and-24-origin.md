@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation commits `bade4a33` and `26907c85`, documentation repair `ded38d19`, required post-fix full local verification, whole-branch review, and PR delivery are complete. Prior plan-ledger head `653bb5b3cab0abafff55401efb299bd974e9c7bf` later passed all four jobs in CI run `29689122313`, but that commit had already checked Task 4 Steps 3 and 4 before the run existed. Task 4 is therefore reopened: this corrective plan commit will become the new PR head, and backend, frontend, ae-cli, and deploy-static CI on that exact head are pending. PR #190 remains open and unmerged; image publication, Helm changes, staging verification, and production work have not started.
+**Status:** PR #190 merged as `55302b62c795054c56a700c6cb817eac06c49a5b`, whose tree matches reviewed head `e7ab9e4c2a8f25071adbc1cc1861961488e73ea2`. Task 5 Steps 1-3 are complete: the exact merge commit is published as an immutable amd64/arm64 staging image, staging revision 32 is Ready after the required paused/restore rollout, and the first 24-slot cold audit failed the nine-second gate at `12.363568s`. Its immediate warm audit passed at `1.222148s`; the required fail-fast path stopped before cold round 2, and the origin limit remains 24. Final isolation verification and ledger cleanup remain pending; production remains unchanged at revision 68 on `v0.1.0-preview.72`.
 
 **Goal:** Recover one transient Redis read failure without leaving the bounded command budget, and reduce large-team cold latency by raising the single provider-wide trend origin limit from sixteen to 24.
 
@@ -587,7 +587,7 @@
   staging gate all conformant. The verdict was ready subject to exact-head CI;
   no actionable finding or behavioral follow-up remained.
 
-- [ ] **Step 3: Require exact-final-head repository CI**
+- [x] **Step 3: Require exact-final-head repository CI**
 
   Require backend, frontend, ae-cli, and deploy-static success on the exact
   reviewed PR head. If a plan-only ledger commit records an earlier CI run,
@@ -615,28 +615,37 @@
   head, and backend, frontend, ae-cli, and deploy-static must all be observed
   successful on that unchanged head before either step is checked again.
 
-- [ ] **Step 4: Stop at the merge gate**
+  Corrective-head CI evidence (2026-07-19): after the corrective commit was
+  pushed, CI run `29689664751` completed successfully on exact PR head
+  `e7ab9e4c2a8f25071adbc1cc1861961488e73ea2`: backend job `88200039500`,
+  frontend job `88200039495`, ae-cli job `88200039482`, and deploy-static job
+  `88200039485` all succeeded. Local HEAD, the remote branch, and the live PR
+  head still matched that exact SHA after completion; the head was not changed
+  while the run was pending. This evidence is recorded only in the intentional
+  uncommitted live-ledger carry-forward, so it does not invalidate the verified
+  PR head.
+
+- [x] **Step 4: Stop at the merge gate**
 
   Do not merge automatically. Report PR URL, base/head branches, reviewed head
   SHA, mergeability, review state, and exact-head CI. Wait for user merge or
   observe the merge before any image publish or Helm action.
 
-  Current merge-gate state before corrective-head CI (2026-07-19): PR #190
-  remains OPEN and non-Draft with
-  base `feat/platform-loading-performance` and head
-  `perf/team-usage-cache-read-retry-24`; independent Standards and Spec review
-  is clean and GitHub reports MERGEABLE/CLEAN. No merge, image publish,
-  release, Helm, staging, or production command was run. The completed merge
-  gate remains pending until the corrective plan commit receives all four
-  required CI successes on its exact unchanged head.
+  Final merge-gate evidence (2026-07-19): after exact-head run `29689664751`
+  completed, PR #190 remained OPEN and non-Draft with base
+  `feat/platform-loading-performance`, head
+  `perf/team-usage-cache-read-retry-24`, and exact head
+  `e7ab9e4c2a8f25071adbc1cc1861961488e73ea2`. GitHub reported
+  MERGEABLE/CLEAN. `reviewDecision` remained empty with no formal GitHub review;
+  the required independent Standards and Spec review remained complete and
+  clean. No merge, image publish, release, Helm, staging, or production command
+  was run. Task 4 is stopped at the merge gate pending user merge or an
+  observed merge; Task 5 and staging remain pending.
 
-  **Corrective exact-head gate:** after pushing this plan-only commit, require
-  backend, frontend, ae-cli, and deploy-static success on its exact head.
-  Verify local HEAD, remote branch, and live PR head are identical. Only after
-  those observations may the working-tree ledger record the final SHA, run and
-  job IDs, conclusions, mergeability, and review state. Keep that live-ledger
-  carry-forward intentionally uncommitted so it cannot create another
-  self-invalidating follow-up head.
+  **Live-ledger carry-forward (intentionally uncommitted):** this final status,
+  SHA, run, job, and mergeability evidence stays only in the working tree. A
+  further commit would create an unverified PR head and repeat the timing defect
+  corrected by `e7ab9e4c`.
 
 ### Task 5: Publish Staging And Re-run The 16/24 Comparison
 
@@ -649,7 +658,7 @@
 - Advances only `ai-efficiency-staging` in `la3-ai-efficiency-prod` through the existing two-phase restore rollout.
 - Produces two comparable 24-slot cold/warm audits against revision 30.
 
-- [ ] **Step 1: Verify merge and publish the exact multi-architecture image**
+- [x] **Step 1: Verify merge and publish the exact multi-architecture image**
 
   Verify the PR is merged into `feat/platform-loading-performance`, the merge
   tree matches the reviewed PR tree, and the temporary PR branch is eligible
@@ -694,7 +703,26 @@
   Record the exact manifest digest and both platform manifests. Do not publish
   a platform tag or GitHub Release.
 
-- [ ] **Step 2: Update only staging selectors and execute the two-phase rollout**
+  Evidence (2026-07-20): GitHub reported PR #190 MERGED at
+  `55302b62c795054c56a700c6cb817eac06c49a5b`; both that merge commit and
+  reviewed PR head `e7ab9e4c2a8f25071adbc1cc1861961488e73ea2` resolve to tree
+  `2e4d02c4b3d8b2ec1a85745552052557862eaf06`. The integration worktree was
+  fast-forwarded to the exact merge commit. Stash
+  `2f0c1176ec68703d3a47a242ddcb9578de3ab1c8` applied cleanly and changed only
+  this plan, then only that stash and the merged local/remote PR branch were
+  removed; the two unrelated user stashes remain. Builder
+  `static-spaces-release-builder` advertised `linux/amd64` and `linux/arm64`
+  and pushed
+  `ghcr.io/lichking-2234/ai-efficiency:staging-55302b62c795054c56a700c6cb817eac06c49a5b`.
+  Remote inspection returned index digest
+  `sha256:e51c69cd476bceb580e088e309f266f24e951ecda124a46610c30ccac75c6aa4`,
+  amd64 manifest
+  `sha256:ff4163101be8006778ac4117c0b3d025c04476aa577f858dc72a04278d6da3e2`,
+  and arm64 manifest
+  `sha256:5c8b9f4b7d1b13404d3cd1f5e5266394073d7062d23dd1122884331fa4372103`.
+  No platform tag or GitHub Release was created.
+
+- [x] **Step 2: Update only staging selectors and execute the two-phase rollout**
 
   In `/Users/admin/helm`, update only `.image.tag` and the 12-character restore
   snapshot selector without printing secrets, verify the metadata-only diff,
@@ -713,7 +741,25 @@
   Redis, and Relay checks are `up`. Verify production is still Ready on the
   pre-audit revision and image before proceeding.
 
-- [ ] **Step 3: Run two exact cold/warm audits**
+  Evidence (2026-07-20): Helm commit
+  `3f09c5d5dd9bd39fdfdfa806774a8435a912fc9e` updated only `.image.tag` to
+  `staging-55302b62c795054c56a700c6cb817eac06c49a5b` and the 12-character
+  restore selector to `55302b62c795`; replacing those two paths with fixed
+  placeholders left the before/after JSON at the same normalized SHA-256
+  `327c868eab3c6891366845e34dc97cc1b7fe78d24f7a4a07c1ab9a750bb30dd8`.
+  The commit was pushed to `origin/main` without exposing secret values.
+  Phase A server dry-run passed, revision 31 deployed with zero application
+  replicas, and the old application Pod was observed deleted. Phase B server
+  dry-run passed and the atomic restore rollout deployed revision 32. Restore
+  Job `ai-efficiency-staging-postgres-restore-55302b62c795` completed `1/1`
+  with zero failures; PostgreSQL was `1/1` Ready and the application Deployment
+  was `1/1` Ready on the exact staging image. Ready and live health reported
+  commit `55302b62c795054c56a700c6cb817eac06c49a5b`; database, Redis, and Relay
+  were all `up`. Production remained Ready at revision 68 on
+  `ghcr.io/lichking-2234/ai-efficiency:v0.1.0-preview.72`, with commit
+  `1d3a8c6cbf755774860ff44c8dd466d1115f3890` and all three checks `up`.
+
+- [x] **Step 3: Run two exact cold/warm audits**
 
   Use a session-only temporary audit script under `/tmp`; never write the
   supplied account, password, SSO token, cookie, or response bodies into the
@@ -746,6 +792,30 @@
   Usage cache-error/Redis-timeout/wait/lease-failure counters, HTTP 200, and
   preserved 251/235 response counts. If any condition fails, record it and
   stop without increasing beyond 24 or weakening the contract.
+
+  Evidence (2026-07-20): after a measured 300-second quiet window beginning at
+  `2026-07-20T01:42:41Z`, cold round 1 issued the four required lanes
+  concurrently against revision 32 and completed in `12.363568s`, which failed
+  the `<=9s` gate. Summary, trend, members, and organization completed in
+  `11.580609s`, `12.363568s`, `11.887330s`, and `11.563641s`; all returned HTTP
+  200 with matching bounded request IDs, `cache=miss`, `source=ok`, and the
+  preserved 251-member / 235-Relay-member scope. The cold round made exactly
+  255 Relay calls, all 2xx, with `101.907s` aggregate dependency duration and
+  zero 4xx, 5xx, transport errors, or timeouts. Each response cache recorded
+  `miss +1`, `refresh +1`, and `lease_acquired +1`, with zero error, stale,
+  lease-wait, or lease-failure delta; Redis wait, timeout, and stale-connection
+  deltas were also zero.
+
+  Immediate warm round 1 completed in `1.222148s`; its four lane durations
+  were `0.751889s`, `1.222148s`, `0.951021s`, and `0.896057s`. Every response
+  was HTTP 200 with `cache=fresh`, `source=ok`, matching request IDs, and the
+  same 251/235 scope. The warm round made zero Relay calls, each response cache
+  recorded `fresh +1`, and all cache-error, lease-failure, and Redis pool
+  deltas remained zero. Because cold round 1 failed the contract, the second
+  300-second wait was interrupted before cold round 2; cold round 2 and warm
+  round 2 were not requested. This is the required fail-fast path, not a
+  successful two-round acceptance result. The provider-wide origin limit
+  remains 24 and must not be raised further.
 
 - [ ] **Step 4: Record evidence, verify isolation, and clean temporary state**
 
