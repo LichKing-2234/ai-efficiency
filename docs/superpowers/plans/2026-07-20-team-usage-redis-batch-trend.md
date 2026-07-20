@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Redis via `github.com/redis/go-redis/v9`, `miniredis`, Gin HTTP adapters, zap structured logging, Prometheus cache metrics.
 
-**Status:** In progress. Tasks 1-5 are complete; Tasks 6-7 remain.
+**Status:** Task 6 is complete and locally verified; Task 7 staging delivery and acceptance remain.
 
 ## Global Constraints
 
@@ -726,7 +726,7 @@ git commit -m "perf(backend): share personal Relay trends through Redis"
 - Consumes the completed runtime from Tasks 1-5.
 - Produces current project documentation and a locally verified implementation branch.
 
-- [ ] **Step 1: Update the Team Usage architecture contract**
+- [x] **Step 1: Update the Team Usage architecture contract**
 
 Replace the process-local 60-second/4096-entry paragraph. Document the
 60-second per-provider/version/Relay-UID/range Redis primitive, authenticated
@@ -738,7 +738,7 @@ reuse; classify `FlightGroup`, limiters, and locks as coordination; record OAuth
 authorization/device maps as a separate multi-replica concern. Link the July 20
 spec without rewriting the July 19 historical specs.
 
-- [ ] **Step 2: Run formatting and hygiene checks**
+- [x] **Step 2: Run formatting and hygiene checks**
 
 ```bash
 cd backend
@@ -752,7 +752,7 @@ rg -n 'email|username|password|token' backend/internal/relay/sub2api_team_trend_
 Expected: diff check is silent; old cache symbols have no production match; the
 privacy scan finds no serialized or logged sensitive field.
 
-- [ ] **Step 3: Run focused package tests**
+- [x] **Step 3: Run focused package tests**
 
 ```bash
 cd backend
@@ -761,7 +761,7 @@ go test ./internal/readcache ./internal/relay ./internal/relayruntime ./internal
 
 Expected: all six targets report `ok`.
 
-- [ ] **Step 4: Run the complete backend suite**
+- [x] **Step 4: Run the complete backend suite**
 
 ```bash
 cd backend
@@ -770,7 +770,7 @@ go test ./... -count=1
 
 Expected: every backend package passes.
 
-- [ ] **Step 5: Run race detection on shared paths**
+- [x] **Step 5: Run race detection on shared paths**
 
 ```bash
 cd backend
@@ -779,14 +779,14 @@ go test -race ./internal/readcache ./internal/relay ./internal/personalusage ./i
 
 Expected: all four packages pass with no race report.
 
-- [ ] **Step 6: Mark the spec locally implemented**
+- [x] **Step 6: Mark the spec locally implemented**
 
 Only after Steps 2-5 pass, set the spec status to `Implemented and locally
 verified on perf/team-usage-batch-trend`. Add `Local Verification` with the
 exact successful commands and date. Check completed plan items immediately;
 leave every staging-only checkbox unchecked.
 
-- [ ] **Step 7: Commit Task 6**
+- [x] **Step 7: Commit Task 6**
 
 ```bash
 git add docs/architecture.md docs/superpowers/specs/2026-07-20-team-usage-redis-batch-trend-design.md docs/superpowers/plans/2026-07-20-team-usage-redis-batch-trend.md

@@ -1,6 +1,6 @@
 # Team Usage Redis Batch Trend Design
 
-**Status:** Approved for implementation planning on `perf/team-usage-batch-trend`
+**Status:** Implemented and locally verified on `perf/team-usage-batch-trend`
 
 **Base:** `feat/platform-loading-performance@14098806`
 
@@ -376,6 +376,34 @@ Focused tests must prove:
 14. Provider version changes make old entries unreachable.
 15. Existing Sub2API adapter, Personal Usage, Team Usage, handler, Redis-store,
     full backend, and race tests continue to pass.
+
+## Local Verification
+
+Locally verified on `perf/team-usage-batch-trend` on 2026-07-20 with these
+exact commands:
+
+```bash
+cd backend
+gofmt -w $(rg --files internal/readcache internal/relay internal/telemetry cmd/server | rg '\.go$')
+cd ..
+git diff --check
+rg -n 'teamTrendCache|teamTrendCacheCapacity|teamTrendCacheTTL' backend/internal/relay
+rg -n 'email|username|password|token' backend/internal/relay/sub2api_team_trend_redis.go backend/internal/relay/sub2api_team_trend_batch.go
+
+cd backend
+go test ./internal/readcache ./internal/relay ./internal/relayruntime ./internal/personalusage ./internal/teamusage ./cmd/server -count=1
+go test ./... -count=1
+go test -race ./internal/readcache ./internal/relay ./internal/personalusage ./internal/teamusage -count=1
+```
+
+Formatting produced no source diff and `git diff --check` was silent. The old
+Pod-cache symbol scan returned no matches. The privacy scan matched only the
+upstream batch DTO's numeric `tokens` field, internal `TotalTokens` projections,
+and the random token used for token-protected lease ownership and release. It
+found no email, username, or password field in either implementation file, and
+none of the permitted token-count or lease-token values is serialized into a
+log. All focused packages, the complete backend suite, and all four race-test
+packages passed; no environment-sensitive local verification gap remains.
 
 ## Staging Acceptance
 
