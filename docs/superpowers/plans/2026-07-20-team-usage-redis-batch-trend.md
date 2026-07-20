@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Redis via `github.com/redis/go-redis/v9`, `miniredis`, Gin HTTP adapters, zap structured logging, Prometheus cache metrics.
 
-**Status:** In progress. Tasks 1-2 are complete; Task 3 implementation and tests are complete with its commit pending; Tasks 4-7 remain.
+**Status:** In progress. Tasks 1-3 are complete; Tasks 4-7 remain.
 
 ## Global Constraints
 
@@ -433,7 +433,7 @@ go test ./internal/relay -run '^TestTeamTrendBatch' -count=1
 
 Expected: all batch adapter tests pass.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```bash
 git add backend/internal/relay/sub2api_team_trend_batch.go backend/internal/relay/sub2api_team_trend_batch_test.go docs/superpowers/plans/2026-07-20-team-usage-redis-batch-trend.md
