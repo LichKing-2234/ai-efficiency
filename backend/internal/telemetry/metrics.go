@@ -23,6 +23,12 @@ var (
 		"lease_acquired",
 		"lease_wait",
 		"lease_failed",
+		"malformed",
+		"write",
+		"batch_origin",
+		"individual_fallback",
+		"possible_truncation",
+		"personal_write_through",
 	}
 )
 

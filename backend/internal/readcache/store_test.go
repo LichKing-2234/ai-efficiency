@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -56,6 +57,22 @@ func (h *scriptedRedisCommandHook) ProcessHook(next redis.ProcessHook) redis.Pro
 
 func (h *scriptedRedisCommandHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
 	return func(ctx context.Context, cmds []redis.Cmder) error {
+		const command = "pipeline"
+		h.mu.Lock()
+		attempt := h.calls[command]
+		h.calls[command] = attempt + 1
+		var failure error
+		if attempt < len(h.failures[command]) {
+			failure = h.failures[command][attempt]
+		}
+		after := h.after
+		h.mu.Unlock()
+		if after != nil {
+			after(command, attempt)
+		}
+		if failure != nil {
+			return failure
+		}
 		return next(ctx, cmds)
 	}
 }
@@ -281,5 +298,103 @@ func TestRedisStoreRetryIsGetOnly(t *testing.T) {
 				t.Fatalf("%s error/attempts = %v/%d, want synthetic error/1", tt.name, err, hook.callCount(tt.command))
 			}
 		})
+	}
+}
+
+func TestRedisStoreMGetPreservesOrderAndMisses(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	store := NewRedisStore(client)
+	ctx := context.Background()
+
+	err := store.SetMany(ctx, []SetItem{
+		{Key: "first", Value: []byte("one"), TTL: 11 * time.Second},
+		{Key: "third", Value: []byte("three"), TTL: 13 * time.Second},
+	})
+	if err != nil {
+		t.Fatalf("SetMany() error = %v", err)
+	}
+	values, err := store.MGet(ctx, []string{"first", "second", "third"})
+	if err != nil {
+		t.Fatalf("MGet() error = %v", err)
+	}
+	got := []string{string(values[0]), string(values[1]), string(values[2])}
+	if !reflect.DeepEqual(got, []string{"one", "", "three"}) {
+		t.Fatalf("MGet() = %#v", got)
+	}
+	if values[1] != nil {
+		t.Fatalf("missing value = %#v, want nil", values[1])
+	}
+	if server.TTL("first") != 11*time.Second || server.TTL("third") != 13*time.Second {
+		t.Fatalf("unexpected TTLs: first=%s third=%s", server.TTL("first"), server.TTL("third"))
+	}
+}
+
+func TestRedisStoreBulkOperationsAcceptEmptyInput(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	store := NewRedisStore(client)
+	values, err := store.MGet(context.Background(), nil)
+	if err != nil || len(values) != 0 {
+		t.Fatalf("MGet(nil) = %#v, %v", values, err)
+	}
+	if err := store.SetMany(context.Background(), nil); err != nil {
+		t.Fatalf("SetMany(nil) error = %v", err)
+	}
+}
+
+func TestRedisStoreMGetRetriesOneCommandError(t *testing.T) {
+	server := miniredis.RunT(t)
+	server.Set("value", "payload")
+	firstErr := errors.New("synthetic first MGET failure")
+	hook := newScriptedRedisCommandHook(map[string][]error{"mget": {firstErr}})
+	client := redis.NewClient(&redis.Options{Addr: server.Addr(), MaxRetries: -1})
+	client.AddHook(hook)
+	t.Cleanup(func() { _ = client.Close() })
+
+	values, err := NewRedisStore(client).MGet(context.Background(), []string{"value"})
+	if err != nil || len(values) != 1 || string(values[0]) != "payload" {
+		t.Fatalf("MGet() = %#v, %v, want payload after one retry", values, err)
+	}
+	if got := hook.callCount("mget"); got != 2 {
+		t.Fatalf("MGET attempts = %d, want 2", got)
+	}
+}
+
+func TestRedisStoreMGetStopsAfterCancellation(t *testing.T) {
+	server := miniredis.RunT(t)
+	firstErr := errors.New("synthetic first MGET failure")
+	hook := newScriptedRedisCommandHook(map[string][]error{"mget": {firstErr}})
+	ctx, cancel := context.WithCancel(context.Background())
+	hook.after = func(command string, attempt int) {
+		if command == "mget" && attempt == 0 {
+			cancel()
+		}
+	}
+	client := redis.NewClient(&redis.Options{Addr: server.Addr(), MaxRetries: -1})
+	client.AddHook(hook)
+	t.Cleanup(func() { _ = client.Close() })
+
+	_, err := NewRedisStore(client).MGet(ctx, []string{"value"})
+	if !errors.Is(err, firstErr) || hook.callCount("mget") != 1 {
+		t.Fatalf("MGet() error/attempts = %v/%d, want first error/1", err, hook.callCount("mget"))
+	}
+}
+
+func TestRedisStoreSetManyDoesNotRetryPipelineError(t *testing.T) {
+	server := miniredis.RunT(t)
+	pipelineErr := errors.New("synthetic pipeline failure")
+	hook := newScriptedRedisCommandHook(map[string][]error{"pipeline": {pipelineErr}})
+	client := redis.NewClient(&redis.Options{Addr: server.Addr(), MaxRetries: -1})
+	client.AddHook(hook)
+	t.Cleanup(func() { _ = client.Close() })
+
+	err := NewRedisStore(client).SetMany(context.Background(), []SetItem{
+		{Key: "value", Value: []byte("payload"), TTL: time.Minute},
+	})
+	if !errors.Is(err, pipelineErr) || hook.callCount("pipeline") != 1 {
+		t.Fatalf("SetMany() error/attempts = %v/%d, want synthetic error/1", err, hook.callCount("pipeline"))
 	}
 }

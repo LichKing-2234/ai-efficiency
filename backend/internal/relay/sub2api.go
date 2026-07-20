@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +29,7 @@ type sub2apiRelay struct {
 	apiKey           string // Relay API key used for both admin and inference requests.
 	model            string
 	logger           *zap.Logger
-	teamTrends       teamTrendCache
+	teamTrends       *teamTrendRedisCache
 	teamTrendOrigins teamTrendOriginLimiter
 }
 
@@ -71,8 +72,49 @@ func (s envelopeStatus) messageSuffix() string {
 	return ": " + strings.Join(messages, ": ")
 }
 
-// NewSub2apiProvider creates a new relay provider backed by a sub2api instance.
+type Sub2apiProviderOptions struct {
+	TeamTrendStore               readcache.MultiStore
+	CacheNamespace               string
+	ProviderID                   int
+	ProviderConfigurationVersion int64
+	TeamTrendMetrics             readcache.Metrics
+}
+
+// NewSub2apiProvider creates an uncached relay provider backed by a sub2api instance.
 func NewSub2apiProvider(httpClient *http.Client, baseURL, apiKey, model string, logger *zap.Logger) Provider {
+	return newSub2apiProvider(httpClient, baseURL, apiKey, model, logger)
+}
+
+func NewSub2apiProviderWithOptions(
+	httpClient *http.Client,
+	baseURL, apiKey, model string,
+	logger *zap.Logger,
+	options Sub2apiProviderOptions,
+) (Provider, error) {
+	provider := newSub2apiProvider(httpClient, baseURL, apiKey, model, logger)
+	cacheConfigured := options.TeamTrendStore != nil ||
+		strings.TrimSpace(options.CacheNamespace) != "" ||
+		options.ProviderID != 0 ||
+		options.ProviderConfigurationVersion != 0 ||
+		options.TeamTrendMetrics != nil
+	if !cacheConfigured {
+		return provider, nil
+	}
+	cache, err := newTeamTrendRedisCache(teamTrendRedisCacheOptions{
+		Store:           options.TeamTrendStore,
+		Namespace:       strings.TrimSpace(options.CacheNamespace),
+		ProviderID:      options.ProviderID,
+		ProviderVersion: options.ProviderConfigurationVersion,
+		Metrics:         options.TeamTrendMetrics,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("configure Relay user trend cache: %w", err)
+	}
+	provider.teamTrends = cache
+	return provider, nil
+}
+
+func newSub2apiProvider(httpClient *http.Client, baseURL, apiKey, model string, logger *zap.Logger) *sub2apiRelay {
 	return &sub2apiRelay{
 		client:   httpClient,
 		baseURL:  normalizeInferenceBaseURL(baseURL),
@@ -110,12 +152,8 @@ func (s *sub2apiRelay) adminAPIKey() string {
 func (s *sub2apiRelay) SetAdminAPIKey(apiKey string) {
 	normalized := strings.TrimSpace(apiKey)
 	s.mu.Lock()
-	changed := normalized != strings.TrimSpace(s.apiKey)
 	s.apiKey = normalized
 	s.mu.Unlock()
-	if changed {
-		s.teamTrends.Invalidate()
-	}
 }
 
 func (s *sub2apiRelay) SetModel(model string) {
@@ -2292,76 +2330,6 @@ func (s *sub2apiRelay) GetBatchUserUsageStats(ctx context.Context, userIDs []int
 	return out, nil
 }
 
-func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error) {
-	out := make(map[int64][]UsageTrendPoint, len(relayUserIDs))
-	if len(relayUserIDs) == 0 {
-		return out, nil
-	}
-	trendCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	workers := maxConcurrentTeamTrendOrigins
-	if len(relayUserIDs) < workers {
-		workers = len(relayUserIDs)
-	}
-
-	type trendResult struct {
-		relayUserID int64
-		points      []UsageTrendPoint
-		err         error
-	}
-
-	jobs := make(chan int64)
-	results := make(chan trendResult, len(relayUserIDs))
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for relayUserID := range jobs {
-				trend, err := s.teamTrends.GetOrLoad(trendCtx, relayUserID, params, func(loadCtx context.Context) ([]UsageTrendPoint, error) {
-					return s.teamTrendOrigins.Do(loadCtx, func(originCtx context.Context) ([]UsageTrendPoint, error) {
-						return s.getTeamMemberTrend(originCtx, relayUserID, params)
-					})
-				})
-				results <- trendResult{relayUserID: relayUserID, points: trend, err: err}
-			}
-		}()
-	}
-
-	go func() {
-		defer close(jobs)
-		for _, relayUserID := range relayUserIDs {
-			select {
-			case jobs <- relayUserID:
-			case <-trendCtx.Done():
-				return
-			}
-		}
-	}()
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	completed := 0
-	for result := range results {
-		completed++
-		if result.err != nil {
-			cancel()
-			return nil, result.err
-		}
-		out[result.relayUserID] = result.points
-	}
-	if completed != len(relayUserIDs) {
-		if err := trendCtx.Err(); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
-}
-
 func (s *sub2apiRelay) ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error) {
 	var entries []UserGroupRateEntry
 	if err := s.getAdminEnvelopeJSON(ctx, fmt.Sprintf("/api/v1/admin/groups/%d/rate-multipliers", groupID), nil, &entries); err != nil {
@@ -2494,8 +2462,8 @@ func (s *sub2apiRelay) ReadUserUsageOrigin(ctx context.Context, request UserUsag
 	defer cancel()
 
 	var token string
+	var authenticatedUser *User
 	if request.Branches.Usage {
-		var authenticatedUser *User
 		var err error
 		token, authenticatedUser, err = s.loginSessionToken(originCtx, request.Login, request.Password)
 		if err != nil {
@@ -2584,6 +2552,20 @@ func (s *sub2apiRelay) ReadUserUsageOrigin(ctx context.Context, request UserUsag
 			subscriptionsErr = branch.err
 		}
 	}
+	if request.RelayUserID > 0 &&
+		authenticatedUser != nil && authenticatedUser.ID == request.RelayUserID &&
+		trendErr == nil && trend != nil && ctx.Err() == nil && originCtx.Err() == nil &&
+		s.teamTrends != nil {
+		params := TeamMemberTrendParams{
+			StartDate: request.Params.StartDate, EndDate: request.Params.EndDate,
+			Granularity: request.Params.Granularity, Timezone: request.Params.Timezone,
+		}
+		if err := s.teamTrends.Write(originCtx, map[int64][]UsageTrendPoint{
+			request.RelayUserID: projectPersonalTrend(trend.Trend),
+		}, params, "personal_write_through"); err != nil {
+			s.logPersonalTrendRedisFailure(err)
+		}
+	}
 
 	if request.Branches.Usage {
 		result.UsageErr = firstError(statsErr, trendErr, modelsErr)
@@ -2614,6 +2596,29 @@ func (s *sub2apiRelay) ReadUserUsageOrigin(ctx context.Context, request UserUsag
 		}
 	}
 	return result, nil
+}
+
+func projectPersonalTrend(points []UserUsageTrendPoint) []UsageTrendPoint {
+	out := make([]UsageTrendPoint, len(points))
+	for index, point := range points {
+		tokens := point.TotalTokens
+		out[index] = UsageTrendPoint{
+			Date:        point.Date,
+			ActualCost:  point.ActualCost,
+			TotalTokens: &tokens,
+		}
+	}
+	return out
+}
+
+func (s *sub2apiRelay) logPersonalTrendRedisFailure(err error) {
+	if s.logger == nil || s.teamTrends == nil {
+		return
+	}
+	s.logger.Warn("Relay personal trend Redis write failed open",
+		zap.Int("provider_id", s.teamTrends.options.ProviderID),
+		zap.String("error_class", teamTrendErrorClass(err)),
+	)
 }
 
 func firstError(errors ...error) error {
@@ -2691,49 +2696,6 @@ func (s *sub2apiRelay) getAdminUsageModelsForUser(ctx context.Context, relayUser
 		return nil, fmt.Errorf("relay: subject usage dashboard models: decode: %w", err)
 	}
 	return models, nil
-}
-
-func (s *sub2apiRelay) getTeamMemberTrend(ctx context.Context, relayUserID int64, params TeamMemberTrendParams) ([]UsageTrendPoint, error) {
-	query := url.Values{}
-	if v := strings.TrimSpace(params.StartDate); v != "" {
-		query.Set("start_date", v)
-	}
-	if v := strings.TrimSpace(params.EndDate); v != "" {
-		query.Set("end_date", v)
-	}
-	if v := strings.TrimSpace(params.Granularity); v != "" {
-		query.Set("granularity", v)
-	}
-	if v := strings.TrimSpace(params.Timezone); v != "" {
-		query.Set("timezone", v)
-	}
-	query.Set("user_id", strconv.FormatInt(relayUserID, 10))
-
-	var raw json.RawMessage
-	if err := s.getAdminEnvelopeJSON(ctx, "/api/v1/admin/dashboard/trend", query, &raw); err != nil {
-		return nil, fmt.Errorf("relay: team member trend: %w", err)
-	}
-
-	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
-		return nil, nil
-	}
-
-	var points []UsageTrendPoint
-	if len(raw) > 0 && raw[0] == '[' {
-		if err := json.Unmarshal(raw, &points); err != nil {
-			return nil, fmt.Errorf("relay: team member trend: decode points: %w", err)
-		}
-		return points, nil
-	}
-
-	var envelope struct {
-		Trend []UsageTrendPoint `json:"trend"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return nil, fmt.Errorf("relay: team member trend: decode envelope: %w", err)
-	}
-	return envelope.Trend, nil
 }
 
 func (s *sub2apiRelay) getUserDashboardJSON(ctx context.Context, token, path string, query url.Values, dst any) error {

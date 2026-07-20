@@ -2,15 +2,22 @@ package relayruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"sort"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/pkg"
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/testdb"
+	"github.com/alicebob/miniredis/v2"
+	redis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -94,6 +101,104 @@ func createProviderRow(t *testing.T, client *ent.Client) *ent.RelayProvider {
 		t.Fatalf("create provider row: %v", err)
 	}
 	return row
+}
+
+func TestRelayUserTrendRuntimeProvidersUsePersistedIdentity(t *testing.T) {
+	client := testdb.Open(t)
+	redisServer := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	t.Cleanup(func() { _ = redisClient.Close() })
+	store := readcache.NewRedisStore(redisClient)
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/admin/dashboard/trend" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data":    []map[string]any{{"date": "2026-07-20", "actual_cost": 1.01, "total_tokens": 101}},
+		})
+	}))
+	t.Cleanup(upstream.Close)
+
+	createRow := func(name string, version int64) *ent.RelayProvider {
+		encrypted, err := pkg.Encrypt("test-admin-key", testEncryptionKey)
+		if err != nil {
+			t.Fatalf("encrypt admin key: %v", err)
+		}
+		row, err := client.RelayProvider.Create().
+			SetName(name).
+			SetDisplayName(name).
+			SetBaseURL(upstream.URL).
+			SetAdminAPIKey(encrypted).
+			SetDefaultModel("test-model").
+			SetConfigurationVersion(version).
+			SetEnabled(true).
+			Save(context.Background())
+		if err != nil {
+			t.Fatalf("create provider row: %v", err)
+		}
+		return row
+	}
+	firstRow := createRow("relay-first", 3)
+	secondRow := createRow("relay-second", 5)
+
+	manager, err := NewManager(client, testEncryptionKey, zap.NewNop(), Options{
+		Factory: func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
+			return relay.NewSub2apiProviderWithOptions(
+				upstream.Client(), row.BaseURL, adminAPIKey, row.DefaultModel, zap.NewNop(), relay.Sub2apiProviderOptions{
+					TeamTrendStore: store, CacheNamespace: "runtime-test", ProviderID: row.ID,
+					ProviderConfigurationVersion: row.ConfigurationVersion,
+				},
+			)
+		},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	params := relay.TeamMemberTrendParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-20", Granularity: "day", Timezone: "Asia/Shanghai",
+	}
+	for _, row := range []*ent.RelayProvider{firstRow, secondRow} {
+		provider, err := manager.Resolve(context.Background(), row.ID)
+		if err != nil {
+			t.Fatalf("resolve provider %d: %v", row.ID, err)
+		}
+		trendProvider, ok := provider.(relay.TeamMemberTrendProvider)
+		if !ok {
+			t.Fatalf("provider %d does not implement TeamMemberTrendProvider", row.ID)
+		}
+		if _, err := trendProvider.GetUsageTrendForUsers(context.Background(), []int64{101}, params); err != nil {
+			t.Fatalf("provider %d trend: %v", row.ID, err)
+		}
+	}
+
+	keys := redisServer.Keys()
+	sort.Strings(keys)
+	if len(keys) != 2 || keys[0] == keys[1] {
+		t.Fatalf("shared Redis keys = %v, want two provider/version-isolated values", keys)
+	}
+	gotIdentities := make([][2]int64, 0, len(keys))
+	for _, key := range keys {
+		var envelope struct {
+			ProviderID      int   `json:"provider_id"`
+			ProviderVersion int64 `json:"provider_configuration_version"`
+		}
+		raw, err := redisServer.Get(key)
+		if err != nil {
+			t.Fatalf("read Redis value %q: %v", key, err)
+		}
+		if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+			t.Fatalf("decode Redis value %q: %v", key, err)
+		}
+		gotIdentities = append(gotIdentities, [2]int64{int64(envelope.ProviderID), envelope.ProviderVersion})
+	}
+	sort.Slice(gotIdentities, func(i, j int) bool { return gotIdentities[i][0] < gotIdentities[j][0] })
+	wantIdentities := [][2]int64{{int64(firstRow.ID), 3}, {int64(secondRow.ID), 5}}
+	if len(gotIdentities) != len(wantIdentities) || gotIdentities[0] != wantIdentities[0] || gotIdentities[1] != wantIdentities[1] {
+		t.Fatalf("Redis provider identities = %v, want %v", gotIdentities, wantIdentities)
+	}
 }
 
 func TestRelayRuntimeReusesVersionedClientUntilMaximumLifetime(t *testing.T) {

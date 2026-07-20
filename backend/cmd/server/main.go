@@ -299,13 +299,20 @@ func main() {
 		Bus:             providerInvalidationBus,
 		MetadataMetrics: cacheMetrics.providerMetadata,
 		Factory: func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
-			return relay.NewSub2apiProvider(
+			return relay.NewSub2apiProviderWithOptions(
 				httpClients.providerRelay,
 				row.BaseURL,
 				adminAPIKey,
 				row.DefaultModel,
 				logger,
-			), nil
+				relay.Sub2apiProviderOptions{
+					TeamTrendStore:               redisStore,
+					CacheNamespace:               cfg.Redis.Namespace,
+					ProviderID:                   row.ID,
+					ProviderConfigurationVersion: row.ConfigurationVersion,
+					TeamTrendMetrics:             cacheMetrics.relayUserTrend,
+				},
+			)
 		},
 	})
 	if err != nil {
