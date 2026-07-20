@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** PR #190 merged as `55302b62c795054c56a700c6cb817eac06c49a5b`, whose tree matches reviewed head `e7ab9e4c2a8f25071adbc1cc1861961488e73ea2`. Task 5 Steps 1-3 are complete: the exact merge commit is published as an immutable amd64/arm64 staging image, staging revision 32 is Ready after the required paused/restore rollout, and the first 24-slot cold audit failed the nine-second gate at `12.363568s`. Its immediate warm audit passed at `1.222148s`; the required fail-fast path stopped before cold round 2, and the origin limit remains 24. Final isolation verification and ledger cleanup remain pending; production remains unchanged at revision 68 on `v0.1.0-preview.72`.
+**Status:** Task 5 execution is complete with a FAIL verdict pending final independent review. PR #190 merged as `55302b62c795054c56a700c6cb817eac06c49a5b`, whose tree matches reviewed head `e7ab9e4c2a8f25071adbc1cc1861961488e73ea2`; that exact merge commit is published as the immutable staging image and staging revision 32 is Ready. The first 24-slot cold audit failed the nine-second gate at `12.363568s`; its immediate warm audit passed at `1.222148s`, and the required fail-fast path stopped before cold round 2. The origin limit remains 24. Temporary audit state is deleted, the application and Helm worktrees are clean and remote-aligned, and production remains unchanged at revision 68 on `v0.1.0-preview.72`.
 
 **Goal:** Recover one transient Redis read failure without leaving the bounded command budget, and reduce large-team cold latency by raising the single provider-wide trend origin limit from sixteen to 24.
 
@@ -817,7 +817,7 @@
   successful two-round acceptance result. The provider-wide origin limit
   remains 24 and must not be raised further.
 
-- [ ] **Step 4: Record evidence, verify isolation, and clean temporary state**
+- [x] **Step 4: Record evidence, verify isolation, and clean temporary state**
 
   Record image digest, Helm revisions, restore result, health, cold/warm
   timings, sanitized dependency/counter deltas, and the acceptance verdict in
@@ -825,3 +825,25 @@
   image as before the staging rollout. Delete the temporary audit script and
   session artifacts, confirm the application and Helm worktrees are clean and
   aligned with their remotes, and preserve unrelated main-checkout changes.
+
+  Evidence (2026-07-20): remote image inspection reconfirmed index digest
+  `sha256:e51c69cd476bceb580e088e309f266f24e951ecda124a46610c30ccac75c6aa4`
+  with the recorded amd64 and arm64 manifests. After the audit evidence commit,
+  the application worktree was clean and local/remote-aligned at `6cdce15b`;
+  the Helm worktree was clean and local/remote-aligned at
+  `3f09c5d5dd9bd39fdfdfa806774a8435a912fc9e`. Staging remained deployed at
+  revision 32 with the exact `staging-55302b62...` image, application and
+  PostgreSQL `1/1` Ready, restore Job `1/1`, and database, Redis, and Relay
+  checks `up`. Production remained deployed at revision 68 with
+  `v0.1.0-preview.72`, application `1/1` Ready, commit `1d3a8c6c...`, and all
+  three dependency checks `up`.
+
+  The session-only token, audit script, and sanitized temporary artifact were
+  deleted and independently confirmed absent. No Redis key was deleted or
+  flushed, no response body or credential was persisted, and no Team Usage
+  request was sent after the failed cold round and its immediate warm
+  measurement. The main application checkout still contains only its unrelated
+  pre-existing `CLAUDE.md` modification and untracked `docs/agents/` directory;
+  neither was touched. The final acceptance verdict is FAIL solely because
+  cold round 1 exceeded nine seconds; the observed warm, Relay, response-scope,
+  cache-error, lease-failure, and Redis-pool guards all passed.
