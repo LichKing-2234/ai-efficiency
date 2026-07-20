@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Redis via `github.com/redis/go-redis/v9`, `miniredis`, Gin HTTP adapters, zap structured logging, Prometheus cache metrics.
 
-**Status:** In progress. Task 1 is complete; Task 2 Steps 1-6 are complete and its commit is pending; Tasks 3-7 remain.
+**Status:** In progress. Tasks 1-2 are complete; Tasks 3-7 remain.
 
 ## Global Constraints
 
@@ -356,7 +356,7 @@ Expected: the new Redis primitive and unchanged existing Relay tests pass. The
 old Pod cache remains untouched until Task 4 can remove it atomically with the
 orchestration switch.
 
-- [ ] **Step 7: Commit Task 2**
+- [x] **Step 7: Commit Task 2**
 
 ```bash
 git add backend/internal/relay/sub2api_team_trend_redis.go backend/internal/relay/sub2api_team_trend_redis_test.go docs/superpowers/plans/2026-07-20-team-usage-redis-batch-trend.md
