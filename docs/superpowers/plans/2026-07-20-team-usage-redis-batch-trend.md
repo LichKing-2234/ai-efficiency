@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Redis via `github.com/redis/go-redis/v9`, `miniredis`, Gin HTTP adapters, zap structured logging, Prometheus cache metrics.
 
-**Status:** In progress. Task 1 is complete; Tasks 2-7 remain.
+**Status:** In progress. Task 1 is complete; Task 2 Steps 1-6 are complete and its commit is pending; Tasks 3-7 remain.
 
 ## Global Constraints
 
@@ -261,7 +261,7 @@ func (c *teamTrendRedisCache) LeaseTTL(ctx context.Context, leaseKey string) (ti
 func (c *teamTrendRedisCache) ReleaseBatchLease(leaseKey, token string)
 ```
 
-- [ ] **Step 1: Write failing identity, TTL, malformed, and clone tests**
+- [x] **Step 1: Write failing identity, TTL, malformed, and clone tests**
 
 Create two cache instances backed by the same miniredis server and a deterministic
 clock. Write user 101 through the first, read users 101 and 102 through the
@@ -273,7 +273,7 @@ seconds and prove the envelope is rejected even when the Redis key remains.
 Insert malformed JSON and a future `generated_at`; both must be misses and
 record `malformed`.
 
-- [ ] **Step 2: Run the primitive tests and verify RED**
+- [x] **Step 2: Run the primitive tests and verify RED**
 
 ```bash
 cd backend
@@ -282,7 +282,7 @@ go test ./internal/relay -run '^TestTeamTrendRedisCache' -count=1
 
 Expected: build failure because `teamTrendRedisCache` does not exist.
 
-- [ ] **Step 3: Implement normalized keys and versioned envelopes**
+- [x] **Step 3: Implement normalized keys and versioned envelopes**
 
 Use these exact constants and fields:
 
@@ -327,7 +327,7 @@ trailing-content rejection. Validate every envelope dimension, positive user
 ID, nonfuture generation, age below 60 seconds, nonblank point dates, finite
 cost, and nonnegative optional tokens. Clone slices and token pointers.
 
-- [ ] **Step 4: Implement ordered bulk read/write and metrics**
+- [x] **Step 4: Implement ordered bulk read/write and metrics**
 
 `Read` deduplicates positive IDs in input order, executes one `MGet` under the
 command timeout, decodes entries independently, and returns sorted misses. A
@@ -336,7 +336,7 @@ one envelope per user, uses one `SetMany` with exact one-minute TTLs, and record
 `write` plus the supplied source only after success. Encoding or Redis failure
 records `error`. No actor or user profile field is accepted by these APIs.
 
-- [ ] **Step 5: Implement token-protected lease helpers and tests**
+- [x] **Step 5: Implement token-protected lease helpers and tests**
 
 Lease identity includes provider/version, normalized range, limit, and a SHA-256
 digest of sorted unique missing Relay IDs. Acquire with UUID token and 15-second
@@ -344,7 +344,7 @@ TTL. Test two instances cannot acquire the same lease, different missing sets
 do not collide, the wrong token cannot release, and detached 100-millisecond
 release still runs after caller cancellation.
 
-- [ ] **Step 6: Run and format primitive tests**
+- [x] **Step 6: Run and format primitive tests**
 
 ```bash
 cd backend
