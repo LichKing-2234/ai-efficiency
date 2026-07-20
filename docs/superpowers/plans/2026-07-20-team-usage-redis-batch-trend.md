@@ -81,7 +81,7 @@ type MultiStore interface {
 - `MGet` returns one element per input key in the same order; a Redis miss is a nil element, not `ErrMiss`.
 - `MGet` retries one non-cancellation command error. `SetMany` executes once and does not retry.
 
-- [ ] **Step 1: Add failing ordered-read and per-item TTL tests**
+- [x] **Step 1: Add failing ordered-read and per-item TTL tests**
 
 Append tests that seed `first` and `third`, leave `second` absent, and assert exact positional output and TTLs:
 
@@ -131,7 +131,7 @@ func TestRedisStoreBulkOperationsAcceptEmptyInput(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -142,7 +142,7 @@ go test ./internal/readcache -run 'TestRedisStore(MGet|Bulk)' -count=1
 
 Expected: build failure because `SetItem`, `SetMany`, and `MGet` do not exist.
 
-- [ ] **Step 3: Implement `MultiStore` in a focused file**
+- [x] **Step 3: Implement `MultiStore` in a focused file**
 
 Create `backend/internal/readcache/multi_store.go`:
 
@@ -213,7 +213,7 @@ func (s *RedisStore) SetMany(ctx context.Context, items []SetItem) error {
 
 Add `reflect` to `store_test.go` imports.
 
-- [ ] **Step 4: Add retry, cancellation, and write-no-retry tests**
+- [x] **Step 4: Add retry, cancellation, and write-no-retry tests**
 
 Add `TestRedisStoreMGetRetriesOneCommandError` using the existing scripted hook
 with one synthetic `mget` failure, then assert the second attempt returns the
@@ -223,7 +223,7 @@ first attempt and assert exactly one call. Extend `ProcessPipelineHook` with a
 counted synthetic `pipeline` failure and assert `SetMany` executes once without
 retry.
 
-- [ ] **Step 5: Run and format the read-cache package**
+- [x] **Step 5: Run and format the read-cache package**
 
 ```bash
 cd backend
@@ -233,7 +233,7 @@ go test ./internal/readcache -count=1
 
 Expected: `ok github.com/ai-efficiency/backend/internal/readcache`.
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 ```bash
 git add backend/internal/readcache/multi_store.go backend/internal/readcache/store_test.go docs/superpowers/plans/2026-07-20-team-usage-redis-batch-trend.md
