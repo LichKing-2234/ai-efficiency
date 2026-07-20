@@ -21,14 +21,13 @@ import (
 const maxPingResponseBodyBytes int64 = 4 * 1024
 
 type sub2apiRelay struct {
-	mu               sync.RWMutex
-	client           *http.Client
-	baseURL          string // LLM API endpoint, e.g. http://localhost:3000/v1
-	adminURL         string // Admin API endpoint, e.g. http://localhost:3000
-	apiKey           string // Relay API key used for both admin and inference requests.
-	model            string
-	logger           *zap.Logger
-	teamTrendOrigins teamTrendOriginLimiter
+	mu       sync.RWMutex
+	client   *http.Client
+	baseURL  string // LLM API endpoint, e.g. http://localhost:3000/v1
+	adminURL string // Admin API endpoint, e.g. http://localhost:3000
+	apiKey   string // Relay API key used for both admin and inference requests.
+	model    string
+	logger   *zap.Logger
 }
 
 const userUsageOriginTimeout = 12 * time.Second

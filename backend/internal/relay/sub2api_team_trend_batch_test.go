@@ -109,7 +109,6 @@ func TestUsersTrendBatchRejectsMalformedAggregateRows(t *testing.T) {
 	}{
 		{name: "non-positive user", row: map[string]any{"date": "2026-07-01", "user_id": 0, "tokens": 1, "actual_cost": 1}},
 		{name: "blank date", row: map[string]any{"date": " ", "user_id": 101, "tokens": 1, "actual_cost": 1}},
-		{name: "missing tokens", row: map[string]any{"date": "2026-07-01", "user_id": 101, "actual_cost": 1}},
 		{name: "negative tokens", row: map[string]any{"date": "2026-07-01", "user_id": 101, "tokens": -1, "actual_cost": 1}},
 		{name: "missing actual cost", row: map[string]any{"date": "2026-07-01", "user_id": 101, "tokens": 1}},
 	}
@@ -133,16 +132,84 @@ func TestUsersTrendBatchRejectsMalformedAggregateRows(t *testing.T) {
 	}
 }
 
+func TestUsersTrendBatchPreservesUnknownTokens(t *testing.T) {
+	tests := []struct {
+		name string
+		row  map[string]any
+	}{
+		{name: "omitted", row: map[string]any{"date": "2026-07-01", "user_id": 101, "actual_cost": 1.25}},
+		{name: "null", row: map[string]any{"date": "2026-07-01", "user_id": 101, "tokens": nil, "actual_cost": 1.25}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"success": true, "data": map[string]any{"trend": []map[string]any{test.row}},
+				})
+			}))
+			t.Cleanup(server.Close)
+			provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+
+			got, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, TeamMemberTrendParams{})
+			if err != nil {
+				t.Fatalf("GetUsageTrendForUsers() error = %v", err)
+			}
+			if len(got[101]) != 1 {
+				t.Fatalf("user 101 points = %#v, want one point", got[101])
+			}
+			if got[101][0].TotalTokens != nil {
+				t.Fatalf("user 101 total tokens = %#v, want nil for unknown tokens", got[101][0].TotalTokens)
+			}
+		})
+	}
+}
+
 func TestNoPodTrendCacheOnSub2APIRelay(t *testing.T) {
+	var mu sync.Mutex
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/admin/dashboard/users-trend" {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		requestCount++
+		tokens := requestCount
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{"trend": []map[string]any{
+				{"date": "2026-07-01", "user_id": 101, "tokens": tokens, "actual_cost": 1},
+			}},
+		})
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+
+	first, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, TeamMemberTrendParams{})
+	if err != nil {
+		t.Fatalf("first GetUsageTrendForUsers() error = %v", err)
+	}
+	second, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, TeamMemberTrendParams{})
+	if err != nil {
+		t.Fatalf("second GetUsageTrendForUsers() error = %v", err)
+	}
+	mu.Lock()
+	gotRequestCount := requestCount
+	mu.Unlock()
+	if gotRequestCount != 2 {
+		t.Fatalf("users-trend request count = %d, want 2", gotRequestCount)
+	}
+	if first[101][0].TotalTokens == nil || *first[101][0].TotalTokens != 1 {
+		t.Fatalf("first total tokens = %#v, want 1", first[101][0].TotalTokens)
+	}
+	if second[101][0].TotalTokens == nil || *second[101][0].TotalTokens != 2 {
+		t.Fatalf("second total tokens = %#v, want 2 from second origin response", second[101][0].TotalTokens)
+	}
+
 	relayType := reflect.TypeOf(sub2apiRelay{})
 	if field, exists := relayType.FieldByName("teamTrends"); exists {
 		t.Fatalf("sub2apiRelay still contains completed trend cache field %s of type %s", field.Name, field.Type)
-	}
-	for index := 0; index < relayType.NumField(); index++ {
-		field := relayType.Field(index)
-		if field.Type.Kind() == reflect.Map {
-			t.Fatalf("sub2apiRelay contains direct map field %s of type %s", field.Name, field.Type)
-		}
 	}
 }
 

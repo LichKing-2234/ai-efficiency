@@ -120,10 +120,7 @@ func (s *sub2apiRelay) getTeamTrendBatch(
 		if strings.TrimSpace(row.Date) == "" {
 			return empty, fmt.Errorf("relay: team trend batch: row %d has blank date", index)
 		}
-		if row.Tokens == nil {
-			return empty, fmt.Errorf("relay: team trend batch: row %d is missing tokens", index)
-		}
-		if *row.Tokens < 0 {
+		if row.Tokens != nil && *row.Tokens < 0 {
 			return empty, fmt.Errorf("relay: team trend batch: row %d has negative tokens", index)
 		}
 		if row.ActualCost == nil {
@@ -153,9 +150,8 @@ func (s *sub2apiRelay) getTeamTrendBatch(
 		if _, allowed := requested[row.UserID]; !allowed {
 			continue
 		}
-		tokens := *row.Tokens
 		pointsByUser[row.UserID] = append(pointsByUser[row.UserID], UsageTrendPoint{
-			Date: row.Date, ActualCost: *row.ActualCost, TotalTokens: &tokens,
+			Date: row.Date, ActualCost: *row.ActualCost, TotalTokens: row.Tokens,
 		})
 	}
 	for userID := range pointsByUser {
