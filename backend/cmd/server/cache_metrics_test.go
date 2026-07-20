@@ -14,7 +14,6 @@ func TestProductionCacheMetricsBindStablePrivacySafeNames(t *testing.T) {
 	wantNames := []string{
 		"personal_usage",
 		"provider_metadata",
-		"relay_user_trend",
 		"representative_scope",
 		"repository_inventory",
 		"team_usage_summary",
