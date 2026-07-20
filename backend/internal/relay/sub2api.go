@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"go.uber.org/zap"
 )
 
@@ -71,8 +72,49 @@ func (s envelopeStatus) messageSuffix() string {
 	return ": " + strings.Join(messages, ": ")
 }
 
-// NewSub2apiProvider creates a new relay provider backed by a sub2api instance.
+type Sub2apiProviderOptions struct {
+	TeamTrendStore               readcache.MultiStore
+	CacheNamespace               string
+	ProviderID                   int
+	ProviderConfigurationVersion int64
+	TeamTrendMetrics             readcache.Metrics
+}
+
+// NewSub2apiProvider creates an uncached relay provider backed by a sub2api instance.
 func NewSub2apiProvider(httpClient *http.Client, baseURL, apiKey, model string, logger *zap.Logger) Provider {
+	return newSub2apiProvider(httpClient, baseURL, apiKey, model, logger)
+}
+
+func NewSub2apiProviderWithOptions(
+	httpClient *http.Client,
+	baseURL, apiKey, model string,
+	logger *zap.Logger,
+	options Sub2apiProviderOptions,
+) (Provider, error) {
+	provider := newSub2apiProvider(httpClient, baseURL, apiKey, model, logger)
+	cacheConfigured := options.TeamTrendStore != nil ||
+		strings.TrimSpace(options.CacheNamespace) != "" ||
+		options.ProviderID != 0 ||
+		options.ProviderConfigurationVersion != 0 ||
+		options.TeamTrendMetrics != nil
+	if !cacheConfigured {
+		return provider, nil
+	}
+	cache, err := newTeamTrendRedisCache(teamTrendRedisCacheOptions{
+		Store:           options.TeamTrendStore,
+		Namespace:       strings.TrimSpace(options.CacheNamespace),
+		ProviderID:      options.ProviderID,
+		ProviderVersion: options.ProviderConfigurationVersion,
+		Metrics:         options.TeamTrendMetrics,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("configure Relay user trend cache: %w", err)
+	}
+	provider.teamTrends = cache
+	return provider, nil
+}
+
+func newSub2apiProvider(httpClient *http.Client, baseURL, apiKey, model string, logger *zap.Logger) *sub2apiRelay {
 	return &sub2apiRelay{
 		client:   httpClient,
 		baseURL:  normalizeInferenceBaseURL(baseURL),
@@ -2420,8 +2462,8 @@ func (s *sub2apiRelay) ReadUserUsageOrigin(ctx context.Context, request UserUsag
 	defer cancel()
 
 	var token string
+	var authenticatedUser *User
 	if request.Branches.Usage {
-		var authenticatedUser *User
 		var err error
 		token, authenticatedUser, err = s.loginSessionToken(originCtx, request.Login, request.Password)
 		if err != nil {
@@ -2510,6 +2552,20 @@ func (s *sub2apiRelay) ReadUserUsageOrigin(ctx context.Context, request UserUsag
 			subscriptionsErr = branch.err
 		}
 	}
+	if request.RelayUserID > 0 &&
+		authenticatedUser != nil && authenticatedUser.ID == request.RelayUserID &&
+		trendErr == nil && trend != nil && ctx.Err() == nil && originCtx.Err() == nil &&
+		s.teamTrends != nil {
+		params := TeamMemberTrendParams{
+			StartDate: request.Params.StartDate, EndDate: request.Params.EndDate,
+			Granularity: request.Params.Granularity, Timezone: request.Params.Timezone,
+		}
+		if err := s.teamTrends.Write(originCtx, map[int64][]UsageTrendPoint{
+			request.RelayUserID: projectPersonalTrend(trend.Trend),
+		}, params, "personal_write_through"); err != nil {
+			s.logPersonalTrendRedisFailure(err)
+		}
+	}
 
 	if request.Branches.Usage {
 		result.UsageErr = firstError(statsErr, trendErr, modelsErr)
@@ -2540,6 +2596,29 @@ func (s *sub2apiRelay) ReadUserUsageOrigin(ctx context.Context, request UserUsag
 		}
 	}
 	return result, nil
+}
+
+func projectPersonalTrend(points []UserUsageTrendPoint) []UsageTrendPoint {
+	out := make([]UsageTrendPoint, len(points))
+	for index, point := range points {
+		tokens := point.TotalTokens
+		out[index] = UsageTrendPoint{
+			Date:        point.Date,
+			ActualCost:  point.ActualCost,
+			TotalTokens: &tokens,
+		}
+	}
+	return out
+}
+
+func (s *sub2apiRelay) logPersonalTrendRedisFailure(err error) {
+	if s.logger == nil || s.teamTrends == nil {
+		return
+	}
+	s.logger.Warn("Relay personal trend Redis write failed open",
+		zap.Int("provider_id", s.teamTrends.options.ProviderID),
+		zap.String("error_class", teamTrendErrorClass(err)),
+	)
 }
 
 func firstError(errors ...error) error {

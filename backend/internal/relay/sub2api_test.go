@@ -17,9 +17,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/go-cmp/cmp"
+	redis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func newTestProvider(t *testing.T, handler http.Handler) relay.Provider {
@@ -38,6 +42,317 @@ func TestName(t *testing.T) {
 	if p.Name() != "sub2api" {
 		t.Fatalf("expected name 'sub2api', got %q", p.Name())
 	}
+}
+
+func TestSub2apiProviderOptionsValidateRedisIdentity(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	store := readcache.NewRedisStore(client)
+
+	tests := []struct {
+		name    string
+		options relay.Sub2apiProviderOptions
+	}{
+		{name: "invalid namespace", options: relay.Sub2apiProviderOptions{
+			TeamTrendStore: store, CacheNamespace: "bad namespace", ProviderID: 7, ProviderConfigurationVersion: 3,
+		}},
+		{name: "non-positive provider ID", options: relay.Sub2apiProviderOptions{
+			TeamTrendStore: store, CacheNamespace: "test", ProviderConfigurationVersion: 3,
+		}},
+		{name: "non-positive provider version", options: relay.Sub2apiProviderOptions{
+			TeamTrendStore: store, CacheNamespace: "test", ProviderID: 7,
+		}},
+		{name: "identity without store", options: relay.Sub2apiProviderOptions{
+			CacheNamespace: "test", ProviderID: 7, ProviderConfigurationVersion: 3,
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider, err := relay.NewSub2apiProviderWithOptions(
+				http.DefaultClient, "https://relay.example.com", "test-admin-key", "test-model", zap.NewNop(), test.options,
+			)
+			if err == nil || provider != nil {
+				t.Fatalf("NewSub2apiProviderWithOptions() = %#v, %v, want nil provider and error", provider, err)
+			}
+		})
+	}
+}
+
+func TestSub2apiProviderOptionsSimpleConstructorRemainsUncached(t *testing.T) {
+	var individualCalls atomic.Int64
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		individualCalls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data":    []map[string]any{{"date": "2026-07-20", "actual_cost": 1.01, "total_tokens": 101}},
+		})
+	})
+	provider := newTestProvider(t, mux)
+	trendProvider, ok := provider.(relay.TeamMemberTrendProvider)
+	if !ok {
+		t.Fatal("provider does not implement TeamMemberTrendProvider")
+	}
+	params := relay.TeamMemberTrendParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-20", Granularity: "day", Timezone: "Asia/Shanghai",
+	}
+	for range 2 {
+		got, err := trendProvider.GetUsageTrendForUsers(context.Background(), []int64{101}, params)
+		if err != nil {
+			t.Fatalf("GetUsageTrendForUsers() error = %v", err)
+		}
+		if len(got[101]) != 1 || got[101][0].ActualCost != 1.01 {
+			t.Fatalf("GetUsageTrendForUsers() = %#v", got)
+		}
+	}
+	if got := individualCalls.Load(); got != 2 {
+		t.Fatalf("individual origin calls = %d, want 2 without a result cache", got)
+	}
+}
+
+func TestRelayUserTrendPersonalUsageWarmsSharedRedisWithoutSensitiveData(t *testing.T) {
+	server := miniredis.RunT(t)
+	store := newPersonalTrendRedisStore(t, server)
+	provider, calls := newPersonalTrendTestProvider(t, store, zap.NewNop(), personalTrendTestEndpointOptions{
+		AuthenticatedUserID: 101,
+	})
+	params := personalTrendTestParams()
+	result := readPersonalTrendOrigin(t, provider, context.Background(), 101, params)
+	if result.UsageErr != nil || result.Usage == nil {
+		t.Fatalf("ReadUserUsageOrigin() usage/error = %#v/%v", result.Usage, result.UsageErr)
+	}
+
+	trendProvider := provider.(relay.TeamMemberTrendProvider)
+	got, err := trendProvider.GetUsageTrendForUsers(context.Background(), []int64{101}, relay.TeamMemberTrendParams{
+		StartDate: params.StartDate, EndDate: params.EndDate, Granularity: params.Granularity, Timezone: params.Timezone,
+	})
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
+	}
+	if calls.adminBatch.Load() != 0 || calls.adminIndividual.Load() != 0 {
+		t.Fatalf("admin batch/individual calls = %d/%d, want 0/0 after personal write-through", calls.adminBatch.Load(), calls.adminIndividual.Load())
+	}
+	points := got[101]
+	if len(points) != 1 || points[0].Date != "2026-07-20" || points[0].ActualCost != 1.01 || points[0].TotalTokens == nil || *points[0].TotalTokens != 101 {
+		t.Fatalf("cached reduced personal trend = %#v", points)
+	}
+
+	keys := server.Keys()
+	if len(keys) != 1 {
+		t.Fatalf("Redis keys = %v, want one personal trend value", keys)
+	}
+	raw, err := server.Get(keys[0])
+	if err != nil {
+		t.Fatalf("read Redis value: %v", err)
+	}
+	for _, secret := range []string{"alice@example.com", "alice", "test-password", "test-bearer-token"} {
+		if strings.Contains(keys[0], secret) || strings.Contains(raw, secret) {
+			t.Fatalf("Redis key/value contains sensitive marker %q", secret)
+		}
+	}
+}
+
+func TestRelayUserTrendPersonalUsageIdentityMismatchDoesNotWrite(t *testing.T) {
+	server := miniredis.RunT(t)
+	provider, _ := newPersonalTrendTestProvider(t, newPersonalTrendRedisStore(t, server), zap.NewNop(), personalTrendTestEndpointOptions{
+		AuthenticatedUserID: 202,
+	})
+	reader := provider.(relay.UserUsageOriginReader)
+	_, err := reader.ReadUserUsageOrigin(context.Background(), relay.UserUsageOriginRequest{
+		Login: "alice@example.com", Password: "test-password", RelayUserID: 101,
+		Params: personalTrendTestParams(), Branches: relay.UserUsageOriginBranches{Usage: true},
+	})
+	if err == nil {
+		t.Fatal("ReadUserUsageOrigin() error = nil, want authenticated identity mismatch")
+	}
+	if keys := server.Keys(); len(keys) != 0 {
+		t.Fatalf("Redis keys after identity mismatch = %v, want none", keys)
+	}
+}
+
+func TestRelayUserTrendPersonalUsageWritesSuccessfulTrendWhenSiblingBranchesFail(t *testing.T) {
+	server := miniredis.RunT(t)
+	provider, calls := newPersonalTrendTestProvider(t, newPersonalTrendRedisStore(t, server), zap.NewNop(), personalTrendTestEndpointOptions{
+		AuthenticatedUserID: 101,
+		StatsStatus:         http.StatusBadGateway,
+		ModelsStatus:        http.StatusServiceUnavailable,
+	})
+	params := personalTrendTestParams()
+	result := readPersonalTrendOrigin(t, provider, context.Background(), 101, params)
+	if result.UsageErr == nil || result.Usage != nil {
+		t.Fatalf("ReadUserUsageOrigin() usage/error = %#v/%v, want independent usage error", result.Usage, result.UsageErr)
+	}
+	trendProvider := provider.(relay.TeamMemberTrendProvider)
+	got, err := trendProvider.GetUsageTrendForUsers(context.Background(), []int64{101}, relay.TeamMemberTrendParams{
+		StartDate: params.StartDate, EndDate: params.EndDate, Granularity: params.Granularity, Timezone: params.Timezone,
+	})
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
+	}
+	if calls.adminBatch.Load() != 0 || calls.adminIndividual.Load() != 0 || len(got[101]) != 1 {
+		t.Fatalf("write-through after sibling failures: calls=%d/%d values=%#v", calls.adminBatch.Load(), calls.adminIndividual.Load(), got)
+	}
+}
+
+func TestRelayUserTrendPersonalUsageCancellationDoesNotWrite(t *testing.T) {
+	server := miniredis.RunT(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	provider, _ := newPersonalTrendTestProvider(t, newPersonalTrendRedisStore(t, server), zap.NewNop(), personalTrendTestEndpointOptions{
+		AuthenticatedUserID: 101,
+		BeforeModelsReply:   cancel,
+	})
+	_ = readPersonalTrendOrigin(t, provider, ctx, 101, personalTrendTestParams())
+	if keys := server.Keys(); len(keys) != 0 {
+		t.Fatalf("Redis keys after canceled origin = %v, want none", keys)
+	}
+}
+
+func TestRelayUserTrendPersonalUsageRedisWriteFailureIsIgnoredAndLogsOnlySafeFields(t *testing.T) {
+	server := miniredis.RunT(t)
+	baseStore := newPersonalTrendRedisStore(t, server)
+	store := &personalTrendFailingWriteStore{MultiStore: baseStore, err: errors.New("synthetic Redis write failure")}
+	core, observed := observer.New(zap.WarnLevel)
+	provider, _ := newPersonalTrendTestProvider(t, store, zap.New(core), personalTrendTestEndpointOptions{
+		AuthenticatedUserID: 101,
+	})
+	result := readPersonalTrendOrigin(t, provider, context.Background(), 101, personalTrendTestParams())
+	if result.UsageErr != nil || result.Usage == nil {
+		t.Fatalf("ReadUserUsageOrigin() usage/error = %#v/%v, want successful personal result", result.Usage, result.UsageErr)
+	}
+	entries := observed.All()
+	if len(entries) != 1 {
+		t.Fatalf("Redis failure logs = %#v, want one warning", entries)
+	}
+	fields := entries[0].ContextMap()
+	if len(fields) != 2 || fields["provider_id"] != int64(7) || fields["error_class"] != "redis" {
+		t.Fatalf("Redis failure log fields = %#v, want only provider_id/error_class", fields)
+	}
+}
+
+type personalTrendTestEndpointOptions struct {
+	AuthenticatedUserID int64
+	StatsStatus         int
+	ModelsStatus        int
+	BeforeModelsReply   func()
+}
+
+type personalTrendTestCalls struct {
+	adminBatch      atomic.Int64
+	adminIndividual atomic.Int64
+}
+
+func newPersonalTrendTestProvider(
+	t *testing.T,
+	store readcache.MultiStore,
+	logger *zap.Logger,
+	options personalTrendTestEndpointOptions,
+) (relay.Provider, *personalTrendTestCalls) {
+	t.Helper()
+	calls := &personalTrendTestCalls{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0, "data": map[string]any{"access_token": "test-bearer-token"},
+		})
+	})
+	mux.HandleFunc("/api/v1/auth/me", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0, "data": map[string]any{
+				"id": options.AuthenticatedUserID, "username": "alice", "email": "alice@example.com",
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, _ *http.Request) {
+		if options.StatsStatus != 0 {
+			w.WriteHeader(options.StatsStatus)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"total_tokens": 101}})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/trend", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-20", "granularity": "day",
+				"trend": []map[string]any{{"date": "2026-07-20", "actual_cost": 1.01, "total_tokens": 101}},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/usage/dashboard/models", func(w http.ResponseWriter, _ *http.Request) {
+		if options.BeforeModelsReply != nil {
+			options.BeforeModelsReply()
+		}
+		if options.ModelsStatus != 0 {
+			w.WriteHeader(options.ModelsStatus)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"models": []any{}}})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/users-trend", func(w http.ResponseWriter, _ *http.Request) {
+		calls.adminBatch.Add(1)
+		http.Error(w, "unexpected batch request", http.StatusInternalServerError)
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, _ *http.Request) {
+		calls.adminIndividual.Add(1)
+		http.Error(w, "unexpected individual request", http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	provider, err := relay.NewSub2apiProviderWithOptions(
+		srv.Client(), srv.URL, "test-admin-key", "test-model", logger, relay.Sub2apiProviderOptions{
+			TeamTrendStore: store, CacheNamespace: "personal-test", ProviderID: 7, ProviderConfigurationVersion: 3,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewSub2apiProviderWithOptions() error = %v", err)
+	}
+	return provider, calls
+}
+
+func newPersonalTrendRedisStore(t *testing.T, server *miniredis.Miniredis) readcache.MultiStore {
+	t.Helper()
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	return readcache.NewRedisStore(client)
+}
+
+func personalTrendTestParams() relay.UserUsageDashboardParams {
+	return relay.UserUsageDashboardParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-20", Granularity: "day", Timezone: "Asia/Shanghai",
+	}
+}
+
+func readPersonalTrendOrigin(
+	t *testing.T,
+	provider relay.Provider,
+	ctx context.Context,
+	relayUserID int64,
+	params relay.UserUsageDashboardParams,
+) *relay.UserUsageOriginResult {
+	t.Helper()
+	reader := provider.(relay.UserUsageOriginReader)
+	result, err := reader.ReadUserUsageOrigin(ctx, relay.UserUsageOriginRequest{
+		Login: "alice@example.com", Password: "test-password", RelayUserID: relayUserID,
+		Params: params, Branches: relay.UserUsageOriginBranches{Usage: true},
+	})
+	if err != nil {
+		t.Fatalf("ReadUserUsageOrigin() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("ReadUserUsageOrigin() result = nil")
+	}
+	return result
+}
+
+type personalTrendFailingWriteStore struct {
+	readcache.MultiStore
+	err error
+}
+
+func (s *personalTrendFailingWriteStore) SetMany(context.Context, []readcache.SetItem) error {
+	return s.err
 }
 
 func TestNewSub2apiProviderNormalizesInferenceBaseURL(t *testing.T) {

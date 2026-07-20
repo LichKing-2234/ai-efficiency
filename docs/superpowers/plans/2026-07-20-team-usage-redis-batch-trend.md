@@ -623,7 +623,7 @@ func NewSub2apiProviderWithOptions(httpClient *http.Client, baseURL, apiKey, mod
 - Existing `NewSub2apiProvider` remains source-compatible and uncached, while
   retaining batch-first origin behavior.
 
-- [ ] **Step 1: Write failing constructor and production-recorder tests**
+- [x] **Step 1: Write failing constructor and production-recorder tests**
 
 Reject configured stores with invalid namespace, non-positive provider ID, or
 non-positive provider version. Prove the simple constructor remains usable and
@@ -631,7 +631,7 @@ allocates no Pod result cache. Add `relay_user_trend` to server cache metrics
 `wantNames`. In a runtime construction test, resolve two providers configured
 against one miniredis and prove provider ID/version determine shared keys.
 
-- [ ] **Step 2: Run constructor and wiring tests and verify RED**
+- [x] **Step 2: Run constructor and wiring tests and verify RED**
 
 ```bash
 cd backend
@@ -640,7 +640,7 @@ go test ./internal/relay ./internal/relayruntime ./cmd/server -run 'Sub2apiProvi
 
 Expected: failure because the options constructor and recorder do not exist.
 
-- [ ] **Step 3: Implement provider options and inject production Redis**
+- [x] **Step 3: Implement provider options and inject production Redis**
 
 Make `NewSub2apiProvider` delegate to a private base constructor without cache.
 Make `NewSub2apiProviderWithOptions` enforce all-or-none cache fields and call
@@ -651,7 +651,7 @@ pass the exact store/namespace/row ID/configuration version/recorder from
 simple constructor because it lacks persisted provider identity and is not the
 Team Usage resolver.
 
-- [ ] **Step 4: Add failing Personal Usage write-through tests**
+- [x] **Step 4: Add failing Personal Usage write-through tests**
 
 Use an options-backed provider and mocked login/me/stats/trend/models endpoints.
 Call `ReadUserUsageOrigin` for positive Relay ID 101, then call
@@ -661,7 +661,7 @@ identity mismatch, successful trend plus failed stats/models, cancellation,
 Redis write failure, and a miniredis scan proving no email, username, password,
 or bearer token is present in keys or values.
 
-- [ ] **Step 5: Implement best-effort personal projection**
+- [x] **Step 5: Implement best-effort personal projection**
 
 Retain the authenticated user outside the initial login block. After branch
 collection, write only when the request Relay ID is positive, authenticated ID
@@ -688,7 +688,7 @@ Convert request params to `TeamMemberTrendParams` and write with source
 error when forming the personal result. A successful trend may write even when
 an independent stats or models branch sets `UsageErr`.
 
-- [ ] **Step 6: Permit primitive-specific stable metric outcomes**
+- [x] **Step 6: Permit primitive-specific stable metric outcomes**
 
 Extend `telemetry.cacheOutcomes` with `malformed`, `write`, `batch_origin`,
 `individual_fallback`, `possible_truncation`, and `personal_write_through`.
@@ -696,7 +696,7 @@ Extend metrics tests to record every outcome through
 `CacheRecorder("relay_user_trend")` and assert counters retain exactly the
 existing `cache` and `outcome` labels. Add no identity or range labels.
 
-- [ ] **Step 7: Run provider, personal, metrics, and server tests**
+- [x] **Step 7: Run provider, personal, metrics, and server tests**
 
 ```bash
 cd backend

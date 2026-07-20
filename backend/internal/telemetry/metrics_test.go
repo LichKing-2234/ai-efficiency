@@ -110,6 +110,47 @@ func TestMetricsCacheRecorderUsesOnlyStableCacheAndOutcomeLabels(t *testing.T) {
 	}
 }
 
+func TestMetricsRelayUserTrendCacheOutcomesUseOnlyStableLabels(t *testing.T) {
+	metrics := NewMetrics("test-release")
+	recorder := metrics.CacheRecorder("relay_user_trend")
+	outcomes := []string{
+		"fresh", "miss", "stale", "error", "refresh", "lease_acquired", "lease_wait", "lease_failed",
+		"malformed", "write", "batch_origin", "individual_fallback", "possible_truncation", "personal_write_through",
+	}
+	for _, outcome := range outcomes {
+		recorder.Record(outcome)
+	}
+
+	families, err := metrics.Gatherer().Gather()
+	if err != nil {
+		t.Fatalf("Gather() error = %v", err)
+	}
+	seen := make(map[string]float64, len(outcomes))
+	for _, family := range families {
+		if family.GetName() != "ai_efficiency_cache_events_total" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			labels := metric.GetLabel()
+			if len(labels) != 2 {
+				t.Fatalf("cache metric labels = %v, want exactly cache/outcome", labels)
+			}
+			values := make(map[string]string, 2)
+			for _, label := range labels {
+				values[label.GetName()] = label.GetValue()
+			}
+			if values["cache"] == "relay_user_trend" {
+				seen[values["outcome"]] = metric.GetCounter().GetValue()
+			}
+		}
+	}
+	for _, outcome := range outcomes {
+		if got := seen[outcome]; got != 1 {
+			t.Fatalf("relay_user_trend outcome %q = %v, want 1", outcome, got)
+		}
+	}
+}
+
 func gatheredMetric(t *testing.T, gatherer prometheus.Gatherer, name string, labels map[string]string) *dto.Metric {
 	t.Helper()
 	families, err := gatherer.Gather()
