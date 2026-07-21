@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -9,6 +10,61 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 )
+
+var errPrewarmAuthorizationChanged = errors.New("team usage prewarm authorization changed")
+
+func (s *Service) loadPrewarmFirstScopeOrigin(ctx context.Context, request *splitReadRequest) (*teamUsageScopeOrigin, bool, error) {
+	overviewSubjects := request.scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = request.scope.Subjects
+	}
+	if request.bypassPrewarm || s.prewarmReader == nil {
+		if len(overviewSubjects) > s.fullScopeCap || s.originCache == nil {
+			return nil, false, nil
+		}
+		origin, err := s.loadSharedScopeOrigin(ctx, request)
+		return origin, true, err
+	}
+
+	provider, err := s.providerResolver.Resolve(ctx, request.providerConfig.ID)
+	if err != nil {
+		return nil, true, fmt.Errorf("resolve primary relay provider origin: %w", err)
+	}
+	subjects, relayUserIDs, err := s.resolveOverviewSubjects(ctx, request.scope, provider)
+	if err != nil {
+		return nil, true, err
+	}
+	origin, _, readErr := s.prewarmReader.ReadAuthorizedOrigin(ctx, PrewarmReadRequest{
+		ProviderID: request.providerConfig.ID, ActorUserID: request.actorUserID,
+		ProviderVersion: request.providerConfig.ConfigurationVersion, ScopeVersion: request.scope.Version,
+		Params: request.params, AuthorizedRelayUserIDs: sortedUniqueInt64s(relayUserIDs), Provider: provider,
+	})
+	if ctx.Err() != nil {
+		return nil, true, ctx.Err()
+	}
+	if readErr == nil && origin != nil {
+		currentScope, scopeErr := s.requireRepresentativeScope(ctx, request.actorUserID)
+		currentProvider, providerErr := s.resolvePrimaryProviderConfig(ctx)
+		if scopeErr == nil && providerErr == nil {
+			if currentScope.Version != request.scope.Version || currentProvider.ID != request.providerConfig.ID ||
+				currentProvider.ConfigurationVersion != request.providerConfig.ConfigurationVersion {
+				return nil, true, errPrewarmAuthorizationChanged
+			}
+			origin.subjects = subjects
+			return origin, true, nil
+		}
+	}
+
+	if len(overviewSubjects) > s.fullScopeCap {
+		return nil, false, nil
+	}
+	if s.originCache == nil {
+		origin, err = s.loadTeamUsageScopeOrigin(ctx, request.scope, provider, request.params)
+		return origin, true, err
+	}
+	origin, err = s.loadSharedScopeOriginWithProvider(ctx, request, provider)
+	return origin, true, err
+}
 
 func (s *Service) loadSharedScopeOrigin(ctx context.Context, request *splitReadRequest) (*teamUsageScopeOrigin, error) {
 	if s == nil || s.originCache == nil {
@@ -18,6 +74,10 @@ func (s *Service) loadSharedScopeOrigin(ctx context.Context, request *splitReadR
 	if err != nil {
 		return nil, fmt.Errorf("resolve primary relay provider origin: %w", err)
 	}
+	return s.loadSharedScopeOriginWithProvider(ctx, request, provider)
+}
+
+func (s *Service) loadSharedScopeOriginWithProvider(ctx context.Context, request *splitReadRequest, provider relay.Provider) (*teamUsageScopeOrigin, error) {
 	origin, err := s.originCache.GetOrLoad(ctx, OriginCacheKey{
 		ProviderID: request.providerConfig.ID, ProviderVersion: request.providerConfig.ConfigurationVersion,
 		ScopeVersion: request.scope.Version, ScopeHash: request.scopeHash, Params: request.params,

@@ -488,11 +488,11 @@ git commit -m "perf(teamusage): add segmented prewarm lifecycle"
 - Produces: `PrewarmReader.ReadAuthorizedOrigin(ctx, PrewarmReadRequest) (*teamUsageScopeOrigin, PrewarmReadOutcome, error)`.
 - Preserves: `loadTeamUsageScopeOrigin` as the exact PR #192 source path and `OriginCache` as the outer request-origin cache.
 
-- [ ] **Step 1: Write RED request-path tests**
+- [x] **Step 1: Write RED request-path tests**
 
 Tests must prove authorization and mapping resolution happen before Redis; full hits make no Relay call; eligible scopes above the existing `fullScopeCap=500` can use provider-wide prewarm facts; custom/unconfigured/DST/provider-version/anchor/schema/Redis failures use the exact existing lane fallback; authorized roster absence falls back; sparse complete trend omission yields zero; current scope-version change discards projection; partial missing today fetches only `D..D/hour` through the shared global source slots and never history; partial Relay failure falls back to the full exact range; Summary/Trend/Members/Organization/Overview outputs, cursors, freshness, and response-cache keys remain byte-equivalent.
 
-- [ ] **Step 2: Run RED tests**
+- [x] **Step 2: Run RED tests**
 
 ```bash
 cd backend
@@ -501,7 +501,7 @@ go test ./internal/teamusage -run 'PrewarmReader|PrewarmFallback|PrewarmPartialT
 
 Expected: FAIL because `Service` has no prewarm reader and current cold loads always use the scope-origin source.
 
-- [ ] **Step 3: Implement prewarm-first loading behind the existing origin cache**
+- [x] **Step 3: Implement prewarm-first loading behind the existing origin cache**
 
 Add `PrewarmReader *PrewarmReader` to `ServiceOptions`. In each existing lane loader, resolve current subjects and Relay IDs first and attempt the reader for a recognized eligible window before applying `fullScopeCap`; a valid provider-wide generation may therefore serve an authorized scope larger than 500 but smaller than the provider `<5000` bound. Hydrate a dense origin from authorized IDs, then resolve scope again and compare the opaque version before returning. On miss/ineligibility, preserve the exact PR #192 branch: scopes at or below 500 use `OriginCache` plus `loadTeamUsageScopeOrigin`, while larger scopes use their existing bounded Summary/Trend/Members/Organization generator. Do not change HTTP DTOs or outer caches.
 
@@ -520,13 +520,13 @@ type PrewarmReadOutcome string
 func (r *PrewarmReader) ReadAuthorizedOrigin(context.Context, PrewarmReadRequest) (*teamUsageScopeOrigin, PrewarmReadOutcome, error)
 ```
 
-- [ ] **Step 4: Implement partial-today recovery without a completed Pod cache**
+- [x] **Step 4: Implement partial-today recovery without a completed Pod cache**
 
 When current stats and required history are hard-valid but today is not, coordinate only the in-flight today request, fetch exactly `D..D/hour`, validate and compose it, optionally publish a complete new generation while the lease is owned, then discard the completed local value. If any step fails, call the complete PR #192 loader rather than a per-segment approximation.
 
 The local flight key contains provider ID/version, timezone digest, anchor, and `today_hour`; its callback returns the request result to current waiters only. It never writes the completed result into a process map after the callback returns.
 
-- [ ] **Step 5: Verify all Team Usage behavior**
+- [x] **Step 5: Verify all Team Usage behavior**
 
 ```bash
 cd backend
