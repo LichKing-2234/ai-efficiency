@@ -28,7 +28,7 @@ func (s *Service) loadSharedScopeOrigin(ctx context.Context, request *splitReadR
 		return nil, err
 	}
 	if len(origin.subjects) == 0 {
-		origin, err = s.hydrateCachedScopeOrigin(ctx, request.scope, provider, origin)
+		origin, err = s.hydrateCachedScopeOrigin(ctx, request.scope, provider, request.params, origin)
 		if err != nil {
 			return nil, err
 		}
@@ -114,6 +114,7 @@ func (s *Service) hydrateCachedScopeOrigin(
 	ctx context.Context,
 	scope *representativescope.Scope,
 	provider relay.Provider,
+	params OverviewParams,
 	origin *teamUsageScopeOrigin,
 ) (*teamUsageScopeOrigin, error) {
 	subjects, currentRelayUserIDs, err := s.resolveOverviewSubjects(ctx, scope, provider)
@@ -121,6 +122,9 @@ func (s *Service) hydrateCachedScopeOrigin(
 		return nil, fmt.Errorf("hydrate team usage cached scope origin subjects: %w", err)
 	}
 	currentRelayUserIDs = sortedUniqueInt64s(currentRelayUserIDs)
+	if !equalSortedInt64s(currentRelayUserIDs, origin.RelayUserIDs) {
+		return s.loadTeamUsageScopeOrigin(ctx, scope, provider, params)
+	}
 	authorized := make(map[int64]struct{}, len(currentRelayUserIDs))
 	for _, relayUserID := range currentRelayUserIDs {
 		authorized[relayUserID] = struct{}{}
@@ -142,6 +146,18 @@ func (s *Service) hydrateCachedScopeOrigin(
 		}
 	}
 	return hydrated, nil
+}
+
+func equalSortedInt64s(left, right []int64) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func completeScopeOriginRanges(origin *teamUsageScopeOrigin) {

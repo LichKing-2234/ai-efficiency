@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -99,6 +100,34 @@ func TestUsersTrendBatchRejectsPossiblyTruncatedResponse(t *testing.T) {
 
 	if _, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, TeamMemberTrendParams{}); err == nil {
 		t.Fatal("GetUsageTrendForUsers() error = nil, want possibly truncated users-trend rejection")
+	}
+}
+
+func TestUsersTrendBatchPreservesInvalidCredentialsClassification(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		response   map[string]any
+	}{
+		{name: "http unauthorized", statusCode: http.StatusUnauthorized, response: map[string]any{"success": false}},
+		{name: "http forbidden", statusCode: http.StatusForbidden, response: map[string]any{"success": false}},
+		{name: "envelope unauthorized", statusCode: http.StatusOK, response: map[string]any{"code": http.StatusUnauthorized}},
+		{name: "envelope forbidden", statusCode: http.StatusOK, response: map[string]any{"code": http.StatusForbidden}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.statusCode)
+				_ = json.NewEncoder(w).Encode(test.response)
+			}))
+			t.Cleanup(server.Close)
+			provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+
+			_, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, TeamMemberTrendParams{})
+			if !errors.Is(err, ErrInvalidCredentials) {
+				t.Fatalf("GetUsageTrendForUsers() error = %v, want ErrInvalidCredentials", err)
+			}
+		})
 	}
 }
 

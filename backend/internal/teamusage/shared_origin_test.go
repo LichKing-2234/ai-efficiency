@@ -230,6 +230,53 @@ func TestSharedOriginSummaryCountsConnectedSubjectsBeforeRelayIDDeduplication(t 
 	}
 }
 
+func TestSharedOriginReloadsWhenRelayMappingsChangeDuringRedisTTL(t *testing.T) {
+	cache, _ := testOriginCache(t, time.Now, "mapping-change-token")
+	key := testOriginCacheKey()
+	if _, err := cache.GetOrLoad(context.Background(), key, func(context.Context) (*teamUsageScopeOrigin, error) {
+		return testScopeOrigin(), nil
+	}); err != nil {
+		t.Fatalf("prewarm origin cache: %v", err)
+	}
+
+	newRelayUserID := int64(202)
+	rangeCost := 2.0
+	rangeTokens := int64(20)
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			newRelayUserID: {UserID: newRelayUserID, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			newRelayUserID: {{Date: "2026-07-01", ActualCost: rangeCost, TotalTokens: &rangeTokens}},
+		},
+	}
+	scope := &representativescope.Scope{
+		Version: key.ScopeVersion,
+		OverviewSubjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, RelayUserID: intPtr(int(newRelayUserID)), Selectable: true},
+		},
+	}
+	service := &Service{
+		originCache: cache, providerResolver: fakeProviderResolver{provider: provider},
+		teamOverviewTrendTimeout: time.Second,
+	}
+
+	origin, err := service.loadSharedScopeOrigin(context.Background(), &splitReadRequest{
+		params: key.Params, scope: scope, scopeHash: key.ScopeHash,
+		providerConfig: primaryProviderConfig{ID: key.ProviderID, ConfigurationVersion: key.ProviderVersion},
+	})
+	if err != nil {
+		t.Fatalf("loadSharedScopeOrigin() error = %v", err)
+	}
+	if !reflect.DeepEqual(origin.RelayUserIDs, []int64{newRelayUserID}) || origin.StatsByRelayUserID[newRelayUserID].UserID != newRelayUserID ||
+		len(origin.PointsByUser[newRelayUserID]) != 1 {
+		t.Fatalf("reloaded origin = %#v/%#v/%#v, want authoritative data for Relay user %d", origin.RelayUserIDs, origin.StatsByRelayUserID, origin.PointsByUser, newRelayUserID)
+	}
+	if !reflect.DeepEqual(provider.summaryRequestUserIDs, []int64{newRelayUserID}) || provider.trendCalls != 1 {
+		t.Fatalf("authoritative reload calls = stats %#v trend %d, want one reload", provider.summaryRequestUserIDs, provider.trendCalls)
+	}
+}
+
 func TestSharedOriginNormalizesNilTrendPoints(t *testing.T) {
 	client := testdb.Open(t)
 	scope, provider := membersTestData(1)

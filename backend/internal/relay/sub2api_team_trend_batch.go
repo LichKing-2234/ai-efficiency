@@ -80,6 +80,9 @@ func (s *sub2apiRelay) getTeamTrendBatch(
 	if int64(len(body)) >= teamTrendBatchResponseLimit {
 		return empty, fmt.Errorf("relay: team trend batch: response body reached %d-byte limit", teamTrendBatchResponseLimit)
 	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return empty, ErrInvalidCredentials
+	}
 	if resp.StatusCode != http.StatusOK {
 		return empty, fmt.Errorf("relay: team trend batch: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffixFromData(body))
 	}
@@ -95,6 +98,9 @@ func (s *sub2apiRelay) getTeamTrendBatch(
 			return empty, fmt.Errorf("relay: team trend batch: decode envelope: trailing JSON")
 		}
 		return empty, fmt.Errorf("relay: team trend batch: decode trailing content: %w", err)
+	}
+	if envelope.Code != nil && (*envelope.Code == http.StatusUnauthorized || *envelope.Code == http.StatusForbidden) {
+		return empty, ErrInvalidCredentials
 	}
 	if !envelope.ok() {
 		return empty, fmt.Errorf("relay: team trend batch: request failed%s", envelope.envelopeStatus.messageSuffix())

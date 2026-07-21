@@ -272,7 +272,10 @@ response adapter over those lanes and owns no additional cache:
   authorized scope can address the same value. It also binds provider version and
   normalized range/granularity/timezone. Values live for 60 seconds and serialize
   only Relay IDs, per-user stats, and validated trend points. Current subject
-  metadata is re-resolved and authorized before a cached origin is hydrated.
+  metadata is re-resolved and authorized before a cached origin is hydrated. If
+  the current Relay ID set differs from the cached set, hydration discards the
+  cached payload and performs a fresh authoritative origin load so a remapped
+  subject is never projected with another generation's missing data.
 - A Summary value contains only a typed normalized window and summary aggregate.
   A Trend value contains only its normalized window, bounded `top_members`,
   `top_member_trend`, and `department_trend`. A Members value contains only its
@@ -564,7 +567,8 @@ connections removed. These pool measurements are separate from the application
 cache counter. Production startup binds that counter once to each stable read
 model name: `work_items_counts`, `personal_usage`, `representative_scope`,
 `team_usage_summary`, `team_usage_trend`, `team_usage_members`,
-`team_usage_organization`, `repository_inventory`, and `provider_metadata`. Every
+`team_usage_organization`, `team_usage_origin`, `repository_inventory`, and
+`provider_metadata`. Every
 domain records only the closed outcomes `fresh`,
 `miss`, `stale`, `error`, `refresh`, `lease_acquired`, `lease_wait`, and
 `lease_failed`; fresh-only caches do not fabricate stale events. No observer
