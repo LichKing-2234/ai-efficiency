@@ -2564,7 +2564,7 @@ func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs [
 	}
 
 	limit := teamTrendBatchLimit(len(requested))
-	result, err := s.GetProviderUsageTrend(ctx, TeamMemberTrendParams{
+	result, err := s.getTeamTrendFallback(ctx, requested, TeamMemberTrendParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
 	}, limit)
@@ -2574,21 +2574,12 @@ func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs [
 	if !result.Complete {
 		return nil, fmt.Errorf("relay: team trend batch: response may be truncated at limit %d", limit)
 	}
-	pointsByUser := make(map[int64][]UsageTrendPoint, len(requested))
-	for _, point := range result.Points {
-		if _, allowed := seen[point.UserID]; !allowed {
-			continue
-		}
-		pointsByUser[point.UserID] = append(pointsByUser[point.UserID], UsageTrendPoint{
-			Date: point.Date, ActualCost: point.ActualCost, TotalTokens: point.TotalTokens,
-		})
-	}
 	for _, relayUserID := range requested {
-		if _, exists := pointsByUser[relayUserID]; !exists {
-			pointsByUser[relayUserID] = []UsageTrendPoint{}
+		if _, exists := result.PointsByUser[relayUserID]; !exists {
+			result.PointsByUser[relayUserID] = []UsageTrendPoint{}
 		}
 	}
-	return pointsByUser, nil
+	return result.PointsByUser, nil
 }
 
 func (s *sub2apiRelay) ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error) {

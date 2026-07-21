@@ -399,7 +399,7 @@ func TestPrewarmRecoverySharesOneCurrentGenerationAcrossMissingLanes(t *testing.
 
 func TestPrewarmRecoveryLaneFailureDoesNotBlockHealthyLane(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
-	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
 	provider := newLifecycleProvider([]int64{101})
 	provider.trendErrorTimezone = "Asia/Shanghai"
 	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"Asia/Shanghai", "UTC"}, func() time.Time { return now }))
@@ -416,6 +416,9 @@ func TestPrewarmRecoveryLaneFailureDoesNotBlockHealthyLane(t *testing.T) {
 	}
 	if provider.directoryCount() != 1 || provider.statsCount() != 1 {
 		t.Fatalf("recovery current builds directory=%d stats=%d, want one shared build", provider.directoryCount(), provider.statsCount())
+	}
+	if got := countLeasesWithTTL(server, 80*time.Second, 91*time.Second); got != 0 {
+		t.Fatalf("recovery worker/source leases after lane failure = %d, want zero", got)
 	}
 }
 
@@ -1174,6 +1177,33 @@ func TestPrewarmRecoveryAtomicPublicationRejectsCoordinatorLostAtCommit(t *testi
 	}
 	if got := store.maximumClaims(); got < 3 {
 		t.Fatalf("recovery atomic publication checked %d leases, want tick+active+segment", got)
+	}
+}
+
+func TestPrewarmRecoveryAtomicPublicationRejectsHistoryLeaseLostAtCommit(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	store := &coordinatorDropMultiLeaseStore{recordingPrewarmStore: newRecordingPrewarmStore()}
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	provider := newLifecycleProvider([]int64{101})
+	binding := prewarmBinding(provider)
+	store.replaceLeaseKey = prewarmSegmentLeaseKey(
+		cache, binding, "UTC", "2026-07-21", string(SegmentHistory29d),
+	)
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: binding}, cache, lifecycleOptions([]string{"UTC", "Asia/Shanghai"}, func() time.Time { return now }))
+
+	if err := prewarmer.runRecovery(context.Background()); err == nil {
+		t.Fatal("runRecovery(commit-window history lease loss) error = nil")
+	}
+	identity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+	if _, found, err := cache.Read(context.Background(), identity); err != nil || found {
+		t.Fatalf("recovery manifest after history lease loss found=%v err=%v, want absent", found, err)
+	}
+	healthyIdentity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "Asia/Shanghai", AnchorDate: "2026-07-21"}
+	if result := readPrewarmResult(t, cache, healthyIdentity); !result.Complete {
+		t.Fatal("healthy recovery lane did not publish after another lane lost a history lease")
+	}
+	if got := store.maximumClaims(); got < 5 {
+		t.Fatalf("recovery atomic publication checked %d leases, want tick+active+three segments", got)
 	}
 }
 
@@ -2047,6 +2077,7 @@ type coordinatorDropMultiLeaseStore struct {
 
 	muDrop          sync.Mutex
 	dropCoordinator bool
+	replaceLeaseKey string
 	maxClaims       int
 }
 
@@ -2066,10 +2097,16 @@ func (s *coordinatorDropMultiLeaseStore) SetIfLeasesOwned(
 		s.maxClaims = len(leaseKeys)
 	}
 	drop := s.dropCoordinator
+	replaceLeaseKey := s.replaceLeaseKey
 	s.muDrop.Unlock()
 	if drop && len(leaseKeys) > 0 {
 		s.recordingPrewarmStore.mu.Lock()
 		delete(s.recordingPrewarmStore.leases, leaseKeys[0])
+		s.recordingPrewarmStore.mu.Unlock()
+	}
+	if replaceLeaseKey != "" {
+		s.recordingPrewarmStore.mu.Lock()
+		s.recordingPrewarmStore.leases[replaceLeaseKey] = "competitor-owner"
 		s.recordingPrewarmStore.mu.Unlock()
 	}
 	return s.recordingPrewarmStore.SetIfLeasesOwned(ctx, leaseKeys, tokens, key, value, ttl)

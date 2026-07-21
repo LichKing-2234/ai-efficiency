@@ -53,6 +53,47 @@ func TestPrewarmReaderFullHitFiltersAuthorizedRosterAndUsesSparseZero(t *testing
 	}
 }
 
+func TestPrewarmReaderTamperedRosterDigestSelectsExactFallback(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
+	identity := testPrewarmIdentity()
+	manifest := seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101, 102})
+	result := readPrewarmResult(t, cache, identity)
+	tampered := *result.CurrentStats
+	tampered.RosterDigest = strings.Repeat("f", 64)
+	encodedCurrent, err := encodePrewarmJSON(tampered, prewarmCurrentStatsMaxBytes)
+	if err != nil {
+		t.Fatalf("encodePrewarmJSON(tampered current) error = %v", err)
+	}
+	server.Set(manifest.CurrentStats.Key, string(encodedCurrent))
+	server.SetTTL(manifest.CurrentStats.Key, movingValueTTL)
+	manifest.CurrentStats.RosterDigest = tampered.RosterDigest
+	manifest.CurrentStats.SerializedBytes = len(encodedCurrent)
+	encodedManifest, err := encodePrewarmJSON(manifest, prewarmManifestMaxBytes)
+	if err != nil {
+		t.Fatalf("encodePrewarmJSON(tampered manifest) error = %v", err)
+	}
+	manifestKey, err := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, identity)
+	if err != nil {
+		t.Fatalf("prewarmManifestKeyForIdentity() error = %v", err)
+	}
+	server.Set(manifestKey, string(encodedManifest))
+	server.SetTTL(manifestKey, manifestTTL)
+
+	metrics := &recordingPrewarmRequestMetrics{}
+	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
+		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
+	})
+	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
+	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
+		ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
+		Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
+	})
+	if err == nil || origin != nil || outcome != PrewarmReadFallback {
+		t.Fatalf("tampered roster digest = %#v/%q/%v, want exact fallback signal", origin, outcome, err)
+	}
+}
+
 func TestPrewarmReaderUnionMetricUsesProviderWideTrendBeforeAuthorization(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })

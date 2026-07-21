@@ -18,6 +18,20 @@ import (
 	redis "github.com/redis/go-redis/v9"
 )
 
+func TestPrewarmTimezoneDigestUsesLengthDelimitedVectorAndIsolation(t *testing.T) {
+	const wantUTC = "f1e77e06761707b36450be5a9f66cef85e62e3f8be634a997c96c345501cf40a"
+	got := prewarmTimezoneDigest("UTC")
+	if got != wantUTC {
+		t.Fatalf("prewarmTimezoneDigest(UTC) = %q, want length-delimited vector %q", got, wantUTC)
+	}
+	if got != prewarmStringDigest("UTC") {
+		t.Fatalf("timezone digest = %q, prewarmStringDigest(UTC) = %q", got, prewarmStringDigest("UTC"))
+	}
+	if got == prewarmStringDigest("U", "TC") || got == prewarmTimezoneDigest("Etc/UTC") {
+		t.Fatal("timezone digest did not isolate length-delimited inputs")
+	}
+}
+
 func TestPrewarmCacheKeysIsolateAllGenerationDimensions(t *testing.T) {
 	const (
 		namespace       = "test"
@@ -366,14 +380,35 @@ func TestPrewarmCachePublishManifestWithLeasesRequiresAllClaims(t *testing.T) {
 	}
 }
 
+func TestPrewarmCachePublishManifestWithLeasesAcceptsFiveClaims(t *testing.T) {
+	generatedAt := testPrewarmGeneratedAt()
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
+	manifest := testPrewarmManifest(t, cache, testPrewarmIdentity(), generatedAt)
+	claims := make([]PrewarmLeaseClaim, 5)
+	for index := range claims {
+		claims[index] = PrewarmLeaseClaim{
+			Key: cache.LeaseKey("claim", fmt.Sprint(index)), Token: fmt.Sprintf("owner-%d", index),
+		}
+		acquired, err := cache.TryAcquireLease(context.Background(), claims[index].Key, claims[index].Token, time.Minute)
+		if err != nil || !acquired {
+			t.Fatalf("TryAcquireLease(%d) = %v, %v", index, acquired, err)
+		}
+	}
+
+	published, err := cache.PublishManifestWithLeases(context.Background(), claims, manifest)
+	if err != nil || !published {
+		t.Fatalf("PublishManifestWithLeases(five claims) = %v, %v, want accepted", published, err)
+	}
+}
+
 func TestPrewarmCachePublishManifestWithLeasesRejectsInvalidClaimSets(t *testing.T) {
 	testCases := []struct {
 		name   string
 		claims func(*PrewarmCache) []PrewarmLeaseClaim
 	}{
 		{name: "zero claims", claims: func(*PrewarmCache) []PrewarmLeaseClaim { return nil }},
-		{name: "five claims", claims: func(cache *PrewarmCache) []PrewarmLeaseClaim {
-			claims := make([]PrewarmLeaseClaim, 5)
+		{name: "six claims", claims: func(cache *PrewarmCache) []PrewarmLeaseClaim {
+			claims := make([]PrewarmLeaseClaim, 6)
 			for index := range claims {
 				claims[index] = PrewarmLeaseClaim{Key: cache.LeaseKey("claim", fmt.Sprint(index)), Token: fmt.Sprintf("owner-%d", index)}
 			}
@@ -989,7 +1024,7 @@ func testPrewarmCurrentStats(generatedAt time.Time, generationSeed string) Prewa
 	return PrewarmCurrentStatsEnvelope{
 		SchemaVersion: prewarmCacheSchemaVersion, ProviderID: 7, ProviderVersion: 11,
 		GenerationID: strings.Repeat(generationSeed, 64), GeneratedAt: generatedAt,
-		RosterCount: 1, RosterDigest: strings.Repeat("f", 64), ResponseBytes: 512,
+		RosterCount: 1, RosterDigest: prewarmRosterDigest([]int64{101}), ResponseBytes: 512,
 		Stats: []PrewarmCurrentStat{{UserID: 101, TodayActualCost: 1.25, TotalActualCost: 12.5, TotalTokens: &tokens}},
 	}
 }

@@ -263,6 +263,63 @@ func TestProviderWideTeamTrendBatchEnforcesBodyLimitBeforeDecode(t *testing.T) {
 	}
 }
 
+func TestUsersTrendFallbackKeeps64MiBCompatibilityWhileProviderWideRejects32MiB(t *testing.T) {
+	const responseSize = (32 << 20) + 1
+	const validTrend = `{"success":true,"data":{"trend":[]}}`
+	body := paddedTrendJSONBody(t, validTrend, responseSize)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+
+	got, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, TeamMemberTrendParams{})
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v, want 32-64 MiB compatibility acceptance", err)
+	}
+	if points, exists := got[101]; !exists || len(points) != 0 {
+		t.Fatalf("GetUsageTrendForUsers() = %#v, want explicit empty user 101 trend", got)
+	}
+
+	_, err = provider.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{}, 5000)
+	if err == nil {
+		t.Fatal("GetProviderUsageTrend() error = nil, want strict 32 MiB rejection")
+	}
+	requireProviderWideRejectionKind(t, err, ProviderSourceRejectionRawTrendLimit)
+}
+
+func TestUsersTrendFallbackSortsOutOfOrderRowsWhileProviderWideRejectsThem(t *testing.T) {
+	params := TeamMemberTrendParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-02", Granularity: "day", Timezone: "UTC",
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-02", "granularity": "day",
+				"trend": []map[string]any{
+					{"date": "2026-07-02", "user_id": 101, "tokens": 2, "actual_cost": 2},
+					{"date": "2026-07-01", "user_id": 101, "tokens": 1, "actual_cost": 1},
+				},
+			},
+		})
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+
+	got, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, params)
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v, want compatibility sorting", err)
+	}
+	if len(got[101]) != 2 || got[101][0].Date != "2026-07-01" || got[101][1].Date != "2026-07-02" {
+		t.Fatalf("GetUsageTrendForUsers()[101] = %#v, want ascending dates", got[101])
+	}
+
+	if _, err := provider.GetProviderUsageTrend(context.Background(), params, 5000); err == nil {
+		t.Fatal("GetProviderUsageTrend() error = nil, want strict source-order rejection")
+	}
+}
+
 func TestProviderWideTeamTrendHTTPRejectsTypedPointCoverageAndCompleteness(t *testing.T) {
 	params := TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC"}
 	tests := []struct {

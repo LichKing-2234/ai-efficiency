@@ -34,7 +34,7 @@ const (
 	prewarmTimezoneGenerationMaxBytes = 16 << 20
 	prewarmDefaultCommandTimeout      = 2 * time.Second
 	prewarmImmutableClaimTTL          = 90 * time.Second
-	prewarmPublicationLeaseLimit      = 4
+	prewarmPublicationLeaseLimit      = 5
 )
 
 type PrewarmCacheIdentity struct {
@@ -103,10 +103,6 @@ type PrewarmCacheResult struct {
 	History29dStatus   PrewarmValueStatus
 	History6dStatus    PrewarmValueStatus
 	TodayHourStatus    PrewarmValueStatus
-	CurrentStatsFresh  bool
-	History29dFresh    bool
-	History6dFresh     bool
-	TodayHourFresh     bool
 }
 
 type PrewarmCacheOptions struct {
@@ -216,10 +212,6 @@ func (c *PrewarmCache) Read(
 		History29dStatus:   statuses[1],
 		History6dStatus:    statuses[2],
 		TodayHourStatus:    statuses[3],
-		CurrentStatsFresh:  statuses[0] == PrewarmValueFresh,
-		History29dFresh:    statuses[1] == PrewarmValueFresh,
-		History6dFresh:     statuses[2] == PrewarmValueFresh,
-		TodayHourFresh:     statuses[3] == PrewarmValueFresh,
 	}, true, nil
 }
 
@@ -853,8 +845,7 @@ func validatePrewarmCacheIdentity(identity PrewarmCacheIdentity) error {
 }
 
 func prewarmTimezoneDigest(timezone string) string {
-	digest := sha256.Sum256([]byte(timezone))
-	return hex.EncodeToString(digest[:])
+	return prewarmStringDigest(timezone)
 }
 
 func prewarmManifestKeyForIdentity(namespace string, schemaVersion int, identity PrewarmCacheIdentity) (string, error) {

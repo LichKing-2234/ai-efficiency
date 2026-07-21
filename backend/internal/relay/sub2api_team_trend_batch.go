@@ -7,15 +7,22 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 )
 
 const (
-	teamTrendBatchResponseLimit int64 = 32 << 20
-	teamTrendBatchPointLimit          = 1_000_000
-	teamTrendBatchUserLimit           = 5000
+	teamTrendBatchResponseLimit    int64 = 32 << 20
+	teamTrendFallbackResponseLimit int64 = 64 << 20
+	teamTrendBatchPointLimit             = 1_000_000
+	teamTrendBatchUserLimit              = 5000
 )
+
+type teamTrendFallbackResult struct {
+	PointsByUser map[int64][]UsageTrendPoint
+	Complete     bool
+}
 
 type teamTrendBatchPoint struct {
 	Date       string   `json:"date"`
@@ -43,6 +50,113 @@ type teamTrendBatchPointKey struct {
 
 func teamTrendBatchLimit(_ int) int {
 	return teamTrendBatchUserLimit
+}
+
+// getTeamTrendFallback retains the PR #192 requested-user compatibility
+// contract. Provider-wide prewarm reads use GetProviderUsageTrend instead.
+func (s *sub2apiRelay) getTeamTrendFallback(
+	ctx context.Context,
+	requestedUserIDs []int64,
+	params TeamMemberTrendParams,
+	limit int,
+) (teamTrendFallbackResult, error) {
+	empty := teamTrendFallbackResult{PointsByUser: make(map[int64][]UsageTrendPoint)}
+	if limit <= 0 || limit > teamTrendBatchUserLimit {
+		return empty, fmt.Errorf("relay: team trend batch: invalid limit %d", limit)
+	}
+
+	query := url.Values{}
+	query.Set("start_date", params.StartDate)
+	query.Set("end_date", params.EndDate)
+	query.Set("granularity", params.Granularity)
+	query.Set("timezone", params.Timezone)
+	query.Set("limit", strconv.Itoa(limit))
+	path := "/api/v1/admin/dashboard/users-trend?" + query.Encode()
+
+	resp, err := s.doAdminRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return empty, fmt.Errorf("relay: team trend batch: fetch: %w", err)
+	}
+	body, readErr := readBodyStrictlyBelow(resp.Body, teamTrendFallbackResponseLimit)
+	resp.Body.Close()
+	if readErr != nil {
+		return empty, fmt.Errorf("relay: team trend batch: read body: %w", readErr)
+	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return empty, ErrInvalidCredentials
+	}
+	if resp.StatusCode != http.StatusOK {
+		return empty, fmt.Errorf("relay: team trend batch: unexpected status %d%s", resp.StatusCode, relayErrorMessageSuffixFromData(body))
+	}
+
+	var envelope teamTrendBatchEnvelope
+	if err := decodeSingleJSON(body, &envelope); err != nil {
+		return empty, fmt.Errorf("relay: team trend batch: decode envelope: %w", err)
+	}
+	if envelope.Code != nil && (*envelope.Code == http.StatusUnauthorized || *envelope.Code == http.StatusForbidden) {
+		return empty, ErrInvalidCredentials
+	}
+	if !envelope.ok() {
+		return empty, fmt.Errorf("relay: team trend batch: request failed%s", envelope.envelopeStatus.messageSuffix())
+	}
+	if envelope.Data == nil || envelope.Data.Trend == nil {
+		return empty, fmt.Errorf("relay: team trend batch: missing trend data")
+	}
+
+	rows := *envelope.Data.Trend
+	uniqueUsers := make(map[int64]struct{}, len(rows))
+	seenPoints := make(map[teamTrendBatchPointKey]struct{}, len(rows))
+	for index, row := range rows {
+		if row.UserID <= 0 {
+			return empty, fmt.Errorf("relay: team trend batch: row %d has invalid user ID", index)
+		}
+		if strings.TrimSpace(row.Date) == "" {
+			return empty, fmt.Errorf("relay: team trend batch: row %d has blank date", index)
+		}
+		if row.Tokens != nil && *row.Tokens < 0 {
+			return empty, fmt.Errorf("relay: team trend batch: row %d has negative tokens", index)
+		}
+		if row.ActualCost == nil {
+			return empty, fmt.Errorf("relay: team trend batch: row %d is missing actual cost", index)
+		}
+		if math.IsNaN(*row.ActualCost) || math.IsInf(*row.ActualCost, 0) {
+			return empty, fmt.Errorf("relay: team trend batch: row %d has non-finite actual cost", index)
+		}
+
+		uniqueUsers[row.UserID] = struct{}{}
+		if len(uniqueUsers) > limit {
+			return empty, fmt.Errorf("relay: team trend batch: unique user count exceeds limit %d", limit)
+		}
+		key := teamTrendBatchPointKey{UserID: row.UserID, Date: row.Date}
+		if _, exists := seenPoints[key]; exists {
+			return empty, fmt.Errorf("relay: team trend batch: duplicate user/date row")
+		}
+		seenPoints[key] = struct{}{}
+	}
+
+	requested := make(map[int64]struct{}, len(requestedUserIDs))
+	for _, userID := range requestedUserIDs {
+		requested[userID] = struct{}{}
+	}
+	pointsByUser := make(map[int64][]UsageTrendPoint, len(requested))
+	for _, row := range rows {
+		if _, allowed := requested[row.UserID]; !allowed {
+			continue
+		}
+		pointsByUser[row.UserID] = append(pointsByUser[row.UserID], UsageTrendPoint{
+			Date: row.Date, ActualCost: *row.ActualCost, TotalTokens: row.Tokens,
+		})
+	}
+	for userID := range pointsByUser {
+		sort.Slice(pointsByUser[userID], func(left, right int) bool {
+			return pointsByUser[userID][left].Date < pointsByUser[userID][right].Date
+		})
+	}
+
+	return teamTrendFallbackResult{
+		PointsByUser: pointsByUser,
+		Complete:     len(uniqueUsers) < limit,
+	}, nil
 }
 
 func (s *sub2apiRelay) GetProviderUsageTrend(

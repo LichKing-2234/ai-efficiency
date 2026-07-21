@@ -774,33 +774,59 @@ func (p *Prewarmer) runRecoveryLane(
 	} else if found {
 		return nil
 	}
+	laneCtx, cancelLane := context.WithTimeout(ctx, p.options.segmentWorkerTimeout)
+	defer cancelLane()
 	refs := make(map[PrewarmSegmentClass]PrewarmValueReference, 3)
 	classes := []PrewarmSegmentClass{SegmentHistory29d, SegmentHistory6d, SegmentTodayHour}
-	var completing leasedPrewarmReference
-	for index, class := range classes {
-		refreshClass := string(class)
-		if class == SegmentTodayHour {
-			refreshClass = prewarmMovingRefreshClass
-		}
-		leased, err := p.fetchLeasedSegment(ctx, binding, lane.timezone, lane.anchorDate, class, refreshClass)
-		if err != nil {
-			return err
-		}
-		refs[class] = leased.reference
-		if index == len(classes)-1 {
-			completing = leased
-		} else {
-			p.releaseLeasedReference(leased)
-		}
+	type recoverySegmentResult struct {
+		class  PrewarmSegmentClass
+		leased leasedPrewarmReference
+		err    error
 	}
-	defer p.releaseLeasedReference(completing)
+	results := make(chan recoverySegmentResult, len(classes))
+	for _, class := range classes {
+		class := class
+		go func() {
+			refreshClass := string(class)
+			if class == SegmentTodayHour {
+				refreshClass = prewarmMovingRefreshClass
+			}
+			leased, fetchErr := p.fetchLeasedSegment(
+				laneCtx, binding, lane.timezone, lane.anchorDate, class, refreshClass,
+			)
+			results <- recoverySegmentResult{class: class, leased: leased, err: fetchErr}
+		}()
+	}
+	leasedByClass := make(map[PrewarmSegmentClass]leasedPrewarmReference, len(classes))
+	var failures []error
+	for range classes {
+		result := <-results
+		if result.err != nil {
+			failures = append(failures, result.err)
+			cancelLane()
+			continue
+		}
+		leasedByClass[result.class] = result.leased
+		refs[result.class] = result.leased.reference
+	}
+	for _, leased := range leasedByClass {
+		defer p.releaseLeasedReference(leased)
+	}
+	if len(failures) != 0 {
+		return errors.Join(failures...)
+	}
 	manifest := PrewarmManifest{
 		SchemaVersion: prewarmCacheSchemaVersion, ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
 		Timezone: lane.timezone, TimezoneDigest: prewarmTimezoneDigest(lane.timezone), AnchorDate: lane.anchorDate,
 		CreatedAt: p.options.Now(), CurrentStats: currentRef,
 		History29d: refs[SegmentHistory29d], History6d: refs[SegmentHistory6d], TodayHour: refs[SegmentTodayHour],
 	}
-	err = p.publishIfCurrent(completing.ctx, binding, []PrewarmLeaseClaim{{Key: completing.leaseKey, Token: completing.token}}, manifest)
+	claims := make([]PrewarmLeaseClaim, 0, len(classes))
+	for _, class := range classes {
+		leased := leasedByClass[class]
+		claims = append(claims, PrewarmLeaseClaim{Key: leased.leaseKey, Token: leased.token})
+	}
+	err = p.publishIfCurrent(laneCtx, binding, claims, manifest)
 	if err == nil {
 		cycleOutcome = "success"
 		p.options.Metrics.SetLastSuccess("recovery", lane.timezone, p.options.Now())

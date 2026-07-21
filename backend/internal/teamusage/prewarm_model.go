@@ -459,6 +459,7 @@ func validatePrewarmCurrentStats(current PrewarmCurrentStatsEnvelope) (map[int64
 		return nil, fmt.Errorf("prewarm current stats roster reached limit %d", PrewarmTrendUserLimit)
 	}
 	stats := make(map[int64]PrewarmCurrentStat, len(current.Stats))
+	roster := make([]int64, 0, len(current.Stats))
 	var previous int64
 	for index, stat := range current.Stats {
 		if stat.UserID <= 0 {
@@ -478,6 +479,10 @@ func validatePrewarmCurrentStats(current PrewarmCurrentStatsEnvelope) (map[int64
 			return nil, fmt.Errorf("prewarm current stats contain duplicate user ID")
 		}
 		stats[stat.UserID] = stat
+		roster = append(roster, stat.UserID)
+	}
+	if prewarmRosterDigest(roster) != current.RosterDigest {
+		return nil, fmt.Errorf("prewarm current stats roster digest does not match stats")
 	}
 	return stats, nil
 }

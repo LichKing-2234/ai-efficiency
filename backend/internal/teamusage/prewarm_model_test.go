@@ -255,11 +255,11 @@ func TestPrewarmSegmentPreservesRawHourLabels(t *testing.T) {
 
 func TestPrewarmComposeUsesIndependentHistoryAndCoalescedToday(t *testing.T) {
 	ten, twenty, forty := int64(10), int64(20), int64(40)
-	current := PrewarmCurrentStatsEnvelope{RosterCount: 3, Stats: []PrewarmCurrentStat{
+	current := prewarmTestCurrentStats([]PrewarmCurrentStat{
 		{UserID: 1, TodayActualCost: 3, TotalActualCost: 30, TotalTokens: int64Pointer(300)},
 		{UserID: 2, TodayActualCost: 1, TotalActualCost: 20},
 		{UserID: 3, TodayActualCost: 0, TotalActualCost: 0, TotalTokens: int64Pointer(0)},
-	}}
+	})
 	today := validPrewarmTestSegment(SegmentTodayHour, []relay.ProviderWideTrendPoint{
 		{UserID: 1, Date: "2026-07-21 00:00", ActualCost: 1, TotalTokens: &ten},
 		{UserID: 1, Date: "2026-07-21 01:00", ActualCost: 2, TotalTokens: &twenty},
@@ -336,7 +336,7 @@ func TestPrewarmComposeRejectsMissingRosterAndUnionTruncationBeforeAuthorization
 	window := mustRecognizePrewarmTestWindow(t, OverviewParams{
 		StartDate: "2026-07-15", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC",
 	})
-	current := PrewarmCurrentStatsEnvelope{RosterCount: 1, Stats: []PrewarmCurrentStat{{UserID: 1}}}
+	current := prewarmTestCurrentStats([]PrewarmCurrentStat{{UserID: 1}})
 	if origin, eligible, err := ComposePrewarmedOrigin(window, current, PrewarmSegmentSet{History6d: &history, TodayHour: &today}, []int64{1, 2}); err != nil || eligible || origin != nil {
 		t.Fatalf("missing roster ComposePrewarmedOrigin() = %#v, %v, %v, want ineligible without synthetic stat", origin, eligible, err)
 	}
@@ -357,16 +357,26 @@ func TestPrewarmComposeValidatesCurrentStatsAndCostTolerance(t *testing.T) {
 		StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC",
 	})
 	today := validPrewarmTestSegment(SegmentTodayHour, nil)
+	duplicate := prewarmTestCurrentStats([]PrewarmCurrentStat{{UserID: 1}, {UserID: 1}})
+	nonpositive := prewarmTestCurrentStats([]PrewarmCurrentStat{{UserID: 0}})
+	rosterCount := prewarmTestCurrentStats([]PrewarmCurrentStat{{UserID: 1}})
+	rosterCount.RosterCount = 2
+	negativeToday := prewarmTestCurrentStats([]PrewarmCurrentStat{{UserID: 1, TodayActualCost: -1}})
+	nonfiniteTotal := prewarmTestCurrentStats([]PrewarmCurrentStat{{UserID: 1, TotalActualCost: math.Inf(1)}})
+	negativeTokens := prewarmTestCurrentStats([]PrewarmCurrentStat{{UserID: 1, TotalTokens: int64Pointer(-1)}})
+	tamperedDigest := prewarmTestCurrentStats([]PrewarmCurrentStat{{UserID: 1}})
+	tamperedDigest.RosterDigest = strings.Repeat("f", 64)
 	for _, test := range []struct {
 		name    string
 		current PrewarmCurrentStatsEnvelope
 	}{
-		{name: "duplicate ID", current: PrewarmCurrentStatsEnvelope{RosterCount: 2, Stats: []PrewarmCurrentStat{{UserID: 1}, {UserID: 1}}}},
-		{name: "nonpositive ID", current: PrewarmCurrentStatsEnvelope{RosterCount: 1, Stats: []PrewarmCurrentStat{{UserID: 0}}}},
-		{name: "roster count", current: PrewarmCurrentStatsEnvelope{RosterCount: 2, Stats: []PrewarmCurrentStat{{UserID: 1}}}},
-		{name: "negative today cost", current: PrewarmCurrentStatsEnvelope{RosterCount: 1, Stats: []PrewarmCurrentStat{{UserID: 1, TodayActualCost: -1}}}},
-		{name: "nonfinite total cost", current: PrewarmCurrentStatsEnvelope{RosterCount: 1, Stats: []PrewarmCurrentStat{{UserID: 1, TotalActualCost: math.Inf(1)}}}},
-		{name: "negative optional tokens", current: PrewarmCurrentStatsEnvelope{RosterCount: 1, Stats: []PrewarmCurrentStat{{UserID: 1, TotalTokens: int64Pointer(-1)}}}},
+		{name: "duplicate ID", current: duplicate},
+		{name: "nonpositive ID", current: nonpositive},
+		{name: "roster count", current: rosterCount},
+		{name: "negative today cost", current: negativeToday},
+		{name: "nonfinite total cost", current: nonfiniteTotal},
+		{name: "negative optional tokens", current: negativeTokens},
+		{name: "tampered roster digest", current: tamperedDigest},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, _, err := ComposePrewarmedOrigin(window, test.current, PrewarmSegmentSet{TodayHour: &today}, []int64{1}); err == nil {
@@ -389,7 +399,7 @@ func TestPrewarmComposeValidatesCurrentStatsAndCostTolerance(t *testing.T) {
 func TestPrewarmComposeRejectsUsageOverflow(t *testing.T) {
 	maxTokens := int64(^uint64(0) >> 1)
 	oneToken := int64(1)
-	current := PrewarmCurrentStatsEnvelope{RosterCount: 1, Stats: []PrewarmCurrentStat{{UserID: 1}}}
+	current := prewarmTestCurrentStats([]PrewarmCurrentStat{{UserID: 1}})
 	todayWindow := mustRecognizePrewarmTestWindow(t, OverviewParams{
 		StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC",
 	})
@@ -511,4 +521,14 @@ func mustRecognizePrewarmTestWindow(t *testing.T, params OverviewParams) Prewarm
 
 func int64Pointer(value int64) *int64 {
 	return &value
+}
+
+func prewarmTestCurrentStats(stats []PrewarmCurrentStat) PrewarmCurrentStatsEnvelope {
+	roster := make([]int64, len(stats))
+	for index, stat := range stats {
+		roster[index] = stat.UserID
+	}
+	return PrewarmCurrentStatsEnvelope{
+		RosterCount: len(stats), RosterDigest: prewarmRosterDigest(roster), Stats: stats,
+	}
 }
