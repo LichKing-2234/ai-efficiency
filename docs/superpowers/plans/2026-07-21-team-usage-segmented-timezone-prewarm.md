@@ -8,7 +8,32 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Ready to execute. Task 1 is a mandatory hard gate. Tasks 2-9 must remain unchecked and must not start unless every Task 1 semantic and capacity gate passes.
+**Status:** Task 1 POC passed on 2026-07-21. The evidence commit is pending; Tasks 2-9 remain not started until Task 1 Step 6 is checked.
+
+## Task 1 Gate Evidence
+
+Staging matched PR #192 exact head `627a7123` at Helm revision 44. Production
+remained unchanged on `v0.1.0-preview.73` at revision 69. The read-only probe
+used completed split-safe anchor `2026-07-19`, made exactly 20 trend GETs with
+maximum concurrency two, and completed in 46.274 seconds.
+
+| Gate | Observed | Result |
+| --- | ---: | --- |
+| Slowest GET `<25s` | 6.649 s | Pass |
+| All 20 GETs `<5m` | 46.274 s | Pass |
+| Largest body `<32 MiB` | 1,022,906 bytes | Pass |
+| Largest decoded result `<1,000,000` | 6,308 points | Pass |
+| Largest source/composed user set `<5,000` | 359 / 359 | Pass |
+| Largest stored segment `<8 MiB` | 470,925 bytes | Pass |
+| Largest timezone generation `<16 MiB` | 696,320 bytes | Pass |
+| All 12 trend segments `<64 MiB` | 2,621,028 bytes | Pass |
+| Synthetic directory `<16 MiB` | 6,445,098 bytes | Pass |
+| Synthetic stats chunk `<2 MiB` | 88,549 bytes | Pass |
+| Synthetic current stats `<2 MiB` | 774,970 bytes | Pass |
+| Synthetic manifest `<64 KiB` | 3,798 bytes | Pass |
+| Peak RSS `<192 MiB` | 58,392,576 bytes | Pass |
+| 7d/30d token and cost equality | exact in all four timezones | Pass |
+| DST split guard fixtures | four rollover rejects and eight adjacent accepts | Pass |
 
 ## Global Constraints
 
@@ -67,7 +92,7 @@
 - Produces: sanitized per-call duration/body/point/user counts, per-timezone composition results, trend-segment sizes, synthetic envelope sizes, peak RSS, and a pass/fail decision.
 - Makes exactly 20 read-only trend GETs: four timezones times `history_29d`, `history_6d`, `today_hour`, `direct_30d`, and `direct_7d`, with global concurrency at most two.
 
-- [ ] **Step 1: Verify immutable audit targets before reading any credential**
+- [x] **Step 1: Verify immutable audit targets before reading any credential**
 
 Run:
 
@@ -80,7 +105,7 @@ helm -n la3-ai-efficiency-prod status ai-efficiency-prod
 
 Expected: PR #192 reports exact head `627a7123d98aee37dd04fd5da2198234cfd003f0`; record the exact staging image/revision; production has no pending change. Stop if the staging target cannot be tied to the retained baseline. Do not run `helm upgrade`.
 
-- [ ] **Step 2: Create the throwaway bounded probe**
+- [x] **Step 2: Create the throwaway bounded probe**
 
 The probe must define and use these request shapes and comparison keys:
 
@@ -102,7 +127,7 @@ For one completed split-safe anchor `D` per timezone, generate `D-29..D-1/day`, 
 
 Coalesce only `today_hour` by `point.Date[:10]`, merge by `pointKey`, preserve nil-token propagation, and compare composed versus direct key sets, token presence/value, and `math.Abs(left.Cost-right.Cost) <= 1e-9`. The stored-size simulation serializes raw `today_hour`, not its coalesced projection.
 
-- [ ] **Step 3: Add deterministic no-HTTP structural fixtures to the same probe**
+- [x] **Step 3: Add deterministic no-HTTP structural fixtures to the same probe**
 
 Create synthetic fixtures only:
 
@@ -120,7 +145,7 @@ const (
 
 Serialize one 1,000-row maximum-width no-subscription directory page, one 500-row maximum-width stats response, one 4,999-row current-stats envelope, and four maximum-width manifests exactly as specified in the design. Assert every serialized size is strictly below its constant and that all 12 stored trend segments are strictly below 64 MiB in total. These fixtures must not make an HTTP request.
 
-- [ ] **Step 4: Run the measured POC and enforce every gate**
+- [x] **Step 4: Run the measured POC and enforce every gate**
 
 Run:
 
@@ -138,7 +163,7 @@ jq -e '.request_count == 20 and .max_concurrency <= 2 and .decision == "pass"' \
 
 Expected: each GET `<25s`; total wall `<5m`; each body `<32 MiB`; each decoded result `<1,000,000` points; source and composed users `<5,000`; each segment `<8 MiB`; one timezone `<16 MiB`; all timezones `<64 MiB`; RSS `<192 MiB`; every per-key comparison exact under the token/cost rules; LA/Berlin spring and fall fixture anchors select fallback while adjacent 24-hour anchors pass. Any failure blocks the plan; do not weaken a limit or execute Task 2.
 
-- [ ] **Step 5: Record only sanitized evidence and delete authenticated artifacts**
+- [x] **Step 5: Record only sanitized evidence and delete authenticated artifacts**
 
 Update the spec and this plan with dates, aggregate counts, sizes, durations, and pass/fail only. Then run:
 

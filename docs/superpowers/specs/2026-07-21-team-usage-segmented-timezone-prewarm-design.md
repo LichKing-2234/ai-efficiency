@@ -1,7 +1,7 @@
 # Team Usage Segmented Timezone Prewarm Design
 
-**Status:** Approved design. Implementation has not started and is blocked on
-the segmented-source POC hard gate in this document.
+**Status:** Approved design. The segmented-source POC hard gate passed on
+2026-07-21. Production implementation has not started.
 
 **Date:** 2026-07-21
 
@@ -703,6 +703,45 @@ Mandatory hard gates are:
 | Peak probe RSS | `< 192 MiB` |
 | Token comparison | Exact, including nil presence |
 | Actual-cost comparison | Absolute delta `<= 1e-9` per key |
+
+### POC Evidence
+
+The read-only staging POC used completed split-safe anchor `D=2026-07-19` for
+all four configured timezones. Staging remained on PR #192 exact head
+`627a7123` at Helm revision 44. Production remained unchanged on
+`v0.1.0-preview.73` at Helm revision 69.
+
+| Measurement | Observed | Gate |
+| --- | ---: | ---: |
+| Trend GET count | 20 | exactly 20 |
+| Maximum concurrency | 2 | `<= 2` |
+| Total wall duration | 46.274 s | `< 5m` |
+| Slowest GET | 6.649 s | `< 25s` |
+| Total response bytes | 10,503,197 | informational |
+| Largest response body | 1,022,906 bytes | `< 32 MiB` |
+| Total decoded points | 64,710 | informational |
+| Largest decoded result | 6,308 points | `< 1,000,000` |
+| Largest source unique-user set | 359 | `< 5,000` |
+| Largest composed unique-user union | 359 | `< 5,000` |
+| Largest stored trend segment | 470,925 bytes | `< 8 MiB` |
+| Largest timezone trend generation | 696,320 bytes | `< 16 MiB` |
+| All 12 stored trend segments | 2,621,028 bytes | `< 64 MiB` |
+| Synthetic directory page | 6,445,098 bytes | `< 16 MiB` |
+| Synthetic 500-ID stats chunk | 88,549 bytes | `< 2 MiB` |
+| Synthetic 4,999-row current stats | 774,970 bytes | `< 2 MiB` |
+| Each synthetic manifest | 3,798 bytes | `< 64 KiB` |
+| Peak process RSS | 58,392,576 bytes | `< 192 MiB` |
+
+Per-user and daily-source-label key sets, optional-token presence and values,
+and actual cost all matched for both direct 7-day and direct 30-day results in
+`UTC`, `Asia/Shanghai`, `America/Los_Angeles`, and `Europe/Berlin`. That is eight
+exact composed-versus-direct comparisons. The no-extra-HTTP DST fixtures also
+rejected the completed Los Angeles and Berlin spring/fall rollover anchors and
+accepted their adjacent 24-hour anchors.
+
+The POC made no directory, stats, Redis, Kubernetes, Helm, or production write.
+It locks the candidate runtime caps in this section but does not enable the
+feature or authorize implementation beyond the reviewed plan.
 
 Reaching a strict upper bound fails the gate. Any request error, invalid point,
 coverage mismatch, duplicate, out-of-order point, exact 5,000-user source,
