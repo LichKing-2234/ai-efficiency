@@ -8,7 +8,9 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Task 1 POC passed and its evidence was committed on 2026-07-21. Tasks 2-9 are ready but not started.
+**Status:** Task 1 source and capacity gates passed, but task review found the
+retained evidence incomplete because it omitted the required 20-call ledger and
+exact staging image. Task 1 Steps 5-6 are reopened; Tasks 2-9 remain blocked.
 
 ## Task 1 Gate Evidence
 
@@ -163,7 +165,7 @@ jq -e '.request_count == 20 and .max_concurrency <= 2 and .decision == "pass"' \
 
 Expected: each GET `<25s`; total wall `<5m`; each body `<32 MiB`; each decoded result `<1,000,000` points; source and composed users `<5,000`; each segment `<8 MiB`; one timezone `<16 MiB`; all timezones `<64 MiB`; RSS `<192 MiB`; every per-key comparison exact under the token/cost rules; LA/Berlin spring and fall fixture anchors select fallback while adjacent 24-hour anchors pass. Any failure blocks the plan; do not weaken a limit or execute Task 2.
 
-- [x] **Step 5: Record only sanitized evidence and delete authenticated artifacts**
+- [ ] **Step 5: Record only sanitized evidence and delete authenticated artifacts**
 
 Update the spec and this plan with dates, aggregate counts, sizes, durations, and pass/fail only. Then run:
 
@@ -178,7 +180,7 @@ git diff --check
 
 Expected: no credential, URL, user ID, row, body, or raw Redis value remains. On pass, change `Status` to `POC passed; implementation ready` and check Task 1. On failure, change it to `Blocked by segmented-source POC`, leave Tasks 2-9 unchecked, and stop.
 
-- [x] **Step 6: Commit the POC decision**
+- [ ] **Step 6: Commit the POC decision**
 
 ```bash
 git add docs/superpowers/specs/2026-07-21-team-usage-segmented-timezone-prewarm-design.md \
