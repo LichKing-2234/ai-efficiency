@@ -8,9 +8,9 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Tasks 1-2 are complete. Task 3 Steps 1-4 are complete with focused,
-race, full-package, and vet verification; Step 5 remains. Tasks 4-9 have not
-started.
+**Status:** Tasks 1-3 are complete. Task 3's pure segmented prewarm domain
+model was committed in `b29b53a5` after focused, race, full-package, and vet
+verification. Tasks 4-9 have not started.
 
 ## Task 1 Gate Evidence
 
@@ -320,7 +320,7 @@ go test ./internal/teamusage -run 'Prewarm(Timezone|Window|Split|Segment|Compose
 go test -race ./internal/teamusage -run 'Prewarm(Timezone|Window|Split|Segment|Compose)' -count=1
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/teamusage/prewarm_model.go backend/internal/teamusage/prewarm_model_test.go
