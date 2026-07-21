@@ -68,6 +68,7 @@ type Prewarmer struct {
 	timezones        []string
 	allowlistDigest  string
 	moving           atomic.Bool
+	recovery         atomic.Bool
 	scheduledWorkers atomic.Int64
 
 	lifecycleMu sync.Mutex
@@ -218,6 +219,7 @@ func (p *Prewarmer) runTicks(ctx context.Context, ticks <-chan time.Time) {
 			return
 		case <-ticks:
 			p.startMoving(ctx)
+			p.startRecovery(ctx)
 			for _, timezone := range p.timezones {
 				p.startHistorical(ctx, timezone, p.options.Now())
 			}
@@ -239,6 +241,23 @@ func (p *Prewarmer) startMoving(ctx context.Context) {
 		defer p.scheduledWorkers.Add(-1)
 		defer p.moving.Store(false)
 		_ = p.runMoving(ctx)
+	}()
+}
+
+func (p *Prewarmer) startRecovery(ctx context.Context) {
+	if !p.recovery.CompareAndSwap(false, true) {
+		return
+	}
+	if !p.beginLifecycleWorker() {
+		p.recovery.Store(false)
+		return
+	}
+	p.scheduledWorkers.Add(1)
+	go func() {
+		defer p.wg.Done()
+		defer p.scheduledWorkers.Add(-1)
+		defer p.recovery.Store(false)
+		_ = p.runRecovery(ctx)
 	}()
 }
 
@@ -280,28 +299,14 @@ func (p *Prewarmer) runMoving(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	normalLanes, rolloverLanes, err := p.preflightMovingLanes(ctx, binding)
-	if err != nil {
-		return err
+	normalLanes, preflightErr := p.preflightMovingLanes(ctx, binding)
+	if len(normalLanes) == 0 {
+		return preflightErr
 	}
-	if len(normalLanes) == 0 && len(rolloverLanes) == 0 {
-		return nil
-	}
-	var failures []error
-	for _, lane := range rolloverLanes {
-		if err := p.runRolloverRecovery(ctx, binding, lane); err != nil {
-			failures = append(failures, fmt.Errorf("rollover timezone %s: %w", lane.timezone, err))
-		}
-	}
-	if len(normalLanes) > 0 {
-		if err := p.runNormalMoving(ctx, binding, normalLanes); err != nil {
-			failures = append(failures, err)
-		}
-	}
-	return errors.Join(failures...)
+	return errors.Join(preflightErr, p.runNormalMoving(ctx, binding, normalLanes))
 }
 
-type prewarmMovingLane struct {
+type prewarmTimezoneLane struct {
 	timezone   string
 	anchorDate string
 }
@@ -309,17 +314,19 @@ type prewarmMovingLane struct {
 func (p *Prewarmer) preflightMovingLanes(
 	ctx context.Context,
 	binding ProviderBinding,
-) ([]prewarmMovingLane, []prewarmMovingLane, error) {
-	normal := make([]prewarmMovingLane, 0, len(p.timezones))
-	rollover := make([]prewarmMovingLane, 0, len(p.timezones))
+) ([]prewarmTimezoneLane, error) {
+	normal := make([]prewarmTimezoneLane, 0, len(p.timezones))
+	failures := make([]error, 0, len(p.timezones))
 	for _, timezone := range p.timezones {
 		anchorDate, err := prewarmLocalAnchorDate(timezone, p.options.Now())
 		if err != nil {
-			return nil, nil, err
+			failures = append(failures, fmt.Errorf("preflight moving timezone %s anchor: %w", timezone, err))
+			continue
 		}
 		safe, err := SplitSafe(timezone, anchorDate)
 		if err != nil {
-			return nil, nil, err
+			failures = append(failures, fmt.Errorf("preflight moving timezone %s split safety: %w", timezone, err))
+			continue
 		}
 		if !safe {
 			continue
@@ -330,35 +337,24 @@ func (p *Prewarmer) preflightMovingLanes(
 		}
 		result, found, err := p.cache.Read(ctx, identity)
 		if err != nil {
-			return nil, nil, fmt.Errorf("preflight moving timezone %s: %w", timezone, err)
+			failures = append(failures, fmt.Errorf("preflight moving timezone %s: %w", timezone, err))
+			continue
 		}
-		lane := prewarmMovingLane{timezone: timezone, anchorDate: anchorDate}
+		lane := prewarmTimezoneLane{timezone: timezone, anchorDate: anchorDate}
 		if found {
 			if result.History29dStatus != PrewarmValueMissing && result.History29dStatus != PrewarmValueHardExpired &&
 				result.History6dStatus != PrewarmValueMissing && result.History6dStatus != PrewarmValueHardExpired {
 				normal = append(normal, lane)
 			}
-			continue
-		}
-		due29, err := p.historicalClassDue(binding, timezone, anchorDate, SegmentHistory29d)
-		if err != nil {
-			return nil, nil, err
-		}
-		due6, err := p.historicalClassDue(binding, timezone, anchorDate, SegmentHistory6d)
-		if err != nil {
-			return nil, nil, err
-		}
-		if due29 && due6 {
-			rollover = append(rollover, lane)
 		}
 	}
-	return normal, rollover, nil
+	return normal, errors.Join(failures...)
 }
 
 func (p *Prewarmer) runNormalMoving(
 	ctx context.Context,
 	binding ProviderBinding,
-	lanes []prewarmMovingLane,
+	lanes []prewarmTimezoneLane,
 ) error {
 	tick := p.options.Now().Truncate(prewarmMovingInterval).UTC().Format(time.RFC3339)
 	tickKey := p.cache.LeaseKey(
@@ -447,14 +443,14 @@ func (p *Prewarmer) runMovingTimezone(
 	if err != nil {
 		return err
 	}
-	return p.runMovingLane(ctx, binding, currentRef, prewarmMovingLane{timezone: timezone, anchorDate: anchorDate})
+	return p.runMovingLane(ctx, binding, currentRef, prewarmTimezoneLane{timezone: timezone, anchorDate: anchorDate})
 }
 
 func (p *Prewarmer) runMovingLane(
 	ctx context.Context,
 	binding ProviderBinding,
 	currentRef PrewarmValueReference,
-	lane prewarmMovingLane,
+	lane prewarmTimezoneLane,
 ) error {
 	if err := p.requireCoordinatorOwned(ctx); err != nil {
 		return err
@@ -488,52 +484,168 @@ func (p *Prewarmer) runMovingLane(
 	return p.publishIfCurrent(leased.ctx, binding, []PrewarmLeaseClaim{{Key: leased.leaseKey, Token: leased.token}}, manifest)
 }
 
-func (p *Prewarmer) runRolloverRecovery(ctx context.Context, binding ProviderBinding, lane prewarmMovingLane) error {
-	coordinatorKey := p.cache.LeaseKey(
-		"rollover", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10),
-		p.allowlistDigest, prewarmTimezoneDigest(lane.timezone), lane.anchorDate,
+func (p *Prewarmer) runRecovery(ctx context.Context) error {
+	binding, err := p.resolveBinding(ctx)
+	if err != nil {
+		return err
+	}
+	tick := p.options.Now().Truncate(prewarmMovingInterval).UTC().Format(time.RFC3339)
+	tickKey := p.cache.LeaseKey(
+		"recovery-tick", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10),
+		p.allowlistDigest, tick, "recovery",
 	)
-	coordinatorToken, acquired, err := p.acquireLease(ctx, coordinatorKey, prewarmHistoryCoordinatorTTL)
+	tickToken, acquired, err := p.acquireLease(ctx, tickKey, prewarmHistoryCoordinatorTTL)
 	if err != nil || !acquired {
 		return err
 	}
-	retainCoordinator := false
+	retainTick := false
 	defer func() {
-		if !retainCoordinator {
-			p.releaseLease(coordinatorKey, coordinatorToken)
+		if !retainTick {
+			p.releaseLease(tickKey, tickToken)
 		}
 	}()
+	activeKey := p.cache.LeaseKey(
+		"recovery-active", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10), p.allowlistDigest,
+	)
+	activeToken, active, err := p.acquireLease(ctx, activeKey, prewarmHistoryCoordinatorTTL)
+	if err != nil {
+		return err
+	}
+	if !active {
+		retainTick = true
+		return nil
+	}
+	defer p.releaseLease(activeKey, activeToken)
 	workerCtx, cancel := context.WithTimeout(ctx, p.options.historicalWorkerTimeout)
 	defer cancel()
-	workerCtx = withPrewarmControllingLeases(workerCtx, PrewarmLeaseClaim{Key: coordinatorKey, Token: coordinatorToken})
+	workerCtx = withPrewarmControllingLeases(workerCtx,
+		PrewarmLeaseClaim{Key: tickKey, Token: tickToken},
+		PrewarmLeaseClaim{Key: activeKey, Token: activeToken},
+	)
+
+	lanes, preflightErr := p.preflightRecoveryLanes(workerCtx, binding)
+	var failures []error
+	if preflightErr != nil {
+		failures = append(failures, preflightErr)
+	}
+	if len(lanes) == 0 {
+		if err := workerCtx.Err(); err != nil {
+			failures = append(failures, err)
+		}
+		if err := p.requireCoordinatorOwned(workerCtx); err != nil {
+			failures = append(failures, err)
+		}
+		if len(failures) == 0 {
+			retainTick = true
+		}
+		return errors.Join(failures...)
+	}
+
+	current, err := p.source.BuildCurrentStats(workerCtx, binding)
+	if err != nil {
+		return errors.Join(preflightErr, err)
+	}
+	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
+		return errors.Join(preflightErr, err)
+	}
+	currentRef, err := p.cache.WriteCurrentStats(workerCtx, current)
+	if err != nil {
+		return errors.Join(preflightErr, fmt.Errorf("write recovery current stats: %w", err))
+	}
+
+	errorsByTimezone := make(chan error, len(lanes))
+	var wg sync.WaitGroup
+	for _, lane := range lanes {
+		lane := lane
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := p.runRecoveryLane(workerCtx, binding, currentRef, lane); err != nil {
+				errorsByTimezone <- fmt.Errorf("recovery timezone %s: %w", lane.timezone, err)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errorsByTimezone)
+	for failure := range errorsByTimezone {
+		failures = append(failures, failure)
+	}
+	if err := workerCtx.Err(); err != nil {
+		failures = append(failures, err)
+	}
+	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
+		failures = append(failures, err)
+	}
+	if len(failures) == 0 {
+		retainTick = true
+	}
+	return errors.Join(failures...)
+}
+
+func (p *Prewarmer) preflightRecoveryLanes(
+	ctx context.Context,
+	binding ProviderBinding,
+) ([]prewarmTimezoneLane, error) {
+	lanes := make([]prewarmTimezoneLane, 0, len(p.timezones))
+	failures := make([]error, 0, len(p.timezones))
+	for _, timezone := range p.timezones {
+		anchorDate, err := prewarmLocalAnchorDate(timezone, p.options.Now())
+		if err != nil {
+			failures = append(failures, fmt.Errorf("preflight recovery timezone %s anchor: %w", timezone, err))
+			continue
+		}
+		safe, err := SplitSafe(timezone, anchorDate)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("preflight recovery timezone %s split safety: %w", timezone, err))
+			continue
+		}
+		if !safe {
+			continue
+		}
+		identity := PrewarmCacheIdentity{
+			ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
+			Timezone: timezone, AnchorDate: anchorDate,
+		}
+		if _, found, err := p.cache.Read(ctx, identity); err != nil {
+			failures = append(failures, fmt.Errorf("preflight recovery timezone %s: %w", timezone, err))
+			continue
+		} else if found {
+			continue
+		}
+		due29, err := p.historicalClassDue(binding, timezone, anchorDate, SegmentHistory29d)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("preflight recovery timezone %s history_29d jitter: %w", timezone, err))
+			continue
+		}
+		due6, err := p.historicalClassDue(binding, timezone, anchorDate, SegmentHistory6d)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("preflight recovery timezone %s history_6d jitter: %w", timezone, err))
+			continue
+		}
+		if due29 && due6 {
+			lanes = append(lanes, prewarmTimezoneLane{timezone: timezone, anchorDate: anchorDate})
+		}
+	}
+	return lanes, errors.Join(failures...)
+}
+
+func (p *Prewarmer) runRecoveryLane(
+	ctx context.Context,
+	binding ProviderBinding,
+	currentRef PrewarmValueReference,
+	lane prewarmTimezoneLane,
+) error {
+	if err := p.requireCoordinatorOwned(ctx); err != nil {
+		return err
+	}
 	identity := PrewarmCacheIdentity{
 		ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
 		Timezone: lane.timezone, AnchorDate: lane.anchorDate,
 	}
-	if _, found, err := p.cache.Read(workerCtx, identity); err != nil {
-		return fmt.Errorf("read rollover generation after coordinator acquisition: %w", err)
+	if _, found, err := p.cache.Read(ctx, identity); err != nil {
+		return fmt.Errorf("read recovery generation before source calls: %w", err)
 	} else if found {
-		retainCoordinator = true
 		return nil
-	}
-	due29, err := p.historicalClassDue(binding, lane.timezone, lane.anchorDate, SegmentHistory29d)
-	if err != nil || !due29 {
-		return err
-	}
-	due6, err := p.historicalClassDue(binding, lane.timezone, lane.anchorDate, SegmentHistory6d)
-	if err != nil || !due6 {
-		return err
-	}
-	current, err := p.source.BuildCurrentStats(workerCtx, binding)
-	if err != nil {
-		return err
-	}
-	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
-		return err
-	}
-	currentRef, err := p.cache.WriteCurrentStats(workerCtx, current)
-	if err != nil {
-		return fmt.Errorf("write rollover current stats: %w", err)
 	}
 	refs := make(map[PrewarmSegmentClass]PrewarmValueReference, 3)
 	classes := []PrewarmSegmentClass{SegmentHistory29d, SegmentHistory6d, SegmentTodayHour}
@@ -543,7 +655,7 @@ func (p *Prewarmer) runRolloverRecovery(ctx context.Context, binding ProviderBin
 		if class == SegmentTodayHour {
 			refreshClass = "moving"
 		}
-		leased, err := p.fetchLeasedSegment(workerCtx, binding, lane.timezone, lane.anchorDate, class, refreshClass)
+		leased, err := p.fetchLeasedSegment(ctx, binding, lane.timezone, lane.anchorDate, class, refreshClass)
 		if err != nil {
 			return err
 		}
@@ -561,14 +673,7 @@ func (p *Prewarmer) runRolloverRecovery(ctx context.Context, binding ProviderBin
 		CreatedAt: p.options.Now(), CurrentStats: currentRef,
 		History29d: refs[SegmentHistory29d], History6d: refs[SegmentHistory6d], TodayHour: refs[SegmentTodayHour],
 	}
-	if err := p.publishIfCurrent(completing.ctx, binding, []PrewarmLeaseClaim{{Key: completing.leaseKey, Token: completing.token}}, manifest); err != nil {
-		return err
-	}
-	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
-		return err
-	}
-	retainCoordinator = true
-	return nil
+	return p.publishIfCurrent(completing.ctx, binding, []PrewarmLeaseClaim{{Key: completing.leaseKey, Token: completing.token}}, manifest)
 }
 
 func (p *Prewarmer) RunHistorical(ctx context.Context, timezone string, anchor time.Time) error {
@@ -593,6 +698,11 @@ func (p *Prewarmer) RunHistorical(ctx context.Context, timezone string, anchor t
 	identity := PrewarmCacheIdentity{
 		ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
 		Timezone: timezone, AnchorDate: anchorDate,
+	}
+	if _, found, err := p.cache.Read(ctx, identity); err != nil {
+		return fmt.Errorf("preflight historical timezone %s: %w", timezone, err)
+	} else if !found {
+		return nil
 	}
 	classes := []PrewarmSegmentClass{SegmentHistory29d, SegmentHistory6d}
 	var failures []error

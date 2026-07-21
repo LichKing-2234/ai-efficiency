@@ -333,6 +333,43 @@ func TestPrewarmCachePublishManifestWithLeasesRequiresAllClaims(t *testing.T) {
 	}
 }
 
+func TestPrewarmCachePublishManifestWithLeasesRejectsInvalidClaimSets(t *testing.T) {
+	testCases := []struct {
+		name   string
+		claims func(*PrewarmCache) []PrewarmLeaseClaim
+	}{
+		{name: "zero claims", claims: func(*PrewarmCache) []PrewarmLeaseClaim { return nil }},
+		{name: "five claims", claims: func(cache *PrewarmCache) []PrewarmLeaseClaim {
+			claims := make([]PrewarmLeaseClaim, 5)
+			for index := range claims {
+				claims[index] = PrewarmLeaseClaim{Key: cache.LeaseKey("claim", fmt.Sprint(index)), Token: fmt.Sprintf("owner-%d", index)}
+			}
+			return claims
+		}},
+		{name: "duplicate key", claims: func(cache *PrewarmCache) []PrewarmLeaseClaim {
+			key := cache.LeaseKey("claim", "duplicate")
+			return []PrewarmLeaseClaim{{Key: key, Token: "owner-a"}, {Key: key, Token: "owner-b"}}
+		}},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			generatedAt := testPrewarmGeneratedAt()
+			cache, server := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
+			identity := testPrewarmIdentity()
+			manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+			published, err := cache.PublishManifestWithLeases(context.Background(), testCase.claims(cache), manifest)
+			if err == nil || published {
+				t.Fatalf("PublishManifestWithLeases() = %v, %v, want strict rejection", published, err)
+			}
+			manifestKey, _ := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, identity)
+			if server.Exists(manifestKey) {
+				t.Fatal("invalid claim set published a manifest")
+			}
+		})
+	}
+}
+
 func TestPrewarmCacheReadReturnsPerReferenceStatusForPartialGeneration(t *testing.T) {
 	generatedAt := testPrewarmGeneratedAt()
 	now := generatedAt.Add(30 * time.Second)

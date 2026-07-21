@@ -54,13 +54,60 @@ func TestPrewarmMovingSharesCurrentStatsAndPublishesTimezonesIndependently(t *te
 	}
 }
 
-func TestPrewarmMovingRunningLifecycleBootstrapsNewAnchorAfterBothJitters(t *testing.T) {
+func TestPrewarmMovingPreflightErrorDoesNotBlockHealthyTimezone(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	badIdentity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "Asia/Shanghai", AnchorDate: "2026-07-21"}
+	goodIdentity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+	baseStore := newRecordingPrewarmStore()
+	seedCache := mustNewPrewarmCache(t, baseStore, func() time.Time { return now })
+	bad := seedPrewarmManifest(t, seedCache, badIdentity, now.Add(-30*time.Second), "a")
+	good := seedPrewarmManifest(t, seedCache, goodIdentity, now.Add(-30*time.Second), "e")
+	store := &laneMGetErrorPrewarmStore{
+		BatchStore: &leaseVisiblePrewarmStore{recordingPrewarmStore: baseStore},
+		failKey:    bad.TodayHour.Key,
+		err:        errors.New("synthetic timezone MGET failure"),
+	}
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	provider := newLifecycleProvider([]int64{101})
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"Asia/Shanghai", "UTC"}, func() time.Time { return now }))
+
+	if err := prewarmer.RunMoving(context.Background()); err == nil {
+		t.Fatal("RunMoving() error = nil, want bounded bad-timezone preflight error")
+	}
+	badResult := readPrewarmResult(t, seedCache, badIdentity)
+	goodResult := readPrewarmResult(t, seedCache, goodIdentity)
+	if badResult.Manifest.TodayHour.GenerationID != bad.TodayHour.GenerationID {
+		t.Fatal("bad preflight timezone replaced its prior today generation")
+	}
+	if goodResult.Manifest.TodayHour.GenerationID == good.TodayHour.GenerationID {
+		t.Fatal("healthy timezone was not refreshed after another timezone preflight failed")
+	}
+	if provider.directoryCount() != 1 || provider.statsCount() != 1 || provider.classCount(SegmentTodayHour) != 1 {
+		t.Fatalf("healthy moving sources directory=%d stats=%d today=%d, want one shared current build and one today fetch",
+			provider.directoryCount(), provider.statsCount(), provider.classCount(SegmentTodayHour))
+	}
+}
+
+func TestPrewarmMovingDoesNotBootstrapMissingManifest(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	provider := newLifecycleProvider([]int64{101})
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC"}, func() time.Time { return now }))
+	if err := prewarmer.RunMoving(context.Background()); err != nil {
+		t.Fatalf("RunMoving(missing manifest) error = %v", err)
+	}
+	if got := provider.totalSourceCalls(); got != 0 {
+		t.Fatalf("RunMoving(missing manifest) made %d recovery source calls, want zero", got)
+	}
+}
+
+func TestPrewarmRecoveryRunningLifecycleBootstrapsNewAnchorAfterBothJitters(t *testing.T) {
 	dayOne := time.Date(2026, 7, 21, 23, 59, 0, 0, time.UTC)
 	dayTwo := time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC)
 	var clock atomic.Value
 	clock.Store(dayOne)
 	now := func() time.Time { return clock.Load().(time.Time) }
-	cache, _ := newRedisPrewarmCache(t, now)
+	cache, server := newRedisPrewarmCache(t, now)
 	seedPrewarmManifest(t, cache, PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}, dayOne, "a")
 	provider := newLifecycleProvider([]int64{101})
 	ticks := make(chan time.Time, 2)
@@ -88,8 +135,10 @@ func TestPrewarmMovingRunningLifecycleBootstrapsNewAnchorAfterBothJitters(t *tes
 	}
 	clock.Store(dayTwo.Add(minimumJitter / 2))
 	ticks <- now()
+	preJitterTick := now().Truncate(prewarmMovingInterval).UTC().Format(time.RFC3339)
+	recoveryTickKey := cache.LeaseKey("recovery-tick", "7", "11", prewarmer.allowlistDigest, preJitterTick, "recovery")
 	waitForPrewarmCondition(t, time.Second, func() bool {
-		return !prewarmer.moving.Load() && prewarmer.scheduledWorkers.Load() == 0
+		return server.Exists(recoveryTickKey) && !prewarmer.moving.Load() && !prewarmer.recovery.Load() && prewarmer.scheduledWorkers.Load() == 0
 	})
 	if got := provider.totalSourceCalls(); got != 0 {
 		t.Fatalf("pre-jitter rollover made %d source calls, want zero", got)
@@ -114,6 +163,57 @@ func TestPrewarmMovingRunningLifecycleBootstrapsNewAnchorAfterBothJitters(t *tes
 			provider.classCount(SegmentHistory6d), provider.classCount(SegmentTodayHour))
 	}
 	prewarmer.Stop()
+}
+
+func TestPrewarmRecoverySharesOneCurrentGenerationAcrossMissingLanes(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	provider := newLifecycleProvider([]int64{101})
+	timezones := []string{"Asia/Shanghai", "UTC"}
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions(timezones, func() time.Time { return now }))
+	if err := prewarmer.runRecovery(context.Background()); err != nil {
+		t.Fatalf("runRecovery() error = %v", err)
+	}
+	if provider.directoryCount() != 1 || provider.statsCount() != 1 ||
+		provider.classCount(SegmentHistory29d) != 2 || provider.classCount(SegmentHistory6d) != 2 || provider.classCount(SegmentTodayHour) != 2 {
+		t.Fatalf("recovery sources directory=%d stats=%d history29=%d history6=%d today=%d, want 1/1/2/2/2",
+			provider.directoryCount(), provider.statsCount(), provider.classCount(SegmentHistory29d),
+			provider.classCount(SegmentHistory6d), provider.classCount(SegmentTodayHour))
+	}
+	var currentGeneration string
+	for _, timezone := range timezones {
+		result := readPrewarmResult(t, cache, PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: timezone, AnchorDate: "2026-07-21"})
+		if !result.Complete {
+			t.Fatalf("recovery timezone %s manifest is incomplete", timezone)
+		}
+		if currentGeneration == "" {
+			currentGeneration = result.Manifest.CurrentStats.GenerationID
+		} else if result.Manifest.CurrentStats.GenerationID != currentGeneration {
+			t.Fatalf("recovery timezone %s current generation = %q, want shared %q", timezone, result.Manifest.CurrentStats.GenerationID, currentGeneration)
+		}
+	}
+}
+
+func TestPrewarmRecoveryLaneFailureDoesNotBlockHealthyLane(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	provider := newLifecycleProvider([]int64{101})
+	provider.trendErrorTimezone = "Asia/Shanghai"
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"Asia/Shanghai", "UTC"}, func() time.Time { return now }))
+	if err := prewarmer.runRecovery(context.Background()); err == nil {
+		t.Fatal("runRecovery() error = nil, want bounded bad-lane failure")
+	}
+	healthyIdentity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+	if result := readPrewarmResult(t, cache, healthyIdentity); !result.Complete {
+		t.Fatal("healthy recovery lane did not publish a complete manifest")
+	}
+	badIdentity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "Asia/Shanghai", AnchorDate: "2026-07-21"}
+	if _, found, err := cache.Read(context.Background(), badIdentity); err != nil || found {
+		t.Fatalf("bad recovery lane Read() found=%v err=%v, want no manifest", found, err)
+	}
+	if provider.directoryCount() != 1 || provider.statsCount() != 1 {
+		t.Fatalf("recovery current builds directory=%d stats=%d, want one shared build", provider.directoryCount(), provider.statsCount())
+	}
 }
 
 func TestPrewarmMovingTimezoneFailureDoesNotInvalidateAnother(t *testing.T) {
@@ -639,6 +739,62 @@ func TestPrewarmLeaseActiveMovingPreventsAdjacentTickOverlap(t *testing.T) {
 	}
 }
 
+func TestPrewarmRecoveryActiveLeasePreventsAdjacentTickOverlap(t *testing.T) {
+	base := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	var cacheClock atomic.Value
+	cacheClock.Store(base)
+	cache, server := newRedisPrewarmCache(t, func() time.Time { return cacheClock.Load().(time.Time) })
+	provider := newLifecycleProvider([]int64{101})
+	provider.directoryEntered = make(chan struct{}, 3)
+	provider.directoryRelease = make(chan struct{})
+	leftNow := base
+	rightNow := base.Add(time.Minute)
+	sharedOptions := lifecycleOptions([]string{"UTC"}, func() time.Time { return base })
+	leftOptions := sharedOptions
+	leftOptions.Now = func() time.Time { return leftNow }
+	rightOptions := sharedOptions
+	rightOptions.Now = func() time.Time { return rightNow }
+	left := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, leftOptions)
+	right := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, rightOptions)
+	leftResult := make(chan error, 1)
+	go func() { leftResult <- left.runRecovery(context.Background()) }()
+	select {
+	case <-provider.directoryEntered:
+	case <-time.After(time.Second):
+		t.Fatal("recovery tick N did not enter source")
+	}
+	nextCtx, cancelNext := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	err := right.runRecovery(nextCtx)
+	cancelNext()
+	if err != nil {
+		t.Fatalf("recovery tick N+1 active-busy error = %v", err)
+	}
+	if got := provider.directoryCount(); got != 1 {
+		t.Fatalf("recovery tick N+1 raised directory count to %d, want one", got)
+	}
+	close(provider.directoryRelease)
+	if err := <-leftResult; err != nil {
+		t.Fatalf("recovery tick N error = %v", err)
+	}
+	identity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+	manifestKey, _ := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, identity)
+	server.Del(manifestKey)
+	if err := right.runRecovery(context.Background()); err != nil {
+		t.Fatalf("recovery tick N+1 replay error = %v", err)
+	}
+	if got := provider.directoryCount(); got != 1 {
+		t.Fatalf("recovery tick N+1 replay raised directory count to %d, want one", got)
+	}
+	rightNow = base.Add(2 * time.Minute)
+	cacheClock.Store(rightNow)
+	if err := right.runRecovery(context.Background()); err != nil {
+		t.Fatalf("recovery tick N+2 error = %v", err)
+	}
+	if got := provider.directoryCount(); got != 2 {
+		t.Fatalf("recovery tick N+2 directory count = %d, want two", got)
+	}
+}
+
 func TestPrewarmLeaseAtomicPublicationRejectsCoordinatorLostAtCommit(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	store := &coordinatorDropMultiLeaseStore{recordingPrewarmStore: newRecordingPrewarmStore()}
@@ -657,6 +813,24 @@ func TestPrewarmLeaseAtomicPublicationRejectsCoordinatorLostAtCommit(t *testing.
 	}
 	if got := store.maximumClaims(); got < 3 {
 		t.Fatalf("moving atomic publication checked %d leases, want tick+active+segment", got)
+	}
+}
+
+func TestPrewarmRecoveryAtomicPublicationRejectsCoordinatorLostAtCommit(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	store := &coordinatorDropMultiLeaseStore{recordingPrewarmStore: newRecordingPrewarmStore(), dropCoordinator: true}
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	provider := newLifecycleProvider([]int64{101})
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC"}, func() time.Time { return now }))
+	if err := prewarmer.runRecovery(context.Background()); err == nil {
+		t.Fatal("runRecovery(commit-window coordinator loss) error = nil")
+	}
+	identity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+	if _, found, err := cache.Read(context.Background(), identity); err != nil || found {
+		t.Fatalf("recovery manifest after coordinator loss found=%v err=%v, want absent", found, err)
+	}
+	if got := store.maximumClaims(); got < 3 {
+		t.Fatalf("recovery atomic publication checked %d leases, want tick+active+segment", got)
 	}
 }
 
@@ -1312,6 +1486,23 @@ func getRecordingPrewarmValueOrLease(ctx context.Context, store *recordingPrewar
 }
 
 var _ readcache.BatchStore = (*leaseVisiblePrewarmStore)(nil)
+
+type laneMGetErrorPrewarmStore struct {
+	readcache.BatchStore
+	failKey string
+	err     error
+}
+
+func (s *laneMGetErrorPrewarmStore) MGet(ctx context.Context, keys ...string) ([][]byte, error) {
+	for _, key := range keys {
+		if key == s.failKey {
+			return nil, s.err
+		}
+	}
+	return s.BatchStore.MGet(ctx, keys...)
+}
+
+var _ readcache.BatchStore = (*laneMGetErrorPrewarmStore)(nil)
 
 type coordinatorDropMultiLeaseStore struct {
 	*recordingPrewarmStore
