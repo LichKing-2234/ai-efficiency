@@ -2,13 +2,34 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Move standard Team Usage today, seven-day, and thirty-day Relay aggregation off the request path by publishing provider-wide UTC-hour facts and current usage stats to Redis.
+**Goal:** Evaluate whether provider-wide UTC-hour facts can safely move standard Team Usage aggregation off the request path. The evaluated approach failed its mandatory semantic-equivalence gate.
 
-**Architecture:** A primary-provider background prewarmer fetches one current-stats snapshot and one bounded UTC-hour history, validates and shards history by UTC day, writes immutable generation values, and publishes a manifest last under a token-protected Redis lease. Requests still resolve current representative authorization from the local database, then MGET the manifest generation, intersect facts with authorized Relay IDs, reconstruct whole-hour browser timezones, and fall back to the retained PR #192 scope-origin path for Redis failure, unsupported ranges, or non-hour offsets.
+**Architecture:** Rejected UTC-hour candidate: a primary-provider background prewarmer would fetch one current-stats snapshot and one bounded UTC-hour history, then reconstruct browser-timezone days. The staging POC proved that the current Relay hourly labels cannot support that reconstruction contract.
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Kubernetes, Helm, Docker Buildx, GHCR.
 
-**Status:** Approved design; implementation is blocked on Task 1's staging POC gate.
+**Status:** **Blocked by UTC-hour POC.** Task 1 failed semantic equivalence on all three required comparison timezones. Tasks 2-10 belong to the rejected UTC-hour implementation and must remain unchecked. The spec now contains a proposed direct daily-bucket replacement for an explicit common-timezone list; it requires user approval and a replacement plan before implementation.
+
+### Task 1 Gate Evidence
+
+| Gate | Measured | Result |
+| --- | ---: | --- |
+| Relay duration | 10.081 s | Pass (`< 25 s`) |
+| Hourly source body | 7,464,074 bytes | Pass (`< 33,554,432`) |
+| Decoded hourly points | 45,331 | Pass (`< 1,000,000`) |
+| Unique users | 364 | Pass (`< 5,000`) |
+| Probe peak RSS | 59,375,616 bytes | Pass (`< 201,326,592`) |
+| Largest serialized UTC-day shard | 157,531 bytes | Pass (`< 1,048,576`) |
+| Total serialized 32-day generation | 3,165,743 bytes | Pass (`< 16,777,216`) |
+| `UTC` reconstructed vs direct daily | Mismatch | **Fail** |
+| `America/Los_Angeles` reconstructed vs direct daily | Mismatch | **Fail** |
+| `Europe/Berlin` reconstructed vs direct daily | Mismatch | **Fail** |
+
+The failure is semantic, not capacity-related. Sub2API applies the request
+timezone while deriving range boundaries, but `GetUserUsageTrend` groups with
+`TO_CHAR(u.created_at, format)` without applying that timezone in SQL. Hourly
+labels therefore cannot be treated as UTC facts for cross-timezone
+reconstruction. No production limit constants are locked by this failed gate.
 
 ## Global Constraints
 
@@ -27,6 +48,9 @@
 - Keep authenticated POC and staging artifacts under `/tmp`; remove credentials, bodies, user lists, tokens, and unredacted Redis values after each run.
 - Use only synthetic identities such as `alice@example.com` in tests, fixtures, specs, plans, and logs.
 - Production remains unchanged until a separately approved production release.
+
+The UTC-hour-specific constraints and file map below are retained only as the
+rejected candidate's execution record. They are not authorization to continue.
 
 ## File Map
 
@@ -63,7 +87,7 @@
 - Produces: a sanitized `POCDecision` record containing `relay_duration`, `source_bytes`, `decoded_points`, `unique_users`, `peak_rss`, `max_day_shard_bytes`, `total_shard_bytes`, and comparison results for `UTC`, `America/Los_Angeles`, and `Europe/Berlin`.
 - Gate constants: Relay duration `< 25s`; source body `< 32 MiB`; decoded points `< 1,000,000`; unique users `< 5,000`; probe peak RSS `< 192 MiB`; each serialized day shard `< 1 MiB`; all 32 day shards together `< 16 MiB`; token totals exact; actual-cost absolute error `<= 1e-9`.
 
-- [ ] **Step 1: Verify the audit target and isolation before reading credentials**
+- [x] **Step 1: Verify the audit target and isolation before reading credentials**
 
 Run:
 
@@ -76,7 +100,7 @@ helm -n la3-ai-efficiency-prod status ai-efficiency-prod
 
 Expected: PR #192 head is `627a7123d98aee37dd04fd5da2198234cfd003f0`, staging uses its immutable image at revision 44 or a later explicitly recorded equivalent baseline, and production has no pending rollout. If staging has moved, record the exact new image/revision before continuing; do not alter production.
 
-- [ ] **Step 2: Create a throwaway probe with no embedded identity or secret**
+- [x] **Step 2: Create a throwaway probe with no embedded identity or secret**
 
 The `/tmp` probe must:
 
@@ -101,7 +125,7 @@ type result struct {
 
 Use `http.NewRequestWithContext`, set only `X-API-Key` from `AE_POC_ADMIN_API_KEY`, call `/api/v1/admin/dashboard/users-trend`, limit reads to `32 << 20`, reject an exactly 5,000-user result, parse hourly dates with layout `2006-01-02 15:00` in UTC, and group each point after `hour.In(location)` by local `2006-01-02`. Fetch direct `granularity=day` results for the three comparison timezones, filter both sides to the same 30 local dates, compare tokens exactly and costs with `math.Abs(left-right) <= 1e-9`, and print only the `result` JSON. Do not print URLs, headers, IDs, row contents, or response bodies.
 
-- [ ] **Step 3: Build and run the probe under a measured process**
+- [x] **Step 3: Build and run the probe under a measured process**
 
 Run with the canonical 30-day comparison window plus one UTC date on each side:
 
@@ -128,7 +152,9 @@ jq -e '
 
 Expected: `jq` exits 0; `/usr/bin/time -l` reports maximum resident set size below 192 MiB. A response at 5,000 users, a body reaching 32 MiB, or a comparison mismatch is a hard failure, not a warning.
 
-- [ ] **Step 4: Record the decision and enforce the stop condition**
+Actual: build and measured execution completed, and the probe's internal request-count guard confirmed exactly four read-only GETs. The capacity gates passed, but all three comparison values were `mismatch`; `jq` therefore failed as required.
+
+- [x] **Step 4: Record the decision and enforce the stop condition**
 
 For a pass, add a sanitized table to the design spec and this plan with only aggregate measurements and lock these production constants:
 
@@ -145,7 +171,9 @@ const (
 
 If any gate fails, mark this plan `Blocked by UTC-hour POC`, leave every later checkbox unchecked, and write a replacement design using daily buckets for an explicit configured common-timezone list. Do not implement Tasks 2-10 on a failed UTC-hour POC.
 
-- [ ] **Step 5: Delete all authenticated artifacts before committing evidence**
+Decision: blocked. The design spec records the failed semantic gate and proposes direct `granularity=day` buckets for the explicitly configured initial set `UTC`, `Asia/Shanghai`, `America/Los_Angeles`, and `Europe/Berlin`. Other timezones remain request-driven. That replacement awaits user approval and a new plan.
+
+- [x] **Step 5: Delete all authenticated artifacts before committing evidence**
 
 Run:
 
@@ -160,12 +188,12 @@ git status --short
 
 Expected: no temporary probe remains; only the spec and plan contain sanitized aggregate evidence.
 
-- [ ] **Step 6: Commit the passed gate**
+- [x] **Step 6: Commit the failed gate evidence**
 
 ```bash
 git add docs/superpowers/specs/2026-07-21-team-usage-redis-daily-prewarm-design.md \
   docs/superpowers/plans/2026-07-21-team-usage-redis-daily-prewarm.md
-git commit -m "docs(teamusage): record Redis prewarm POC gate"
+git commit -m "docs(teamusage): record failed Redis prewarm POC"
 ```
 
 ---

@@ -1,6 +1,8 @@
 # Team Usage Redis Daily Prewarm Design
 
-**Status:** Approved; implementation has not started.
+**Status:** Blocked by UTC-hour POC. The UTC-hour reconstruction contract is
+rejected; the common-timezone daily-bucket replacement below is proposed and
+must receive explicit user approval before implementation or replanning.
 
 **Date:** 2026-07-21
 
@@ -42,6 +44,99 @@ The product exposes three dominant windows: today, seven days, and thirty
 days. These windows overlap heavily. Recomputing the previous complete days on
 each new actor/range cache miss wastes Relay and database work. Only the moving
 edge near each user's local "today" requires frequent refresh.
+
+## UTC-Hour POC Decision
+
+The staging POC ran against exact PR #192 head `627a7123` on the immutable
+staging image at Helm revision 44. Production remained unchanged at revision
+69. The probe made exactly four read-only aggregate requests: one canonical
+UTC hourly request and one direct daily comparison for each of `UTC`,
+`America/Los_Angeles`, and `Europe/Berlin`.
+
+| Gate | Measured | Limit | Result |
+| --- | ---: | ---: | --- |
+| Relay duration | 10.081 s | `< 25 s` | Pass |
+| Hourly source body | 7,464,074 bytes | `< 33,554,432 bytes` | Pass |
+| Decoded hourly points | 45,331 | `< 1,000,000` | Pass |
+| Unique users | 364 | `< 5,000` | Pass |
+| Probe peak RSS | 59,375,616 bytes | `< 201,326,592 bytes` | Pass |
+| Largest serialized UTC-day shard | 157,531 bytes | `< 1,048,576 bytes` | Pass |
+| Total serialized 32-day generation | 3,165,743 bytes | `< 16,777,216 bytes` | Pass |
+| `UTC` reconstruction | Mismatch | Exact tokens and cost delta `<= 1e-9` | **Fail** |
+| `America/Los_Angeles` reconstruction | Mismatch | Exact tokens and cost delta `<= 1e-9` | **Fail** |
+| `Europe/Berlin` reconstruction | Mismatch | Exact tokens and cost delta `<= 1e-9` | **Fail** |
+
+This is a semantic failure, not a capacity failure. The measured body, point,
+user, memory, and serialized-size gates all have headroom, but all three
+required equivalence checks failed. UTC-hour facts therefore cannot be used to
+reconstruct exact timezone-local daily totals under the current Relay contract.
+
+Sub2API source confirms the contract gap. `parseTimeRange` in
+`backend/internal/handler/admin/dashboard_handler.go` uses the request timezone
+to calculate only the query's start and end instants. `GetUserUsageTrend` in
+`backend/internal/repository/usage_log_repo_trend.go` groups rows with
+`TO_CHAR(u.created_at, format)` and does not receive or apply the request
+timezone in SQL. An hourly response label consequently cannot be interpreted
+as a reliable UTC bucket and then shifted into another timezone. The original
+UTC-hour design is blocked, Tasks 2-10 in its implementation plan must not run,
+and its proposed production constants are not locked by this failed gate.
+
+## Proposed Common-Timezone Daily-Bucket Replacement
+
+This replacement preserves the current source semantics instead of attempting
+cross-timezone reconstruction. It is a proposal only; implementation requires
+explicit user approval and a new or replaced implementation plan.
+
+The deployment provides an explicit allowlist of IANA timezone names. The
+initial recommended set is:
+
+```text
+UTC
+Asia/Shanghai
+America/Los_Angeles
+Europe/Berlin
+```
+
+The list is configuration, not a hard-coded product promise. Empty or invalid
+configuration disables daily prewarming. Duplicate names are rejected after
+canonical validation, and a bounded maximum list length must be fixed in the
+follow-up plan.
+
+For each configured timezone, the prewarmer requests provider-wide
+`users-trend` data directly with `granularity=day` and that exact timezone. It
+caches only the returned per-user date label, optional token total, and actual
+cost after applying the existing truncation and validation rules. Names,
+emails, credentials, raw responses, and directory records are discarded. The
+implementation must not derive one timezone from another and must not rebuild
+daily facts from hourly labels.
+
+Each immutable generation contains the current usage-stat snapshot plus daily
+shards keyed by provider version, configured timezone digest, source timezone,
+and returned date label. Its publish-last manifest records coverage separately
+for every configured timezone. The newest local dates are refreshed on the
+bounded moving schedule; a jittered correction cycle refetches the complete
+thirty-date window directly for every configured timezone so late usage and
+billing corrections converge. A follow-up daily-source POC must fix request,
+decoded-point, per-shard, total-generation, timeout, and Redis TTL bounds before
+production code is approved.
+
+A standard Team Usage request may use this prewarm only when its requested IANA
+timezone exactly matches one configured entry and its requested dates and
+granularity are fully covered by that timezone's direct daily generation. The
+request still resolves current representative authorization and Relay identity
+mapping, intersects cached facts with the current authorized Relay IDs, and
+projects the existing DTOs. Every unconfigured timezone, custom range,
+unsupported granularity, missing or invalid generation, and Redis error remains
+request-driven through the retained exact scope-origin path.
+
+This design intentionally trades bounded source duplication across a small
+configured timezone set for semantic equivalence with the current Relay API.
+It does not claim timezone-neutral reuse and does not change Sub2API.
+
+> **Rejected candidate record:** The remaining sections describe the UTC-hour
+> candidate as it stood before the hard gate. They are retained for design
+> history only and must not be implemented. Where they conflict with the POC
+> decision or proposed replacement above, the sections above are authoritative.
 
 ## Goals
 
