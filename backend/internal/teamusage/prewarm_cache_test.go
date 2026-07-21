@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -140,6 +141,38 @@ func TestPrewarmCacheKeysIsolateAllGenerationDimensions(t *testing.T) {
 		if key == currentA {
 			t.Fatalf("%s current variant reused %q", variant.name, currentA)
 		}
+	}
+}
+
+func TestPrewarmCacheMetricsRecordDistinctManifestCurrentAndSegmentOutcomes(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	metrics := &recordingPrewarmRequestMetrics{}
+	store := newRecordingPrewarmStore()
+	cache, err := NewPrewarmCache(store, PrewarmCacheOptions{
+		Namespace: "test", Now: func() time.Time { return now }, Metrics: metrics,
+	})
+	if err != nil {
+		t.Fatalf("NewPrewarmCache() error = %v", err)
+	}
+	identity := testPrewarmIdentity()
+	if _, found, err := cache.Read(context.Background(), identity); err != nil || found {
+		t.Fatalf("Read(miss) = %v/%v, want clean miss", found, err)
+	}
+	seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101})
+	metrics.caches = metrics.caches[:1]
+	if _, found, err := cache.Read(context.Background(), identity); err != nil || !found {
+		t.Fatalf("Read(fresh) = %v/%v, want fresh generation", found, err)
+	}
+	want := []prewarmCacheMetric{
+		{cache: PrewarmCacheManifest, outcome: PrewarmCacheMiss},
+		{cache: PrewarmCacheCurrentStats, outcome: PrewarmCacheFresh},
+		{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
+		{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
+		{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
+		{cache: PrewarmCacheManifest, outcome: PrewarmCacheFresh},
+	}
+	if !reflect.DeepEqual(metrics.caches, want) {
+		t.Fatalf("cache metrics = %#v, want %#v", metrics.caches, want)
 	}
 }
 

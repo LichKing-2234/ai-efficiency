@@ -41,16 +41,16 @@ type Service struct {
 	maxMultiplier            float64
 	snapshotCache            *SnapshotCache
 	originCache              *OriginCache
-	prewarmReader            *PrewarmReader
+	prewarmReaderSource      PrewarmReaderSource
 	memberCursorCodec        *memberCursorCodec
 	organizationCursorCodec  *organizationCursorCodec
 }
 
 type ServiceOptions struct {
-	SnapshotCache *SnapshotCache
-	OriginCache   *OriginCache
-	PrewarmReader *PrewarmReader
-	CursorSecret  string
+	SnapshotCache       *SnapshotCache
+	OriginCache         *OriginCache
+	PrewarmReaderSource PrewarmReaderSource
+	CursorSecret        string
 }
 
 type splitReadRequest struct {
@@ -115,8 +115,18 @@ func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolve
 		return nil, fmt.Errorf("team usage cursor secret is required")
 	}
 	service := newService(client, scopeResolver, providerResolver, locker, options.SnapshotCache, options.OriginCache, cursorSecret)
-	service.prewarmReader = options.PrewarmReader
+	service.prewarmReaderSource = options.PrewarmReaderSource
 	return service, nil
+}
+
+func (s *Service) currentPrewarmReader() *PrewarmReader {
+	if s == nil {
+		return nil
+	}
+	if s.prewarmReaderSource != nil {
+		return s.prewarmReaderSource.Load()
+	}
+	return nil
 }
 
 func newService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, originCache *OriginCache, cursorSecret string) *Service {

@@ -51,6 +51,36 @@ type PrewarmReader struct {
 	flights   readcache.FlightGroup[PrewarmTrendSegment]
 }
 
+type prewarmRequestFailure struct {
+	reason string
+	err    error
+}
+
+func (e *prewarmRequestFailure) Error() string { return e.err.Error() }
+func (e *prewarmRequestFailure) Unwrap() error { return e.err }
+
+func wrapPrewarmRequestFailure(reason string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &prewarmRequestFailure{reason: reason, err: err}
+}
+
+func prewarmFallbackReasonForError(err error) string {
+	var requestFailure *prewarmRequestFailure
+	if errors.As(err, &requestFailure) {
+		return requestFailure.reason
+	}
+	var sourceFailure *prewarmSourceFailure
+	if errors.As(err, &sourceFailure) {
+		if sourceFailure.kind == prewarmSourceFailureValidation {
+			return "generation_invalid"
+		}
+		return "source_error"
+	}
+	return "generation_invalid"
+}
+
 func NewPrewarmReader(cache *PrewarmCache, limiter SourceCallLimiter, options PrewarmReaderOptions) (*PrewarmReader, error) {
 	if cache == nil {
 		return nil, fmt.Errorf("team usage prewarm reader cache is required")
@@ -69,7 +99,7 @@ func NewPrewarmReader(cache *PrewarmCache, limiter SourceCallLimiter, options Pr
 		options.NewToken = newPrewarmRandomID
 	}
 	source, err := NewPrewarmSource(limiter, PrewarmSourceOptions{
-		Now: options.Now, NewGenerationID: options.NewGenerationID,
+		Now: options.Now, NewGenerationID: options.NewGenerationID, Metrics: options.Metrics,
 	})
 	if err != nil {
 		return nil, err
@@ -152,6 +182,7 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 			fallbackReason = "roster_incomplete"
 			return nil, PrewarmReadFallback, nil
 		}
+		r.metrics.RecordQuantity(PrewarmQuantityUnionUsers, window.Coverage.Timezone, len(origin.RelayUserIDs))
 		return origin, PrewarmReadFullHit, nil
 	}
 	if !prewarmResultCanRecoverToday(result) {
@@ -176,7 +207,7 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		return r.recoverToday(flightCtx, request, identity, result)
 	})
 	if err != nil {
-		fallbackReason = "source_error"
+		fallbackReason = prewarmFallbackReasonForError(err)
 		return nil, PrewarmReadFallback, err
 	}
 	segments := result.Segments
@@ -190,6 +221,7 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		fallbackReason = "roster_incomplete"
 		return nil, PrewarmReadFallback, nil
 	}
+	r.metrics.RecordQuantity(PrewarmQuantityUnionUsers, window.Coverage.Timezone, len(origin.RelayUserIDs))
 	return origin, PrewarmReadPartialToday, nil
 }
 
@@ -236,19 +268,19 @@ func (r *PrewarmReader) recoverToday(
 	token := r.newToken()
 	acquired, err := r.cache.TryAcquireLease(ctx, leaseKey, token, prewarmWorkerLeaseTTL)
 	if err != nil {
-		return PrewarmTrendSegment{}, fmt.Errorf("acquire request today segment lease: %w", err)
+		return PrewarmTrendSegment{}, wrapPrewarmRequestFailure("redis_error", fmt.Errorf("acquire request today segment lease: %w", err))
 	}
 	if !acquired {
-		return PrewarmTrendSegment{}, errPrewarmLeaseBusy
+		return PrewarmTrendSegment{}, wrapPrewarmRequestFailure("redis_error", errPrewarmLeaseBusy)
 	}
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), prewarmDefaultCommandTimeout)
 		released, releaseErr := r.cache.ReleaseLease(releaseCtx, leaseKey, token)
 		cancel()
 		if releaseErr != nil {
-			err = errors.Join(err, fmt.Errorf("release request today segment lease: %w", releaseErr))
+			err = errors.Join(err, wrapPrewarmRequestFailure("redis_error", fmt.Errorf("release request today segment lease: %w", releaseErr)))
 		} else if !released {
-			err = errors.Join(err, errPrewarmLeaseLost)
+			err = errors.Join(err, wrapPrewarmRequestFailure("redis_error", errPrewarmLeaseLost))
 		}
 	}()
 
@@ -269,16 +301,16 @@ func (r *PrewarmReader) recoverToday(
 	}
 	todayRef, err := r.cache.WriteSegment(ctx, today)
 	if err != nil {
-		return PrewarmTrendSegment{}, fmt.Errorf("write recovered request today segment: %w", err)
+		return PrewarmTrendSegment{}, wrapPrewarmRequestFailure("redis_error", fmt.Errorf("write recovered request today segment: %w", err))
 	}
 	manifest := newPrewarmManifestCandidate(identity, result, r.now())
 	manifest.TodayHour = todayRef
 	published, err := r.cache.PublishManifestWithLeases(ctx, []PrewarmLeaseClaim{{Key: leaseKey, Token: token}}, manifest)
 	if err != nil {
-		return PrewarmTrendSegment{}, fmt.Errorf("publish recovered request today manifest: %w", err)
+		return PrewarmTrendSegment{}, wrapPrewarmRequestFailure("redis_error", fmt.Errorf("publish recovered request today manifest: %w", err))
 	}
 	if !published {
-		return PrewarmTrendSegment{}, errPrewarmLeaseLost
+		return PrewarmTrendSegment{}, wrapPrewarmRequestFailure("redis_error", errPrewarmLeaseLost)
 	}
 	return today, nil
 }

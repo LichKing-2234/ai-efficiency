@@ -26,7 +26,10 @@ func TestPrewarmMovingSharesCurrentStatsAndPublishesTimezonesIndependently(t *te
 	}
 
 	provider := newLifecycleProvider(ascendingIDs(3))
-	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions(timezones, func() time.Time { return now }))
+	metrics := &recordingPrewarmRequestMetrics{}
+	options := lifecycleOptions(timezones, func() time.Time { return now })
+	options.Metrics = metrics
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
 	if err := prewarmer.RunMoving(context.Background()); err != nil {
 		t.Fatalf("RunMoving() error = %v", err)
 	}
@@ -38,6 +41,8 @@ func TestPrewarmMovingSharesCurrentStatsAndPublishesTimezonesIndependently(t *te
 	}
 
 	var sharedGeneration string
+	currentBytes := 0
+	timezoneBytes := 0
 	for _, timezone := range timezones {
 		result := readPrewarmResult(t, cache, PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: timezone, AnchorDate: "2026-07-21"})
 		if result.Manifest.TodayHour.GenerationID == old[timezone].TodayHour.GenerationID {
@@ -48,10 +53,35 @@ func TestPrewarmMovingSharesCurrentStatsAndPublishesTimezonesIndependently(t *te
 		}
 		if sharedGeneration == "" {
 			sharedGeneration = result.Manifest.CurrentStats.GenerationID
+			currentBytes = result.Manifest.CurrentStats.SerializedBytes
 		} else if result.Manifest.CurrentStats.GenerationID != sharedGeneration {
 			t.Fatalf("current generation = %q, want shared %q", result.Manifest.CurrentStats.GenerationID, sharedGeneration)
 		}
+		encoded, encodeErr := encodePrewarmJSON(result.Manifest, prewarmManifestMaxBytes)
+		if encodeErr != nil {
+			t.Fatalf("encode manifest size: %v", encodeErr)
+		}
+		timezoneBytes += result.Manifest.History29d.SerializedBytes + result.Manifest.History6d.SerializedBytes +
+			result.Manifest.TodayHour.SerializedBytes + len(encoded)
 	}
+	if len(metrics.generation) == 0 || metrics.generation[len(metrics.generation)-1] != currentBytes+timezoneBytes {
+		t.Fatalf("generation bytes = %#v, want current once %d + timezones %d", metrics.generation, currentBytes, timezoneBytes)
+	}
+	for _, timezone := range timezones {
+		if !containsPrewarmQuantity(metrics.quantities, PrewarmQuantitySegmentBytes, timezone) ||
+			!containsPrewarmQuantity(metrics.quantities, PrewarmQuantityTimezoneBytes, timezone) {
+			t.Fatalf("publication quantities for %s = %#v", timezone, metrics.quantities)
+		}
+	}
+}
+
+func containsPrewarmQuantity(metrics []prewarmQuantityMetric, kind PrewarmQuantityKind, timezone string) bool {
+	for _, metric := range metrics {
+		if metric.kind == kind && metric.timezone == timezone && metric.value > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func TestPrewarmMovingPreflightErrorDoesNotBlockHealthyTimezone(t *testing.T) {
@@ -1068,6 +1098,76 @@ func TestPrewarmMovingStartDuringStopCannotJoinLifecycle(t *testing.T) {
 		t.Fatal("Start() after completed Stop did not start a new lifecycle")
 	}
 	prewarmer.Stop()
+}
+
+func TestPrewarmerLifecycleReportsBoundedStartupProviderFailure(t *testing.T) {
+	cache := mustNewPrewarmCache(t, newRecordingPrewarmStore(), time.Now)
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 1)}
+	options := lifecycleOptions([]string{"UTC"}, time.Now)
+	options.Metrics = metrics
+	options.Reporter = reporter
+	options.NewOperationID = func() string { return strings.Repeat("a", 32) }
+	prewarmer := mustPrewarmer(t, staticBindingResolver{err: errors.New("dynamic provider detail")}, cache, options)
+
+	prewarmer.Start(context.Background())
+	defer prewarmer.Stop()
+	select {
+	case event := <-reporter.events:
+		if event.OperationID != strings.Repeat("a", 32) || event.Class != PrewarmCycleStartup ||
+			event.Timezone != "UTC" || event.Outcome != PrewarmCycleError || event.ProviderID != 0 || event.ProviderVersion != 0 {
+			t.Fatalf("startup failure event = %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("startup provider failure was discarded")
+	}
+	if !containsPrewarmCycleMetric(metrics.cycles, prewarmCycleMetric{
+		class: string(PrewarmCycleStartup), timezone: "UTC", outcome: string(PrewarmCycleError),
+	}) {
+		t.Fatalf("startup failure cycle metrics = %#v", metrics.cycles)
+	}
+}
+
+func TestPrewarmerLifecycleReportsBoundedCoordinatorFailure(t *testing.T) {
+	store := newRecordingPrewarmStore()
+	store.leaseErr = errors.New("dynamic Redis detail")
+	cache := mustNewPrewarmCache(t, store, time.Now)
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 1)}
+	provider := newLifecycleProvider([]int64{101})
+	options := lifecycleOptions([]string{"UTC"}, time.Now)
+	options.Metrics = metrics
+	options.Reporter = reporter
+	options.NewOperationID = func() string { return strings.Repeat("b", 32) }
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+
+	prewarmer.Start(context.Background())
+	defer prewarmer.Stop()
+	select {
+	case event := <-reporter.events:
+		if event.Class != PrewarmCycleStartup || event.Outcome != PrewarmCycleError || event.OperationID != strings.Repeat("b", 32) {
+			t.Fatalf("coordinator failure event = %#v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("startup coordinator failure was discarded")
+	}
+}
+
+type recordingPrewarmReporter struct {
+	events chan PrewarmBackgroundEvent
+}
+
+func (r *recordingPrewarmReporter) ReportPrewarmBackground(event PrewarmBackgroundEvent) {
+	r.events <- event
+}
+
+func containsPrewarmCycleMetric(got []prewarmCycleMetric, want prewarmCycleMetric) bool {
+	for _, metric := range got {
+		if metric.class == want.class && metric.timezone == want.timezone && metric.outcome == want.outcome {
+			return true
+		}
+	}
+	return false
 }
 
 type staticBindingResolver struct {

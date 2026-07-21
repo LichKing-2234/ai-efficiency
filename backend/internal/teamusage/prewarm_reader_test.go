@@ -22,8 +22,9 @@ func TestPrewarmReaderFullHitFiltersAuthorizedRosterAndUsesSparseZero(t *testing
 	identity := testPrewarmIdentity()
 	seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101, 102})
 	limiter := &readerSourceLimiter{}
+	metrics := &recordingPrewarmRequestMetrics{}
 	reader := mustPrewarmReader(t, cache, limiter, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
+		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
 	})
 	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
 
@@ -46,6 +47,9 @@ func TestPrewarmReaderFullHitFiltersAuthorizedRosterAndUsesSparseZero(t *testing
 	if stat := origin.StatsByRelayUserID[102]; stat.RangeActualCost == nil || *stat.RangeActualCost != 0 ||
 		stat.RangeTotalTokens == nil || *stat.RangeTotalTokens != 0 {
 		t.Fatalf("sparse authorized range = %#v/%#v, want complete zero", stat.RangeActualCost, stat.RangeTotalTokens)
+	}
+	if !reflect.DeepEqual(metrics.quantities, []prewarmQuantityMetric{{kind: PrewarmQuantityUnionUsers, timezone: "UTC", value: 2}}) {
+		t.Fatalf("composition quantities = %#v", metrics.quantities)
 	}
 }
 
@@ -86,6 +90,31 @@ func TestPrewarmReaderMetricsUseClosedFallbackReasons(t *testing.T) {
 	}
 	if !reflect.DeepEqual(metrics.requests, []prewarmRequestMetric{requests[0].want, requests[1].want, requests[2].want}) {
 		t.Fatalf("request metrics = %#v, want closed reasons %#v", metrics.requests, []prewarmRequestMetric{requests[0].want, requests[1].want, requests[2].want})
+	}
+}
+
+func TestPrewarmReaderSlotUsesExactFallbackBeforeAtomicInstall(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	scope, provider := membersTestData(1)
+	rangeCost, rangeTokens := 7.0, int64(70)
+	provider.summaryStats[10001] = relay.TeamUserUsageStats{
+		UserID: 10001, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
+	}
+	provider.trendPoints[10001] = []relay.UsageTrendPoint{{Date: "2026-07-15", ActualCost: 7, TotalTokens: &rangeTokens}}
+	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	service.prewarmReaderSource = NewPrewarmReaderSlot()
+	service.originCache, _ = testOriginCache(t, time.Now, "empty-reader-slot-fallback-token")
+
+	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if response.Summary.RangeActualCost == nil || *response.Summary.RangeActualCost != 7 {
+		t.Fatalf("empty-slot fallback range = %#v, want exact 7", response.Summary.RangeActualCost)
+	}
+	if len(provider.summaryRequestBatches) == 0 || provider.trendCalls == 0 {
+		t.Fatalf("empty-slot exact fallback calls = stats %d trend %d", len(provider.summaryRequestBatches), provider.trendCalls)
 	}
 }
 
@@ -193,8 +222,9 @@ func TestPrewarmPartialTodayRelayFailureSelectsCompleteFallback(t *testing.T) {
 	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
 	manifest := seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), now, []int64{101})
 	server.Del(manifest.TodayHour.Key)
+	metrics := &recordingPrewarmRequestMetrics{}
 	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
+		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
 	})
 	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}, trendErr: errors.New("synthetic today outage")}
 
@@ -204,6 +234,38 @@ func TestPrewarmPartialTodayRelayFailureSelectsCompleteFallback(t *testing.T) {
 	})
 	if err == nil || origin != nil || outcome != PrewarmReadFallback {
 		t.Fatalf("partial Relay failure = %#v/%q/%v, want exact fallback signal", origin, outcome, err)
+	}
+	last := metrics.requests[len(metrics.requests)-1]
+	if last.reason != "source_error" {
+		t.Fatalf("partial Relay fallback reason = %q, want source_error", last.reason)
+	}
+}
+
+func TestPrewarmPartialTodayRedisLeaseFailureIsNotClassifiedAsSource(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	store := newRecordingPrewarmStore()
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	manifest := seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), now, []int64{101})
+	store.mu.Lock()
+	delete(store.values, manifest.TodayHour.Key)
+	store.mu.Unlock()
+	store.leaseErr = errors.New("dynamic Redis lease detail")
+	metrics := &recordingPrewarmRequestMetrics{}
+	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
+		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
+	})
+	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
+
+	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
+		ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
+		Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
+	})
+	if err == nil || origin != nil || outcome != PrewarmReadFallback {
+		t.Fatalf("partial Redis failure = %#v/%q/%v, want exact fallback signal", origin, outcome, err)
+	}
+	last := metrics.requests[len(metrics.requests)-1]
+	if last.reason != "redis_error" {
+		t.Fatalf("partial Redis fallback reason = %q, want redis_error", last.reason)
 	}
 }
 
@@ -320,7 +382,7 @@ func TestPrewarmPartialTodayLifecycleMovingLeaseSelectsExactFallbackWithoutConcu
 		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, NewToken: func() string { return strings.Repeat("e", 64) },
 	})
 	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
-	service.prewarmReader = reader
+	installTestPrewarmReader(service, reader)
 	service.originCache, _ = testOriginCache(t, time.Now, "moving-lease-fallback-token")
 
 	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
@@ -349,6 +411,12 @@ func mustPrewarmReader(t *testing.T, cache *PrewarmCache, limiter SourceCallLimi
 		t.Fatalf("NewPrewarmReader() error = %v", err)
 	}
 	return reader
+}
+
+func installTestPrewarmReader(service *Service, reader *PrewarmReader) {
+	slot := NewPrewarmReaderSlot()
+	slot.Store(reader)
+	service.prewarmReaderSource = slot
 }
 
 func seedAuthorizedPrewarmManifest(
@@ -415,6 +483,13 @@ type prewarmRequestMetric struct {
 	reason   string
 }
 
+type prewarmCycleMetric struct {
+	class    string
+	timezone string
+	outcome  string
+	duration time.Duration
+}
+
 type prewarmSourceMetric struct {
 	class    string
 	timezone string
@@ -424,22 +499,72 @@ type prewarmSourceMetric struct {
 	users    int
 }
 
-type recordingPrewarmRequestMetrics struct {
-	requests []prewarmRequestMetric
-	sources  []prewarmSourceMetric
+type prewarmQuantityMetric struct {
+	kind     PrewarmQuantityKind
+	timezone string
+	value    int
 }
 
-func (*recordingPrewarmRequestMetrics) RecordCycle(string, string, string, time.Duration) {}
+type prewarmValidationMetric struct {
+	check   PrewarmValidationCheck
+	outcome PrewarmValidationOutcome
+}
+
+type prewarmCacheMetric struct {
+	cache   PrewarmCacheKind
+	outcome PrewarmCacheOutcome
+}
+
+type recordingPrewarmRequestMetrics struct {
+	mu          sync.Mutex
+	cycles      []prewarmCycleMetric
+	requests    []prewarmRequestMetric
+	sources     []prewarmSourceMetric
+	quantities  []prewarmQuantityMetric
+	validations []prewarmValidationMetric
+	caches      []prewarmCacheMetric
+	generation  []int
+}
+
+func (m *recordingPrewarmRequestMetrics) RecordCycle(class, timezone, outcome string, duration time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cycles = append(m.cycles, prewarmCycleMetric{class: class, timezone: timezone, outcome: outcome, duration: duration})
+}
 func (m *recordingPrewarmRequestMetrics) RecordSource(class, timezone, outcome string, _ time.Duration, bytes, points, users int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.sources = append(m.sources, prewarmSourceMetric{
 		class: class, timezone: timezone, outcome: outcome, bytes: bytes, points: points, users: users,
 	})
 }
 func (*recordingPrewarmRequestMetrics) RecordRedis(string, string, time.Duration, int) {}
 func (m *recordingPrewarmRequestMetrics) RecordRequest(timezone, outcome, reason string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.requests = append(m.requests, prewarmRequestMetric{timezone: timezone, outcome: outcome, reason: reason})
 }
 func (*recordingPrewarmRequestMetrics) SetLastSuccess(string, string, time.Time) {}
+func (m *recordingPrewarmRequestMetrics) RecordQuantity(kind PrewarmQuantityKind, timezone string, value int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.quantities = append(m.quantities, prewarmQuantityMetric{kind: kind, timezone: timezone, value: value})
+}
+func (m *recordingPrewarmRequestMetrics) SetGenerationBytes(value int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.generation = append(m.generation, value)
+}
+func (m *recordingPrewarmRequestMetrics) RecordValidation(check PrewarmValidationCheck, outcome PrewarmValidationOutcome) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.validations = append(m.validations, prewarmValidationMetric{check: check, outcome: outcome})
+}
+func (m *recordingPrewarmRequestMetrics) RecordCache(cache PrewarmCacheKind, outcome PrewarmCacheOutcome) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.caches = append(m.caches, prewarmCacheMetric{cache: cache, outcome: outcome})
+}
 
 func (l *readerSourceLimiter) Do(ctx context.Context, call func(context.Context) error) error {
 	l.calls.Add(1)

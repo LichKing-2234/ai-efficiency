@@ -314,7 +314,7 @@ func TestSharedOriginPrewarmResolvesMappingsBeforeSegmentedRedis(t *testing.T) {
 		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
 	})
 	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
-	service.prewarmReader = reader
+	installTestPrewarmReader(service, reader)
 
 	if _, err := service.Summary(context.Background(), 1, prewarmReader7dParams()); err != nil {
 		t.Fatalf("Summary() error = %v", err)
@@ -338,7 +338,7 @@ func TestSharedOriginPrewarmServesAuthorizedScopeAboveLegacyCap(t *testing.T) {
 		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
 	})
 	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
-	service.prewarmReader = reader
+	installTestPrewarmReader(service, reader)
 
 	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
 	if err != nil {
@@ -374,7 +374,7 @@ func TestPrewarmFallbackScopeVersionRaceDiscardsProjectionAndUsesExactOrigin(t *
 		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
 	})
 	service := newUncachedServiceForTest(client, resolver, fakeProviderResolver{provider: provider}, nil)
-	service.prewarmReader = reader
+	installTestPrewarmReader(service, reader)
 	service.originCache, _ = testOriginCache(t, time.Now, "scope-race-exact-token")
 
 	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
@@ -406,7 +406,7 @@ func TestPrewarmFallbackFinalRepresentativeLossReturnsForbiddenWithoutStaleSourc
 		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
 	})
 	service := newUncachedServiceForTest(client, resolver, fakeProviderResolver{provider: provider}, nil)
-	service.prewarmReader = reader
+	installTestPrewarmReader(service, reader)
 	service.originCache, _ = testOriginCache(t, time.Now, "representative-loss-token")
 
 	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
@@ -434,7 +434,7 @@ func TestPrewarmFallbackFinalProviderResolutionFailureReturnsErrorWithoutStaleSo
 		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
 	})
 	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
-	service.prewarmReader = reader
+	installTestPrewarmReader(service, reader)
 	service.originCache, _ = testOriginCache(t, time.Now, "provider-reresolution-token")
 
 	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())

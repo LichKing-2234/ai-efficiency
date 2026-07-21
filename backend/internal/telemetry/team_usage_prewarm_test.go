@@ -6,6 +6,8 @@ import (
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/ai-efficiency/backend/internal/teamusage"
 )
 
 func TestTeamUsagePrewarmMetricsPreinitializeClosedPrivacySafeLabels(t *testing.T) {
@@ -30,6 +32,10 @@ func TestTeamUsagePrewarmMetricsPreinitializeClosedPrivacySafeLabels(t *testing.
 		"ai_efficiency_team_usage_prewarm_redis_bytes":                    false,
 		"ai_efficiency_team_usage_prewarm_request_total":                  false,
 		"ai_efficiency_team_usage_prewarm_last_success_timestamp_seconds": false,
+		"ai_efficiency_team_usage_prewarm_quantity":                       false,
+		"ai_efficiency_team_usage_prewarm_generation_bytes":               false,
+		"ai_efficiency_team_usage_prewarm_validation_total":               false,
+		"ai_efficiency_team_usage_prewarm_cache_total":                    false,
 	}
 	for _, family := range families {
 		if _, ok := wantFamilies[family.GetName()]; !ok {
@@ -39,7 +45,7 @@ func TestTeamUsagePrewarmMetricsPreinitializeClosedPrivacySafeLabels(t *testing.
 		for _, metric := range family.GetMetric() {
 			for _, label := range metric.GetLabel() {
 				switch label.GetName() {
-				case "class", "timezone", "outcome", "operation", "fallback_reason":
+				case "class", "timezone", "outcome", "operation", "fallback_reason", "quantity", "check", "cache":
 				default:
 					t.Fatalf("metric %s exposes unexpected label %q", family.GetName(), label.GetName())
 				}
@@ -75,6 +81,11 @@ func TestTeamUsagePrewarmMetricsRecordBoundedDurationsSizesAndLastSuccess(t *tes
 	recorder.RecordRedis("manifest_read", "hit", 5*time.Millisecond, 128)
 	recorder.RecordRequest("UTC", "full_hit", "none")
 	recorder.SetLastSuccess("moving", "UTC", at)
+	recorder.RecordQuantity(teamusage.PrewarmQuantityUnionUsers, "UTC", 3)
+	recorder.RecordQuantity(teamusage.PrewarmQuantitySegmentBytes, "UTC", 2048)
+	recorder.SetGenerationBytes(8192)
+	recorder.RecordValidation(teamusage.PrewarmValidationStatsExactCoverage, teamusage.PrewarmValidationAccepted)
+	recorder.RecordCache(teamusage.PrewarmCacheManifest, teamusage.PrewarmCacheFresh)
 
 	if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_team_usage_prewarm_cycle_total", map[string]string{
 		"class": "moving", "timezone": "UTC", "outcome": "success",
@@ -91,6 +102,19 @@ func TestTeamUsagePrewarmMetricsRecordBoundedDurationsSizesAndLastSuccess(t *tes
 		"class": "moving", "timezone": "UTC",
 	}); got != float64(at.Unix()) {
 		t.Fatalf("last success = %v, want %v", got, at.Unix())
+	}
+	if got := gaugeValue(t, metrics.Gatherer(), "ai_efficiency_team_usage_prewarm_generation_bytes", map[string]string{}); got != 8192 {
+		t.Fatalf("generation bytes = %v, want 8192", got)
+	}
+	if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_team_usage_prewarm_validation_total", map[string]string{
+		"check": string(teamusage.PrewarmValidationStatsExactCoverage), "outcome": string(teamusage.PrewarmValidationAccepted),
+	}); got != 1 {
+		t.Fatalf("stats validation count = %v, want 1", got)
+	}
+	if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_team_usage_prewarm_cache_total", map[string]string{
+		"cache": string(teamusage.PrewarmCacheManifest), "outcome": string(teamusage.PrewarmCacheFresh),
+	}); got != 1 {
+		t.Fatalf("manifest cache count = %v, want 1", got)
 	}
 }
 

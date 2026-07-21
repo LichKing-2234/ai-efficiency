@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,6 +43,8 @@ type PrewarmerOptions struct {
 	NewGenerationID func() string
 	Sleep           func(context.Context, time.Duration) error
 	Metrics         PrewarmMetrics
+	Reporter        PrewarmReporter
+	NewOperationID  func() string
 
 	// tick is test-only; runtime uses the fixed 60-second ticker.
 	tick                    <-chan time.Time
@@ -79,6 +82,17 @@ type Prewarmer struct {
 	stopDone    chan struct{}
 	startupDone chan struct{}
 	wg          sync.WaitGroup
+
+	reportingMu       sync.Mutex
+	reportingProvider int
+	reportingVersion  int64
+
+	publicationMu              sync.Mutex
+	publicationProvider        int
+	publicationProviderVersion int64
+	publicationCurrentID       string
+	publicationCurrentBytes    int
+	publicationTimezoneBytes   map[string]int
 }
 
 func NewPrewarmer(
@@ -112,6 +126,10 @@ func NewPrewarmer(
 		options.Sleep = readcache.Sleep
 	}
 	options.Metrics = prewarmMetricsOrNoop(options.Metrics)
+	options.Reporter = prewarmReporterOrNoop(options.Reporter)
+	if options.NewOperationID == nil {
+		options.NewOperationID = newPrewarmRandomID
+	}
 	if options.sourceCallTimeout <= 0 || options.sourceCallTimeout >= prewarmWorkerLeaseTTL {
 		options.sourceCallTimeout = prewarmSourceCallTimeout
 	}
@@ -132,7 +150,7 @@ func NewPrewarmer(
 		newToken: options.NewToken, sleep: options.Sleep, callTimeout: options.sourceCallTimeout,
 	}
 	source, err := NewPrewarmSource(limiter, PrewarmSourceOptions{
-		Now: options.Now, NewGenerationID: options.NewGenerationID,
+		Now: options.Now, NewGenerationID: options.NewGenerationID, Metrics: options.Metrics,
 	})
 	if err != nil {
 		return nil, err
@@ -140,6 +158,7 @@ func NewPrewarmer(
 	return &Prewarmer{
 		resolver: resolver, cache: cache, source: source, limiter: limiter, options: options,
 		timezones: timezones, allowlistDigest: prewarmStringDigest(timezones...),
+		publicationTimezoneBytes: make(map[string]int, len(timezones)),
 	}, nil
 }
 
@@ -203,7 +222,10 @@ func (p *Prewarmer) Stop() {
 
 func (p *Prewarmer) runLifecycle(ctx context.Context, startupDone chan struct{}) {
 	defer p.wg.Done()
-	_ = p.runStartup(ctx)
+	startedAt := time.Now()
+	operationID := p.newOperationID()
+	startupErr := p.runStartup(ctx)
+	p.reportLifecycle(operationID, PrewarmCycleStartup, p.timezones, startedAt, startupErr, true)
 	close(startupDone)
 
 	if p.options.tick != nil {
@@ -246,7 +268,11 @@ func (p *Prewarmer) startMoving(ctx context.Context) {
 		defer p.wg.Done()
 		defer p.scheduledWorkers.Add(-1)
 		defer p.moving.Store(false)
-		_ = p.runMoving(ctx)
+		startedAt := time.Now()
+		operationID := p.newOperationID()
+		if err := p.runMoving(ctx); err != nil {
+			p.reportLifecycle(operationID, PrewarmCycleMoving, p.timezones, startedAt, err, false)
+		}
 	}()
 }
 
@@ -263,7 +289,11 @@ func (p *Prewarmer) startRecovery(ctx context.Context) {
 		defer p.wg.Done()
 		defer p.scheduledWorkers.Add(-1)
 		defer p.recovery.Store(false)
-		_ = p.runRecovery(ctx)
+		startedAt := time.Now()
+		operationID := p.newOperationID()
+		if err := p.runRecovery(ctx); err != nil {
+			p.reportLifecycle(operationID, PrewarmCycleRecovery, p.timezones, startedAt, err, false)
+		}
 	}()
 }
 
@@ -275,7 +305,12 @@ func (p *Prewarmer) startHistorical(ctx context.Context, timezone string, anchor
 	go func() {
 		defer p.wg.Done()
 		defer p.scheduledWorkers.Add(-1)
-		_ = p.RunHistorical(ctx, timezone, anchor)
+		startedAt := time.Now()
+		operationID := p.newOperationID()
+		if err := p.RunHistorical(ctx, timezone, anchor); err != nil {
+			p.reportLifecycle(operationID, PrewarmCycleHistory29d, []string{timezone}, startedAt, err, false)
+			p.reportLifecycle(operationID, PrewarmCycleHistory6d, []string{timezone}, startedAt, err, false)
+		}
 	}()
 }
 
@@ -1090,6 +1125,7 @@ func (p *Prewarmer) publishIfCurrent(
 	if !published {
 		return errPrewarmLeaseLost
 	}
+	p.recordPublishedGeneration(manifest)
 	return nil
 }
 
@@ -1101,7 +1137,87 @@ func (p *Prewarmer) resolveBinding(ctx context.Context) (ProviderBinding, error)
 	if err := validateProviderBinding(binding); err != nil {
 		return ProviderBinding{}, err
 	}
+	p.reportingMu.Lock()
+	p.reportingProvider = binding.ProviderID
+	p.reportingVersion = binding.ProviderVersion
+	p.reportingMu.Unlock()
 	return binding, nil
+}
+
+func (p *Prewarmer) recordPublishedGeneration(manifest PrewarmManifest) {
+	encodedManifest, err := encodePrewarmJSON(manifest, prewarmManifestMaxBytes)
+	if err != nil {
+		return
+	}
+	segmentBytes := manifest.History29d.SerializedBytes + manifest.History6d.SerializedBytes + manifest.TodayHour.SerializedBytes
+	timezoneBytes := segmentBytes + len(encodedManifest)
+
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
+	if p.publicationProvider != manifest.ProviderID ||
+		p.publicationProviderVersion != manifest.ProviderVersion ||
+		p.publicationCurrentID != manifest.CurrentStats.GenerationID {
+		p.publicationProvider = manifest.ProviderID
+		p.publicationProviderVersion = manifest.ProviderVersion
+		p.publicationCurrentID = manifest.CurrentStats.GenerationID
+		p.publicationCurrentBytes = manifest.CurrentStats.SerializedBytes
+		clear(p.publicationTimezoneBytes)
+	}
+	p.publicationTimezoneBytes[manifest.Timezone] = timezoneBytes
+	fullGenerationBytes := p.publicationCurrentBytes
+	for _, size := range p.publicationTimezoneBytes {
+		fullGenerationBytes += size
+	}
+	p.options.Metrics.RecordQuantity(PrewarmQuantitySegmentBytes, manifest.Timezone, segmentBytes)
+	p.options.Metrics.RecordQuantity(PrewarmQuantityTimezoneBytes, manifest.Timezone, timezoneBytes)
+	p.options.Metrics.SetGenerationBytes(fullGenerationBytes)
+}
+
+func (p *Prewarmer) newOperationID() string {
+	operationID := strings.TrimSpace(p.options.NewOperationID())
+	if operationID == "" {
+		return "unknown"
+	}
+	if len(operationID) > 64 {
+		operationID = operationID[:64]
+	}
+	for _, char := range operationID {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') &&
+			(char < '0' || char > '9') && char != '-' && char != '_' {
+			return "invalid"
+		}
+	}
+	return operationID
+}
+
+func (p *Prewarmer) reportLifecycle(
+	operationID string,
+	class PrewarmCycleClass,
+	timezones []string,
+	startedAt time.Time,
+	err error,
+	reportSuccess bool,
+) {
+	if err == nil && !reportSuccess {
+		return
+	}
+	outcome := PrewarmCycleSuccess
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		outcome = PrewarmCycleCanceled
+	} else if err != nil {
+		outcome = PrewarmCycleError
+	}
+	duration := time.Since(startedAt)
+	p.reportingMu.Lock()
+	providerID, providerVersion := p.reportingProvider, p.reportingVersion
+	p.reportingMu.Unlock()
+	for _, timezone := range timezones {
+		p.options.Metrics.RecordCycle(string(class), timezone, string(outcome), duration)
+		p.options.Reporter.ReportPrewarmBackground(PrewarmBackgroundEvent{
+			OperationID: operationID, ProviderID: providerID, ProviderVersion: providerVersion,
+			Timezone: timezone, Class: class, Outcome: outcome, Duration: duration,
+		})
+	}
 }
 
 func (p *Prewarmer) acquireLease(ctx context.Context, key string, ttl time.Duration) (string, bool, error) {

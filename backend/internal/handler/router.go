@@ -33,21 +33,21 @@ var ginDefaultNotFoundBody = []byte("404 page not found")
 
 // RouterOptions supplies the runtime dependencies required by the production router.
 type RouterOptions struct {
-	DirectoryService         DirectoryAdminService
-	PersonalUsageCache       *personalusage.Cache
-	WorkItemsCache           *workitems.CountsCache
-	WorkItemsRevisionStore   *workitems.RevisionStore
-	RepresentativeScopeCache *representativescope.Cache
-	TeamUsageSnapshotCache   *teamusage.SnapshotCache
-	TeamUsageOriginCache     *teamusage.OriginCache
-	TeamUsagePrewarmReader   *teamusage.PrewarmReader
-	TeamUsageCursorSecret    string
-	WebhookHTTPClient        *http.Client
-	RequestLogger            *zap.Logger
-	RequestObserver          telemetry.RequestObserver
-	WebVitalsHandler         *WebVitalsHandler
-	Release                  string
-	RequestTimeout           time.Duration
+	DirectoryService             DirectoryAdminService
+	PersonalUsageCache           *personalusage.Cache
+	WorkItemsCache               *workitems.CountsCache
+	WorkItemsRevisionStore       *workitems.RevisionStore
+	RepresentativeScopeCache     *representativescope.Cache
+	TeamUsageSnapshotCache       *teamusage.SnapshotCache
+	TeamUsageOriginCache         *teamusage.OriginCache
+	TeamUsagePrewarmReaderSource teamusage.PrewarmReaderSource
+	TeamUsageCursorSecret        string
+	WebhookHTTPClient            *http.Client
+	RequestLogger                *zap.Logger
+	RequestObserver              telemetry.RequestObserver
+	WebVitalsHandler             *WebVitalsHandler
+	Release                      string
+	RequestTimeout               time.Duration
 }
 
 func validateRouterDependencies(providerHandler *ProviderHandler, options RouterOptions) error {
@@ -355,7 +355,7 @@ func setupRouter(
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
 
-	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageOriginCache, options.TeamUsagePrewarmReader, options.TeamUsageCursorSecret)
+	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageOriginCache, options.TeamUsagePrewarmReaderSource, options.TeamUsageCursorSecret)
 	if err != nil {
 		return nil, fmt.Errorf("initialize team usage service: %w", err)
 	}

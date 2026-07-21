@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -61,28 +63,38 @@ func TestTeamUsagePrewarmRuntimeFailOpenConstructionBoundary(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		cfg      config.TeamUsagePrewarmConfig
 		store    readcache.BatchStore
+		ping     func(context.Context) error
 		resolver teamusage.PrimaryProviderBindingResolver
 	}{
-		{name: "disabled", cfg: config.TeamUsagePrewarmConfig{Enabled: false, Timezones: []string{"UTC"}}, store: store, resolver: staticServerPrewarmResolver{provider: supported}},
-		{name: "empty allowlist", cfg: config.TeamUsagePrewarmConfig{Enabled: true}, store: store, resolver: staticServerPrewarmResolver{provider: supported}},
-		{name: "Redis unavailable", cfg: config.TeamUsagePrewarmConfig{Enabled: true, Timezones: []string{"UTC"}}, resolver: staticServerPrewarmResolver{provider: supported}},
-		{name: "provider unsupported", cfg: config.TeamUsagePrewarmConfig{Enabled: true, Timezones: []string{"UTC"}}, store: store, resolver: staticServerPrewarmResolver{provider: unsupported}},
-		{name: "provider resolution unavailable", cfg: config.TeamUsagePrewarmConfig{Enabled: true, Timezones: []string{"UTC"}}, store: store, resolver: staticServerPrewarmResolver{err: errors.New("provider unavailable")}},
-		{name: "invalid allowlist", cfg: config.TeamUsagePrewarmConfig{Enabled: true, Timezones: []string{"not-a-real-timezone"}}, store: store, resolver: staticServerPrewarmResolver{provider: supported}},
+		{name: "Redis unavailable", resolver: staticServerPrewarmResolver{provider: supported}},
+		{name: "Redis ping unavailable", store: store, ping: func(context.Context) error { return errors.New("Redis unavailable") }, resolver: staticServerPrewarmResolver{provider: supported}},
+		{name: "provider unsupported", store: store, ping: func(context.Context) error { return nil }, resolver: staticServerPrewarmResolver{provider: unsupported}},
+		{name: "provider resolution unavailable", store: store, ping: func(context.Context) error { return nil }, resolver: staticServerPrewarmResolver{err: errors.New("provider unavailable")}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			core, logs := observer.New(zap.InfoLevel)
 			logger := zap.New(core)
-			runtime := initializeTeamUsagePrewarm(
-				context.Background(), tt.cfg, "test", tt.store, tt.resolver,
-				telemetry.NewMetrics("test-release"), logger,
-			)
-			if runtime != nil {
-				t.Fatalf("initializeTeamUsagePrewarm() = %#v, want disabled fail-open runtime", runtime)
+			runtime := prepareTeamUsagePrewarm(teamUsagePrewarmRuntimeOptions{
+				Config:         config.TeamUsagePrewarmConfig{Enabled: true, Timezones: []string{"UTC"}},
+				RedisNamespace: "test", Store: tt.store, PingRedis: tt.ping, Resolver: tt.resolver,
+				MetricsFactory: telemetry.NewMetrics("test-release").TeamUsagePrewarmRecorder,
+				Logger:         logger,
+			})
+			if runtime == nil {
+				t.Fatal("prepareTeamUsagePrewarm() = nil, want lazy fail-open runtime")
+			}
+			runtime.Start(context.Background())
+			select {
+			case <-runtime.initDone:
+			case <-time.After(time.Second):
+				t.Fatal("fail-open initializer did not finish")
+			}
+			runtime.Stop()
+			if runtime.ReaderSource().Load() != nil || runtime.prewarmer != nil {
+				t.Fatalf("failed initializer installed reader/prewarmer = %v/%v", runtime.ReaderSource().Load(), runtime.prewarmer)
 			}
 			for _, entry := range logs.All() {
 				if entry.ContextMap()["timezones"] != nil || entry.ContextMap()["error"] != nil {
@@ -101,26 +113,29 @@ func TestTeamUsagePrewarmRuntimeSharesLimiterAndStartsWithoutBlocking(t *testing
 		directoryEntered: make(chan struct{}, 1),
 		directoryRelease: make(chan struct{}),
 	}
-	runtime := initializeTeamUsagePrewarm(
-		context.Background(),
-		config.TeamUsagePrewarmConfig{Enabled: true, Timezones: []string{"UTC"}},
-		"test",
-		store,
-		staticServerPrewarmResolver{provider: provider},
-		telemetry.NewMetrics("test-release"),
-		zap.NewNop(),
-	)
-	if runtime == nil || runtime.prewarmer == nil || runtime.reader == nil {
-		t.Fatalf("initializeTeamUsagePrewarm() = %#v, want reader and prewarmer", runtime)
-	}
-	if got, want := runtime.reader.SourceCallLimiter(), runtime.prewarmer.SourceCallLimiter(); got != want {
-		t.Fatalf("reader limiter = %p, prewarmer limiter = %p, want exact shared instance", got, want)
-	}
+	runtime := prepareTeamUsagePrewarm(teamUsagePrewarmRuntimeOptions{
+		Config:         config.TeamUsagePrewarmConfig{Enabled: true, Timezones: []string{"UTC"}},
+		RedisNamespace: "test", Store: store, PingRedis: func(context.Context) error { return nil },
+		Resolver:       staticServerPrewarmResolver{provider: provider},
+		MetricsFactory: telemetry.NewMetrics("test-release").TeamUsagePrewarmRecorder,
+		Logger:         zap.NewNop(),
+	})
 
 	startedAt := time.Now()
 	runtime.Start(context.Background())
 	if elapsed := time.Since(startedAt); elapsed > 100*time.Millisecond {
 		t.Fatalf("Start() blocked for %s, want asynchronous HTTP startup", elapsed)
+	}
+	select {
+	case <-runtime.initDone:
+	case <-time.After(time.Second):
+		t.Fatal("lazy initializer did not finish")
+	}
+	if runtime.prewarmer == nil || runtime.reader == nil || runtime.ReaderSource().Load() != runtime.reader {
+		t.Fatalf("runtime reader/prewarmer = %v/%v, want atomically installed reader", runtime.reader, runtime.prewarmer)
+	}
+	if got, want := runtime.reader.SourceCallLimiter(), runtime.prewarmer.SourceCallLimiter(); got != want {
+		t.Fatalf("reader limiter = %p, prewarmer limiter = %p, want exact shared instance", got, want)
 	}
 	select {
 	case <-provider.directoryEntered:
@@ -146,6 +161,149 @@ func TestTeamUsagePrewarmRuntimeSharesLimiterAndStartsWithoutBlocking(t *testing
 	}
 }
 
+func TestTeamUsagePrewarmCompositionStartDoesNotBlockOnRedisPing(t *testing.T) {
+	pingEntered := make(chan struct{})
+	pingCanceled := make(chan struct{})
+	var resolverCalls atomic.Int32
+	runtime := prepareTeamUsagePrewarm(teamUsagePrewarmRuntimeOptions{
+		Config:         config.TeamUsagePrewarmConfig{Enabled: true, Timezones: []string{"UTC"}},
+		RedisNamespace: "test",
+		Store:          newRecordingServerBatchStore(),
+		PingRedis: func(ctx context.Context) error {
+			close(pingEntered)
+			<-ctx.Done()
+			close(pingCanceled)
+			return ctx.Err()
+		},
+		Resolver:       countingServerPrewarmResolver{calls: &resolverCalls, provider: &serverPrewarmProvider{}},
+		MetricsFactory: telemetry.NewMetrics("test-release").TeamUsagePrewarmRecorder,
+		Logger:         zap.NewNop(),
+		InitTimeout:    time.Minute,
+	})
+	if runtime == nil || runtime.ReaderSource() == nil || runtime.ReaderSource().Load() != nil {
+		t.Fatalf("prepareTeamUsagePrewarm() = %#v, want empty atomic reader source", runtime)
+	}
+	select {
+	case <-pingEntered:
+		t.Fatal("prepareTeamUsagePrewarm performed Redis work before Start")
+	default:
+	}
+
+	startedAt := time.Now()
+	runtime.Start(context.Background())
+	if elapsed := time.Since(startedAt); elapsed > 100*time.Millisecond {
+		t.Fatalf("Start() blocked on Redis for %s", elapsed)
+	}
+	select {
+	case <-pingEntered:
+	case <-time.After(time.Second):
+		t.Fatal("lazy initializer did not start Redis ping")
+	}
+	if runtime.ReaderSource().Load() != nil || resolverCalls.Load() != 0 {
+		t.Fatalf("reader/resolver before ping = %v/%d, want exact fallback and no provider work", runtime.ReaderSource().Load(), resolverCalls.Load())
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		runtime.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-pingCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("Stop() did not cancel in-flight Redis initializer")
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop() did not join in-flight Redis initializer")
+	}
+	if runtime.ReaderSource().Load() != nil || runtime.prewarmer != nil {
+		t.Fatalf("failed initializer installed reader/prewarmer: %v/%v", runtime.ReaderSource().Load(), runtime.prewarmer)
+	}
+}
+
+func TestTeamUsagePrewarmCompositionStartDoesNotBlockOnProviderResolution(t *testing.T) {
+	resolverEntered := make(chan struct{})
+	resolverCanceled := make(chan struct{})
+	runtime := prepareTeamUsagePrewarm(teamUsagePrewarmRuntimeOptions{
+		Config:         config.TeamUsagePrewarmConfig{Enabled: true, Timezones: []string{"UTC"}},
+		RedisNamespace: "test",
+		Store:          newRecordingServerBatchStore(),
+		PingRedis:      func(context.Context) error { return nil },
+		Resolver: blockingServerPrewarmResolver{
+			entered: resolverEntered, canceled: resolverCanceled,
+		},
+		MetricsFactory: telemetry.NewMetrics("test-release").TeamUsagePrewarmRecorder,
+		Logger:         zap.NewNop(),
+		InitTimeout:    time.Minute,
+	})
+	startedAt := time.Now()
+	runtime.Start(context.Background())
+	if elapsed := time.Since(startedAt); elapsed > 100*time.Millisecond {
+		t.Fatalf("Start() blocked on provider resolution for %s", elapsed)
+	}
+	select {
+	case <-resolverEntered:
+	case <-time.After(time.Second):
+		t.Fatal("lazy initializer did not enter provider resolution")
+	}
+	if runtime.ReaderSource().Load() != nil {
+		t.Fatal("reader installed before provider resolution completed")
+	}
+	runtime.Stop()
+	select {
+	case <-resolverCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("Stop() did not cancel and join provider resolution")
+	}
+}
+
+func TestTeamUsagePrewarmCompositionSkipsAllWorkForDisabledEmptyAndInvalid(t *testing.T) {
+	for _, cfg := range []config.TeamUsagePrewarmConfig{
+		{Enabled: false, Timezones: []string{"UTC"}},
+		{Enabled: true},
+		{Enabled: true, Timezones: []string{"not-a-real-timezone"}},
+	} {
+		var pingCalls, resolverCalls atomic.Int32
+		runtime := prepareTeamUsagePrewarm(teamUsagePrewarmRuntimeOptions{
+			Config: cfg, RedisNamespace: "test", Store: newRecordingServerBatchStore(),
+			PingRedis:      func(context.Context) error { pingCalls.Add(1); return nil },
+			Resolver:       countingServerPrewarmResolver{calls: &resolverCalls, provider: &serverPrewarmProvider{}},
+			MetricsFactory: telemetry.NewMetrics("test-release").TeamUsagePrewarmRecorder,
+			Logger:         zap.NewNop(),
+		})
+		if runtime != nil {
+			t.Fatalf("prepareTeamUsagePrewarm(%#v) = %#v, want nil", cfg, runtime)
+		}
+		if pingCalls.Load() != 0 || resolverCalls.Load() != 0 {
+			t.Fatalf("disabled/empty/invalid external calls = ping %d resolver %d", pingCalls.Load(), resolverCalls.Load())
+		}
+	}
+}
+
+func TestTeamUsagePrewarmCompositionUnsupportedProviderInstallsNothing(t *testing.T) {
+	runtime := prepareTeamUsagePrewarm(teamUsagePrewarmRuntimeOptions{
+		Config:         config.TeamUsagePrewarmConfig{Enabled: true, Timezones: []string{"UTC"}},
+		RedisNamespace: "test",
+		Store:          newRecordingServerBatchStore(),
+		PingRedis:      func(context.Context) error { return nil },
+		Resolver:       staticServerPrewarmResolver{provider: &unsupportedServerPrewarmProvider{}},
+		MetricsFactory: telemetry.NewMetrics("test-release").TeamUsagePrewarmRecorder,
+		Logger:         zap.NewNop(),
+	})
+	runtime.Start(context.Background())
+	select {
+	case <-runtime.initDone:
+	case <-time.After(time.Second):
+		t.Fatal("unsupported provider initialization did not finish")
+	}
+	defer runtime.Stop()
+	if runtime.ReaderSource().Load() != nil || runtime.prewarmer != nil {
+		t.Fatalf("unsupported provider installed reader/prewarmer = %v/%v", runtime.ReaderSource().Load(), runtime.prewarmer)
+	}
+}
+
 func TestTeamUsagePrewarmShutdownStopsBeforeRedisClose(t *testing.T) {
 	var order []string
 	prewarm := stoppingRecorder{stop: func() { order = append(order, "prewarm") }}
@@ -161,6 +319,31 @@ func TestTeamUsagePrewarmShutdownStopsBeforeRedisClose(t *testing.T) {
 	}
 }
 
+func TestTeamUsagePrewarmBackgroundReporterUsesOnlyBoundedFields(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	reporter := newTeamUsagePrewarmReporter(zap.New(core))
+	reporter.ReportPrewarmBackground(teamusage.PrewarmBackgroundEvent{
+		OperationID: strings.Repeat("a", 32), ProviderID: 7, ProviderVersion: 11,
+		Timezone: "UTC", Class: teamusage.PrewarmCycleStartup, Outcome: teamusage.PrewarmCycleError,
+		Duration: 25 * time.Millisecond, Bytes: 128, Points: 2, Users: 1,
+	})
+	entries := logs.All()
+	if len(entries) != 1 {
+		t.Fatalf("background log entries = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	allowed := map[string]bool{
+		"operation_id": true, "provider_id": true, "provider_version": true,
+		"timezone": true, "class": true, "outcome": true, "duration_ms": true,
+		"bytes": true, "points": true, "users": true,
+	}
+	for name := range fields {
+		if !allowed[name] {
+			t.Fatalf("background log exposes unbounded field %q in %#v", name, fields)
+		}
+	}
+}
+
 type stoppingRecorder struct {
 	stop func()
 }
@@ -172,6 +355,28 @@ func (r stoppingRecorder) Stop() {
 type staticServerPrewarmResolver struct {
 	provider relay.Provider
 	err      error
+}
+
+type countingServerPrewarmResolver struct {
+	calls    *atomic.Int32
+	provider relay.Provider
+}
+
+func (r countingServerPrewarmResolver) ResolvePrimaryProviderBinding(context.Context) (teamusage.ProviderBinding, error) {
+	r.calls.Add(1)
+	return teamusage.ProviderBinding{ProviderID: 1, ProviderVersion: 1, Provider: r.provider}, nil
+}
+
+type blockingServerPrewarmResolver struct {
+	entered  chan struct{}
+	canceled chan struct{}
+}
+
+func (r blockingServerPrewarmResolver) ResolvePrimaryProviderBinding(ctx context.Context) (teamusage.ProviderBinding, error) {
+	close(r.entered)
+	<-ctx.Done()
+	close(r.canceled)
+	return teamusage.ProviderBinding{}, ctx.Err()
 }
 
 func (r staticServerPrewarmResolver) ResolvePrimaryProviderBinding(context.Context) (teamusage.ProviderBinding, error) {
@@ -189,6 +394,35 @@ type serverPrewarmProvider struct {
 	relay.Provider
 	directoryEntered chan struct{}
 	directoryRelease chan struct{}
+}
+
+type recordingServerBatchStore struct{}
+
+func newRecordingServerBatchStore() *recordingServerBatchStore { return &recordingServerBatchStore{} }
+
+func (*recordingServerBatchStore) Get(context.Context, string) ([]byte, error) {
+	return nil, readcache.ErrMiss
+}
+func (*recordingServerBatchStore) Set(context.Context, string, []byte, time.Duration) error {
+	return nil
+}
+func (*recordingServerBatchStore) TryAcquireLease(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}
+func (*recordingServerBatchStore) LeaseTTL(context.Context, string) (time.Duration, error) {
+	return time.Second, nil
+}
+func (*recordingServerBatchStore) ReleaseLease(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+func (*recordingServerBatchStore) MGet(_ context.Context, keys ...string) ([][]byte, error) {
+	return make([][]byte, len(keys)), nil
+}
+func (*recordingServerBatchStore) SetIfLeaseOwned(context.Context, string, string, string, []byte, time.Duration) (bool, error) {
+	return true, nil
+}
+func (*recordingServerBatchStore) SetIfLeasesOwned(context.Context, []string, []string, string, []byte, time.Duration) (bool, error) {
+	return true, nil
 }
 
 func (p *serverPrewarmProvider) GetProviderUserIDs(ctx context.Context) (relay.ProviderDirectoryResult, error) {

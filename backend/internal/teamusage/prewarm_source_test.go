@@ -161,6 +161,50 @@ func TestPrewarmSourceEveryRelayCallUsesSharedLimiter(t *testing.T) {
 	}
 }
 
+func TestPrewarmSourceMetricsRecordStructuredValidationChecks(t *testing.T) {
+	metrics := &recordingPrewarmRequestMetrics{}
+	provider := &prewarmSourceProvider{
+		directory: relay.ProviderDirectoryResult{UserIDs: []int64{1}, PageCount: 1},
+		statsFn: func([]int64) (relay.ProviderCurrentStatsResult, error) {
+			return relay.ProviderCurrentStatsResult{Stats: map[int64]relay.TeamUserUsageStats{1: {UserID: 1}}}, nil
+		},
+		trendFn: func(params relay.TeamMemberTrendParams, _ int) (relay.ProviderWideTrendResult, error) {
+			return relay.ProviderWideTrendResult{Coverage: params, Complete: true}, nil
+		},
+	}
+	options := fixedGenerationOptions()
+	options.Metrics = metrics
+	source := mustPrewarmSource(t, passthroughSourceLimiter{}, options)
+	if _, err := source.BuildCurrentStats(context.Background(), prewarmBinding(provider)); err != nil {
+		t.Fatalf("BuildCurrentStats() error = %v", err)
+	}
+	if _, err := source.FetchSegment(context.Background(), prewarmBinding(provider), "UTC", "2026-07-21", SegmentTodayHour); err != nil {
+		t.Fatalf("FetchSegment() error = %v", err)
+	}
+	wantAccepted := []prewarmValidationMetric{
+		{check: PrewarmValidationDirectoryPagination, outcome: PrewarmValidationAccepted},
+		{check: PrewarmValidationProviderIDBound, outcome: PrewarmValidationAccepted},
+		{check: PrewarmValidationStatsExactCoverage, outcome: PrewarmValidationAccepted},
+		{check: PrewarmValidationRawTrendCompleteness, outcome: PrewarmValidationAccepted},
+		{check: PrewarmValidationRawTrendCoverage, outcome: PrewarmValidationAccepted},
+		{check: PrewarmValidationRawTrendLimit, outcome: PrewarmValidationAccepted},
+	}
+	if !reflect.DeepEqual(metrics.validations, wantAccepted) {
+		t.Fatalf("accepted validation metrics = %#v, want %#v", metrics.validations, wantAccepted)
+	}
+
+	provider.trendFn = func(params relay.TeamMemberTrendParams, _ int) (relay.ProviderWideTrendResult, error) {
+		return relay.ProviderWideTrendResult{Coverage: params, Complete: false}, nil
+	}
+	if _, err := source.FetchSegment(context.Background(), prewarmBinding(provider), "UTC", "2026-07-21", SegmentTodayHour); err == nil {
+		t.Fatal("FetchSegment(incomplete) error = nil")
+	}
+	last := metrics.validations[len(metrics.validations)-1]
+	if last != (prewarmValidationMetric{check: PrewarmValidationRawTrendCompleteness, outcome: PrewarmValidationRejected}) {
+		t.Fatalf("incomplete validation metric = %#v", last)
+	}
+}
+
 type passthroughSourceLimiter struct{}
 
 func (passthroughSourceLimiter) Do(ctx context.Context, call func(context.Context) error) error {

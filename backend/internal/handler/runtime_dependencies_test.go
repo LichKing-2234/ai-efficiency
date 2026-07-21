@@ -85,7 +85,9 @@ func TestRouterDependenciesPassOptionalTeamUsagePrewarmReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrewarmReader() error = %v", err)
 	}
-	service, err := newTeamUsageService(client, nil, nil, nil, snapshot, origin, reader, "test-cursor-secret")
+	readerSlot := teamusage.NewPrewarmReaderSlot()
+	readerSlot.Store(reader)
+	service, err := newTeamUsageService(client, nil, nil, nil, snapshot, origin, readerSlot, "test-cursor-secret")
 	if err != nil || service == nil {
 		t.Fatalf("newTeamUsageService() service=%v error=%v, want optional reader injected", service, err)
 	}
