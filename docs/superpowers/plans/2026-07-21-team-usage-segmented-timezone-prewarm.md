@@ -37,8 +37,14 @@ vet, and diff checks. The implementation is committed in `20677980` and awaits
 same-reviewer formal re-review. Task 6 authorized-reader integration is complete.
 Task 7 disabled runtime, configuration, lifecycle, Redis transport, and bounded
 telemetry wiring passed focused, full-backend, race, vet, build, compose-config,
-and diff verification and is committed in `90943307`. Tasks 8-9 have not started;
-staging and production remain disabled and unchanged.
+and diff verification and is committed in `90943307`. Formal Task 7 review
+corrections move all optional Redis/provider initialization behind HTTP startup,
+atomically install the reader, join initialization before Redis close, complete
+bounded validation/cache/quantity/generation metrics, classify partial-today
+Redis failures separately from Relay failures, and report discarded lifecycle
+failures without raw errors. The correction passed focused, full-backend, race,
+vet, build, compose-config, and diff verification and is committed in `8f86642f`.
+Tasks 8-9 have not started; staging and production remain disabled and unchanged.
 
 ## Task 1 Gate Evidence
 
@@ -680,6 +686,24 @@ git commit -m "perf(backend): wire segmented Team Usage prewarm"
 ```
 
   Committed as `90943307f9a323b57a65a4dc92ed3903af9e198f` on 2026-07-21.
+
+**Formal review correction evidence (2026-07-21):** RED tests first failed for
+the missing lazy runtime/atomic reader source, bounded background reporter,
+quantity/validation/cache metrics, and distinct partial-today failure classes.
+The production path now prepares only normalized configuration before router
+construction, starts a bounded cancelable initializer after both HTTP goroutines,
+and performs Redis ping, provider resolution/capability checks, metric/cache/
+prewarmer/reader construction, atomic installation, and lifecycle startup in
+that order. Shutdown cancels and joins the initializer and prewarmer before
+Redis close. Successful publications record segment, timezone, and full
+generation bytes with current stats counted once; source validation and
+manifest/current-stats/segment cache outcomes use closed enums. Background
+failures emit generated bounded operation IDs and fixed fields without raw
+errors. The exact focused Task 7 command, focused Team Usage review tests,
+`go test ./... -count=1`, the required race set, `go vet ./...`, `go build ./...`,
+all five compose config checks, and `git diff --check` passed. The first race
+run exposed a test-recorder slice append race; the fake was synchronized and
+both focused and complete race reruns passed. Committed as `8f86642f`.
 
 ---
 
