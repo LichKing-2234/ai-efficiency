@@ -16,9 +16,12 @@ prewarm-cache symbols. The first implementation passed focused and race tests,
 but review found four binding gaps: write-once values, per-reference partial
 status, earliest-reference manifest expiry, and the two-second timeout cap.
 Correction RED tests failed first for the missing partial-result API and then
-for all four behaviors. The correction implementation passes focused, race,
-full-package, and vet verification; final re-review is clean. Task 4 is
-complete in `acb58831`. Tasks 5-9 have not started.
+for all four behaviors. A later formal review found three additional binding
+gaps in trend-only generation accounting, fresh-clock publication margin, and
+identical concurrent immutable claims. Their RED tests failed as expected. The
+correction implementation passes focused, race, full-package, vet, and diff
+verification and is committed in `3354ee41`; controller formal re-review is
+pending. Tasks 5-9 have not started.
 
 ## Task 1 Gate Evidence
 
