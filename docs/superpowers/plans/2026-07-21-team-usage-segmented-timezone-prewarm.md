@@ -8,9 +8,10 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Task 1 POC passed. The corrected 20-call ledger, exact staging
-image, cleanup evidence, and correction commit are complete. Tasks 2-9 are
-ready but not started.
+**Status:** Tasks 1-2 are complete. The corrected Task 1 POC ledger, exact
+staging image, cleanup evidence, and correction commit are complete. Task 2's
+bounded provider-wide Relay sources are implemented and verified in
+`04c925ac`. Tasks 3-9 are ready but not started.
 
 ## Task 1 Gate Evidence
 
@@ -263,7 +264,7 @@ go vet ./internal/relay
 
 Expected: all pass; tests prove no real identity or raw body is logged or returned by the provider-wide interfaces.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/relay
