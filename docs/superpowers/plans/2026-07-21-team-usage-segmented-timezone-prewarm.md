@@ -8,10 +8,9 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Tasks 1-2 are complete. Task 2's bounded provider-wide Relay
-sources are implemented in `04c925ac`; review hard-boundary coverage and fresh
-Relay, race, and vet verification were completed in `0e4facd4`. Tasks 3-9 are
-ready but not started.
+**Status:** Tasks 1-2 are complete. Task 3 Steps 1-4 are complete with focused,
+race, full-package, and vet verification; Step 5 remains. Tasks 4-9 have not
+started.
 
 ## Task 1 Gate Evidence
 
@@ -283,11 +282,11 @@ git commit -m "perf(relay): add bounded provider-wide usage sources"
 - Produces: `NormalizePrewarmTimezones`, `RecognizePrewarmWindow`, `SplitSafe`, `ValidateTrendSegment`, `ComposePrewarmedOrigin`, and immutable envelope types used by Tasks 4-6.
 - Consumes: provider-wide Relay types from Task 2.
 
-- [ ] **Step 1: Write RED table tests for configuration, dates, labels, and composition**
+- [x] **Step 1: Write RED table tests for configuration, dates, labels, and composition**
 
 Tests must cover the exact four defaults, trim/dedup/order, invalid zone, fifth zone, current local anchors, exact today/7d/30d shapes, custom-range rejection, `AddDate` semantics, LA/Berlin spring/fall rejection, opaque label validation, raw-hour retention, first-10-character coalescing, independent 6d/29d histories, sparse-user zero contribution, nil-token propagation, `1e-9` cost boundary, duplicate/order/coverage validation, and per-source/composed 5,000-user rejection.
 
-- [ ] **Step 2: Run RED tests**
+- [x] **Step 2: Run RED tests**
 
 ```bash
 cd backend
@@ -296,7 +295,7 @@ go test ./internal/teamusage -run 'Prewarm(Timezone|Window|Split|Segment|Compose
 
 Expected: FAIL with missing prewarm model symbols.
 
-- [ ] **Step 3: Implement the pure domain model**
+- [x] **Step 3: Implement the pure domain model**
 
 Use explicit classes and coverage:
 
@@ -312,7 +311,7 @@ type PrewarmCoverage struct { StartDate, EndDate, Granularity, Timezone string }
 
 `SplitSafe` may parse only local `D-1` and `D` midnights and compare `previous.Add(24*time.Hour).Equal(current)`. Returned Relay labels remain strings. Composition creates a dense `teamUsageScopeOrigin` only after intersecting with authorized IDs; absent complete trend rows become empty point slices, while missing roster stats return an ineligible outcome.
 
-- [ ] **Step 4: Verify the pure model and race safety**
+- [x] **Step 4: Verify the pure model and race safety**
 
 ```bash
 cd backend
