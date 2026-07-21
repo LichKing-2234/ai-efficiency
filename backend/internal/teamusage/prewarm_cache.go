@@ -301,14 +301,8 @@ func (c *PrewarmCache) PublishManifest(
 	if err := validatePrewarmManifest(c.options.Namespace, identity, manifest, now, true); err != nil {
 		return false, fmt.Errorf("validate team usage prewarm manifest: %w", err)
 	}
-	earliestHardExpiry := manifest.CurrentStats.HardExpiresAt
-	for _, ref := range [...]PrewarmValueReference{manifest.History29d, manifest.History6d, manifest.TodayHour} {
-		if ref.HardExpiresAt.Before(earliestHardExpiry) {
-			earliestHardExpiry = ref.HardExpiresAt
-		}
-	}
-	if !now.Add(manifestTTL).Before(earliestHardExpiry) {
-		return false, fmt.Errorf("team usage prewarm manifest TTL would reach earliest moving hard expiry")
+	if err := validatePrewarmPublicationWindow(now, c.options.WriteTimeout, manifest); err != nil {
+		return false, err
 	}
 	encoded, err := encodePrewarmJSON(manifest, prewarmManifestMaxBytes)
 	if err != nil {
@@ -321,6 +315,9 @@ func (c *PrewarmCache) PublishManifest(
 	}
 	key, err := prewarmManifestKeyForIdentity(c.options.Namespace, prewarmCacheSchemaVersion, identity)
 	if err != nil {
+		return false, err
+	}
+	if err := validatePrewarmPublicationWindow(c.now(), c.options.WriteTimeout, manifest); err != nil {
 		return false, err
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.WriteTimeout)
@@ -383,16 +380,7 @@ func (c *PrewarmCache) writeImmutable(ctx context.Context, key string, value []b
 		return err
 	}
 	if !acquired {
-		commandCtx, cancel = context.WithTimeout(ctx, c.options.ReadTimeout)
-		existing, readErr := c.store.Get(commandCtx, key)
-		cancel()
-		if readErr != nil {
-			return readErr
-		}
-		if !bytes.Equal(existing, value) {
-			return fmt.Errorf("immutable prewarm generation key already contains different bytes")
-		}
-		return nil
+		return c.waitForImmutableValue(ctx, key, claimToken, value)
 	}
 	commandCtx, cancel = context.WithTimeout(ctx, c.options.WriteTimeout)
 	written, err := c.store.SetIfLeaseOwned(commandCtx, key, claimToken, key, value, ttl)
@@ -404,6 +392,26 @@ func (c *PrewarmCache) writeImmutable(ctx context.Context, key string, value []b
 		return fmt.Errorf("immutable prewarm generation claim was lost")
 	}
 	return nil
+}
+
+func (c *PrewarmCache) waitForImmutableValue(ctx context.Context, key, claimToken string, value []byte) error {
+	waitCtx, cancel := context.WithTimeout(ctx, c.options.WriteTimeout)
+	defer cancel()
+	for {
+		existing, err := c.store.Get(waitCtx, key)
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(existing, value) {
+			return nil
+		}
+		if string(existing) != claimToken {
+			return fmt.Errorf("immutable prewarm generation key already contains different bytes")
+		}
+		if err := readcache.Sleep(waitCtx, 5*time.Millisecond); err != nil {
+			return fmt.Errorf("wait for identical immutable prewarm generation: %w", err)
+		}
+	}
 }
 
 func (c *PrewarmCache) readReferencedValues(
@@ -502,7 +510,7 @@ func validatePrewarmManifest(
 		{class: SegmentHistory6d, ref: manifest.History6d},
 		{class: SegmentTodayHour, ref: manifest.TodayHour},
 	}
-	totalBytes := manifest.CurrentStats.SerializedBytes
+	totalBytes := 0
 	for _, item := range segmentRefs {
 		if err := validatePrewarmSegmentReferenceMetadata(namespace, identity, item.class, item.ref, now, requireHardValid); err != nil {
 			return fmt.Errorf("%s reference: %w", item.class, err)
@@ -516,6 +524,19 @@ func validatePrewarmManifest(
 		if ref.GeneratedAt.After(manifest.CreatedAt) {
 			return fmt.Errorf("prewarm reference was generated after manifest creation")
 		}
+	}
+	return nil
+}
+
+func validatePrewarmPublicationWindow(now time.Time, commandMargin time.Duration, manifest PrewarmManifest) error {
+	earliestHardExpiry := manifest.CurrentStats.HardExpiresAt
+	for _, ref := range [...]PrewarmValueReference{manifest.History29d, manifest.History6d, manifest.TodayHour} {
+		if ref.HardExpiresAt.Before(earliestHardExpiry) {
+			earliestHardExpiry = ref.HardExpiresAt
+		}
+	}
+	if !now.Add(manifestTTL + commandMargin).Before(earliestHardExpiry) {
+		return fmt.Errorf("team usage prewarm manifest TTL plus command margin would reach earliest hard expiry")
 	}
 	return nil
 }

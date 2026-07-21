@@ -2,8 +2,10 @@ package teamusage
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -68,15 +70,36 @@ func TestPrewarmCacheKeysIsolateAllGenerationDimensions(t *testing.T) {
 		t.Fatalf("prewarmSegmentKey() error = %v", err)
 	}
 	segmentVariants := []struct {
-		name       string
-		class      PrewarmSegmentClass
-		generation string
+		name string
+		key  func() (string, error)
 	}{
-		{name: "class", class: SegmentHistory6d, generation: generationID},
-		{name: "generation", class: SegmentTodayHour, generation: strings.Repeat("c", 64)},
+		{name: "namespace", key: func() (string, error) {
+			return prewarmSegmentKey("other", schemaVersion, providerID, providerVersion, timezoneDigest, anchorDate, SegmentTodayHour, generationID)
+		}},
+		{name: "schema", key: func() (string, error) {
+			return prewarmSegmentKey(namespace, schemaVersion+1, providerID, providerVersion, timezoneDigest, anchorDate, SegmentTodayHour, generationID)
+		}},
+		{name: "provider", key: func() (string, error) {
+			return prewarmSegmentKey(namespace, schemaVersion, providerID+1, providerVersion, timezoneDigest, anchorDate, SegmentTodayHour, generationID)
+		}},
+		{name: "provider version", key: func() (string, error) {
+			return prewarmSegmentKey(namespace, schemaVersion, providerID, providerVersion+1, timezoneDigest, anchorDate, SegmentTodayHour, generationID)
+		}},
+		{name: "timezone digest", key: func() (string, error) {
+			return prewarmSegmentKey(namespace, schemaVersion, providerID, providerVersion, strings.Repeat("b", 64), anchorDate, SegmentTodayHour, generationID)
+		}},
+		{name: "anchor", key: func() (string, error) {
+			return prewarmSegmentKey(namespace, schemaVersion, providerID, providerVersion, timezoneDigest, "2026-07-22", SegmentTodayHour, generationID)
+		}},
+		{name: "class", key: func() (string, error) {
+			return prewarmSegmentKey(namespace, schemaVersion, providerID, providerVersion, timezoneDigest, anchorDate, SegmentHistory6d, generationID)
+		}},
+		{name: "generation", key: func() (string, error) {
+			return prewarmSegmentKey(namespace, schemaVersion, providerID, providerVersion, timezoneDigest, anchorDate, SegmentTodayHour, strings.Repeat("c", 64))
+		}},
 	}
 	for _, variant := range segmentVariants {
-		key, keyErr := prewarmSegmentKey(namespace, schemaVersion, providerID, providerVersion, timezoneDigest, anchorDate, variant.class, variant.generation)
+		key, keyErr := variant.key()
 		if keyErr != nil {
 			t.Fatalf("%s segment variant error = %v", variant.name, keyErr)
 		}
@@ -89,9 +112,49 @@ func TestPrewarmCacheKeysIsolateAllGenerationDimensions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prewarmCurrentStatsKey() error = %v", err)
 	}
-	currentB, err := prewarmCurrentStatsKey(namespace, schemaVersion, providerID, providerVersion, strings.Repeat("d", 64))
-	if err != nil || currentA == currentB {
-		t.Fatalf("current generation keys = %q/%q, %v, want isolated", currentA, currentB, err)
+	currentVariants := []struct {
+		name string
+		key  func() (string, error)
+	}{
+		{name: "namespace", key: func() (string, error) {
+			return prewarmCurrentStatsKey("other", schemaVersion, providerID, providerVersion, generationID)
+		}},
+		{name: "schema", key: func() (string, error) {
+			return prewarmCurrentStatsKey(namespace, schemaVersion+1, providerID, providerVersion, generationID)
+		}},
+		{name: "provider", key: func() (string, error) {
+			return prewarmCurrentStatsKey(namespace, schemaVersion, providerID+1, providerVersion, generationID)
+		}},
+		{name: "provider version", key: func() (string, error) {
+			return prewarmCurrentStatsKey(namespace, schemaVersion, providerID, providerVersion+1, generationID)
+		}},
+		{name: "generation", key: func() (string, error) {
+			return prewarmCurrentStatsKey(namespace, schemaVersion, providerID, providerVersion, strings.Repeat("d", 64))
+		}},
+	}
+	for _, variant := range currentVariants {
+		key, keyErr := variant.key()
+		if keyErr != nil {
+			t.Fatalf("%s current variant error = %v", variant.name, keyErr)
+		}
+		if key == currentA {
+			t.Fatalf("%s current variant reused %q", variant.name, currentA)
+		}
+	}
+}
+
+func TestPrewarmCacheGenerationLimitCountsTrendSegmentsOnly(t *testing.T) {
+	generatedAt := testPrewarmGeneratedAt()
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
+	identity := testPrewarmIdentity()
+	manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+	manifest.CurrentStats.SerializedBytes = 1 << 20
+	manifest.History29d.SerializedBytes = prewarmSegmentMaxBytes - 1
+	manifest.History6d.SerializedBytes = prewarmSegmentMaxBytes - 2
+	manifest.TodayHour.SerializedBytes = 1
+
+	if err := validatePrewarmManifest("test", identity, manifest, generatedAt, false); err != nil {
+		t.Fatalf("validatePrewarmManifest(trend below 16MiB) error = %v", err)
 	}
 }
 
@@ -164,6 +227,73 @@ func TestPrewarmCacheImmutableValueRejectsGenerationReuse(t *testing.T) {
 	}
 }
 
+func TestPrewarmCacheConcurrentIdenticalWriteWaitsForClaimPublication(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	baseStore := readcache.NewRedisStore(client)
+	generatedAt := testPrewarmGeneratedAt()
+	value := testPrewarmCurrentStats(generatedAt, "a")
+	encoded, err := encodePrewarmJSON(value, prewarmCurrentStatsMaxBytes)
+	if err != nil {
+		t.Fatalf("encode current stats error = %v", err)
+	}
+	key, err := prewarmCurrentStatsKey("test", prewarmCacheSchemaVersion, value.ProviderID, value.ProviderVersion, value.GenerationID)
+	if err != nil {
+		t.Fatalf("prewarmCurrentStatsKey() error = %v", err)
+	}
+	digest := sha256.Sum256(encoded)
+	claimToken := "immutable:" + fmt.Sprintf("%x", digest)
+	acquired, err := baseStore.TryAcquireLease(context.Background(), key, claimToken, prewarmImmutableClaimTTL)
+	if err != nil || !acquired {
+		t.Fatalf("controlled claim acquire = %v, %v", acquired, err)
+	}
+
+	controlled := &controlledClaimPrewarmStore{
+		BatchStore: baseStore, key: key, claimToken: claimToken,
+		observed: make(chan struct{}), release: make(chan struct{}),
+	}
+	cache := mustNewPrewarmCache(t, controlled, func() time.Time { return generatedAt })
+	result := make(chan error, 1)
+	go func() {
+		_, writeErr := cache.WriteCurrentStats(context.Background(), value)
+		result <- writeErr
+	}()
+	<-controlled.observed
+	written, err := baseStore.SetIfLeaseOwned(context.Background(), key, claimToken, key, encoded, movingValueTTL)
+	if err != nil || !written {
+		t.Fatalf("controlled claim publication = %v, %v", written, err)
+	}
+	close(controlled.release)
+	if err := <-result; err != nil {
+		t.Fatalf("concurrent identical WriteCurrentStats() error = %v", err)
+	}
+}
+
+func TestPrewarmCachePublishLastRechecksClockAfterValidationRead(t *testing.T) {
+	generatedAt := testPrewarmGeneratedAt()
+	now := generatedAt
+	store := newRecordingPrewarmStore()
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	identity := testPrewarmIdentity()
+	leaseKey := cache.LeaseKey("moving", "delayed-publication")
+	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner", 90*time.Second)
+	if err != nil || !acquired {
+		t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
+	}
+	manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+	store.mgetAfter = func() { now = generatedAt.Add(59 * time.Second) }
+
+	published, err := cache.PublishManifest(context.Background(), leaseKey, "owner", manifest)
+	if err == nil || published {
+		t.Fatalf("PublishManifest(delayed validation) = %v, %v, want fresh-clock expiry rejection", published, err)
+	}
+	manifestKey, _ := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, identity)
+	if store.HasValue(manifestKey) {
+		t.Fatal("late publication created a discoverable manifest")
+	}
+}
+
 func TestPrewarmCacheReadReturnsPerReferenceStatusForPartialGeneration(t *testing.T) {
 	generatedAt := testPrewarmGeneratedAt()
 	now := generatedAt.Add(30 * time.Second)
@@ -196,6 +326,167 @@ func TestPrewarmCacheReadReturnsPerReferenceStatusForPartialGeneration(t *testin
 	if result.Manifest.TodayHour.Key != manifest.TodayHour.Key {
 		t.Fatalf("partial result lost resolved manifest reference: %#v", result.Manifest.TodayHour)
 	}
+}
+
+func TestPrewarmCacheRecoveryStatusesAndSingleBatchRead(t *testing.T) {
+	generatedAt := testPrewarmGeneratedAt()
+	identity := testPrewarmIdentity()
+	t.Run("missing references", func(t *testing.T) {
+		targets := []struct {
+			name      string
+			selectRef func(PrewarmManifest) PrewarmValueReference
+			status    func(*PrewarmCacheResult) PrewarmValueStatus
+		}{
+			{name: "current stats", selectRef: func(m PrewarmManifest) PrewarmValueReference { return m.CurrentStats }, status: func(r *PrewarmCacheResult) PrewarmValueStatus { return r.CurrentStatsStatus }},
+			{name: "history 29d", selectRef: func(m PrewarmManifest) PrewarmValueReference { return m.History29d }, status: func(r *PrewarmCacheResult) PrewarmValueStatus { return r.History29dStatus }},
+			{name: "history 6d", selectRef: func(m PrewarmManifest) PrewarmValueReference { return m.History6d }, status: func(r *PrewarmCacheResult) PrewarmValueStatus { return r.History6dStatus }},
+		}
+		for _, target := range targets {
+			t.Run(target.name, func(t *testing.T) {
+				now := generatedAt
+				store := newRecordingPrewarmStore()
+				cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+				manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+				publishTestPrewarmManifest(t, cache, manifest, "missing-"+target.name)
+				store.DeleteRaw(target.selectRef(manifest).Key)
+				before := store.MGetCalls()
+				result, found, err := cache.Read(context.Background(), identity)
+				if err != nil || !found || result == nil || result.Complete {
+					t.Fatalf("Read(missing %s) = %#v, %v, %v", target.name, result, found, err)
+				}
+				if target.status(result) != PrewarmValueMissing {
+					t.Fatalf("%s status = %q, want missing", target.name, target.status(result))
+				}
+				if got := store.MGetCalls() - before; got != 1 {
+					t.Fatalf("Read(missing %s) MGET calls = %d, want 1", target.name, got)
+				}
+			})
+		}
+	})
+
+	t.Run("hard expired references", func(t *testing.T) {
+		targets := []struct {
+			name    string
+			replace func(*testing.T, *PrewarmCache, *PrewarmManifest, time.Time) time.Time
+			status  func(*PrewarmCacheResult) PrewarmValueStatus
+		}{
+			{name: "current stats", replace: func(t *testing.T, cache *PrewarmCache, manifest *PrewarmManifest, hardAt time.Time) time.Time {
+				generated := hardAt.Add(-movingHard)
+				ref, err := cache.WriteCurrentStats(context.Background(), testPrewarmCurrentStats(generated, "8"))
+				if err != nil {
+					t.Fatalf("WriteCurrentStats(old) error = %v", err)
+				}
+				manifest.CurrentStats = ref
+				return ref.HardExpiresAt
+			}, status: func(r *PrewarmCacheResult) PrewarmValueStatus { return r.CurrentStatsStatus }},
+			{name: "history 29d", replace: func(t *testing.T, cache *PrewarmCache, manifest *PrewarmManifest, hardAt time.Time) time.Time {
+				generated := hardAt.Add(-historyHard)
+				ref, err := cache.WriteSegment(context.Background(), testPrewarmSegment(t, identity, generated, SegmentHistory29d, "8"))
+				if err != nil {
+					t.Fatalf("WriteSegment(old history29d) error = %v", err)
+				}
+				manifest.History29d = ref
+				return ref.HardExpiresAt
+			}, status: func(r *PrewarmCacheResult) PrewarmValueStatus { return r.History29dStatus }},
+			{name: "history 6d", replace: func(t *testing.T, cache *PrewarmCache, manifest *PrewarmManifest, hardAt time.Time) time.Time {
+				generated := hardAt.Add(-historyHard)
+				ref, err := cache.WriteSegment(context.Background(), testPrewarmSegment(t, identity, generated, SegmentHistory6d, "8"))
+				if err != nil {
+					t.Fatalf("WriteSegment(old history6d) error = %v", err)
+				}
+				manifest.History6d = ref
+				return ref.HardExpiresAt
+			}, status: func(r *PrewarmCacheResult) PrewarmValueStatus { return r.History6dStatus }},
+		}
+		for _, target := range targets {
+			t.Run(target.name, func(t *testing.T) {
+				now := generatedAt
+				store := newRecordingPrewarmStore()
+				cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+				manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+				hardAt := generatedAt.Add(3*time.Minute + 30*time.Second)
+				hardAt = target.replace(t, cache, &manifest, hardAt)
+				publishTestPrewarmManifest(t, cache, manifest, "hard-"+target.name)
+				now = hardAt
+				before := store.MGetCalls()
+				result, found, err := cache.Read(context.Background(), identity)
+				if err != nil || !found || result == nil || result.Complete {
+					t.Fatalf("Read(hard expired %s) = %#v, %v, %v", target.name, result, found, err)
+				}
+				if target.status(result) != PrewarmValueHardExpired {
+					t.Fatalf("%s status = %q, want hard_expired", target.name, target.status(result))
+				}
+				if got := store.MGetCalls() - before; got != 1 {
+					t.Fatalf("Read(hard expired %s) MGET calls = %d, want 1", target.name, got)
+				}
+			})
+		}
+	})
+
+	t.Run("stale but hard valid", func(t *testing.T) {
+		for _, class := range []PrewarmSegmentClass{SegmentHistory29d, SegmentHistory6d} {
+			t.Run(string(class), func(t *testing.T) {
+				now := generatedAt
+				store := newRecordingPrewarmStore()
+				cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+				manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+				ref, err := cache.WriteSegment(context.Background(), testPrewarmSegment(t, identity, generatedAt.Add(-26*time.Hour), class, "8"))
+				if err != nil {
+					t.Fatalf("WriteSegment(stale %s) error = %v", class, err)
+				}
+				if class == SegmentHistory29d {
+					manifest.History29d = ref
+				} else {
+					manifest.History6d = ref
+				}
+				publishTestPrewarmManifest(t, cache, manifest, "stale-"+string(class))
+				before := store.MGetCalls()
+				result, found, err := cache.Read(context.Background(), identity)
+				if err != nil || !found || result == nil || !result.Complete {
+					t.Fatalf("Read(stale %s) = %#v, %v, %v", class, result, found, err)
+				}
+				status := result.History29dStatus
+				if class == SegmentHistory6d {
+					status = result.History6dStatus
+				}
+				if status != PrewarmValueStale {
+					t.Fatalf("stale %s status = %q", class, status)
+				}
+				if got := store.MGetCalls() - before; got != 1 {
+					t.Fatalf("Read(stale %s) MGET calls = %d, want 1", class, got)
+				}
+			})
+		}
+	})
+
+	t.Run("invalid current and history reject", func(t *testing.T) {
+		targets := []struct {
+			name      string
+			selectRef func(PrewarmManifest) PrewarmValueReference
+		}{
+			{name: "current stats", selectRef: func(m PrewarmManifest) PrewarmValueReference { return m.CurrentStats }},
+			{name: "history 29d", selectRef: func(m PrewarmManifest) PrewarmValueReference { return m.History29d }},
+			{name: "history 6d", selectRef: func(m PrewarmManifest) PrewarmValueReference { return m.History6d }},
+		}
+		for _, target := range targets {
+			t.Run(target.name, func(t *testing.T) {
+				now := generatedAt
+				store := newRecordingPrewarmStore()
+				cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+				manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+				publishTestPrewarmManifest(t, cache, manifest, "invalid-"+target.name)
+				store.SetRaw(target.selectRef(manifest).Key, []byte(`{"schema_version":1`), movingValueTTL)
+				before := store.MGetCalls()
+				result, found, err := cache.Read(context.Background(), identity)
+				if err == nil || found || result != nil {
+					t.Fatalf("Read(invalid %s) = %#v, %v, %v, want rejection", target.name, result, found, err)
+				}
+				if got := store.MGetCalls() - before; got != 1 {
+					t.Fatalf("Read(invalid %s) MGET calls = %d, want 1", target.name, got)
+				}
+			})
+		}
+	})
 }
 
 func TestPrewarmCacheReadReturnsPartialForInvalidOrHardExpiredToday(t *testing.T) {
@@ -391,6 +682,9 @@ func TestPrewarmCacheReaderUsesOneManifestOnly(t *testing.T) {
 	}
 	if store.GetCalls() != 1 {
 		t.Fatalf("manifest GET calls = %d, want exactly 1", store.GetCalls())
+	}
+	if store.MGetCalls() != 1 {
+		t.Fatalf("value MGET calls = %d, want exactly 1", store.MGetCalls())
 	}
 	if got := store.LastMGet(); !equalStrings(got, []string{manifestA.CurrentStats.Key, manifestA.History29d.Key, manifestA.History6d.Key, manifestA.TodayHour.Key}) {
 		t.Fatalf("MGET keys = %#v, want first manifest references", got)
@@ -647,6 +941,8 @@ type recordingPrewarmStore struct {
 	getAfter   func(string)
 	getErr     error
 	mgetErr    error
+	mgetAfter  func()
+	mgetCalls  int
 	setErr     error
 	publishErr error
 	leaseErr   error
@@ -681,6 +977,7 @@ func (s *recordingPrewarmStore) MGet(_ context.Context, keys ...string) ([][]byt
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, "mget "+strings.Join(keys, ","))
+	s.mgetCalls++
 	s.lastMGet = append([]string(nil), keys...)
 	if s.mgetErr != nil {
 		return nil, s.mgetErr
@@ -690,6 +987,9 @@ func (s *recordingPrewarmStore) MGet(_ context.Context, keys ...string) ([][]byt
 		if value, ok := s.values[key]; ok {
 			values[index] = append([]byte(nil), value...)
 		}
+	}
+	if s.mgetAfter != nil {
+		s.mgetAfter()
 	}
 	return values, nil
 }
@@ -800,6 +1100,26 @@ func (s *recordingPrewarmStore) LastMGet() []string {
 	return append([]string(nil), s.lastMGet...)
 }
 
+func (s *recordingPrewarmStore) MGetCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mgetCalls
+}
+
+func (s *recordingPrewarmStore) DeleteRaw(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.values, key)
+	delete(s.ttls, key)
+}
+
+func (s *recordingPrewarmStore) HasValue(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.values[key]
+	return ok
+}
+
 func equalStrings(left, right []string) bool {
 	if len(left) != len(right) {
 		return false
@@ -833,4 +1153,39 @@ func assertPartialTodayResult(t *testing.T, result *PrewarmCacheResult, wantStat
 		t.Fatalf("partial statuses = %q/%q/%q/%q, want today %q",
 			result.CurrentStatsStatus, result.History29dStatus, result.History6dStatus, result.TodayHourStatus, wantStatus)
 	}
+}
+
+func publishTestPrewarmManifest(t *testing.T, cache *PrewarmCache, manifest PrewarmManifest, seed string) {
+	t.Helper()
+	leaseKey := cache.LeaseKey("moving", seed)
+	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner", 90*time.Second)
+	if err != nil || !acquired {
+		t.Fatalf("TryAcquireLease(%s) = %v, %v", seed, acquired, err)
+	}
+	published, err := cache.PublishManifest(context.Background(), leaseKey, "owner", manifest)
+	if err != nil || !published {
+		t.Fatalf("PublishManifest(%s) = %v, %v", seed, published, err)
+	}
+}
+
+type controlledClaimPrewarmStore struct {
+	readcache.BatchStore
+	key        string
+	claimToken string
+	observed   chan struct{}
+	release    chan struct{}
+	once       sync.Once
+}
+
+func (s *controlledClaimPrewarmStore) Get(ctx context.Context, key string) ([]byte, error) {
+	value, err := s.BatchStore.Get(ctx, key)
+	if err == nil && key == s.key && string(value) == s.claimToken {
+		s.once.Do(func() { close(s.observed) })
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return value, err
 }
