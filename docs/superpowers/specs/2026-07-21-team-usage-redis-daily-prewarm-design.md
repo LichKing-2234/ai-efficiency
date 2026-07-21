@@ -1,20 +1,26 @@
 # Team Usage Redis Daily Prewarm Design
 
-**Status:** Blocked by UTC-hour POC. The UTC-hour reconstruction contract is
-rejected; the common-timezone daily-bucket replacement below is proposed and
-must receive explicit user approval before implementation or replanning.
+**Status:** Rejected historical design. The UTC-hour reconstruction contract
+failed its mandatory POC and must not be implemented. Its approved replacement
+is `2026-07-21-team-usage-segmented-timezone-prewarm-design.md`; that replacement
+is separately blocked on its segmented-source POC before implementation.
 
 **Date:** 2026-07-21
 
-**Refines:**
+**Replaced by:**
+
+- `docs/superpowers/specs/2026-07-21-team-usage-segmented-timezone-prewarm-design.md`
+
+**Historical references:**
 
 - `docs/superpowers/specs/2026-07-20-team-usage-experiment-matrix-design.md`
 - `docs/superpowers/specs/2026-07-19-team-usage-cache-read-retry-and-24-origin-design.md`
 
-The earlier documents remain historical records of their experiments. This
-document defines the next implementation contract on top of PR #192's retained
-Redis scope-origin baseline. It does not describe the current production
-runtime until the implementation is merged and released.
+This document and the earlier documents remain historical experiment records.
+The replacement spec defines the approved next contract on top of PR #192's
+retained Redis scope-origin baseline. Neither design describes current
+production runtime unless and until a separately approved implementation is
+merged and released.
 
 ## Problem
 
