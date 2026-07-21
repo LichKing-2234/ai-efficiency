@@ -8,10 +8,10 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Task 1 is complete. Task 2's bounded provider-wide Relay sources
-are implemented in `04c925ac`, but its review verification ledger is reopened
-while hard-boundary coverage is completed. Task 2 Steps 4-5 are pending;
-Tasks 3-9 are ready but not started.
+**Status:** Tasks 1-2 are complete. Task 2's bounded provider-wide Relay
+sources are implemented in `04c925ac`; review hard-boundary coverage and fresh
+Relay, race, and vet verification were completed in `0e4facd4`. Tasks 3-9 are
+ready but not started.
 
 ## Task 1 Gate Evidence
 
@@ -252,7 +252,7 @@ type ProviderWideTrendPoint struct { UserID int64; Date string; ActualCost float
 
 Use limited reads with one sentinel byte before JSON decoding. Decode stats object tokens before map conversion so duplicate object keys cannot be hidden. Keep `GetUsageTrendForUsers` as a thin authorization-filtering adapter over the provider-wide result, without a completed in-memory cache.
 
-- [ ] **Step 4: Verify Relay behavior**
+- [x] **Step 4: Verify Relay behavior**
 
 ```bash
 cd backend
@@ -264,7 +264,7 @@ go vet ./internal/relay
 
 Expected: all pass; tests prove no real identity or raw body is logged or returned by the provider-wide interfaces.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/relay
