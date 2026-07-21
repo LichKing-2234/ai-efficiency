@@ -22,8 +22,8 @@ identical concurrent immutable claims. Their RED tests failed as expected. The
 correction implementation passes focused, race, full-package, vet, and diff
 verification and is committed in `3354ee41`; controller formal re-review is
 pending. Task 5 source and lifecycle implementation is complete; focused,
-race, full-package, and vet verification pass, and the implementation commit is
-pending. Tasks 6-9 have not started.
+race, full-package, and vet verification pass, and the implementation is
+committed in `06338e20`. Tasks 6-9 have not started.
 
 ## Task 1 Gate Evidence
 
@@ -453,7 +453,7 @@ go test ./internal/teamusage -run 'Prewarm(Source|Moving|Historical|Startup|Leas
 go test -race ./internal/teamusage -run 'Prewarm(Source|Moving|Historical|Startup|Lease|Concurrency)' -count=1
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/teamusage/prewarm_source* backend/internal/teamusage/prewarmer*
