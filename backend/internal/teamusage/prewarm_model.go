@@ -123,7 +123,7 @@ func NormalizePrewarmTimezones(configured []string) ([]string, error) {
 		if _, ok := seen[name]; ok {
 			continue
 		}
-		if _, err := time.LoadLocation(name); err != nil {
+		if _, err := loadPrewarmLocation(name); err != nil {
 			return nil, fmt.Errorf("invalid prewarm timezone %q: %w", name, err)
 		}
 		seen[name] = struct{}{}
@@ -137,7 +137,7 @@ func NormalizePrewarmTimezones(configured []string) ([]string, error) {
 
 func RecognizePrewarmWindow(params OverviewParams, now time.Time) (PrewarmWindow, bool, error) {
 	timezone := strings.TrimSpace(params.Timezone)
-	location, err := time.LoadLocation(timezone)
+	location, err := loadPrewarmLocation(timezone)
 	if err != nil {
 		return PrewarmWindow{}, false, fmt.Errorf("load prewarm window timezone %q: %w", timezone, err)
 	}
@@ -163,7 +163,7 @@ func RecognizePrewarmWindow(params OverviewParams, now time.Time) (PrewarmWindow
 
 func SplitSafe(timezone, anchorDate string) (bool, error) {
 	name := strings.TrimSpace(timezone)
-	location, err := time.LoadLocation(name)
+	location, err := loadPrewarmLocation(name)
 	if err != nil {
 		return false, fmt.Errorf("load prewarm split timezone %q: %w", name, err)
 	}
@@ -293,16 +293,23 @@ func ComposePrewarmedOrigin(
 	case PrewarmWindowToday:
 		projectRawToday(origin.PointsByUser, authorizedSet, segments.TodayHour.Points)
 	case PrewarmWindow7d:
-		composeDailyPoints(origin.PointsByUser, authorizedSet, segments.History6d.Points, segments.TodayHour.Points)
+		if err := composeDailyPoints(origin.PointsByUser, authorizedSet, segments.History6d.Points, segments.TodayHour.Points); err != nil {
+			return nil, false, fmt.Errorf("compose prewarm 7d points: %w", err)
+		}
 	case PrewarmWindow30d:
-		composeDailyPoints(origin.PointsByUser, authorizedSet, segments.History29d.Points, segments.TodayHour.Points)
+		if err := composeDailyPoints(origin.PointsByUser, authorizedSet, segments.History29d.Points, segments.TodayHour.Points); err != nil {
+			return nil, false, fmt.Errorf("compose prewarm 30d points: %w", err)
+		}
 	default:
 		return nil, false, fmt.Errorf("unsupported prewarm window class %q", window.Class)
 	}
 
 	for _, userID := range authorized {
 		currentStat := stats[userID]
-		cost, tokens, tokensComplete := summarizeTeamUsageRange(origin.PointsByUser[userID])
+		cost, tokens, tokensComplete, err := summarizePrewarmRange(origin.PointsByUser[userID])
+		if err != nil {
+			return nil, false, fmt.Errorf("summarize prewarm composed range: %w", err)
+		}
 		stat := relay.TeamUserUsageStats{
 			UserID: userID, TodayActualCost: currentStat.TodayActualCost, TotalActualCost: currentStat.TotalActualCost,
 			TotalTokens: clonePrewarmInt64Pointer(currentStat.TotalTokens), RangeActualCost: &cost,
@@ -335,7 +342,7 @@ func prewarmSegmentCoverage(class PrewarmSegmentClass, anchorDate, timezone stri
 	if strings.TrimSpace(timezone) != timezone || timezone == "" {
 		return PrewarmCoverage{}, fmt.Errorf("invalid prewarm segment timezone")
 	}
-	location, err := time.LoadLocation(timezone)
+	location, err := loadPrewarmLocation(timezone)
 	if err != nil {
 		return PrewarmCoverage{}, fmt.Errorf("load prewarm segment timezone %q: %w", timezone, err)
 	}
@@ -374,7 +381,7 @@ func validatePrewarmWindow(window PrewarmWindow) error {
 	default:
 		return fmt.Errorf("invalid prewarm window class %q", window.Class)
 	}
-	location, err := time.LoadLocation(window.Coverage.Timezone)
+	location, err := loadPrewarmLocation(window.Coverage.Timezone)
 	if err != nil {
 		return fmt.Errorf("load prewarm window timezone %q: %w", window.Coverage.Timezone, err)
 	}
@@ -496,13 +503,15 @@ func composeDailyPoints(
 	authorized map[int64]struct{},
 	history []relay.ProviderWideTrendPoint,
 	today []relay.ProviderWideTrendPoint,
-) {
+) error {
 	byUser := make(map[int64]map[string]*prewarmPointAccumulator, len(authorized))
 	for _, point := range history {
 		if _, ok := authorized[point.UserID]; !ok {
 			continue
 		}
-		addPrewarmContribution(prewarmAccumulator(byUser, point.UserID, point.Date), point.ActualCost, point.TotalTokens)
+		if err := addPrewarmContribution(prewarmAccumulator(byUser, point.UserID, point.Date), point.ActualCost, point.TotalTokens); err != nil {
+			return fmt.Errorf("add history contribution: %w", err)
+		}
 	}
 	todayByUser := make(map[int64]map[string]*prewarmPointAccumulator, len(authorized))
 	for _, point := range today {
@@ -510,11 +519,15 @@ func composeDailyPoints(
 			continue
 		}
 		label := point.Date[:len(time.DateOnly)]
-		addPrewarmContribution(prewarmAccumulator(todayByUser, point.UserID, label), point.ActualCost, point.TotalTokens)
+		if err := addPrewarmContribution(prewarmAccumulator(todayByUser, point.UserID, label), point.ActualCost, point.TotalTokens); err != nil {
+			return fmt.Errorf("coalesce today contribution: %w", err)
+		}
 	}
 	for userID, byLabel := range todayByUser {
 		for label, contribution := range byLabel {
-			addPrewarmAccumulator(prewarmAccumulator(byUser, userID, label), contribution)
+			if err := addPrewarmAccumulator(prewarmAccumulator(byUser, userID, label), contribution); err != nil {
+				return fmt.Errorf("merge history and today contribution: %w", err)
+			}
 		}
 	}
 	for userID := range authorized {
@@ -535,6 +548,7 @@ func composeDailyPoints(
 		}
 		target[userID] = points
 	}
+	return nil
 }
 
 func prewarmAccumulator(target map[int64]map[string]*prewarmPointAccumulator, userID int64, label string) *prewarmPointAccumulator {
@@ -551,30 +565,108 @@ func prewarmAccumulator(target map[int64]map[string]*prewarmPointAccumulator, us
 	return value
 }
 
-func addPrewarmContribution(target *prewarmPointAccumulator, actualCost float64, totalTokens *int64) {
-	target.actualCost += actualCost
+func addPrewarmContribution(target *prewarmPointAccumulator, actualCost float64, totalTokens *int64) error {
+	newCost, err := addPrewarmCosts(target.actualCost, actualCost)
+	if err != nil {
+		return err
+	}
+	newTokens := target.totalTokens
+	newTokensComplete := target.tokensComplete
 	if !target.hasContribution {
-		target.tokensComplete = true
-		target.hasContribution = true
+		newTokensComplete = true
 	}
 	if totalTokens == nil {
-		target.tokensComplete = false
-		return
+		newTokensComplete = false
+	} else {
+		newTokens, err = addPrewarmTokens(newTokens, *totalTokens)
+		if err != nil {
+			return err
+		}
 	}
-	target.totalTokens += *totalTokens
+	target.actualCost = newCost
+	target.totalTokens = newTokens
+	target.tokensComplete = newTokensComplete
+	target.hasContribution = true
+	return nil
 }
 
-func addPrewarmAccumulator(target, contribution *prewarmPointAccumulator) {
-	target.actualCost += contribution.actualCost
+func addPrewarmAccumulator(target, contribution *prewarmPointAccumulator) error {
+	newCost, err := addPrewarmCosts(target.actualCost, contribution.actualCost)
+	if err != nil {
+		return err
+	}
+	newTokens := target.totalTokens
+	newTokensComplete := target.tokensComplete
 	if !target.hasContribution {
-		target.tokensComplete = true
-		target.hasContribution = true
+		newTokensComplete = true
 	}
 	if !contribution.tokensComplete {
-		target.tokensComplete = false
-		return
+		newTokensComplete = false
+	} else {
+		newTokens, err = addPrewarmTokens(newTokens, contribution.totalTokens)
+		if err != nil {
+			return err
+		}
 	}
-	target.totalTokens += contribution.totalTokens
+	target.actualCost = newCost
+	target.totalTokens = newTokens
+	target.tokensComplete = newTokensComplete
+	target.hasContribution = true
+	return nil
+}
+
+func summarizePrewarmRange(points []relay.UsageTrendPoint) (float64, int64, bool, error) {
+	var actualCost float64
+	var totalTokens int64
+	tokensComplete := true
+	for _, point := range points {
+		var err error
+		actualCost, err = addPrewarmCosts(actualCost, point.ActualCost)
+		if err != nil {
+			return 0, 0, false, fmt.Errorf("add range actual cost: %w", err)
+		}
+		if point.TotalTokens == nil {
+			tokensComplete = false
+			continue
+		}
+		totalTokens, err = addPrewarmTokens(totalTokens, *point.TotalTokens)
+		if err != nil {
+			return 0, 0, false, fmt.Errorf("add range tokens: %w", err)
+		}
+	}
+	return actualCost, totalTokens, tokensComplete, nil
+}
+
+func addPrewarmCosts(left, right float64) (float64, error) {
+	if !validPrewarmCost(left) || !validPrewarmCost(right) {
+		return 0, fmt.Errorf("invalid actual cost addition")
+	}
+	total := left + right
+	if !validPrewarmCost(total) {
+		return 0, fmt.Errorf("actual cost overflow")
+	}
+	return total, nil
+}
+
+func addPrewarmTokens(left, right int64) (int64, error) {
+	if left < 0 || right < 0 {
+		return 0, fmt.Errorf("invalid token addition")
+	}
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if right > maxInt64-left {
+		return 0, fmt.Errorf("token overflow")
+	}
+	return left + right, nil
+}
+
+func loadPrewarmLocation(name string) (*time.Location, error) {
+	if name == "Local" {
+		return nil, fmt.Errorf("timezone Local is environment-dependent")
+	}
+	if name == "UTC" {
+		return time.UTC, nil
+	}
+	return time.LoadLocation(name)
 }
 
 func validPrewarmSourceLabel(label, granularity string) bool {

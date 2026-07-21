@@ -55,6 +55,36 @@ func TestPrewarmTimezoneNormalizationRejectsInvalidBounds(t *testing.T) {
 	}
 }
 
+func TestPrewarmTimezoneRejectsLocalAndPreservesAliases(t *testing.T) {
+	if _, err := NormalizePrewarmTimezones([]string{"Local"}); err == nil {
+		t.Fatal("NormalizePrewarmTimezones(Local) error = nil, want environment-dependent timezone rejection")
+	}
+	aliases, err := NormalizePrewarmTimezones([]string{"UTC", "Etc/UTC", "UTC"})
+	if err != nil {
+		t.Fatalf("NormalizePrewarmTimezones(aliases) error = %v", err)
+	}
+	if want := []string{"UTC", "Etc/UTC"}; !reflect.DeepEqual(aliases, want) {
+		t.Fatalf("NormalizePrewarmTimezones(aliases) = %#v, want distinct valid aliases %#v", aliases, want)
+	}
+
+	localParams := OverviewParams{
+		StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "Local",
+	}
+	if _, _, err := RecognizePrewarmWindow(localParams, time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)); err == nil {
+		t.Fatal("RecognizePrewarmWindow(Local) error = nil, want environment-dependent timezone rejection")
+	}
+	if _, err := SplitSafe("Local", "2026-07-21"); err == nil {
+		t.Fatal("SplitSafe(Local) error = nil, want environment-dependent timezone rejection")
+	}
+
+	segment := validPrewarmTestSegment(SegmentTodayHour, nil)
+	segment.Timezone = "Local"
+	segment.Coverage.Timezone = "Local"
+	if err := ValidateTrendSegment(segment); err == nil {
+		t.Fatal("ValidateTrendSegment(Local) error = nil, want shared location loader rejection")
+	}
+}
+
 func TestPrewarmWindowRecognizesOnlyCurrentLocalStandardShapes(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -354,6 +384,95 @@ func TestPrewarmComposeValidatesCurrentStatsAndCostTolerance(t *testing.T) {
 	if PrewarmCostsEquivalent(math.NaN(), math.NaN()) || PrewarmCostsEquivalent(math.Inf(1), math.Inf(1)) {
 		t.Fatal("PrewarmCostsEquivalent() accepted nonfinite values")
 	}
+}
+
+func TestPrewarmComposeRejectsUsageOverflow(t *testing.T) {
+	maxTokens := int64(^uint64(0) >> 1)
+	oneToken := int64(1)
+	current := PrewarmCurrentStatsEnvelope{RosterCount: 1, Stats: []PrewarmCurrentStat{{UserID: 1}}}
+	todayWindow := mustRecognizePrewarmTestWindow(t, OverviewParams{
+		StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC",
+	})
+	sevenWindow := mustRecognizePrewarmTestWindow(t, OverviewParams{
+		StartDate: "2026-07-15", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC",
+	})
+
+	tests := []struct {
+		name     string
+		window   PrewarmWindow
+		segments PrewarmSegmentSet
+	}{
+		{
+			name:   "cost within coalesced today",
+			window: sevenWindow,
+			segments: prewarmTestDailySegments(nil, []relay.ProviderWideTrendPoint{
+				{UserID: 1, Date: "2026-07-21 00:00", ActualCost: math.MaxFloat64},
+				{UserID: 1, Date: "2026-07-21 01:00", ActualCost: math.MaxFloat64},
+			}),
+		},
+		{
+			name:   "tokens within coalesced today",
+			window: sevenWindow,
+			segments: prewarmTestDailySegments(nil, []relay.ProviderWideTrendPoint{
+				{UserID: 1, Date: "2026-07-21 00:00", ActualCost: 1, TotalTokens: &maxTokens},
+				{UserID: 1, Date: "2026-07-21 01:00", ActualCost: 1, TotalTokens: &oneToken},
+			}),
+		},
+		{
+			name:   "cost across history and today",
+			window: sevenWindow,
+			segments: prewarmTestDailySegments(
+				[]relay.ProviderWideTrendPoint{{UserID: 1, Date: "2026-07-21", ActualCost: math.MaxFloat64}},
+				[]relay.ProviderWideTrendPoint{{UserID: 1, Date: "2026-07-21 00:00", ActualCost: math.MaxFloat64}},
+			),
+		},
+		{
+			name:   "tokens across history and today",
+			window: sevenWindow,
+			segments: prewarmTestDailySegments(
+				[]relay.ProviderWideTrendPoint{{UserID: 1, Date: "2026-07-21", ActualCost: 1, TotalTokens: &maxTokens}},
+				[]relay.ProviderWideTrendPoint{{UserID: 1, Date: "2026-07-21 00:00", ActualCost: 1, TotalTokens: &oneToken}},
+			),
+		},
+		{
+			name:   "cost while summarizing raw range",
+			window: todayWindow,
+			segments: prewarmTestTodaySegments([]relay.ProviderWideTrendPoint{
+				{UserID: 1, Date: "2026-07-21 00:00", ActualCost: math.MaxFloat64},
+				{UserID: 1, Date: "2026-07-21 01:00", ActualCost: math.MaxFloat64},
+			}),
+		},
+		{
+			name:   "tokens while summarizing raw range",
+			window: todayWindow,
+			segments: prewarmTestTodaySegments([]relay.ProviderWideTrendPoint{
+				{UserID: 1, Date: "2026-07-21 00:00", ActualCost: 1, TotalTokens: &maxTokens},
+				{UserID: 1, Date: "2026-07-21 01:00", ActualCost: 1, TotalTokens: &oneToken},
+			}),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			origin, eligible, err := ComposePrewarmedOrigin(test.window, current, test.segments, []int64{1})
+			if err == nil || !strings.Contains(err.Error(), "overflow") {
+				t.Fatalf("ComposePrewarmedOrigin() error = %v, want contextual overflow rejection", err)
+			}
+			if origin != nil || eligible {
+				t.Fatalf("ComposePrewarmedOrigin() = %#v, %v, want no eligible overflow facts", origin, eligible)
+			}
+		})
+	}
+}
+
+func prewarmTestDailySegments(history, today []relay.ProviderWideTrendPoint) PrewarmSegmentSet {
+	historySegment := validPrewarmTestSegment(SegmentHistory6d, history)
+	todaySegment := validPrewarmTestSegment(SegmentTodayHour, today)
+	return PrewarmSegmentSet{History6d: &historySegment, TodayHour: &todaySegment}
+}
+
+func prewarmTestTodaySegments(today []relay.ProviderWideTrendPoint) PrewarmSegmentSet {
+	todaySegment := validPrewarmTestSegment(SegmentTodayHour, today)
+	return PrewarmSegmentSet{TodayHour: &todaySegment}
 }
 
 func validPrewarmTestSegment(class PrewarmSegmentClass, points []relay.ProviderWideTrendPoint) PrewarmTrendSegment {
