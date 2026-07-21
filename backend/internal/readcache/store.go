@@ -3,6 +3,7 @@ package readcache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	redis "github.com/redis/go-redis/v9"
@@ -16,12 +17,25 @@ if redis.call("GET", KEYS[1]) == ARGV[1] then
 end
 return 0`)
 
+var setIfLeaseOwnedScript = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  redis.call("SET", KEYS[2], ARGV[2], "PX", ARGV[3])
+  return 1
+end
+return 0`)
+
 type Store interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
 	TryAcquireLease(ctx context.Context, key, token string, ttl time.Duration) (bool, error)
 	LeaseTTL(ctx context.Context, key string) (time.Duration, error)
 	ReleaseLease(ctx context.Context, key, token string) (bool, error)
+}
+
+type BatchStore interface {
+	Store
+	MGet(context.Context, ...string) ([][]byte, error)
+	SetIfLeaseOwned(context.Context, string, string, string, []byte, time.Duration) (bool, error)
 }
 
 type RedisStore struct {
@@ -50,6 +64,49 @@ func (s *RedisStore) Get(ctx context.Context, key string) ([]byte, error) {
 
 func (s *RedisStore) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	return s.client.Set(ctx, key, value, ttl).Err()
+}
+
+func (s *RedisStore) MGet(ctx context.Context, keys ...string) ([][]byte, error) {
+	if len(keys) == 0 {
+		return [][]byte{}, nil
+	}
+	results, err := s.client.MGet(ctx, keys...).Result()
+	if err != nil {
+		return nil, err
+	}
+	values := make([][]byte, len(results))
+	for index, result := range results {
+		switch value := result.(type) {
+		case nil:
+		case string:
+			values[index] = []byte(value)
+		case []byte:
+			values[index] = append([]byte(nil), value...)
+		default:
+			return nil, fmt.Errorf("decode Redis MGET result %d: unexpected %T", index, result)
+		}
+	}
+	return values, nil
+}
+
+func (s *RedisStore) SetIfLeaseOwned(
+	ctx context.Context,
+	leaseKey, token, key string,
+	value []byte,
+	ttl time.Duration,
+) (bool, error) {
+	result, err := setIfLeaseOwnedScript.Run(
+		ctx,
+		s.client,
+		[]string{leaseKey, key},
+		token,
+		value,
+		ttl.Milliseconds(),
+	).Int64()
+	if err != nil {
+		return false, err
+	}
+	return result == 1, nil
 }
 
 func (s *RedisStore) TryAcquireLease(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {

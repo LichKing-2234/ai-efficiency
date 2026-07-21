@@ -112,6 +112,71 @@ func TestRedisStoreImplementsValueAndTokenProtectedLeaseContract(t *testing.T) {
 	}
 }
 
+func TestRedisStoreMGetPreservesOrderAndMissPositions(t *testing.T) {
+	server := miniredis.RunT(t)
+	server.Set("first", "alpha")
+	server.Set("third", "charlie")
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+
+	values, err := NewRedisStore(client).MGet(context.Background(), "first", "second", "third", "fourth")
+	if err != nil {
+		t.Fatalf("MGet() error = %v", err)
+	}
+	if len(values) != 4 {
+		t.Fatalf("MGet() value count = %d, want 4", len(values))
+	}
+	want := []string{"alpha", "", "charlie", ""}
+	for index, value := range values {
+		if string(value) != want[index] {
+			t.Fatalf("MGet() value[%d] = %q, want %q", index, value, want[index])
+		}
+	}
+	if values[1] != nil || values[3] != nil {
+		t.Fatalf("MGet() misses = %#v/%#v, want nil positions", values[1], values[3])
+	}
+}
+
+func TestRedisStoreSetIfLeaseOwnedAndReleaseAreTokenChecked(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	store := NewRedisStore(client)
+	ctx := context.Background()
+
+	acquired, err := store.TryAcquireLease(ctx, "lease", "owner-a", 30*time.Second)
+	if err != nil || !acquired {
+		t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
+	}
+	published, err := store.SetIfLeaseOwned(ctx, "lease", "owner-b", "manifest", []byte("wrong"), 3*time.Minute)
+	if err != nil || published {
+		t.Fatalf("SetIfLeaseOwned(wrong token) = %v, %v, want false, nil", published, err)
+	}
+	if server.Exists("manifest") {
+		t.Fatal("wrong-token publication created manifest")
+	}
+
+	published, err = store.SetIfLeaseOwned(ctx, "lease", "owner-a", "manifest", []byte("committed"), 3*time.Minute)
+	if err != nil || !published {
+		t.Fatalf("SetIfLeaseOwned(owner token) = %v, %v, want true, nil", published, err)
+	}
+	if value, getErr := server.Get("manifest"); getErr != nil || value != "committed" {
+		t.Fatalf("manifest = %q, %v, want committed", value, getErr)
+	}
+	if ttl := server.TTL("manifest"); ttl != 3*time.Minute {
+		t.Fatalf("manifest TTL = %s, want 3m", ttl)
+	}
+
+	released, err := store.ReleaseLease(ctx, "lease", "owner-b")
+	if err != nil || released {
+		t.Fatalf("ReleaseLease(wrong token) = %v, %v, want false, nil", released, err)
+	}
+	released, err = store.ReleaseLease(ctx, "lease", "owner-a")
+	if err != nil || !released {
+		t.Fatalf("ReleaseLease(owner token) = %v, %v, want true, nil", released, err)
+	}
+}
+
 func TestRedisStoreGetRetriesOneCommandError(t *testing.T) {
 	server := miniredis.RunT(t)
 	server.Set("value", "payload")
