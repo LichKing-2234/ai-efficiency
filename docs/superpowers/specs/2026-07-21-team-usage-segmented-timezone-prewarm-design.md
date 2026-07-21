@@ -1,7 +1,11 @@
 # Team Usage Segmented Timezone Prewarm Design
 
-**Status:** Implementation and branch-wide review completed. Staging acceptance
-is pending; the feature remains disabled by default and production is unchanged.
+**Status:** Implementation and branch-wide review completed. The exact reviewed
+image completed its feature-disabled staging rollout. A package-native,
+runtime-local synthetic Redis benchmark then hit a real two-second timeout in
+the four-lane maximum-safe MGET workload. No command budgets were selected or
+implemented, feature-enabled acceptance is blocked, the feature remains
+disabled by default, and production is unchanged.
 
 **Date:** 2026-07-21
 
@@ -902,9 +906,34 @@ credentials, user lists, response bodies, or unredacted Redis values.
 ## Rollout And Rollback
 
 Implementation and branch-wide review are complete. The feature flag still
-defaults to false. No staging acceptance or feature-enabled rollout has run,
-and production remains unchanged. Staging enablement and production release
-are separate approvals.
+defaults to false. On 2026-07-22, exact reviewed HEAD
+`667f4032e0ec9e60b8dd240fe55c0db2833e9509` was published as the staging-only
+multi-architecture image with manifest digest
+`sha256:5a25d8feadd213ccf64706281d05411628d549d675788c14bdf92b0bf32dfb6b`.
+The required paused and restore-enabled phases completed at staging revisions 45
+and 46. The live application Pod used the exact image with the feature flag
+absent, and staging live/readiness checks returned HTTP 200. Production remained
+unchanged at revision 69 on `v0.1.0-preview.73`, with the flag absent and HTTP 200
+readiness. Three ad-hoc probe paths were excluded because they used non-runtime
+network locality, accumulated sample keys beyond the one-GiB Redis capacity, or
+failed before sampling on an invalid metadata command.
+
+The accepted package-native harness reused the existing RedisStore command
+contracts, first proved its 13-key and `102,760,435`-byte live-set bound with
+miniredis, and then ran the same static test binary in the staging application
+Pod. Current-value writes, segment writes, five-lease manifest publication, and
+lease acquire/release each completed 100 samples without a command error. Their
+p99 values were `23.142 ms`, `242.412 ms`, `12.134 ms`, `11.871 ms`, and
+`11.834 ms`. The four-lane maximum-safe MGET workload produced 15 valid samples
+with `p50=1099.047 ms` and `p95/p99/max=1900.419 ms`, then one lane command hit
+the configured two-second read timeout in the fourth concurrent round. Cleanup
+had zero errors; Redis returned to `6,410,536` bytes used with zero eviction or
+rejected-connection delta, and the application Pod remained ready with zero
+restarts. The partial read distribution is retained for diagnosis but is not
+used to calculate a budget. The command timeout alone satisfies the Redis-error
+gate and blocks budget selection. No RED budget test, budget constant, second
+image, or feature-enabled rollout was created. Production release remains a
+separate approval.
 
 Rollback disables the prewarm feature. New readers and background cycles stop,
 and every request immediately uses the retained PR #192 scope-origin path.

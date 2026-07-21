@@ -56,14 +56,22 @@ and reject late same-current-ID manifests whose anchors do not match the active
 batch. The same reviewer approved the final diff with zero Critical, Important,
 or Minor findings. Final focused, full-backend, race, vet, build, compose-config,
 and diff checks passed; implementation is committed in `ab7cea64`.
-Task 8 Steps 1-4 are complete: the exact Dashboard RED run failed for the
+Task 8 is complete: the exact Dashboard RED run failed for the
 expected missing prewarm cycle-duration panel, then the bounded prewarm panels
 and operations guidance made the same command pass. Final local verification
 also passes after a controller-authorized test-only correction removed three
 redundant parallel `gin.SetMode` writes exposed by the required race gate. The
 final Standards and Spec reviewers approved the corrected immutable package
-with zero findings. Task 8 Step 5 remains open until the deliberate commits;
-Task 9 has not started, and staging and production remain disabled and unchanged.
+with zero findings; its behavior and documentation commits are `506bd403` and
+`667f4032`.
+Task 9 Step 1 is complete: the exact reviewed image is deployed only to staging
+at revision 46 with the feature disabled, and production remains unchanged.
+Task 9 Step 2 is blocked by a valid package-native runtime-local benchmark: the
+five write/manifest/lease operations completed 100 samples each without error,
+but the four-lane maximum-safe MGET workload timed out under the locked two-second
+read ceiling after 15 valid samples. No command budgets were selected and no
+budget code or tests were changed. The feature remains disabled; Steps 3-6 have
+not started.
 
 ## Task 1 Gate Evidence
 
@@ -908,7 +916,50 @@ Do not update `docs/architecture.md` yet; the feature is still disabled and is n
 - Consumes: exact reviewed branch head and synthetic maximum-safe Redis fixtures.
 - Produces: locked large-value read/write command budgets and sanitized three-round staging evidence.
 
-- [ ] **Step 1: Publish and deploy an immutable staging image with the feature disabled**
+- [x] **Step 1: Publish and deploy an immutable staging image with the feature disabled**
+
+  **Execution evidence (2026-07-22, complete):** Before the Task 9 rollout,
+  production was healthy at Helm revision 69 on
+  `ghcr.io/lichking-2234/ai-efficiency:v0.1.0-preview.73`, with the prewarm flag
+  absent and one of one Deployment replicas ready. Staging was healthy at Helm
+  revision 44 on the retained PR #192 image
+  `ghcr.io/lichking-2234/ai-efficiency:staging-627a7123d98aee37dd04fd5da2198234cfd003f0`,
+  also with the flag absent and one of one replicas ready. Staging live/readiness
+  and production readiness each returned HTTP 200. No secret values or response
+  bodies were retained. The required `static-spaces-release-builder` advertised
+  both `linux/amd64` and `linux/arm64`, so it passed the local builder gate before
+  any image was published. Exact reviewed HEAD
+  `667f4032e0ec9e60b8dd240fe55c0db2833e9509` was then published as
+  `ghcr.io/lichking-2234/ai-efficiency:staging-667f4032e0ec9e60b8dd240fe55c0db2833e9509`
+  with remote manifest digest
+  `sha256:5a25d8feadd213ccf64706281d05411628d549d675788c14bdf92b0bf32dfb6b`.
+  The inspected remote index contains both required target manifests:
+  `linux/amd64` at `sha256:0bdc1850475bea5495c7b2732b7b76041f46314297a11118a822d3cd715e9be8`
+  and `linux/arm64` at `sha256:bf5ca2d1b13f096201856af0e97e3e5aecfab39eeef65bc716fba099b7f07c24`.
+  The staging refresh script left the static override at mode `0600` with the
+  exact image tag and snapshot ID `667f4032e0ec`; its parsed values still omit
+  `AE_TEAM_USAGE_PREWARM_ENABLED`. A deployment-only render likewise omitted
+  the flag, and the paused `--dry-run=server --hide-secret` completed
+  successfully. The final tracked static override diff is limited to the
+  non-secret image tag and snapshot ID: canonical JSON hashes are identical
+  after deleting those two selectors. No secret value changed in the retained
+  diff, and no secret values were printed or retained outside the `0600` values
+  file. The
+  required paused upgrade completed at Helm revision 45 with zero desired and
+  zero ready application replicas; the rendered flag remained absent. The
+  explicit application-Pod deletion gate then observed zero matching Pods both
+  before and after its wait, proving the old staging application was gone before
+  the restore-enabled phase. The restore-enabled
+  `--dry-run=server --hide-secret` also completed successfully and its
+  deployment-only render continued to omit the feature flag. The actual atomic
+  restore-enabled upgrade, including the waited restore Job, completed at Helm
+  revision 46. The PostgreSQL StatefulSet and application Deployment both
+  completed rollout; the Deployment was desired/ready/available `1/1/1`. The
+  sole application Pod used the exact immutable image and had the feature flag
+  absent. Staging live and readiness endpoints each returned HTTP 200. The final
+  production gate exactly matched the baseline: Helm revision 69, image
+  `ghcr.io/lichking-2234/ai-efficiency:v0.1.0-preview.73`, absent feature flag,
+  one of one replicas ready, and HTTP 200 readiness.
 
 Build the exact reviewed HEAD through the repository's current staging workflow, verify the GHCR manifest digest, deploy only `ai-efficiency-staging`, and record image digest and Helm revision. Confirm `AE_TEAM_USAGE_PREWARM_ENABLED=false`. Verify production image, configuration, and Helm revision before and after.
 
@@ -932,6 +983,79 @@ docker buildx imagetools inspect "${IMAGE}"
 Use `/Users/admin/helm/ai-efficiency/scripts/refresh-staging-upgrade-values.sh` for the exact image tag and snapshot ID, then follow `/Users/admin/helm/docs/staging-playbook.md` paused and restore-enabled phases. Before the disabled rollout, assert the rendered Deployment either omits `AE_TEAM_USAGE_PREWARM_ENABLED` or sets it to `false`; verify both architectures in the remote manifest.
 
 - [ ] **Step 2: Benchmark staging Redis with synthetic maximum-safe values**
+
+  **Initial excluded evidence (2026-07-22):** The reviewed runtime
+  configures the shared Redis client with `MinIdleConns=4`, one-second dial and
+  pool timeouts, disabled command retries, and context timeouts enabled. Its
+  distributed source limiter has exactly two process and Redis slots. The live
+  staging application remained feature-disabled before the synthetic benchmark.
+  A first local execution proved that a single maximum-safe lane
+  (`27,262,972` bytes across current plus three segment values) exceeded the
+  two-second read timeout over the non-runtime local network path. The identical
+  static probe was therefore moved into the staging application Pod without
+  changing its payloads, concurrency, timeouts, or Redis commands. Its transport
+  smoke passed config, authentication, PING, four-connection pool warmup, and
+  `MinIdleConns>=4`. Its ordered one-sample smoke passed maximum-safe current and
+  segment immutable writes, five-lease setup, the six-key/eight-argument
+  token-checked manifest publication, one-lane MGET, four-lane concurrent MGET,
+  and cleanup. The full in-Pod run then failed after approximately 53 seconds at
+  fixed diagnostic stage `mget` with class `redis_command`. Read-only root-cause
+  review found that the probe created 200 unique large write-sample keys and
+  deferred cleanup until the end. Those current and segment values alone totalled
+  `1,048,575,800` raw bytes; warmup, manifests, and four-lane seeds raised the
+  raw total to approximately `1.168` GB before Redis overhead. Redis reports
+  `maxmemory=1,073,741,824`, `maxmemory_policy=volatile-lru`, current post-cleanup
+  used memory `6,280,576`, and lifetime peak used memory `1,100,870,752` bytes.
+  The application Pod remained ready with zero restarts and no OOM/kill event;
+  its post-cleanup cgroup usage was `21,676,032` of `536,870,912` bytes. No
+  before-run Redis counters or Pod working-set sample exists, and the probe
+  intentionally collapsed the command error without retaining its raw string,
+  so no timeout/EOF/reset/OOM subtype can be claimed. The accumulated sample-key
+  shape does not represent one runtime generation, making the full run invalid
+  rather than an accepted capacity result. The probe retained no partial latency
+  report, so the budget formula cannot be applied. Cleanup completed (the
+  terminal stage was `mget`, not `cleanup`), and
+  the Pod binary, local probe source/binary, and all temporary reports were then
+  deleted and verified absent. A controller-authorized corrected harness then
+  passed a static live-set assertion of `102,760,435 < 268,435,456` raw bytes
+  with at most 13 live value keys, but its only formal execution stopped at
+  diagnostic stage `baseline` before generating a probe ID or any synthetic key.
+  It issued an unsupported combined `INFO memory stats` command where this Redis
+  endpoint requires separate section commands. That corrected source, binary,
+  and empty diagnostic report were also deleted and verified absent. No valid
+  p50/p95/p99/max distribution or before/after counter pair exists. Step 2
+  remains unchecked by design. The final safety check found Redis used memory at
+  `6,309,464` bytes, staging still disabled and healthy at revision 46, and
+  production unchanged and healthy at revision 69.
+
+  **Accepted package-native benchmark and blocking result (2026-07-22):** A
+  temporary `teamusage` test used the existing RedisStore primitives rather than
+  duplicating their protocol. Its miniredis RED/GREEN cycle proved 13 live value
+  keys, `102,760,435` raw bytes below a 256-MiB guard, immediate deletion of each
+  unique write sample, fixed MGET seeds, registry-only cleanup, and zero remaining
+  namespace keys. The same statically linked `linux/amd64` test binary ran in the
+  feature-disabled staging application Pod. Its smoke passed before the only
+  full run. Current SET NX, segment SET NX, five-lease manifest publication,
+  lease acquire, and lease release each completed 100 samples with zero command
+  errors. Their p50/p95/p99/max values in milliseconds were respectively
+  `21.126/21.582/23.142/98.109`,
+  `142.001/239.545/242.412/245.360`,
+  `11.998/12.096/12.134/12.196`,
+  `11.705/11.751/11.871/15.047`, and
+  `11.716/11.760/11.834/12.274`.
+
+  The four-lane MGET workload completed 15 valid lane samples at
+  `p50=1099.047 ms` and `p95/p99/max=1900.419 ms`, then one command hit the
+  configured two-second read timeout in the fourth concurrent round. The
+  partial distribution is retained only for diagnosis and is not used to select
+  a budget; the real command error independently blocks Step 2. Full cleanup had
+  zero errors; Redis used memory returned to `6,410,536` bytes with zero eviction
+  and rejected-connection delta. Staging remained revision 46 with the flag
+  absent, one ready Pod, zero restarts, and healthy live/readiness checks.
+  Production remained revision 69 on `v0.1.0-preview.73`, with the flag absent
+  and healthy. All temporary test sources, binaries, and JSON reports were
+  deleted; only sanitized evidence was retained. Therefore Step 2 remains
+  unchecked, no budget constants or commit exist, and Steps 3-6 must not start.
 
 Under `MinIdleConns>=4` and background concurrency two, measure separate immutable writes, manifest publication, and four-lane MGET reads. Select each command budget as `max(250ms, 2*p99)` capped at `2s`. Any Redis error or required budget above two seconds blocks enablement. Write RED boundary tests for the selected budgets, implement the exact constants, and run:
 
