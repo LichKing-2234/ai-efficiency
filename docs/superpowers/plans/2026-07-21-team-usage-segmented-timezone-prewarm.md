@@ -8,8 +8,9 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Tasks 1-3 are complete. Task 3's pure segmented prewarm domain
-model was committed in `b29b53a5` after focused, race, full-package, and vet
+**Status:** Tasks 1-3 are complete. Task 3 review corrections reject the
+environment-dependent `Local` timezone and check every usage composition
+addition; implementation `d9e0c4d2` passed focused, race, full-package, and vet
 verification. Tasks 4-9 have not started.
 
 ## Task 1 Gate Evidence
