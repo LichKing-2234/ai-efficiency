@@ -257,8 +257,14 @@ before any authorization intersection or Redis publication. The existing
 requested-ID `TeamMemberTrendProvider.GetUsageTrendForUsers` capability remains
 the PR #192 fallback contract and is not a prewarm publication source.
 
-The provider-wide directory source requests `/api/v1/admin/users` with
-`page_size=1000` and follows authoritative pagination until every declared page
+The provider-wide directory source uses this fixed request shape for every page:
+
+```text
+/api/v1/admin/users?page=<page>&page_size=1000&include_subscriptions=false&sort_by=id&sort_order=asc
+```
+
+All five query values are mandatory; the implementation must not depend on
+Sub2API defaults. It follows authoritative pagination until every declared page
 is exhausted. It rejects:
 
 - a non-positive or duplicate Relay ID on one page or across pages;
@@ -267,6 +273,8 @@ is exhausted. It rejects:
 - a response page number that differs from the requested page;
 - a page size other than the requested 1,000 when that metadata is present;
 - changing total-count or total-page metadata across pages;
+- IDs that are not strictly ascending within a page or whose first ID is not
+  greater than the preceding page's final ID;
 - an empty nonterminal page, a page longer than 1,000, an undeclared extra page,
   or a final cumulative count inconsistent with authoritative metadata; and
 - a directory containing 5,000 or more unique provider IDs.
@@ -275,24 +283,38 @@ Fewer than 5,000 positive unique provider IDs is required for prewarm. Reaching
 the bound, invalid pagination, or incomplete pagination uses exact fallback and
 does not publish a partial provider generation.
 
+Before JSON decoding, every directory page body is subject to the POC-locked
+hard cap of strictly less than 16 MiB. A limited read that reaches 16 MiB rejects
+prewarm and uses exact fallback; it is never decoded as a partial page.
+
 Current stats are fetched for that complete directory set in chunks of at most
-500 positive unique IDs. Each chunk response must contain exactly one record for
-every requested ID and no extra, missing, duplicate, zero, or negative ID. The
-decoder rejects duplicate JSON object keys before map conversion, and each
-record's embedded `UserID` must equal its decoded object key and one requested
-ID. Every `TodayActualCost` and `TotalActualCost` must be finite and
-non-negative; optional `TotalTokens` must be non-negative. Chunk results must
-remain disjoint when combined. Any violation rejects the provider-wide
-current-stats generation.
+500 positive unique IDs. Before JSON decoding, each stats chunk body is subject
+to the POC-locked hard cap of strictly less than 2 MiB. A limited read that
+reaches 2 MiB rejects the entire provider generation and uses exact fallback.
+Each decoded chunk must contain exactly one record for every requested ID and no
+extra, missing, duplicate, zero, or negative ID. The decoder rejects duplicate
+JSON object keys before map conversion, and each record's embedded `UserID` must
+equal its decoded object key and one requested ID. Every `TodayActualCost` and
+`TotalActualCost` must be finite and non-negative; optional `TotalTokens` must be
+non-negative. Chunk results must remain disjoint when combined. Any violation
+rejects the provider-wide current-stats generation.
 
 The trend capability publishes no requested-ID-filtered map. Its validated raw
 rows remain provider-wide in the immutable segment, and authorization filtering
-happens only on a reader. For a today request, raw trend coverage is the
-`today_hour` user set. For 7d and 30d, it is the user union of the respective
-history segment and `today_hour`. If any currently authorized positive Relay ID
-is absent from the provider-wide current-stats value or the required raw trend
-coverage set, the request uses PR #192's exact scope-origin path. It never
-inserts an empty trend or zero stats record for a missing authorized ID.
+happens only on a reader. The complete directory roster and current-stats keys
+must be the same positive unique ID set. The current-stats envelope records that
+roster's count and deterministic digest so a reader can validate the equality.
+If a currently authorized Relay ID is absent from this complete
+directory/current-stats roster, the request uses PR #192's exact scope-origin
+path and never synthesizes a stats record.
+
+A complete, non-truncated provider-wide trend result is sparse usage data, not
+an identity roster. Absence of a directory/current-stats user from one trend
+segment, or from every segment in a standard window, means that user's
+contribution for the absent source interval is zero. It does not trigger
+fallback and does not require a synthetic trend row. This zero interpretation
+is allowed only after provider-wide response, point, ordering, duplicate,
+coverage, and truncation validation succeeds.
 
 ## Redis Contract
 
@@ -312,7 +334,8 @@ tokens from the validated `TeamUserUsageStats` facts. `TotalActualCost` is not a
 lifetime value under the current upstream batch endpoint. `RangeActualCost` and
 `RangeTotalTokens` are not serialized into this shared value. Timezone-specific
 selected-window range totals come from the three trend segments, not from
-duplicating current stats per timezone.
+duplicating current stats per timezone. Its roster count and digest prove that
+its key set exactly matches the complete directory ID roster.
 
 Trend values contain only provider/version metadata, timezone digest, anchor,
 segment class, exact requested coverage, source generation time, validated
@@ -385,10 +408,11 @@ prewarmed facts:
 4. require the split-safety guard to pass before any segmented Redis read;
 5. read and validate that provider/version/timezone/anchor manifest;
 6. read the current-stats value and required trend segments;
-7. require every currently authorized Relay ID to exist in current stats and
-   the required raw trend coverage set;
+7. require every currently authorized Relay ID to exist in the validated
+   complete directory/current-stats roster;
 8. intersect all provider-wide facts with the currently authorized Relay IDs;
-9. compose source labels without timezone conversion; and
+9. treat an absent row in a complete, non-truncated trend source as zero and
+   compose present source labels without timezone conversion; and
 10. project the existing Summary, Trend, Members, Organization, or compatibility
    Overview DTO, including its existing scope-version race check.
 
@@ -438,8 +462,8 @@ The request uses PR #192's exact scope-origin path for all of these cases:
 - either required historical segment is missing, invalid, hard-expired,
   truncated, over limit, or has mismatched coverage;
 - current stats or the provider/version/anchor manifest cannot be trusted;
-- a currently authorized Relay ID is absent from current stats or required raw
-  provider-wide trend coverage;
+- a currently authorized Relay ID is absent from the validated complete
+  directory/current-stats roster;
 - the source-label composition or unique-user union fails validation;
 - Redis read, write, pool, lease, decode, or timeout behavior fails;
 - Relay fails during the partial-today fetch; or
@@ -519,7 +543,9 @@ completed prewarm result.
 The provider-wide source path retains two independent call-count reductions from
 the rejected candidate:
 
-- request Relay admin users with `page_size=1000`;
+- request Relay admin users with `page_size=1000`,
+  `include_subscriptions=false`, `sort_by=id`, and `sort_order=asc` on every
+  page;
 - request batch current usage stats in chunks of at most 500 Relay user IDs.
 
 The directory loop exhausts and validates authoritative pagination before it
@@ -615,25 +641,47 @@ decoded results but are not counted as stored Redis values. The shared current
 stats value and manifests are not fetched by these 20 calls and are not inferred
 from trend response sizes.
 
-The same probe performs a deterministic no-extra-HTTP structural sizing test.
-It serializes one shared current-stats envelope containing exactly 4,999
-synthetic rows, using maximum-width positive int64 IDs, maximum-width finite
-non-negative JSON costs, and present `math.MaxInt64` token values. It also
-serializes four manifest envelopes using the maximum admitted widths: 19-digit
-provider/version values, a 255-byte timezone name, 64-character digests and
-generation IDs, 512-byte Redis key references, RFC3339Nano timestamps, and
-maximum-width byte/point/user counters. All identities are synthetic.
+The same probe performs deterministic no-extra-HTTP source-body and structural
+sizing tests. It serializes:
 
-The candidate structural caps become implementation constants only if the
-synthetic current-stats envelope is strictly smaller than 2 MiB and every
-synthetic manifest is strictly smaller than 64 KiB. Reaching either cap fails
-the POC and stops implementation; the POC does not raise the limits. A complete
-generation size counts the shared current-stats value once per provider, not
-once per timezone, plus one manifest per timezone and all 12 stored trend
-segments. Direct comparison responses are excluded. Consequently, when every
-gate passes, the strict structural generation bound is less than 66.25 MiB:
-less than 64 MiB of trend segments, one shared value below 2 MiB, and four
-manifests below 64 KiB each.
+1. one directory page envelope with exactly 1,000 strictly ascending,
+   maximum-width positive int64 IDs, authoritative `page`, `page_size=1000`,
+   `pages=5`, and `total=4999` metadata, no subscriptions, every other string
+   field exposed by the current no-subscription response filled to 1,024 bytes,
+   and maximum-width RFC3339Nano timestamps;
+2. one stats chunk envelope with exactly 500 entries whose object keys and
+   embedded IDs are distinct maximum-width positive int64 values, with every
+   numeric stats field present at its maximum finite non-negative JSON width and
+   every optional token field present at `math.MaxInt64`;
+3. one shared current-stats Redis envelope containing exactly 4,999 synthetic
+   rows with the same maximum-width IDs, costs, and token values plus its roster
+   count and digest; and
+4. four manifest envelopes using the maximum admitted widths: 19-digit
+   provider/version values, a 255-byte timezone name, 64-character digests and
+   generation IDs, 512-byte Redis key references, RFC3339Nano timestamps, and
+   maximum-width byte/point/user counters.
+
+All identities and string contents are synthetic. These fixtures perform no
+HTTP request and do not change the exact 20-GET count.
+
+The candidate source-body and structural caps become implementation constants
+only if the synthetic directory page is strictly smaller than 16 MiB, the
+synthetic stats chunk is strictly smaller than 2 MiB, the synthetic
+current-stats envelope is strictly smaller than 2 MiB, and every synthetic
+manifest is strictly smaller than 64 KiB. A fixture that reaches its candidate
+cap fails the POC and stops implementation; the POC does not raise a limit or
+derive a different number. Passing the gate locks these exact pre-decode runtime
+body constants:
+
+- directory page body: `< 16 MiB`;
+- one at-most-500-ID stats chunk body: `< 2 MiB`.
+
+A complete Redis generation size counts the shared current-stats value once per
+provider, not once per timezone, plus one manifest per timezone and all 12
+stored trend segments. Direct comparison responses and transient directory and
+stats HTTP bodies are excluded. Consequently, when every gate passes, the
+strict Redis generation bound is less than 66.25 MiB: less than 64 MiB of trend
+segments, one shared value below 2 MiB, and four manifests below 64 KiB each.
 
 Mandatory hard gates are:
 
@@ -648,6 +696,8 @@ Mandatory hard gates are:
 | Each stored trend segment | `< 8 MiB` |
 | Three trend segments for one timezone | `< 16 MiB` |
 | All 12 timezone trend segments | `< 64 MiB` |
+| One synthetic directory page body | `< 16 MiB` |
+| One synthetic 500-ID stats chunk body | `< 2 MiB` |
 | One synthetic shared current-stats value | `< 2 MiB` |
 | Each synthetic manifest | `< 64 KiB` |
 | Peak probe RSS | `< 192 MiB` |
@@ -701,13 +751,19 @@ identities only. Required tests cover:
 - raw provider-wide trend rows and bytes/points/users/completeness metadata with
   no requested-ID filtering before Redis publication;
 - directory `page_size=1000`, complete and consistent pagination, positive
-  unique IDs, and the strict provider-directory `< 5000` bound;
+  ascending unique IDs, fixed no-subscription/id-sort query, and the strict
+  provider-directory `< 5000` bound;
 - stats chunks no larger than 500 with exact requested-ID coverage, no
   extra/missing/duplicate records, and finite non-negative fields;
-- exact fallback rather than zero synthesis when current authorization is not
-  covered by current stats or the required raw trend union;
-- deterministic no-HTTP 4,999-row current-stats and maximum-width manifest
-  sizing, with one shared current-stats value counted per provider;
+- exact fallback when a currently authorized ID is absent from the complete
+  directory/current-stats roster;
+- zero contribution, without fallback or a synthetic row, when a validated
+  complete and non-truncated trend result omits a roster ID;
+- directory and stats hard body limits applied before JSON decode, including
+  exact-at-limit and over-limit rejection;
+- deterministic no-HTTP maximum-width directory page, stats chunk, 4,999-row
+  current-stats, and manifest sizing, with one shared current-stats value counted
+  per provider;
 - feature-disabled staging Redis benchmarking of synthetic maximum-safe values
   before timeout constants are selected or staging is enabled;
 - global moving-source concurrency no larger than two; and
