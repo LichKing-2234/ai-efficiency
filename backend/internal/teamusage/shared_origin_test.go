@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"sync"
@@ -385,6 +386,63 @@ func TestPrewarmFallbackScopeVersionRaceDiscardsProjectionAndUsesExactOrigin(t *
 	}
 	if len(provider.summaryRequestBatches) == 0 || provider.trendCalls == 0 {
 		t.Fatalf("scope-race fallback source calls = stats %d trend %d, want complete exact origin", len(provider.summaryRequestBatches), provider.trendCalls)
+	}
+}
+
+func TestPrewarmFallbackFinalRepresentativeLossReturnsForbiddenWithoutStaleSource(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	client := testdb.Open(t)
+	providerRow := createPrimaryRelayProvider(t, client)
+	authorized, provider := membersTestData(1)
+	authorized.Version = "scope-v1"
+	revoked := *authorized
+	revoked.IsRepresentative = false
+	resolver := &sequenceScopeResolver{scopes: []*representativescope.Scope{authorized, &revoked, &revoked}}
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
+	}, now, []int64{10001})
+	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
+		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
+	})
+	service := newUncachedServiceForTest(client, resolver, fakeProviderResolver{provider: provider}, nil)
+	service.prewarmReader = reader
+	service.originCache, _ = testOriginCache(t, time.Now, "representative-loss-token")
+
+	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
+	var forbidden *ForbiddenError
+	if response != nil || !errors.As(err, &forbidden) || forbidden.Reason != ErrNotRepresentative.Error() {
+		t.Fatalf("Summary(representative lost) = %#v/%v, want ForbiddenError(%q)", response, err, ErrNotRepresentative)
+	}
+	if len(provider.summaryRequestBatches) != 0 || provider.trendCalls != 0 {
+		t.Fatalf("representative-loss stale fallback calls = stats %d trend %d, want zero", len(provider.summaryRequestBatches), provider.trendCalls)
+	}
+}
+
+func TestPrewarmFallbackFinalProviderResolutionFailureReturnsErrorWithoutStaleSource(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	client := testdb.Open(t)
+	providerRow := createPrimaryRelayProvider(t, client)
+	scope, provider := membersTestData(1)
+	store := newRecordingPrewarmStore()
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
+	}, now, []int64{10001})
+	store.getAfter = func(string) { _ = client.Close() }
+	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
+		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
+	})
+	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	service.prewarmReader = reader
+	service.originCache, _ = testOriginCache(t, time.Now, "provider-reresolution-token")
+
+	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
+	if response != nil || err == nil {
+		t.Fatalf("Summary(provider re-resolution failed) = %#v/%v, want hard error", response, err)
+	}
+	if len(provider.summaryRequestBatches) != 0 || provider.trendCalls != 0 {
+		t.Fatalf("provider-resolution stale fallback calls = stats %d trend %d, want zero", len(provider.summaryRequestBatches), provider.trendCalls)
 	}
 }
 

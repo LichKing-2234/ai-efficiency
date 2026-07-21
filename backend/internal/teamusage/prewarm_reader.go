@@ -196,10 +196,9 @@ func (r *PrewarmReader) recoverToday(
 	identity PrewarmCacheIdentity,
 	result *PrewarmCacheResult,
 ) (today PrewarmTrendSegment, err error) {
-	leaseKey := r.cache.LeaseKey(
-		"segment", strconv.Itoa(identity.ProviderID), strconv.FormatInt(identity.ProviderVersion, 10),
-		prewarmTimezoneDigest(identity.Timezone), identity.AnchorDate, string(SegmentTodayHour),
-	)
+	leaseKey := prewarmSegmentLeaseKey(r.cache, ProviderBinding{
+		ProviderID: identity.ProviderID, ProviderVersion: identity.ProviderVersion, Provider: request.Provider,
+	}, identity.Timezone, identity.AnchorDate, prewarmMovingRefreshClass)
 	token := r.newToken()
 	acquired, err := r.cache.TryAcquireLease(ctx, leaseKey, token, prewarmWorkerLeaseTTL)
 	if err != nil {

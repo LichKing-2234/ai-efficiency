@@ -542,6 +542,18 @@ git add backend/internal/teamusage
 git commit -m "perf(teamusage): read authorized prewarmed origins"
 ```
 
+**Formal review correction evidence (2026-07-21):** Final representative-scope
+and provider-config re-resolution errors now abort the prewarmed projection and
+force a fresh request resolution without executing the stale request's exact
+fallback. Request partial-today recovery and lifecycle moving work now share one
+`moving` segment-lease dimension and helper, so an owned lifecycle lease sends the
+request directly to the complete exact fallback without a concurrent source call.
+Explicit exact-versus-prewarm coverage now compares serialized Summary, Trend,
+Members, Organization, and Overview responses, Members and Organization cursor
+signatures, miss/fresh status, and all four response-cache keys. The required
+focused command passed in `3.648s`, full Team Usage passed in `19.077s`, race
+passed in `23.387s`, and `go vet ./...` plus `git diff --check` exited zero.
+
 ---
 
 ### Task 7: Wire Disabled Configuration, Runtime, And Observability

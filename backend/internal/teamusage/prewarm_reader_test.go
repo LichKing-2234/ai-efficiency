@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/testdb"
 )
 
 func TestPrewarmReaderFullHitFiltersAuthorizedRosterAndUsesSparseZero(t *testing.T) {
@@ -230,6 +232,62 @@ func TestPrewarmPartialTodayFlightComposesEachAuthorizedWaiterIndependently(t *t
 	}
 	if !seen[101] || !seen[102] || provider.trendCalls.Load() != 1 {
 		t.Fatalf("authorized waiter projections/source calls = %#v/%d, want distinct 101+102 with one flight", seen, provider.trendCalls.Load())
+	}
+}
+
+func TestPrewarmPartialTodayLifecycleMovingLeaseSelectsExactFallbackWithoutConcurrentSource(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	client := testdb.Open(t)
+	providerRow := createPrimaryRelayProvider(t, client)
+	scope, exactProvider := membersTestData(1)
+	rangeCost, rangeTokens := 9.0, int64(90)
+	exactProvider.summaryStats[10001] = relay.TeamUserUsageStats{
+		UserID: 10001, TodayActualCost: 3, TotalActualCost: 30, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
+	}
+	exactProvider.trendPoints[10001] = []relay.UsageTrendPoint{{Date: "2026-07-15", ActualCost: 9, TotalTokens: &rangeTokens}}
+	provider := &prewarmReaderProvider{
+		fakeRelayProvider: exactProvider,
+		trendResult: relay.ProviderWideTrendResult{
+			Coverage:      relay.TeamMemberTrendParams{StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC"},
+			Points:        []relay.ProviderWideTrendPoint{{UserID: 10001, Date: "2026-07-21 08:00", ActualCost: 2, TotalTokens: int64Ptr(20)}},
+			ResponseBytes: 64, PointCount: 1, UniqueUserCount: 1, Complete: true,
+		},
+	}
+	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
+	identity := PrewarmCacheIdentity{
+		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
+	}
+	manifest := seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{10001})
+	server.Del(manifest.TodayHour.Key)
+	lifecycleLeaseKey := cache.LeaseKey(
+		"segment", strconv.Itoa(identity.ProviderID), strconv.FormatInt(identity.ProviderVersion, 10),
+		prewarmTimezoneDigest(identity.Timezone), identity.AnchorDate, "moving",
+	)
+	lifecycleToken := strings.Repeat("f", 64)
+	acquired, err := cache.TryAcquireLease(context.Background(), lifecycleLeaseKey, lifecycleToken, prewarmWorkerLeaseTTL)
+	if err != nil || !acquired {
+		t.Fatalf("TryAcquireLease(lifecycle moving) = %v/%v", acquired, err)
+	}
+	limiter := &readerSourceLimiter{}
+	reader := mustPrewarmReader(t, cache, limiter, PrewarmReaderOptions{
+		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, NewToken: func() string { return strings.Repeat("e", 64) },
+	})
+	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	service.prewarmReader = reader
+	service.originCache, _ = testOriginCache(t, time.Now, "moving-lease-fallback-token")
+
+	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if response.Summary.RangeActualCost == nil || *response.Summary.RangeActualCost != 9 {
+		t.Fatalf("moving-lease fallback range = %#v, want exact 9", response.Summary.RangeActualCost)
+	}
+	if limiter.calls.Load() != 0 || provider.trendCalls.Load() != 0 {
+		t.Fatalf("moving-lease concurrent partial source calls = %d/%d, want zero", limiter.calls.Load(), provider.trendCalls.Load())
+	}
+	if len(exactProvider.summaryRequestBatches) == 0 || exactProvider.trendCalls == 0 {
+		t.Fatalf("moving-lease exact fallback calls = stats %d trend %d, want complete exact origin", len(exactProvider.summaryRequestBatches), exactProvider.trendCalls)
 	}
 }
 

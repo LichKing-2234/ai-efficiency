@@ -29,6 +29,7 @@ const (
 	prewarmHistoricalJitterMax     = 30 * time.Minute
 	prewarmSourceSlotCount         = 2
 	prewarmSourceSlotPoll          = 10 * time.Millisecond
+	prewarmMovingRefreshClass      = "moving"
 )
 
 var errPrewarmLeaseLost = errors.New("team usage prewarm lease ownership was lost")
@@ -467,7 +468,7 @@ func (p *Prewarmer) runMovingLane(
 		previous.History6dStatus == PrewarmValueMissing || previous.History6dStatus == PrewarmValueHardExpired {
 		return nil
 	}
-	leased, err := p.fetchLeasedSegment(ctx, binding, lane.timezone, lane.anchorDate, SegmentTodayHour, "moving")
+	leased, err := p.fetchLeasedSegment(ctx, binding, lane.timezone, lane.anchorDate, SegmentTodayHour, prewarmMovingRefreshClass)
 	if errors.Is(err, errPrewarmLeaseBusy) {
 		return nil
 	}
@@ -653,7 +654,7 @@ func (p *Prewarmer) runRecoveryLane(
 	for index, class := range classes {
 		refreshClass := string(class)
 		if class == SegmentTodayHour {
-			refreshClass = "moving"
+			refreshClass = prewarmMovingRefreshClass
 		}
 		leased, err := p.fetchLeasedSegment(ctx, binding, lane.timezone, lane.anchorDate, class, refreshClass)
 		if err != nil {
@@ -921,7 +922,7 @@ func (p *Prewarmer) fetchHistoricalOrTodayClass(
 ) (leasedPrewarmReference, error) {
 	refreshClass := string(class)
 	if class == SegmentTodayHour {
-		refreshClass = "moving"
+		refreshClass = prewarmMovingRefreshClass
 	}
 	return p.fetchLeasedSegment(ctx, binding, timezone, anchorDate, class, refreshClass)
 }
@@ -1082,9 +1083,13 @@ func requirePrewarmCoordinatorOwned(ctx context.Context, cache *PrewarmCache) er
 }
 
 func (p *Prewarmer) segmentLeaseKey(binding ProviderBinding, timezone, anchorDate, class string) string {
-	return p.cache.LeaseKey(
+	return prewarmSegmentLeaseKey(p.cache, binding, timezone, anchorDate, class)
+}
+
+func prewarmSegmentLeaseKey(cache *PrewarmCache, binding ProviderBinding, timezone, anchorDate, refreshClass string) string {
+	return cache.LeaseKey(
 		"segment", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10),
-		prewarmTimezoneDigest(timezone), anchorDate, class,
+		prewarmTimezoneDigest(timezone), anchorDate, refreshClass,
 	)
 }
 

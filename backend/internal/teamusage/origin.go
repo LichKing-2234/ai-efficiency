@@ -44,15 +44,19 @@ func (s *Service) loadPrewarmFirstScopeOrigin(ctx context.Context, request *spli
 	}
 	if readErr == nil && origin != nil {
 		currentScope, scopeErr := s.requireRepresentativeScope(ctx, request.actorUserID)
-		currentProvider, providerErr := s.resolvePrimaryProviderConfig(ctx)
-		if scopeErr == nil && providerErr == nil {
-			if currentScope.Version != request.scope.Version || currentProvider.ID != request.providerConfig.ID ||
-				currentProvider.ConfigurationVersion != request.providerConfig.ConfigurationVersion {
-				return nil, true, errPrewarmAuthorizationChanged
-			}
-			origin.subjects = subjects
-			return origin, true, nil
+		if scopeErr != nil {
+			return nil, true, fmt.Errorf("%w: re-resolve representative scope: %w", errPrewarmAuthorizationChanged, scopeErr)
 		}
+		currentProvider, providerErr := s.resolvePrimaryProviderConfig(ctx)
+		if providerErr != nil {
+			return nil, true, fmt.Errorf("%w: re-resolve primary provider configuration: %w", errPrewarmAuthorizationChanged, providerErr)
+		}
+		if currentScope.Version != request.scope.Version || currentProvider.ID != request.providerConfig.ID ||
+			currentProvider.ConfigurationVersion != request.providerConfig.ConfigurationVersion {
+			return nil, true, errPrewarmAuthorizationChanged
+		}
+		origin.subjects = subjects
+		return origin, true, nil
 	}
 
 	if len(overviewSubjects) > s.fullScopeCap {
