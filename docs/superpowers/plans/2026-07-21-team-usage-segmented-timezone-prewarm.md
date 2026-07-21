@@ -34,7 +34,11 @@ review corrections for timezone-isolated moving preflight, an independent
 provider-wide rollover recovery cycle, and strict multi-lease claim boundary
 coverage pass focused, repeated, race, full-package, readcache, backend compile,
 vet, and diff checks. The implementation is committed in `20677980` and awaits
-same-reviewer formal re-review. Tasks 6-9 have not started.
+same-reviewer formal re-review. Task 6 authorized-reader integration is complete.
+Task 7 disabled runtime, configuration, lifecycle, Redis transport, and bounded
+telemetry wiring passed focused, full-backend, race, vet, build, compose-config,
+and diff verification and is committed in `90943307`. Tasks 8-9 have not started;
+staging and production remain disabled and unchanged.
 
 ## Task 1 Gate Evidence
 
@@ -668,12 +672,14 @@ go build ./...
   emitted non-fatal `LC_DYSYMTAB` warnings for three test binaries, all of which
   subsequently passed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend deploy
 git commit -m "perf(backend): wire segmented Team Usage prewarm"
 ```
+
+  Committed as `90943307f9a323b57a65a4dc92ed3903af9e198f` on 2026-07-21.
 
 ---
 
