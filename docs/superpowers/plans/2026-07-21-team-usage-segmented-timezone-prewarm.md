@@ -535,7 +535,7 @@ go test ./internal/teamusage -count=1
 go test -race ./internal/teamusage -count=1
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/internal/teamusage
