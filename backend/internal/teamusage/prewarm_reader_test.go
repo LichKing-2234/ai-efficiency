@@ -49,6 +49,46 @@ func TestPrewarmReaderFullHitFiltersAuthorizedRosterAndUsesSparseZero(t *testing
 	}
 }
 
+func TestPrewarmReaderMetricsUseClosedFallbackReasons(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	metrics := &recordingPrewarmRequestMetrics{}
+	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
+		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
+	})
+	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
+
+	requests := []struct {
+		request PrewarmReadRequest
+		want    prewarmRequestMetric
+	}{
+		{
+			request: PrewarmReadRequest{Params: prewarmReader7dParams()},
+			want:    prewarmRequestMetric{timezone: "UTC", outcome: "fallback", reason: "invalid_request"},
+		},
+		{
+			request: PrewarmReadRequest{
+				ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1", Provider: provider,
+				Params: OverviewParams{StartDate: "2026-07-01", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC"},
+			},
+			want: prewarmRequestMetric{timezone: "UTC", outcome: "ineligible", reason: "ineligible"},
+		},
+		{
+			request: PrewarmReadRequest{
+				ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1", Provider: provider,
+				Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101},
+			},
+			want: prewarmRequestMetric{timezone: "UTC", outcome: "miss", reason: "cache_miss"},
+		},
+	}
+	for _, test := range requests {
+		_, _, _ = reader.ReadAuthorizedOrigin(context.Background(), test.request)
+	}
+	if !reflect.DeepEqual(metrics.requests, []prewarmRequestMetric{requests[0].want, requests[1].want, requests[2].want}) {
+		t.Fatalf("request metrics = %#v, want closed reasons %#v", metrics.requests, []prewarmRequestMetric{requests[0].want, requests[1].want, requests[2].want})
+	}
+}
+
 func TestPrewarmReaderAuthorizedRosterAbsenceAndEligibilityFailuresSelectFallback(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	store := newRecordingPrewarmStore()
@@ -98,10 +138,12 @@ func TestPrewarmPartialTodayFetchesOnlyTodayThroughSharedLimiterAndPublishes(t *
 	manifest := seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101})
 	server.Del(manifest.TodayHour.Key)
 	limiter := &readerSourceLimiter{}
+	metrics := &recordingPrewarmRequestMetrics{}
 	reader := mustPrewarmReader(t, cache, limiter, PrewarmReaderOptions{
 		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
 		NewToken:        func() string { return strings.Repeat("a", 64) },
 		NewGenerationID: func() string { return strings.Repeat("b", 64) },
+		Metrics:         metrics,
 	})
 	provider := &prewarmReaderProvider{
 		fakeRelayProvider: &fakeRelayProvider{},
@@ -122,6 +164,11 @@ func TestPrewarmPartialTodayFetchesOnlyTodayThroughSharedLimiterAndPublishes(t *
 	}
 	if limiter.calls.Load() != 1 || provider.trendCalls.Load() != 1 {
 		t.Fatalf("partial source calls = limiter %d/provider %d, want one today call", limiter.calls.Load(), provider.trendCalls.Load())
+	}
+	if !reflect.DeepEqual(metrics.sources, []prewarmSourceMetric{{
+		class: "today_hour", timezone: "UTC", outcome: "success", bytes: 64, points: 1, users: 1,
+	}}) {
+		t.Fatalf("partial source metrics = %#v, want bounded today source evidence", metrics.sources)
 	}
 	if got := provider.params(); len(got) != 1 || got[0] != (relay.TeamMemberTrendParams{
 		StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC",
@@ -361,6 +408,38 @@ func seedAuthorizedPrewarmManifest(
 type readerSourceLimiter struct {
 	calls atomic.Int32
 }
+
+type prewarmRequestMetric struct {
+	timezone string
+	outcome  string
+	reason   string
+}
+
+type prewarmSourceMetric struct {
+	class    string
+	timezone string
+	outcome  string
+	bytes    int
+	points   int
+	users    int
+}
+
+type recordingPrewarmRequestMetrics struct {
+	requests []prewarmRequestMetric
+	sources  []prewarmSourceMetric
+}
+
+func (*recordingPrewarmRequestMetrics) RecordCycle(string, string, string, time.Duration) {}
+func (m *recordingPrewarmRequestMetrics) RecordSource(class, timezone, outcome string, _ time.Duration, bytes, points, users int) {
+	m.sources = append(m.sources, prewarmSourceMetric{
+		class: class, timezone: timezone, outcome: outcome, bytes: bytes, points: points, users: users,
+	})
+}
+func (*recordingPrewarmRequestMetrics) RecordRedis(string, string, time.Duration, int) {}
+func (m *recordingPrewarmRequestMetrics) RecordRequest(timezone, outcome, reason string) {
+	m.requests = append(m.requests, prewarmRequestMetric{timezone: timezone, outcome: outcome, reason: reason})
+}
+func (*recordingPrewarmRequestMetrics) SetLastSuccess(string, string, time.Time) {}
 
 func (l *readerSourceLimiter) Do(ctx context.Context, call func(context.Context) error) error {
 	l.calls.Add(1)

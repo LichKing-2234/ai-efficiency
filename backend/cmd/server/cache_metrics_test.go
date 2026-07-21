@@ -68,3 +68,32 @@ func TestProductionCacheMetricsBindStablePrivacySafeNames(t *testing.T) {
 		}
 	}
 }
+
+func TestProductionCacheMetricsConstructTeamUsagePrewarmMetricsOnlyOnDemand(t *testing.T) {
+	metrics := telemetry.NewMetrics("test-release")
+	cacheMetrics := newProductionCacheMetrics(metrics)
+	before, err := metrics.Gatherer().Gather()
+	if err != nil {
+		t.Fatalf("Gather() before prewarm recorder error = %v", err)
+	}
+	for _, family := range before {
+		if family.GetName() == "ai_efficiency_team_usage_prewarm_cycle_total" {
+			t.Fatal("prewarm metrics constructed while feature path is disabled")
+		}
+	}
+
+	recorder, err := cacheMetrics.teamUsagePrewarm([]string{"UTC"})
+	if err != nil || recorder == nil {
+		t.Fatalf("teamUsagePrewarm() recorder=%v error=%v", recorder, err)
+	}
+	after, err := metrics.Gatherer().Gather()
+	if err != nil {
+		t.Fatalf("Gather() after prewarm recorder error = %v", err)
+	}
+	for _, family := range after {
+		if family.GetName() == "ai_efficiency_team_usage_prewarm_cycle_total" {
+			return
+		}
+	}
+	t.Fatal("prewarm metrics missing after enabled-path construction")
+}

@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
+	"github.com/ai-efficiency/backend/ent/relayprovider"
 	_ "github.com/ai-efficiency/backend/ent/runtime"
 	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -54,19 +56,187 @@ type authTokenAdapter struct {
 }
 
 func redisClientOptions(cfg config.RedisConfig) *redis.Options {
-	const timeout = 100 * time.Millisecond
 	return &redis.Options{
 		Addr:                  cfg.Addr,
 		Password:              cfg.Password,
 		DB:                    cfg.DB,
 		MaxRetries:            -1,
-		DialTimeout:           timeout,
+		DialTimeout:           time.Second,
 		DialerRetries:         1,
-		ReadTimeout:           timeout,
-		WriteTimeout:          timeout,
-		PoolTimeout:           timeout,
+		ReadTimeout:           2 * time.Second,
+		WriteTimeout:          2 * time.Second,
+		PoolTimeout:           time.Second,
+		MinIdleConns:          4,
 		ContextTimeoutEnabled: true,
 	}
+}
+
+type relayProviderResolver interface {
+	Resolve(context.Context, int) (relay.Provider, error)
+}
+
+type primaryTeamUsagePrewarmResolver struct {
+	client   *ent.Client
+	provider relayProviderResolver
+}
+
+func (r primaryTeamUsagePrewarmResolver) ResolvePrimaryProviderBinding(ctx context.Context) (teamusage.ProviderBinding, error) {
+	if r.client == nil || r.provider == nil {
+		return teamusage.ProviderBinding{}, fmt.Errorf("primary Team Usage prewarm resolver is unavailable")
+	}
+	row, err := r.client.RelayProvider.Query().
+		Where(relayprovider.IsPrimary(true), relayprovider.Enabled(true)).
+		Order(ent.Asc(relayprovider.FieldID)).
+		First(ctx)
+	if err != nil {
+		return teamusage.ProviderBinding{}, fmt.Errorf("resolve primary Relay provider row: %w", err)
+	}
+	provider, err := r.provider.Resolve(ctx, row.ID)
+	if err != nil {
+		return teamusage.ProviderBinding{}, fmt.Errorf("resolve primary Relay provider runtime: %w", err)
+	}
+	return teamusage.ProviderBinding{
+		ProviderID: row.ID, ProviderVersion: row.ConfigurationVersion, Provider: provider,
+	}, nil
+}
+
+type teamUsagePrewarmRuntime struct {
+	reader    *teamusage.PrewarmReader
+	prewarmer *teamusage.Prewarmer
+
+	mu     sync.Mutex
+	cancel context.CancelFunc
+}
+
+func (r *teamUsagePrewarmRuntime) Start(parent context.Context) {
+	if r == nil || r.prewarmer == nil || parent == nil {
+		return
+	}
+	r.mu.Lock()
+	if r.cancel != nil {
+		r.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(parent)
+	r.cancel = cancel
+	r.mu.Unlock()
+	r.prewarmer.Start(ctx)
+}
+
+func (r *teamUsagePrewarmRuntime) Stop() {
+	if r == nil || r.prewarmer == nil {
+		return
+	}
+	r.mu.Lock()
+	cancel := r.cancel
+	r.cancel = nil
+	r.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	r.prewarmer.Stop()
+}
+
+func prewarmReader(runtime *teamUsagePrewarmRuntime) *teamusage.PrewarmReader {
+	if runtime == nil {
+		return nil
+	}
+	return runtime.reader
+}
+
+func initializeTeamUsagePrewarm(
+	ctx context.Context,
+	cfg config.TeamUsagePrewarmConfig,
+	redisNamespace string,
+	store readcache.BatchStore,
+	resolver teamusage.PrimaryProviderBindingResolver,
+	metrics *telemetry.Metrics,
+	logger *zap.Logger,
+) *teamUsagePrewarmRuntime {
+	if !cfg.Enabled {
+		return nil
+	}
+	timezones, err := teamusage.NormalizePrewarmTimezones(cfg.Timezones)
+	if err != nil {
+		logTeamUsagePrewarmDisabled(logger, "invalid_configuration")
+		return nil
+	}
+	if len(timezones) == 0 {
+		return nil
+	}
+	if store == nil {
+		logTeamUsagePrewarmDisabled(logger, "redis_unavailable")
+		return nil
+	}
+	if resolver == nil {
+		logTeamUsagePrewarmDisabled(logger, "provider_unavailable")
+		return nil
+	}
+	binding, err := resolver.ResolvePrimaryProviderBinding(ctx)
+	if err != nil || binding.ProviderID <= 0 || binding.ProviderVersion <= 0 || binding.Provider == nil {
+		logTeamUsagePrewarmDisabled(logger, "provider_unavailable")
+		return nil
+	}
+	if _, ok := binding.Provider.(relay.ProviderWideTeamUsageProvider); !ok {
+		logTeamUsagePrewarmDisabled(logger, "provider_unsupported")
+		return nil
+	}
+	if _, ok := binding.Provider.(relay.ProviderWideTeamTrendProvider); !ok {
+		logTeamUsagePrewarmDisabled(logger, "provider_unsupported")
+		return nil
+	}
+	if metrics == nil {
+		logTeamUsagePrewarmDisabled(logger, "telemetry_unavailable")
+		return nil
+	}
+	prewarmMetrics, err := metrics.TeamUsagePrewarmRecorder(timezones)
+	if err != nil {
+		logTeamUsagePrewarmDisabled(logger, "telemetry_unavailable")
+		return nil
+	}
+	cache, err := teamusage.NewPrewarmCache(store, teamusage.PrewarmCacheOptions{
+		Namespace: redisNamespace, Metrics: prewarmMetrics,
+	})
+	if err != nil {
+		logTeamUsagePrewarmDisabled(logger, "cache_unavailable")
+		return nil
+	}
+	prewarmer, err := teamusage.NewPrewarmer(resolver, cache, teamusage.PrewarmerOptions{
+		Timezones: timezones, Metrics: prewarmMetrics,
+	})
+	if err != nil {
+		logTeamUsagePrewarmDisabled(logger, "lifecycle_unavailable")
+		return nil
+	}
+	reader, err := teamusage.NewPrewarmReader(cache, prewarmer.SourceCallLimiter(), teamusage.PrewarmReaderOptions{
+		Timezones: timezones, Metrics: prewarmMetrics,
+	})
+	if err != nil {
+		logTeamUsagePrewarmDisabled(logger, "reader_unavailable")
+		return nil
+	}
+	return &teamUsagePrewarmRuntime{reader: reader, prewarmer: prewarmer}
+}
+
+func logTeamUsagePrewarmDisabled(logger *zap.Logger, reason string) {
+	if logger == nil {
+		return
+	}
+	logger.Warn("Team Usage prewarm disabled", zap.String("reason", reason))
+}
+
+type prewarmStopper interface {
+	Stop()
+}
+
+func closeTeamUsagePrewarmResources(prewarm prewarmStopper, closeRedis func() error) error {
+	if prewarm != nil {
+		prewarm.Stop()
+	}
+	if closeRedis == nil {
+		return nil
+	}
+	return closeRedis()
 }
 
 func newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *http.Server {
@@ -284,7 +454,12 @@ func main() {
 	}
 
 	redisClient := redis.NewClient(redisClientOptions(cfg.Redis))
-	defer redisClient.Close()
+	var prewarmRuntime *teamUsagePrewarmRuntime
+	defer func() {
+		if err := closeTeamUsagePrewarmResources(prewarmRuntime, redisClient.Close); err != nil {
+			logger.Warn("close Redis client", zap.Error(err))
+		}
+	}()
 	if err := metrics.RegisterRedisPool(redisClient); err != nil {
 		logger.Fatal("register Redis pool metrics", zap.Error(err))
 	}
@@ -362,6 +537,23 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize team usage origin cache", zap.Error(err))
 	}
+	var prewarmStore readcache.BatchStore = redisStore
+	if cfg.TeamUsagePrewarm.Enabled {
+		pingCtx, cancelPing := context.WithTimeout(context.Background(), time.Second)
+		if pingErr := redisClient.Ping(pingCtx).Err(); pingErr != nil {
+			prewarmStore = nil
+		}
+		cancelPing()
+	}
+	prewarmRuntime = initializeTeamUsagePrewarm(
+		context.Background(),
+		cfg.TeamUsagePrewarm,
+		cfg.Redis.Namespace,
+		prewarmStore,
+		primaryTeamUsagePrewarmResolver{client: entClient, provider: providerRuntime},
+		metrics,
+		logger,
+	)
 	repoInventoryCache, repoInventoryRevisions, err := initializeRepoInventory(
 		context.Background(),
 		entClient,
@@ -517,6 +709,7 @@ func main() {
 			RepresentativeScopeCache: representativeScopeCache,
 			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
 			TeamUsageOriginCache:     teamUsageOriginCache,
+			TeamUsagePrewarmReader:   prewarmReader(prewarmRuntime),
 			TeamUsageCursorSecret:    cfg.Encryption.Key,
 			WebhookHTTPClient:        httpClients.webhook,
 			RequestLogger:            logger,
@@ -541,6 +734,9 @@ func main() {
 			logger.Fatal("server error", zap.Error(err))
 		}
 	}()
+	if prewarmRuntime != nil {
+		prewarmRuntime.Start(context.Background())
+	}
 	go func() {
 		logger.Info("starting metrics server", zap.String("addr", cfg.Metrics.ListenAddress))
 		if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -554,6 +750,9 @@ func main() {
 	<-quit
 	logger.Info("shutting down server...")
 	stopDirectoryScheduler()
+	if prewarmRuntime != nil {
+		prewarmRuntime.Stop()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

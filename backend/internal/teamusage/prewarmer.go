@@ -41,6 +41,7 @@ type PrewarmerOptions struct {
 	NewToken        func() string
 	NewGenerationID func() string
 	Sleep           func(context.Context, time.Duration) error
+	Metrics         PrewarmMetrics
 
 	// tick is test-only; runtime uses the fixed 60-second ticker.
 	tick                    <-chan time.Time
@@ -110,6 +111,7 @@ func NewPrewarmer(
 	if options.Sleep == nil {
 		options.Sleep = readcache.Sleep
 	}
+	options.Metrics = prewarmMetricsOrNoop(options.Metrics)
 	if options.sourceCallTimeout <= 0 || options.sourceCallTimeout >= prewarmWorkerLeaseTTL {
 		options.sourceCallTimeout = prewarmSourceCallTimeout
 	}
@@ -230,6 +232,9 @@ func (p *Prewarmer) runTicks(ctx context.Context, ticks <-chan time.Time) {
 
 func (p *Prewarmer) startMoving(ctx context.Context) {
 	if !p.moving.CompareAndSwap(false, true) {
+		for _, timezone := range p.timezones {
+			p.options.Metrics.RecordCycle("moving", timezone, "tick_skipped", 0)
+		}
 		return
 	}
 	if !p.beginLifecycleWorker() {
@@ -391,7 +396,7 @@ func (p *Prewarmer) runNormalMoving(
 		PrewarmLeaseClaim{Key: activeKey, Token: activeToken},
 	)
 
-	current, err := p.source.BuildCurrentStats(workerCtx, binding)
+	current, err := p.buildCurrentStats(workerCtx, binding, "moving")
 	if err != nil {
 		return err
 	}
@@ -452,7 +457,15 @@ func (p *Prewarmer) runMovingLane(
 	binding ProviderBinding,
 	currentRef PrewarmValueReference,
 	lane prewarmTimezoneLane,
-) error {
+) (err error) {
+	startedAt := time.Now()
+	cycleOutcome := "skipped"
+	defer func() {
+		if err != nil {
+			cycleOutcome = prewarmTelemetryOutcome(err)
+		}
+		p.options.Metrics.RecordCycle("moving", lane.timezone, cycleOutcome, time.Since(startedAt))
+	}()
 	if err := p.requireCoordinatorOwned(ctx); err != nil {
 		return err
 	}
@@ -482,7 +495,12 @@ func (p *Prewarmer) runMovingLane(
 		CreatedAt: p.options.Now(), CurrentStats: currentRef,
 		History29d: previous.Manifest.History29d, History6d: previous.Manifest.History6d, TodayHour: leased.reference,
 	}
-	return p.publishIfCurrent(leased.ctx, binding, []PrewarmLeaseClaim{{Key: leased.leaseKey, Token: leased.token}}, manifest)
+	err = p.publishIfCurrent(leased.ctx, binding, []PrewarmLeaseClaim{{Key: leased.leaseKey, Token: leased.token}}, manifest)
+	if err == nil {
+		cycleOutcome = "success"
+		p.options.Metrics.SetLastSuccess("moving", lane.timezone, p.options.Now())
+	}
+	return err
 }
 
 func (p *Prewarmer) runRecovery(ctx context.Context) error {
@@ -542,7 +560,7 @@ func (p *Prewarmer) runRecovery(ctx context.Context) error {
 		return errors.Join(failures...)
 	}
 
-	current, err := p.source.BuildCurrentStats(workerCtx, binding)
+	current, err := p.buildCurrentStats(workerCtx, binding, "recovery")
 	if err != nil {
 		return errors.Join(preflightErr, err)
 	}
@@ -635,7 +653,15 @@ func (p *Prewarmer) runRecoveryLane(
 	binding ProviderBinding,
 	currentRef PrewarmValueReference,
 	lane prewarmTimezoneLane,
-) error {
+) (err error) {
+	startedAt := time.Now()
+	cycleOutcome := "skipped"
+	defer func() {
+		if err != nil {
+			cycleOutcome = prewarmTelemetryOutcome(err)
+		}
+		p.options.Metrics.RecordCycle("recovery", lane.timezone, cycleOutcome, time.Since(startedAt))
+	}()
 	if err := p.requireCoordinatorOwned(ctx); err != nil {
 		return err
 	}
@@ -674,7 +700,12 @@ func (p *Prewarmer) runRecoveryLane(
 		CreatedAt: p.options.Now(), CurrentStats: currentRef,
 		History29d: refs[SegmentHistory29d], History6d: refs[SegmentHistory6d], TodayHour: refs[SegmentTodayHour],
 	}
-	return p.publishIfCurrent(completing.ctx, binding, []PrewarmLeaseClaim{{Key: completing.leaseKey, Token: completing.token}}, manifest)
+	err = p.publishIfCurrent(completing.ctx, binding, []PrewarmLeaseClaim{{Key: completing.leaseKey, Token: completing.token}}, manifest)
+	if err == nil {
+		cycleOutcome = "success"
+		p.options.Metrics.SetLastSuccess("recovery", lane.timezone, p.options.Now())
+	}
+	return err
 }
 
 func (p *Prewarmer) RunHistorical(ctx context.Context, timezone string, anchor time.Time) error {
@@ -728,7 +759,15 @@ func (p *Prewarmer) runHistoricalClass(
 	binding ProviderBinding,
 	identity PrewarmCacheIdentity,
 	class PrewarmSegmentClass,
-) error {
+) (err error) {
+	startedAt := time.Now()
+	cycleOutcome := "skipped"
+	defer func() {
+		if err != nil {
+			cycleOutcome = prewarmTelemetryOutcome(err)
+		}
+		p.options.Metrics.RecordCycle(string(class), identity.Timezone, cycleOutcome, time.Since(startedAt))
+	}()
 	coordinatorKey := p.cache.LeaseKey(
 		"historical-coordinator", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10),
 		p.allowlistDigest, prewarmTimezoneDigest(identity.Timezone), identity.AnchorDate, string(class),
@@ -788,6 +827,8 @@ func (p *Prewarmer) runHistoricalClass(
 		return err
 	}
 	retainCoordinator = true
+	cycleOutcome = "success"
+	p.options.Metrics.SetLastSuccess(string(class), identity.Timezone, p.options.Now())
 	return nil
 }
 
@@ -852,7 +893,7 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 		manifest := newPrewarmManifestCandidate(identity, previous, p.options.Now())
 		if !ok || previous.CurrentStatsStatus == PrewarmValueMissing || previous.CurrentStatsStatus == PrewarmValueHardExpired {
 			if currentRef == nil {
-				current, buildErr := p.source.BuildCurrentStats(workerCtx, binding)
+				current, buildErr := p.buildCurrentStats(workerCtx, binding, "startup")
 				if buildErr != nil {
 					failures = append(failures, fmt.Errorf("startup current stats: %w", buildErr))
 					continue
@@ -901,6 +942,8 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 				case SegmentTodayHour:
 					manifest.TodayHour = previousRef
 				}
+			} else {
+				p.options.Metrics.SetLastSuccess("startup", timezone, p.options.Now())
 			}
 			p.releaseLeasedReference(leased)
 		}
@@ -909,6 +952,8 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 		}
 		if publishErr := p.publishIfCurrent(workerCtx, binding, nil, manifest); publishErr != nil {
 			failures = append(failures, fmt.Errorf("startup publish %s: %w", timezone, publishErr))
+		} else {
+			p.options.Metrics.SetLastSuccess("startup", timezone, p.options.Now())
 		}
 	}
 	return errors.Join(failures...)
@@ -956,7 +1001,16 @@ func (p *Prewarmer) fetchLeasedSegment(
 		p.releaseLease(leaseKey, token)
 		return leasedPrewarmReference{}, err
 	}
+	startedAt := time.Now()
 	segment, err := p.source.FetchSegment(workerCtx, binding, timezone, anchorDate, class)
+	sourceOutcome := "success"
+	if err != nil {
+		sourceOutcome = prewarmTelemetryOutcome(err)
+	}
+	p.options.Metrics.RecordSource(
+		string(class), timezone, sourceOutcome, time.Since(startedAt),
+		int(segment.ResponseBytes), segment.PointCount, segment.UniqueUserCount,
+	)
 	if err != nil {
 		cancel()
 		p.releaseLease(leaseKey, token)
@@ -974,6 +1028,29 @@ func (p *Prewarmer) fetchLeasedSegment(
 		return leasedPrewarmReference{}, err
 	}
 	return leasedPrewarmReference{reference: ref, leaseKey: leaseKey, token: token, ctx: workerCtx, cancel: cancel}, nil
+}
+
+func (p *Prewarmer) buildCurrentStats(ctx context.Context, binding ProviderBinding, class string) (PrewarmCurrentStatsEnvelope, error) {
+	startedAt := time.Now()
+	current, err := p.source.BuildCurrentStats(ctx, binding)
+	outcome := "success"
+	if err != nil {
+		outcome = prewarmTelemetryOutcome(err)
+	}
+	for _, timezone := range p.timezones {
+		p.options.Metrics.RecordSource(
+			class, timezone, outcome, time.Since(startedAt),
+			int(current.ResponseBytes), 0, current.RosterCount,
+		)
+	}
+	return current, err
+}
+
+func prewarmTelemetryOutcome(err error) string {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return "canceled"
+	}
+	return "error"
 }
 
 func (p *Prewarmer) releaseLeasedReference(leased leasedPrewarmReference) {

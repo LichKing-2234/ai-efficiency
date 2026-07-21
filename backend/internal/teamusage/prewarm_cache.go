@@ -116,6 +116,7 @@ type PrewarmCacheOptions struct {
 	LeaseTimeout   time.Duration
 	ReleaseTimeout time.Duration
 	Now            func() time.Time
+	Metrics        PrewarmMetrics
 }
 
 type PrewarmCache struct {
@@ -145,6 +146,7 @@ func NewPrewarmCache(store readcache.BatchStore, options PrewarmCacheOptions) (*
 	if options.Now == nil {
 		options.Now = time.Now
 	}
+	options.Metrics = prewarmMetricsOrNoop(options.Metrics)
 	for name, timeout := range map[string]time.Duration{
 		"read": options.ReadTimeout, "write": options.WriteTimeout,
 		"lease": options.LeaseTimeout, "release": options.ReleaseTimeout,
@@ -159,7 +161,18 @@ func NewPrewarmCache(store readcache.BatchStore, options PrewarmCacheOptions) (*
 func (c *PrewarmCache) Read(
 	ctx context.Context,
 	identity PrewarmCacheIdentity,
-) (*PrewarmCacheResult, bool, error) {
+) (result *PrewarmCacheResult, found bool, err error) {
+	startedAt := time.Now()
+	readBytes := 0
+	defer func() {
+		outcome := "hit"
+		if err != nil {
+			outcome = "error"
+		} else if !found {
+			outcome = "miss"
+		}
+		c.options.Metrics.RecordRedis("manifest_read", outcome, time.Since(startedAt), readBytes)
+	}()
 	manifestKey, err := prewarmManifestKeyForIdentity(c.options.Namespace, prewarmCacheSchemaVersion, identity)
 	if err != nil {
 		return nil, false, err
@@ -173,6 +186,7 @@ func (c *PrewarmCache) Read(
 	if err != nil {
 		return nil, false, fmt.Errorf("read team usage prewarm manifest: %w", err)
 	}
+	readBytes = len(encodedManifest)
 
 	var manifest PrewarmManifest
 	if err := decodePrewarmJSON(encodedManifest, prewarmManifestMaxBytes, &manifest); err != nil {
@@ -303,7 +317,18 @@ func (c *PrewarmCache) PublishManifestWithLeases(
 	ctx context.Context,
 	claims []PrewarmLeaseClaim,
 	manifest PrewarmManifest,
-) (bool, error) {
+) (published bool, err error) {
+	startedAt := time.Now()
+	writtenBytes := 0
+	defer func() {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		} else if !published {
+			outcome = "not_owned"
+		}
+		c.options.Metrics.RecordRedis("manifest_write", outcome, time.Since(startedAt), writtenBytes)
+	}()
 	if len(claims) == 0 || len(claims) > prewarmPublicationLeaseLimit {
 		return false, fmt.Errorf("team usage prewarm publication requires between one and %d lease claims", prewarmPublicationLeaseLimit)
 	}
@@ -336,6 +361,7 @@ func (c *PrewarmCache) PublishManifestWithLeases(
 	if err != nil {
 		return false, fmt.Errorf("encode team usage prewarm manifest: %w", err)
 	}
+	writtenBytes = len(encoded)
 	if _, _, _, complete, err := c.readReferencedValues(ctx, manifest, now, false); err != nil {
 		return false, fmt.Errorf("validate team usage prewarm values before publication: %w", err)
 	} else if !complete {
@@ -349,7 +375,7 @@ func (c *PrewarmCache) PublishManifestWithLeases(
 		return false, err
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.WriteTimeout)
-	published, err := c.store.SetIfLeasesOwned(commandCtx, leaseKeys, tokens, key, encoded, manifestTTL)
+	published, err = c.store.SetIfLeasesOwned(commandCtx, leaseKeys, tokens, key, encoded, manifestTTL)
 	cancel()
 	if err != nil {
 		return false, fmt.Errorf("publish team usage prewarm manifest: %w", err)
@@ -371,7 +397,17 @@ func (c *PrewarmCache) TryAcquireLease(
 	ctx context.Context,
 	key, token string,
 	ttl time.Duration,
-) (bool, error) {
+) (acquired bool, err error) {
+	startedAt := time.Now()
+	defer func() {
+		outcome := "acquired"
+		if err != nil {
+			outcome = "error"
+		} else if !acquired {
+			outcome = "busy"
+		}
+		c.options.Metrics.RecordRedis("lease_acquire", outcome, time.Since(startedAt), 0)
+	}()
 	if err := validatePrewarmLeaseInput(key, token, ttl); err != nil {
 		return false, err
 	}
@@ -381,15 +417,33 @@ func (c *PrewarmCache) TryAcquireLease(
 }
 
 func (c *PrewarmCache) LeaseTTL(ctx context.Context, key string) (time.Duration, error) {
+	startedAt := time.Now()
 	if len(key) == 0 || len(key) > prewarmKeyReferenceMaxBytes {
+		c.options.Metrics.RecordRedis("lease_ttl", "error", time.Since(startedAt), 0)
 		return 0, fmt.Errorf("invalid team usage prewarm lease key")
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.LeaseTimeout)
 	defer cancel()
-	return c.store.LeaseTTL(commandCtx, key)
+	ttl, err := c.store.LeaseTTL(commandCtx, key)
+	outcome := "hit"
+	if err != nil {
+		outcome = "error"
+	}
+	c.options.Metrics.RecordRedis("lease_ttl", outcome, time.Since(startedAt), 0)
+	return ttl, err
 }
 
-func (c *PrewarmCache) ReleaseLease(ctx context.Context, key, token string) (bool, error) {
+func (c *PrewarmCache) ReleaseLease(ctx context.Context, key, token string) (released bool, err error) {
+	startedAt := time.Now()
+	defer func() {
+		outcome := "released"
+		if err != nil {
+			outcome = "error"
+		} else if !released {
+			outcome = "not_owned"
+		}
+		c.options.Metrics.RecordRedis("lease_release", outcome, time.Since(startedAt), 0)
+	}()
 	if err := validatePrewarmLeaseInput(key, token, time.Nanosecond); err != nil {
 		return false, err
 	}
@@ -398,7 +452,15 @@ func (c *PrewarmCache) ReleaseLease(ctx context.Context, key, token string) (boo
 	return c.store.ReleaseLease(commandCtx, key, token)
 }
 
-func (c *PrewarmCache) writeImmutable(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+func (c *PrewarmCache) writeImmutable(ctx context.Context, key string, value []byte, ttl time.Duration) (err error) {
+	startedAt := time.Now()
+	defer func() {
+		outcome := "success"
+		if err != nil {
+			outcome = "error"
+		}
+		c.options.Metrics.RecordRedis("immutable_write", outcome, time.Since(startedAt), len(value))
+	}()
 	digest := sha256.Sum256(value)
 	claimToken := "immutable:" + hex.EncodeToString(digest[:])
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.WriteTimeout)
@@ -455,11 +517,22 @@ func (c *PrewarmCache) readReferencedValues(
 		keys[index] = refs[index].Key
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.ReadTimeout)
+	startedAt := time.Now()
 	values, err := c.store.MGet(commandCtx, keys...)
 	cancel()
 	if err != nil {
+		c.options.Metrics.RecordRedis("generation_read", "error", time.Since(startedAt), 0)
 		return nil, PrewarmSegmentSet{}, statuses, false, fmt.Errorf("read team usage prewarm values: %w", err)
 	}
+	readBytes := 0
+	readOutcome := "hit"
+	for _, value := range values {
+		readBytes += len(value)
+		if value == nil {
+			readOutcome = "miss"
+		}
+	}
+	c.options.Metrics.RecordRedis("generation_read", readOutcome, time.Since(startedAt), readBytes)
 	if len(values) != len(refs) {
 		return nil, PrewarmSegmentSet{}, statuses, false, fmt.Errorf("read team usage prewarm values: got %d results, want %d", len(values), len(refs))
 	}

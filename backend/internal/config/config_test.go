@@ -40,6 +40,37 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadTeamUsagePrewarmDefaultsDisabledWithExactTimezoneList(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.TeamUsagePrewarm.Enabled {
+		t.Fatal("TeamUsagePrewarm.Enabled = true, want disabled by default")
+	}
+	want := []string{"UTC", "Asia/Shanghai", "America/Los_Angeles", "Europe/Berlin"}
+	if !reflect.DeepEqual(cfg.TeamUsagePrewarm.Timezones, want) {
+		t.Fatalf("TeamUsagePrewarm.Timezones = %#v, want %#v", cfg.TeamUsagePrewarm.Timezones, want)
+	}
+}
+
+func TestLoadTeamUsagePrewarmEnvironmentOverrides(t *testing.T) {
+	t.Setenv("AE_TEAM_USAGE_PREWARM_ENABLED", "true")
+	t.Setenv("AE_TEAM_USAGE_PREWARM_TIMEZONES", "UTC,Asia/Shanghai")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.TeamUsagePrewarm.Enabled {
+		t.Fatal("TeamUsagePrewarm.Enabled = false, want environment override")
+	}
+	want := []string{"UTC", "Asia/Shanghai"}
+	if !reflect.DeepEqual(cfg.TeamUsagePrewarm.Timezones, want) {
+		t.Fatalf("TeamUsagePrewarm.Timezones = %#v, want %#v", cfg.TeamUsagePrewarm.Timezones, want)
+	}
+}
+
 func TestLoadMetricsListenAddressFromEnvironment(t *testing.T) {
 	t.Setenv("AE_METRICS_LISTEN_ADDRESS", ":9191")
 	cfg, err := Load("")

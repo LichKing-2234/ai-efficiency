@@ -582,11 +582,18 @@ passed in `23.387s`, and `go vet ./...` plus `git diff --check` exited zero.
 - Produces: `TeamUsagePrewarmConfig{Enabled bool, Timezones []string}` and a lifecycle wired to server shutdown.
 - Preserves: existing 100ms cache command contexts while the shared Redis transport uses one-second dial/pool bounds and at least four idle connections.
 
-- [ ] **Step 1: Write RED configuration, dependency, lifecycle, and metric tests**
+- [x] **Step 1: Write RED configuration, dependency, lifecycle, and metric tests**
 
 Tests must prove disabled default, exact default list, env binding, invalid-list fail-open behavior, no prewarmer when disabled/empty/Redis unavailable/provider unsupported, startup after dependencies without blocking HTTP, graceful stop before Redis close, `MinIdleConns>=4`, one-second dial/pool bounds, two-second Redis transport read/write ceilings for later measured large-value contexts, existing cache 100ms contexts, and preinitialized closed-enum metric labels with no identity or raw-key label.
 
-- [ ] **Step 2: Run RED tests**
+  RED tests added on 2026-07-21 cover configuration defaults and environment
+  binding, fail-open runtime construction, exact limiter sharing, asynchronous
+  lifecycle startup and ordered shutdown, shared Redis transport bounds, optional
+  router injection, and preinitialized privacy-safe closed-enum metrics. Step 2
+  remains unchecked until the exact focused command is run and its failure is
+  captured.
+
+- [x] **Step 2: Run RED tests**
 
 ```bash
 cd backend
@@ -594,7 +601,14 @@ go test ./internal/config ./internal/telemetry ./internal/handler ./cmd/server \
   -run 'TeamUsagePrewarm|RedisClientOptions|CacheMetrics|RouterDependencies' -count=1 -v
 ```
 
-- [ ] **Step 3: Implement disabled-by-default wiring**
+  RED evidence (2026-07-21): the exact command failed as expected. Config tests
+  could not find `Config.TeamUsagePrewarm`; telemetry tests could not find
+  `TeamUsagePrewarmRecorder`; server tests could not find the on-demand metrics
+  factory, runtime initializer, or config type; and handler tests rejected the
+  intended optional reader argument. These failures establish the missing Task
+  7 wiring rather than a fixture or syntax failure.
+
+- [x] **Step 3: Implement disabled-by-default wiring**
 
 Bind `AE_TEAM_USAGE_PREWARM_ENABLED` and comma-separated `AE_TEAM_USAGE_PREWARM_TIMEZONES`. Validate through `NormalizePrewarmTimezones`; invalid optimization config logs a bounded error and constructs no reader/prewarmer instead of terminating the core service. Configure the shared go-redis transport with one-second dial/pool timeouts, `MinIdleConns=4`, and two-second read/write ceilings; existing caches keep their 100ms command contexts, while prewarm read/write contexts remain separately configurable for Task 9 measurement. Pass the reader through `RouterOptions` and `ServiceOptions`. Start the prewarmer after provider runtime/cache construction, retain its cancel function, and stop it before Redis shutdown.
 
@@ -607,7 +621,14 @@ type TeamUsagePrewarmConfig struct {
 
 Defaults are `false` and the four design timezones. Compose examples expose the same values without enabling the feature.
 
-- [ ] **Step 4: Add bounded-cardinality telemetry**
+  Implemented on 2026-07-21. Runtime construction returns before creating the
+  recorder, cache, reader, or prewarmer when disabled, empty, Redis-unavailable,
+  provider-unavailable, provider-unsupported, or invalid. The enabled path uses
+  the configured Redis namespace, passes the exact prewarmer limiter into the
+  reader, starts after the HTTP server goroutine, and stops before Redis close.
+  All compose examples retain `false` as the default.
+
+- [x] **Step 4: Add bounded-cardinality telemetry**
 
 Record cycle/source/Redis durations, sizes, lease/tick outcomes, last-success timestamps, cache outcomes, and request fallback reasons using closed enums. Timezone labels may contain only the validated maximum-four configured values. Background logs contain only operation ID, provider/version, bounded timezone/class/outcome, duration, and counts; user fallbacks retain the request ID.
 
@@ -621,7 +642,14 @@ type PrewarmMetrics interface {
 }
 ```
 
-- [ ] **Step 5: Verify configuration and full backend**
+  Implemented on 2026-07-21 with preinitialized closed enums for cycle, source,
+  Redis, request, fallback, lease/tick, and last-success evidence. Invalid
+  runtime labels are dropped, and timezone series are limited to the normalized
+  maximum-four allowlist. The focused Task 7 command and complete config,
+  telemetry, handler, and server package tests pass; full backend verification
+  remains Step 5.
+
+- [x] **Step 5: Verify configuration and full backend**
 
 ```bash
 cd backend
@@ -632,6 +660,13 @@ go test -race ./internal/relay ./internal/readcache ./internal/teamusage ./inter
 go vet ./...
 go build ./...
 ```
+
+  GREEN evidence (2026-07-21): the exact focused Task 7 command passed; the
+  complete config, telemetry, handler, and server packages passed; `go test
+  ./... -count=1` passed; the required race set passed with no race reports;
+  and `go vet ./...` plus `go build ./...` exited zero. The macOS race linker
+  emitted non-fatal `LC_DYSYMTAB` warnings for three test binaries, all of which
+  subsequently passed.
 
 - [ ] **Step 6: Commit**
 

@@ -2,10 +2,12 @@ package main
 
 import (
 	"github.com/ai-efficiency/backend/internal/readcache"
+	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/telemetry"
 )
 
 type productionCacheMetrics struct {
+	metrics             *telemetry.Metrics
 	personalUsage       readcache.Metrics
 	providerMetadata    readcache.Metrics
 	representativeScope readcache.Metrics
@@ -20,6 +22,7 @@ type productionCacheMetrics struct {
 
 func newProductionCacheMetrics(metrics *telemetry.Metrics) productionCacheMetrics {
 	return productionCacheMetrics{
+		metrics:             metrics,
 		personalUsage:       metrics.CacheRecorder("personal_usage"),
 		providerMetadata:    metrics.CacheRecorder("provider_metadata"),
 		representativeScope: metrics.CacheRecorder("representative_scope"),
@@ -31,6 +34,10 @@ func newProductionCacheMetrics(metrics *telemetry.Metrics) productionCacheMetric
 		teamUsageOrigin:     metrics.CacheRecorder("team_usage_origin"),
 		workItemsCounts:     metrics.CacheRecorder("work_items_counts"),
 	}
+}
+
+func (m productionCacheMetrics) teamUsagePrewarm(timezones []string) (teamusage.PrewarmMetrics, error) {
+	return m.metrics.TeamUsagePrewarmRecorder(timezones)
 }
 
 func (m productionCacheMetrics) recorders() map[string]readcache.Metrics {

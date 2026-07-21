@@ -38,6 +38,7 @@ type PrewarmReaderOptions struct {
 	Now             func() time.Time
 	NewToken        func() string
 	NewGenerationID func() string
+	Metrics         PrewarmMetrics
 }
 
 type PrewarmReader struct {
@@ -46,6 +47,7 @@ type PrewarmReader struct {
 	timezones []string
 	now       func() time.Time
 	newToken  func() string
+	metrics   PrewarmMetrics
 	flights   readcache.FlightGroup[PrewarmTrendSegment]
 }
 
@@ -74,35 +76,57 @@ func NewPrewarmReader(cache *PrewarmCache, limiter SourceCallLimiter, options Pr
 	}
 	return &PrewarmReader{
 		cache: cache, source: source, timezones: timezones, now: options.Now, newToken: options.NewToken,
+		metrics: prewarmMetricsOrNoop(options.Metrics),
 	}, nil
+}
+
+func (r *PrewarmReader) SourceCallLimiter() SourceCallLimiter {
+	if r == nil || r.source == nil {
+		return nil
+	}
+	return r.source.limiter
 }
 
 func (r *PrewarmReader) ReadAuthorizedOrigin(
 	ctx context.Context,
 	request PrewarmReadRequest,
-) (*teamUsageScopeOrigin, PrewarmReadOutcome, error) {
+) (origin *teamUsageScopeOrigin, outcome PrewarmReadOutcome, err error) {
+	fallbackReason := "none"
+	defer func() {
+		if r == nil || r.metrics == nil {
+			return
+		}
+		r.metrics.RecordRequest(request.Params.Timezone, string(outcome), fallbackReason)
+	}()
 	if r == nil || r.cache == nil || r.source == nil {
+		fallbackReason = "invalid_request"
 		return nil, PrewarmReadFallback, fmt.Errorf("team usage prewarm reader is not configured")
 	}
 	if request.ProviderID <= 0 || request.ActorUserID <= 0 || request.ProviderVersion <= 0 ||
 		strings.TrimSpace(request.ScopeVersion) == "" || request.Provider == nil {
+		fallbackReason = "invalid_request"
 		return nil, PrewarmReadFallback, fmt.Errorf("valid authorized team usage prewarm request is required")
 	}
 	if !containsPrewarmTimezone(r.timezones, request.Params.Timezone) {
+		fallbackReason = "ineligible"
 		return nil, PrewarmReadIneligible, nil
 	}
 	window, recognized, err := RecognizePrewarmWindow(request.Params, r.now())
 	if err != nil {
+		fallbackReason = "generation_invalid"
 		return nil, PrewarmReadFallback, err
 	}
 	if !recognized {
+		fallbackReason = "ineligible"
 		return nil, PrewarmReadIneligible, nil
 	}
 	safe, err := SplitSafe(window.Coverage.Timezone, window.AnchorDate)
 	if err != nil {
+		fallbackReason = "generation_invalid"
 		return nil, PrewarmReadFallback, err
 	}
 	if !safe {
+		fallbackReason = "ineligible"
 		return nil, PrewarmReadIneligible, nil
 	}
 	identity := PrewarmCacheIdentity{
@@ -111,29 +135,36 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 	}
 	result, found, err := r.cache.Read(ctx, identity)
 	if err != nil {
+		fallbackReason = "redis_error"
 		return nil, PrewarmReadFallback, err
 	}
 	if !found || result == nil {
+		fallbackReason = "cache_miss"
 		return nil, PrewarmReadMiss, nil
 	}
 	if result.Complete {
 		origin, eligible, composeErr := ComposePrewarmedOrigin(window, *result.CurrentStats, result.Segments, request.AuthorizedRelayUserIDs)
 		if composeErr != nil {
+			fallbackReason = "generation_invalid"
 			return nil, PrewarmReadFallback, composeErr
 		}
 		if !eligible {
+			fallbackReason = "roster_incomplete"
 			return nil, PrewarmReadFallback, nil
 		}
 		return origin, PrewarmReadFullHit, nil
 	}
 	if !prewarmResultCanRecoverToday(result) {
+		fallbackReason = "generation_invalid"
 		return nil, PrewarmReadFallback, nil
 	}
 	rosterEligible, err := prewarmCurrentRosterCoversAuthorized(*result.CurrentStats, request.AuthorizedRelayUserIDs)
 	if err != nil {
+		fallbackReason = "generation_invalid"
 		return nil, PrewarmReadFallback, err
 	}
 	if !rosterEligible {
+		fallbackReason = "roster_incomplete"
 		return nil, PrewarmReadFallback, nil
 	}
 
@@ -145,15 +176,18 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		return r.recoverToday(flightCtx, request, identity, result)
 	})
 	if err != nil {
+		fallbackReason = "source_error"
 		return nil, PrewarmReadFallback, err
 	}
 	segments := result.Segments
 	segments.TodayHour = &today
 	origin, eligible, err := ComposePrewarmedOrigin(window, *result.CurrentStats, segments, request.AuthorizedRelayUserIDs)
 	if err != nil {
+		fallbackReason = "generation_invalid"
 		return nil, PrewarmReadFallback, err
 	}
 	if !eligible {
+		fallbackReason = "roster_incomplete"
 		return nil, PrewarmReadFallback, nil
 	}
 	return origin, PrewarmReadPartialToday, nil
@@ -218,9 +252,18 @@ func (r *PrewarmReader) recoverToday(
 		}
 	}()
 
+	startedAt := time.Now()
 	today, err = r.source.FetchSegment(ctx, ProviderBinding{
 		ProviderID: request.ProviderID, ProviderVersion: request.ProviderVersion, Provider: request.Provider,
 	}, identity.Timezone, identity.AnchorDate, SegmentTodayHour)
+	sourceOutcome := "success"
+	if err != nil {
+		sourceOutcome = prewarmTelemetryOutcome(err)
+	}
+	r.metrics.RecordSource(
+		string(SegmentTodayHour), identity.Timezone, sourceOutcome, time.Since(startedAt),
+		int(today.ResponseBytes), today.PointCount, today.UniqueUserCount,
+	)
 	if err != nil {
 		return PrewarmTrendSegment{}, err
 	}

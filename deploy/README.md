@@ -177,6 +177,15 @@ If you need to override them, append values such as these to `.env` manually:
 - `AE_STATE_DIR`
 - `COMPOSE_PROJECT_NAME`
 
+The compose examples expose the optional segmented Team Usage prewarm settings
+without enabling them:
+
+- `AE_TEAM_USAGE_PREWARM_ENABLED=false`
+- `AE_TEAM_USAGE_PREWARM_TIMEZONES=UTC,Asia/Shanghai,America/Los_Angeles,Europe/Berlin`
+
+Keep the feature disabled until the separate Redis benchmark and staging
+acceptance steps are complete.
+
 ## Health And Status
 
 After startup:

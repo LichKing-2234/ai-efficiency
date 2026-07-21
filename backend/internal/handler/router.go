@@ -40,6 +40,7 @@ type RouterOptions struct {
 	RepresentativeScopeCache *representativescope.Cache
 	TeamUsageSnapshotCache   *teamusage.SnapshotCache
 	TeamUsageOriginCache     *teamusage.OriginCache
+	TeamUsagePrewarmReader   *teamusage.PrewarmReader
 	TeamUsageCursorSecret    string
 	WebhookHTTPClient        *http.Client
 	RequestLogger            *zap.Logger
@@ -354,7 +355,7 @@ func setupRouter(
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
 
-	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageOriginCache, options.TeamUsageCursorSecret)
+	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageOriginCache, options.TeamUsagePrewarmReader, options.TeamUsageCursorSecret)
 	if err != nil {
 		return nil, fmt.Errorf("initialize team usage service: %w", err)
 	}

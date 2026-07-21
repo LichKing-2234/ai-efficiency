@@ -7,16 +7,19 @@ import (
 	"github.com/ai-efficiency/backend/internal/config"
 )
 
-func TestRedisClientOptionsBoundReadCacheLatency(t *testing.T) {
+func TestRedisClientOptionsUseSharedBoundedTransport(t *testing.T) {
 	options := redisClientOptions(config.RedisConfig{Addr: "redis.example:6379", Password: "test-password", DB: 2})
 	if options.Addr != "redis.example:6379" || options.Password != "test-password" || options.DB != 2 {
 		t.Fatalf("Redis identity options = %+v", options)
 	}
-	if options.DialTimeout != 100*time.Millisecond ||
-		options.ReadTimeout != 100*time.Millisecond ||
-		options.WriteTimeout != 100*time.Millisecond ||
-		options.PoolTimeout != 100*time.Millisecond {
-		t.Fatalf("Redis timeout options = dial %s read %s write %s pool %s, want 100ms each", options.DialTimeout, options.ReadTimeout, options.WriteTimeout, options.PoolTimeout)
+	if options.DialTimeout != time.Second || options.PoolTimeout != time.Second {
+		t.Fatalf("Redis dial/pool options = %s/%s, want one second", options.DialTimeout, options.PoolTimeout)
+	}
+	if options.ReadTimeout != 2*time.Second || options.WriteTimeout != 2*time.Second {
+		t.Fatalf("Redis read/write options = %s/%s, want two-second ceilings", options.ReadTimeout, options.WriteTimeout)
+	}
+	if options.MinIdleConns < 4 {
+		t.Fatalf("Redis MinIdleConns = %d, want at least 4", options.MinIdleConns)
 	}
 	if !options.ContextTimeoutEnabled {
 		t.Fatal("ContextTimeoutEnabled = false, want true")

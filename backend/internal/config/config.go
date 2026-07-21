@@ -11,15 +11,16 @@ import (
 )
 
 type Config struct {
-	Server       ServerConfig       `mapstructure:"server"`
-	Metrics      MetricsConfig      `mapstructure:"metrics"`
-	HTTPClient   HTTPClientConfig   `mapstructure:"http_client"`
-	DB           DBConfig           `mapstructure:"db"`
-	Redis        RedisConfig        `mapstructure:"redis"`
-	Auth         AuthConfig         `mapstructure:"auth"`
-	Encryption   EncryptionConfig   `mapstructure:"encryption"`
-	Relay        RelayConfig        `mapstructure:"relay"`
-	VersionCheck VersionCheckConfig `mapstructure:"version_check"`
+	Server           ServerConfig           `mapstructure:"server"`
+	Metrics          MetricsConfig          `mapstructure:"metrics"`
+	HTTPClient       HTTPClientConfig       `mapstructure:"http_client"`
+	DB               DBConfig               `mapstructure:"db"`
+	Redis            RedisConfig            `mapstructure:"redis"`
+	TeamUsagePrewarm TeamUsagePrewarmConfig `mapstructure:"team_usage_prewarm"`
+	Auth             AuthConfig             `mapstructure:"auth"`
+	Encryption       EncryptionConfig       `mapstructure:"encryption"`
+	Relay            RelayConfig            `mapstructure:"relay"`
+	VersionCheck     VersionCheckConfig     `mapstructure:"version_check"`
 }
 
 type MetricsConfig struct {
@@ -68,6 +69,11 @@ type RedisConfig struct {
 	Password  string `mapstructure:"password"`
 	DB        int    `mapstructure:"db"`
 	Namespace string `mapstructure:"namespace"`
+}
+
+type TeamUsagePrewarmConfig struct {
+	Enabled   bool     `mapstructure:"enabled"`
+	Timezones []string `mapstructure:"timezones"`
 }
 
 var redisNamespaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
@@ -131,6 +137,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("redis.addr", "redis:6379")
 	v.SetDefault("redis.db", 0)
 	v.SetDefault("redis.namespace", "ai-efficiency")
+	v.SetDefault("team_usage_prewarm.enabled", false)
+	v.SetDefault("team_usage_prewarm.timezones", []string{"UTC", "Asia/Shanghai", "America/Los_Angeles", "Europe/Berlin"})
 	v.SetDefault("relay.provider", "sub2api")
 	v.SetDefault("relay.model", "claude-sonnet-4-20250514")
 	v.SetDefault("relay.default_group_id", "")
@@ -193,6 +201,8 @@ func Load(path string) (*Config, error) {
 		"redis.password",
 		"redis.db",
 		"redis.namespace",
+		"team_usage_prewarm.enabled",
+		"team_usage_prewarm.timezones",
 		"version_check.enabled",
 		"version_check.release_api_url",
 	} {
