@@ -25,7 +25,8 @@ pending. Task 5 implementation and ledger commits `06338e20` and `014fecef`
 passed their original verification. Formal review corrections for schedule
 coordinators, worker lifetimes, source-slot release, lifecycle state, and
 startup recovery now pass focused, race, full-package, vet, and diff checks;
-the correction commit is pending formal re-review. Tasks 6-9 have not started.
+the corrections are committed in `b1b84ef2` and await formal re-review. Tasks
+6-9 have not started.
 
 ## Task 1 Gate Evidence
 
