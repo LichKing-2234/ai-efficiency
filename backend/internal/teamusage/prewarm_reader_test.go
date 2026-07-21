@@ -48,8 +48,65 @@ func TestPrewarmReaderFullHitFiltersAuthorizedRosterAndUsesSparseZero(t *testing
 		stat.RangeTotalTokens == nil || *stat.RangeTotalTokens != 0 {
 		t.Fatalf("sparse authorized range = %#v/%#v, want complete zero", stat.RangeActualCost, stat.RangeTotalTokens)
 	}
-	if !reflect.DeepEqual(metrics.quantities, []prewarmQuantityMetric{{kind: PrewarmQuantityUnionUsers, timezone: "UTC", value: 2}}) {
+	if !reflect.DeepEqual(metrics.quantities, []prewarmQuantityMetric{{kind: PrewarmQuantityUnionUsers, timezone: "UTC", value: 1}}) {
 		t.Fatalf("composition quantities = %#v", metrics.quantities)
+	}
+}
+
+func TestPrewarmReaderUnionMetricUsesProviderWideTrendBeforeAuthorization(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	identity := testPrewarmIdentity()
+	manifest := seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101, 102, 103})
+	coverage, err := prewarmSegmentCoverage(SegmentHistory6d, identity.AnchorDate, identity.Timezone)
+	if err != nil {
+		t.Fatalf("prewarmSegmentCoverage() error = %v", err)
+	}
+	points := []relay.ProviderWideTrendPoint{
+		{UserID: 101, Date: coverage.StartDate, ActualCost: 1},
+		{UserID: 102, Date: coverage.StartDate, ActualCost: 1},
+		{UserID: 103, Date: coverage.StartDate, ActualCost: 1},
+	}
+	manifest.History6d, err = cache.WriteSegment(context.Background(), PrewarmTrendSegment{
+		SchemaVersion: prewarmCacheSchemaVersion, ProviderID: identity.ProviderID, ProviderVersion: identity.ProviderVersion,
+		TimezoneDigest: prewarmTimezoneDigest(identity.Timezone), GenerationID: strings.Repeat("z", 64), GeneratedAt: now,
+		Timezone: identity.Timezone, AnchorDate: identity.AnchorDate, Class: SegmentHistory6d, Coverage: coverage,
+		Points: points, ResponseBytes: 96, PointCount: len(points), UniqueUserCount: len(points), Complete: true,
+	})
+	if err != nil {
+		t.Fatalf("WriteSegment() error = %v", err)
+	}
+	leaseKey := cache.LeaseKey("union-metric", manifest.History6d.GenerationID)
+	token := strings.Repeat("u", 64)
+	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, token, time.Minute)
+	if err != nil || !acquired {
+		t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
+	}
+	published, err := cache.PublishManifest(context.Background(), leaseKey, token, manifest)
+	if err != nil || !published {
+		t.Fatalf("PublishManifest() = %v, %v", published, err)
+	}
+
+	metrics := &recordingPrewarmRequestMetrics{}
+	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
+		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
+	})
+	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
+	for _, authorized := range [][]int64{{101}, {102}} {
+		origin, outcome, readErr := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
+			ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
+			Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: authorized, Provider: provider,
+		})
+		if readErr != nil || outcome != PrewarmReadFullHit || !reflect.DeepEqual(origin.RelayUserIDs, authorized) {
+			t.Fatalf("ReadAuthorizedOrigin(%v) = %#v/%q/%v", authorized, origin, outcome, readErr)
+		}
+	}
+	want := []prewarmQuantityMetric{
+		{kind: PrewarmQuantityUnionUsers, timezone: "UTC", value: 3},
+		{kind: PrewarmQuantityUnionUsers, timezone: "UTC", value: 3},
+	}
+	if !reflect.DeepEqual(metrics.quantities, want) {
+		t.Fatalf("provider-wide union quantities = %#v, want %#v", metrics.quantities, want)
 	}
 }
 
@@ -517,6 +574,7 @@ type prewarmCacheMetric struct {
 
 type recordingPrewarmRequestMetrics struct {
 	mu          sync.Mutex
+	cycleHook   func(class, timezone, outcome string)
 	cycles      []prewarmCycleMetric
 	requests    []prewarmRequestMetric
 	sources     []prewarmSourceMetric
@@ -528,8 +586,12 @@ type recordingPrewarmRequestMetrics struct {
 
 func (m *recordingPrewarmRequestMetrics) RecordCycle(class, timezone, outcome string, duration time.Duration) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.cycles = append(m.cycles, prewarmCycleMetric{class: class, timezone: timezone, outcome: outcome, duration: duration})
+	hook := m.cycleHook
+	m.mu.Unlock()
+	if hook != nil {
+		hook(class, timezone, outcome)
+	}
 }
 func (m *recordingPrewarmRequestMetrics) RecordSource(class, timezone, outcome string, _ time.Duration, bytes, points, users int) {
 	m.mu.Lock()

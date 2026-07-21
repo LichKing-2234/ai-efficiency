@@ -46,6 +46,17 @@ func paddedJSONBody(t *testing.T, raw string, size int) []byte {
 	return body
 }
 
+func TestProviderSourceRejectionKindsAreClosed(t *testing.T) {
+	sentinel := errors.New("dynamic source detail")
+	err := relay.NewProviderSourceRejection(relay.ProviderSourceRejectionKind("unknown"), sentinel)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("NewProviderSourceRejection() error = %v, want wrapped sentinel", err)
+	}
+	if kind, ok := relay.ProviderSourceRejectionKindOf(err); ok || kind != "" {
+		t.Fatalf("ProviderSourceRejectionKindOf() = %q/%v, want empty/false", kind, ok)
+	}
+}
+
 func TestName(t *testing.T) {
 	p := newTestProvider(t, http.NewServeMux())
 	if p.Name() != "sub2api" {
@@ -978,6 +989,8 @@ func TestProviderWideDirectoryContractRejectsExactUserAndBodyBounds(t *testing.T
 		directory := provider.(relay.ProviderWideTeamUsageProvider)
 		if _, err := directory.GetProviderUserIDs(context.Background()); err == nil {
 			t.Fatal("GetProviderUserIDs() error = nil, want exact-5000 rejection")
+		} else {
+			requireProviderSourceRejectionKind(t, err, relay.ProviderSourceRejectionProviderIDBound)
 		}
 	})
 
@@ -1128,11 +1141,21 @@ func TestProviderWideCurrentStatsContractRejectsRequestAndCoverageViolations(t *
 			statsProvider := provider.(relay.ProviderWideTeamUsageProvider)
 			if _, err := statsProvider.GetProviderCurrentUsageStats(context.Background(), test.ids); err == nil {
 				t.Fatalf("GetProviderCurrentUsageStats() error = nil, want %s rejection", test.name)
+			} else if test.name == "missing record" || test.name == "extra record" || test.name == "embedded ID mismatch" || test.name == "duplicate JSON key" {
+				requireProviderSourceRejectionKind(t, err, relay.ProviderSourceRejectionStatsExactCoverage)
 			}
 			if (test.name == "empty request" || test.name == "non-positive request" || test.name == "duplicate request" || test.name == "501 requested IDs") && calls != 0 {
 				t.Fatalf("HTTP calls = %d, want validation before request", calls)
 			}
 		})
+	}
+}
+
+func requireProviderSourceRejectionKind(t *testing.T, err error, want relay.ProviderSourceRejectionKind) {
+	t.Helper()
+	got, ok := relay.ProviderSourceRejectionKindOf(err)
+	if !ok || got != want {
+		t.Fatalf("ProviderSourceRejectionKindOf(%v) = %q/%v, want %q/true", err, got, ok, want)
 	}
 }
 

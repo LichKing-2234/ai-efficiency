@@ -37,6 +37,8 @@ type sub2apiRelay struct {
 	apiKey   string // Relay API key used for both admin and inference requests.
 	model    string
 	logger   *zap.Logger
+
+	providerWideTrendPointLimit int
 }
 
 const userUsageOriginTimeout = 12 * time.Second
@@ -590,13 +592,13 @@ func (s *sub2apiRelay) GetProviderUserIDs(ctx context.Context) (ProviderDirector
 
 		data := envelope.Data
 		if data.Page == nil || *data.Page != page {
-			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: response page does not match request page %d", page)
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: response page does not match request page %d", page))
 		}
 		if data.PageSize != nil && *data.PageSize != providerDirectoryPageSize {
-			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: page %d has invalid page-size metadata", page)
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d has invalid page-size metadata", page))
 		}
 		if len(data.Items) > providerDirectoryPageSize {
-			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: page %d exceeds item limit", page)
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionProviderIDBound, fmt.Errorf("relay: provider directory: page %d exceeds item limit", page))
 		}
 		if data.Pages == nil || data.Total == nil {
 			if page == 1 && len(data.Items) == 0 && data.Pages == nil && data.Total == nil {
@@ -604,53 +606,53 @@ func (s *sub2apiRelay) GetProviderUserIDs(ctx context.Context) (ProviderDirector
 				result.PageCount = 1
 				return result, nil
 			}
-			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: page %d missing authoritative pagination", page)
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d missing authoritative pagination", page))
 		}
 		if *data.Pages < 0 || *data.Total < 0 || (len(data.Items) > 0 && (*data.Pages == 0 || *data.Total == 0)) {
-			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: page %d has invalid authoritative pagination", page)
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d has invalid authoritative pagination", page))
 		}
 
 		if page == 1 {
 			declaredPages, declaredTotal = *data.Pages, *data.Total
 			if declaredTotal == 0 {
 				if len(data.Items) != 0 || declaredPages > 1 {
-					return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: empty roster has inconsistent pagination")
+					return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: empty roster has inconsistent pagination"))
 				}
 				result.ResponseBytes = int64(len(body))
 				result.PageCount = 1
 				return result, nil
 			}
 		} else if *data.Pages != declaredPages || *data.Total != declaredTotal {
-			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: page %d changed authoritative pagination", page)
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d changed authoritative pagination", page))
 		}
 		if declaredPages < page {
-			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: page %d exceeds declared pages", page)
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d exceeds declared pages", page))
 		}
 		if page < declaredPages && len(data.Items) == 0 {
-			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: page %d is empty before final page", page)
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d is empty before final page", page))
 		}
 
 		for itemIndex, item := range data.Items {
 			if item.ID <= 0 {
-				return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: page %d item %d has invalid ID", page, itemIndex)
+				return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionProviderIDBound, fmt.Errorf("relay: provider directory: page %d item %d has invalid ID", page, itemIndex))
 			}
 			if item.ID <= previousID {
-				return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: page %d item %d is not strictly ascending", page, itemIndex)
+				return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionProviderIDBound, fmt.Errorf("relay: provider directory: page %d item %d is not strictly ascending", page, itemIndex))
 			}
 			previousID = item.ID
 			result.UserIDs = append(result.UserIDs, item.ID)
 			if len(result.UserIDs) >= providerDirectoryUserLimit {
-				return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: user count reached limit %d", providerDirectoryUserLimit)
+				return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionProviderIDBound, fmt.Errorf("relay: provider directory: user count reached limit %d", providerDirectoryUserLimit))
 			}
 		}
 		result.ResponseBytes += int64(len(body))
 		result.PageCount++
 		if len(result.UserIDs) > declaredTotal {
-			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: cumulative count exceeds authoritative total")
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: cumulative count exceeds authoritative total"))
 		}
 		if page == declaredPages {
 			if len(result.UserIDs) != declaredTotal {
-				return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: final count does not match authoritative total")
+				return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: final count does not match authoritative total"))
 			}
 			return result, nil
 		}
@@ -708,7 +710,7 @@ func (s *sub2apiRelay) GetProviderCurrentUsageStats(ctx context.Context, userIDs
 	}
 	stats, err := decodeExactProviderCurrentStats(envelope.Data.Stats, requested)
 	if err != nil {
-		return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: decode stats: %w", err)
+		return ProviderCurrentStatsResult{}, NewProviderSourceRejection(ProviderSourceRejectionStatsExactCoverage, fmt.Errorf("relay: provider current stats: decode stats: %w", err))
 	}
 	return ProviderCurrentStatsResult{Stats: stats, ResponseBytes: int64(len(body))}, nil
 }
@@ -799,13 +801,21 @@ func validateProviderCurrentStat(item TeamUserUsageStats) error {
 	return nil
 }
 
+type responseBodyLimitError struct {
+	limit int64
+}
+
+func (e *responseBodyLimitError) Error() string {
+	return fmt.Sprintf("response body reached %d-byte limit", e.limit)
+}
+
 func readBodyStrictlyBelow(reader io.Reader, limit int64) ([]byte, error) {
 	body, err := io.ReadAll(io.LimitReader(reader, limit+1))
 	if err != nil {
 		return nil, err
 	}
 	if int64(len(body)) >= limit {
-		return nil, fmt.Errorf("response body reached %d-byte limit", limit)
+		return nil, &responseBodyLimitError{limit: limit}
 	}
 	return body, nil
 }

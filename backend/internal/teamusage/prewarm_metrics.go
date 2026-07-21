@@ -13,12 +13,12 @@ const (
 type PrewarmValidationCheck string
 
 const (
-	PrewarmValidationDirectoryPagination   PrewarmValidationCheck = "directory_pagination"
-	PrewarmValidationProviderIDBound       PrewarmValidationCheck = "provider_id_bound"
-	PrewarmValidationStatsExactCoverage    PrewarmValidationCheck = "stats_exact_coverage"
-	PrewarmValidationRawTrendCompleteness  PrewarmValidationCheck = "raw_trend_completeness"
-	PrewarmValidationRawTrendCoverage      PrewarmValidationCheck = "raw_trend_coverage"
-	PrewarmValidationRawTrendLimit         PrewarmValidationCheck = "raw_trend_limit"
+	PrewarmValidationDirectoryPagination  PrewarmValidationCheck = "directory_pagination"
+	PrewarmValidationProviderIDBound      PrewarmValidationCheck = "provider_id_bound"
+	PrewarmValidationStatsExactCoverage   PrewarmValidationCheck = "stats_exact_coverage"
+	PrewarmValidationRawTrendCompleteness PrewarmValidationCheck = "raw_trend_completeness"
+	PrewarmValidationRawTrendCoverage     PrewarmValidationCheck = "raw_trend_coverage"
+	PrewarmValidationRawTrendLimit        PrewarmValidationCheck = "raw_trend_limit"
 )
 
 type PrewarmValidationOutcome string
@@ -63,6 +63,7 @@ const (
 	PrewarmCycleSuccess  PrewarmCycleOutcome = "success"
 	PrewarmCycleError    PrewarmCycleOutcome = "error"
 	PrewarmCycleCanceled PrewarmCycleOutcome = "canceled"
+	PrewarmCycleRejected PrewarmCycleOutcome = "rejected"
 )
 
 type PrewarmBackgroundEvent struct {
@@ -101,11 +102,11 @@ type noopPrewarmMetrics struct{}
 func (noopPrewarmMetrics) RecordCycle(string, string, string, time.Duration) {}
 func (noopPrewarmMetrics) RecordSource(string, string, string, time.Duration, int, int, int) {
 }
-func (noopPrewarmMetrics) RecordRedis(string, string, time.Duration, int) {}
-func (noopPrewarmMetrics) RecordRequest(string, string, string)           {}
-func (noopPrewarmMetrics) SetLastSuccess(string, string, time.Time)       {}
+func (noopPrewarmMetrics) RecordRedis(string, string, time.Duration, int)  {}
+func (noopPrewarmMetrics) RecordRequest(string, string, string)            {}
+func (noopPrewarmMetrics) SetLastSuccess(string, string, time.Time)        {}
 func (noopPrewarmMetrics) RecordQuantity(PrewarmQuantityKind, string, int) {}
-func (noopPrewarmMetrics) SetGenerationBytes(int)                         {}
+func (noopPrewarmMetrics) SetGenerationBytes(int)                          {}
 func (noopPrewarmMetrics) RecordValidation(PrewarmValidationCheck, PrewarmValidationOutcome) {
 }
 func (noopPrewarmMetrics) RecordCache(PrewarmCacheKind, PrewarmCacheOutcome) {}

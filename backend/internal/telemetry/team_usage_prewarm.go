@@ -10,7 +10,7 @@ import (
 
 var (
 	prewarmCycleClasses    = []string{"moving", "recovery", "startup", "history_29d", "history_6d"}
-	prewarmCycleOutcomes   = []string{"success", "error", "canceled", "skipped", "tick_skipped", "lease_busy"}
+	prewarmCycleOutcomes   = []string{"success", "error", "canceled", "rejected", "skipped", "tick_skipped", "lease_busy"}
 	prewarmSourceClasses   = []string{"moving", "recovery", "startup", "history_29d", "history_6d", "today_hour"}
 	prewarmSourceOutcomes  = []string{"success", "error", "canceled", "rejected"}
 	prewarmRedisOperations = []string{
@@ -60,17 +60,17 @@ var (
 type teamUsagePrewarmMetrics struct {
 	timezones map[string]struct{}
 
-	cycleTotal     *prometheus.CounterVec
-	cycleDuration  *prometheus.HistogramVec
-	sourceDuration *prometheus.HistogramVec
-	sourceBytes    *prometheus.HistogramVec
-	sourcePoints   *prometheus.HistogramVec
-	sourceUsers    *prometheus.HistogramVec
-	redisDuration  *prometheus.HistogramVec
-	redisBytes     *prometheus.HistogramVec
-	requestTotal   *prometheus.CounterVec
-	lastSuccess    *prometheus.GaugeVec
-	quantity       *prometheus.HistogramVec
+	cycleTotal      *prometheus.CounterVec
+	cycleDuration   *prometheus.HistogramVec
+	sourceDuration  *prometheus.HistogramVec
+	sourceBytes     *prometheus.HistogramVec
+	sourcePoints    *prometheus.HistogramVec
+	sourceUsers     *prometheus.HistogramVec
+	redisDuration   *prometheus.HistogramVec
+	redisBytes      *prometheus.HistogramVec
+	requestTotal    *prometheus.CounterVec
+	lastSuccess     *prometheus.GaugeVec
+	quantity        *prometheus.HistogramVec
 	generationBytes prometheus.Gauge
 	validationTotal *prometheus.CounterVec
 	cacheTotal      *prometheus.CounterVec
@@ -132,7 +132,7 @@ func (m *Metrics) TeamUsagePrewarmRecorder(timezones []string) (teamusage.Prewar
 		}, []string{"class", "timezone"}),
 		quantity: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: metricsNamespace, Name: "team_usage_prewarm_quantity",
-			Help: "Bounded Team Usage prewarm composition and publication quantities.",
+			Help:    "Bounded Team Usage prewarm composition and publication quantities.",
 			Buckets: prometheus.ExponentialBuckets(1, 2, 25),
 		}, []string{"quantity", "timezone"}),
 		generationBytes: prometheus.NewGauge(prometheus.GaugeOpts{

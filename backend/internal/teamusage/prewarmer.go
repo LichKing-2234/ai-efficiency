@@ -93,6 +93,7 @@ type Prewarmer struct {
 	publicationCurrentID       string
 	publicationCurrentBytes    int
 	publicationTimezoneBytes   map[string]int
+	publicationExpectedAnchors map[string]string
 }
 
 func NewPrewarmer(
@@ -270,9 +271,8 @@ func (p *Prewarmer) startMoving(ctx context.Context) {
 		defer p.moving.Store(false)
 		startedAt := time.Now()
 		operationID := p.newOperationID()
-		if err := p.runMoving(ctx); err != nil {
-			p.reportLifecycle(operationID, PrewarmCycleMoving, p.timezones, startedAt, err, false)
-		}
+		err := p.runMoving(ctx)
+		p.reportScheduledLifecycle(operationID, prewarmLifecycleTargets(PrewarmCycleMoving, p.timezones), startedAt, err)
 	}()
 }
 
@@ -291,9 +291,8 @@ func (p *Prewarmer) startRecovery(ctx context.Context) {
 		defer p.recovery.Store(false)
 		startedAt := time.Now()
 		operationID := p.newOperationID()
-		if err := p.runRecovery(ctx); err != nil {
-			p.reportLifecycle(operationID, PrewarmCycleRecovery, p.timezones, startedAt, err, false)
-		}
+		err := p.runRecovery(ctx)
+		p.reportScheduledLifecycle(operationID, prewarmLifecycleTargets(PrewarmCycleRecovery, p.timezones), startedAt, err)
 	}()
 }
 
@@ -307,10 +306,11 @@ func (p *Prewarmer) startHistorical(ctx context.Context, timezone string, anchor
 		defer p.scheduledWorkers.Add(-1)
 		startedAt := time.Now()
 		operationID := p.newOperationID()
-		if err := p.RunHistorical(ctx, timezone, anchor); err != nil {
-			p.reportLifecycle(operationID, PrewarmCycleHistory29d, []string{timezone}, startedAt, err, false)
-			p.reportLifecycle(operationID, PrewarmCycleHistory6d, []string{timezone}, startedAt, err, false)
-		}
+		err := p.RunHistorical(ctx, timezone, anchor)
+		p.reportScheduledLifecycle(operationID, []prewarmLifecycleTarget{
+			{class: PrewarmCycleHistory29d, timezone: timezone},
+			{class: PrewarmCycleHistory6d, timezone: timezone},
+		}, startedAt, err)
 	}()
 }
 
@@ -352,21 +352,67 @@ type prewarmTimezoneLane struct {
 	anchorDate string
 }
 
+type prewarmLifecycleTarget struct {
+	class    PrewarmCycleClass
+	timezone string
+}
+
+type prewarmLifecycleFailure struct {
+	target        prewarmLifecycleTarget
+	cycleRecorded bool
+	err           error
+}
+
+func (e *prewarmLifecycleFailure) Error() string { return e.err.Error() }
+func (e *prewarmLifecycleFailure) Unwrap() error { return e.err }
+
+func newPrewarmLifecycleFailure(class PrewarmCycleClass, timezone string, cycleRecorded bool, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &prewarmLifecycleFailure{
+		target:        prewarmLifecycleTarget{class: class, timezone: timezone},
+		cycleRecorded: cycleRecorded,
+		err:           err,
+	}
+}
+
+func newPrewarmLifecycleLaneFailures(
+	class PrewarmCycleClass,
+	lanes []prewarmTimezoneLane,
+	cycleRecorded bool,
+	err error,
+) error {
+	if err == nil {
+		return nil
+	}
+	failures := make([]error, 0, len(lanes))
+	for _, lane := range lanes {
+		failures = append(failures, newPrewarmLifecycleFailure(class, lane.timezone, cycleRecorded, err))
+	}
+	return errors.Join(failures...)
+}
+
 func (p *Prewarmer) preflightMovingLanes(
 	ctx context.Context,
 	binding ProviderBinding,
 ) ([]prewarmTimezoneLane, error) {
+	batchTime := p.options.Now()
 	normal := make([]prewarmTimezoneLane, 0, len(p.timezones))
 	failures := make([]error, 0, len(p.timezones))
 	for _, timezone := range p.timezones {
-		anchorDate, err := prewarmLocalAnchorDate(timezone, p.options.Now())
+		anchorDate, err := prewarmLocalAnchorDate(timezone, batchTime)
 		if err != nil {
-			failures = append(failures, fmt.Errorf("preflight moving timezone %s anchor: %w", timezone, err))
+			failures = append(failures, newPrewarmLifecycleFailure(
+				PrewarmCycleMoving, timezone, false, fmt.Errorf("preflight moving timezone %s anchor: %w", timezone, err),
+			))
 			continue
 		}
 		safe, err := SplitSafe(timezone, anchorDate)
 		if err != nil {
-			failures = append(failures, fmt.Errorf("preflight moving timezone %s split safety: %w", timezone, err))
+			failures = append(failures, newPrewarmLifecycleFailure(
+				PrewarmCycleMoving, timezone, false, fmt.Errorf("preflight moving timezone %s split safety: %w", timezone, err),
+			))
 			continue
 		}
 		if !safe {
@@ -378,7 +424,9 @@ func (p *Prewarmer) preflightMovingLanes(
 		}
 		result, found, err := p.cache.Read(ctx, identity)
 		if err != nil {
-			failures = append(failures, fmt.Errorf("preflight moving timezone %s: %w", timezone, err))
+			failures = append(failures, newPrewarmLifecycleFailure(
+				PrewarmCycleMoving, timezone, false, fmt.Errorf("preflight moving timezone %s: %w", timezone, err),
+			))
 			continue
 		}
 		lane := prewarmTimezoneLane{timezone: timezone, anchorDate: anchorDate}
@@ -404,7 +452,7 @@ func (p *Prewarmer) runNormalMoving(
 	)
 	tickToken, acquired, err := p.acquireLease(ctx, tickKey, prewarmMovingCoordinatorTTL)
 	if err != nil || !acquired {
-		return err
+		return newPrewarmLifecycleLaneFailures(PrewarmCycleMoving, lanes, false, err)
 	}
 	retainTick := false
 	defer func() {
@@ -417,7 +465,7 @@ func (p *Prewarmer) runNormalMoving(
 	)
 	activeToken, active, err := p.acquireLease(ctx, activeKey, prewarmMovingCoordinatorTTL)
 	if err != nil {
-		return err
+		return newPrewarmLifecycleLaneFailures(PrewarmCycleMoving, lanes, false, err)
 	}
 	if !active {
 		retainTick = true
@@ -433,18 +481,21 @@ func (p *Prewarmer) runNormalMoving(
 
 	current, err := p.buildCurrentStats(workerCtx, binding, "moving")
 	if err != nil {
-		return err
+		return newPrewarmLifecycleLaneFailures(PrewarmCycleMoving, lanes, false, err)
 	}
 	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
-		return err
+		return newPrewarmLifecycleLaneFailures(PrewarmCycleMoving, lanes, false, err)
 	}
 	currentRef, err := p.cache.WriteCurrentStats(workerCtx, current)
 	if err != nil {
-		return fmt.Errorf("write moving current stats: %w", err)
+		return newPrewarmLifecycleLaneFailures(
+			PrewarmCycleMoving, lanes, false, fmt.Errorf("write moving current stats: %w", err),
+		)
 	}
 	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
-		return err
+		return newPrewarmLifecycleLaneFailures(PrewarmCycleMoving, lanes, false, err)
 	}
+	p.beginPublicationBatch(binding, currentRef, lanes)
 
 	var wg sync.WaitGroup
 	errorsByTimezone := make(chan error, len(lanes))
@@ -454,7 +505,9 @@ func (p *Prewarmer) runNormalMoving(
 		go func() {
 			defer wg.Done()
 			if err := p.runMovingLane(workerCtx, binding, currentRef, lane); err != nil {
-				errorsByTimezone <- fmt.Errorf("moving timezone %s: %w", lane.timezone, err)
+				errorsByTimezone <- newPrewarmLifecycleFailure(
+					PrewarmCycleMoving, lane.timezone, true, fmt.Errorf("moving timezone %s: %w", lane.timezone, err),
+				)
 			}
 		}()
 	}
@@ -465,10 +518,10 @@ func (p *Prewarmer) runNormalMoving(
 		failures = append(failures, failure)
 	}
 	if err := workerCtx.Err(); err != nil {
-		return errors.Join(append(failures, err)...)
+		return errors.Join(append(failures, newPrewarmLifecycleLaneFailures(PrewarmCycleMoving, lanes, true, err))...)
 	}
 	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
-		return errors.Join(append(failures, err)...)
+		return errors.Join(append(failures, newPrewarmLifecycleLaneFailures(PrewarmCycleMoving, lanes, true, err))...)
 	}
 	retainTick = true
 	return errors.Join(failures...)
@@ -583,29 +636,28 @@ func (p *Prewarmer) runRecovery(ctx context.Context) error {
 		failures = append(failures, preflightErr)
 	}
 	if len(lanes) == 0 {
-		if err := workerCtx.Err(); err != nil {
-			failures = append(failures, err)
-		}
-		if err := p.requireCoordinatorOwned(workerCtx); err != nil {
-			failures = append(failures, err)
-		}
+		workerErr := workerCtx.Err()
+		coordinatorErr := p.requireCoordinatorOwned(workerCtx)
 		if len(failures) == 0 {
-			retainTick = true
+			retainTick = workerErr == nil && coordinatorErr == nil
 		}
 		return errors.Join(failures...)
 	}
 
 	current, err := p.buildCurrentStats(workerCtx, binding, "recovery")
 	if err != nil {
-		return errors.Join(preflightErr, err)
+		return errors.Join(preflightErr, newPrewarmLifecycleLaneFailures(PrewarmCycleRecovery, lanes, false, err))
 	}
 	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
-		return errors.Join(preflightErr, err)
+		return errors.Join(preflightErr, newPrewarmLifecycleLaneFailures(PrewarmCycleRecovery, lanes, false, err))
 	}
 	currentRef, err := p.cache.WriteCurrentStats(workerCtx, current)
 	if err != nil {
-		return errors.Join(preflightErr, fmt.Errorf("write recovery current stats: %w", err))
+		return errors.Join(preflightErr, newPrewarmLifecycleLaneFailures(
+			PrewarmCycleRecovery, lanes, false, fmt.Errorf("write recovery current stats: %w", err),
+		))
 	}
+	p.beginPublicationBatch(binding, currentRef, lanes)
 
 	errorsByTimezone := make(chan error, len(lanes))
 	var wg sync.WaitGroup
@@ -615,7 +667,9 @@ func (p *Prewarmer) runRecovery(ctx context.Context) error {
 		go func() {
 			defer wg.Done()
 			if err := p.runRecoveryLane(workerCtx, binding, currentRef, lane); err != nil {
-				errorsByTimezone <- fmt.Errorf("recovery timezone %s: %w", lane.timezone, err)
+				errorsByTimezone <- newPrewarmLifecycleFailure(
+					PrewarmCycleRecovery, lane.timezone, true, fmt.Errorf("recovery timezone %s: %w", lane.timezone, err),
+				)
 			}
 		}()
 	}
@@ -625,10 +679,10 @@ func (p *Prewarmer) runRecovery(ctx context.Context) error {
 		failures = append(failures, failure)
 	}
 	if err := workerCtx.Err(); err != nil {
-		failures = append(failures, err)
+		failures = append(failures, newPrewarmLifecycleLaneFailures(PrewarmCycleRecovery, lanes, true, err))
 	}
 	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
-		failures = append(failures, err)
+		failures = append(failures, newPrewarmLifecycleLaneFailures(PrewarmCycleRecovery, lanes, true, err))
 	}
 	if len(failures) == 0 {
 		retainTick = true
@@ -640,17 +694,22 @@ func (p *Prewarmer) preflightRecoveryLanes(
 	ctx context.Context,
 	binding ProviderBinding,
 ) ([]prewarmTimezoneLane, error) {
+	batchTime := p.options.Now()
 	lanes := make([]prewarmTimezoneLane, 0, len(p.timezones))
 	failures := make([]error, 0, len(p.timezones))
 	for _, timezone := range p.timezones {
-		anchorDate, err := prewarmLocalAnchorDate(timezone, p.options.Now())
+		anchorDate, err := prewarmLocalAnchorDate(timezone, batchTime)
 		if err != nil {
-			failures = append(failures, fmt.Errorf("preflight recovery timezone %s anchor: %w", timezone, err))
+			failures = append(failures, newPrewarmLifecycleFailure(
+				PrewarmCycleRecovery, timezone, false, fmt.Errorf("preflight recovery timezone %s anchor: %w", timezone, err),
+			))
 			continue
 		}
 		safe, err := SplitSafe(timezone, anchorDate)
 		if err != nil {
-			failures = append(failures, fmt.Errorf("preflight recovery timezone %s split safety: %w", timezone, err))
+			failures = append(failures, newPrewarmLifecycleFailure(
+				PrewarmCycleRecovery, timezone, false, fmt.Errorf("preflight recovery timezone %s split safety: %w", timezone, err),
+			))
 			continue
 		}
 		if !safe {
@@ -661,19 +720,25 @@ func (p *Prewarmer) preflightRecoveryLanes(
 			Timezone: timezone, AnchorDate: anchorDate,
 		}
 		if _, found, err := p.cache.Read(ctx, identity); err != nil {
-			failures = append(failures, fmt.Errorf("preflight recovery timezone %s: %w", timezone, err))
+			failures = append(failures, newPrewarmLifecycleFailure(
+				PrewarmCycleRecovery, timezone, false, fmt.Errorf("preflight recovery timezone %s: %w", timezone, err),
+			))
 			continue
 		} else if found {
 			continue
 		}
 		due29, err := p.historicalClassDue(binding, timezone, anchorDate, SegmentHistory29d)
 		if err != nil {
-			failures = append(failures, fmt.Errorf("preflight recovery timezone %s history_29d jitter: %w", timezone, err))
+			failures = append(failures, newPrewarmLifecycleFailure(
+				PrewarmCycleRecovery, timezone, false, fmt.Errorf("preflight recovery timezone %s history_29d jitter: %w", timezone, err),
+			))
 			continue
 		}
 		due6, err := p.historicalClassDue(binding, timezone, anchorDate, SegmentHistory6d)
 		if err != nil {
-			failures = append(failures, fmt.Errorf("preflight recovery timezone %s history_6d jitter: %w", timezone, err))
+			failures = append(failures, newPrewarmLifecycleFailure(
+				PrewarmCycleRecovery, timezone, false, fmt.Errorf("preflight recovery timezone %s history_6d jitter: %w", timezone, err),
+			))
 			continue
 		}
 		if due29 && due6 {
@@ -776,14 +841,18 @@ func (p *Prewarmer) RunHistorical(ctx context.Context, timezone string, anchor t
 	for _, class := range classes {
 		due, dueErr := p.historicalClassDue(binding, timezone, anchorDate, class)
 		if dueErr != nil {
-			failures = append(failures, dueErr)
+			failures = append(failures, newPrewarmLifecycleFailure(
+				PrewarmCycleClass(class), timezone, false, dueErr,
+			))
 			continue
 		}
 		if !due {
 			continue
 		}
 		if err := p.runHistoricalClass(ctx, binding, identity, class); err != nil {
-			failures = append(failures, fmt.Errorf("historical %s: %w", class, err))
+			failures = append(failures, newPrewarmLifecycleFailure(
+				PrewarmCycleClass(class), timezone, true, fmt.Errorf("historical %s: %w", class, err),
+			))
 		}
 	}
 	return errors.Join(failures...)
@@ -1082,6 +1151,10 @@ func (p *Prewarmer) buildCurrentStats(ctx context.Context, binding ProviderBindi
 }
 
 func prewarmTelemetryOutcome(err error) string {
+	var sourceFailure *prewarmSourceFailure
+	if errors.As(err, &sourceFailure) && sourceFailure.kind == prewarmSourceFailureValidation {
+		return "rejected"
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return "canceled"
 	}
@@ -1151,26 +1224,50 @@ func (p *Prewarmer) recordPublishedGeneration(manifest PrewarmManifest) {
 	}
 	segmentBytes := manifest.History29d.SerializedBytes + manifest.History6d.SerializedBytes + manifest.TodayHour.SerializedBytes
 	timezoneBytes := segmentBytes + len(encodedManifest)
+	p.options.Metrics.RecordQuantity(PrewarmQuantitySegmentBytes, manifest.Timezone, segmentBytes)
+	p.options.Metrics.RecordQuantity(PrewarmQuantityTimezoneBytes, manifest.Timezone, timezoneBytes)
 
 	p.publicationMu.Lock()
 	defer p.publicationMu.Unlock()
-	if p.publicationProvider != manifest.ProviderID ||
+	if len(p.publicationExpectedAnchors) == 0 ||
+		p.publicationProvider != manifest.ProviderID ||
 		p.publicationProviderVersion != manifest.ProviderVersion ||
 		p.publicationCurrentID != manifest.CurrentStats.GenerationID {
-		p.publicationProvider = manifest.ProviderID
-		p.publicationProviderVersion = manifest.ProviderVersion
-		p.publicationCurrentID = manifest.CurrentStats.GenerationID
-		p.publicationCurrentBytes = manifest.CurrentStats.SerializedBytes
-		clear(p.publicationTimezoneBytes)
+		return
+	}
+	expectedAnchor, expected := p.publicationExpectedAnchors[manifest.Timezone]
+	if !expected || manifest.AnchorDate != expectedAnchor {
+		return
 	}
 	p.publicationTimezoneBytes[manifest.Timezone] = timezoneBytes
 	fullGenerationBytes := p.publicationCurrentBytes
-	for _, size := range p.publicationTimezoneBytes {
+	for timezone := range p.publicationExpectedAnchors {
+		size, ok := p.publicationTimezoneBytes[timezone]
+		if !ok {
+			return
+		}
 		fullGenerationBytes += size
 	}
-	p.options.Metrics.RecordQuantity(PrewarmQuantitySegmentBytes, manifest.Timezone, segmentBytes)
-	p.options.Metrics.RecordQuantity(PrewarmQuantityTimezoneBytes, manifest.Timezone, timezoneBytes)
 	p.options.Metrics.SetGenerationBytes(fullGenerationBytes)
+}
+
+func (p *Prewarmer) beginPublicationBatch(
+	binding ProviderBinding,
+	current PrewarmValueReference,
+	lanes []prewarmTimezoneLane,
+) {
+	expected := make(map[string]string, len(lanes))
+	for _, lane := range lanes {
+		expected[lane.timezone] = lane.anchorDate
+	}
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
+	p.publicationProvider = binding.ProviderID
+	p.publicationProviderVersion = binding.ProviderVersion
+	p.publicationCurrentID = current.GenerationID
+	p.publicationCurrentBytes = current.SerializedBytes
+	clear(p.publicationTimezoneBytes)
+	p.publicationExpectedAnchors = expected
 }
 
 func (p *Prewarmer) newOperationID() string {
@@ -1202,10 +1299,8 @@ func (p *Prewarmer) reportLifecycle(
 		return
 	}
 	outcome := PrewarmCycleSuccess
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		outcome = PrewarmCycleCanceled
-	} else if err != nil {
-		outcome = PrewarmCycleError
+	if err != nil {
+		outcome = prewarmCycleOutcomeForError(err)
 	}
 	duration := time.Since(startedAt)
 	p.reportingMu.Lock()
@@ -1218,6 +1313,150 @@ func (p *Prewarmer) reportLifecycle(
 			Timezone: timezone, Class: class, Outcome: outcome, Duration: duration,
 		})
 	}
+}
+
+func prewarmLifecycleTargets(class PrewarmCycleClass, timezones []string) []prewarmLifecycleTarget {
+	targets := make([]prewarmLifecycleTarget, 0, len(timezones))
+	for _, timezone := range timezones {
+		targets = append(targets, prewarmLifecycleTarget{class: class, timezone: timezone})
+	}
+	return targets
+}
+
+func (p *Prewarmer) reportScheduledLifecycle(
+	operationID string,
+	targets []prewarmLifecycleTarget,
+	startedAt time.Time,
+	err error,
+) {
+	if err == nil {
+		return
+	}
+	exact := make(map[prewarmLifecycleTarget]*prewarmLifecycleFailure)
+	var globalErrors []error
+	partitionPrewarmLifecycleError(err, exact, &globalErrors)
+	duration := time.Since(startedAt)
+	reported := make(map[prewarmLifecycleTarget]struct{}, len(exact))
+	for _, target := range targets {
+		if failure, ok := exact[target]; ok {
+			p.reportExactLifecycleFailure(operationID, target, failure, duration)
+			reported[target] = struct{}{}
+			continue
+		}
+		if len(globalErrors) > 0 {
+			p.reportGlobalLifecycleFailure(operationID, target, errors.Join(globalErrors...), duration)
+			reported[target] = struct{}{}
+		}
+	}
+	for target, failure := range exact {
+		if _, ok := reported[target]; ok {
+			continue
+		}
+		p.reportExactLifecycleFailure(operationID, target, failure, duration)
+	}
+}
+
+func partitionPrewarmLifecycleError(
+	err error,
+	exact map[prewarmLifecycleTarget]*prewarmLifecycleFailure,
+	globalErrors *[]error,
+) {
+	if err == nil {
+		return
+	}
+	if failure, ok := err.(*prewarmLifecycleFailure); ok {
+		if previous, exists := exact[failure.target]; exists {
+			copy := *previous
+			copy.cycleRecorded = previous.cycleRecorded || failure.cycleRecorded
+			copy.err = errors.Join(previous.err, failure.err)
+			exact[failure.target] = &copy
+		} else {
+			exact[failure.target] = failure
+		}
+		return
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range joined.Unwrap() {
+			partitionPrewarmLifecycleError(child, exact, globalErrors)
+		}
+		return
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok && containsPrewarmLifecycleFailure(wrapped.Unwrap()) {
+		partitionPrewarmLifecycleError(wrapped.Unwrap(), exact, globalErrors)
+		return
+	}
+	*globalErrors = append(*globalErrors, err)
+}
+
+func containsPrewarmLifecycleFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, ok := err.(*prewarmLifecycleFailure); ok {
+		return true
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range joined.Unwrap() {
+			if containsPrewarmLifecycleFailure(child) {
+				return true
+			}
+		}
+		return false
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return containsPrewarmLifecycleFailure(wrapped.Unwrap())
+	}
+	return false
+}
+
+func (p *Prewarmer) reportExactLifecycleFailure(
+	operationID string,
+	target prewarmLifecycleTarget,
+	failure *prewarmLifecycleFailure,
+	duration time.Duration,
+) {
+	outcome := prewarmCycleOutcomeForError(failure.err)
+	if !failure.cycleRecorded {
+		p.options.Metrics.RecordCycle(string(target.class), target.timezone, string(outcome), duration)
+	}
+	p.reportBackgroundEvent(operationID, target, outcome, duration)
+}
+
+func (p *Prewarmer) reportGlobalLifecycleFailure(
+	operationID string,
+	target prewarmLifecycleTarget,
+	err error,
+	duration time.Duration,
+) {
+	outcome := prewarmCycleOutcomeForError(err)
+	p.options.Metrics.RecordCycle(string(target.class), target.timezone, string(outcome), duration)
+	p.reportBackgroundEvent(operationID, target, outcome, duration)
+}
+
+func prewarmCycleOutcomeForError(err error) PrewarmCycleOutcome {
+	switch prewarmTelemetryOutcome(err) {
+	case "canceled":
+		return PrewarmCycleCanceled
+	case "rejected":
+		return PrewarmCycleRejected
+	default:
+		return PrewarmCycleError
+	}
+}
+
+func (p *Prewarmer) reportBackgroundEvent(
+	operationID string,
+	target prewarmLifecycleTarget,
+	outcome PrewarmCycleOutcome,
+	duration time.Duration,
+) {
+	p.reportingMu.Lock()
+	providerID, providerVersion := p.reportingProvider, p.reportingVersion
+	p.reportingMu.Unlock()
+	p.options.Reporter.ReportPrewarmBackground(PrewarmBackgroundEvent{
+		OperationID: operationID, ProviderID: providerID, ProviderVersion: providerVersion,
+		Timezone: target.timezone, Class: target.class, Outcome: outcome, Duration: duration,
+	})
 }
 
 func (p *Prewarmer) acquireLease(ctx context.Context, key string, ttl time.Duration) (string, bool, error) {

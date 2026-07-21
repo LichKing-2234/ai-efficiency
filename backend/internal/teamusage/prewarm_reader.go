@@ -173,7 +173,7 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		return nil, PrewarmReadMiss, nil
 	}
 	if result.Complete {
-		origin, eligible, composeErr := ComposePrewarmedOrigin(window, *result.CurrentStats, result.Segments, request.AuthorizedRelayUserIDs)
+		origin, eligible, unionUsers, composeErr := composePrewarmedOriginWithUnion(window, *result.CurrentStats, result.Segments, request.AuthorizedRelayUserIDs)
 		if composeErr != nil {
 			fallbackReason = "generation_invalid"
 			return nil, PrewarmReadFallback, composeErr
@@ -182,7 +182,7 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 			fallbackReason = "roster_incomplete"
 			return nil, PrewarmReadFallback, nil
 		}
-		r.metrics.RecordQuantity(PrewarmQuantityUnionUsers, window.Coverage.Timezone, len(origin.RelayUserIDs))
+		r.metrics.RecordQuantity(PrewarmQuantityUnionUsers, window.Coverage.Timezone, unionUsers)
 		return origin, PrewarmReadFullHit, nil
 	}
 	if !prewarmResultCanRecoverToday(result) {
@@ -212,7 +212,7 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 	}
 	segments := result.Segments
 	segments.TodayHour = &today
-	origin, eligible, err := ComposePrewarmedOrigin(window, *result.CurrentStats, segments, request.AuthorizedRelayUserIDs)
+	origin, eligible, unionUsers, err := composePrewarmedOriginWithUnion(window, *result.CurrentStats, segments, request.AuthorizedRelayUserIDs)
 	if err != nil {
 		fallbackReason = "generation_invalid"
 		return nil, PrewarmReadFallback, err
@@ -221,7 +221,7 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		fallbackReason = "roster_incomplete"
 		return nil, PrewarmReadFallback, nil
 	}
-	r.metrics.RecordQuantity(PrewarmQuantityUnionUsers, window.Coverage.Timezone, len(origin.RelayUserIDs))
+	r.metrics.RecordQuantity(PrewarmQuantityUnionUsers, window.Coverage.Timezone, unionUsers)
 	return origin, PrewarmReadPartialToday, nil
 }
 

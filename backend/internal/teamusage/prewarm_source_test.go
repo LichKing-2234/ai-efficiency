@@ -205,6 +205,90 @@ func TestPrewarmSourceMetricsRecordStructuredValidationChecks(t *testing.T) {
 	}
 }
 
+func TestPrewarmSourceMapsTypedRelayRejectionsWithoutStringParsing(t *testing.T) {
+	tests := []struct {
+		name  string
+		kind  relay.ProviderSourceRejectionKind
+		check PrewarmValidationCheck
+		call  func(*PrewarmSource, *prewarmSourceProvider) error
+	}{
+		{
+			name: "directory pagination", kind: relay.ProviderSourceRejectionDirectoryPagination, check: PrewarmValidationDirectoryPagination,
+			call: func(source *PrewarmSource, provider *prewarmSourceProvider) error {
+				provider.directoryErr = relay.NewProviderSourceRejection(relay.ProviderSourceRejectionDirectoryPagination, errors.New("dynamic detail"))
+				_, err := source.BuildCurrentStats(context.Background(), prewarmBinding(provider))
+				return err
+			},
+		},
+		{
+			name: "provider ID bound", kind: relay.ProviderSourceRejectionProviderIDBound, check: PrewarmValidationProviderIDBound,
+			call: func(source *PrewarmSource, provider *prewarmSourceProvider) error {
+				provider.directoryErr = relay.NewProviderSourceRejection(relay.ProviderSourceRejectionProviderIDBound, errors.New("dynamic detail"))
+				_, err := source.BuildCurrentStats(context.Background(), prewarmBinding(provider))
+				return err
+			},
+		},
+		{
+			name: "stats coverage", kind: relay.ProviderSourceRejectionStatsExactCoverage, check: PrewarmValidationStatsExactCoverage,
+			call: func(source *PrewarmSource, provider *prewarmSourceProvider) error {
+				provider.directory = relay.ProviderDirectoryResult{UserIDs: []int64{1}, PageCount: 1}
+				provider.statsFn = func([]int64) (relay.ProviderCurrentStatsResult, error) {
+					return relay.ProviderCurrentStatsResult{}, relay.NewProviderSourceRejection(relay.ProviderSourceRejectionStatsExactCoverage, errors.New("dynamic detail"))
+				}
+				_, err := source.BuildCurrentStats(context.Background(), prewarmBinding(provider))
+				return err
+			},
+		},
+	}
+	for _, trend := range []struct {
+		name  string
+		kind  relay.ProviderSourceRejectionKind
+		check PrewarmValidationCheck
+	}{
+		{name: "trend coverage", kind: relay.ProviderSourceRejectionRawTrendCoverage, check: PrewarmValidationRawTrendCoverage},
+		{name: "trend completeness", kind: relay.ProviderSourceRejectionRawTrendCompleteness, check: PrewarmValidationRawTrendCompleteness},
+		{name: "trend limit", kind: relay.ProviderSourceRejectionRawTrendLimit, check: PrewarmValidationRawTrendLimit},
+	} {
+		trend := trend
+		tests = append(tests, struct {
+			name  string
+			kind  relay.ProviderSourceRejectionKind
+			check PrewarmValidationCheck
+			call  func(*PrewarmSource, *prewarmSourceProvider) error
+		}{name: trend.name, kind: trend.kind, check: trend.check, call: func(source *PrewarmSource, provider *prewarmSourceProvider) error {
+			provider.trendFn = func(relay.TeamMemberTrendParams, int) (relay.ProviderWideTrendResult, error) {
+				return relay.ProviderWideTrendResult{}, relay.NewProviderSourceRejection(trend.kind, errors.New("dynamic detail"))
+			}
+			_, err := source.FetchSegment(context.Background(), prewarmBinding(provider), "UTC", "2026-07-21", SegmentTodayHour)
+			return err
+		}})
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			metrics := &recordingPrewarmRequestMetrics{}
+			options := fixedGenerationOptions()
+			options.Metrics = metrics
+			source := mustPrewarmSource(t, passthroughSourceLimiter{}, options)
+			err := test.call(source, &prewarmSourceProvider{})
+			if err == nil {
+				t.Fatal("typed Relay rejection returned nil")
+			}
+			var failure *prewarmSourceFailure
+			if !errors.As(err, &failure) || failure.kind != prewarmSourceFailureValidation {
+				t.Fatalf("source failure = %#v/%v, want typed validation", failure, err)
+			}
+			if got := prewarmTelemetryOutcome(err); got != "rejected" {
+				t.Fatalf("prewarmTelemetryOutcome() = %q, want rejected", got)
+			}
+			want := prewarmValidationMetric{check: test.check, outcome: PrewarmValidationRejected}
+			if len(metrics.validations) == 0 || metrics.validations[len(metrics.validations)-1] != want {
+				t.Fatalf("validation metrics = %#v, want final %#v", metrics.validations, want)
+			}
+		})
+	}
+}
+
 type passthroughSourceLimiter struct{}
 
 func (passthroughSourceLimiter) Do(ctx context.Context, call func(context.Context) error) error {

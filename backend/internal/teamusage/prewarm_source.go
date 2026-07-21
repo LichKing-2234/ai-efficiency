@@ -93,6 +93,10 @@ func (s *PrewarmSource) BuildCurrentStats(ctx context.Context, binding ProviderB
 		directory, err = provider.GetProviderUserIDs(callCtx)
 		return err
 	}); err != nil {
+		if check, ok := prewarmValidationCheckForRelayRejection(err); ok {
+			s.options.Metrics.RecordValidation(check, PrewarmValidationRejected)
+			return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("fetch provider-wide directory: %w", err))
+		}
 		return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureRelay, fmt.Errorf("fetch provider-wide directory: %w", err))
 	}
 	if directory.PageCount <= 0 {
@@ -125,6 +129,10 @@ func (s *PrewarmSource) BuildCurrentStats(ctx context.Context, binding ProviderB
 			result, callErr = provider.GetProviderCurrentUsageStats(callCtx, chunk)
 			return callErr
 		}); err != nil {
+			if check, ok := prewarmValidationCheckForRelayRejection(err); ok {
+				s.options.Metrics.RecordValidation(check, PrewarmValidationRejected)
+				return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("fetch provider-wide current stats chunk %d: %w", offset/prewarmCurrentStatsChunkSize, err))
+			}
 			return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureRelay, fmt.Errorf("fetch provider-wide current stats chunk %d: %w", offset/prewarmCurrentStatsChunkSize, err))
 		}
 		if err := mergePrewarmCurrentStatsChunk(combined, chunk, result.Stats); err != nil {
@@ -189,6 +197,10 @@ func (s *PrewarmSource) FetchSegment(
 		result, callErr = provider.GetProviderUsageTrend(callCtx, params, PrewarmTrendUserLimit)
 		return callErr
 	}); err != nil {
+		if check, ok := prewarmValidationCheckForRelayRejection(err); ok {
+			s.options.Metrics.RecordValidation(check, PrewarmValidationRejected)
+			return PrewarmTrendSegment{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("fetch provider-wide %s trend: %w", class, err))
+		}
 		return PrewarmTrendSegment{}, wrapPrewarmSourceFailure(prewarmSourceFailureRelay, fmt.Errorf("fetch provider-wide %s trend: %w", class, err))
 	}
 	if !result.Complete {
@@ -227,6 +239,29 @@ func (s *PrewarmSource) FetchSegment(
 		return PrewarmTrendSegment{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("validate provider-wide %s trend: %w", class, err))
 	}
 	return segment, nil
+}
+
+func prewarmValidationCheckForRelayRejection(err error) (PrewarmValidationCheck, bool) {
+	kind, ok := relay.ProviderSourceRejectionKindOf(err)
+	if !ok {
+		return "", false
+	}
+	switch kind {
+	case relay.ProviderSourceRejectionDirectoryPagination:
+		return PrewarmValidationDirectoryPagination, true
+	case relay.ProviderSourceRejectionProviderIDBound:
+		return PrewarmValidationProviderIDBound, true
+	case relay.ProviderSourceRejectionStatsExactCoverage:
+		return PrewarmValidationStatsExactCoverage, true
+	case relay.ProviderSourceRejectionRawTrendCoverage:
+		return PrewarmValidationRawTrendCoverage, true
+	case relay.ProviderSourceRejectionRawTrendCompleteness:
+		return PrewarmValidationRawTrendCompleteness, true
+	case relay.ProviderSourceRejectionRawTrendLimit:
+		return PrewarmValidationRawTrendLimit, true
+	default:
+		return "", false
+	}
 }
 
 func validateProviderBinding(binding ProviderBinding) error {

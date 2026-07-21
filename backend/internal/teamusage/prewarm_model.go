@@ -247,35 +247,46 @@ func ComposePrewarmedOrigin(
 	segments PrewarmSegmentSet,
 	authorizedRelayUserIDs []int64,
 ) (*teamUsageScopeOrigin, bool, error) {
+	origin, eligible, _, err := composePrewarmedOriginWithUnion(window, current, segments, authorizedRelayUserIDs)
+	return origin, eligible, err
+}
+
+func composePrewarmedOriginWithUnion(
+	window PrewarmWindow,
+	current PrewarmCurrentStatsEnvelope,
+	segments PrewarmSegmentSet,
+	authorizedRelayUserIDs []int64,
+) (*teamUsageScopeOrigin, bool, int, error) {
 	if err := validatePrewarmWindow(window); err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	required, err := requiredPrewarmSegments(window, segments)
 	if err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	for _, segment := range required {
 		if err := ValidateTrendSegment(*segment); err != nil {
-			return nil, false, err
+			return nil, false, 0, err
 		}
 		if segment.AnchorDate != window.AnchorDate || segment.Timezone != window.Coverage.Timezone {
-			return nil, false, fmt.Errorf("prewarm trend segment does not match window anchor or timezone")
+			return nil, false, 0, fmt.Errorf("prewarm trend segment does not match window anchor or timezone")
 		}
 	}
-	if err := validatePrewarmComposedUnion(required); err != nil {
-		return nil, false, err
+	unionUsers, err := validatePrewarmComposedUnion(required)
+	if err != nil {
+		return nil, false, 0, err
 	}
 	stats, err := validatePrewarmCurrentStats(current)
 	if err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	authorized, err := normalizeAuthorizedRelayUserIDs(authorizedRelayUserIDs)
 	if err != nil {
-		return nil, false, err
+		return nil, false, 0, err
 	}
 	for _, userID := range authorized {
 		if _, ok := stats[userID]; !ok {
-			return nil, false, nil
+			return nil, false, unionUsers, nil
 		}
 	}
 
@@ -294,21 +305,21 @@ func ComposePrewarmedOrigin(
 		projectRawToday(origin.PointsByUser, authorizedSet, segments.TodayHour.Points)
 	case PrewarmWindow7d:
 		if err := composeDailyPoints(origin.PointsByUser, authorizedSet, segments.History6d.Points, segments.TodayHour.Points); err != nil {
-			return nil, false, fmt.Errorf("compose prewarm 7d points: %w", err)
+			return nil, false, unionUsers, fmt.Errorf("compose prewarm 7d points: %w", err)
 		}
 	case PrewarmWindow30d:
 		if err := composeDailyPoints(origin.PointsByUser, authorizedSet, segments.History29d.Points, segments.TodayHour.Points); err != nil {
-			return nil, false, fmt.Errorf("compose prewarm 30d points: %w", err)
+			return nil, false, unionUsers, fmt.Errorf("compose prewarm 30d points: %w", err)
 		}
 	default:
-		return nil, false, fmt.Errorf("unsupported prewarm window class %q", window.Class)
+		return nil, false, unionUsers, fmt.Errorf("unsupported prewarm window class %q", window.Class)
 	}
 
 	for _, userID := range authorized {
 		currentStat := stats[userID]
 		cost, tokens, tokensComplete, err := summarizePrewarmRange(origin.PointsByUser[userID])
 		if err != nil {
-			return nil, false, fmt.Errorf("summarize prewarm composed range: %w", err)
+			return nil, false, unionUsers, fmt.Errorf("summarize prewarm composed range: %w", err)
 		}
 		stat := relay.TeamUserUsageStats{
 			UserID: userID, TodayActualCost: currentStat.TodayActualCost, TotalActualCost: currentStat.TotalActualCost,
@@ -319,7 +330,7 @@ func ComposePrewarmedOrigin(
 		}
 		origin.StatsByRelayUserID[userID] = stat
 	}
-	return origin, true, nil
+	return origin, true, unionUsers, nil
 }
 
 func PrewarmCostsEquivalent(left, right float64) bool {
@@ -427,17 +438,17 @@ func requiredPrewarmSegments(window PrewarmWindow, segments PrewarmSegmentSet) (
 	}
 }
 
-func validatePrewarmComposedUnion(segments []*PrewarmTrendSegment) error {
+func validatePrewarmComposedUnion(segments []*PrewarmTrendSegment) (int, error) {
 	users := make(map[int64]struct{})
 	for _, segment := range segments {
 		for _, point := range segment.Points {
 			users[point.UserID] = struct{}{}
 			if len(users) >= PrewarmTrendUserLimit {
-				return fmt.Errorf("prewarm composed unique user union reached limit %d", PrewarmTrendUserLimit)
+				return 0, fmt.Errorf("prewarm composed unique user union reached limit %d", PrewarmTrendUserLimit)
 			}
 		}
 	}
-	return nil
+	return len(users), nil
 }
 
 func validatePrewarmCurrentStats(current PrewarmCurrentStatsEnvelope) (map[int64]PrewarmCurrentStat, error) {

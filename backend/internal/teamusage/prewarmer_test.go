@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -84,6 +85,147 @@ func containsPrewarmQuantity(metrics []prewarmQuantityMetric, kind PrewarmQuanti
 	return false
 }
 
+func TestPrewarmGenerationGaugeWaitsForCompleteCurrentGenerationAndResets(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	metrics := &recordingPrewarmRequestMetrics{}
+	cache := mustNewPrewarmCache(t, newRecordingPrewarmStore(), func() time.Time { return now })
+	options := lifecycleOptions([]string{"UTC", "Asia/Shanghai"}, func() time.Time { return now })
+	options.Metrics = metrics
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(newLifecycleProvider([]int64{101}))}, cache, options)
+
+	firstUTC := publicationMetricsManifest(7, 11, strings.Repeat("a", 64), "UTC", "2026-07-21")
+	firstShanghai := publicationMetricsManifest(7, 11, strings.Repeat("a", 64), "Asia/Shanghai", "2026-07-21")
+	beginPublicationMetricsBatch(prewarmer, firstUTC, firstShanghai)
+	prewarmer.recordPublishedGeneration(firstUTC)
+	if len(metrics.generation) != 0 {
+		t.Fatalf("partial generation gauge = %#v, want unchanged", metrics.generation)
+	}
+	prewarmer.recordPublishedGeneration(firstShanghai)
+	if want := fullPublicationBytes(t, firstUTC, firstShanghai); !reflect.DeepEqual(metrics.generation, []int{want}) {
+		t.Fatalf("first complete generation gauge = %#v, want %d", metrics.generation, want)
+	}
+
+	secondUTC := publicationMetricsManifest(7, 11, strings.Repeat("b", 64), "UTC", "2026-07-21")
+	secondShanghai := publicationMetricsManifest(7, 11, strings.Repeat("b", 64), "Asia/Shanghai", "2026-07-21")
+	beginPublicationMetricsBatch(prewarmer, secondUTC, secondShanghai)
+	prewarmer.recordPublishedGeneration(secondUTC)
+	if len(metrics.generation) != 1 {
+		t.Fatalf("current-generation reset changed full gauge early: %#v", metrics.generation)
+	}
+	prewarmer.recordPublishedGeneration(secondShanghai)
+
+	thirdUTC := publicationMetricsManifest(8, 1, strings.Repeat("c", 64), "UTC", "2026-07-21")
+	thirdShanghai := publicationMetricsManifest(8, 1, strings.Repeat("c", 64), "Asia/Shanghai", "2026-07-21")
+	beginPublicationMetricsBatch(prewarmer, thirdUTC, thirdShanghai)
+	prewarmer.recordPublishedGeneration(thirdUTC)
+	if len(metrics.generation) != 2 {
+		t.Fatalf("provider-version reset changed full gauge early: %#v", metrics.generation)
+	}
+	prewarmer.recordPublishedGeneration(thirdShanghai)
+	if len(metrics.generation) != 3 {
+		t.Fatalf("completed generation gauges = %#v, want three complete values", metrics.generation)
+	}
+}
+
+func TestPrewarmGenerationGaugeExcludesConfiguredSplitUnsafeLane(t *testing.T) {
+	now := time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC)
+	metrics := &recordingPrewarmRequestMetrics{}
+	cache := mustNewPrewarmCache(t, newRecordingPrewarmStore(), func() time.Time { return now })
+	options := lifecycleOptions([]string{"UTC", "America/Los_Angeles"}, func() time.Time { return now })
+	options.Metrics = metrics
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(newLifecycleProvider([]int64{101}))}, cache, options)
+
+	utc := publicationMetricsManifest(7, 11, strings.Repeat("d", 64), "UTC", "2026-03-09")
+	utc.CreatedAt = now
+	beginPublicationMetricsBatch(prewarmer, utc)
+	prewarmer.recordPublishedGeneration(utc)
+	if want := fullPublicationBytes(t, utc); !reflect.DeepEqual(metrics.generation, []int{want}) {
+		t.Fatalf("split-safe generation gauge = %#v, want UTC-only complete value %d", metrics.generation, want)
+	}
+}
+
+func TestPrewarmGenerationGaugeLocksExpectedLanesToManifestBatchTime(t *testing.T) {
+	batchTime := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	currentTime := time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC)
+	metrics := &recordingPrewarmRequestMetrics{}
+	cache := mustNewPrewarmCache(t, newRecordingPrewarmStore(), func() time.Time { return currentTime })
+	options := lifecycleOptions([]string{"UTC", "America/Los_Angeles"}, func() time.Time { return currentTime })
+	options.Metrics = metrics
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(newLifecycleProvider([]int64{101}))}, cache, options)
+
+	utc := publicationMetricsManifest(7, 11, strings.Repeat("f", 64), "UTC", "2026-07-21")
+	losAngeles := publicationMetricsManifest(7, 11, strings.Repeat("f", 64), "America/Los_Angeles", "2026-07-21")
+	utc.CreatedAt, losAngeles.CreatedAt = batchTime, batchTime
+	beginPublicationMetricsBatch(prewarmer, utc, losAngeles)
+	prewarmer.recordPublishedGeneration(utc)
+	if len(metrics.generation) != 0 {
+		t.Fatalf("fresh-clock DST state completed manifest-time generation early: %#v", metrics.generation)
+	}
+	prewarmer.recordPublishedGeneration(losAngeles)
+	if want := fullPublicationBytes(t, utc, losAngeles); !reflect.DeepEqual(metrics.generation, []int{want}) {
+		t.Fatalf("manifest-time complete generation gauge = %#v, want %d", metrics.generation, want)
+	}
+}
+
+func TestPrewarmGenerationGaugeRejectsLateOldAnchorForSameCurrentID(t *testing.T) {
+	batchTime := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	metrics := &recordingPrewarmRequestMetrics{}
+	cache := mustNewPrewarmCache(t, newRecordingPrewarmStore(), func() time.Time { return batchTime })
+	options := lifecycleOptions([]string{"UTC", "Asia/Shanghai"}, func() time.Time { return batchTime })
+	options.Metrics = metrics
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(newLifecycleProvider([]int64{101}))}, cache, options)
+
+	utc := publicationMetricsManifest(7, 11, strings.Repeat("g", 64), "UTC", "2026-07-21")
+	lateShanghai := publicationMetricsManifest(7, 11, strings.Repeat("g", 64), "Asia/Shanghai", "2026-07-20")
+	currentShanghai := publicationMetricsManifest(7, 11, strings.Repeat("g", 64), "Asia/Shanghai", "2026-07-21")
+	utc.CreatedAt, lateShanghai.CreatedAt, currentShanghai.CreatedAt = batchTime, batchTime, batchTime
+	beginPublicationMetricsBatch(prewarmer, utc, currentShanghai)
+	prewarmer.recordPublishedGeneration(utc)
+	prewarmer.recordPublishedGeneration(lateShanghai)
+	if len(metrics.generation) != 0 {
+		t.Fatalf("late old-anchor manifest completed current batch: %#v", metrics.generation)
+	}
+	prewarmer.recordPublishedGeneration(currentShanghai)
+	if want := fullPublicationBytes(t, utc, currentShanghai); !reflect.DeepEqual(metrics.generation, []int{want}) {
+		t.Fatalf("current-anchor complete generation gauge = %#v, want %d", metrics.generation, want)
+	}
+}
+
+func publicationMetricsManifest(providerID int, providerVersion int64, currentID, timezone, anchor string) PrewarmManifest {
+	ref := func(class PrewarmSegmentClass, size int) PrewarmValueReference {
+		return PrewarmValueReference{Class: class, SerializedBytes: size, GenerationID: strings.Repeat(string(rune('e'+size%3)), 64)}
+	}
+	return PrewarmManifest{
+		SchemaVersion: prewarmCacheSchemaVersion, ProviderID: providerID, ProviderVersion: providerVersion,
+		Timezone: timezone, TimezoneDigest: prewarmTimezoneDigest(timezone), AnchorDate: anchor, CreatedAt: time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC),
+		CurrentStats: PrewarmValueReference{GenerationID: currentID, SerializedBytes: 100},
+		History29d:   ref(SegmentHistory29d, 10), History6d: ref(SegmentHistory6d, 20), TodayHour: ref(SegmentTodayHour, 30),
+	}
+}
+
+func beginPublicationMetricsBatch(prewarmer *Prewarmer, manifests ...PrewarmManifest) {
+	lanes := make([]prewarmTimezoneLane, 0, len(manifests))
+	for _, manifest := range manifests {
+		lanes = append(lanes, prewarmTimezoneLane{timezone: manifest.Timezone, anchorDate: manifest.AnchorDate})
+	}
+	prewarmer.beginPublicationBatch(ProviderBinding{
+		ProviderID: manifests[0].ProviderID, ProviderVersion: manifests[0].ProviderVersion,
+	}, manifests[0].CurrentStats, lanes)
+}
+
+func fullPublicationBytes(t *testing.T, manifests ...PrewarmManifest) int {
+	t.Helper()
+	total := manifests[0].CurrentStats.SerializedBytes
+	for _, manifest := range manifests {
+		encoded, err := encodePrewarmJSON(manifest, prewarmManifestMaxBytes)
+		if err != nil {
+			t.Fatalf("encodePrewarmJSON() error = %v", err)
+		}
+		total += manifest.History29d.SerializedBytes + manifest.History6d.SerializedBytes + manifest.TodayHour.SerializedBytes + len(encoded)
+	}
+	return total
+}
+
 func TestPrewarmMovingPreflightErrorDoesNotBlockHealthyTimezone(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	badIdentity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "Asia/Shanghai", AnchorDate: "2026-07-21"}
@@ -115,6 +257,37 @@ func TestPrewarmMovingPreflightErrorDoesNotBlockHealthyTimezone(t *testing.T) {
 	if provider.directoryCount() != 1 || provider.statsCount() != 1 || provider.classCount(SegmentTodayHour) != 1 {
 		t.Fatalf("healthy moving sources directory=%d stats=%d today=%d, want one shared current build and one today fetch",
 			provider.directoryCount(), provider.statsCount(), provider.classCount(SegmentTodayHour))
+	}
+}
+
+func TestPrewarmMovingPreflightUsesOneBatchInstantAcrossTimezones(t *testing.T) {
+	batchTime := time.Date(2026, 7, 21, 15, 59, 0, 0, time.UTC)
+	rolloverTime := batchTime.Add(2 * time.Minute)
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return batchTime })
+	for index, timezone := range []string{"UTC", "Asia/Shanghai"} {
+		seedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+			ProviderID: 7, ProviderVersion: 11, Timezone: timezone, AnchorDate: "2026-07-21",
+		}, batchTime.Add(-30*time.Second), string(rune('a'+index*4)))
+	}
+	var clockCalls atomic.Int32
+	now := func() time.Time {
+		if clockCalls.Add(1) == 1 {
+			return batchTime
+		}
+		return rolloverTime
+	}
+	provider := newLifecycleProvider([]int64{101})
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC", "Asia/Shanghai"}, now))
+
+	lanes, err := prewarmer.preflightMovingLanes(context.Background(), prewarmBinding(provider))
+	if err != nil {
+		t.Fatalf("preflightMovingLanes() error = %v", err)
+	}
+	if len(lanes) != 2 || lanes[0].anchorDate != "2026-07-21" || lanes[1].anchorDate != "2026-07-21" {
+		t.Fatalf("batch-instant preflight lanes = %#v, want both 2026-07-21 anchors", lanes)
+	}
+	if calls := clockCalls.Load(); calls != 1 {
+		t.Fatalf("preflight clock calls = %d, want one batch instant", calls)
 	}
 }
 
@@ -256,9 +429,28 @@ func TestPrewarmMovingTimezoneFailureDoesNotInvalidateAnother(t *testing.T) {
 	}
 	provider := newLifecycleProvider([]int64{101})
 	provider.trendErrorTimezone = "Asia/Shanghai"
-	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions(timezones, func() time.Time { return now }))
-	if err := prewarmer.RunMoving(context.Background()); err == nil {
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 4)}
+	options := lifecycleOptions(timezones, func() time.Time { return now })
+	options.Metrics, options.Reporter = metrics, reporter
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+	startedAt := time.Now()
+	err := prewarmer.RunMoving(context.Background())
+	if err == nil {
 		t.Fatal("RunMoving() error = nil, want bounded timezone failure")
+	}
+	prewarmer.reportScheduledLifecycle(strings.Repeat("m", 32), []prewarmLifecycleTarget{
+		{class: PrewarmCycleMoving, timezone: "UTC"},
+		{class: PrewarmCycleMoving, timezone: "Asia/Shanghai"},
+	}, startedAt, err)
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleMoving, "Asia/Shanghai", PrewarmCycleError); got != 1 {
+		t.Fatalf("bad moving lane error metrics = %d, want one; all=%#v", got, metrics.cycles)
+	}
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleMoving, "UTC", PrewarmCycleError); got != 0 {
+		t.Fatalf("healthy moving lane error metrics = %d, want zero; all=%#v", got, metrics.cycles)
+	}
+	if events := drainPrewarmReporter(reporter); len(events) != 1 || events[0].Timezone != "Asia/Shanghai" || events[0].Class != PrewarmCycleMoving {
+		t.Fatalf("moving failure events = %#v, want exact bad lane only", events)
 	}
 	utc := readPrewarmResult(t, cache, PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"})
 	shanghai := readPrewarmResult(t, cache, PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "Asia/Shanghai", AnchorDate: "2026-07-21"})
@@ -270,6 +462,108 @@ func TestPrewarmMovingTimezoneFailureDoesNotInvalidateAnother(t *testing.T) {
 	}
 }
 
+func TestPrewarmMovingSharedFailureReportsOnlyPreflightSelectedLanes(t *testing.T) {
+	now := time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC)
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	seedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+		ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-03-09",
+	}, now.Add(-30*time.Second), "a")
+	provider := newLifecycleProvider([]int64{101})
+	provider.directoryErr = errors.New("dynamic shared source detail")
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 4)}
+	options := lifecycleOptions([]string{"UTC", "America/Los_Angeles"}, func() time.Time { return now })
+	options.Metrics, options.Reporter = metrics, reporter
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+
+	err := prewarmer.runMoving(context.Background())
+	if err == nil {
+		t.Fatal("runMoving() error = nil, want shared source failure")
+	}
+	prewarmer.reportScheduledLifecycle(strings.Repeat("l", 32), prewarmLifecycleTargets(PrewarmCycleMoving, options.Timezones), time.Now(), err)
+
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleMoving, "UTC", PrewarmCycleError); got != 1 {
+		t.Fatalf("selected UTC shared-failure metrics = %d, want one; all=%#v", got, metrics.cycles)
+	}
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleMoving, "America/Los_Angeles", PrewarmCycleError); got != 0 {
+		t.Fatalf("split-unsafe LA shared-failure metrics = %d, want zero; all=%#v", got, metrics.cycles)
+	}
+	if events := drainPrewarmReporter(reporter); len(events) != 1 || events[0].Timezone != "UTC" {
+		t.Fatalf("selected-lane shared-failure events = %#v, want UTC only", events)
+	}
+}
+
+func TestPrewarmMovingPostLaneFailureDoesNotDoubleRecordCycleOutcome(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
+	seedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+		ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21",
+	}, now.Add(-30*time.Second), "a")
+	provider := newLifecycleProvider([]int64{101})
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 2)}
+	options := lifecycleOptions([]string{"UTC"}, func() time.Time { return now })
+	options.Metrics, options.Reporter = metrics, reporter
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+	activeKey := cache.LeaseKey("moving-active", "7", "11", prewarmer.allowlistDigest)
+	var deleteActive sync.Once
+	metrics.cycleHook = func(class, timezone, outcome string) {
+		if class == string(PrewarmCycleMoving) && timezone == "UTC" && outcome == "success" {
+			deleteActive.Do(func() { server.Del(activeKey) })
+		}
+	}
+
+	err := prewarmer.runMoving(context.Background())
+	if err == nil {
+		t.Fatal("runMoving() error = nil, want post-lane ownership failure")
+	}
+	prewarmer.reportScheduledLifecycle(strings.Repeat("o", 32), prewarmLifecycleTargets(PrewarmCycleMoving, options.Timezones), time.Now(), err)
+
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleMoving, "UTC", PrewarmCycleSuccess); got != 1 {
+		t.Fatalf("lane success metrics = %d, want one; all=%#v", got, metrics.cycles)
+	}
+	if len(metrics.cycles) != 1 {
+		t.Fatalf("post-lane ownership failure double-recorded cycle metrics: %#v", metrics.cycles)
+	}
+	if events := drainPrewarmReporter(reporter); len(events) != 1 || events[0].Timezone != "UTC" || events[0].Outcome != PrewarmCycleError {
+		t.Fatalf("post-lane ownership failure events = %#v", events)
+	}
+}
+
+func TestPrewarmRecoveryPostLaneFailureDoesNotDoubleRecordCycleOutcome(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
+	provider := newLifecycleProvider([]int64{101})
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 2)}
+	options := lifecycleOptions([]string{"UTC"}, func() time.Time { return now })
+	options.Metrics, options.Reporter = metrics, reporter
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+	activeKey := cache.LeaseKey("recovery-active", "7", "11", prewarmer.allowlistDigest)
+	var deleteActive sync.Once
+	metrics.cycleHook = func(class, timezone, outcome string) {
+		if class == string(PrewarmCycleRecovery) && timezone == "UTC" && outcome == "success" {
+			deleteActive.Do(func() { server.Del(activeKey) })
+		}
+	}
+
+	err := prewarmer.runRecovery(context.Background())
+	if err == nil {
+		t.Fatal("runRecovery() error = nil, want post-lane ownership failure")
+	}
+	prewarmer.reportScheduledLifecycle(strings.Repeat("q", 32), prewarmLifecycleTargets(PrewarmCycleRecovery, options.Timezones), time.Now(), err)
+
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleRecovery, "UTC", PrewarmCycleSuccess); got != 1 {
+		t.Fatalf("recovery lane success metrics = %d, want one; all=%#v", got, metrics.cycles)
+	}
+	if len(metrics.cycles) != 1 {
+		t.Fatalf("recovery post-lane ownership failure double-recorded cycle metrics: %#v", metrics.cycles)
+	}
+	if events := drainPrewarmReporter(reporter); len(events) != 1 || events[0].Timezone != "UTC" || events[0].Outcome != PrewarmCycleError {
+		t.Fatalf("recovery post-lane ownership failure events = %#v", events)
+	}
+}
+
 func TestPrewarmHistoricalRefreshesIndependentSegmentsAndSkipsSplitUnsafe(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
@@ -277,9 +571,28 @@ func TestPrewarmHistoricalRefreshesIndependentSegmentsAndSkipsSplitUnsafe(t *tes
 	old := seedMixedAgePrewarmManifest(t, cache, identity, now)
 	provider := newLifecycleProvider([]int64{101})
 	provider.trendErrorClass = SegmentHistory6d
-	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC", "America/Los_Angeles"}, func() time.Time { return now }))
-	if err := prewarmer.RunHistorical(context.Background(), "UTC", now); err == nil {
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 4)}
+	options := lifecycleOptions([]string{"UTC", "America/Los_Angeles"}, func() time.Time { return now })
+	options.Metrics, options.Reporter = metrics, reporter
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+	startedAt := time.Now()
+	err := prewarmer.RunHistorical(context.Background(), "UTC", now)
+	if err == nil {
 		t.Fatal("RunHistorical() error = nil, want independent history_6d failure")
+	}
+	prewarmer.reportScheduledLifecycle(strings.Repeat("h", 32), []prewarmLifecycleTarget{
+		{class: PrewarmCycleHistory29d, timezone: "UTC"},
+		{class: PrewarmCycleHistory6d, timezone: "UTC"},
+	}, startedAt, err)
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleHistory6d, "UTC", PrewarmCycleError); got != 1 {
+		t.Fatalf("history_6d error metrics = %d, want one; all=%#v", got, metrics.cycles)
+	}
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleHistory29d, "UTC", PrewarmCycleError); got != 0 {
+		t.Fatalf("healthy history_29d error metrics = %d, want zero; all=%#v", got, metrics.cycles)
+	}
+	if events := drainPrewarmReporter(reporter); len(events) != 1 || events[0].Class != PrewarmCycleHistory6d || events[0].Timezone != "UTC" {
+		t.Fatalf("historical failure events = %#v, want history_6d only", events)
 	}
 	result := readPrewarmResult(t, cache, identity)
 	if result.Manifest.History29d.GenerationID == old.History29d.GenerationID {
@@ -1153,12 +1466,137 @@ func TestPrewarmerLifecycleReportsBoundedCoordinatorFailure(t *testing.T) {
 	}
 }
 
+func TestPrewarmerScheduledLifecycleReportsEarlyGlobalFailureOnce(t *testing.T) {
+	cache := mustNewPrewarmCache(t, newRecordingPrewarmStore(), time.Now)
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 2)}
+	options := lifecycleOptions([]string{"UTC"}, time.Now)
+	options.Metrics, options.Reporter = metrics, reporter
+	prewarmer := mustPrewarmer(t, staticBindingResolver{err: errors.New("dynamic provider detail")}, cache, options)
+
+	startedAt := time.Now()
+	err := prewarmer.runMoving(context.Background())
+	if err == nil {
+		t.Fatal("runMoving() error = nil, want provider resolution failure")
+	}
+	prewarmer.reportScheduledLifecycle(strings.Repeat("g", 32), []prewarmLifecycleTarget{
+		{class: PrewarmCycleMoving, timezone: "UTC"},
+	}, startedAt, err)
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleMoving, "UTC", PrewarmCycleError); got != 1 {
+		t.Fatalf("global moving error metrics = %d, want one; all=%#v", got, metrics.cycles)
+	}
+	if events := drainPrewarmReporter(reporter); len(events) != 1 || events[0].Class != PrewarmCycleMoving || events[0].Timezone != "UTC" {
+		t.Fatalf("global moving failure events = %#v", events)
+	}
+}
+
+func TestPrewarmerScheduledLifecyclePreservesGlobalValidationOutcome(t *testing.T) {
+	cache := mustNewPrewarmCache(t, newRecordingPrewarmStore(), time.Now)
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 1)}
+	options := lifecycleOptions([]string{"UTC"}, time.Now)
+	options.Metrics, options.Reporter = metrics, reporter
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(newLifecycleProvider([]int64{101}))}, cache, options)
+	err := fmt.Errorf("moving cycle: %w", wrapPrewarmSourceFailure(
+		prewarmSourceFailureValidation,
+		errors.New("dynamic validation detail"),
+	))
+
+	prewarmer.reportScheduledLifecycle(strings.Repeat("r", 32), []prewarmLifecycleTarget{
+		{class: PrewarmCycleMoving, timezone: "UTC"},
+	}, time.Now(), err)
+
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleMoving, "UTC", PrewarmCycleRejected); got != 1 {
+		t.Fatalf("global moving rejected metrics = %d, want one; all=%#v", got, metrics.cycles)
+	}
+	if events := drainPrewarmReporter(reporter); len(events) != 1 || events[0].Outcome != PrewarmCycleRejected {
+		t.Fatalf("global moving rejection events = %#v", events)
+	}
+}
+
+func TestPrewarmerStartupLifecycleUsesValidationOutcome(t *testing.T) {
+	cache := mustNewPrewarmCache(t, newRecordingPrewarmStore(), time.Now)
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 1)}
+	options := lifecycleOptions([]string{"UTC"}, time.Now)
+	options.Metrics, options.Reporter = metrics, reporter
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(newLifecycleProvider([]int64{101}))}, cache, options)
+	err := wrapPrewarmSourceFailure(prewarmSourceFailureValidation, errors.New("dynamic validation detail"))
+
+	prewarmer.reportLifecycle(strings.Repeat("s", 32), PrewarmCycleStartup, []string{"UTC"}, time.Now(), err, true)
+
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleStartup, "UTC", PrewarmCycleRejected); got != 1 {
+		t.Fatalf("startup rejected metrics = %d, want one; all=%#v", got, metrics.cycles)
+	}
+	if events := drainPrewarmReporter(reporter); len(events) != 1 || events[0].Outcome != PrewarmCycleRejected {
+		t.Fatalf("startup rejection events = %#v", events)
+	}
+}
+
+func TestPrewarmerScheduledLifecyclePartitionsExactAndGlobalFailures(t *testing.T) {
+	cache := mustNewPrewarmCache(t, newRecordingPrewarmStore(), time.Now)
+	metrics := &recordingPrewarmRequestMetrics{}
+	reporter := &recordingPrewarmReporter{events: make(chan PrewarmBackgroundEvent, 2)}
+	options := lifecycleOptions([]string{"UTC", "Asia/Shanghai"}, time.Now)
+	options.Metrics, options.Reporter = metrics, reporter
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(newLifecycleProvider([]int64{101}))}, cache, options)
+	err := errors.Join(
+		newPrewarmLifecycleFailure(PrewarmCycleMoving, "Asia/Shanghai", false, errors.New("dynamic lane detail")),
+		fmt.Errorf("moving cycle: %w", wrapPrewarmSourceFailure(
+			prewarmSourceFailureValidation,
+			errors.New("dynamic global validation detail"),
+		)),
+	)
+
+	prewarmer.reportScheduledLifecycle(strings.Repeat("p", 32), []prewarmLifecycleTarget{
+		{class: PrewarmCycleMoving, timezone: "UTC"},
+		{class: PrewarmCycleMoving, timezone: "Asia/Shanghai"},
+	}, time.Now(), err)
+
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleMoving, "UTC", PrewarmCycleRejected); got != 1 {
+		t.Fatalf("UTC global rejected metrics = %d, want one; all=%#v", got, metrics.cycles)
+	}
+	if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleMoving, "Asia/Shanghai", PrewarmCycleError); got != 1 {
+		t.Fatalf("Shanghai exact error metrics = %d, want one; all=%#v", got, metrics.cycles)
+	}
+	if len(metrics.cycles) != 2 {
+		t.Fatalf("partitioned lifecycle metrics = %#v, want exactly two", metrics.cycles)
+	}
+	events := drainPrewarmReporter(reporter)
+	if len(events) != 2 || events[0].Timezone != "UTC" || events[0].Outcome != PrewarmCycleRejected ||
+		events[1].Timezone != "Asia/Shanghai" || events[1].Outcome != PrewarmCycleError {
+		t.Fatalf("partitioned lifecycle events = %#v", events)
+	}
+}
+
 type recordingPrewarmReporter struct {
 	events chan PrewarmBackgroundEvent
 }
 
 func (r *recordingPrewarmReporter) ReportPrewarmBackground(event PrewarmBackgroundEvent) {
 	r.events <- event
+}
+
+func drainPrewarmReporter(reporter *recordingPrewarmReporter) []PrewarmBackgroundEvent {
+	var events []PrewarmBackgroundEvent
+	for {
+		select {
+		case event := <-reporter.events:
+			events = append(events, event)
+		default:
+			return events
+		}
+	}
+}
+
+func countPrewarmCycleOutcome(metrics []prewarmCycleMetric, class PrewarmCycleClass, timezone string, outcome PrewarmCycleOutcome) int {
+	count := 0
+	for _, metric := range metrics {
+		if metric.class == string(class) && metric.timezone == timezone && metric.outcome == string(outcome) {
+			count++
+		}
+	}
+	return count
 }
 
 func containsPrewarmCycleMetric(got []prewarmCycleMetric, want prewarmCycleMetric) bool {

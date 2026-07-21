@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -73,6 +74,10 @@ func (s *sub2apiRelay) GetProviderUsageTrend(
 	body, readErr := readBodyStrictlyBelow(resp.Body, teamTrendBatchResponseLimit)
 	resp.Body.Close()
 	if readErr != nil {
+		var limitErr *responseBodyLimitError
+		if errors.As(readErr, &limitErr) {
+			return empty, NewProviderSourceRejection(ProviderSourceRejectionRawTrendLimit, fmt.Errorf("relay: provider team trend: read body: %w", readErr))
+		}
 		return empty, fmt.Errorf("relay: provider team trend: read body: %w", readErr)
 	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
@@ -98,11 +103,11 @@ func (s *sub2apiRelay) GetProviderUsageTrend(
 	if strings.TrimSpace(envelope.Data.StartDate) != coverage.StartDate ||
 		strings.TrimSpace(envelope.Data.EndDate) != coverage.EndDate ||
 		strings.TrimSpace(envelope.Data.Granularity) != coverage.Granularity {
-		return empty, fmt.Errorf("relay: provider team trend: source coverage does not match request")
+		return empty, NewProviderSourceRejection(ProviderSourceRejectionRawTrendCoverage, fmt.Errorf("relay: provider team trend: source coverage does not match request"))
 	}
 
 	rows := *envelope.Data.Trend
-	if err := validateProviderWideTrendPointCount(rows); err != nil {
+	if err := validateProviderWideTrendPointCountLimit(rows, s.effectiveProviderWideTrendPointLimit()); err != nil {
 		return empty, err
 	}
 	uniqueUsers := make(map[int64]struct{}, len(rows))
@@ -126,27 +131,41 @@ func (s *sub2apiRelay) GetProviderUsageTrend(
 
 		uniqueUsers[row.UserID] = struct{}{}
 		if len(uniqueUsers) > limit {
-			return empty, fmt.Errorf("relay: provider team trend: unique user count exceeds requested limit %d", limit)
+			return empty, NewProviderSourceRejection(ProviderSourceRejectionRawTrendCompleteness, fmt.Errorf("relay: provider team trend: unique user count exceeds requested limit %d", limit))
 		}
 		if len(uniqueUsers) >= teamTrendBatchUserLimit {
-			return empty, fmt.Errorf("relay: provider team trend: unique user count reached truncation limit %d", teamTrendBatchUserLimit)
+			return empty, NewProviderSourceRejection(ProviderSourceRejectionRawTrendLimit, fmt.Errorf("relay: provider team trend: unique user count reached truncation limit %d", teamTrendBatchUserLimit))
 		}
 		points = append(points, ProviderWideTrendPoint{
 			UserID: row.UserID, Date: row.Date, ActualCost: *row.ActualCost, TotalTokens: row.Tokens,
 		})
 	}
+	if len(uniqueUsers) >= limit {
+		return empty, NewProviderSourceRejection(ProviderSourceRejectionRawTrendCompleteness, fmt.Errorf("relay: provider team trend: source reached requested completeness limit %d", limit))
+	}
 
 	return ProviderWideTrendResult{
 		Points: points, Coverage: coverage, ResponseBytes: int64(len(body)),
-		PointCount: len(points), UniqueUserCount: len(uniqueUsers), Complete: len(uniqueUsers) < limit,
+		PointCount: len(points), UniqueUserCount: len(uniqueUsers), Complete: true,
 	}, nil
 }
 
 func validateProviderWideTrendPointCount(rows []teamTrendBatchPoint) error {
-	if len(rows) >= teamTrendBatchPointLimit {
-		return fmt.Errorf("relay: provider team trend: point count reached limit %d", teamTrendBatchPointLimit)
+	return validateProviderWideTrendPointCountLimit(rows, teamTrendBatchPointLimit)
+}
+
+func validateProviderWideTrendPointCountLimit(rows []teamTrendBatchPoint, limit int) error {
+	if len(rows) >= limit {
+		return NewProviderSourceRejection(ProviderSourceRejectionRawTrendLimit, fmt.Errorf("relay: provider team trend: point count reached limit %d", limit))
 	}
 	return nil
+}
+
+func (s *sub2apiRelay) effectiveProviderWideTrendPointLimit() int {
+	if s.providerWideTrendPointLimit > 0 && s.providerWideTrendPointLimit <= teamTrendBatchPointLimit {
+		return s.providerWideTrendPointLimit
+	}
+	return teamTrendBatchPointLimit
 }
 
 func validateProviderWideTrendPoint(row teamTrendBatchPoint, index int, granularity string) error {
