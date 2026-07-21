@@ -8,32 +8,35 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Task 1 source and capacity gates passed, but task review found the
-retained evidence incomplete because it omitted the required 20-call ledger and
-exact staging image. Task 1 Steps 5-6 are reopened; Tasks 2-9 remain blocked.
+**Status:** Task 1 source and capacity gates passed. The corrected 20-call
+ledger, exact staging image, and cleanup evidence are recorded; the correction
+commit is pending. Tasks 2-9 remain blocked until Step 6 is checked.
 
 ## Task 1 Gate Evidence
 
-Staging matched PR #192 exact head `627a7123` at Helm revision 44. Production
-remained unchanged on `v0.1.0-preview.73` at revision 69. The read-only probe
+Staging matched PR #192 exact head `627a7123` at Helm revision 44 using image
+`ghcr.io/lichking-2234/ai-efficiency:staging-627a7123d98aee37dd04fd5da2198234cfd003f0`.
+Production remained unchanged on `v0.1.0-preview.73` at revision 69. The read-only probe
 used completed split-safe anchor `2026-07-19`, made exactly 20 trend GETs with
-maximum concurrency two, and completed in 46.274 seconds.
+maximum concurrency two. The final retained-ledger rerun completed in 51.576
+seconds; its complete 20-call table is in the authoritative design spec's POC
+Evidence section.
 
 | Gate | Observed | Result |
 | --- | ---: | --- |
-| Slowest GET `<25s` | 6.649 s | Pass |
-| All 20 GETs `<5m` | 46.274 s | Pass |
+| Slowest GET `<25s` | 6.657 s | Pass |
+| All 20 GETs `<5m` | 51.576 s | Pass |
 | Largest body `<32 MiB` | 1,022,906 bytes | Pass |
 | Largest decoded result `<1,000,000` | 6,308 points | Pass |
 | Largest source/composed user set `<5,000` | 359 / 359 | Pass |
-| Largest stored segment `<8 MiB` | 470,925 bytes | Pass |
-| Largest timezone generation `<16 MiB` | 696,320 bytes | Pass |
-| All 12 trend segments `<64 MiB` | 2,621,028 bytes | Pass |
+| Largest stored segment `<8 MiB` | 470,926 bytes | Pass |
+| Largest timezone generation `<16 MiB` | 696,323 bytes | Pass |
+| All 12 trend segments `<64 MiB` | 2,621,040 bytes | Pass |
 | Synthetic directory `<16 MiB` | 6,445,098 bytes | Pass |
 | Synthetic stats chunk `<2 MiB` | 88,549 bytes | Pass |
 | Synthetic current stats `<2 MiB` | 774,970 bytes | Pass |
 | Synthetic manifest `<64 KiB` | 3,798 bytes | Pass |
-| Peak RSS `<192 MiB` | 58,392,576 bytes | Pass |
+| Peak RSS `<192 MiB` | 33,243,136 bytes | Pass |
 | 7d/30d token and cost equality | exact in all four timezones | Pass |
 | DST split guard fixtures | four rollover rejects and eight adjacent accepts | Pass |
 
@@ -165,7 +168,7 @@ jq -e '.request_count == 20 and .max_concurrency <= 2 and .decision == "pass"' \
 
 Expected: each GET `<25s`; total wall `<5m`; each body `<32 MiB`; each decoded result `<1,000,000` points; source and composed users `<5,000`; each segment `<8 MiB`; one timezone `<16 MiB`; all timezones `<64 MiB`; RSS `<192 MiB`; every per-key comparison exact under the token/cost rules; LA/Berlin spring and fall fixture anchors select fallback while adjacent 24-hour anchors pass. Any failure blocks the plan; do not weaken a limit or execute Task 2.
 
-- [ ] **Step 5: Record only sanitized evidence and delete authenticated artifacts**
+- [x] **Step 5: Record only sanitized evidence and delete authenticated artifacts**
 
 Update the spec and this plan with dates, aggregate counts, sizes, durations, and pass/fail only. Then run:
 

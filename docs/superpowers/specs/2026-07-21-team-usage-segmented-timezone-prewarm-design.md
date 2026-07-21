@@ -708,29 +708,58 @@ Mandatory hard gates are:
 
 The read-only staging POC used completed split-safe anchor `D=2026-07-19` for
 all four configured timezones. Staging remained on PR #192 exact head
-`627a7123` at Helm revision 44. Production remained unchanged on
+`627a7123` at Helm revision 44 using immutable image
+`ghcr.io/lichking-2234/ai-efficiency:staging-627a7123d98aee37dd04fd5da2198234cfd003f0`.
+Production remained unchanged on
 `v0.1.0-preview.73` at Helm revision 69.
 
 | Measurement | Observed | Gate |
 | --- | ---: | ---: |
 | Trend GET count | 20 | exactly 20 |
 | Maximum concurrency | 2 | `<= 2` |
-| Total wall duration | 46.274 s | `< 5m` |
-| Slowest GET | 6.649 s | `< 25s` |
+| Total wall duration | 51.576 s | `< 5m` |
+| Slowest GET | 6.657 s | `< 25s` |
 | Total response bytes | 10,503,197 | informational |
 | Largest response body | 1,022,906 bytes | `< 32 MiB` |
 | Total decoded points | 64,710 | informational |
 | Largest decoded result | 6,308 points | `< 1,000,000` |
 | Largest source unique-user set | 359 | `< 5,000` |
 | Largest composed unique-user union | 359 | `< 5,000` |
-| Largest stored trend segment | 470,925 bytes | `< 8 MiB` |
-| Largest timezone trend generation | 696,320 bytes | `< 16 MiB` |
-| All 12 stored trend segments | 2,621,028 bytes | `< 64 MiB` |
+| Largest stored trend segment | 470,926 bytes | `< 8 MiB` |
+| Largest timezone trend generation | 696,323 bytes | `< 16 MiB` |
+| All 12 stored trend segments | 2,621,040 bytes | `< 64 MiB` |
 | Synthetic directory page | 6,445,098 bytes | `< 16 MiB` |
 | Synthetic 500-ID stats chunk | 88,549 bytes | `< 2 MiB` |
 | Synthetic 4,999-row current stats | 774,970 bytes | `< 2 MiB` |
 | Each synthetic manifest | 3,798 bytes | `< 64 KiB` |
-| Peak process RSS | 58,392,576 bytes | `< 192 MiB` |
+| Peak process RSS | 33,243,136 bytes | `< 192 MiB` |
+
+The final source rerun retained this sanitized per-call ledger. `Stored bytes`
+is zero for the two direct comparison sources because they are never Redis
+values.
+
+| Timezone | Source | Duration ms | Body bytes | Points | Users | Stored bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `UTC` | `direct_30d` | 6,419 | 991,444 | 6,113 | 356 | 0 |
+| `UTC` | `direct_7d` | 2,732 | 267,237 | 1,647 | 326 | 0 |
+| `UTC` | `history_29d` | 6,320 | 974,949 | 6,010 | 356 | 469,371 |
+| `UTC` | `history_6d` | 2,719 | 250,742 | 1,544 | 326 | 120,815 |
+| `UTC` | `today_hour` | 1,183 | 105,794 | 646 | 98 | 53,095 |
+| `Asia/Shanghai` | `direct_30d` | 6,540 | 984,502 | 6,069 | 356 | 0 |
+| `Asia/Shanghai` | `direct_7d` | 2,611 | 259,963 | 1,601 | 326 | 0 |
+| `Asia/Shanghai` | `history_29d` | 6,470 | 968,254 | 5,968 | 356 | 466,173 |
+| `Asia/Shanghai` | `history_6d` | 3,172 | 243,715 | 1,500 | 326 | 117,459 |
+| `Asia/Shanghai` | `today_hour` | 686 | 108,821 | 664 | 101 | 54,570 |
+| `America/Los_Angeles` | `direct_30d` | 6,139 | 1,022,906 | 6,308 | 359 | 0 |
+| `America/Los_Angeles` | `direct_7d` | 2,881 | 298,504 | 1,842 | 329 | 0 |
+| `America/Los_Angeles` | `history_29d` | 6,644 | 978,146 | 6,030 | 356 | 470,926 |
+| `America/Los_Angeles` | `history_6d` | 2,576 | 253,744 | 1,564 | 324 | 122,278 |
+| `America/Los_Angeles` | `today_hour` | 1,660 | 205,758 | 1,253 | 262 | 103,119 |
+| `Europe/Berlin` | `direct_30d` | 6,624 | 990,801 | 6,109 | 356 | 0 |
+| `Europe/Berlin` | `direct_7d` | 3,324 | 266,600 | 1,643 | 326 | 0 |
+| `Europe/Berlin` | `history_29d` | 6,657 | 974,450 | 6,007 | 356 | 469,142 |
+| `Europe/Berlin` | `history_6d` | 1,928 | 250,249 | 1,541 | 326 | 120,590 |
+| `Europe/Berlin` | `today_hour` | 1,296 | 106,618 | 651 | 100 | 53,502 |
 
 Per-user and daily-source-label key sets, optional-token presence and values,
 and actual cost all matched for both direct 7-day and direct 30-day results in
