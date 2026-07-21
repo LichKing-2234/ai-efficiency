@@ -207,7 +207,7 @@ git commit -m "docs(teamusage): record segmented prewarm POC"
 - Produces: `ProviderWideTeamUsageProvider.GetProviderUserIDs`, `GetProviderCurrentUsageStats`, and `ProviderWideTeamTrendProvider.GetProviderUsageTrend`.
 - Preserves: `TeamUsageSummaryProvider.GetBatchUserUsageStats` and `TeamMemberTrendProvider.GetUsageTrendForUsers` as PR #192 fallback APIs.
 
-- [ ] **Step 1: Write RED interface and HTTP contract tests**
+- [x] **Step 1: Write RED interface and HTTP contract tests**
 
 Define the intended signatures in test fakes:
 
@@ -223,7 +223,7 @@ type ProviderWideTeamTrendProvider interface {
 
 Tests must assert the exact directory query, strictly ascending cross-page IDs, stable authoritative pagination, `<5000` IDs, at-most-500 stats IDs, exact stats coverage, duplicate JSON-key rejection, and pre-decode rejection at exactly 16 MiB and 2 MiB. Trend tests must assert raw unfiltered rows, exact coverage metadata, bytes/points/users, negative-cost rejection, exact-5,000 rejection, and fallback API filtering remains unchanged.
 
-- [ ] **Step 2: Run RED tests**
+- [x] **Step 2: Run RED tests**
 
 ```bash
 cd backend
@@ -232,7 +232,7 @@ go test ./internal/relay -run 'ProviderWide|DirectoryContract|CurrentStatsContra
 
 Expected: FAIL because the provider-wide interfaces and bounded source methods do not exist and existing directory/stats reads are unbounded.
 
-- [ ] **Step 3: Implement the minimal provider capabilities**
+- [x] **Step 3: Implement the minimal provider capabilities**
 
 Add identity-free result types:
 
@@ -251,7 +251,7 @@ type ProviderWideTrendPoint struct { UserID int64; Date string; ActualCost float
 
 Use limited reads with one sentinel byte before JSON decoding. Decode stats object tokens before map conversion so duplicate object keys cannot be hidden. Keep `GetUsageTrendForUsers` as a thin authorization-filtering adapter over the provider-wide result, without a completed in-memory cache.
 
-- [ ] **Step 4: Verify Relay behavior**
+- [x] **Step 4: Verify Relay behavior**
 
 ```bash
 cd backend

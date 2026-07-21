@@ -810,6 +810,300 @@ func TestListUsersFetchesAllAdminPages(t *testing.T) {
 	}
 }
 
+func TestProviderWideDirectoryContractUsesFixedQueryAndAuthoritativePages(t *testing.T) {
+	pageBodies := map[string][]byte{
+		"1": []byte(`{"success":true,"data":{"items":[{"id":11},{"id":12}],"page":1,"page_size":1000,"pages":2,"total":3}}`),
+		"2": []byte(`{"success":true,"data":{"items":[{"id":13}],"page":2,"page_size":1000,"pages":2,"total":3}}`),
+	}
+	var pages []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		page := r.URL.Query().Get("page")
+		pages = append(pages, page)
+		if diff := cmp.Diff(map[string][]string{
+			"page":                  {page},
+			"page_size":             {"1000"},
+			"include_subscriptions": {"false"},
+			"sort_by":               {"id"},
+			"sort_order":            {"asc"},
+		}, map[string][]string(r.URL.Query())); diff != "" {
+			t.Fatalf("directory query mismatch (-want +got):\n%s", diff)
+		}
+		body, ok := pageBodies[page]
+		if !ok {
+			t.Fatalf("unexpected page %q", page)
+		}
+		_, _ = w.Write(body)
+	})
+
+	provider := newTestProvider(t, mux)
+	directory, ok := provider.(relay.ProviderWideTeamUsageProvider)
+	if !ok {
+		t.Fatal("provider does not implement ProviderWideTeamUsageProvider")
+	}
+	got, err := directory.GetProviderUserIDs(context.Background())
+	if err != nil {
+		t.Fatalf("GetProviderUserIDs() error = %v", err)
+	}
+	if diff := cmp.Diff([]int64{11, 12, 13}, got.UserIDs); diff != "" {
+		t.Fatalf("provider user IDs mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"1", "2"}, pages); diff != "" {
+		t.Fatalf("requested pages mismatch (-want +got):\n%s", diff)
+	}
+	if got.PageCount != 2 {
+		t.Fatalf("page count = %d, want 2", got.PageCount)
+	}
+	wantBytes := int64(len(pageBodies["1"]) + len(pageBodies["2"]))
+	if got.ResponseBytes != wantBytes {
+		t.Fatalf("response bytes = %d, want %d", got.ResponseBytes, wantBytes)
+	}
+}
+
+func TestProviderWideDirectoryContractRejectsInvalidPaginationAndIDs(t *testing.T) {
+	tests := []struct {
+		name  string
+		pages map[string]string
+	}{
+		{
+			name: "cross-page order",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":1,"page_size":1000,"pages":2,"total":2}}`,
+				"2": `{"success":true,"data":{"items":[{"id":10}],"page":2,"page_size":1000,"pages":2,"total":2}}`,
+			},
+		},
+		{
+			name: "duplicate ID",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11},{"id":11}],"page":1,"page_size":1000,"pages":1,"total":2}}`,
+			},
+		},
+		{
+			name: "non-positive ID",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":0}],"page":1,"page_size":1000,"pages":1,"total":1}}`,
+			},
+		},
+		{
+			name: "response page mismatch",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":2,"page_size":1000,"pages":1,"total":1}}`,
+			},
+		},
+		{
+			name: "page size mismatch",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":1,"page_size":200,"pages":1,"total":1}}`,
+			},
+		},
+		{
+			name: "missing total pages",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":1,"page_size":1000,"total":1}}`,
+			},
+		},
+		{
+			name: "changing total",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":1,"page_size":1000,"pages":2,"total":2}}`,
+				"2": `{"success":true,"data":{"items":[{"id":12}],"page":2,"page_size":1000,"pages":2,"total":3}}`,
+			},
+		},
+		{
+			name: "empty nonterminal page",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[],"page":1,"page_size":1000,"pages":2,"total":1}}`,
+			},
+		},
+		{
+			name: "final count mismatch",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":1,"page_size":1000,"pages":1,"total":2}}`,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+				body, ok := test.pages[r.URL.Query().Get("page")]
+				if !ok {
+					t.Fatalf("unexpected page %q", r.URL.Query().Get("page"))
+				}
+				_, _ = io.WriteString(w, body)
+			})
+			provider := newTestProvider(t, mux)
+			directory := provider.(relay.ProviderWideTeamUsageProvider)
+			if _, err := directory.GetProviderUserIDs(context.Background()); err == nil {
+				t.Fatalf("GetProviderUserIDs() error = nil, want %s rejection", test.name)
+			}
+		})
+	}
+}
+
+func TestProviderWideDirectoryContractRejectsExactUserAndBodyBounds(t *testing.T) {
+	t.Run("5000 users", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+			page, err := strconv.Atoi(r.URL.Query().Get("page"))
+			if err != nil || page < 1 || page > 5 {
+				t.Fatalf("unexpected page %q", r.URL.Query().Get("page"))
+			}
+			items := make([]map[string]int64, 1000)
+			for index := range items {
+				items[index] = map[string]int64{"id": int64((page-1)*1000 + index + 1)}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{
+				"items": items, "page": page, "page_size": 1000, "pages": 5, "total": 5000,
+			}})
+		})
+		provider := newTestProvider(t, mux)
+		directory := provider.(relay.ProviderWideTeamUsageProvider)
+		if _, err := directory.GetProviderUserIDs(context.Background()); err == nil {
+			t.Fatal("GetProviderUserIDs() error = nil, want exact-5000 rejection")
+		}
+	})
+
+	t.Run("16 MiB body", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, strings.Repeat("x", 16<<20))
+		})
+		provider := newTestProvider(t, mux)
+		directory := provider.(relay.ProviderWideTeamUsageProvider)
+		_, err := directory.GetProviderUserIDs(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "16777216-byte limit") {
+			t.Fatalf("GetProviderUserIDs() error = %v, want pre-decode body limit rejection", err)
+		}
+	})
+}
+
+func TestProviderWideCurrentStatsContractUsesOneBoundedExactChunk(t *testing.T) {
+	response := []byte(`{"success":true,"data":{"stats":{"101":{"user_id":101,"today_actual_cost":1.25,"total_actual_cost":10.5,"total_tokens":123},"102":{"user_id":102,"today_actual_cost":0,"total_actual_cost":0}}}}`)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		var payload map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(payload) != 1 {
+			t.Fatalf("request fields = %v, want only user_ids", payload)
+		}
+		var ids []int64
+		if err := json.Unmarshal(payload["user_ids"], &ids); err != nil {
+			t.Fatalf("decode user_ids: %v", err)
+		}
+		if diff := cmp.Diff([]int64{101, 102}, ids); diff != "" {
+			t.Fatalf("user_ids mismatch (-want +got):\n%s", diff)
+		}
+		_, _ = w.Write(response)
+	})
+
+	provider := newTestProvider(t, mux)
+	statsProvider := provider.(relay.ProviderWideTeamUsageProvider)
+	got, err := statsProvider.GetProviderCurrentUsageStats(context.Background(), []int64{101, 102})
+	if err != nil {
+		t.Fatalf("GetProviderCurrentUsageStats() error = %v", err)
+	}
+	if got.ResponseBytes != int64(len(response)) {
+		t.Fatalf("response bytes = %d, want %d", got.ResponseBytes, len(response))
+	}
+	if len(got.Stats) != 2 || got.Stats[101].TotalActualCost != 10.5 || got.Stats[102].UserID != 102 {
+		t.Fatalf("stats = %#v, want exact records for 101 and 102", got.Stats)
+	}
+}
+
+func TestProviderWideCurrentStatsContractRejectsRequestAndCoverageViolations(t *testing.T) {
+	validRecord := `{"user_id":101,"today_actual_cost":1,"total_actual_cost":2}`
+	tests := []struct {
+		name string
+		ids  []int64
+		body string
+	}{
+		{name: "empty request", ids: nil, body: `{}`},
+		{name: "non-positive request", ids: []int64{0}, body: `{}`},
+		{name: "duplicate request", ids: []int64{101, 101}, body: `{}`},
+		{name: "missing record", ids: []int64{101, 102}, body: `{"success":true,"data":{"stats":{"101":` + validRecord + `}}}`},
+		{name: "extra record", ids: []int64{101}, body: `{"success":true,"data":{"stats":{"101":` + validRecord + `,"102":{"user_id":102}}}}`},
+		{name: "embedded ID mismatch", ids: []int64{101}, body: `{"success":true,"data":{"stats":{"101":{"user_id":102}}}}`},
+		{name: "duplicate JSON key", ids: []int64{101}, body: `{"success":true,"data":{"stats":{"101":` + validRecord + `,"101":` + validRecord + `}}}`},
+		{name: "negative cost", ids: []int64{101}, body: `{"success":true,"data":{"stats":{"101":{"user_id":101,"today_actual_cost":-1,"total_actual_cost":2}}}}`},
+		{name: "negative tokens", ids: []int64{101}, body: `{"success":true,"data":{"stats":{"101":{"user_id":101,"today_actual_cost":1,"total_actual_cost":2,"total_tokens":-1}}}}`},
+	}
+	tooMany := make([]int64, 501)
+	for index := range tooMany {
+		tooMany[index] = int64(index + 1)
+	}
+	tests = append(tests, struct {
+		name string
+		ids  []int64
+		body string
+	}{name: "501 requested IDs", ids: tooMany, body: `{}`})
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var calls int
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
+				calls++
+				_, _ = io.WriteString(w, test.body)
+			})
+			provider := newTestProvider(t, mux)
+			statsProvider := provider.(relay.ProviderWideTeamUsageProvider)
+			if _, err := statsProvider.GetProviderCurrentUsageStats(context.Background(), test.ids); err == nil {
+				t.Fatalf("GetProviderCurrentUsageStats() error = nil, want %s rejection", test.name)
+			}
+			if (test.name == "empty request" || test.name == "non-positive request" || test.name == "duplicate request" || test.name == "501 requested IDs") && calls != 0 {
+				t.Fatalf("HTTP calls = %d, want validation before request", calls)
+			}
+		})
+	}
+}
+
+func TestProviderWideCurrentStatsContractRejectsExactBodyLimitBeforeDecode(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, strings.Repeat("x", 2<<20))
+	})
+	provider := newTestProvider(t, mux)
+	statsProvider := provider.(relay.ProviderWideTeamUsageProvider)
+	_, err := statsProvider.GetProviderCurrentUsageStats(context.Background(), []int64{101})
+	if err == nil || !strings.Contains(err.Error(), "2097152-byte limit") {
+		t.Fatalf("GetProviderCurrentUsageStats() error = %v, want pre-decode body limit rejection", err)
+	}
+}
+
+func TestProviderWideUsageSourcesDoNotExposeUpstreamIdentityMessages(t *testing.T) {
+	const upstreamMessage = "alice@example.com secret response text"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": upstreamMessage})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": upstreamMessage})
+	})
+	provider := newTestProvider(t, mux)
+	wide := provider.(relay.ProviderWideTeamUsageProvider)
+
+	_, directoryErr := wide.GetProviderUserIDs(context.Background())
+	_, statsErr := wide.GetProviderCurrentUsageStats(context.Background(), []int64{101})
+	for name, err := range map[string]error{"directory": directoryErr, "stats": statsErr} {
+		if err == nil {
+			t.Fatalf("%s error = nil, want failed envelope rejection", name)
+		}
+		if strings.Contains(err.Error(), upstreamMessage) || strings.Contains(err.Error(), "alice@example.com") {
+			t.Fatalf("%s error exposed upstream identity text: %v", name, err)
+		}
+	}
+}
+
 func TestCreateUser(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -37,11 +38,13 @@ func TestUsersTrendBatchUsesOnlyAggregateRouteAndFiltersAuthorizedRows(t *testin
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"success": true,
-				"data": map[string]any{"trend": []map[string]any{
-					{"date": "2026-07-02", "user_id": 101, "tokens": 22, "actual_cost": 2.25},
-					{"date": "2026-07-01", "user_id": 999, "tokens": 99, "actual_cost": 9.99},
-					{"date": "2026-07-01", "user_id": 101, "tokens": 11, "actual_cost": 1.25},
-				}},
+				"data": map[string]any{
+					"start_date": "2026-07-01", "end_date": "2026-07-20", "granularity": "day",
+					"trend": []map[string]any{
+						{"date": "2026-07-01", "user_id": 101, "tokens": 11, "actual_cost": 1.25},
+						{"date": "2026-07-01", "user_id": 999, "tokens": 99, "actual_cost": 9.99},
+						{"date": "2026-07-02", "user_id": 101, "tokens": 22, "actual_cost": 2.25},
+					}},
 			})
 		case "/api/v1/admin/dashboard/trend":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -74,10 +77,176 @@ func TestUsersTrendBatchUsesOnlyAggregateRouteAndFiltersAuthorizedRows(t *testin
 		t.Fatalf("trend map contains unauthorized user 999: %#v", got)
 	}
 	if len(got[101]) != 2 || got[101][0].Date != "2026-07-01" || got[101][1].Date != "2026-07-02" {
-		t.Fatalf("authorized user 101 points = %#v, want sorted aggregate rows", got[101])
+		t.Fatalf("authorized user 101 points = %#v, want source-ordered aggregate rows", got[101])
 	}
 	if points, exists := got[102]; !exists || len(points) != 0 {
 		t.Fatalf("zero-usage authorized user 102 = %#v, exists %v, want explicit empty trend", points, exists)
+	}
+}
+
+func TestProviderWideTeamTrendBatchReturnsRawRowsAndExactMetadata(t *testing.T) {
+	response := []byte(`{"success":true,"data":{"trend":[{"date":"2026-07-01","user_id":101,"tokens":11,"actual_cost":1.25},{"date":"2026-07-01","user_id":999,"actual_cost":9.99},{"date":"2026-07-02","user_id":101,"tokens":22,"actual_cost":2.25}],"start_date":"2026-07-01","end_date":"2026-07-02","granularity":"day"}}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wantQuery := url.Values{
+			"start_date": {"2026-07-01"}, "end_date": {"2026-07-02"},
+			"granularity": {"day"}, "timezone": {"Asia/Shanghai"}, "limit": {"5000"},
+		}
+		if !reflect.DeepEqual(r.URL.Query(), wantQuery) {
+			t.Fatalf("query = %#v, want %#v", r.URL.Query(), wantQuery)
+		}
+		_, _ = w.Write(response)
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+
+	wide, ok := any(provider).(ProviderWideTeamTrendProvider)
+	if !ok {
+		t.Fatal("provider does not implement ProviderWideTeamTrendProvider")
+	}
+	got, err := wide.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{
+		StartDate: " 2026-07-01 ", EndDate: "2026-07-02", Granularity: " day ", Timezone: " Asia/Shanghai ",
+	}, 5000)
+	if err != nil {
+		t.Fatalf("GetProviderUsageTrend() error = %v", err)
+	}
+	if got.ResponseBytes != int64(len(response)) || got.PointCount != 3 || got.UniqueUserCount != 2 || !got.Complete {
+		t.Fatalf("metadata = bytes:%d points:%d users:%d complete:%v", got.ResponseBytes, got.PointCount, got.UniqueUserCount, got.Complete)
+	}
+	wantCoverage := TeamMemberTrendParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-02", Granularity: "day", Timezone: "Asia/Shanghai",
+	}
+	if !reflect.DeepEqual(got.Coverage, wantCoverage) {
+		t.Fatalf("coverage = %#v, want %#v", got.Coverage, wantCoverage)
+	}
+	if len(got.Points) != 3 || got.Points[0].UserID != 101 || got.Points[1].UserID != 999 || got.Points[2].Date != "2026-07-02" {
+		t.Fatalf("raw provider-wide points = %#v, want all source-ordered rows", got.Points)
+	}
+	if got.Points[1].TotalTokens != nil {
+		t.Fatalf("unknown tokens = %#v, want nil", got.Points[1].TotalTokens)
+	}
+}
+
+func TestProviderWideTeamTrendBatchRejectsInvalidRowsBeforeFiltering(t *testing.T) {
+	tests := []struct {
+		name   string
+		params TeamMemberTrendParams
+		data   map[string]any
+	}{
+		{
+			name:   "negative cost on unrelated user",
+			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC"},
+			data: map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-01", "granularity": "day",
+				"trend": []map[string]any{{"date": "2026-07-01", "user_id": 999, "actual_cost": -1}},
+			},
+		},
+		{
+			name:   "out-of-order labels",
+			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-02", Granularity: "day", Timezone: "UTC"},
+			data: map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-02", "granularity": "day",
+				"trend": []map[string]any{
+					{"date": "2026-07-02", "user_id": 101, "actual_cost": 1},
+					{"date": "2026-07-01", "user_id": 101, "actual_cost": 1},
+				},
+			},
+		},
+		{
+			name:   "invalid day label",
+			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC"},
+			data: map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-01", "granularity": "day",
+				"trend": []map[string]any{{"date": "2026-07-01 00:00", "user_id": 101, "actual_cost": 1}},
+			},
+		},
+		{
+			name:   "mismatched coverage",
+			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC"},
+			data: map[string]any{
+				"start_date": "2026-06-30", "end_date": "2026-07-01", "granularity": "day", "trend": []map[string]any{},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": test.data})
+			}))
+			t.Cleanup(server.Close)
+			provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+			if _, err := provider.GetProviderUsageTrend(context.Background(), test.params, 5000); err == nil {
+				t.Fatalf("GetProviderUsageTrend() error = nil, want %s rejection", test.name)
+			}
+		})
+	}
+}
+
+func TestProviderWideTeamTrendBatchRejectsExact5000Users(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		rows := make([]map[string]any, 5000)
+		for index := range rows {
+			rows[index] = map[string]any{"date": "2026-07-01", "user_id": index + 1, "actual_cost": 1}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"trend": rows, "start_date": "2026-07-01", "end_date": "2026-07-01", "granularity": "day",
+			},
+		})
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+	_, err := provider.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC",
+	}, 5000)
+	if err == nil {
+		t.Fatal("GetProviderUsageTrend() error = nil, want exact-5000 rejection")
+	}
+}
+
+func TestProviderWideTeamTrendBatchRejectsExactBodyLimitBeforeDecode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, strings.Repeat("x", 32<<20))
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+	_, err := provider.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{}, 5000)
+	if err == nil || !strings.Contains(err.Error(), "33554432-byte limit") {
+		t.Fatalf("GetProviderUsageTrend() error = %v, want pre-decode body limit rejection", err)
+	}
+}
+
+func TestProviderWideTeamTrendDoesNotExposeUpstreamIdentityMessages(t *testing.T) {
+	const upstreamMessage = "alice@example.com secret response text"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": upstreamMessage})
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+	_, err := provider.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{}, 5000)
+	if err == nil {
+		t.Fatal("GetProviderUsageTrend() error = nil, want failed envelope rejection")
+	}
+	if strings.Contains(err.Error(), upstreamMessage) || strings.Contains(err.Error(), "alice@example.com") {
+		t.Fatalf("GetProviderUsageTrend() error exposed upstream identity text: %v", err)
+	}
+}
+
+func TestProviderWideResultTypesContainNoIdentityOrRawBodyFields(t *testing.T) {
+	for _, resultType := range []reflect.Type{
+		reflect.TypeOf(ProviderDirectoryResult{}),
+		reflect.TypeOf(ProviderCurrentStatsResult{}),
+		reflect.TypeOf(ProviderWideTrendResult{}),
+		reflect.TypeOf(ProviderWideTrendPoint{}),
+	} {
+		for index := 0; index < resultType.NumField(); index++ {
+			name := strings.ToLower(resultType.Field(index).Name)
+			for _, forbidden := range []string{"email", "username", "body"} {
+				if strings.Contains(name, forbidden) {
+					t.Fatalf("provider-wide result %s exposes forbidden field %s", resultType.Name(), resultType.Field(index).Name)
+				}
+			}
+		}
 	}
 }
 
