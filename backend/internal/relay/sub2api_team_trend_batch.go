@@ -102,28 +102,16 @@ func (s *sub2apiRelay) GetProviderUsageTrend(
 	}
 
 	rows := *envelope.Data.Trend
-	if len(rows) >= teamTrendBatchPointLimit {
-		return empty, fmt.Errorf("relay: provider team trend: point count reached limit %d", teamTrendBatchPointLimit)
+	if err := validateProviderWideTrendPointCount(rows); err != nil {
+		return empty, err
 	}
 	uniqueUsers := make(map[int64]struct{}, len(rows))
 	seenPoints := make(map[teamTrendBatchPointKey]struct{}, len(rows))
 	lastLabels := make(map[int64]string, len(rows))
 	points := make([]ProviderWideTrendPoint, 0, len(rows))
 	for index, row := range rows {
-		if row.UserID <= 0 {
-			return empty, fmt.Errorf("relay: provider team trend: row %d has invalid user ID", index)
-		}
-		if !validTeamTrendSourceLabel(row.Date, coverage.Granularity) {
-			return empty, fmt.Errorf("relay: provider team trend: row %d has invalid source label", index)
-		}
-		if row.Tokens != nil && *row.Tokens < 0 {
-			return empty, fmt.Errorf("relay: provider team trend: row %d has negative tokens", index)
-		}
-		if row.ActualCost == nil {
-			return empty, fmt.Errorf("relay: provider team trend: row %d is missing actual cost", index)
-		}
-		if *row.ActualCost < 0 || math.IsNaN(*row.ActualCost) || math.IsInf(*row.ActualCost, 0) {
-			return empty, fmt.Errorf("relay: provider team trend: row %d has invalid actual cost", index)
+		if err := validateProviderWideTrendPoint(row, index, coverage.Granularity); err != nil {
+			return empty, err
 		}
 
 		if previous, exists := lastLabels[row.UserID]; exists && row.Date <= previous {
@@ -152,6 +140,32 @@ func (s *sub2apiRelay) GetProviderUsageTrend(
 		Points: points, Coverage: coverage, ResponseBytes: int64(len(body)),
 		PointCount: len(points), UniqueUserCount: len(uniqueUsers), Complete: len(uniqueUsers) < limit,
 	}, nil
+}
+
+func validateProviderWideTrendPointCount(rows []teamTrendBatchPoint) error {
+	if len(rows) >= teamTrendBatchPointLimit {
+		return fmt.Errorf("relay: provider team trend: point count reached limit %d", teamTrendBatchPointLimit)
+	}
+	return nil
+}
+
+func validateProviderWideTrendPoint(row teamTrendBatchPoint, index int, granularity string) error {
+	if row.UserID <= 0 {
+		return fmt.Errorf("relay: provider team trend: row %d has invalid user ID", index)
+	}
+	if !validTeamTrendSourceLabel(row.Date, granularity) {
+		return fmt.Errorf("relay: provider team trend: row %d has invalid source label", index)
+	}
+	if row.Tokens != nil && *row.Tokens < 0 {
+		return fmt.Errorf("relay: provider team trend: row %d has negative tokens", index)
+	}
+	if row.ActualCost == nil {
+		return fmt.Errorf("relay: provider team trend: row %d is missing actual cost", index)
+	}
+	if *row.ActualCost < 0 || math.IsNaN(*row.ActualCost) || math.IsInf(*row.ActualCost, 0) {
+		return fmt.Errorf("relay: provider team trend: row %d has invalid actual cost", index)
+	}
+	return nil
 }
 
 func validTeamTrendSourceLabel(label, granularity string) bool {

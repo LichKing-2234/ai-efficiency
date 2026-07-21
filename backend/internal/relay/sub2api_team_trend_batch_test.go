@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +15,19 @@ import (
 
 	"go.uber.org/zap"
 )
+
+func paddedTrendJSONBody(t *testing.T, raw string, size int) []byte {
+	t.Helper()
+	if len(raw) > size {
+		t.Fatalf("JSON fixture size = %d, exceeds requested size %d", len(raw), size)
+	}
+	body := make([]byte, size)
+	copy(body, raw)
+	for index := len(raw); index < len(body); index++ {
+		body[index] = ' '
+	}
+	return body
+}
 
 func TestUsersTrendBatchUsesOnlyAggregateRouteAndFiltersAuthorizedRows(t *testing.T) {
 	var mu sync.Mutex
@@ -141,6 +154,14 @@ func TestProviderWideTeamTrendBatchRejectsInvalidRowsBeforeFiltering(t *testing.
 			},
 		},
 		{
+			name:   "negative optional tokens on unrelated user",
+			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC"},
+			data: map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-01", "granularity": "day",
+				"trend": []map[string]any{{"date": "2026-07-01", "user_id": 999, "tokens": -1, "actual_cost": 1}},
+			},
+		},
+		{
 			name:   "out-of-order labels",
 			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-02", Granularity: "day", Timezone: "UTC"},
 			data: map[string]any{
@@ -204,15 +225,99 @@ func TestProviderWideTeamTrendBatchRejectsExact5000Users(t *testing.T) {
 	}
 }
 
-func TestProviderWideTeamTrendBatchRejectsExactBodyLimitBeforeDecode(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, strings.Repeat("x", 32<<20))
-	}))
-	t.Cleanup(server.Close)
-	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
-	_, err := provider.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{}, 5000)
-	if err == nil || !strings.Contains(err.Error(), "33554432-byte limit") {
-		t.Fatalf("GetProviderUsageTrend() error = %v, want pre-decode body limit rejection", err)
+func TestProviderWideTeamTrendBatchEnforcesBodyLimitBeforeDecode(t *testing.T) {
+	const trendBodyLimit = 32 << 20
+	const validTrend = `{"success":true,"data":{"trend":[],"start_date":"","end_date":"","granularity":""}}`
+	for _, test := range []struct {
+		name    string
+		size    int
+		wantErr bool
+	}{
+		{name: "below 32 MiB", size: trendBodyLimit - 1},
+		{name: "exactly 32 MiB", size: trendBodyLimit, wantErr: true},
+		{name: "over 32 MiB", size: trendBodyLimit + 1, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := paddedTrendJSONBody(t, validTrend, test.size)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(body)
+			}))
+			t.Cleanup(server.Close)
+			provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+			got, err := provider.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{}, 5000)
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "33554432-byte limit") {
+					t.Fatalf("GetProviderUsageTrend() error = %v, want pre-decode body limit rejection", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetProviderUsageTrend() error = %v, want below-limit acceptance", err)
+			}
+			if got.ResponseBytes != int64(test.size) || got.PointCount != 0 {
+				t.Fatalf("trend result = %#v, want accepted %d-byte empty response", got, test.size)
+			}
+		})
+	}
+}
+
+func TestProviderWideTeamTrendDecodedPointCountBoundaries(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		count   int
+		wantErr bool
+	}{
+		{name: "below limit", count: teamTrendBatchPointLimit - 1},
+		{name: "exactly limit", count: teamTrendBatchPointLimit, wantErr: true},
+		{name: "over limit", count: teamTrendBatchPointLimit + 1, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateProviderWideTrendPointCount(make([]teamTrendBatchPoint, test.count))
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateProviderWideTrendPointCount(%d) error = %v, wantErr %v", test.count, err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestProviderWideTeamTrendPointRejectsNonFiniteCost(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		cost float64
+	}{
+		{name: "NaN", cost: math.NaN()},
+		{name: "positive infinity", cost: math.Inf(1)},
+		{name: "negative infinity", cost: math.Inf(-1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cost := test.cost
+			err := validateProviderWideTrendPoint(teamTrendBatchPoint{
+				Date: "2026-07-01", UserID: 101, ActualCost: &cost,
+			}, 0, "day")
+			if err == nil {
+				t.Fatalf("validateProviderWideTrendPoint() error = nil, want %s rejection", test.name)
+			}
+		})
+	}
+}
+
+func TestProviderWideCurrentStatRejectsNonFiniteCosts(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		stat TeamUserUsageStats
+	}{
+		{name: "today NaN", stat: TeamUserUsageStats{TodayActualCost: math.NaN()}},
+		{name: "today positive infinity", stat: TeamUserUsageStats{TodayActualCost: math.Inf(1)}},
+		{name: "today negative infinity", stat: TeamUserUsageStats{TodayActualCost: math.Inf(-1)}},
+		{name: "total NaN", stat: TeamUserUsageStats{TotalActualCost: math.NaN()}},
+		{name: "total positive infinity", stat: TeamUserUsageStats{TotalActualCost: math.Inf(1)}},
+		{name: "total negative infinity", stat: TeamUserUsageStats{TotalActualCost: math.Inf(-1)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateProviderCurrentStat(test.stat); err == nil {
+				t.Fatalf("validateProviderCurrentStat() error = nil, want %s rejection", test.name)
+			}
+		})
 	}
 }
 

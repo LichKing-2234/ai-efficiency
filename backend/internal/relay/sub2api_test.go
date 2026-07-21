@@ -33,6 +33,19 @@ func newTestProvider(t *testing.T, handler http.Handler) relay.Provider {
 	return p
 }
 
+func paddedJSONBody(t *testing.T, raw string, size int) []byte {
+	t.Helper()
+	if len(raw) > size {
+		t.Fatalf("JSON fixture size = %d, exceeds requested size %d", len(raw), size)
+	}
+	body := make([]byte, size)
+	copy(body, raw)
+	for index := len(raw); index < len(body); index++ {
+		body[index] = ' '
+	}
+	return body
+}
+
 func TestName(t *testing.T) {
 	p := newTestProvider(t, http.NewServeMux())
 	if p.Name() != "sub2api" {
@@ -968,18 +981,40 @@ func TestProviderWideDirectoryContractRejectsExactUserAndBodyBounds(t *testing.T
 		}
 	})
 
-	t.Run("16 MiB body", func(t *testing.T) {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = io.WriteString(w, strings.Repeat("x", 16<<20))
+	const directoryBodyLimit = 16 << 20
+	const validEmptyDirectory = `{"success":true,"data":{"items":[],"page":1,"page_size":1000,"pages":1,"total":0}}`
+	for _, test := range []struct {
+		name    string
+		size    int
+		wantErr bool
+	}{
+		{name: "below 16 MiB", size: directoryBodyLimit - 1},
+		{name: "exactly 16 MiB", size: directoryBodyLimit, wantErr: true},
+		{name: "over 16 MiB", size: directoryBodyLimit + 1, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := paddedJSONBody(t, validEmptyDirectory, test.size)
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(body)
+			})
+			provider := newTestProvider(t, mux)
+			directory := provider.(relay.ProviderWideTeamUsageProvider)
+			got, err := directory.GetProviderUserIDs(context.Background())
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "16777216-byte limit") {
+					t.Fatalf("GetProviderUserIDs() error = %v, want pre-decode body limit rejection", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetProviderUserIDs() error = %v, want below-limit acceptance", err)
+			}
+			if got.ResponseBytes != int64(test.size) || got.PageCount != 1 || len(got.UserIDs) != 0 {
+				t.Fatalf("directory result = %#v, want accepted %d-byte empty page", got, test.size)
+			}
 		})
-		provider := newTestProvider(t, mux)
-		directory := provider.(relay.ProviderWideTeamUsageProvider)
-		_, err := directory.GetProviderUserIDs(context.Background())
-		if err == nil || !strings.Contains(err.Error(), "16777216-byte limit") {
-			t.Fatalf("GetProviderUserIDs() error = %v, want pre-decode body limit rejection", err)
-		}
-	})
+	}
 }
 
 func TestProviderWideCurrentStatsContractUsesOneBoundedExactChunk(t *testing.T) {
@@ -1017,6 +1052,40 @@ func TestProviderWideCurrentStatsContractUsesOneBoundedExactChunk(t *testing.T) 
 	}
 	if len(got.Stats) != 2 || got.Stats[101].TotalActualCost != 10.5 || got.Stats[102].UserID != 102 {
 		t.Fatalf("stats = %#v, want exact records for 101 and 102", got.Stats)
+	}
+}
+
+func TestProviderWideCurrentStatsContractAcceptsExactly500RequestedIDs(t *testing.T) {
+	requested := make([]int64, 500)
+	stats := make(map[string]any, len(requested))
+	for index := range requested {
+		userID := int64(index + 1)
+		requested[index] = userID
+		stats[strconv.FormatInt(userID, 10)] = map[string]any{
+			"user_id": userID, "today_actual_cost": float64(index), "total_actual_cost": float64(index + 1),
+		}
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			UserIDs []int64 `json:"user_ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if diff := cmp.Diff(requested, payload.UserIDs); diff != "" {
+			t.Fatalf("500-ID request mismatch (-want +got):\n%s", diff)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{"stats": stats}})
+	})
+	provider := newTestProvider(t, mux)
+	wide := provider.(relay.ProviderWideTeamUsageProvider)
+	got, err := wide.GetProviderCurrentUsageStats(context.Background(), requested)
+	if err != nil {
+		t.Fatalf("GetProviderCurrentUsageStats() error = %v", err)
+	}
+	if len(got.Stats) != 500 {
+		t.Fatalf("stats count = %d, want 500", len(got.Stats))
 	}
 }
 
@@ -1067,16 +1136,40 @@ func TestProviderWideCurrentStatsContractRejectsRequestAndCoverageViolations(t *
 	}
 }
 
-func TestProviderWideCurrentStatsContractRejectsExactBodyLimitBeforeDecode(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, strings.Repeat("x", 2<<20))
-	})
-	provider := newTestProvider(t, mux)
-	statsProvider := provider.(relay.ProviderWideTeamUsageProvider)
-	_, err := statsProvider.GetProviderCurrentUsageStats(context.Background(), []int64{101})
-	if err == nil || !strings.Contains(err.Error(), "2097152-byte limit") {
-		t.Fatalf("GetProviderCurrentUsageStats() error = %v, want pre-decode body limit rejection", err)
+func TestProviderWideCurrentStatsContractEnforcesBodyLimitBeforeDecode(t *testing.T) {
+	const statsBodyLimit = 2 << 20
+	const validStats = `{"success":true,"data":{"stats":{"101":{"user_id":101,"today_actual_cost":1,"total_actual_cost":2}}}}`
+	for _, test := range []struct {
+		name    string
+		size    int
+		wantErr bool
+	}{
+		{name: "below 2 MiB", size: statsBodyLimit - 1},
+		{name: "exactly 2 MiB", size: statsBodyLimit, wantErr: true},
+		{name: "over 2 MiB", size: statsBodyLimit + 1, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := paddedJSONBody(t, validStats, test.size)
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(body)
+			})
+			provider := newTestProvider(t, mux)
+			statsProvider := provider.(relay.ProviderWideTeamUsageProvider)
+			got, err := statsProvider.GetProviderCurrentUsageStats(context.Background(), []int64{101})
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "2097152-byte limit") {
+					t.Fatalf("GetProviderCurrentUsageStats() error = %v, want pre-decode body limit rejection", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetProviderCurrentUsageStats() error = %v, want below-limit acceptance", err)
+			}
+			if got.ResponseBytes != int64(test.size) || len(got.Stats) != 1 {
+				t.Fatalf("stats result = %#v, want accepted %d-byte response", got, test.size)
+			}
+		})
 	}
 }
 
