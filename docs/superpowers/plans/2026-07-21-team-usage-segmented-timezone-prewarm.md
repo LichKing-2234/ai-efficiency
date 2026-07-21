@@ -8,9 +8,9 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Task 1 source and capacity gates passed. The corrected 20-call
-ledger, exact staging image, and cleanup evidence are recorded; the correction
-commit is pending. Tasks 2-9 remain blocked until Step 6 is checked.
+**Status:** Task 1 POC passed. The corrected 20-call ledger, exact staging
+image, cleanup evidence, and correction commit are complete. Tasks 2-9 are
+ready but not started.
 
 ## Task 1 Gate Evidence
 
@@ -183,7 +183,7 @@ git diff --check
 
 Expected: no credential, URL, user ID, row, body, or raw Redis value remains. On pass, change `Status` to `POC passed; implementation ready` and check Task 1. On failure, change it to `Blocked by segmented-source POC`, leave Tasks 2-9 unchecked, and stop.
 
-- [ ] **Step 6: Commit the POC decision**
+- [x] **Step 6: Commit the POC decision**
 
 ```bash
 git add docs/superpowers/specs/2026-07-21-team-usage-segmented-timezone-prewarm-design.md \
