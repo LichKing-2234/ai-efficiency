@@ -69,6 +69,15 @@ func TestPerformanceDashboardContainsRequiredQuantilesPoolsAndPrivacyContract(t 
 	requireDashboardExpressions(t, expressions, "Redis Pool", "ai_efficiency_redis_pool_connections", "ai_efficiency_redis_pool_wait_total", "ai_efficiency_redis_pool_wait_duration_seconds_total", "ai_efficiency_redis_pool_timeout_total")
 	requireDashboardExpressions(t, expressions, "Application Cache", "ai_efficiency_cache_events_total", "cache", "outcome")
 	requireDashboardExpressions(t, expressions, "HTTP Response Size", "histogram_quantile(0.75", "histogram_quantile(0.95", "ai_efficiency_http_response_bytes_bucket", "sum by (le, route, release)", `$http_route`)
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Cycle Duration", "histogram_quantile(0.95", "ai_efficiency_team_usage_prewarm_cycle_duration_seconds_bucket", "sum by (le, class, timezone, outcome)")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Cycle Outcomes", "ai_efficiency_team_usage_prewarm_cycle_total", "sum by (class, timezone, outcome)")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Last Success", "ai_efficiency_team_usage_prewarm_last_success_timestamp_seconds", `class=~"moving|history_29d|history_6d"`)
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Source Duration", "histogram_quantile(0.95", "ai_efficiency_team_usage_prewarm_source_duration_seconds_bucket", "sum by (le, class, timezone, outcome)")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Redis Duration", "histogram_quantile(0.95", "ai_efficiency_team_usage_prewarm_redis_duration_seconds_bucket", "sum by (le, operation, outcome)")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Generation Bytes", "ai_efficiency_team_usage_prewarm_generation_bytes")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Request Outcomes", "ai_efficiency_team_usage_prewarm_request_total", "sum by (timezone, outcome, fallback_reason)")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Skipped Ticks", "ai_efficiency_team_usage_prewarm_cycle_total", `outcome="tick_skipped"`, "sum by (class, timezone, outcome)")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Lease Outcomes", "ai_efficiency_team_usage_prewarm_redis_duration_seconds_count", `operation=~"lease_acquire|lease_ttl|lease_release"`, "sum by (operation, outcome)")
 
 	all := strings.ToLower(allExpressions.String())
 	for _, forbidden := range []string{"user_id", "request_id", "cache_key", "provider_id", "scope", "email", "query"} {

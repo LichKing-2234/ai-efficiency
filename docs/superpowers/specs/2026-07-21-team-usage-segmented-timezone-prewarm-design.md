@@ -1,7 +1,7 @@
 # Team Usage Segmented Timezone Prewarm Design
 
-**Status:** Approved design. The segmented-source POC hard gate passed on
-2026-07-21. Production implementation has not started.
+**Status:** Implementation and branch-wide review completed. Staging acceptance
+is pending; the feature remains disabled by default and production is unchanged.
 
 **Date:** 2026-07-21
 
@@ -13,11 +13,10 @@
 scope-origin fallback, response caches, DTOs, cursors, authorization checks,
 and bounded aggregate-trend behavior.
 
-This design refines the failed UTC-hour candidate. It is the approved contract
-for the next experiment, but it does not describe the current production
-runtime. Production remains on the PR #192 behavior until the POC passes, an
-implementation is separately reviewed, staging acceptance passes, and a
-production release is explicitly approved.
+This design refines the failed UTC-hour candidate and is the implemented
+contract for the default-disabled optimization. It does not describe the
+current production runtime. Production remains on the PR #192 behavior until
+staging acceptance passes and a production release is explicitly approved.
 
 ## Decision Summary
 
@@ -360,6 +359,11 @@ rejects the optimization and uses exact fallback.
 Provider version changes make all prior values unreachable. One timezone cannot
 address another timezone's values. A local-date rollover creates a new anchor
 rather than mutating the prior anchor.
+
+The implementation switched timezone digests to the specified length-delimited
+encoding before any staging or production enablement. No feature-enabled runtime
+keys exist with the earlier raw-string digest, so schema version 1 remains the
+initial runtime schema and requires no compatibility reader or key migration.
 
 ### Publish-Last Manifest
 
@@ -897,8 +901,10 @@ credentials, user lists, response bodies, or unredacted Redis values.
 
 ## Rollout And Rollback
 
-The feature flag defaults to false. POC completion does not enable staging or
-production. Staging enablement and production release are separate approvals.
+Implementation and branch-wide review are complete. The feature flag still
+defaults to false. No staging acceptance or feature-enabled rollout has run,
+and production remains unchanged. Staging enablement and production release
+are separate approvals.
 
 Rollback disables the prewarm feature. New readers and background cycles stop,
 and every request immediately uses the retained PR #192 scope-origin path.
@@ -907,9 +913,10 @@ Redis flush, schema migration, Sub2API deployment, frontend change, or cursor
 reset.
 
 `docs/architecture.md` changes only after an implementation becomes current
-runtime. Until then, this spec records an approved but POC-blocked design, and
-the rejected UTC-hour spec remains unchanged historical evidence apart from its
-status and replacement reference.
+runtime. Until staging acceptance makes the feature current runtime, this spec
+records the implemented default-disabled contract, and the rejected UTC-hour
+spec remains unchanged historical evidence apart from its status and replacement
+reference.
 
 ## Alternatives Rejected
 

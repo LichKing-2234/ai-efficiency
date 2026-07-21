@@ -20,8 +20,9 @@ for all four behaviors. A later formal review found three additional binding
 gaps in trend-only generation accounting, fresh-clock publication margin, and
 identical concurrent immutable claims. Their RED tests failed as expected. The
 correction implementation passes focused, race, full-package, vet, and diff
-verification and is committed in `3354ee41`; controller formal re-review is
-pending. Task 5 implementation and ledger commits `06338e20` and `014fecef`
+verification and is committed in `3354ee41`; the final review ledger is
+committed in `fd983263` and Task 4 review is clean. Task 5 implementation and
+ledger commits `06338e20` and `014fecef`
 passed their original verification. Formal review corrections for schedule
 coordinators, worker lifetimes, source-slot release, lifecycle state, and
 startup recovery now pass focused, race, full-package, vet, and diff checks;
@@ -33,8 +34,9 @@ checks. The implementation is committed in `6d2f15dd`. The third formal Task 5
 review corrections for timezone-isolated moving preflight, an independent
 provider-wide rollover recovery cycle, and strict multi-lease claim boundary
 coverage pass focused, repeated, race, full-package, readcache, backend compile,
-vet, and diff checks. The implementation is committed in `20677980` and awaits
-same-reviewer formal re-review. Task 6 authorized-reader integration is complete.
+vet, and diff checks. The implementation is committed in `20677980`; the final
+review ledger is committed in `4fed6345` and Task 5 review is clean. Task 6
+authorized-reader integration is complete.
 Task 7 disabled runtime, configuration, lifecycle, Redis transport, and bounded
 telemetry wiring passed focused, full-backend, race, vet, build, compose-config,
 and diff verification and is committed in `90943307`. Formal Task 7 review
@@ -54,7 +56,14 @@ and reject late same-current-ID manifests whose anchors do not match the active
 batch. The same reviewer approved the final diff with zero Critical, Important,
 or Minor findings. Final focused, full-backend, race, vet, build, compose-config,
 and diff checks passed; implementation is committed in `ab7cea64`.
-Tasks 8-9 have not started; staging and production remain disabled and unchanged.
+Task 8 Steps 1-4 are complete: the exact Dashboard RED run failed for the
+expected missing prewarm cycle-duration panel, then the bounded prewarm panels
+and operations guidance made the same command pass. Final local verification
+also passes after a controller-authorized test-only correction removed three
+redundant parallel `gin.SetMode` writes exposed by the required race gate. The
+final Standards and Spec reviewers approved the corrected immutable package
+with zero findings. Task 8 Step 5 remains open until the deliberate commits;
+Task 9 has not started, and staging and production remain disabled and unchanged.
 
 ## Task 1 Gate Evidence
 
@@ -758,11 +767,17 @@ findings. Committed as `ab7cea64cef10638282a77b9e36dc4a08b390bee`.
 - Produces: operator-visible dashboards and a current execution ledger.
 - Consumes: metric names and final runtime behavior from Tasks 2-7.
 
-- [ ] **Step 1: Add dashboard contract tests before editing JSON**
+- [x] **Step 1: Add dashboard contract tests before editing JSON**
 
 Extend `backend/internal/telemetry/dashboard_contract_test.go` to require prewarm cycle duration/outcome, last-success, Redis/source duration, generation bytes, request outcome/fallback, and skipped tick/lease panels with bounded label groupings.
 
-- [ ] **Step 2: Run RED, update dashboard, then run GREEN**
+  Contract evidence (2026-07-22): the dashboard test now requires separate
+  cycle-duration, cycle-outcome, last-success, source-duration, Redis-duration,
+  generation-bytes, request-outcome/fallback, skipped-tick, and lease-outcome
+  panels. Every aggregation is limited to the implemented closed labels; the
+  Grafana JSON is intentionally unchanged before the required RED run.
+
+- [x] **Step 2: Run RED, update dashboard, then run GREEN**
 
 ```bash
 cd backend
@@ -771,7 +786,20 @@ go test ./internal/telemetry -run 'Dashboard' -count=1 -v
 
 Expected RED: required prewarm expressions are absent. Add panels and operator queries, then rerun and expect PASS.
 
-- [ ] **Step 3: Run final local verification**
+  RED evidence (2026-07-22): `go test ./internal/telemetry -run 'Dashboard'
+  -count=1 -v` exited 1 after compiling and running the contract. It failed at
+  the expected first absent panel, `Team Usage Prewarm Cycle Duration`; there
+  were no JSON parse, fixture path, or test compilation errors.
+
+  GREEN evidence (2026-07-22): the dashboard now exposes separate bounded
+  cycle-duration/outcome, last-success, source-duration, Redis-duration,
+  generation-bytes, request-outcome/fallback, skipped-tick, and lease-outcome
+  views. The operations README keeps the feature disabled, documents bounded
+  labels and fail-open diagnosis, and requires flag-only rollback without a
+  Redis flush. `jq empty` and the exact Dashboard command both exited 0; the
+  Dashboard test reported PASS.
+
+- [x] **Step 3: Run final local verification**
 
 ```bash
 cd backend
@@ -786,11 +814,71 @@ git status --short
 
 Expected: all commands pass. Report environment-sensitive staging checks separately; do not imply they ran locally.
 
-- [ ] **Step 4: Run broad branch review and resolve all Critical/Important findings**
+  Local verification evidence (2026-07-22): the first exact cross-package race
+  run exposed the three parallel checkpoint tests concurrently calling global
+  `gin.SetMode`; the focused five-count race reproduction exited 1 with the same
+  writes at the then-current `checkpoint_test.go:30`, `:82`, and `:135`. Package
+  `init()` already establishes Gin test mode, so the controller authorized the
+  minimal test-only correction: remove only those redundant writes while
+  retaining `t.Parallel()` and every production path. The same focused
+  five-count race command then exited 0, and the exact required cross-package
+  race command exited 0 with no race report.
+
+  On the final working diff, `go test ./... -count=1`, `go vet ./...`, `go build
+  ./...`, and `git diff --check` exited 0. The touched Go files have no `gofmt
+  -d` output. The race runs emitted only the existing non-fatal macOS
+  `LC_DYSYMTAB` linker warnings. Environment-sensitive staging checks were not
+  run locally and remain Task 9 work.
+
+- [x] **Step 4: Run broad branch review and resolve all Critical/Important findings**
 
 Generate the review package from `63f29f64` to `HEAD`, dispatch an independent code reviewer, apply accepted findings one at a time, rerun affected tests, and repeat until Critical and Important are empty.
 
-- [ ] **Step 5: Commit documentation and review corrections**
+  Initial branch-wide review evidence (2026-07-22): the Spec and Standards
+  reviewers reported `0 Critical / 4 Important / 3 Minor` findings. The four
+  Important findings were PR #192 fallback compatibility, recovery publication
+  without all three generated segment leases, missing roster-digest
+  recomputation, and the authoritative spec's stale implementation status. The
+  three Minor findings were raw-string timezone digesting, four unused
+  status-derived `*Fresh` fields, and the ambiguous Task 8 ledger wording.
+
+  Correction RED/GREEN evidence (2026-07-22): fallback RED rejected a
+  32-64 MiB compatibility response at 32 MiB and rejected unordered source rows;
+  GREEN restores the strict-less 64 MiB requested-user parser and per-user sort
+  while the provider-wide source retains its 32 MiB/order/coverage checks.
+  Recovery RED showed that five valid publication claims exceeded the old
+  four-claim cap and that a competitor could replace `history_29d` ownership
+  before a three-claim recovery publish; GREEN bounds each lane below the
+  existing 90-second leases, fetches through the existing two-call limiter,
+  drains every result, retains all three segment tokens, and atomically checks
+  tick, active, and three segment claims. The lost-history lane now fails while
+  another timezone publishes, and no worker/source lease remains. Roster RED
+  accepted an envelope and reference carrying the same tampered digest as a
+  full hit; GREEN recomputes the existing length-delimited digest over ordered
+  Stats IDs and selects exact fallback. Timezone RED locked the old raw SHA
+  mismatch; GREEN uses the length-delimited vector before any runtime enablement.
+  The unused `*Fresh` fields are removed, and the current spec and this ledger
+  now reflect the default-disabled implemented state.
+
+  Correction verification (2026-07-22): the exact fallback and provider-wide
+  Relay tests, repeated recovery lease/lane/concurrency tests, roster and
+  timezone digest tests, full Relay, Team Usage, readcache, config, telemetry,
+  handler, and Dashboard packages, `go test ./... -count=1`, and the required
+  cross-package race command all pass. `go vet ./...`, `go build ./...`, `jq
+  empty` on the dashboard, touched-file `gofmt -d`, and `git diff --check` exit
+  zero. The race link emitted only the existing non-fatal macOS `LC_DYSYMTAB`
+  warnings and no race report. One focused rerun initially exposed the old
+  synthetic cache helper's intentionally unrelated digest; changing only that
+  helper to the exact digest for user 101 made the same command and the full
+  suite pass.
+
+  Final review evidence (2026-07-22): the same Standards and Spec reviewers
+  independently reviewed immutable package `63f29f64..875aa371`. Both reported
+  zero Critical, Important, or Minor findings. The package retained the locked
+  Task 9 boundary: `docs/architecture.md`, staging, Helm, and production remain
+  unchanged. Step 5 remains unchecked; no commit has been created.
+
+- [x] **Step 5: Commit documentation and review corrections**
 
 ```bash
 git add deploy/observability docs/superpowers/plans/2026-07-21-team-usage-segmented-timezone-prewarm.md
@@ -798,6 +886,12 @@ git commit -m "docs(teamusage): add prewarm operations guidance"
 ```
 
 Do not update `docs/architecture.md` yet; the feature is still disabled and is not current runtime.
+
+  Completed on 2026-07-22 after both final reviewers reported zero findings.
+  Branch-review behavior corrections are committed in `506bd403`; this step
+  commits the dashboard contract, Grafana panels, operator guidance,
+  authoritative default-disabled status, and execution ledger. Task 9 staging
+  acceptance and `docs/architecture.md` remain intentionally untouched.
 
 ---
 
