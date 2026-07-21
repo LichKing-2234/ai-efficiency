@@ -29,7 +29,7 @@ func TestUsersTrendBatchUsesOnlyAggregateRouteAndFiltersAuthorizedRows(t *testin
 				"end_date":    {"2026-07-20"},
 				"granularity": {"day"},
 				"timezone":    {"Asia/Shanghai"},
-				"limit":       {"500"},
+				"limit":       {"5000"},
 			}
 			if !reflect.DeepEqual(r.URL.Query(), wantQuery) {
 				t.Errorf("query = %#v, want %#v", r.URL.Query(), wantQuery)
@@ -86,7 +86,7 @@ func TestUsersTrendBatchRejectsPossiblyTruncatedResponse(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []any{}})
 			return
 		}
-		rows := make([]map[string]any, 500)
+		rows := make([]map[string]any, 5000)
 		for index := range rows {
 			rows[index] = map[string]any{
 				"date": "2026-07-01", "user_id": index + 1, "tokens": index, "actual_cost": float64(index),

@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -167,6 +168,11 @@ func TestSharedOriginOrganizationKeepsLargeScopeBranchBounded(t *testing.T) {
 		scope.OverviewSubjects[index].DepartmentExternalIDs = []string{departmentID}
 		scope.OverviewSubjects[index].DepartmentDisplayPath = departmentID
 	}
+	branchRelayUserID := int64(*scope.OverviewSubjects[0].RelayUserID)
+	branchStats := provider.summaryStats[branchRelayUserID]
+	branchStats.RangeActualCost = nil
+	branchStats.RangeTotalTokens = nil
+	provider.summaryStats[branchRelayUserID] = branchStats
 
 	responseCache, _ := testSnapshotCache(t, time.Date(2026, 7, 20, 8, 0, 0, 0, time.UTC), 0)
 	originCache, originServer := testOriginCache(t, time.Now, "large-branch-token")
@@ -188,13 +194,39 @@ func TestSharedOriginOrganizationKeepsLargeScopeBranchBounded(t *testing.T) {
 	if len(provider.summaryRequestBatches) != 1 || len(provider.summaryRequestBatches[0]) != 1 {
 		t.Fatalf("branch stats requests = %#v, want one single-user batch", provider.summaryRequestBatches)
 	}
-	if provider.trendCalls != 0 {
-		t.Fatalf("branch trend requests = %d, want 0", provider.trendCalls)
+	if provider.trendCalls != 1 || !reflect.DeepEqual(provider.trendRequestUserIDs, []int64{branchRelayUserID}) {
+		t.Fatalf("branch trend requests = %d/%#v, want one branch-local request", provider.trendCalls, provider.trendRequestUserIDs)
 	}
 	for _, key := range originServer.Keys() {
 		if strings.Contains(key, "team-usage-origin") {
 			t.Fatalf("large-scope Organization created full origin key %q", key)
 		}
+	}
+}
+
+func TestSharedOriginSummaryCountsConnectedSubjectsBeforeRelayIDDeduplication(t *testing.T) {
+	rangeCost := 15.0
+	rangeTokens := int64(1500)
+	origin := &teamUsageScopeOrigin{
+		subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, RelayUserID: intPtr(1002)},
+			{SubjectType: "member", UserID: 3, RelayUserID: intPtr(1002)},
+		},
+		RelayUserIDs: []int64{1002},
+		StatsByRelayUserID: map[int64]relay.TeamUserUsageStats{
+			1002: {UserID: 1002, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens},
+		},
+	}
+	scope := &representativescope.Scope{OverviewSubjects: append([]representativescope.Subject(nil), origin.subjects...)}
+
+	snapshot := buildSummarySnapshotFromScopeOrigin(scope, OverviewParams{}, origin)
+
+	if snapshot.Summary.MemberCount != 2 || snapshot.Summary.RelayMemberCount != 2 {
+		t.Fatalf("summary counts = %d/%d, want canonical/connected 2/2", snapshot.Summary.MemberCount, snapshot.Summary.RelayMemberCount)
+	}
+	if snapshot.Summary.RangeActualCost == nil || *snapshot.Summary.RangeActualCost != 15 ||
+		snapshot.Summary.RangeTotalTokens == nil || *snapshot.Summary.RangeTotalTokens != 1500 {
+		t.Fatalf("summary range totals = %#v/%#v, want one deduplicated Relay total", snapshot.Summary.RangeActualCost, snapshot.Summary.RangeTotalTokens)
 	}
 }
 

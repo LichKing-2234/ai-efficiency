@@ -302,11 +302,21 @@ response adapter over those lanes and owns no additional cache:
   complete-range stats in at-most-100-user chunks, and calls the aggregate
   `users-trend` capability once for the complete Relay ID set. It filters returned
   points to authorized IDs and uses those points to complete only missing range
-  totals. A legal origin larger than 2 MiB remains authoritative for the current
+  totals. The Sub2API endpoint does not accept requested user IDs and applies its
+  limit to the global token-ranked user set, so the adapter always requests the
+  supported maximum of 5,000 users even for a small authorized scope. A response
+  containing exactly 5,000 unique users is rejected as possibly truncated rather
+  than treating an omitted authorized user as zero usage. Consequently, a Relay
+  deployment with more than 5,000 active users can still leave lower-ranked
+  authorized users unavailable until Sub2API exposes filtering or pagination.
+  A legal origin larger than 2 MiB remains authoritative for the current
   request but is not written to Redis. Scopes above 500 use the previous bounded
   lane-specific generation path.
 - Summary projects aggregate counts and totals from the shared origin without
-  ranking members or constructing an organization tree. Members ranks the complete
+  ranking members or constructing an organization tree. Its `relay_member_count`
+  counts authorized subjects with a positive hydrated Relay binding, while cost
+  and token totals remain deduplicated by Relay user ID when multiple subjects
+  share one binding. Members ranks the complete
   authorized rows once. Trend does not compose Summary or Members DTOs; its projection
   preserves the complete independent team total, caps top members and department
   comparisons at 12, retains stable subject/department identities and unavailable
@@ -346,7 +356,9 @@ response adapter over those lanes and owns no additional cache:
   the authorized full-scope origin down to subjects in the requested child subtrees
   plus the parent's direct subjects. The scope-above-500 fallback resolves only those
   branch subjects and loads complete-range stats in batches of at most 100 Relay user
-  IDs. Multi-membership members are deduplicated inside each aggregate while
+  IDs. If those branch stats need range completion, only the branch Relay IDs are
+  passed to the aggregate adapter; the fallback does not expand its requested-ID
+  set back to the complete represented scope. Multi-membership members are deduplicated inside each aggregate while
   remaining visible in each department they directly belong to. The virtual root
   returns no members. Departments sort by normalized display name and stable
   external ID, default to 25, and cap at 100. For eligible scopes it projects the

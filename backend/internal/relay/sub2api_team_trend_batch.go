@@ -44,15 +44,8 @@ type teamTrendBatchPointKey struct {
 	Date   string
 }
 
-func teamTrendBatchLimit(totalRequested int) int {
-	switch {
-	case totalRequested <= 250:
-		return 500
-	case totalRequested >= 4750:
-		return 5000
-	default:
-		return totalRequested + 250
-	}
+func teamTrendBatchLimit(_ int) int {
+	return 5000
 }
 
 func (s *sub2apiRelay) getTeamTrendBatch(

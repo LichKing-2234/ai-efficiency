@@ -197,11 +197,17 @@ func buildSummarySnapshotFromScopeOrigin(
 		unavailableReason = &reason
 	}
 	todayCost, totalCost := sumOverviewComparisonCosts(origin.StatsByRelayUserID)
+	relayMemberCount := 0
+	for _, subject := range origin.subjects {
+		if subject.RelayUserID != nil && *subject.RelayUserID > 0 {
+			relayMemberCount++
+		}
+	}
 	return &SummarySnapshot{
 		Window: buildOverviewWindow(params),
 		Summary: SummaryAggregate{
 			Unavailable: !rangeComplete, UnavailableReason: unavailableReason,
-			MemberCount: len(overviewSubjects), RelayMemberCount: len(origin.RelayUserIDs),
+			MemberCount: len(overviewSubjects), RelayMemberCount: relayMemberCount,
 			RangeActualCost: rangeCost, RangeTotalTokens: rangeTokens,
 			TodayActualCost: todayCost, TotalActualCost: totalCost, UnitLabel: teamOverviewCostUnitLabel,
 		},

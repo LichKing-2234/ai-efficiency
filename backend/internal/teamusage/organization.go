@@ -276,11 +276,14 @@ func (s *Service) generateOrganizationSnapshot(ctx context.Context, branch organ
 		if err != nil {
 			return nil, fmt.Errorf("resolve team organization Relay subjects: %w", err)
 		}
-		_, representedRelayUserIDs, err := s.resolveSubjectsWithResolver(ctx, branch.represented, resolver)
-		if err != nil {
-			return nil, fmt.Errorf("resolve represented team organization Relay subjects: %w", err)
+		completeRangeRelayUserIDs := relayUserIDs
+		if len(branch.represented) <= s.fullScopeCap {
+			_, completeRangeRelayUserIDs, err = s.resolveSubjectsWithResolver(ctx, branch.represented, resolver)
+			if err != nil {
+				return nil, fmt.Errorf("resolve represented team organization Relay subjects: %w", err)
+			}
 		}
-		statsByRelayUserID, err = s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, representedRelayUserIDs, relay.TeamUsageSummaryParams{
+		statsByRelayUserID, err = s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, completeRangeRelayUserIDs, relay.TeamUsageSummaryParams{
 			StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 			Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone), RequireCompleteRange: true,
 		})

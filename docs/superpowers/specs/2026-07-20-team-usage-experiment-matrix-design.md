@@ -121,6 +121,20 @@ Summary, Trend, Members, and Organization project their existing independent
 response snapshots from the shared origin. The four response caches remain
 separate.
 
+The retained adapter requests `limit=5000` for every `/users-trend` call. The
+endpoint has no requested-user filter and applies its limit to the global
+token-ranked user set, so sizing the limit from the authorized scope can omit a
+small team's lower-ranked users. A response containing exactly 5,000 unique users
+is rejected as possibly truncated. This prevents false zero-usage data but leaves
+a known boundary when the Relay deployment has more than 5,000 active users;
+resolving that boundary requires a filtered or paginated Sub2API contract, which
+is outside this experiment.
+
+For scopes above the 500-subject origin-cache cap, Organization keeps range
+completion branch-local instead of expanding a branch request to every represented
+Relay ID. Summary counts hydrated connected subjects before Relay-ID deduplication,
+while all monetary and token totals remain deduplicated by Relay user ID.
+
 Expected benefits:
 
 - one stats generation and one user-trend aggregation for the complete page;
