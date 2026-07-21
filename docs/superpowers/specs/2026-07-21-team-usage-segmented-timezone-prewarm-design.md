@@ -572,7 +572,7 @@ Existing small-cache callers retain their 100-millisecond command contexts, so
 the broader transport bounds do not make unrelated cache misses wait one
 second.
 
-Redis source-body, decoded-point, serialized-segment, timezone-generation, and
+Relay source-body, decoded-point, serialized-segment, timezone-generation, and
 all-timezone-generation limits are enforced before publication. An over-limit
 value is never cached and uses exact fallback. If the deterministic POC sizing
 gate passes, runtime also rejects a shared current-stats envelope at or above 2
