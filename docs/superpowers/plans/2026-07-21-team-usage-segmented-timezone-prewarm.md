@@ -44,6 +44,16 @@ bounded validation/cache/quantity/generation metrics, classify partial-today
 Redis failures separately from Relay failures, and report discarded lifecycle
 failures without raw errors. The correction passed focused, full-backend, race,
 vet, build, compose-config, and diff verification and is committed in `8f86642f`.
+Formal Task 7 re-review corrections now record the validated provider-wide trend
+union before authorization, preserve exact lifecycle lane/class outcomes, map
+the locked six Relay rejection kinds without string parsing, and update the full
+generation gauge only for one explicitly registered participating-lane batch.
+Two follow-up RED/GREEN waves additionally bound global failures to selected
+lanes, prevent post-lane duplicate cycle metrics, capture one preflight instant,
+and reject late same-current-ID manifests whose anchors do not match the active
+batch. The same reviewer approved the final diff with zero Critical, Important,
+or Minor findings. Final focused, full-backend, race, vet, build, compose-config,
+and diff checks passed; implementation is committed in `ab7cea64`.
 Tasks 8-9 have not started; staging and production remain disabled and unchanged.
 
 ## Task 1 Gate Evidence
@@ -704,6 +714,35 @@ errors. The exact focused Task 7 command, focused Team Usage review tests,
 all five compose config checks, and `git diff --check` passed. The first race
 run exposed a test-recorder slice append race; the fake was synchronized and
 both focused and complete race reruns passed. Committed as `8f86642f`.
+
+**Formal re-review correction evidence (2026-07-21):** The first RED wave
+proved that `union_users` exposed authorized roster size, one published timezone
+updated the full-generation gauge, real Sub2API limit/coverage rejections were
+not mapped through a closed typed contract, and aggregate lifecycle reporting
+duplicated failures or marked healthy lanes/classes as errors. Follow-up RED
+tests proved that a global validation wrapper was downgraded to `error`, startup
+did not emit `rejected`, an unknown Relay rejection kind was accepted, and the
+old sparse fixture expected an authorization-derived union.
+
+The second RED wave proved that post-preflight shared failures were broadcast to
+non-participating lanes, post-lane ownership failures could add a second cycle
+outcome after lane defers had already recorded success, preflight read the clock
+once per timezone across rollover, and a late old-anchor manifest could satisfy
+the same current generation. The correction now uses exact lifecycle failure
+targets, keeps the highest non-lifecycle wrapper for bounded global reporting,
+marks post-lane failures as already cycle-recorded, and maintains one bounded
+active metrics batch containing only provider/version/current ID, at most four
+timezone anchors, and byte counts. Publication contributes to the full gauge
+only when provider, version, current ID, timezone, and anchor all match that
+registered participating-lane batch. It retains no request or usage result.
+
+The exact Relay and Team Usage focused suites, complete Relay/Team Usage
+packages, exact Task 7 command, `go test ./... -count=1`, the required
+cross-package race set, `go vet ./...`, `go build ./...`, all five Compose config
+checks, and `git diff --check` passed. The race run emitted only the existing
+non-fatal macOS `LC_DYSYMTAB` linker warnings and reported no race. The same
+reviewer approved the final correction with zero Critical, Important, or Minor
+findings. Committed as `ab7cea64cef10638282a77b9e36dc4a08b390bee`.
 
 ---
 
