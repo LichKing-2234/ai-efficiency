@@ -21,7 +21,9 @@ gaps in trend-only generation accounting, fresh-clock publication margin, and
 identical concurrent immutable claims. Their RED tests failed as expected. The
 correction implementation passes focused, race, full-package, vet, and diff
 verification and is committed in `3354ee41`; controller formal re-review is
-pending. Tasks 5-9 have not started.
+pending. Task 5 source and lifecycle implementation is complete; focused,
+race, full-package, and vet verification pass, and the implementation commit is
+pending. Tasks 6-9 have not started.
 
 ## Task 1 Gate Evidence
 
@@ -409,11 +411,11 @@ git commit -m "perf(teamusage): add publish-last Redis generations"
 - Produces: `ProviderBinding`, `PrimaryProviderBindingResolver`, `PrewarmSource.BuildCurrentStats`, `FetchSegment`, and `Prewarmer.Start/Stop/RunMoving/RunHistorical`.
 - Consumes: Tasks 2-4 provider capabilities, domain model, and cache.
 
-- [ ] **Step 1: Write RED source and scheduler tests**
+- [x] **Step 1: Write RED source and scheduler tests**
 
 Tests must prove full deterministic directory exhaustion precedes 500-ID stats chunks, exact roster equality/digest, one shared current-stats generation, independent histories, deployment-wide source concurrency two across directory pages, stats chunks, trend segments, and partial-today calls, token-checked coordinator and two slot leases, process-local concurrency two, skipped overlapping 60-second ticks, deterministic `[0,30m)` jitter, split-unsafe no-source behavior, startup recovery of only missing/hard-expired values, stale-but-hard-valid retention, provider-version cancellation, lost-lease no-publish, and one timezone failure not invalidating another.
 
-- [ ] **Step 2: Run RED tests**
+- [x] **Step 2: Run RED tests**
 
 ```bash
 cd backend
@@ -422,11 +424,11 @@ go test ./internal/teamusage -run 'Prewarm(Source|Moving|Historical|Startup|Leas
 
 Expected: FAIL with missing source and lifecycle types.
 
-- [ ] **Step 3: Implement bounded source orchestration**
+- [x] **Step 3: Implement bounded source orchestration**
 
 `BuildCurrentStats` requires the new provider-wide usage capability, rejects 5,000 IDs, chunks at 500, validates exact cross-chunk coverage, sorts by ID, and hashes the length-delimited roster. `FetchSegment` calls the provider-wide trend capability with `limit=5000`, validates before writing, and never filters to a request scope.
 
-- [ ] **Step 4: Implement the scheduler and distributed coordination**
+- [x] **Step 4: Implement the scheduler and distributed coordination**
 
 Use a 60-second ticker, non-blocking process cycle guard, source semaphore size two, `3m` moving coordinator TTL, `6m` historical coordinator TTL, and `90s` segment/source-slot lease TTL. Expose one `SourceCallLimiter` used by every background and request-driven Relay source call; each call must own one of the same two distributed slot leases and one process-local semaphore position. Generate random lease tokens, re-check token ownership through `SetIfLeaseOwned` before manifest publication, and stop all workers on context cancellation. No goroutine may retain a completed provider generation after publication.
 
@@ -442,7 +444,7 @@ func (p *Prewarmer) RunMoving(ctx context.Context) error
 func (p *Prewarmer) RunHistorical(ctx context.Context, timezone string, anchor time.Time) error
 ```
 
-- [ ] **Step 5: Verify lifecycle behavior**
+- [x] **Step 5: Verify lifecycle behavior**
 
 ```bash
 cd backend
