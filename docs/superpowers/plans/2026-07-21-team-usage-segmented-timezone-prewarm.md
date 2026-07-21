@@ -29,8 +29,12 @@ the corrections are committed in `b1b84ef2`. The second formal Task 5 review
 corrections for rollover bootstrap, atomic multi-lease publication, an
 adjacent-tick active moving lease, and allowlist-scoped historical coordination
 pass focused, race, full-package, readcache, backend compile, vet, and diff
-checks. The implementation is committed in `6d2f15dd` and awaits same-reviewer
-formal re-review. Tasks 6-9 have not started.
+checks. The implementation is committed in `6d2f15dd`. The third formal Task 5
+review corrections for timezone-isolated moving preflight, an independent
+provider-wide rollover recovery cycle, and strict multi-lease claim boundary
+coverage pass focused, repeated, race, full-package, readcache, backend compile,
+vet, and diff checks. The implementation is committed in `20677980` and awaits
+same-reviewer formal re-review. Tasks 6-9 have not started.
 
 ## Task 1 Gate Evidence
 
