@@ -34,6 +34,7 @@ const (
 	prewarmTimezoneGenerationMaxBytes = 16 << 20
 	prewarmDefaultCommandTimeout      = 2 * time.Second
 	prewarmImmutableClaimTTL          = 90 * time.Second
+	prewarmPublicationLeaseLimit      = 4
 )
 
 type PrewarmCacheIdentity struct {
@@ -41,6 +42,11 @@ type PrewarmCacheIdentity struct {
 	ProviderVersion int64
 	Timezone        string
 	AnchorDate      string
+}
+
+type PrewarmLeaseClaim struct {
+	Key   string
+	Token string
 }
 
 type PrewarmValueReference struct {
@@ -290,8 +296,30 @@ func (c *PrewarmCache) PublishManifest(
 	leaseKey, token string,
 	manifest PrewarmManifest,
 ) (bool, error) {
-	if err := validatePrewarmLeaseInput(leaseKey, token, manifestTTL); err != nil {
-		return false, err
+	return c.PublishManifestWithLeases(ctx, []PrewarmLeaseClaim{{Key: leaseKey, Token: token}}, manifest)
+}
+
+func (c *PrewarmCache) PublishManifestWithLeases(
+	ctx context.Context,
+	claims []PrewarmLeaseClaim,
+	manifest PrewarmManifest,
+) (bool, error) {
+	if len(claims) == 0 || len(claims) > prewarmPublicationLeaseLimit {
+		return false, fmt.Errorf("team usage prewarm publication requires between one and %d lease claims", prewarmPublicationLeaseLimit)
+	}
+	leaseKeys := make([]string, len(claims))
+	tokens := make([]string, len(claims))
+	seen := make(map[string]struct{}, len(claims))
+	for index, claim := range claims {
+		if err := validatePrewarmLeaseInput(claim.Key, claim.Token, manifestTTL); err != nil {
+			return false, err
+		}
+		if _, exists := seen[claim.Key]; exists {
+			return false, fmt.Errorf("team usage prewarm publication contains duplicate lease claim")
+		}
+		seen[claim.Key] = struct{}{}
+		leaseKeys[index] = claim.Key
+		tokens[index] = claim.Token
 	}
 	identity := PrewarmCacheIdentity{
 		ProviderID: manifest.ProviderID, ProviderVersion: manifest.ProviderVersion,
@@ -321,7 +349,7 @@ func (c *PrewarmCache) PublishManifest(
 		return false, err
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.WriteTimeout)
-	published, err := c.store.SetIfLeaseOwned(commandCtx, leaseKey, token, key, encoded, manifestTTL)
+	published, err := c.store.SetIfLeasesOwned(commandCtx, leaseKeys, tokens, key, encoded, manifestTTL)
 	cancel()
 	if err != nil {
 		return false, fmt.Errorf("publish team usage prewarm manifest: %w", err)

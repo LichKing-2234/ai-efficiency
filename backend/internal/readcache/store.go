@@ -17,12 +17,15 @@ if redis.call("GET", KEYS[1]) == ARGV[1] then
 end
 return 0`)
 
-var setIfLeaseOwnedScript = redis.NewScript(`
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-  redis.call("SET", KEYS[2], ARGV[2], "PX", ARGV[3])
-  return 1
+var setIfLeasesOwnedScript = redis.NewScript(`
+local lease_count = tonumber(ARGV[1])
+for index = 1, lease_count do
+  if redis.call("GET", KEYS[index]) ~= ARGV[index + 1] then
+    return 0
+  end
 end
-return 0`)
+redis.call("SET", KEYS[lease_count + 1], ARGV[lease_count + 2], "PX", ARGV[lease_count + 3])
+return 1`)
 
 type Store interface {
 	Get(ctx context.Context, key string) ([]byte, error)
@@ -36,6 +39,7 @@ type BatchStore interface {
 	Store
 	MGet(context.Context, ...string) ([][]byte, error)
 	SetIfLeaseOwned(context.Context, string, string, string, []byte, time.Duration) (bool, error)
+	SetIfLeasesOwned(context.Context, []string, []string, string, []byte, time.Duration) (bool, error)
 }
 
 type RedisStore struct {
@@ -95,14 +99,27 @@ func (s *RedisStore) SetIfLeaseOwned(
 	value []byte,
 	ttl time.Duration,
 ) (bool, error) {
-	result, err := setIfLeaseOwnedScript.Run(
-		ctx,
-		s.client,
-		[]string{leaseKey, key},
-		token,
-		value,
-		ttl.Milliseconds(),
-	).Int64()
+	return s.SetIfLeasesOwned(ctx, []string{leaseKey}, []string{token}, key, value, ttl)
+}
+
+func (s *RedisStore) SetIfLeasesOwned(
+	ctx context.Context,
+	leaseKeys, tokens []string,
+	key string,
+	value []byte,
+	ttl time.Duration,
+) (bool, error) {
+	if len(leaseKeys) == 0 || len(leaseKeys) != len(tokens) {
+		return false, fmt.Errorf("lease keys and tokens must have the same non-zero length")
+	}
+	keys := append(append(make([]string, 0, len(leaseKeys)+1), leaseKeys...), key)
+	arguments := make([]any, 0, len(tokens)+3)
+	arguments = append(arguments, len(tokens))
+	for _, token := range tokens {
+		arguments = append(arguments, token)
+	}
+	arguments = append(arguments, value, ttl.Milliseconds())
+	result, err := setIfLeasesOwnedScript.Run(ctx, s.client, keys, arguments...).Int64()
 	if err != nil {
 		return false, err
 	}

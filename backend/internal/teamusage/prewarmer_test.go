@@ -54,6 +54,68 @@ func TestPrewarmMovingSharesCurrentStatsAndPublishesTimezonesIndependently(t *te
 	}
 }
 
+func TestPrewarmMovingRunningLifecycleBootstrapsNewAnchorAfterBothJitters(t *testing.T) {
+	dayOne := time.Date(2026, 7, 21, 23, 59, 0, 0, time.UTC)
+	dayTwo := time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC)
+	var clock atomic.Value
+	clock.Store(dayOne)
+	now := func() time.Time { return clock.Load().(time.Time) }
+	cache, _ := newRedisPrewarmCache(t, now)
+	seedPrewarmManifest(t, cache, PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}, dayOne, "a")
+	provider := newLifecycleProvider([]int64{101})
+	ticks := make(chan time.Time, 2)
+	options := lifecycleOptions([]string{"UTC"}, now)
+	options.tick = ticks
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	prewarmer.Start(ctx)
+	select {
+	case <-prewarmer.startupDone:
+	case <-time.After(time.Second):
+		t.Fatal("day-one startup did not complete")
+	}
+
+	binding := prewarmBinding(provider)
+	jitter29 := prewarmHistoricalJitter(binding, "UTC", "2026-07-22", SegmentHistory29d)
+	jitter6 := prewarmHistoricalJitter(binding, "UTC", "2026-07-22", SegmentHistory6d)
+	minimumJitter := jitter29
+	if jitter6 < minimumJitter {
+		minimumJitter = jitter6
+	}
+	if minimumJitter <= 0 {
+		t.Fatalf("test fixture minimum jitter = %v, want positive pre-due window", minimumJitter)
+	}
+	clock.Store(dayTwo.Add(minimumJitter / 2))
+	ticks <- now()
+	waitForPrewarmCondition(t, time.Second, func() bool {
+		return !prewarmer.moving.Load() && prewarmer.scheduledWorkers.Load() == 0
+	})
+	if got := provider.totalSourceCalls(); got != 0 {
+		t.Fatalf("pre-jitter rollover made %d source calls, want zero", got)
+	}
+
+	maximumJitter := jitter29
+	if jitter6 > maximumJitter {
+		maximumJitter = jitter6
+	}
+	clock.Store(dayTwo.Add(maximumJitter + time.Second))
+	ticks <- now()
+	newIdentity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-22"}
+	waitForPrewarmCondition(t, 2*time.Second, func() bool {
+		result, found, err := cache.Read(context.Background(), newIdentity)
+		return err == nil && found && result != nil && result.Complete
+	})
+	if provider.directoryCount() != 1 || provider.statsCount() != 1 ||
+		provider.classCount(SegmentHistory29d) != 1 || provider.classCount(SegmentHistory6d) != 1 ||
+		provider.classCount(SegmentTodayHour) != 1 {
+		t.Fatalf("rollover source calls directory=%d stats=%d history29=%d history6=%d today=%d, want 1 each",
+			provider.directoryCount(), provider.statsCount(), provider.classCount(SegmentHistory29d),
+			provider.classCount(SegmentHistory6d), provider.classCount(SegmentTodayHour))
+	}
+	prewarmer.Stop()
+}
+
 func TestPrewarmMovingTimezoneFailureDoesNotInvalidateAnother(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
@@ -531,6 +593,73 @@ func TestPrewarmLeaseMovingCoordinatorRetainsSuccessAndReleasesEarlyFailure(t *t
 	})
 }
 
+func TestPrewarmLeaseActiveMovingPreventsAdjacentTickOverlap(t *testing.T) {
+	base := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return base })
+	seedPrewarmManifest(t, cache, PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}, base, "a")
+	provider := newLifecycleProvider([]int64{101})
+	provider.directoryEntered = make(chan struct{}, 3)
+	provider.directoryRelease = make(chan struct{})
+	leftNow := base
+	rightNow := base.Add(time.Minute)
+	left := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC"}, func() time.Time { return leftNow }))
+	right := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC"}, func() time.Time { return rightNow }))
+	leftResult := make(chan error, 1)
+	go func() { leftResult <- left.RunMoving(context.Background()) }()
+	select {
+	case <-provider.directoryEntered:
+	case <-time.After(time.Second):
+		t.Fatal("tick N did not enter source")
+	}
+	nextCtx, cancelNext := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	err := right.RunMoving(nextCtx)
+	cancelNext()
+	if err != nil {
+		t.Fatalf("tick N+1 active-busy RunMoving() error = %v", err)
+	}
+	if got := provider.directoryCount(); got != 1 {
+		t.Fatalf("tick N+1 source calls raised directory count to %d, want one", got)
+	}
+	close(provider.directoryRelease)
+	if err := <-leftResult; err != nil {
+		t.Fatalf("tick N RunMoving() error = %v", err)
+	}
+	if err := right.RunMoving(context.Background()); err != nil {
+		t.Fatalf("tick N+1 replay RunMoving() error = %v", err)
+	}
+	if got := provider.directoryCount(); got != 1 {
+		t.Fatalf("tick N+1 replay raised directory count to %d, want one", got)
+	}
+	rightNow = base.Add(2 * time.Minute)
+	if err := right.RunMoving(context.Background()); err != nil {
+		t.Fatalf("tick N+2 RunMoving() error = %v", err)
+	}
+	if got := provider.directoryCount(); got != 2 {
+		t.Fatalf("tick N+2 directory count = %d, want two", got)
+	}
+}
+
+func TestPrewarmLeaseAtomicPublicationRejectsCoordinatorLostAtCommit(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	store := &coordinatorDropMultiLeaseStore{recordingPrewarmStore: newRecordingPrewarmStore()}
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	identity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+	old := seedPrewarmManifest(t, cache, identity, now, "a")
+	store.dropCoordinator = true
+	provider := newLifecycleProvider([]int64{101})
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC"}, func() time.Time { return now }))
+	if err := prewarmer.RunMoving(context.Background()); err == nil {
+		t.Fatal("RunMoving(commit-window coordinator loss) error = nil")
+	}
+	result := readPrewarmResult(t, cache, identity)
+	if result.Manifest.TodayHour.GenerationID != old.TodayHour.GenerationID {
+		t.Fatal("coordinator lost at atomic commit still published manifest")
+	}
+	if got := store.maximumClaims(); got < 3 {
+		t.Fatalf("moving atomic publication checked %d leases, want tick+active+segment", got)
+	}
+}
+
 func TestPrewarmHistoricalUsesIndependentRetainedClassCoordinators(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
@@ -559,6 +688,35 @@ func TestPrewarmHistoricalUsesIndependentRetainedClassCoordinators(t *testing.T)
 	}
 	if got := countLeasesWithTTL(server, 5*time.Minute, 7*time.Minute); got != 2 {
 		t.Fatalf("retained class coordinators after both successes = %d, want two", got)
+	}
+}
+
+func TestPrewarmHistoricalCoordinatorKeyIncludesAllowlistIdentity(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	identity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+	allowlists := [][]string{{"UTC"}, {"UTC", "Asia/Shanghai"}}
+	coordinatorKeys := make([]string, 0, len(allowlists))
+
+	for _, allowlist := range allowlists {
+		cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
+		seedPrewarmManifest(t, cache, identity, now, "a")
+		provider := newLifecycleProvider([]int64{101})
+		prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions(allowlist, func() time.Time { return now }))
+		if err := prewarmer.RunHistorical(context.Background(), "UTC", now); err != nil {
+			t.Fatalf("RunHistorical(%v) error = %v", allowlist, err)
+		}
+		coordinatorKey := cache.LeaseKey(
+			"historical-coordinator", "7", "11", prewarmer.allowlistDigest,
+			prewarmTimezoneDigest("UTC"), "2026-07-21", string(SegmentHistory29d),
+		)
+		if !server.Exists(coordinatorKey) {
+			t.Fatalf("historical coordinator for allowlist %v did not use allowlist-scoped key", allowlist)
+		}
+		coordinatorKeys = append(coordinatorKeys, coordinatorKey)
+	}
+
+	if coordinatorKeys[0] == coordinatorKeys[1] {
+		t.Fatal("historical coordinator key did not change with the configured timezone allowlist")
 	}
 }
 
@@ -951,6 +1109,18 @@ func deleteLeasesWithTTL(server *miniredis.Miniredis, minimum, maximum time.Dura
 	}
 }
 
+func waitForPrewarmCondition(t *testing.T, timeout time.Duration, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for prewarm condition")
+}
+
 func lifecycleOptions(timezones []string, now func() time.Time) PrewarmerOptions {
 	var sequence atomic.Uint64
 	return PrewarmerOptions{
@@ -1142,6 +1312,47 @@ func getRecordingPrewarmValueOrLease(ctx context.Context, store *recordingPrewar
 }
 
 var _ readcache.BatchStore = (*leaseVisiblePrewarmStore)(nil)
+
+type coordinatorDropMultiLeaseStore struct {
+	*recordingPrewarmStore
+
+	muDrop          sync.Mutex
+	dropCoordinator bool
+	maxClaims       int
+}
+
+func (s *coordinatorDropMultiLeaseStore) Get(ctx context.Context, key string) ([]byte, error) {
+	return getRecordingPrewarmValueOrLease(ctx, s.recordingPrewarmStore, key)
+}
+
+func (s *coordinatorDropMultiLeaseStore) SetIfLeasesOwned(
+	ctx context.Context,
+	leaseKeys, tokens []string,
+	key string,
+	value []byte,
+	ttl time.Duration,
+) (bool, error) {
+	s.muDrop.Lock()
+	if len(leaseKeys) > s.maxClaims {
+		s.maxClaims = len(leaseKeys)
+	}
+	drop := s.dropCoordinator
+	s.muDrop.Unlock()
+	if drop && len(leaseKeys) > 0 {
+		s.recordingPrewarmStore.mu.Lock()
+		delete(s.recordingPrewarmStore.leases, leaseKeys[0])
+		s.recordingPrewarmStore.mu.Unlock()
+	}
+	return s.recordingPrewarmStore.SetIfLeasesOwned(ctx, leaseKeys, tokens, key, value, ttl)
+}
+
+func (s *coordinatorDropMultiLeaseStore) maximumClaims() int {
+	s.muDrop.Lock()
+	defer s.muDrop.Unlock()
+	return s.maxClaims
+}
+
+var _ readcache.BatchStore = (*coordinatorDropMultiLeaseStore)(nil)
 var _ relay.ProviderWideTeamUsageProvider = (*lifecycleProvider)(nil)
 var _ relay.ProviderWideTeamTrendProvider = (*lifecycleProvider)(nil)
 var _ = errors.Is

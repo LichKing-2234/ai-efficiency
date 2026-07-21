@@ -65,14 +65,16 @@ type Prewarmer struct {
 	limiter  SourceCallLimiter
 	options  PrewarmerOptions
 
-	timezones       []string
-	allowlistDigest string
-	moving          atomic.Bool
+	timezones        []string
+	allowlistDigest  string
+	moving           atomic.Bool
+	scheduledWorkers atomic.Int64
 
 	lifecycleMu sync.Mutex
 	state       prewarmerLifecycleState
 	cancel      context.CancelFunc
 	stopDone    chan struct{}
+	startupDone chan struct{}
 	wg          sync.WaitGroup
 }
 
@@ -157,10 +159,12 @@ func (p *Prewarmer) Start(ctx context.Context) {
 	p.state = prewarmerRunning
 	p.cancel = cancel
 	p.stopDone = make(chan struct{})
+	p.startupDone = make(chan struct{})
+	startupDone := p.startupDone
 	p.wg.Add(1)
 	p.lifecycleMu.Unlock()
 
-	go p.runLifecycle(runCtx)
+	go p.runLifecycle(runCtx, startupDone)
 }
 
 func (p *Prewarmer) Stop() {
@@ -193,9 +197,10 @@ func (p *Prewarmer) Stop() {
 	p.lifecycleMu.Unlock()
 }
 
-func (p *Prewarmer) runLifecycle(ctx context.Context) {
+func (p *Prewarmer) runLifecycle(ctx context.Context, startupDone chan struct{}) {
 	defer p.wg.Done()
 	_ = p.runStartup(ctx)
+	close(startupDone)
 
 	if p.options.tick != nil {
 		p.runTicks(ctx, p.options.tick)
@@ -228,8 +233,10 @@ func (p *Prewarmer) startMoving(ctx context.Context) {
 		p.moving.Store(false)
 		return
 	}
+	p.scheduledWorkers.Add(1)
 	go func() {
 		defer p.wg.Done()
+		defer p.scheduledWorkers.Add(-1)
 		defer p.moving.Store(false)
 		_ = p.runMoving(ctx)
 	}()
@@ -239,8 +246,10 @@ func (p *Prewarmer) startHistorical(ctx context.Context, timezone string, anchor
 	if !p.beginLifecycleWorker() {
 		return
 	}
+	p.scheduledWorkers.Add(1)
 	go func() {
 		defer p.wg.Done()
+		defer p.scheduledWorkers.Add(-1)
 		_ = p.RunHistorical(ctx, timezone, anchor)
 	}()
 }
@@ -271,24 +280,119 @@ func (p *Prewarmer) runMoving(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	normalLanes, rolloverLanes, err := p.preflightMovingLanes(ctx, binding)
+	if err != nil {
+		return err
+	}
+	if len(normalLanes) == 0 && len(rolloverLanes) == 0 {
+		return nil
+	}
+	var failures []error
+	for _, lane := range rolloverLanes {
+		if err := p.runRolloverRecovery(ctx, binding, lane); err != nil {
+			failures = append(failures, fmt.Errorf("rollover timezone %s: %w", lane.timezone, err))
+		}
+	}
+	if len(normalLanes) > 0 {
+		if err := p.runNormalMoving(ctx, binding, normalLanes); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+
+type prewarmMovingLane struct {
+	timezone   string
+	anchorDate string
+}
+
+func (p *Prewarmer) preflightMovingLanes(
+	ctx context.Context,
+	binding ProviderBinding,
+) ([]prewarmMovingLane, []prewarmMovingLane, error) {
+	normal := make([]prewarmMovingLane, 0, len(p.timezones))
+	rollover := make([]prewarmMovingLane, 0, len(p.timezones))
+	for _, timezone := range p.timezones {
+		anchorDate, err := prewarmLocalAnchorDate(timezone, p.options.Now())
+		if err != nil {
+			return nil, nil, err
+		}
+		safe, err := SplitSafe(timezone, anchorDate)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !safe {
+			continue
+		}
+		identity := PrewarmCacheIdentity{
+			ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
+			Timezone: timezone, AnchorDate: anchorDate,
+		}
+		result, found, err := p.cache.Read(ctx, identity)
+		if err != nil {
+			return nil, nil, fmt.Errorf("preflight moving timezone %s: %w", timezone, err)
+		}
+		lane := prewarmMovingLane{timezone: timezone, anchorDate: anchorDate}
+		if found {
+			if result.History29dStatus != PrewarmValueMissing && result.History29dStatus != PrewarmValueHardExpired &&
+				result.History6dStatus != PrewarmValueMissing && result.History6dStatus != PrewarmValueHardExpired {
+				normal = append(normal, lane)
+			}
+			continue
+		}
+		due29, err := p.historicalClassDue(binding, timezone, anchorDate, SegmentHistory29d)
+		if err != nil {
+			return nil, nil, err
+		}
+		due6, err := p.historicalClassDue(binding, timezone, anchorDate, SegmentHistory6d)
+		if err != nil {
+			return nil, nil, err
+		}
+		if due29 && due6 {
+			rollover = append(rollover, lane)
+		}
+	}
+	return normal, rollover, nil
+}
+
+func (p *Prewarmer) runNormalMoving(
+	ctx context.Context,
+	binding ProviderBinding,
+	lanes []prewarmMovingLane,
+) error {
 	tick := p.options.Now().Truncate(prewarmMovingInterval).UTC().Format(time.RFC3339)
-	coordinatorKey := p.cache.LeaseKey(
-		"moving-coordinator", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10),
+	tickKey := p.cache.LeaseKey(
+		"moving-tick", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10),
 		p.allowlistDigest, tick, "moving",
 	)
-	coordinatorToken, acquired, err := p.acquireLease(ctx, coordinatorKey, prewarmMovingCoordinatorTTL)
+	tickToken, acquired, err := p.acquireLease(ctx, tickKey, prewarmMovingCoordinatorTTL)
 	if err != nil || !acquired {
 		return err
 	}
-	retainCoordinator := false
+	retainTick := false
 	defer func() {
-		if !retainCoordinator {
-			p.releaseLease(coordinatorKey, coordinatorToken)
+		if !retainTick {
+			p.releaseLease(tickKey, tickToken)
 		}
 	}()
+	activeKey := p.cache.LeaseKey(
+		"moving-active", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10), p.allowlistDigest,
+	)
+	activeToken, active, err := p.acquireLease(ctx, activeKey, prewarmMovingCoordinatorTTL)
+	if err != nil {
+		return err
+	}
+	if !active {
+		retainTick = true
+		return nil
+	}
+	defer p.releaseLease(activeKey, activeToken)
 	workerCtx, cancel := context.WithTimeout(ctx, p.options.movingWorkerTimeout)
 	defer cancel()
-	workerCtx = withPrewarmCoordinatorLease(workerCtx, coordinatorKey, coordinatorToken)
+	workerCtx = withPrewarmControllingLeases(workerCtx,
+		PrewarmLeaseClaim{Key: tickKey, Token: tickToken},
+		PrewarmLeaseClaim{Key: activeKey, Token: activeToken},
+	)
 
 	current, err := p.source.BuildCurrentStats(workerCtx, binding)
 	if err != nil {
@@ -306,14 +410,14 @@ func (p *Prewarmer) runMoving(ctx context.Context) error {
 	}
 
 	var wg sync.WaitGroup
-	errorsByTimezone := make(chan error, len(p.timezones))
-	for _, timezone := range p.timezones {
-		timezone := timezone
+	errorsByTimezone := make(chan error, len(lanes))
+	for _, lane := range lanes {
+		lane := lane
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := p.runMovingTimezone(workerCtx, binding, currentRef, timezone); err != nil {
-				errorsByTimezone <- fmt.Errorf("moving timezone %s: %w", timezone, err)
+			if err := p.runMovingLane(workerCtx, binding, currentRef, lane); err != nil {
+				errorsByTimezone <- fmt.Errorf("moving timezone %s: %w", lane.timezone, err)
 			}
 		}()
 	}
@@ -329,7 +433,7 @@ func (p *Prewarmer) runMoving(ctx context.Context) error {
 	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
 		return errors.Join(append(failures, err)...)
 	}
-	retainCoordinator = true
+	retainTick = true
 	return errors.Join(failures...)
 }
 
@@ -339,20 +443,25 @@ func (p *Prewarmer) runMovingTimezone(
 	currentRef PrewarmValueReference,
 	timezone string,
 ) error {
-	if err := p.requireCoordinatorOwned(ctx); err != nil {
-		return err
-	}
 	anchorDate, err := prewarmLocalAnchorDate(timezone, p.options.Now())
 	if err != nil {
 		return err
 	}
-	safe, err := SplitSafe(timezone, anchorDate)
-	if err != nil || !safe {
+	return p.runMovingLane(ctx, binding, currentRef, prewarmMovingLane{timezone: timezone, anchorDate: anchorDate})
+}
+
+func (p *Prewarmer) runMovingLane(
+	ctx context.Context,
+	binding ProviderBinding,
+	currentRef PrewarmValueReference,
+	lane prewarmMovingLane,
+) error {
+	if err := p.requireCoordinatorOwned(ctx); err != nil {
 		return err
 	}
 	identity := PrewarmCacheIdentity{
 		ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
-		Timezone: timezone, AnchorDate: anchorDate,
+		Timezone: lane.timezone, AnchorDate: lane.anchorDate,
 	}
 	previous, ok, err := p.cache.Read(ctx, identity)
 	if err != nil {
@@ -362,7 +471,7 @@ func (p *Prewarmer) runMovingTimezone(
 		previous.History6dStatus == PrewarmValueMissing || previous.History6dStatus == PrewarmValueHardExpired {
 		return nil
 	}
-	leased, err := p.fetchLeasedSegment(ctx, binding, timezone, anchorDate, SegmentTodayHour, "moving")
+	leased, err := p.fetchLeasedSegment(ctx, binding, lane.timezone, lane.anchorDate, SegmentTodayHour, "moving")
 	if errors.Is(err, errPrewarmLeaseBusy) {
 		return nil
 	}
@@ -372,11 +481,94 @@ func (p *Prewarmer) runMovingTimezone(
 	defer p.releaseLeasedReference(leased)
 	manifest := PrewarmManifest{
 		SchemaVersion: prewarmCacheSchemaVersion, ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
-		Timezone: timezone, TimezoneDigest: prewarmTimezoneDigest(timezone), AnchorDate: anchorDate,
+		Timezone: lane.timezone, TimezoneDigest: prewarmTimezoneDigest(lane.timezone), AnchorDate: lane.anchorDate,
 		CreatedAt: p.options.Now(), CurrentStats: currentRef,
 		History29d: previous.Manifest.History29d, History6d: previous.Manifest.History6d, TodayHour: leased.reference,
 	}
-	return p.publishIfCurrent(leased.ctx, binding, leased.leaseKey, leased.token, manifest)
+	return p.publishIfCurrent(leased.ctx, binding, []PrewarmLeaseClaim{{Key: leased.leaseKey, Token: leased.token}}, manifest)
+}
+
+func (p *Prewarmer) runRolloverRecovery(ctx context.Context, binding ProviderBinding, lane prewarmMovingLane) error {
+	coordinatorKey := p.cache.LeaseKey(
+		"rollover", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10),
+		p.allowlistDigest, prewarmTimezoneDigest(lane.timezone), lane.anchorDate,
+	)
+	coordinatorToken, acquired, err := p.acquireLease(ctx, coordinatorKey, prewarmHistoryCoordinatorTTL)
+	if err != nil || !acquired {
+		return err
+	}
+	retainCoordinator := false
+	defer func() {
+		if !retainCoordinator {
+			p.releaseLease(coordinatorKey, coordinatorToken)
+		}
+	}()
+	workerCtx, cancel := context.WithTimeout(ctx, p.options.historicalWorkerTimeout)
+	defer cancel()
+	workerCtx = withPrewarmControllingLeases(workerCtx, PrewarmLeaseClaim{Key: coordinatorKey, Token: coordinatorToken})
+	identity := PrewarmCacheIdentity{
+		ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
+		Timezone: lane.timezone, AnchorDate: lane.anchorDate,
+	}
+	if _, found, err := p.cache.Read(workerCtx, identity); err != nil {
+		return fmt.Errorf("read rollover generation after coordinator acquisition: %w", err)
+	} else if found {
+		retainCoordinator = true
+		return nil
+	}
+	due29, err := p.historicalClassDue(binding, lane.timezone, lane.anchorDate, SegmentHistory29d)
+	if err != nil || !due29 {
+		return err
+	}
+	due6, err := p.historicalClassDue(binding, lane.timezone, lane.anchorDate, SegmentHistory6d)
+	if err != nil || !due6 {
+		return err
+	}
+	current, err := p.source.BuildCurrentStats(workerCtx, binding)
+	if err != nil {
+		return err
+	}
+	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
+		return err
+	}
+	currentRef, err := p.cache.WriteCurrentStats(workerCtx, current)
+	if err != nil {
+		return fmt.Errorf("write rollover current stats: %w", err)
+	}
+	refs := make(map[PrewarmSegmentClass]PrewarmValueReference, 3)
+	classes := []PrewarmSegmentClass{SegmentHistory29d, SegmentHistory6d, SegmentTodayHour}
+	var completing leasedPrewarmReference
+	for index, class := range classes {
+		refreshClass := string(class)
+		if class == SegmentTodayHour {
+			refreshClass = "moving"
+		}
+		leased, err := p.fetchLeasedSegment(workerCtx, binding, lane.timezone, lane.anchorDate, class, refreshClass)
+		if err != nil {
+			return err
+		}
+		refs[class] = leased.reference
+		if index == len(classes)-1 {
+			completing = leased
+		} else {
+			p.releaseLeasedReference(leased)
+		}
+	}
+	defer p.releaseLeasedReference(completing)
+	manifest := PrewarmManifest{
+		SchemaVersion: prewarmCacheSchemaVersion, ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
+		Timezone: lane.timezone, TimezoneDigest: prewarmTimezoneDigest(lane.timezone), AnchorDate: lane.anchorDate,
+		CreatedAt: p.options.Now(), CurrentStats: currentRef,
+		History29d: refs[SegmentHistory29d], History6d: refs[SegmentHistory6d], TodayHour: refs[SegmentTodayHour],
+	}
+	if err := p.publishIfCurrent(completing.ctx, binding, []PrewarmLeaseClaim{{Key: completing.leaseKey, Token: completing.token}}, manifest); err != nil {
+		return err
+	}
+	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
+		return err
+	}
+	retainCoordinator = true
+	return nil
 }
 
 func (p *Prewarmer) RunHistorical(ctx context.Context, timezone string, anchor time.Time) error {
@@ -428,7 +620,7 @@ func (p *Prewarmer) runHistoricalClass(
 ) error {
 	coordinatorKey := p.cache.LeaseKey(
 		"historical-coordinator", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10),
-		prewarmTimezoneDigest(identity.Timezone), identity.AnchorDate, string(class),
+		p.allowlistDigest, prewarmTimezoneDigest(identity.Timezone), identity.AnchorDate, string(class),
 	)
 	coordinatorToken, acquired, err := p.acquireLease(ctx, coordinatorKey, prewarmHistoryCoordinatorTTL)
 	if err != nil {
@@ -445,11 +637,14 @@ func (p *Prewarmer) runHistoricalClass(
 	}()
 	workerCtx, cancel := context.WithTimeout(ctx, p.options.historicalWorkerTimeout)
 	defer cancel()
-	workerCtx = withPrewarmCoordinatorLease(workerCtx, coordinatorKey, coordinatorToken)
+	workerCtx = withPrewarmControllingLeases(workerCtx, PrewarmLeaseClaim{Key: coordinatorKey, Token: coordinatorToken})
 
 	previous, ok, err := p.cache.Read(workerCtx, identity)
 	if err != nil {
 		return fmt.Errorf("read generation after coordinator acquisition: %w", err)
+	}
+	if !ok {
+		return nil
 	}
 	if ok && prewarmHistoricalStatus(previous, class) == PrewarmValueFresh {
 		if err := p.requireCoordinatorOwned(workerCtx); err != nil {
@@ -475,7 +670,7 @@ func (p *Prewarmer) runHistoricalClass(
 	if !prewarmManifestReferencesPresent(manifest) {
 		return fmt.Errorf("historical manifest is incomplete")
 	}
-	if err := p.publishIfCurrent(leased.ctx, binding, leased.leaseKey, leased.token, manifest); err != nil {
+	if err := p.publishIfCurrent(leased.ctx, binding, []PrewarmLeaseClaim{{Key: leased.leaseKey, Token: leased.token}}, manifest); err != nil {
 		return err
 	}
 	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
@@ -510,7 +705,7 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 	defer p.releaseLease(coordinatorKey, coordinatorToken)
 	workerCtx, cancel := context.WithTimeout(ctx, p.options.startupWorkerTimeout)
 	defer cancel()
-	workerCtx = withPrewarmCoordinatorLease(workerCtx, coordinatorKey, coordinatorToken)
+	workerCtx = withPrewarmControllingLeases(workerCtx, PrewarmLeaseClaim{Key: coordinatorKey, Token: coordinatorToken})
 
 	var currentRef *PrewarmValueReference
 	var failures []error
@@ -585,7 +780,7 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 				p.releaseLeasedReference(leased)
 				continue
 			}
-			if publishErr := p.publishIfCurrent(leased.ctx, binding, leased.leaseKey, leased.token, manifest); publishErr != nil {
+			if publishErr := p.publishIfCurrent(leased.ctx, binding, []PrewarmLeaseClaim{{Key: leased.leaseKey, Token: leased.token}}, manifest); publishErr != nil {
 				failures = append(failures, fmt.Errorf("startup publish %s %s: %w", timezone, class, publishErr))
 				switch class {
 				case SegmentHistory29d:
@@ -601,7 +796,7 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 		if len(missingClasses) != 0 || !prewarmManifestReferencesPresent(manifest) {
 			continue
 		}
-		if publishErr := p.publishIfCurrent(workerCtx, binding, coordinatorKey, coordinatorToken, manifest); publishErr != nil {
+		if publishErr := p.publishIfCurrent(workerCtx, binding, nil, manifest); publishErr != nil {
 			failures = append(failures, fmt.Errorf("startup publish %s: %w", timezone, publishErr))
 		}
 	}
@@ -682,7 +877,7 @@ func (p *Prewarmer) releaseLeasedReference(leased leasedPrewarmReference) {
 func (p *Prewarmer) publishIfCurrent(
 	ctx context.Context,
 	binding ProviderBinding,
-	leaseKey, token string,
+	extraClaims []PrewarmLeaseClaim,
 	manifest PrewarmManifest,
 ) error {
 	if err := p.requireCoordinatorOwned(ctx); err != nil {
@@ -699,7 +894,8 @@ func (p *Prewarmer) publishIfCurrent(
 		return err
 	}
 	manifest.CreatedAt = p.options.Now()
-	published, err := p.cache.PublishManifest(ctx, leaseKey, token, manifest)
+	claims := append(prewarmControllingLeaseClaims(ctx), extraClaims...)
+	published, err := p.cache.PublishManifestWithLeases(ctx, claims, manifest)
 	if err != nil {
 		return err
 	}
@@ -737,13 +933,13 @@ func (p *Prewarmer) releaseLease(key, token string) {
 
 type prewarmCoordinatorLeaseContextKey struct{}
 
-type prewarmCoordinatorLease struct {
-	key   string
-	token string
+func withPrewarmControllingLeases(ctx context.Context, claims ...PrewarmLeaseClaim) context.Context {
+	return context.WithValue(ctx, prewarmCoordinatorLeaseContextKey{}, append([]PrewarmLeaseClaim(nil), claims...))
 }
 
-func withPrewarmCoordinatorLease(ctx context.Context, key, token string) context.Context {
-	return context.WithValue(ctx, prewarmCoordinatorLeaseContextKey{}, prewarmCoordinatorLease{key: key, token: token})
+func prewarmControllingLeaseClaims(ctx context.Context) []PrewarmLeaseClaim {
+	claims, _ := ctx.Value(prewarmCoordinatorLeaseContextKey{}).([]PrewarmLeaseClaim)
+	return append([]PrewarmLeaseClaim(nil), claims...)
 }
 
 func (p *Prewarmer) requireCoordinatorOwned(ctx context.Context) error {
@@ -754,21 +950,23 @@ func requirePrewarmCoordinatorOwned(ctx context.Context, cache *PrewarmCache) er
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	lease, ok := ctx.Value(prewarmCoordinatorLeaseContextKey{}).(prewarmCoordinatorLease)
-	if !ok {
+	claims := prewarmControllingLeaseClaims(ctx)
+	if len(claims) == 0 {
 		return nil
 	}
-	commandCtx, cancel := context.WithTimeout(ctx, cache.options.LeaseTimeout)
-	value, err := cache.store.Get(commandCtx, lease.key)
-	cancel()
-	if errors.Is(err, readcache.ErrMiss) {
-		return errPrewarmLeaseLost
-	}
-	if err != nil {
-		return fmt.Errorf("check team usage prewarm coordinator lease: %w", err)
-	}
-	if !bytes.Equal(value, []byte(lease.token)) {
-		return errPrewarmLeaseLost
+	for _, claim := range claims {
+		commandCtx, cancel := context.WithTimeout(ctx, cache.options.LeaseTimeout)
+		value, err := cache.store.Get(commandCtx, claim.Key)
+		cancel()
+		if errors.Is(err, readcache.ErrMiss) {
+			return errPrewarmLeaseLost
+		}
+		if err != nil {
+			return fmt.Errorf("check team usage prewarm coordinator lease: %w", err)
+		}
+		if !bytes.Equal(value, []byte(claim.Token)) {
+			return errPrewarmLeaseLost
+		}
 	}
 	return nil
 }

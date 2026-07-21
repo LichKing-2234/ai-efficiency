@@ -294,6 +294,45 @@ func TestPrewarmCachePublishLastRechecksClockAfterValidationRead(t *testing.T) {
 	}
 }
 
+func TestPrewarmCachePublishManifestWithLeasesRequiresAllClaims(t *testing.T) {
+	generatedAt := testPrewarmGeneratedAt()
+	cache, server := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
+	manifest := testPrewarmManifest(t, cache, testPrewarmIdentity(), generatedAt)
+	claims := []PrewarmLeaseClaim{
+		{Key: cache.LeaseKey("coordinator", "multi"), Token: "cycle-owner"},
+		{Key: cache.LeaseKey("segment", "multi"), Token: "segment-owner"},
+	}
+	for _, claim := range claims {
+		acquired, err := cache.TryAcquireLease(context.Background(), claim.Key, claim.Token, time.Minute)
+		if err != nil || !acquired {
+			t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
+		}
+	}
+	wrong := append([]PrewarmLeaseClaim(nil), claims...)
+	wrong[1].Token = "wrong"
+	published, err := cache.PublishManifestWithLeases(context.Background(), wrong, manifest)
+	if err != nil || published {
+		t.Fatalf("PublishManifestWithLeases(wrong) = %v, %v", published, err)
+	}
+	manifestKey, _ := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, testPrewarmIdentity())
+	if server.Exists(manifestKey) {
+		t.Fatal("wrong multi-lease claim published manifest")
+	}
+	server.Del(claims[0].Key)
+	published, err = cache.PublishManifestWithLeases(context.Background(), claims, manifest)
+	if err != nil || published || server.Exists(manifestKey) {
+		t.Fatalf("PublishManifestWithLeases(missing) = %v, %v, exists=%v", published, err, server.Exists(manifestKey))
+	}
+	acquired, err := cache.TryAcquireLease(context.Background(), claims[0].Key, claims[0].Token, time.Minute)
+	if err != nil || !acquired {
+		t.Fatalf("reacquire coordinator = %v, %v", acquired, err)
+	}
+	published, err = cache.PublishManifestWithLeases(context.Background(), claims, manifest)
+	if err != nil || !published {
+		t.Fatalf("PublishManifestWithLeases(all owned) = %v, %v", published, err)
+	}
+}
+
 func TestPrewarmCacheReadReturnsPerReferenceStatusForPartialGeneration(t *testing.T) {
 	generatedAt := testPrewarmGeneratedAt()
 	now := generatedAt.Add(30 * time.Second)
@@ -1024,6 +1063,32 @@ func (s *recordingPrewarmStore) SetIfLeaseOwned(_ context.Context, leaseKey, tok
 	if leaseKey == key {
 		delete(s.leases, leaseKey)
 	}
+	return true, nil
+}
+
+func (s *recordingPrewarmStore) SetIfLeasesOwned(
+	_ context.Context,
+	leaseKeys, tokens []string,
+	key string,
+	value []byte,
+	ttl time.Duration,
+) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, "publish "+key)
+	if s.publishErr != nil {
+		return false, s.publishErr
+	}
+	if len(leaseKeys) == 0 || len(leaseKeys) != len(tokens) {
+		return false, fmt.Errorf("invalid multi-lease claim")
+	}
+	for index, leaseKey := range leaseKeys {
+		if s.leases[leaseKey] != tokens[index] {
+			return false, nil
+		}
+	}
+	s.values[key] = append([]byte(nil), value...)
+	s.ttls[key] = ttl
 	return true, nil
 }
 
