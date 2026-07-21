@@ -11,7 +11,14 @@
 **Status:** Tasks 1-3 are complete. Task 3 review corrections reject the
 environment-dependent `Local` timezone and check every usage composition
 addition; implementation `d9e0c4d2` passed focused, race, full-package, and vet
-verification. Tasks 4-9 have not started.
+verification. Task 4 RED tests failed for the expected missing batch-store and
+prewarm-cache symbols. The first implementation passed focused and race tests,
+but review found four binding gaps: write-once values, per-reference partial
+status, earliest-reference manifest expiry, and the two-second timeout cap.
+Correction RED tests failed first for the missing partial-result API and then
+for all four behaviors. The correction implementation passes focused, race,
+full-package, and vet verification; final re-review is clean. Task 4 is
+complete in `acb58831`. Tasks 5-9 have not started.
 
 ## Task 1 Gate Evidence
 
@@ -342,11 +349,11 @@ git commit -m "perf(teamusage): add segmented prewarm domain model"
 - Produces: `readcache.BatchStore.MGet` and `SetIfLeaseOwned`; `PrewarmCache.Read`, `WriteCurrentStats`, `WriteSegment`, `PublishManifest`, and lease methods.
 - Consumes: immutable model/envelope types from Task 3.
 
-- [ ] **Step 1: Write RED Redis primitive and cache tests**
+- [x] **Step 1: Write RED Redis primitive and cache tests**
 
 Tests must prove ordered MGET miss positions, token-checked Lua publication, token-checked release, namespace/schema/provider/version/timezone-digest/anchor/class/generation isolation, 512-byte key-reference rejection, immutable write-before-manifest order, reader use of one manifest only, malformed/oversized/hard-expired rejection, old-anchor in-flight readability, and Redis fail-open outcomes.
 
-- [ ] **Step 2: Run RED tests**
+- [x] **Step 2: Run RED tests**
 
 ```bash
 cd backend
@@ -355,7 +362,7 @@ go test ./internal/readcache ./internal/teamusage -run 'MGet|SetIfLeaseOwned|Pre
 
 Expected: FAIL because batch reads, atomic publish, and prewarm cache do not exist.
 
-- [ ] **Step 3: Implement bounded cache primitives and TTL relationships**
+- [x] **Step 3: Implement bounded cache primitives and TTL relationships**
 
 Introduce a narrow extension instead of enlarging every existing fake:
 
@@ -369,7 +376,7 @@ type BatchStore interface {
 
 Use `movingFresh=75s`, `movingHard=4m`, `movingValueTTL=6m`, `historyFresh=25h`, `historyHard=49h`, `historyValueTTL=50h`, and `manifestTTL=3m`. Every reader validates logical hard expiry in addition to Redis TTL. The manifest expires before the earliest moving hard expiry; values outlive manifest discovery plus the 44-second maximum backend request, and prior-anchor moving values remain available long enough for a resolved request to finish.
 
-- [ ] **Step 4: Verify Redis behavior**
+- [x] **Step 4: Verify Redis behavior**
 
 ```bash
 cd backend
@@ -378,7 +385,7 @@ go test ./internal/readcache ./internal/teamusage -run 'MGet|SetIfLeaseOwned|Pre
 go test -race ./internal/readcache ./internal/teamusage -run 'MGet|SetIfLeaseOwned|PrewarmCache|PublishLast' -count=1
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/readcache backend/internal/teamusage/prewarm_cache.go backend/internal/teamusage/prewarm_cache_test.go
