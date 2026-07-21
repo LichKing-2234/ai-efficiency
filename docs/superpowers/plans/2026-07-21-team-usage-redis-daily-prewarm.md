@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Gin, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Sub2API HTTP APIs, Kubernetes, Helm, Docker Buildx, GHCR.
 
-**Status:** **Blocked by UTC-hour POC.** Task 1 failed semantic equivalence on all three required comparison timezones. Tasks 2-10 belong to the rejected UTC-hour implementation and must remain unchecked. The spec now contains a proposed direct daily-bucket replacement for an explicit common-timezone list; it requires user approval and a replacement plan before implementation.
+**Status:** **Rejected historical plan.** Replaced by `docs/superpowers/specs/2026-07-21-team-usage-segmented-timezone-prewarm-design.md`; the replacement is approved but blocked on its segmented-source POC. Every checkbox and the remaining body below are retained as historical evidence and must not be executed.
 
 ### Task 1 Gate Evidence
 

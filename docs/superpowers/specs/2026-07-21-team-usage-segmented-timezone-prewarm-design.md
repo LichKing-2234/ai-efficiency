@@ -145,8 +145,8 @@ The allowlist is operator configurable. Startup normalization trims entries,
 validates each with the runtime IANA timezone database, treats the validated
 trimmed name as the canonical configured name, preserves first occurrence
 order, and deduplicates equal canonical configured names. The maximum after
-deduplication is four. Distinct valid IANA aliases are not silently folded
-together.
+deduplication is four, and one configured name is at most 255 bytes. Distinct
+valid IANA aliases are not silently folded together.
 
 An empty normalized list or a disabled feature flag means no prewarmer and no
 prewarm reader. An invalid timezone or more than four deduplicated entries
@@ -187,7 +187,7 @@ conditions holds:
 - Relay user ID is not positive;
 - the label is blank or does not match the segment granularity's exact shape;
 - tokens are present and negative;
-- actual cost is absent, NaN, or infinite;
+- actual cost is absent, negative, NaN, or infinite;
 - the same Relay user ID plus exact source label appears twice in one segment;
 - labels for one user are not strictly increasing in source order;
 - the response envelope's normalized start date, end date, or granularity does
@@ -233,6 +233,67 @@ Actual-cost equivalence is accepted only when the absolute difference is at
 most `1e-9`. Relative error, rounded display equality, and aggregate-only
 equality do not satisfy the gate.
 
+### Provider-Wide Source Completeness
+
+The implementation adds a `ProviderWideTeamTrendProvider` capability behind
+`backend/internal/relay.Provider` for prewarm source reads. Its
+`GetProviderUsageTrend` method accepts only the exact
+range/granularity/timezone tuple and limit; it does not accept requested Relay
+IDs. It returns a `ProviderWideTrendResult` containing all decoded source rows
+before authorization filtering together with:
+
+- exact normalized source coverage;
+- source response bytes;
+- decoded point count;
+- unique source user count; and
+- an explicit completeness result derived from the 5,000-user truncation guard.
+
+"Raw provider-wide rows" means the complete decoded trend rows needed by this
+domain, not raw HTTP bytes and not rows already filtered to a representative
+scope. The returned row type contains only Relay user ID, source label, optional
+tokens, and actual cost. Source validation, ordering, duplicate detection,
+response/point bounds, and truncation checks all run on that provider-wide result
+before any authorization intersection or Redis publication. The existing
+requested-ID `TeamMemberTrendProvider.GetUsageTrendForUsers` capability remains
+the PR #192 fallback contract and is not a prewarm publication source.
+
+The provider-wide directory source requests `/api/v1/admin/users` with
+`page_size=1000` and follows authoritative pagination until every declared page
+is exhausted. It rejects:
+
+- a non-positive or duplicate Relay ID on one page or across pages;
+- missing or non-positive authoritative total-page metadata for a nonempty
+  result;
+- a response page number that differs from the requested page;
+- a page size other than the requested 1,000 when that metadata is present;
+- changing total-count or total-page metadata across pages;
+- an empty nonterminal page, a page longer than 1,000, an undeclared extra page,
+  or a final cumulative count inconsistent with authoritative metadata; and
+- a directory containing 5,000 or more unique provider IDs.
+
+Fewer than 5,000 positive unique provider IDs is required for prewarm. Reaching
+the bound, invalid pagination, or incomplete pagination uses exact fallback and
+does not publish a partial provider generation.
+
+Current stats are fetched for that complete directory set in chunks of at most
+500 positive unique IDs. Each chunk response must contain exactly one record for
+every requested ID and no extra, missing, duplicate, zero, or negative ID. The
+decoder rejects duplicate JSON object keys before map conversion, and each
+record's embedded `UserID` must equal its decoded object key and one requested
+ID. Every `TodayActualCost` and `TotalActualCost` must be finite and
+non-negative; optional `TotalTokens` must be non-negative. Chunk results must
+remain disjoint when combined. Any violation rejects the provider-wide
+current-stats generation.
+
+The trend capability publishes no requested-ID-filtered map. Its validated raw
+rows remain provider-wide in the immutable segment, and authorization filtering
+happens only on a reader. For a today request, raw trend coverage is the
+`today_hour` user set. For 7d and 30d, it is the user union of the respective
+history segment and `today_hour`. If any currently authorized positive Relay ID
+is absent from the provider-wide current-stats value or the required raw trend
+coverage set, the request uses PR #192's exact scope-origin path. It never
+inserts an empty trend or zero stats record for a missing authorized ID.
+
 ## Redis Contract
 
 ### Immutable Values
@@ -246,8 +307,9 @@ Redis stores immutable envelopes for:
 
 The current-stats snapshot is fetched once per provider moving generation and
 shared by every configured timezone manifest. It contains only Relay user ID,
-today actual cost, lifetime actual cost, and optional lifetime total tokens from
-the validated `TeamUserUsageStats` facts. `RangeActualCost` and
+today actual cost, default rolling-30-day `TotalActualCost`, and optional total
+tokens from the validated `TeamUserUsageStats` facts. `TotalActualCost` is not a
+lifetime value under the current upstream batch endpoint. `RangeActualCost` and
 `RangeTotalTokens` are not serialized into this shared value. Timezone-specific
 selected-window range totals come from the three trend segments, not from
 duplicating current stats per timezone.
@@ -268,6 +330,9 @@ Every value and manifest key is namespace and schema version isolated. Segment
 keys bind provider ID, persisted provider configuration version, timezone
 digest, local anchor date, segment class, and an opaque generation ID. Current
 stats bind provider ID, persisted provider version, and their own generation ID.
+Digests and generation IDs are 64 characters, and any Redis key reference
+serialized into an envelope is at most 512 bytes. An over-width dimension
+rejects the optimization and uses exact fallback.
 
 Provider version changes make all prior values unreachable. One timezone cannot
 address another timezone's values. A local-date rollover creates a new anchor
@@ -295,12 +360,17 @@ references. A newer moving generation may reuse unchanged historical values
 only when every provider, version, timezone, anchor, class, coverage, schema,
 and validation dimension matches.
 
-Value expiry must exceed the manifest's maximum discoverable lifetime plus the
-maximum bounded prewarm request duration. At local-date rollover, prior-anchor
-values remain readable long enough for any request that already resolved the
-prior manifest to finish. Exact TTL constants are deliberately not production
-constants until the POC measures serialized sizes and read/write duration; the
-relationships above are mandatory regardless of the selected constants.
+TTL relationships come from schedule and correctness requirements, not the 20
+GET source POC. A today value's hard lifetime must cover more than one 60-second
+moving interval plus one bounded recovery opportunity. A historical value's
+hard lifetime must cover more than one local-day interval, its maximum 30-minute
+jitter, and one bounded recovery opportunity. A manifest cannot outlive its
+earliest referenced value. Every value expiry must also exceed the manifest's
+maximum discoverable lifetime plus the maximum bounded request duration. At
+local-date rollover, prior-anchor values remain readable long enough for any
+request that already resolved the prior manifest to finish. Exact TTL constants
+are selected from these relationships during implementation, not inferred from
+source payload timing.
 
 ## Authorization And Request Path
 
@@ -315,9 +385,11 @@ prewarmed facts:
 4. require the split-safety guard to pass before any segmented Redis read;
 5. read and validate that provider/version/timezone/anchor manifest;
 6. read the current-stats value and required trend segments;
-7. intersect all provider-wide facts with the currently authorized Relay IDs;
-8. compose source labels without timezone conversion; and
-9. project the existing Summary, Trend, Members, Organization, or compatibility
+7. require every currently authorized Relay ID to exist in current stats and
+   the required raw trend coverage set;
+8. intersect all provider-wide facts with the currently authorized Relay IDs;
+9. compose source labels without timezone conversion; and
+10. project the existing Summary, Trend, Members, Organization, or compatibility
    Overview DTO, including its existing scope-version race check.
 
 The exact candidate shapes are:
@@ -366,6 +438,8 @@ The request uses PR #192's exact scope-origin path for all of these cases:
 - either required historical segment is missing, invalid, hard-expired,
   truncated, over limit, or has mismatched coverage;
 - current stats or the provider/version/anchor manifest cannot be trusted;
+- a currently authorized Relay ID is absent from current stats or required raw
+  provider-wide trend coverage;
 - the source-label composition or unique-user union fails validation;
 - Redis read, write, pool, lease, decode, or timeout behavior fails;
 - Relay fails during the partial-today fetch; or
@@ -442,25 +516,43 @@ completed prewarm result.
 
 ## Upstream And Redis Runtime Bounds
 
-The source path retains two independent call-count reductions from the rejected
-candidate:
+The provider-wide source path retains two independent call-count reductions from
+the rejected candidate:
 
 - request Relay admin users with `page_size=1000`;
 - request batch current usage stats in chunks of at most 500 Relay user IDs.
+
+The directory loop exhausts and validates authoritative pagination before it
+chunks stats or publishes any value. The new or extended provider-wide trend
+capability returns raw rows plus bytes, points, users, coverage, and completeness
+metadata; it does not reuse the existing requested-ID-filtered return contract
+as a Redis publication source.
 
 These changes stay behind `backend/internal/relay.Provider`; they do not couple
 AI Efficiency to the Sub2API database. Sub2API source remains unchanged.
 
 The shared Redis client is configured with at least four pre-created idle
-connections and one-second dial and pool timeouts. Large prewarm reads and
-writes use separately measured, bounded command budgets selected from the POC.
+connections and one-second dial and pool timeouts. The 20 GET POC does not
+measure Redis and does not choose large-value Redis read/write command timeouts.
+After cache code exists, deploy it to staging with the feature still disabled
+and benchmark synthetic maximum-safe values against staging Redis. Benchmark
+separate immutable writes, manifest publish, and four-lane MGET reads under the
+same min-idle pool and background concurrency-two shape. Select separate read
+and write command budgets as the greater of 250 milliseconds or twice the
+observed p99, each capped at two seconds. If either required budget would exceed
+two seconds or produces any Redis error, do not enable the feature in staging.
+
 Existing small-cache callers retain their 100-millisecond command contexts, so
 the broader transport bounds do not make unrelated cache misses wait one
 second.
 
 Redis source-body, decoded-point, serialized-segment, timezone-generation, and
 all-timezone-generation limits are enforced before publication. An over-limit
-value is never cached and uses exact fallback.
+value is never cached and uses exact fallback. If the deterministic POC sizing
+gate passes, runtime also rejects a shared current-stats envelope at or above 2
+MiB and a manifest at or above 64 KiB. Current stats are counted once per
+provider generation, while one manifest is counted for each configured
+timezone/anchor.
 
 ## Segmented-Source POC Hard Gate
 
@@ -481,12 +573,24 @@ For each of the four configured timezones, make exactly five read-only GETs:
 4. `direct_30d`: `D-29..D`, `granularity=day`;
 5. `direct_7d`: `D-6..D`, `granularity=day`.
 
-The probe makes exactly 20 GETs with global concurrency at most two. It validates
-each response before comparison, builds `composed_30d` and `composed_7d` by
-Relay user ID plus unmodified source label, and compares each composed map with
-its direct map. Key sets and token presence must match; tokens must be exact;
-each actual-cost delta must be at most `1e-9` in absolute value. Aggregate totals
-cannot hide a per-user/source-label mismatch.
+The probe makes exactly 20 trend GETs with global concurrency at most two. It
+validates every raw response before composition. For each timezone, it then
+uses the exact runtime algorithm:
+
+1. retain the validated `today_hour` source rows and their raw labels;
+2. coalesce `today_hour` by Relay user ID plus the exact first 10-character
+   source-label prefix;
+3. merge that daily map separately with `history_6d` and `history_29d` by Relay
+   user ID plus daily source label, adding actual cost and preserving the
+   optional-token rules;
+4. key `direct_7d` and `direct_30d` by Relay user ID plus their unmodified daily
+   source labels; and
+5. compare each composed per-key map with its corresponding direct daily map.
+
+Key sets and token presence must match; tokens must be exact; each actual-cost
+delta must be at most `1e-9` in absolute value. Aggregate totals cannot hide a
+per-user/daily-source-label mismatch. Coalescing is a projection operation only;
+the stored `today_hour` segment retains every raw source label.
 
 The same POC executable also evaluates completed DST rollover fixtures for
 America/Los_Angeles and Europe/Berlin without making additional HTTP calls. It
@@ -495,17 +599,43 @@ and select PR #192 fallback before any segmented manifest read, while the
 split-safe anchors selected for the 20 GETs pass. This assertion compares only
 calendar-boundary instants; it never parses a source label.
 
-The sanitized POC record includes, per call and in total:
+The 20 GETs measure only trend source and trend-segment capacity. The sanitized
+POC record includes, per call and in total:
 
 - HTTP duration and total wall duration;
 - response body bytes;
 - decoded point count;
 - unique user count and composed union count;
 - peak process RSS;
-- serialized Redis bytes for each segment; and
-- serialized bytes per timezone and across all timezone values.
+- serialized Redis bytes for each of the three stored trend segments; and
+- serialized trend-segment bytes per timezone and across all four timezones.
 
-Suggested hard gates are:
+The two direct daily comparison responses are measured as HTTP bodies and
+decoded results but are not counted as stored Redis values. The shared current
+stats value and manifests are not fetched by these 20 calls and are not inferred
+from trend response sizes.
+
+The same probe performs a deterministic no-extra-HTTP structural sizing test.
+It serializes one shared current-stats envelope containing exactly 4,999
+synthetic rows, using maximum-width positive int64 IDs, maximum-width finite
+non-negative JSON costs, and present `math.MaxInt64` token values. It also
+serializes four manifest envelopes using the maximum admitted widths: 19-digit
+provider/version values, a 255-byte timezone name, 64-character digests and
+generation IDs, 512-byte Redis key references, RFC3339Nano timestamps, and
+maximum-width byte/point/user counters. All identities are synthetic.
+
+The candidate structural caps become implementation constants only if the
+synthetic current-stats envelope is strictly smaller than 2 MiB and every
+synthetic manifest is strictly smaller than 64 KiB. Reaching either cap fails
+the POC and stops implementation; the POC does not raise the limits. A complete
+generation size counts the shared current-stats value once per provider, not
+once per timezone, plus one manifest per timezone and all 12 stored trend
+segments. Direct comparison responses are excluded. Consequently, when every
+gate passes, the strict structural generation bound is less than 66.25 MiB:
+less than 64 MiB of trend segments, one shared value below 2 MiB, and four
+manifests below 64 KiB each.
+
+Mandatory hard gates are:
 
 | Gate | Required result |
 | --- | ---: |
@@ -515,18 +645,21 @@ Suggested hard gates are:
 | Each decoded result | `< 1,000,000 points` |
 | Each source unique users | `< 5,000` |
 | Each composed unique-user union | `< 5,000` |
-| Each serialized segment | `< 8 MiB` |
-| All values for one timezone | `< 16 MiB` |
-| All timezone values | `< 64 MiB` |
+| Each stored trend segment | `< 8 MiB` |
+| Three trend segments for one timezone | `< 16 MiB` |
+| All 12 timezone trend segments | `< 64 MiB` |
+| One synthetic shared current-stats value | `< 2 MiB` |
+| Each synthetic manifest | `< 64 KiB` |
 | Peak probe RSS | `< 192 MiB` |
 | Token comparison | Exact, including nil presence |
 | Actual-cost comparison | Absolute delta `<= 1e-9` per key |
 
 Reaching a strict upper bound fails the gate. Any request error, invalid point,
 coverage mismatch, duplicate, out-of-order point, exact 5,000-user source,
-composed union at or above 5,000, size overrun, or comparison mismatch also
-fails. On any failure, record sanitized evidence and stop before implementation;
-do not relax a gate, reinterpret a label, or proceed with a subset of timezones.
+composed union at or above 5,000, synthetic structural-cap overrun, trend-size
+overrun, or comparison mismatch also fails. On any failure, record sanitized
+evidence and stop before implementation; do not relax a gate, reinterpret a
+label, or proceed with a subset of timezones.
 
 The probe receives URL and credential only through process environment, limits
 body reads, and prints no URL, header, ID, source row, response body, name,
@@ -546,6 +679,8 @@ identities only. Required tests cover:
   the four-timezone maximum;
 - source-label preservation with no UTC reinterpretation or timezone parsing;
 - hour-prefix coalescing by the exact first 10 characters;
+- exact POC/runtime ordering of today coalescing, daily-label merge, and
+  per-user/daily-label direct comparison;
 - 7-day composition from `history_6d` plus `today_hour`;
 - 30-day composition from `history_29d` plus `today_hour`;
 - independent `history_6d` and `history_29d` source selection;
@@ -563,8 +698,19 @@ identities only. Required tests cover:
 - invalid, duplicate, out-of-order, mismatched-coverage, oversized, and
   truncated source rejection;
 - per-source and composed-union 5,000-user guards before authorization;
-- admin user `page_size=1000`, stats chunks no larger than 500, and global
-  moving-source concurrency no larger than two; and
+- raw provider-wide trend rows and bytes/points/users/completeness metadata with
+  no requested-ID filtering before Redis publication;
+- directory `page_size=1000`, complete and consistent pagination, positive
+  unique IDs, and the strict provider-directory `< 5000` bound;
+- stats chunks no larger than 500 with exact requested-ID coverage, no
+  extra/missing/duplicate records, and finite non-negative fields;
+- exact fallback rather than zero synthesis when current authorization is not
+  covered by current stats or the required raw trend union;
+- deterministic no-HTTP 4,999-row current-stats and maximum-width manifest
+  sizing, with one shared current-stats value counted per provider;
+- feature-disabled staging Redis benchmarking of synthetic maximum-safe values
+  before timeout constants are selected or staging is enabled;
+- global moving-source concurrency no larger than two; and
 - unchanged Summary, Trend, Members, Organization, and Overview DTOs, response
   caches, cursor payloads, and freshness behavior.
 
@@ -581,6 +727,8 @@ Add bounded-cardinality metrics for:
 - skipped moving ticks and lease outcomes;
 - source bytes, decoded points, unique users, union users, segment bytes,
   timezone bytes, and generation bytes;
+- directory pagination, provider-ID bound, stats exact-coverage, and raw-trend
+  completeness rejection reasons from closed enums;
 - manifest, current-stats, and segment cache outcomes;
 - last successful moving and historical refresh by configured timezone; and
 - request prewarm outcome or exact fallback reason from a closed enum.
@@ -594,8 +742,10 @@ allowlist.
 ## Staging Acceptance
 
 Deploy only an immutable exact-head staging image with the prewarm feature
-enabled in staging. Production remains unchanged. Run three sanitized rounds
-with the same authorized account and deterministic standard window:
+disabled first. Run and pass the synthetic maximum-safe Redis benchmark, lock
+the measured read/write command budgets, and only then enable the feature in
+staging. Production remains unchanged. Run three sanitized rounds with the same
+authorized account and deterministic standard window:
 
 1. **Empty Redis:** remove only the new prewarm, existing Team Usage origin,
    response, and lease keys, then issue all four lanes concurrently.
