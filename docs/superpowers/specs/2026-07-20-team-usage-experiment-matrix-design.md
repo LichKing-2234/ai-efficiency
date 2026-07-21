@@ -1,8 +1,30 @@
 # Team Usage Cold-Load Experiment Matrix Design
 
-**Status:** Approved for implementation and staging comparison.
+**Status:** Experiment complete. Candidate C is retained as the next optimization baseline, but it is not release-approved because cold completion remains above target.
 
 **Date:** 2026-07-20
+
+## Experiment Outcome
+
+The sequential staging matrix completed without a candidate satisfying every
+acceptance gate. Candidate C produced the best new architecture and is retained
+for the next optimization round:
+
+- cold complete readiness: 14.214 seconds;
+- slowest immediate warm lane: 1.122 seconds;
+- cold Relay calls: 5 successful GETs and 3 successful POSTs;
+- warm Relay calls: zero;
+- one successful aggregate `/api/v1/admin/dashboard/users-trend` request and no
+  individual trend request;
+- one Redis scope-origin miss, lease acquisition, and refresh;
+- no Relay, response-cache, origin-cache, lease, or Redis errors; and
+- equal cold/warm business payloads across Summary, Trend, Members, and
+  Organization.
+
+This result passes every gate except the 9-second cold-completion target. The
+implementation may be reviewed and extended as a performance baseline, but it
+must not be described as meeting the staging target or promoted to release
+without another measured optimization round.
 
 ## Baseline
 
@@ -112,7 +134,8 @@ Risks:
 - less reuse across partially overlapping scopes;
 - higher implementation and review cost.
 
-Candidate C is accepted only if A and B fail and C meets every gate.
+Candidate C is the retained next-round baseline because A and B performed worse.
+It is not accepted for release until a later staging run meets every gate.
 
 ## Shared Safety Contract
 
@@ -190,6 +213,8 @@ baseline, record the matrix failure, and do not promote an experiment.
 
 Each candidate has its own branch, worktree, commits, image tag, Helm revision,
 and evidence. Do not merge candidate branches into each other during testing.
-After selection, rebase or replay only the winning implementation onto the
+After selection, rebase or replay only the chosen implementation onto the
 current PR #160 head, run full review and CI, then clean the losing branches,
-worktrees, and staging-only images conservatively.
+worktrees, and staging-only images conservatively. The completed matrix had no
+promotion winner; Candidate C was replayed only as an explicitly measured
+next-round baseline so its remaining cold path can be optimized in isolation.
