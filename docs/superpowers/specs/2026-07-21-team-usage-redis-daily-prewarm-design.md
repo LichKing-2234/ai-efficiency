@@ -1,7 +1,6 @@
 # Team Usage Redis Daily Prewarm Design
 
-**Status:** Architecture direction approved; implementation has not started and
-the written contract is pending review.
+**Status:** Approved; implementation has not started.
 
 **Date:** 2026-07-21
 
@@ -191,10 +190,11 @@ The server starts the prewarmer only after database migration, Relay provider
 runtime, Redis, and metrics initialization succeed. It does not block liveness
 or HTTP startup.
 
-Each configured Relay provider receives an independent Redis lease keyed by
+The current primary Relay provider receives an independent Redis lease keyed by
 namespace, provider ID, provider version, refresh class, and canonical window.
-Lease release remains token checked. A canceled or superseded provider version
-cannot publish a manifest for the new version.
+Team Usage does not read non-primary providers, so the prewarmer does not query
+them. Lease release remains token checked. A canceled or superseded primary
+provider version cannot publish a manifest for the new version.
 
 The lifecycle has three bounded cycles:
 
