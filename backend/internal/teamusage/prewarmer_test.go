@@ -13,6 +13,7 @@ import (
 
 	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/alicebob/miniredis/v2"
 )
 
 func TestPrewarmMovingSharesCurrentStatsAndPublishesTimezonesIndependently(t *testing.T) {
@@ -84,7 +85,7 @@ func TestPrewarmHistoricalRefreshesIndependentSegmentsAndSkipsSplitUnsafe(t *tes
 	old := seedMixedAgePrewarmManifest(t, cache, identity, now)
 	provider := newLifecycleProvider([]int64{101})
 	provider.trendErrorClass = SegmentHistory6d
-	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC"}, func() time.Time { return now }))
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC", "America/Los_Angeles"}, func() time.Time { return now }))
 	if err := prewarmer.RunHistorical(context.Background(), "UTC", now); err == nil {
 		t.Fatal("RunHistorical() error = nil, want independent history_6d failure")
 	}
@@ -208,7 +209,53 @@ func TestPrewarmStartupLostSegmentLeaseCannotPublishRecovery(t *testing.T) {
 	}
 }
 
+func TestPrewarmStartupRetainsInvalidTodayWithoutSourceCall(t *testing.T) {
+	base := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	now := base.Add(30 * time.Second)
+	store := &leaseVisiblePrewarmStore{recordingPrewarmStore: newRecordingPrewarmStore()}
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	identity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+	manifest := seedPrewarmManifest(t, cache, identity, base, "a")
+	store.mu.Lock()
+	store.values[manifest.TodayHour.Key] = []byte(`{"invalid":true}`)
+	store.mu.Unlock()
+	result, ok, err := cache.Read(context.Background(), identity)
+	if err != nil || !ok || result.TodayHourStatus != PrewarmValueInvalid {
+		t.Fatalf("Read(invalid today) = %v, %v, %v", result, ok, err)
+	}
+	provider := newLifecycleProvider([]int64{101})
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC"}, func() time.Time { return now }))
+	if err := prewarmer.runStartup(context.Background()); err != nil {
+		t.Fatalf("runStartup(invalid today) error = %v", err)
+	}
+	if got := provider.totalSourceCalls(); got != 0 {
+		t.Fatalf("invalid hard-valid today triggered %d startup source calls, want zero", got)
+	}
+}
+
 func TestPrewarmLeaseLostOrProviderVersionChangedCannotPublish(t *testing.T) {
+	t.Run("lost moving coordinator", func(t *testing.T) {
+		now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+		cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
+		identity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+		old := seedPrewarmManifest(t, cache, identity, now.Add(-30*time.Second), "a")
+		provider := newLifecycleProvider([]int64{101})
+		provider.afterDirectory = func() {
+			deleteLeasesWithTTL(server, 2*time.Minute, 4*time.Minute)
+		}
+		prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, lifecycleOptions([]string{"UTC"}, func() time.Time { return now }))
+		if err := prewarmer.RunMoving(context.Background()); err == nil {
+			t.Fatal("RunMoving(lost coordinator) error = nil, want ownership failure")
+		}
+		if got := provider.statsCount() + provider.trendCount(); got != 0 {
+			t.Fatalf("lost coordinator allowed %d continued source calls, want zero", got)
+		}
+		result := readPrewarmResult(t, cache, identity)
+		if result.Manifest.CurrentStats.GenerationID != old.CurrentStats.GenerationID || result.Manifest.TodayHour.GenerationID != old.TodayHour.GenerationID {
+			t.Fatal("lost moving coordinator published a new manifest")
+		}
+	})
+
 	t.Run("lost segment", func(t *testing.T) {
 		now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 		store := &lostSegmentLeasePrewarmStore{
@@ -359,22 +406,159 @@ func TestPrewarmLeaseDurationsUseCoordinatorAndWorkerContracts(t *testing.T) {
 	}
 }
 
-func TestPrewarmLeaseCoordinatorUsesTokenCheckedCompareDelete(t *testing.T) {
+func TestPrewarmLeaseWorkerDeadlinesAreStrictlyBelowLeaseTTLs(t *testing.T) {
+	if prewarmMovingWorkerTimeout <= 0 || prewarmMovingWorkerTimeout >= prewarmMovingCoordinatorTTL {
+		t.Fatalf("moving worker timeout = %v, want (0,%v)", prewarmMovingWorkerTimeout, prewarmMovingCoordinatorTTL)
+	}
+	if prewarmHistoricalWorkerTimeout <= 0 || prewarmHistoricalWorkerTimeout >= prewarmHistoryCoordinatorTTL {
+		t.Fatalf("historical worker timeout = %v, want (0,%v)", prewarmHistoricalWorkerTimeout, prewarmHistoryCoordinatorTTL)
+	}
+	if prewarmStartupWorkerTimeout <= 0 || prewarmStartupWorkerTimeout >= prewarmHistoryCoordinatorTTL {
+		t.Fatalf("startup worker timeout = %v, want (0,%v)", prewarmStartupWorkerTimeout, prewarmHistoryCoordinatorTTL)
+	}
+	if prewarmSegmentWorkerTimeout <= 0 || prewarmSegmentWorkerTimeout >= prewarmWorkerLeaseTTL {
+		t.Fatalf("segment worker timeout = %v, want (0,%v)", prewarmSegmentWorkerTimeout, prewarmWorkerLeaseTTL)
+	}
+}
+
+func TestPrewarmLeaseQueuedSegmentExpiresWithoutSourceOrPublish(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	identity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+	old := seedPrewarmManifest(t, cache, identity, now, "a")
 	provider := newLifecycleProvider([]int64{101})
-	provider.directoryErr = errors.New("synthetic directory failure")
+	options := lifecycleOptions([]string{"UTC"}, func() time.Time { return now })
+	options.segmentWorkerTimeout = 40 * time.Millisecond
+	options.sourceCallTimeout = time.Second
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+
+	release := make(chan struct{})
+	entered := make(chan struct{}, 2)
+	var blockers sync.WaitGroup
+	for index := 0; index < 2; index++ {
+		blockers.Add(1)
+		go func() {
+			defer blockers.Done()
+			_ = prewarmer.SourceCallLimiter().Do(context.Background(), func(context.Context) error {
+				entered <- struct{}{}
+				<-release
+				return nil
+			})
+		}()
+	}
+	for index := 0; index < 2; index++ {
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("failed to occupy both process source positions")
+		}
+	}
+
+	resultCh := make(chan error, 1)
+	go func() {
+		resultCh <- prewarmer.runMovingTimezone(context.Background(), prewarmBinding(provider), old.CurrentStats, "UTC")
+	}()
+	var runErr error
+	returnedBeforeRelease := false
+	select {
+	case runErr = <-resultCh:
+		returnedBeforeRelease = true
+	case <-time.After(150 * time.Millisecond):
+	}
+	close(release)
+	blockers.Wait()
+	if !returnedBeforeRelease {
+		select {
+		case runErr = <-resultCh:
+		case <-time.After(time.Second):
+			t.Fatal("queued segment did not finish after blocker release")
+		}
+	}
+	if !returnedBeforeRelease || !errors.Is(runErr, context.DeadlineExceeded) {
+		t.Fatalf("queued segment returned before release=%v error=%v, want prompt deadline", returnedBeforeRelease, runErr)
+	}
+	if got := provider.trendCount(); got != 0 {
+		t.Fatalf("expired queued segment made %d source calls, want zero", got)
+	}
+	result := readPrewarmResult(t, cache, identity)
+	if result.Manifest.TodayHour.GenerationID != old.TodayHour.GenerationID {
+		t.Fatal("expired queued segment published a manifest")
+	}
+}
+
+func TestPrewarmLeaseMovingCoordinatorRetainsSuccessAndReleasesEarlyFailure(t *testing.T) {
+	t.Run("successful tick retained", func(t *testing.T) {
+		now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+		cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
+		seedPrewarmManifest(t, cache, PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}, now, "a")
+		provider := newLifecycleProvider([]int64{101})
+		options := lifecycleOptions([]string{"UTC"}, func() time.Time { return now })
+		left := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+		right := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+		if err := left.RunMoving(context.Background()); err != nil {
+			t.Fatalf("left RunMoving() error = %v", err)
+		}
+		if err := right.RunMoving(context.Background()); err != nil {
+			t.Fatalf("right RunMoving() error = %v", err)
+		}
+		if got := provider.directoryCount(); got != 1 {
+			t.Fatalf("same-tick directory calls = %d, want one", got)
+		}
+		if got := countLeasesWithTTL(server, 2*time.Minute, 4*time.Minute); got != 1 {
+			t.Fatalf("retained moving coordinator count = %d, want one", got)
+		}
+	})
+
+	t.Run("early failure released", func(t *testing.T) {
+		now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+		cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+		seedPrewarmManifest(t, cache, PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}, now, "a")
+		provider := newLifecycleProvider([]int64{101})
+		provider.setDirectoryError(errors.New("synthetic directory failure"))
+		options := lifecycleOptions([]string{"UTC"}, func() time.Time { return now })
+		left := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+		right := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+		if err := left.RunMoving(context.Background()); err == nil {
+			t.Fatal("first RunMoving() error = nil, want source failure")
+		}
+		provider.setDirectoryError(nil)
+		if err := right.RunMoving(context.Background()); err != nil {
+			t.Fatalf("retry RunMoving() error = %v", err)
+		}
+		if got := provider.directoryCount(); got != 2 {
+			t.Fatalf("directory calls after early-failure release = %d, want two", got)
+		}
+	})
+}
+
+func TestPrewarmHistoricalUsesIndependentRetainedClassCoordinators(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
+	identity := PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}
+	seedMixedAgePrewarmManifest(t, cache, identity, now)
+	provider := newLifecycleProvider([]int64{101})
+	provider.setTrendErrorClass(SegmentHistory29d)
 	options := lifecycleOptions([]string{"UTC"}, func() time.Time { return now })
 	left := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
 	right := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
-	if err := left.RunMoving(context.Background()); err == nil {
-		t.Fatal("first RunMoving() error = nil, want source failure")
+	if err := left.RunHistorical(context.Background(), "UTC", now); err == nil {
+		t.Fatal("left RunHistorical() error = nil, want history_29d failure")
 	}
-	if err := right.RunMoving(context.Background()); err == nil {
-		t.Fatal("second RunMoving() error = nil, want retry after coordinator release")
+	if provider.classCount(SegmentHistory29d) != 1 || provider.classCount(SegmentHistory6d) != 1 {
+		t.Fatalf("first class calls history29=%d history6=%d, want 1/1", provider.classCount(SegmentHistory29d), provider.classCount(SegmentHistory6d))
 	}
-	if got := provider.directoryCount(); got != 2 {
-		t.Fatalf("directory calls after compare-delete release = %d, want two", got)
+	if got := countLeasesWithTTL(server, 5*time.Minute, 7*time.Minute); got != 1 {
+		t.Fatalf("retained class coordinators after partial success = %d, want one", got)
+	}
+	provider.setTrendErrorClass("")
+	if err := right.RunHistorical(context.Background(), "UTC", now); err != nil {
+		t.Fatalf("right RunHistorical() error = %v", err)
+	}
+	if provider.classCount(SegmentHistory29d) != 2 || provider.classCount(SegmentHistory6d) != 1 {
+		t.Fatalf("retry class calls history29=%d history6=%d, want 2/1", provider.classCount(SegmentHistory29d), provider.classCount(SegmentHistory6d))
+	}
+	if got := countLeasesWithTTL(server, 5*time.Minute, 7*time.Minute); got != 2 {
+		t.Fatalf("retained class coordinators after both successes = %d, want two", got)
 	}
 }
 
@@ -441,6 +625,29 @@ func TestPrewarmConcurrencySourceCallGetsDeadlineBelowSlotTTL(t *testing.T) {
 	}
 }
 
+func TestPrewarmConcurrencyCancellationReleasesOwnedSlotImmediately(t *testing.T) {
+	cache, server := newRedisPrewarmCache(t, time.Now)
+	limiter := mustPrewarmer(t, staticBindingResolver{}, cache, lifecycleOptions([]string{"UTC"}, time.Now)).SourceCallLimiter()
+	ctx, cancel := context.WithCancel(context.Background())
+	entered := make(chan struct{})
+	resultCh := make(chan error, 1)
+	go func() {
+		resultCh <- limiter.Do(ctx, func(callCtx context.Context) error {
+			close(entered)
+			<-callCtx.Done()
+			return callCtx.Err()
+		})
+	}()
+	<-entered
+	cancel()
+	if err := <-resultCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("SourceCallLimiter.Do() error = %v, want context canceled", err)
+	}
+	if got := countLeasesWithTTL(server, 80*time.Second, 91*time.Second); got != 0 {
+		t.Fatalf("owned source slots after cancellation = %d, want zero", got)
+	}
+}
+
 func TestPrewarmMovingStartSkipsOverlappingSixtySecondTicksAndStopWaits(t *testing.T) {
 	if prewarmMovingInterval != 60*time.Second {
 		t.Fatalf("moving interval = %v, want 60s", prewarmMovingInterval)
@@ -476,6 +683,61 @@ func TestPrewarmMovingStartSkipsOverlappingSixtySecondTicksAndStopWaits(t *testi
 	}
 }
 
+func TestPrewarmMovingStartDuringStopCannotJoinLifecycle(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	seedPrewarmManifest(t, cache, PrewarmCacheIdentity{ProviderID: 7, ProviderVersion: 11, Timezone: "UTC", AnchorDate: "2026-07-21"}, now, "a")
+	provider := newLifecycleProvider([]int64{101})
+	provider.directoryEntered = make(chan struct{}, 3)
+	provider.directoryRelease = make(chan struct{})
+	provider.directoryContextDone = make(chan struct{}, 1)
+	provider.ignoreDirectoryCancel = true
+	ticks := make(chan time.Time, 3)
+	options := lifecycleOptions([]string{"UTC"}, func() time.Time { return now })
+	options.tick = ticks
+	prewarmer := mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+	firstCtx, firstCancel := context.WithCancel(context.Background())
+	defer firstCancel()
+	prewarmer.Start(firstCtx)
+	ticks <- now
+	select {
+	case <-provider.directoryEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first lifecycle did not enter moving source")
+	}
+	stopDone := make(chan struct{})
+	go func() {
+		prewarmer.Stop()
+		close(stopDone)
+	}()
+	select {
+	case <-provider.directoryContextDone:
+	case <-time.After(time.Second):
+		t.Fatal("Stop() did not cancel the active lifecycle")
+	}
+	duringCtx, cancelDuring := context.WithCancel(context.Background())
+	prewarmer.Start(duringCtx)
+	cancelDuring()
+	close(provider.directoryRelease)
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("Stop() did not return after active worker exited")
+	}
+
+	now = now.Add(time.Minute)
+	postCtx, cancelPost := context.WithCancel(context.Background())
+	defer cancelPost()
+	prewarmer.Start(postCtx)
+	ticks <- now
+	select {
+	case <-provider.directoryEntered:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("Start() after completed Stop did not start a new lifecycle")
+	}
+	prewarmer.Stop()
+}
+
 type staticBindingResolver struct {
 	binding ProviderBinding
 	err     error
@@ -505,17 +767,20 @@ func (r *changingBindingResolver) ResolvePrimaryProviderBinding(context.Context)
 type lifecycleProvider struct {
 	relay.Provider
 
-	mu                 sync.Mutex
-	ids                []int64
-	directoryCalls     int
-	directoryErr       error
-	statsCalls         int
-	trendCalls         map[PrewarmSegmentClass]int
-	trendErrorTimezone string
-	trendErrorClass    PrewarmSegmentClass
-	beforeTrend        func()
-	directoryEntered   chan struct{}
-	directoryRelease   chan struct{}
+	mu                    sync.Mutex
+	ids                   []int64
+	directoryCalls        int
+	directoryErr          error
+	afterDirectory        func()
+	statsCalls            int
+	trendCalls            map[PrewarmSegmentClass]int
+	trendErrorTimezone    string
+	trendErrorClass       PrewarmSegmentClass
+	beforeTrend           func()
+	directoryEntered      chan struct{}
+	directoryRelease      chan struct{}
+	directoryContextDone  chan struct{}
+	ignoreDirectoryCancel bool
 }
 
 func newLifecycleProvider(ids []int64) *lifecycleProvider {
@@ -526,19 +791,37 @@ func (p *lifecycleProvider) GetProviderUserIDs(ctx context.Context) (relay.Provi
 	p.mu.Lock()
 	p.directoryCalls++
 	entered, release := p.directoryEntered, p.directoryRelease
+	contextDone := p.directoryContextDone
+	ignoreCancel := p.ignoreDirectoryCancel
+	directoryErr := p.directoryErr
+	afterDirectory := p.afterDirectory
 	ids := append([]int64(nil), p.ids...)
 	p.mu.Unlock()
 	if entered != nil {
 		entered <- struct{}{}
 	}
 	if release != nil {
-		select {
-		case <-release:
-		case <-ctx.Done():
-			return relay.ProviderDirectoryResult{}, ctx.Err()
+		if ignoreCancel {
+			select {
+			case <-release:
+			case <-ctx.Done():
+				if contextDone != nil {
+					contextDone <- struct{}{}
+				}
+				<-release
+			}
+		} else {
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return relay.ProviderDirectoryResult{}, ctx.Err()
+			}
 		}
 	}
-	return relay.ProviderDirectoryResult{UserIDs: ids, PageCount: 1}, p.directoryErr
+	if afterDirectory != nil {
+		afterDirectory()
+	}
+	return relay.ProviderDirectoryResult{UserIDs: ids, PageCount: 1}, directoryErr
 }
 
 func (p *lifecycleProvider) GetProviderCurrentUsageStats(_ context.Context, ids []int64) (relay.ProviderCurrentStatsResult, error) {
@@ -630,6 +913,44 @@ func (p *lifecycleProvider) resetCounts() {
 	p.trendCalls = make(map[PrewarmSegmentClass]int)
 }
 
+func (p *lifecycleProvider) setDirectoryError(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.directoryErr = err
+}
+
+func (p *lifecycleProvider) setTrendErrorClass(class PrewarmSegmentClass) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.trendErrorClass = class
+}
+
+func countLeasesWithTTL(server *miniredis.Miniredis, minimum, maximum time.Duration) int {
+	count := 0
+	for _, key := range server.Keys() {
+		if !strings.Contains(key, ":lease:") {
+			continue
+		}
+		ttl := server.TTL(key)
+		if ttl > minimum && ttl < maximum {
+			count++
+		}
+	}
+	return count
+}
+
+func deleteLeasesWithTTL(server *miniredis.Miniredis, minimum, maximum time.Duration) {
+	for _, key := range server.Keys() {
+		if !strings.Contains(key, ":lease:") {
+			continue
+		}
+		ttl := server.TTL(key)
+		if ttl > minimum && ttl < maximum {
+			server.Del(key)
+		}
+	}
+}
+
 func lifecycleOptions(timezones []string, now func() time.Time) PrewarmerOptions {
 	var sequence atomic.Uint64
 	return PrewarmerOptions{
@@ -718,6 +1039,10 @@ type ttlRecordingPrewarmStore struct {
 	ttls  []time.Duration
 }
 
+func (s *ttlRecordingPrewarmStore) Get(ctx context.Context, key string) ([]byte, error) {
+	return getRecordingPrewarmValueOrLease(ctx, s.recordingPrewarmStore, key)
+}
+
 func (s *ttlRecordingPrewarmStore) TryAcquireLease(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
 	s.ttlMu.Lock()
 	s.ttls = append(s.ttls, ttl)
@@ -756,6 +1081,10 @@ type lostSegmentLeasePrewarmStore struct {
 	loseClass PrewarmSegmentClass
 }
 
+func (s *lostSegmentLeasePrewarmStore) Get(ctx context.Context, key string) ([]byte, error) {
+	return getRecordingPrewarmValueOrLease(ctx, s.recordingPrewarmStore, key)
+}
+
 func (s *lostSegmentLeasePrewarmStore) TryAcquireLease(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
 	s.ttlMu.Lock()
 	s.leaseTTLs[key] = ttl
@@ -789,6 +1118,30 @@ func (s *lostSegmentLeasePrewarmStore) SetIfLeaseOwned(
 }
 
 var _ readcache.BatchStore = (*lostSegmentLeasePrewarmStore)(nil)
+
+type leaseVisiblePrewarmStore struct {
+	*recordingPrewarmStore
+}
+
+func (s *leaseVisiblePrewarmStore) Get(ctx context.Context, key string) ([]byte, error) {
+	return getRecordingPrewarmValueOrLease(ctx, s.recordingPrewarmStore, key)
+}
+
+func getRecordingPrewarmValueOrLease(ctx context.Context, store *recordingPrewarmStore, key string) ([]byte, error) {
+	value, err := store.Get(ctx, key)
+	if !errors.Is(err, readcache.ErrMiss) {
+		return value, err
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	token, ok := store.leases[key]
+	if !ok {
+		return nil, readcache.ErrMiss
+	}
+	return []byte(token), nil
+}
+
+var _ readcache.BatchStore = (*leaseVisiblePrewarmStore)(nil)
 var _ relay.ProviderWideTeamUsageProvider = (*lifecycleProvider)(nil)
 var _ relay.ProviderWideTeamTrendProvider = (*lifecycleProvider)(nil)
 var _ = errors.Is

@@ -21,9 +21,11 @@ gaps in trend-only generation accounting, fresh-clock publication margin, and
 identical concurrent immutable claims. Their RED tests failed as expected. The
 correction implementation passes focused, race, full-package, vet, and diff
 verification and is committed in `3354ee41`; controller formal re-review is
-pending. Task 5 source and lifecycle implementation is complete; focused,
-race, full-package, and vet verification pass, and the implementation is
-committed in `06338e20`. Tasks 6-9 have not started.
+pending. Task 5 implementation and ledger commits `06338e20` and `014fecef`
+passed their original verification. Formal review corrections for schedule
+coordinators, worker lifetimes, source-slot release, lifecycle state, and
+startup recovery now pass focused, race, full-package, vet, and diff checks;
+the correction commit is pending formal re-review. Tasks 6-9 have not started.
 
 ## Task 1 Gate Evidence
 
