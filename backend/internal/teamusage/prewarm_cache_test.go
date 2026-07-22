@@ -1304,6 +1304,123 @@ func TestPrewarmCacheRedisFailuresRemainFailOpen(t *testing.T) {
 	})
 }
 
+func TestPrewarmCacheRecordsClosedRedisErrorClasses(t *testing.T) {
+	type testCase struct {
+		name      string
+		wantClass string
+		run       func(*testing.T, *recordingRedisErrorMetrics)
+	}
+	tests := []testCase{
+		{
+			name: "validation", wantClass: "validation",
+			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
+				store := newRecordingPrewarmStore()
+				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
+				if acquired, err := cache.TryAcquireLease(context.Background(), "", "owner", time.Minute); acquired || err == nil {
+					t.Fatalf("TryAcquireLease(invalid) = %v, %v, want validation error", acquired, err)
+				}
+				if got := store.LeaseCalls(); got != 0 {
+					t.Fatalf("validation reached Redis %d times, want zero", got)
+				}
+			},
+		},
+		{
+			name: "caller canceled", wantClass: "caller_canceled",
+			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
+				store := newRecordingPrewarmStore()
+				store.waitGetContext = true
+				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				if _, _, err := cache.Read(ctx, testPrewarmIdentity()); !errors.Is(err, context.Canceled) {
+					t.Fatalf("Read(pre-canceled) error = %v, want canceled", err)
+				}
+			},
+		},
+		{
+			name: "command deadline", wantClass: "command_deadline",
+			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
+				store := newRecordingPrewarmStore()
+				store.waitGetContext = true
+				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, time.Millisecond)
+				if _, _, err := cache.Read(context.Background(), testPrewarmIdentity()); !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("Read(command deadline) error = %v, want deadline exceeded", err)
+				}
+			},
+		},
+		{
+			name: "network timeout", wantClass: "network_timeout",
+			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
+				store := newRecordingPrewarmStore()
+				store.getErr = syntheticPrewarmNetworkError{timeout: true}
+				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
+				_, _, _ = cache.Read(context.Background(), testPrewarmIdentity())
+			},
+		},
+		{
+			name: "network error", wantClass: "network_error",
+			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
+				store := newRecordingPrewarmStore()
+				store.getErr = syntheticPrewarmNetworkError{}
+				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
+				_, _, _ = cache.Read(context.Background(), testPrewarmIdentity())
+			},
+		},
+		{
+			name: "Redis command", wantClass: "redis_command",
+			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
+				store := newRecordingPrewarmStore()
+				store.getErr = errors.New("synthetic Redis command failure")
+				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
+				_, _, _ = cache.Read(context.Background(), testPrewarmIdentity())
+			},
+		},
+		{
+			name: "decode or reference", wantClass: "decode_or_reference",
+			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
+				store := newRecordingPrewarmStore()
+				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
+				key, err := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, testPrewarmIdentity())
+				if err != nil {
+					t.Fatalf("prewarmManifestKeyForIdentity() error = %v", err)
+				}
+				store.SetRaw(key, []byte("not-json"), manifestTTL)
+				_, _, _ = cache.Read(context.Background(), testPrewarmIdentity())
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			metrics := &recordingRedisErrorMetrics{}
+			test.run(t, metrics)
+			if got := metrics.Classes(); !reflect.DeepEqual(got, []redisErrorMetric{{operation: expectedRedisOperation(test.wantClass), class: PrewarmRedisErrorClass(test.wantClass)}}) {
+				t.Fatalf("Redis error classes = %#v, want one %s", got, test.wantClass)
+			}
+		})
+	}
+}
+
+func TestPrewarmCacheDoesNotRecordNormalMissOrLeaseContentionAsRedisErrors(t *testing.T) {
+	store := newRecordingPrewarmStore()
+	metrics := &recordingRedisErrorMetrics{}
+	cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
+
+	if result, found, err := cache.Read(context.Background(), testPrewarmIdentity()); result != nil || found || err != nil {
+		t.Fatalf("Read(miss) = %#v, %v, %v, want normal miss", result, found, err)
+	}
+	leaseKey := cache.LeaseKey("test-contention")
+	if acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner-a", time.Minute); !acquired || err != nil {
+		t.Fatalf("TryAcquireLease(owner) = %v, %v", acquired, err)
+	}
+	if acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner-b", time.Minute); acquired || err != nil {
+		t.Fatalf("TryAcquireLease(contender) = %v, %v, want false, nil", acquired, err)
+	}
+	if got := metrics.Classes(); len(got) != 0 {
+		t.Fatalf("normal miss/contention Redis error classes = %#v, want none", got)
+	}
+}
+
 func testPrewarmManifest(t *testing.T, cache *PrewarmCache, identity PrewarmCacheIdentity, generatedAt time.Time) PrewarmManifest {
 	t.Helper()
 	return testPrewarmManifestWithGeneration(t, cache, identity, generatedAt, "a")
@@ -1386,30 +1503,88 @@ func mustNewPrewarmCache(t *testing.T, store readcache.BatchStore, now func() ti
 	return cache
 }
 
+func mustNewPrewarmCacheWithMetrics(
+	t *testing.T,
+	store readcache.BatchStore,
+	now func() time.Time,
+	metrics PrewarmMetrics,
+	readTimeout time.Duration,
+) *PrewarmCache {
+	t.Helper()
+	cache, err := NewPrewarmCache(store, PrewarmCacheOptions{
+		Namespace: "test", Now: now, Metrics: metrics, ReadTimeout: readTimeout,
+	})
+	if err != nil {
+		t.Fatalf("NewPrewarmCache() error = %v", err)
+	}
+	return cache
+}
+
+type redisErrorMetric struct {
+	operation string
+	class     PrewarmRedisErrorClass
+}
+
+type recordingRedisErrorMetrics struct {
+	noopPrewarmMetrics
+	mu      sync.Mutex
+	classes []redisErrorMetric
+}
+
+func (m *recordingRedisErrorMetrics) RecordRedisError(operation string, class PrewarmRedisErrorClass) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.classes = append(m.classes, redisErrorMetric{operation: operation, class: class})
+}
+
+func (m *recordingRedisErrorMetrics) Classes() []redisErrorMetric {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]redisErrorMetric(nil), m.classes...)
+}
+
+func expectedRedisOperation(class string) string {
+	if class == "validation" {
+		return "lease_acquire"
+	}
+	return "manifest_read"
+}
+
+type syntheticPrewarmNetworkError struct {
+	timeout bool
+}
+
+func (e syntheticPrewarmNetworkError) Error() string   { return "synthetic network failure" }
+func (e syntheticPrewarmNetworkError) Timeout() bool   { return e.timeout }
+func (e syntheticPrewarmNetworkError) Temporary() bool { return false }
+
 type recordingPrewarmStore struct {
-	mu         sync.Mutex
-	values     map[string][]byte
-	ttls       map[string]time.Duration
-	leases     map[string]string
-	events     []string
-	lastMGet   []string
-	getCalls   int
-	getAfter   func(string)
-	getErr     error
-	mgetErr    error
-	mgetAfter  func()
-	mgetCalls  int
-	setErr     error
-	publishErr error
-	leaseErr   error
+	mu             sync.Mutex
+	values         map[string][]byte
+	ttls           map[string]time.Duration
+	leases         map[string]string
+	events         []string
+	lastMGet       []string
+	getCalls       int
+	getAfter       func(string)
+	getErr         error
+	waitGetContext bool
+	mgetErr        error
+	mgetAfter      func()
+	mgetCalls      int
+	setErr         error
+	publishErr     error
+	leaseErr       error
+	leaseCalls     int
 }
 
 func newRecordingPrewarmStore() *recordingPrewarmStore {
 	return &recordingPrewarmStore{values: make(map[string][]byte), ttls: make(map[string]time.Duration), leases: make(map[string]string)}
 }
 
-func (s *recordingPrewarmStore) Get(_ context.Context, key string) ([]byte, error) {
+func (s *recordingPrewarmStore) Get(ctx context.Context, key string) ([]byte, error) {
 	s.mu.Lock()
+	waitForContext := s.waitGetContext
 	if s.getErr != nil {
 		err := s.getErr
 		s.mu.Unlock()
@@ -1420,6 +1595,10 @@ func (s *recordingPrewarmStore) Get(_ context.Context, key string) ([]byte, erro
 	cloned := append([]byte(nil), value...)
 	after := s.getAfter
 	s.mu.Unlock()
+	if waitForContext {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if after != nil {
 		after(key)
 	}
@@ -1512,6 +1691,7 @@ func (s *recordingPrewarmStore) SetIfLeasesOwned(
 func (s *recordingPrewarmStore) TryAcquireLease(_ context.Context, key, token string, _ time.Duration) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.leaseCalls++
 	s.events = append(s.events, "acquire "+key)
 	if s.leaseErr != nil {
 		return false, s.leaseErr
@@ -1524,6 +1704,12 @@ func (s *recordingPrewarmStore) TryAcquireLease(_ context.Context, key, token st
 	}
 	s.leases[key] = token
 	return true, nil
+}
+
+func (s *recordingPrewarmStore) LeaseCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.leaseCalls
 }
 
 func (s *recordingPrewarmStore) LeaseTTL(_ context.Context, key string) (time.Duration, error) {

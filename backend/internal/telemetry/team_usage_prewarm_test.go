@@ -4,6 +4,7 @@ import (
 	"math"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ func TestTeamUsagePrewarmMetricsPreinitializeClosedPrivacySafeLabels(t *testing.
 		"ai_efficiency_team_usage_prewarm_source_users":                   false,
 		"ai_efficiency_team_usage_prewarm_redis_duration_seconds":         false,
 		"ai_efficiency_team_usage_prewarm_redis_bytes":                    false,
+		"ai_efficiency_team_usage_prewarm_redis_error_total":              false,
 		"ai_efficiency_team_usage_prewarm_request_total":                  false,
 		"ai_efficiency_team_usage_prewarm_last_success_timestamp_seconds": false,
 		"ai_efficiency_team_usage_prewarm_quantity":                       false,
@@ -118,6 +120,38 @@ func TestTeamUsagePrewarmMetricsRecordBoundedDurationsSizesAndLastSuccess(t *tes
 	}
 }
 
+func TestTeamUsagePrewarmMetricsRecordsOnlyClosedRedisErrorClasses(t *testing.T) {
+	metrics := NewMetrics("test-release")
+	recorder, err := metrics.TeamUsagePrewarmRecorder([]string{"UTC"})
+	if err != nil {
+		t.Fatalf("TeamUsagePrewarmRecorder() error = %v", err)
+	}
+	errorRecorder, ok := recorder.(interface {
+		RecordRedisError(operation string, class teamusage.PrewarmRedisErrorClass)
+	})
+	if !ok {
+		t.Fatal("Team Usage prewarm recorder does not expose bounded Redis error-class recording")
+	}
+
+	for _, class := range []string{
+		"validation", "caller_canceled", "command_deadline", "network_timeout",
+		"network_error", "redis_command", "decode_or_reference",
+	} {
+		errorRecorder.RecordRedisError("manifest_read", teamusage.PrewarmRedisErrorClass(class))
+		if got := counterValue(t, metrics.Gatherer(), "ai_efficiency_team_usage_prewarm_redis_error_total", map[string]string{
+			"operation": "manifest_read", "class": class,
+		}); got != 1 {
+			t.Fatalf("Redis error count for %s = %v, want 1", class, got)
+		}
+	}
+	before := prewarmMetricLabelSets(t, metrics, "ai_efficiency_team_usage_prewarm_redis_error_total")
+	errorRecorder.RecordRedisError("raw-key", teamusage.PrewarmRedisErrorClass("dynamic error detail"))
+	after := prewarmMetricLabelSets(t, metrics, "ai_efficiency_team_usage_prewarm_redis_error_total")
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("invalid Redis labels changed series: before=%v after=%v", before, after)
+	}
+}
+
 func TestTeamUsagePrewarmMetricsRejectInvalidTimezoneConfiguration(t *testing.T) {
 	metrics := NewMetrics("test-release")
 	if recorder, err := metrics.TeamUsagePrewarmRecorder([]string{"UTC", "Asia/Shanghai", "America/Los_Angeles", "Europe/Berlin", "Etc/UTC"}); err == nil || recorder != nil {
@@ -142,7 +176,7 @@ func prewarmMetricLabelSets(t *testing.T, metrics *Metrics, familyName string) [
 				labels = append(labels, label.GetName()+"="+label.GetValue())
 			}
 			sort.Strings(labels)
-			sets = append(sets, labels[0]+"|"+labels[1]+"|"+labels[2])
+			sets = append(sets, strings.Join(labels, "|"))
 		}
 	}
 	sort.Strings(sets)

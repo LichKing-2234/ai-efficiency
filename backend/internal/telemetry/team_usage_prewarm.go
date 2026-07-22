@@ -20,6 +20,15 @@ var (
 	prewarmRedisOutcomes = []string{
 		"hit", "miss", "success", "error", "acquired", "busy", "released", "not_owned",
 	}
+	prewarmRedisErrorClasses = []teamusage.PrewarmRedisErrorClass{
+		teamusage.PrewarmRedisErrorValidation,
+		teamusage.PrewarmRedisErrorCallerCanceled,
+		teamusage.PrewarmRedisErrorCommandDeadline,
+		teamusage.PrewarmRedisErrorNetworkTimeout,
+		teamusage.PrewarmRedisErrorNetwork,
+		teamusage.PrewarmRedisErrorCommand,
+		teamusage.PrewarmRedisErrorDecodeOrReference,
+	}
 	prewarmRequestOutcomes = []string{"full_hit", "partial_today", "ineligible", "miss", "fallback"}
 	prewarmFallbackReasons = []string{
 		"none", "cache_miss", "ineligible", "invalid_request", "redis_error",
@@ -68,6 +77,7 @@ type teamUsagePrewarmMetrics struct {
 	sourceUsers     *prometheus.HistogramVec
 	redisDuration   *prometheus.HistogramVec
 	redisBytes      *prometheus.HistogramVec
+	redisErrorTotal *prometheus.CounterVec
 	requestTotal    *prometheus.CounterVec
 	lastSuccess     *prometheus.GaugeVec
 	quantity        *prometheus.HistogramVec
@@ -122,6 +132,10 @@ func (m *Metrics) TeamUsagePrewarmRecorder(timezones []string) (teamusage.Prewar
 			Namespace: metricsNamespace, Name: "team_usage_prewarm_redis_bytes",
 			Help: "Bounded Team Usage prewarm Redis payload bytes.", Buckets: prometheus.ExponentialBuckets(64, 2, 19),
 		}, []string{"operation", "outcome"}),
+		redisErrorTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: metricsNamespace, Name: "team_usage_prewarm_redis_error_total",
+			Help: "Closed Team Usage prewarm Redis failure classifications.",
+		}, []string{"operation", "class"}),
 		requestTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: metricsNamespace, Name: "team_usage_prewarm_request_total",
 			Help: "Team Usage request prewarm outcomes and exact-fallback reasons.",
@@ -154,7 +168,7 @@ func (m *Metrics) TeamUsagePrewarmRecorder(timezones []string) (teamusage.Prewar
 	m.registry.MustRegister(
 		recorder.cycleTotal, recorder.cycleDuration,
 		recorder.sourceDuration, recorder.sourceBytes, recorder.sourcePoints, recorder.sourceUsers,
-		recorder.redisDuration, recorder.redisBytes, recorder.requestTotal, recorder.lastSuccess,
+		recorder.redisDuration, recorder.redisBytes, recorder.redisErrorTotal, recorder.requestTotal, recorder.lastSuccess,
 		recorder.quantity, recorder.generationBytes, recorder.validationTotal, recorder.cacheTotal,
 	)
 	recorder.preinitialize(normalized)
@@ -204,6 +218,9 @@ func (m *teamUsagePrewarmMetrics) preinitialize(timezones []string) {
 			m.redisDuration.WithLabelValues(operation, outcome)
 			m.redisBytes.WithLabelValues(operation, outcome)
 		}
+		for _, class := range prewarmRedisErrorClasses {
+			m.redisErrorTotal.WithLabelValues(operation, string(class)).Add(0)
+		}
 	}
 }
 
@@ -234,6 +251,13 @@ func (m *teamUsagePrewarmMetrics) RecordRedis(operation, outcome string, duratio
 	labels := []string{operation, outcome}
 	m.redisDuration.WithLabelValues(labels...).Observe(nonnegativeDuration(duration).Seconds())
 	m.redisBytes.WithLabelValues(labels...).Observe(float64(nonnegativeInt(bytes)))
+}
+
+func (m *teamUsagePrewarmMetrics) RecordRedisError(operation string, class teamusage.PrewarmRedisErrorClass) {
+	if !containsMetricValue(prewarmRedisOperations, operation) || !containsPrewarmRedisErrorClass(class) {
+		return
+	}
+	m.redisErrorTotal.WithLabelValues(operation, string(class)).Inc()
 }
 
 func (m *teamUsagePrewarmMetrics) RecordRequest(timezone, outcome, fallbackReason string) {
@@ -327,6 +351,15 @@ func containsPrewarmCacheKind(value teamusage.PrewarmCacheKind) bool {
 
 func containsPrewarmCacheOutcome(value teamusage.PrewarmCacheOutcome) bool {
 	for _, allowed := range prewarmCacheOutcomes {
+		if value == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPrewarmRedisErrorClass(value teamusage.PrewarmRedisErrorClass) bool {
+	for _, allowed := range prewarmRedisErrorClasses {
 		if value == allowed {
 			return true
 		}

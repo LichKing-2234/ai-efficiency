@@ -920,7 +920,8 @@ func (m *recordingPrewarmRequestMetrics) RecordSource(class, timezone, outcome s
 		class: class, timezone: timezone, outcome: outcome, bytes: bytes, points: points, users: users,
 	})
 }
-func (*recordingPrewarmRequestMetrics) RecordRedis(string, string, time.Duration, int) {}
+func (*recordingPrewarmRequestMetrics) RecordRedis(string, string, time.Duration, int)  {}
+func (*recordingPrewarmRequestMetrics) RecordRedisError(string, PrewarmRedisErrorClass) {}
 func (m *recordingPrewarmRequestMetrics) RecordRequest(timezone, outcome, reason string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

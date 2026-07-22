@@ -35,6 +35,7 @@ const (
 
 var errPrewarmLeaseLost = errors.New("team usage prewarm lease ownership was lost")
 var errPrewarmLeaseBusy = errors.New("team usage prewarm lease is owned by another worker")
+var errPrewarmStartupLeaseBusy = errors.New("team usage prewarm startup is owned by another worker")
 
 type PrewarmerOptions struct {
 	Timezones       []string
@@ -981,10 +982,18 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 		"startup-coordinator", strconv.Itoa(binding.ProviderID), strconv.FormatInt(binding.ProviderVersion, 10), p.allowlistDigest,
 	)
 	coordinatorToken, acquired, err := p.acquireLease(ctx, coordinatorKey, prewarmHistoryCoordinatorTTL)
-	if err != nil || !acquired {
+	if err != nil {
 		return err
 	}
-	defer p.releaseLease(coordinatorKey, coordinatorToken)
+	if !acquired {
+		return errPrewarmStartupLeaseBusy
+	}
+	retainCoordinator := false
+	defer func() {
+		if !retainCoordinator {
+			p.releaseLease(coordinatorKey, coordinatorToken)
+		}
+	}()
 	workerCtx, cancel := context.WithTimeout(ctx, p.options.startupWorkerTimeout)
 	defer cancel()
 	workerCtx = withPrewarmControllingLeases(workerCtx, PrewarmLeaseClaim{Key: coordinatorKey, Token: coordinatorToken})
@@ -1086,7 +1095,17 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 			p.options.Metrics.SetLastSuccess("startup", timezone, p.options.Now())
 		}
 	}
-	return errors.Join(failures...)
+	if err := errors.Join(failures...); err != nil {
+		return err
+	}
+	if err := workerCtx.Err(); err != nil {
+		return err
+	}
+	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
+		return err
+	}
+	retainCoordinator = true
+	return nil
 }
 
 func (p *Prewarmer) fetchHistoricalOrTodayClass(
@@ -1460,6 +1479,9 @@ func (p *Prewarmer) reportGlobalLifecycleFailure(
 }
 
 func prewarmCycleOutcomeForError(err error) PrewarmCycleOutcome {
+	if errors.Is(err, errPrewarmStartupLeaseBusy) {
+		return PrewarmCycleLeaseBusy
+	}
 	switch prewarmTelemetryOutcome(err) {
 	case "canceled":
 		return PrewarmCycleCanceled

@@ -47,6 +47,18 @@ const (
 	PrewarmCacheError       PrewarmCacheOutcome = "error"
 )
 
+type PrewarmRedisErrorClass string
+
+const (
+	PrewarmRedisErrorValidation        PrewarmRedisErrorClass = "validation"
+	PrewarmRedisErrorCallerCanceled    PrewarmRedisErrorClass = "caller_canceled"
+	PrewarmRedisErrorCommandDeadline   PrewarmRedisErrorClass = "command_deadline"
+	PrewarmRedisErrorNetworkTimeout    PrewarmRedisErrorClass = "network_timeout"
+	PrewarmRedisErrorNetwork           PrewarmRedisErrorClass = "network_error"
+	PrewarmRedisErrorCommand           PrewarmRedisErrorClass = "redis_command"
+	PrewarmRedisErrorDecodeOrReference PrewarmRedisErrorClass = "decode_or_reference"
+)
+
 type PrewarmCycleClass string
 
 const (
@@ -60,10 +72,11 @@ const (
 type PrewarmCycleOutcome string
 
 const (
-	PrewarmCycleSuccess  PrewarmCycleOutcome = "success"
-	PrewarmCycleError    PrewarmCycleOutcome = "error"
-	PrewarmCycleCanceled PrewarmCycleOutcome = "canceled"
-	PrewarmCycleRejected PrewarmCycleOutcome = "rejected"
+	PrewarmCycleSuccess   PrewarmCycleOutcome = "success"
+	PrewarmCycleError     PrewarmCycleOutcome = "error"
+	PrewarmCycleCanceled  PrewarmCycleOutcome = "canceled"
+	PrewarmCycleRejected  PrewarmCycleOutcome = "rejected"
+	PrewarmCycleLeaseBusy PrewarmCycleOutcome = "lease_busy"
 )
 
 type PrewarmBackgroundEvent struct {
@@ -89,6 +102,7 @@ type PrewarmMetrics interface {
 	RecordCycle(class, timezone, outcome string, duration time.Duration)
 	RecordSource(class, timezone, outcome string, duration time.Duration, bytes, points, users int)
 	RecordRedis(operation, outcome string, duration time.Duration, bytes int)
+	RecordRedisError(operation string, class PrewarmRedisErrorClass)
 	RecordRequest(timezone, outcome, fallbackReason string)
 	SetLastSuccess(class, timezone string, at time.Time)
 	RecordQuantity(kind PrewarmQuantityKind, timezone string, value int)
@@ -103,6 +117,7 @@ func (noopPrewarmMetrics) RecordCycle(string, string, string, time.Duration) {}
 func (noopPrewarmMetrics) RecordSource(string, string, string, time.Duration, int, int, int) {
 }
 func (noopPrewarmMetrics) RecordRedis(string, string, time.Duration, int)  {}
+func (noopPrewarmMetrics) RecordRedisError(string, PrewarmRedisErrorClass) {}
 func (noopPrewarmMetrics) RecordRequest(string, string, string)            {}
 func (noopPrewarmMetrics) SetLastSuccess(string, string, time.Time)        {}
 func (noopPrewarmMetrics) RecordQuantity(PrewarmQuantityKind, string, int) {}

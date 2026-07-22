@@ -13,7 +13,9 @@ remains unchanged.
 Task 14 is the current correction contract: it makes startup ownership and
 Redis error classes observable, retains a successful startup coordinator for
 its bounded TTL, and requires a pre-ticker two-Pod replay before Task 9 can
-resume.
+resume. Its local implementation and required verification are complete, but
+the controller's independent task review is still pending. No Task 14 image has
+been published and no environment state has changed.
 
 **Date:** 2026-07-21
 
@@ -1047,6 +1049,12 @@ five seconds of the first complete manifest, and zero Relay/Redis errors. A
 failure is rolled back immediately and its closed class determines the next
 root-cause task. A pass only permits Task 9 Step 3 to restart from a fresh
 controlled round.
+
+Local Task 14 verification covered the concurrent and staggered multi-instance
+startup paths, all seven closed Redis error classes, normal cache miss and lease
+contention, 50 repeated collapse runs, Team Usage and telemetry race tests, the
+full backend suite, vet, and build. The independent controller review remains
+the final local gate before an immutable staging image may be published.
 
 ## Rollout And Rollback
 

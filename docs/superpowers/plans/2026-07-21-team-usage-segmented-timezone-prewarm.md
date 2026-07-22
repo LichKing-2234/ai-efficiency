@@ -90,7 +90,11 @@ Task 14 root-cause analysis is complete. Retained evidence cannot identify the
 Redis error subtype or attribute aggregate source observations to startup versus
 the first scheduled tick. Task 14 therefore adds bounded diagnostic telemetry
 and closes the confirmed startup coordinator contract gaps before any new
-feature-enabled attempt.
+feature-enabled attempt. Task 14 Steps 1-2 are locally complete. Focused RED and
+GREEN tests, 50 repeated multi-instance runs, Team Usage and telemetry race
+tests, the full backend suite, `go vet ./...`, and `go build ./...` passed.
+Step 3 remains unchecked pending the controller's independent task review; no
+image has been published and staging remains disabled.
 
 ## Task 1 Gate Evidence
 
@@ -1782,7 +1786,7 @@ production state. Then proceed to Task 9 Step 3. If it fails, keep Task 9 Steps
   `error`. The old Pods and raw metrics are gone, so the `250ms` budget remains
   the strongest hypothesis, not a proven cause.
 
-- [ ] **Step 1: Add RED multi-instance and error-class tests**
+- [x] **Step 1: Add RED multi-instance and error-class tests**
 
 Use two independent `Prewarmer` instances with separate providers and metrics
 but one shared Redis store, namespace, provider binding, and four-timezone
@@ -1801,7 +1805,7 @@ rejection without calling the store. The existing Redis pool pending, wait, and
 timeout metrics remain the source for pool-phase correlation because go-redis
 does not expose its internal pool-timeout sentinel as a public error contract.
 
-- [ ] **Step 2: Implement the minimal coordinator and telemetry correction**
+- [x] **Step 2: Implement the minimal coordinator and telemetry correction**
 
 Represent startup lease contention as an explicit closed lifecycle result.
 Retain the successful startup coordinator marker until its TTL expires; release

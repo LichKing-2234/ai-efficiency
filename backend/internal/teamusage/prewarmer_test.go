@@ -15,6 +15,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/alicebob/miniredis/v2"
+	redis "github.com/redis/go-redis/v9"
 )
 
 func TestPrewarmMovingSharesCurrentStatsAndPublishesTimezonesIndependently(t *testing.T) {
@@ -670,6 +671,7 @@ func TestPrewarmStartupRecoversOnlyMissingOrHardExpiredValues(t *testing.T) {
 		t.Fatal("missing history recovery rebuilt current stats")
 	}
 
+	deleteLeasesWithTTL(server, 5*time.Minute, 7*time.Minute)
 	provider.resetCounts()
 	now = base.Add(2 * time.Minute)
 	if err := prewarmer.runStartup(context.Background()); err != nil {
@@ -679,6 +681,7 @@ func TestPrewarmStartupRecoversOnlyMissingOrHardExpiredValues(t *testing.T) {
 		t.Fatalf("startup rebuilt stale-but-hard-valid values with %d calls", provider.totalSourceCalls())
 	}
 
+	deleteLeasesWithTTL(server, 5*time.Minute, 7*time.Minute)
 	provider.resetCounts()
 	now = base.Add(5 * time.Minute)
 	if err := prewarmer.runStartup(context.Background()); err != nil {
@@ -1468,6 +1471,88 @@ func TestPrewarmerLifecycleReportsBoundedStartupProviderFailure(t *testing.T) {
 		class: string(PrewarmCycleStartup), timezone: "UTC", outcome: string(PrewarmCycleError),
 	}) {
 		t.Fatalf("startup failure cycle metrics = %#v", metrics.cycles)
+	}
+}
+
+func TestPrewarmerStartupCollapsesConcurrentAndStaggeredInstances(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	server := miniredis.RunT(t)
+	timezones := []string{"UTC", "Asia/Shanghai", "America/Los_Angeles", "Europe/Berlin"}
+
+	newInstance := func(token string, provider *lifecycleProvider, metrics *recordingPrewarmRequestMetrics) *Prewarmer {
+		client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+		t.Cleanup(func() { _ = client.Close() })
+		cache, err := NewPrewarmCache(readcache.NewRedisStore(client), PrewarmCacheOptions{
+			Namespace: "test", Now: func() time.Time { return now }, Metrics: metrics,
+		})
+		if err != nil {
+			t.Fatalf("NewPrewarmCache() error = %v", err)
+		}
+		options := lifecycleOptions(timezones, func() time.Time { return now })
+		options.Metrics = metrics
+		options.NewToken = func() string { return strings.Repeat(token, 64) }
+		return mustPrewarmer(t, staticBindingResolver{binding: prewarmBinding(provider)}, cache, options)
+	}
+	waitForStartup := func(name string, prewarmer *Prewarmer) {
+		t.Helper()
+		select {
+		case <-prewarmer.startupDone:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s startup did not finish", name)
+		}
+	}
+
+	ownerProvider := newLifecycleProvider([]int64{101})
+	ownerProvider.directoryEntered = make(chan struct{}, 1)
+	ownerProvider.directoryRelease = make(chan struct{})
+	ownerMetrics := &recordingPrewarmRequestMetrics{}
+	owner := newInstance("a", ownerProvider, ownerMetrics)
+
+	concurrentProvider := newLifecycleProvider([]int64{101})
+	concurrentMetrics := &recordingPrewarmRequestMetrics{}
+	concurrent := newInstance("b", concurrentProvider, concurrentMetrics)
+
+	staggeredProvider := newLifecycleProvider([]int64{101})
+	staggeredMetrics := &recordingPrewarmRequestMetrics{}
+	staggered := newInstance("c", staggeredProvider, staggeredMetrics)
+
+	owner.Start(context.Background())
+	select {
+	case <-ownerProvider.directoryEntered:
+	case <-time.After(time.Second):
+		t.Fatal("startup owner did not enter source work")
+	}
+	concurrent.Start(context.Background())
+	waitForStartup("concurrent loser", concurrent)
+
+	close(ownerProvider.directoryRelease)
+	waitForStartup("owner", owner)
+	staggered.Start(context.Background())
+	waitForStartup("staggered loser", staggered)
+
+	owner.Stop()
+	concurrent.Stop()
+	staggered.Stop()
+
+	if got := concurrentProvider.totalSourceCalls(); got != 0 {
+		t.Fatalf("concurrent startup loser source calls = %d, want zero", got)
+	}
+	if got := staggeredProvider.totalSourceCalls(); got != 0 {
+		t.Fatalf("staggered startup loser source calls = %d, want zero", got)
+	}
+	for name, metrics := range map[string]*recordingPrewarmRequestMetrics{
+		"concurrent": concurrentMetrics,
+		"staggered":  staggeredMetrics,
+	} {
+		if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleStartup, "UTC", PrewarmCycleLeaseBusy); got != 1 {
+			t.Fatalf("%s startup lease_busy metrics = %d, want one per timezone; all=%#v", name, got, metrics.cycles)
+		}
+		if got := countPrewarmCycleOutcome(metrics.cycles, PrewarmCycleStartup, "UTC", PrewarmCycleSuccess); got != 0 {
+			t.Fatalf("%s startup success metrics = %d, want zero; all=%#v", name, got, metrics.cycles)
+		}
+	}
+	if got := countPrewarmCycleOutcome(ownerMetrics.cycles, PrewarmCycleStartup, "UTC", PrewarmCycleSuccess); got != 1 {
+		t.Fatalf("startup owner success metrics = %d, want one per timezone; all=%#v", got, ownerMetrics.cycles)
 	}
 }
 
