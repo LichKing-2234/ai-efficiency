@@ -1,11 +1,13 @@
 # Team Usage Segmented Timezone Prewarm Design
 
-**Status:** Implementation and branch-wide review completed. The exact reviewed
-image completed its feature-disabled staging rollout. A package-native,
+**Status:** Initial implementation and branch-wide review completed. The exact
+reviewed image completed its feature-disabled staging rollout. A package-native,
 runtime-local synthetic Redis benchmark then hit a real two-second timeout in
-the four-lane maximum-safe MGET workload. No command budgets were selected or
-implemented, feature-enabled acceptance is blocked, the feature remains
-disabled by default, and production is unchanged.
+the four-lane maximum-safe MGET workload. The approved follow-up design uses
+schema-v2 zstd value encoding and request-window-scoped reads, but that follow-up
+is not implemented yet. No command budgets have been selected or implemented,
+feature-enabled acceptance remains blocked, the feature remains disabled by
+default, and production is unchanged.
 
 **Date:** 2026-07-21
 
@@ -346,6 +348,26 @@ Relay user IDs, source labels, optional tokens, actual cost, and bounded size
 metadata. Relay directory responses are discarded after the ID list has driven
 current-stat requests.
 
+The schema-v2 follow-up stores current-stats and trend immutable values as zstd
+frames rather than raw JSON. Writers first produce JSON under the existing
+decoded-size limit, then encode it with `SpeedFastest`, one encoder worker, and
+frame checksum enabled. A compressed value at or above the existing stored-value
+limit is rejected and uses exact fallback; compression never relaxes the 2 MiB
+current-stats or 8 MiB trend decoded-JSON limits. `SerializedBytes` records the
+actual Redis value length so manifests, validation, and generation-byte metrics
+describe transported and stored bytes rather than the expanded JSON length.
+Encoding stays inside `teamusage.PrewarmCache`; the shared `readcache.BatchStore`
+contract and every existing non-prewarm cache continue to read and write opaque
+bytes unchanged.
+
+Readers use one-worker zstd decoding with explicit maximum window and memory
+bounds. They reject an invalid frame, checksum failure, trailing data, expanded
+value at or above its decoded-size limit, or metadata mismatch before composing
+any response. Compression and decompression errors are Redis-generation
+validation failures and immediately use the retained exact fallback. Manifests
+remain bounded plain JSON because they are small commit records rather than
+large immutable payloads.
+
 No prewarm value contains a name, username, email, credential, API key, JWT,
 raw Relay response, Directory record, representative assignment, authorized
 scope, or authorization decision.
@@ -365,9 +387,12 @@ address another timezone's values. A local-date rollover creates a new anchor
 rather than mutating the prior anchor.
 
 The implementation switched timezone digests to the specified length-delimited
-encoding before any staging or production enablement. No feature-enabled runtime
-keys exist with the earlier raw-string digest, so schema version 1 remains the
-initial runtime schema and requires no compatibility reader or key migration.
+encoding before any staging or production enablement. The follow-up increments
+the Redis schema and every key from v1 to v2 before the first feature-enabled
+runtime. A v2 reader never reads or rewrites v1 manifests or immutable values,
+and no migration path or dual reader is added. The feature has never consumed v1
+keys in an enabled runtime, and those disabled-staging keys expire through their
+existing bounded TTLs.
 
 ### Publish-Last Manifest
 
@@ -390,6 +415,21 @@ Readers resolve one manifest and never mix it with another manifest's segment
 references. A newer moving generation may reuse unchanged historical values
 only when every provider, version, timezone, anchor, class, coverage, schema,
 and validation dimension matches.
+
+Background startup, recovery, and publish-last validation continue to read all
+four references from one manifest. Those reads consume compressed bytes and
+validate the complete generation before publication. Request handling instead
+selects the minimum reference set after exact window recognition:
+
+- today reads current stats plus `today_hour`;
+- 7d reads current stats, `history_6d`, and `today_hour`;
+- 30d reads current stats, `history_29d`, and `today_hour`.
+
+The selected references are fetched in one MGET. An unselected history segment
+does not produce a cache miss metric and is not required for request-relative
+completeness or missing-today recovery. This changes only Redis transfer and
+decode work; it does not change manifest atomicity, source selection, composed
+results, authorization, or exact fallback.
 
 TTL relationships come from schedule and correctness requirements, not the 20
 GET source POC. A today value's hard lifetime must cover more than one 60-second
@@ -568,13 +608,17 @@ AI Efficiency to the Sub2API database. Sub2API source remains unchanged.
 The shared Redis client is configured with at least four pre-created idle
 connections and one-second dial and pool timeouts. The 20 GET POC does not
 measure Redis and does not choose large-value Redis read/write command timeouts.
-After cache code exists, deploy it to staging with the feature still disabled
-and benchmark synthetic maximum-safe values against staging Redis. Benchmark
-separate immutable writes, manifest publish, and four-lane MGET reads under the
-same min-idle pool and background concurrency-two shape. Select separate read
-and write command budgets as the greater of 250 milliseconds or twice the
-observed p99, each capped at two seconds. If either required budget would exceed
-two seconds or produces any Redis error, do not enable the feature in staging.
+After any cache-encoding or read-shape change, deploy the exact new head to
+staging with the feature still disabled and benchmark synthetic maximum-safe
+values against staging Redis. Benchmark separate compressed immutable writes,
+manifest publish, full-generation validation reads, and four concurrent
+request-window MGET reads under the same min-idle pool and background
+concurrency-two shape. The request benchmark uses the largest standard window,
+so every lane reads current stats, `history_29d`, and `today_hour`. Select
+separate read and write command budgets as the greater of 250 milliseconds or
+twice the observed p99, each capped at two seconds. If either required budget
+would exceed two seconds or produces any Redis error, do not enable the feature
+in staging.
 
 Existing small-cache callers retain their 100-millisecond command contexts, so
 the broader transport bounds do not make unrelated cache misses wait one
@@ -817,6 +861,16 @@ identities only. Required tests cover:
 - current authorization intersection and final scope-version race checks;
 - provider-version, timezone-digest, anchor, and schema isolation;
 - immutable writes, publish-last manifests, and old-anchor read completion;
+- schema-v2 zstd round trips for current stats and trend segments, with raw JSON
+  absent from Redis and `SerializedBytes` equal to the stored frame length;
+- exact rejection boundaries for oversized input JSON, oversized compressed
+  output, expanded output, corrupt or truncated frames, checksum failures,
+  trailing bytes, and decoder memory/window limits;
+- v2 key isolation with no v1 compatibility read or migration;
+- today, 7d, and 30d request MGET key selection, request-relative completeness,
+  missing-today recovery, and no cache metric for an unselected history segment;
+- full four-reference background and publish-last validation through compressed
+  values;
 - token-checked multi-Pod lease collapse and skipped overlapping ticks;
 - partial missing-today fallback that never refetches either history segment;
 - Redis error, Relay error, cancellation, stale value, hard expiry, and lost
@@ -935,6 +989,14 @@ gate and blocks budget selection. No RED budget test, budget constant, second
 image, or feature-enabled rollout was created. Production release remains a
 separate approval.
 
+The approved follow-up keeps the two-second cap and the maximum-safe decoded
+fixtures. It changes their Redis representation to schema-v2 zstd frames and
+changes request reads to the largest-window three-reference shape. The next
+immutable staging image must remain feature-disabled until both the full
+generation and four-lane request-window benchmarks pass without Redis errors and
+produce selectable budgets. The failed v1 distribution is diagnostic evidence,
+not a budget input for v2.
+
 Rollback disables the prewarm feature. New readers and background cycles stop,
 and every request immediately uses the retained PR #192 scope-origin path.
 Immutable values and manifests expire by TTL; rollback requires no destructive
@@ -976,6 +1038,23 @@ preserve the exact source selection while bounding moving refreshes.
 Pod values fragment across replicas and complicate provider, scope, and
 rollover invalidation. Redis immutable generations plus process-local in-flight
 coordination provide the required collapse without replica-local result state.
+
+### Only Select Request-Window Keys
+
+Window-scoped MGET removes one unused historical segment from 7d and 30d
+requests, but publish-last validation still needs the complete generation. At
+the maximum-safe v1 sizes it also leaves roughly 18 MiB per largest-window lane.
+It is retained as a complementary request optimization, not accepted as the
+complete Redis timeout fix.
+
+### Shard Values By User Or Page
+
+Per-user or paged values can reduce transfer for small authorization scopes, but
+they multiply keys and require a new atomic generation index, partial-page
+validation, cleanup, and failure semantics. A provider-wide request still reads
+the complete data volume. The current failure is transport size for four bounded
+objects, so schema-v2 compression solves that cause without adding a sharded
+publication protocol.
 
 ### Change Sub2API First
 
