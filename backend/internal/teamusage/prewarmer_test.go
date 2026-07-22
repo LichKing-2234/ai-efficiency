@@ -2011,7 +2011,11 @@ func (s *lostSegmentLeasePrewarmStore) SetIfLeaseOwned(
 	ttl time.Duration,
 ) (bool, error) {
 	published, err := s.recordingPrewarmStore.SetIfLeaseOwned(ctx, leaseKey, token, key, value, ttl)
-	if err != nil || !published || leaseKey != key || s.loseClass == "" || !strings.Contains(string(value), `"class":"`+string(s.loseClass)+`"`) {
+	if err != nil || !published || leaseKey != key || s.loseClass == "" {
+		return published, err
+	}
+	var segment PrewarmTrendSegment
+	if decodeErr := decodePrewarmStoredJSON(value, prewarmSegmentMaxBytes, &segment); decodeErr != nil || segment.Class != s.loseClass {
 		return published, err
 	}
 	s.ttlMu.Lock()

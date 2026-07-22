@@ -1114,6 +1114,7 @@ If any gate fails, disable the staging flag, record the failure with remaining c
 - Create: `backend/internal/teamusage/prewarm_codec_test.go`
 - Modify: `backend/internal/teamusage/prewarm_cache.go`
 - Modify: `backend/internal/teamusage/prewarm_cache_test.go`
+- Modify: `backend/internal/teamusage/prewarmer_test.go` (schema-v2 opaque-value test interceptor only)
 - Modify: `backend/go.mod`
 - Modify: `backend/go.sum`
 
@@ -1121,7 +1122,7 @@ If any gate fails, disable the staging flag, record the failure with remaining c
 - Consumes: existing `encodePrewarmJSON`, `decodePrewarmJSON`, 2 MiB current-stats limit, 8 MiB trend limit, and opaque `readcache.BatchStore` bytes.
 - Produces: schema-v2 keys plus package-private `encodePrewarmStoredJSON(value any, decodedLimit, storedLimit int) ([]byte, error)` and `decodePrewarmStoredJSON(encoded []byte, decodedLimit int, destination any) error`.
 
-- [ ] **Step 1: Write RED codec and cache-storage tests**
+- [x] **Step 1: Write RED codec and cache-storage tests**
 
 Add table tests that require the zstd magic prefix, checksum-protected round
 trip, stored-byte metadata, and hard rejection boundaries. Use only synthetic
@@ -1157,7 +1158,7 @@ Also require `prewarmCacheSchemaVersion == 2`, raw JSON absent from Redis,
 compressed output exactly at its stored limit, expanded output at the decoded
 limit, checksum corruption, truncation, appended bytes, and a v1 manifest miss.
 
-- [ ] **Step 2: Run RED tests**
+- [x] **Step 2: Run RED tests**
 
 ```bash
 cd backend
@@ -1167,7 +1168,7 @@ go test ./internal/teamusage -run 'PrewarmStoredJSON|StoresCompressedBytesAndUse
 Expected: compile failure for missing stored-codec functions and schema-version
 assertion failure until the production implementation exists.
 
-- [ ] **Step 3: Add the direct dependency and minimal bounded codec**
+- [x] **Step 3: Add the direct dependency and minimal bounded codec**
 
 ```bash
 cd backend
@@ -1211,7 +1212,7 @@ empty or over-width input, decodes into capacity `decodedLimit`, rejects
 `len(decoded) >= decodedLimit`, then calls `decodePrewarmJSON` so concatenated
 or trailing JSON and metadata tampering still fail.
 
-- [ ] **Step 4: Wire compressed values and schema v2 into `PrewarmCache`**
+- [x] **Step 4: Wire compressed values and schema v2 into `PrewarmCache`**
 
 Change only current-stats and trend immutable values:
 
@@ -1232,7 +1233,7 @@ Apply the trend path with `prewarmSegmentMaxBytes`. Manifests remain plain JSON.
 Keep reference validation against stored frame length and generation-byte metrics
 based on `SerializedBytes`.
 
-- [ ] **Step 5: Run GREEN and race tests**
+- [x] **Step 5: Run GREEN and race tests**
 
 ```bash
 cd backend
@@ -1246,7 +1247,7 @@ go test -race ./internal/teamusage -run 'PrewarmStoredJSON|PrewarmCache|PrewarmM
 
 Expected: all selected tests pass with zero race reports.
 
-- [ ] **Step 6: Commit the codec unit**
+- [x] **Step 6: Commit the codec unit**
 
 ```bash
 git add backend/go.mod backend/go.sum \

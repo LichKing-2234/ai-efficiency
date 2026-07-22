@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	prewarmCacheSchemaVersion = 1
+	prewarmCacheSchemaVersion = 2
 
 	movingFresh    = 75 * time.Second
 	movingHard     = 4 * time.Minute
@@ -235,7 +235,7 @@ func (c *PrewarmCache) WriteCurrentStats(
 	if err := validatePrewarmCurrentStatsValue(value); err != nil {
 		return PrewarmValueReference{}, err
 	}
-	encoded, err := encodePrewarmJSON(value, prewarmCurrentStatsMaxBytes)
+	encoded, err := encodePrewarmStoredJSON(value, prewarmCurrentStatsMaxBytes, prewarmCurrentStatsMaxBytes)
 	if err != nil {
 		return PrewarmValueReference{}, fmt.Errorf("encode team usage prewarm current stats: %w", err)
 	}
@@ -268,7 +268,7 @@ func (c *PrewarmCache) WriteSegment(
 	if err := validatePrewarmSegmentValue(value); err != nil {
 		return PrewarmValueReference{}, err
 	}
-	encoded, err := encodePrewarmJSON(value, prewarmSegmentMaxBytes)
+	encoded, err := encodePrewarmStoredJSON(value, prewarmSegmentMaxBytes, prewarmSegmentMaxBytes)
 	if err != nil {
 		return PrewarmValueReference{}, fmt.Errorf("encode team usage prewarm segment: %w", err)
 	}
@@ -551,7 +551,7 @@ func (c *PrewarmCache) readReferencedValues(
 	var current *PrewarmCurrentStatsEnvelope
 	if statuses[0] != PrewarmValueHardExpired && values[0] != nil {
 		var decoded PrewarmCurrentStatsEnvelope
-		if err := decodePrewarmJSON(values[0], prewarmCurrentStatsMaxBytes, &decoded); err != nil {
+		if err := decodePrewarmStoredJSON(values[0], prewarmCurrentStatsMaxBytes, &decoded); err != nil {
 			cacheOutcomes[0] = PrewarmCacheInvalid
 			return nil, PrewarmSegmentSet{}, statuses, false, fmt.Errorf("decode team usage prewarm current stats: %w", err)
 		}
@@ -569,7 +569,7 @@ func (c *PrewarmCache) readReferencedValues(
 			continue
 		}
 		var segment PrewarmTrendSegment
-		if err := decodePrewarmJSON(values[statusIndex], prewarmSegmentMaxBytes, &segment); err != nil {
+		if err := decodePrewarmStoredJSON(values[statusIndex], prewarmSegmentMaxBytes, &segment); err != nil {
 			if allowInvalidToday && ref.Class == SegmentTodayHour {
 				statuses[statusIndex] = PrewarmValueInvalid
 				cacheOutcomes[statusIndex] = PrewarmCacheInvalid

@@ -1,6 +1,7 @@
 package teamusage
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -266,7 +267,7 @@ func TestPrewarmCacheImmutableValueRejectsGenerationReuse(t *testing.T) {
 		t.Fatalf("read immutable value error = %v", err)
 	}
 	var decoded PrewarmCurrentStatsEnvelope
-	if err := json.Unmarshal([]byte(stored), &decoded); err != nil {
+	if err := decodePrewarmStoredJSON([]byte(stored), prewarmCurrentStatsMaxBytes, &decoded); err != nil {
 		t.Fatalf("decode immutable value error = %v", err)
 	}
 	if decoded.Stats[0].TodayActualCost != 1.25 {
@@ -281,7 +282,7 @@ func TestPrewarmCacheConcurrentIdenticalWriteWaitsForClaimPublication(t *testing
 	baseStore := readcache.NewRedisStore(client)
 	generatedAt := testPrewarmGeneratedAt()
 	value := testPrewarmCurrentStats(generatedAt, "a")
-	encoded, err := encodePrewarmJSON(value, prewarmCurrentStatsMaxBytes)
+	encoded, err := encodePrewarmStoredJSON(value, prewarmCurrentStatsMaxBytes, prewarmCurrentStatsMaxBytes)
 	if err != nil {
 		t.Fatalf("encode current stats error = %v", err)
 	}
@@ -314,6 +315,65 @@ func TestPrewarmCacheConcurrentIdenticalWriteWaitsForClaimPublication(t *testing
 	close(controlled.release)
 	if err := <-result; err != nil {
 		t.Fatalf("concurrent identical WriteCurrentStats() error = %v", err)
+	}
+}
+
+func TestPrewarmCacheStoresCompressedBytesAndUsesSchemaV2(t *testing.T) {
+	if prewarmCacheSchemaVersion != 2 {
+		t.Fatalf("prewarmCacheSchemaVersion = %d, want 2", prewarmCacheSchemaVersion)
+	}
+	generatedAt := testPrewarmGeneratedAt()
+	cache, server := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
+	identity := testPrewarmIdentity()
+	currentRef, err := cache.WriteCurrentStats(context.Background(), testPrewarmCurrentStats(generatedAt, "a"))
+	if err != nil {
+		t.Fatalf("WriteCurrentStats() error = %v", err)
+	}
+	segmentRef, err := cache.WriteSegment(context.Background(), testPrewarmSegment(t, identity, generatedAt, SegmentHistory29d, "b"))
+	if err != nil {
+		t.Fatalf("WriteSegment() error = %v", err)
+	}
+
+	for _, test := range []struct {
+		name      string
+		reference PrewarmValueReference
+		rawMarker []byte
+	}{
+		{name: "current stats", reference: currentRef, rawMarker: []byte(`"stats"`)},
+		{name: "trend segment", reference: segmentRef, rawMarker: []byte(`"points"`)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stored, err := server.Get(test.reference.Key)
+			if err != nil {
+				t.Fatalf("read stored value error = %v", err)
+			}
+			storedBytes := []byte(stored)
+			if !bytes.HasPrefix(storedBytes, []byte{0x28, 0xb5, 0x2f, 0xfd}) || bytes.Contains(storedBytes, test.rawMarker) {
+				t.Fatal("Redis value is not an opaque zstd frame")
+			}
+			if test.reference.SerializedBytes != len(storedBytes) {
+				t.Fatalf("SerializedBytes = %d, stored length = %d", test.reference.SerializedBytes, len(storedBytes))
+			}
+			if !strings.Contains(test.reference.Key, ":v2:") || test.reference.SchemaVersion != 2 {
+				t.Fatalf("reference = %#v, want schema-v2 isolation", test.reference)
+			}
+		})
+	}
+}
+
+func TestPrewarmCacheSchemaV2MissesV1Manifest(t *testing.T) {
+	store := newRecordingPrewarmStore()
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return testPrewarmGeneratedAt() })
+	identity := testPrewarmIdentity()
+	v1Key, err := prewarmManifestKeyForIdentity("test", 1, identity)
+	if err != nil {
+		t.Fatalf("prewarmManifestKeyForIdentity(v1) error = %v", err)
+	}
+	store.SetRaw(v1Key, []byte(`{"schema_version":1}`), manifestTTL)
+
+	result, found, err := cache.Read(context.Background(), identity)
+	if err != nil || found || result != nil {
+		t.Fatalf("Read(v1-only) = %#v, %v, %v, want schema-v2 miss", result, found, err)
 	}
 }
 
