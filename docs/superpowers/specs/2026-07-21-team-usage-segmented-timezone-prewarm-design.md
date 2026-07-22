@@ -13,9 +13,9 @@ remains unchanged.
 Task 14 is the current correction contract: it makes startup ownership and
 Redis error classes observable, retains a successful startup coordinator for
 its bounded TTL, and requires a pre-ticker two-Pod replay before Task 9 can
-resume. Its local implementation and required verification are complete, but
-the controller's independent task review is still pending. No Task 14 image has
-been published and no environment state has changed.
+resume. Its local implementation and independent review are complete in commits
+`666e1e94` and `16529b18`; the feature remains disabled pending an exact-code
+benchmark and diagnostic staging replay.
 
 **Date:** 2026-07-21
 

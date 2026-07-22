@@ -90,11 +90,12 @@ Task 14 root-cause analysis is complete. Retained evidence cannot identify the
 Redis error subtype or attribute aggregate source observations to startup versus
 the first scheduled tick. Task 14 therefore adds bounded diagnostic telemetry
 and closes the confirmed startup coordinator contract gaps before any new
-feature-enabled attempt. Task 14 Steps 1-2 are locally complete. Focused RED and
-GREEN tests, 50 repeated multi-instance runs, Team Usage and telemetry race
-tests, the full backend suite, `go vet ./...`, and `go build ./...` passed.
-Step 3 remains unchecked pending the controller's independent task review; no
-image has been published and staging remains disabled.
+feature-enabled attempt. Task 14 Steps 1-3 are complete in commits `666e1e94`
+and `16529b18`. Focused RED/GREEN tests, 50 repeated multi-instance runs,
+server, Team Usage, and telemetry race tests, the full backend suite,
+`go vet ./...`, and `go build ./...` passed. Independent task review found zero
+Critical, Important, or Minor issues. No image has been published and staging
+remains disabled pending Step 4.
 
 ## Task 1 Gate Evidence
 
@@ -1818,7 +1819,7 @@ before canceling the child command context. Do not expose raw errors, Redis
 keys, tokens, provider data, or user data. Do not change the accepted command
 budgets in this task.
 
-- [ ] **Step 3: Verify and review exact code**
+- [x] **Step 3: Verify and review exact code**
 
 Run focused RED/GREEN tests, repeated multi-instance tests, race tests for
 `teamusage` and `telemetry`, the full backend suite, `go vet ./...`, and
@@ -1830,6 +1831,17 @@ git commit -m "fix(teamusage): make prewarm startup gates deterministic"
 
 Generate a task-scoped review package and resolve every Critical/Important
 finding before publishing an image.
+
+  **Completed local verification and review (2026-07-22):** The multi-instance
+  startup and Redis error-class RED tests failed only on the missing contracts.
+  GREEN passed, including 50 repeated startup-collapse runs, focused server,
+  Team Usage, and telemetry tests, race tests for all three packages, the full
+  backend suite, `go vet ./...`, `go build ./...`, and diff checks. Initial
+  review found three Important telemetry gaps: the real reporter rejected
+  `lease_busy`, publication double-classified generation failures, and an
+  immutable claim miss lacked a closed class. Commit `16529b18` fixed all three
+  with RED/GREEN coverage. Re-review reported zero Critical, Important, or Minor
+  findings. No staging image was published and no runtime configuration changed.
 
 - [ ] **Step 4: Rebuild and repeat the feature-disabled Redis benchmark**
 
