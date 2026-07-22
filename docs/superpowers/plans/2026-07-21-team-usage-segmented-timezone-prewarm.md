@@ -66,21 +66,20 @@ with zero findings; its behavior and documentation commits are `506bd403` and
 `667f4032`.
 Task 9 Step 1 is complete: the exact reviewed image is deployed only to staging
 at revision 46 with the feature disabled, and production remains unchanged.
-Task 9 Step 2 is blocked by a valid package-native runtime-local benchmark: the
-five write/manifest/lease operations completed 100 samples each without error,
-but the four-lane maximum-safe MGET workload timed out under the locked two-second
-read ceiling after 15 valid samples. No command budgets were selected and no
-budget code or tests were changed. The feature remains disabled; Steps 3-6 have
-not started. Tasks 10 and 11 implemented schema-v2 zstd immutable values and
+Task 9 Step 2 is complete after Task 13 replaced the blocked schema-v1 result
+with schema-v2 zstd values and request-window reads. Exact budget-code commit
+`759b1946` passed the final feature-disabled benchmark with 100 valid samples
+and zero errors in every required class; read, write, lease, and release budgets
+are locked at `250ms`. The feature remains disabled and Steps 3-6 have not
+started. Tasks 10 and 11 implemented schema-v2 zstd immutable values and
 request-window-scoped Redis reads in commits `2761ecaf` and `0f0ba03a`. Task 12
 implementation and review are complete. The first review corrections are
 committed in `4bf72e9b`; the exhaustive selected-reference validation correction
 is committed in `10d1e8ea`. The final independent review approved exact head
 `10d1e8ea` with zero Critical, Important, or Minor findings after both
-correction ladders passed. Task 13's feature-disabled staging rebenchmark is
-next. Schema-v2 command budgets remain unselected, the feature remains disabled,
-Task 9 Steps 2-6 remain unchecked, production is unchanged, and
-`docs/architecture.md` remains pending until feature-enabled acceptance.
+correction ladders passed. Task 13 is complete. The feature remains disabled,
+Task 9 Step 3 is next, production is unchanged, and `docs/architecture.md`
+remains pending until feature-enabled acceptance.
 
 ## Task 1 Gate Evidence
 
@@ -991,7 +990,7 @@ docker buildx imagetools inspect "${IMAGE}"
 
 Use `/Users/admin/helm/ai-efficiency/scripts/refresh-staging-upgrade-values.sh` for the exact image tag and snapshot ID, then follow `/Users/admin/helm/docs/staging-playbook.md` paused and restore-enabled phases. Before the disabled rollout, assert the rendered Deployment either omits `AE_TEAM_USAGE_PREWARM_ENABLED` or sets it to `false`; verify both architectures in the remote manifest.
 
-- [ ] **Step 2: Benchmark staging Redis with synthetic maximum-safe values**
+- [x] **Step 2: Benchmark staging Redis with synthetic maximum-safe values**
 
   **Initial excluded evidence (2026-07-22):** The reviewed runtime
   configures the shared Redis client with `MinIdleConns=4`, one-second dial and
@@ -1065,6 +1064,22 @@ Use `/Users/admin/helm/ai-efficiency/scripts/refresh-staging-upgrade-values.sh` 
   and healthy. All temporary test sources, binaries, and JSON reports were
   deleted; only sanitized evidence was retained. Therefore Step 2 remains
   unchecked, no budget constants or commit exist, and Steps 3-6 must not start.
+
+  **Accepted schema-v2 replacement (2026-07-22):** Tasks 10-13 preserved the
+  failed schema-v1 run as diagnostic evidence, then replaced its values with the
+  production schema-v2 zstd codec and narrowed 30-day request reads to current,
+  history-29d, and today-hour. Exact budget commit `759b1946` ran in the
+  feature-disabled staging Pod at revision 50. Its final full repeat completed
+  100 samples with zero errors for current write, segment write, five-lease
+  manifest publication, full-generation MGET, four-concurrent-lane 30-day MGET,
+  lease acquire, and lease release. Their p99 values were `14.963`, `20.989`,
+  `13.548`, `75.757`, `47.576`, `12.664`, and `12.718` milliseconds. The
+  unchanged formula selected and the code locks `250ms` for read, write, lease,
+  and release. Cleanup errors and final registered key count were zero; eviction
+  and rejected-connection deltas were zero. The staging image remained exact,
+  ready, and feature-disabled after the benchmark. Production remained revision
+  69 on `v0.1.0-preview.73`, feature-disabled and healthy. Step 2 is complete;
+  Steps 3-6 remain unchecked pending separate feature-enabled acceptance.
 
 Under `MinIdleConns>=4` and background concurrency two, measure separate immutable writes, manifest publication, and four-lane MGET reads. Select each command budget as `max(250ms, 2*p99)` capped at `2s`. Any Redis error or required budget above two seconds blocks enablement. Write RED boundary tests for the selected budgets, implement the exact constants, and run:
 
@@ -1495,14 +1510,88 @@ git commit -m "docs(teamusage): complete compressed read review"
 - Consumes: exact reviewed Task 12 head, accepted package-native benchmark shape, staging Redis, and the disabled staging workflow.
 - Produces: selected schema-v2 command budgets and a passing repeat benchmark, or a documented blocker with the feature still disabled.
 
-- [ ] **Step 1: Build and deploy the exact reviewed head disabled**
+- [x] **Step 1: Build and deploy the exact reviewed head disabled**
+
+  **Execution evidence (2026-07-22, complete):** Before this rollout, staging
+  was healthy at revision 46 on the previous reviewed image and production was
+  healthy at revision 69 on `v0.1.0-preview.73`; both Deployments omitted
+  `AE_TEAM_USAGE_PREWARM_ENABLED`, had one ready replica with zero restarts,
+  and returned HTTP 200 for live and readiness. The required
+  `static-spaces-release-builder` advertised both `linux/amd64` and
+  `linux/arm64`. Exact reviewed head `e1452ca834d37769036df0f2a1630c9b95161aed`
+  was published as a multi-architecture image with index digest
+  `sha256:8fd47a1eea943892843448abb546669e980cba9dd600c4a2049f6e4c4fd65cf8`;
+  the amd64 and arm64 manifest digests are respectively
+  `sha256:c0506a543afa4f08920ff5ef08946e23f6bd3b76c622fc14157e0cc2e945dc62`
+  and
+  `sha256:44ab128bf053082de61ddf03e5ac38ba389b03861f613045f221913deabbc701`.
+  The staging override remained mode `0600`; canonical JSON excluding only
+  image tag and restore snapshot ID was unchanged, and both the parsed override
+  and rendered Deployment omitted the feature flag. The paused server dry-run
+  and atomic upgrade completed at revision 47 with zero application Pods. The
+  restore-enabled server dry-run and waited atomic upgrade completed at
+  revision 48. The final staging Deployment ran only the exact image with one
+  ready replica, zero restarts, no feature-flag entry, and HTTP 200 live and
+  readiness. Production remained revision 69 on `v0.1.0-preview.73`, with the
+  flag absent, one ready replica, and HTTP 200 live and readiness.
 
 Reuse Task 9 Step 1's immutable Buildx and paused/restore-enabled Helm procedure.
 Verify both GHCR architectures, exact staging image, absent
 `AE_TEAM_USAGE_PREWARM_ENABLED`, staging live/readiness HTTP 200, and unchanged
 production revision/image/flag/health before and after.
 
-- [ ] **Step 2: Recreate the package-native benchmark outside the repository**
+- [x] **Step 2: Recreate the package-native benchmark outside the repository**
+
+  **Excluded invalid smoke (2026-07-22):** The first staged schema-v2 binary
+  stopped at `stage=request_lane_mget class=shape` after two valid lane samples
+  and two byte-count mismatches. All four MGET commands returned without a Redis
+  command or timeout error. The harness incorrectly compared every lane against
+  lane 0's compressed byte total even though each lane uses distinct generation
+  IDs and therefore may have a different zstd length. This run is excluded from
+  benchmark evidence and budget selection. It had zero transport, INFO, and
+  cleanup errors, final registered synthetic key count zero, and zero eviction
+  and rejected-connection delta. The controller authorized one corrected formal
+  smoke limited strictly to per-lane expected-byte accounting; payloads, codec,
+  Redis commands, timeouts, concurrency, sample counts, and gates remain
+  unchanged.
+
+  **Corrected formal smoke (2026-07-22, pass):** The local RED failed for the
+  missing per-lane byte-accounting helper. GREEN then proved that distinct
+  generation IDs produce distinct compressed lane totals and that all four
+  miniredis lane MGETs validate against their own current, history-29d, and
+  today-hour byte sums. The corrected static `linux/amd64` binary ran in the
+  same feature-disabled staging Pod. Decoded current JSON was `765,163` bytes;
+  decoded history-29d, history-6d, and today-hour JSON were `8,388,489`,
+  `8,388,488`, and `8,388,496` bytes, all strictly below their limits. The
+  compressed full generation was `652,833` bytes and the recorded lane-0 30-day
+  request window was `436,744` bytes. Current write, segment write, manifest
+  write, full-generation MGET, lease acquire, and lease release each completed
+  one valid sample; the four concurrent request lanes completed four valid
+  samples. Their p99 values were respectively `11.724`, `17.145`, `12.437`,
+  `69.882`, `11.320`, `11.282`, and `67.598` milliseconds. Every command class
+  had zero errors. Cleanup, transport, and INFO errors were zero, the final
+  registered synthetic key count was zero, and eviction and rejected-connection
+  deltas were zero. This smoke selects no budget; the single full run is next.
+
+  **Initial exact-head full run (2026-07-22, pass):** The unchanged corrected
+  binary completed 100 valid samples with zero errors for current compressed
+  write, segment compressed write, five-lease manifest publication,
+  full-generation MGET, four-concurrent-lane 30-day request MGET, lease acquire,
+  and lease release. Its p50/p95/p99/max values in milliseconds were
+  `12.200/13.502/13.557/13.616`,
+  `17.062/17.218/19.343/48.952`,
+  `12.269/12.423/12.462/12.503`,
+  `13.161/21.318/71.539/74.687`,
+  `12.416/20.433/52.040/67.882`,
+  `11.909/12.633/12.644/12.680`, and
+  `11.788/12.619/12.635/12.777`. Transport, INFO, and cleanup errors were zero;
+  final registered synthetic key count was zero. Redis used memory changed by
+  `-8,016` bytes, peak used memory did not increase, eviction and
+  rejected-connection deltas were zero, and the lifetime error-reply counter
+  increased by 18 without any returned command error. The command-class formula
+  selects `250 ms` for every class and therefore provisional `250 ms` read,
+  write, lease, and release defaults. These values are not accepted until the
+  RED/GREEN budget commit and its exact-code repeat benchmark pass.
 
 Use a temporary `_test.go` copied into `backend/internal/teamusage` only for
 compilation, then delete it before any commit. It must call the production
@@ -1523,7 +1612,13 @@ staging application Pod, run one smoke and then one full sample run. Delete the
 source, local binary, Pod binary, and raw report after retaining only sanitized
 counts, durations, byte sizes, error classes, and counter deltas.
 
-- [ ] **Step 3: Apply the unchanged budget gate**
+- [x] **Step 3: Apply the unchanged budget gate**
+
+  The initial exact-head full run satisfied the unchanged gate: every required
+  class had 100 valid samples and zero errors, every calculated budget was
+  `250 ms`, cleanup was complete, and eviction/rejected-connection deltas were
+  zero. Step 4 still requires the same gate to pass again on the exact budget
+  code before any value is accepted.
 
 Measure at least 100 successful samples for compressed immutable writes,
 manifest publication, full-generation MGET, 30d request-window MGET, lease
@@ -1538,7 +1633,45 @@ Any Redis error, fewer than 100 valid samples, cleanup error, eviction,
 rejected-connection increase, or required budget above 2 seconds blocks the
 feature. Partial distributions never select a budget.
 
-- [ ] **Step 4: Lock passing budgets with RED/GREEN tests**
+- [x] **Step 4: Lock passing budgets with RED/GREEN tests**
+
+  **Budget TDD and local verification (2026-07-22, code ready for commit):**
+  The focused RED run failed only because all four PrewarmCache defaults were
+  still `2s` instead of the measured `250ms`. GREEN added distinct exact
+  read, write, lease, and release default constants at `250ms` while retaining
+  the existing explicit two-second cap and shared Redis transport ceilings.
+  The first full-package run exposed one old test's hard-coded `59s` publication
+  boundary, which encoded the previous `2s` write budget. That failure was
+  reproduced three times; the test now derives the same equality boundary from
+  the cache's actual write budget, without changing production publication
+  logic. Its focused three-count rerun passed. The final focused, focused race,
+  full-backend, vet, and build commands all passed. The race command emitted
+  only the existing macOS linker `LC_DYSYMTAB` warning. Independent narrow
+  review reported zero Critical, Important, or Minor findings. The budget-only
+  implementation and tests are committed as `759b1946`; the exact-code image
+  and repeat benchmark remain before this step can be checked.
+
+  The exact-code repeat smoke on staging revision 50 passed with zero errors in
+  every command class. Full-generation MGET completed one sample at
+  `p99=71.196 ms`; four concurrent 30-day request lanes completed four samples
+  at `p99=62.990 ms`. Cleanup errors and final registered key count were zero,
+  and eviction/rejected-connection deltas were zero. The single full repeat
+  completed all seven required classes with 100 valid samples and zero errors.
+  Their p50/p95/p99/max values in milliseconds were
+  `14.365/14.910/14.963/15.017`,
+  `16.543/18.413/20.989/53.967`,
+  `11.921/13.467/13.548/13.638`,
+  `13.415/19.680/75.757/77.355`,
+  `11.704/31.456/47.576/59.045`,
+  `11.581/12.637/12.664/12.760`, and
+  `11.367/12.657/12.718/12.819`. Each command-class and selected cache budget
+  remained `250ms`. Cleanup, transport, and INFO errors were zero; final
+  registered key count was zero. Used memory changed by `-143,720` bytes, peak
+  used memory did not increase, eviction and rejected-connection deltas were
+  zero, and the lifetime error-reply counter increased by 19 without a returned
+  command error. The repeat package source, local binary, Pod binary, and raw
+  reports were deleted and verified absent after this sanitized evidence was
+  retained.
 
 Only after Step 3 passes, write exact boundary tests for selected read, write,
 lease, and release values. Run RED, change only the corresponding defaults or
@@ -1557,7 +1690,14 @@ Commit with `perf(teamusage): lock compressed Redis command budgets`, rebuild an
 exact immutable staging image, and repeat Steps 1-3 against that exact code. A
 budget is not accepted until this second benchmark also passes.
 
-- [ ] **Step 5: Record the decision and resume Task 9 only on success**
+- [x] **Step 5: Record the decision and resume Task 9 only on success**
+
+  The final exact-code benchmark passed, so Task 9 Step 2 is checked and the
+  selected `250ms` read, write, lease, and release budgets are accepted. The
+  feature remains disabled at staging revision 50 and in production; Task 9
+  Steps 3-6 remain unchecked. The final staging selector is committed and
+  pushed on Helm main as `215b7d0`. Task 9 Step 3 is the next separately
+  controlled action.
 
 If the final exact-code benchmark passes, check Task 9 Step 2 and record image
 digest, staging revision, selected budgets, sanitized distributions,

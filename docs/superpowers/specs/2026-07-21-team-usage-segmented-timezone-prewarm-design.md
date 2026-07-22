@@ -1,17 +1,14 @@
 # Team Usage Segmented Timezone Prewarm Design
 
-**Status:** Initial implementation and branch-wide review completed. The exact
-reviewed image completed its feature-disabled staging rollout. A package-native,
-runtime-local synthetic Redis benchmark then hit a real two-second timeout in
-the four-lane maximum-safe MGET workload. The approved schema-v2 zstd value
-encoding and request-window-scoped reads are implemented and Task 12 review is
-complete at exact head `10d1e8ea`. The final independent review reported zero
-Critical, Important, or Minor findings after correction commits `4bf72e9b` and
-`10d1e8ea` passed their full verification ladders. Task 13's feature-disabled
-staging rebenchmark is next. No command budgets have been selected or
-implemented, feature-enabled acceptance remains blocked, the feature remains
-disabled by default, production is unchanged, and `docs/architecture.md`
-remains pending until the feature is accepted for enablement.
+**Status:** Initial implementation and branch-wide review completed. The approved
+schema-v2 zstd value encoding and request-window-scoped reads are implemented.
+Task 13's feature-disabled initial and exact-budget-code staging benchmarks each
+completed every required command class with 100 valid samples and zero errors.
+Read, write, lease, and release defaults are accepted at `250 ms` in commit
+`759b1946`. Task 9 Step 2 is complete. Feature-enabled acceptance remains next,
+the feature remains disabled by default, production is unchanged, and
+`docs/architecture.md` remains pending until the feature is accepted for
+enablement.
 
 **Date:** 2026-07-21
 
@@ -1006,11 +1003,25 @@ separate approval.
 
 The approved follow-up keeps the two-second cap and the maximum-safe decoded
 fixtures. It changes their Redis representation to schema-v2 zstd frames and
-changes request reads to the largest-window three-reference shape. The next
-immutable staging image must remain feature-disabled until both the full
-generation and four-lane request-window benchmarks pass without Redis errors and
-produce selectable budgets. The failed v1 distribution is diagnostic evidence,
-not a budget input for v2.
+changes request reads to the largest-window three-reference shape. Exact head
+`e1452ca834d37769036df0f2a1630c9b95161aed` completed its feature-disabled full
+benchmark with 100 valid samples and zero command errors in each required class.
+The p99 values for current write, segment write, manifest publication,
+full-generation MGET, four-lane request-window MGET, lease acquire, and lease
+release were respectively `13.557`, `19.343`, `12.462`, `71.539`, `52.040`,
+`12.644`, and `12.635` milliseconds. The `max(250 ms, 2*p99)` formula therefore
+selected provisional `250 ms` read, write, lease, and release defaults. Cleanup
+had zero errors and left zero registered synthetic keys; eviction and
+rejected-connection deltas were zero. The exact budget code must remain
+feature-disabled and pass the same full-generation and four-lane gate before
+these values are accepted. Commit `759b1946` locked those exact defaults. Its
+repeat benchmark completed 100 valid samples with zero errors per class; p99
+values for the same ordered classes were `14.963`, `20.989`, `13.548`, `75.757`,
+`47.576`, `12.664`, and `12.718` milliseconds, so every selected budget remained
+`250 ms`. Cleanup left zero registered keys and eviction/rejected-connection
+deltas were zero. The budgets are accepted and Task 9 Step 2 is complete. The
+failed v1 distribution remains diagnostic evidence and is not a budget input
+for v2.
 
 Rollback disables the prewarm feature. New readers and background cycles stop,
 and every request immediately uses the retained PR #192 scope-origin path.
