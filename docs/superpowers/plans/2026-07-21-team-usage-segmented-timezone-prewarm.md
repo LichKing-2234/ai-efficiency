@@ -77,9 +77,11 @@ implementation and review are complete. The first review corrections are
 committed in `4bf72e9b`; the exhaustive selected-reference validation correction
 is committed in `10d1e8ea`. The final independent review approved exact head
 `10d1e8ea` with zero Critical, Important, or Minor findings after both
-correction ladders passed. Task 13 is complete. The feature remains disabled,
-Task 9 Step 3 is next, production is unchanged, and `docs/architecture.md`
-remains pending until feature-enabled acceptance.
+correction ladders passed. Task 13 is complete. Task 9 Step 3 was attempted on
+2026-07-22 at staging revision 51 with two replicas, but failed the zero-Redis-
+error and one-logical-cycle gates. The flag was immediately rolled back;
+staging is healthy and disabled at revision 52, production is unchanged, Steps
+3-6 remain unchecked, and `docs/architecture.md` remains unchanged.
 
 ## Task 1 Gate Evidence
 
@@ -1098,6 +1100,35 @@ Generate a focused review package for this commit and resolve every Critical/Imp
 - [ ] **Step 3: Enable staging and wait for four valid lanes**
 
 Enable the feature only in staging with the four approved timezones. Within five seconds of the recorded readiness point, require valid current stats, both histories, today, and a publish-last manifest for every safe lane. Confirm global source concurrency never exceeds two, one logical cycle across Pods, and zero Relay/Redis error counters.
+
+  **Failed staging attempt (2026-07-22):** The exact accepted image from budget
+  commit `759b1946` was atomically enabled only in staging at Helm revision 51
+  with exactly two ready replicas and the four approved timezones. All four safe
+  schema-v2 manifests referenced current stats, history-29d, history-6d, and
+  today values that existed in Redis. Manifest creation timestamps spanned
+  `1.375s` from the first complete lane to the last, and eight bounded 7-day and
+  30-day Summary validation reads recorded `full_hit`.
+
+  The hard error and collapse gates failed before Step 4. Before those
+  validation reads, the two Pods each recorded four successful startup labels
+  and 16 successful source observations, so the runtime evidence showed two
+  source-producing Pod cycles rather than one collapsed logical startup cycle.
+  The same snapshot contained two Redis errors: one manifest-read error and one
+  lease-acquire error. It also contained one manifest-cache error and six cycle
+  errors (two historical and four recovery). Relay non-2xx/source-error,
+  validation-rejection, and Redis-pool-timeout counts were zero. During the
+  bounded validation interval, Redis lease-acquire errors increased by one and
+  recovery-cycle errors increased by four. Because the contract requires zero
+  Redis errors and one logical cycle, no concurrency inference or partial pass
+  was accepted and the three-round API acceptance did not start.
+
+  Helm rollback restored the exact revision-50 disabled selector as revision
+  52. Staging finished at one of one replicas ready on the same immutable image,
+  with the prewarm environment entries absent and live/readiness HTTP 200. The
+  tracked staging override was restored byte-for-byte with mode `0600` and has
+  no diff. Production remained healthy and unchanged at revision 69 on
+  `v0.1.0-preview.73`, with one ready replica and the flag absent. Steps 3-6
+  remain unchecked and `docs/architecture.md` was not modified.
 
 - [ ] **Step 4: Run the three sanitized acceptance rounds**
 

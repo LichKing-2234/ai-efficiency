@@ -5,10 +5,11 @@ schema-v2 zstd value encoding and request-window-scoped reads are implemented.
 Task 13's feature-disabled initial and exact-budget-code staging benchmarks each
 completed every required command class with 100 valid samples and zero errors.
 Read, write, lease, and release defaults are accepted at `250 ms` in commit
-`759b1946`. Task 9 Step 2 is complete. Feature-enabled acceptance remains next,
-the feature remains disabled by default, production is unchanged, and
-`docs/architecture.md` remains pending until the feature is accepted for
-enablement.
+`759b1946`. Task 9 Step 2 is complete. The 2026-07-22 feature-enabled staging
+attempt failed the zero-Redis-error and one-logical-cycle gates and was rolled
+back. The feature is disabled in staging and by default, production is
+unchanged, Task 9 Steps 3-6 remain incomplete, and `docs/architecture.md`
+remains unchanged.
 
 **Date:** 2026-07-21
 
@@ -968,6 +969,37 @@ Acceptance requires:
 The audit records only sanitized request/operation IDs, durations, counts,
 cache outcomes, image digest, and staging revision. It does not retain
 credentials, user lists, response bodies, or unredacted Redis values.
+
+### Failed Feature-Enabled Attempt
+
+On 2026-07-22, the accepted immutable image for commit `759b1946` was enabled
+only in staging at Helm revision 51 with two ready replicas and the exact four
+configured timezones. Four split-safe schema-v2 manifests each referenced all
+four required values. Their publish-last creation timestamps spanned `1.375s`
+from the first complete lane to the last, and eight bounded 7-day/30-day Summary
+validation reads recorded `full_hit` across the configured lanes.
+
+The attempt nevertheless failed before the three acceptance rounds. Before the
+validation reads, both Pods had independently recorded four successful startup
+labels and 16 successful source observations. The startup snapshot also held
+two Redis errors, one for manifest read and one for lease acquire, plus one
+manifest-cache error and six cycle errors. Relay non-2xx/source errors,
+validation rejections, and Redis pool timeouts were zero. During the bounded
+validation interval, the lease-acquire error count increased by one and four
+additional recovery-cycle errors were recorded. These observations violate the
+required zero-Redis-error gate and do not prove one logical cycle collapsed
+across the two Pods. Global source concurrency was therefore not accepted as a
+passing claim, even though the implementation's configured distributed limit
+remained two.
+
+The controller stopped before deleting any Team Usage Redis family or starting
+Round 1. No three-round business hash or timing was accepted. Helm rollback
+restored the exact disabled revision-50 selector as revision 52. Staging ended
+healthy with one ready replica, the same immutable image, prewarm environment
+entries absent, and HTTP 200 live/readiness. The tracked staging override was
+restored with no diff and mode `0600`. Production remained healthy and unchanged
+at revision 69 on `v0.1.0-preview.73`, with one ready replica and the feature
+flag absent.
 
 ## Rollout And Rollback
 
