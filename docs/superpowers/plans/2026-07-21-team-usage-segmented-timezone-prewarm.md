@@ -96,11 +96,11 @@ server, Team Usage, and telemetry race tests, the full backend suite,
 `go vet ./...`, and `go build ./...` passed. Independent task review found zero
 Critical, Important, or Minor issues. Step 4's exact-code feature-disabled
 benchmark passed. Step 5 then proved one startup owner and one lease-busy loser,
-but failed because the four-manifest cohort exceeded five seconds and completed
-after the loser's first scheduled tick; that tick recorded two closed
-`command_deadline` Redis failures. Staging was restored disabled at revision 56;
-the rollback duration was not retained separately. Production is unchanged, and
-Task 9 Steps 3-6 remain unchecked.
+but the four-manifest cohort exceeded five seconds and two closed
+`command_deadline` Redis failures occurred. The pre-ticker gate was not proven.
+Staging was restored disabled at revision 56; the rollback duration was not
+retained separately. Production is unchanged, and Task 9 Steps 3-6 remain
+unchecked.
 
 ## Task 1 Gate Evidence
 
@@ -1902,14 +1902,13 @@ Redis pending, wait, and timeout deltas alongside any command deadline.
 
   The timing gate failed. The first complete manifest was created at
   `12:15:42.532Z` and the last at `12:16:33.468Z`, a `50.936s` cohort rather
-  than at most five seconds. The lease-busy Pod started at `12:15:22Z`; its
-  first successful scrape at `12:15:27.600Z` already contained all four
-  `startup/lease_busy` labels, so `runStartup` and ticker construction had
-  completed by then. Its first tick was therefore due no later than
-  `12:16:27.600Z`, at least `5.868s` before the last manifest. This is a bounded
-  upper limit, not an exact ticker timestamp. The final scrape also recorded
-  moving/recovery/historical cycles and eight source observations after the
-  loser's zero-source startup. It recorded exactly two
+  than at most five seconds. The lease-busy Pod's first successful scrape at
+  `12:15:27.600Z` already contained all four `startup/lease_busy` labels, but no
+  ticker-construction or first-tick timestamp was retained. Because lifecycle
+  reporting still runs after those counters are written, the pre-ticker gate is
+  unproven. The final scrape recorded moving/recovery/historical cycles and
+  eight source observations after the loser's zero-source startup. It recorded
+  exactly two
   Redis operation errors, both closed `command_deadline` classes: one
   `lease_acquire` and one `manifest_read`. Relay non-2xx and source-error counts
   were zero. Bounded scrapes recorded zero pool pending values and zero pool

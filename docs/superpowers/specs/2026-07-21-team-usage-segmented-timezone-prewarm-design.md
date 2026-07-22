@@ -1059,11 +1059,10 @@ revision-55 replay also proved the coordinator correction: one Pod reported
 four `startup/success` labels and 16 source observations, while the other
 reported four `startup/lease_busy` labels and zero startup source observations.
 However, the four complete publish-last manifests spanned `50.936s` from first
-to last. The loser started at `12:15:22Z`, and its `12:15:27.600Z` scrape already
-contained all four startup-busy labels. Because the ticker is constructed only
-after startup returns, its first tick was due no later than `12:16:27.600Z`, at
-least `5.868s` before the last manifest. This is a bounded upper limit rather
-than an exact ticker timestamp. The final scrape recorded one `lease_acquire`
+to last. The loser's `12:15:27.600Z` scrape already contained all four startup-
+busy labels, but no ticker-construction or first-tick timestamp was retained.
+Because synchronous lifecycle reporting still follows the counter writes, the
+pre-ticker gate was not proven. The final scrape recorded one `lease_acquire`
 and one `manifest_read` Redis error, both closed class `command_deadline`.
 Bounded scrapes recorded zero pool pending and zero wait-count, wait-duration,
 and timeout deltas; this does not exclude pressure between scrapes. Relay non-
