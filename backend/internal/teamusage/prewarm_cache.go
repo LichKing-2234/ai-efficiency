@@ -519,7 +519,6 @@ func (c *PrewarmCache) publishManifestWithLeases(
 		if requestSelection != nil && prewarmOnlyUnselectedHistoryFailed(err, *requestSelection) {
 			return false, true, nil
 		}
-		c.recordRedisError("manifest_write", PrewarmRedisErrorDecodeOrReference)
 		return false, false, fmt.Errorf("validate team usage prewarm values before publication: %w", err)
 	} else if !complete {
 		missing := prewarmUnavailableReferenceIndexes(statuses, prewarmAllReferencesSelection())
@@ -699,7 +698,11 @@ func (c *PrewarmCache) waitForImmutableValue(ctx context.Context, key, claimToke
 	for {
 		existing, err := c.store.Get(waitCtx, key)
 		if err != nil {
-			c.recordRedisCommandError("immutable_write", ctx, waitCtx, err)
+			if errors.Is(err, readcache.ErrMiss) {
+				c.recordRedisError("immutable_write", PrewarmRedisErrorDecodeOrReference)
+			} else {
+				c.recordRedisCommandError("immutable_write", ctx, waitCtx, err)
+			}
 			return err
 		}
 		if bytes.Equal(existing, value) {

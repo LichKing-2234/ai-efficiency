@@ -325,7 +325,8 @@ func validTeamUsagePrewarmClass(class teamusage.PrewarmCycleClass) bool {
 
 func validTeamUsagePrewarmOutcome(outcome teamusage.PrewarmCycleOutcome) bool {
 	switch outcome {
-	case teamusage.PrewarmCycleSuccess, teamusage.PrewarmCycleError, teamusage.PrewarmCycleCanceled, teamusage.PrewarmCycleRejected:
+	case teamusage.PrewarmCycleSuccess, teamusage.PrewarmCycleError, teamusage.PrewarmCycleCanceled,
+		teamusage.PrewarmCycleRejected, teamusage.PrewarmCycleLeaseBusy:
 		return true
 	default:
 		return false

@@ -1421,6 +1421,75 @@ func TestPrewarmCacheDoesNotRecordNormalMissOrLeaseContentionAsRedisErrors(t *te
 	}
 }
 
+func TestPrewarmCachePublishRecordsReferencedReadFailureOnceAtSource(t *testing.T) {
+	tests := []struct {
+		name        string
+		wantClass   PrewarmRedisErrorClass
+		readTimeout time.Duration
+		wrapStore   func(*recordingPrewarmStore) readcache.BatchStore
+		mutate      func(*recordingPrewarmStore, PrewarmManifest)
+	}{
+		{
+			name: "command deadline", wantClass: PrewarmRedisErrorCommandDeadline, readTimeout: time.Millisecond,
+			wrapStore: func(store *recordingPrewarmStore) readcache.BatchStore {
+				return blockingMGetPrewarmStore{recordingPrewarmStore: store}
+			},
+		},
+		{
+			name: "network error", wantClass: PrewarmRedisErrorNetwork, readTimeout: 250 * time.Millisecond,
+			mutate: func(store *recordingPrewarmStore, _ PrewarmManifest) {
+				store.mgetErr = syntheticPrewarmNetworkError{}
+			},
+		},
+		{
+			name: "decode error", wantClass: PrewarmRedisErrorDecodeOrReference, readTimeout: 250 * time.Millisecond,
+			mutate: func(store *recordingPrewarmStore, manifest PrewarmManifest) {
+				store.SetRaw(manifest.History6d.Key, []byte("not-json"), historyValueTTL)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			generatedAt := testPrewarmGeneratedAt()
+			baseStore := newRecordingPrewarmStore()
+			var store readcache.BatchStore = baseStore
+			if test.wrapStore != nil {
+				store = test.wrapStore(baseStore)
+			}
+			metrics := &recordingRedisErrorMetrics{}
+			cache := mustNewPrewarmCacheWithMetrics(t, store, func() time.Time { return generatedAt }, metrics, test.readTimeout)
+			manifest := testPrewarmManifest(t, cache, testPrewarmIdentity(), generatedAt)
+			if test.mutate != nil {
+				test.mutate(baseStore, manifest)
+			}
+			metrics.Reset()
+
+			published, err := cache.PublishManifest(context.Background(), "lease", "owner", manifest)
+			if published || err == nil {
+				t.Fatalf("PublishManifest() = %v, %v, want referenced-read failure", published, err)
+			}
+			want := []redisErrorMetric{{operation: "generation_read", class: test.wantClass}}
+			if got := metrics.Classes(); !reflect.DeepEqual(got, want) {
+				t.Fatalf("referenced-read Redis error classes = %#v, want %#v", got, want)
+			}
+		})
+	}
+}
+
+func TestPrewarmCacheImmutableClaimMissRecordsDecodeOrReference(t *testing.T) {
+	metrics := &recordingRedisErrorMetrics{}
+	cache := mustNewPrewarmCacheWithMetrics(t, newRecordingPrewarmStore(), time.Now, metrics, 250*time.Millisecond)
+	err := cache.waitForImmutableValue(context.Background(), "missing-claim", "claim-token", []byte("value"))
+	if !errors.Is(err, readcache.ErrMiss) {
+		t.Fatalf("waitForImmutableValue(missing claim) error = %v, want cache miss", err)
+	}
+	want := []redisErrorMetric{{operation: "immutable_write", class: PrewarmRedisErrorDecodeOrReference}}
+	if got := metrics.Classes(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("immutable claim miss Redis error classes = %#v, want %#v", got, want)
+	}
+}
+
 func testPrewarmManifest(t *testing.T, cache *PrewarmCache, identity PrewarmCacheIdentity, generatedAt time.Time) PrewarmManifest {
 	t.Helper()
 	return testPrewarmManifestWithGeneration(t, cache, identity, generatedAt, "a")
@@ -1543,6 +1612,12 @@ func (m *recordingRedisErrorMetrics) Classes() []redisErrorMetric {
 	return append([]redisErrorMetric(nil), m.classes...)
 }
 
+func (m *recordingRedisErrorMetrics) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.classes = nil
+}
+
 func expectedRedisOperation(class string) string {
 	if class == "validation" {
 		return "lease_acquire"
@@ -1557,6 +1632,15 @@ type syntheticPrewarmNetworkError struct {
 func (e syntheticPrewarmNetworkError) Error() string   { return "synthetic network failure" }
 func (e syntheticPrewarmNetworkError) Timeout() bool   { return e.timeout }
 func (e syntheticPrewarmNetworkError) Temporary() bool { return false }
+
+type blockingMGetPrewarmStore struct {
+	*recordingPrewarmStore
+}
+
+func (s blockingMGetPrewarmStore) MGet(ctx context.Context, _ ...string) ([][]byte, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
 
 type recordingPrewarmStore struct {
 	mu             sync.Mutex

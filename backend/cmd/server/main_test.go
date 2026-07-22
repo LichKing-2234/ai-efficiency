@@ -344,6 +344,22 @@ func TestTeamUsagePrewarmBackgroundReporterUsesOnlyBoundedFields(t *testing.T) {
 	}
 }
 
+func TestTeamUsagePrewarmBackgroundReporterAcceptsLeaseBusy(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+	reporter := newTeamUsagePrewarmReporter(zap.New(core))
+	reporter.ReportPrewarmBackground(teamusage.PrewarmBackgroundEvent{
+		OperationID: strings.Repeat("b", 32), ProviderID: 7, ProviderVersion: 11,
+		Timezone: "UTC", Class: teamusage.PrewarmCycleStartup, Outcome: teamusage.PrewarmCycleLeaseBusy,
+	})
+	entries := logs.All()
+	if len(entries) != 1 {
+		t.Fatalf("lease-busy background log entries = %d, want 1", len(entries))
+	}
+	if got := entries[0].ContextMap()["outcome"]; got != string(teamusage.PrewarmCycleLeaseBusy) {
+		t.Fatalf("lease-busy background outcome = %#v, want %q", got, teamusage.PrewarmCycleLeaseBusy)
+	}
+}
+
 type stoppingRecorder struct {
 	stop func()
 }
