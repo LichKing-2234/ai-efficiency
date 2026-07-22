@@ -70,18 +70,22 @@ Task 9 Step 2 is complete after Task 13 replaced the blocked schema-v1 result
 with schema-v2 zstd values and request-window reads. Exact budget-code commit
 `759b1946` passed the final feature-disabled benchmark with 100 valid samples
 and zero errors in every required class; read, write, lease, and release budgets
-are locked at `250ms`. The feature remains disabled and Steps 3-6 have not
-started. Tasks 10 and 11 implemented schema-v2 zstd immutable values and
-request-window-scoped Redis reads in commits `2761ecaf` and `0f0ba03a`. Task 12
-implementation and review are complete. The first review corrections are
+are locked at `250ms`. Step 3 was attempted and failed; Steps 3-6 are incomplete
+and remain unchecked. Tasks 10 and 11 implemented schema-v2 zstd immutable
+values and request-window-scoped Redis reads in commits `2761ecaf` and
+`0f0ba03a`. Task 12 implementation and review are complete. The first review
+corrections are
 committed in `4bf72e9b`; the exhaustive selected-reference validation correction
 is committed in `10d1e8ea`. The final independent review approved exact head
 `10d1e8ea` with zero Critical, Important, or Minor findings after both
 correction ladders passed. Task 13 is complete. Task 9 Step 3 was attempted on
 2026-07-22 at staging revision 51 with two replicas, but failed the zero-Redis-
-error and one-logical-cycle gates. The flag was immediately rolled back;
-staging is healthy and disabled at revision 52, production is unchanged, Steps
-3-6 remain unchecked, and `docs/architecture.md` remains unchanged.
+error and one-logical-cycle gates. The hard failure was established before
+eight bounded Summary probes were run. Running those probes instead of stopping
+was a deviation from the fail-fast contract; Step 4 did not start, and rollback
+followed the probes. Staging is healthy and disabled at revision 52, production
+is unchanged, Steps 3-6 are incomplete and remain unchecked, and
+`docs/architecture.md` remains unchanged.
 
 ## Task 1 Gate Evidence
 
@@ -1106,29 +1110,36 @@ Enable the feature only in staging with the four approved timezones. Within five
   with exactly two ready replicas and the four approved timezones. All four safe
   schema-v2 manifests referenced current stats, history-29d, history-6d, and
   today values that existed in Redis. Manifest creation timestamps spanned
-  `1.375s` from the first complete lane to the last, and eight bounded 7-day and
-  30-day Summary validation reads recorded `full_hit`.
+  `1.375s` from the first complete lane to the last.
 
-  The hard error and collapse gates failed before Step 4. Before those
-  validation reads, the two Pods each recorded four successful startup labels
-  and 16 successful source observations, so the runtime evidence showed two
-  source-producing Pod cycles rather than one collapsed logical startup cycle.
-  The same snapshot contained two Redis errors: one manifest-read error and one
-  lease-acquire error. It also contained one manifest-cache error and six cycle
-  errors (two historical and four recovery). Relay non-2xx/source-error,
-  validation-rejection, and Redis-pool-timeout counts were zero. During the
-  bounded validation interval, Redis lease-acquire errors increased by one and
-  recovery-cycle errors increased by four. Because the contract requires zero
-  Redis errors and one logical cycle, no concurrency inference or partial pass
-  was accepted and the three-round API acceptance did not start.
+  Before any Summary validation probe, the snapshot already established the
+  hard failure: the two Pods each recorded four successful startup labels and
+  16 successful source observations, showing two source-producing Pod cycles
+  rather than one collapsed logical startup cycle. The same pre-validation
+  snapshot contained two Redis errors, including one lease-acquire error, and
+  six cycle errors (two historical and four recovery); the other Redis error
+  was a manifest-read error. It also contained one manifest-cache error. Relay
+  non-2xx/source-error, validation-rejection, and Redis-pool-timeout counts were
+  zero.
 
-  Helm rollback restored the exact revision-50 disabled selector as revision
-  52. Staging finished at one of one replicas ready on the same immutable image,
-  with the prewarm environment entries absent and live/readiness HTTP 200. The
-  tracked staging override was restored byte-for-byte with mode `0600` and has
-  no diff. Production remained healthy and unchanged at revision 69 on
-  `v0.1.0-preview.73`, with one ready replica and the flag absent. Steps 3-6
-  remain unchecked and `docs/architecture.md` was not modified.
+  Despite the already-conclusive Step 3 failure, eight bounded 7-day and 30-day
+  Summary probes were then executed and recorded `full_hit`. This was a process
+  deviation from the required fail-fast stop and must not be treated as Step 3
+  compliance or acceptance-round evidence. Across that interval, total Redis
+  errors increased by one, lease-acquire Redis errors increased by one, and
+  cycle errors increased by four. The post-interval totals were therefore three
+  Redis errors, including two lease-acquire errors, and ten cycle errors. Step 4
+  did not start: no Team Usage Redis family was deleted and no three-round API
+  acceptance evidence was collected.
+
+  Only after the eight probes did Helm rollback restore the exact revision-50
+  disabled selector as revision 52. Staging finished at one of one replicas
+  ready on the same immutable image, with the prewarm environment entries
+  absent and live/readiness HTTP 200. The tracked staging override was restored
+  byte-for-byte with mode `0600` and has no diff. Production remained healthy
+  and unchanged at revision 69 on `v0.1.0-preview.73`, with one ready replica and
+  the flag absent. Steps 3-6 remain incomplete and unchecked, and
+  `docs/architecture.md` was not modified.
 
 - [ ] **Step 4: Run the three sanitized acceptance rounds**
 

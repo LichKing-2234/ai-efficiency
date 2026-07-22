@@ -976,30 +976,37 @@ On 2026-07-22, the accepted immutable image for commit `759b1946` was enabled
 only in staging at Helm revision 51 with two ready replicas and the exact four
 configured timezones. Four split-safe schema-v2 manifests each referenced all
 four required values. Their publish-last creation timestamps spanned `1.375s`
-from the first complete lane to the last, and eight bounded 7-day/30-day Summary
-validation reads recorded `full_hit` across the configured lanes.
+from the first complete lane to the last.
 
-The attempt nevertheless failed before the three acceptance rounds. Before the
-validation reads, both Pods had independently recorded four successful startup
-labels and 16 successful source observations. The startup snapshot also held
-two Redis errors, one for manifest read and one for lease acquire, plus one
-manifest-cache error and six cycle errors. Relay non-2xx/source errors,
-validation rejections, and Redis pool timeouts were zero. During the bounded
-validation interval, the lease-acquire error count increased by one and four
-additional recovery-cycle errors were recorded. These observations violate the
-required zero-Redis-error gate and do not prove one logical cycle collapsed
-across the two Pods. Global source concurrency was therefore not accepted as a
+Before any Summary validation probe, the snapshot already established the hard
+Step 3 failure. Both Pods had independently recorded four successful startup
+labels and 16 successful source observations. The pre-validation totals were
+two Redis errors, including one lease-acquire error, and six cycle errors; the
+other Redis error was a manifest-read error. The snapshot also held one
+manifest-cache error. Relay non-2xx/source errors, validation rejections, and
+Redis pool timeouts were zero. These observations violated the required zero-
+Redis-error gate and did not prove one logical cycle collapsed across the two
+Pods.
+
+Despite that already-conclusive failure, eight bounded 7-day/30-day Summary
+probes were then executed and recorded `full_hit` across the configured lanes.
+Continuing with those probes instead of stopping was a process deviation from
+the fail-fast contract; the probes are not Step 3 compliance or acceptance-
+round evidence. During their interval, total Redis errors increased by one,
+lease-acquire Redis errors increased by one, and cycle errors increased by four.
+The post-interval totals were three Redis errors, including two lease-acquire
+errors, and ten cycle errors. Global source concurrency was not accepted as a
 passing claim, even though the implementation's configured distributed limit
 remained two.
 
-The controller stopped before deleting any Team Usage Redis family or starting
-Round 1. No three-round business hash or timing was accepted. Helm rollback
-restored the exact disabled revision-50 selector as revision 52. Staging ended
-healthy with one ready replica, the same immutable image, prewarm environment
-entries absent, and HTTP 200 live/readiness. The tracked staging override was
-restored with no diff and mode `0600`. Production remained healthy and unchanged
-at revision 69 on `v0.1.0-preview.73`, with one ready replica and the feature
-flag absent.
+Step 4 did not start: no Team Usage Redis family was deleted, Round 1 did not
+start, and no three-round business hash or timing was accepted. Only after the
+eight probes did Helm rollback restore the exact disabled revision-50 selector
+as revision 52. Staging ended healthy with one ready replica, the same immutable
+image, prewarm environment entries absent, and HTTP 200 live/readiness. The
+tracked staging override was restored with no diff and mode `0600`. Production
+remained healthy and unchanged at revision 69 on `v0.1.0-preview.73`, with one
+ready replica and the feature flag absent.
 
 ## Rollout And Rollback
 
