@@ -73,12 +73,14 @@ read ceiling after 15 valid samples. No command budgets were selected and no
 budget code or tests were changed. The feature remains disabled; Steps 3-6 have
 not started. Tasks 10 and 11 implemented schema-v2 zstd immutable values and
 request-window-scoped Redis reads in commits `2761ecaf` and `0f0ba03a`. Task 12
-Step 1 verification evidence is preserved below; Task 12 corrections and broad
-review are active after findings in request-scoped recovery publication,
-single-frame validation, schema-v2 tamper coverage, and status drift. Task 12
-Steps 2-3, schema-v2 command budgets, feature enablement, production rollout,
-and `docs/architecture.md` remain pending. Task 13 must repeat the
-feature-disabled staging benchmark before Task 9 may resume.
+implementation and review are complete. The first review corrections are
+committed in `4bf72e9b`; the exhaustive selected-reference validation correction
+is committed in `10d1e8ea`. The final independent review approved exact head
+`10d1e8ea` with zero Critical, Important, or Minor findings after both
+correction ladders passed. Task 13's feature-disabled staging rebenchmark is
+next. Schema-v2 command budgets remain unselected, the feature remains disabled,
+Task 9 Steps 2-6 remain unchecked, production is unchanged, and
+`docs/architecture.md` remains pending until feature-enabled acceptance.
 
 ## Task 1 Gate Evidence
 
@@ -1437,7 +1439,7 @@ Verification evidence (2026-07-22, head `0f0ba03a`):
 with no race report; and `go vet ./...`, `go build ./...`, and
 `git diff --check` all exited zero without errors.
 
-- [ ] **Step 2: Review Standards and Spec compliance**
+- [x] **Step 2: Review Standards and Spec compliance**
 
 Use the repository code-review workflow against merge-base through current HEAD.
 Review zstd decompression bounds, shared-codec concurrency, stored-vs-decoded
@@ -1445,10 +1447,32 @@ byte semantics, v1/v2 isolation, request-relative cache metrics, missing-today
 recovery, and unchanged full-generation publication. Resolve every Critical or
 Important finding with a fresh RED/GREEN cycle, then rerun Step 1.
 
-- [ ] **Step 3: Record the reviewed head and commit the local ledger**
+Review evidence (2026-07-22): the initial branch-wide review from base
+`1d3a8c6c` through head `0f0ba03a` reported two Important and two Minor
+findings. They covered request-scoped missing-today recovery being coupled to
+strict full-generation publication, stale plan/spec status, acceptance of an
+appended legal zstd frame, and schema-v2 tamper tests stopping at codec decode
+instead of their named validators. Commit `4bf72e9b` closed all four with fresh
+RED/GREEN coverage and the full Step 1 ladder. Re-review then found one
+Important first-error masking case where an unavailable unselected reference
+could hide an unavailable selected reference. Commit `10d1e8ea` made selected
+reference validation exhaustive, passed fresh RED/GREEN tests, and reran the
+full Step 1 ladder. Final independent review of exact head `10d1e8ea` reported
+zero Critical, zero Important, and zero Minor findings.
+
+- [x] **Step 3: Record the reviewed head and commit the local ledger**
 
 Update the plan status and completed checkboxes with exact commands and commit
 IDs. Keep Task 9 Steps 2-6 unchecked and do not modify `docs/architecture.md`.
+
+Ledger evidence (2026-07-22): exact reviewed implementation head
+`10d1e8eabb0221acbee027ed599c2bae05d8b7b3` includes correction commits
+`4bf72e9b7532c045de7c63d34b55e346a2d5c29a` and
+`10d1e8eabb0221acbee027ed599c2bae05d8b7b3`. Pre-commit `git diff --check`
+exited zero, and the only tracked ledger changes were this plan and the current
+design spec. Task 9 Steps 2-6 remained unchecked, command budgets remained
+unselected, the feature remained disabled, production remained unchanged, and
+`docs/architecture.md` had no diff.
 
 ```bash
 git add docs/superpowers/plans/2026-07-21-team-usage-segmented-timezone-prewarm.md \
