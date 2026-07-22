@@ -112,6 +112,14 @@ type prewarmReadSelection struct {
 	todayHour    bool
 }
 
+type prewarmReferencedValueError struct {
+	indexes []int
+	err     error
+}
+
+func (e *prewarmReferencedValueError) Error() string { return e.err.Error() }
+func (e *prewarmReferencedValueError) Unwrap() error { return e.err }
+
 func prewarmSelectionForWindow(class PrewarmWindowClass) (prewarmReadSelection, error) {
 	selection := prewarmReadSelection{currentStats: true, todayHour: true}
 	switch class {
@@ -376,29 +384,54 @@ func (c *PrewarmCache) PublishManifestWithLeases(
 	claims []PrewarmLeaseClaim,
 	manifest PrewarmManifest,
 ) (published bool, err error) {
+	published, _, err = c.publishManifestWithLeases(ctx, claims, manifest, nil)
+	return published, err
+}
+
+func (c *PrewarmCache) publishRecoveredManifestWithLeases(
+	ctx context.Context,
+	claims []PrewarmLeaseClaim,
+	manifest PrewarmManifest,
+	class PrewarmWindowClass,
+) (published bool, skipped bool, err error) {
+	selection, err := prewarmSelectionForWindow(class)
+	if err != nil {
+		return false, false, err
+	}
+	return c.publishManifestWithLeases(ctx, claims, manifest, &selection)
+}
+
+func (c *PrewarmCache) publishManifestWithLeases(
+	ctx context.Context,
+	claims []PrewarmLeaseClaim,
+	manifest PrewarmManifest,
+	requestSelection *prewarmReadSelection,
+) (published bool, skipped bool, err error) {
 	startedAt := time.Now()
 	writtenBytes := 0
 	defer func() {
 		outcome := "success"
 		if err != nil {
 			outcome = "error"
+		} else if skipped {
+			outcome = "skipped"
 		} else if !published {
 			outcome = "not_owned"
 		}
 		c.options.Metrics.RecordRedis("manifest_write", outcome, time.Since(startedAt), writtenBytes)
 	}()
 	if len(claims) == 0 || len(claims) > prewarmPublicationLeaseLimit {
-		return false, fmt.Errorf("team usage prewarm publication requires between one and %d lease claims", prewarmPublicationLeaseLimit)
+		return false, false, fmt.Errorf("team usage prewarm publication requires between one and %d lease claims", prewarmPublicationLeaseLimit)
 	}
 	leaseKeys := make([]string, len(claims))
 	tokens := make([]string, len(claims))
 	seen := make(map[string]struct{}, len(claims))
 	for index, claim := range claims {
 		if err := validatePrewarmLeaseInput(claim.Key, claim.Token, manifestTTL); err != nil {
-			return false, err
+			return false, false, err
 		}
 		if _, exists := seen[claim.Key]; exists {
-			return false, fmt.Errorf("team usage prewarm publication contains duplicate lease claim")
+			return false, false, fmt.Errorf("team usage prewarm publication contains duplicate lease claim")
 		}
 		seen[claim.Key] = struct{}{}
 		leaseKeys[index] = claim.Key
@@ -410,35 +443,76 @@ func (c *PrewarmCache) PublishManifestWithLeases(
 	}
 	now := c.now()
 	if err := validatePrewarmManifest(c.options.Namespace, identity, manifest, now, true); err != nil {
-		return false, fmt.Errorf("validate team usage prewarm manifest: %w", err)
+		return false, false, fmt.Errorf("validate team usage prewarm manifest: %w", err)
 	}
 	if err := validatePrewarmPublicationWindow(now, c.options.WriteTimeout, manifest); err != nil {
-		return false, err
+		return false, false, err
 	}
 	encoded, err := encodePrewarmJSON(manifest, prewarmManifestMaxBytes)
 	if err != nil {
-		return false, fmt.Errorf("encode team usage prewarm manifest: %w", err)
+		return false, false, fmt.Errorf("encode team usage prewarm manifest: %w", err)
 	}
 	writtenBytes = len(encoded)
-	if _, _, _, complete, err := c.readReferencedValues(ctx, manifest, now, prewarmAllReferencesSelection(), false); err != nil {
-		return false, fmt.Errorf("validate team usage prewarm values before publication: %w", err)
+	_, _, statuses, complete, err := c.readReferencedValues(ctx, manifest, now, prewarmAllReferencesSelection(), false)
+	if err != nil {
+		if requestSelection != nil && prewarmOnlyUnselectedHistoryFailed(err, *requestSelection) {
+			return false, true, nil
+		}
+		return false, false, fmt.Errorf("validate team usage prewarm values before publication: %w", err)
 	} else if !complete {
-		return false, fmt.Errorf("validate team usage prewarm values before publication: %w", readcache.ErrMiss)
+		missing := prewarmUnavailableReferenceIndexes(statuses)
+		missingErr := &prewarmReferencedValueError{indexes: missing, err: readcache.ErrMiss}
+		if requestSelection != nil && prewarmOnlyUnselectedHistoryFailed(missingErr, *requestSelection) {
+			return false, true, nil
+		}
+		return false, false, fmt.Errorf("validate team usage prewarm values before publication: %w", missingErr)
 	}
 	key, err := prewarmManifestKeyForIdentity(c.options.Namespace, prewarmCacheSchemaVersion, identity)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if err := validatePrewarmPublicationWindow(c.now(), c.options.WriteTimeout, manifest); err != nil {
-		return false, err
+		return false, false, err
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.WriteTimeout)
 	published, err = c.store.SetIfLeasesOwned(commandCtx, leaseKeys, tokens, key, encoded, manifestTTL)
 	cancel()
 	if err != nil {
-		return false, fmt.Errorf("publish team usage prewarm manifest: %w", err)
+		return false, false, fmt.Errorf("publish team usage prewarm manifest: %w", err)
 	}
-	return published, nil
+	return published, false, nil
+}
+
+func prewarmUnavailableReferenceIndexes(statuses [4]PrewarmValueStatus) []int {
+	indexes := make([]int, 0, len(statuses))
+	for index, status := range statuses {
+		if status != PrewarmValueFresh && status != PrewarmValueStale {
+			indexes = append(indexes, index)
+		}
+	}
+	return indexes
+}
+
+func prewarmOnlyUnselectedHistoryFailed(err error, selection prewarmReadSelection) bool {
+	var referencedValueErr *prewarmReferencedValueError
+	if !errors.As(err, &referencedValueErr) || len(referencedValueErr.indexes) == 0 {
+		return false
+	}
+	for _, index := range referencedValueErr.indexes {
+		switch index {
+		case 1:
+			if selection.history29d {
+				return false
+			}
+		case 2:
+			if selection.history6d {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (c *PrewarmCache) LeaseKey(kind string, dimensions ...string) string {
@@ -627,11 +701,15 @@ func (c *PrewarmCache) readReferencedValues(
 		var decoded PrewarmCurrentStatsEnvelope
 		if err := decodePrewarmStoredJSON(valuesByReference[0], prewarmCurrentStatsMaxBytes, &decoded); err != nil {
 			cacheOutcomes[0] = PrewarmCacheInvalid
-			return nil, PrewarmSegmentSet{}, statuses, false, fmt.Errorf("decode team usage prewarm current stats: %w", err)
+			return nil, PrewarmSegmentSet{}, statuses, false, &prewarmReferencedValueError{
+				indexes: []int{0}, err: fmt.Errorf("decode team usage prewarm current stats: %w", err),
+			}
 		}
 		if err := validatePrewarmCurrentStatsReference(c.options.Namespace, manifest.CurrentStats, decoded, len(valuesByReference[0]), now); err != nil {
 			cacheOutcomes[0] = PrewarmCacheInvalid
-			return nil, PrewarmSegmentSet{}, statuses, false, fmt.Errorf("validate team usage prewarm current stats: %w", err)
+			return nil, PrewarmSegmentSet{}, statuses, false, &prewarmReferencedValueError{
+				indexes: []int{0}, err: fmt.Errorf("validate team usage prewarm current stats: %w", err),
+			}
 		}
 		current = &decoded
 	}
@@ -650,7 +728,9 @@ func (c *PrewarmCache) readReferencedValues(
 				continue
 			}
 			cacheOutcomes[statusIndex] = PrewarmCacheInvalid
-			return nil, PrewarmSegmentSet{}, statuses, false, fmt.Errorf("decode team usage prewarm %s: %w", ref.Class, err)
+			return nil, PrewarmSegmentSet{}, statuses, false, &prewarmReferencedValueError{
+				indexes: []int{statusIndex}, err: fmt.Errorf("decode team usage prewarm %s: %w", ref.Class, err),
+			}
 		}
 		if err := validatePrewarmSegmentReference(c.options.Namespace, ref, segment, len(valuesByReference[statusIndex]), now); err != nil {
 			if allowInvalidToday && ref.Class == SegmentTodayHour {
@@ -659,7 +739,9 @@ func (c *PrewarmCache) readReferencedValues(
 				continue
 			}
 			cacheOutcomes[statusIndex] = PrewarmCacheInvalid
-			return nil, PrewarmSegmentSet{}, statuses, false, fmt.Errorf("validate team usage prewarm %s: %w", ref.Class, err)
+			return nil, PrewarmSegmentSet{}, statuses, false, &prewarmReferencedValueError{
+				indexes: []int{statusIndex}, err: fmt.Errorf("validate team usage prewarm %s: %w", ref.Class, err),
+			}
 		}
 		segments[index] = &segment
 	}

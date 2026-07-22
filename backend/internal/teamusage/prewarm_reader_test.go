@@ -176,9 +176,9 @@ func TestPrewarmReaderTamperedRosterDigestSelectsExactFallback(t *testing.T) {
 	result := readPrewarmResult(t, cache, identity)
 	tampered := *result.CurrentStats
 	tampered.RosterDigest = strings.Repeat("f", 64)
-	encodedCurrent, err := encodePrewarmJSON(tampered, prewarmCurrentStatsMaxBytes)
+	encodedCurrent, err := encodePrewarmStoredJSON(tampered, prewarmCurrentStatsMaxBytes, prewarmCurrentStatsMaxBytes)
 	if err != nil {
-		t.Fatalf("encodePrewarmJSON(tampered current) error = %v", err)
+		t.Fatalf("encodePrewarmStoredJSON(tampered current) error = %v", err)
 	}
 	server.Set(manifest.CurrentStats.Key, string(encodedCurrent))
 	server.SetTTL(manifest.CurrentStats.Key, movingValueTTL)
@@ -206,6 +206,9 @@ func TestPrewarmReaderTamperedRosterDigestSelectsExactFallback(t *testing.T) {
 	})
 	if err == nil || origin != nil || outcome != PrewarmReadFallback {
 		t.Fatalf("tampered roster digest = %#v/%q/%v, want exact fallback signal", origin, outcome, err)
+	}
+	if !strings.Contains(err.Error(), "prewarm current stats roster digest does not match stats") {
+		t.Fatalf("tampered roster digest error = %v, want roster validator", err)
 	}
 }
 
@@ -427,6 +430,101 @@ func TestPrewarmPartialTodayFetchesOnlyTodayThroughSharedLimiterAndPublishes(t *
 	}
 	if limiter.calls.Load() != 1 {
 		t.Fatalf("second request reused a completed Pod value/source: calls=%d, want Redis-only hit", limiter.calls.Load())
+	}
+}
+
+func TestPrewarmPartialTodayComposesWhenUnselectedHistoryIsUnavailable(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		params        OverviewParams
+		unselectedRef func(PrewarmManifest) PrewarmValueReference
+	}{
+		{
+			name:   "today",
+			params: OverviewParams{StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC"},
+			unselectedRef: func(manifest PrewarmManifest) PrewarmValueReference {
+				return manifest.History29d
+			},
+		},
+		{
+			name:   "7d",
+			params: prewarmReader7dParams(),
+			unselectedRef: func(manifest PrewarmManifest) PrewarmValueReference {
+				return manifest.History29d
+			},
+		},
+		{
+			name: "30d",
+			params: OverviewParams{
+				StartDate: "2026-06-22", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC",
+			},
+			unselectedRef: func(manifest PrewarmManifest) PrewarmValueReference {
+				return manifest.History6d
+			},
+		},
+	}
+	for _, test := range tests {
+		for _, damage := range []string{"deleted", "corrupt"} {
+			t.Run(test.name+"/"+damage, func(t *testing.T) {
+				cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
+				identity := testPrewarmIdentity()
+				manifest := seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101})
+				server.Del(manifest.TodayHour.Key)
+				unselected := test.unselectedRef(manifest)
+				if damage == "deleted" {
+					server.Del(unselected.Key)
+				} else {
+					server.Set(unselected.Key, "corrupt-zstd-frame")
+					server.SetTTL(unselected.Key, historyValueTTL)
+				}
+
+				limiter := &readerSourceLimiter{}
+				reader := mustPrewarmReader(t, cache, limiter, PrewarmReaderOptions{
+					Timezones: []string{"UTC"}, Now: func() time.Time { return now },
+					NewToken:        func() string { return strings.Repeat("a", 64) },
+					NewGenerationID: func() string { return strings.Repeat("b", 64) },
+				})
+				provider := &prewarmReaderProvider{
+					fakeRelayProvider: &fakeRelayProvider{},
+					trendResult: relay.ProviderWideTrendResult{
+						Coverage: relay.TeamMemberTrendParams{
+							StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC",
+						},
+						Points: []relay.ProviderWideTrendPoint{
+							{UserID: 101, Date: "2026-07-21 08:00", ActualCost: 2, TotalTokens: int64Ptr(20)},
+						},
+						ResponseBytes: 64, PointCount: 1, UniqueUserCount: 1, Complete: true,
+					},
+				}
+
+				origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
+					ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
+					Params: test.params, AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
+				})
+				if err != nil || outcome != PrewarmReadPartialToday || origin == nil {
+					t.Fatalf("ReadAuthorizedOrigin(%s, %s unselected history) = %#v/%q/%v, want request-scoped recovery", test.name, damage, origin, outcome, err)
+				}
+				if limiter.calls.Load() != 1 || provider.trendCalls.Load() != 1 {
+					t.Fatalf("request-scoped source calls = limiter %d/provider %d, want one today call", limiter.calls.Load(), provider.trendCalls.Load())
+				}
+				manifestKey, keyErr := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, identity)
+				if keyErr != nil {
+					t.Fatalf("prewarmManifestKeyForIdentity() error = %v", keyErr)
+				}
+				encodedManifest, getErr := server.Get(manifestKey)
+				if getErr != nil {
+					t.Fatalf("get stored manifest error = %v", getErr)
+				}
+				var storedManifest PrewarmManifest
+				if decodeErr := decodePrewarmJSON([]byte(encodedManifest), prewarmManifestMaxBytes, &storedManifest); decodeErr != nil {
+					t.Fatalf("decode stored manifest error = %v", decodeErr)
+				}
+				if storedManifest.TodayHour != manifest.TodayHour {
+					t.Fatalf("incomplete full generation was published: today ref = %#v, want original %#v", storedManifest.TodayHour, manifest.TodayHour)
+				}
+			})
+		}
 	}
 }
 

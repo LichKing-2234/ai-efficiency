@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/klauspost/compress/zstd"
 )
 
 func TestPrewarmStoredJSONRoundTripAndCorruption(t *testing.T) {
@@ -28,6 +29,13 @@ func TestPrewarmStoredJSONRoundTripAndCorruption(t *testing.T) {
 
 	checksumCorrupted := append([]byte(nil), encoded...)
 	checksumCorrupted[len(checksumCorrupted)-1] ^= 0xff
+	emptyEncoder, err := zstd.NewWriter(nil, zstd.WithZeroFrames(true))
+	if err != nil {
+		t.Fatalf("create empty-frame encoder error = %v", err)
+	}
+	t.Cleanup(func() { emptyEncoder.Close() })
+	emptyFrame := emptyEncoder.EncodeAll(nil, nil)
+	skippableFrame := []byte{0x50, 0x2a, 0x4d, 0x18, 0, 0, 0, 0}
 	corrupted := []struct {
 		name  string
 		value []byte
@@ -35,6 +43,8 @@ func TestPrewarmStoredJSONRoundTripAndCorruption(t *testing.T) {
 		{name: "checksum", value: checksumCorrupted},
 		{name: "truncated", value: encoded[:len(encoded)-1]},
 		{name: "appended", value: append(append([]byte(nil), encoded...), 0xff)},
+		{name: "appended empty frame", value: append(append([]byte(nil), encoded...), emptyFrame...)},
+		{name: "appended skippable frame", value: append(append([]byte(nil), encoded...), skippableFrame...)},
 	}
 	for _, test := range corrupted {
 		t.Run(test.name, func(t *testing.T) {

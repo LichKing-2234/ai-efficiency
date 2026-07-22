@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/klauspost/compress/zstd"
@@ -59,6 +60,9 @@ func decodePrewarmStoredJSON(encoded []byte, decodedLimit int, destination any) 
 	if len(encoded) == 0 || len(encoded) >= decodedLimit {
 		return fmt.Errorf("compressed value is empty or reached strict %d-byte limit", decodedLimit)
 	}
+	if err := validateSinglePrewarmZstdFrame(encoded); err != nil {
+		return err
+	}
 	codec, err := prewarmStoredCodec()
 	if err != nil {
 		return err
@@ -72,6 +76,51 @@ func decodePrewarmStoredJSON(encoded []byte, decodedLimit int, destination any) 
 	}
 	if err := decodePrewarmJSON(decoded, decodedLimit, destination); err != nil {
 		return fmt.Errorf("decode prewarm stored JSON: %w", err)
+	}
+	return nil
+}
+
+func validateSinglePrewarmZstdFrame(encoded []byte) error {
+	var header zstd.Header
+	if err := header.Decode(encoded); err != nil {
+		return fmt.Errorf("decode prewarm zstd frame header: %w", err)
+	}
+	if header.Skippable {
+		return fmt.Errorf("prewarm stored JSON must use one non-skippable zstd frame")
+	}
+	offset := header.HeaderSize
+	for {
+		if len(encoded)-offset < 3 {
+			return fmt.Errorf("decode prewarm zstd frame blocks: %w", io.ErrUnexpectedEOF)
+		}
+		blockHeader := uint32(encoded[offset]) | uint32(encoded[offset+1])<<8 | uint32(encoded[offset+2])<<16
+		offset += 3
+		lastBlock := blockHeader&1 != 0
+		blockType := (blockHeader >> 1) & 3
+		blockSize := int(blockHeader >> 3)
+		switch blockType {
+		case 0, 2:
+		case 1:
+			blockSize = 1
+		default:
+			return fmt.Errorf("decode prewarm zstd frame blocks: reserved block type")
+		}
+		if blockSize > len(encoded)-offset {
+			return fmt.Errorf("decode prewarm zstd frame blocks: %w", io.ErrUnexpectedEOF)
+		}
+		offset += blockSize
+		if lastBlock {
+			break
+		}
+	}
+	if header.HasCheckSum {
+		if len(encoded)-offset < 4 {
+			return fmt.Errorf("decode prewarm zstd frame checksum: %w", io.ErrUnexpectedEOF)
+		}
+		offset += 4
+	}
+	if offset != len(encoded) {
+		return fmt.Errorf("prewarm stored JSON contains more than one zstd frame")
 	}
 	return nil
 }

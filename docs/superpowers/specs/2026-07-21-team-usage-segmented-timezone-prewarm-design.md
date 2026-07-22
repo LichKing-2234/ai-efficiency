@@ -3,11 +3,12 @@
 **Status:** Initial implementation and branch-wide review completed. The exact
 reviewed image completed its feature-disabled staging rollout. A package-native,
 runtime-local synthetic Redis benchmark then hit a real two-second timeout in
-the four-lane maximum-safe MGET workload. The approved follow-up design uses
-schema-v2 zstd value encoding and request-window-scoped reads, but that follow-up
-is not implemented yet. No command budgets have been selected or implemented,
-feature-enabled acceptance remains blocked, the feature remains disabled by
-default, and production is unchanged.
+the four-lane maximum-safe MGET workload. The approved schema-v2 zstd value
+encoding and request-window-scoped reads are implemented. Task 12 corrections
+and broad review are active. No command budgets have been selected or
+implemented, feature-enabled acceptance remains blocked, the feature remains
+disabled by default, production is unchanged, and `docs/architecture.md`
+remains pending until the feature is accepted for enablement.
 
 **Date:** 2026-07-21
 
@@ -499,6 +500,14 @@ validates and composes that request-scoped value with the cached history. It
 must never refetch `history_6d` or `history_29d` in this partial path. A
 token-protected lease and in-flight coordination may collapse the fetch and may
 publish a new complete manifest, but no completed value remains in Pod memory.
+The recovered request-scoped value is successful independently of that optional
+publication when a history reference not selected by the request is missing,
+or invalid. In that case publish-last validation still rejects the
+incomplete full generation, the previous manifest remains in place for the
+background full-generation repair path, and the request composes from only its
+already validated selected values. Redis command failures, lease loss, and any
+failure in a selected value or required publication remain exact-fallback
+conditions with their existing Redis/source classification.
 
 The request uses PR #192's exact scope-origin path for all of these cases:
 
@@ -513,7 +522,8 @@ The request uses PR #192's exact scope-origin path for all of these cases:
 - a currently authorized Relay ID is absent from the validated complete
   directory/current-stats roster;
 - the source-label composition or unique-user union fails validation;
-- Redis read, write, pool, lease, decode, or timeout behavior fails;
+- Redis read, write, pool, lease, decode, or timeout behavior required by the
+  selected read, recovery, or an otherwise eligible publication fails;
 - Relay fails during the partial-today fetch; or
 - caller cancellation, stale provider version, or stale scope prevents safe
   publication or projection.
@@ -865,10 +875,12 @@ identities only. Required tests cover:
   absent from Redis and `SerializedBytes` equal to the stored frame length;
 - exact rejection boundaries for oversized input JSON, oversized compressed
   output, expanded output, corrupt or truncated frames, checksum failures,
-  trailing bytes, and decoder memory/window limits;
+  trailing bytes, appended legal empty or skippable frames, and decoder
+  memory/window limits;
 - v2 key isolation with no v1 compatibility read or migration;
 - today, 7d, and 30d request MGET key selection, request-relative completeness,
-  missing-today recovery, and no cache metric for an unselected history segment;
+  missing-today recovery with deleted or corrupt unselected history, and no
+  cache metric for an unselected history segment;
 - full four-reference background and publish-last validation through compressed
   values;
 - token-checked multi-Pod lease collapse and skipped overlapping ticks;

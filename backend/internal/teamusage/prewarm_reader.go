@@ -204,7 +204,7 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		prewarmTimezoneDigest(identity.Timezone), identity.AnchorDate, string(SegmentTodayHour),
 	}, ":")
 	today, err := r.flights.Do(ctx, flightKey, prewarmPartialTodayTimeout, func(flightCtx context.Context) (PrewarmTrendSegment, error) {
-		return r.recoverToday(flightCtx, request, identity, result)
+		return r.recoverToday(flightCtx, request, identity, result, window.Class)
 	})
 	if err != nil {
 		fallbackReason = prewarmFallbackReasonForError(err)
@@ -274,6 +274,7 @@ func (r *PrewarmReader) recoverToday(
 	request PrewarmReadRequest,
 	identity PrewarmCacheIdentity,
 	result *PrewarmCacheResult,
+	class PrewarmWindowClass,
 ) (today PrewarmTrendSegment, err error) {
 	leaseKey := prewarmSegmentLeaseKey(r.cache, ProviderBinding{
 		ProviderID: identity.ProviderID, ProviderVersion: identity.ProviderVersion, Provider: request.Provider,
@@ -318,11 +319,13 @@ func (r *PrewarmReader) recoverToday(
 	}
 	manifest := newPrewarmManifestCandidate(identity, result, r.now())
 	manifest.TodayHour = todayRef
-	published, err := r.cache.PublishManifestWithLeases(ctx, []PrewarmLeaseClaim{{Key: leaseKey, Token: token}}, manifest)
+	published, skipped, err := r.cache.publishRecoveredManifestWithLeases(
+		ctx, []PrewarmLeaseClaim{{Key: leaseKey, Token: token}}, manifest, class,
+	)
 	if err != nil {
 		return PrewarmTrendSegment{}, wrapPrewarmRequestFailure("redis_error", fmt.Errorf("publish recovered request today manifest: %w", err))
 	}
-	if !published {
+	if !published && !skipped {
 		return PrewarmTrendSegment{}, wrapPrewarmRequestFailure("redis_error", errPrewarmLeaseLost)
 	}
 	return today, nil

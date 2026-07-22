@@ -393,6 +393,27 @@ func TestPrewarmCacheReadWindowRejectsInvalidClassBeforeRedis(t *testing.T) {
 	}
 }
 
+func TestPrewarmCacheStrictPublicationStillRequiresEveryHistoryReference(t *testing.T) {
+	generatedAt := testPrewarmGeneratedAt()
+	for _, damage := range []string{"deleted", "corrupt"} {
+		t.Run(damage, func(t *testing.T) {
+			cache, server := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
+			manifest := testPrewarmManifest(t, cache, testPrewarmIdentity(), generatedAt)
+			if damage == "deleted" {
+				server.Del(manifest.History29d.Key)
+			} else {
+				server.Set(manifest.History29d.Key, "corrupt-zstd-frame")
+				server.SetTTL(manifest.History29d.Key, historyValueTTL)
+			}
+
+			published, err := cache.PublishManifest(context.Background(), "lease", "owner", manifest)
+			if err == nil || published {
+				t.Fatalf("PublishManifest(%s history) = %v, %v, want strict publish-last rejection", damage, published, err)
+			}
+		})
+	}
+}
+
 func TestPrewarmCacheGenerationLimitCountsTrendSegmentsOnly(t *testing.T) {
 	generatedAt := testPrewarmGeneratedAt()
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
@@ -917,12 +938,23 @@ func TestPrewarmCacheReadReturnsPartialForInvalidOrHardExpiredToday(t *testing.T
 			prepare: func(t *testing.T, _ *PrewarmCache, server *miniredis.Miniredis, manifest *PrewarmManifest, _ *time.Time) {
 				value := testPrewarmSegment(t, identity, generatedAt, SegmentTodayHour, "d")
 				value.ProviderVersion++
-				encoded, err := json.Marshal(value)
+				encoded, err := encodePrewarmStoredJSON(value, prewarmSegmentMaxBytes, prewarmSegmentMaxBytes)
 				if err != nil {
 					t.Fatalf("encode mismatched today error = %v", err)
 				}
 				server.Set(manifest.TodayHour.Key, string(encoded))
 				server.SetTTL(manifest.TodayHour.Key, movingValueTTL)
+				manifest.TodayHour.SerializedBytes = len(encoded)
+				manifestKey, keyErr := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, identity)
+				if keyErr != nil {
+					t.Fatalf("prewarmManifestKeyForIdentity() error = %v", keyErr)
+				}
+				encodedManifest, encodeErr := encodePrewarmJSON(*manifest, prewarmManifestMaxBytes)
+				if encodeErr != nil {
+					t.Fatalf("encodePrewarmJSON(updated manifest) error = %v", encodeErr)
+				}
+				server.Set(manifestKey, string(encodedManifest))
+				server.SetTTL(manifestKey, manifestTTL)
 			},
 		},
 		{

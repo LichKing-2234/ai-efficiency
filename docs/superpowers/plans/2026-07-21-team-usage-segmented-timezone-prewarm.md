@@ -71,10 +71,14 @@ five write/manifest/lease operations completed 100 samples each without error,
 but the four-lane maximum-safe MGET workload timed out under the locked two-second
 read ceiling after 15 valid samples. No command budgets were selected and no
 budget code or tests were changed. The feature remains disabled; Steps 3-6 have
-not started. The approved blocker follow-up is committed in design commit
-`35273163`: Tasks 10-13 will add schema-v2 zstd immutable values, select only the
-request window's Redis references, run the full local verification/review gate,
-and repeat the feature-disabled staging benchmark before Task 9 may resume.
+not started. Tasks 10 and 11 implemented schema-v2 zstd immutable values and
+request-window-scoped Redis reads in commits `2761ecaf` and `0f0ba03a`. Task 12
+Step 1 verification evidence is preserved below; Task 12 corrections and broad
+review are active after findings in request-scoped recovery publication,
+single-frame validation, schema-v2 tamper coverage, and status drift. Task 12
+Steps 2-3, schema-v2 command budgets, feature enablement, production rollout,
+and `docs/architecture.md` remain pending. Task 13 must repeat the
+feature-disabled staging benchmark before Task 9 may resume.
 
 ## Task 1 Gate Evidence
 
@@ -1408,7 +1412,7 @@ git commit -m "perf(teamusage): scope prewarm reads by window"
 - Consumes: Task 10 schema-v2 codec and Task 11 window-scoped reader.
 - Produces: one reviewed exact branch head eligible for a new feature-disabled staging image.
 
-- [ ] **Step 1: Run the full local verification ladder**
+- [x] **Step 1: Run the full local verification ladder**
 
 ```bash
 cd backend
@@ -1424,6 +1428,14 @@ git diff --check
 
 Expected: every command exits zero with no test failure, race report, vet error,
 build error, or whitespace error.
+
+Verification evidence (2026-07-22, head `0f0ba03a`):
+`gofmt -w internal/teamusage` produced no diff;
+`go test ./internal/teamusage -count=1` passed (`22.527s`);
+`go test ./... -count=1` passed (including `internal/teamusage` at `44.032s`);
+`go test -race ./internal/teamusage ./cmd/server -count=1` passed both packages
+with no race report; and `go vet ./...`, `go build ./...`, and
+`git diff --check` all exited zero without errors.
 
 - [ ] **Step 2: Review Standards and Spec compliance**
 
