@@ -163,7 +163,7 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		ProviderID: request.ProviderID, ProviderVersion: request.ProviderVersion,
 		Timezone: window.Coverage.Timezone, AnchorDate: window.AnchorDate,
 	}
-	result, found, err := r.cache.Read(ctx, identity)
+	result, found, err := r.cache.ReadWindow(ctx, identity, window.Class)
 	if err != nil {
 		fallbackReason = "redis_error"
 		return nil, PrewarmReadFallback, err
@@ -185,7 +185,7 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		r.metrics.RecordQuantity(PrewarmQuantityUnionUsers, window.Coverage.Timezone, unionUsers)
 		return origin, PrewarmReadFullHit, nil
 	}
-	if !prewarmResultCanRecoverToday(result) {
+	if !prewarmResultCanRecoverToday(result, window.Class) {
 		fallbackReason = "generation_invalid"
 		return nil, PrewarmReadFallback, nil
 	}
@@ -242,14 +242,27 @@ func prewarmCurrentRosterCoversAuthorized(current PrewarmCurrentStatsEnvelope, a
 	return true, nil
 }
 
-func prewarmResultCanRecoverToday(result *PrewarmCacheResult) bool {
-	if result == nil || result.CurrentStats == nil || result.Segments.History29d == nil || result.Segments.History6d == nil {
+func prewarmResultCanRecoverToday(result *PrewarmCacheResult, class PrewarmWindowClass) bool {
+	if result == nil || result.CurrentStats == nil {
 		return false
 	}
 	available := func(status PrewarmValueStatus) bool {
 		return status == PrewarmValueFresh || status == PrewarmValueStale
 	}
-	if !available(result.CurrentStatsStatus) || !available(result.History29dStatus) || !available(result.History6dStatus) {
+	if !available(result.CurrentStatsStatus) {
+		return false
+	}
+	switch class {
+	case PrewarmWindowToday:
+	case PrewarmWindow7d:
+		if result.Segments.History6d == nil || !available(result.History6dStatus) {
+			return false
+		}
+	case PrewarmWindow30d:
+		if result.Segments.History29d == nil || !available(result.History29dStatus) {
+			return false
+		}
+	default:
 		return false
 	}
 	return result.TodayHourStatus == PrewarmValueMissing || result.TodayHourStatus == PrewarmValueInvalid ||

@@ -53,6 +53,121 @@ func TestPrewarmReaderFullHitFiltersAuthorizedRosterAndUsesSparseZero(t *testing
 	}
 }
 
+func TestPrewarmReaderWindowSelectionUsesExactCacheReferences(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name   string
+		params OverviewParams
+		want   func(PrewarmManifest) []string
+	}{
+		{
+			name:   "today",
+			params: OverviewParams{StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC"},
+			want: func(manifest PrewarmManifest) []string {
+				return []string{manifest.CurrentStats.Key, manifest.TodayHour.Key}
+			},
+		},
+		{
+			name:   "7d",
+			params: prewarmReader7dParams(),
+			want: func(manifest PrewarmManifest) []string {
+				return []string{manifest.CurrentStats.Key, manifest.History6d.Key, manifest.TodayHour.Key}
+			},
+		},
+		{
+			name:   "30d",
+			params: OverviewParams{StartDate: "2026-06-22", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC"},
+			want: func(manifest PrewarmManifest) []string {
+				return []string{manifest.CurrentStats.Key, manifest.History29d.Key, manifest.TodayHour.Key}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := newRecordingPrewarmStore()
+			cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+			manifest := seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), now, []int64{101})
+			reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
+				Timezones: []string{"UTC"}, Now: func() time.Time { return now },
+			})
+			provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
+
+			origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
+				ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
+				Params: test.params, AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
+			})
+			if err != nil || outcome != PrewarmReadFullHit || origin == nil {
+				t.Fatalf("ReadAuthorizedOrigin(%s) = %#v/%q/%v, want full hit", test.name, origin, outcome, err)
+			}
+			if got := store.LastMGet(); !reflect.DeepEqual(got, test.want(manifest)) {
+				t.Fatalf("ReadAuthorizedOrigin(%s) MGET keys = %#v, want %#v", test.name, got, test.want(manifest))
+			}
+		})
+	}
+}
+
+func TestPrewarmReaderWindowSelectionRecoveryUsesOnlySelectedStaticPrerequisites(t *testing.T) {
+	current := &PrewarmCurrentStatsEnvelope{}
+	history29d := &PrewarmTrendSegment{}
+	history6d := &PrewarmTrendSegment{}
+	tests := []struct {
+		name   string
+		class  PrewarmWindowClass
+		result *PrewarmCacheResult
+	}{
+		{
+			name:  "today",
+			class: PrewarmWindowToday,
+			result: &PrewarmCacheResult{
+				CurrentStats: current, CurrentStatsStatus: PrewarmValueStale,
+				TodayHourStatus: PrewarmValueMissing,
+			},
+		},
+		{
+			name:  "7d",
+			class: PrewarmWindow7d,
+			result: &PrewarmCacheResult{
+				CurrentStats: current, CurrentStatsStatus: PrewarmValueStale,
+				Segments: PrewarmSegmentSet{History6d: history6d}, History6dStatus: PrewarmValueStale,
+				TodayHourStatus: PrewarmValueInvalid,
+			},
+		},
+		{
+			name:  "30d",
+			class: PrewarmWindow30d,
+			result: &PrewarmCacheResult{
+				CurrentStats: current, CurrentStatsStatus: PrewarmValueStale,
+				Segments: PrewarmSegmentSet{History29d: history29d}, History29dStatus: PrewarmValueStale,
+				TodayHourStatus: PrewarmValueHardExpired,
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if !prewarmResultCanRecoverToday(test.result, test.class) {
+				t.Fatalf("prewarmResultCanRecoverToday(%s) = false, want selected prerequisites only", test.class)
+			}
+			withoutCurrent := *test.result
+			withoutCurrent.CurrentStats = nil
+			if prewarmResultCanRecoverToday(&withoutCurrent, test.class) {
+				t.Fatalf("prewarmResultCanRecoverToday(%s, missing current) = true", test.class)
+			}
+			withoutSelectedHistory := *test.result
+			switch test.class {
+			case PrewarmWindow7d:
+				withoutSelectedHistory.Segments.History6d = nil
+			case PrewarmWindow30d:
+				withoutSelectedHistory.Segments.History29d = nil
+			default:
+				return
+			}
+			if prewarmResultCanRecoverToday(&withoutSelectedHistory, test.class) {
+				t.Fatalf("prewarmResultCanRecoverToday(%s, missing selected history) = true", test.class)
+			}
+		})
+	}
+}
+
 func TestPrewarmReaderTamperedRosterDigestSelectsExactFallback(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })

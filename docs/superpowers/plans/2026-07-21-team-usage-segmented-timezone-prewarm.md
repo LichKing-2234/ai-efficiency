@@ -1273,7 +1273,7 @@ git commit -m "perf(teamusage): compress prewarm Redis values"
 - Consumes: schema-v2 compressed immutable values from Task 10 and existing `PrewarmWindowClass` recognition.
 - Produces: `(*PrewarmCache).ReadWindow(context.Context, PrewarmCacheIdentity, PrewarmWindowClass) (*PrewarmCacheResult, bool, error)` while preserving full `Read` for lifecycle and publication validation.
 
-- [ ] **Step 1: Write RED key-selection and relative-completeness tests**
+- [x] **Step 1: Write RED key-selection and relative-completeness tests**
 
 Use `recordingPrewarmStore.LastMGet()` to require the exact key order:
 
@@ -1300,7 +1300,7 @@ complete request-relative result with no unselected cache-outcome metric. Delete
 the selected history value and require an incomplete result. Prove ordinary
 `Read` still MGETs all four references and detects that missing/corrupt value.
 
-- [ ] **Step 2: Run RED cache tests**
+- [x] **Step 2: Run RED cache tests**
 
 ```bash
 cd backend
@@ -1310,7 +1310,7 @@ go test ./internal/teamusage -run 'PrewarmCacheReadWindow|PrewarmReaderWindowSel
 Expected: compile failure because `ReadWindow` does not exist and the reader
 still calls full `Read`.
 
-- [ ] **Step 3: Implement an explicit internal selection model**
+- [x] **Step 3: Implement an explicit internal selection model**
 
 Keep one manifest GET and one selected-value MGET:
 
@@ -1341,7 +1341,7 @@ Refactor full `Read` through an all-reference selection and add `ReadWindow`.
 `readReferencedValues` must build keys, statuses, decode work, completeness, and
 cache metrics only from selected references while preserving manifest order.
 
-- [ ] **Step 4: Make request-time recovery window-relative**
+- [x] **Step 4: Make request-time recovery window-relative**
 
 Change the reader call and recovery predicate:
 
@@ -1370,7 +1370,7 @@ func prewarmResultCanRecoverToday(result *PrewarmCacheResult, class PrewarmWindo
 Retain fresh/stale eligibility for current stats and the selected history.
 Do not weaken authorization, point validation, or composition validation.
 
-- [ ] **Step 5: Run GREEN, equivalence, and race tests**
+- [x] **Step 5: Run GREEN, equivalence, and race tests**
 
 ```bash
 cd backend
@@ -1385,7 +1385,7 @@ go test -race ./internal/teamusage -run 'PrewarmCacheReadWindow|PrewarmReader|Pr
 Expected: selected tests pass, public Team Usage DTO equivalence stays exact,
 and race reports remain empty.
 
-- [ ] **Step 6: Commit the request-read unit**
+- [x] **Step 6: Commit the request-read unit**
 
 ```bash
 git add backend/internal/teamusage/prewarm_cache.go \

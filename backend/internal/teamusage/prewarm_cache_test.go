@@ -191,6 +191,208 @@ func TestPrewarmCacheMetricsRecordDistinctManifestCurrentAndSegmentOutcomes(t *t
 	}
 }
 
+func TestPrewarmCacheReadWindowSelectsExactReferencesAndRelativeCompleteness(t *testing.T) {
+	generatedAt := testPrewarmGeneratedAt()
+	identity := testPrewarmIdentity()
+	tests := []struct {
+		name       string
+		class      PrewarmWindowClass
+		want       func(PrewarmManifest) []string
+		unselected func(PrewarmManifest) []PrewarmValueReference
+		wantResult func(*PrewarmCacheResult) bool
+		wantCaches []prewarmCacheMetric
+	}{
+		{
+			name:  "today",
+			class: PrewarmWindowToday,
+			want: func(m PrewarmManifest) []string {
+				return []string{m.CurrentStats.Key, m.TodayHour.Key}
+			},
+			unselected: func(m PrewarmManifest) []PrewarmValueReference {
+				return []PrewarmValueReference{m.History29d, m.History6d}
+			},
+			wantResult: func(result *PrewarmCacheResult) bool {
+				return result.CurrentStats != nil && result.Segments.History29d == nil &&
+					result.Segments.History6d == nil && result.Segments.TodayHour != nil &&
+					result.History29dStatus == "" && result.History6dStatus == ""
+			},
+			wantCaches: []prewarmCacheMetric{
+				{cache: PrewarmCacheCurrentStats, outcome: PrewarmCacheFresh},
+				{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
+				{cache: PrewarmCacheManifest, outcome: PrewarmCacheFresh},
+			},
+		},
+		{
+			name:  "7d",
+			class: PrewarmWindow7d,
+			want: func(m PrewarmManifest) []string {
+				return []string{m.CurrentStats.Key, m.History6d.Key, m.TodayHour.Key}
+			},
+			unselected: func(m PrewarmManifest) []PrewarmValueReference {
+				return []PrewarmValueReference{m.History29d}
+			},
+			wantResult: func(result *PrewarmCacheResult) bool {
+				return result.CurrentStats != nil && result.Segments.History29d == nil &&
+					result.Segments.History6d != nil && result.Segments.TodayHour != nil &&
+					result.History29dStatus == ""
+			},
+			wantCaches: []prewarmCacheMetric{
+				{cache: PrewarmCacheCurrentStats, outcome: PrewarmCacheFresh},
+				{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
+				{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
+				{cache: PrewarmCacheManifest, outcome: PrewarmCacheFresh},
+			},
+		},
+		{
+			name:  "30d",
+			class: PrewarmWindow30d,
+			want: func(m PrewarmManifest) []string {
+				return []string{m.CurrentStats.Key, m.History29d.Key, m.TodayHour.Key}
+			},
+			unselected: func(m PrewarmManifest) []PrewarmValueReference {
+				return []PrewarmValueReference{m.History6d}
+			},
+			wantResult: func(result *PrewarmCacheResult) bool {
+				return result.CurrentStats != nil && result.Segments.History29d != nil &&
+					result.Segments.History6d == nil && result.Segments.TodayHour != nil &&
+					result.History6dStatus == ""
+			},
+			wantCaches: []prewarmCacheMetric{
+				{cache: PrewarmCacheCurrentStats, outcome: PrewarmCacheFresh},
+				{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
+				{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
+				{cache: PrewarmCacheManifest, outcome: PrewarmCacheFresh},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			metrics := &recordingPrewarmRequestMetrics{}
+			store := newRecordingPrewarmStore()
+			cache, err := NewPrewarmCache(store, PrewarmCacheOptions{
+				Namespace: "test", Now: func() time.Time { return generatedAt }, Metrics: metrics,
+			})
+			if err != nil {
+				t.Fatalf("NewPrewarmCache() error = %v", err)
+			}
+			manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+			publishTestPrewarmManifest(t, cache, manifest, "read-window-"+test.name)
+			metrics.caches = nil
+			for index, ref := range test.unselected(manifest) {
+				if index == 0 {
+					store.DeleteRaw(ref.Key)
+					continue
+				}
+				store.SetRaw(ref.Key, []byte(`{"schema_version":2`), historyValueTTL)
+			}
+
+			result, found, err := cache.ReadWindow(context.Background(), identity, test.class)
+			if err != nil || !found || result == nil || !result.Complete {
+				t.Fatalf("ReadWindow(%s) = %#v, %v, %v, want complete", test.class, result, found, err)
+			}
+			if !test.wantResult(result) {
+				t.Fatalf("ReadWindow(%s) selected result = %#v", test.class, result)
+			}
+			if got := store.LastMGet(); !equalStrings(got, test.want(manifest)) {
+				t.Fatalf("ReadWindow(%s) MGET keys = %#v, want %#v", test.class, got, test.want(manifest))
+			}
+			if !reflect.DeepEqual(metrics.caches, test.wantCaches) {
+				t.Fatalf("ReadWindow(%s) cache metrics = %#v, want %#v", test.class, metrics.caches, test.wantCaches)
+			}
+		})
+	}
+}
+
+func TestPrewarmCacheReadWindowSelectedHistoryMissingIsIncomplete(t *testing.T) {
+	generatedAt := testPrewarmGeneratedAt()
+	identity := testPrewarmIdentity()
+	tests := []struct {
+		name      string
+		class     PrewarmWindowClass
+		selectRef func(PrewarmManifest) PrewarmValueReference
+		status    func(*PrewarmCacheResult) PrewarmValueStatus
+	}{
+		{
+			name: "7d", class: PrewarmWindow7d,
+			selectRef: func(m PrewarmManifest) PrewarmValueReference { return m.History6d },
+			status:    func(result *PrewarmCacheResult) PrewarmValueStatus { return result.History6dStatus },
+		},
+		{
+			name: "30d", class: PrewarmWindow30d,
+			selectRef: func(m PrewarmManifest) PrewarmValueReference { return m.History29d },
+			status:    func(result *PrewarmCacheResult) PrewarmValueStatus { return result.History29dStatus },
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := newRecordingPrewarmStore()
+			cache := mustNewPrewarmCache(t, store, func() time.Time { return generatedAt })
+			manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+			publishTestPrewarmManifest(t, cache, manifest, "selected-missing-"+test.name)
+			store.DeleteRaw(test.selectRef(manifest).Key)
+
+			result, found, err := cache.ReadWindow(context.Background(), identity, test.class)
+			if err != nil || !found || result == nil || result.Complete {
+				t.Fatalf("ReadWindow(%s, missing history) = %#v, %v, %v, want incomplete", test.class, result, found, err)
+			}
+			if got := test.status(result); got != PrewarmValueMissing {
+				t.Fatalf("ReadWindow(%s) selected history status = %q, want missing", test.class, got)
+			}
+		})
+	}
+}
+
+func TestPrewarmCacheReadWindowPreservesFullReadValidation(t *testing.T) {
+	generatedAt := testPrewarmGeneratedAt()
+	identity := testPrewarmIdentity()
+	wantKeys := func(manifest PrewarmManifest) []string {
+		return []string{manifest.CurrentStats.Key, manifest.History29d.Key, manifest.History6d.Key, manifest.TodayHour.Key}
+	}
+	t.Run("missing", func(t *testing.T) {
+		store := newRecordingPrewarmStore()
+		cache := mustNewPrewarmCache(t, store, func() time.Time { return generatedAt })
+		manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+		publishTestPrewarmManifest(t, cache, manifest, "full-read-missing")
+		store.DeleteRaw(manifest.History29d.Key)
+
+		result, found, err := cache.Read(context.Background(), identity)
+		if err != nil || !found || result == nil || result.Complete || result.History29dStatus != PrewarmValueMissing {
+			t.Fatalf("Read(missing history) = %#v, %v, %v, want detected incomplete", result, found, err)
+		}
+		if got := store.LastMGet(); !equalStrings(got, wantKeys(manifest)) {
+			t.Fatalf("Read(missing history) MGET keys = %#v, want %#v", got, wantKeys(manifest))
+		}
+	})
+	t.Run("corrupt", func(t *testing.T) {
+		store := newRecordingPrewarmStore()
+		cache := mustNewPrewarmCache(t, store, func() time.Time { return generatedAt })
+		manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+		publishTestPrewarmManifest(t, cache, manifest, "full-read-corrupt")
+		store.SetRaw(manifest.History29d.Key, []byte(`{"schema_version":2`), historyValueTTL)
+
+		result, found, err := cache.Read(context.Background(), identity)
+		if err == nil || found || result != nil {
+			t.Fatalf("Read(corrupt history) = %#v, %v, %v, want rejection", result, found, err)
+		}
+		if got := store.LastMGet(); !equalStrings(got, wantKeys(manifest)) {
+			t.Fatalf("Read(corrupt history) MGET keys = %#v, want %#v", got, wantKeys(manifest))
+		}
+	})
+}
+
+func TestPrewarmCacheReadWindowRejectsInvalidClassBeforeRedis(t *testing.T) {
+	store := newRecordingPrewarmStore()
+	cache := mustNewPrewarmCache(t, store, testPrewarmGeneratedAt)
+	result, found, err := cache.ReadWindow(context.Background(), testPrewarmIdentity(), PrewarmWindowClass("custom"))
+	if err == nil || found || result != nil {
+		t.Fatalf("ReadWindow(custom) = %#v, %v, %v, want validation error", result, found, err)
+	}
+	if store.GetCalls() != 0 || store.MGetCalls() != 0 {
+		t.Fatalf("ReadWindow(custom) Redis calls = GET %d/MGET %d, want zero", store.GetCalls(), store.MGetCalls())
+	}
+}
+
 func TestPrewarmCacheGenerationLimitCountsTrendSegmentsOnly(t *testing.T) {
 	generatedAt := testPrewarmGeneratedAt()
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
