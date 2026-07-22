@@ -71,7 +71,10 @@ five write/manifest/lease operations completed 100 samples each without error,
 but the four-lane maximum-safe MGET workload timed out under the locked two-second
 read ceiling after 15 valid samples. No command budgets were selected and no
 budget code or tests were changed. The feature remains disabled; Steps 3-6 have
-not started.
+not started. The approved blocker follow-up is committed in design commit
+`35273163`: Tasks 10-13 will add schema-v2 zstd immutable values, select only the
+request window's Redis references, run the full local verification/review gate,
+and repeat the feature-disabled staging benchmark before Task 9 may resume.
 
 ## Task 1 Gate Evidence
 
@@ -1101,3 +1104,426 @@ git commit -m "docs(teamusage): record segmented prewarm staging acceptance"
 ```
 
 If any gate fails, disable the staging flag, record the failure with remaining checkboxes unchecked, and stop. Do not flush unrelated Redis keys, deploy Sub2API, or alter production.
+
+---
+
+### Task 10: Store Prewarm Immutable Values As Schema-v2 Zstd Frames
+
+**Files:**
+- Create: `backend/internal/teamusage/prewarm_codec.go`
+- Create: `backend/internal/teamusage/prewarm_codec_test.go`
+- Modify: `backend/internal/teamusage/prewarm_cache.go`
+- Modify: `backend/internal/teamusage/prewarm_cache_test.go`
+- Modify: `backend/go.mod`
+- Modify: `backend/go.sum`
+
+**Interfaces:**
+- Consumes: existing `encodePrewarmJSON`, `decodePrewarmJSON`, 2 MiB current-stats limit, 8 MiB trend limit, and opaque `readcache.BatchStore` bytes.
+- Produces: schema-v2 keys plus package-private `encodePrewarmStoredJSON(value any, decodedLimit, storedLimit int) ([]byte, error)` and `decodePrewarmStoredJSON(encoded []byte, decodedLimit int, destination any) error`.
+
+- [ ] **Step 1: Write RED codec and cache-storage tests**
+
+Add table tests that require the zstd magic prefix, checksum-protected round
+trip, stored-byte metadata, and hard rejection boundaries. Use only synthetic
+values:
+
+```go
+func TestPrewarmStoredJSONRoundTripAndCorruption(t *testing.T) {
+	value := testPrewarmSegmentValue(t, SegmentHistory29d)
+	encoded, err := encodePrewarmStoredJSON(value, prewarmSegmentMaxBytes, prewarmSegmentMaxBytes)
+	if err != nil {
+		t.Fatalf("encodePrewarmStoredJSON() error = %v", err)
+	}
+	if !bytes.HasPrefix(encoded, []byte{0x28, 0xb5, 0x2f, 0xfd}) || bytes.Contains(encoded, []byte(`"points"`)) {
+		t.Fatal("stored value is not an opaque zstd frame")
+	}
+	var decoded PrewarmTrendSegment
+	if err := decodePrewarmStoredJSON(encoded, prewarmSegmentMaxBytes, &decoded); err != nil {
+		t.Fatalf("decodePrewarmStoredJSON() error = %v", err)
+	}
+	if diff := cmp.Diff(value, decoded); diff != "" {
+		t.Fatalf("round trip mismatch (-want +got):\n%s", diff)
+	}
+	for _, corrupted := range [][]byte{encoded[:len(encoded)-1], append(append([]byte(nil), encoded...), 0xff)} {
+		if err := decodePrewarmStoredJSON(corrupted, prewarmSegmentMaxBytes, &decoded); err == nil {
+			t.Fatal("corrupt frame decoded without error")
+		}
+	}
+}
+```
+
+Also require `prewarmCacheSchemaVersion == 2`, raw JSON absent from Redis,
+`SerializedBytes == len(stored)`, raw JSON exactly at each decoded limit,
+compressed output exactly at its stored limit, expanded output at the decoded
+limit, checksum corruption, truncation, appended bytes, and a v1 manifest miss.
+
+- [ ] **Step 2: Run RED tests**
+
+```bash
+cd backend
+go test ./internal/teamusage -run 'PrewarmStoredJSON|StoresCompressedBytesAndUsesSchemaV2|SchemaV2' -count=1
+```
+
+Expected: compile failure for missing stored-codec functions and schema-version
+assertion failure until the production implementation exists.
+
+- [ ] **Step 3: Add the direct dependency and minimal bounded codec**
+
+```bash
+cd backend
+go get github.com/klauspost/compress@v1.18.0
+```
+
+Create `prewarm_codec.go` with reusable stateless encoder and decoder instances.
+Keep compression inside `teamusage`; do not change `readcache.BatchStore`:
+
+```go
+type prewarmStoredCodecPair struct {
+	encoder *zstd.Encoder
+	decoder *zstd.Decoder
+}
+
+var prewarmStoredCodec = sync.OnceValues(func() (*prewarmStoredCodecPair, error) {
+	encoder, err := zstd.NewWriter(nil,
+		zstd.WithEncoderLevel(zstd.SpeedFastest),
+		zstd.WithEncoderConcurrency(1),
+		zstd.WithEncoderCRC(true),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create prewarm zstd encoder: %w", err)
+	}
+	decoder, err := zstd.NewReader(nil,
+		zstd.WithDecoderConcurrency(1),
+		zstd.WithDecoderMaxMemory(uint64(prewarmSegmentMaxBytes)),
+		zstd.WithDecoderMaxWindow(uint64(prewarmSegmentMaxBytes)),
+		zstd.WithDecodeAllCapLimit(true),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create prewarm zstd decoder: %w", err)
+	}
+	return &prewarmStoredCodecPair{encoder: encoder, decoder: decoder}, nil
+})
+```
+
+`encodePrewarmStoredJSON` calls `encodePrewarmJSON`, compresses with `EncodeAll`,
+and rejects `len(encoded) >= storedLimit`. `decodePrewarmStoredJSON` rejects
+empty or over-width input, decodes into capacity `decodedLimit`, rejects
+`len(decoded) >= decodedLimit`, then calls `decodePrewarmJSON` so concatenated
+or trailing JSON and metadata tampering still fail.
+
+- [ ] **Step 4: Wire compressed values and schema v2 into `PrewarmCache`**
+
+Change only current-stats and trend immutable values:
+
+```go
+const prewarmCacheSchemaVersion = 2
+
+encoded, err := encodePrewarmStoredJSON(
+	value, prewarmCurrentStatsMaxBytes, prewarmCurrentStatsMaxBytes,
+)
+
+if err := decodePrewarmStoredJSON(values[0], prewarmCurrentStatsMaxBytes, &decoded); err != nil {
+	return nil, PrewarmSegmentSet{}, statuses, false,
+		fmt.Errorf("decode team usage prewarm current stats: %w", err)
+}
+```
+
+Apply the trend path with `prewarmSegmentMaxBytes`. Manifests remain plain JSON.
+Keep reference validation against stored frame length and generation-byte metrics
+based on `SerializedBytes`.
+
+- [ ] **Step 5: Run GREEN and race tests**
+
+```bash
+cd backend
+gofmt -w internal/teamusage/prewarm_codec.go \
+  internal/teamusage/prewarm_codec_test.go \
+  internal/teamusage/prewarm_cache.go \
+  internal/teamusage/prewarm_cache_test.go
+go test ./internal/teamusage -run 'PrewarmStoredJSON|PrewarmCache|PrewarmManifest' -count=1
+go test -race ./internal/teamusage -run 'PrewarmStoredJSON|PrewarmCache|PrewarmManifest' -count=1
+```
+
+Expected: all selected tests pass with zero race reports.
+
+- [ ] **Step 6: Commit the codec unit**
+
+```bash
+git add backend/go.mod backend/go.sum \
+  backend/internal/teamusage/prewarm_codec.go \
+  backend/internal/teamusage/prewarm_codec_test.go \
+  backend/internal/teamusage/prewarm_cache.go \
+  backend/internal/teamusage/prewarm_cache_test.go \
+  docs/superpowers/plans/2026-07-21-team-usage-segmented-timezone-prewarm.md
+git commit -m "perf(teamusage): compress prewarm Redis values"
+```
+
+---
+
+### Task 11: Read Only The Requested Standard Window
+
+**Files:**
+- Modify: `backend/internal/teamusage/prewarm_cache.go`
+- Modify: `backend/internal/teamusage/prewarm_cache_test.go`
+- Modify: `backend/internal/teamusage/prewarm_reader.go`
+- Modify: `backend/internal/teamusage/prewarm_reader_test.go`
+
+**Interfaces:**
+- Consumes: schema-v2 compressed immutable values from Task 10 and existing `PrewarmWindowClass` recognition.
+- Produces: `(*PrewarmCache).ReadWindow(context.Context, PrewarmCacheIdentity, PrewarmWindowClass) (*PrewarmCacheResult, bool, error)` while preserving full `Read` for lifecycle and publication validation.
+
+- [ ] **Step 1: Write RED key-selection and relative-completeness tests**
+
+Use `recordingPrewarmStore.LastMGet()` to require the exact key order:
+
+```go
+tests := []struct {
+	name  string
+	class PrewarmWindowClass
+	want  func(PrewarmManifest) []string
+}{
+	{"today", PrewarmWindowToday, func(m PrewarmManifest) []string {
+		return []string{m.CurrentStats.Key, m.TodayHour.Key}
+	}},
+	{"7d", PrewarmWindow7d, func(m PrewarmManifest) []string {
+		return []string{m.CurrentStats.Key, m.History6d.Key, m.TodayHour.Key}
+	}},
+	{"30d", PrewarmWindow30d, func(m PrewarmManifest) []string {
+		return []string{m.CurrentStats.Key, m.History29d.Key, m.TodayHour.Key}
+	}},
+}
+```
+
+For every class, delete or corrupt the unselected history value and require a
+complete request-relative result with no unselected cache-outcome metric. Delete
+the selected history value and require an incomplete result. Prove ordinary
+`Read` still MGETs all four references and detects that missing/corrupt value.
+
+- [ ] **Step 2: Run RED cache tests**
+
+```bash
+cd backend
+go test ./internal/teamusage -run 'PrewarmCacheReadWindow|PrewarmReaderWindowSelection' -count=1
+```
+
+Expected: compile failure because `ReadWindow` does not exist and the reader
+still calls full `Read`.
+
+- [ ] **Step 3: Implement an explicit internal selection model**
+
+Keep one manifest GET and one selected-value MGET:
+
+```go
+type prewarmReadSelection struct {
+	currentStats bool
+	history29d   bool
+	history6d    bool
+	todayHour    bool
+}
+
+func prewarmSelectionForWindow(class PrewarmWindowClass) (prewarmReadSelection, error) {
+	selection := prewarmReadSelection{currentStats: true, todayHour: true}
+	switch class {
+	case PrewarmWindowToday:
+	case PrewarmWindow7d:
+		selection.history6d = true
+	case PrewarmWindow30d:
+		selection.history29d = true
+	default:
+		return prewarmReadSelection{}, fmt.Errorf("invalid prewarm window class %q", class)
+	}
+	return selection, nil
+}
+```
+
+Refactor full `Read` through an all-reference selection and add `ReadWindow`.
+`readReferencedValues` must build keys, statuses, decode work, completeness, and
+cache metrics only from selected references while preserving manifest order.
+
+- [ ] **Step 4: Make request-time recovery window-relative**
+
+Change the reader call and recovery predicate:
+
+```go
+result, found, err := r.cache.ReadWindow(ctx, identity, window.Class)
+
+func prewarmResultCanRecoverToday(result *PrewarmCacheResult, class PrewarmWindowClass) bool {
+	if result == nil || result.CurrentStats == nil {
+		return false
+	}
+	switch class {
+	case PrewarmWindowToday:
+	case PrewarmWindow7d:
+		if result.Segments.History6d == nil { return false }
+	case PrewarmWindow30d:
+		if result.Segments.History29d == nil { return false }
+	default:
+		return false
+	}
+	return result.TodayHourStatus == PrewarmValueMissing ||
+		result.TodayHourStatus == PrewarmValueInvalid ||
+		result.TodayHourStatus == PrewarmValueHardExpired
+}
+```
+
+Retain fresh/stale eligibility for current stats and the selected history.
+Do not weaken authorization, point validation, or composition validation.
+
+- [ ] **Step 5: Run GREEN, equivalence, and race tests**
+
+```bash
+cd backend
+gofmt -w internal/teamusage/prewarm_cache.go \
+  internal/teamusage/prewarm_cache_test.go \
+  internal/teamusage/prewarm_reader.go \
+  internal/teamusage/prewarm_reader_test.go
+go test ./internal/teamusage -run 'PrewarmCacheReadWindow|PrewarmReader|PrewarmEquivalence' -count=1
+go test -race ./internal/teamusage -run 'PrewarmCacheReadWindow|PrewarmReader|PrewarmEquivalence' -count=1
+```
+
+Expected: selected tests pass, public Team Usage DTO equivalence stays exact,
+and race reports remain empty.
+
+- [ ] **Step 6: Commit the request-read unit**
+
+```bash
+git add backend/internal/teamusage/prewarm_cache.go \
+  backend/internal/teamusage/prewarm_cache_test.go \
+  backend/internal/teamusage/prewarm_reader.go \
+  backend/internal/teamusage/prewarm_reader_test.go \
+  docs/superpowers/plans/2026-07-21-team-usage-segmented-timezone-prewarm.md
+git commit -m "perf(teamusage): scope prewarm reads by window"
+```
+
+---
+
+### Task 12: Verify And Review The Compressed Read Branch
+
+**Files:**
+- Modify as evidence is completed: `docs/superpowers/plans/2026-07-21-team-usage-segmented-timezone-prewarm.md`
+- Modify only for contract corrections: `docs/superpowers/specs/2026-07-21-team-usage-segmented-timezone-prewarm-design.md`
+
+**Interfaces:**
+- Consumes: Task 10 schema-v2 codec and Task 11 window-scoped reader.
+- Produces: one reviewed exact branch head eligible for a new feature-disabled staging image.
+
+- [ ] **Step 1: Run the full local verification ladder**
+
+```bash
+cd backend
+gofmt -w internal/teamusage
+go test ./internal/teamusage -count=1
+go test ./... -count=1
+go test -race ./internal/teamusage ./cmd/server -count=1
+go vet ./...
+go build ./...
+cd ..
+git diff --check
+```
+
+Expected: every command exits zero with no test failure, race report, vet error,
+build error, or whitespace error.
+
+- [ ] **Step 2: Review Standards and Spec compliance**
+
+Use the repository code-review workflow against merge-base through current HEAD.
+Review zstd decompression bounds, shared-codec concurrency, stored-vs-decoded
+byte semantics, v1/v2 isolation, request-relative cache metrics, missing-today
+recovery, and unchanged full-generation publication. Resolve every Critical or
+Important finding with a fresh RED/GREEN cycle, then rerun Step 1.
+
+- [ ] **Step 3: Record the reviewed head and commit the local ledger**
+
+Update the plan status and completed checkboxes with exact commands and commit
+IDs. Keep Task 9 Steps 2-6 unchecked and do not modify `docs/architecture.md`.
+
+```bash
+git add docs/superpowers/plans/2026-07-21-team-usage-segmented-timezone-prewarm.md \
+  docs/superpowers/specs/2026-07-21-team-usage-segmented-timezone-prewarm-design.md
+git commit -m "docs(teamusage): complete compressed read review"
+```
+
+---
+
+### Task 13: Rebenchmark Schema-v2 Redis Before Enablement
+
+**Files:**
+- Modify with sanitized evidence: `docs/superpowers/plans/2026-07-21-team-usage-segmented-timezone-prewarm.md`
+- Modify with sanitized evidence: `docs/superpowers/specs/2026-07-21-team-usage-segmented-timezone-prewarm-design.md`
+- Modify after measured budgets pass: `backend/internal/teamusage/prewarm_cache.go`
+- Modify after measured budgets pass: `backend/internal/teamusage/prewarm_cache_test.go`
+- Modify exact staging selectors in `/Users/admin/helm`: `ai-efficiency/.secrets/ai-efficiency-staging-upgrade.json`
+
+**Interfaces:**
+- Consumes: exact reviewed Task 12 head, accepted package-native benchmark shape, staging Redis, and the disabled staging workflow.
+- Produces: selected schema-v2 command budgets and a passing repeat benchmark, or a documented blocker with the feature still disabled.
+
+- [ ] **Step 1: Build and deploy the exact reviewed head disabled**
+
+Reuse Task 9 Step 1's immutable Buildx and paused/restore-enabled Helm procedure.
+Verify both GHCR architectures, exact staging image, absent
+`AE_TEAM_USAGE_PREWARM_ENABLED`, staging live/readiness HTTP 200, and unchanged
+production revision/image/flag/health before and after.
+
+- [ ] **Step 2: Recreate the package-native benchmark outside the repository**
+
+Use a temporary `_test.go` copied into `backend/internal/teamusage` only for
+compilation, then delete it before any commit. It must call the production
+schema-v2 codec and `RedisStore`, use a unique synthetic namespace, print no
+Redis URL or value, and guarantee registry-only cleanup. Its static gate is:
+
+```text
+decoded current JSON < 2 MiB
+decoded segment JSON < 8 MiB each
+one full generation = current + history_29d + history_6d + today_hour
+one 30d request lane = current + history_29d + today_hour
+four concurrent request lanes
+final synthetic namespace key count = 0
+```
+
+Compile a static `linux/amd64` test binary, copy it into the feature-disabled
+staging application Pod, run one smoke and then one full sample run. Delete the
+source, local binary, Pod binary, and raw report after retaining only sanitized
+counts, durations, byte sizes, error classes, and counter deltas.
+
+- [ ] **Step 3: Apply the unchanged budget gate**
+
+Measure at least 100 successful samples for compressed immutable writes,
+manifest publication, full-generation MGET, 30d request-window MGET, lease
+acquire, and lease release. Run four request lanes concurrently with background
+concurrency two. For each command class calculate:
+
+```text
+budget = max(250 ms, 2 * p99)
+```
+
+Any Redis error, fewer than 100 valid samples, cleanup error, eviction,
+rejected-connection increase, or required budget above 2 seconds blocks the
+feature. Partial distributions never select a budget.
+
+- [ ] **Step 4: Lock passing budgets with RED/GREEN tests**
+
+Only after Step 3 passes, write exact boundary tests for selected read, write,
+lease, and release values. Run RED, change only the corresponding defaults or
+constants, then run:
+
+```bash
+cd backend
+go test ./internal/teamusage ./cmd/server -run 'Prewarm.*CommandBudget|RedisClientOptions' -count=1
+go test -race ./internal/teamusage ./cmd/server -run 'Prewarm.*CommandBudget|RedisClientOptions' -count=1
+go test ./... -count=1
+go vet ./...
+go build ./...
+```
+
+Commit with `perf(teamusage): lock compressed Redis command budgets`, rebuild an
+exact immutable staging image, and repeat Steps 1-3 against that exact code. A
+budget is not accepted until this second benchmark also passes.
+
+- [ ] **Step 5: Record the decision and resume Task 9 only on success**
+
+If the final exact-code benchmark passes, check Task 9 Step 2 and record image
+digest, staging revision, selected budgets, sanitized distributions,
+compressed/decoded byte totals, Redis counters, cleanup, and unchanged
+production state. Then proceed to Task 9 Step 3. If it fails, keep Task 9 Steps
+2-6 unchecked, keep the feature disabled, record the blocker, and stop.
