@@ -528,6 +528,72 @@ func TestPrewarmPartialTodayComposesWhenUnselectedHistoryIsUnavailable(t *testin
 	}
 }
 
+func TestPrewarmPartialTodayDoesNotLetUnselectedCorruptionMaskSelectedHistoryFailure(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	for _, damage := range []string{"deleted", "corrupt"} {
+		t.Run(damage, func(t *testing.T) {
+			cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
+			identity := testPrewarmIdentity()
+			manifest := seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101})
+			server.Del(manifest.TodayHour.Key)
+			started := make(chan struct{})
+			release := make(chan struct{})
+			metrics := &recordingPrewarmRequestMetrics{}
+			reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
+				Timezones: []string{"UTC"}, Now: func() time.Time { return now },
+				NewToken:        func() string { return strings.Repeat("a", 64) },
+				NewGenerationID: func() string { return strings.Repeat("b", 64) },
+				Metrics:         metrics,
+			})
+			provider := &prewarmReaderProvider{
+				fakeRelayProvider: &fakeRelayProvider{}, started: started, release: release,
+				trendResult: relay.ProviderWideTrendResult{
+					Coverage: relay.TeamMemberTrendParams{
+						StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC",
+					},
+					Points: []relay.ProviderWideTrendPoint{
+						{UserID: 101, Date: "2026-07-21 08:00", ActualCost: 2, TotalTokens: int64Ptr(20)},
+					},
+					ResponseBytes: 64, PointCount: 1, UniqueUserCount: 1, Complete: true,
+				},
+			}
+			type readResult struct {
+				origin  *teamUsageScopeOrigin
+				outcome PrewarmReadOutcome
+				err     error
+			}
+			result := make(chan readResult, 1)
+			go func() {
+				origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
+					ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
+					Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
+				})
+				result <- readResult{origin: origin, outcome: outcome, err: err}
+			}()
+
+			<-started
+			server.Set(manifest.History29d.Key, "corrupt-unselected-history")
+			server.SetTTL(manifest.History29d.Key, historyValueTTL)
+			if damage == "deleted" {
+				server.Del(manifest.History6d.Key)
+			} else {
+				server.Set(manifest.History6d.Key, "corrupt-selected-history")
+				server.SetTTL(manifest.History6d.Key, historyValueTTL)
+			}
+			close(release)
+
+			got := <-result
+			if got.err == nil || got.origin != nil || got.outcome != PrewarmReadFallback {
+				t.Fatalf("selected history %s behind corrupt unselected history = %#v/%q/%v, want exact fallback signal", damage, got.origin, got.outcome, got.err)
+			}
+			last := metrics.requests[len(metrics.requests)-1]
+			if last.reason != "redis_error" {
+				t.Fatalf("selected history %s fallback reason = %q, want redis_error", damage, last.reason)
+			}
+		})
+	}
+}
+
 func TestPrewarmPartialTodayRelayFailureSelectsCompleteFallback(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })

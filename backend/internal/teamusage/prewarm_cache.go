@@ -460,7 +460,7 @@ func (c *PrewarmCache) publishManifestWithLeases(
 		}
 		return false, false, fmt.Errorf("validate team usage prewarm values before publication: %w", err)
 	} else if !complete {
-		missing := prewarmUnavailableReferenceIndexes(statuses)
+		missing := prewarmUnavailableReferenceIndexes(statuses, prewarmAllReferencesSelection())
 		missingErr := &prewarmReferencedValueError{indexes: missing, err: readcache.ErrMiss}
 		if requestSelection != nil && prewarmOnlyUnselectedHistoryFailed(missingErr, *requestSelection) {
 			return false, true, nil
@@ -483,10 +483,10 @@ func (c *PrewarmCache) publishManifestWithLeases(
 	return published, false, nil
 }
 
-func prewarmUnavailableReferenceIndexes(statuses [4]PrewarmValueStatus) []int {
+func prewarmUnavailableReferenceIndexes(statuses [4]PrewarmValueStatus, selection prewarmReadSelection) []int {
 	indexes := make([]int, 0, len(statuses))
 	for index, status := range statuses {
-		if status != PrewarmValueFresh && status != PrewarmValueStale {
+		if selection.includes(index) && status != PrewarmValueFresh && status != PrewarmValueStale {
 			indexes = append(indexes, index)
 		}
 	}
@@ -697,21 +697,20 @@ func (c *PrewarmCache) readReferencedValues(
 	}
 
 	var current *PrewarmCurrentStatsEnvelope
+	var referenceErrors []error
 	if selection.currentStats && statuses[0] != PrewarmValueHardExpired && valuesByReference[0] != nil {
 		var decoded PrewarmCurrentStatsEnvelope
 		if err := decodePrewarmStoredJSON(valuesByReference[0], prewarmCurrentStatsMaxBytes, &decoded); err != nil {
+			statuses[0] = PrewarmValueInvalid
 			cacheOutcomes[0] = PrewarmCacheInvalid
-			return nil, PrewarmSegmentSet{}, statuses, false, &prewarmReferencedValueError{
-				indexes: []int{0}, err: fmt.Errorf("decode team usage prewarm current stats: %w", err),
-			}
-		}
-		if err := validatePrewarmCurrentStatsReference(c.options.Namespace, manifest.CurrentStats, decoded, len(valuesByReference[0]), now); err != nil {
+			referenceErrors = append(referenceErrors, fmt.Errorf("decode team usage prewarm current stats: %w", err))
+		} else if err := validatePrewarmCurrentStatsReference(c.options.Namespace, manifest.CurrentStats, decoded, len(valuesByReference[0]), now); err != nil {
+			statuses[0] = PrewarmValueInvalid
 			cacheOutcomes[0] = PrewarmCacheInvalid
-			return nil, PrewarmSegmentSet{}, statuses, false, &prewarmReferencedValueError{
-				indexes: []int{0}, err: fmt.Errorf("validate team usage prewarm current stats: %w", err),
-			}
+			referenceErrors = append(referenceErrors, fmt.Errorf("validate team usage prewarm current stats: %w", err))
+		} else {
+			current = &decoded
 		}
-		current = &decoded
 	}
 
 	segments := make([]*PrewarmTrendSegment, 3)
@@ -722,28 +721,29 @@ func (c *PrewarmCache) readReferencedValues(
 		}
 		var segment PrewarmTrendSegment
 		if err := decodePrewarmStoredJSON(valuesByReference[statusIndex], prewarmSegmentMaxBytes, &segment); err != nil {
+			statuses[statusIndex] = PrewarmValueInvalid
+			cacheOutcomes[statusIndex] = PrewarmCacheInvalid
 			if allowInvalidToday && ref.Class == SegmentTodayHour {
-				statuses[statusIndex] = PrewarmValueInvalid
-				cacheOutcomes[statusIndex] = PrewarmCacheInvalid
 				continue
 			}
+			referenceErrors = append(referenceErrors, fmt.Errorf("decode team usage prewarm %s: %w", ref.Class, err))
+			continue
+		} else if err := validatePrewarmSegmentReference(c.options.Namespace, ref, segment, len(valuesByReference[statusIndex]), now); err != nil {
+			statuses[statusIndex] = PrewarmValueInvalid
 			cacheOutcomes[statusIndex] = PrewarmCacheInvalid
-			return nil, PrewarmSegmentSet{}, statuses, false, &prewarmReferencedValueError{
-				indexes: []int{statusIndex}, err: fmt.Errorf("decode team usage prewarm %s: %w", ref.Class, err),
-			}
-		}
-		if err := validatePrewarmSegmentReference(c.options.Namespace, ref, segment, len(valuesByReference[statusIndex]), now); err != nil {
 			if allowInvalidToday && ref.Class == SegmentTodayHour {
-				statuses[statusIndex] = PrewarmValueInvalid
-				cacheOutcomes[statusIndex] = PrewarmCacheInvalid
 				continue
 			}
-			cacheOutcomes[statusIndex] = PrewarmCacheInvalid
-			return nil, PrewarmSegmentSet{}, statuses, false, &prewarmReferencedValueError{
-				indexes: []int{statusIndex}, err: fmt.Errorf("validate team usage prewarm %s: %w", ref.Class, err),
-			}
+			referenceErrors = append(referenceErrors, fmt.Errorf("validate team usage prewarm %s: %w", ref.Class, err))
+			continue
 		}
 		segments[index] = &segment
+	}
+	if len(referenceErrors) > 0 {
+		return nil, PrewarmSegmentSet{}, statuses, false, &prewarmReferencedValueError{
+			indexes: prewarmUnavailableReferenceIndexes(statuses, selection),
+			err:     errors.Join(referenceErrors...),
+		}
 	}
 	result := PrewarmSegmentSet{History29d: segments[0], History6d: segments[1], TodayHour: segments[2]}
 	complete := (!selection.currentStats || current != nil) &&
