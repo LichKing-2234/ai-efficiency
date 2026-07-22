@@ -86,6 +86,11 @@ was a deviation from the fail-fast contract; Step 4 did not start, and rollback
 followed the probes. Staging is healthy and disabled at revision 52, production
 is unchanged, Steps 3-6 are incomplete and remain unchecked, and
 `docs/architecture.md` remains unchanged.
+Task 14 root-cause analysis is complete. Retained evidence cannot identify the
+Redis error subtype or attribute aggregate source observations to startup versus
+the first scheduled tick. Task 14 therefore adds bounded diagnostic telemetry
+and closes the confirmed startup coordinator contract gaps before any new
+feature-enabled attempt.
 
 ## Task 1 Gate Evidence
 
@@ -1746,3 +1751,102 @@ digest, staging revision, selected budgets, sanitized distributions,
 compressed/decoded byte totals, Redis counters, cleanup, and unchanged
 production state. Then proceed to Task 9 Step 3. If it fails, keep Task 9 Steps
 2-6 unchecked, keep the feature disabled, record the blocker, and stop.
+
+---
+
+### Task 14: Make Startup Collapse And Redis Failures Diagnosable
+
+**Files:**
+- Modify: `backend/internal/teamusage/prewarm_cache.go`
+- Modify: `backend/internal/teamusage/prewarm_cache_test.go`
+- Modify: `backend/internal/teamusage/prewarm_metrics.go`
+- Modify: `backend/internal/teamusage/prewarmer.go`
+- Modify: `backend/internal/teamusage/prewarmer_test.go`
+- Modify: `backend/internal/telemetry/team_usage_prewarm.go`
+- Modify: `backend/internal/telemetry/team_usage_prewarm_test.go`
+- Modify: current plan and current design spec with sanitized evidence only.
+
+**Confirmed root causes and evidence limits:**
+
+- A Pod that loses the startup `SET NX` race returns `nil`, and lifecycle
+  reporting therefore records four `startup/success` observations rather than
+  a closed `lease_busy` outcome.
+- A successful startup compare-deletes its coordinator lease, so a staggered
+  Pod can become a second startup owner inside the intended six-minute
+  deployment-wide collapse window.
+- The retained `16` source observations per Pod have no lifecycle/timestamp
+  breakdown and may include the first 60-second moving/recovery/historical
+  tick. They do not prove two complete startup source cycles.
+- The retained Redis metrics collapse command deadline, caller cancellation,
+  network, Redis command, validation, and decode/reference failures into
+  `error`. The old Pods and raw metrics are gone, so the `250ms` budget remains
+  the strongest hypothesis, not a proven cause.
+
+- [ ] **Step 1: Add RED multi-instance and error-class tests**
+
+Use two independent `Prewarmer` instances with separate providers and metrics
+but one shared Redis store, namespace, provider binding, and four-timezone
+allowlist. Block the first source while it owns startup coordination. Require
+the concurrent loser to make zero source calls and report `lease_busy`, not
+success. After the owner completes, start a staggered third instance within the
+six-minute TTL and require it to remain `lease_busy`; exactly one startup owner
+may be observed.
+
+Add closed Redis error classes without raw error strings or unbounded labels:
+`validation`, `caller_canceled`, `command_deadline`, `network_timeout`,
+`network_error`, `redis_command`, and `decode_or_reference`. Tests must
+distinguish a pre-canceled parent from a child command deadline, normal manifest
+miss from an error, normal lease contention from an error, and validation
+rejection without calling the store. The existing Redis pool pending, wait, and
+timeout metrics remain the source for pool-phase correlation because go-redis
+does not expose its internal pool-timeout sentinel as a public error contract.
+
+- [ ] **Step 2: Implement the minimal coordinator and telemetry correction**
+
+Represent startup lease contention as an explicit closed lifecycle result.
+Retain the successful startup coordinator marker until its TTL expires; release
+it only on failure or cancellation so recovery can retry. Keep all token checks,
+TTL values, provider/version/allowlist dimensions, source concurrency, segment
+leases, and fallback behavior unchanged.
+
+Record one additional bounded Redis error-class counter at the live error site
+before canceling the child command context. Do not expose raw errors, Redis
+keys, tokens, provider data, or user data. Do not change the accepted command
+budgets in this task.
+
+- [ ] **Step 3: Verify and review exact code**
+
+Run focused RED/GREEN tests, repeated multi-instance tests, race tests for
+`teamusage` and `telemetry`, the full backend suite, `go vet ./...`, and
+`go build ./...`. Commit with:
+
+```bash
+git commit -m "fix(teamusage): make prewarm startup gates deterministic"
+```
+
+Generate a task-scoped review package and resolve every Critical/Important
+finding before publishing an image.
+
+- [ ] **Step 4: Rebuild and repeat the feature-disabled Redis benchmark**
+
+Publish an immutable staging image for the reviewed Task 14 head, deploy it
+with the feature absent/disabled, and repeat Task 13's exact 100-sample seven-
+class benchmark. Any command, transport, INFO, cleanup, eviction, or rejected-
+connection error blocks enablement. Do not change a budget from this run unless
+a later feature-enabled replay proves the current value insufficient.
+
+- [ ] **Step 5: Run one pre-ticker two-Pod diagnostic replay**
+
+Enable only staging with two replicas and the approved four timezones. Capture
+per-Pod metric baselines before enablement and evaluate startup before the first
+60-second scheduled tick. Require exactly one startup owner, one busy replica,
+four complete manifests within five seconds of the first complete manifest,
+zero Relay errors, zero Redis errors, and zero Redis error-class deltas. Capture
+Redis pending, wait, and timeout deltas alongside any command deadline.
+
+On any failure, disable staging immediately, keep Task 9 Steps 3-6 unchecked,
+record only sanitized operation IDs, closed outcomes, counts, and durations,
+and stop. If a Redis error recurs, its closed class and pool deltas define the
+next root-cause task; do not guess or alter the budget in this task. If the
+replay passes, record that Task 9 Step 3 may restart from a fresh empty-key
+round, but do not start Step 4 in the same replay.

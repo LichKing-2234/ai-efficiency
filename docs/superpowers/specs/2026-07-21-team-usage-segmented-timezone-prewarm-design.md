@@ -10,6 +10,10 @@ attempt failed the zero-Redis-error and one-logical-cycle gates and was rolled
 back. The feature is disabled in staging and by default, production is
 unchanged, Task 9 Steps 3-6 remain incomplete, and `docs/architecture.md`
 remains unchanged.
+Task 14 is the current correction contract: it makes startup ownership and
+Redis error classes observable, retains a successful startup coordinator for
+its bounded TTL, and requires a pre-ticker two-Pod replay before Task 9 can
+resume.
 
 **Date:** 2026-07-21
 
@@ -1007,6 +1011,42 @@ image, prewarm environment entries absent, and HTTP 200 live/readiness. The
 tracked staging override was restored with no diff and mode `0600`. Production
 remained healthy and unchanged at revision 69 on `v0.1.0-preview.73`, with one
 ready replica and the feature flag absent.
+
+### Task 14 Diagnostic And Startup-Collapse Contract
+
+The failed attempt's durable counters are insufficient to prove that both Pods
+ran complete startup source cycles. A startup lease loser currently returns no
+error and is reported as `startup/success`; aggregate source observations can
+also include moving, recovery, and historical work after the fixed 60-second
+ticker starts. The corrected contract uses an explicit closed `lease_busy`
+startup outcome and evaluates startup before that first tick.
+
+One deployment-wide startup owner is allowed for a provider ID, persistent
+provider version, and normalized timezone-allowlist digest. A successful owner
+retains the token-protected startup coordinator marker until the existing
+six-minute TTL expires. Failure and cancellation release the marker so another
+Pod can retry. A concurrent or staggered Pod inside that TTL reports
+`lease_busy` and performs no startup source work. Segment/source-slot leases,
+the global source limit of two, and publish-time token ownership checks remain
+unchanged.
+
+Redis operation failures retain the existing bounded operation/outcome
+histograms and add one closed error-class counter. Allowed classes are
+`validation`, `caller_canceled`, `command_deadline`, `network_timeout`,
+`network_error`, `redis_command`, and `decode_or_reference`. Classification
+happens while both the parent and child command contexts are still inspectable.
+No raw error, Redis key, token, credential, provider payload, or user data
+becomes a label or log field. Existing Redis pending-request, wait-count, wait-
+duration, and pool-timeout metrics correlate command deadlines with connection-
+pool pressure.
+
+The first replay after this correction is diagnostic and ends before the first
+scheduled tick. It does not count as the three-round API acceptance. It must
+show one startup owner, one busy replica, the four complete manifests within
+five seconds of the first complete manifest, and zero Relay/Redis errors. A
+failure is rolled back immediately and its closed class determines the next
+root-cause task. A pass only permits Task 9 Step 3 to restart from a fresh
+controlled round.
 
 ## Rollout And Rollback
 
