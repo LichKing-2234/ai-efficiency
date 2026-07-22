@@ -27,14 +27,18 @@ const (
 	historyValueTTL = 50 * time.Hour
 	manifestTTL     = 3 * time.Minute
 
-	prewarmKeyReferenceMaxBytes       = 512
-	prewarmCurrentStatsMaxBytes       = 2 << 20
-	prewarmSegmentMaxBytes            = 8 << 20
-	prewarmManifestMaxBytes           = 64 << 10
-	prewarmTimezoneGenerationMaxBytes = 16 << 20
-	prewarmDefaultCommandTimeout      = 2 * time.Second
-	prewarmImmutableClaimTTL          = 90 * time.Second
-	prewarmPublicationLeaseLimit      = 5
+	prewarmKeyReferenceMaxBytes        = 512
+	prewarmCurrentStatsMaxBytes        = 2 << 20
+	prewarmSegmentMaxBytes             = 8 << 20
+	prewarmManifestMaxBytes            = 64 << 10
+	prewarmTimezoneGenerationMaxBytes  = 16 << 20
+	prewarmDefaultReadCommandBudget    = 250 * time.Millisecond
+	prewarmDefaultWriteCommandBudget   = 250 * time.Millisecond
+	prewarmDefaultLeaseCommandBudget   = 250 * time.Millisecond
+	prewarmDefaultReleaseCommandBudget = 250 * time.Millisecond
+	prewarmDefaultCommandTimeout       = 2 * time.Second
+	prewarmImmutableClaimTTL           = 90 * time.Second
+	prewarmPublicationLeaseLimit       = 5
 )
 
 type PrewarmCacheIdentity struct {
@@ -176,16 +180,16 @@ func NewPrewarmCache(store readcache.BatchStore, options PrewarmCacheOptions) (*
 		return nil, fmt.Errorf("invalid Redis namespace %q", options.Namespace)
 	}
 	if options.ReadTimeout <= 0 {
-		options.ReadTimeout = prewarmDefaultCommandTimeout
+		options.ReadTimeout = prewarmDefaultReadCommandBudget
 	}
 	if options.WriteTimeout <= 0 {
-		options.WriteTimeout = prewarmDefaultCommandTimeout
+		options.WriteTimeout = prewarmDefaultWriteCommandBudget
 	}
 	if options.LeaseTimeout <= 0 {
-		options.LeaseTimeout = prewarmDefaultCommandTimeout
+		options.LeaseTimeout = prewarmDefaultLeaseCommandBudget
 	}
 	if options.ReleaseTimeout <= 0 {
-		options.ReleaseTimeout = prewarmDefaultCommandTimeout
+		options.ReleaseTimeout = prewarmDefaultReleaseCommandBudget
 	}
 	if options.Now == nil {
 		options.Now = time.Now

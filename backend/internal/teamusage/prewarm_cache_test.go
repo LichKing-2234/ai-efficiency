@@ -612,7 +612,9 @@ func TestPrewarmCachePublishLastRechecksClockAfterValidationRead(t *testing.T) {
 		t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
 	}
 	manifest := testPrewarmManifest(t, cache, identity, generatedAt)
-	store.mgetAfter = func() { now = generatedAt.Add(59 * time.Second) }
+	store.mgetAfter = func() {
+		now = generatedAt.Add(movingHard - manifestTTL - cache.options.WriteTimeout)
+	}
 
 	published, err := cache.PublishManifest(context.Background(), leaseKey, "owner", manifest)
 	if err == nil || published {
@@ -1043,6 +1045,22 @@ func TestPrewarmCacheRejectsCommandTimeoutOverTwoSeconds(t *testing.T) {
 				t.Fatal("NewPrewarmCache(over-cap timeout) error = nil")
 			}
 		})
+	}
+}
+
+func TestPrewarmCacheDefaultCommandBudgets(t *testing.T) {
+	cache, err := NewPrewarmCache(newRecordingPrewarmStore(), PrewarmCacheOptions{Namespace: "test"})
+	if err != nil {
+		t.Fatalf("NewPrewarmCache() error = %v", err)
+	}
+	const selectedBudget = 250 * time.Millisecond
+	for name, got := range map[string]time.Duration{
+		"read": cache.options.ReadTimeout, "write": cache.options.WriteTimeout,
+		"lease": cache.options.LeaseTimeout, "release": cache.options.ReleaseTimeout,
+	} {
+		if got != selectedBudget {
+			t.Errorf("default %s command budget = %s, want %s", name, got, selectedBudget)
+		}
 	}
 }
 
