@@ -94,8 +94,12 @@ feature-enabled attempt. Task 14 Steps 1-3 are complete in commits `666e1e94`
 and `16529b18`. Focused RED/GREEN tests, 50 repeated multi-instance runs,
 server, Team Usage, and telemetry race tests, the full backend suite,
 `go vet ./...`, and `go build ./...` passed. Independent task review found zero
-Critical, Important, or Minor issues. No image has been published and staging
-remains disabled pending Step 4.
+Critical, Important, or Minor issues. Step 4's exact-code feature-disabled
+benchmark passed. Step 5 then proved one startup owner and one lease-busy loser,
+but failed because the four-manifest cohort exceeded five seconds and completed
+after the loser's first scheduled tick; that tick recorded two closed
+`command_deadline` Redis failures. Staging was immediately restored disabled at
+revision 56, production is unchanged, and Task 9 Steps 3-6 remain unchecked.
 
 ## Task 1 Gate Evidence
 
@@ -1843,13 +1847,38 @@ finding before publishing an image.
   with RED/GREEN coverage. Re-review reported zero Critical, Important, or Minor
   findings. No staging image was published and no runtime configuration changed.
 
-- [ ] **Step 4: Rebuild and repeat the feature-disabled Redis benchmark**
+- [x] **Step 4: Rebuild and repeat the feature-disabled Redis benchmark**
 
 Publish an immutable staging image for the reviewed Task 14 head, deploy it
 with the feature absent/disabled, and repeat Task 13's exact 100-sample seven-
 class benchmark. Any command, transport, INFO, cleanup, eviction, or rejected-
 connection error blocks enablement. Do not change a budget from this run unless
 a later feature-enabled replay proves the current value insufficient.
+
+  **Completed exact-code replay (2026-07-22):** Exact reviewed head
+  `3d533710` was published only as immutable staging image
+  `staging-3d533710b8c48a76be1a92389482e1e80ca66317`. The remote index digest is
+  `sha256:9865d3e2039999ac0f6b5ae3dcd2b9bc26bdda89a521994e1388641dd3bc1038`;
+  its amd64 and arm64 manifests are respectively
+  `sha256:0e2773ce083bafec17e5bcd8c9a50c7002de3f9dc951ded734c194832311700e`
+  and
+  `sha256:34d6836640ac6dedce81715f6aed453823e52aabdd42f3a4035f09e9b6d85ed0`.
+  The paused and restore-enabled disabled rollouts completed at staging
+  revisions 53 and 54. Revision 54 ran one ready Pod on the exact image with
+  prewarm environment entries absent and HTTP 200 live/readiness; production
+  remained revision 69 on `v0.1.0-preview.73`, ready and unchanged.
+
+  The exact Task 13 package-native harness was restored outside the repository,
+  passed its local overlay check, and ran as a static amd64 binary in the
+  feature-disabled Pod. The smoke passed. The full replay completed 100 samples
+  with zero errors in each ordered class: current write, segment write,
+  five-lease manifest publication, full-generation MGET, four-lane request MGET,
+  lease acquire, and lease release. Their p99 values were `13.442`, `19.416`,
+  `12.600`, `73.590`, `50.473`, `11.848`, and `11.847` milliseconds. Every
+  selected budget remained `250ms`. Transport, INFO, and cleanup errors were
+  zero; the final synthetic key count and eviction/rejected-connection deltas
+  were zero. The Pod binary was deleted before enablement. Step 5 is the next
+  controlled action.
 
 - [ ] **Step 5: Run one pre-ticker two-Pod diagnostic replay**
 
@@ -1859,6 +1888,34 @@ per-Pod metric baselines before enablement and evaluate startup before the first
 four complete manifests within five seconds of the first complete manifest,
 zero Relay errors, zero Redis errors, and zero Redis error-class deltas. Capture
 Redis pending, wait, and timeout deltas alongside any command deadline.
+
+  **Failed deterministic replay (2026-07-22):** The exact revision-54 image was
+  atomically enabled only in staging at revision 55 with two fresh Pods. The
+  earliest successful scrapes came `14.716s` and `5.600s` after their respective
+  container starts. At those scrapes, Redis operation/error-class and pool
+  pending/wait/timeout counters were zero on both Pods. One Pod became the exact
+  owner and later recorded four `startup/success` labels and 16 source
+  observations. The other recorded four `startup/lease_busy` labels and zero
+  source observations during startup, satisfying the corrected ownership
+  contract.
+
+  The timing gate failed. The first complete manifest was created at
+  `12:15:42.532Z` and the last at `12:16:33.468Z`, a `50.936s` cohort rather
+  than at most five seconds. The lease-busy Pod started at `12:15:22Z`, so its
+  first fixed 60-second ticker was due at `12:16:22Z`; the last manifest arrived
+  `11.468s` after that boundary. The final bounded scrape proved the ticker had
+  run: the loser recorded moving/recovery/historical cycles and eight source
+  observations after its zero-source startup. It also recorded exactly two
+  Redis operation errors, both closed `command_deadline` classes: one
+  `lease_acquire` and one `manifest_read`. Relay non-2xx and source-error counts
+  were zero. Pool pending, wait count, wait duration, and timeout deltas were all
+  zero.
+
+  No API acceptance round ran and no Team Usage business key was deleted.
+  Atomic upgrade immediately restored the exact image with the feature absent,
+  one replica, and HTTP 200 live/readiness at staging revision 56. Production
+  remained revision 69 on `v0.1.0-preview.73`, ready and unchanged. Step 5 and
+  Task 9 Steps 3-6 remain unchecked.
 
 On any failure, disable staging immediately, keep Task 9 Steps 3-6 unchecked,
 record only sanitized operation IDs, closed outcomes, counts, and durations,

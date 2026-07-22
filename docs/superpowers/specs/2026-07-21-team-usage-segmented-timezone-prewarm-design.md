@@ -15,7 +15,10 @@ Redis error classes observable, retains a successful startup coordinator for
 its bounded TTL, and requires a pre-ticker two-Pod replay before Task 9 can
 resume. Its local implementation and independent review are complete in commits
 `666e1e94` and `16529b18`; the feature remains disabled pending an exact-code
-benchmark and diagnostic staging replay.
+benchmark and diagnostic staging replay. The exact-code feature-disabled
+benchmark passed on 2026-07-22 with 100 zero-error samples in every required
+class. The two-Pod replay then proved one startup owner and one lease-busy loser
+but failed its cohort/pre-ticker gate and was restored disabled at revision 56.
 
 **Date:** 2026-07-21
 
@@ -1049,6 +1052,20 @@ five seconds of the first complete manifest, and zero Relay/Redis errors. A
 failure is rolled back immediately and its closed class determines the next
 root-cause task. A pass only permits Task 9 Step 3 to restart from a fresh
 controlled round.
+
+The 2026-07-22 exact-code disabled benchmark passed all seven classes with 100
+samples and zero command, transport, INFO, or cleanup errors. The subsequent
+revision-55 replay also proved the coordinator correction: one Pod reported
+four `startup/success` labels and 16 source observations, while the other
+reported four `startup/lease_busy` labels and zero startup source observations.
+However, the four complete publish-last manifests spanned `50.936s` from first
+to last. The loser started at `12:15:22Z`; its first 60-second ticker preceded
+the last manifest by `11.468s`. The post-ticker bounded scrape recorded one
+`lease_acquire` and one `manifest_read` Redis error, both closed class
+`command_deadline`, while pool pending/wait/timeout deltas and Relay non-2xx
+counts remained zero. The replay therefore failed without API requests or
+business-key deletion. Staging was atomically restored to one healthy disabled
+replica on the exact image at revision 56, and production remained unchanged.
 
 Local Task 14 verification covered the concurrent and staggered multi-instance
 startup paths, all seven closed Redis error classes, normal cache miss and lease
