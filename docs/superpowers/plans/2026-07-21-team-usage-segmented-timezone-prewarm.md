@@ -98,8 +98,9 @@ Critical, Important, or Minor issues. Step 4's exact-code feature-disabled
 benchmark passed. Step 5 then proved one startup owner and one lease-busy loser,
 but failed because the four-manifest cohort exceeded five seconds and completed
 after the loser's first scheduled tick; that tick recorded two closed
-`command_deadline` Redis failures. Staging was immediately restored disabled at
-revision 56, production is unchanged, and Task 9 Steps 3-6 remain unchecked.
+`command_deadline` Redis failures. Staging was restored disabled at revision 56;
+the rollback duration was not retained separately. Production is unchanged, and
+Task 9 Steps 3-6 remain unchecked.
 
 ## Task 1 Gate Evidence
 
@@ -1901,21 +1902,26 @@ Redis pending, wait, and timeout deltas alongside any command deadline.
 
   The timing gate failed. The first complete manifest was created at
   `12:15:42.532Z` and the last at `12:16:33.468Z`, a `50.936s` cohort rather
-  than at most five seconds. The lease-busy Pod started at `12:15:22Z`, so its
-  first fixed 60-second ticker was due at `12:16:22Z`; the last manifest arrived
-  `11.468s` after that boundary. The final bounded scrape proved the ticker had
-  run: the loser recorded moving/recovery/historical cycles and eight source
-  observations after its zero-source startup. It also recorded exactly two
+  than at most five seconds. The lease-busy Pod started at `12:15:22Z`; its
+  first successful scrape at `12:15:27.600Z` already contained all four
+  `startup/lease_busy` labels, so `runStartup` and ticker construction had
+  completed by then. Its first tick was therefore due no later than
+  `12:16:27.600Z`, at least `5.868s` before the last manifest. This is a bounded
+  upper limit, not an exact ticker timestamp. The final scrape also recorded
+  moving/recovery/historical cycles and eight source observations after the
+  loser's zero-source startup. It recorded exactly two
   Redis operation errors, both closed `command_deadline` classes: one
   `lease_acquire` and one `manifest_read`. Relay non-2xx and source-error counts
-  were zero. Pool pending, wait count, wait duration, and timeout deltas were all
-  zero.
+  were zero. Bounded scrapes recorded zero pool pending values and zero pool
+  wait-count, wait-duration, and timeout deltas; they cannot exclude pressure
+  between scrapes.
 
   No API acceptance round ran and no Team Usage business key was deleted.
-  Atomic upgrade immediately restored the exact image with the feature absent,
-  one replica, and HTTP 200 live/readiness at staging revision 56. Production
-  remained revision 69 on `v0.1.0-preview.73`, ready and unchanged. Step 5 and
-  Task 9 Steps 3-6 remain unchecked.
+  Atomic upgrade restored the exact image with the feature absent, one replica,
+  and HTTP 200 live/readiness at staging revision 56. The failure-to-rollback
+  duration was not retained separately, so this ledger does not claim a timed
+  fail-fast proof. Production remained revision 69 on `v0.1.0-preview.73`, ready
+  and unchanged. Step 5 and Task 9 Steps 3-6 remain unchecked.
 
 On any failure, disable staging immediately, keep Task 9 Steps 3-6 unchecked,
 record only sanitized operation IDs, closed outcomes, counts, and durations,

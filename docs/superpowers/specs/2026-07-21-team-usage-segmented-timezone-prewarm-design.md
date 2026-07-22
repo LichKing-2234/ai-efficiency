@@ -14,11 +14,11 @@ Task 14 is the current correction contract: it makes startup ownership and
 Redis error classes observable, retains a successful startup coordinator for
 its bounded TTL, and requires a pre-ticker two-Pod replay before Task 9 can
 resume. Its local implementation and independent review are complete in commits
-`666e1e94` and `16529b18`; the feature remains disabled pending an exact-code
-benchmark and diagnostic staging replay. The exact-code feature-disabled
-benchmark passed on 2026-07-22 with 100 zero-error samples in every required
-class. The two-Pod replay then proved one startup owner and one lease-busy loser
-but failed its cohort/pre-ticker gate and was restored disabled at revision 56.
+`666e1e94` and `16529b18`. The exact-code feature-disabled benchmark passed on
+2026-07-22 with 100 zero-error samples in every required class. The two-Pod
+replay then proved one startup owner and one lease-busy loser but failed its
+cohort/pre-ticker gate and was restored disabled at revision 56. Task 14 Step 4
+is complete, Step 5 remains incomplete, and Task 9 must not resume.
 
 **Date:** 2026-07-21
 
@@ -1059,19 +1059,23 @@ revision-55 replay also proved the coordinator correction: one Pod reported
 four `startup/success` labels and 16 source observations, while the other
 reported four `startup/lease_busy` labels and zero startup source observations.
 However, the four complete publish-last manifests spanned `50.936s` from first
-to last. The loser started at `12:15:22Z`; its first 60-second ticker preceded
-the last manifest by `11.468s`. The post-ticker bounded scrape recorded one
-`lease_acquire` and one `manifest_read` Redis error, both closed class
-`command_deadline`, while pool pending/wait/timeout deltas and Relay non-2xx
-counts remained zero. The replay therefore failed without API requests or
+to last. The loser started at `12:15:22Z`, and its `12:15:27.600Z` scrape already
+contained all four startup-busy labels. Because the ticker is constructed only
+after startup returns, its first tick was due no later than `12:16:27.600Z`, at
+least `5.868s` before the last manifest. This is a bounded upper limit rather
+than an exact ticker timestamp. The final scrape recorded one `lease_acquire`
+and one `manifest_read` Redis error, both closed class `command_deadline`.
+Bounded scrapes recorded zero pool pending and zero wait-count, wait-duration,
+and timeout deltas; this does not exclude pressure between scrapes. Relay non-
+2xx counts remained zero. The replay therefore failed without API requests or
 business-key deletion. Staging was atomically restored to one healthy disabled
 replica on the exact image at revision 56, and production remained unchanged.
 
 Local Task 14 verification covered the concurrent and staggered multi-instance
 startup paths, all seven closed Redis error classes, normal cache miss and lease
 contention, 50 repeated collapse runs, Team Usage and telemetry race tests, the
-full backend suite, vet, and build. The independent controller review remains
-the final local gate before an immutable staging image may be published.
+full backend suite, vet, and build. Independent controller review completed
+before the immutable Task 14 staging image was published.
 
 ## Rollout And Rollback
 
