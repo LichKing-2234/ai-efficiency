@@ -8,17 +8,12 @@
 
 **Tech Stack:** Go 1.24, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Tasks 1-2 and the Task 3 implementation and verification ladder are
-complete at exact reviewed code head
-`30279888db6dad6c0f5e433879ba9573642fc461`. The first Task 3 documentation
-commit `f028b72ce61150b005b788b5518f97bc52b8a882` received one Important
-post-commit Standards finding for a stale publication snippet; this follow-up
-corrects that snippet without pre-recording its own review result. The clean
-post-commit documentation review result and current only image-eligible head
-are recorded in ignored SDD ledgers after review. No Task 15 image or staging
-replay exists. Staging remains feature-disabled according to retained Task 14
-evidence, Tasks 4-5 remain pending, and Task 9 Steps 3-6 remain unchanged and
-unchecked.
+**Status:** Tasks 1-4 are complete. Task 4 published exact reviewed head
+`c5d3f6af15ea4db7ef424139822b043ee787f79d`, deployed it disabled to staging,
+and passed the seven-class Redis benchmark with 100 valid samples per class at
+the unchanged `250ms` budgets. Staging is restored disabled at revision 58 with
+one ready replica on that exact image; production remains unchanged at revision
+69. Task 5 is pending, and Task 9 Steps 3-6 remain unchanged and unchecked.
 
 ## Global Constraints
 
@@ -615,13 +610,14 @@ the already recorded final ladder rerun had not been read. After that evidence
 was reviewed, the finding was withdrawn without a code change; final Spec
 review reports `0 Critical / 0 Important / 0 Minor`.
 
-No Task 15 image has been built or deployed and no Task 15 staging replay has
-run. Retained Task 14 evidence remains the source for the feature-disabled
-staging state. Tasks 4-5 remain pending, Task 9 Steps 3-6 remain unchecked, and
+At the Task 3 checkpoint no Task 15 image had been built or deployed. The clean
+post-commit documentation review later established
+`c5d3f6af15ea4db7ef424139822b043ee787f79d` as the image-eligible head, and the
+Task 4 evidence below records its subsequent disabled publication, rollout, and
+benchmark. Task 5 and Task 9 Steps 3-6 remain unchecked, and
 `docs/architecture.md` remains unchanged. Because a tracked commit cannot
-truthfully pre-record its own review result, its image eligibility is recorded
-only after clean post-commit documentation review in the ignored progress and
-task report ledgers.
+truthfully pre-record its own review result, the Task 3 image-eligibility
+decision remains recorded in the ignored progress and task report ledgers.
 
 ---
 
@@ -635,11 +631,29 @@ task report ledgers.
 - Consumes: exact reviewed Task 3 head and the Task 13 package-native benchmark harness by its recorded SHA.
 - Produces: a multi-architecture staging image and a passing feature-disabled Redis command gate.
 
-- [ ] **Step 1: Verify immutable baselines**
+- [x] **Step 1: Verify immutable baselines**
+
+  **Execution evidence (2026-07-23):** The application worktree was clean at
+  exact reviewed head `c5d3f6af15ea4db7ef424139822b043ee787f79d` before the
+  rollout. Staging was revision 56, feature-disabled, one of one replicas ready
+  with zero restarts, and HTTP 200 live/readiness. Production was revision 69
+  on `v0.1.0-preview.73`, feature-disabled, one of one replicas ready with zero
+  restarts, and HTTP 200 live/readiness. The staging selector was mode `0600`;
+  only that allowed selector was inspected, and unrelated Helm changes were
+  neither inspected nor modified.
 
 Require the application worktree clean. Record staging revision/image/flag/health and production revision/image/flag/health. Verify the staging selector is mode `0600`. Preserve and do not inspect unrelated Helm changes.
 
-- [ ] **Step 2: Build and verify the exact image**
+- [x] **Step 2: Build and verify the exact image**
+
+  **Execution evidence (2026-07-23):** The exact head was published as
+  `ghcr.io/lichking-2234/ai-efficiency:staging-c5d3f6af15ea4db7ef424139822b043ee787f79d`.
+  The remote OCI index is
+  `sha256:1e683cd90c1a5366e7b1d6a6ffff509ac99efb8a9079303383af9b539214df38`,
+  with `linux/amd64` manifest
+  `sha256:d7a265a9416669679f231ed7b6bb368f22f150f183ed9aa1ade01f47c44e1d76`
+  and `linux/arm64` manifest
+  `sha256:09932200dd0da885bfc3159e9ea06b6d66ebe93f8e6df0a32150dcc627622516`.
 
 ```bash
 APP_WORKTREE=/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm
@@ -658,17 +672,62 @@ docker buildx imagetools inspect "${IMAGE}"
 
 Record index, amd64, and arm64 digests. A missing architecture blocks deployment.
 
-- [ ] **Step 3: Deploy disabled through paused and restore-enabled phases**
+- [x] **Step 3: Deploy disabled through paused and restore-enabled phases**
+
+  **Execution evidence (2026-07-23):** The tracked refresh script selected the
+  exact image tag and snapshot `c5d3f6af15ea` while preserving every other
+  selector byte. Render and server dry-run showed one replica and no Team Usage
+  prewarm environment entry. Paused revision 57 reached zero application Pods;
+  restore-enabled revision 58 reached one of one ready replicas on the exact
+  image with zero restarts, no prewarm environment entry, and HTTP 200
+  live/readiness. Production remained unchanged at revision 69.
 
 Use the tracked staging refresh script and staging playbook. Server dry-run and rendered Deployment must show the exact image, one replica, and all Team Usage prewarm environment entries absent. Verify deployed, `1/1` ready, zero restarts, and HTTP 200 live/readiness.
 
-- [ ] **Step 4: Repeat the exact seven-class benchmark**
+- [x] **Step 4: Repeat the exact seven-class benchmark**
+
+  **Execution evidence (2026-07-23):** The exact Task 13 package-native harness
+  was restored mechanically with SHA-256
+  `85702939d9775cb2980847ee04eb7ac06a3dde79ecd0f9a744565224e9448cb8`.
+  Its static `linux/amd64` binary was `51,309,011` bytes. Smoke passed, followed
+  by one full run with the following accepted aggregates:
+
+  | Command class | Samples | p99 ms | Max ms | Budget ms | Returned command errors |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | Current compressed write | 100 | 13.772 | 14.228 | 250 | 0 |
+  | Segment compressed write | 100 | 19.497 | 49.805 | 250 | 0 |
+  | Five-lease manifest publication | 100 | 13.456 | 13.717 | 250 | 0 |
+  | Full-generation MGET | 100 | 73.820 | 78.506 | 250 | 0 |
+  | Four-lane request MGET | 100 | 54.993 | 61.472 | 250 | 0 |
+  | Lease acquire | 100 | 12.757 | 13.906 | 250 | 0 |
+  | Lease release | 100 | 12.650 | 12.869 | 250 | 0 |
+
+  Returned command, transport, INFO, and cleanup error counts were all zero.
+  Final synthetic namespace key count was zero; eviction,
+  rejected-connection, and peak-memory deltas were zero. The Redis lifetime
+  `error-replies` counter increased by 18 during the observation window, but it
+  is a global background counter, no benchmark command returned an error, and
+  the increase cannot be attributed to this harness. Read, write, lease, and
+  release budgets therefore remain `250ms`.
+
+  The Pod binary was deleted and verified absent. Eleven task-specific local
+  source, binary, and raw-report artifacts matching the established Task 15
+  pattern were deleted; the final scan found zero matching paths.
 
 Run smoke, then 100 valid samples for current write, segment write, five-lease manifest publication, full-generation MGET, four-lane request MGET, lease acquire, and lease release. Require zero returned command, transport, INFO, and cleanup errors; zero remaining synthetic keys; and zero eviction/rejected-connection deltas. Keep all four budgets at `250ms`.
 
 Delete local source, binary, raw reports, and Pod binary; verify zero task-specific temporary artifacts. Any gate failure leaves staging disabled, keeps Task 4 unchecked, records sanitized evidence, and stops.
 
-- [ ] **Step 5: Record the passing disabled gate**
+- [x] **Step 5: Record the passing disabled gate**
+
+  **Execution evidence (2026-07-23):** Staging ended at revision 58 on the
+  exact tested image, feature-disabled, with one ready replica, zero restarts,
+  no prewarm environment entry, and HTTP 200 live/readiness. Production remained
+  revision 69 on `v0.1.0-preview.73`, feature-disabled and healthy. The
+  mode-`0600` staging selector intentionally retains only the exact-image and
+  snapshot update and remains uncommitted and unpushed; unrelated Helm changes
+  remain untouched. Task 5 and Task 9 Steps 3-6 remain unchecked, and
+  `docs/architecture.md` remains unchanged.
 
 Check Task 4 only after the exact-code full run passes. Commit sanitized plan/spec evidence with:
 

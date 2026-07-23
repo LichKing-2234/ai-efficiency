@@ -1,15 +1,11 @@
 # Team Usage Startup Cohort Publication Design
 
-**Status:** Implementation and the verification ladder are complete at exact
-reviewed code head `30279888db6dad6c0f5e433879ba9573642fc461`. Documentation
-commit `f028b72ce61150b005b788b5518f97bc52b8a882` received one Important
-post-commit Standards finding for a stale publication snippet; this follow-up
-corrects it without pre-recording its own review result. The clean post-commit
-documentation review result and current only image-eligible head are recorded
-in ignored SDD ledgers after review. No Task 15 image has been published or
-deployed and no Task 15 staging replay has run. Staging remains
-feature-disabled according to retained Task 14 evidence; Tasks 4-5 remain
-pending.
+**Status:** Tasks 1-4 are complete. Exact reviewed head
+`c5d3f6af15ea4db7ef424139822b043ee787f79d` is published and deployed disabled
+to staging. Its seven-class Redis benchmark passed with 100 valid samples per
+class at the unchanged `250ms` budgets. Staging is restored disabled at revision
+58 with one ready replica on the exact image; production remains unchanged at
+revision 69. Task 5 is pending, and Task 9 Steps 3-6 remain unchecked.
 
 **Date:** 2026-07-23
 
@@ -233,19 +229,66 @@ ledgers after review, because a tracked commit cannot truthfully pre-record its
 own review result. Final Spec review remains `0 Critical / 0 Important / 0
 Minor`.
 
-This status is local evidence only: no Task 15 image has been built or
-deployed, no Task 15 staging replay has run, and this design does not claim
-current staging or production runtime behavior. Retained Task 14 evidence
-remains the source for the feature-disabled staging state. Tasks 4-5 remain
-pending, Task 9 Steps 3-6 remain unchecked, and `docs/architecture.md` remains
-unchanged.
+The implementation and review statements above remain local code evidence. The
+Task 4 exact-code image publication, disabled rollout, and Redis benchmark are
+recorded below as separate runtime evidence. No Task 5 two-Pod cohort replay has
+run. Task 5 and Task 9 Steps 3-6 remain pending, and `docs/architecture.md`
+remains unchanged.
+
+## Disabled Exact-Code Benchmark
+
+Task 4 published
+`ghcr.io/lichking-2234/ai-efficiency:staging-c5d3f6af15ea4db7ef424139822b043ee787f79d`
+with OCI index
+`sha256:1e683cd90c1a5366e7b1d6a6ffff509ac99efb8a9079303383af9b539214df38`.
+The index contains `linux/amd64` manifest
+`sha256:d7a265a9416669679f231ed7b6bb368f22f150f183ed9aa1ade01f47c44e1d76`
+and `linux/arm64` manifest
+`sha256:09932200dd0da885bfc3159e9ea06b6d66ebe93f8e6df0a32150dcc627622516`.
+
+The rollout started from healthy, disabled staging revision 56 and unchanged
+healthy, disabled production revision 69 on `v0.1.0-preview.73`. The normal
+paused phase reached zero application Pods at staging revision 57. The
+restore-enabled phase reached revision 58 with one ready replica on the exact
+image, zero restarts, all Team Usage prewarm environment entries absent, and
+HTTP 200 live/readiness. The mode-`0600` selector retained image tag
+`staging-c5d3f6af15ea4db7ef424139822b043ee787f79d` and snapshot
+`c5d3f6af15ea` while preserving every other byte. It remains deliberately
+uncommitted and unpushed. Production remained unchanged.
+
+The exact Task 13 package-native harness was restored with SHA-256
+`85702939d9775cb2980847ee04eb7ac06a3dde79ecd0f9a744565224e9448cb8`.
+The static `linux/amd64` binary was `51,309,011` bytes. Smoke passed before the
+only full run. The accepted full-run aggregates are:
+
+| Command class | Samples | p99 ms | Max ms | Budget ms | Returned command errors |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Current compressed write | 100 | 13.772 | 14.228 | 250 | 0 |
+| Segment compressed write | 100 | 19.497 | 49.805 | 250 | 0 |
+| Five-lease manifest publication | 100 | 13.456 | 13.717 | 250 | 0 |
+| Full-generation MGET | 100 | 73.820 | 78.506 | 250 | 0 |
+| Four-lane request MGET | 100 | 54.993 | 61.472 | 250 | 0 |
+| Lease acquire | 100 | 12.757 | 13.906 | 250 | 0 |
+| Lease release | 100 | 12.650 | 12.869 | 250 | 0 |
+
+Returned command, transport, INFO, and cleanup error counts were zero. Final
+synthetic namespace key count was zero. Eviction, rejected-connection, and
+peak-memory deltas were zero. The global Redis lifetime `error-replies` counter
+increased by 18 during the observation window. No harness command returned an
+error, so this non-attributable background counter is recorded without claiming
+that the harness caused it or that the global counter remained zero.
+
+The Pod binary was deleted and verified absent. Eleven task-specific local
+source, binary, and raw-report artifacts were deleted, and the final established
+pattern scan found zero paths. Task 4 therefore passes the disabled Redis gate;
+read, write, lease, and release remain `250ms`. This pass permits Task 5 only.
+It does not enable the feature or satisfy any Task 9 API acceptance round.
 
 ## Staging Gates
 
-Because exact code changes, first publish a new multi-architecture immutable
-image and repeat the feature-disabled seven-class Redis benchmark with 100
-samples per class. Any returned command, transport, INFO, cleanup, eviction, or
-rejected-connection error blocks enablement.
+The exact-code publication and disabled seven-class Redis benchmark are complete
+with 100 valid samples per class. Any later returned command, transport, INFO,
+cleanup, eviction, or rejected-connection error still blocks enablement.
 
 Then run one two-Pod diagnostic replay, with no API acceptance round and no
 business-key deletion. Require:
