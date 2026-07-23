@@ -40,7 +40,7 @@
 - Consumes: exact disabled selector, captured baseline revision, Task 15 observer metric contracts.
 - Produces: reviewed guardian/controller/observer SHA-256 values, passing rollback drills, and a passing synthetic observer parser suite.
 
-- [ ] **Step 1: Create private, non-overlapping session directories**
+- [x] **Step 1: Create private, non-overlapping session directories**
 
 Run from the application worktree:
 
@@ -59,7 +59,7 @@ test "${RAW_DIR}" != "${EVIDENCE_DIR}"
 
 Store the three absolute paths only in the ignored task report. Do not print directory contents.
 
-- [ ] **Step 2: Write the Bash guardian with explicit environment inputs**
+- [x] **Step 2: Write the Bash guardian with explicit environment inputs**
 
 `guardian.sh` must be Bash 3.2-compatible and start with:
 
@@ -118,7 +118,7 @@ selector bytes and call `live_is_exact_disabled`; skip emergency Helm if it
 passes, otherwise invoke the same rollback argv once. It must freshly prove
 disabled runtime before returning and must never cleanup on failure.
 
-- [ ] **Step 3: Run the fake-controller-death guardian drill**
+- [x] **Step 3: Run the fake-controller-death guardian drill**
 
 Create private fake `helm` and `kubectl` executables that operate only on files in `GUARD_DIR`. The fake runtime begins enabled. The fake Helm rollback appends one sanitized argument line, changes the fake runtime to disabled, and exits zero. The fake kubectl returns that state without keys or values.
 
@@ -162,7 +162,7 @@ emergency Helm and the combined fake Helm call count must remain one. The drill
 fails if any process exits without bounded handling, invokes its rollback
 twice, accepts different argv, or deletes state/evidence.
 
-- [ ] **Step 4: Write and test the durable observer**
+- [x] **Step 4: Write and test the durable observer**
 
 Recover only the metric/Redis parsing behavior represented by Task 15 observer SHA-256 `d5915970ded740b1f4480ccd84455cdea22537b91d8e1a004ca214083e4e2f27`; do not recover its controller or cleanup trap. The new `observer.sh` owns these atomic files in `EVIDENCE_DIR`:
 
