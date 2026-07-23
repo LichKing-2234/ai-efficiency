@@ -999,127 +999,39 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 	defer cancel()
 	workerCtx = withPrewarmControllingLeases(workerCtx, PrewarmLeaseClaim{Key: coordinatorKey, Token: coordinatorToken})
 
-	var currentRef *PrewarmValueReference
-	var failures []error
-	for _, timezone := range p.timezones {
-		anchorDate, anchorErr := prewarmLocalAnchorDate(timezone, p.options.Now())
-		if anchorErr != nil {
-			failures = append(failures, anchorErr)
-			continue
+	batchTime := p.options.Now()
+	plans, failures := p.planStartupLanes(workerCtx, binding, batchTime)
+	if sharedCurrentNeeded(plans) {
+		current, err := p.buildCurrentStats(workerCtx, binding, "startup")
+		if err != nil {
+			return errors.Join(append(failures, err)...)
 		}
-		safe, splitErr := SplitSafe(timezone, anchorDate)
-		if splitErr != nil {
-			failures = append(failures, splitErr)
-			continue
+		ref, err := p.cache.WriteCurrentStats(workerCtx, current)
+		if err != nil {
+			return errors.Join(append(failures, err)...)
 		}
-		if !safe {
-			continue
-		}
-		identity := PrewarmCacheIdentity{
-			ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
-			Timezone: timezone, AnchorDate: anchorDate,
-		}
-		if ownershipErr := p.requireCoordinatorOwned(workerCtx); ownershipErr != nil {
-			return errors.Join(append(failures, ownershipErr)...)
-		}
-		previous, ok, readErr := p.cache.Read(workerCtx, identity)
-		if readErr != nil {
-			failures = append(failures, fmt.Errorf("startup read %s: %w", timezone, readErr))
-			continue
-		}
-		if !startupNeedsRecovery(previous, ok) {
-			continue
-		}
-		manifest := newPrewarmManifestCandidate(identity, previous, p.options.Now())
-		if !ok || previous.CurrentStatsStatus == PrewarmValueMissing || previous.CurrentStatsStatus == PrewarmValueHardExpired {
-			if currentRef == nil {
-				current, buildErr := p.buildCurrentStats(workerCtx, binding, "startup")
-				if buildErr != nil {
-					failures = append(failures, fmt.Errorf("startup current stats: %w", buildErr))
-					continue
-				}
-				written, writeErr := p.cache.WriteCurrentStats(workerCtx, current)
-				if writeErr != nil {
-					failures = append(failures, fmt.Errorf("startup write current stats: %w", writeErr))
-					continue
-				}
-				currentRef = &written
-			}
-			manifest.CurrentStats = *currentRef
-		}
-		missingClasses := startupMissingSegmentClasses(previous, ok)
-		for _, class := range missingClasses {
-			leased, fetchErr := p.fetchHistoricalOrTodayClass(workerCtx, binding, timezone, anchorDate, class)
-			if fetchErr != nil {
-				if errors.Is(fetchErr, errPrewarmLeaseBusy) {
-					continue
-				}
-				failures = append(failures, fmt.Errorf("startup %s %s: %w", timezone, class, fetchErr))
-				continue
-			}
-			previousRef := manifest.TodayHour
-			switch class {
-			case SegmentHistory29d:
-				previousRef = manifest.History29d
-				manifest.History29d = leased.reference
-			case SegmentHistory6d:
-				previousRef = manifest.History6d
-				manifest.History6d = leased.reference
-			case SegmentTodayHour:
-				manifest.TodayHour = leased.reference
-			}
-			if !prewarmManifestReferencesPresent(manifest) {
+		applyStartupCurrentReference(plans, ref)
+	}
+	failures = append(failures, p.fetchStartupSegments(workerCtx, binding, plans)...)
+	defer func() {
+		for index := range plans {
+			for _, leased := range plans[index].leased {
 				p.releaseLeasedReference(leased)
-				continue
 			}
-			if publishErr := p.publishIfCurrent(leased.ctx, binding, []PrewarmLeaseClaim{{Key: leased.leaseKey, Token: leased.token}}, manifest); publishErr != nil {
-				failures = append(failures, fmt.Errorf("startup publish %s %s: %w", timezone, class, publishErr))
-				switch class {
-				case SegmentHistory29d:
-					manifest.History29d = previousRef
-				case SegmentHistory6d:
-					manifest.History6d = previousRef
-				case SegmentTodayHour:
-					manifest.TodayHour = previousRef
-				}
-			} else {
-				p.options.Metrics.SetLastSuccess("startup", timezone, p.options.Now())
-			}
-			p.releaseLeasedReference(leased)
 		}
-		if len(missingClasses) != 0 || !prewarmManifestReferencesPresent(manifest) {
-			continue
-		}
-		if publishErr := p.publishIfCurrent(workerCtx, binding, nil, manifest); publishErr != nil {
-			failures = append(failures, fmt.Errorf("startup publish %s: %w", timezone, publishErr))
-		} else {
-			p.options.Metrics.SetLastSuccess("startup", timezone, p.options.Now())
-		}
-	}
-	if err := errors.Join(failures...); err != nil {
-		return err
-	}
+	}()
 	if err := workerCtx.Err(); err != nil {
-		return err
+		return errors.Join(append(failures, err)...)
 	}
 	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
+		return errors.Join(append(failures, err)...)
+	}
+	failures = append(failures, p.publishStartupCohort(workerCtx, binding, plans)...)
+	if err := errors.Join(failures...); err != nil {
 		return err
 	}
 	retainCoordinator = true
 	return nil
-}
-
-func (p *Prewarmer) fetchHistoricalOrTodayClass(
-	ctx context.Context,
-	binding ProviderBinding,
-	timezone, anchorDate string,
-	class PrewarmSegmentClass,
-) (leasedPrewarmReference, error) {
-	refreshClass := string(class)
-	if class == SegmentTodayHour {
-		refreshClass = prewarmMovingRefreshClass
-	}
-	return p.fetchLeasedSegment(ctx, binding, timezone, anchorDate, class, refreshClass)
 }
 
 type leasedPrewarmReference struct {
