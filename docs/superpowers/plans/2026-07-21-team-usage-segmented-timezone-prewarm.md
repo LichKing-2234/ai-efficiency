@@ -115,6 +115,16 @@ deployed and no Task 15 staging replay has run. Staging remains
 feature-disabled according to the retained Task 14 evidence. Task 15 Tasks 4-5
 remain pending, and Task 9 Steps 3-6 remain unchanged and unchecked.
 
+**Task 16 guarded replay decision (2026-07-23):** The one separately authorized
+replacement replay completed one staging enable at revision 61 and one guardian
+rollback at revision 62. Its feed/observer window overlapped restoration and the
+controller transiently misclassified rollback convergence, so independent
+review classified the run as an operational failure rather than a product pass
+or product-gate failure. Final staging is exact-image disabled `1/1` and healthy,
+production revision 69 is unchanged, and local/Pod Task 16 artifact counts are
+zero. Task 9 Steps 3-6 remain unchecked, `docs/architecture.md` remains
+unchanged, and no third replay is authorized.
+
 ## Task 1 Gate Evidence
 
 Staging matched PR #192 exact head `627a7123` at Helm revision 44 using image
@@ -1934,6 +1944,14 @@ Redis pending, wait, and timeout deltas alongside any command deadline.
   duration was not retained separately, so this ledger does not claim a timed
   fail-fast proof. Production remained revision 69 on `v0.1.0-preview.73`, ready
   and unchanged. Step 5 and Task 9 Steps 3-6 remain unchecked.
+
+  **Guarded replacement replay (2026-07-23):** One later authorized replay
+  completed enabled revision 61, but its feed closed before the controller
+  stopped marker/observer processing. The resulting observer failure overlapped
+  rollback and cannot establish a product result. The guardian performed the
+  only rollback and produced healthy disabled revision 62. Independent review
+  classified the attempt as an operational failure. Step 5 and Task 9 Steps
+  3-6 remain unchecked; no third replay is authorized.
 
 On any failure, disable staging immediately, keep Task 9 Steps 3-6 unchecked,
 record only sanitized operation IDs, closed outcomes, counts, and durations,

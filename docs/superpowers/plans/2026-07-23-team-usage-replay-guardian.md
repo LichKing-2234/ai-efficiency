@@ -8,6 +8,12 @@
 
 **Tech Stack:** Bash 3.2-compatible shell, jq, curl, Helm, kubectl, Redis CLI through the existing staging Pod, Prometheus text parsing, Git, Kubernetes.
 
+**Status:** Task 1 and Task 2 Steps 1-5 are complete. The single authorized live
+replay ended in an operational failure, while final restoration and cleanup
+passed. Task 2 Step 6 remains unchecked because review found unresolved
+session-tooling gaps that cannot be validated by another replay. Task 3 records
+the decision; no third replay is authorized.
+
 ## Global Constraints
 
 - The approved design is `docs/superpowers/specs/2026-07-23-team-usage-replay-guardian-design.md`.
@@ -298,7 +304,7 @@ Copy the disabled selector to `GUARD_DIR/disabled.json` mode `0600`. Create `RAW
 
 Preserve every other selector value. Render and server-dry-run both selectors through the existing staging playbook. Disabled must render one replica and no prewarm environment. Enabled must render two replicas, exact image, enabled true, and the exact timezone string. Production resources must not appear in either rendered diff.
 
-- [ ] **Step 3: Arm guardian, heartbeat, and observer before enablement**
+- [x] **Step 3: Arm guardian, heartbeat, and observer before enablement**
 
 Capture the existing disabled Pod UIDs and template hash. Start the
 controller-bound heartbeat writer before guardian, and touch the heartbeat
@@ -335,13 +341,13 @@ proof.
 
 Record PIDs only in the private raw report. Missing armed/waiting state blocks enablement.
 
-- [ ] **Step 4: Consume the one authorized live replay**
+- [x] **Step 4: Consume the one authorized live replay**
 
 Install the enabled selector bytes locally and run one staging-only atomic Helm upgrade with `--wait --wait-for-jobs`. Do not retry enablement. Record the new revision and require two desired, ready, updated, and available replicas on the exact image.
 
 Wait for exactly one `summary.json` or `failure.json`. At first result or observer deadline, atomically copy the sanitized result into `.superpowers/sdd/task-16-2-report.md`, fsync it, and only then create the guardian explicit-restore request.
 
-- [ ] **Step 5: Require guardian restoration and fresh final state**
+- [x] **Step 5: Require guardian restoration and fresh final state**
 
 Wait for guardian `restore_succeeded`. Measure the 660-second bound from the
 explicit restore request or an earlier `restore_started` state. If guardian
@@ -361,6 +367,52 @@ Keep the sanitized evidence until it is copied into the ignored report. Then rem
 
 Record the exact enabled/restore revisions, observer closed result, guardian states, final runtime, cleanup counts, and script SHAs in `.superpowers/sdd/task-16-2-report.md`. An independent reviewer must classify the replay as product pass, product-gate failure, or operational failure. Resolve every Critical and Important evidence finding without another enablement.
 
+## Guarded Replay Execution Ledger
+
+The one authorized replay ran once on 2026-07-23. Preflight passed at ledger
+head `ac81c1cd`, disabled staging revision 60, unchanged production revision 69,
+and image index digest
+`sha256:1e683cd90c1a5366e7b1d6a6ffff509ac99efb8a9079303383af9b539214df38`.
+The single enable completed at revision 61 and the single guardian rollback
+completed at revision 62; the emergency path did not run.
+
+```text
+guardian.sh                    f4a328b00c0a68ac5a880035bd04b039b320dc4c009447f6e4230a45b0479eef
+controller.sh                  4123c1167c381c84d985280c4b3f5e7a578ae5961cbb441c50b9598463c77230
+observer.sh                    d002a33a157d730461c578ec376554c15e72ab9df161cc61dd2af8bcb62a2bc3
+live-snapshot-command.sh       7daccf118441a763c192ab02276cea5087c7a3da9d22a127b6678f842a27bca0
+write-enabled-marker.sh        04958cf6014fde31202d3bd1d90179d92b7e2a36af7afb1ca976e405b5f49080
+live-observer-feed.sh          69fc20bf39a4bc0bb2ecc1d9eda7121ddf44dc15db2ee6f451e6a646d7c72834
+enabled-marker-watcher.sh      10cab49d6fd7c261da1f0025af221011922d8a7e52410258fd88a0e7103adc0b
+controller-liveness-watcher.sh 6b1199b9bbd7265541c09970329a980d0b6a08dfe7e6af728c3325b3bcd58613
+operational recorder           e7670dc1be49982b76513411177317e721f80015c9288854a11852beb558297f
+live replay controller         c1fb85986fec101e0b460010214d5b0094894e467fffb22733bb4713bd7b10cb
+```
+
+The enable attempt began 292 seconds before the enabled marker and restore
+request. The feed closed with `old_pod_set_changed`; the controller requested
+restoration, but enabled observation and marker completion continued. The
+observer then
+wrote `fresh_pod_selection_invalid`, so its product result overlapped rollback
+and is non-authoritative. Guardian state reached
+`restore_succeeded:explicit_restore` 30 seconds after the request. The
+controller's one strict final Pod read about two seconds later recorded
+`restore_failed`, but a fresh bounded terminal audit passed completely.
+
+Independent review classifies the replay as `operational failure`, with no
+product pass and no independently attributable product-gate failure. It found
+that operational stop did not short-circuit later observation and that final
+disabled verification lacked a bounded convergence wait. The outer launch
+wrapper also returned early because it checked the child process group before
+`setsid`; the independent controller continued and was never relaunched.
+
+Final staging revision 62 is exact-image disabled `1/1`, zero restart, no
+prewarm environment, frozen image digest, and HTTP 200 live/readiness.
+Production revision 69 is unchanged and healthy. The selector is exact disabled
+at mode `0600`. Runtime processes, local Task 16 artifacts, and final-Pod Task
+16 artifacts are all zero. No account or Team Usage API was used, Redis access
+was read-only, and no business key was deleted.
+
 ---
 
 ### Task 3: Record The Guarded Replay Decision
@@ -376,11 +428,11 @@ Record the exact enabled/restore revisions, observer closed result, guardian sta
 - Consumes: reviewed Task 2 runtime evidence.
 - Produces: the authoritative pass/fail decision and clean final branch/runtime state.
 
-- [ ] **Step 1: Write the sanitized replay ledger**
+- [x] **Step 1: Write the sanitized replay ledger**
 
 Record only script SHAs, Helm revisions, exact image digest, relative durations, closed counts/outcomes, guardian states, cleanup counts, and final runtime. Do not retain process IDs, directory paths, raw output, selector bytes, Redis keys/values, manifests, Pod names, credentials, identities, or response bodies.
 
-- [ ] **Step 2: Apply the decision without weakening gates**
+- [x] **Step 2: Apply the decision without weakening gates**
 
 On pass, check Task 16 and state only that a fresh Task 9 Step 3 may restart; keep Task 9 Steps 3-6 unchecked. On product failure, record the exact nonzero/missing gate. On operational failure, record the exact guardian/observer/evidence failure. In all cases state that no third replay is authorized and leave `docs/architecture.md` unchanged.
 

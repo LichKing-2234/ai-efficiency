@@ -3,12 +3,12 @@
 **Status:** Tasks 1-4 are complete. Exact reviewed head
 `c5d3f6af15ea4db7ef424139822b043ee787f79d` is published and deployed disabled
 to staging. Its seven-class Redis benchmark passed with 100 valid samples per
-class at the unchanged `250ms` budgets. The single approved Task 5 replay reached
-enabled revision 59 but retained no observer result, so none of its diagnostic
-gates is proven. A manual atomic upgrade restored staging disabled at revision
-60 after the in-process rollback guard was bypassed. Production remains
+class at the unchanged `250ms` budgets. The original Task 5 replay retained no
+observer result. The one separately authorized guarded replacement replay then
+ended in an operational observation failure, so no product diagnostic result
+is proven. Staging is healthy and disabled at revision 62; production remains
 unchanged at revision 69. Task 5 failed, Task 9 Steps 3-6 remain unchecked, and
-another replay requires a new plan/design decision.
+no third replay is authorized.
 
 **Date:** 2026-07-23
 
@@ -368,6 +368,29 @@ account or Team Usage API request was used, no response body was retained, and
 no business Redis key was deleted. Task 9 Steps 3-6 remain unchecked and
 `docs/architecture.md` remains unchanged. A second two-Pod replay requires a
 new plan/design decision rather than being implied by this failure.
+
+## Guarded Replacement Replay
+
+The later replay-guardian design authorized exactly one replacement. Its
+immutable preflight passed at disabled staging revision 60 and unchanged
+production revision 69. One enable completed at revision 61. The feed then
+closed with `old_pod_set_changed`; the controller detected that failure and
+requested restoration, but continued enabled observation and marker completion.
+The observer's subsequent
+`fresh_pod_selection_invalid` result therefore overlapped rollback and cannot
+be used as a product pass or product-gate failure.
+
+The independent guardian performed the only rollback and reached
+`restore_succeeded:explicit_restore`, producing revision 62. A controller read
+about two seconds later misclassified normal Pod convergence as
+`restore_failed`; a fresh bounded final audit proved revision 62 exact-image
+disabled `1/1`, zero restart, no prewarm environment, frozen image digest, and
+HTTP 200 live/readiness. Production revision 69 remained unchanged and healthy.
+
+Independent evidence review classifies this replacement as `operational
+failure`. The product cohort gates remain unproven. Task 9 Steps 3-6 remain
+unchecked, `docs/architecture.md` remains unchanged, final Task 16 artifact
+counts are zero, and no third replay is authorized.
 
 ## Alternatives Rejected
 

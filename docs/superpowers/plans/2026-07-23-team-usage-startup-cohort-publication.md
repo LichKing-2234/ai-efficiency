@@ -11,13 +11,12 @@
 **Status:** Tasks 1-4 are complete. Task 4 published exact reviewed head
 `c5d3f6af15ea4db7ef424139822b043ee787f79d`, deployed it disabled to staging,
 and passed the seven-class Redis benchmark with 100 valid samples per class at
-the unchanged `250ms` budgets. The single approved Task 5 replay reached enabled
-revision 59 but failed without retained observer evidence; none of its product
-diagnostic gates are proven. Its in-process rollback guard was bypassed, so a
-manual atomic upgrade restored staging disabled at revision 60 with one ready
-replica on the exact image. Production remains unchanged at revision 69. Task 5
-failed, Task 9 Steps 3-6 remain unchanged and unchecked, and another replay
-requires a new plan/design decision.
+the unchanged `250ms` budgets. The original Task 5 replay retained no observer
+result. Its separately authorized guarded replacement replay ended in an
+operational observation failure, so none of the product diagnostic gates is
+proven. Staging is healthy and disabled at revision 62; production remains
+unchanged at revision 69. Task 5 failed, Task 9 Steps 3-6 remain unchecked, and
+no third replay is authorized.
 
 ## Global Constraints
 
@@ -849,3 +848,24 @@ git commit -m "docs(teamusage): record startup cohort staging replay"
 ```
 
 Generate a task-scoped ledger review. Resolve every Critical and Important evidence finding before reporting the final state.
+
+#### Guarded Replacement Replay Evidence
+
+The one replacement replay authorized by the replay-guardian design ran once.
+One enable completed at staging revision 61 and one guardian rollback completed
+at revision 62. The feed closed `old_pod_set_changed`; the controller detected
+that failure and requested restoration before continuing enabled observation
+and marker completion. The
+observer's `fresh_pod_selection_invalid` result consequently overlapped rollback
+and is not an authoritative product result.
+
+Guardian state was `restore_succeeded:explicit_restore`. The controller then
+performed one transient final Pod read and recorded `restore_failed` during
+normal rollback convergence. Fresh final verification passed revision 62 as
+exact-image disabled `1/1`, zero restart, no prewarm environment, frozen image
+digest, and HTTP 200 live/readiness. Production revision 69 remained unchanged.
+
+The authoritative classification is `operational failure`; product pass and
+product-gate failure are both unproven. Task 5 and Task 9 Steps 3-6 remain
+unchecked, final Task 16 local/Pod artifact counts are zero,
+`docs/architecture.md` remains unchanged, and no third replay is authorized.

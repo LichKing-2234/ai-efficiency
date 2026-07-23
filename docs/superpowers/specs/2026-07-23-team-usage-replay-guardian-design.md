@@ -1,6 +1,8 @@
 # Team Usage Replay Guardian Design
 
-**Status:** Approved for one additional staging replay.
+**Status:** The one additional staging replay was consumed and ended in an
+operational failure. Final restoration succeeded; no third replay is
+authorized.
 
 **Date:** 2026-07-23
 
@@ -205,6 +207,46 @@ A pass permits a fresh Task 9 Step 3 attempt only. It does not count as an API
 acceptance round. A product-gate failure records the closed blocker. A guardian,
 observer, or evidence-retention failure records an operational blocker. No
 third replay is authorized by this design.
+
+## Guarded Replay Result
+
+The authorized replacement replay ran once on 2026-07-23. Its immutable
+preflight passed at application ledger head `ac81c1cd`, staging revision 60,
+production revision 69, and image index digest
+`sha256:1e683cd90c1a5366e7b1d6a6ffff509ac99efb8a9079303383af9b539214df38`.
+The single enable completed at staging revision 61. No second enable was
+started.
+
+The feed then closed with `old_pod_set_changed`. The controller detected that
+failure and requested restoration, but did not short-circuit later enabled
+observation and marker completion. The observer's subsequent
+`fresh_pod_selection_invalid` result therefore overlapped rollback. That closed
+observer result is durable but cannot establish a product pass or an
+independently attributable product-gate failure.
+
+The external guardian completed exactly one rollback to the captured disabled
+baseline, producing staging revision 62 and closed state
+`restore_succeeded:explicit_restore`. The emergency rollback path did not run.
+About two seconds later the controller made one strict Deployment-and-Pod read
+while rollback Pods were still converging and recorded `restore_failed`. A
+fresh bounded final audit then passed every terminal gate: revision 62 was
+deployed on the exact image and frozen image digest, feature-disabled at one
+ready replica with zero restarts and HTTP 200 live/readiness. Production
+revision 69 remained unchanged and healthy, and the selector remained exact
+disabled at mode `0600`.
+
+The authoritative classification is therefore `operational failure`. The
+recorded `restore_failed` is a controller timing/evidence misclassification,
+not an actual final recovery failure. A future controller would need to stop
+enabled observation immediately after an operational stop and use a bounded
+post-guardian convergence wait. The launch wrapper also returned before the
+independent controller because it checked the child process group before the
+child completed `setsid`; the controller was not relaunched and completed under
+the guardian.
+
+After independent evidence review, local and final-Pod Task 16 artifact counts
+were both zero. Task 9 Steps 3-6 remain unchecked, `docs/architecture.md`
+remains unchanged, and no third replay is authorized.
 
 ## Alternatives Rejected
 
