@@ -59,9 +59,9 @@ atomic `armed` state. The guardian receives only these bounded inputs:
 A separate heartbeat writer starts first and updates every two seconds. The
 guardian may write `armed` only after observing a fresh heartbeat. It requests
 restoration when the heartbeat is stale for 15 seconds, an explicit restore
-file appears, or the absolute deadline expires. An atomic restore claim prevents
-signal re-entry or simultaneous triggers from starting a second rollback; the
-guardian disables its signal handlers after acquiring that claim.
+file appears, or the absolute deadline expires. Before attempting an atomic
+restore claim, the guardian ignores further restore signals. The claim then
+prevents simultaneous main-loop triggers from starting a second rollback.
 
 Restoration first installs the private disabled selector bytes locally. The
 guardian then reads the live Deployment. If the exact image is already one
@@ -71,13 +71,17 @@ the captured disabled revision with `--wait`, `--cleanup-on-fail`, and a
 ten-minute timeout. It writes only atomic closed states: `armed`,
 `restore_started`, `restore_succeeded`, or `restore_failed`.
 
-The controller cannot terminate a live guardian without restoration. If the
-guardian reports `restore_failed`, has no terminal state after 660 seconds, or
-dies during rollback, the controller installs the same private disabled
-selector and runs one bounded emergency rollback to the captured revision. It
-does not delete any guardian, raw, or evidence file until a fresh read proves
-exact-image disabled runtime. Failure of both restore paths is an operational
-emergency and leaves all evidence intact for operator recovery.
+The controller cannot terminate a live guardian without restoration. Its
+660-second terminal wait starts at the explicit restore request, or at the
+`restore_started` state when the guardian restored earlier. On timeout it first
+terminates and waits for the complete guardian process group. For a failed,
+missing, dead, or overdue guardian, the controller installs the same private
+disabled selector and freshly reads runtime. It skips emergency Helm when that
+read already proves exact-image disabled state; otherwise it runs one bounded
+emergency rollback to the captured revision. It does not delete any guardian,
+raw, or evidence file until a fresh read proves exact-image disabled runtime.
+Failure of both restore paths is an operational emergency and leaves all
+evidence intact for operator recovery.
 
 ## Pre-Enable Failure Drill
 
@@ -99,6 +103,11 @@ The fake drill also fires explicit restore and heartbeat staleness
 simultaneously and requires one rollback, then kills a fake guardian and
 requires the controller emergency path to restore once. Fake Helm and kubectl
 reject any argument sequence that differs from the real commands.
+
+A final drill kills the guardian after fake Helm changes runtime to disabled
+but before it writes a terminal state. The controller must restore selector
+bytes, prove runtime already disabled, skip emergency Helm, and retain exactly
+one total rollback call.
 
 ## Durable Observer
 

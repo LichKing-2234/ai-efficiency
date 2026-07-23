@@ -38,7 +38,7 @@
 
 **Interfaces:**
 - Consumes: exact disabled selector, captured baseline revision, Task 15 observer metric contracts.
-- Produces: reviewed guardian/observer SHA-256 values, a passing fake-controller-death drill, and a passing synthetic observer parser suite.
+- Produces: reviewed guardian/controller/observer SHA-256 values, passing rollback drills, and a passing synthetic observer parser suite.
 
 - [ ] **Step 1: Create private, non-overlapping session directories**
 
@@ -89,7 +89,7 @@ Implement only these functions:
 write_state(state, reason)       atomic temp-file + rename, closed strings only
 restore_selector()               install mode-0600 disabled copy at selector path
 live_is_exact_disabled()         exact image, desired/ready/updated/available 1, zero prewarm env
-claim_restore()                  atomic mkdir; disable INT/TERM/HUP after success
+claim_restore()                  ignore INT/TERM/HUP, then atomic mkdir
 restore(reason)                  selector restore, optional one Helm rollback, verify, state, exit
 heartbeat_is_stale(now_epoch)    stat -f %m and 15-second comparison
 main_loop()                      restore request, stale heartbeat, absolute deadline
@@ -104,14 +104,19 @@ helm rollback "${RELEASE}" "${BASELINE_REVISION}" \
   --wait --cleanup-on-fail --timeout "${HELM_TIMEOUT}"
 ```
 
-It skips Helm only when `live_is_exact_disabled` already proves the final Deployment shape. `INT`, `TERM`, and `HUP` invoke `restore signal`; `EXIT` does not own rollback or cleanup. `restore()` first calls `claim_restore`; losing callers wait for the existing terminal state and never invoke Helm. The script never deletes its state or disabled-selector copy.
+It skips Helm only when `live_is_exact_disabled` already proves the final Deployment shape. `INT`, `TERM`, and `HUP` invoke `restore signal`; `EXIT` does not own rollback or cleanup. At the start of `restore()`, run `trap '' INT TERM HUP` before `claim_restore`; losing callers wait for the existing terminal state and never invoke Helm. The script never deletes its state or disabled-selector copy.
 
 Write `controller.sh` with one `emergency_restore()` function using the same
 selector copy, baseline revision, and exact Helm argv. It runs only when
 guardian state is `restore_failed`, missing after
 `GUARDIAN_TERMINAL_WAIT_SECONDS=660`, or the
-guardian PID exited without `restore_succeeded`. It must freshly prove disabled
-runtime before returning and must never cleanup on failure.
+guardian PID exited without `restore_succeeded`. The 660 seconds start at the
+explicit restore-request file mtime, or an earlier `restore_started` state
+mtime. On timeout, terminate the independent guardian process group, wait up to
+15 seconds, send `KILL` only if still alive, and wait for exit. Then restore
+selector bytes and call `live_is_exact_disabled`; skip emergency Helm if it
+passes, otherwise invoke the same rollback argv once. It must freshly prove
+disabled runtime before returning and must never cleanup on failure.
 
 - [ ] **Step 3: Run the fake-controller-death guardian drill**
 
@@ -151,8 +156,11 @@ Run a second drill that creates explicit restore at
 the same instant the heartbeat becomes stale and require exactly one rollback
 and terminal state. Run a third drill that kills guardian before terminal state;
 the fake controller emergency path must make exactly one rollback and preserve
-all evidence. The drill fails if any process exits without state, invokes its
-rollback twice, accepts different argv, or deletes state/evidence.
+all evidence. Run a fourth drill that kills guardian after fake Helm changes
+runtime to disabled but before the terminal state write; controller must skip
+emergency Helm and the combined fake Helm call count must remain one. The drill
+fails if any process exits without bounded handling, invokes its rollback
+twice, accepts different argv, or deletes state/evidence.
 
 - [ ] **Step 4: Write and test the durable observer**
 
@@ -239,7 +247,11 @@ shasum -a 256 "${GUARD_DIR}/guardian.sh" "${RAW_DIR}/controller.sh" "${RAW_DIR}/
 find "${EVIDENCE_DIR}" -maxdepth 1 -type f -print | sort
 ```
 
-Write sanitized commands/results and both SHAs to `.superpowers/sdd/task-16-1-report.md`. Generate an independent task review. Resolve every Critical and Important finding before Task 2. Do not commit temporary scripts.
+Run all drills explicitly with `/bin/bash`, never the shebang-selected Bash.
+Write sanitized commands/results and all three SHAs to
+`.superpowers/sdd/task-16-1-report.md`. Generate an independent task review.
+Resolve every Critical and Important finding before Task 2. Do not commit
+temporary scripts.
 
 ---
 
@@ -284,7 +296,7 @@ installed Python runtime only as a process launcher:
 
 ```bash
 nohup python3 -c \
-  'import os,sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
+  'import os,sys; os.setsid(); os.execv("/bin/bash", ["/bin/bash", sys.argv[1]])' \
   "${GUARD_DIR}/guardian.sh" \
   >"${RAW_DIR}/guardian.log" 2>&1 &
 ```
@@ -305,9 +317,12 @@ Wait for exactly one `summary.json` or `failure.json`. At first result or observ
 
 - [ ] **Step 5: Require guardian restoration and fresh final state**
 
-Wait for guardian `restore_succeeded`. If guardian reports `restore_failed`, has
-no terminal state after 660 seconds, or dies, run exactly one controller
-`emergency_restore()` attempt. Freshly verify the newest Helm revision is
+Wait for guardian `restore_succeeded`. Measure the 660-second bound from the
+explicit restore request or an earlier `restore_started` state. If guardian
+reports `restore_failed`, has no terminal state at that bound, or dies, stop and
+wait for its complete process group before running exactly one controller
+`emergency_restore()` attempt. That path restores selector bytes and skips Helm
+when fresh runtime is already exact-disabled. Freshly verify the newest Helm revision is
 deployed, exact image disabled `1/1`, zero restarts, no prewarm environment,
 HTTP 200 live/readiness, and production revision 69 unchanged. If both restore
 paths fail, retain all files and escalate; never cleanup. Only after disabled
