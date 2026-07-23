@@ -79,17 +79,25 @@ set -Eeuo pipefail
 : "${STATE_PATH:?}"
 : "${RESTORE_CLAIM_DIR:?}"
 : "${ABSOLUTE_DEADLINE_EPOCH:?}"
+: "${CONTROLLER_PID:?}"
+: "${CONTROLLER_PGID:?}"
+: "${ENABLE_IN_PROGRESS_PATH:?}"
+: "${HELM_BIN:?}"
+: "${KUBECTL_BIN:?}"
 HEARTBEAT_STALE_SECONDS="${HEARTBEAT_STALE_SECONDS:-15}"
 HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
+CONTROLLER_KILL_WAIT_SECONDS="${CONTROLLER_KILL_WAIT_SECONDS:-15}"
 ```
 
-Implement only these functions:
+Implement these focused functions without unrelated runtime behavior:
 
 ```text
 write_state(state, reason)       atomic temp-file + rename, closed strings only
 restore_selector()               install mode-0600 disabled copy at selector path
 live_is_exact_disabled()         exact image, desired/ready/updated/available 1, zero prewarm env
 claim_restore()                  ignore INT/TERM/HUP, then atomic mkdir
+validate_controller_group()      prove the live controller PID owns the supplied PGID
+drain_controller_group(reason)   quiesce and reap the complete controller PGID when required
 restore(reason)                  selector restore, optional one Helm rollback, verify, state, exit
 heartbeat_is_stale(now_epoch)    stat -f %m and 15-second comparison
 main_loop()                      restore request, stale heartbeat, absolute deadline
@@ -104,17 +112,21 @@ helm rollback "${RELEASE}" "${BASELINE_REVISION}" \
   --wait --cleanup-on-fail --timeout "${HELM_TIMEOUT}"
 ```
 
-It skips Helm only when `live_is_exact_disabled` already proves the final Deployment shape. `INT`, `TERM`, and `HUP` invoke `restore signal`; `EXIT` does not own rollback or cleanup. At the start of `restore()`, run `trap '' INT TERM HUP` before `claim_restore`; losing callers wait for the existing terminal state and never invoke Helm. The script never deletes its state or disabled-selector copy.
+It skips Helm only when `live_is_exact_disabled` already proves the final Deployment shape. `INT`, `TERM`, and `HUP` invoke `restore signal`; `EXIT` does not own rollback or cleanup. At the start of `restore()`, run `trap '' INT TERM HUP` before `claim_restore`; losing callers wait for the existing terminal state and never invoke Helm. Before any live read or rollback, every non-explicit restore drains the validated controller PGID. Explicit restore preserves the controller only when the atomic enable-in-progress marker is absent; when that marker exists, explicit restore also drains and waits for the complete controller group. The script never deletes its state, enable marker, or disabled-selector copy. Helm and kubectl must match the frozen live paths and hashes; fake proofs run only generated private copies whose differences are limited to reviewed path/hash substitutions.
 
-Write `controller.sh` with one `emergency_restore()` function using the same
-selector copy, baseline revision, and exact Helm argv. It runs only when
+Write `controller.sh` with `emergency_restore()` and
+`quiesce_controller_group()` using the same selector copy, baseline revision,
+exact Helm argv, validated live controller PID/PGID, and enable-in-progress
+marker. It runs only when
 guardian state is `restore_failed`, missing after
 `GUARDIAN_TERMINAL_WAIT_SECONDS=660`, or the
 guardian PID exited without `restore_succeeded`. The 660 seconds start at the
 explicit restore-request file mtime, or an earlier `restore_started` state
 mtime. On timeout, terminate the independent guardian process group, wait up to
 15 seconds, send `KILL` only if still alive, and wait for exit. Then restore
-selector bytes and call `live_is_exact_disabled`; skip emergency Helm if it
+selector bytes. Every emergency path must first terminate, wait, and if needed
+`KILL` the complete live controller PGID before calling
+`live_is_exact_disabled`; skip emergency Helm if it
 passes, otherwise invoke the same rollback argv once. It must freshly prove
 disabled runtime before returning and must never cleanup on failure.
 
@@ -306,6 +318,20 @@ seconds. Wait up to ten seconds for that state. Start observer before Helm
 upgrade, give it the pre-enable UID/hash set and a 150-second result deadline,
 and require `RAW_DIR/observer-state.json` to contain the exact state
 `waiting_for_fresh_pods`.
+
+Before enablement, also start an independent controller-liveness watcher and
+require its closed waiting state. The live controller atomically records an
+enable-attempt marker, creates `ENABLE_IN_PROGRESS_PATH` immediately before
+spawning Helm, waits and fully reaps that exact Helm PID, and only then removes
+the in-progress marker with a directory fsync. A normal finalization writes an
+atomic controller-complete marker before the liveness watcher exits. If the
+controller dies after the attempt marker and before controller-complete, the
+watcher atomically records closed `controller_died` operational evidence and
+projects it into the report. `restore_failed` has higher precedence than every
+earlier operational reason. Production scripts accept only frozen live
+binary, host, and dependency boundaries; all fake behavior runs generated
+private copies with an explicit substitution manifest and byte-difference
+proof.
 
 Record PIDs only in the private raw report. Missing armed/waiting state blocks enablement.
 
