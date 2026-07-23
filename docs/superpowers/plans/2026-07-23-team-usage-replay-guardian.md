@@ -235,7 +235,7 @@ The observer writes its transient lifecycle state only to
 `RAW_DIR/observer-state.json`. Before enablement the exact state must be
 `waiting_for_fresh_pods`; this file is never copied into documentation.
 
-- [ ] **Step 5: Run static safety, syntax, and focused review checks**
+- [x] **Step 5: Run static safety, syntax, and focused review checks**
 
 Run:
 
