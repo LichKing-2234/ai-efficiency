@@ -1012,7 +1012,9 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 		}
 		applyStartupCurrentReference(plans, ref)
 	}
-	failures = append(failures, p.fetchStartupSegments(workerCtx, binding, plans)...)
+	batchCtx, cancelBatch := context.WithCancelCause(workerCtx)
+	defer cancelBatch(nil)
+	failures = append(failures, p.fetchStartupSegments(batchCtx, cancelBatch, binding, plans)...)
 	defer func() {
 		for index := range plans {
 			for _, leased := range plans[index].leased {
@@ -1020,13 +1022,13 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 			}
 		}
 	}()
-	if err := workerCtx.Err(); err != nil {
+	if err := context.Cause(batchCtx); err != nil {
 		return errors.Join(append(failures, err)...)
 	}
-	if err := p.requireCoordinatorOwned(workerCtx); err != nil {
+	if err := p.requireCoordinatorOwned(batchCtx); err != nil {
 		return errors.Join(append(failures, err)...)
 	}
-	failures = append(failures, p.publishStartupCohort(workerCtx, binding, plans)...)
+	failures = append(failures, p.publishStartupCohort(batchCtx, binding, plans)...)
 	if err := errors.Join(failures...); err != nil {
 		return err
 	}

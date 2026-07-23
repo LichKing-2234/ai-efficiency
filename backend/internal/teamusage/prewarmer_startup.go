@@ -185,11 +185,11 @@ func (p *Prewarmer) planStartupLanes(
 }
 
 func (p *Prewarmer) fetchStartupSegments(
-	ctx context.Context,
+	batchCtx context.Context,
+	cancelBatch context.CancelCauseFunc,
 	binding ProviderBinding,
 	plans []startupLanePlan,
 ) []error {
-	batchCtx, cancelBatch := context.WithCancelCause(ctx)
 	tasks := make(chan startupSegmentTask)
 	results := make(chan startupSegmentResult, startupTaskCount(plans))
 	var workers sync.WaitGroup
@@ -217,7 +217,7 @@ func (p *Prewarmer) fetchStartupSegments(
 				)
 				hasFetchedTask = true
 				if err != nil {
-					if coordinatorErr := p.requireCoordinatorOwned(ctx); coordinatorErr != nil {
+					if coordinatorErr := p.requireCoordinatorOwned(batchCtx); coordinatorErr != nil {
 						cancelBatch(coordinatorErr)
 					}
 				}

@@ -296,7 +296,7 @@ func TestPrewarmStartupBatchRetainsNoCompletedResult(t *testing.T) {
 		t.Fatalf("completed startup source calls = %d, want %d", got, len(startupTestTimezones)*3)
 	}
 
-	prewarmerType := reflect.TypeOf(*prewarmer)
+	prewarmerType := reflect.TypeOf(prewarmer).Elem()
 	for index := 0; index < prewarmerType.NumField(); index++ {
 		fieldType := prewarmerType.Field(index).Type.String()
 		for _, completedType := range []string{
