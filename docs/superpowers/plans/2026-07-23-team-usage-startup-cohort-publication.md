@@ -176,7 +176,7 @@ Generate a task-scoped review package from the recorded pre-task base through th
 - Consumes: `Prewarmer.fetchLeasedSegment`, `Prewarmer.publishIfCurrent`, `Prewarmer.releaseLeasedReference`, `newPrewarmManifestCandidate`, `startupNeedsRecovery`, `startupMissingSegmentClasses`, and the Task 14 startup coordinator behavior.
 - Produces: package-private `startupLanePlan`, `startupSegmentTask`, `startupSegmentResult`, `planStartupLanes`, `fetchStartupSegments`, and `publishStartupCohort` used only by `runStartup`.
 
-- [ ] **Step 1: Write the two-worker and publication-barrier RED test**
+- [x] **Step 1: Write the two-worker and publication-barrier RED test**
 
 Create a provider fixture that blocks every trend fetch, records active and maximum calls, and exposes entered/release channels. Start `runStartup` with four empty lanes and assert:
 
@@ -203,7 +203,7 @@ func TestPrewarmStartupFetchesAtTwoAndPublishesAfterBarrier(t *testing.T) {
 
 The fixture must count actual provider calls, not goroutine creation. Before the fix, the test must fail because maximum source concurrency is one or a manifest appears before the barrier.
 
-- [ ] **Step 2: Write RED tests for failure isolation and cleanup**
+- [x] **Step 2: Write RED tests for failure isolation and cleanup**
 
 Add these exact tests:
 
@@ -230,7 +230,7 @@ go test ./internal/teamusage -run 'PrewarmStartup.*(Barrier|LaneFailure|Coordina
 
 Expected: behavioral failures from serial fetch/publication and missing batch helpers, never fixture compilation errors.
 
-- [ ] **Step 3: Add the package-private startup batch model**
+- [x] **Step 3: Add the package-private startup batch model**
 
 Create these types in `prewarmer_startup.go`:
 
@@ -298,7 +298,7 @@ func (p *Prewarmer) planStartupLanes(
 
 If any plan needs current stats, `runStartup` calls `buildCurrentStats` and `WriteCurrentStats` exactly once, then assigns the returned reference only to plans that need it. Shared current failure returns before any segment worker starts.
 
-- [ ] **Step 4: Implement the fixed two-worker fetch and complete drain**
+- [x] **Step 4: Implement the fixed two-worker fetch and complete drain**
 
 Use a task channel, a result channel sized to the exact task count, two workers, and one collector goroutine. The collector is the only writer to lane plans:
 
@@ -366,7 +366,7 @@ func (p *Prewarmer) fetchStartupSegments(
 
 The real implementation must avoid producer leakage when `ctx` is canceled: task submission selects on `ctx.Done`, every started worker exits, and every result channel is drained. `errPrewarmLeaseBusy` is a lane failure during owner startup; it is not silently converted to success.
 
-- [ ] **Step 5: Implement barrier publication and unconditional lease cleanup**
+- [x] **Step 5: Implement barrier publication and unconditional lease cleanup**
 
 After all fetch results settle, defer release for every successful leased reference. Apply results to candidate manifests, then publish only complete lanes:
 
@@ -400,7 +400,7 @@ Sort claims by segment class for deterministic tests. `publishIfCurrent` already
 
 On every return path, call `releaseLeasedReference` exactly once for each successful task. Do not store plans or leased references on `Prewarmer`.
 
-- [ ] **Step 6: Replace the serial startup loop and run GREEN**
+- [x] **Step 6: Replace the serial startup loop and run GREEN**
 
 Keep `runStartup` ownership and retain-on-success semantics, but replace its timezone/class source loop with:
 
@@ -450,7 +450,7 @@ go test ./internal/teamusage -count=1
 
 Expected: all commands pass, observed source maximum is exactly two in the empty four-lane fixture, and no test weakens existing lost-lease or timezone-isolation assertions.
 
-- [ ] **Step 7: Commit and task-review**
+- [x] **Step 7: Commit and task-review**
 
 ```bash
 git add backend/internal/teamusage/prewarmer.go \
