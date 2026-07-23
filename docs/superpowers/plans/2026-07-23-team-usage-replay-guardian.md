@@ -266,11 +266,11 @@ temporary scripts.
 - Consumes: Task 1 reviewed script SHAs and passing fake drill.
 - Produces: one durable pass/fail replay summary and a guardian-proven disabled final state.
 
-- [ ] **Step 1: Reverify immutable live baselines**
+- [x] **Step 1: Reverify immutable live baselines**
 
 Require application HEAD clean, exact image index/architectures unchanged, staging revision 60 deployed exact-image disabled `1/1` with zero restarts and HTTP 200, production revision 69 unchanged, selector mode `0600`, and zero Task 16 artifacts outside the three owned directories. If a revision or runtime value drifted, stop without enablement.
 
-- [ ] **Step 2: Render and server-dry-run both selectors**
+- [x] **Step 2: Render and server-dry-run both selectors**
 
 Copy the disabled selector to `GUARD_DIR/disabled.json` mode `0600`. Create `RAW_DIR/enabled.json` with only:
 
