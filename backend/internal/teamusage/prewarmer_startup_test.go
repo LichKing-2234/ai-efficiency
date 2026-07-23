@@ -92,6 +92,62 @@ func TestPrewarmStartupCoordinatorLossPreventsBarrierPublication(t *testing.T) {
 }
 
 func TestPrewarmStartupExpiredSegmentContextPreventsLanePublication(t *testing.T) {
+	fixture := newStartupPublicationTestLane(t)
+	fixture.cancelSegment()
+
+	failures := fixture.prewarmer.publishStartupCohort(
+		fixture.workerCtx, fixture.binding, []startupLanePlan{fixture.plan},
+	)
+	if err := errors.Join(failures...); !errors.Is(err, context.Canceled) {
+		t.Fatalf("publishStartupCohort() error = %v, want expired segment context", err)
+	}
+	assertStartupManifestUnchanged(t, fixture)
+}
+
+func TestPrewarmStartupSegmentContextCancellationAbortsBlockedPublication(t *testing.T) {
+	fixture := newStartupPublicationTestLane(t)
+	store := newStartupBlockingPublishStore(fixture.cache.store)
+	fixture.cache.store = store
+	t.Cleanup(store.release)
+
+	result := make(chan []error, 1)
+	go func() {
+		result <- fixture.prewarmer.publishStartupCohort(
+			fixture.workerCtx, fixture.binding, []startupLanePlan{fixture.plan},
+		)
+	}()
+	store.waitForEntry(t)
+	fixture.cancelSegment()
+
+	var failures []error
+	select {
+	case failures = <-result:
+	case <-time.After(5 * time.Second):
+		t.Fatal("blocked startup publication did not observe segment cancellation")
+	}
+	if err := errors.Join(failures...); !errors.Is(err, context.Canceled) {
+		t.Fatalf("blocked publish error = %v, want canceled segment context", err)
+	}
+	store.waitForExit(t)
+	if !store.wasCanceled() {
+		t.Fatal("blocked startup publication exited without context cancellation")
+	}
+	assertStartupManifestUnchanged(t, fixture)
+}
+
+type startupPublicationTestLane struct {
+	prewarmer     *Prewarmer
+	cache         *PrewarmCache
+	binding       ProviderBinding
+	workerCtx     context.Context
+	plan          startupLanePlan
+	manifest      PrewarmManifest
+	identity      PrewarmCacheIdentity
+	cancelSegment context.CancelFunc
+}
+
+func newStartupPublicationTestLane(t *testing.T) startupPublicationTestLane {
+	t.Helper()
 	base := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	now := base
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
@@ -114,7 +170,7 @@ func TestPrewarmStartupExpiredSegmentContextPreventsLanePublication(t *testing.T
 	if err != nil || !acquired {
 		t.Fatalf("acquire startup coordinator = acquired:%v error:%v", acquired, err)
 	}
-	defer prewarmer.releaseLease(coordinatorKey, coordinatorToken)
+	t.Cleanup(func() { prewarmer.releaseLease(coordinatorKey, coordinatorToken) })
 	workerCtx := withPrewarmControllingLeases(
 		context.Background(), PrewarmLeaseClaim{Key: coordinatorKey, Token: coordinatorToken},
 	)
@@ -128,31 +184,38 @@ func TestPrewarmStartupExpiredSegmentContextPreventsLanePublication(t *testing.T
 	if err != nil || !acquired {
 		t.Fatalf("acquire startup segment lease = acquired:%v error:%v", acquired, err)
 	}
-	expiredCtx, expire := context.WithCancel(workerCtx)
-	expire()
+	segmentCtx, cancelSegment := context.WithCancel(workerCtx)
 	leased := leasedPrewarmReference{
 		reference: manifest.History29d,
 		leaseKey:  segmentLeaseKey,
 		token:     segmentToken,
-		ctx:       expiredCtx,
-		cancel:    expire,
+		ctx:       segmentCtx,
+		cancel:    cancelSegment,
 	}
-	defer prewarmer.releaseLeasedReference(leased)
+	t.Cleanup(func() { prewarmer.releaseLeasedReference(leased) })
+	return startupPublicationTestLane{
+		prewarmer: prewarmer,
+		cache:     cache,
+		binding:   binding,
+		workerCtx: workerCtx,
+		plan: startupLanePlan{
+			identity: identity,
+			manifest: manifest,
+			leased:   map[PrewarmSegmentClass]leasedPrewarmReference{SegmentHistory29d: leased},
+		},
+		manifest:      manifest,
+		identity:      identity,
+		cancelSegment: cancelSegment,
+	}
+}
 
-	plans := []startupLanePlan{{
-		identity: identity,
-		manifest: manifest,
-		leased:   map[PrewarmSegmentClass]leasedPrewarmReference{SegmentHistory29d: leased},
-	}}
-	failures := prewarmer.publishStartupCohort(workerCtx, binding, plans)
-	if err := errors.Join(failures...); !errors.Is(err, context.Canceled) {
-		t.Fatalf("publishStartupCohort() error = %v, want expired segment context", err)
-	}
-	result, found, err := cache.Read(context.Background(), identity)
+func assertStartupManifestUnchanged(t *testing.T, fixture startupPublicationTestLane) {
+	t.Helper()
+	result, found, err := fixture.cache.Read(context.Background(), fixture.identity)
 	if err != nil || !found {
 		t.Fatalf("Read(existing startup lane) = found:%v error:%v", found, err)
 	}
-	if !result.Manifest.CreatedAt.Equal(manifest.CreatedAt) {
+	if !result.Manifest.CreatedAt.Equal(fixture.manifest.CreatedAt) {
 		t.Fatal("expired segment context replaced the existing startup manifest")
 	}
 }
@@ -172,6 +235,29 @@ func TestPrewarmStartupCoordinatorLossStopsPendingSegmentLeases(t *testing.T) {
 	provider.waitForIdle(t)
 	if got := leaseAttempts.attemptCount(); got != startupSegmentWorkerCount {
 		t.Fatalf("segment lease acquisitions after coordinator loss = %d, want %d started tasks only", got, startupSegmentWorkerCount)
+	}
+	assertNoStartupManifest(t, cache)
+	assertNoStartupSegmentLeases(t, prewarmer, provider.server)
+}
+
+func TestPrewarmStartupCoordinatorLossBetweenTasksPreventsLaterSegmentLease(t *testing.T) {
+	prewarmer, provider, cache := newBlockedFourLaneStartup(t)
+	provider.passCalls = 1
+	leaseAttempts := trackStartupSegmentLeaseAttempts(prewarmer)
+	drop := dropStartupCoordinatorAfterSegmentWrite(prewarmer, provider.server)
+	result := make(chan error, 1)
+	go func() { result <- prewarmer.runStartup(context.Background()) }()
+
+	drop.wait(t)
+	if err := waitStartupResult(t, result); !errors.Is(err, errPrewarmLeaseLost) {
+		t.Fatalf("runStartup() error = %v, want lost coordinator", err)
+	}
+	provider.waitForIdle(t)
+	if got := provider.successfulCalls(); got != 1 {
+		t.Fatalf("successful source calls before coordinator loss = %d, want 1", got)
+	}
+	if got := leaseAttempts.attemptCount(); got != startupSegmentWorkerCount {
+		t.Fatalf("segment lease acquisitions across between-task coordinator loss = %d, want %d", got, startupSegmentWorkerCount)
 	}
 	assertNoStartupManifest(t, cache)
 	assertNoStartupSegmentLeases(t, prewarmer, provider.server)
@@ -464,6 +550,128 @@ func trackStartupSegmentLeaseAttempts(prewarmer *Prewarmer) *startupSegmentLease
 }
 
 var _ readcache.BatchStore = (*startupSegmentLeaseAttemptStore)(nil)
+
+type startupCoordinatorDropAfterSegmentStore struct {
+	readcache.BatchStore
+
+	server         *miniredis.Miniredis
+	coordinatorKey string
+	dropped        chan struct{}
+	dropOnce       sync.Once
+}
+
+func (s *startupCoordinatorDropAfterSegmentStore) SetIfLeaseOwned(
+	ctx context.Context,
+	leaseKey, token, key string,
+	value []byte,
+	ttl time.Duration,
+) (bool, error) {
+	written, err := s.BatchStore.SetIfLeaseOwned(ctx, leaseKey, token, key, value, ttl)
+	if err == nil && written && leaseKey == key && strings.Contains(key, ":segment:") {
+		s.dropOnce.Do(func() {
+			s.server.Del(s.coordinatorKey)
+			close(s.dropped)
+		})
+	}
+	return written, err
+}
+
+func (s *startupCoordinatorDropAfterSegmentStore) wait(t *testing.T) {
+	t.Helper()
+	select {
+	case <-s.dropped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup segment write did not drop coordinator")
+	}
+}
+
+func dropStartupCoordinatorAfterSegmentWrite(
+	prewarmer *Prewarmer,
+	server *miniredis.Miniredis,
+) *startupCoordinatorDropAfterSegmentStore {
+	store := &startupCoordinatorDropAfterSegmentStore{
+		BatchStore:     prewarmer.cache.store,
+		server:         server,
+		coordinatorKey: startupCoordinatorKey(prewarmer),
+		dropped:        make(chan struct{}),
+	}
+	prewarmer.cache.store = store
+	return store
+}
+
+var _ readcache.BatchStore = (*startupCoordinatorDropAfterSegmentStore)(nil)
+
+type startupBlockingPublishStore struct {
+	readcache.BatchStore
+
+	entered     chan struct{}
+	exited      chan struct{}
+	releaseCh   chan struct{}
+	enteredOnce sync.Once
+	exitedOnce  sync.Once
+	releaseOnce sync.Once
+	mu          sync.Mutex
+	canceled    bool
+}
+
+func newStartupBlockingPublishStore(store readcache.BatchStore) *startupBlockingPublishStore {
+	return &startupBlockingPublishStore{
+		BatchStore: store,
+		entered:    make(chan struct{}),
+		exited:     make(chan struct{}),
+		releaseCh:  make(chan struct{}),
+	}
+}
+
+func (s *startupBlockingPublishStore) SetIfLeasesOwned(
+	ctx context.Context,
+	leaseKeys, tokens []string,
+	key string,
+	value []byte,
+	ttl time.Duration,
+) (bool, error) {
+	s.enteredOnce.Do(func() { close(s.entered) })
+	defer s.exitedOnce.Do(func() { close(s.exited) })
+	select {
+	case <-ctx.Done():
+		s.mu.Lock()
+		s.canceled = true
+		s.mu.Unlock()
+		return false, ctx.Err()
+	case <-s.releaseCh:
+		return s.BatchStore.SetIfLeasesOwned(ctx, leaseKeys, tokens, key, value, ttl)
+	}
+}
+
+func (s *startupBlockingPublishStore) waitForEntry(t *testing.T) {
+	t.Helper()
+	select {
+	case <-s.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup publication did not enter blocking store")
+	}
+}
+
+func (s *startupBlockingPublishStore) waitForExit(t *testing.T) {
+	t.Helper()
+	select {
+	case <-s.exited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup publication store did not exit")
+	}
+}
+
+func (s *startupBlockingPublishStore) wasCanceled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.canceled
+}
+
+func (s *startupBlockingPublishStore) release() {
+	s.releaseOnce.Do(func() { close(s.releaseCh) })
+}
+
+var _ readcache.BatchStore = (*startupBlockingPublishStore)(nil)
 
 func startupCoordinatorKey(prewarmer *Prewarmer) string {
 	return prewarmer.cache.LeaseKey("startup-coordinator", "7", "11", prewarmer.allowlistDigest)

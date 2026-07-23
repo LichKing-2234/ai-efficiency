@@ -197,16 +197,25 @@ func (p *Prewarmer) fetchStartupSegments(
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
+			hasFetchedTask := false
 			for task := range tasks {
 				if cause := context.Cause(batchCtx); cause != nil {
 					results <- startupSegmentResult{task: task, err: cause}
 					continue
+				}
+				if hasFetchedTask {
+					if ownershipErr := p.requireCoordinatorOwned(batchCtx); ownershipErr != nil {
+						cancelBatch(ownershipErr)
+						results <- startupSegmentResult{task: task, err: ownershipErr}
+						continue
+					}
 				}
 				identity := plans[task.laneIndex].identity
 				leased, err := p.fetchLeasedSegment(
 					batchCtx, binding, identity.Timezone, identity.AnchorDate,
 					task.class, startupRefreshClass(task.class),
 				)
+				hasFetchedTask = true
 				if err != nil {
 					if coordinatorErr := p.requireCoordinatorOwned(ctx); coordinatorErr != nil {
 						cancelBatch(coordinatorErr)
