@@ -1,9 +1,15 @@
 # Team Usage Startup Cohort Publication Design
 
-**Status:** Implemented and locally reviewed at
-`30279888db6dad6c0f5e433879ba9573642fc461`. No Task 15 image has been
-published or deployed. Staging remains feature-disabled according to retained
-Task 14 evidence; Tasks 4-5 remain pending.
+**Status:** Implementation and the verification ladder are complete at exact
+reviewed code head `30279888db6dad6c0f5e433879ba9573642fc461`. Documentation
+commit `f028b72ce61150b005b788b5518f97bc52b8a882` received one Important
+post-commit Standards finding for a stale publication snippet; this follow-up
+corrects it without pre-recording its own review result. The clean post-commit
+documentation review result and current only image-eligible head are recorded
+in ignored SDD ledgers after review. No Task 15 image has been published or
+deployed and no Task 15 staging replay has run. Staging remains
+feature-disabled according to retained Task 14 evidence; Tasks 4-5 remain
+pending.
 
 **Date:** 2026-07-23
 
@@ -214,12 +220,25 @@ passed 38 packages, reported 36 packages with no test files, and had zero
 failures. Vet, build, and diff checks had zero findings. The race command
 emitted two non-fatal macOS linker warnings.
 
-Final Standards review and final Spec review each reported `0 Critical / 0
-Important / 0 Minor`. This status is local evidence only: no Task 15 image has
-been built or deployed, no Task 15 staging replay has run, and this design does
-not claim current staging or production runtime behavior. Retained Task 14
-evidence remains the source for the feature-disabled staging state. Tasks 4-5
-remain pending.
+Initial Standards review reported `0 Critical / 2 Important / 1 Minor`.
+Correction `30279888` resolved the code Important and Minor findings.
+Documentation commit `f028b72ce61150b005b788b5518f97bc52b8a882` attempted to
+resolve the remaining documentation Important finding, but its first
+post-commit documentation review reported `0 Critical / 1 Important / 0 Minor`
+because the checked publication snippet did not preserve the reviewed
+segment-context lifetime sequence. This follow-up corrects that snippet but
+does not claim its own approval. A clean post-commit documentation review
+result and the current only image-eligible head are recorded in ignored SDD
+ledgers after review, because a tracked commit cannot truthfully pre-record its
+own review result. Final Spec review remains `0 Critical / 0 Important / 0
+Minor`.
+
+This status is local evidence only: no Task 15 image has been built or
+deployed, no Task 15 staging replay has run, and this design does not claim
+current staging or production runtime behavior. Retained Task 14 evidence
+remains the source for the feature-disabled staging state. Tasks 4-5 remain
+pending, Task 9 Steps 3-6 remain unchecked, and `docs/architecture.md` remains
+unchanged.
 
 ## Staging Gates
 

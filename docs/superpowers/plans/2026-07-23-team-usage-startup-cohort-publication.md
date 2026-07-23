@@ -8,11 +8,17 @@
 
 **Tech Stack:** Go 1.24, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, GHCR, Helm, Kubernetes.
 
-**Status:** Tasks 1-3 are complete. The exact locally reviewed code head is
-`30279888db6dad6c0f5e433879ba9573642fc461`; Task 3 Step 4 is completed by
-this review-ledger commit. No Task 15 image or staging replay exists. Staging
-remains feature-disabled according to retained Task 14 evidence, and Tasks 4-5
-remain pending. Task 9 Steps 3-6 remain unchanged and unchecked.
+**Status:** Tasks 1-2 and the Task 3 implementation and verification ladder are
+complete at exact reviewed code head
+`30279888db6dad6c0f5e433879ba9573642fc461`. The first Task 3 documentation
+commit `f028b72ce61150b005b788b5518f97bc52b8a882` received one Important
+post-commit Standards finding for a stale publication snippet; this follow-up
+corrects that snippet without pre-recording its own review result. The clean
+post-commit documentation review result and current only image-eligible head
+are recorded in ignored SDD ledgers after review. No Task 15 image or staging
+replay exists. Staging remains feature-disabled according to retained Task 14
+evidence, Tasks 4-5 remain pending, and Task 9 Steps 3-6 remain unchanged and
+unchecked.
 
 ## Global Constraints
 
@@ -412,10 +418,20 @@ func (p *Prewarmer) publishStartupCohort(
         if len(plan.failures) != 0 || !prewarmManifestReferencesPresent(plan.manifest) {
             continue
         }
-        claims := startupSegmentClaims(plan.leased)
-        if err := p.publishIfCurrent(ctx, binding, claims, plan.manifest); err != nil {
+        publicationCtx, finishPublication := startupPublicationContext(ctx, plan.leased)
+        publicationErr := context.Cause(publicationCtx)
+        if publicationErr == nil {
+            publicationErr = p.requireCoordinatorOwned(publicationCtx)
+        }
+        if publicationErr == nil {
+            publicationErr = p.publishIfCurrent(
+                publicationCtx, binding, startupSegmentClaims(plan.leased), plan.manifest,
+            )
+        }
+        finishPublication()
+        if publicationErr != nil {
             failures = append(failures, newPrewarmLifecycleFailure(
-                PrewarmCycleStartup, plan.identity.Timezone, false, err,
+                PrewarmCycleStartup, plan.identity.Timezone, false, publicationErr,
             ))
             continue
         }
@@ -425,7 +441,17 @@ func (p *Prewarmer) publishStartupCohort(
 }
 ```
 
-Sort claims by segment class for deterministic tests. `publishIfCurrent` already adds the startup coordinator claim from the worker context, so at most three extra segment claims are passed. Recheck `ctx.Err()` and coordinator ownership immediately before the barrier and before each publication.
+`startupSegmentClaims` emits claims in fixed segment-class order for
+deterministic tests. `publishIfCurrent` already adds the startup coordinator
+claim from the worker context, so at most three extra segment claims are
+passed. `runStartup` checks the batch context cause and coordinator ownership
+once immediately before entering the publication barrier. That batch check
+does not replace the per-lane checks: each complete lane derives a
+`publicationCtx` from its original leased segment contexts, reads that
+context's cause, requires coordinator ownership on that context, and publishes
+on that context only if both checks pass. Call `finishPublication()` before
+evaluating every publication result so all segment-context callbacks are
+detached on both failure and success.
 
 On every return path, call `releaseLeasedReference` exactly once for each successful task. Do not store plans or leased references on `Prewarmer`.
 
@@ -575,19 +601,27 @@ ownership explicit at `runStartup` and removed the pointer-copy vet failure.
 Initial Standards review reported `0 Critical / 2 Important / 1 Minor`: missing
 startup phase error context, stale documentation/live-plan status, and a
 duplicate test refresh mapping. Code correction `30279888` resolved the code
-Important and Minor findings; this ledger commit resolves the documentation
-Important finding. Initial Spec review reported `0 Critical / 1 Important / 0
-Minor` only because the already recorded final ladder rerun had not been read;
-after that evidence was reviewed, the finding was withdrawn without a code
-change. Final Standards review and final Spec review each report `0 Critical /
-0 Important / 0 Minor`.
+Important and Minor findings. Documentation commit
+`f028b72ce61150b005b788b5518f97bc52b8a882` attempted to resolve the remaining
+Important finding, but its first post-commit documentation review reported `0
+Critical / 1 Important / 0 Minor` because the checked publication snippet did
+not preserve the reviewed segment-context lifetime sequence. This follow-up
+corrects that snippet. It does not claim its own approval: the clean
+post-commit documentation review result and current only image-eligible head
+are recorded in ignored SDD ledgers after review.
+
+Initial Spec review reported `0 Critical / 1 Important / 0 Minor` only because
+the already recorded final ladder rerun had not been read. After that evidence
+was reviewed, the finding was withdrawn without a code change; final Spec
+review reports `0 Critical / 0 Important / 0 Minor`.
 
 No Task 15 image has been built or deployed and no Task 15 staging replay has
 run. Retained Task 14 evidence remains the source for the feature-disabled
 staging state. Tasks 4-5 remain pending, Task 9 Steps 3-6 remain unchecked, and
-`docs/architecture.md` remains unchanged. The commit created by this Step 4 is
-the only image-eligible Task 15 head and is recorded after commit in the
-ignored progress and task report ledgers.
+`docs/architecture.md` remains unchanged. Because a tracked commit cannot
+truthfully pre-record its own review result, its image eligibility is recorded
+only after clean post-commit documentation review in the ignored progress and
+task report ledgers.
 
 ---
 
