@@ -2,7 +2,6 @@ package teamusage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -91,6 +90,43 @@ func startupSegmentClaims(leased map[PrewarmSegmentClass]leasedPrewarmReference)
 	return claims
 }
 
+func startupPublicationContext(
+	ctx context.Context,
+	leased map[PrewarmSegmentClass]leasedPrewarmReference,
+) (context.Context, func()) {
+	publicationCtx, cancel := context.WithCancelCause(ctx)
+	stops := make([]func() bool, 0, len(leased))
+	for _, class := range []PrewarmSegmentClass{SegmentHistory29d, SegmentHistory6d, SegmentTodayHour} {
+		value, ok := leased[class]
+		if !ok {
+			continue
+		}
+		if value.ctx == nil {
+			cancel(fmt.Errorf("startup %s segment context is required", class))
+			break
+		}
+		if cause := context.Cause(value.ctx); cause != nil {
+			cancel(fmt.Errorf("startup %s segment context: %w", class, cause))
+			break
+		}
+		segmentCtx := value.ctx
+		segmentClass := class
+		stops = append(stops, context.AfterFunc(segmentCtx, func() {
+			cause := context.Cause(segmentCtx)
+			if cause == nil {
+				cause = segmentCtx.Err()
+			}
+			cancel(fmt.Errorf("startup %s segment context: %w", segmentClass, cause))
+		}))
+	}
+	return publicationCtx, func() {
+		for _, stop := range stops {
+			stop()
+		}
+		cancel(nil)
+	}
+}
+
 func (p *Prewarmer) planStartupLanes(
 	ctx context.Context,
 	binding ProviderBinding,
@@ -153,6 +189,7 @@ func (p *Prewarmer) fetchStartupSegments(
 	binding ProviderBinding,
 	plans []startupLanePlan,
 ) []error {
+	batchCtx, cancelBatch := context.WithCancelCause(ctx)
 	tasks := make(chan startupSegmentTask)
 	results := make(chan startupSegmentResult, startupTaskCount(plans))
 	var workers sync.WaitGroup
@@ -161,11 +198,20 @@ func (p *Prewarmer) fetchStartupSegments(
 		go func() {
 			defer workers.Done()
 			for task := range tasks {
+				if cause := context.Cause(batchCtx); cause != nil {
+					results <- startupSegmentResult{task: task, err: cause}
+					continue
+				}
 				identity := plans[task.laneIndex].identity
 				leased, err := p.fetchLeasedSegment(
-					ctx, binding, identity.Timezone, identity.AnchorDate,
+					batchCtx, binding, identity.Timezone, identity.AnchorDate,
 					task.class, startupRefreshClass(task.class),
 				)
+				if err != nil {
+					if coordinatorErr := p.requireCoordinatorOwned(ctx); coordinatorErr != nil {
+						cancelBatch(coordinatorErr)
+					}
+				}
 				results <- startupSegmentResult{task: task, leased: leased, err: err}
 			}
 		}()
@@ -176,7 +222,7 @@ func (p *Prewarmer) fetchStartupSegments(
 			for _, class := range plans[laneIndex].missing {
 				select {
 				case tasks <- startupSegmentTask{laneIndex: laneIndex, class: class}:
-				case <-ctx.Done():
+				case <-batchCtx.Done():
 					return
 				}
 			}
@@ -215,15 +261,20 @@ func (p *Prewarmer) publishStartupCohort(
 		if len(plan.failures) != 0 || !prewarmManifestReferencesPresent(plan.manifest) {
 			continue
 		}
-		if err := errors.Join(ctx.Err(), p.requireCoordinatorOwned(ctx)); err != nil {
-			failures = append(failures, newPrewarmLifecycleFailure(
-				PrewarmCycleStartup, plan.identity.Timezone, false, err,
-			))
-			continue
+		publicationCtx, finishPublication := startupPublicationContext(ctx, plan.leased)
+		publicationErr := context.Cause(publicationCtx)
+		if publicationErr == nil {
+			publicationErr = p.requireCoordinatorOwned(publicationCtx)
 		}
-		if err := p.publishIfCurrent(ctx, binding, startupSegmentClaims(plan.leased), plan.manifest); err != nil {
+		if publicationErr == nil {
+			publicationErr = p.publishIfCurrent(
+				publicationCtx, binding, startupSegmentClaims(plan.leased), plan.manifest,
+			)
+		}
+		finishPublication()
+		if publicationErr != nil {
 			failures = append(failures, newPrewarmLifecycleFailure(
-				PrewarmCycleStartup, plan.identity.Timezone, false, err,
+				PrewarmCycleStartup, plan.identity.Timezone, false, publicationErr,
 			))
 			continue
 		}

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/alicebob/miniredis/v2"
 )
@@ -63,7 +64,7 @@ func TestPrewarmStartupPublishesHealthyLanesAfterOneLaneFailure(t *testing.T) {
 		}
 		if timezone == provider.failTimezone {
 			if found {
-				t.Fatalf("failed startup lane %s published manifest %#v", timezone, result.Manifest)
+				t.Fatalf("failed startup lane %s published manifest", timezone)
 			}
 			continue
 		}
@@ -90,18 +91,109 @@ func TestPrewarmStartupCoordinatorLossPreventsBarrierPublication(t *testing.T) {
 	assertNoStartupManifest(t, cache)
 }
 
+func TestPrewarmStartupExpiredSegmentContextPreventsLanePublication(t *testing.T) {
+	base := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	now := base
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	provider := newLifecycleProvider([]int64{101})
+	prewarmer := mustPrewarmer(
+		t,
+		staticBindingResolver{binding: prewarmBinding(provider)},
+		cache,
+		lifecycleOptions([]string{"UTC"}, func() time.Time { return now }),
+	)
+	identity := startupTestIdentity("UTC")
+	manifest := seedPrewarmManifest(t, cache, identity, base, "a")
+	now = base.Add(30 * time.Second)
+	binding := prewarmBinding(provider)
+
+	coordinatorKey := startupCoordinatorKey(prewarmer)
+	coordinatorToken, acquired, err := prewarmer.acquireLease(
+		context.Background(), coordinatorKey, prewarmHistoryCoordinatorTTL,
+	)
+	if err != nil || !acquired {
+		t.Fatalf("acquire startup coordinator = acquired:%v error:%v", acquired, err)
+	}
+	defer prewarmer.releaseLease(coordinatorKey, coordinatorToken)
+	workerCtx := withPrewarmControllingLeases(
+		context.Background(), PrewarmLeaseClaim{Key: coordinatorKey, Token: coordinatorToken},
+	)
+
+	segmentLeaseKey := prewarmer.segmentLeaseKey(
+		binding, identity.Timezone, identity.AnchorDate, startupRefreshClass(SegmentHistory29d),
+	)
+	segmentToken, acquired, err := prewarmer.acquireLease(
+		workerCtx, segmentLeaseKey, prewarmWorkerLeaseTTL,
+	)
+	if err != nil || !acquired {
+		t.Fatalf("acquire startup segment lease = acquired:%v error:%v", acquired, err)
+	}
+	expiredCtx, expire := context.WithCancel(workerCtx)
+	expire()
+	leased := leasedPrewarmReference{
+		reference: manifest.History29d,
+		leaseKey:  segmentLeaseKey,
+		token:     segmentToken,
+		ctx:       expiredCtx,
+		cancel:    expire,
+	}
+	defer prewarmer.releaseLeasedReference(leased)
+
+	plans := []startupLanePlan{{
+		identity: identity,
+		manifest: manifest,
+		leased:   map[PrewarmSegmentClass]leasedPrewarmReference{SegmentHistory29d: leased},
+	}}
+	failures := prewarmer.publishStartupCohort(workerCtx, binding, plans)
+	if err := errors.Join(failures...); !errors.Is(err, context.Canceled) {
+		t.Fatalf("publishStartupCohort() error = %v, want expired segment context", err)
+	}
+	result, found, err := cache.Read(context.Background(), identity)
+	if err != nil || !found {
+		t.Fatalf("Read(existing startup lane) = found:%v error:%v", found, err)
+	}
+	if !result.Manifest.CreatedAt.Equal(manifest.CreatedAt) {
+		t.Fatal("expired segment context replaced the existing startup manifest")
+	}
+}
+
+func TestPrewarmStartupCoordinatorLossStopsPendingSegmentLeases(t *testing.T) {
+	prewarmer, provider, cache := newBlockedFourLaneStartup(t)
+	leaseAttempts := trackStartupSegmentLeaseAttempts(prewarmer)
+	result := make(chan error, 1)
+	go func() { result <- prewarmer.runStartup(context.Background()) }()
+
+	provider.waitForActive(t, 2)
+	provider.server.Del(startupCoordinatorKey(prewarmer))
+	provider.releaseAll()
+	if err := waitStartupResult(t, result); !errors.Is(err, errPrewarmLeaseLost) {
+		t.Fatalf("runStartup() error = %v, want lost coordinator", err)
+	}
+	provider.waitForIdle(t)
+	if got := leaseAttempts.attemptCount(); got != startupSegmentWorkerCount {
+		t.Fatalf("segment lease acquisitions after coordinator loss = %d, want %d started tasks only", got, startupSegmentWorkerCount)
+	}
+	assertNoStartupManifest(t, cache)
+	assertNoStartupSegmentLeases(t, prewarmer, provider.server)
+}
+
 func TestPrewarmStartupCancellationDrainsTasksAndReleasesLeases(t *testing.T) {
 	prewarmer, provider, _ := newBlockedFourLaneStartup(t)
+	provider.passCalls = 1
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() { result <- prewarmer.runStartup(ctx) }()
 
+	provider.waitForSuccessful(t, 1)
 	provider.waitForActive(t, 2)
 	cancel()
 	if err := waitStartupResult(t, result); !errors.Is(err, context.Canceled) {
 		t.Fatalf("runStartup() error = %v, want context canceled", err)
 	}
 	provider.waitForIdle(t)
+	if got := provider.successfulCalls(); got != 1 {
+		t.Fatalf("successful source calls before cancellation = %d, want 1", got)
+	}
 	assertNoStartupSegmentLeases(t, prewarmer, provider.server)
 	if provider.server.Exists(startupCoordinatorKey(prewarmer)) {
 		t.Fatal("canceled startup retained coordinator marker")
@@ -141,9 +233,11 @@ type blockedStartupProvider struct {
 	maximumActive int
 	calls         int
 	completed     int
+	successful    int
 	entered       chan struct{}
 	release       chan struct{}
 	releaseOnce   sync.Once
+	passCalls     int
 	failTimezone  string
 	failClass     PrewarmSegmentClass
 }
@@ -156,6 +250,8 @@ func (p *blockedStartupProvider) GetProviderUsageTrend(
 	p.mu.Lock()
 	p.active++
 	p.calls++
+	callNumber := p.calls
+	passCall := callNumber <= p.passCalls
 	if p.active > p.maximumActive {
 		p.maximumActive = p.active
 	}
@@ -168,16 +264,24 @@ func (p *blockedStartupProvider) GetProviderUsageTrend(
 		p.mu.Unlock()
 	}()
 
-	select {
-	case <-p.release:
-	case <-ctx.Done():
-		return relay.ProviderWideTrendResult{}, ctx.Err()
+	if !passCall {
+		select {
+		case <-p.release:
+		case <-ctx.Done():
+			return relay.ProviderWideTrendResult{}, ctx.Err()
+		}
 	}
 	class := classForCoverage(params)
 	if params.Timezone == p.failTimezone && class == p.failClass {
 		return relay.ProviderWideTrendResult{}, fmt.Errorf("synthetic startup lane source failure")
 	}
-	return p.lifecycleProvider.GetProviderUsageTrend(ctx, params, limit)
+	result, err := p.lifecycleProvider.GetProviderUsageTrend(ctx, params, limit)
+	if err == nil {
+		p.mu.Lock()
+		p.successful++
+		p.mu.Unlock()
+	}
+	return result, err
 }
 
 func (p *blockedStartupProvider) waitForActive(t *testing.T, want int) {
@@ -214,6 +318,18 @@ func (p *blockedStartupProvider) waitForIdle(t *testing.T) {
 	t.Fatal("startup provider workers did not become idle")
 }
 
+func (p *blockedStartupProvider) waitForSuccessful(t *testing.T, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if p.successfulCalls() >= want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("successful startup source calls = %d, want at least %d", p.successfulCalls(), want)
+}
+
 func (p *blockedStartupProvider) releaseAll() {
 	p.releaseOnce.Do(func() { close(p.release) })
 }
@@ -228,6 +344,12 @@ func (p *blockedStartupProvider) completedCalls() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.completed
+}
+
+func (p *blockedStartupProvider) successfulCalls() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.successful
 }
 
 func newBlockedFourLaneStartup(t *testing.T) (*Prewarmer, *blockedStartupProvider, *PrewarmCache) {
@@ -262,10 +384,10 @@ func startupTestIdentity(timezone string) PrewarmCacheIdentity {
 func assertNoStartupManifest(t *testing.T, cache *PrewarmCache) {
 	t.Helper()
 	for _, timezone := range startupTestTimezones {
-		if result, found, err := cache.Read(context.Background(), startupTestIdentity(timezone)); err != nil {
+		if _, found, err := cache.Read(context.Background(), startupTestIdentity(timezone)); err != nil {
 			t.Fatalf("Read(%s) error = %v", timezone, err)
 		} else if found {
-			t.Fatalf("startup manifest published before barrier for %s: %#v", timezone, result.Manifest)
+			t.Fatalf("startup manifest published before barrier for %s", timezone)
 		}
 	}
 }
@@ -293,10 +415,55 @@ func assertOneSharedCurrentReference(t *testing.T, cache *PrewarmCache) {
 			continue
 		}
 		if result.Manifest.CurrentStats.Key != key || result.Manifest.CurrentStats.GenerationID != generationID {
-			t.Fatalf("startup current reference for %s differs from shared %s/%s", timezone, key, generationID)
+			t.Fatalf("startup current reference for %s differs from first lane", timezone)
 		}
 	}
 }
+
+type startupSegmentLeaseAttemptStore struct {
+	readcache.BatchStore
+
+	mu       sync.Mutex
+	keys     map[string]struct{}
+	attempts int
+}
+
+func (s *startupSegmentLeaseAttemptStore) TryAcquireLease(
+	ctx context.Context,
+	key, token string,
+	ttl time.Duration,
+) (bool, error) {
+	s.mu.Lock()
+	if _, tracked := s.keys[key]; tracked {
+		s.attempts++
+	}
+	s.mu.Unlock()
+	return s.BatchStore.TryAcquireLease(ctx, key, token, ttl)
+}
+
+func (s *startupSegmentLeaseAttemptStore) attemptCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.attempts
+}
+
+func trackStartupSegmentLeaseAttempts(prewarmer *Prewarmer) *startupSegmentLeaseAttemptStore {
+	keys := make(map[string]struct{}, len(startupTestTimezones)*3)
+	binding := ProviderBinding{ProviderID: 7, ProviderVersion: 11}
+	for _, timezone := range startupTestTimezones {
+		for _, class := range []PrewarmSegmentClass{SegmentHistory29d, SegmentHistory6d, SegmentTodayHour} {
+			key := prewarmer.segmentLeaseKey(
+				binding, timezone, "2026-07-21", startupTestRefreshClass(class),
+			)
+			keys[key] = struct{}{}
+		}
+	}
+	store := &startupSegmentLeaseAttemptStore{BatchStore: prewarmer.cache.store, keys: keys}
+	prewarmer.cache.store = store
+	return store
+}
+
+var _ readcache.BatchStore = (*startupSegmentLeaseAttemptStore)(nil)
 
 func startupCoordinatorKey(prewarmer *Prewarmer) string {
 	return prewarmer.cache.LeaseKey("startup-coordinator", "7", "11", prewarmer.allowlistDigest)
