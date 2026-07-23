@@ -8,6 +8,12 @@
 
 **Tech Stack:** Go 1.24, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, GHCR, Helm, Kubernetes.
 
+**Status:** Tasks 1-3 are complete. The exact locally reviewed code head is
+`30279888db6dad6c0f5e433879ba9573642fc461`; Task 3 Step 4 is completed by
+this review-ledger commit. No Task 15 image or staging replay exists. Staging
+remains feature-disabled according to retained Task 14 evidence, and Tasks 4-5
+remain pending. Task 9 Steps 3-6 remain unchanged and unchecked.
+
 ## Global Constraints
 
 - The approved design is `docs/superpowers/specs/2026-07-23-team-usage-startup-cohort-publication-design.md`; the 2026-07-21 segmented spec remains authoritative outside startup fetch ordering, cohort publication, and scheduler evidence.
@@ -304,7 +310,8 @@ Use a task channel, a result channel sized to the exact task count, two workers,
 
 ```go
 func (p *Prewarmer) fetchStartupSegments(
-    ctx context.Context,
+    batchCtx context.Context,
+    cancelBatch context.CancelCauseFunc,
     binding ProviderBinding,
     plans []startupLanePlan,
 ) []error {
@@ -315,13 +322,30 @@ func (p *Prewarmer) fetchStartupSegments(
         workers.Add(1)
         go func() {
             defer workers.Done()
+            hasFetchedTask := false
             for task := range tasks {
-                plan := plans[task.laneIndex]
+                if cause := context.Cause(batchCtx); cause != nil {
+                    results <- startupSegmentResult{task: task, err: cause}
+                    continue
+                }
+                if hasFetchedTask {
+                    if ownershipErr := p.requireCoordinatorOwned(batchCtx); ownershipErr != nil {
+                        cancelBatch(ownershipErr)
+                        results <- startupSegmentResult{task: task, err: ownershipErr}
+                        continue
+                    }
+                }
+                identity := plans[task.laneIndex].identity
                 leased, err := p.fetchLeasedSegment(
-                    ctx, binding, plan.identity.Timezone,
-                    plan.identity.AnchorDate, task.class,
-                    startupRefreshClass(task.class),
+                    batchCtx, binding, identity.Timezone, identity.AnchorDate,
+                    task.class, startupRefreshClass(task.class),
                 )
+                hasFetchedTask = true
+                if err != nil {
+                    if coordinatorErr := p.requireCoordinatorOwned(batchCtx); coordinatorErr != nil {
+                        cancelBatch(coordinatorErr)
+                    }
+                }
                 results <- startupSegmentResult{task: task, leased: leased, err: err}
             }
         }()
@@ -332,7 +356,7 @@ func (p *Prewarmer) fetchStartupSegments(
             for _, class := range plans[laneIndex].missing {
                 select {
                 case tasks <- startupSegmentTask{laneIndex: laneIndex, class: class}:
-                case <-ctx.Done():
+                case <-batchCtx.Done():
                     return
                 }
             }
@@ -364,7 +388,12 @@ func (p *Prewarmer) fetchStartupSegments(
 }
 ```
 
-The real implementation must avoid producer leakage when `ctx` is canceled: task submission selects on `ctx.Done`, every started worker exits, and every result channel is drained. `errPrewarmLeaseBusy` is a lane failure during owner startup; it is not silently converted to success.
+The final implementation receives the batch context and its explicit cancel
+owner from `runStartup`. It avoids producer leakage when `batchCtx` is
+canceled: task submission selects on `batchCtx.Done`, every started worker
+exits, and every result channel is drained. Between-task ownership loss cancels
+the batch before another segment lease acquisition. `errPrewarmLeaseBusy` is a
+lane failure during owner startup; it is not silently converted to success.
 
 - [x] **Step 5: Implement barrier publication and unconditional lease cleanup**
 
@@ -400,6 +429,10 @@ Sort claims by segment class for deterministic tests. `publishIfCurrent` already
 
 On every return path, call `releaseLeasedReference` exactly once for each successful task. Do not store plans or leased references on `Prewarmer`.
 
+Keep the original `leased.ctx` values returned by `fetchLeasedSegment` alive
+through barrier publication. Do not reparent or replace them; publication must
+still reject a segment context that expires while waiting behind the barrier.
+
 - [x] **Step 6: Replace the serial startup loop and run GREEN**
 
 Keep `runStartup` ownership and retain-on-success semantics, but replace its timezone/class source loop with:
@@ -410,28 +443,48 @@ plans, failures := p.planStartupLanes(workerCtx, binding, batchTime)
 if sharedCurrentNeeded(plans) {
     current, err := p.buildCurrentStats(workerCtx, binding, "startup")
     if err != nil {
-        return errors.Join(append(failures, err)...)
+        return errors.Join(append(
+            failures, fmt.Errorf("startup current stats: %w", err),
+        )...)
     }
     ref, err := p.cache.WriteCurrentStats(workerCtx, current)
     if err != nil {
-        return errors.Join(append(failures, err)...)
+        return errors.Join(append(
+            failures, fmt.Errorf("startup write current stats: %w", err),
+        )...)
     }
     applyStartupCurrentReference(plans, ref)
 }
-failures = append(failures, p.fetchStartupSegments(workerCtx, binding, plans)...)
-if err := workerCtx.Err(); err != nil {
+batchCtx, cancelBatch := context.WithCancelCause(workerCtx)
+defer cancelBatch(nil)
+failures = append(failures, p.fetchStartupSegments(
+    batchCtx, cancelBatch, binding, plans,
+)...)
+defer func() {
+    for index := range plans {
+        for _, leased := range plans[index].leased {
+            p.releaseLeasedReference(leased)
+        }
+    }
+}()
+if err := context.Cause(batchCtx); err != nil {
     return errors.Join(append(failures, err)...)
 }
-if err := p.requireCoordinatorOwned(workerCtx); err != nil {
+if err := p.requireCoordinatorOwned(batchCtx); err != nil {
     return errors.Join(append(failures, err)...)
 }
-failures = append(failures, p.publishStartupCohort(workerCtx, binding, plans)...)
+failures = append(failures, p.publishStartupCohort(batchCtx, binding, plans)...)
 if err := errors.Join(failures...); err != nil {
     return err
 }
 retainCoordinator = true
 return nil
 ```
+
+The batch cancel defer is registered before the successful-reference release
+defer. LIFO execution therefore releases every original leased context and
+segment lease before normal batch cancellation, while ownership-loss calls can
+still cancel the same batch immediately with their explicit cause.
 
 Do not call `beginPublicationBatch` from startup or create a dummy current
 value. Preserve the existing startup generation-metrics behavior; moving and
@@ -475,7 +528,7 @@ Generate a task-scoped review package from the recorded pre-task base. Resolve e
 - Consumes: reviewed Task 1 and Task 2 commits.
 - Produces: one exact reviewed application head eligible for immutable image publication.
 
-- [ ] **Step 1: Run the full backend verification ladder**
+- [x] **Step 1: Run the full backend verification ladder**
 
 ```bash
 cd backend
@@ -490,15 +543,15 @@ git diff --check
 
 Expected: every command exits zero. Record existing toolchain-only warnings separately; any test, race, vet, build, or diff failure blocks Task 3.
 
-- [ ] **Step 2: Run a broad startup-branch review**
+- [x] **Step 2: Run a broad startup-branch review**
 
 Generate a review package from Task 15's design commit through the exact code head. Review Standards and Spec, focusing on worker/channel cancellation, maximum source concurrency, publication ordering, lease release exactly once, coordinator retention, lane isolation, metric privacy, and no completed Pod state. Resolve every Critical and Important finding with covering tests and re-review.
 
-- [ ] **Step 3: Update current documentation status**
+- [x] **Step 3: Update current documentation status**
 
 Record only commit SHAs, exact commands, pass/fail counts, and review findings. Mark the new design as implemented and reviewed but staging-disabled. Do not update `docs/architecture.md` or claim current runtime.
 
-- [ ] **Step 4: Commit the local review ledger**
+- [x] **Step 4: Commit the local review ledger**
 
 ```bash
 git add docs/superpowers/specs/2026-07-23-team-usage-startup-cohort-publication-design.md \
@@ -508,6 +561,33 @@ git commit -m "docs(teamusage): complete startup cohort review"
 ```
 
 Verify the tracked worktree is clean and record this commit as the only image-eligible Task 15 head.
+
+**Completed local verification and review (2026-07-23):** The exact reviewed
+code head is `30279888db6dad6c0f5e433879ba9573642fc461`. The Step 1 ladder ran
+the six commands above in order: the focused test and race commands each
+passed three packages with zero failures and zero race findings; the full
+backend run passed 38 packages, reported 36 packages with no test files, and
+had zero failures; vet, build, and diff checks exited zero. Two non-fatal macOS
+linker warnings were recorded separately.
+
+Before broad review, Task 3 vet/lifetime correction `0e442bc1` made batch cancel
+ownership explicit at `runStartup` and removed the pointer-copy vet failure.
+Initial Standards review reported `0 Critical / 2 Important / 1 Minor`: missing
+startup phase error context, stale documentation/live-plan status, and a
+duplicate test refresh mapping. Code correction `30279888` resolved the code
+Important and Minor findings; this ledger commit resolves the documentation
+Important finding. Initial Spec review reported `0 Critical / 1 Important / 0
+Minor` only because the already recorded final ladder rerun had not been read;
+after that evidence was reviewed, the finding was withdrawn without a code
+change. Final Standards review and final Spec review each report `0 Critical /
+0 Important / 0 Minor`.
+
+No Task 15 image has been built or deployed and no Task 15 staging replay has
+run. Retained Task 14 evidence remains the source for the feature-disabled
+staging state. Tasks 4-5 remain pending, Task 9 Steps 3-6 remain unchecked, and
+`docs/architecture.md` remains unchanged. The commit created by this Step 4 is
+the only image-eligible Task 15 head and is recorded after commit in the
+ignored progress and task report ledgers.
 
 ---
 

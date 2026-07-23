@@ -102,6 +102,19 @@ Staging was restored disabled at revision 56; the rollback duration was not
 retained separately. Production is unchanged, and Task 9 Steps 3-6 remain
 unchecked.
 
+**Task 15 supersession note (2026-07-23):**
+`docs/superpowers/specs/2026-07-23-team-usage-startup-cohort-publication-design.md`
+and
+`docs/superpowers/plans/2026-07-23-team-usage-startup-cohort-publication.md`
+supersede only Task 14's startup fetch ordering, cohort publication, and direct
+scheduler-tick evidence contract. The Task 14 failure and rollback evidence
+below remains historical evidence and is not rewritten. The exact locally
+reviewed Task 15 code head is
+`30279888db6dad6c0f5e433879ba9573642fc461`; no Task 15 image has been built or
+deployed and no Task 15 staging replay has run. Staging remains
+feature-disabled according to the retained Task 14 evidence. Task 15 Tasks 4-5
+remain pending, and Task 9 Steps 3-6 remain unchanged and unchecked.
+
 ## Task 1 Gate Evidence
 
 Staging matched PR #192 exact head `627a7123` at Helm revision 44 using image

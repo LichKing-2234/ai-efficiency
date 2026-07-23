@@ -1,6 +1,9 @@
 # Team Usage Startup Cohort Publication Design
 
-**Status:** Approved approach; ready for implementation planning.
+**Status:** Implemented and locally reviewed at
+`30279888db6dad6c0f5e433879ba9573642fc461`. No Task 15 image has been
+published or deployed. Staging remains feature-disabled according to retained
+Task 14 evidence; Tasks 4-5 remain pending.
 
 **Date:** 2026-07-23
 
@@ -31,14 +34,15 @@ final scrape also recorded one `lease_acquire` and one `manifest_read`
 `command_deadline`; bounded pool scrapes and wait/timeout deltas were zero, but
 that evidence does not prove why the deadlines occurred.
 
-The implementation explains the cohort shape. `runStartup` currently loops over
-timezones and missing segment classes sequentially. Each source call still uses
-the deployment-wide limiter, but startup presents only one segment call at a
-time, so the configured concurrency of two is unused. Each lane may publish as
-soon as its last missing segment arrives, spreading manifests across the entire
-serial source-fetch interval. A lease-busy Pod can also reach its fixed ticker
-while the owner is still working, adding scheduled Redis and source work before
-the startup cohort settles.
+The pre-change implementation explained the observed cohort shape.
+`runStartup` looped over timezones and missing segment classes sequentially.
+Each source call still used the deployment-wide limiter, but startup presented
+only one segment call at a time, so the configured concurrency of two was
+unused. Each lane could publish as soon as its last missing segment arrived,
+spreading manifests across the entire serial source-fetch interval. A
+lease-busy Pod could also reach its fixed ticker while the owner was still
+working, adding scheduled Redis and source work before the startup cohort
+settled.
 
 ## Decision
 
@@ -131,9 +135,10 @@ marker until its existing TTL expires.
 
 ## Scheduler Evidence
 
-Add one no-label monotonic counter for received scheduled ticks. Increment it
-synchronously in `runTicks` before starting moving, recovery, or historical
-workers. It contains no timezone, operation ID, provider, or user dimension.
+The local implementation adds one no-label monotonic counter for received
+scheduled ticks. It increments synchronously in `runTicks` before starting
+moving, recovery, or historical workers. It contains no timezone, operation
+ID, provider, or user dimension.
 
 The staging pre-ticker gate reads this counter directly. At the scrape that
 first observes all four complete manifests:
@@ -189,6 +194,33 @@ Run focused startup/telemetry tests, a repeated concurrency test, race tests for
 build. Independent task review must clear every Critical and Important finding
 before an image is published.
 
+## Local Implementation And Review
+
+The exact locally reviewed code head is
+`30279888db6dad6c0f5e433879ba9573642fc461`. The final verification ladder ran:
+
+```text
+go test ./internal/teamusage ./internal/telemetry ./cmd/server -count=1
+go test -race ./internal/teamusage ./internal/telemetry ./cmd/server -count=1
+go test ./... -count=1
+go vet ./...
+go build ./...
+git diff --check
+```
+
+All six commands exited zero. The focused test and race commands each passed
+three packages with zero failures and zero race findings. The full backend run
+passed 38 packages, reported 36 packages with no test files, and had zero
+failures. Vet, build, and diff checks had zero findings. The race command
+emitted two non-fatal macOS linker warnings.
+
+Final Standards review and final Spec review each reported `0 Critical / 0
+Important / 0 Minor`. This status is local evidence only: no Task 15 image has
+been built or deployed, no Task 15 staging replay has run, and this design does
+not claim current staging or production runtime behavior. Retained Task 14
+evidence remains the source for the feature-disabled staging state. Tasks 4-5
+remain pending.
+
 ## Staging Gates
 
 Because exact code changes, first publish a new multi-architecture immutable
@@ -223,7 +255,7 @@ the `50.936s` serial cohort or prove completion before scheduled work.
 
 ### Publish Each Lane As Soon As It Is Ready
 
-This preserves the current first-to-last spread. Fetch concurrency alone can
+This preserves the pre-change first-to-last spread. Fetch concurrency alone can
 still let one fast lane publish far ahead of the last lane. The barrier is what
 makes publication a cohort.
 
