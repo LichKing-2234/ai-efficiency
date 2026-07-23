@@ -78,6 +78,7 @@ type teamUsagePrewarmMetrics struct {
 	redisDuration   *prometheus.HistogramVec
 	redisBytes      *prometheus.HistogramVec
 	redisErrorTotal *prometheus.CounterVec
+	schedulerTicks  prometheus.Counter
 	requestTotal    *prometheus.CounterVec
 	lastSuccess     *prometheus.GaugeVec
 	quantity        *prometheus.HistogramVec
@@ -136,6 +137,10 @@ func (m *Metrics) TeamUsagePrewarmRecorder(timezones []string) (teamusage.Prewar
 			Namespace: metricsNamespace, Name: "team_usage_prewarm_redis_error_total",
 			Help: "Closed Team Usage prewarm Redis failure classifications.",
 		}, []string{"operation", "class"}),
+		schedulerTicks: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: metricsNamespace, Name: "team_usage_prewarm_scheduler_tick_total",
+			Help: "Team Usage prewarm scheduler ticks observed before worker dispatch.",
+		}),
 		requestTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: metricsNamespace, Name: "team_usage_prewarm_request_total",
 			Help: "Team Usage request prewarm outcomes and exact-fallback reasons.",
@@ -168,7 +173,8 @@ func (m *Metrics) TeamUsagePrewarmRecorder(timezones []string) (teamusage.Prewar
 	m.registry.MustRegister(
 		recorder.cycleTotal, recorder.cycleDuration,
 		recorder.sourceDuration, recorder.sourceBytes, recorder.sourcePoints, recorder.sourceUsers,
-		recorder.redisDuration, recorder.redisBytes, recorder.redisErrorTotal, recorder.requestTotal, recorder.lastSuccess,
+		recorder.redisDuration, recorder.redisBytes, recorder.redisErrorTotal, recorder.schedulerTicks,
+		recorder.requestTotal, recorder.lastSuccess,
 		recorder.quantity, recorder.generationBytes, recorder.validationTotal, recorder.cacheTotal,
 	)
 	recorder.preinitialize(normalized)
@@ -258,6 +264,10 @@ func (m *teamUsagePrewarmMetrics) RecordRedisError(operation string, class teamu
 		return
 	}
 	m.redisErrorTotal.WithLabelValues(operation, string(class)).Inc()
+}
+
+func (m *teamUsagePrewarmMetrics) RecordSchedulerTick() {
+	m.schedulerTicks.Inc()
 }
 
 func (m *teamUsagePrewarmMetrics) RecordRequest(timezone, outcome, fallbackReason string) {

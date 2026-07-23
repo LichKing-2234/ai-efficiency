@@ -1391,6 +1391,48 @@ func TestPrewarmMovingStartSkipsOverlappingSixtySecondTicksAndStopWaits(t *testi
 	}
 }
 
+func TestPrewarmerRecordsSchedulerTickBeforeWorkers(t *testing.T) {
+	ticks := make(chan time.Time, 1)
+	tickRecorded := make(chan struct{}, 1)
+	metrics := &recordingPrewarmRequestMetrics{schedulerTickRecorded: tickRecorded}
+	metrics.schedulerTickHook = func() {
+		for _, cycle := range metrics.cyclesCopy() {
+			switch PrewarmCycleClass(cycle.class) {
+			case PrewarmCycleMoving, PrewarmCycleRecovery, PrewarmCycleHistory29d, PrewarmCycleHistory6d:
+				t.Error("scheduled worker recorded before scheduler tick")
+			}
+		}
+	}
+	options := lifecycleOptions([]string{"UTC"}, time.Now)
+	options.tick, options.Metrics = ticks, metrics
+	prewarmer := mustPrewarmer(
+		t,
+		staticBindingResolver{binding: prewarmBinding(newLifecycleProvider([]int64{101}))},
+		mustNewPrewarmCache(t, newRecordingPrewarmStore(), time.Now),
+		options,
+	)
+
+	prewarmer.Start(context.Background())
+	select {
+	case <-prewarmer.startupDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("startup did not finish")
+	}
+	ticks <- time.Now()
+	select {
+	case <-tickRecorded:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scheduler tick was not recorded")
+	}
+	prewarmer.Stop()
+	metrics.mu.Lock()
+	recordedTicks := metrics.schedulerTicks
+	metrics.mu.Unlock()
+	if recordedTicks != 1 {
+		t.Fatalf("scheduler ticks = %d, want 1", recordedTicks)
+	}
+}
+
 func TestPrewarmMovingStartDuringStopCannotJoinLifecycle(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })

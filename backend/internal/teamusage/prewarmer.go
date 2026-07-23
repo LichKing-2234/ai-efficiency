@@ -245,6 +245,7 @@ func (p *Prewarmer) runTicks(ctx context.Context, ticks <-chan time.Time) {
 		case <-ctx.Done():
 			return
 		case <-ticks:
+			p.options.Metrics.RecordSchedulerTick()
 			p.startMoving(ctx)
 			p.startRecovery(ctx)
 			for _, timezone := range p.timezones {

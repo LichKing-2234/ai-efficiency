@@ -103,6 +103,7 @@ type PrewarmMetrics interface {
 	RecordSource(class, timezone, outcome string, duration time.Duration, bytes, points, users int)
 	RecordRedis(operation, outcome string, duration time.Duration, bytes int)
 	RecordRedisError(operation string, class PrewarmRedisErrorClass)
+	RecordSchedulerTick()
 	RecordRequest(timezone, outcome, fallbackReason string)
 	SetLastSuccess(class, timezone string, at time.Time)
 	RecordQuantity(kind PrewarmQuantityKind, timezone string, value int)
@@ -118,6 +119,7 @@ func (noopPrewarmMetrics) RecordSource(string, string, string, time.Duration, in
 }
 func (noopPrewarmMetrics) RecordRedis(string, string, time.Duration, int)  {}
 func (noopPrewarmMetrics) RecordRedisError(string, PrewarmRedisErrorClass) {}
+func (noopPrewarmMetrics) RecordSchedulerTick()                            {}
 func (noopPrewarmMetrics) RecordRequest(string, string, string)            {}
 func (noopPrewarmMetrics) SetLastSuccess(string, string, time.Time)        {}
 func (noopPrewarmMetrics) RecordQuantity(PrewarmQuantityKind, string, int) {}

@@ -893,15 +893,18 @@ type prewarmCacheMetric struct {
 }
 
 type recordingPrewarmRequestMetrics struct {
-	mu          sync.Mutex
-	cycleHook   func(class, timezone, outcome string)
-	cycles      []prewarmCycleMetric
-	requests    []prewarmRequestMetric
-	sources     []prewarmSourceMetric
-	quantities  []prewarmQuantityMetric
-	validations []prewarmValidationMetric
-	caches      []prewarmCacheMetric
-	generation  []int
+	mu                    sync.Mutex
+	cycleHook             func(class, timezone, outcome string)
+	schedulerTickHook     func()
+	schedulerTickRecorded chan struct{}
+	schedulerTicks        int
+	cycles                []prewarmCycleMetric
+	requests              []prewarmRequestMetric
+	sources               []prewarmSourceMetric
+	quantities            []prewarmQuantityMetric
+	validations           []prewarmValidationMetric
+	caches                []prewarmCacheMetric
+	generation            []int
 }
 
 func (m *recordingPrewarmRequestMetrics) RecordCycle(class, timezone, outcome string, duration time.Duration) {
@@ -922,6 +925,23 @@ func (m *recordingPrewarmRequestMetrics) RecordSource(class, timezone, outcome s
 }
 func (*recordingPrewarmRequestMetrics) RecordRedis(string, string, time.Duration, int)  {}
 func (*recordingPrewarmRequestMetrics) RecordRedisError(string, PrewarmRedisErrorClass) {}
+func (m *recordingPrewarmRequestMetrics) RecordSchedulerTick() {
+	m.mu.Lock()
+	m.schedulerTicks++
+	hook, recorded := m.schedulerTickHook, m.schedulerTickRecorded
+	m.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	if recorded != nil {
+		recorded <- struct{}{}
+	}
+}
+func (m *recordingPrewarmRequestMetrics) cyclesCopy() []prewarmCycleMetric {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]prewarmCycleMetric(nil), m.cycles...)
+}
 func (m *recordingPrewarmRequestMetrics) RecordRequest(timezone, outcome, reason string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

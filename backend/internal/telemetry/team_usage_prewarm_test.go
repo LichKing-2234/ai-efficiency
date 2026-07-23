@@ -38,6 +38,7 @@ func TestTeamUsagePrewarmMetricsPreinitializeClosedPrivacySafeLabels(t *testing.
 		"ai_efficiency_team_usage_prewarm_generation_bytes":               false,
 		"ai_efficiency_team_usage_prewarm_validation_total":               false,
 		"ai_efficiency_team_usage_prewarm_cache_total":                    false,
+		"ai_efficiency_team_usage_prewarm_scheduler_tick_total":           false,
 	}
 	for _, family := range families {
 		if _, ok := wantFamilies[family.GetName()]; !ok {
@@ -68,6 +69,30 @@ func TestTeamUsagePrewarmMetricsPreinitializeClosedPrivacySafeLabels(t *testing.
 	after := prewarmMetricLabelSets(t, metrics, "ai_efficiency_team_usage_prewarm_request_total")
 	if !reflect.DeepEqual(after, before) {
 		t.Fatalf("invalid labels changed request series: before=%v after=%v", before, after)
+	}
+}
+
+func TestTeamUsagePrewarmSchedulerTickCounterStartsAtZeroAndHasNoLabels(t *testing.T) {
+	metrics := NewMetrics("test-release")
+	recorder, err := metrics.TeamUsagePrewarmRecorder([]string{"UTC"})
+	if err != nil {
+		t.Fatalf("TeamUsagePrewarmRecorder() error = %v", err)
+	}
+	const family = "ai_efficiency_team_usage_prewarm_scheduler_tick_total"
+	if got := counterValue(t, metrics.Gatherer(), family, map[string]string{}); got != 0 {
+		t.Fatalf("scheduler tick count before record = %v, want 0", got)
+	}
+	if labels := prewarmMetricLabelSets(t, metrics, family); !reflect.DeepEqual(labels, []string{""}) {
+		t.Fatalf("scheduler tick labels = %v, want no labels", labels)
+	}
+
+	recorder.RecordSchedulerTick()
+
+	if got := counterValue(t, metrics.Gatherer(), family, map[string]string{}); got != 1 {
+		t.Fatalf("scheduler tick count after record = %v, want 1", got)
+	}
+	if labels := prewarmMetricLabelSets(t, metrics, family); !reflect.DeepEqual(labels, []string{""}) {
+		t.Fatalf("scheduler tick labels after record = %v, want no labels", labels)
 	}
 }
 
