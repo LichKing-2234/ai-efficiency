@@ -40,7 +40,7 @@
 - Consumes: existing `PrewarmMetrics`, `Prewarmer.runTicks`, and the fixed 60-second runtime ticker.
 - Produces: `PrewarmMetrics.RecordSchedulerTick()` and Prometheus metric `ai_efficiency_team_usage_prewarm_scheduler_tick_total` with no labels.
 
-- [ ] **Step 1: Write scheduler metric RED tests**
+- [x] **Step 1: Write scheduler metric RED tests**
 
 Add `TestPrewarmerRecordsSchedulerTickBeforeWorkers` using the test-only tick channel. The recorder hook must observe one scheduler tick before any moving, recovery, or historical worker records a cycle:
 
@@ -87,7 +87,7 @@ Add `cyclesCopy()` as a locked slice copy used only by this test.
 
 Add telemetry tests that gather the new family, require value zero immediately after recorder construction, call `RecordSchedulerTick`, require value one, and assert the metric has no labels.
 
-- [ ] **Step 2: Run RED and verify missing behavior**
+- [x] **Step 2: Run RED and verify missing behavior**
 
 Run:
 
@@ -99,7 +99,7 @@ go test ./internal/teamusage ./internal/telemetry \
 
 Expected: compilation or assertions fail only because `RecordSchedulerTick` and the metric family do not exist. Fix fixture or syntax errors until the failure is behavioral.
 
-- [ ] **Step 3: Implement the no-label counter**
+- [x] **Step 3: Implement the no-label counter**
 
 Extend the interface and no-op recorder:
 
@@ -137,7 +137,7 @@ case <-ticks:
 
 Update every test fake by embedding `noopPrewarmMetrics` or implementing the new method. Do not add labels or a structured log field.
 
-- [ ] **Step 4: Run GREEN, race, and package verification**
+- [x] **Step 4: Run GREEN, race, and package verification**
 
 Run:
 
@@ -153,7 +153,7 @@ go test ./internal/teamusage ./internal/telemetry -count=1
 
 Expected: all commands exit zero with no test failure. Record any existing linker-only warning separately.
 
-- [ ] **Step 5: Commit and task-review**
+- [x] **Step 5: Commit and task-review**
 
 ```bash
 git add backend/internal/teamusage backend/internal/telemetry
