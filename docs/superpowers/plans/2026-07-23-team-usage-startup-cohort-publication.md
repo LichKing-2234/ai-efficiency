@@ -11,9 +11,13 @@
 **Status:** Tasks 1-4 are complete. Task 4 published exact reviewed head
 `c5d3f6af15ea4db7ef424139822b043ee787f79d`, deployed it disabled to staging,
 and passed the seven-class Redis benchmark with 100 valid samples per class at
-the unchanged `250ms` budgets. Staging is restored disabled at revision 58 with
-one ready replica on that exact image; production remains unchanged at revision
-69. Task 5 is pending, and Task 9 Steps 3-6 remain unchanged and unchecked.
+the unchanged `250ms` budgets. The single approved Task 5 replay reached enabled
+revision 59 but failed without retained observer evidence; none of its product
+diagnostic gates are proven. Its in-process rollback guard was bypassed, so a
+manual atomic upgrade restored staging disabled at revision 60 with one ready
+replica on the exact image. Production remains unchanged at revision 69. Task 5
+failed, Task 9 Steps 3-6 remain unchanged and unchecked, and another replay
+requires a new plan/design decision.
 
 ## Global Constraints
 
@@ -752,13 +756,40 @@ Do not commit or push the staging selector yet; Step 5 must restore it to a deli
 
 - [ ] **Step 1: Prepare bounded fresh-Pod observation**
 
+  **Attempt evidence (2026-07-23, incomplete):** The Task 14 capture watcher
+  was mechanically recovered from structured session
+  `019f8948-18f6-79f3-aad8-d02da8457cbb` with SHA-256
+  `624b2def3420b0cabc04c42594c765540baa1eb1fa9dff3f96221b3a324107dc`.
+  The adapted observer had SHA-256
+  `d5915970ded740b1f4480ccd84455cdea22537b91d8e1a004ca214083e4e2f27`
+  and passed syntax, fixed-field parsing, and forbidden-command checks. It was
+  launched before the enabled upgrade, but exited without a retained result.
+  No per-Pod counter-zero baseline survived, so this step remains unchecked.
+
 Create only session-temporary watcher files. For each new Pod capture counter-zero baselines as soon as the metrics listener is available. Retain only durations, closed counts/outcomes, digests, and revisions. Do not use an account, call Team Usage API lanes, print response bodies, or read raw Redis values.
 
 - [ ] **Step 2: Enable exact code on two staging replicas**
 
+  **Attempt evidence (2026-07-23, incomplete):** Deployment-only render and
+  server dry-run completed before the staging-only atomic upgrade. Revision 59
+  completed on the exact image with two desired, ready, updated, and available
+  replicas, `AE_TEAM_USAGE_PREWARM_ENABLED=true`, and the exact four approved
+  timezones. The observer/orchestration then exited before retaining the
+  required per-Pod zero-restart and HTTP health proof, so this step remains
+  unchecked even though the enabled revision itself completed.
+
 Render and server-dry-run the exact image, two replicas, `AE_TEAM_USAGE_PREWARM_ENABLED=true`, and the approved four timezones. Apply atomically only to staging. Verify `2/2` ready, exact image, zero restarts, and HTTP 200 health.
 
 - [ ] **Step 3: Enforce every diagnostic gate**
+
+  **Failure evidence (2026-07-23):** No observer result was retained. Therefore
+  none of the following is proven or disproven: owner startup-success count,
+  loser lease-busy count, loser source count, either scheduler-tick count,
+  complete schema-v2 manifest/reference count, publication spread, maximum
+  deployment-wide source concurrency, Relay error count, Redis operation/error-
+  class deltas, or bounded pool pending/wait/timeout values. The closed failure
+  is missing observation evidence, not a product-gate failure. This step remains
+  unchecked, and the one approved replay has been consumed.
 
 At the first observation where four complete schema-v2 manifests and all references exist, require:
 
@@ -777,11 +808,37 @@ Redis error-class deltas = 0
 
 Record bounded pool pending values and wait/timeout deltas without claiming interval pressure is impossible. Any missing proof or nonzero error is failure.
 
-- [ ] **Step 4: Restore disabled regardless of result**
+- [x] **Step 4: Restore disabled regardless of result**
+
+  **Execution evidence (2026-07-23):** The orchestration PTY retained only exit
+  `1`, no trap result, and no observer result. Its recorded source installs an
+  EXIT/INT/TERM handler whose guarded rollback precedes internal cleanup. The
+  internal cleanup ran, but the selector remained enabled on deployed revision
+  59 and Helm history contained no automatic restore revision. With no external
+  cleanup or restore, this proves the guarded rollback branch was bypassed; the
+  guard's runtime boolean value was not retained, so no deeper cause is claimed.
+
+  A manual staging-only atomic upgrade then restored the exact image disabled
+  with one replica at revision 60. Fresh verification found `1/1` ready,
+  updated, and available, zero restarts, every prewarm environment entry absent,
+  and HTTP 200 live/readiness. Production remained revision 69 on
+  `v0.1.0-preview.73`, disabled, zero restarts, and HTTP 200 live/readiness. The
+  mode-`0600` selector is exact-image disabled and remains uncommitted and
+  unpushed with every non-selector byte unchanged.
 
 Immediately apply the exact-image disabled selector with one replica. Verify a new Helm revision is deployed, `1/1` ready, all prewarm environment entries absent, and HTTP 200 live/readiness. Reverify production unchanged. Restore the tracked selector to its deliberate exact-image disabled bytes, keep mode `0600`, and preserve unrelated Helm changes.
 
-- [ ] **Step 5: Record, clean, review, and commit**
+- [x] **Step 5: Record, clean, review, and commit**
+
+  **Execution evidence (2026-07-23):** The failed orchestration removed its
+  session-temporary files before its result could be retained; the deleted count
+  is therefore unknown. Fresh final scans found zero `/tmp/ae-task15-*` paths
+  locally and zero in the final staging application Pod, and no task-specific
+  temporary values file remains. This plan and the current design spec record
+  the failure without raw metrics, Redis keys/values, manifests, response
+  bodies, credentials, identities, or user data. Task 5 remains failed; Task 9
+  Steps 3-6 remain unchecked; `docs/architecture.md` remains unchanged. A second
+  replay is not authorized by this result.
 
 Delete watcher source, binaries, metrics, and raw reports; verify zero task-specific `/tmp` and Pod artifacts. On pass, check Task 5 and record that Task 9 Step 3 may restart; on failure leave it unchecked and record the exact closed blocker. In both cases keep Task 9 Steps 3-6 unchecked and `docs/architecture.md` unchanged.
 

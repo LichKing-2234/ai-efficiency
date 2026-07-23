@@ -3,9 +3,12 @@
 **Status:** Tasks 1-4 are complete. Exact reviewed head
 `c5d3f6af15ea4db7ef424139822b043ee787f79d` is published and deployed disabled
 to staging. Its seven-class Redis benchmark passed with 100 valid samples per
-class at the unchanged `250ms` budgets. Staging is restored disabled at revision
-58 with one ready replica on the exact image; production remains unchanged at
-revision 69. Task 5 is pending, and Task 9 Steps 3-6 remain unchecked.
+class at the unchanged `250ms` budgets. The single approved Task 5 replay reached
+enabled revision 59 but retained no observer result, so none of its diagnostic
+gates is proven. A manual atomic upgrade restored staging disabled at revision
+60 after the in-process rollback guard was bypassed. Production remains
+unchanged at revision 69. Task 5 failed, Task 9 Steps 3-6 remain unchecked, and
+another replay requires a new plan/design decision.
 
 **Date:** 2026-07-23
 
@@ -290,8 +293,9 @@ The exact-code publication and disabled seven-class Redis benchmark are complete
 with 100 valid samples per class. Any later returned command, transport, INFO,
 cleanup, eviction, or rejected-connection error still blocks enablement.
 
-Then run one two-Pod diagnostic replay, with no API acceptance round and no
-business-key deletion. Require:
+The approved sequence then allowed one two-Pod diagnostic replay, with no API
+acceptance round and no business-key deletion. That attempt is recorded below;
+its missing evidence does not authorize an automatic repeat. Its gates were:
 
 - one startup owner and one lease-busy loser;
 - exactly four complete manifests;
@@ -306,6 +310,64 @@ business-key deletion. Require:
 Whether the replay passes or fails, restore staging to one disabled replica on
 the exact image and verify production unchanged. A pass only permits a fresh
 Task 9 Step 3 acceptance attempt; it does not count as the three API rounds.
+
+## Failed Two-Pod Replay
+
+The single Task 5 replay on 2026-07-23 used exact image
+`ghcr.io/lichking-2234/ai-efficiency:staging-c5d3f6af15ea4db7ef424139822b043ee787f79d`.
+The Task 14 watcher was recovered from structured session
+`019f8948-18f6-79f3-aad8-d02da8457cbb` at SHA-256
+`624b2def3420b0cabc04c42594c765540baa1eb1fa9dff3f96221b3a324107dc`.
+The Task 15 observer adaptation had SHA-256
+`d5915970ded740b1f4480ccd84455cdea22537b91d8e1a004ca214083e4e2f27`;
+its fail-safe orchestration had SHA-256
+`127764d2416e4714ff8741b50725c1ef9982a03f0aa42dc583cb99ec23d4d66b`.
+Both passed static syntax and forbidden-command checks before rollout.
+
+Deployment-only render and server dry-run completed, then staging revision 59
+deployed the exact image with two desired, ready, updated, and available
+replicas, the feature enabled, and the exact four approved timezones. The PTY
+retained only exit `1`; it retained no observer JSON, counter-zero baseline, raw
+metric scrape, or sanitized gate aggregate. Accordingly, all product diagnostic
+gates remain unproven:
+
+- owner startup-success and loser lease-busy counts;
+- loser source count and maximum deployment-wide source concurrency;
+- both no-label scheduler-tick counts;
+- complete schema-v2 manifest/reference count and publication spread;
+- Relay error count;
+- Redis operation-error and closed error-class deltas; and
+- bounded Redis pool pending, wait, wait-duration, and timeout values.
+
+This is an observation-evidence failure. It is not evidence that any listed
+product gate passed or failed.
+
+The retained orchestration source installs an EXIT/INT/TERM handler. Inside that
+handler, a conditional `enabled_attempted == 1 && restored == 0` rollback comes
+before task-specific cleanup. No other agent or process cleaned the artifacts
+or changed Helm during the failure. After exit, internal cleanup had removed all
+`/tmp/ae-task15-*` files, but the selector still contained the enabled two-Pod
+state and Helm revision 59 remained deployed with no automatic restore revision.
+These side effects prove the trap was present and its cleanup path ran, while
+its guarded rollback branch was bypassed before any selector deletion or Helm
+restore. The guard's runtime boolean value was not retained, so this document
+does not speculate about why it evaluated away from the required rollback path.
+
+A manual staging-only atomic upgrade restored revision 60. Fresh final
+verification found one ready, updated, and available application replica on the
+exact image, zero restarts, all Team Usage prewarm environment entries absent,
+and HTTP 200 live/readiness. Production remained revision 69 on
+`v0.1.0-preview.73`, disabled with one ready replica, zero restarts, and HTTP 200
+live/readiness. The staging selector is mode `0600`, exact-image disabled,
+uncommitted, and unpushed; canonical JSON is unchanged from `HEAD` after deleting
+only image tag and snapshot selectors.
+
+Fresh final scans found zero local and zero final-Pod `/tmp/ae-task15-*`
+artifacts. The failed script did not retain its deleted artifact count. No
+account or Team Usage API request was used, no response body was retained, and
+no business Redis key was deleted. Task 9 Steps 3-6 remain unchecked and
+`docs/architecture.md` remains unchanged. A second two-Pod replay requires a
+new plan/design decision rather than being implied by this failure.
 
 ## Alternatives Rejected
 
