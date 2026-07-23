@@ -8,11 +8,11 @@
 
 **Tech Stack:** Bash 3.2-compatible shell, jq, curl, Helm, kubectl, Redis CLI through the existing staging Pod, Prometheus text parsing, Git, Kubernetes.
 
-**Status:** Task 1 and Task 2 Steps 1-5 are complete. The single authorized live
-replay ended in an operational failure, while final restoration and cleanup
-passed. Task 2 Step 6 remains unchecked because review found unresolved
-session-tooling gaps that cannot be validated by another replay. Task 3 records
-the decision; no third replay is authorized.
+**Status:** Task 1, Task 2 Steps 1-5, and Task 3 are complete. The single
+authorized live replay ended in an operational failure, while final restoration
+and cleanup passed. Task 2 Step 6 remains unchecked because review found
+unresolved session-tooling gaps that cannot be validated by another replay. No
+third replay is authorized.
 
 ## Global Constraints
 
@@ -436,7 +436,7 @@ Record only script SHAs, Helm revisions, exact image digest, relative durations,
 
 On pass, check Task 16 and state only that a fresh Task 9 Step 3 may restart; keep Task 9 Steps 3-6 unchecked. On product failure, record the exact nonzero/missing gate. On operational failure, record the exact guardian/observer/evidence failure. In all cases state that no third replay is authorized and leave `docs/architecture.md` unchanged.
 
-- [ ] **Step 3: Commit and independently review the ledger**
+- [x] **Step 3: Commit and independently review the ledger**
 
 Run `git diff --check`, verify the exact allowed documentation scope, and commit:
 
