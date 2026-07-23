@@ -1004,11 +1004,11 @@ func (p *Prewarmer) runStartup(ctx context.Context) error {
 	if sharedCurrentNeeded(plans) {
 		current, err := p.buildCurrentStats(workerCtx, binding, "startup")
 		if err != nil {
-			return errors.Join(append(failures, err)...)
+			return errors.Join(append(failures, fmt.Errorf("startup current stats: %w", err))...)
 		}
 		ref, err := p.cache.WriteCurrentStats(workerCtx, current)
 		if err != nil {
-			return errors.Join(append(failures, err)...)
+			return errors.Join(append(failures, fmt.Errorf("startup write current stats: %w", err))...)
 		}
 		applyStartupCurrentReference(plans, ref)
 	}

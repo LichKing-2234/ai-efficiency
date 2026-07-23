@@ -77,6 +77,44 @@ func TestPrewarmStartupPublishesHealthyLanesAfterOneLaneFailure(t *testing.T) {
 	}
 }
 
+func TestPrewarmStartupSharedCurrentBuildFailurePreservesPhase(t *testing.T) {
+	prewarmer, provider, _ := newFourLaneStartup(t, false)
+	sentinel := errors.New("synthetic startup current build failure")
+	provider.setDirectoryError(sentinel)
+
+	err := prewarmer.runStartup(context.Background())
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("runStartup() error preserves build cause = %v, want true", errors.Is(err, sentinel))
+	}
+	if err == nil || !strings.Contains(err.Error(), "startup current stats") {
+		t.Fatalf("runStartup() error contains startup current phase = %v, want true", err != nil && strings.Contains(err.Error(), "startup current stats"))
+	}
+}
+
+func TestPrewarmStartupSharedCurrentWriteFailurePreservesPhase(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	sentinel := errors.New("synthetic startup current write failure")
+	baseStore := newRecordingPrewarmStore()
+	baseStore.setErr = sentinel
+	store := &leaseVisiblePrewarmStore{recordingPrewarmStore: baseStore}
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	provider := newLifecycleProvider([]int64{101})
+	prewarmer := mustPrewarmer(
+		t,
+		staticBindingResolver{binding: prewarmBinding(provider)},
+		cache,
+		lifecycleOptions([]string{"UTC"}, func() time.Time { return now }),
+	)
+
+	err := prewarmer.runStartup(context.Background())
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("runStartup() error preserves write cause = %v, want true", errors.Is(err, sentinel))
+	}
+	if err == nil || !strings.Contains(err.Error(), "startup write current stats") {
+		t.Fatalf("runStartup() error contains startup write phase = %v, want true", err != nil && strings.Contains(err.Error(), "startup write current stats"))
+	}
+}
+
 func TestPrewarmStartupCoordinatorLossPreventsBarrierPublication(t *testing.T) {
 	prewarmer, provider, cache := newBlockedFourLaneStartup(t)
 	result := make(chan error, 1)
@@ -539,7 +577,7 @@ func trackStartupSegmentLeaseAttempts(prewarmer *Prewarmer) *startupSegmentLease
 	for _, timezone := range startupTestTimezones {
 		for _, class := range []PrewarmSegmentClass{SegmentHistory29d, SegmentHistory6d, SegmentTodayHour} {
 			key := prewarmer.segmentLeaseKey(
-				binding, timezone, "2026-07-21", startupTestRefreshClass(class),
+				binding, timezone, "2026-07-21", startupRefreshClass(class),
 			)
 			keys[key] = struct{}{}
 		}
@@ -682,19 +720,12 @@ func assertNoStartupSegmentLeases(t *testing.T, prewarmer *Prewarmer, server *mi
 	binding := ProviderBinding{ProviderID: 7, ProviderVersion: 11}
 	for _, timezone := range startupTestTimezones {
 		for _, class := range []PrewarmSegmentClass{SegmentHistory29d, SegmentHistory6d, SegmentTodayHour} {
-			key := prewarmer.segmentLeaseKey(binding, timezone, "2026-07-21", startupTestRefreshClass(class))
+			key := prewarmer.segmentLeaseKey(binding, timezone, "2026-07-21", startupRefreshClass(class))
 			if server.Exists(key) {
 				t.Fatalf("startup segment lease retained for %s/%s", timezone, class)
 			}
 		}
 	}
-}
-
-func startupTestRefreshClass(class PrewarmSegmentClass) string {
-	if class == SegmentTodayHour {
-		return prewarmMovingRefreshClass
-	}
-	return string(class)
 }
 
 func waitStartupResult(t *testing.T, result <-chan error) error {
