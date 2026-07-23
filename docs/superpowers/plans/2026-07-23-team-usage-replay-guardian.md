@@ -31,6 +31,7 @@
 **Files:**
 - Create temporarily: `/tmp/ae-task16-guardian.<nonce>/guardian.sh`
 - Create temporarily: `/tmp/ae-task16-raw.<nonce>/observer.sh`
+- Create temporarily: `/tmp/ae-task16-raw.<nonce>/controller.sh`
 - Create temporarily: `/tmp/ae-task16-evidence.<nonce>/`
 - Modify ignored: `.superpowers/sdd/task-16-1-report.md`
 - Modify ignored: `.superpowers/sdd/progress.md`
@@ -75,8 +76,8 @@ set -Eeuo pipefail
 : "${DISABLED_SELECTOR_COPY:?}"
 : "${HEARTBEAT_PATH:?}"
 : "${RESTORE_REQUEST_PATH:?}"
-: "${DISARM_PATH:?}"
 : "${STATE_PATH:?}"
+: "${RESTORE_CLAIM_DIR:?}"
 : "${ABSOLUTE_DEADLINE_EPOCH:?}"
 HEARTBEAT_STALE_SECONDS="${HEARTBEAT_STALE_SECONDS:-15}"
 HELM_TIMEOUT="${HELM_TIMEOUT:-10m}"
@@ -88,9 +89,10 @@ Implement only these functions:
 write_state(state, reason)       atomic temp-file + rename, closed strings only
 restore_selector()               install mode-0600 disabled copy at selector path
 live_is_exact_disabled()         exact image, desired/ready/updated/available 1, zero prewarm env
+claim_restore()                  atomic mkdir; disable INT/TERM/HUP after success
 restore(reason)                  selector restore, optional one Helm rollback, verify, state, exit
 heartbeat_is_stale(now_epoch)    stat -f %m and 15-second comparison
-main_loop()                      restore request, validated disarm, stale heartbeat, absolute deadline
+main_loop()                      restore request, stale heartbeat, absolute deadline
 ```
 
 `restore()` must call Helm at most once:
@@ -102,24 +104,55 @@ helm rollback "${RELEASE}" "${BASELINE_REVISION}" \
   --wait --cleanup-on-fail --timeout "${HELM_TIMEOUT}"
 ```
 
-It skips Helm only when `live_is_exact_disabled` already proves the final Deployment shape. `INT`, `TERM`, and `HUP` invoke `restore signal`; `EXIT` does not own rollback or cleanup. The script never deletes its state or disabled-selector copy.
+It skips Helm only when `live_is_exact_disabled` already proves the final Deployment shape. `INT`, `TERM`, and `HUP` invoke `restore signal`; `EXIT` does not own rollback or cleanup. `restore()` first calls `claim_restore`; losing callers wait for the existing terminal state and never invoke Helm. The script never deletes its state or disabled-selector copy.
+
+Write `controller.sh` with one `emergency_restore()` function using the same
+selector copy, baseline revision, and exact Helm argv. It runs only when
+guardian state is `restore_failed`, missing after
+`GUARDIAN_TERMINAL_WAIT_SECONDS=660`, or the
+guardian PID exited without `restore_succeeded`. It must freshly prove disabled
+runtime before returning and must never cleanup on failure.
 
 - [ ] **Step 3: Run the fake-controller-death guardian drill**
 
 Create private fake `helm` and `kubectl` executables that operate only on files in `GUARD_DIR`. The fake runtime begins enabled. The fake Helm rollback appends one sanitized argument line, changes the fake runtime to disabled, and exits zero. The fake kubectl returns that state without keys or values.
 
-Run the same guardian with `PATH` prefixed by the fake bin, `HEARTBEAT_STALE_SECONDS=3`, and a 30-second deadline. Start a heartbeat writer tied to a short-lived fake controller PID, then let that controller exit without restore/disarm.
+Run the same guardian with `PATH` prefixed by the fake bin, `HEARTBEAT_STALE_SECONDS=3`, and a 30-second deadline. Start a heartbeat writer tied to a short-lived fake controller PID, then let that controller exit without restore.
 
-Require:
+Require the fake Helm to receive this complete ordered argv:
 
 ```bash
 test "$(wc -l < "${GUARD_DIR}/fake-helm.calls" | tr -d ' ')" = 1
-grep -Fx -- "rollback ai-efficiency-staging 60" "${GUARD_DIR}/fake-helm.calls"
+grep -Fx -- "rollback ai-efficiency-staging 60 --namespace la3-ai-efficiency-prod --kube-context luxuhui-agora-hci-losangeles3s --wait --cleanup-on-fail --timeout 10m" "${GUARD_DIR}/fake-helm.calls"
 cmp -s "${GUARD_DIR}/disabled.json" "${GUARD_DIR}/selector.json"
 jq -e '.state=="restore_succeeded" and .reason=="heartbeat_stale"' "${GUARD_DIR}/state.json"
 ```
 
-The drill fails if guardian exits without state, invokes rollback twice, or deletes its state.
+The fake kubectl accepts only:
+
+```text
+--context luxuhui-agora-hci-losangeles3s --namespace la3-ai-efficiency-prod get deployment ai-efficiency-staging -o json
+```
+
+It rejects any other argv and returns this shape from the private fake runtime
+state, with `enabled` changing to `disabled` only after fake Helm rollback:
+
+```json
+{
+  "spec": {
+    "replicas": 1,
+    "template": {"spec": {"containers": [{"name": "ai-efficiency", "image": "exact-image", "env": []}]}}
+  },
+  "status": {"readyReplicas": 1, "updatedReplicas": 1, "availableReplicas": 1}
+}
+```
+
+Run a second drill that creates explicit restore at
+the same instant the heartbeat becomes stale and require exactly one rollback
+and terminal state. Run a third drill that kills guardian before terminal state;
+the fake controller emergency path must make exactly one rollback and preserve
+all evidence. The drill fails if any process exits without state, invokes its
+rollback twice, accepts different argv, or deletes state/evidence.
 
 - [ ] **Step 4: Write and test the durable observer**
 
@@ -158,7 +191,37 @@ Exactly one of `summary.json` or `failure.json` may exist. A successful summary 
 }
 ```
 
-Use synthetic Prometheus/Redis fixtures to prove: two baselines are mandatory; the first four-manifest cohort writes one atomic summary; scheduler tick one fails; missing baseline fails with `baseline_missing`; source occupancy three fails; raw workspace deletion leaves evidence intact. No fixture contains real keys, Pod names, credentials, or identities.
+Use synthetic Prometheus/Redis fixtures to prove: an old disabled Pod plus two
+new enabled-ReplicaSet Pods yields exactly the two new baselines; two baselines
+are mandatory; the first four-manifest cohort writes one atomic summary;
+scheduler tick one fails; missing baseline fails with `baseline_missing`;
+source occupancy three fails; simultaneous success/timeout paths create exactly
+one result; raw workspace deletion leaves evidence intact. Result finalization
+must first claim `EVIDENCE_DIR/result.claim` with atomic `mkdir`, then use this
+macOS-valid sequence:
+
+```bash
+mkdir "${EVIDENCE_DIR}/result.claim"
+python3 - "${EVIDENCE_DIR}/result.tmp" "${EVIDENCE_DIR}/summary.json" "${EVIDENCE_DIR}" <<'PY'
+import os
+import sys
+
+source, destination, directory = sys.argv[1:]
+with open(source, "rb+") as stream:
+    stream.flush()
+    os.fsync(stream.fileno())
+os.replace(source, destination)
+directory_fd = os.open(directory, os.O_RDONLY)
+try:
+    os.fsync(directory_fd)
+finally:
+    os.close(directory_fd)
+PY
+```
+
+Failure finalization uses the same sequence with `failure.json`. A losing
+`mkdir` path exits without writing. No fixture contains real keys, Pod names,
+credentials, or identities.
 
 The observer writes its transient lifecycle state only to
 `RAW_DIR/observer-state.json`. Before enablement the exact state must be
@@ -169,10 +232,10 @@ The observer writes its transient lifecycle state only to
 Run:
 
 ```bash
-bash -n "${GUARD_DIR}/guardian.sh" "${RAW_DIR}/observer.sh"
+/bin/bash -n "${GUARD_DIR}/guardian.sh" "${RAW_DIR}/controller.sh" "${RAW_DIR}/observer.sh"
 ! rg -n 'DEL|UNLINK|/api/v1/usage/team|authorization|bearer|password|token=' \
-  "${GUARD_DIR}/guardian.sh" "${RAW_DIR}/observer.sh"
-shasum -a 256 "${GUARD_DIR}/guardian.sh" "${RAW_DIR}/observer.sh"
+  "${GUARD_DIR}/guardian.sh" "${RAW_DIR}/controller.sh" "${RAW_DIR}/observer.sh"
+shasum -a 256 "${GUARD_DIR}/guardian.sh" "${RAW_DIR}/controller.sh" "${RAW_DIR}/observer.sh"
 find "${EVIDENCE_DIR}" -maxdepth 1 -type f -print | sort
 ```
 
@@ -213,9 +276,11 @@ Preserve every other selector value. Render and server-dry-run both selectors th
 
 - [ ] **Step 3: Arm guardian, heartbeat, and observer before enablement**
 
-Start guardian with baseline revision 60 and a ten-minute absolute deadline in
-an independent session. macOS has no `setsid` binary, so use the installed
-Python runtime only as a process launcher:
+Capture the existing disabled Pod UIDs and template hash. Start the
+controller-bound heartbeat writer before guardian, and touch the heartbeat
+once. Start guardian with baseline revision 60 and a ten-minute absolute
+deadline in an independent session. macOS has no `setsid` binary, so use the
+installed Python runtime only as a process launcher:
 
 ```bash
 nohup python3 -c \
@@ -224,10 +289,11 @@ nohup python3 -c \
   >"${RAW_DIR}/guardian.log" 2>&1 &
 ```
 
-Wait up to ten seconds for atomic state `armed`. Start a heartbeat writer that
-touches every two seconds only while the controller PID exists. Start observer
-before Helm upgrade and require `RAW_DIR/observer-state.json` to contain the
-exact state `waiting_for_fresh_pods`.
+Guardian may write `armed` only after reading a heartbeat no older than two
+seconds. Wait up to ten seconds for that state. Start observer before Helm
+upgrade, give it the pre-enable UID/hash set and a 150-second result deadline,
+and require `RAW_DIR/observer-state.json` to contain the exact state
+`waiting_for_fresh_pods`.
 
 Record PIDs only in the private raw report. Missing armed/waiting state blocks enablement.
 
@@ -239,7 +305,14 @@ Wait for exactly one `summary.json` or `failure.json`. At first result or observ
 
 - [ ] **Step 5: Require guardian restoration and fresh final state**
 
-Wait for guardian `restore_succeeded`; `restore_failed` is a hard operational failure. Freshly verify the newest Helm revision is deployed, exact image disabled `1/1`, zero restarts, no prewarm environment, HTTP 200 live/readiness, and production revision 69 unchanged. Only after those checks may the controller stop heartbeat and remove raw/guardian directories.
+Wait for guardian `restore_succeeded`. If guardian reports `restore_failed`, has
+no terminal state after 660 seconds, or dies, run exactly one controller
+`emergency_restore()` attempt. Freshly verify the newest Helm revision is
+deployed, exact image disabled `1/1`, zero restarts, no prewarm environment,
+HTTP 200 live/readiness, and production revision 69 unchanged. If both restore
+paths fail, retain all files and escalate; never cleanup. Only after disabled
+runtime is proven may the controller stop heartbeat and remove raw/guardian
+directories.
 
 Keep the sanitized evidence until it is copied into the ignored report. Then remove the evidence directory and verify zero `/tmp/ae-task16-*` paths locally and in the final staging Pod. Restore the selector to its exact disabled bytes, mode `0600`, unstaged, uncommitted, and unpushed.
 

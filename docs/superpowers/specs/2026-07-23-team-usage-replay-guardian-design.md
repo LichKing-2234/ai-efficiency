@@ -53,29 +53,37 @@ atomic `armed` state. The guardian receives only these bounded inputs:
 - the captured disabled revision;
 - exact image tag;
 - private disabled-selector path;
-- heartbeat, explicit-restore, and disarm paths; and
+- heartbeat and explicit-restore paths; and
 - a ten-minute absolute deadline.
 
-A separate heartbeat writer updates every two seconds. The guardian requests
+A separate heartbeat writer starts first and updates every two seconds. The
+guardian may write `armed` only after observing a fresh heartbeat. It requests
 restoration when the heartbeat is stale for 15 seconds, an explicit restore
-file appears, or the absolute deadline expires. It first restores the private
-disabled selector bytes locally. It then reads the live Deployment. If the
-exact image is already one replica with no Team Usage prewarm environment, it
-skips Helm. Otherwise it runs one bounded `helm rollback` to the captured
-disabled revision with `--wait`, `--cleanup-on-fail`, and a ten-minute timeout.
-It writes only atomic closed states: `armed`, `restore_started`,
-`restore_succeeded`, or `restore_failed`.
+file appears, or the absolute deadline expires. An atomic restore claim prevents
+signal re-entry or simultaneous triggers from starting a second rollback; the
+guardian disables its signal handlers after acquiring that claim.
 
-The controller may write `disarm` only after a fresh read proves the exact
-image, one ready replica, zero restarts, no prewarm environment, and HTTP 200
-live/readiness. A missing or failed guardian state blocks enablement or final
-success.
+Restoration first installs the private disabled selector bytes locally. The
+guardian then reads the live Deployment. If the exact image is already one
+desired, ready, updated, and available replica with no Team Usage prewarm
+environment, it skips Helm. Otherwise it runs one bounded `helm rollback` to
+the captured disabled revision with `--wait`, `--cleanup-on-fail`, and a
+ten-minute timeout. It writes only atomic closed states: `armed`,
+`restore_started`, `restore_succeeded`, or `restore_failed`.
+
+The controller cannot terminate a live guardian without restoration. If the
+guardian reports `restore_failed`, has no terminal state after 660 seconds, or
+dies during rollback, the controller installs the same private disabled
+selector and runs one bounded emergency rollback to the captured revision. It
+does not delete any guardian, raw, or evidence file until a fresh read proves
+exact-image disabled runtime. Failure of both restore paths is an operational
+emergency and leaves all evidence intact for operator recovery.
 
 ## Pre-Enable Failure Drill
 
 Before any live selector change, run the exact guardian script against fake
 `helm` and `kubectl` executables in a private sandbox. Stop the fake controller
-heartbeat without writing restore or disarm. Require the guardian to:
+heartbeat without writing restore. Require the guardian to:
 
 - detect the stale heartbeat;
 - invoke exactly one fake rollback for the captured revision;
@@ -87,6 +95,11 @@ Then run real chart render and server dry-run for both the disabled selector and
 the proposed enabled selector. This drill creates no Kubernetes revision and
 does not count as the authorized live replay.
 
+The fake drill also fires explicit restore and heartbeat staleness
+simultaneously and requires one rollback, then kills a fake guardian and
+requires the controller emergency path to restore once. Fake Helm and kubectl
+reject any argument sequence that differs from the real commands.
+
 ## Durable Observer
 
 Start the observer before the enabled Helm upgrade. Its private raw workspace
@@ -94,10 +107,13 @@ and its evidence directory are siblings, not parent/child, and cleanup patterns
 must name the raw workspace exactly. The evidence directory is never removed by
 controller or guardian cleanup.
 
-For each fresh Pod, the observer captures the first available metrics scrape
-and atomically writes a counter baseline. It then polls bounded metrics, source
-slot occupancy, and schema-v2 completeness. Redis manifest keys and decoded
-values may exist only in process memory; they are never written or printed.
+Before enablement, capture the existing Pod UID set and old ReplicaSet template
+hash. For each fresh Pod, the observer accepts only a UID absent from that set,
+the enabled ReplicaSet hash, the exact image, and enabled prewarm environment.
+It captures the first available metrics scrape and atomically writes a counter
+baseline. It then polls bounded metrics, source slot occupancy, and schema-v2
+completeness. Redis manifest keys and decoded values may exist only in process
+memory; they are never written or printed.
 
 At the first observation with four complete manifests and all references, the
 observer atomically renames a sanitized summary containing only:
@@ -112,10 +128,14 @@ observer atomically renames a sanitized summary containing only:
 - bounded Redis pool pending observations and wait/timeout deltas; and
 - Helm revision and exact image digest.
 
-On timeout or internal error, it atomically writes a sanitized failure summary
-with the phase and closed failure class. The controller must fsync and copy the
-summary into the ignored SDD report before requesting cleanup. Absence of a
-summary is a replay failure, but cannot prevent guardian restoration.
+Success, timeout, and internal-error paths first compete for one atomic result
+claim. The winner fsyncs a same-directory temporary file, atomically renames it
+to the sanitized summary or failure path, and fsyncs the evidence directory.
+Late paths cannot create a second result. The observer deadline is 150 seconds
+from enabled-revision observation, shorter than the guardian's ten-minute
+deadline. The controller must fsync and copy the result into the ignored SDD
+report before requesting cleanup. Absence of a result is a replay failure, but
+cannot prevent guardian restoration.
 
 ## Live Replay Sequence
 
@@ -124,13 +144,15 @@ summary is a replay failure, but cannot prevent guardian restoration.
    `0600`, and zero task artifacts.
 2. Run the fake-command guardian failure drill.
 3. Render and server-dry-run exact disabled and enabled selectors.
-4. Arm guardian and heartbeat, then start the observer.
+4. Capture old Pod UIDs/template hash, start heartbeat, arm guardian, then start
+   the observer.
 5. Atomically enable the exact image with two replicas and the four approved
    timezones only in staging.
 6. Let the observer write exactly one pass/fail summary at the first complete
    cohort or its bounded deadline.
 7. Write the guardian explicit-restore request regardless of observer result.
-8. Verify the guardian result and fresh disabled runtime before disarming.
+8. Verify the guardian result and fresh disabled runtime; invoke the controller
+   emergency restore if the guardian is failed, missing, or overdue.
 9. Delete watcher, guardian, raw metrics, binaries, private selector copy, and
    state only after the sanitized summary is retained and final runtime is
    verified.
