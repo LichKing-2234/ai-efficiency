@@ -136,6 +136,16 @@ exact-image disabled staging revision 66 at `1/1`; production revision 69
 remained unchanged. Task 9 Steps 3-6 remain unchecked and
 `docs/architecture.md` remains unchanged.
 
+**Task 9 latency-only observation (2026-07-24):** The user separately
+authorized one current-image staging measurement after the failed preflight.
+All four cold lanes returned HTTP 200 and `full_hit`, but Summary/Organization/
+Trend/Members took `4.939/5.139/5.956/7.344s`; three failed the five-second
+bound. All four immediate warm lanes passed at `0.512/0.519/0.785/0.863s`, with
+matching business hashes. Background ticks made the Relay delta
+non-attributable. The detailed sanitized ledger is in the superseding Task 15
+plan. The guardian restored disabled staging revision 72 at `1/1`; production
+revision 69 remained unchanged. Task 9 Steps 3-6 remain unchecked.
+
 ## Task 1 Gate Evidence
 
 Staging matched PR #192 exact head `627a7123` at Helm revision 44 using image

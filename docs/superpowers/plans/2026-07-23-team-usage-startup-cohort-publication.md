@@ -16,9 +16,14 @@ result. Its separately authorized guarded replacement replay ended in an
 operational observation failure, so none of the product diagnostic gates is
 proven. A later, separately user-authorized Task 9 HTTP acceptance preflight
 failed before login or API requests on three Redis `command_deadline` errors
-and four cycle errors. Staging is healthy and disabled at revision 66;
-production remains unchanged at revision 69. Task 5 failed, Task 9 Steps 3-6
-remain unchecked, and no further replay is implied by either failure.
+and four cycle errors. One still later, separately authorized latency-only
+observation continued past the preflight solely to measure the current image.
+All four cold lanes returned HTTP 200 and `full_hit`, but three exceeded five
+seconds; all immediate warm lanes met `1.5s`. Background ticks made the
+aggregate Relay delta non-attributable. The guardian restored exact-image
+disabled staging revision 72, and production revision 69 remained unchanged.
+Task 5 failed, Task 9 Steps 3-6 remain unchecked, and neither result authorizes
+implementation work.
 
 ## Global Constraints
 
@@ -896,3 +901,41 @@ exact-image disabled staging revision 66 at one ready replica with zero
 restarts, no prewarm environment, and HTTP 200 live/readiness. Production
 revision 69 remained unchanged. Task 9 Steps 3-6 remain unchecked and
 `docs/architecture.md` remains unchanged.
+
+#### Separately Authorized Latency-Only Observation
+
+On 2026-07-24, the user separately authorized one measurement of the current
+image after the preflight failure. This permission covered staging testing
+only: it did not relax any acceptance gate or authorize another implementation
+task. The run began from healthy exact-image disabled staging revision 70 and
+unchanged production revision 69. A fresh independent guardian was armed before
+the exact image was enabled only in staging at revision 71 with two ready
+replicas and the four approved timezones.
+
+Before login, metrics showed four complete schema-v2 manifests with a
+`1.000s` cohort spread, zero scheduler ticks, zero Redis/Relay/cache/pool
+errors, and positive manifest TTL. By the request baseline, two scheduler ticks
+had started. No response-cache key needed deletion and the scope-origin cache
+was empty. The four concurrent Asia/Shanghai 30-day cold requests all returned
+HTTP 200 and recorded `full_hit`; end-to-end durations were Summary `4.939s`,
+Organization `5.139s`, Trend `5.956s`, and Members `7.344s`. Corresponding
+server durations were `4.480s`, `4.676s`, `5.129s`, and `6.504s`. Only Summary
+met the five-second cold bound.
+
+The immediate warm requests returned HTTP 200 in `0.512s`, `0.519s`, `0.785s`,
+and `0.863s` respectively, all below `1.5s`; server durations were between
+`0.035s` and `0.043s`. Every cold/warm business hash matched. Redis,
+Relay-error, cache-error, non-full-hit, and pool-timeout counters remained zero.
+Relay request counters increased by 12 during cold and two during warm, split
+across both Pods, while the scheduler counter remained at two. Because the
+scheduled background cycles were already in flight, those aggregate deltas
+cannot establish whether the application requests themselves made Relay calls.
+The zero-request-time-Relay gate is therefore unproven, not passed.
+
+The result is an acceptance failure on three cold latency lanes, background
+tick interference, and unproven request-time Relay isolation. No response body,
+credential, identity, Redis key, or Redis value was retained. The guardian
+performed the only rollback and produced healthy exact-image disabled staging
+revision 72 at one ready replica with zero restarts and HTTP 200 live/readiness.
+Production remained healthy and unchanged at revision 69. Task 9 Steps 3-6
+remain unchecked and `docs/architecture.md` remains unchanged.

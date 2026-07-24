@@ -9,9 +9,12 @@ ended in an operational observation failure, so no product diagnostic result
 is proven. A later, separately user-authorized Task 9 HTTP acceptance preflight
 enabled the same image at staging revision 65, but failed before login or API
 requests on three Redis `command_deadline` errors and four cycle errors. The
-guardian restored healthy disabled revision 66; production remains unchanged
-at revision 69. Task 5 failed, Task 9 Steps 3-6 remain unchecked, and no further
-replay is implied by either failure.
+later latency-only observation returned HTTP 200 and `full_hit` for all four
+cold lanes, but three exceeded five seconds and background ticks made the Relay
+delta non-attributable. All immediate warm lanes met `1.5s`. The guardian
+restored healthy disabled revision 72; production remains unchanged at revision
+69. Task 5 failed, Task 9 Steps 3-6 remain unchecked, and neither result
+authorizes implementation work.
 
 **Date:** 2026-07-23
 
@@ -426,6 +429,18 @@ disabled at one ready replica with zero restarts, no prewarm environment, and
 HTTP 200 live/readiness. Production remained healthy and unchanged at revision
 69. Task 9 Steps 3-6 remain unchecked and `docs/architecture.md` remains
 unchanged.
+
+## Latency-Only Staging Observation
+
+On 2026-07-24, the user separately authorized testing the current staging image
+past the preflight solely to obtain real timings. All four cold lanes returned
+HTTP 200 and `full_hit`, but Summary/Organization/Trend/Members took
+`4.939/5.139/5.956/7.344s`; three failed the five-second bound. All immediate
+warm lanes met `1.5s` with matching business hashes. Two background ticks made
+the aggregate Relay delta non-attributable, so zero request-time Relay remains
+unproven. The detailed sanitized ledger is in the implementation plan. The
+guardian restored disabled staging revision 72; production revision 69 remained
+unchanged. The overall result is a failure, not a partial acceptance.
 
 ## Alternatives Rejected
 
