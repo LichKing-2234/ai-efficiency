@@ -28,6 +28,15 @@ also failing the goal, before restoring disabled staging revision 76.
 Production revision 69 remained unchanged. Task 5 failed, Task 9 Steps 3-6
 remain unchecked, and neither result authorizes implementation work.
 
+**Closure Status (2026-07-24):** The user accepted the cache-verified Google
+Chrome 30-day page result of `7.796s` and closed further performance work. The
+superseding closeout contract is
+`docs/superpowers/specs/2026-07-24-team-usage-prewarm-closeout-design.md`.
+Tasks 1-4 are accepted for merge. Task 5 and Task 9 Steps 3-6 remain visibly
+incomplete and are closed/deferred to issue #194; they must not be resumed in
+PR #193. The feature remains disabled by default, no startup completion marker
+will be added here, and `docs/architecture.md` remains unchanged.
+
 ## Global Constraints
 
 - The approved design is `docs/superpowers/specs/2026-07-23-team-usage-startup-cohort-publication-design.md`; the 2026-07-21 segmented spec remains authoritative outside startup fetch ordering, cohort publication, and scheduler evidence.
@@ -40,7 +49,7 @@ remain unchecked, and neither result authorizes implementation work.
 - Do not retain raw Redis keys or values, Relay payloads, response bodies, credentials, user IDs, emails, names, or user lists in tests, metrics, logs, plans, or reports.
 - Preserve timezone failure isolation: one failed lane cannot erase another complete lane, but any startup failure releases the startup coordinator so retry remains possible.
 - Coordinator loss, provider-version change, cancellation, or worker deadline forbids all later manifest publication.
-- Task 9 Steps 3-6 remain unchecked. A Task 15 replay pass only permits a fresh Task 9 Step 3 attempt.
+- Task 9 Steps 3-6 remain unchecked as historical evidence and are closed/deferred to issue #194 by the 2026-07-24 closeout contract.
 - Production and Sub2API remain unchanged. Every staging replay ends disabled at one replica on the exact tested image.
 
 ---

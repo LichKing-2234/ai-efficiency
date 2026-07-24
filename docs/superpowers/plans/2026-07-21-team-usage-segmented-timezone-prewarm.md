@@ -146,6 +146,15 @@ non-attributable. The detailed sanitized ledger is in the superseding Task 15
 plan. The guardian restored disabled staging revision 72 at `1/1`; production
 revision 69 remained unchanged. Task 9 Steps 3-6 remain unchecked.
 
+**Closeout decision (2026-07-24):** The user accepted the later cache-verified
+Google Chrome 30-day page completion of `7.796s`. The current merge contract is
+`docs/superpowers/specs/2026-07-24-team-usage-prewarm-closeout-design.md`.
+Further performance implementation is closed. Task 9 Steps 3-6 remain
+unchecked as historical failures and are closed/deferred to issue #194 rather
+than marked successful. PR #193 keeps prewarm disabled by default;
+multi-replica enablement remains blocked, production remains unchanged, and
+`docs/architecture.md` remains unchanged.
+
 ## Task 1 Gate Evidence
 
 Staging matched PR #192 exact head `627a7123` at Helm revision 44 using image
