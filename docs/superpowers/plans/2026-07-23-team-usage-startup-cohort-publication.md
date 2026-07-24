@@ -23,9 +23,10 @@ seconds; all immediate warm lanes met `1.5s`. Background ticks made the
 aggregate Relay delta non-attributable. The guardian restored exact-image
 disabled staging revision 72. A separate full-page cold observation then
 measured `/usage/team` data-rendered completion at `8.786s`, also failing the
-five-second goal, before restoring disabled staging revision 74. Production
-revision 69 remained unchanged. Task 5 failed, Task 9 Steps 3-6 remain
-unchecked, and neither result authorizes implementation work.
+five-second goal. A cache-verified Google Chrome 150 repeat measured `7.796s`,
+also failing the goal, before restoring disabled staging revision 76.
+Production revision 69 remained unchanged. Task 5 failed, Task 9 Steps 3-6
+remain unchecked, and neither result authorizes implementation work.
 
 ## Global Constraints
 
@@ -967,3 +968,15 @@ full-page cold result fails the five-second goal. No screenshot, response body,
 credential, identity, Redis key, or Redis value was retained. The guardian
 restored healthy exact-image disabled staging revision 74 at one ready replica;
 production revision 69 remained unchanged. Task 9 Steps 3-6 remain unchecked.
+
+One later user-requested repeat used the installed Google Chrome
+`150.0.7871.182` binary with a fresh temporary profile. Metrics proved four
+outer-cache misses, zero fresh hits, four prewarm `full_hit` results, and zero
+error deltas. The request was the default 30-day Asia/Shanghai window. TTFB was
+`0.157s`, DOMContentLoaded was `0.745s`, FCP was `1.228s`, and LCP was `6.336s`.
+Summary, Members, Trend, and Organization ended at `5.516s`, `6.300s`,
+`7.627s`, and `7.627s`; fully rendered completion was `7.796s`. Four background
+scheduler ticks and 42 Relay requests overlapped the page window. The guardian
+restored healthy exact-image disabled staging revision 76; production revision
+69 remained unchanged. No browser profile or authentication artifact was
+retained.
