@@ -14,9 +14,11 @@ and passed the seven-class Redis benchmark with 100 valid samples per class at
 the unchanged `250ms` budgets. The original Task 5 replay retained no observer
 result. Its separately authorized guarded replacement replay ended in an
 operational observation failure, so none of the product diagnostic gates is
-proven. Staging is healthy and disabled at revision 62; production remains
-unchanged at revision 69. Task 5 failed, Task 9 Steps 3-6 remain unchecked, and
-no third replay is authorized.
+proven. A later, separately user-authorized Task 9 HTTP acceptance preflight
+failed before login or API requests on three Redis `command_deadline` errors
+and four cycle errors. Staging is healthy and disabled at revision 66;
+production remains unchanged at revision 69. Task 5 failed, Task 9 Steps 3-6
+remain unchecked, and no further replay is implied by either failure.
 
 ## Global Constraints
 
@@ -869,3 +871,28 @@ The authoritative classification is `operational failure`; product pass and
 product-gate failure are both unproven. Task 5 and Task 9 Steps 3-6 remain
 unchecked, final Task 16 local/Pod artifact counts are zero,
 `docs/architecture.md` remains unchanged, and no third replay is authorized.
+
+#### Separately Authorized HTTP Acceptance Preflight
+
+On 2026-07-24, one later user-authorized Task 9 HTTP acceptance preflight began
+from healthy exact-image disabled staging revision 64 and unchanged production
+revision 69. A rollback guardian was armed before the exact image was enabled
+only in staging at revision 65 with two ready replicas, zero restarts, the four
+approved timezones, and HTTP 200 live/readiness.
+
+The pre-request metrics gate failed before login, cache deletion, or any Team
+Usage API request. The anonymous replicas recorded `4 startup/success` with
+four successful startup source observations versus `4 startup/lease_busy` with
+zero startup source observations. Redis contained four schema-v2 manifest keys,
+but its counters already contained three `command_deadline` errors: two
+`generation_read` and one `manifest_read`. Four background cycles ended in
+error. Relay recorded 150 requests and zero errors.
+
+Fail-fast restoration therefore began without accepting lane completeness,
+cold or warm timings, `full_hit`, payload hashes, or request-time Relay deltas.
+No account was authenticated, no Redis key was deleted, no application API was
+called, and no response body was retained. The guardian produced healthy
+exact-image disabled staging revision 66 at one ready replica with zero
+restarts, no prewarm environment, and HTTP 200 live/readiness. Production
+revision 69 remained unchanged. Task 9 Steps 3-6 remain unchecked and
+`docs/architecture.md` remains unchanged.

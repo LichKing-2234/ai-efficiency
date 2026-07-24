@@ -6,9 +6,12 @@ to staging. Its seven-class Redis benchmark passed with 100 valid samples per
 class at the unchanged `250ms` budgets. The original Task 5 replay retained no
 observer result. The one separately authorized guarded replacement replay then
 ended in an operational observation failure, so no product diagnostic result
-is proven. Staging is healthy and disabled at revision 62; production remains
-unchanged at revision 69. Task 5 failed, Task 9 Steps 3-6 remain unchecked, and
-no third replay is authorized.
+is proven. A later, separately user-authorized Task 9 HTTP acceptance preflight
+enabled the same image at staging revision 65, but failed before login or API
+requests on three Redis `command_deadline` errors and four cycle errors. The
+guardian restored healthy disabled revision 66; production remains unchanged
+at revision 69. Task 5 failed, Task 9 Steps 3-6 remain unchecked, and no further
+replay is implied by either failure.
 
 **Date:** 2026-07-23
 
@@ -391,6 +394,38 @@ Independent evidence review classifies this replacement as `operational
 failure`. The product cohort gates remain unproven. Task 9 Steps 3-6 remain
 unchecked, `docs/architecture.md` remains unchanged, final Task 16 artifact
 counts are zero, and no third replay is authorized.
+
+## Failed HTTP Acceptance Preflight
+
+On 2026-07-24, the user separately authorized one real staging HTTP acceptance
+attempt after the guarded diagnostic replay had closed. The attempt started
+from healthy exact-image disabled revision 64 and unchanged production revision
+69. An independent rollback guardian was armed before one staging-only atomic
+upgrade enabled the exact image with two replicas and the four approved
+timezones at revision 65. Both replicas became ready with zero restarts and
+external live/readiness returned HTTP 200.
+
+Before login, response-cache deletion, or any Team Usage request, per-replica
+metrics established a hard acceptance failure. One replica recorded four
+`startup/success` labels and four successful startup source observations; the
+other recorded four `startup/lease_busy` labels and zero startup source
+observations. Redis held four schema-v2 manifest keys, but three closed Redis
+errors had already occurred: two `generation_read/command_deadline` errors and
+one `manifest_read/command_deadline` error. Four background cycles also ended in
+error. The 150 observed Relay requests had zero Relay errors.
+
+The zero-Redis-error gate therefore failed before lane completeness or timing
+could be accepted. The run stopped without authenticating an account, deleting
+any Redis key, issuing an application API request, or retaining any response
+body. No cold or warm timing, `full_hit`, payload-equivalence, or zero
+request-time-Relay result exists for this attempt.
+
+The guardian performed the only rollback to the captured disabled baseline and
+produced staging revision 66. Fresh verification proved the exact image
+disabled at one ready replica with zero restarts, no prewarm environment, and
+HTTP 200 live/readiness. Production remained healthy and unchanged at revision
+69. Task 9 Steps 3-6 remain unchecked and `docs/architecture.md` remains
+unchanged.
 
 ## Alternatives Rejected
 

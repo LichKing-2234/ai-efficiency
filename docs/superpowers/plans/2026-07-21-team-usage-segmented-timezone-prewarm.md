@@ -125,6 +125,17 @@ production revision 69 is unchanged, and local/Pod Task 16 artifact counts are
 zero. Task 9 Steps 3-6 remain unchecked, `docs/architecture.md` remains
 unchanged, and no third replay is authorized.
 
+**Task 9 HTTP acceptance preflight (2026-07-24):** One later, separately
+user-authorized attempt enabled the Task 15 exact image only in staging at
+revision 65 with two ready replicas and the four approved timezones. Before
+login, cache deletion, or any Team Usage API request, its metrics contained
+three Redis `command_deadline` errors and four cycle errors. The fail-fast gate
+therefore stopped the attempt without producing cold/warm timings, `full_hit`,
+payload hashes, or request-time Relay evidence. The guardian restored healthy
+exact-image disabled staging revision 66 at `1/1`; production revision 69
+remained unchanged. Task 9 Steps 3-6 remain unchecked and
+`docs/architecture.md` remains unchanged.
+
 ## Task 1 Gate Evidence
 
 Staging matched PR #192 exact head `627a7123` at Helm revision 44 using image
@@ -1178,6 +1189,32 @@ Enable the feature only in staging with the four approved timezones. Within five
   and unchanged at revision 69 on `v0.1.0-preview.73`, with one ready replica and
   the flag absent. Steps 3-6 remain incomplete and unchecked, and
   `docs/architecture.md` was not modified.
+
+  **Failed HTTP acceptance preflight (2026-07-24):** One separately
+  user-authorized retry started from exact-image disabled staging revision 64
+  and unchanged production revision 69. An independent rollback guardian was
+  armed before one staging-only atomic upgrade enabled revision 65 with two
+  ready replicas, zero restarts, and the four approved timezones. External
+  live/readiness returned HTTP 200.
+
+  Before login, response-cache deletion, or any Team Usage request, anonymous
+  per-replica metrics recorded four `startup/success` labels and four successful
+  startup source observations on the owner, and four `startup/lease_busy`
+  labels with zero startup source observations on the loser. Redis contained
+  four schema-v2 manifest keys. The same snapshot already contained three
+  `command_deadline` errors: two `generation_read` and one `manifest_read`.
+  Four background cycles ended in error. Relay recorded 150 requests with zero
+  errors.
+
+  The zero-Redis-error gate failed before lane completeness or timing could be
+  accepted. No account was authenticated, no Redis key was deleted, no
+  application API was called, and no response body was retained. Cold/warm
+  timings, `full_hit`, payload hashes, and request-time Relay deltas are not
+  available for this attempt. The guardian performed the only rollback and
+  produced healthy exact-image disabled staging revision 66 with one ready
+  replica, zero restarts, no prewarm environment, and HTTP 200 live/readiness.
+  Production remained healthy and unchanged at revision 69. Steps 3-6 remain
+  incomplete and unchecked, and `docs/architecture.md` remains unchanged.
 
 - [ ] **Step 4: Run the three sanitized acceptance rounds**
 
