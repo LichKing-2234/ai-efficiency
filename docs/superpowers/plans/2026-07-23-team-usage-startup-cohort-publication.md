@@ -21,9 +21,11 @@ observation continued past the preflight solely to measure the current image.
 All four cold lanes returned HTTP 200 and `full_hit`, but three exceeded five
 seconds; all immediate warm lanes met `1.5s`. Background ticks made the
 aggregate Relay delta non-attributable. The guardian restored exact-image
-disabled staging revision 72, and production revision 69 remained unchanged.
-Task 5 failed, Task 9 Steps 3-6 remain unchecked, and neither result authorizes
-implementation work.
+disabled staging revision 72. A separate full-page cold observation then
+measured `/usage/team` data-rendered completion at `8.786s`, also failing the
+five-second goal, before restoring disabled staging revision 74. Production
+revision 69 remained unchanged. Task 5 failed, Task 9 Steps 3-6 remain
+unchecked, and neither result authorizes implementation work.
 
 ## Global Constraints
 
@@ -939,3 +941,29 @@ performed the only rollback and produced healthy exact-image disabled staging
 revision 72 at one ready replica with zero restarts and HTTP 200 live/readiness.
 Production remained healthy and unchanged at revision 69. Task 9 Steps 3-6
 remain unchecked and `docs/architecture.md` remains unchanged.
+
+#### Separately Authorized Full-Page Cold Observation
+
+On 2026-07-24, the user separately requested the real `/usage/team` page cold
+time rather than API-only timings. Exact image staging revision 73 ran two ready
+replicas with four complete manifests. A fresh 1440x1000 browser context had an
+authenticated local-storage state but no site resources or application state.
+Only staging Redis DB 2 was touched: four page response keys were removed while
+prewarm values remained intact. Production Redis DB 0 was not touched.
+
+From navigation start, response start was `0.155s`, DOMContentLoaded/load was
+`0.724s`, FCP was `1.192s`, and LCP was `6.032s`. The four business requests
+started at `1.142s`. Summary and Members ended at `5.989s`, Trend at `8.601s`,
+and Organization at `8.772s`. All required data components were rendered at
+`8.765s`; the two-frame data-rendered completion marker was `8.786s`. The page
+loaded 18 resources and 10 scripts, transferring 250,595 bytes and decoding
+563,316 bytes. There were zero console, page, request, or loading-state errors.
+
+Metric deltas proved four outer-cache misses, zero fresh hits, four prewarm
+`full_hit` results, and zero non-full-hit or Redis/Relay error deltas. During
+the same page window, five background scheduler ticks and 50 Relay requests
+occurred, so background work again contaminated request-time attribution. The
+full-page cold result fails the five-second goal. No screenshot, response body,
+credential, identity, Redis key, or Redis value was retained. The guardian
+restored healthy exact-image disabled staging revision 74 at one ready replica;
+production revision 69 remained unchanged. Task 9 Steps 3-6 remain unchecked.
