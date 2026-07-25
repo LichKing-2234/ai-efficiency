@@ -1,9 +1,8 @@
 # Stateless Team Usage Prewarm Worker Design
 
-**Status:** Proposed for written-spec review. The architecture, Redis flow,
-failure semantics, deployment shape, observability scope, and test strategy were
-approved interactively on 2026-07-25. Implementation must not begin until this
-written document is reviewed.
+**Status:** Approved on 2026-07-25. The architecture, Redis flow, failure
+semantics, deployment shape, observability scope, and test strategy are the
+current implementation contract. Implementation has not started.
 
 **Date:** 2026-07-25
 
