@@ -40,6 +40,8 @@ const (
 	prewarmImmutableClaimTTL           = 90 * time.Second
 )
 
+var errPrewarmCacheInvalid = errors.New("invalid team usage prewarm cache")
+
 type PrewarmCacheIdentity struct {
 	ProviderID      int
 	ProviderVersion int64
@@ -237,15 +239,19 @@ func (c *PrewarmCache) read(
 	}
 	var manifest PrewarmManifest
 	if err := decodePrewarmJSON(encodedManifest, prewarmManifestMaxBytes, &manifest); err != nil {
-		return nil, false, fmt.Errorf("decode team usage prewarm manifest: %w", err)
+		return nil, false, fmt.Errorf("%w: decode team usage prewarm manifest: %w", errPrewarmCacheInvalid, err)
 	}
 	now := c.now()
 	if err := validatePrewarmManifest(c.options.Namespace, identity, manifest, now, false); err != nil {
-		return nil, false, fmt.Errorf("validate team usage prewarm manifest: %w", err)
+		return nil, false, fmt.Errorf("%w: validate team usage prewarm manifest: %w", errPrewarmCacheInvalid, err)
 	}
 
 	current, segments, statuses, complete, err := c.readReferencedValues(ctx, manifest, now, selection, true)
 	if err != nil {
+		var invalidValues *prewarmReferencedValueError
+		if errors.As(err, &invalidValues) {
+			return nil, false, fmt.Errorf("%w: %w", errPrewarmCacheInvalid, err)
+		}
 		return nil, false, err
 	}
 	return &PrewarmCacheResult{

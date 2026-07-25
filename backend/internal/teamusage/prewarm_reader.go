@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -68,6 +69,9 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		AnchorDate:      window.AnchorDate,
 	}, window.Class)
 	if err != nil {
+		if errors.Is(err, errPrewarmCacheInvalid) {
+			return nil, PrewarmReadInvalid, err
+		}
 		return nil, PrewarmReadFallback, err
 	}
 	if !found || result == nil {

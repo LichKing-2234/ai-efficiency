@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"sync"
@@ -19,16 +20,30 @@ func TestPrewarmReaderNeverCallsRelayOrWritesRedis(t *testing.T) {
 		name        string
 		seed        bool
 		authorized  []int64
-		mutate      func(*recordingPrewarmStore, PrewarmManifest, *time.Time)
+		mutate      func(*testing.T, *recordingPrewarmStore, PrewarmManifest, *time.Time)
 		wantOutcome PrewarmReadOutcome
+		wantInvalid bool
 		wantOps     []string
 	}{
 		{name: "full hit", seed: true, authorized: []int64{101}, wantOutcome: PrewarmReadFullHit, wantOps: []string{"GET", "MGET"}},
 		{name: "miss", authorized: []int64{101}, wantOutcome: PrewarmReadMiss, wantOps: []string{"GET"}},
-		{name: "corruption", seed: true, authorized: []int64{101}, wantOutcome: PrewarmReadFallback, wantOps: []string{"GET", "MGET"}, mutate: func(store *recordingPrewarmStore, manifest PrewarmManifest, _ *time.Time) {
+		{name: "value corruption", seed: true, authorized: []int64{101}, wantOutcome: PrewarmReadInvalid, wantInvalid: true, wantOps: []string{"GET", "MGET"}, mutate: func(_ *testing.T, store *recordingPrewarmStore, manifest PrewarmManifest, _ *time.Time) {
 			store.SetRaw(manifest.CurrentStats.Key, []byte("corrupt-zstd-frame"), movingValueTTL)
 		}},
-		{name: "expiry", seed: true, authorized: []int64{101}, wantOutcome: PrewarmReadInvalid, wantOps: []string{"GET", "MGET"}, mutate: func(_ *recordingPrewarmStore, _ PrewarmManifest, now *time.Time) {
+		{name: "manifest corruption", seed: true, authorized: []int64{101}, wantOutcome: PrewarmReadInvalid, wantInvalid: true, wantOps: []string{"GET"}, mutate: func(t *testing.T, store *recordingPrewarmStore, _ PrewarmManifest, _ *time.Time) {
+			manifestKey, err := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, testPrewarmIdentity())
+			if err != nil {
+				t.Fatalf("prewarmManifestKeyForIdentity() error = %v", err)
+			}
+			store.SetRaw(manifestKey, []byte("corrupt-json"), manifestTTL)
+		}},
+		{name: "manifest Redis failure", authorized: []int64{101}, wantOutcome: PrewarmReadFallback, wantOps: []string{"GET"}, mutate: func(_ *testing.T, store *recordingPrewarmStore, _ PrewarmManifest, _ *time.Time) {
+			store.getErr = errors.New("synthetic Redis failure")
+		}},
+		{name: "value Redis failure", seed: true, authorized: []int64{101}, wantOutcome: PrewarmReadFallback, wantOps: []string{"GET", "MGET"}, mutate: func(_ *testing.T, store *recordingPrewarmStore, _ PrewarmManifest, _ *time.Time) {
+			store.mgetErr = errors.New("synthetic Redis failure")
+		}},
+		{name: "expiry", seed: true, authorized: []int64{101}, wantOutcome: PrewarmReadInvalid, wantOps: []string{"GET", "MGET"}, mutate: func(_ *testing.T, _ *recordingPrewarmStore, _ PrewarmManifest, now *time.Time) {
 			*now = now.Add(movingHard)
 		}},
 		{name: "roster absence", seed: true, authorized: []int64{999}, wantOutcome: PrewarmReadFallback, wantOps: []string{"GET", "MGET"}},
@@ -44,7 +59,7 @@ func TestPrewarmReaderNeverCallsRelayOrWritesRedis(t *testing.T) {
 				manifest = seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), baseNow, []int64{101})
 			}
 			if test.mutate != nil {
-				test.mutate(store, manifest, &now)
+				test.mutate(t, store, manifest, &now)
 			}
 			store.ResetOperations()
 			reader, err := NewPrewarmReader(cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
@@ -52,7 +67,7 @@ func TestPrewarmReaderNeverCallsRelayOrWritesRedis(t *testing.T) {
 				t.Fatalf("NewPrewarmReader() error = %v", err)
 			}
 
-			origin, outcome, _ := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
+			origin, outcome, readErr := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
 				ProviderID: 7, ProviderVersion: 11, Params: prewarmReader7dParams(),
 				AuthorizedRelayUserIDs: test.authorized,
 			})
@@ -65,6 +80,9 @@ func TestPrewarmReaderNeverCallsRelayOrWritesRedis(t *testing.T) {
 				}
 			} else if origin != nil {
 				t.Fatalf("ReadAuthorizedOrigin(%s) origin = %#v, want nil", test.name, origin)
+			}
+			if got := errors.Is(readErr, errPrewarmCacheInvalid); got != test.wantInvalid {
+				t.Fatalf("ReadAuthorizedOrigin() invalid cache error = %v, want %v (error %v)", got, test.wantInvalid, readErr)
 			}
 			if operations := store.Operations(); !reflect.DeepEqual(operations, test.wantOps) {
 				t.Fatalf("Redis operations = %#v, want read-only %#v", operations, test.wantOps)
@@ -147,7 +165,7 @@ func TestPrewarmReaderWindowSelectionUsesExactCacheReferences(t *testing.T) {
 	}
 }
 
-func TestPrewarmReaderTamperedRosterDigestSelectsExactFallback(t *testing.T) {
+func TestPrewarmReaderTamperedRosterDigestRecordsInvalidAndSelectsExactFallback(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
 	identity := testPrewarmIdentity()
@@ -178,8 +196,8 @@ func TestPrewarmReaderTamperedRosterDigestSelectsExactFallback(t *testing.T) {
 	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }, Metrics: metrics})
 
 	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{ProviderID: 7, ProviderVersion: 11, Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101}})
-	if err == nil || origin != nil || outcome != PrewarmReadFallback {
-		t.Fatalf("tampered roster digest = %#v/%q/%v, want exact fallback signal", origin, outcome, err)
+	if err == nil || origin != nil || outcome != PrewarmReadInvalid {
+		t.Fatalf("tampered roster digest = %#v/%q/%v, want invalid cache signal", origin, outcome, err)
 	}
 	if !strings.Contains(err.Error(), "prewarm current stats roster digest does not match stats") {
 		t.Fatalf("tampered roster digest error = %v, want roster validator", err)

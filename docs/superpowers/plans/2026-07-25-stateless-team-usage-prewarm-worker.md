@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, Helm, Kubernetes, Google Chrome.
 
-**Status:** Implementation and Task 7 staging acceptance completed on 2026-07-25. The final exact image `staging-7924f8ce750688300c5913058f851cbb8f0903e5` passed the request-metrics replay, three Chrome runs, stateless scale/restart checks, and the controlled manifest-expiry fallback check at Helm revision 82. Chrome fully rendered median was 7021 ms and every immediate warm lane was below 500 ms. The live fallback comparison used the current spec's sampling-aware semantic equality contract: exact shape/cardinality and every stable field matched, while only the four approved current/today-derived usage leaves changed across the source-sampling interval. Backend ended 2/2, Worker 1/1, and liveness/readiness returned HTTP 200. The initial wrong-cluster denial, revision 79 Worker resource admission failure, and first-image missing request metric are retained below as resolved history. PR #193 remains draft for the controller's whole-branch review, so the Final Review Checklist intentionally remains open. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 uses the independent Helm worktree `/Users/admin/helm/.worktrees/ai-efficiency-prewarmer` and leaves `/Users/admin/helm`'s dirty main worktree untouched; Task 7 records sanitized staging evidence only.
+**Status:** Implementation, Task 7 staging acceptance, and final review remediation completed on 2026-07-25. The staging acceptance image `staging-7924f8ce750688300c5913058f851cbb8f0903e5` passed the request-metrics replay, three Chrome runs, stateless scale/restart checks, and the controlled manifest-expiry fallback check at Helm revision 82. Chrome fully rendered median was 7021 ms and every immediate warm lane was below 500 ms. The live fallback comparison used the current spec's sampling-aware semantic equality contract: exact shape/cardinality and every stable field matched, while only the four approved current/today-derived usage leaves changed across the source-sampling interval. Backend ended 2/2, Worker 1/1, and liveness/readiness returned HTTP 200. The initial wrong-cluster denial, revision 79 Worker resource admission failure, and first-image missing request metric are retained below as resolved history. The whole-branch review found one telemetry-classification mismatch: corrupt Redis manifests/values used exact fallback correctly but were counted as `fallback` instead of `invalid`. That mismatch was fixed test-first with one package-local sentinel; fresh backend, race, vet, build, Docker, Compose, Helm, static, and hygiene verification passed, and the follow-up review found no Critical, Important, or Minor issues. This telemetry-only remediation was not redeployed because it does not change exact fallback or response behavior. PR #193 may leave draft after current-head CI passes. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 uses the independent Helm worktree `/Users/admin/helm/.worktrees/ai-efficiency-prewarmer` and leaves `/Users/admin/helm`'s dirty main worktree untouched; Task 7 records sanitized staging evidence only.
 
 ## Global Constraints
 
@@ -429,6 +429,9 @@ result, found, err := r.cache.ReadWindow(ctx, PrewarmCacheIdentity{
 	Timezone: window.Coverage.Timezone, AnchorDate: window.AnchorDate,
 }, window.Class)
 if err != nil {
+	if errors.Is(err, errPrewarmCacheInvalid) {
+		return nil, PrewarmReadInvalid, err
+	}
 	return nil, PrewarmReadFallback, err
 }
 if !found || result == nil {
@@ -446,7 +449,7 @@ if err != nil || !eligible {
 return origin, PrewarmReadFullHit, nil
 ```
 
-Corrupt, expired, missing, unsupported-window, roster-incomplete, provider-version-mismatched, and Redis-error cases immediately return to the existing exact loader. A complete sparse provider trend still contributes zero for an omitted authorized user only when the current-stats roster proves that user exists.
+Corrupt, expired, missing, unsupported-window, roster-incomplete, provider-version-mismatched, and Redis-error cases immediately return to the existing exact loader. Corrupt manifest/value decode or validation errors carry the package-local invalid-cache sentinel and record `invalid`; Redis transport errors remain `fallback`. A complete sparse provider trend still contributes zero for an omitted authorized user only when the current-stats roster proves that user exists.
 
 - [x] **Step 5: Remove Backend lifecycle ownership and wire the direct reader**
 
@@ -1287,10 +1290,23 @@ controller-owned Final Review Checklist.
 
 ## Final Review Checklist
 
-- [ ] Every approved spec requirement maps to a task and a verification command.
-- [ ] No placeholder, real credential, real identity, or raw response data appears in the plan or final diff.
-- [ ] `Refresher`, cache, reader, metrics, config, Helm values, and command signatures are consistent across tasks.
-- [ ] Backend has no worker lifecycle; Worker has no application HTTP/auth/SCM lifecycle.
-- [ ] Redis schema v3 is read/write isolated from v2 and publication checks one refresh token atomically.
-- [ ] The final PR removes superseded lifecycle code and execution ledgers instead of layering new machinery over them.
-- [ ] Backend, race, vet, build, Docker, Helm, stateless restart, fallback, and Chrome acceptance evidence all exist before merge-ready status.
+- [x] Every approved spec requirement maps to a task and a verification command.
+- [x] No placeholder, real credential, real identity, or raw response data appears in the plan or final diff.
+- [x] `Refresher`, cache, reader, metrics, config, Helm values, and command signatures are consistent across tasks.
+- [x] Backend has no worker lifecycle; Worker has no application HTTP/auth/SCM lifecycle.
+- [x] Redis schema v3 is read/write isolated from v2 and publication checks one refresh token atomically.
+- [x] The final PR removes superseded lifecycle code and execution ledgers instead of layering new machinery over them.
+- [x] Backend, race, vet, build, Docker, Helm, stateless restart, fallback, and Chrome acceptance evidence all exist before merge-ready status.
+
+**Final review evidence (2026-07-25):** The original whole-branch review reported
+no Critical or Important findings and one Minor spec mismatch in corrupt-cache
+request telemetry. A failing reader test first proved that corrupt values were
+reported as `fallback`; the remediation now distinguishes corrupt manifest/value
+decode or validation errors as `invalid` from Redis GET/MGET transport failures
+as `fallback`, while both continue through exact fallback. The focused RED/GREEN
+tests, full backend suite, six-package race suite, `go vet ./...`, `go build ./...`,
+Dockerfile multi-architecture contract, both Compose renders, Helm
+staging script suite, `helm lint ai-efficiency`, deletion constraints,
+`git diff --check`, and sanitized-diff hygiene scan all passed. The read-only
+follow-up review found no Critical, Important, or Minor issues and confirmed all
+seven checklist items.
