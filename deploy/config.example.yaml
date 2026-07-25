@@ -50,16 +50,6 @@ redis:
   db: 0
   namespace: "ai-efficiency"
 
-# Optional segmented Team Usage read optimization. Keep disabled until the
-# feature-disabled Redis benchmark and staging acceptance are complete.
-team_usage_prewarm:
-  enabled: false
-  timezones:
-    - "UTC"
-    - "Asia/Shanghai"
-    - "America/Los_Angeles"
-    - "Europe/Berlin"
-
 relay:
   provider: "sub2api"
   url: "http://sub2api.example.com"

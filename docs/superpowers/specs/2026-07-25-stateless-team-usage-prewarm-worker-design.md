@@ -1,8 +1,6 @@
 # Stateless Team Usage Prewarm Worker Design
 
-**Status:** Approved on 2026-07-25. The architecture, Redis flow, failure
-semantics, deployment shape, observability scope, and test strategy are the
-current implementation contract. Implementation has not started.
+**Status:** Implemented; staging acceptance pending
 
 **Date:** 2026-07-25
 
@@ -25,12 +23,11 @@ current implementation contract. Implementation has not started.
   request; and
 - PR #192's exact scope-origin fallback.
 
-The superseded documents remain design history while this branch is under
-review. They are not current implementation contracts. Because none has merged
-to the integration branch, the final PR diff should retain only the source
-semantics that remain necessary, this design, its implementation plan, and
-short sanitized acceptance evidence. One-off replay procedures and execution
-ledgers do not belong in the final product contract.
+The superseded documents never merged to the integration branch and have been
+removed from the final PR diff. This design, its implementation plan, and short
+sanitized acceptance evidence retain the necessary source semantics. One-off
+replay procedures and execution ledgers do not belong in the final product
+contract.
 
 ## Context
 
@@ -475,7 +472,7 @@ Remove or replace:
 `docs/architecture.md` must describe the optional worker Deployment, schema-v3
 Redis data flow, read-only backend integration, and fallback. The current spec
 must explicitly supersede the old embedded lifecycle contract without rewriting
-historical text that remains in the repository.
+unrelated historical specs that remain in the repository.
 
 PR #193 returns to draft while this replacement is implemented and reviewed.
 Issue #194's embedded multi-Pod scheduler problem becomes obsolete when backend

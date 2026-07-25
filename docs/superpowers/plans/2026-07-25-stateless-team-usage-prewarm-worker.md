@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, Helm, Kubernetes, Google Chrome.
 
-**Status:** In progress. Tasks 1-4, including the Task 1 review follow-up, are complete; Tasks 5-7 remain. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
+**Status:** In progress. Tasks 1-5, including the Task 1 review follow-up, are complete; Tasks 6-7 remain. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
 
 ## Global Constraints
 
@@ -780,7 +780,7 @@ git commit -m "feat(backend): add stateless prewarm worker command"
 **Interfaces:**
 - Produces the final repository contract: one current spec, one live plan, architecture reflecting web/worker runtime topology, and no Compose worker.
 
-- [ ] **Step 1: Add a failing final-state audit**
+- [x] **Step 1: Add a failing final-state audit**
 
 Run before cleanup:
 
@@ -792,13 +792,13 @@ rg -n 'AE_TEAM_USAGE_PREWARM|teamUsagePrewarmRuntime|PrewarmReaderSlot|startup c
 
 Expected: matches remain in old runtime/config/operations/documents.
 
-- [ ] **Step 2: Remove obsolete configuration and documents**
+- [x] **Step 2: Remove obsolete configuration and documents**
 
 Remove Backend/Compose `AE_TEAM_USAGE_PREWARM_ENABLED` and `AE_TEAM_USAGE_PREWARM_TIMEZONES`; Compose launches only the default server binary. Remove all unmerged superseded plans/specs listed above. Do not rewrite unrelated historical specs.
 
 Update the current spec status to `Implemented; staging acceptance pending` only after Tasks 1-4 actually pass. Keep the plan status and checkboxes aligned.
 
-- [ ] **Step 3: Update current architecture and operations documentation**
+- [x] **Step 3: Update current architecture and operations documentation**
 
 Add one project-level runtime diagram to `docs/architecture.md`:
 
@@ -816,7 +816,7 @@ Prewarmer Deployment (1 optional Pod) -> Relay HTTP API
 
 Document that Backend always attempts eligible schema-v3 reads, Worker absence is a normal miss, exact fallback remains authoritative, and Worker readiness is independent of Backend readiness. `deploy/README.md` must say Helm is the only initial worker deployment path.
 
-- [ ] **Step 4: Run the complete backend and repository verification**
+- [x] **Step 4: Run the complete backend and repository verification**
 
 ```bash
 cd /Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm/backend
@@ -834,7 +834,7 @@ git diff --check
 
 Expected: all tests/builds/config renders pass; final `rg` has no matches; `git diff --check` is empty.
 
-- [ ] **Step 5: Review the final PR scope for overdesign**
+- [x] **Step 5: Review the final PR scope for overdesign**
 
 ```bash
 git diff --stat perf/team-usage-scope-origin-baseline...HEAD
@@ -844,7 +844,17 @@ gh pr view 193 --json changedFiles,additions,deletions,isDraft,baseRefName,headR
 
 Reject the result if the final diff still contains a scheduler in `cmd/server`, more than one worker lifecycle, any Pod-local correctness cache, any second deployment coordinator, or superseded execution ledgers. Record the reduced file/line counts in this plan without real runtime data.
 
-- [ ] **Step 6: Commit the cleanup and architecture**
+**Task 5 scope review (2026-07-25):** The final local diff against
+`perf/team-usage-scope-origin-baseline` is 55 files, 12,106 additions, and 108
+deletions, reduced from the current unpushed PR metadata of 68 files, 19,050
+additions, and 108 deletions. Static review found no prewarm scheduler in
+`cmd/server`, exactly one worker run loop in `cmd/prewarmer`, no Pod-local
+completed-result cache, one deployment-wide refresh owner, and no superseded
+execution ledger. Immutable-value write claims are data-level create fencing,
+not a second lifecycle coordinator. No runtime or staging measurements are
+claimed by this review.
+
+- [x] **Step 6: Commit the cleanup and architecture**
 
 ```bash
 git add -A deploy docs backend

@@ -60,8 +60,6 @@ services:
       AE_REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
       AE_REDIS_DB: "0"
       AE_REDIS_NAMESPACE: "${AE_REDIS_NAMESPACE:-ai-efficiency-local}"
-      AE_TEAM_USAGE_PREWARM_ENABLED: "${AE_TEAM_USAGE_PREWARM_ENABLED:-false}"
-      AE_TEAM_USAGE_PREWARM_TIMEZONES: "${AE_TEAM_USAGE_PREWARM_TIMEZONES:-UTC,Asia/Shanghai,America/Los_Angeles,Europe/Berlin}"
       AE_RELAY_URL: "${AE_RELAY_URL:-}"
       AE_RELAY_ADMIN_API_KEY: "${AE_RELAY_ADMIN_API_KEY:-}"
       AE_AUTH_JWT_SECRET: "${AE_AUTH_JWT_SECRET:-dev-jwt-secret-32-bytes-long!!!!}"

@@ -51,9 +51,7 @@ func TestLoadPrewarmerDefaultsToExactTimezoneListWithoutEnabledFlag(t *testing.T
 	}
 }
 
-func TestLoadPrewarmerBindsOnlyDedicatedTimezoneEnvironment(t *testing.T) {
-	t.Setenv("AE_TEAM_USAGE_PREWARM_ENABLED", "true")
-	t.Setenv("AE_TEAM_USAGE_PREWARM_TIMEZONES", "Europe/Berlin")
+func TestLoadPrewarmerBindsDedicatedTimezoneEnvironment(t *testing.T) {
 	t.Setenv("AE_PREWARMER_TIMEZONES", "UTC,Asia/Shanghai")
 
 	cfg, err := Load("")
