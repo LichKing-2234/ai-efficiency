@@ -2,6 +2,37 @@ package teamusage
 
 import "time"
 
+type PrewarmRefreshOutcome string
+
+const (
+	PrewarmRefreshSuccess PrewarmRefreshOutcome = "success"
+	PrewarmRefreshPartial PrewarmRefreshOutcome = "partial"
+	PrewarmRefreshSkipped PrewarmRefreshOutcome = "skipped"
+	PrewarmRefreshError   PrewarmRefreshOutcome = "error"
+)
+
+type PrewarmSourceClass string
+
+const (
+	PrewarmSourceDirectory    PrewarmSourceClass = "directory"
+	PrewarmSourceCurrentStats PrewarmSourceClass = "current_stats"
+	PrewarmSourceTodayHour    PrewarmSourceClass = "today_hour"
+	PrewarmSourceHistory6d    PrewarmSourceClass = "history_6d"
+	PrewarmSourceHistory29d   PrewarmSourceClass = "history_29d"
+)
+
+type RefreshReport struct {
+	Outcome        PrewarmRefreshOutcome
+	Duration       time.Duration
+	PlannedLanes   int
+	PublishedLanes int
+	SourceCounts   map[PrewarmSourceClass]int
+}
+
+type RefreshReporter interface {
+	ReportRefresh(RefreshReport)
+}
+
 type PrewarmQuantityKind string
 
 const (
@@ -132,6 +163,10 @@ type noopPrewarmReporter struct{}
 
 func (noopPrewarmReporter) ReportPrewarmBackground(PrewarmBackgroundEvent) {}
 
+type noopRefreshReporter struct{}
+
+func (noopRefreshReporter) ReportRefresh(RefreshReport) {}
+
 func prewarmMetricsOrNoop(metrics PrewarmMetrics) PrewarmMetrics {
 	if metrics == nil {
 		return noopPrewarmMetrics{}
@@ -142,6 +177,13 @@ func prewarmMetricsOrNoop(metrics PrewarmMetrics) PrewarmMetrics {
 func prewarmReporterOrNoop(reporter PrewarmReporter) PrewarmReporter {
 	if reporter == nil {
 		return noopPrewarmReporter{}
+	}
+	return reporter
+}
+
+func refreshReporterOrNoop(reporter RefreshReporter) RefreshReporter {
+	if reporter == nil {
+		return noopRefreshReporter{}
 	}
 	return reporter
 }

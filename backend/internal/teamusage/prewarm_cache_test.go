@@ -33,6 +33,26 @@ func TestPrewarmTimezoneDigestUsesLengthDelimitedVectorAndIsolation(t *testing.T
 	}
 }
 
+func TestPrewarmCacheRefreshLeaseKeyIsStableAndNamespaceIsolated(t *testing.T) {
+	testCache := mustNewPrewarmCache(t, newRecordingPrewarmStore(), testPrewarmGeneratedAt)
+	otherCache, err := NewPrewarmCache(newRecordingPrewarmStore(), PrewarmCacheOptions{
+		Namespace: "other", Now: testPrewarmGeneratedAt,
+	})
+	if err != nil {
+		t.Fatalf("NewPrewarmCache(other) error = %v", err)
+	}
+	const want = "ae:test:team-usage-prewarm:v2:lease:2147c1287351d486e2999507b832d9ef53681583fbafd1b2f51e684320b61213"
+	if got := testCache.RefreshLeaseKey(); got != want {
+		t.Fatalf("RefreshLeaseKey() = %q, want %q", got, want)
+	}
+	if testCache.RefreshLeaseKey() != testCache.LeaseKey("refresh") {
+		t.Fatal("RefreshLeaseKey() did not retain the approved refresh lease identity")
+	}
+	if testCache.RefreshLeaseKey() == otherCache.RefreshLeaseKey() {
+		t.Fatal("RefreshLeaseKey() did not isolate Redis namespaces")
+	}
+}
+
 func TestPrewarmCacheKeysIsolateAllGenerationDimensions(t *testing.T) {
 	const (
 		namespace       = "test"

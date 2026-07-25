@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -286,6 +287,65 @@ func TestPrewarmSourceMapsTypedRelayRejectionsWithoutStringParsing(t *testing.T)
 				t.Fatalf("validation metrics = %#v, want final %#v", metrics.validations, want)
 			}
 		})
+	}
+}
+
+func TestLocalSourceCallLimiterBoundsConcurrencyAndTimeout(t *testing.T) {
+	limiter := &localSourceCallLimiter{semaphore: make(chan struct{}, 2), timeout: 40 * time.Millisecond}
+	release := make(chan struct{})
+	entered := make(chan struct{}, 3)
+	errs := make(chan error, 3)
+	var active atomic.Int32
+	var maximum atomic.Int32
+	for range 3 {
+		go func() {
+			errs <- limiter.Do(context.Background(), func(ctx context.Context) error {
+				current := active.Add(1)
+				defer active.Add(-1)
+				for {
+					previous := maximum.Load()
+					if current <= previous || maximum.CompareAndSwap(previous, current) {
+						break
+					}
+				}
+				entered <- struct{}{}
+				select {
+				case <-release:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+		}()
+	}
+	for range 2 {
+		select {
+		case <-entered:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for two admitted calls")
+		}
+	}
+	select {
+	case <-entered:
+		t.Fatal("third source call entered while both semaphore slots were occupied")
+	case <-time.After(10 * time.Millisecond):
+	}
+	for range 2 {
+		if err := <-errs; !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("bounded source call error = %v, want deadline exceeded", err)
+		}
+	}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("third source call did not enter after a slot was released")
+	}
+	close(release)
+	if err := <-errs; err != nil {
+		t.Fatalf("third source call error = %v", err)
+	}
+	if got := maximum.Load(); got != 2 {
+		t.Fatalf("maximum concurrent source calls = %d, want 2", got)
 	}
 }
 

@@ -31,6 +31,23 @@ type SourceCallLimiter interface {
 	Do(context.Context, func(context.Context) error) error
 }
 
+type localSourceCallLimiter struct {
+	semaphore chan struct{}
+	timeout   time.Duration
+}
+
+func (l *localSourceCallLimiter) Do(ctx context.Context, call func(context.Context) error) error {
+	select {
+	case l.semaphore <- struct{}{}:
+		defer func() { <-l.semaphore }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	callCtx, cancel := context.WithTimeout(ctx, l.timeout)
+	defer cancel()
+	return call(callCtx)
+}
+
 type PrewarmSourceOptions struct {
 	Now             func() time.Time
 	NewGenerationID func() string

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, Helm, Kubernetes, Google Chrome.
 
-**Status:** Approved plan; implementation has not started. Update this status and each checkbox in the same work session as the corresponding action. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
+**Status:** In progress. Task 1 is complete and committed; Tasks 2-7 remain. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
 
 ## Global Constraints
 
@@ -73,6 +73,8 @@
 **Files:**
 - Create: `backend/internal/teamusage/prewarm_refresher.go`
 - Create: `backend/internal/teamusage/prewarm_refresher_test.go`
+- Modify: `backend/internal/teamusage/prewarm_cache.go`
+- Modify: `backend/internal/teamusage/prewarm_cache_test.go`
 - Modify: `backend/internal/teamusage/prewarm_metrics.go`
 - Modify: `backend/internal/teamusage/prewarm_source.go`
 - Modify: `backend/internal/teamusage/prewarm_source_test.go`
@@ -137,7 +139,7 @@ func NewRefresher(
 
 - Invariants: default `CycleTimeout=5m`, refresh lease TTL `6m`, local source concurrency `2`, no ticker or process lifecycle in this package.
 
-- [ ] **Step 1: Write failing refresh-cycle tests**
+- [x] **Step 1: Write failing refresh-cycle tests**
 
 Add table-driven tests with these exact cases and assertions:
 
@@ -172,7 +174,7 @@ Also add:
 
 Use miniredis and synthetic user IDs. The two-refresher test starts both calls behind one barrier and asserts total directory calls equal one, not one per instance.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -183,7 +185,7 @@ go test ./internal/teamusage -run 'TestRefresher|TestLocalSourceCallLimiter' -co
 
 Expected: FAIL because `Refresher`, `RefresherOptions`, and `NewRefresher` do not exist.
 
-- [ ] **Step 3: Implement the minimal refresher**
+- [x] **Step 3: Implement the minimal refresher**
 
 Implement an unexported `refresher` with no `Start`, `Stop`, ticker, atomics, startup state, or recovery state. Its cycle is exactly:
 
@@ -245,7 +247,7 @@ func (l *localSourceCallLimiter) Do(ctx context.Context, call func(context.Conte
 }
 ```
 
-- [ ] **Step 4: Verify focused behavior and races**
+- [x] **Step 4: Verify focused behavior and races**
 
 Run:
 
@@ -258,13 +260,17 @@ go test -race ./internal/teamusage -run 'TestRefresher|TestLocalSourceCallLimite
 
 Expected: PASS; race detector reports no races.
 
-- [ ] **Step 5: Update this plan and commit**
+**Task 1 verification (2026-07-25):** the focused refresher/source suite passed, the focused race suite passed without race reports, and the controller-approved exact refresh-lease key/isolation test passed. Test fixtures use synthetic IDs only.
+
+- [x] **Step 5: Update this plan and commit**
 
 Mark Task 1 complete, record only sanitized test results, then run:
 
 ```bash
 git add backend/internal/teamusage/prewarm_refresher.go \
   backend/internal/teamusage/prewarm_refresher_test.go \
+  backend/internal/teamusage/prewarm_cache.go \
+  backend/internal/teamusage/prewarm_cache_test.go \
   backend/internal/teamusage/prewarm_metrics.go \
   backend/internal/teamusage/prewarm_source.go \
   backend/internal/teamusage/prewarm_source_test.go \

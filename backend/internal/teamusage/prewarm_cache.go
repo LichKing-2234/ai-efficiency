@@ -590,6 +590,10 @@ func (c *PrewarmCache) LeaseKey(kind string, dimensions ...string) string {
 	return fmt.Sprintf("ae:%s:team-usage-prewarm:v%d:lease:%x", c.options.Namespace, prewarmCacheSchemaVersion, digest)
 }
 
+func (c *PrewarmCache) RefreshLeaseKey() string {
+	return c.LeaseKey("refresh")
+}
+
 func (c *PrewarmCache) TryAcquireLease(
 	ctx context.Context,
 	key, token string,
