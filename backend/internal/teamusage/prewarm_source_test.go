@@ -211,6 +211,50 @@ func TestPrewarmSourceMetricsRecordClosedSourceOutcomes(t *testing.T) {
 	}
 }
 
+func TestPrewarmSourceMetricsClassifyRelayErrorsAndCancellation(t *testing.T) {
+	relayFailure := errors.New("synthetic Relay failure")
+	tests := []struct {
+		name        string
+		sourceError error
+		want        PrewarmSourceOutcome
+	}{
+		{name: "ordinary Relay error", sourceError: relayFailure, want: PrewarmSourceError},
+		{name: "caller canceled", sourceError: context.Canceled, want: PrewarmSourceCanceled},
+		{name: "source deadline", sourceError: context.DeadlineExceeded, want: PrewarmSourceCanceled},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			metrics := &recordingPrewarmRequestMetrics{}
+			provider := &prewarmSourceProvider{
+				trendFn: func(relay.TeamMemberTrendParams, int) (relay.ProviderWideTrendResult, error) {
+					return relay.ProviderWideTrendResult{}, test.sourceError
+				},
+			}
+			options := fixedGenerationOptions()
+			options.Metrics = metrics
+			source := mustPrewarmSource(t, passthroughSourceLimiter{}, options)
+
+			_, err := source.FetchSegment(
+				context.Background(),
+				prewarmBinding(provider),
+				"UTC",
+				"2026-07-21",
+				SegmentTodayHour,
+			)
+			if !errors.Is(err, test.sourceError) {
+				t.Fatalf("FetchSegment() error = %v, want %v", err, test.sourceError)
+			}
+			if len(metrics.sources) != 1 {
+				t.Fatalf("source metrics = %#v, want one", metrics.sources)
+			}
+			metric := metrics.sources[0]
+			if metric.source != PrewarmSourceTodayHour || metric.outcome != test.want {
+				t.Fatalf("source metric = %#v, want today_hour/%s", metric, test.want)
+			}
+		})
+	}
+}
+
 func TestPrewarmSourceMapsTypedRelayRejectionsWithoutStringParsing(t *testing.T) {
 	tests := []struct {
 		name   string

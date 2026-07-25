@@ -44,7 +44,7 @@ func TestTeamUsagePrewarmMetricsPreinitializeClosedPrivacySafeLabels(t *testing.
 		teamusage.PrewarmSourceOutcome("credential"),
 		-time.Second,
 	)
-	recorder.RecordRequest(teamusage.PrewarmReadOutcome("invalid"))
+	recorder.RecordRequest(teamusage.PrewarmReadOutcome("credential"))
 	after := allPrewarmMetricLabelSets(t, metrics)
 	if !reflect.DeepEqual(after, before) {
 		t.Fatalf("invalid typed values changed prewarm series: before=%v after=%v", before, after)
