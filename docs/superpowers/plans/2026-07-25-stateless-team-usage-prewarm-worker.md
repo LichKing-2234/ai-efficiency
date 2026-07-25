@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, Helm, Kubernetes, Google Chrome.
 
-**Status:** In progress. Task 1 is complete and committed; Tasks 2-7 remain. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
+**Status:** In progress. Task 1 and its review follow-up are complete and committed; Tasks 2-7 remain. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
 
 ## Global Constraints
 
@@ -261,6 +261,13 @@ go test -race ./internal/teamusage -run 'TestRefresher|TestLocalSourceCallLimite
 Expected: PASS; race detector reports no races.
 
 **Task 1 verification (2026-07-25):** the focused refresher/source suite passed, the focused race suite passed without race reports, and the controller-approved exact refresh-lease key/isolation test passed. Test fixtures use synthetic IDs only.
+
+**Task 1 review follow-up:**
+
+- [x] Add blocked-lane, provider-reversion fence, lease-restoration fence, and deterministic contention tests; verify covering RED.
+- [x] Publish each complete timezone as soon as its own source work finishes.
+- [x] Make provider-version mismatch and refresh-lease loss irreversible for the current cycle.
+- [x] Run focused GREEN and race verification, append the SDD report, and commit the review fixes.
 
 - [x] **Step 5: Update this plan and commit**
 
