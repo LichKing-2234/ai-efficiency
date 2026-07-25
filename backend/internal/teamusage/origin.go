@@ -18,7 +18,7 @@ func (s *Service) loadPrewarmFirstScopeOrigin(ctx context.Context, request *spli
 	if len(overviewSubjects) == 0 {
 		overviewSubjects = request.scope.Subjects
 	}
-	prewarmReader := s.currentPrewarmReader()
+	prewarmReader := s.prewarmReader
 	if request.bypassPrewarm || prewarmReader == nil {
 		if len(overviewSubjects) > s.fullScopeCap || s.originCache == nil {
 			return nil, false, nil
@@ -36,9 +36,8 @@ func (s *Service) loadPrewarmFirstScopeOrigin(ctx context.Context, request *spli
 		return nil, true, err
 	}
 	origin, _, readErr := prewarmReader.ReadAuthorizedOrigin(ctx, PrewarmReadRequest{
-		ProviderID: request.providerConfig.ID, ActorUserID: request.actorUserID,
-		ProviderVersion: request.providerConfig.ConfigurationVersion, ScopeVersion: request.scope.Version,
-		Params: request.params, AuthorizedRelayUserIDs: sortedUniqueInt64s(relayUserIDs), Provider: provider,
+		ProviderID: request.providerConfig.ID, ProviderVersion: request.providerConfig.ConfigurationVersion,
+		Params: request.params, AuthorizedRelayUserIDs: sortedUniqueInt64s(relayUserIDs),
 	})
 	if ctx.Err() != nil {
 		return nil, true, ctx.Err()

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -34,6 +33,7 @@ func TestSetupRouterReportsAllMissingPerformanceInputs(t *testing.T) {
 		"representative scope cache",
 		"team usage snapshot cache",
 		"team usage origin cache",
+		"team usage prewarm reader",
 		"webhook HTTP client",
 		"request logger",
 		"request observer",
@@ -63,7 +63,7 @@ func TestNewTeamUsageServiceRejectsImplicitUncachedFallback(t *testing.T) {
 	}
 }
 
-func TestRouterDependenciesPassOptionalTeamUsagePrewarmReader(t *testing.T) {
+func TestRouterDependenciesPassDirectTeamUsagePrewarmReader(t *testing.T) {
 	client := testdb.Open(t)
 	server := miniredis.RunT(t)
 	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
@@ -81,20 +81,12 @@ func TestRouterDependenciesPassOptionalTeamUsagePrewarmReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrewarmCache() error = %v", err)
 	}
-	reader, err := teamusage.NewPrewarmReader(prewarmCache, handlerPrewarmLimiter{}, teamusage.PrewarmReaderOptions{Timezones: []string{"UTC"}})
+	reader, err := teamusage.NewPrewarmReader(prewarmCache, teamusage.PrewarmReaderOptions{})
 	if err != nil {
 		t.Fatalf("NewPrewarmReader() error = %v", err)
 	}
-	readerSlot := teamusage.NewPrewarmReaderSlot()
-	readerSlot.Store(reader)
-	service, err := newTeamUsageService(client, nil, nil, nil, snapshot, origin, readerSlot, "test-cursor-secret")
+	service, err := newTeamUsageService(client, nil, nil, nil, snapshot, origin, reader, "test-cursor-secret")
 	if err != nil || service == nil {
-		t.Fatalf("newTeamUsageService() service=%v error=%v, want optional reader injected", service, err)
+		t.Fatalf("newTeamUsageService() service=%v error=%v, want direct reader injected", service, err)
 	}
-}
-
-type handlerPrewarmLimiter struct{}
-
-func (handlerPrewarmLimiter) Do(ctx context.Context, call func(context.Context) error) error {
-	return call(ctx)
 }

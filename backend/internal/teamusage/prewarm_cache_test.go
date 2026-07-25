@@ -41,12 +41,9 @@ func TestPrewarmCacheRefreshLeaseKeyIsStableAndNamespaceIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrewarmCache(other) error = %v", err)
 	}
-	const want = "ae:test:team-usage-prewarm:v2:lease:2147c1287351d486e2999507b832d9ef53681583fbafd1b2f51e684320b61213"
+	const want = "ae:test:team-usage-prewarm:v3:lease:199318017e0468a1e9a06d19b3efa80592e9df10d1aef19276c0e180716e592a"
 	if got := testCache.RefreshLeaseKey(); got != want {
 		t.Fatalf("RefreshLeaseKey() = %q, want %q", got, want)
-	}
-	if testCache.RefreshLeaseKey() != testCache.LeaseKey("refresh") {
-		t.Fatal("RefreshLeaseKey() did not retain the approved refresh lease identity")
 	}
 	if testCache.RefreshLeaseKey() == otherCache.RefreshLeaseKey() {
 		t.Fatal("RefreshLeaseKey() did not isolate Redis namespaces")
@@ -561,9 +558,46 @@ func TestPrewarmCacheConcurrentIdenticalWriteWaitsForClaimPublication(t *testing
 	}
 }
 
-func TestPrewarmCacheStoresCompressedBytesAndUsesSchemaV2(t *testing.T) {
-	if prewarmCacheSchemaVersion != 2 {
-		t.Fatalf("prewarmCacheSchemaVersion = %d, want 2", prewarmCacheSchemaVersion)
+func TestPrewarmCacheUsesSchemaV3AndOneRefreshLease(t *testing.T) {
+	if prewarmCacheSchemaVersion != 3 {
+		t.Fatalf("prewarmCacheSchemaVersion = %d, want 3", prewarmCacheSchemaVersion)
+	}
+	generatedAt := testPrewarmGeneratedAt()
+	cache, server := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
+	identity := testPrewarmIdentity()
+	v2Key, err := prewarmManifestKeyForIdentity("test", 2, identity)
+	if err != nil {
+		t.Fatalf("prewarmManifestKeyForIdentity(v2) error = %v", err)
+	}
+	server.Set(v2Key, `{"schema_version":2}`)
+	server.SetTTL(v2Key, manifestTTL)
+	result, found, err := cache.Read(context.Background(), identity)
+	if err != nil || found || result != nil {
+		t.Fatalf("Read(v2-only) = %#v, %v, %v, want schema-v3 miss", result, found, err)
+	}
+
+	manifest := testPrewarmManifest(t, cache, identity, generatedAt)
+	leaseKey := cache.RefreshLeaseKey()
+	token := strings.Repeat("a", 64)
+	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, token, time.Minute)
+	if err != nil || !acquired {
+		t.Fatalf("TryAcquireLease(refresh) = %v, %v", acquired, err)
+	}
+	server.Set(leaseKey, strings.Repeat("b", 64))
+	server.SetTTL(leaseKey, time.Minute)
+	published, err := cache.PublishManifest(context.Background(), leaseKey, token, manifest)
+	if err != nil || published {
+		t.Fatalf("PublishManifest(replaced refresh token) = %v, %v, want false, nil", published, err)
+	}
+	manifestKey, _ := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, identity)
+	if server.Exists(manifestKey) {
+		t.Fatal("replaced refresh token published a manifest")
+	}
+}
+
+func TestPrewarmCacheStoresCompressedSchemaV3Bytes(t *testing.T) {
+	if prewarmCacheSchemaVersion != 3 {
+		t.Fatalf("prewarmCacheSchemaVersion = %d, want 3", prewarmCacheSchemaVersion)
 	}
 	generatedAt := testPrewarmGeneratedAt()
 	cache, server := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
@@ -597,26 +631,26 @@ func TestPrewarmCacheStoresCompressedBytesAndUsesSchemaV2(t *testing.T) {
 			if test.reference.SerializedBytes != len(storedBytes) {
 				t.Fatalf("SerializedBytes = %d, stored length = %d", test.reference.SerializedBytes, len(storedBytes))
 			}
-			if !strings.Contains(test.reference.Key, ":v2:") || test.reference.SchemaVersion != 2 {
-				t.Fatalf("reference = %#v, want schema-v2 isolation", test.reference)
+			if !strings.Contains(test.reference.Key, ":v3:") || test.reference.SchemaVersion != 3 {
+				t.Fatalf("reference = %#v, want schema-v3 isolation", test.reference)
 			}
 		})
 	}
 }
 
-func TestPrewarmCacheSchemaV2MissesV1Manifest(t *testing.T) {
+func TestPrewarmCacheSchemaV3MissesV2Manifest(t *testing.T) {
 	store := newRecordingPrewarmStore()
 	cache := mustNewPrewarmCache(t, store, func() time.Time { return testPrewarmGeneratedAt() })
 	identity := testPrewarmIdentity()
-	v1Key, err := prewarmManifestKeyForIdentity("test", 1, identity)
+	v2Key, err := prewarmManifestKeyForIdentity("test", 2, identity)
 	if err != nil {
-		t.Fatalf("prewarmManifestKeyForIdentity(v1) error = %v", err)
+		t.Fatalf("prewarmManifestKeyForIdentity(v2) error = %v", err)
 	}
-	store.SetRaw(v1Key, []byte(`{"schema_version":1}`), manifestTTL)
+	store.SetRaw(v2Key, []byte(`{"schema_version":2}`), manifestTTL)
 
 	result, found, err := cache.Read(context.Background(), identity)
 	if err != nil || found || result != nil {
-		t.Fatalf("Read(v1-only) = %#v, %v, %v, want schema-v2 miss", result, found, err)
+		t.Fatalf("Read(v2-only) = %#v, %v, %v, want schema-v3 miss", result, found, err)
 	}
 }
 
@@ -626,7 +660,7 @@ func TestPrewarmCachePublishLastRechecksClockAfterValidationRead(t *testing.T) {
 	store := newRecordingPrewarmStore()
 	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
 	identity := testPrewarmIdentity()
-	leaseKey := cache.LeaseKey("moving", "delayed-publication")
+	leaseKey := cache.RefreshLeaseKey()
 	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner", 90*time.Second)
 	if err != nil || !acquired {
 		t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
@@ -646,110 +680,13 @@ func TestPrewarmCachePublishLastRechecksClockAfterValidationRead(t *testing.T) {
 	}
 }
 
-func TestPrewarmCachePublishManifestWithLeasesRequiresAllClaims(t *testing.T) {
-	generatedAt := testPrewarmGeneratedAt()
-	cache, server := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
-	manifest := testPrewarmManifest(t, cache, testPrewarmIdentity(), generatedAt)
-	claims := []PrewarmLeaseClaim{
-		{Key: cache.LeaseKey("coordinator", "multi"), Token: "cycle-owner"},
-		{Key: cache.LeaseKey("segment", "multi"), Token: "segment-owner"},
-	}
-	for _, claim := range claims {
-		acquired, err := cache.TryAcquireLease(context.Background(), claim.Key, claim.Token, time.Minute)
-		if err != nil || !acquired {
-			t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
-		}
-	}
-	wrong := append([]PrewarmLeaseClaim(nil), claims...)
-	wrong[1].Token = "wrong"
-	published, err := cache.PublishManifestWithLeases(context.Background(), wrong, manifest)
-	if err != nil || published {
-		t.Fatalf("PublishManifestWithLeases(wrong) = %v, %v", published, err)
-	}
-	manifestKey, _ := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, testPrewarmIdentity())
-	if server.Exists(manifestKey) {
-		t.Fatal("wrong multi-lease claim published manifest")
-	}
-	server.Del(claims[0].Key)
-	published, err = cache.PublishManifestWithLeases(context.Background(), claims, manifest)
-	if err != nil || published || server.Exists(manifestKey) {
-		t.Fatalf("PublishManifestWithLeases(missing) = %v, %v, exists=%v", published, err, server.Exists(manifestKey))
-	}
-	acquired, err := cache.TryAcquireLease(context.Background(), claims[0].Key, claims[0].Token, time.Minute)
-	if err != nil || !acquired {
-		t.Fatalf("reacquire coordinator = %v, %v", acquired, err)
-	}
-	published, err = cache.PublishManifestWithLeases(context.Background(), claims, manifest)
-	if err != nil || !published {
-		t.Fatalf("PublishManifestWithLeases(all owned) = %v, %v", published, err)
-	}
-}
-
-func TestPrewarmCachePublishManifestWithLeasesAcceptsFiveClaims(t *testing.T) {
-	generatedAt := testPrewarmGeneratedAt()
-	cache, _ := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
-	manifest := testPrewarmManifest(t, cache, testPrewarmIdentity(), generatedAt)
-	claims := make([]PrewarmLeaseClaim, 5)
-	for index := range claims {
-		claims[index] = PrewarmLeaseClaim{
-			Key: cache.LeaseKey("claim", fmt.Sprint(index)), Token: fmt.Sprintf("owner-%d", index),
-		}
-		acquired, err := cache.TryAcquireLease(context.Background(), claims[index].Key, claims[index].Token, time.Minute)
-		if err != nil || !acquired {
-			t.Fatalf("TryAcquireLease(%d) = %v, %v", index, acquired, err)
-		}
-	}
-
-	published, err := cache.PublishManifestWithLeases(context.Background(), claims, manifest)
-	if err != nil || !published {
-		t.Fatalf("PublishManifestWithLeases(five claims) = %v, %v, want accepted", published, err)
-	}
-}
-
-func TestPrewarmCachePublishManifestWithLeasesRejectsInvalidClaimSets(t *testing.T) {
-	testCases := []struct {
-		name   string
-		claims func(*PrewarmCache) []PrewarmLeaseClaim
-	}{
-		{name: "zero claims", claims: func(*PrewarmCache) []PrewarmLeaseClaim { return nil }},
-		{name: "six claims", claims: func(cache *PrewarmCache) []PrewarmLeaseClaim {
-			claims := make([]PrewarmLeaseClaim, 6)
-			for index := range claims {
-				claims[index] = PrewarmLeaseClaim{Key: cache.LeaseKey("claim", fmt.Sprint(index)), Token: fmt.Sprintf("owner-%d", index)}
-			}
-			return claims
-		}},
-		{name: "duplicate key", claims: func(cache *PrewarmCache) []PrewarmLeaseClaim {
-			key := cache.LeaseKey("claim", "duplicate")
-			return []PrewarmLeaseClaim{{Key: key, Token: "owner-a"}, {Key: key, Token: "owner-b"}}
-		}},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			generatedAt := testPrewarmGeneratedAt()
-			cache, server := newRedisPrewarmCache(t, func() time.Time { return generatedAt })
-			identity := testPrewarmIdentity()
-			manifest := testPrewarmManifest(t, cache, identity, generatedAt)
-			published, err := cache.PublishManifestWithLeases(context.Background(), testCase.claims(cache), manifest)
-			if err == nil || published {
-				t.Fatalf("PublishManifestWithLeases() = %v, %v, want strict rejection", published, err)
-			}
-			manifestKey, _ := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, identity)
-			if server.Exists(manifestKey) {
-				t.Fatal("invalid claim set published a manifest")
-			}
-		})
-	}
-}
-
 func TestPrewarmCacheReadReturnsPerReferenceStatusForPartialGeneration(t *testing.T) {
 	generatedAt := testPrewarmGeneratedAt()
 	now := generatedAt.Add(30 * time.Second)
 	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
 	identity := testPrewarmIdentity()
 	manifest := testPrewarmManifest(t, cache, identity, generatedAt)
-	leaseKey := cache.LeaseKey("moving", "partial")
+	leaseKey := cache.RefreshLeaseKey()
 	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner", 90*time.Second)
 	if err != nil || !acquired {
 		t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
@@ -1003,7 +940,7 @@ func TestPrewarmCacheReadReturnsPartialForInvalidOrHardExpiredToday(t *testing.T
 				test.prepare(t, cache, server, &manifest, &now)
 				now = generatedAt
 			}
-			leaseKey := cache.LeaseKey("moving", "partial", test.name)
+			leaseKey := cache.RefreshLeaseKey()
 			acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner", 90*time.Second)
 			if err != nil || !acquired {
 				t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
@@ -1089,7 +1026,7 @@ func TestPrewarmCachePublishLastWritesImmutableValuesBeforeManifest(t *testing.T
 	store := newRecordingPrewarmStore()
 	cache := mustNewPrewarmCache(t, store, func() time.Time { return generatedAt })
 	identity := testPrewarmIdentity()
-	leaseKey := cache.LeaseKey("moving", "provider-7", "version-11", identity.Timezone, identity.AnchorDate)
+	leaseKey := cache.RefreshLeaseKey()
 	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner", 90*time.Second)
 	if err != nil || !acquired {
 		t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
@@ -1218,7 +1155,7 @@ func TestPrewarmCacheRejectsMalformedOversizedAndHardExpiredValues(t *testing.T)
 			now := generatedAt.Add(30 * time.Second)
 			cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
 			manifest := testPrewarmManifest(t, cache, identity, generatedAt)
-			leaseKey := cache.LeaseKey("moving", "reject", test.name)
+			leaseKey := cache.RefreshLeaseKey()
 			acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner", 90*time.Second)
 			if err != nil || !acquired {
 				t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
@@ -1243,7 +1180,7 @@ func TestPrewarmCacheOldAnchorRemainsReadableForInflightRequest(t *testing.T) {
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
 	identity := testPrewarmIdentity()
 	manifest := testPrewarmManifest(t, cache, identity, generatedAt)
-	leaseKey := cache.LeaseKey("moving", "old-anchor")
+	leaseKey := cache.RefreshLeaseKey()
 	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner", 90*time.Second)
 	if err != nil || !acquired {
 		t.Fatalf("TryAcquireLease() = %v, %v", acquired, err)
@@ -1317,7 +1254,7 @@ func TestPrewarmCacheRedisFailuresRemainFailOpen(t *testing.T) {
 		store := newRecordingPrewarmStore()
 		store.leaseErr = synthetic
 		cache := mustNewPrewarmCache(t, store, time.Now)
-		acquired, err := cache.TryAcquireLease(context.Background(), cache.LeaseKey("moving", "lease-error"), "owner", time.Minute)
+		acquired, err := cache.TryAcquireLease(context.Background(), cache.RefreshLeaseKey(), "owner", time.Minute)
 		if acquired || !errors.Is(err, synthetic) {
 			t.Fatalf("TryAcquireLease() = %v, %v, want false and Redis error", acquired, err)
 		}
@@ -1429,7 +1366,7 @@ func TestPrewarmCacheDoesNotRecordNormalMissOrLeaseContentionAsRedisErrors(t *te
 	if result, found, err := cache.Read(context.Background(), testPrewarmIdentity()); result != nil || found || err != nil {
 		t.Fatalf("Read(miss) = %#v, %v, %v, want normal miss", result, found, err)
 	}
-	leaseKey := cache.LeaseKey("test-contention")
+	leaseKey := cache.RefreshLeaseKey()
 	if acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner-a", time.Minute); !acquired || err != nil {
 		t.Fatalf("TryAcquireLease(owner) = %v, %v", acquired, err)
 	}
@@ -1663,11 +1600,13 @@ func (s blockingMGetPrewarmStore) MGet(ctx context.Context, _ ...string) ([][]by
 }
 
 type recordingPrewarmStore struct {
+	readcache.Store
 	mu             sync.Mutex
 	values         map[string][]byte
 	ttls           map[string]time.Duration
 	leases         map[string]string
 	events         []string
+	operations     []string
 	lastMGet       []string
 	getCalls       int
 	getAfter       func(string)
@@ -1682,12 +1621,15 @@ type recordingPrewarmStore struct {
 	leaseCalls     int
 }
 
+var _ readcache.BatchStore = (*recordingPrewarmStore)(nil)
+
 func newRecordingPrewarmStore() *recordingPrewarmStore {
 	return &recordingPrewarmStore{values: make(map[string][]byte), ttls: make(map[string]time.Duration), leases: make(map[string]string)}
 }
 
 func (s *recordingPrewarmStore) Get(ctx context.Context, key string) ([]byte, error) {
 	s.mu.Lock()
+	s.operations = append(s.operations, "GET")
 	waitForContext := s.waitGetContext
 	if s.getErr != nil {
 		err := s.getErr
@@ -1715,6 +1657,7 @@ func (s *recordingPrewarmStore) Get(ctx context.Context, key string) ([]byte, er
 func (s *recordingPrewarmStore) MGet(_ context.Context, keys ...string) ([][]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.operations = append(s.operations, "MGET")
 	s.events = append(s.events, "mget "+strings.Join(keys, ","))
 	s.mgetCalls++
 	s.lastMGet = append([]string(nil), keys...)
@@ -1736,6 +1679,7 @@ func (s *recordingPrewarmStore) MGet(_ context.Context, keys ...string) ([][]byt
 func (s *recordingPrewarmStore) Set(_ context.Context, key string, value []byte, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.operations = append(s.operations, "SET")
 	s.events = append(s.events, "set "+key)
 	if s.setErr != nil {
 		return s.setErr
@@ -1748,6 +1692,7 @@ func (s *recordingPrewarmStore) Set(_ context.Context, key string, value []byte,
 func (s *recordingPrewarmStore) SetIfLeaseOwned(_ context.Context, leaseKey, token, key string, value []byte, ttl time.Duration) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.operations = append(s.operations, "SET_IF_LEASE_OWNED")
 	s.events = append(s.events, "publish "+key)
 	if leaseKey == key && s.setErr != nil {
 		return false, s.setErr
@@ -1766,35 +1711,10 @@ func (s *recordingPrewarmStore) SetIfLeaseOwned(_ context.Context, leaseKey, tok
 	return true, nil
 }
 
-func (s *recordingPrewarmStore) SetIfLeasesOwned(
-	_ context.Context,
-	leaseKeys, tokens []string,
-	key string,
-	value []byte,
-	ttl time.Duration,
-) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.events = append(s.events, "publish "+key)
-	if s.publishErr != nil {
-		return false, s.publishErr
-	}
-	if len(leaseKeys) == 0 || len(leaseKeys) != len(tokens) {
-		return false, fmt.Errorf("invalid multi-lease claim")
-	}
-	for index, leaseKey := range leaseKeys {
-		if s.leases[leaseKey] != tokens[index] {
-			return false, nil
-		}
-	}
-	s.values[key] = append([]byte(nil), value...)
-	s.ttls[key] = ttl
-	return true, nil
-}
-
 func (s *recordingPrewarmStore) TryAcquireLease(_ context.Context, key, token string, _ time.Duration) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.operations = append(s.operations, "TRY_ACQUIRE_LEASE")
 	s.leaseCalls++
 	s.events = append(s.events, "acquire "+key)
 	if s.leaseErr != nil {
@@ -1816,21 +1736,10 @@ func (s *recordingPrewarmStore) LeaseCalls() int {
 	return s.leaseCalls
 }
 
-func (s *recordingPrewarmStore) LeaseTTL(_ context.Context, key string) (time.Duration, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.leaseErr != nil {
-		return 0, s.leaseErr
-	}
-	if _, exists := s.leases[key]; !exists {
-		return 0, readcache.ErrMiss
-	}
-	return time.Minute, nil
-}
-
 func (s *recordingPrewarmStore) ReleaseLease(_ context.Context, key, token string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.operations = append(s.operations, "RELEASE_LEASE")
 	if s.leaseErr != nil {
 		return false, s.leaseErr
 	}
@@ -1845,6 +1754,18 @@ func (s *recordingPrewarmStore) Events() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.events...)
+}
+
+func (s *recordingPrewarmStore) ResetOperations() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.operations = nil
+}
+
+func (s *recordingPrewarmStore) Operations() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.operations...)
 }
 
 func (s *recordingPrewarmStore) TTL(key string) time.Duration {
@@ -1913,6 +1834,33 @@ func eventIndex(events []string, target string) int {
 	return -1
 }
 
+func publishSeedManifest(t *testing.T, cache *PrewarmCache, manifest PrewarmManifest) {
+	t.Helper()
+	leaseKey := cache.RefreshLeaseKey()
+	token := strings.Repeat("e", 64)
+	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, token, time.Minute)
+	if err != nil || !acquired {
+		t.Fatalf("TryAcquireLease(seed) = %v, %v", acquired, err)
+	}
+	published, err := cache.PublishManifest(context.Background(), leaseKey, token, manifest)
+	if err != nil || !published {
+		t.Fatalf("PublishManifest(seed) = %v, %v", published, err)
+	}
+	released, err := cache.ReleaseLease(context.Background(), leaseKey, token)
+	if err != nil || !released {
+		t.Fatalf("ReleaseLease(seed) = %v, %v", released, err)
+	}
+}
+
+func readPrewarmResult(t *testing.T, cache *PrewarmCache, identity PrewarmCacheIdentity) *PrewarmCacheResult {
+	t.Helper()
+	result, ok, err := cache.Read(context.Background(), identity)
+	if err != nil || !ok {
+		t.Fatalf("PrewarmCache.Read() = %v, %v, %v", result, ok, err)
+	}
+	return result
+}
+
 func assertPartialTodayResult(t *testing.T, result *PrewarmCacheResult, wantStatus PrewarmValueStatus) {
 	t.Helper()
 	if result.Complete || result.CurrentStats == nil || result.Segments.History29d == nil ||
@@ -1929,7 +1877,7 @@ func assertPartialTodayResult(t *testing.T, result *PrewarmCacheResult, wantStat
 
 func publishTestPrewarmManifest(t *testing.T, cache *PrewarmCache, manifest PrewarmManifest, seed string) {
 	t.Helper()
-	leaseKey := cache.LeaseKey("moving", seed)
+	leaseKey := cache.RefreshLeaseKey()
 	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner", 90*time.Second)
 	if err != nil || !acquired {
 		t.Fatalf("TryAcquireLease(%s) = %v, %v", seed, acquired, err)

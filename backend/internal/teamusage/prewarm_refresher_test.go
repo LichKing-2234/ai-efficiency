@@ -519,14 +519,16 @@ type notifyingRefresherPublicationStore struct {
 	notOwned chan struct{}
 }
 
-func (s *notifyingRefresherPublicationStore) SetIfLeasesOwned(
+var _ readcache.BatchStore = (*notifyingRefresherPublicationStore)(nil)
+
+func (s *notifyingRefresherPublicationStore) SetIfLeaseOwned(
 	ctx context.Context,
-	leaseKeys, tokens []string,
+	leaseKey, token string,
 	key string,
 	value []byte,
 	ttl time.Duration,
 ) (bool, error) {
-	published, err := s.BatchStore.SetIfLeasesOwned(ctx, leaseKeys, tokens, key, value, ttl)
+	published, err := s.BatchStore.SetIfLeaseOwned(ctx, leaseKey, token, key, value, ttl)
 	if err == nil && !published {
 		s.notOwned <- struct{}{}
 	}

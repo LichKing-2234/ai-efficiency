@@ -2,12 +2,9 @@ package teamusage
 
 import (
 	"context"
-	"errors"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,27 +13,77 @@ import (
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
 
+func TestPrewarmReaderNeverCallsRelayOrWritesRedis(t *testing.T) {
+	baseNow := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name        string
+		seed        bool
+		authorized  []int64
+		mutate      func(*recordingPrewarmStore, PrewarmManifest, *time.Time)
+		wantOutcome PrewarmReadOutcome
+		wantOps     []string
+	}{
+		{name: "full hit", seed: true, authorized: []int64{101}, wantOutcome: PrewarmReadFullHit, wantOps: []string{"GET", "MGET"}},
+		{name: "miss", authorized: []int64{101}, wantOutcome: PrewarmReadMiss, wantOps: []string{"GET"}},
+		{name: "corruption", seed: true, authorized: []int64{101}, wantOutcome: PrewarmReadFallback, wantOps: []string{"GET", "MGET"}, mutate: func(store *recordingPrewarmStore, manifest PrewarmManifest, _ *time.Time) {
+			store.SetRaw(manifest.CurrentStats.Key, []byte("corrupt-zstd-frame"), movingValueTTL)
+		}},
+		{name: "expiry", seed: true, authorized: []int64{101}, wantOutcome: PrewarmReadInvalid, wantOps: []string{"GET", "MGET"}, mutate: func(_ *recordingPrewarmStore, _ PrewarmManifest, now *time.Time) {
+			*now = now.Add(movingHard)
+		}},
+		{name: "roster absence", seed: true, authorized: []int64{999}, wantOutcome: PrewarmReadFallback, wantOps: []string{"GET", "MGET"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			now := baseNow
+			store := newRecordingPrewarmStore()
+			cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+			var manifest PrewarmManifest
+			if test.seed {
+				manifest = seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), baseNow, []int64{101})
+			}
+			if test.mutate != nil {
+				test.mutate(store, manifest, &now)
+			}
+			store.ResetOperations()
+			reader, err := NewPrewarmReader(cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+			if err != nil {
+				t.Fatalf("NewPrewarmReader() error = %v", err)
+			}
+
+			origin, outcome, _ := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
+				ProviderID: 7, ProviderVersion: 11, Params: prewarmReader7dParams(),
+				AuthorizedRelayUserIDs: test.authorized,
+			})
+			if outcome != test.wantOutcome {
+				t.Fatalf("ReadAuthorizedOrigin() outcome = %q, want %q", outcome, test.wantOutcome)
+			}
+			if test.wantOutcome == PrewarmReadFullHit {
+				if origin == nil {
+					t.Fatal("ReadAuthorizedOrigin(full hit) origin = nil")
+				}
+			} else if origin != nil {
+				t.Fatalf("ReadAuthorizedOrigin(%s) origin = %#v, want nil", test.name, origin)
+			}
+			if operations := store.Operations(); !reflect.DeepEqual(operations, test.wantOps) {
+				t.Fatalf("Redis operations = %#v, want read-only %#v", operations, test.wantOps)
+			}
+		})
+	}
+}
+
 func TestPrewarmReaderFullHitFiltersAuthorizedRosterAndUsesSparseZero(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
 	identity := testPrewarmIdentity()
 	seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101, 102})
-	limiter := &readerSourceLimiter{}
 	metrics := &recordingPrewarmRequestMetrics{}
-	reader := mustPrewarmReader(t, cache, limiter, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
-	})
-	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }, Metrics: metrics})
 
-	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-		ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-		Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{102, 101, 102}, Provider: provider,
-	})
+	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{ProviderID: 7, ProviderVersion: 11, Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{102, 101, 102}})
 	if err != nil || outcome != PrewarmReadFullHit {
 		t.Fatalf("ReadAuthorizedOrigin() outcome/error = %q/%v, want full hit", outcome, err)
-	}
-	if limiter.calls.Load() != 0 || provider.trendCalls.Load() != 0 {
-		t.Fatalf("full hit source calls = limiter %d/provider %d, want zero", limiter.calls.Load(), provider.trendCalls.Load())
 	}
 	if !reflect.DeepEqual(origin.RelayUserIDs, []int64{101, 102}) {
 		t.Fatalf("authorized Relay IDs = %#v, want sorted unique IDs", origin.RelayUserIDs)
@@ -87,82 +134,14 @@ func TestPrewarmReaderWindowSelectionUsesExactCacheReferences(t *testing.T) {
 			store := newRecordingPrewarmStore()
 			cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
 			manifest := seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), now, []int64{101})
-			reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-				Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-			})
-			provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
+			reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
 
-			origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-				ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-				Params: test.params, AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
-			})
+			origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{ProviderID: 7, ProviderVersion: 11, Params: test.params, AuthorizedRelayUserIDs: []int64{101}})
 			if err != nil || outcome != PrewarmReadFullHit || origin == nil {
 				t.Fatalf("ReadAuthorizedOrigin(%s) = %#v/%q/%v, want full hit", test.name, origin, outcome, err)
 			}
 			if got := store.LastMGet(); !reflect.DeepEqual(got, test.want(manifest)) {
 				t.Fatalf("ReadAuthorizedOrigin(%s) MGET keys = %#v, want %#v", test.name, got, test.want(manifest))
-			}
-		})
-	}
-}
-
-func TestPrewarmReaderWindowSelectionRecoveryUsesOnlySelectedStaticPrerequisites(t *testing.T) {
-	current := &PrewarmCurrentStatsEnvelope{}
-	history29d := &PrewarmTrendSegment{}
-	history6d := &PrewarmTrendSegment{}
-	tests := []struct {
-		name   string
-		class  PrewarmWindowClass
-		result *PrewarmCacheResult
-	}{
-		{
-			name:  "today",
-			class: PrewarmWindowToday,
-			result: &PrewarmCacheResult{
-				CurrentStats: current, CurrentStatsStatus: PrewarmValueStale,
-				TodayHourStatus: PrewarmValueMissing,
-			},
-		},
-		{
-			name:  "7d",
-			class: PrewarmWindow7d,
-			result: &PrewarmCacheResult{
-				CurrentStats: current, CurrentStatsStatus: PrewarmValueStale,
-				Segments: PrewarmSegmentSet{History6d: history6d}, History6dStatus: PrewarmValueStale,
-				TodayHourStatus: PrewarmValueInvalid,
-			},
-		},
-		{
-			name:  "30d",
-			class: PrewarmWindow30d,
-			result: &PrewarmCacheResult{
-				CurrentStats: current, CurrentStatsStatus: PrewarmValueStale,
-				Segments: PrewarmSegmentSet{History29d: history29d}, History29dStatus: PrewarmValueStale,
-				TodayHourStatus: PrewarmValueHardExpired,
-			},
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if !prewarmResultCanRecoverToday(test.result, test.class) {
-				t.Fatalf("prewarmResultCanRecoverToday(%s) = false, want selected prerequisites only", test.class)
-			}
-			withoutCurrent := *test.result
-			withoutCurrent.CurrentStats = nil
-			if prewarmResultCanRecoverToday(&withoutCurrent, test.class) {
-				t.Fatalf("prewarmResultCanRecoverToday(%s, missing current) = true", test.class)
-			}
-			withoutSelectedHistory := *test.result
-			switch test.class {
-			case PrewarmWindow7d:
-				withoutSelectedHistory.Segments.History6d = nil
-			case PrewarmWindow30d:
-				withoutSelectedHistory.Segments.History29d = nil
-			default:
-				return
-			}
-			if prewarmResultCanRecoverToday(&withoutSelectedHistory, test.class) {
-				t.Fatalf("prewarmResultCanRecoverToday(%s, missing selected history) = true", test.class)
 			}
 		})
 	}
@@ -196,14 +175,9 @@ func TestPrewarmReaderTamperedRosterDigestSelectsExactFallback(t *testing.T) {
 	server.SetTTL(manifestKey, manifestTTL)
 
 	metrics := &recordingPrewarmRequestMetrics{}
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
-	})
-	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
-	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-		ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-		Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
-	})
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }, Metrics: metrics})
+
+	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{ProviderID: 7, ProviderVersion: 11, Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101}})
 	if err == nil || origin != nil || outcome != PrewarmReadFallback {
 		t.Fatalf("tampered roster digest = %#v/%q/%v, want exact fallback signal", origin, outcome, err)
 	}
@@ -235,7 +209,7 @@ func TestPrewarmReaderUnionMetricUsesProviderWideTrendBeforeAuthorization(t *tes
 	if err != nil {
 		t.Fatalf("WriteSegment() error = %v", err)
 	}
-	leaseKey := cache.LeaseKey("union-metric", manifest.History6d.GenerationID)
+	leaseKey := cache.RefreshLeaseKey()
 	token := strings.Repeat("u", 64)
 	acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, token, time.Minute)
 	if err != nil || !acquired {
@@ -247,15 +221,10 @@ func TestPrewarmReaderUnionMetricUsesProviderWideTrendBeforeAuthorization(t *tes
 	}
 
 	metrics := &recordingPrewarmRequestMetrics{}
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
-	})
-	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }, Metrics: metrics})
+
 	for _, authorized := range [][]int64{{101}, {102}} {
-		origin, outcome, readErr := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-			ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-			Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: authorized, Provider: provider,
-		})
+		origin, outcome, readErr := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{ProviderID: 7, ProviderVersion: 11, Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: authorized})
 		if readErr != nil || outcome != PrewarmReadFullHit || !reflect.DeepEqual(origin.RelayUserIDs, authorized) {
 			t.Fatalf("ReadAuthorizedOrigin(%v) = %#v/%q/%v", authorized, origin, outcome, readErr)
 		}
@@ -273,10 +242,7 @@ func TestPrewarmReaderMetricsUseClosedFallbackReasons(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
 	metrics := &recordingPrewarmRequestMetrics{}
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
-	})
-	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }, Metrics: metrics})
 
 	requests := []struct {
 		request PrewarmReadRequest
@@ -288,14 +254,14 @@ func TestPrewarmReaderMetricsUseClosedFallbackReasons(t *testing.T) {
 		},
 		{
 			request: PrewarmReadRequest{
-				ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1", Provider: provider,
+				ProviderID: 7, ProviderVersion: 11,
 				Params: OverviewParams{StartDate: "2026-07-01", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC"},
 			},
 			want: prewarmRequestMetric{timezone: "UTC", outcome: "ineligible", reason: "ineligible"},
 		},
 		{
 			request: PrewarmReadRequest{
-				ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1", Provider: provider,
+				ProviderID: 7, ProviderVersion: 11,
 				Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101},
 			},
 			want: prewarmRequestMetric{timezone: "UTC", outcome: "miss", reason: "cache_miss"},
@@ -309,28 +275,48 @@ func TestPrewarmReaderMetricsUseClosedFallbackReasons(t *testing.T) {
 	}
 }
 
-func TestPrewarmReaderSlotUsesExactFallbackBeforeAtomicInstall(t *testing.T) {
+func TestServiceUsesDirectPrewarmReaderWithoutMutableSlot(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	client := testdb.Open(t)
-	createPrimaryRelayProvider(t, client)
-	scope, provider := membersTestData(1)
+	providerRow := createPrimaryRelayProvider(t, client)
+	scopeV1, provider := membersTestData(1)
+	scopeV1.Version = "scope-v1"
+	scopeV2 := *scopeV1
+	scopeV2.Version = "scope-v2"
+	resolver := &sequenceScopeResolver{scopes: []*representativescope.Scope{scopeV1, &scopeV2, &scopeV2}}
 	rangeCost, rangeTokens := 7.0, int64(70)
 	provider.summaryStats[10001] = relay.TeamUserUsageStats{
 		UserID: 10001, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
 	}
 	provider.trendPoints[10001] = []relay.UsageTrendPoint{{Date: "2026-07-15", ActualCost: 7, TotalTokens: &rangeTokens}}
-	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
-	service.prewarmReaderSource = NewPrewarmReaderSlot()
-	service.originCache, _ = testOriginCache(t, time.Now, "empty-reader-slot-fallback-token")
+	store := newRecordingPrewarmStore()
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion,
+		Timezone: "UTC", AnchorDate: "2026-07-21",
+	}, now, []int64{10001})
+	store.getAfter = func(string) {
+		if provider.listUsersCalls == 0 {
+			t.Error("Redis read happened before current Relay mappings were resolved")
+		}
+	}
+	reader, err := NewPrewarmReader(cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("NewPrewarmReader() error = %v", err)
+	}
+	service := newUncachedServiceForTest(client, resolver, fakeProviderResolver{provider: provider}, nil)
+	service.prewarmReader = reader
+	service.originCache, _ = testOriginCache(t, time.Now, "direct-reader-fallback-token")
 
 	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
 	if err != nil {
 		t.Fatalf("Summary() error = %v", err)
 	}
-	if response.Summary.RangeActualCost == nil || *response.Summary.RangeActualCost != 7 {
-		t.Fatalf("empty-slot fallback range = %#v, want exact 7", response.Summary.RangeActualCost)
+	if response.ScopeVersion != "scope-v2" || response.Summary.RangeActualCost == nil || *response.Summary.RangeActualCost != 7 {
+		t.Fatalf("authorization-race response = scope %q range %#v, want scope-v2 exact 7", response.ScopeVersion, response.Summary.RangeActualCost)
 	}
 	if len(provider.summaryRequestBatches) == 0 || provider.trendCalls == 0 {
-		t.Fatalf("empty-slot exact fallback calls = stats %d trend %d", len(provider.summaryRequestBatches), provider.trendCalls)
+		t.Fatalf("authorization-race exact fallback calls = stats %d trend %d", len(provider.summaryRequestBatches), provider.trendCalls)
 	}
 }
 
@@ -339,441 +325,32 @@ func TestPrewarmReaderAuthorizedRosterAbsenceAndEligibilityFailuresSelectFallbac
 	store := newRecordingPrewarmStore()
 	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
 	seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), now, []int64{101})
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC", "America/Los_Angeles"}, Now: func() time.Time { return now },
-	})
-	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
 
-	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-		ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-		Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{999}, Provider: provider,
-	})
+	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{ProviderID: 7, ProviderVersion: 11, Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{999}})
 	if err != nil || origin != nil || outcome != PrewarmReadFallback {
 		t.Fatalf("missing authorized roster = %#v/%q/%v, want exact fallback", origin, outcome, err)
 	}
 
 	for _, test := range []struct {
-		name   string
-		params OverviewParams
+		name        string
+		params      OverviewParams
+		wantOutcome PrewarmReadOutcome
+		wantReads   int
 	}{
-		{name: "custom", params: OverviewParams{StartDate: "2026-07-01", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC"}},
-		{name: "unconfigured timezone", params: OverviewParams{StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "Asia/Shanghai"}},
-		{name: "DST rollover", params: OverviewParams{StartDate: "2026-03-03", EndDate: "2026-03-09", Granularity: "day", Timezone: "America/Los_Angeles"}},
+		{name: "custom", params: OverviewParams{StartDate: "2026-07-01", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC"}, wantOutcome: PrewarmReadIneligible},
+		{name: "timezone without manifest", params: OverviewParams{StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "Asia/Shanghai"}, wantOutcome: PrewarmReadMiss, wantReads: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			before := store.GetCalls()
-			origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-				ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-				Params: test.params, AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
-			})
-			if err != nil || origin != nil || outcome != PrewarmReadIneligible {
-				t.Fatalf("ReadAuthorizedOrigin() = %#v/%q/%v, want clean ineligible", origin, outcome, err)
+			origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{ProviderID: 7, ProviderVersion: 11, Params: test.params, AuthorizedRelayUserIDs: []int64{101}})
+			if err != nil || origin != nil || outcome != test.wantOutcome {
+				t.Fatalf("ReadAuthorizedOrigin() = %#v/%q/%v, want %q", origin, outcome, err, test.wantOutcome)
 			}
-			if store.GetCalls() != before {
-				t.Fatalf("ineligible request made %d manifest reads, want zero", store.GetCalls()-before)
+			if reads := store.GetCalls() - before; reads != test.wantReads {
+				t.Fatalf("manifest reads = %d, want %d", reads, test.wantReads)
 			}
 		})
-	}
-}
-
-func TestPrewarmPartialTodayFetchesOnlyTodayThroughSharedLimiterAndPublishes(t *testing.T) {
-	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
-	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
-	identity := testPrewarmIdentity()
-	manifest := seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101})
-	server.Del(manifest.TodayHour.Key)
-	limiter := &readerSourceLimiter{}
-	metrics := &recordingPrewarmRequestMetrics{}
-	reader := mustPrewarmReader(t, cache, limiter, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-		NewToken:        func() string { return strings.Repeat("a", 64) },
-		NewGenerationID: func() string { return strings.Repeat("b", 64) },
-		Metrics:         metrics,
-	})
-	provider := &prewarmReaderProvider{
-		fakeRelayProvider: &fakeRelayProvider{},
-		trendResult: relay.ProviderWideTrendResult{
-			Coverage:      relay.TeamMemberTrendParams{StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC"},
-			Points:        []relay.ProviderWideTrendPoint{{UserID: 101, Date: "2026-07-21 08:00", ActualCost: 2, TotalTokens: int64Ptr(20)}},
-			ResponseBytes: 64, PointCount: 1, UniqueUserCount: 1, Complete: true,
-		},
-	}
-
-	request := PrewarmReadRequest{
-		ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-		Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
-	}
-	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), request)
-	if err != nil || outcome != PrewarmReadPartialToday || origin == nil {
-		t.Fatalf("ReadAuthorizedOrigin(partial) = %#v/%q/%v", origin, outcome, err)
-	}
-	if limiter.calls.Load() != 1 || provider.trendCalls.Load() != 1 {
-		t.Fatalf("partial source calls = limiter %d/provider %d, want one today call", limiter.calls.Load(), provider.trendCalls.Load())
-	}
-	if !reflect.DeepEqual(metrics.sources, []prewarmSourceMetric{{
-		class: "today_hour", timezone: "UTC", outcome: "success", bytes: 64, points: 1, users: 1,
-	}}) {
-		t.Fatalf("partial source metrics = %#v, want bounded today source evidence", metrics.sources)
-	}
-	if got := provider.params(); len(got) != 1 || got[0] != (relay.TeamMemberTrendParams{
-		StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC",
-	}) {
-		t.Fatalf("partial source params = %#v, want exact D..D/hour only", got)
-	}
-	result := readPrewarmResult(t, cache, identity)
-	if !result.Complete || result.Manifest.TodayHour.GenerationID != strings.Repeat("b", 64) {
-		t.Fatalf("published partial recovery = %#v, want complete new manifest", result)
-	}
-
-	if _, outcome, err = reader.ReadAuthorizedOrigin(context.Background(), request); err != nil || outcome != PrewarmReadFullHit {
-		t.Fatalf("second ReadAuthorizedOrigin() outcome/error = %q/%v, want Redis full hit", outcome, err)
-	}
-	if limiter.calls.Load() != 1 {
-		t.Fatalf("second request reused a completed Pod value/source: calls=%d, want Redis-only hit", limiter.calls.Load())
-	}
-}
-
-func TestPrewarmPartialTodayComposesWhenUnselectedHistoryIsUnavailable(t *testing.T) {
-	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name          string
-		params        OverviewParams
-		unselectedRef func(PrewarmManifest) PrewarmValueReference
-	}{
-		{
-			name:   "today",
-			params: OverviewParams{StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC"},
-			unselectedRef: func(manifest PrewarmManifest) PrewarmValueReference {
-				return manifest.History29d
-			},
-		},
-		{
-			name:   "7d",
-			params: prewarmReader7dParams(),
-			unselectedRef: func(manifest PrewarmManifest) PrewarmValueReference {
-				return manifest.History29d
-			},
-		},
-		{
-			name: "30d",
-			params: OverviewParams{
-				StartDate: "2026-06-22", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC",
-			},
-			unselectedRef: func(manifest PrewarmManifest) PrewarmValueReference {
-				return manifest.History6d
-			},
-		},
-	}
-	for _, test := range tests {
-		for _, damage := range []string{"deleted", "corrupt"} {
-			t.Run(test.name+"/"+damage, func(t *testing.T) {
-				cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
-				identity := testPrewarmIdentity()
-				manifest := seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101})
-				server.Del(manifest.TodayHour.Key)
-				unselected := test.unselectedRef(manifest)
-				if damage == "deleted" {
-					server.Del(unselected.Key)
-				} else {
-					server.Set(unselected.Key, "corrupt-zstd-frame")
-					server.SetTTL(unselected.Key, historyValueTTL)
-				}
-
-				limiter := &readerSourceLimiter{}
-				reader := mustPrewarmReader(t, cache, limiter, PrewarmReaderOptions{
-					Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-					NewToken:        func() string { return strings.Repeat("a", 64) },
-					NewGenerationID: func() string { return strings.Repeat("b", 64) },
-				})
-				provider := &prewarmReaderProvider{
-					fakeRelayProvider: &fakeRelayProvider{},
-					trendResult: relay.ProviderWideTrendResult{
-						Coverage: relay.TeamMemberTrendParams{
-							StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC",
-						},
-						Points: []relay.ProviderWideTrendPoint{
-							{UserID: 101, Date: "2026-07-21 08:00", ActualCost: 2, TotalTokens: int64Ptr(20)},
-						},
-						ResponseBytes: 64, PointCount: 1, UniqueUserCount: 1, Complete: true,
-					},
-				}
-
-				origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-					ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-					Params: test.params, AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
-				})
-				if err != nil || outcome != PrewarmReadPartialToday || origin == nil {
-					t.Fatalf("ReadAuthorizedOrigin(%s, %s unselected history) = %#v/%q/%v, want request-scoped recovery", test.name, damage, origin, outcome, err)
-				}
-				if limiter.calls.Load() != 1 || provider.trendCalls.Load() != 1 {
-					t.Fatalf("request-scoped source calls = limiter %d/provider %d, want one today call", limiter.calls.Load(), provider.trendCalls.Load())
-				}
-				manifestKey, keyErr := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, identity)
-				if keyErr != nil {
-					t.Fatalf("prewarmManifestKeyForIdentity() error = %v", keyErr)
-				}
-				encodedManifest, getErr := server.Get(manifestKey)
-				if getErr != nil {
-					t.Fatalf("get stored manifest error = %v", getErr)
-				}
-				var storedManifest PrewarmManifest
-				if decodeErr := decodePrewarmJSON([]byte(encodedManifest), prewarmManifestMaxBytes, &storedManifest); decodeErr != nil {
-					t.Fatalf("decode stored manifest error = %v", decodeErr)
-				}
-				if storedManifest.TodayHour != manifest.TodayHour {
-					t.Fatalf("incomplete full generation was published: today ref = %#v, want original %#v", storedManifest.TodayHour, manifest.TodayHour)
-				}
-			})
-		}
-	}
-}
-
-func TestPrewarmPartialTodayDoesNotLetUnselectedCorruptionMaskSelectedHistoryFailure(t *testing.T) {
-	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
-	for _, damage := range []string{"deleted", "corrupt"} {
-		t.Run(damage, func(t *testing.T) {
-			cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
-			identity := testPrewarmIdentity()
-			manifest := seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101})
-			server.Del(manifest.TodayHour.Key)
-			started := make(chan struct{})
-			release := make(chan struct{})
-			metrics := &recordingPrewarmRequestMetrics{}
-			reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-				Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-				NewToken:        func() string { return strings.Repeat("a", 64) },
-				NewGenerationID: func() string { return strings.Repeat("b", 64) },
-				Metrics:         metrics,
-			})
-			provider := &prewarmReaderProvider{
-				fakeRelayProvider: &fakeRelayProvider{}, started: started, release: release,
-				trendResult: relay.ProviderWideTrendResult{
-					Coverage: relay.TeamMemberTrendParams{
-						StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC",
-					},
-					Points: []relay.ProviderWideTrendPoint{
-						{UserID: 101, Date: "2026-07-21 08:00", ActualCost: 2, TotalTokens: int64Ptr(20)},
-					},
-					ResponseBytes: 64, PointCount: 1, UniqueUserCount: 1, Complete: true,
-				},
-			}
-			type readResult struct {
-				origin  *teamUsageScopeOrigin
-				outcome PrewarmReadOutcome
-				err     error
-			}
-			result := make(chan readResult, 1)
-			go func() {
-				origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-					ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-					Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
-				})
-				result <- readResult{origin: origin, outcome: outcome, err: err}
-			}()
-
-			<-started
-			server.Set(manifest.History29d.Key, "corrupt-unselected-history")
-			server.SetTTL(manifest.History29d.Key, historyValueTTL)
-			if damage == "deleted" {
-				server.Del(manifest.History6d.Key)
-			} else {
-				server.Set(manifest.History6d.Key, "corrupt-selected-history")
-				server.SetTTL(manifest.History6d.Key, historyValueTTL)
-			}
-			close(release)
-
-			got := <-result
-			if got.err == nil || got.origin != nil || got.outcome != PrewarmReadFallback {
-				t.Fatalf("selected history %s behind corrupt unselected history = %#v/%q/%v, want exact fallback signal", damage, got.origin, got.outcome, got.err)
-			}
-			last := metrics.requests[len(metrics.requests)-1]
-			if last.reason != "redis_error" {
-				t.Fatalf("selected history %s fallback reason = %q, want redis_error", damage, last.reason)
-			}
-		})
-	}
-}
-
-func TestPrewarmPartialTodayRelayFailureSelectsCompleteFallback(t *testing.T) {
-	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
-	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
-	manifest := seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), now, []int64{101})
-	server.Del(manifest.TodayHour.Key)
-	metrics := &recordingPrewarmRequestMetrics{}
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
-	})
-	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}, trendErr: errors.New("synthetic today outage")}
-
-	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-		ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-		Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
-	})
-	if err == nil || origin != nil || outcome != PrewarmReadFallback {
-		t.Fatalf("partial Relay failure = %#v/%q/%v, want exact fallback signal", origin, outcome, err)
-	}
-	last := metrics.requests[len(metrics.requests)-1]
-	if last.reason != "source_error" {
-		t.Fatalf("partial Relay fallback reason = %q, want source_error", last.reason)
-	}
-}
-
-func TestPrewarmPartialTodayRedisLeaseFailureIsNotClassifiedAsSource(t *testing.T) {
-	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
-	store := newRecordingPrewarmStore()
-	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
-	manifest := seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), now, []int64{101})
-	store.mu.Lock()
-	delete(store.values, manifest.TodayHour.Key)
-	store.mu.Unlock()
-	store.leaseErr = errors.New("dynamic Redis lease detail")
-	metrics := &recordingPrewarmRequestMetrics{}
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, Metrics: metrics,
-	})
-	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
-
-	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-		ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-		Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101}, Provider: provider,
-	})
-	if err == nil || origin != nil || outcome != PrewarmReadFallback {
-		t.Fatalf("partial Redis failure = %#v/%q/%v, want exact fallback signal", origin, outcome, err)
-	}
-	last := metrics.requests[len(metrics.requests)-1]
-	if last.reason != "redis_error" {
-		t.Fatalf("partial Redis fallback reason = %q, want redis_error", last.reason)
-	}
-}
-
-func TestPrewarmPartialTodayAuthorizedRosterAbsenceFallsBackBeforeSource(t *testing.T) {
-	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
-	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
-	manifest := seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), now, []int64{101})
-	server.Del(manifest.TodayHour.Key)
-	limiter := &readerSourceLimiter{}
-	reader := mustPrewarmReader(t, cache, limiter, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-	})
-	provider := &prewarmReaderProvider{fakeRelayProvider: &fakeRelayProvider{}}
-
-	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-		ProviderID: 7, ActorUserID: 1, ProviderVersion: 11, ScopeVersion: "scope-v1",
-		Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{999}, Provider: provider,
-	})
-	if err != nil || origin != nil || outcome != PrewarmReadFallback {
-		t.Fatalf("partial missing roster = %#v/%q/%v, want exact fallback", origin, outcome, err)
-	}
-	if limiter.calls.Load() != 0 || provider.trendCalls.Load() != 0 {
-		t.Fatalf("partial missing roster source calls = %d/%d, want zero", limiter.calls.Load(), provider.trendCalls.Load())
-	}
-}
-
-func TestPrewarmPartialTodayFlightComposesEachAuthorizedWaiterIndependently(t *testing.T) {
-	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
-	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
-	manifest := seedAuthorizedPrewarmManifest(t, cache, testPrewarmIdentity(), now, []int64{101, 102})
-	server.Del(manifest.TodayHour.Key)
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-	})
-	started, release := make(chan struct{}), make(chan struct{})
-	provider := &prewarmReaderProvider{
-		fakeRelayProvider: &fakeRelayProvider{}, started: started, release: release,
-		trendResult: relay.ProviderWideTrendResult{
-			Coverage: relay.TeamMemberTrendParams{StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC"},
-			Points: []relay.ProviderWideTrendPoint{
-				{UserID: 101, Date: "2026-07-21 08:00", ActualCost: 1},
-				{UserID: 102, Date: "2026-07-21 08:00", ActualCost: 2},
-			},
-			ResponseBytes: 64, PointCount: 2, UniqueUserCount: 2, Complete: true,
-		},
-	}
-	type readResult struct {
-		origin  *teamUsageScopeOrigin
-		outcome PrewarmReadOutcome
-		err     error
-	}
-	results := make(chan readResult, 2)
-	read := func(actor int, authorized int64) {
-		origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), PrewarmReadRequest{
-			ProviderID: 7, ActorUserID: actor, ProviderVersion: 11, ScopeVersion: "scope-v1",
-			Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{authorized}, Provider: provider,
-		})
-		results <- readResult{origin: origin, outcome: outcome, err: err}
-	}
-	go read(1, 101)
-	<-started
-	go read(2, 102)
-	time.Sleep(20 * time.Millisecond)
-	close(release)
-
-	seen := map[int64]bool{}
-	for range 2 {
-		result := <-results
-		if result.err != nil || result.outcome != PrewarmReadPartialToday || result.origin == nil || len(result.origin.RelayUserIDs) != 1 {
-			t.Fatalf("concurrent partial result = %#v/%q/%v", result.origin, result.outcome, result.err)
-		}
-		seen[result.origin.RelayUserIDs[0]] = true
-	}
-	if !seen[101] || !seen[102] || provider.trendCalls.Load() != 1 {
-		t.Fatalf("authorized waiter projections/source calls = %#v/%d, want distinct 101+102 with one flight", seen, provider.trendCalls.Load())
-	}
-}
-
-func TestPrewarmPartialTodayLifecycleMovingLeaseSelectsExactFallbackWithoutConcurrentSource(t *testing.T) {
-	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
-	client := testdb.Open(t)
-	providerRow := createPrimaryRelayProvider(t, client)
-	scope, exactProvider := membersTestData(1)
-	rangeCost, rangeTokens := 9.0, int64(90)
-	exactProvider.summaryStats[10001] = relay.TeamUserUsageStats{
-		UserID: 10001, TodayActualCost: 3, TotalActualCost: 30, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
-	}
-	exactProvider.trendPoints[10001] = []relay.UsageTrendPoint{{Date: "2026-07-15", ActualCost: 9, TotalTokens: &rangeTokens}}
-	provider := &prewarmReaderProvider{
-		fakeRelayProvider: exactProvider,
-		trendResult: relay.ProviderWideTrendResult{
-			Coverage:      relay.TeamMemberTrendParams{StartDate: "2026-07-21", EndDate: "2026-07-21", Granularity: "hour", Timezone: "UTC"},
-			Points:        []relay.ProviderWideTrendPoint{{UserID: 10001, Date: "2026-07-21 08:00", ActualCost: 2, TotalTokens: int64Ptr(20)}},
-			ResponseBytes: 64, PointCount: 1, UniqueUserCount: 1, Complete: true,
-		},
-	}
-	cache, server := newRedisPrewarmCache(t, func() time.Time { return now })
-	identity := PrewarmCacheIdentity{
-		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
-	}
-	manifest := seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{10001})
-	server.Del(manifest.TodayHour.Key)
-	lifecycleLeaseKey := cache.LeaseKey(
-		"segment", strconv.Itoa(identity.ProviderID), strconv.FormatInt(identity.ProviderVersion, 10),
-		prewarmTimezoneDigest(identity.Timezone), identity.AnchorDate, "moving",
-	)
-	lifecycleToken := strings.Repeat("f", 64)
-	acquired, err := cache.TryAcquireLease(context.Background(), lifecycleLeaseKey, lifecycleToken, prewarmWorkerLeaseTTL)
-	if err != nil || !acquired {
-		t.Fatalf("TryAcquireLease(lifecycle moving) = %v/%v", acquired, err)
-	}
-	limiter := &readerSourceLimiter{}
-	reader := mustPrewarmReader(t, cache, limiter, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now }, NewToken: func() string { return strings.Repeat("e", 64) },
-	})
-	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
-	installTestPrewarmReader(service, reader)
-	service.originCache, _ = testOriginCache(t, time.Now, "moving-lease-fallback-token")
-
-	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
-	if err != nil {
-		t.Fatalf("Summary() error = %v", err)
-	}
-	if response.Summary.RangeActualCost == nil || *response.Summary.RangeActualCost != 9 {
-		t.Fatalf("moving-lease fallback range = %#v, want exact 9", response.Summary.RangeActualCost)
-	}
-	if limiter.calls.Load() != 0 || provider.trendCalls.Load() != 0 {
-		t.Fatalf("moving-lease concurrent partial source calls = %d/%d, want zero", limiter.calls.Load(), provider.trendCalls.Load())
-	}
-	if len(exactProvider.summaryRequestBatches) == 0 || exactProvider.trendCalls == 0 {
-		t.Fatalf("moving-lease exact fallback calls = stats %d trend %d, want complete exact origin", len(exactProvider.summaryRequestBatches), exactProvider.trendCalls)
 	}
 }
 
@@ -781,9 +358,9 @@ func prewarmReader7dParams() OverviewParams {
 	return OverviewParams{StartDate: "2026-07-15", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC"}
 }
 
-func mustPrewarmReader(t *testing.T, cache *PrewarmCache, limiter SourceCallLimiter, options PrewarmReaderOptions) *PrewarmReader {
+func mustPrewarmReader(t *testing.T, cache *PrewarmCache, options PrewarmReaderOptions) *PrewarmReader {
 	t.Helper()
-	reader, err := NewPrewarmReader(cache, limiter, options)
+	reader, err := NewPrewarmReader(cache, options)
 	if err != nil {
 		t.Fatalf("NewPrewarmReader() error = %v", err)
 	}
@@ -791,9 +368,7 @@ func mustPrewarmReader(t *testing.T, cache *PrewarmCache, limiter SourceCallLimi
 }
 
 func installTestPrewarmReader(service *Service, reader *PrewarmReader) {
-	slot := NewPrewarmReaderSlot()
-	slot.Store(reader)
-	service.prewarmReaderSource = slot
+	service.prewarmReader = reader
 }
 
 func seedAuthorizedPrewarmManifest(
@@ -848,10 +423,6 @@ func seedAuthorizedPrewarmManifest(
 	}
 	publishSeedManifest(t, cache, manifest)
 	return manifest
-}
-
-type readerSourceLimiter struct {
-	calls atomic.Int32
 }
 
 type prewarmRequestMetric struct {
@@ -967,50 +538,6 @@ func (m *recordingPrewarmRequestMetrics) RecordCache(cache PrewarmCacheKind, out
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.caches = append(m.caches, prewarmCacheMetric{cache: cache, outcome: outcome})
-}
-
-func (l *readerSourceLimiter) Do(ctx context.Context, call func(context.Context) error) error {
-	l.calls.Add(1)
-	return call(ctx)
-}
-
-type prewarmReaderProvider struct {
-	*fakeRelayProvider
-	trendCalls  atomic.Int32
-	trendMu     sync.Mutex
-	trendParams []relay.TeamMemberTrendParams
-	trendResult relay.ProviderWideTrendResult
-	trendErr    error
-	started     chan struct{}
-	release     <-chan struct{}
-	startOnce   sync.Once
-}
-
-func (p *prewarmReaderProvider) GetProviderUsageTrend(ctx context.Context, params relay.TeamMemberTrendParams, _ int) (relay.ProviderWideTrendResult, error) {
-	p.trendCalls.Add(1)
-	p.trendMu.Lock()
-	p.trendParams = append(p.trendParams, params)
-	p.trendMu.Unlock()
-	if p.started != nil {
-		p.startOnce.Do(func() { close(p.started) })
-	}
-	if p.release != nil {
-		select {
-		case <-p.release:
-		case <-ctx.Done():
-			return relay.ProviderWideTrendResult{}, ctx.Err()
-		}
-	}
-	if p.trendErr != nil {
-		return relay.ProviderWideTrendResult{}, p.trendErr
-	}
-	return p.trendResult, nil
-}
-
-func (p *prewarmReaderProvider) params() []relay.TeamMemberTrendParams {
-	p.trendMu.Lock()
-	defer p.trendMu.Unlock()
-	return append([]relay.TeamMemberTrendParams(nil), p.trendParams...)
 }
 
 type sequenceScopeResolver struct {

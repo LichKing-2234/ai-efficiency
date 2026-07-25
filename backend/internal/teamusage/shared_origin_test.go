@@ -310,9 +310,8 @@ func TestSharedOriginPrewarmResolvesMappingsBeforeSegmentedRedis(t *testing.T) {
 			t.Error("segmented Redis read happened before current Relay mappings were resolved")
 		}
 	}
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-	})
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
 	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 	installTestPrewarmReader(service, reader)
 
@@ -334,9 +333,8 @@ func TestSharedOriginPrewarmServesAuthorizedScopeAboveLegacyCap(t *testing.T) {
 	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
 		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
 	}, now, roster)
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-	})
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
 	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 	installTestPrewarmReader(service, reader)
 
@@ -370,9 +368,8 @@ func TestPrewarmFallbackScopeVersionRaceDiscardsProjectionAndUsesExactOrigin(t *
 	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
 		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
 	}, now, []int64{10001})
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-	})
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
 	service := newUncachedServiceForTest(client, resolver, fakeProviderResolver{provider: provider}, nil)
 	installTestPrewarmReader(service, reader)
 	service.originCache, _ = testOriginCache(t, time.Now, "scope-race-exact-token")
@@ -402,9 +399,8 @@ func TestPrewarmFallbackFinalRepresentativeLossReturnsForbiddenWithoutStaleSourc
 	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
 		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
 	}, now, []int64{10001})
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-	})
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
 	service := newUncachedServiceForTest(client, resolver, fakeProviderResolver{provider: provider}, nil)
 	installTestPrewarmReader(service, reader)
 	service.originCache, _ = testOriginCache(t, time.Now, "representative-loss-token")
@@ -430,9 +426,8 @@ func TestPrewarmFallbackFinalProviderResolutionFailureReturnsErrorWithoutStaleSo
 		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
 	}, now, []int64{10001})
 	store.getAfter = func(string) { _ = client.Close() }
-	reader := mustPrewarmReader(t, cache, &readerSourceLimiter{}, PrewarmReaderOptions{
-		Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-	})
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
 	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 	installTestPrewarmReader(service, reader)
 	service.originCache, _ = testOriginCache(t, time.Now, "provider-reresolution-token")

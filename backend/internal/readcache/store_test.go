@@ -177,43 +177,6 @@ func TestRedisStoreSetIfLeaseOwnedAndReleaseAreTokenChecked(t *testing.T) {
 	}
 }
 
-func TestRedisStoreSetIfLeasesOwnedRequiresEveryTokenAtomically(t *testing.T) {
-	server := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
-	t.Cleanup(func() { _ = client.Close() })
-	store := NewRedisStore(client)
-	ctx := context.Background()
-	leaseKeys := []string{"coordinator", "segment"}
-	tokens := []string{"cycle-owner", "segment-owner"}
-	for index := range leaseKeys {
-		acquired, err := store.TryAcquireLease(ctx, leaseKeys[index], tokens[index], time.Minute)
-		if err != nil || !acquired {
-			t.Fatalf("TryAcquireLease(%s) = %v, %v", leaseKeys[index], acquired, err)
-		}
-	}
-
-	published, err := store.SetIfLeasesOwned(ctx, leaseKeys, []string{tokens[0], "wrong"}, "manifest", []byte("wrong"), 3*time.Minute)
-	if err != nil || published || server.Exists("manifest") {
-		t.Fatalf("SetIfLeasesOwned(wrong token) = %v, %v, exists=%v", published, err, server.Exists("manifest"))
-	}
-	server.Del(leaseKeys[0])
-	published, err = store.SetIfLeasesOwned(ctx, leaseKeys, tokens, "manifest", []byte("missing"), 3*time.Minute)
-	if err != nil || published || server.Exists("manifest") {
-		t.Fatalf("SetIfLeasesOwned(missing lease) = %v, %v, exists=%v", published, err, server.Exists("manifest"))
-	}
-	acquired, err := store.TryAcquireLease(ctx, leaseKeys[0], tokens[0], time.Minute)
-	if err != nil || !acquired {
-		t.Fatalf("reacquire coordinator = %v, %v", acquired, err)
-	}
-	published, err = store.SetIfLeasesOwned(ctx, leaseKeys, tokens, "manifest", []byte("committed"), 3*time.Minute)
-	if err != nil || !published {
-		t.Fatalf("SetIfLeasesOwned(all owned) = %v, %v", published, err)
-	}
-	if value, getErr := server.Get("manifest"); getErr != nil || value != "committed" {
-		t.Fatalf("manifest = %q, %v, want committed", value, getErr)
-	}
-}
-
 func TestRedisStoreGetRetriesOneCommandError(t *testing.T) {
 	server := miniredis.RunT(t)
 	server.Set("value", "payload")

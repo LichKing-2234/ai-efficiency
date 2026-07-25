@@ -8,13 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/ai-efficiency/backend/ent"
-	"github.com/ai-efficiency/backend/ent/relayprovider"
 	_ "github.com/ai-efficiency/backend/ent/runtime"
 	"github.com/ai-efficiency/backend/internal/attribution"
 	"github.com/ai-efficiency/backend/internal/auth"
@@ -69,319 +67,6 @@ func redisClientOptions(cfg config.RedisConfig) *redis.Options {
 		MinIdleConns:          4,
 		ContextTimeoutEnabled: true,
 	}
-}
-
-type relayProviderResolver interface {
-	Resolve(context.Context, int) (relay.Provider, error)
-}
-
-type primaryTeamUsagePrewarmResolver struct {
-	client   *ent.Client
-	provider relayProviderResolver
-}
-
-func (r primaryTeamUsagePrewarmResolver) ResolvePrimaryProviderBinding(ctx context.Context) (teamusage.ProviderBinding, error) {
-	if r.client == nil || r.provider == nil {
-		return teamusage.ProviderBinding{}, fmt.Errorf("primary Team Usage prewarm resolver is unavailable")
-	}
-	row, err := r.client.RelayProvider.Query().
-		Where(relayprovider.IsPrimary(true), relayprovider.Enabled(true)).
-		Order(ent.Asc(relayprovider.FieldID)).
-		First(ctx)
-	if err != nil {
-		return teamusage.ProviderBinding{}, fmt.Errorf("resolve primary Relay provider row: %w", err)
-	}
-	provider, err := r.provider.Resolve(ctx, row.ID)
-	if err != nil {
-		return teamusage.ProviderBinding{}, fmt.Errorf("resolve primary Relay provider runtime: %w", err)
-	}
-	return teamusage.ProviderBinding{
-		ProviderID: row.ID, ProviderVersion: row.ConfigurationVersion, Provider: provider,
-	}, nil
-}
-
-type teamUsagePrewarmRuntime struct {
-	options      teamUsagePrewarmRuntimeOptions
-	timezones    []string
-	readerSource *teamusage.PrewarmReaderSlot
-	initDone     chan struct{}
-	stopDone     chan struct{}
-
-	mu        sync.Mutex
-	started   bool
-	stopped   bool
-	cancel    context.CancelFunc
-	reader    *teamusage.PrewarmReader
-	prewarmer *teamusage.Prewarmer
-	wg        sync.WaitGroup
-}
-
-type teamUsagePrewarmMetricsFactory func([]string) (teamusage.PrewarmMetrics, error)
-
-type teamUsagePrewarmRuntimeOptions struct {
-	Config         config.TeamUsagePrewarmConfig
-	RedisNamespace string
-	Store          readcache.BatchStore
-	PingRedis      func(context.Context) error
-	Resolver       teamusage.PrimaryProviderBindingResolver
-	MetricsFactory teamUsagePrewarmMetricsFactory
-	Reporter       teamusage.PrewarmReporter
-	Logger         *zap.Logger
-	InitTimeout    time.Duration
-}
-
-const teamUsagePrewarmInitTimeout = 5 * time.Second
-
-func prepareTeamUsagePrewarm(options teamUsagePrewarmRuntimeOptions) *teamUsagePrewarmRuntime {
-	if !options.Config.Enabled {
-		return nil
-	}
-	timezones, err := teamusage.NormalizePrewarmTimezones(options.Config.Timezones)
-	if err != nil {
-		logTeamUsagePrewarmDisabled(options.Logger, "invalid_configuration")
-		return nil
-	}
-	if len(timezones) == 0 {
-		return nil
-	}
-	if options.InitTimeout <= 0 {
-		options.InitTimeout = teamUsagePrewarmInitTimeout
-	}
-	return &teamUsagePrewarmRuntime{
-		options: options, timezones: timezones,
-		readerSource: teamusage.NewPrewarmReaderSlot(), initDone: make(chan struct{}), stopDone: make(chan struct{}),
-	}
-}
-
-func (r *teamUsagePrewarmRuntime) ReaderSource() teamusage.PrewarmReaderSource {
-	if r == nil {
-		return nil
-	}
-	return r.readerSource
-}
-
-func (r *teamUsagePrewarmRuntime) Start(parent context.Context) {
-	if r == nil || parent == nil {
-		return
-	}
-	r.mu.Lock()
-	if r.started || r.stopped {
-		r.mu.Unlock()
-		return
-	}
-	runCtx, cancel := context.WithCancel(parent)
-	r.started = true
-	r.cancel = cancel
-	r.wg.Add(1)
-	r.mu.Unlock()
-
-	go r.initialize(runCtx)
-}
-
-func (r *teamUsagePrewarmRuntime) Stop() {
-	if r == nil {
-		return
-	}
-	r.mu.Lock()
-	if r.stopped {
-		done := r.stopDone
-		r.mu.Unlock()
-		<-done
-		return
-	}
-	r.stopped = true
-	cancel := r.cancel
-	r.cancel = nil
-	r.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-	r.wg.Wait()
-	r.readerSource.Clear()
-	r.mu.Lock()
-	prewarmer := r.prewarmer
-	r.mu.Unlock()
-	if prewarmer != nil {
-		prewarmer.Stop()
-	}
-	close(r.stopDone)
-}
-
-func (r *teamUsagePrewarmRuntime) initialize(runCtx context.Context) {
-	defer r.wg.Done()
-	defer close(r.initDone)
-	initCtx, cancel := context.WithTimeout(runCtx, r.options.InitTimeout)
-	defer cancel()
-
-	if r.options.Store == nil || r.options.PingRedis == nil || r.options.PingRedis(initCtx) != nil {
-		logTeamUsagePrewarmDisabled(r.options.Logger, "redis_unavailable")
-		return
-	}
-	if r.options.Resolver == nil {
-		logTeamUsagePrewarmDisabled(r.options.Logger, "provider_unavailable")
-		return
-	}
-	binding, err := r.options.Resolver.ResolvePrimaryProviderBinding(initCtx)
-	if err != nil || binding.ProviderID <= 0 || binding.ProviderVersion <= 0 || binding.Provider == nil {
-		logTeamUsagePrewarmDisabled(r.options.Logger, "provider_unavailable")
-		return
-	}
-	if _, ok := binding.Provider.(relay.ProviderWideTeamUsageProvider); !ok {
-		logTeamUsagePrewarmDisabled(r.options.Logger, "provider_unsupported")
-		return
-	}
-	if _, ok := binding.Provider.(relay.ProviderWideTeamTrendProvider); !ok {
-		logTeamUsagePrewarmDisabled(r.options.Logger, "provider_unsupported")
-		return
-	}
-	if r.options.MetricsFactory == nil {
-		logTeamUsagePrewarmDisabled(r.options.Logger, "telemetry_unavailable")
-		return
-	}
-	prewarmMetrics, err := r.options.MetricsFactory(r.timezones)
-	if err != nil || prewarmMetrics == nil {
-		logTeamUsagePrewarmDisabled(r.options.Logger, "telemetry_unavailable")
-		return
-	}
-	cache, err := teamusage.NewPrewarmCache(r.options.Store, teamusage.PrewarmCacheOptions{
-		Namespace: r.options.RedisNamespace, Metrics: prewarmMetrics,
-	})
-	if err != nil {
-		logTeamUsagePrewarmDisabled(r.options.Logger, "cache_unavailable")
-		return
-	}
-	prewarmer, err := teamusage.NewPrewarmer(r.options.Resolver, cache, teamusage.PrewarmerOptions{
-		Timezones: r.timezones, Metrics: prewarmMetrics, Reporter: r.options.Reporter,
-	})
-	if err != nil {
-		logTeamUsagePrewarmDisabled(r.options.Logger, "lifecycle_unavailable")
-		return
-	}
-	reader, err := teamusage.NewPrewarmReader(cache, prewarmer.SourceCallLimiter(), teamusage.PrewarmReaderOptions{
-		Timezones: r.timezones, Metrics: prewarmMetrics,
-	})
-	if err != nil {
-		logTeamUsagePrewarmDisabled(r.options.Logger, "reader_unavailable")
-		return
-	}
-	if initCtx.Err() != nil || runCtx.Err() != nil {
-		return
-	}
-	r.mu.Lock()
-	if r.stopped {
-		r.mu.Unlock()
-		return
-	}
-	r.reader = reader
-	r.prewarmer = prewarmer
-	r.readerSource.Store(reader)
-	r.mu.Unlock()
-	prewarmer.Start(runCtx)
-}
-
-func logTeamUsagePrewarmDisabled(logger *zap.Logger, reason string) {
-	if logger == nil {
-		return
-	}
-	logger.Warn("Team Usage prewarm disabled", zap.String("reason", reason))
-}
-
-type teamUsagePrewarmReporter struct {
-	logger *zap.Logger
-}
-
-func newTeamUsagePrewarmReporter(logger *zap.Logger) teamusage.PrewarmReporter {
-	return teamUsagePrewarmReporter{logger: logger}
-}
-
-func (r teamUsagePrewarmReporter) ReportPrewarmBackground(event teamusage.PrewarmBackgroundEvent) {
-	if r.logger == nil || !validTeamUsagePrewarmClass(event.Class) || !validTeamUsagePrewarmOutcome(event.Outcome) {
-		return
-	}
-	r.logger.Info(
-		"Team Usage prewarm background outcome",
-		zap.String("operation_id", boundedTeamUsagePrewarmField(event.OperationID, 64)),
-		zap.Int("provider_id", nonnegativeBoundedInt(event.ProviderID, 1<<31-1)),
-		zap.Int64("provider_version", nonnegativeBoundedInt64(event.ProviderVersion, 1<<63-1)),
-		zap.String("timezone", boundedTeamUsagePrewarmField(event.Timezone, 64)),
-		zap.String("class", string(event.Class)),
-		zap.String("outcome", string(event.Outcome)),
-		zap.Int64("duration_ms", nonnegativeBoundedInt64(event.Duration.Milliseconds(), int64((6*time.Minute).Milliseconds()))),
-		zap.Int("bytes", nonnegativeBoundedInt(event.Bytes, 64<<20)),
-		zap.Int("points", nonnegativeBoundedInt(event.Points, 1_000_000)),
-		zap.Int("users", nonnegativeBoundedInt(event.Users, 5_000)),
-	)
-}
-
-func validTeamUsagePrewarmClass(class teamusage.PrewarmCycleClass) bool {
-	switch class {
-	case teamusage.PrewarmCycleMoving, teamusage.PrewarmCycleRecovery, teamusage.PrewarmCycleStartup,
-		teamusage.PrewarmCycleHistory29d, teamusage.PrewarmCycleHistory6d:
-		return true
-	default:
-		return false
-	}
-}
-
-func validTeamUsagePrewarmOutcome(outcome teamusage.PrewarmCycleOutcome) bool {
-	switch outcome {
-	case teamusage.PrewarmCycleSuccess, teamusage.PrewarmCycleError, teamusage.PrewarmCycleCanceled,
-		teamusage.PrewarmCycleRejected, teamusage.PrewarmCycleLeaseBusy:
-		return true
-	default:
-		return false
-	}
-}
-
-func boundedTeamUsagePrewarmField(value string, limit int) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "unknown"
-	}
-	if len(value) > limit {
-		value = value[:limit]
-	}
-	for _, char := range value {
-		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') &&
-			(char < '0' || char > '9') && char != '-' && char != '_' && char != '/' {
-			return "invalid"
-		}
-	}
-	return value
-}
-
-func nonnegativeBoundedInt(value, limit int) int {
-	if value < 0 {
-		return 0
-	}
-	if value > limit {
-		return limit
-	}
-	return value
-}
-
-func nonnegativeBoundedInt64(value, limit int64) int64 {
-	if value < 0 {
-		return 0
-	}
-	if value > limit {
-		return limit
-	}
-	return value
-}
-
-type prewarmStopper interface {
-	Stop()
-}
-
-func closeTeamUsagePrewarmResources(prewarm prewarmStopper, closeRedis func() error) error {
-	if prewarm != nil {
-		prewarm.Stop()
-	}
-	if closeRedis == nil {
-		return nil
-	}
-	return closeRedis()
 }
 
 func newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *http.Server {
@@ -599,9 +284,8 @@ func main() {
 	}
 
 	redisClient := redis.NewClient(redisClientOptions(cfg.Redis))
-	var prewarmRuntime *teamUsagePrewarmRuntime
 	defer func() {
-		if err := closeTeamUsagePrewarmResources(prewarmRuntime, redisClient.Close); err != nil {
+		if err := redisClient.Close(); err != nil {
 			logger.Warn("close Redis client", zap.Error(err))
 		}
 	}()
@@ -682,16 +366,20 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize team usage origin cache", zap.Error(err))
 	}
-	prewarmRuntime = prepareTeamUsagePrewarm(teamUsagePrewarmRuntimeOptions{
-		Config: cfg.TeamUsagePrewarm, RedisNamespace: cfg.Redis.Namespace, Store: redisStore,
-		PingRedis: func(ctx context.Context) error {
-			return redisClient.Ping(ctx).Err()
-		},
-		Resolver:       primaryTeamUsagePrewarmResolver{client: entClient, provider: providerRuntime},
-		MetricsFactory: cacheMetrics.teamUsagePrewarm,
-		Reporter:       newTeamUsagePrewarmReporter(logger),
-		Logger:         logger,
-	})
+	teamUsagePrewarmCache, err := teamusage.NewPrewarmCache(
+		redisStore,
+		teamusage.PrewarmCacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize team usage prewarm cache", zap.Error(err))
+	}
+	teamUsagePrewarmReader, err := teamusage.NewPrewarmReader(
+		teamUsagePrewarmCache,
+		teamusage.PrewarmReaderOptions{},
+	)
+	if err != nil {
+		logger.Fatal("initialize team usage prewarm reader", zap.Error(err))
+	}
 	repoInventoryCache, repoInventoryRevisions, err := initializeRepoInventory(
 		context.Background(),
 		entClient,
@@ -840,21 +528,21 @@ func main() {
 		checkpointHandler,
 		healthHandler,
 		handler.RouterOptions{
-			DirectoryService:             directoryService,
-			PersonalUsageCache:           personalUsageCache,
-			WorkItemsCache:               workItemsCache,
-			WorkItemsRevisionStore:       workItemsRevisionStore,
-			RepresentativeScopeCache:     representativeScopeCache,
-			TeamUsageSnapshotCache:       teamUsageSnapshotCache,
-			TeamUsageOriginCache:         teamUsageOriginCache,
-			TeamUsagePrewarmReaderSource: prewarmRuntime.ReaderSource(),
-			TeamUsageCursorSecret:        cfg.Encryption.Key,
-			WebhookHTTPClient:            httpClients.webhook,
-			RequestLogger:                logger,
-			RequestObserver:              metrics.RequestObserver(),
-			WebVitalsHandler:             webVitalsHandler,
-			Release:                      versionInfo.Version,
-			RequestTimeout:               time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
+			DirectoryService:         directoryService,
+			PersonalUsageCache:       personalUsageCache,
+			WorkItemsCache:           workItemsCache,
+			WorkItemsRevisionStore:   workItemsRevisionStore,
+			RepresentativeScopeCache: representativeScopeCache,
+			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
+			TeamUsageOriginCache:     teamUsageOriginCache,
+			TeamUsagePrewarmReader:   teamUsagePrewarmReader,
+			TeamUsageCursorSecret:    cfg.Encryption.Key,
+			WebhookHTTPClient:        httpClients.webhook,
+			RequestLogger:            logger,
+			RequestObserver:          metrics.RequestObserver(),
+			WebVitalsHandler:         webVitalsHandler,
+			Release:                  versionInfo.Version,
+			RequestTimeout:           time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
 		},
 	)
 	if err != nil {
@@ -878,20 +566,12 @@ func main() {
 			logger.Fatal("metrics server error", zap.Error(err))
 		}
 	}()
-	if prewarmRuntime != nil {
-		prewarmRuntime.Start(context.Background())
-	}
-
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	logger.Info("shutting down server...")
 	stopDirectoryScheduler()
-	if prewarmRuntime != nil {
-		prewarmRuntime.Stop()
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {

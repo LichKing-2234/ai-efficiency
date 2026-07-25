@@ -337,9 +337,8 @@ func newPrewarmEquivalenceService(
 			ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion,
 			Timezone: "UTC", AnchorDate: "2026-07-21",
 		}, now)
-		reader := mustPrewarmReader(t, prewarmCache, &readerSourceLimiter{}, PrewarmReaderOptions{
-			Timezones: []string{"UTC"}, Now: func() time.Time { return now },
-		})
+		reader := mustPrewarmReader(t, prewarmCache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
 		installTestPrewarmReader(service, reader)
 	}
 	return service, provider, scope, func() []string {

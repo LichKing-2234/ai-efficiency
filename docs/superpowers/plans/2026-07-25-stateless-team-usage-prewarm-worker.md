@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, Helm, Kubernetes, Google Chrome.
 
-**Status:** In progress. Task 1 and its review follow-up are complete and committed; Tasks 2-7 remain. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
+**Status:** In progress. Tasks 1 and 2, including the Task 1 review follow-up, are complete; Tasks 3-7 remain. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
 
 ## Global Constraints
 
@@ -354,7 +354,7 @@ type ServiceOptions struct {
 - `PrewarmCache.PublishManifest(ctx, leaseKey, token string, manifest PrewarmManifest) (bool, error)` is the only manifest publication API.
 - `readcache.BatchStore` retains `MGet` and `SetIfLeaseOwned`; it no longer exposes `SetIfLeasesOwned`. `readcache.Store.LeaseTTL` remains unchanged because non-prewarm caches use it.
 
-- [ ] **Step 1: Write failing schema-v3 and read-only Backend tests**
+- [x] **Step 1: Write failing schema-v3 and read-only Backend tests**
 
 Add tests that assert:
 
@@ -382,7 +382,7 @@ func TestServiceUsesDirectPrewarmReaderWithoutMutableSlot(t *testing.T) {
 
 Add an operation-recording `readcache.BatchStore` test double and assert the reader operation set is exactly `GET` plus `MGET`. Add compile-time assertions that no test double implements `SetIfLeasesOwned`.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -394,7 +394,9 @@ go test ./internal/readcache ./internal/teamusage ./cmd/server \
 
 Expected: FAIL because schema is v2, the reader requires a limiter/provider, and Backend wiring still owns a mutable runtime.
 
-- [ ] **Step 3: Simplify the Redis contract**
+**Task 2 RED verification (2026-07-25):** the exact focused command failed at compile time because `PrewarmReadInvalid`, the read-only `NewPrewarmReader(cache, options)` signature, and the direct `Service.prewarmReader` dependency did not exist. The readcache and server targets passed their selected tests.
+
+- [x] **Step 3: Simplify the Redis contract**
 
 Set `prewarmCacheSchemaVersion = 3`. Keep current TTLs, zstd bounds, manifest validation, immutable write order, and window-selected MGET behavior. Remove `PrewarmLeaseClaim`, multi-lease publication, recovered publication, lease-TTL reads, segment/source-slot key kinds, and every startup/recovery helper.
 
@@ -410,7 +412,7 @@ return 1
 
 `SetIfLeaseOwned` validates one lease key/token and runs that script atomically. Do not remove `Store.LeaseTTL` or its tests.
 
-- [ ] **Step 4: Make the reader permanently read-only**
+- [x] **Step 4: Make the reader permanently read-only**
 
 Remove `source`, `newToken`, `flights`, `SourceCallLimiter`, `recoverToday`, `PrewarmReadPartialToday`, and the timezone allowlist from `PrewarmReader`. The read path is:
 
@@ -446,7 +448,7 @@ return origin, PrewarmReadFullHit, nil
 
 Corrupt, expired, missing, unsupported-window, roster-incomplete, provider-version-mismatched, and Redis-error cases immediately return to the existing exact loader. A complete sparse provider trend still contributes zero for an omitted authorized user only when the current-stats roster proves that user exists.
 
-- [ ] **Step 5: Remove Backend lifecycle ownership and wire the direct reader**
+- [x] **Step 5: Remove Backend lifecycle ownership and wire the direct reader**
 
 Delete `teamUsagePrewarmRuntime`, `prepareTeamUsagePrewarm`, the background reporter, startup/shutdown calls, and prewarm config branches from `cmd/server/main.go`. Construct `PrewarmCache` and `PrewarmReader` synchronously from the already-required Redis store and pass the reader through `handler.RouterOptions` to `teamusage.ServiceOptions`.
 
@@ -467,7 +469,7 @@ indirection.
 
 Backend construction does not check an enable flag and does not know the worker timezone list. A missing schema-v3 manifest is a normal miss. Delete the old lifecycle and slot files in the same step.
 
-- [ ] **Step 6: Verify stateless Backend behavior**
+- [x] **Step 6: Verify stateless Backend behavior**
 
 Run:
 
@@ -486,7 +488,9 @@ rg -n 'teamUsagePrewarmRuntime|prepareTeamUsagePrewarm|PrewarmReaderSlot|recover
 
 Expected: tests PASS; race detector is clean; `rg` finds `LeaseTTL` only in shared readcache/non-prewarm cache code and finds none of the other removed symbols.
 
-- [ ] **Step 7: Update this plan and commit**
+**Task 2 verification (2026-07-25):** the complete readcache, Team Usage, handler, and server package suite passed. The exact readcache, Team Usage, and server race suite passed without race reports; the macOS linker emitted only its known `LC_DYSYMTAB` warning. The removal scan found `LeaseTTL` only in the shared store and non-prewarm caches/tests, with no old runtime, reader slot, recovery, or multi-lease publication symbols.
+
+- [x] **Step 7: Update this plan and commit**
 
 ```bash
 git add -A backend/cmd/server backend/internal/readcache backend/internal/teamusage backend/internal/handler \

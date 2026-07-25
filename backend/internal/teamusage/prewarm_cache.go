@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	prewarmCacheSchemaVersion = 2
+	prewarmCacheSchemaVersion = 3
 
 	movingFresh    = 75 * time.Second
 	movingHard     = 4 * time.Minute
@@ -39,7 +39,6 @@ const (
 	prewarmDefaultReleaseCommandBudget = 250 * time.Millisecond
 	prewarmDefaultCommandTimeout       = 2 * time.Second
 	prewarmImmutableClaimTTL           = 90 * time.Second
-	prewarmPublicationLeaseLimit       = 5
 )
 
 type PrewarmCacheIdentity struct {
@@ -47,11 +46,6 @@ type PrewarmCacheIdentity struct {
 	ProviderVersion int64
 	Timezone        string
 	AnchorDate      string
-}
-
-type PrewarmLeaseClaim struct {
-	Key   string
-	Token string
 }
 
 type PrewarmValueReference struct {
@@ -430,70 +424,21 @@ func (c *PrewarmCache) PublishManifest(
 	ctx context.Context,
 	leaseKey, token string,
 	manifest PrewarmManifest,
-) (bool, error) {
-	return c.PublishManifestWithLeases(ctx, []PrewarmLeaseClaim{{Key: leaseKey, Token: token}}, manifest)
-}
-
-func (c *PrewarmCache) PublishManifestWithLeases(
-	ctx context.Context,
-	claims []PrewarmLeaseClaim,
-	manifest PrewarmManifest,
 ) (published bool, err error) {
-	published, _, err = c.publishManifestWithLeases(ctx, claims, manifest, nil)
-	return published, err
-}
-
-func (c *PrewarmCache) publishRecoveredManifestWithLeases(
-	ctx context.Context,
-	claims []PrewarmLeaseClaim,
-	manifest PrewarmManifest,
-	class PrewarmWindowClass,
-) (published bool, skipped bool, err error) {
-	selection, err := prewarmSelectionForWindow(class)
-	if err != nil {
-		return false, false, err
-	}
-	return c.publishManifestWithLeases(ctx, claims, manifest, &selection)
-}
-
-func (c *PrewarmCache) publishManifestWithLeases(
-	ctx context.Context,
-	claims []PrewarmLeaseClaim,
-	manifest PrewarmManifest,
-	requestSelection *prewarmReadSelection,
-) (published bool, skipped bool, err error) {
 	startedAt := time.Now()
 	writtenBytes := 0
 	defer func() {
 		outcome := "success"
 		if err != nil {
 			outcome = "error"
-		} else if skipped {
-			outcome = "skipped"
 		} else if !published {
 			outcome = "not_owned"
 		}
 		c.options.Metrics.RecordRedis("manifest_write", outcome, time.Since(startedAt), writtenBytes)
 	}()
-	if len(claims) == 0 || len(claims) > prewarmPublicationLeaseLimit {
+	if err := validatePrewarmLeaseInput(leaseKey, token, manifestTTL); err != nil {
 		c.recordRedisError("manifest_write", PrewarmRedisErrorValidation)
-		return false, false, fmt.Errorf("team usage prewarm publication requires between one and %d lease claims", prewarmPublicationLeaseLimit)
-	}
-	leaseKeys := make([]string, len(claims))
-	tokens := make([]string, len(claims))
-	seen := make(map[string]struct{}, len(claims))
-	for index, claim := range claims {
-		if err := validatePrewarmLeaseInput(claim.Key, claim.Token, manifestTTL); err != nil {
-			c.recordRedisError("manifest_write", PrewarmRedisErrorValidation)
-			return false, false, err
-		}
-		if _, exists := seen[claim.Key]; exists {
-			c.recordRedisError("manifest_write", PrewarmRedisErrorValidation)
-			return false, false, fmt.Errorf("team usage prewarm publication contains duplicate lease claim")
-		}
-		seen[claim.Key] = struct{}{}
-		leaseKeys[index] = claim.Key
-		tokens[index] = claim.Token
+		return false, err
 	}
 	identity := PrewarmCacheIdentity{
 		ProviderID: manifest.ProviderID, ProviderVersion: manifest.ProviderVersion,
@@ -502,50 +447,44 @@ func (c *PrewarmCache) publishManifestWithLeases(
 	now := c.now()
 	if err := validatePrewarmManifest(c.options.Namespace, identity, manifest, now, true); err != nil {
 		c.recordRedisError("manifest_write", PrewarmRedisErrorValidation)
-		return false, false, fmt.Errorf("validate team usage prewarm manifest: %w", err)
+		return false, fmt.Errorf("validate team usage prewarm manifest: %w", err)
 	}
 	if err := validatePrewarmPublicationWindow(now, c.options.WriteTimeout, manifest); err != nil {
 		c.recordRedisError("manifest_write", PrewarmRedisErrorValidation)
-		return false, false, err
+		return false, err
 	}
 	encoded, err := encodePrewarmJSON(manifest, prewarmManifestMaxBytes)
 	if err != nil {
 		c.recordRedisError("manifest_write", PrewarmRedisErrorValidation)
-		return false, false, fmt.Errorf("encode team usage prewarm manifest: %w", err)
+		return false, fmt.Errorf("encode team usage prewarm manifest: %w", err)
 	}
 	writtenBytes = len(encoded)
 	_, _, statuses, complete, err := c.readReferencedValues(ctx, manifest, now, prewarmAllReferencesSelection(), false)
 	if err != nil {
-		if requestSelection != nil && prewarmOnlyUnselectedHistoryFailed(err, *requestSelection) {
-			return false, true, nil
-		}
-		return false, false, fmt.Errorf("validate team usage prewarm values before publication: %w", err)
+		return false, fmt.Errorf("validate team usage prewarm values before publication: %w", err)
 	} else if !complete {
 		missing := prewarmUnavailableReferenceIndexes(statuses, prewarmAllReferencesSelection())
 		missingErr := &prewarmReferencedValueError{indexes: missing, err: readcache.ErrMiss}
-		if requestSelection != nil && prewarmOnlyUnselectedHistoryFailed(missingErr, *requestSelection) {
-			return false, true, nil
-		}
 		c.recordRedisError("manifest_write", PrewarmRedisErrorDecodeOrReference)
-		return false, false, fmt.Errorf("validate team usage prewarm values before publication: %w", missingErr)
+		return false, fmt.Errorf("validate team usage prewarm values before publication: %w", missingErr)
 	}
 	key, err := prewarmManifestKeyForIdentity(c.options.Namespace, prewarmCacheSchemaVersion, identity)
 	if err != nil {
 		c.recordRedisError("manifest_write", PrewarmRedisErrorValidation)
-		return false, false, err
+		return false, err
 	}
 	if err := validatePrewarmPublicationWindow(c.now(), c.options.WriteTimeout, manifest); err != nil {
 		c.recordRedisError("manifest_write", PrewarmRedisErrorValidation)
-		return false, false, err
+		return false, err
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, c.options.WriteTimeout)
-	published, err = c.store.SetIfLeasesOwned(commandCtx, leaseKeys, tokens, key, encoded, manifestTTL)
+	published, err = c.store.SetIfLeaseOwned(commandCtx, leaseKey, token, key, encoded, manifestTTL)
 	c.recordRedisCommandError("manifest_write", ctx, commandCtx, err)
 	cancel()
 	if err != nil {
-		return false, false, fmt.Errorf("publish team usage prewarm manifest: %w", err)
+		return false, fmt.Errorf("publish team usage prewarm manifest: %w", err)
 	}
-	return published, false, nil
+	return published, nil
 }
 
 func prewarmUnavailableReferenceIndexes(statuses [4]PrewarmValueStatus, selection prewarmReadSelection) []int {
@@ -558,40 +497,14 @@ func prewarmUnavailableReferenceIndexes(statuses [4]PrewarmValueStatus, selectio
 	return indexes
 }
 
-func prewarmOnlyUnselectedHistoryFailed(err error, selection prewarmReadSelection) bool {
-	var referencedValueErr *prewarmReferencedValueError
-	if !errors.As(err, &referencedValueErr) || len(referencedValueErr.indexes) == 0 {
-		return false
-	}
-	for _, index := range referencedValueErr.indexes {
-		switch index {
-		case 1:
-			if selection.history29d {
-				return false
-			}
-		case 2:
-			if selection.history6d {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func (c *PrewarmCache) LeaseKey(kind string, dimensions ...string) string {
+func (c *PrewarmCache) RefreshLeaseKey() string {
 	encoded, _ := json.Marshal(struct {
 		SchemaVersion int      `json:"schema_version"`
 		Kind          string   `json:"kind"`
 		Dimensions    []string `json:"dimensions"`
-	}{SchemaVersion: prewarmCacheSchemaVersion, Kind: kind, Dimensions: dimensions})
+	}{SchemaVersion: prewarmCacheSchemaVersion, Kind: "refresh"})
 	digest := sha256.Sum256(encoded)
 	return fmt.Sprintf("ae:%s:team-usage-prewarm:v%d:lease:%x", c.options.Namespace, prewarmCacheSchemaVersion, digest)
-}
-
-func (c *PrewarmCache) RefreshLeaseKey() string {
-	return c.LeaseKey("refresh")
 }
 
 func (c *PrewarmCache) TryAcquireLease(
@@ -618,25 +531,6 @@ func (c *PrewarmCache) TryAcquireLease(
 	c.recordRedisCommandError("lease_acquire", ctx, commandCtx, err)
 	cancel()
 	return acquired, err
-}
-
-func (c *PrewarmCache) LeaseTTL(ctx context.Context, key string) (time.Duration, error) {
-	startedAt := time.Now()
-	if len(key) == 0 || len(key) > prewarmKeyReferenceMaxBytes {
-		c.options.Metrics.RecordRedis("lease_ttl", "error", time.Since(startedAt), 0)
-		c.recordRedisError("lease_ttl", PrewarmRedisErrorValidation)
-		return 0, fmt.Errorf("invalid team usage prewarm lease key")
-	}
-	commandCtx, cancel := context.WithTimeout(ctx, c.options.LeaseTimeout)
-	ttl, err := c.store.LeaseTTL(commandCtx, key)
-	c.recordRedisCommandError("lease_ttl", ctx, commandCtx, err)
-	cancel()
-	outcome := "hit"
-	if err != nil {
-		outcome = "error"
-	}
-	c.options.Metrics.RecordRedis("lease_ttl", outcome, time.Since(startedAt), 0)
-	return ttl, err
 }
 
 func (c *PrewarmCache) ReleaseLease(ctx context.Context, key, token string) (released bool, err error) {
@@ -1102,6 +996,14 @@ func validatePrewarmCacheIdentity(identity PrewarmCacheIdentity) error {
 
 func prewarmTimezoneDigest(timezone string) string {
 	return prewarmStringDigest(timezone)
+}
+
+func prewarmStringDigest(values ...string) string {
+	hash := sha256.New()
+	for _, value := range values {
+		writePrewarmLengthDelimited(hash, value)
+	}
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func prewarmManifestKeyForIdentity(namespace string, schemaVersion int, identity PrewarmCacheIdentity) (string, error) {

@@ -279,9 +279,6 @@ func TestPrewarmSourceMapsTypedRelayRejectionsWithoutStringParsing(t *testing.T)
 			if !errors.As(err, &failure) || failure.kind != prewarmSourceFailureValidation {
 				t.Fatalf("source failure = %#v/%v, want typed validation", failure, err)
 			}
-			if got := prewarmTelemetryOutcome(err); got != "rejected" {
-				t.Fatalf("prewarmTelemetryOutcome() = %q, want rejected", got)
-			}
 			want := prewarmValidationMetric{check: test.check, outcome: PrewarmValidationRejected}
 			if len(metrics.validations) == 0 || metrics.validations[len(metrics.validations)-1] != want {
 				t.Fatalf("validation metrics = %#v, want final %#v", metrics.validations, want)

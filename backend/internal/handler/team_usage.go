@@ -46,7 +46,7 @@ func (f teamUsageProviderResolverFunc) Resolve(ctx context.Context, providerID i
 	return f(ctx, providerID)
 }
 
-func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *ProviderHandler, scopeCache *representativescope.Cache, snapshotCache *teamusage.SnapshotCache, originCache *teamusage.OriginCache, prewarmReaderSource teamusage.PrewarmReaderSource, memberCursorSecret string) (*teamusage.Service, error) {
+func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *ProviderHandler, scopeCache *representativescope.Cache, snapshotCache *teamusage.SnapshotCache, originCache *teamusage.OriginCache, prewarmReader *teamusage.PrewarmReader, memberCursorSecret string) (*teamusage.Service, error) {
 	resolver := teamUsageProviderResolverFunc(func(context.Context, int) (relay.Provider, error) {
 		return nil, teamusage.ErrProviderUnsupported
 	})
@@ -58,7 +58,7 @@ func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *
 		representativescope.NewWithCache(entClient, scopeCache),
 		resolver,
 		teamusage.NewPostgresAdvisoryLocker(sqlDB),
-		teamusage.ServiceOptions{SnapshotCache: snapshotCache, OriginCache: originCache, PrewarmReaderSource: prewarmReaderSource, CursorSecret: memberCursorSecret},
+		teamusage.ServiceOptions{SnapshotCache: snapshotCache, OriginCache: originCache, PrewarmReader: prewarmReader, CursorSecret: memberCursorSecret},
 	)
 }
 
