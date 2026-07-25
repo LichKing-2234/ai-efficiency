@@ -24,14 +24,23 @@ import (
 	"github.com/ai-efficiency/backend/internal/efficiency"
 	"github.com/ai-efficiency/backend/internal/handler"
 	"github.com/ai-efficiency/backend/internal/health"
+	"github.com/ai-efficiency/backend/internal/httpclient"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
+	"github.com/ai-efficiency/backend/internal/readcache"
+	"github.com/ai-efficiency/backend/internal/redisruntime"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/relayruntime"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/teamusage"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/versioncheck"
 	"github.com/ai-efficiency/backend/internal/webhook"
+	"github.com/ai-efficiency/backend/internal/workitems"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	redis "github.com/redis/go-redis/v9"
@@ -43,6 +52,78 @@ import (
 // authTokenAdapter adapts auth.Service to the oauth.TokenGenerator interface.
 type authTokenAdapter struct {
 	authService *auth.Service
+}
+
+func newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: time.Duration(cfg.ReadHeaderTimeoutSeconds) * time.Second,
+		IdleTimeout:       time.Duration(cfg.IdleTimeoutSeconds) * time.Second,
+	}
+}
+
+type runtimeHTTPClients struct {
+	runtimeRelay  *http.Client
+	providerRelay *http.Client
+	directory     *http.Client
+	settings      *http.Client
+	scm           *http.Client
+	version       *http.Client
+	webhook       *http.Client
+}
+
+func httpClientOptions(cfg config.HTTPClientConfig) httpclient.Options {
+	return httpclient.Options{
+		ConnectTimeout:        time.Duration(cfg.ConnectTimeoutSeconds) * time.Second,
+		TLSHandshakeTimeout:   time.Duration(cfg.TLSHandshakeTimeoutSeconds) * time.Second,
+		ResponseHeaderTimeout: time.Duration(cfg.ResponseHeaderTimeoutSeconds) * time.Second,
+		OverallTimeout:        time.Duration(cfg.OverallTimeoutSeconds) * time.Second,
+		IdleConnTimeout:       time.Duration(cfg.IdleConnTimeoutSeconds) * time.Second,
+		MaxIdleConns:          cfg.MaxIdleConns,
+		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       cfg.MaxConnsPerHost,
+	}
+}
+
+func newRuntimeHTTPClients(cfg config.HTTPClientConfig, relayWrappers ...httpclient.TransportWrapper) runtimeHTTPClients {
+	downstreamOptions := httpClientOptions(cfg)
+	relayClient := httpclient.New(downstreamOptions, relayWrappers...)
+	generalClient := httpclient.New(downstreamOptions)
+
+	versionOptions := downstreamOptions
+	versionOptions.OverallTimeout = config.VersionCheckTimeoutSeconds * time.Second
+	version := httpclient.New(versionOptions)
+
+	webhookOptions := downstreamOptions
+	webhookOptions.OverallTimeout = config.QuotaNotificationWebhookTimeoutSeconds * time.Second
+	webhook := httpclient.New(webhookOptions)
+
+	return runtimeHTTPClients{
+		runtimeRelay:  relayClient,
+		providerRelay: relayClient,
+		directory:     generalClient,
+		settings:      relayClient,
+		scm:           generalClient,
+		version:       version,
+		webhook:       webhook,
+	}
+}
+
+func initializeRepoInventory(ctx context.Context, entClient *ent.Client, redisClient redis.UniversalClient, namespace string, metrics readcache.Metrics) (*repo.InventoryCache, *repo.InventoryRevisionStore, error) {
+	revisions := repo.NewInventoryRevisionStore(entClient)
+	if err := revisions.Ensure(ctx); err != nil {
+		return nil, nil, fmt.Errorf("initialize repository inventory revision: %w", err)
+	}
+	cache, err := repo.NewInventoryCache(
+		readcache.NewRedisStore(redisClient),
+		revisions,
+		repo.InventoryCacheOptions{Namespace: namespace, Metrics: metrics},
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize repository inventory cache: %w", err)
+	}
+	return cache, revisions, nil
 }
 
 func (a *authTokenAdapter) GenerateAccessToken(userID int, username, role string) (string, string, int, error) {
@@ -101,6 +182,16 @@ func main() {
 	if config.RequireExplicitDBDSN(cfg.DB.DSN) {
 		logger.Fatal("DB.DSN is required and must point to PostgreSQL")
 	}
+	metrics := telemetry.NewMetrics(versionInfo.Version)
+	cacheMetrics := newProductionCacheMetrics(metrics)
+	httpClients := newRuntimeHTTPClients(
+		cfg.HTTPClient,
+		telemetry.WrapDependency(logger, versionInfo.Version, "relay", "http_request", metrics.DependencyObserver()),
+	)
+	defer httpClients.runtimeRelay.CloseIdleConnections()
+	defer httpClients.directory.CloseIdleConnections()
+	defer httpClients.version.CloseIdleConnections()
+	defer httpClients.webhook.CloseIdleConnections()
 
 	// Set gin mode
 	if cfg.Server.Mode == "release" {
@@ -117,6 +208,9 @@ func main() {
 	db.SetMaxOpenConns(cfg.DB.MaxOpenConns)
 	db.SetMaxIdleConns(cfg.DB.MaxIdleConns)
 	db.SetConnMaxLifetime(time.Duration(cfg.DB.ConnMaxLifetime) * time.Second)
+	if err := metrics.RegisterDBPool(db); err != nil {
+		logger.Fatal("register database pool metrics", zap.Error(err))
+	}
 
 	if err := db.Ping(); err != nil {
 		logger.Fatal("ping ai_efficiency db", zap.Error(err))
@@ -134,6 +228,10 @@ func main() {
 		logger.Fatal("drop legacy relay provider admin_url", zap.Error(err))
 	}
 	logger.Info("database schema migrated")
+	workItemsRevisionStore := workitems.NewRevisionStore(entClient)
+	if err := workItemsRevisionStore.Ensure(context.Background()); err != nil {
+		logger.Fatal("initialize work item counts revision", zap.Error(err))
+	}
 	if err := ensurePrimaryRelayProviderFromConfig(context.Background(), entClient, cfg.Relay, cfg.Encryption.Key); err != nil {
 		logger.Fatal("bootstrap primary relay provider from config", zap.Error(err))
 	}
@@ -157,7 +255,7 @@ func main() {
 	var relayProvider relay.Provider
 	if cfg.Relay.URL != "" {
 		relayProvider = relay.NewSub2apiProvider(
-			http.DefaultClient,
+			httpClients.runtimeRelay,
 			cfg.Relay.URL,
 			cfg.Relay.AdminAPIKey,
 			cfg.Relay.Model,
@@ -170,12 +268,110 @@ func main() {
 		)
 	}
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.Redis.Addr,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
+	redisClient := redisruntime.NewClient(cfg.Redis)
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			logger.Warn("close Redis client", zap.Error(err))
+		}
+	}()
+	if err := metrics.RegisterRedisPool(redisClient); err != nil {
+		logger.Fatal("register Redis pool metrics", zap.Error(err))
+	}
+	redisStore := readcache.NewRedisStore(redisClient)
+	providerInvalidationBus, err := relayruntime.NewRedisInvalidationBus(redisClient, cfg.Redis.Namespace)
+	if err != nil {
+		logger.Fatal("initialize relay provider invalidation bus", zap.Error(err))
+	}
+	providerRuntime, err := relayruntime.NewManager(entClient, cfg.Encryption.Key, logger, relayruntime.Options{
+		Namespace:       cfg.Redis.Namespace,
+		Store:           redisStore,
+		Bus:             providerInvalidationBus,
+		MetadataMetrics: cacheMetrics.providerMetadata,
+		Factory: func(row *ent.RelayProvider, adminAPIKey string) (relay.Provider, error) {
+			return relay.NewSub2apiProvider(
+				httpClients.providerRelay,
+				row.BaseURL,
+				adminAPIKey,
+				row.DefaultModel,
+				logger,
+			), nil
+		},
 	})
-	defer redisClient.Close()
+	if err != nil {
+		logger.Fatal("initialize relay provider runtime", zap.Error(err))
+	}
+	providerRuntimeCtx, stopProviderRuntime := context.WithCancel(context.Background())
+	defer stopProviderRuntime()
+	providerRuntime.Start(providerRuntimeCtx)
+	workItemsCache, err := workitems.NewCountsCache(
+		redisStore,
+		workItemsRevisionStore,
+		workitems.CountsCacheOptions{
+			Namespace: cfg.Redis.Namespace,
+			Metrics:   cacheMetrics.workItemsCounts,
+		},
+	)
+	if err != nil {
+		logger.Fatal("initialize work item counts cache", zap.Error(err))
+	}
+	personalUsageCache, err := personalusage.NewCache(
+		redisStore,
+		personalusage.CacheOptions{Namespace: cfg.Redis.Namespace, Metrics: cacheMetrics.personalUsage},
+	)
+	if err != nil {
+		logger.Fatal("initialize personal usage cache", zap.Error(err))
+	}
+	representativeScopeCache, err := representativescope.NewCache(
+		redisStore,
+		representativescope.CacheOptions{Namespace: cfg.Redis.Namespace, Metrics: cacheMetrics.representativeScope},
+	)
+	if err != nil {
+		logger.Fatal("initialize representative scope cache", zap.Error(err))
+	}
+	teamUsageSnapshotCache, err := teamusage.NewSnapshotCache(
+		redisStore,
+		teamusage.SnapshotCacheOptions{
+			Namespace:           cfg.Redis.Namespace,
+			SummaryMetrics:      cacheMetrics.teamUsageSummary,
+			TrendMetrics:        cacheMetrics.teamUsageTrend,
+			MembersMetrics:      cacheMetrics.teamUsageMembers,
+			OrganizationMetrics: cacheMetrics.teamUsageOrg,
+		},
+	)
+	if err != nil {
+		logger.Fatal("initialize team usage snapshot cache", zap.Error(err))
+	}
+	teamUsageOriginCache, err := teamusage.NewOriginCache(
+		redisStore,
+		teamusage.OriginCacheOptions{
+			Namespace: cfg.Redis.Namespace,
+			Metrics:   cacheMetrics.teamUsageOrigin,
+		},
+	)
+	if err != nil {
+		logger.Fatal("initialize team usage origin cache", zap.Error(err))
+	}
+	teamUsagePrewarmCache, err := teamusage.NewPrewarmCache(
+		redisStore,
+		teamusage.PrewarmCacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize team usage prewarm cache", zap.Error(err))
+	}
+	teamUsagePrewarmReader, err := cacheMetrics.newTeamUsagePrewarmReader(teamUsagePrewarmCache)
+	if err != nil {
+		logger.Fatal("initialize team usage prewarm reader", zap.Error(err))
+	}
+	repoInventoryCache, repoInventoryRevisions, err := initializeRepoInventory(
+		context.Background(),
+		entClient,
+		redisClient,
+		cfg.Redis.Namespace,
+		cacheMetrics.repositoryInventory,
+	)
+	if err != nil {
+		logger.Fatal("initialize repository inventory", zap.Error(err))
+	}
 
 	// Init LDAP config (shared between auth service and admin settings handler)
 	var ldapConfig atomic.Pointer[config.LDAPConfig]
@@ -206,9 +402,12 @@ func main() {
 
 	// Init repo service
 	repoService := repo.NewService(entClient, cfg.Encryption.Key, logger, repo.ServiceOptions{
-		WebhookPublicURL: cfg.Server.PublicURL,
-		FrontendURL:      cfg.Server.FrontendURL,
-		ServerMode:       cfg.Server.Mode,
+		WebhookPublicURL:       cfg.Server.PublicURL,
+		FrontendURL:            cfg.Server.FrontendURL,
+		ServerMode:             cfg.Server.Mode,
+		HTTPClient:             httpClients.scm,
+		InventoryCache:         repoInventoryCache,
+		InventoryRevisionStore: repoInventoryRevisions,
 	})
 
 	// Init PR labeler (with optional relay usage stats lookup)
@@ -230,19 +429,23 @@ func main() {
 	}); ok {
 		relayRuntimeUpdater = u
 	}
-	settingsHandler := handler.NewSettingsHandler(settingsConfigPath, cfg.Relay, logger, relayRuntimeUpdater)
+	settingsHandler := handler.NewSettingsHandlerWithHTTPClient(settingsConfigPath, cfg.Relay, logger, httpClients.settings, relayRuntimeUpdater)
 
 	// Init OAuth handler
 	oauthServer := oauth.NewServer()
 	oauthHandler := oauth.NewHandler(oauthServer, cfg.Server.FrontendURL, &authTokenAdapter{authService: authService})
 
 	// Init provider handler
-	providerHandler := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger)
+	providerHandler, err := handler.NewProviderHandler(entClient, cfg.Encryption.Key, logger, providerRuntime)
+	if err != nil {
+		logger.Fatal("initialize relay provider handler", zap.Error(err))
+	}
 	directoryService := directorysync.NewService(entClient, directorysync.ServiceOptions{
-		Executor:       directorysync.NewExecutor(directorysync.ExecutorOptions{}),
-		Credentials:    directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
-		RelayDisablers: directorysync.NewProviderRelayDisablerResolver(providerHandler),
-		TokenRevoker:   authService,
+		Executor:                  directorysync.NewExecutor(directorysync.ExecutorOptions{HTTPClient: httpClients.directory}),
+		Credentials:               directorysync.NewEntCredentialResolver(entClient, cfg.Encryption.Key),
+		RelayDisablers:            directorysync.NewProviderRelayDisablerResolver(providerHandler),
+		TokenRevoker:              authService,
+		WorkItemCountsInvalidator: workItemsRevisionStore,
 	})
 	directorySchedulerCtx, stopDirectoryScheduler := context.WithCancel(context.Background())
 	defer stopDirectoryScheduler()
@@ -251,7 +454,10 @@ func main() {
 	// Init admin settings handler
 	adminSettingsHandler := handler.NewAdminSettingsHandler(settingsConfigPath, &ldapConfig)
 
-	checkpointService := checkpoint.NewService(entClient)
+	checkpointService := checkpoint.NewService(entClient, checkpoint.ServiceOptions{
+		InventoryRevisionStore: repoInventoryRevisions,
+		RepoService:            repoService,
+	})
 	checkpointHandler := handler.NewCheckpointHandler(checkpointService)
 	attributionService := attribution.NewService(entClient, relayProvider)
 	handler.SetPRAttributionService(attributionService)
@@ -277,16 +483,17 @@ func main() {
 		}),
 		relayPinger,
 		versionInfo,
+		health.WithReadyTimeout(time.Duration(cfg.Server.ReadinessTimeoutSeconds)*time.Second),
 	)
-	versionHTTPClient := &http.Client{Timeout: 10 * time.Second}
 	var releaseSource versioncheck.ReleaseSource
 	if cfg.VersionCheck.Enabled && strings.TrimSpace(cfg.VersionCheck.ReleaseAPIURL) != "" {
-		releaseSource = versioncheck.NewGitHubReleaseSource(versionHTTPClient, cfg.VersionCheck.ReleaseAPIURL)
+		releaseSource = versioncheck.NewGitHubReleaseSource(httpClients.version, cfg.VersionCheck.ReleaseAPIURL)
 	}
 	versionCheckService := versioncheck.NewService(versionInfo, releaseSource)
 	healthHandler := handler.NewHealthHandler(healthService, versionCheckService)
+	webVitalsHandler := handler.NewWebVitalsHandler(metrics, handler.WebVitalsOptions{})
 
-	r := handler.SetupRouter(
+	r, err := handler.SetupRouter(
 		entClient,
 		sqlDB,
 		authService,
@@ -302,15 +509,32 @@ func main() {
 		adminSettingsHandler,
 		checkpointHandler,
 		healthHandler,
-		directoryService,
+		handler.RouterOptions{
+			DirectoryService:         directoryService,
+			PersonalUsageCache:       personalUsageCache,
+			WorkItemsCache:           workItemsCache,
+			WorkItemsRevisionStore:   workItemsRevisionStore,
+			RepresentativeScopeCache: representativeScopeCache,
+			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
+			TeamUsageOriginCache:     teamUsageOriginCache,
+			TeamUsagePrewarmReader:   teamUsagePrewarmReader,
+			TeamUsageCursorSecret:    cfg.Encryption.Key,
+			WebhookHTTPClient:        httpClients.webhook,
+			RequestLogger:            logger,
+			RequestObserver:          metrics.RequestObserver(),
+			WebVitalsHandler:         webVitalsHandler,
+			Release:                  versionInfo.Version,
+			RequestTimeout:           time.Duration(cfg.Server.RequestTimeoutSeconds) * time.Second,
+		},
 	)
+	if err != nil {
+		logger.Fatal("initialize HTTP router", zap.Error(err))
+	}
 
 	// Start server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: r,
-	}
+	srv := newHTTPServer(addr, r, cfg.Server)
+	metricsSrv := newMetricsServer(cfg.Metrics.ListenAddress, metrics.Handler(), cfg.Server)
 
 	go func() {
 		logger.Info("starting server", zap.String("addr", addr))
@@ -318,18 +542,25 @@ func main() {
 			logger.Fatal("server error", zap.Error(err))
 		}
 	}()
-
+	go func() {
+		logger.Info("starting metrics server", zap.String("addr", cfg.Metrics.ListenAddress))
+		if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("metrics server error", zap.Error(err))
+		}
+	}()
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	logger.Info("shutting down server...")
 	stopDirectoryScheduler()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Fatal("server shutdown", zap.Error(err))
+	}
+	if err := metricsSrv.Shutdown(ctx); err != nil {
+		logger.Fatal("metrics server shutdown", zap.Error(err))
 	}
 	logger.Info("server stopped")
 }

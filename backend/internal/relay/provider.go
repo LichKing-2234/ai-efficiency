@@ -75,6 +75,12 @@ type PlatformModelLister interface {
 	ListModelsForPlatform(ctx context.Context, platform string) ([]ModelOption, error)
 }
 
+// PlatformGroupLister exposes provider-wide group display metadata. Callers
+// must still resolve current user membership and entitlement separately.
+type PlatformGroupLister interface {
+	ListPlatformGroups(ctx context.Context) ([]Group, error)
+}
+
 // UserDisabler is an optional extension for relay implementations that can
 // disable upstream users without exposing provider-specific request details to
 // admin/offboarding handlers.
@@ -86,12 +92,31 @@ type SubjectUsageDashboardProvider interface {
 	GetUsageDashboardForUser(ctx context.Context, relayUserID int64, params UserUsageDashboardParams) (*UserUsageDashboardResponse, error)
 }
 
+// UserUsageOriginReader reads explicitly selected current-user usage branches
+// under one request-scoped Relay session and deadline.
+type UserUsageOriginReader interface {
+	ReadUserUsageOrigin(ctx context.Context, request UserUsageOriginRequest) (*UserUsageOriginResult, error)
+}
+
 type TeamUsageSummaryProvider interface {
 	GetBatchUserUsageStats(ctx context.Context, userIDs []int64, params TeamUsageSummaryParams) (map[int64]TeamUserUsageStats, error)
 }
 
 type TeamMemberTrendProvider interface {
 	GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error)
+}
+
+// ProviderWideTeamUsageProvider exposes bounded provider-wide roster and
+// current-usage sources without changing the generic user-directory contract.
+type ProviderWideTeamUsageProvider interface {
+	GetProviderUserIDs(ctx context.Context) (ProviderDirectoryResult, error)
+	GetProviderCurrentUsageStats(ctx context.Context, userIDs []int64) (ProviderCurrentStatsResult, error)
+}
+
+// ProviderWideTeamTrendProvider exposes validated raw usage rows before any
+// request-specific authorization filter is applied.
+type ProviderWideTeamTrendProvider interface {
+	GetProviderUsageTrend(ctx context.Context, params TeamMemberTrendParams, limit int) (ProviderWideTrendResult, error)
 }
 
 type UserDirectoryProvider interface {
@@ -109,4 +134,14 @@ type UserSubscriptionQuotaResetter interface {
 type GroupRateMultiplierManager interface {
 	ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]UserGroupRateEntry, error)
 	ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error
+}
+
+type GroupRateMultiplierReadResult struct {
+	GroupID int64
+	Entries []UserGroupRateEntry
+	Err     error
+}
+
+type GroupRateMultiplierBatchReader interface {
+	GroupRateMultipliersForGroups(ctx context.Context, groupIDs []int64) []GroupRateMultiplierReadResult
 }

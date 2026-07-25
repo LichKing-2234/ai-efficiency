@@ -1,19 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { installAuthNavigationGuards } from '@/router/authGuard'
 import { reloadOnceForChunkError } from '@/utils/chunkReload'
-
-function resolveSafeRedirect(raw: unknown, fallback = '/') {
-  if (typeof raw !== 'string') {
-    return fallback
-  }
-  if (!raw.startsWith('/') || raw.startsWith('//')) {
-    return fallback
-  }
-  if (raw === '/login' || raw.startsWith('/login?') || raw.startsWith('/login#')) {
-    return fallback
-  }
-  return raw
-}
 
 const router = createRouter({
   history: createWebHistory(),
@@ -34,7 +21,7 @@ const router = createRouter({
       path: '/oauth/device',
       name: 'OAuthDevice',
       component: () => import('@/views/oauth/DevicePage.vue'),
-      meta: { public: true },
+      meta: { public: true, redirectOnAuthExpiry: true },
     },
     {
       path: '/',
@@ -107,22 +94,7 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach(async (to) => {
-  const auth = useAuthStore()
-  // Hydrate user info after page refresh (pinia state is lost)
-  if (auth.isAuthenticated && !auth.user) {
-    await auth.fetchMe()
-  }
-  if (to.name === 'Login' && auth.isAuthenticated) {
-    return { path: resolveSafeRedirect(to.query.redirect) }
-  }
-  if (!to.meta.public && !auth.isAuthenticated) {
-    return { path: '/login', query: { redirect: to.fullPath } }
-  }
-  if (to.meta.requireAdmin && !auth.isAdmin) {
-    return { path: '/' }
-  }
-})
+installAuthNavigationGuards(router)
 
 export function handleRouterError(error: unknown) {
   if (reloadOnceForChunkError(error)) {

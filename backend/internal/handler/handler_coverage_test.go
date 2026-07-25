@@ -46,7 +46,7 @@ func setupFullTestEnvWithHealth(t *testing.T, healthHandler *HealthHandler) *ful
 	relayCfg := config.RelayConfig{URL: "http://localhost:19876", AdminAPIKey: "admin-test-key-12345678", Model: "gpt-4"}
 	settingsHandler := NewSettingsHandler(configPath, relayCfg, logger)
 
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authSvc,
@@ -333,7 +333,7 @@ func TestAuthOptionsExposeLDAPAndDevLoginWhenAvailable(t *testing.T) {
 	ldapConfig.Store(&config.LDAPConfig{URL: "ldap://ldap.example.com:389"})
 	adminSettingsHandler := NewAdminSettingsHandler(filepath.Join(t.TempDir(), "config.yaml"), &ldapConfig)
 
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authSvc,

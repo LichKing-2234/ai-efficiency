@@ -1,23 +1,110 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/personalusage"
 	"github.com/ai-efficiency/backend/internal/quotareset"
 	"github.com/ai-efficiency/backend/internal/repo"
+	"github.com/ai-efficiency/backend/internal/representativescope"
+	"github.com/ai-efficiency/backend/internal/teamusage"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/toolusage"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/ai-efficiency/backend/internal/web"
 	"github.com/ai-efficiency/backend/internal/webhook"
 	"github.com/ai-efficiency/backend/internal/workitems"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 var prAttributionService prAttributionSettler
 var prUsageService prUsageRefresher
+var ginDefaultNotFoundBody = []byte("404 page not found")
+
+// RouterOptions supplies the runtime dependencies required by the production router.
+type RouterOptions struct {
+	DirectoryService         DirectoryAdminService
+	PersonalUsageCache       *personalusage.Cache
+	WorkItemsCache           *workitems.CountsCache
+	WorkItemsRevisionStore   *workitems.RevisionStore
+	RepresentativeScopeCache *representativescope.Cache
+	TeamUsageSnapshotCache   *teamusage.SnapshotCache
+	TeamUsageOriginCache     *teamusage.OriginCache
+	TeamUsagePrewarmReader   *teamusage.PrewarmReader
+	TeamUsageCursorSecret    string
+	WebhookHTTPClient        *http.Client
+	RequestLogger            *zap.Logger
+	RequestObserver          telemetry.RequestObserver
+	WebVitalsHandler         *WebVitalsHandler
+	Release                  string
+	RequestTimeout           time.Duration
+}
+
+func validateRouterDependencies(providerHandler *ProviderHandler, options RouterOptions) error {
+	missing := make([]string, 0, 14)
+	if providerHandler == nil || providerHandler.runtime == nil {
+		missing = append(missing, "provider runtime")
+	}
+	if strings.TrimSpace(options.TeamUsageCursorSecret) == "" {
+		missing = append(missing, "cursor secret")
+	}
+	if options.DirectoryService == nil {
+		missing = append(missing, "directory service")
+	}
+	if options.PersonalUsageCache == nil {
+		missing = append(missing, "personal usage cache")
+	}
+	if options.WorkItemsCache == nil {
+		missing = append(missing, "work items cache")
+	}
+	if options.WorkItemsRevisionStore == nil {
+		missing = append(missing, "work items revision store")
+	}
+	if options.RepresentativeScopeCache == nil {
+		missing = append(missing, "representative scope cache")
+	}
+	if options.TeamUsageSnapshotCache == nil {
+		missing = append(missing, "team usage snapshot cache")
+	}
+	if options.TeamUsageOriginCache == nil {
+		missing = append(missing, "team usage origin cache")
+	}
+	if options.TeamUsagePrewarmReader == nil {
+		missing = append(missing, "team usage prewarm reader")
+	}
+	if options.WebhookHTTPClient == nil {
+		missing = append(missing, "webhook HTTP client")
+	}
+	if options.RequestLogger == nil {
+		missing = append(missing, "request logger")
+	}
+	if options.RequestObserver == nil {
+		missing = append(missing, "request observer")
+	}
+	if options.WebVitalsHandler == nil {
+		missing = append(missing, "Web Vitals handler")
+	}
+	if strings.TrimSpace(options.Release) == "" {
+		missing = append(missing, "release")
+	}
+	if options.RequestTimeout <= 0 {
+		missing = append(missing, "request timeout")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing production router dependencies: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
 
 func SetPRAttributionService(service prAttributionSettler) {
 	prAttributionService = service
@@ -27,7 +114,7 @@ func SetPRUsageService(service prUsageRefresher) {
 	prUsageService = service
 }
 
-// SetupRouter creates and configures the Gin router with all route groups.
+// SetupRouter validates production dependencies and configures all route groups.
 func SetupRouter(
 	entClient *ent.Client,
 	sqlDB *sql.DB,
@@ -44,21 +131,74 @@ func SetupRouter(
 	adminSettingsHandler *AdminSettingsHandler,
 	checkpointHandler *CheckpointHandler,
 	healthHandler *HealthHandler,
-	directoryServices ...DirectoryAdminService,
-) *gin.Engine {
+	options RouterOptions,
+) (*gin.Engine, error) {
+	if err := validateRouterDependencies(providerHandler, options); err != nil {
+		return nil, err
+	}
+	return setupRouter(
+		entClient,
+		sqlDB,
+		authService,
+		repoService,
+		webhookHandler,
+		syncService,
+		settingsHandler,
+		encryptionKey,
+		publicURL,
+		corsMiddleware,
+		oauthHandler,
+		providerHandler,
+		adminSettingsHandler,
+		checkpointHandler,
+		healthHandler,
+		options,
+	)
+}
+
+func setupRouter(
+	entClient *ent.Client,
+	sqlDB *sql.DB,
+	authService *auth.Service,
+	repoService *repo.Service,
+	webhookHandler *webhook.Handler,
+	syncService prSyncer,
+	settingsHandler *SettingsHandler,
+	encryptionKey string,
+	publicURL string,
+	corsMiddleware gin.HandlerFunc,
+	oauthHandler *oauth.Handler,
+	providerHandler *ProviderHandler,
+	adminSettingsHandler *AdminSettingsHandler,
+	checkpointHandler *CheckpointHandler,
+	healthHandler *HealthHandler,
+	options RouterOptions,
+) (*gin.Engine, error) {
 	r := gin.New()
+	// Keep canonical redirects inside the correlation and telemetry chain.
+	r.RedirectTrailingSlash = false
 	r.RemoveExtraSlash = true
-	r.Use(gin.Recovery())
+	r.Use(middleware.RequestTelemetry(options.RequestLogger, options.Release, options.RequestObserver))
+	r.Use(middleware.Recovery(options.RequestLogger, options.Release))
+	if options.RequestTimeout > 0 {
+		r.Use(middleware.RequestTimeout(options.RequestTimeout))
+	}
 	r.Use(corsMiddleware)
 	r.Use(web.RedirectCanonicalBrowserPath())
 	if web.HasEmbeddedFrontend() {
 		r.Use(web.ServeEmbeddedFrontend())
 	}
+	// Finalize Gin's default body before request telemetry unwinds.
+	r.NoRoute(func(c *gin.Context) {
+		c.Data(http.StatusNotFound, gin.MIMEPlain, ginDefaultNotFoundBody)
+	})
 
 	// OAuth endpoints — at root /oauth/* (not under /api/v1)
 	if oauthHandler != nil {
 		r.GET("/oauth/authorize", oauthHandler.Authorize)
+		r.HEAD("/oauth/authorize", oauthHandler.Authorize)
 		r.GET("/oauth/device", oauthHandler.DevicePage)
+		r.HEAD("/oauth/device", oauthHandler.DevicePage)
 		r.POST("/oauth/device/code", oauthHandler.DeviceCode)
 		r.POST("/oauth/token", oauthHandler.Token)
 
@@ -71,7 +211,7 @@ func SetupRouter(
 	// Handlers
 	authHandler := NewAuthHandler(authService, entClient, adminSettingsHandler)
 	credentialHandler := NewCredentialHandler(entClient, encryptionKey)
-	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey)
+	scmProviderHandler := NewSCMProviderHandler(entClient, encryptionKey, repoService)
 	repoHandler := NewRepoHandler(repoService)
 	prHandler := NewPRHandler(entClient, repoService, syncService, prAttributionService, prUsageService)
 	efficiencyHandler := NewEfficiencyHandler(entClient)
@@ -80,10 +220,17 @@ func SetupRouter(
 	userSetupService := usersetup.NewService(entClient, providerHandler, encryptionKey)
 	userSetupHandler := NewUserSetupHandler(userSetupService)
 	adminUsersHandler := NewAdminUsersHandler(entClient, encryptionKey)
-	workItemsService := workitems.NewService(entClient)
-	if providerHandler != nil {
-		workItemsService = workitems.NewService(entClient, userSetupService)
+	var offboardingCounter interface {
+		CountOffboardingCandidates(context.Context, int) (int, error)
 	}
+	if options.DirectoryService != nil {
+		offboardingCounter = options.DirectoryService
+	}
+	workItemsService := workitems.NewService(entClient, offboardingCounter)
+	if providerHandler != nil {
+		workItemsService = workitems.NewService(entClient, offboardingCounter, userSetupService)
+	}
+	workItemsService.WithCountsCache(options.WorkItemsCache)
 	workItemsHandler := NewWorkItemsHandler(workItemsService)
 	var quotaResetHandler *QuotaResetHandler
 	if providerHandler != nil {
@@ -93,7 +240,8 @@ func SetupRouter(
 			entClient,
 			providerHandler,
 			quotareset.NewApproverResolver(entClient),
-			quotareset.NewWebhookNotifier(entClient, encryptionKey, publicURL),
+			quotareset.NewWebhookNotifier(entClient, encryptionKey, publicURL, options.WebhookHTTPClient),
+			options.WorkItemsRevisionStore,
 		)
 		quotaResetHandler = NewQuotaResetHandler(quotaResetService)
 	}
@@ -208,8 +356,13 @@ func SetupRouter(
 	}
 
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
+	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
 
-	teamUsageHandler := NewTeamUsageHandler(newTeamUsageService(entClient, sqlDB, providerHandler))
+	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageOriginCache, options.TeamUsagePrewarmReader, options.TeamUsageCursorSecret)
+	if err != nil {
+		return nil, fmt.Errorf("initialize team usage service: %w", err)
+	}
+	teamUsageHandler := NewTeamUsageHandler(teamUsageService)
 
 	userGroup := protected.Group("/user")
 	{
@@ -228,6 +381,10 @@ func SetupRouter(
 		userGroup.GET("/team-usage/subjects", teamUsageHandler.Subjects)
 		userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamUsageHandler.SubjectDashboard)
 		userGroup.PUT("/team-usage/subjects/:user_id/groups/:group_id/rate-multiplier", teamUsageHandler.UpdateMultiplier)
+		userGroup.GET("/team-usage/summary", teamUsageHandler.Summary)
+		userGroup.GET("/team-usage/trend", teamUsageHandler.Trend)
+		userGroup.GET("/team-usage/members", teamUsageHandler.Members)
+		userGroup.GET("/team-usage/organization", teamUsageHandler.Organization)
 		userGroup.GET("/team-usage/overview", teamUsageHandler.Overview)
 		userGroup.GET("/team-usage/audit", teamUsageHandler.Audit)
 		if providerHandler != nil {
@@ -235,8 +392,10 @@ func SetupRouter(
 			userGroup.POST("/providers/:id/test", providerHandler.Test)
 
 			// User usage dashboard
-			userUsageHandler := NewUserUsageHandler(entClient, providerHandler, encryptionKey)
+			userUsageService := personalusage.NewService(entClient, providerHandler, encryptionKey, options.PersonalUsageCache)
+			userUsageHandler := NewUserUsageHandler(userUsageService)
 			userGroup.GET("/usage/dashboard", userUsageHandler.Dashboard)
+			userGroup.GET("/usage/group-quotas", userUsageHandler.GroupQuotas)
 		}
 		userGroup.POST("/providers/:id/groups/:group_id/credential", userSetupHandler.CreateGroupCredential)
 		userGroup.POST("/providers/:id/groups/:group_id/credential/regenerate", userSetupHandler.RegenerateGroupCredential)
@@ -268,6 +427,8 @@ func SetupRouter(
 	adminUsersGroup.Use(auth.RequireAdmin())
 	{
 		adminUsersGroup.GET("", adminUsersHandler.List)
+		adminUsersGroup.GET("/department-options", adminUsersHandler.ListDepartmentOptions)
+		adminUsersGroup.GET("/department-children", adminUsersHandler.ListDepartmentChildren)
 		adminUsersGroup.GET("/departments", adminUsersHandler.ListDepartments)
 		adminUsersGroup.GET("/subscription-options", adminUsersHandler.ListSubscriptionOptions)
 		adminUsersGroup.POST("/subscription-jobs", adminUsersHandler.StartSubscriptionJob)
@@ -323,10 +484,10 @@ func SetupRouter(
 		}
 	}
 
-	if len(directoryServices) > 0 && directoryServices[0] != nil {
+	if options.DirectoryService != nil {
 		directoryGroup := protected.Group("/admin/directory")
 		directoryGroup.Use(auth.RequireAdmin())
-		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(directoryServices[0]))
+		RegisterDirectoryRoutes(directoryGroup, NewDirectoryHandler(options.DirectoryService))
 	}
 
 	// Settings — admin only
@@ -340,5 +501,5 @@ func SetupRouter(
 		}
 	}
 
-	return r
+	return r, nil
 }

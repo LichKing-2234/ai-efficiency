@@ -1,0 +1,521 @@
+# Bounded And Correlated HTTP Runtime Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #143 at `5d5eae06`; request-correlation and explicit-runtime-dependency review remediations #161/#163 are also integrated at the then-current integration head `d2bc2694`. Draft-PR and ledger-CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+
+**Goal:** Bound inbound headers, downstream HTTP work, and readiness while making every browser-to-Relay request path safely correlatable through low-cardinality structured telemetry.
+
+**Architecture:** Keep the modular monolith and introduce one shared bounded HTTP-client factory under `backend/internal/httpclient`. Add request identity and structured timing under `backend/internal/telemetry` plus Gin middleware, use the request context to propagate correlation into a Relay transport wrapper, and keep readiness independent from liveness with one parallel two-second dependency budget.
+
+**Tech Stack:** Go 1.23+, `net/http`, Gin, zap, PostgreSQL, Redis, existing Relay/SCM/Directory provider boundaries.
+
+## Global Constraints
+
+- Work from `docs/performance-contracts-116@5f6c58e6821dfcd95eefff14ea3426d454ae86cd`; do not stack on #117 or #119.
+- Keep one modular-monolith backend and one embedded frontend release unit.
+- Do not modify `sub2api`, introduce direct database coupling, or add a separate proxy/service.
+- Preserve all public provider interfaces. Constructor extensions must be backward-compatible where tests or packages already call them.
+- Server defaults are `read_header_timeout_seconds: 5`, `idle_timeout_seconds: 120`, and `request_timeout_seconds: 35`.
+- Readiness has one `readiness_timeout_seconds: 2` budget shared by all dependency checks.
+- The temporary default migration ordering is proxy >=60s, browser Axios 45s (including Team Overview and raw token refresh), request context 35s, shared downstream overall 30s, version check 10s, and quota notification webhook 5s. Proxy >=60s is a deployment prerequisite.
+- Supported overrides preserve that order: request context is 12-44s; shared downstream overall is 11-43s and must remain below request context. Connect/TLS are 1-30s; response-header has a 60s field cap but an effective accepted range of 1-42s; every phase must remain below shared overall. Readiness is 1-30s and must remain below request context. Server/connection idle values are 1-3600s, request-header is 1-60s, and pool fields are 1-10,000.
+- Shared downstream defaults are connect 5s, TLS handshake 5s, response header 15s, overall 30s, idle connection 90s, 100 total idle connections, 20 idle connections per host, and 50 total connections per host.
+- Existing stricter overall budgets remain stricter: version checks stay at 10s and quota notification webhooks stay at 5s.
+- Database down is `not_ready` with HTTP 503. Redis or Relay down/not-configured is `degraded` with HTTP 200. Liveness performs no dependency work.
+- Incoming `X-Request-ID` is accepted only when it is 1-128 ASCII characters from `[A-Za-z0-9._-]`; otherwise generate a UUID. Return the selected ID on every response.
+- Request telemetry uses Gin route templates. Requests with no matched template use the single fixed route `unmatched`; raw paths and queries are never fallback labels.
+- Request logs contain only normalized route, method, status class, duration, response bytes, release, and request ID. Dependency logs use fixed dependency/operation names and never contain URL, query, body, actor, credential, or downstream response text.
+- Request, dependency, and recovery methods use canonical known verbs or `OTHER`. Recovery discards Gin request/panic dumps and writes only fixed safe zap fields.
+- Dependency timing completes exactly once after response-body EOF, close, or read error; a withheld-body timeout is an error/timeout event, not an early `2xx` success.
+- Request IDs may appear in logs and downstream headers but never as metric labels. #118 adds structured zap events only; Prometheus/cache/pool metrics and browser Web Vitals belong to #135.
+- Cancellation propagates through request contexts. No deadline path may detach or leave background HTTP requests running.
+- Tests, fixtures, logs, and documentation use only synthetic identities such as `alice@example.com`.
+- Update `docs/architecture.md` only after behavior lands. Do not rewrite historical specs.
+
+## Baseline Evidence
+
+At `5f6c58e6821dfcd95eefff14ea3426d454ae86cd` on 2026-07-15:
+
+- `cd backend && go test ./...`: PASS.
+- `cd ae-cli && go test ./...`: PASS.
+- `cd frontend && npm test`: PASS, 39 files and 429 tests.
+- `backend/cmd/server/main.go` constructs an `http.Server` with only `Addr` and `Handler`.
+- Runtime Relay and provider-created Relay clients use `http.DefaultClient`; Bitbucket and settings create unbounded clients.
+- Readiness checks database, Redis, and Relay serially and the handler always returns HTTP 200.
+- The router has no shared request ID or normalized request/dependency timing middleware.
+
+---
+
+### Task 1: Runtime Budgets And Shared HTTP Client
+
+**Files:**
+- Create: `backend/internal/httpclient/client.go`
+- Create: `backend/internal/httpclient/client_test.go`
+- Modify: `backend/internal/config/config.go`
+- Modify: `backend/internal/config/config_test.go`
+- Modify: `backend/internal/config/writable_config.go`
+- Modify: `backend/cmd/server/main.go`
+- Create: `backend/cmd/server/http_server_test.go`
+- Modify: `deploy/config.example.yaml`
+- Modify: this plan
+
+**Interfaces:**
+- Produces `httpclient.Options` with `ConnectTimeout`, `TLSHandshakeTimeout`, `ResponseHeaderTimeout`, `OverallTimeout`, `IdleConnTimeout`, `MaxIdleConns`, `MaxIdleConnsPerHost`, and `MaxConnsPerHost`.
+- Produces `type TransportWrapper func(http.RoundTripper) http.RoundTripper`.
+- Produces `httpclient.New(options Options, wrappers ...TransportWrapper) *http.Client`; wrappers are applied in declaration order around one bounded `*http.Transport`.
+- Produces `newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *http.Server`.
+- Produces config fields `Server.ReadHeaderTimeoutSeconds`, `Server.IdleTimeoutSeconds`, `Server.ReadinessTimeoutSeconds`, `Server.RequestTimeoutSeconds`, and top-level `HTTPClient HTTPClientConfig`.
+
+- [x] **Step 1: Add failing config and client deadline tests**
+
+  Add config assertions for the exact defaults and `AE_SERVER_READ_HEADER_TIMEOUT_SECONDS`, `AE_SERVER_IDLE_TIMEOUT_SECONDS`, `AE_SERVER_READINESS_TIMEOUT_SECONDS`, `AE_SERVER_REQUEST_TIMEOUT_SECONDS`, and the individual `AE_HTTP_CLIENT_*` overrides. Assert generated writable YAML retains the non-secret runtime budget fields.
+
+  Add `httpclient` tests with a synthetic listener/transport:
+
+  ```go
+  func TestNewBoundsResponseHeadersAndOverallRequest(t *testing.T)
+  func TestNewConfiguresBoundedConnectionPool(t *testing.T)
+  func TestNewAppliesTransportWrappersInOrder(t *testing.T)
+  ```
+
+  The response-header case accepts a connection but withholds headers beyond 40ms. The overall case returns headers then withholds the body. Both clients use test-only millisecond budgets and must return a timeout without inspecting raw endpoint data.
+
+- [x] **Step 2: Run Task 1 tests and record RED**
+
+  Run separately:
+
+  - `cd backend && go test ./internal/config -run 'HTTP|Timeout|Writable' -count=1`
+  - `cd backend && go test ./internal/httpclient -count=1`
+
+  Expected: FAIL because the config fields and `httpclient` package do not exist.
+
+  Evidence (2026-07-15): both commands failed as expected. The config package reported missing `ServerConfig` timeout fields and `HTTPClientConfig`; the httpclient package reported missing `New`, `Options`, and `TransportWrapper`.
+
+- [x] **Step 3: Implement the bounded client and configuration**
+
+  `httpclient.New` must create its own transport using a `net.Dialer`, set all exact timeout/pool fields, and set `http.Client.Timeout` to `OverallTimeout`. Do not mutate `http.DefaultTransport` or `http.DefaultClient`. Apply wrappers to the private transport and return one reusable client.
+
+  Add integer-second config fields and defaults:
+
+  ```go
+  type HTTPClientConfig struct {
+      ConnectTimeoutSeconds        int `mapstructure:"connect_timeout_seconds"`
+      TLSHandshakeTimeoutSeconds   int `mapstructure:"tls_handshake_timeout_seconds"`
+      ResponseHeaderTimeoutSeconds int `mapstructure:"response_header_timeout_seconds"`
+      OverallTimeoutSeconds        int `mapstructure:"overall_timeout_seconds"`
+      IdleConnTimeoutSeconds       int `mapstructure:"idle_conn_timeout_seconds"`
+      MaxIdleConns                 int `mapstructure:"max_idle_conns"`
+      MaxIdleConnsPerHost          int `mapstructure:"max_idle_conns_per_host"`
+      MaxConnsPerHost              int `mapstructure:"max_conns_per_host"`
+  }
+  ```
+
+  Bind all environment keys and persist the fields through `EnsureWritableConfigFile`. Add the exact values to `deploy/config.example.yaml` with comments that version/webhook clients retain stricter overall budgets.
+
+  Evidence (2026-07-15): the focused config command passed in 0.200s and the httpclient package command passed in 0.277s after implementation.
+
+- [x] **Step 4: Add failing server field and slow-header tests**
+
+  Test `newHTTPServer` field values. Start it on `127.0.0.1:0` with a test-only 50ms `ReadHeaderTimeout`, write an incomplete request header over TCP, and assert the server closes the connection before a one-second test deadline. The test owns and closes its listener/server.
+
+  Run: `cd backend && go test ./cmd/server -run 'HTTPServer|SlowHeader' -count=1`
+
+  Expected: FAIL because `newHTTPServer` does not exist.
+
+  Evidence (2026-07-15): the focused server command failed as expected with `undefined: newHTTPServer` at both constructor call sites.
+
+- [x] **Step 5: Implement and verify the server constructor**
+
+  Construct the production server through `newHTTPServer`, mapping the two configured values to `time.Duration). Do not introduce a short `ReadTimeout` or `WriteTimeout` during the current synchronous Team Overview migration.
+
+  Run separately:
+
+  - `cd backend && go test ./cmd/server -run 'HTTPServer|SlowHeader' -count=1`
+  - `cd backend && go test ./internal/config ./internal/httpclient ./cmd/server -count=1`
+  - `git diff --check`
+
+  Expected: PASS. Record the slow-header listener test separately as environment-sensitive evidence.
+
+  Evidence (2026-07-15): the environment-sensitive slow-header listener command passed in 0.363s; the combined config/httpclient/server command passed in 0.193s, 0.427s, and 0.781s respectively; `git diff --check` passed.
+
+- [x] **Step 6: Commit Task 1 and record the checkpoint**
+
+  Commit implementation plus checked Steps 1-5:
+
+  `feat(runtime): bound HTTP server and client budgets`
+
+  After the commit succeeds, check Step 6 and commit:
+
+  `docs(plan): record runtime budget task 1`
+
+  Checkpoint (2026-07-15): implementation commit `ef2b044d3508261994612fca730507809600d6db`.
+
+---
+
+### Task 2: Adopt Bounded Clients At Production Boundaries
+
+**Files:**
+- Modify: `backend/cmd/server/main.go`
+- Modify: `backend/internal/directorysync/executor.go`
+- Modify: `backend/internal/directorysync/executor_test.go`
+- Modify: `backend/internal/handler/provider.go`
+- Modify: `backend/internal/handler/settings.go`
+- Modify: relevant handler tests
+- Modify: `backend/internal/quotareset/notification.go`
+- Modify: `backend/internal/quotareset/notification_test.go`
+- Modify: `backend/internal/repo/service.go`
+- Modify: `backend/internal/repo/factory.go`
+- Modify: relevant repo tests
+- Modify: `backend/internal/scm/github/github.go`
+- Modify: `backend/internal/scm/bitbucket/bitbucket.go`
+- Modify: relevant SCM tests
+- Modify: this plan
+
+**Interfaces:**
+- `directorysync.NewExecutor` continues consuming `ExecutorOptions.HTTPClient`.
+- `handler.NewProviderHandler(..., clients ...*http.Client)` preserves existing calls while using the optional bounded client. `handler.NewSettingsHandler` retains its existing relay-runtime variadic; `handler.NewSettingsHandlerWithHTTPClient` adds typed client injection without weakening that contract.
+- `quotareset.NewWebhookNotifier(..., clients ...*http.Client)` preserves its 5s overall limit.
+- `repo.ServiceOptions.HTTPClient *http.Client` supplies SCM constructors.
+- GitHub and Bitbucket retain `New(..., webhookCallbackURL ...string)` and add `NewWithHTTPClient` for typed production injection.
+
+- [x] **Step 1: Add failing constructor/wiring tests**
+
+  For each boundary, inject a client whose transport records calls and whose timeout is a sentinel value. Assert the constructor uses that exact client for one synthetic operation. Add a `cmd/server` wiring test or a pure helper test that proves:
+
+  - Relay, directory, provider-created Relay, settings, and SCM use a shared 30s bounded client configuration.
+  - version check uses a separate bounded client with a 10s overall timeout.
+  - quota webhooks use a separate bounded client with a 5s overall timeout.
+
+  No test may call a real service.
+
+- [x] **Step 2: Run Task 2 tests and record RED**
+
+  Run:
+
+  ```bash
+  cd backend && go test ./internal/directorysync ./internal/handler ./internal/quotareset ./internal/repo ./internal/scm/github ./internal/scm/bitbucket ./cmd/server -run 'HTTPClient|Bounded|Injected|Timeout' -count=1
+  ```
+
+  Expected: FAIL because several constructors still create or use default clients.
+
+  Evidence (2026-07-15): the focused command failed as expected. ProviderHandler and WebhookNotifier rejected the injected client argument, SettingsHandler required a relay runtime updater, GitHub and Bitbucket accepted only string variadic arguments, `ServiceOptions.HTTPClient` and `newRuntimeHTTPClients` were undefined, while the existing Directory executor injection test passed.
+
+- [x] **Step 3: Extend constructors without changing provider contracts**
+
+  Store an injected client once per long-lived handler/service/provider. When an optional client is absent, retain a non-nil compatibility fallback for tests, but production `main.go` must pass bounded clients explicitly.
+
+  GitHub must construct `go-github` with `gh.NewClient(injectedClient)`; Bitbucket must store the injected client. `repo.ServiceOptions.HTTPClient` must flow through `newGitHubProvider` and `newBitbucketProvider`.
+
+- [x] **Step 4: Wire one reusable pool per boundary**
+
+  Convert `cfg.HTTPClient` into `httpclient.Options` in a pure helper. Create reusable clients once during startup, inject them into Runtime Relay, ProviderHandler, SettingsHandler, Directory Executor, Repo/SCM, version check, and quota notifier. Do not create a fresh transport per request.
+
+- [x] **Step 5: Verify focused and broad boundary suites**
+
+  Run separately:
+
+  - the focused command from Step 2;
+  - `cd backend && go test ./internal/relay ./internal/directorysync ./internal/handler ./internal/quotareset ./internal/repo ./internal/scm/... ./internal/versioncheck ./cmd/server -count=1`;
+  - `git diff --check`.
+
+  Expected: PASS, with no unbounded production `http.DefaultClient` or `&http.Client{}` left at these boundaries.
+
+  Evidence (2026-07-15): the focused command passed for all seven target packages; the broad boundary command passed for Relay, Directory, Handler, Quota Reset, Repo, all SCM packages, Version Check, and server; `go test ./internal/httpclient -count=1` and `git diff --check` passed. A targeted scan found no `http.DefaultClient` or empty `&http.Client{}` at the adopted boundaries. Compatibility tests also passed for the existing Settings relay-runtime and SCM webhook-callback constructor forms.
+
+- [x] **Step 6: Commit Task 2 and record the checkpoint**
+
+  Commit implementation plus checked Steps 1-5:
+
+  `fix(runtime): bound downstream HTTP clients`
+
+  After the commit succeeds, check Step 6 and commit:
+
+  `docs(plan): record bounded clients task 2`
+
+  Checkpoint (2026-07-15): implementation commit `b99f30333de6076e47952645ee8b80d91b6750b5`.
+
+---
+
+### Task 3: Deadline-Bounded Readiness Semantics
+
+**Files:**
+- Modify: `backend/internal/health/health.go`
+- Modify: `backend/internal/health/health_test.go`
+- Modify: `backend/internal/handler/health.go`
+- Modify: `backend/internal/handler/health_http_test.go`
+- Modify: `backend/cmd/server/main.go`
+- Modify: this plan
+
+**Interfaces:**
+- Produces `health.WithReadyTimeout(time.Duration) Option`; `NewService` keeps existing positional pingers and accepts optional options.
+- `Service.Ready(ctx)` preserves `ReadyReport` JSON and deterministic check order: database, Redis, Relay.
+- `HealthHandler.Ready` maps only `not_ready` to HTTP 503; `ready` and `degraded` remain HTTP 200.
+
+- [x] **Step 1: Add failing deadline and HTTP semantic tests**
+
+  Add a context-aware blocking DB pinger and assert a 40ms configured readiness budget returns a `not_ready` report well before one second. Add parallel probes whose individual delay would exceed the shared budget if run serially.
+
+  Handler cases:
+
+  ```go
+  database down       => 503, status not_ready
+  redis down          => 200, status degraded
+  relay down          => 200, status degraded
+  all up              => 200, status ready
+  live with blockers  => 200 without invoking any pinger
+  ```
+
+- [x] **Step 2: Run readiness tests and record RED**
+
+  Run: `cd backend && go test ./internal/health ./internal/handler -run 'Ready|Readiness|Live' -count=1`
+
+  Expected: FAIL because readiness is serial, unbounded, and always returns HTTP 200.
+
+  Evidence (2026-07-15): the focused command failed as expected. The health package reported undefined `WithReadyTimeout` and an unsupported fifth `NewService` argument; the handler database-down case returned a `not_ready` body with HTTP 200 instead of 503.
+
+- [x] **Step 3: Implement one parallel readiness budget**
+
+  Derive one child context with the configured overall timeout, launch the three checks concurrently, and collect into fixed indexes. A pinger that returns after the deadline remains `down/unavailable`; do not expose its raw error. All production pingers already consume the supplied context.
+
+  Preserve precedence: database down wins `not_ready`; only when database is up may Redis/Relay yield `degraded`.
+
+- [x] **Step 4: Wire and verify readiness**
+
+  Pass `cfg.Server.ReadinessTimeoutSeconds` through `health.WithReadyTimeout`. Run separately:
+
+  - `cd backend && go test ./internal/health ./internal/handler -run 'Ready|Readiness|Live' -count=1`
+  - `cd backend && go test ./internal/health ./internal/handler ./cmd/server -count=1`
+  - `git diff --check`.
+
+  Expected: PASS. Tests must use context-aware blockers so no goroutine leaks after completion.
+
+  Evidence (2026-07-15): the focused health/handler command passed in 0.338s and 1.601s; the broad health/handler/server command passed in 0.344s, 37.532s, and 0.840s; `git diff --check` passed.
+
+- [x] **Step 5: Commit Task 3 and record the checkpoint**
+
+  Commit implementation plus checked Steps 1-4:
+
+  `fix(runtime): bound readiness and return 503`
+
+  After the commit succeeds, check Step 5 and commit:
+
+  `docs(plan): record readiness task 3`
+
+  Checkpoint (2026-07-15): implementation commit `5846285a97ea822f36c9a829cc41e58ae91a86c8`.
+
+---
+
+### Task 4: Request Correlation And Low-Cardinality Telemetry
+
+**Files:**
+- Create: `backend/internal/telemetry/request.go`
+- Create: `backend/internal/telemetry/request_test.go`
+- Create: `backend/internal/telemetry/dependency.go`
+- Create: `backend/internal/telemetry/dependency_test.go`
+- Create: `backend/internal/middleware/request.go`
+- Create: `backend/internal/middleware/request_test.go`
+- Modify: `backend/internal/middleware/cors.go`
+- Modify: `backend/internal/middleware/cors_test.go`
+- Modify: `backend/internal/handler/router.go`
+- Modify: `backend/internal/handler/router_frontend_test.go`
+- Modify: `backend/cmd/server/main.go`
+- Modify: this plan
+
+**Interfaces:**
+- Produces `telemetry.RequestID(ctx context.Context) string`, `telemetry.WithRequestID(ctx, id)`, and `telemetry.HeaderRequestID = "X-Request-ID"`.
+- Produces `middleware.RequestTelemetry(logger *zap.Logger, release string) gin.HandlerFunc`; it owns selection/response of the request ID and one terminal `http_request` event.
+- Produces `telemetry.WrapDependency(logger *zap.Logger, release, dependency, operation string) httpclient.TransportWrapper`.
+- Production Relay uses fixed labels `dependency="relay"` and `operation="http_request"`.
+
+- [x] **Step 1: Add failing request-ID and CORS tests**
+
+  Table-test missing, valid, 129-character, whitespace, slash, control-character, and Unicode incoming IDs. Valid IDs are preserved; all invalid IDs are replaced by a valid UUID. Assert the selected value is in the request context during the handler and in `X-Request-ID` on successful, error, OPTIONS, 404, and embedded/static responses.
+
+  Assert CORS includes `X-Request-ID` in both `Access-Control-Allow-Headers` and `Access-Control-Expose-Headers`.
+
+- [x] **Step 2: Add failing low-cardinality request-log tests and record RED**
+
+  Use a zap observer and two requests such as `/users/7?email=alice@example.com` and `/users/99?email=bob@example.org` against one Gin route `/users/:id`. Both events must contain:
+
+  ```text
+  event=http_request
+  route=/users/:id
+  method=GET
+  status_class=2xx
+  duration_ms=<non-negative>
+  response_bytes=<exact Gin writer size>
+  release=test-release
+  request_id=<selected ID>
+  ```
+
+  Neither raw path, query, email, body, nor route parameter may occur in the event message or structured fields. Unmatched paths always log `route=unmatched`.
+
+  Run: `cd backend && go test ./internal/telemetry ./internal/middleware -run 'Request|CORS|Cardinality|Privacy' -count=1`
+
+  Expected: FAIL because the packages/middleware do not exist.
+
+  Evidence (2026-07-15): the focused command failed as expected because `telemetry.WithRequestID`, `telemetry.RequestID`, and the request telemetry middleware did not exist; the telemetry package had no non-test Go files.
+
+- [x] **Step 3: Implement request correlation before every other middleware**
+
+  Validate/generate the ID, replace `c.Request` with a clone carrying the context value, set the response header before `c.Next()`, then log after completion using `c.FullPath()` or exactly `unmatched`. Use `c.Writer.Size()`; do not wrap the writer and risk losing `Flusher` or `Hijacker`.
+
+  The production router must order middleware as request telemetry, privacy-safe recovery, request timeout, CORS, canonical redirect, embedded frontend, then route/group handlers.
+
+  Evidence (2026-07-15): the focused telemetry/middleware command passed in 1.510s, and the embedded frontend router test passed in 3.359s with the selected request ID returned on the static response.
+
+- [x] **Step 4: Add failing Relay dependency transport tests**
+
+  Wrap a synthetic transport and assert:
+
+  - the incoming request ID is forwarded as `X-Request-ID`;
+  - one `dependency_request` event records fixed dependency/operation, method, status class, duration, release, and request ID;
+  - timeout/error records an error class without raw URL, query, response text, or credentials;
+  - requests without a correlation context do not fabricate a metrics-style label.
+
+  Run: `cd backend && go test ./internal/telemetry ./internal/relay -run 'Dependency|RequestID|Telemetry' -count=1`
+
+  Expected: FAIL because the transport wrapper is not wired.
+
+  Evidence (2026-07-15): the focused command failed as expected at each dependency test call site because `telemetry.WrapDependency` did not exist; the existing Relay package passed with no matching tests to run.
+
+- [x] **Step 5: Implement Relay telemetry and full router coverage**
+
+  Wrap only the production Relay client's private bounded transport, so all existing direct `client.Do` calls are covered without changing `relay.Provider`. Do not classify from URL path; `relay/http_request` is the only operation label in this slice.
+
+  Run separately:
+
+  - `cd backend && go test ./internal/telemetry ./internal/middleware ./internal/relay -count=1`
+  - `cd backend && go test ./internal/handler ./cmd/server -run 'Router|Request|CORS|Frontend|Runtime' -count=1`
+  - `git diff --check`.
+
+  Expected: PASS, with exactly one request event per handled request and one dependency event per Relay round trip.
+
+  Evidence (2026-07-15): telemetry/middleware/Relay passed in 0.168s, 0.421s, and 0.292s; the focused handler/server router command passed in 1.562s and 0.327s; `git diff --check` passed. The production client wiring test also passed in 0.323s and confirmed only the shared Relay pool is wrapped.
+
+- [x] **Step 6: Commit Task 4 and record the checkpoint**
+
+  Commit implementation plus checked Steps 1-5:
+
+  `feat(runtime): correlate request and Relay timing`
+
+  After the commit succeeds, check Step 6 and commit:
+
+  `docs(plan): record request telemetry task 4`
+
+  Checkpoint (2026-07-15): implementation commit `a89e4f6c4ee539eab6c59ccf5995eea49d65eb91`.
+
+#### Task 4 Review Follow-Up
+
+- [x] Finalize the pinned Gin default 404 response inside the router chain and add a real-router regression for status, body, request ID, one unmatched event, and exact non-negative response bytes.
+- [x] Replace the duplicate request/dependency HTTP status classification functions with one telemetry helper and focused boundary tests.
+- [x] Run the Task 4 focused and prescribed verification commands, record the evidence, and commit the review fixes.
+
+  Review follow-up evidence (2026-07-15): the real-router 404 regression failed with `response_bytes = -1` while the returned body was 18 bytes, then passed after the default response was finalized in the Gin chain. The status-boundary test failed because `telemetry.HTTPStatusClass` did not exist, then passed after both event paths used the shared helper. The prescribed telemetry/middleware/Relay suite passed in 0.192s, 0.286s, and 0.490s; the focused handler/server suite passed in 1.330s and 0.636s; the combined new regression command passed in 0.172s and 0.843s; `git diff --check` passed.
+
+---
+
+### Task 5: Architecture, Review, Verification, And Delivery
+
+**Files:**
+- Modify: `docs/architecture.md`
+- Modify: this plan
+
+**Interfaces:**
+- Consumes Tasks 1-4 and their test/review evidence.
+- Produces current runtime documentation, full-repository verification, independent reviews, a pushed branch, and a draft PR targeting `docs/performance-contracts-116`.
+
+- [x] **Step 1: Update current architecture documentation**
+
+  Document explicit server header/idle budgets, bounded downstream pools/deadlines, two-second parallel readiness with 503 only for database failure, request-ID propagation, normalized request logs, and fixed Relay dependency timing. State that #135 metrics/Web Vitals and final #136 production budget ratification remain future work.
+
+- [x] **Step 2: Run full verification**
+
+  Run separately:
+
+  - `cd backend && go test ./...`
+  - `cd ae-cli && go test ./...`
+  - `cd frontend && npm test`
+  - `cd frontend && npm run build`
+  - `bash deploy/test/release-frontend-embed-test.sh`
+  - start Vite and run `cd frontend && npm run test:e2e:role`
+  - `git diff --check`
+
+  Report the slow-header listener test and role E2E as environment-sensitive checks. Do not mark either complete unless actually run.
+
+#### Final Standards Review Remediation (2026-07-15)
+
+The first final standards review at `.superpowers/sdd/final-standards-review-118.md` returned `QUALITY NEEDS FIXES` with 6 Important and 3 Minor findings. The remediation keeps all provider interfaces and the four production pool owners unchanged:
+
+- Runtime config now validates every server/downstream duration and HTTP pool field for positivity and a field-specific upper bound before duration conversion. It also enforces phase < downstream overall < request context and readiness < request context, with field names in startup errors. `server.request_timeout_seconds: 35` is available through file, environment, writable config, `RouterOptions`, and Gin middleware.
+- The shared browser client now uses 45 seconds while the existing Team Overview override remains 45 seconds. The deployment example and current architecture record proxy >=60 seconds as a prerequisite over the 35-second request context and 30-second shared downstream budget.
+- Readiness converts child-pinger panics to sanitized `down/unavailable`; its concurrency regression now uses start/release barriers rather than elapsed-time assertions.
+- Gin recovery now discards the framework request/panic dump and writes only fixed zap fields. Request, dependency, and recovery methods use canonical known verbs or `OTHER`.
+- Relay dependency timing emits exactly once at body EOF, close, or error; a withheld 200 body timeout becomes one error/timeout event. Relay Ping drains a bounded small body and a two-call test proves real connection reuse.
+- `httpclient.NewDefault` compatibility clients share one documented process-lifetime bounded transport. The production Relay, general downstream, version, and webhook pools remain private, isolated, and startup-owned; the exact 30/10/5-second overall values remain unchanged.
+
+Focused RED evidence reproduced each finding: missing/invalid timeout contracts, an uncontained readiness panic, raw Gin recovery output, unbounded method values, header-time dependency success, separate compatibility transports, and two Relay Ping connections. Required GREEN suites pass for config, HTTP clients, health, middleware, telemetry, Relay, handler, server, SCM, Directory Sync, quota reset, version checking, frontend API clients, and the frontend production build. Clean independent re-reviews are still pending, so Step 3 remains unchecked.
+
+#### Final Timeout-Order Re-review Remediation (2026-07-15)
+
+The final spec re-review returned 2 Important and 1 Minor findings, and the final standards re-review returned 2 overlapping Important findings. This remediation closes those reviewed gaps without changing the four production pool owners or provider boundaries:
+
+- Config load now rejects request timeouts at or above the fixed 45-second browser deadline and shared downstream overall timeouts at or below the fixed 10-second version deadline. Together with the existing dynamic checks, every accepted configuration preserves `browser 45s > request > shared downstream > version 10s > webhook 5s`.
+- The lowest accepted timeout combination is request 12s and shared downstream 11s. A server wiring regression loads that configuration, constructs every runtime client, and proves the complete strict order through the fixed 10-second and 5-second clients.
+- The raw Axios token-refresh call retains its interceptor-free path but now carries an explicit 45-second timeout, so requests sharing `refreshPromise` cannot wait indefinitely.
+- The checked Task 4 ledger now includes the remediated request-timeout middleware between privacy-safe recovery and CORS.
+
+Focused RED evidence: `go test ./internal/config -run 'HTTPRuntime' -count=1` failed because request values 45/46 and shared overall values 10/9 were accepted; `npm test -- src/__tests__/client.test.ts` failed 2 tests because raw refresh omitted the timeout config. Focused GREEN evidence: the same config command passed, `go test ./cmd/server -run 'RuntimeHTTPClients' -count=1` passed with the lowest accepted configuration, and the frontend client file passed all 10 tests. Final remediation verification passed `go test ./internal/config ./internal/httpclient ./cmd/server -count=1`, 17 focused frontend tests across the client and Team Overview API files, the frontend production build, and `git diff --check`. Clean independent re-reviews are still pending, so Task 5 Step 3 remains unchecked.
+
+#### Final Router-Edge Standards Re-review Remediation (2026-07-15)
+
+The R3 final standards re-review returned 2 Important and 1 Minor findings. This remediation keeps the existing route, redirect, response-body, middleware-order, and provider contracts unchanged:
+
+- Gin's engine-level automatic trailing-slash redirect is disabled. Existing GET/HEAD canonicalization now handles registered route variants inside the installed middleware chain with its established 307 status and query-preserving location.
+- Request telemetry maps only Gin's unwritten `Size() == -1` sentinel to zero. It does not finalize the writer early or fabricate a body, so status-only and embedded HEAD responses retain their actual zero-byte wire behavior.
+- Real `SetupRouter` regressions cover `/api/v1/health/` correlation/CORS/privacy/exact-once telemetry, a status-only handler, and embedded frontend HEAD serving.
+
+Focused RED evidence (2026-07-15): the three-router regression command failed independently with trailing-slash status `301` instead of the in-chain canonical `307`, status-only `response_bytes = -1`, and embedded HEAD `response_bytes = -1`. Focused GREEN evidence: the same command passed all three regressions after the two minimal runtime changes. The related router/health/recovery handler selection passed in 4.660s, the server selection passed in 0.794s, and the complete middleware and web packages passed in 0.593s and 0.817s. Clean independent re-reviews are still pending, so Task 5 Step 3 remains unchecked.
+
+#### Final Mutation-Redirect Standards Re-review Remediation (2026-07-15)
+
+The R4 final standards re-review returned one Important finding: disabling Gin's out-of-chain redirect had moved POST trailing-slash routes from the prior method-preserving 307 behavior to the in-chain 404 because canonicalization still allowed only GET/HEAD.
+
+- The in-chain canonical middleware now redirects non-canonical paths for every HTTP method with 307 while retaining the original query in `Location`.
+- A real `SetupRouter` POST regression asserts the first redirect's request ID, CORS headers, normalized private-data-safe exact-once event, and canonical location. It then follows that location with the same POST body and proves the canonical downstream handler receives the original method, query, and body.
+- Existing GET canonical redirect, status-only zero-byte, and embedded HEAD zero-byte regressions remain unchanged and passing.
+
+Focused RED evidence (2026-07-15): `go test ./internal/handler -run 'TestSetupRouterCanonicalMutationTrailingSlashPreservesReplayContract' -count=1 -v` failed with status 404 instead of 307. Focused GREEN evidence: the same real-router test passed in 0.929s after extending the existing middleware. The combined GET/POST/zero-byte router selection passed in 1.744s, complete web and middleware packages passed in 0.521s and 1.016s, and the relevant server selection passed in 1.451s. Clean independent re-reviews are still pending, so Task 5 Step 3 remains unchecked.
+
+#### Final Verification And Review Gates (2026-07-15)
+
+Fresh verification was rerun after the last mutation-redirect fix on final implementation head `15d6f6d`: the full backend and `ae-cli` suites passed; frontend Vitest passed 39 files / 430 tests; the production build transformed 188 modules; the release frontend embed harness passed `backend/internal/web`; and `git diff --check` produced no output. The embed harness emitted the known unresolved-hook-queue message plus npm deprecation/audit/install-script warnings without changing its exit status.
+
+The uncached `TestNewHTTPServerClosesSlowHeader` listener regression passed in 0.05s. Role E2E ran against a Vite process owned by this worktree at `http://[::1]:5173/`; its executable and cwd were verified, `localhost:5173` reached that IPv6 process, and all 16/16 checks passed. Expected proxy `ECONNREFUSED` messages appeared for unmocked background APIs. Only the owned IPv6 server was stopped; the unrelated IPv4 `127.0.0.1:5173` listener remained running.
+
+The complete `5f6c58e..15d6f6d` package then received final independent gates: `SPEC PASS` with 0 Critical, 0 Important, and 0 Minor findings; `QUALITY APPROVED` with 0 Critical, 0 Important, and 0 Minor findings. The publishable branch range and HEAD tree contain no tracked `.superpowers/sdd` review artifact.
+
+- [x] **Step 3: Perform independent task and whole-branch reviews**
+
+  Every Task 1-4 receives an independent spec/quality review against its recorded base and head. Resolve every Critical or Important finding and rerun covering tests. Then generate a branch package from `5f6c58e` and obtain final SPEC and standards reviews for all #118 acceptance criteria, privacy constraints, timeout ordering, and repository standards.
+
+- [x] **Step 4: Commit architecture and verification evidence**
+
+  Commit checked Steps 1-3:
+
+  `docs(architecture): document bounded HTTP runtime`
+
+  After the commit succeeds, check Step 4 and commit:
+
+  `docs(plan): record runtime delivery verification`
+
+- [x] **Step 5: Push and open the stacked draft PR**
+
+  Push `perf/runtime-118` and create a draft PR targeting `docs/performance-contracts-116`. Link #118 and PR #138, list exact defaults, readiness semantics, telemetry privacy/cardinality, tests, and review results. Confirm head/base/draft/merge state plus backend/frontend/ae-cli/deploy-static checks.
+
+  Only after the first CI run passes, check Step 5, set the top status to complete, commit `docs(plan): record bounded runtime delivery`, push it, and confirm the replacement CI run also passes.
+
+  First-round CI evidence (2026-07-15): Actions run `29389013676` passed `backend` (2m51s), `frontend` (51s), `ae-cli` (25s), and `deploy-static` (12s) on PR head `be6b67b`.
+
+  Replacement CI evidence (2026-07-15): Actions run `29389174599` passed `backend` (2m41s), `frontend` (54s), `ae-cli` (25s), and `deploy-static` (19s) on PR head `e2e94d6`. GitHub reported draft PR #143 as open, mergeable/clean, based on `docs/performance-contracts-116`, and headed by `perf/runtime-118`; the local branch and PR head matched before this final ledger commit.

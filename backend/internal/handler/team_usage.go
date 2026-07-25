@@ -14,6 +14,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/teamusage"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,6 +22,10 @@ type teamUsageService interface {
 	Scope(context.Context, int) (*teamusage.ScopeResponse, error)
 	Subjects(context.Context, int, string, int, int) (*teamusage.SubjectsResponse, error)
 	SubjectDashboard(context.Context, int, int, relay.UserUsageDashboardParams) (*teamusage.SubjectDashboardResponse, error)
+	Summary(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error)
+	Trend(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error)
+	Members(context.Context, int, teamusage.MembersParams) (*teamusage.MembersResponse, error)
+	Organization(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error)
 	Overview(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error)
 	UpdateMultiplier(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	ListAudit(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
@@ -41,7 +46,7 @@ func (f teamUsageProviderResolverFunc) Resolve(ctx context.Context, providerID i
 	return f(ctx, providerID)
 }
 
-func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *ProviderHandler) *teamusage.Service {
+func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *ProviderHandler, scopeCache *representativescope.Cache, snapshotCache *teamusage.SnapshotCache, originCache *teamusage.OriginCache, prewarmReader *teamusage.PrewarmReader, memberCursorSecret string) (*teamusage.Service, error) {
 	resolver := teamUsageProviderResolverFunc(func(context.Context, int) (relay.Provider, error) {
 		return nil, teamusage.ErrProviderUnsupported
 	})
@@ -50,9 +55,10 @@ func newTeamUsageService(entClient *ent.Client, sqlDB *sql.DB, providerHandler *
 	}
 	return teamusage.NewService(
 		entClient,
-		representativescope.New(entClient),
+		representativescope.NewWithCache(entClient, scopeCache),
 		resolver,
 		teamusage.NewPostgresAdvisoryLocker(sqlDB),
+		teamusage.ServiceOptions{SnapshotCache: snapshotCache, OriginCache: originCache, PrewarmReader: prewarmReader, CursorSecret: memberCursorSecret},
 	)
 }
 
@@ -117,6 +123,7 @@ func (h *TeamUsageHandler) SubjectDashboard(c *gin.Context) {
 }
 
 func (h *TeamUsageHandler) Overview(c *gin.Context) {
+	writeTeamOverviewCompatibilityHeaders(c)
 	uc := auth.GetUserContext(c)
 	if uc == nil {
 		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
@@ -141,6 +148,139 @@ func (h *TeamUsageHandler) Overview(c *gin.Context) {
 		return
 	}
 	pkg.Success(c, resp)
+}
+
+func (h *TeamUsageHandler) Summary(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dashboardParams, ok := parseUserUsageDashboardParams(c)
+	if !ok {
+		return
+	}
+	resp, err := h.service.Summary(c.Request.Context(), uc.UserID, teamusage.OverviewParams{
+		StartDate: dashboardParams.StartDate, EndDate: dashboardParams.EndDate,
+		Granularity: dashboardParams.Granularity, Timezone: dashboardParams.Timezone,
+	})
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	resp.RequestID = telemetry.RequestID(c.Request.Context())
+	pkg.Success(c, resp)
+}
+
+func (h *TeamUsageHandler) Trend(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dashboardParams, ok := parseUserUsageDashboardParams(c)
+	if !ok {
+		return
+	}
+	resp, err := h.service.Trend(c.Request.Context(), uc.UserID, teamusage.OverviewParams{
+		StartDate: dashboardParams.StartDate, EndDate: dashboardParams.EndDate,
+		Granularity: dashboardParams.Granularity, Timezone: dashboardParams.Timezone,
+	})
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	resp.RequestID = telemetry.RequestID(c.Request.Context())
+	pkg.Success(c, resp)
+}
+
+func (h *TeamUsageHandler) Members(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dashboardParams, ok := parseUserUsageDashboardParams(c)
+	if !ok {
+		return
+	}
+	limit, ok := parseOptionalIntQueryParam(c, "limit")
+	if !ok {
+		return
+	}
+	limitValue := 0
+	if limit != nil {
+		limitValue = *limit
+	}
+	resp, err := h.service.Members(c.Request.Context(), uc.UserID, teamusage.MembersParams{
+		OverviewParams: teamusage.OverviewParams{
+			StartDate: dashboardParams.StartDate, EndDate: dashboardParams.EndDate,
+			Granularity: dashboardParams.Granularity, Timezone: dashboardParams.Timezone,
+		},
+		Cursor: strings.TrimSpace(c.Query("cursor")),
+		Limit:  limitValue,
+	})
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	resp.RequestID = telemetry.RequestID(c.Request.Context())
+	pkg.Success(c, resp)
+}
+
+func (h *TeamUsageHandler) Organization(c *gin.Context) {
+	uc := auth.GetUserContext(c)
+	if uc == nil {
+		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dashboardParams, ok := parseUserUsageDashboardParams(c)
+	if !ok {
+		return
+	}
+	departmentLimit, ok := parseOptionalIntQueryParam(c, "department_limit")
+	if !ok {
+		return
+	}
+	memberLimit, ok := parseOptionalIntQueryParam(c, "member_limit")
+	if !ok {
+		return
+	}
+	departmentLimitValue := 0
+	if departmentLimit != nil {
+		departmentLimitValue = *departmentLimit
+	}
+	memberLimitValue := 0
+	if memberLimit != nil {
+		memberLimitValue = *memberLimit
+	}
+	resp, err := h.service.Organization(c.Request.Context(), uc.UserID, teamusage.OrganizationParams{
+		OverviewParams: teamusage.OverviewParams{
+			StartDate: dashboardParams.StartDate, EndDate: dashboardParams.EndDate,
+			Granularity: dashboardParams.Granularity, Timezone: dashboardParams.Timezone,
+		},
+		ParentDepartmentExternalID: strings.TrimSpace(c.Query("parent_department_external_id")),
+		DepartmentCursor:           strings.TrimSpace(c.Query("department_cursor")),
+		DepartmentLimit:            departmentLimitValue,
+		MemberCursor:               strings.TrimSpace(c.Query("member_cursor")),
+		MemberLimit:                memberLimitValue,
+	})
+	if err != nil {
+		writeTeamUsageError(c, err)
+		return
+	}
+	resp.RequestID = telemetry.RequestID(c.Request.Context())
+	pkg.Success(c, resp)
+}
+
+func writeTeamOverviewCompatibilityHeaders(c *gin.Context) {
+	c.Header("Deprecation", "@1783987200")
+	c.Header("Sunset", "Tue, 15 Sep 2026 00:00:00 GMT")
+	c.Header("Link", `</api/v1/user/team-usage/summary>; rel="successor-version"`)
 }
 
 func (h *TeamUsageHandler) UpdateMultiplier(c *gin.Context) {
@@ -269,6 +409,12 @@ func writeTeamUsageError(c *gin.Context, err error) {
 	}
 
 	switch {
+	case errors.Is(err, teamusage.ErrInvalidMemberCursor):
+		pkg.Error(c, http.StatusBadRequest, teamusage.ErrInvalidMemberCursor.Error())
+	case errors.Is(err, teamusage.ErrMemberSnapshotExpired):
+		pkg.Error(c, http.StatusConflict, teamusage.ErrMemberSnapshotExpired.Error())
+	case errors.Is(err, teamusage.ErrInvalidOverviewParams):
+		pkg.Error(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, teamusage.ErrNotRepresentative), errors.Is(err, teamusage.ErrSelfEditForbidden), errors.Is(err, teamusage.ErrNotUpperLevelRepresentative):
 		pkg.Error(c, http.StatusForbidden, err.Error())
 	case errors.Is(err, teamusage.ErrOutOfScope):

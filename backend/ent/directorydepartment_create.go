@@ -46,6 +46,20 @@ func (ddc *DirectoryDepartmentCreate) SetNillableParentExternalID(s *string) *Di
 	return ddc
 }
 
+// SetEffectiveParentExternalID sets the "effective_parent_external_id" field.
+func (ddc *DirectoryDepartmentCreate) SetEffectiveParentExternalID(s string) *DirectoryDepartmentCreate {
+	ddc.mutation.SetEffectiveParentExternalID(s)
+	return ddc
+}
+
+// SetNillableEffectiveParentExternalID sets the "effective_parent_external_id" field if the given value is not nil.
+func (ddc *DirectoryDepartmentCreate) SetNillableEffectiveParentExternalID(s *string) *DirectoryDepartmentCreate {
+	if s != nil {
+		ddc.SetEffectiveParentExternalID(*s)
+	}
+	return ddc
+}
+
 // SetName sets the "name" field.
 func (ddc *DirectoryDepartmentCreate) SetName(s string) *DirectoryDepartmentCreate {
 	ddc.mutation.SetName(s)
@@ -225,6 +239,10 @@ func (ddc *DirectoryDepartmentCreate) createSpec() (*DirectoryDepartment, *sqlgr
 	if value, ok := ddc.mutation.ParentExternalID(); ok {
 		_spec.SetField(directorydepartment.FieldParentExternalID, field.TypeString, value)
 		_node.ParentExternalID = &value
+	}
+	if value, ok := ddc.mutation.EffectiveParentExternalID(); ok {
+		_spec.SetField(directorydepartment.FieldEffectiveParentExternalID, field.TypeString, value)
+		_node.EffectiveParentExternalID = &value
 	}
 	if value, ok := ddc.mutation.Name(); ok {
 		_spec.SetField(directorydepartment.FieldName, field.TypeString, value)

@@ -70,6 +70,7 @@ func TestDirectorySyncSchemaPersistsFactsAndRevocationFloor(t *testing.T) {
 		SetSourceID(source.ID).
 		SetExternalID("dept-alpha").
 		SetParentExternalID("dept-root").
+		SetEffectiveParentExternalID("dept-root").
 		SetName("Department Alpha").
 		SetPath("Department Alpha").
 		SetMetadata(map[string]any{"synthetic": true}).
@@ -108,6 +109,11 @@ func TestDirectorySyncSchemaPersistsFactsAndRevocationFloor(t *testing.T) {
 		SetPerformedByUserID(user.ID).
 		SaveX(ctx)
 
+	department = client.DirectoryDepartment.GetX(ctx, department.ID)
+	if department.ParentExternalID == nil || *department.ParentExternalID != "dept-root" ||
+		department.EffectiveParentExternalID == nil || *department.EffectiveParentExternalID != "dept-root" {
+		t.Fatalf("department parents = raw:%v effective:%v, want dept-root/dept-root", department.ParentExternalID, department.EffectiveParentExternalID)
+	}
 	if department.ExternalID != "dept-alpha" || member.EmailNormalized != "alice@example.com" || membership.DepartmentExternalID != department.ExternalID || action.UserID != user.ID {
 		t.Fatalf("persisted directory schema rows are inconsistent")
 	}

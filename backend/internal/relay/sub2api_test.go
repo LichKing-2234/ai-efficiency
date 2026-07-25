@@ -3,12 +3,17 @@ package relay_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,6 +31,30 @@ func newTestProvider(t *testing.T, handler http.Handler) relay.Provider {
 		setter.SetAdminAPIKey("test-admin-key")
 	}
 	return p
+}
+
+func paddedJSONBody(t *testing.T, raw string, size int) []byte {
+	t.Helper()
+	if len(raw) > size {
+		t.Fatalf("JSON fixture size = %d, exceeds requested size %d", len(raw), size)
+	}
+	body := make([]byte, size)
+	copy(body, raw)
+	for index := len(raw); index < len(body); index++ {
+		body[index] = ' '
+	}
+	return body
+}
+
+func TestProviderSourceRejectionKindsAreClosed(t *testing.T) {
+	sentinel := errors.New("dynamic source detail")
+	err := relay.NewProviderSourceRejection(relay.ProviderSourceRejectionKind("unknown"), sentinel)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("NewProviderSourceRejection() error = %v, want wrapped sentinel", err)
+	}
+	if kind, ok := relay.ProviderSourceRejectionKindOf(err); ok || kind != "" {
+		t.Fatalf("ProviderSourceRejectionKindOf() = %q/%v, want empty/false", kind, ok)
+	}
 }
 
 func TestName(t *testing.T) {
@@ -74,6 +103,39 @@ func TestPing(t *testing.T) {
 	p := newTestProvider(t, mux)
 	if err := p.Ping(context.Background()); err != nil {
 		t.Fatalf("Ping() unexpected error: %v", err)
+	}
+}
+
+func TestPingDrainsBoundedBodyAndReusesConnection(t *testing.T) {
+	var connectionMu sync.Mutex
+	newConnections := 0
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, strings.Repeat("h", 128))
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			connectionMu.Lock()
+			newConnections++
+			connectionMu.Unlock()
+		}
+	}
+	server.Start()
+	t.Cleanup(server.Close)
+
+	client := server.Client()
+	t.Cleanup(client.CloseIdleConnections)
+	provider := relay.NewSub2apiProvider(client, server.URL, "test-key", "test-model", zap.NewNop())
+	for index := 0; index < 2; index++ {
+		if err := provider.Ping(context.Background()); err != nil {
+			t.Fatalf("Ping() call %d error = %v", index+1, err)
+		}
+	}
+
+	connectionMu.Lock()
+	gotConnections := newConnections
+	connectionMu.Unlock()
+	if gotConnections != 1 {
+		t.Fatalf("new connections = %d, want 1 across two sequential pings", gotConnections)
 	}
 }
 
@@ -769,6 +831,392 @@ func TestListUsersFetchesAllAdminPages(t *testing.T) {
 	}
 	if users[1].Role != "admin" {
 		t.Fatalf("second user role = %q, want admin", users[1].Role)
+	}
+}
+
+func TestProviderWideDirectoryContractUsesFixedQueryAndAuthoritativePages(t *testing.T) {
+	pageBodies := map[string][]byte{
+		"1": []byte(`{"success":true,"data":{"items":[{"id":11},{"id":12}],"page":1,"page_size":1000,"pages":2,"total":3}}`),
+		"2": []byte(`{"success":true,"data":{"items":[{"id":13}],"page":2,"page_size":1000,"pages":2,"total":3}}`),
+	}
+	var pages []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s, want GET", r.Method)
+		}
+		page := r.URL.Query().Get("page")
+		pages = append(pages, page)
+		if diff := cmp.Diff(map[string][]string{
+			"page":                  {page},
+			"page_size":             {"1000"},
+			"include_subscriptions": {"false"},
+			"sort_by":               {"id"},
+			"sort_order":            {"asc"},
+		}, map[string][]string(r.URL.Query())); diff != "" {
+			t.Fatalf("directory query mismatch (-want +got):\n%s", diff)
+		}
+		body, ok := pageBodies[page]
+		if !ok {
+			t.Fatalf("unexpected page %q", page)
+		}
+		_, _ = w.Write(body)
+	})
+
+	provider := newTestProvider(t, mux)
+	directory, ok := provider.(relay.ProviderWideTeamUsageProvider)
+	if !ok {
+		t.Fatal("provider does not implement ProviderWideTeamUsageProvider")
+	}
+	got, err := directory.GetProviderUserIDs(context.Background())
+	if err != nil {
+		t.Fatalf("GetProviderUserIDs() error = %v", err)
+	}
+	if diff := cmp.Diff([]int64{11, 12, 13}, got.UserIDs); diff != "" {
+		t.Fatalf("provider user IDs mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"1", "2"}, pages); diff != "" {
+		t.Fatalf("requested pages mismatch (-want +got):\n%s", diff)
+	}
+	if got.PageCount != 2 {
+		t.Fatalf("page count = %d, want 2", got.PageCount)
+	}
+	wantBytes := int64(len(pageBodies["1"]) + len(pageBodies["2"]))
+	if got.ResponseBytes != wantBytes {
+		t.Fatalf("response bytes = %d, want %d", got.ResponseBytes, wantBytes)
+	}
+}
+
+func TestProviderWideDirectoryContractRejectsInvalidPaginationAndIDs(t *testing.T) {
+	tests := []struct {
+		name  string
+		pages map[string]string
+	}{
+		{
+			name: "cross-page order",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":1,"page_size":1000,"pages":2,"total":2}}`,
+				"2": `{"success":true,"data":{"items":[{"id":10}],"page":2,"page_size":1000,"pages":2,"total":2}}`,
+			},
+		},
+		{
+			name: "duplicate ID",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11},{"id":11}],"page":1,"page_size":1000,"pages":1,"total":2}}`,
+			},
+		},
+		{
+			name: "non-positive ID",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":0}],"page":1,"page_size":1000,"pages":1,"total":1}}`,
+			},
+		},
+		{
+			name: "response page mismatch",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":2,"page_size":1000,"pages":1,"total":1}}`,
+			},
+		},
+		{
+			name: "page size mismatch",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":1,"page_size":200,"pages":1,"total":1}}`,
+			},
+		},
+		{
+			name: "missing total pages",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":1,"page_size":1000,"total":1}}`,
+			},
+		},
+		{
+			name: "changing total",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":1,"page_size":1000,"pages":2,"total":2}}`,
+				"2": `{"success":true,"data":{"items":[{"id":12}],"page":2,"page_size":1000,"pages":2,"total":3}}`,
+			},
+		},
+		{
+			name: "empty nonterminal page",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[],"page":1,"page_size":1000,"pages":2,"total":1}}`,
+			},
+		},
+		{
+			name: "final count mismatch",
+			pages: map[string]string{
+				"1": `{"success":true,"data":{"items":[{"id":11}],"page":1,"page_size":1000,"pages":1,"total":2}}`,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+				body, ok := test.pages[r.URL.Query().Get("page")]
+				if !ok {
+					t.Fatalf("unexpected page %q", r.URL.Query().Get("page"))
+				}
+				_, _ = io.WriteString(w, body)
+			})
+			provider := newTestProvider(t, mux)
+			directory := provider.(relay.ProviderWideTeamUsageProvider)
+			if _, err := directory.GetProviderUserIDs(context.Background()); err == nil {
+				t.Fatalf("GetProviderUserIDs() error = nil, want %s rejection", test.name)
+			}
+		})
+	}
+}
+
+func TestProviderWideDirectoryContractRejectsExactUserAndBodyBounds(t *testing.T) {
+	t.Run("5000 users", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, r *http.Request) {
+			page, err := strconv.Atoi(r.URL.Query().Get("page"))
+			if err != nil || page < 1 || page > 5 {
+				t.Fatalf("unexpected page %q", r.URL.Query().Get("page"))
+			}
+			items := make([]map[string]int64, 1000)
+			for index := range items {
+				items[index] = map[string]int64{"id": int64((page-1)*1000 + index + 1)}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{
+				"items": items, "page": page, "page_size": 1000, "pages": 5, "total": 5000,
+			}})
+		})
+		provider := newTestProvider(t, mux)
+		directory := provider.(relay.ProviderWideTeamUsageProvider)
+		if _, err := directory.GetProviderUserIDs(context.Background()); err == nil {
+			t.Fatal("GetProviderUserIDs() error = nil, want exact-5000 rejection")
+		} else {
+			requireProviderSourceRejectionKind(t, err, relay.ProviderSourceRejectionProviderIDBound)
+		}
+	})
+
+	const directoryBodyLimit = 16 << 20
+	const validEmptyDirectory = `{"success":true,"data":{"items":[],"page":1,"page_size":1000,"pages":1,"total":0}}`
+	for _, test := range []struct {
+		name    string
+		size    int
+		wantErr bool
+	}{
+		{name: "below 16 MiB", size: directoryBodyLimit - 1},
+		{name: "exactly 16 MiB", size: directoryBodyLimit, wantErr: true},
+		{name: "over 16 MiB", size: directoryBodyLimit + 1, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := paddedJSONBody(t, validEmptyDirectory, test.size)
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(body)
+			})
+			provider := newTestProvider(t, mux)
+			directory := provider.(relay.ProviderWideTeamUsageProvider)
+			got, err := directory.GetProviderUserIDs(context.Background())
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "16777216-byte limit") {
+					t.Fatalf("GetProviderUserIDs() error = %v, want pre-decode body limit rejection", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetProviderUserIDs() error = %v, want below-limit acceptance", err)
+			}
+			if got.ResponseBytes != int64(test.size) || got.PageCount != 1 || len(got.UserIDs) != 0 {
+				t.Fatalf("directory result = %#v, want accepted %d-byte empty page", got, test.size)
+			}
+		})
+	}
+}
+
+func TestProviderWideCurrentStatsContractUsesOneBoundedExactChunk(t *testing.T) {
+	response := []byte(`{"success":true,"data":{"stats":{"101":{"user_id":101,"today_actual_cost":1.25,"total_actual_cost":10.5,"total_tokens":123},"102":{"user_id":102,"today_actual_cost":0,"total_actual_cost":0}}}}`)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		var payload map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(payload) != 1 {
+			t.Fatalf("request fields = %v, want only user_ids", payload)
+		}
+		var ids []int64
+		if err := json.Unmarshal(payload["user_ids"], &ids); err != nil {
+			t.Fatalf("decode user_ids: %v", err)
+		}
+		if diff := cmp.Diff([]int64{101, 102}, ids); diff != "" {
+			t.Fatalf("user_ids mismatch (-want +got):\n%s", diff)
+		}
+		_, _ = w.Write(response)
+	})
+
+	provider := newTestProvider(t, mux)
+	statsProvider := provider.(relay.ProviderWideTeamUsageProvider)
+	got, err := statsProvider.GetProviderCurrentUsageStats(context.Background(), []int64{101, 102})
+	if err != nil {
+		t.Fatalf("GetProviderCurrentUsageStats() error = %v", err)
+	}
+	if got.ResponseBytes != int64(len(response)) {
+		t.Fatalf("response bytes = %d, want %d", got.ResponseBytes, len(response))
+	}
+	if len(got.Stats) != 2 || got.Stats[101].TotalActualCost != 10.5 || got.Stats[102].UserID != 102 {
+		t.Fatalf("stats = %#v, want exact records for 101 and 102", got.Stats)
+	}
+}
+
+func TestProviderWideCurrentStatsContractAcceptsExactly500RequestedIDs(t *testing.T) {
+	requested := make([]int64, 500)
+	stats := make(map[string]any, len(requested))
+	for index := range requested {
+		userID := int64(index + 1)
+		requested[index] = userID
+		stats[strconv.FormatInt(userID, 10)] = map[string]any{
+			"user_id": userID, "today_actual_cost": float64(index), "total_actual_cost": float64(index + 1),
+		}
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			UserIDs []int64 `json:"user_ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if diff := cmp.Diff(requested, payload.UserIDs); diff != "" {
+			t.Fatalf("500-ID request mismatch (-want +got):\n%s", diff)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{"stats": stats}})
+	})
+	provider := newTestProvider(t, mux)
+	wide := provider.(relay.ProviderWideTeamUsageProvider)
+	got, err := wide.GetProviderCurrentUsageStats(context.Background(), requested)
+	if err != nil {
+		t.Fatalf("GetProviderCurrentUsageStats() error = %v", err)
+	}
+	if len(got.Stats) != 500 {
+		t.Fatalf("stats count = %d, want 500", len(got.Stats))
+	}
+}
+
+func TestProviderWideCurrentStatsContractRejectsRequestAndCoverageViolations(t *testing.T) {
+	validRecord := `{"user_id":101,"today_actual_cost":1,"total_actual_cost":2}`
+	tests := []struct {
+		name string
+		ids  []int64
+		body string
+	}{
+		{name: "empty request", ids: nil, body: `{}`},
+		{name: "non-positive request", ids: []int64{0}, body: `{}`},
+		{name: "duplicate request", ids: []int64{101, 101}, body: `{}`},
+		{name: "missing record", ids: []int64{101, 102}, body: `{"success":true,"data":{"stats":{"101":` + validRecord + `}}}`},
+		{name: "extra record", ids: []int64{101}, body: `{"success":true,"data":{"stats":{"101":` + validRecord + `,"102":{"user_id":102}}}}`},
+		{name: "embedded ID mismatch", ids: []int64{101}, body: `{"success":true,"data":{"stats":{"101":{"user_id":102}}}}`},
+		{name: "duplicate JSON key", ids: []int64{101}, body: `{"success":true,"data":{"stats":{"101":` + validRecord + `,"101":` + validRecord + `}}}`},
+		{name: "negative cost", ids: []int64{101}, body: `{"success":true,"data":{"stats":{"101":{"user_id":101,"today_actual_cost":-1,"total_actual_cost":2}}}}`},
+		{name: "negative tokens", ids: []int64{101}, body: `{"success":true,"data":{"stats":{"101":{"user_id":101,"today_actual_cost":1,"total_actual_cost":2,"total_tokens":-1}}}}`},
+	}
+	tooMany := make([]int64, 501)
+	for index := range tooMany {
+		tooMany[index] = int64(index + 1)
+	}
+	tests = append(tests, struct {
+		name string
+		ids  []int64
+		body string
+	}{name: "501 requested IDs", ids: tooMany, body: `{}`})
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var calls int
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
+				calls++
+				_, _ = io.WriteString(w, test.body)
+			})
+			provider := newTestProvider(t, mux)
+			statsProvider := provider.(relay.ProviderWideTeamUsageProvider)
+			if _, err := statsProvider.GetProviderCurrentUsageStats(context.Background(), test.ids); err == nil {
+				t.Fatalf("GetProviderCurrentUsageStats() error = nil, want %s rejection", test.name)
+			} else if test.name == "missing record" || test.name == "extra record" || test.name == "embedded ID mismatch" || test.name == "duplicate JSON key" {
+				requireProviderSourceRejectionKind(t, err, relay.ProviderSourceRejectionStatsExactCoverage)
+			}
+			if (test.name == "empty request" || test.name == "non-positive request" || test.name == "duplicate request" || test.name == "501 requested IDs") && calls != 0 {
+				t.Fatalf("HTTP calls = %d, want validation before request", calls)
+			}
+		})
+	}
+}
+
+func requireProviderSourceRejectionKind(t *testing.T, err error, want relay.ProviderSourceRejectionKind) {
+	t.Helper()
+	got, ok := relay.ProviderSourceRejectionKindOf(err)
+	if !ok || got != want {
+		t.Fatalf("ProviderSourceRejectionKindOf(%v) = %q/%v, want %q/true", err, got, ok, want)
+	}
+}
+
+func TestProviderWideCurrentStatsContractEnforcesBodyLimitBeforeDecode(t *testing.T) {
+	const statsBodyLimit = 2 << 20
+	const validStats = `{"success":true,"data":{"stats":{"101":{"user_id":101,"today_actual_cost":1,"total_actual_cost":2}}}}`
+	for _, test := range []struct {
+		name    string
+		size    int
+		wantErr bool
+	}{
+		{name: "below 2 MiB", size: statsBodyLimit - 1},
+		{name: "exactly 2 MiB", size: statsBodyLimit, wantErr: true},
+		{name: "over 2 MiB", size: statsBodyLimit + 1, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := paddedJSONBody(t, validStats, test.size)
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(body)
+			})
+			provider := newTestProvider(t, mux)
+			statsProvider := provider.(relay.ProviderWideTeamUsageProvider)
+			got, err := statsProvider.GetProviderCurrentUsageStats(context.Background(), []int64{101})
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "2097152-byte limit") {
+					t.Fatalf("GetProviderCurrentUsageStats() error = %v, want pre-decode body limit rejection", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetProviderCurrentUsageStats() error = %v, want below-limit acceptance", err)
+			}
+			if got.ResponseBytes != int64(test.size) || len(got.Stats) != 1 {
+				t.Fatalf("stats result = %#v, want accepted %d-byte response", got, test.size)
+			}
+		})
+	}
+}
+
+func TestProviderWideUsageSourcesDoNotExposeUpstreamIdentityMessages(t *testing.T) {
+	const upstreamMessage = "alice@example.com secret response text"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/users", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": upstreamMessage})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": upstreamMessage})
+	})
+	provider := newTestProvider(t, mux)
+	wide := provider.(relay.ProviderWideTeamUsageProvider)
+
+	_, directoryErr := wide.GetProviderUserIDs(context.Background())
+	_, statsErr := wide.GetProviderCurrentUsageStats(context.Background(), []int64{101})
+	for name, err := range map[string]error{"directory": directoryErr, "stats": statsErr} {
+		if err == nil {
+			t.Fatalf("%s error = nil, want failed envelope rejection", name)
+		}
+		if strings.Contains(err.Error(), upstreamMessage) || strings.Contains(err.Error(), "alice@example.com") {
+			t.Fatalf("%s error exposed upstream identity text: %v", name, err)
+		}
 	}
 }
 
@@ -2807,7 +3255,13 @@ func TestListPlatformGroupsReturnsActivePlatformSummaries(t *testing.T) {
 func TestGetUserUsageDashboard(t *testing.T) {
 	var loginCount int
 	var meCount int
+	var seenPathsMu sync.Mutex
 	var seenPaths []string
+	recordPath := func(r *http.Request) {
+		seenPathsMu.Lock()
+		seenPaths = append(seenPaths, r.URL.RequestURI())
+		seenPathsMu.Unlock()
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) {
@@ -2843,7 +3297,7 @@ func TestGetUserUsageDashboard(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/api/v1/usage/dashboard/stats", func(w http.ResponseWriter, r *http.Request) {
-		seenPaths = append(seenPaths, r.URL.RequestURI())
+		recordPath(r)
 		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
 			t.Fatalf("stats Authorization = %q, want user JWT", r.Header.Get("Authorization"))
 		}
@@ -2877,7 +3331,7 @@ func TestGetUserUsageDashboard(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/api/v1/usage/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
-		seenPaths = append(seenPaths, r.URL.RequestURI())
+		recordPath(r)
 		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
 			t.Fatalf("trend Authorization = %q, want user JWT", r.Header.Get("Authorization"))
 		}
@@ -2909,7 +3363,7 @@ func TestGetUserUsageDashboard(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/api/v1/usage/dashboard/models", func(w http.ResponseWriter, r *http.Request) {
-		seenPaths = append(seenPaths, r.URL.RequestURI())
+		recordPath(r)
 		if r.Header.Get("Authorization") != "Bearer test-jwt-token" {
 			t.Fatalf("models Authorization = %q, want user JWT", r.Header.Get("Authorization"))
 		}
@@ -2958,6 +3412,10 @@ func TestGetUserUsageDashboard(t *testing.T) {
 		"/api/v1/usage/dashboard/trend?end_date=2026-06-06&granularity=day&start_date=2026-06-01&timezone=Asia%2FShanghai",
 		"/api/v1/usage/dashboard/models?end_date=2026-06-06&start_date=2026-06-01&timezone=Asia%2FShanghai",
 	}
+	seenPathsMu.Lock()
+	sort.Strings(seenPaths)
+	seenPathsMu.Unlock()
+	sort.Strings(wantPaths)
 	if diff := cmp.Diff(wantPaths, seenPaths); diff != "" {
 		t.Fatalf("paths mismatch (-want +got):\n%s", diff)
 	}
@@ -3012,114 +3470,6 @@ func TestGetUserUsageDashboardFailsFastOnSub2APIError(t *testing.T) {
 	}
 }
 
-func TestSub2APITeamUsageTrendForUsersFansOutByUserID(t *testing.T) {
-	var mu sync.Mutex
-	var requested []map[string]string
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		requested = append(requested, map[string]string{
-			"user_id":     r.URL.Query().Get("user_id"),
-			"start_date":  r.URL.Query().Get("start_date"),
-			"end_date":    r.URL.Query().Get("end_date"),
-			"granularity": r.URL.Query().Get("granularity"),
-			"timezone":    r.URL.Query().Get("timezone"),
-		})
-		mu.Unlock()
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"data":    []map[string]any{{"date": "2026-06-26", "actual_cost": 1.25}},
-		})
-	})
-	p := newTestProvider(t, mux)
-	trender := p.(relay.TeamMemberTrendProvider)
-	got, err := trender.GetUsageTrendForUsers(context.Background(), []int64{1001, 1002}, relay.TeamMemberTrendParams{
-		StartDate:   "2026-06-01",
-		EndDate:     "2026-06-26",
-		Granularity: "day",
-		Timezone:    "Asia/Shanghai",
-	})
-	if err != nil {
-		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	sort.Slice(requested, func(i, j int) bool {
-		return requested[i]["user_id"] < requested[j]["user_id"]
-	})
-	if diff := cmp.Diff([]map[string]string{
-		{
-			"user_id":     "1001",
-			"start_date":  "2026-06-01",
-			"end_date":    "2026-06-26",
-			"granularity": "day",
-			"timezone":    "Asia/Shanghai",
-		},
-		{
-			"user_id":     "1002",
-			"start_date":  "2026-06-01",
-			"end_date":    "2026-06-26",
-			"granularity": "day",
-			"timezone":    "Asia/Shanghai",
-		},
-	}, requested); diff != "" {
-		t.Fatalf("requested query mismatch (-want +got):\n%s", diff)
-	}
-	if len(got[1001]) != 1 || got[1001][0].ActualCost != 1.25 {
-		t.Fatalf("trend[1001] = %#v, want one actual_cost point", got[1001])
-	}
-}
-
-func TestSub2APITeamUsageTrendForUsersFetchesConcurrently(t *testing.T) {
-	var mu sync.Mutex
-	seen := map[string]bool{}
-	allArrived := make(chan struct{})
-	closed := false
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
-		userID := r.URL.Query().Get("user_id")
-		mu.Lock()
-		seen[userID] = true
-		if len(seen) == 2 && !closed {
-			close(allArrived)
-			closed = true
-		}
-		mu.Unlock()
-
-		select {
-		case <-allArrived:
-		case <-r.Context().Done():
-			return
-		case <-time.After(500 * time.Millisecond):
-			http.Error(w, "requests were not concurrent", http.StatusGatewayTimeout)
-			return
-		}
-
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"data":    []map[string]any{{"date": "2026-06-26", "actual_cost": 1.25}},
-		})
-	})
-	p := newTestProvider(t, mux)
-	trender := p.(relay.TeamMemberTrendProvider)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
-	defer cancel()
-	got, err := trender.GetUsageTrendForUsers(ctx, []int64{1001, 1002}, relay.TeamMemberTrendParams{
-		StartDate:   "2026-06-01",
-		EndDate:     "2026-06-26",
-		Granularity: "day",
-		Timezone:    "Asia/Shanghai",
-	})
-	if err != nil {
-		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("trend map size = %d, want 2", len(got))
-	}
-}
-
 func TestSub2APIListGroupRateMultipliersDecodesRateAndRPM(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/groups/42/rate-multipliers", func(w http.ResponseWriter, r *http.Request) {
@@ -3140,6 +3490,422 @@ func TestSub2APIListGroupRateMultipliersDecodesRateAndRPM(t *testing.T) {
 	if got[0].RPMOverride == nil || *got[0].RPMOverride != 120 {
 		t.Fatalf("rpm override = %#v, want 120", got[0].RPMOverride)
 	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsDeduplicatesRequests(t *testing.T) {
+	var mu sync.Mutex
+	requestCountByGroup := make(map[int64]int)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		mu.Lock()
+		requestCountByGroup[groupID]++
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{{"user_id": groupID * 100, "rate_multiplier": float64(groupID)}},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	results := reader.GroupRateMultipliersForGroups(context.Background(), []int64{42, 7, 42, 9, 7})
+	byGroup := rateMultiplierResultsByGroup(t, results)
+
+	if diff := cmp.Diff([]int64{7, 9, 42}, sortedRateMultiplierResultGroupIDs(byGroup)); diff != "" {
+		t.Fatalf("result group IDs mismatch (-want +got):\n%s", diff)
+	}
+	for _, groupID := range []int64{7, 9, 42} {
+		result := byGroup[groupID]
+		if result.Err != nil {
+			t.Fatalf("group %d result error = %v", groupID, result.Err)
+		}
+		if len(result.Entries) != 1 || result.Entries[0].UserID != groupID*100 {
+			t.Fatalf("group %d entries = %#v", groupID, result.Entries)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if diff := cmp.Diff(map[int64]int{7: 1, 9: 1, 42: 1}, requestCountByGroup); diff != "" {
+		t.Fatalf("request counts mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsLimitsConcurrencyToFour(t *testing.T) {
+	var mu sync.Mutex
+	active := 0
+	maxActive := 0
+	requestCount := 0
+	started := make(chan struct{}, 8)
+	release := make(chan struct{})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		mu.Lock()
+		active++
+		requestCount++
+		if active > maxActive {
+			maxActive = active
+		}
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			active--
+			mu.Unlock()
+		}()
+
+		started <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{{"user_id": groupID * 100}},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	done := make(chan []relay.GroupRateMultiplierReadResult, 1)
+	go func() {
+		done <- reader.GroupRateMultipliersForGroups(context.Background(), []int64{1, 2, 3, 4, 5, 6, 7, 8})
+	}()
+
+	for i := 0; i < 4; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatalf("only %d requests started before timeout, want four", i)
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	startedBeforeRelease := requestCount
+	maxBeforeRelease := maxActive
+	mu.Unlock()
+	close(release)
+
+	var results []relay.GroupRateMultiplierReadResult
+	select {
+	case results = <-done:
+	case <-time.After(time.Second):
+		t.Fatal("batch read did not finish after releasing requests")
+	}
+	if len(results) != 8 {
+		t.Fatalf("result count = %d, want 8", len(results))
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if startedBeforeRelease != 4 {
+		t.Fatalf("requests started before release = %d, want 4", startedBeforeRelease)
+	}
+	if maxBeforeRelease != 4 || maxActive != 4 {
+		t.Fatalf("max active requests = %d before release and %d overall, want 4", maxBeforeRelease, maxActive)
+	}
+	if requestCount != 8 {
+		t.Fatalf("request count = %d, want 8", requestCount)
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsFinishesNearSlowestBranch(t *testing.T) {
+	delays := map[int64]time.Duration{
+		1: 80 * time.Millisecond,
+		2: 120 * time.Millisecond,
+		3: 160 * time.Millisecond,
+		4: 200 * time.Millisecond,
+	}
+	var mu sync.Mutex
+	arrived := 0
+	allArrived := make(chan struct{})
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		mu.Lock()
+		arrived++
+		if arrived == len(delays) {
+			close(allArrived)
+		}
+		mu.Unlock()
+		select {
+		case <-allArrived:
+		case <-r.Context().Done():
+			return
+		}
+		select {
+		case <-time.After(delays[groupID]):
+		case <-r.Context().Done():
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": []any{}})
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	startedAt := time.Now()
+	results := reader.GroupRateMultipliersForGroups(context.Background(), []int64{1, 2, 3, 4})
+	elapsed := time.Since(startedAt)
+
+	if len(results) != 4 {
+		t.Fatalf("result count = %d, want 4", len(results))
+	}
+	if elapsed < 180*time.Millisecond || elapsed > 500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want near the 200ms slowest branch", elapsed)
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsRecordsPartialFailure(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		if groupID == 11 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "group metadata unavailable"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": []map[string]any{{"user_id": groupID * 100}},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	byGroup := rateMultiplierResultsByGroup(t, reader.GroupRateMultipliersForGroups(context.Background(), []int64{10, 11, 12}))
+
+	if byGroup[10].Err != nil || len(byGroup[10].Entries) != 1 {
+		t.Fatalf("group 10 result = %#v, want success", byGroup[10])
+	}
+	if byGroup[12].Err != nil || len(byGroup[12].Entries) != 1 {
+		t.Fatalf("group 12 result = %#v, want success", byGroup[12])
+	}
+	if byGroup[11].Err == nil || !strings.Contains(byGroup[11].Err.Error(), "unexpected status 503") {
+		t.Fatalf("group 11 error = %v, want status 503 failure", byGroup[11].Err)
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsCancelsRequestAtDeadline(t *testing.T) {
+	requestCanceled := make(chan struct{}, 1)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/42/rate-multipliers", func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		requestCanceled <- struct{}{}
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	startedAt := time.Now()
+	results := reader.GroupRateMultipliersForGroups(context.Background(), []int64{42})
+	elapsed := time.Since(startedAt)
+
+	if len(results) != 1 || results[0].GroupID != 42 {
+		t.Fatalf("results = %#v, want one result for group 42", results)
+	}
+	if !errors.Is(results[0].Err, context.DeadlineExceeded) {
+		t.Fatalf("result error = %v, want context deadline exceeded", results[0].Err)
+	}
+	if elapsed < 1800*time.Millisecond || elapsed > 3500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want the two-second per-request deadline", elapsed)
+	}
+	select {
+	case <-requestCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("server request context was not canceled")
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsShorterCallerDeadlineWins(t *testing.T) {
+	started := make(chan int64, 6)
+	canceled := make(chan int64, 6)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		started <- groupID
+		<-r.Context().Done()
+		canceled <- groupID
+	})
+
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
+	defer cancel()
+	startedAt := time.Now()
+	results := reader.GroupRateMultipliersForGroups(ctx, []int64{1, 2, 3, 4, 5, 6})
+	elapsed := time.Since(startedAt)
+
+	if elapsed < 500*time.Millisecond || elapsed > 1500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want the 750ms caller deadline to win", elapsed)
+	}
+	byGroup := rateMultiplierResultsByGroup(t, results)
+	if len(byGroup) != 6 {
+		t.Fatalf("result count = %d, want 6", len(byGroup))
+	}
+	for groupID := int64(1); groupID <= 6; groupID++ {
+		result := byGroup[groupID]
+		if !errors.Is(result.Err, context.DeadlineExceeded) {
+			t.Fatalf("group %d error = %v, want caller deadline exceeded", groupID, result.Err)
+		}
+		if len(result.Entries) != 0 {
+			t.Fatalf("group %d entries = %#v, want none after deadline", groupID, result.Entries)
+		}
+	}
+
+	startedGroupIDs := drainInt64Channel(started)
+	sort.Slice(startedGroupIDs, func(i, j int) bool { return startedGroupIDs[i] < startedGroupIDs[j] })
+	if diff := cmp.Diff([]int64{1, 2, 3, 4}, startedGroupIDs); diff != "" {
+		t.Fatalf("started HTTP groups mismatch (-want +got):\n%s", diff)
+	}
+	canceledGroupIDs := receiveInt64Values(t, canceled, 4)
+	sort.Slice(canceledGroupIDs, func(i, j int) bool { return canceledGroupIDs[i] < canceledGroupIDs[j] })
+	if diff := cmp.Diff([]int64{1, 2, 3, 4}, canceledGroupIDs); diff != "" {
+		t.Fatalf("canceled HTTP groups mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGroupRateMultipliersForGroupsHonorsOverallBatchBudget(t *testing.T) {
+	var mu sync.Mutex
+	requested := make(map[int64]struct{})
+	lifecycles := make(chan rateMultiplierRequestLifecycle, 16)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/groups/", func(w http.ResponseWriter, r *http.Request) {
+		groupID := rateMultiplierGroupIDFromPath(t, r.URL.Path)
+		requestStartedAt := time.Now()
+		mu.Lock()
+		requested[groupID] = struct{}{}
+		mu.Unlock()
+		<-r.Context().Done()
+		lifecycles <- rateMultiplierRequestLifecycle{GroupID: groupID, Duration: time.Since(requestStartedAt)}
+	})
+
+	groupIDs := make([]int64, 16)
+	for i := range groupIDs {
+		groupIDs[i] = int64(i + 1)
+	}
+	p := newTestProvider(t, mux)
+	reader := p.(relay.GroupRateMultiplierBatchReader)
+	startedAt := time.Now()
+	results := reader.GroupRateMultipliersForGroups(context.Background(), groupIDs)
+	elapsed := time.Since(startedAt)
+
+	if elapsed < 4500*time.Millisecond || elapsed > 6500*time.Millisecond {
+		t.Fatalf("elapsed = %v, want the five-second overall batch budget", elapsed)
+	}
+	byGroup := rateMultiplierResultsByGroup(t, results)
+	if len(byGroup) != len(groupIDs) {
+		t.Fatalf("result count = %d, want %d", len(byGroup), len(groupIDs))
+	}
+	for _, groupID := range groupIDs {
+		result := byGroup[groupID]
+		if !errors.Is(result.Err, context.DeadlineExceeded) {
+			t.Fatalf("group %d error = %v, want deadline exceeded", groupID, result.Err)
+		}
+		if len(result.Entries) != 0 {
+			t.Fatalf("group %d entries = %#v, want none after deadline", groupID, result.Entries)
+		}
+	}
+
+	mu.Lock()
+	requestedGroupIDs := make([]int64, 0, len(requested))
+	for groupID := range requested {
+		requestedGroupIDs = append(requestedGroupIDs, groupID)
+	}
+	mu.Unlock()
+	sort.Slice(requestedGroupIDs, func(i, j int) bool { return requestedGroupIDs[i] < requestedGroupIDs[j] })
+	if diff := cmp.Diff([]int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, requestedGroupIDs); diff != "" {
+		t.Fatalf("requested HTTP groups mismatch (-want +got):\n%s", diff)
+	}
+
+	for _, lifecycle := range receiveRequestLifecycles(t, lifecycles, 12) {
+		switch {
+		case lifecycle.GroupID <= 8:
+			if lifecycle.Duration < 1700*time.Millisecond || lifecycle.Duration > 3*time.Second {
+				t.Fatalf("group %d request duration = %v, want the two-second request deadline", lifecycle.GroupID, lifecycle.Duration)
+			}
+		case lifecycle.GroupID <= 12:
+			if lifecycle.Duration < 500*time.Millisecond || lifecycle.Duration > 1800*time.Millisecond {
+				t.Fatalf("group %d request duration = %v, want cancellation by the batch deadline", lifecycle.GroupID, lifecycle.Duration)
+			}
+		default:
+			t.Fatalf("unexpected HTTP request for group %d", lifecycle.GroupID)
+		}
+	}
+}
+
+func drainInt64Channel(values <-chan int64) []int64 {
+	drained := make([]int64, 0, len(values))
+	for len(values) > 0 {
+		drained = append(drained, <-values)
+	}
+	return drained
+}
+
+func receiveInt64Values(t *testing.T, values <-chan int64, count int) []int64 {
+	t.Helper()
+	received := make([]int64, 0, count)
+	for len(received) < count {
+		select {
+		case value := <-values:
+			received = append(received, value)
+		case <-time.After(time.Second):
+			t.Fatalf("received %d values, want %d", len(received), count)
+		}
+	}
+	return received
+}
+
+type rateMultiplierRequestLifecycle struct {
+	GroupID  int64
+	Duration time.Duration
+}
+
+func receiveRequestLifecycles(t *testing.T, values <-chan rateMultiplierRequestLifecycle, count int) []rateMultiplierRequestLifecycle {
+	t.Helper()
+	received := make([]rateMultiplierRequestLifecycle, 0, count)
+	for len(received) < count {
+		select {
+		case value := <-values:
+			received = append(received, value)
+		case <-time.After(time.Second):
+			t.Fatalf("received %d request lifecycles, want %d", len(received), count)
+		}
+	}
+	return received
+}
+
+func rateMultiplierGroupIDFromPath(t *testing.T, path string) int64 {
+	t.Helper()
+	const prefix = "/api/v1/admin/groups/"
+	const suffix = "/rate-multipliers"
+	groupID, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix), 10, 64)
+	if err != nil {
+		t.Errorf("parse group ID from path %q: %v", path, err)
+		return 0
+	}
+	return groupID
+}
+
+func rateMultiplierResultsByGroup(t *testing.T, results []relay.GroupRateMultiplierReadResult) map[int64]relay.GroupRateMultiplierReadResult {
+	t.Helper()
+	byGroup := make(map[int64]relay.GroupRateMultiplierReadResult, len(results))
+	for _, result := range results {
+		if _, exists := byGroup[result.GroupID]; exists {
+			t.Fatalf("duplicate result for group %d", result.GroupID)
+		}
+		byGroup[result.GroupID] = result
+	}
+	return byGroup
+}
+
+func sortedRateMultiplierResultGroupIDs(results map[int64]relay.GroupRateMultiplierReadResult) []int64 {
+	groupIDs := make([]int64, 0, len(results))
+	for groupID := range results {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	return groupIDs
 }
 
 func TestSub2APIReplaceGroupRateMultipliersPreservesRPMPayloadShape(t *testing.T) {
@@ -3246,6 +4012,7 @@ func TestSub2APIGetUsageDashboardForUserUsesAdminFilteredEndpoints(t *testing.T)
 
 func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 	var body map[string]any
+	var trendRequests atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -3256,28 +4023,233 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 			"data": map[string]any{
 				"stats": map[string]any{
 					"1001": map[string]any{
-						"user_id":           1001,
-						"today_actual_cost": 1.0,
-						"total_actual_cost": 10.0,
-						"total_tokens":      1234,
+						"user_id":            1001,
+						"today_actual_cost":  1.0,
+						"total_actual_cost":  10.0,
+						"total_tokens":       1234,
+						"range_actual_cost":  7.5,
+						"range_total_tokens": 987,
 					},
 				},
 			},
 		})
 	})
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		trendRequests.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []any{}})
+	})
 	p := newTestProvider(t, mux)
 	summary := p.(relay.TeamUsageSummaryProvider)
-	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{Timezone: "Asia/Shanghai"})
+	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07",
+		Granularity: "day", Timezone: "Asia/Shanghai",
+	})
 	if err != nil {
 		t.Fatalf("GetBatchUserUsageStats() error = %v", err)
 	}
 	if diff := cmp.Diff([]any{float64(1001)}, body["user_ids"]); diff != "" {
 		t.Fatalf("user_ids mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff("Asia/Shanghai", body["timezone"]); diff != "" {
-		t.Fatalf("timezone mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff(map[string]any{
+		"start_date":  "2026-07-01",
+		"end_date":    "2026-07-07",
+		"granularity": "day",
+		"timezone":    "Asia/Shanghai",
+	}, map[string]any{
+		"start_date":  body["start_date"],
+		"end_date":    body["end_date"],
+		"granularity": body["granularity"],
+		"timezone":    body["timezone"],
+	}); diff != "" {
+		t.Fatalf("normalized range mismatch (-want +got):\n%s", diff)
 	}
 	if got[1001].TotalActualCost != 10.0 || got[1001].TotalTokens == nil || *got[1001].TotalTokens != 1234 {
 		t.Fatalf("batch stats = %#v, want user 1001 total_actual_cost 10.0 total_tokens 1234", got)
+	}
+	if got[1001].RangeActualCost == nil || *got[1001].RangeActualCost != 7.5 ||
+		got[1001].RangeTotalTokens == nil || *got[1001].RangeTotalTokens != 987 {
+		t.Fatalf("batch stats = %#v, want independent range_actual_cost 7.5 range_total_tokens 987", got)
+	}
+	if trendRequests.Load() != 0 {
+		t.Fatalf("trend requests = %d, want 0 for complete batch fields", trendRequests.Load())
+	}
+}
+
+func TestSub2APIGetBatchUserUsageStatsLeavesRangeCompletionToTeamUsage(t *testing.T) {
+	var trendCalls atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{"stats": map[string]any{
+				"1001": map[string]any{"user_id": 1001, "today_actual_cost": 1.5, "total_actual_cost": 12.5},
+			}},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, _ *http.Request) {
+		trendCalls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": []any{}})
+	})
+	p := newTestProvider(t, mux)
+	summary := p.(relay.TeamUsageSummaryProvider)
+
+	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "UTC",
+		RequireCompleteRange: true,
+	})
+	if err != nil {
+		t.Fatalf("GetBatchUserUsageStats() error = %v", err)
+	}
+	if trendCalls.Load() != 0 {
+		t.Fatalf("trend fallback calls = %d, want 0", trendCalls.Load())
+	}
+	if got[1001].RangeActualCost != nil || got[1001].RangeTotalTokens != nil {
+		t.Fatalf("range fields = %#v/%#v, want incomplete stats without fallback", got[1001].RangeActualCost, got[1001].RangeTotalTokens)
+	}
+}
+
+func TestSub2APIGetBatchUserUsageStatsDoesNotBackfillMissingRange(t *testing.T) {
+	var requestedTrend []map[string]string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"stats": map[string]any{
+					"1001": map[string]any{
+						"user_id": 1001, "today_actual_cost": 1.0, "total_actual_cost": 10.0,
+						"range_actual_cost": 7.5, "range_total_tokens": 987,
+					},
+					"1002": map[string]any{
+						"user_id": 1002, "today_actual_cost": 2.0, "total_actual_cost": 20.0,
+					},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		requestedTrend = append(requestedTrend, map[string]string{
+			"user_id":     r.URL.Query().Get("user_id"),
+			"start_date":  r.URL.Query().Get("start_date"),
+			"end_date":    r.URL.Query().Get("end_date"),
+			"granularity": r.URL.Query().Get("granularity"),
+			"timezone":    r.URL.Query().Get("timezone"),
+		})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": []map[string]any{
+				{"date": "2026-07-01", "actual_cost": 1.25, "total_tokens": 100},
+				{"date": "2026-07-02", "actual_cost": 2.50, "total_tokens": 200},
+			},
+		})
+	})
+
+	p := newTestProvider(t, mux)
+	summary := p.(relay.TeamUsageSummaryProvider)
+	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001, 1002}, relay.TeamUsageSummaryParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07",
+		Granularity: "day", Timezone: "Asia/Shanghai", RequireCompleteRange: true,
+	})
+	if err != nil {
+		t.Fatalf("GetBatchUserUsageStats() error = %v", err)
+	}
+	if got[1001].RangeActualCost == nil || *got[1001].RangeActualCost != 7.5 ||
+		got[1001].RangeTotalTokens == nil || *got[1001].RangeTotalTokens != 987 {
+		t.Fatalf("batch stats[1001] = %#v, want direct range totals 7.5/987", got[1001])
+	}
+	if got[1002].RangeActualCost != nil || got[1002].RangeTotalTokens != nil {
+		t.Fatalf("batch stats[1002] = %#v, want range completion deferred to Team Usage", got[1002])
+	}
+	if diff := cmp.Diff([]map[string]string(nil), requestedTrend); diff != "" {
+		t.Fatalf("trend requests mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSub2APIGetBatchUserUsageStatsNeverStartsRangeTrend(t *testing.T) {
+	var trendRequests atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"stats": map[string]any{
+					"1001": map[string]any{
+						"user_id": 1001, "today_actual_cost": 1.0, "total_actual_cost": 10.0,
+					},
+				},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+		trendRequests.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "upstream failed"})
+	})
+
+	p := newTestProvider(t, mux)
+	summary := p.(relay.TeamUsageSummaryProvider)
+	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07",
+		Granularity: "day", Timezone: "Asia/Shanghai", RequireCompleteRange: true,
+	})
+	if err != nil {
+		t.Fatalf("GetBatchUserUsageStats() fallback error = %v, want nil", err)
+	}
+	if trendRequests.Load() != 0 {
+		t.Fatalf("trend requests = %d, want 0", trendRequests.Load())
+	}
+	if got[1001].RangeActualCost != nil || got[1001].RangeTotalTokens != nil {
+		t.Fatalf("range fields = %#v/%#v, want incomplete", got[1001].RangeActualCost, got[1001].RangeTotalTokens)
+	}
+	if got[1001].TodayActualCost != 1 || got[1001].TotalActualCost != 10 {
+		t.Fatalf("comparison totals changed: %#v", got[1001])
+	}
+}
+
+func TestSub2APIGetBatchUserUsageStatsIgnoresCompleteRangePolicy(t *testing.T) {
+	tests := []struct {
+		name  string
+		trend []map[string]any
+	}{
+		{
+			name: "missing token point",
+			trend: []map[string]any{
+				{"date": "2026-07-01", "actual_cost": 1.25, "total_tokens": 100},
+				{"date": "2026-07-02", "actual_cost": 2.50},
+			},
+		},
+		{
+			name:  "empty trend",
+			trend: []map[string]any{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"success": true,
+					"data": map[string]any{
+						"stats": map[string]any{
+							"1001": map[string]any{"user_id": 1001},
+						},
+					},
+				})
+			})
+			mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": tt.trend})
+			})
+
+			p := newTestProvider(t, mux)
+			summary := p.(relay.TeamUsageSummaryProvider)
+			got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{RequireCompleteRange: true})
+			if err != nil {
+				t.Fatalf("GetBatchUserUsageStats() error = %v", err)
+			}
+			if got[1001].RangeActualCost != nil || got[1001].RangeTotalTokens != nil {
+				t.Fatalf("range totals = %#v/%#v, want deferred completion", got[1001].RangeActualCost, got[1001].RangeTotalTokens)
+			}
+		})
 	}
 }

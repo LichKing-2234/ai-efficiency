@@ -3,17 +3,22 @@ package quotareset
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
 	"sort"
 	"strings"
 
+	entsql "entgo.io/ent/dialect/sql"
+
 	"github.com/ai-efficiency/backend/ent"
 	"github.com/ai-efficiency/backend/ent/directorydepartment"
 	"github.com/ai-efficiency/backend/ent/directorymember"
 	"github.com/ai-efficiency/backend/ent/directorymemberdepartment"
+	"github.com/ai-efficiency/backend/ent/predicate"
 	"github.com/ai-efficiency/backend/ent/quotaresetapproverconfig"
+	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/directorysync"
 	"github.com/ai-efficiency/backend/internal/directorytree"
 )
@@ -74,7 +79,7 @@ func (r *ApproverResolver) ResolveWorkflow(ctx context.Context, requester *ent.U
 		return nil, nil, fmt.Errorf("current directory source: %w", err)
 	}
 	if ok {
-		facts, err := r.loadWorkflowDirectoryFacts(ctx, sourceID)
+		facts, err := r.loadWorkflowDirectoryFactsForRequester(ctx, sourceID, requester)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -149,6 +154,165 @@ func (r *ApproverResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 	if err != nil {
 		return nil, fmt.Errorf("load workflow approver configs: %w", err)
 	}
+	return buildWorkflowDirectoryFacts(departments, members, memberships, users, configs), nil
+}
+
+func (r *ApproverResolver) loadWorkflowDirectoryFactsForRequester(ctx context.Context, sourceID int, requester *ent.User) (*workflowDirectoryFacts, error) {
+	departments, err := r.client.DirectoryDepartment.Query().
+		Where(directorydepartment.SourceIDEQ(sourceID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load workflow departments: %w", err)
+	}
+	requesterEmail := normalizeWorkflowEmail(requester.Email)
+	requesterMemberPredicates := []predicate.DirectoryMember{directorymember.MatchedUserIDEQ(requester.ID)}
+	if requesterEmail != "" {
+		requesterMemberPredicates = append(requesterMemberPredicates, directorymember.EmailNormalizedEQ(requesterEmail))
+	}
+	requesterMembers, err := r.client.DirectoryMember.Query().Where(
+		directorymember.SourceIDEQ(sourceID),
+		directorymember.Or(requesterMemberPredicates...),
+	).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load workflow requester member: %w", err)
+	}
+	requesterMember := selectWorkflowRequesterMember(requesterMembers, requester)
+	if requesterMember == nil {
+		return buildWorkflowDirectoryFacts(departments, requesterMembers, nil, []*ent.User{requester}, nil), nil
+	}
+	requesterMemberships, err := r.client.DirectoryMemberDepartment.Query().Where(
+		directorymemberdepartment.SourceIDEQ(sourceID),
+		directorymemberdepartment.DirectoryMemberIDEQ(requesterMember.ID),
+	).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load workflow requester memberships: %w", err)
+	}
+	exactDepartmentIDs := []string{requesterMember.DepartmentExternalID}
+	for _, membership := range requesterMemberships {
+		exactDepartmentIDs = append(exactDepartmentIDs, membership.DepartmentExternalID)
+	}
+	exactDepartmentIDs = uniqueSortedStrings(exactDepartmentIDs)
+
+	departmentFacts := buildWorkflowDirectoryFacts(departments, requesterMembers, requesterMemberships, []*ent.User{requester}, nil)
+	relevantDepartmentIDs := workflowRelevantDepartmentIDs(departmentFacts, exactDepartmentIDs)
+	configs := []*ent.QuotaResetApproverConfig{}
+	if len(relevantDepartmentIDs) > 0 {
+		configs, err = r.client.QuotaResetApproverConfig.Query().Where(
+			quotaresetapproverconfig.DirectorySourceIDEQ(sourceID),
+			quotaresetapproverconfig.Enabled(true),
+			quotaresetapproverconfig.DepartmentExternalIDIn(relevantDepartmentIDs...),
+		).All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load workflow approver configs: %w", err)
+		}
+	}
+
+	configuredUserIDs := make([]int, 0, len(configs))
+	for _, config := range configs {
+		configuredUserIDs = append(configuredUserIDs, config.ApproverUserID)
+	}
+	configuredUserIDs = uniqueSortedWorkflowIDs(configuredUserIDs)
+	configuredUsers := []*ent.User{}
+	if len(configuredUserIDs) > 0 {
+		configuredUsers, err = r.client.User.Query().Where(entuser.IDIn(configuredUserIDs...)).All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load workflow configured users: %w", err)
+		}
+	}
+
+	leaderMembers := []*ent.DirectoryMember{}
+	if len(exactDepartmentIDs) > 0 {
+		leaderValues := make([]any, len(exactDepartmentIDs))
+		for index, departmentID := range exactDepartmentIDs {
+			leaderValues[index] = departmentID
+		}
+		numericLeaderValues := workflowNumericDepartmentValues(exactDepartmentIDs)
+		for _, arrayValue := range []bool{false, true} {
+			for _, values := range [][]any{leaderValues, numericLeaderValues} {
+				if len(values) == 0 {
+					continue
+				}
+				matchedLeaders, queryErr := r.client.DirectoryMember.Query().Where(
+					directorymember.SourceIDEQ(sourceID),
+					workflowLeaderDepartmentPredicate(values, arrayValue),
+				).All(ctx)
+				if queryErr != nil {
+					return nil, fmt.Errorf("load workflow representative members: %w", queryErr)
+				}
+				leaderMembers = append(leaderMembers, matchedLeaders...)
+			}
+		}
+		leaderMembers = compactWorkflowMembers(leaderMembers)
+	}
+	representatives := representativeExternalIDsByDepartment(departments, leaderMembers)
+	representativeExternalIDs := make([]string, 0)
+	for _, departmentID := range exactDepartmentIDs {
+		representativeExternalIDs = append(representativeExternalIDs, slices.Collect(maps.Keys(representatives[departmentID]))...)
+	}
+	representativeExternalIDs = uniqueSortedStrings(representativeExternalIDs)
+
+	configuredEmails := make([]string, 0, len(configuredUsers))
+	for _, user := range configuredUsers {
+		configuredEmails = append(configuredEmails, normalizeWorkflowEmail(user.Email))
+	}
+	memberPredicates := make([]predicate.DirectoryMember, 0, 3)
+	if len(configuredUserIDs) > 0 {
+		memberPredicates = append(memberPredicates, directorymember.MatchedUserIDIn(configuredUserIDs...))
+	}
+	if configuredEmails = uniqueSortedStrings(configuredEmails); len(configuredEmails) > 0 {
+		memberPredicates = append(memberPredicates, directorymember.EmailNormalizedIn(configuredEmails...))
+	}
+	if len(representativeExternalIDs) > 0 {
+		memberPredicates = append(memberPredicates, directorymember.ExternalIDIn(representativeExternalIDs...))
+	}
+	candidateMembers := []*ent.DirectoryMember{}
+	if len(memberPredicates) > 0 {
+		candidateMembers, err = r.client.DirectoryMember.Query().Where(
+			directorymember.SourceIDEQ(sourceID),
+			directorymember.Or(memberPredicates...),
+		).All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load workflow candidate members: %w", err)
+		}
+	}
+	members := compactWorkflowMembers(requesterMembers, leaderMembers, candidateMembers)
+
+	memberIDs := make([]int, 0, len(members))
+	userIDs := append([]int{requester.ID}, configuredUserIDs...)
+	userEmails := append([]string{requesterEmail}, configuredEmails...)
+	for _, member := range members {
+		memberIDs = append(memberIDs, member.ID)
+		userEmails = append(userEmails, normalizeWorkflowEmail(member.EmailNormalized))
+		if member.MatchedUserID != nil {
+			userIDs = append(userIDs, *member.MatchedUserID)
+		}
+	}
+	memberships := []*ent.DirectoryMemberDepartment{}
+	if len(memberIDs) > 0 {
+		memberships, err = r.client.DirectoryMemberDepartment.Query().Where(
+			directorymemberdepartment.SourceIDEQ(sourceID),
+			directorymemberdepartment.DirectoryMemberIDIn(memberIDs...),
+		).All(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load workflow candidate memberships: %w", err)
+		}
+	}
+
+	userPredicates := []predicate.User{entuser.IDIn(uniqueSortedWorkflowIDs(userIDs)...)}
+	for _, email := range uniqueSortedStrings(userEmails) {
+		if email != "" {
+			userPredicates = append(userPredicates, entuser.EmailEqualFold(email))
+		}
+	}
+	users, err := r.client.User.Query().Where(entuser.Or(userPredicates...)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load workflow candidate users: %w", err)
+	}
+	return buildWorkflowDirectoryFacts(departments, members, memberships, users, configs), nil
+}
+
+func buildWorkflowDirectoryFacts(departments []*ent.DirectoryDepartment, members []*ent.DirectoryMember,
+	memberships []*ent.DirectoryMemberDepartment, users []*ent.User, configs []*ent.QuotaResetApproverConfig) *workflowDirectoryFacts {
 	facts := &workflowDirectoryFacts{
 		tree:                  directorytree.New(departments),
 		departmentsByID:       make(map[string]*ent.DirectoryDepartment, len(departments)),
@@ -191,7 +355,84 @@ func (r *ApproverResolver) loadWorkflowDirectoryFacts(ctx context.Context, sourc
 	for departmentID := range facts.configUserIDsByDept {
 		facts.configUserIDsByDept[departmentID] = uniqueSortedWorkflowIDs(facts.configUserIDsByDept[departmentID])
 	}
-	return facts, nil
+	return facts
+}
+
+func selectWorkflowRequesterMember(members []*ent.DirectoryMember, requester *ent.User) *ent.DirectoryMember {
+	var selected *ent.DirectoryMember
+	requesterEmail := normalizeWorkflowEmail(requester.Email)
+	for _, member := range members {
+		matched := member.MatchedUserID != nil && *member.MatchedUserID == requester.ID
+		if member.MatchedUserID == nil {
+			matched = normalizeWorkflowEmail(member.EmailNormalized) == requesterEmail
+		}
+		if matched && (selected == nil || member.ID < selected.ID) {
+			selected = member
+		}
+	}
+	return selected
+}
+
+func workflowRelevantDepartmentIDs(facts *workflowDirectoryFacts, exactDepartmentIDs []string) []string {
+	visited := make(map[string]struct{}, len(exactDepartmentIDs))
+	relevant := append([]string(nil), exactDepartmentIDs...)
+	for _, departmentID := range exactDepartmentIDs {
+		visited[departmentID] = struct{}{}
+	}
+	for round := facts.parentRound(exactDepartmentIDs, visited); len(round) > 0; round = facts.parentRound(round, visited) {
+		relevant = append(relevant, round...)
+	}
+	return uniqueSortedStrings(relevant)
+}
+
+func workflowLeaderDepartmentPredicate(departmentValues []any, arrayValue bool) predicate.DirectoryMember {
+	return func(selector *entsql.Selector) {
+		predicates := make([]*entsql.Predicate, 0, len(departmentValues))
+		for _, departmentValue := range departmentValues {
+			value := departmentValue
+			if arrayValue {
+				value = []any{departmentValue}
+			}
+			encoded, _ := json.Marshal(map[string]any{"leader_department_ids": value})
+			needle := string(encoded)
+			predicates = append(predicates, entsql.P(func(builder *entsql.Builder) {
+				builder.Ident(selector.C(directorymember.FieldMetadata)).WriteString(" @> ").Arg(needle)
+			}))
+		}
+		selector.Where(entsql.Or(predicates...))
+	}
+}
+
+func workflowNumericDepartmentValues(departmentIDs []string) []any {
+	values := make([]any, 0, len(departmentIDs))
+	for _, departmentID := range departmentIDs {
+		var decoded any
+		if err := json.Unmarshal([]byte(departmentID), &decoded); err != nil {
+			continue
+		}
+		if _, ok := decoded.(float64); ok {
+			values = append(values, decoded)
+		}
+	}
+	return values
+}
+
+func compactWorkflowMembers(groups ...[]*ent.DirectoryMember) []*ent.DirectoryMember {
+	byID := map[int]*ent.DirectoryMember{}
+	for _, group := range groups {
+		for _, member := range group {
+			if member != nil {
+				byID[member.ID] = member
+			}
+		}
+	}
+	members := slices.Collect(maps.Values(byID))
+	sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
+	return members
+}
+
+func normalizeWorkflowEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 func (f *workflowDirectoryFacts) resolveExactStep(exactIDs []string, requesterID int) (WorkflowStep, bool, []DepartmentPathEvidence) {

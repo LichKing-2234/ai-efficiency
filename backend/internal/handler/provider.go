@@ -14,12 +14,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/ai-efficiency/backend/ent"
 	authpkg "github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/pkg"
 	"github.com/ai-efficiency/backend/internal/relay"
+	"github.com/ai-efficiency/backend/internal/relayruntime"
 	"github.com/ai-efficiency/backend/internal/usersetup"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -30,61 +30,48 @@ type ProviderHandler struct {
 	entClient     *ent.Client
 	encryptionKey string
 	logger        *zap.Logger
-
-	mu            sync.RWMutex
-	providerCache map[int]relay.Provider
+	runtime       *relayruntime.Manager
 }
 
-// NewProviderHandler creates a new provider handler.
-func NewProviderHandler(entClient *ent.Client, encryptionKey string, logger *zap.Logger) *ProviderHandler {
+// NewProviderHandler creates a provider handler with an explicit Relay runtime.
+func NewProviderHandler(entClient *ent.Client, encryptionKey string, logger *zap.Logger, runtime *relayruntime.Manager) (*ProviderHandler, error) {
+	if entClient == nil {
+		return nil, fmt.Errorf("provider handler Ent client is required")
+	}
+	if logger == nil {
+		return nil, fmt.Errorf("provider handler logger is required")
+	}
+	if runtime == nil {
+		return nil, fmt.Errorf("provider handler relay runtime is required")
+	}
 	return &ProviderHandler{
 		entClient:     entClient,
 		encryptionKey: encryptionKey,
 		logger:        logger,
-		providerCache: make(map[int]relay.Provider),
-	}
+		runtime:       runtime,
+	}, nil
 }
 
-func (h *ProviderHandler) getOrCreateRelayProvider(p *ent.RelayProvider) relay.Provider {
-	h.mu.RLock()
-	rp, ok := h.providerCache[p.ID]
-	h.mu.RUnlock()
-	if ok {
-		return rp
-	}
-
-	adminKey, err := decryptAESGCM(p.AdminAPIKey, h.encryptionKey)
-	if err != nil {
-		h.logger.Error("failed to decrypt admin_api_key", zap.String("provider", p.Name), zap.Error(err))
-		adminKey = p.AdminAPIKey
-	}
-
-	rp = relay.NewSub2apiProvider(
-		http.DefaultClient,
-		p.BaseURL,
-		adminKey,
-		p.DefaultModel,
-		h.logger,
-	)
-
-	h.mu.Lock()
-	h.providerCache[p.ID] = rp
-	h.mu.Unlock()
-	return rp
+func (h *ProviderHandler) getOrCreateRelayProvider(p *ent.RelayProvider) (relay.Provider, error) {
+	return h.runtime.ResolveEntity(p)
 }
 
-func (h *ProviderHandler) invalidateCache() {
-	h.mu.Lock()
-	h.providerCache = make(map[int]relay.Provider)
-	h.mu.Unlock()
+func (h *ProviderHandler) invalidateProvider(ctx context.Context, providerID int, configurationVersion int64) {
+	if err := h.runtime.Invalidate(ctx, providerID, configurationVersion); err != nil {
+		h.logger.Warn("relay provider invalidation publish failed",
+			zap.Int("provider_id", providerID),
+			zap.Int64("configuration_version", configurationVersion),
+			zap.Error(err),
+		)
+	}
 }
 
 func (h *ProviderHandler) Resolve(ctx context.Context, providerID int) (relay.Provider, error) {
-	p, err := h.entClient.RelayProvider.Get(ctx, providerID)
-	if err != nil {
-		return nil, err
-	}
-	return h.getOrCreateRelayProvider(p), nil
+	return h.runtime.Resolve(ctx, providerID)
+}
+
+func (h *ProviderHandler) ListAllowedGroupsForUser(ctx context.Context, providerID int, configurationVersion, userID int64) ([]relay.Group, error) {
+	return h.runtime.ListAllowedGroupsForUser(ctx, providerID, configurationVersion, userID)
 }
 
 type providerResponse struct {
@@ -274,7 +261,7 @@ func (h *ProviderHandler) Create(c *gin.Context) {
 		pkg.Error(c, http.StatusInternalServerError, "failed to create provider")
 		return
 	}
-	h.invalidateCache()
+	h.invalidateProvider(ctx, p.ID, p.ConfigurationVersion)
 	c.JSON(http.StatusCreated, gin.H{
 		"code": 201,
 		"data": toAdminProviderResponse(p),
@@ -304,7 +291,8 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	update := h.entClient.RelayProvider.UpdateOneID(id)
+	update := h.entClient.RelayProvider.UpdateOneID(id).
+		AddConfigurationVersion(1)
 
 	if req.DisplayName != "" {
 		update.SetDisplayName(req.DisplayName)
@@ -338,7 +326,7 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 		pkg.Error(c, http.StatusInternalServerError, "failed to update provider")
 		return
 	}
-	h.invalidateCache()
+	h.invalidateProvider(ctx, p.ID, p.ConfigurationVersion)
 	pkg.Success(c, toAdminProviderResponse(p))
 }
 
@@ -351,11 +339,20 @@ func (h *ProviderHandler) Delete(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	provider, err := h.entClient.RelayProvider.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			pkg.Error(c, http.StatusNotFound, "provider not found")
+			return
+		}
+		pkg.Error(c, http.StatusInternalServerError, "failed to get provider")
+		return
+	}
 	if err := h.entClient.RelayProvider.DeleteOneID(id).Exec(ctx); err != nil {
 		pkg.Error(c, http.StatusInternalServerError, "failed to delete provider")
 		return
 	}
-	h.invalidateCache()
+	h.invalidateProvider(ctx, id, provider.ConfigurationVersion+1)
 	pkg.Success(c, gin.H{"message": "deleted"})
 }
 
@@ -432,7 +429,20 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 		return
 	}
 
-	rp := h.getOrCreateRelayProvider(provider)
+	rp, err := h.getOrCreateRelayProvider(provider)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to resolve provider")
+		return
+	}
+	allowedGroups, err := h.runtime.ListAllowedGroupsForUser(ctx, provider.ID, provider.ConfigurationVersion, int64(*user.RelayUserID))
+	if err != nil {
+		pkg.Success(c, gin.H{"success": false, "message": fmt.Sprintf("list current allowed groups: %v", err)})
+		return
+	}
+	if !containsAllowedGroup(allowedGroups, groupID, platform) {
+		pkg.Success(c, gin.H{"success": false, "message": fmt.Sprintf("group %s is not currently allowed for platform %s", groupID, platform)})
+		return
+	}
 	keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
 	if err != nil {
 		pkg.Success(c, gin.H{
@@ -456,13 +466,11 @@ func (h *ProviderHandler) Test(c *gin.Context) {
 	}
 
 	maxTokens := 64
-	testProvider := relay.NewSub2apiProvider(
-		http.DefaultClient,
-		provider.BaseURL,
-		selected.Key,
-		model,
-		h.logger,
-	)
+	testProvider, err := h.runtime.NewUserScopedProvider(provider, selected.Key, model)
+	if err != nil {
+		pkg.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
 	testReq := relay.ChatCompletionRequest{
 		Model: model,
 		Messages: []relay.ChatMessage{
@@ -543,7 +551,20 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 		return
 	}
 
-	rp := h.getOrCreateRelayProvider(provider)
+	rp, err := h.getOrCreateRelayProvider(provider)
+	if err != nil {
+		pkg.Error(c, http.StatusInternalServerError, "failed to resolve provider")
+		return
+	}
+	allowedGroups, err := h.runtime.ListAllowedGroupsForUser(ctx, provider.ID, provider.ConfigurationVersion, int64(*user.RelayUserID))
+	if err != nil {
+		pkg.Success(c, gin.H{"models": []relay.ModelOption{}, "message": fmt.Sprintf("list current allowed groups: %v", err)})
+		return
+	}
+	if !containsAllowedGroup(allowedGroups, groupID, platform) {
+		pkg.Success(c, gin.H{"models": []relay.ModelOption{}, "message": fmt.Sprintf("group %s is not currently allowed for platform %s", groupID, platform)})
+		return
+	}
 	keys, err := rp.ListUserAPIKeys(ctx, int64(*user.RelayUserID))
 	if err != nil {
 		pkg.Success(c, gin.H{
@@ -566,13 +587,11 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 		return
 	}
 
-	userScopedProvider := relay.NewSub2apiProvider(
-		http.DefaultClient,
-		provider.BaseURL,
-		selected.Key,
-		"",
-		h.logger,
-	)
+	userScopedProvider, err := h.runtime.NewUserScopedProvider(provider, selected.Key, "")
+	if err != nil {
+		pkg.Success(c, gin.H{"models": []relay.ModelOption{}, "message": err.Error()})
+		return
+	}
 	lister, ok := userScopedProvider.(relay.PlatformModelLister)
 	if !ok {
 		pkg.Success(c, gin.H{
@@ -581,7 +600,9 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 		})
 		return
 	}
-	models, err := lister.ListModelsForPlatform(ctx, platform)
+	models, err := h.runtime.Models(ctx, provider, platform, groupID, func(loadCtx context.Context) ([]relay.ModelOption, error) {
+		return lister.ListModelsForPlatform(loadCtx, platform)
+	})
 	if err != nil {
 		pkg.Success(c, gin.H{
 			"models":  []relay.ModelOption{},
@@ -591,6 +612,15 @@ func (h *ProviderHandler) Models(c *gin.Context) {
 	}
 
 	pkg.Success(c, gin.H{"models": models})
+}
+
+func containsAllowedGroup(groups []relay.Group, groupID, platform string) bool {
+	for _, group := range groups {
+		if strconv.FormatInt(group.ID, 10) == strings.TrimSpace(groupID) && strings.EqualFold(strings.TrimSpace(group.Platform), strings.TrimSpace(platform)) {
+			return true
+		}
+	}
+	return false
 }
 
 func encryptAESGCM(plaintext, keyHex string) (string, error) {

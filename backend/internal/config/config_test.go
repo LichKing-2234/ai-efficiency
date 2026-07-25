@@ -1,9 +1,14 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -21,11 +26,224 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.DB.MaxOpenConns != 25 {
 		t.Errorf("default max_open_conns = %d, want 25", cfg.DB.MaxOpenConns)
 	}
+	if cfg.Metrics.ListenAddress != "127.0.0.1:9090" {
+		t.Errorf("default metrics listen address = %q, want 127.0.0.1:9090", cfg.Metrics.ListenAddress)
+	}
 	if cfg.Auth.AccessTokenTTL != 7200 {
 		t.Errorf("default access_token_ttl = %d, want 7200", cfg.Auth.AccessTokenTTL)
 	}
 	if cfg.Auth.RefreshTokenTTL != 604800 {
 		t.Errorf("default refresh_token_ttl = %d, want 604800", cfg.Auth.RefreshTokenTTL)
+	}
+	if cfg.Redis.Namespace != "ai-efficiency" {
+		t.Errorf("default redis namespace = %q, want ai-efficiency", cfg.Redis.Namespace)
+	}
+}
+
+func TestLoadPrewarmerDefaultsToExactTimezoneListWithoutEnabledFlag(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	want := []string{"UTC", "Asia/Shanghai", "America/Los_Angeles", "Europe/Berlin"}
+	if !reflect.DeepEqual(cfg.Prewarmer.Timezones, want) {
+		t.Fatalf("Prewarmer.Timezones = %#v, want %#v", cfg.Prewarmer.Timezones, want)
+	}
+}
+
+func TestLoadPrewarmerBindsDedicatedTimezoneEnvironment(t *testing.T) {
+	t.Setenv("AE_PREWARMER_TIMEZONES", "UTC,Asia/Shanghai")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	want := []string{"UTC", "Asia/Shanghai"}
+	if !reflect.DeepEqual(cfg.Prewarmer.Timezones, want) {
+		t.Fatalf("Prewarmer.Timezones = %#v, want %#v", cfg.Prewarmer.Timezones, want)
+	}
+}
+
+func TestLoadMetricsListenAddressFromEnvironment(t *testing.T) {
+	t.Setenv("AE_METRICS_LISTEN_ADDRESS", ":9191")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Metrics.ListenAddress != ":9191" {
+		t.Fatalf("metrics.listen_address = %q, want :9191", cfg.Metrics.ListenAddress)
+	}
+}
+
+func TestLoadRejectsInvalidMetricsListenAddress(t *testing.T) {
+	for _, address := range []string{"http://127.0.0.1:9090", "127.0.0.1", "127.0.0.1:0", "127.0.0.1:70000"} {
+		t.Run(address, func(t *testing.T) {
+			t.Setenv("AE_METRICS_LISTEN_ADDRESS", address)
+			if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "metrics.listen_address") {
+				t.Fatalf("Load() error = %v, want metrics.listen_address validation error", err)
+			}
+		})
+	}
+}
+
+func TestLoadHTTPRuntimeDefaults(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	wantServer := ServerConfig{
+		Port:                     8081,
+		Mode:                     "debug",
+		FrontendURL:              "http://localhost:5173",
+		ReadHeaderTimeoutSeconds: 5,
+		IdleTimeoutSeconds:       120,
+		ReadinessTimeoutSeconds:  2,
+		RequestTimeoutSeconds:    35,
+	}
+	if !reflect.DeepEqual(cfg.Server, wantServer) {
+		t.Fatalf("Server = %#v, want %#v", cfg.Server, wantServer)
+	}
+
+	wantHTTPClient := HTTPClientConfig{
+		ConnectTimeoutSeconds:        5,
+		TLSHandshakeTimeoutSeconds:   5,
+		ResponseHeaderTimeoutSeconds: 15,
+		OverallTimeoutSeconds:        30,
+		IdleConnTimeoutSeconds:       90,
+		MaxIdleConns:                 100,
+		MaxIdleConnsPerHost:          20,
+		MaxConnsPerHost:              50,
+	}
+	if !reflect.DeepEqual(cfg.HTTPClient, wantHTTPClient) {
+		t.Fatalf("HTTPClient = %#v, want %#v", cfg.HTTPClient, wantHTTPClient)
+	}
+}
+
+func TestLoadHTTPRuntimeEnvironmentOverrides(t *testing.T) {
+	t.Setenv("AE_SERVER_READ_HEADER_TIMEOUT_SECONDS", "6")
+	t.Setenv("AE_SERVER_IDLE_TIMEOUT_SECONDS", "121")
+	t.Setenv("AE_SERVER_READINESS_TIMEOUT_SECONDS", "3")
+	t.Setenv("AE_SERVER_REQUEST_TIMEOUT_SECONDS", "36")
+	t.Setenv("AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS", "7")
+	t.Setenv("AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS", "8")
+	t.Setenv("AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS", "16")
+	t.Setenv("AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS", "31")
+	t.Setenv("AE_HTTP_CLIENT_IDLE_CONN_TIMEOUT_SECONDS", "91")
+	t.Setenv("AE_HTTP_CLIENT_MAX_IDLE_CONNS", "101")
+	t.Setenv("AE_HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST", "21")
+	t.Setenv("AE_HTTP_CLIENT_MAX_CONNS_PER_HOST", "51")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	wantServerTimeouts := []int{6, 121, 3, 36}
+	gotServerTimeouts := []int{
+		cfg.Server.ReadHeaderTimeoutSeconds,
+		cfg.Server.IdleTimeoutSeconds,
+		cfg.Server.ReadinessTimeoutSeconds,
+		cfg.Server.RequestTimeoutSeconds,
+	}
+	if !reflect.DeepEqual(gotServerTimeouts, wantServerTimeouts) {
+		t.Fatalf("server timeout overrides = %v, want %v", gotServerTimeouts, wantServerTimeouts)
+	}
+
+	wantHTTPClient := HTTPClientConfig{
+		ConnectTimeoutSeconds:        7,
+		TLSHandshakeTimeoutSeconds:   8,
+		ResponseHeaderTimeoutSeconds: 16,
+		OverallTimeoutSeconds:        31,
+		IdleConnTimeoutSeconds:       91,
+		MaxIdleConns:                 101,
+		MaxIdleConnsPerHost:          21,
+		MaxConnsPerHost:              51,
+	}
+	if !reflect.DeepEqual(cfg.HTTPClient, wantHTTPClient) {
+		t.Fatalf("HTTPClient overrides = %#v, want %#v", cfg.HTTPClient, wantHTTPClient)
+	}
+}
+
+func TestLoadRejectsUnsafeHTTPRuntimeValues(t *testing.T) {
+	tests := []struct {
+		name      string
+		env       map[string]string
+		wantField string
+	}{
+		{name: "read header zero", env: map[string]string{"AE_SERVER_READ_HEADER_TIMEOUT_SECONDS": "0"}, wantField: "server.read_header_timeout_seconds"},
+		{name: "idle zero", env: map[string]string{"AE_SERVER_IDLE_TIMEOUT_SECONDS": "0"}, wantField: "server.idle_timeout_seconds"},
+		{name: "readiness zero", env: map[string]string{"AE_SERVER_READINESS_TIMEOUT_SECONDS": "0"}, wantField: "server.readiness_timeout_seconds"},
+		{name: "request zero", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "0"}, wantField: "server.request_timeout_seconds"},
+		{name: "connect zero", env: map[string]string{"AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS": "0"}, wantField: "http_client.connect_timeout_seconds"},
+		{name: "tls zero", env: map[string]string{"AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS": "0"}, wantField: "http_client.tls_handshake_timeout_seconds"},
+		{name: "response header zero", env: map[string]string{"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "0"}, wantField: "http_client.response_header_timeout_seconds"},
+		{name: "overall zero", env: map[string]string{"AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS": "0"}, wantField: "http_client.overall_timeout_seconds"},
+		{name: "idle connection zero", env: map[string]string{"AE_HTTP_CLIENT_IDLE_CONN_TIMEOUT_SECONDS": "0"}, wantField: "http_client.idle_conn_timeout_seconds"},
+		{name: "max idle zero", env: map[string]string{"AE_HTTP_CLIENT_MAX_IDLE_CONNS": "0"}, wantField: "http_client.max_idle_conns"},
+		{name: "max idle per host zero", env: map[string]string{"AE_HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST": "0"}, wantField: "http_client.max_idle_conns_per_host"},
+		{name: "max connections per host zero", env: map[string]string{"AE_HTTP_CLIENT_MAX_CONNS_PER_HOST": "0"}, wantField: "http_client.max_conns_per_host"},
+		{name: "negative", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "-1"}, wantField: "server.request_timeout_seconds"},
+		{name: "duration conversion overflow", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "9223372037"}, wantField: "server.request_timeout_seconds"},
+		{name: "read header upper bound", env: map[string]string{"AE_SERVER_READ_HEADER_TIMEOUT_SECONDS": "61"}, wantField: "server.read_header_timeout_seconds"},
+		{name: "idle upper bound", env: map[string]string{"AE_SERVER_IDLE_TIMEOUT_SECONDS": "3601"}, wantField: "server.idle_timeout_seconds"},
+		{name: "readiness upper bound", env: map[string]string{"AE_SERVER_READINESS_TIMEOUT_SECONDS": "31"}, wantField: "server.readiness_timeout_seconds"},
+		{name: "request reaches browser deadline", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "45"}, wantField: "server.request_timeout_seconds"},
+		{name: "request exceeds browser deadline", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "46"}, wantField: "server.request_timeout_seconds"},
+		{name: "connect upper bound", env: map[string]string{"AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS": "31"}, wantField: "http_client.connect_timeout_seconds"},
+		{name: "tls upper bound", env: map[string]string{"AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS": "31"}, wantField: "http_client.tls_handshake_timeout_seconds"},
+		{name: "response header upper bound", env: map[string]string{"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "61"}, wantField: "http_client.response_header_timeout_seconds"},
+		{name: "overall upper bound", env: map[string]string{"AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS": "301"}, wantField: "http_client.overall_timeout_seconds"},
+		{name: "idle connection upper bound", env: map[string]string{"AE_HTTP_CLIENT_IDLE_CONN_TIMEOUT_SECONDS": "3601"}, wantField: "http_client.idle_conn_timeout_seconds"},
+		{name: "max idle pool upper bound", env: map[string]string{"AE_HTTP_CLIENT_MAX_IDLE_CONNS": "10001"}, wantField: "http_client.max_idle_conns"},
+		{name: "max idle per host upper bound", env: map[string]string{"AE_HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST": "10001"}, wantField: "http_client.max_idle_conns_per_host"},
+		{name: "max connections per host upper bound", env: map[string]string{"AE_HTTP_CLIENT_MAX_CONNS_PER_HOST": "10001"}, wantField: "http_client.max_conns_per_host"},
+		{name: "connect must precede overall", env: map[string]string{"AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS": "30"}, wantField: "http_client.connect_timeout_seconds"},
+		{name: "tls must precede overall", env: map[string]string{"AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS": "30"}, wantField: "http_client.tls_handshake_timeout_seconds"},
+		{name: "response headers must precede overall", env: map[string]string{"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "30"}, wantField: "http_client.response_header_timeout_seconds"},
+		{name: "shared overall equals version timeout", env: map[string]string{"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "9", "AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS": "10"}, wantField: "http_client.overall_timeout_seconds"},
+		{name: "shared overall below version timeout", env: map[string]string{"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": "8", "AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS": "9"}, wantField: "http_client.overall_timeout_seconds"},
+		{name: "downstream must precede request", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "30"}, wantField: "http_client.overall_timeout_seconds"},
+		{name: "readiness must precede request", env: map[string]string{"AE_SERVER_REQUEST_TIMEOUT_SECONDS": "30", "AE_SERVER_READINESS_TIMEOUT_SECONDS": "30", "AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS": "29"}, wantField: "server.readiness_timeout_seconds"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+			_, err := Load("")
+			if err == nil {
+				t.Fatalf("Load() error = nil, want field-specific validation for %s", tt.wantField)
+			}
+			if !strings.Contains(err.Error(), tt.wantField) {
+				t.Fatalf("Load() error = %q, want field %q", err, tt.wantField)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsHTTPRuntimeBoundaryValues(t *testing.T) {
+	values := map[string]int{
+		"AE_SERVER_READ_HEADER_TIMEOUT_SECONDS":          60,
+		"AE_SERVER_IDLE_TIMEOUT_SECONDS":                 3600,
+		"AE_SERVER_READINESS_TIMEOUT_SECONDS":            30,
+		"AE_SERVER_REQUEST_TIMEOUT_SECONDS":              44,
+		"AE_HTTP_CLIENT_CONNECT_TIMEOUT_SECONDS":         30,
+		"AE_HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT_SECONDS":   30,
+		"AE_HTTP_CLIENT_RESPONSE_HEADER_TIMEOUT_SECONDS": 42,
+		"AE_HTTP_CLIENT_OVERALL_TIMEOUT_SECONDS":         43,
+		"AE_HTTP_CLIENT_IDLE_CONN_TIMEOUT_SECONDS":       3600,
+		"AE_HTTP_CLIENT_MAX_IDLE_CONNS":                  10000,
+		"AE_HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST":         10000,
+		"AE_HTTP_CLIENT_MAX_CONNS_PER_HOST":              10000,
+	}
+	for key, value := range values {
+		t.Setenv(key, fmt.Sprint(value))
+	}
+
+	if _, err := Load(""); err != nil {
+		t.Fatalf("Load() error = %v, want configured upper bounds accepted", err)
 	}
 }
 
@@ -350,6 +568,7 @@ func TestLoadRedisConfigFromEnv(t *testing.T) {
 	t.Setenv("AE_REDIS_ADDR", "redis:6379")
 	t.Setenv("AE_REDIS_PASSWORD", "redis-pass")
 	t.Setenv("AE_REDIS_DB", "2")
+	t.Setenv("AE_REDIS_NAMESPACE", "env-blue")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -365,6 +584,111 @@ func TestLoadRedisConfigFromEnv(t *testing.T) {
 	if cfg.Redis.DB != 2 {
 		t.Errorf("redis db = %d, want %d", cfg.Redis.DB, 2)
 	}
+	if cfg.Redis.Namespace != "env-blue" {
+		t.Errorf("redis namespace = %q, want env-blue", cfg.Redis.Namespace)
+	}
+}
+
+func TestValidateRedisNamespace(t *testing.T) {
+	valid63 := "a" + strings.Repeat("b", 62)
+	invalid64 := "a" + strings.Repeat("b", 63)
+	for _, test := range []struct {
+		name      string
+		namespace string
+		wantErr   bool
+	}{
+		{name: "single character", namespace: "a"},
+		{name: "allowed punctuation", namespace: "prod.blue_1-east"},
+		{name: "maximum length", namespace: valid63},
+		{name: "empty", namespace: "", wantErr: true},
+		{name: "leading hyphen", namespace: "-prod", wantErr: true},
+		{name: "space", namespace: "prod blue", wantErr: true},
+		{name: "slash", namespace: "prod/blue", wantErr: true},
+		{name: "colon", namespace: "prod:blue", wantErr: true},
+		{name: "unicode", namespace: "prod-蓝", wantErr: true},
+		{name: "too long", namespace: invalid64, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateRedisNamespace(test.namespace)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("ValidateRedisNamespace(%q) error = %v, wantErr %v", test.namespace, err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsUnsafeRedisNamespace(t *testing.T) {
+	t.Setenv("AE_REDIS_NAMESPACE", "unsafe/namespace")
+	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "redis namespace") {
+		t.Fatalf("Load() error = %v, want Redis namespace validation error", err)
+	}
+}
+
+func TestDeployExamplesDeclareExplicitValidRedisNamespace(t *testing.T) {
+	deployDir := filepath.Clean(filepath.Join("..", "..", "..", "deploy"))
+
+	configData, err := os.ReadFile(filepath.Join(deployDir, "config.example.yaml"))
+	if err != nil {
+		t.Fatalf("read config.example.yaml: %v", err)
+	}
+	var configExample struct {
+		Redis struct {
+			Namespace string `yaml:"namespace"`
+		} `yaml:"redis"`
+	}
+	if err := yaml.Unmarshal(configData, &configExample); err != nil {
+		t.Fatalf("parse config.example.yaml: %v", err)
+	}
+	if err := ValidateRedisNamespace(configExample.Redis.Namespace); err != nil {
+		t.Fatalf("config.example.yaml Redis namespace = %q: %v", configExample.Redis.Namespace, err)
+	}
+
+	envData, err := os.ReadFile(filepath.Join(deployDir, ".env.example"))
+	if err != nil {
+		t.Fatalf("read .env.example: %v", err)
+	}
+	envNamespace := envFileValue(string(envData), "AE_REDIS_NAMESPACE")
+	if err := ValidateRedisNamespace(envNamespace); err != nil {
+		t.Fatalf(".env.example Redis namespace = %q: %v", envNamespace, err)
+	}
+
+	for _, name := range []string{
+		"docker-compose.yml",
+		"docker-compose.bootstrap.yml",
+		"docker-compose.dev.yml",
+		"docker-compose.external.yml",
+		"docker-compose.local.yml",
+	} {
+		data, err := os.ReadFile(filepath.Join(deployDir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		var compose struct {
+			Services map[string]struct {
+				Environment map[string]string `yaml:"environment"`
+			} `yaml:"services"`
+		}
+		if err := yaml.Unmarshal(data, &compose); err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		raw, ok := compose.Services["backend"].Environment["AE_REDIS_NAMESPACE"]
+		if !ok {
+			t.Fatalf("%s does not declare AE_REDIS_NAMESPACE", name)
+		}
+		namespace := strings.TrimSuffix(strings.TrimPrefix(raw, "${AE_REDIS_NAMESPACE:-"), "}")
+		if err := ValidateRedisNamespace(namespace); err != nil {
+			t.Fatalf("%s Redis namespace default = %q: %v", name, namespace, err)
+		}
+	}
+}
+
+func envFileValue(content, key string) string {
+	for _, line := range strings.Split(content, "\n") {
+		if name, value, ok := strings.Cut(line, "="); ok && strings.TrimSpace(name) == key {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func TestLoadExplicitMissingPathReturnsError(t *testing.T) {
@@ -454,10 +778,25 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 
 	cfg := &Config{
 		Server: ServerConfig{
-			Port:        8081,
-			Mode:        "release",
-			FrontendURL: "http://localhost:8081",
-			PublicURL:   "https://ai-efficiency.example.com",
+			Port:                     8081,
+			Mode:                     "release",
+			FrontendURL:              "http://localhost:8081",
+			PublicURL:                "https://ai-efficiency.example.com",
+			ReadHeaderTimeoutSeconds: 7,
+			IdleTimeoutSeconds:       123,
+			ReadinessTimeoutSeconds:  4,
+			RequestTimeoutSeconds:    35,
+		},
+		Metrics: MetricsConfig{ListenAddress: "127.0.0.1:9090"},
+		HTTPClient: HTTPClientConfig{
+			ConnectTimeoutSeconds:        8,
+			TLSHandshakeTimeoutSeconds:   9,
+			ResponseHeaderTimeoutSeconds: 17,
+			OverallTimeoutSeconds:        32,
+			IdleConnTimeoutSeconds:       92,
+			MaxIdleConns:                 102,
+			MaxIdleConnsPerHost:          22,
+			MaxConnsPerHost:              52,
 		},
 		DB: DBConfig{
 			DSN:             "postgres://postgres:postgres@localhost:5432/ai_efficiency?sslmode=disable",
@@ -466,9 +805,10 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 			ConnMaxLifetime: 300,
 		},
 		Redis: RedisConfig{
-			Addr:     "redis:6379",
-			Password: "",
-			DB:       0,
+			Addr:      "redis:6379",
+			Password:  "",
+			DB:        0,
+			Namespace: "test-blue",
 		},
 		Relay: RelayConfig{
 			Provider:       "sub2api",
@@ -515,6 +855,22 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if loaded.Server.PublicURL != "https://ai-efficiency.example.com" {
 		t.Fatalf("server.public_url = %q, want %q", loaded.Server.PublicURL, "https://ai-efficiency.example.com")
+	}
+	if loaded.Redis.Namespace != "test-blue" {
+		t.Fatalf("redis.namespace = %q, want test-blue", loaded.Redis.Namespace)
+	}
+	if !reflect.DeepEqual(loaded.Server, cfg.Server) {
+		t.Fatalf("persisted Server = %#v, want %#v", loaded.Server, cfg.Server)
+	}
+	if !reflect.DeepEqual(loaded.HTTPClient, cfg.HTTPClient) {
+		t.Fatalf("persisted HTTPClient = %#v, want %#v", loaded.HTTPClient, cfg.HTTPClient)
+	}
+	data, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatalf("read writable config: %v", err)
+	}
+	if strings.Contains(string(data), "team_usage_prewarm") || strings.Contains(string(data), "prewarmer:") {
+		t.Fatalf("writable config persists worker-only settings:\n%s", data)
 	}
 }
 

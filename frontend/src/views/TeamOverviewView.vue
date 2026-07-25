@@ -1,58 +1,177 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import TeamOverviewMemberTrendChart from '@/components/team-usage/TeamOverviewMemberTrendChart.vue'
 import TeamOverviewMemberTable from '@/components/team-usage/TeamOverviewMemberTable.vue'
 import UsageCenterTabs from '@/components/user/usage/UsageCenterTabs.vue'
-import { getTeamUsageOverview } from '@/api/teamUsage'
+import { getTeamUsageMembers, getTeamUsageSummary, getTeamUsageTrend } from '@/api/teamUsage'
+import { useTeamUsageOrganization } from '@/composables/useTeamUsageOrganization'
 import { useI18n } from '@/i18n'
 import { formatTokenCount } from '@/utils/formatters'
-import type { TeamOverviewResponse, TeamUsageOverviewParams } from '@/types'
+import type { TeamUsageMembersResponse, TeamUsageOverviewParams, TeamUsageSummaryResponse, TeamUsageTrendResponse } from '@/types'
+
+const TeamOverviewMemberTrendChart = defineAsyncComponent(
+  () => import('@/components/team-usage/TeamOverviewMemberTrendChart.vue'),
+)
 
 const { t } = useI18n()
 const router = useRouter()
-const overview = ref<TeamOverviewResponse | null>(null)
-const loading = ref(false)
-const loadError = ref<'no_scope' | 'unavailable' | null>(null)
+const summary = ref<TeamUsageSummaryResponse | null>(null)
+const trend = ref<TeamUsageTrendResponse | null>(null)
+const membersPage = ref<TeamUsageMembersResponse | null>(null)
+const summaryLoading = ref(false)
+const trendLoading = ref(false)
+const membersLoading = ref(false)
+const summaryError = ref<'no_scope' | 'unavailable' | null>(null)
+const trendError = ref<'no_scope' | 'unavailable' | null>(null)
+const membersError = ref<'no_scope' | 'unavailable' | null>(null)
 type RangeOption = 'today' | '7d' | '30d'
 const selectedRange = ref<RangeOption>('30d')
-let overviewRequestSeq = 0
+let summaryRequestSeq = 0
+let trendRequestSeq = 0
+let membersRequestSeq = 0
+const memberPageCursors = ref<Array<string | null>>([null])
+const memberPageIndex = ref(0)
+let memberPageParams: TeamUsageOverviewParams | null = null
+const {
+  branches: organizationBranches,
+  rootBranch: organizationRoot,
+  invalidatedDepartmentIds: organizationInvalidatedDepartmentIds,
+  resetVersion: organizationResetVersion,
+  branchFor: organizationBranchFor,
+  reset: resetOrganization,
+  ensureBranch: ensureOrganizationBranch,
+  loadMoreDepartments: loadMoreOrganizationDepartments,
+  loadMoreMembers: loadMoreOrganizationMembers,
+} = useTeamUsageOrganization()
+
+const loading = computed(() => summaryLoading.value || membersLoading.value)
 
 const scopeTooLarge = computed(() => {
-  return overview.value?.summary.unavailable_reason === 'scope_too_large'
-    || overview.value?.top_member_trend.unavailable_reason === 'scope_too_large'
+  return summary.value?.summary.unavailable_reason === 'scope_too_large'
+    || trend.value?.top_member_trend.unavailable_reason === 'scope_too_large'
+    || trend.value?.department_trend.unavailable_reason === 'scope_too_large'
 })
 
 const summaryPartiallyUnavailable = computed(() => {
-  return overview.value?.summary.unavailable === true
-    && overview.value.summary.unavailable_reason !== 'scope_too_large'
+  return summary.value?.summary.unavailable === true
+    && summary.value.summary.unavailable_reason !== 'scope_too_large'
 })
 
-async function loadOverview() {
-  const requestSeq = ++overviewRequestSeq
-  loading.value = true
-  loadError.value = null
+async function loadSummary(params: TeamUsageOverviewParams) {
+  const requestSeq = ++summaryRequestSeq
+  summaryLoading.value = true
+  summaryError.value = null
   try {
-    const range = selectedRange.value
-    const response = await getTeamUsageOverview(buildOverviewParams(range))
-    if (requestSeq !== overviewRequestSeq) return
-    overview.value = response.data.data ?? null
+    const response = await getTeamUsageSummary(params)
+    if (requestSeq !== summaryRequestSeq) return
+    summary.value = response.data.data ?? null
   } catch (error) {
-    if (requestSeq !== overviewRequestSeq) return
-    overview.value = null
-    loadError.value = isForbidden(error) ? 'no_scope' : 'unavailable'
+    if (requestSeq !== summaryRequestSeq) return
+    summary.value = null
+    summaryError.value = isForbidden(error) ? 'no_scope' : 'unavailable'
   } finally {
-    if (requestSeq === overviewRequestSeq) {
-      loading.value = false
+    if (requestSeq === summaryRequestSeq) {
+      summaryLoading.value = false
     }
   }
+}
+
+async function loadTrend(params: TeamUsageOverviewParams) {
+  const requestSeq = ++trendRequestSeq
+  trendLoading.value = true
+  trendError.value = null
+  try {
+    const response = await getTeamUsageTrend(params)
+    if (requestSeq !== trendRequestSeq) return
+    trend.value = response.data.data ?? null
+  } catch (error) {
+    if (requestSeq !== trendRequestSeq) return
+    trend.value = null
+    trendError.value = isForbidden(error) ? 'no_scope' : 'unavailable'
+  } finally {
+    if (requestSeq === trendRequestSeq) {
+      trendLoading.value = false
+    }
+  }
+}
+
+async function loadMembers(
+  params: TeamUsageOverviewParams,
+  cursor: string | null,
+  targetPageIndex: number,
+  recoverSnapshot = true,
+): Promise<void> {
+  const requestSeq = ++membersRequestSeq
+  membersLoading.value = true
+  membersError.value = null
+  try {
+    const response = await getTeamUsageMembers({
+      ...params,
+      cursor: cursor ?? undefined,
+      limit: 50,
+    })
+    if (requestSeq !== membersRequestSeq) return
+    membersPage.value = response.data.data ?? null
+    memberPageIndex.value = targetPageIndex
+    const cursors = memberPageCursors.value.slice(0, targetPageIndex + 1)
+    cursors[targetPageIndex] = cursor
+    memberPageCursors.value = cursors
+  } catch (error) {
+    if (requestSeq !== membersRequestSeq) return
+    if (recoverSnapshot && cursor != null && isSnapshotExpired(error)) {
+      resetMemberPagination()
+      return loadMembers(params, null, 0, false)
+    }
+    if (cursor == null) {
+      membersPage.value = null
+    }
+    membersError.value = isForbidden(error) ? 'no_scope' : 'unavailable'
+  } finally {
+    if (requestSeq === membersRequestSeq) {
+      membersLoading.value = false
+    }
+  }
+}
+
+function loadOverview() {
+  const params = buildOverviewParams(selectedRange.value)
+  resetMemberPagination()
+  memberPageParams = { ...params }
+  void loadSummary(params)
+  void loadTrend(params)
+  void loadMembers(params, null, 0)
+  resetOrganization(params)
+}
+
+function resetMemberPagination() {
+  memberPageCursors.value = [null]
+  memberPageIndex.value = 0
+}
+
+function loadNextMemberPage() {
+  const cursor = membersPage.value?.next_cursor
+  if (!cursor || membersLoading.value || memberPageParams == null) return
+  void loadMembers(memberPageParams, cursor, memberPageIndex.value + 1)
+}
+
+function loadPreviousMemberPage() {
+  if (memberPageIndex.value <= 0 || membersLoading.value || memberPageParams == null) return
+  const targetPageIndex = memberPageIndex.value - 1
+  const cursor = memberPageCursors.value[targetPageIndex] ?? null
+  void loadMembers(memberPageParams, cursor, targetPageIndex)
 }
 
 function isForbidden(error: unknown) {
   if (typeof error !== 'object' || error == null) return false
   const response = (error as { response?: { status?: number } }).response
   return response?.status === 403
+}
+
+function isSnapshotExpired(error: unknown) {
+  if (typeof error !== 'object' || error == null) return false
+  const response = (error as { response?: { status?: number; data?: { message?: string } } }).response
+  return response?.status === 409 && response.data?.message === 'snapshot_expired'
 }
 
 function formatDate(date: Date): string {
@@ -126,61 +245,73 @@ onMounted(loadOverview)
         </div>
       </div>
 
-      <section v-if="loading && !overview" class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm">
-        {{ t('settings.loading') }}
-      </section>
-
       <section
-        v-else-if="loadError === 'no_scope' || (overview && !overview.is_representative)"
+        v-if="summaryError === 'no_scope'"
         class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm"
       >
         {{ t('teamUsage.noScope') }}
       </section>
 
-      <section
-        v-else-if="loadError === 'unavailable'"
-        class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm"
+      <div
+        v-else
+        data-testid="team-overview-content"
+        :aria-busy="loading ? 'true' : 'false'"
+        :class="['space-y-4 transition-opacity', loading ? 'opacity-60' : 'opacity-100']"
       >
-        {{ t('teamUsage.unavailable') }}
-      </section>
-
-      <template v-else-if="overview">
         <div
-          data-testid="team-overview-content"
-          :aria-busy="loading ? 'true' : 'false'"
-          :class="['space-y-4 transition-opacity', loading ? 'opacity-60' : 'opacity-100']"
+          v-if="loading && (summary || trend || membersPage)"
+          data-testid="team-overview-refreshing"
+          class="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700"
         >
+          {{ t('teamUsage.updating') }}
+        </div>
+
+        <section
+          v-if="summaryLoading && !summary"
+          data-testid="team-overview-summary-loading"
+          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm"
+        >
+          {{ t('settings.loading') }}
+        </section>
+        <section
+          v-else-if="summaryError === 'unavailable' && !summary"
+          data-testid="team-overview-summary-error"
+          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm"
+        >
+          {{ t('teamUsage.unavailable') }}
+        </section>
+        <div v-else-if="summary" data-testid="team-overview-summary" class="space-y-3">
           <div
-            v-if="loading"
-            data-testid="team-overview-refreshing"
-            class="rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700"
+            v-if="summary.cache_status === 'stale'"
+            data-testid="team-summary-stale-marker"
+            class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
           >
-            {{ t('teamUsage.updating') }}
+            {{ t('usageDashboard.staleSnapshot') }}
           </div>
 
           <section class="grid gap-3 md:grid-cols-4">
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.scopedMembers') }}</div>
               <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">
-                {{ overview.summary.member_count.toLocaleString() }}
+                {{ summary.summary.member_count.toLocaleString() }}
               </div>
             </div>
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.relayMembers') }}</div>
               <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">
-                {{ overview.summary.relay_member_count.toLocaleString() }}
+                {{ summary.summary.relay_member_count.toLocaleString() }}
               </div>
             </div>
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.rangeActualCost') }}</div>
               <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">
-                {{ formatSummaryCost(overview.summary.range_actual_cost, overview.summary.unit_label) }}
+                {{ formatSummaryCost(summary.summary.range_actual_cost, summary.summary.unit_label) }}
               </div>
             </div>
             <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <div class="text-xs font-medium text-slate-500">{{ t('teamUsage.rangeTotalTokens') }}</div>
               <div class="mt-1 text-xl font-semibold tabular-nums text-slate-950">
-                {{ formatTokenCount(overview.summary.range_total_tokens) }}
+                {{ formatTokenCount(summary.summary.range_total_tokens) }}
               </div>
             </div>
           </section>
@@ -197,15 +328,65 @@ onMounted(loadOverview)
           >
             {{ t('teamUsage.summaryUnavailable') }}
           </section>
-
-          <TeamOverviewMemberTrendChart
-            :state="overview.top_member_trend"
-            :department-trend="overview.department_trend"
-            :window="overview.window"
-          />
-          <TeamOverviewMemberTable :members="overview.members" :member-tree="overview.member_tree" @open-member="openMember" />
         </div>
-      </template>
+
+        <section
+          v-if="trendLoading && !trend"
+          data-testid="team-overview-trend-loading"
+          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-sm"
+        >
+          {{ t('settings.loading') }}
+        </section>
+        <section
+          v-else-if="trendError && !trend"
+          data-testid="team-overview-trend-error"
+          class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm"
+        >
+          {{ trendError === 'no_scope' ? t('teamUsage.noScope') : t('teamUsage.unavailable') }}
+        </section>
+        <div v-else-if="trend" data-testid="team-overview-trend" class="space-y-3">
+          <div
+            v-if="trend.cache_status === 'stale'"
+            data-testid="team-trend-stale-marker"
+            class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
+          >
+            {{ t('usageDashboard.staleSnapshot') }}
+          </div>
+          <TeamOverviewMemberTrendChart
+            :state="trend.top_member_trend"
+            :department-trend="trend.department_trend"
+            :window="trend.window"
+          />
+        </div>
+
+        <div
+          v-if="membersPage?.cache_status === 'stale'"
+          data-testid="team-members-stale-marker"
+          class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
+        >
+          {{ t('usageDashboard.staleSnapshot') }}
+        </div>
+        <TeamOverviewMemberTable
+          v-if="membersLoading || membersPage || membersError || organizationRoot"
+          :members="membersPage?.items ?? []"
+          :organization-root="organizationRoot"
+          :organization-branches="organizationBranches"
+          :organization-invalidated-department-ids="organizationInvalidatedDepartmentIds"
+          :organization-reset-version="organizationResetVersion"
+          :organization-branch-for="organizationBranchFor"
+          :member-loading="membersLoading"
+          :member-error="membersError != null"
+          :member-total-count="membersPage?.total_count ?? 0"
+          :has-previous-page="memberPageIndex > 0"
+          :has-next-page="Boolean(membersPage?.next_cursor)"
+          @open-member="openMember"
+          @previous-page="loadPreviousMemberPage"
+          @next-page="loadNextMemberPage"
+          @expand-department="ensureOrganizationBranch"
+          @load-more-departments="loadMoreOrganizationDepartments"
+          @load-more-members="loadMoreOrganizationMembers"
+        />
+      </div>
     </div>
   </AppLayout>
 </template>

@@ -5011,24 +5011,25 @@ func (m *CredentialMutation) ResetEdge(name string) error {
 // DirectoryDepartmentMutation represents an operation that mutates the DirectoryDepartment nodes in the graph.
 type DirectoryDepartmentMutation struct {
 	config
-	op                  Op
-	typ                 string
-	id                  *int
-	source_id           *int
-	addsource_id        *int
-	external_id         *string
-	parent_external_id  *string
-	name                *string
-	_path               *string
-	metadata            *map[string]interface{}
-	last_seen_run_id    *int
-	addlast_seen_run_id *int
-	created_at          *time.Time
-	updated_at          *time.Time
-	clearedFields       map[string]struct{}
-	done                bool
-	oldValue            func(context.Context) (*DirectoryDepartment, error)
-	predicates          []predicate.DirectoryDepartment
+	op                           Op
+	typ                          string
+	id                           *int
+	source_id                    *int
+	addsource_id                 *int
+	external_id                  *string
+	parent_external_id           *string
+	effective_parent_external_id *string
+	name                         *string
+	_path                        *string
+	metadata                     *map[string]interface{}
+	last_seen_run_id             *int
+	addlast_seen_run_id          *int
+	created_at                   *time.Time
+	updated_at                   *time.Time
+	clearedFields                map[string]struct{}
+	done                         bool
+	oldValue                     func(context.Context) (*DirectoryDepartment, error)
+	predicates                   []predicate.DirectoryDepartment
 }
 
 var _ ent.Mutation = (*DirectoryDepartmentMutation)(nil)
@@ -5268,6 +5269,55 @@ func (m *DirectoryDepartmentMutation) ParentExternalIDCleared() bool {
 func (m *DirectoryDepartmentMutation) ResetParentExternalID() {
 	m.parent_external_id = nil
 	delete(m.clearedFields, directorydepartment.FieldParentExternalID)
+}
+
+// SetEffectiveParentExternalID sets the "effective_parent_external_id" field.
+func (m *DirectoryDepartmentMutation) SetEffectiveParentExternalID(s string) {
+	m.effective_parent_external_id = &s
+}
+
+// EffectiveParentExternalID returns the value of the "effective_parent_external_id" field in the mutation.
+func (m *DirectoryDepartmentMutation) EffectiveParentExternalID() (r string, exists bool) {
+	v := m.effective_parent_external_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEffectiveParentExternalID returns the old "effective_parent_external_id" field's value of the DirectoryDepartment entity.
+// If the DirectoryDepartment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *DirectoryDepartmentMutation) OldEffectiveParentExternalID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEffectiveParentExternalID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEffectiveParentExternalID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEffectiveParentExternalID: %w", err)
+	}
+	return oldValue.EffectiveParentExternalID, nil
+}
+
+// ClearEffectiveParentExternalID clears the value of the "effective_parent_external_id" field.
+func (m *DirectoryDepartmentMutation) ClearEffectiveParentExternalID() {
+	m.effective_parent_external_id = nil
+	m.clearedFields[directorydepartment.FieldEffectiveParentExternalID] = struct{}{}
+}
+
+// EffectiveParentExternalIDCleared returns if the "effective_parent_external_id" field was cleared in this mutation.
+func (m *DirectoryDepartmentMutation) EffectiveParentExternalIDCleared() bool {
+	_, ok := m.clearedFields[directorydepartment.FieldEffectiveParentExternalID]
+	return ok
+}
+
+// ResetEffectiveParentExternalID resets all changes to the "effective_parent_external_id" field.
+func (m *DirectoryDepartmentMutation) ResetEffectiveParentExternalID() {
+	m.effective_parent_external_id = nil
+	delete(m.clearedFields, directorydepartment.FieldEffectiveParentExternalID)
 }
 
 // SetName sets the "name" field.
@@ -5553,7 +5603,7 @@ func (m *DirectoryDepartmentMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *DirectoryDepartmentMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	if m.source_id != nil {
 		fields = append(fields, directorydepartment.FieldSourceID)
 	}
@@ -5562,6 +5612,9 @@ func (m *DirectoryDepartmentMutation) Fields() []string {
 	}
 	if m.parent_external_id != nil {
 		fields = append(fields, directorydepartment.FieldParentExternalID)
+	}
+	if m.effective_parent_external_id != nil {
+		fields = append(fields, directorydepartment.FieldEffectiveParentExternalID)
 	}
 	if m.name != nil {
 		fields = append(fields, directorydepartment.FieldName)
@@ -5595,6 +5648,8 @@ func (m *DirectoryDepartmentMutation) Field(name string) (ent.Value, bool) {
 		return m.ExternalID()
 	case directorydepartment.FieldParentExternalID:
 		return m.ParentExternalID()
+	case directorydepartment.FieldEffectiveParentExternalID:
+		return m.EffectiveParentExternalID()
 	case directorydepartment.FieldName:
 		return m.Name()
 	case directorydepartment.FieldPath:
@@ -5622,6 +5677,8 @@ func (m *DirectoryDepartmentMutation) OldField(ctx context.Context, name string)
 		return m.OldExternalID(ctx)
 	case directorydepartment.FieldParentExternalID:
 		return m.OldParentExternalID(ctx)
+	case directorydepartment.FieldEffectiveParentExternalID:
+		return m.OldEffectiveParentExternalID(ctx)
 	case directorydepartment.FieldName:
 		return m.OldName(ctx)
 	case directorydepartment.FieldPath:
@@ -5663,6 +5720,13 @@ func (m *DirectoryDepartmentMutation) SetField(name string, value ent.Value) err
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetParentExternalID(v)
+		return nil
+	case directorydepartment.FieldEffectiveParentExternalID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEffectiveParentExternalID(v)
 		return nil
 	case directorydepartment.FieldName:
 		v, ok := value.(string)
@@ -5766,6 +5830,9 @@ func (m *DirectoryDepartmentMutation) ClearedFields() []string {
 	if m.FieldCleared(directorydepartment.FieldParentExternalID) {
 		fields = append(fields, directorydepartment.FieldParentExternalID)
 	}
+	if m.FieldCleared(directorydepartment.FieldEffectiveParentExternalID) {
+		fields = append(fields, directorydepartment.FieldEffectiveParentExternalID)
+	}
 	if m.FieldCleared(directorydepartment.FieldMetadata) {
 		fields = append(fields, directorydepartment.FieldMetadata)
 	}
@@ -5786,6 +5853,9 @@ func (m *DirectoryDepartmentMutation) ClearField(name string) error {
 	case directorydepartment.FieldParentExternalID:
 		m.ClearParentExternalID()
 		return nil
+	case directorydepartment.FieldEffectiveParentExternalID:
+		m.ClearEffectiveParentExternalID()
+		return nil
 	case directorydepartment.FieldMetadata:
 		m.ClearMetadata()
 		return nil
@@ -5805,6 +5875,9 @@ func (m *DirectoryDepartmentMutation) ResetField(name string) error {
 		return nil
 	case directorydepartment.FieldParentExternalID:
 		m.ResetParentExternalID()
+		return nil
+	case directorydepartment.FieldEffectiveParentExternalID:
+		m.ResetEffectiveParentExternalID()
 		return nil
 	case directorydepartment.FieldName:
 		m.ResetName()
@@ -23809,23 +23882,25 @@ func (m *QuotaResetRequestEventMutation) ResetEdge(name string) error {
 // RelayProviderMutation represents an operation that mutates the RelayProvider nodes in the graph.
 type RelayProviderMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *int
-	name          *string
-	display_name  *string
-	base_url      *string
-	relay_type    *string
-	admin_api_key *string
-	default_model *string
-	is_primary    *bool
-	enabled       *bool
-	created_at    *time.Time
-	updated_at    *time.Time
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*RelayProvider, error)
-	predicates    []predicate.RelayProvider
+	op                       Op
+	typ                      string
+	id                       *int
+	name                     *string
+	display_name             *string
+	base_url                 *string
+	relay_type               *string
+	admin_api_key            *string
+	default_model            *string
+	is_primary               *bool
+	enabled                  *bool
+	configuration_version    *int64
+	addconfiguration_version *int64
+	created_at               *time.Time
+	updated_at               *time.Time
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*RelayProvider, error)
+	predicates               []predicate.RelayProvider
 }
 
 var _ ent.Mutation = (*RelayProviderMutation)(nil)
@@ -24214,6 +24289,62 @@ func (m *RelayProviderMutation) ResetEnabled() {
 	m.enabled = nil
 }
 
+// SetConfigurationVersion sets the "configuration_version" field.
+func (m *RelayProviderMutation) SetConfigurationVersion(i int64) {
+	m.configuration_version = &i
+	m.addconfiguration_version = nil
+}
+
+// ConfigurationVersion returns the value of the "configuration_version" field in the mutation.
+func (m *RelayProviderMutation) ConfigurationVersion() (r int64, exists bool) {
+	v := m.configuration_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldConfigurationVersion returns the old "configuration_version" field's value of the RelayProvider entity.
+// If the RelayProvider object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RelayProviderMutation) OldConfigurationVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldConfigurationVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldConfigurationVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldConfigurationVersion: %w", err)
+	}
+	return oldValue.ConfigurationVersion, nil
+}
+
+// AddConfigurationVersion adds i to the "configuration_version" field.
+func (m *RelayProviderMutation) AddConfigurationVersion(i int64) {
+	if m.addconfiguration_version != nil {
+		*m.addconfiguration_version += i
+	} else {
+		m.addconfiguration_version = &i
+	}
+}
+
+// AddedConfigurationVersion returns the value that was added to the "configuration_version" field in this mutation.
+func (m *RelayProviderMutation) AddedConfigurationVersion() (r int64, exists bool) {
+	v := m.addconfiguration_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetConfigurationVersion resets all changes to the "configuration_version" field.
+func (m *RelayProviderMutation) ResetConfigurationVersion() {
+	m.configuration_version = nil
+	m.addconfiguration_version = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *RelayProviderMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -24320,7 +24451,7 @@ func (m *RelayProviderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RelayProviderMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 11)
 	if m.name != nil {
 		fields = append(fields, relayprovider.FieldName)
 	}
@@ -24344,6 +24475,9 @@ func (m *RelayProviderMutation) Fields() []string {
 	}
 	if m.enabled != nil {
 		fields = append(fields, relayprovider.FieldEnabled)
+	}
+	if m.configuration_version != nil {
+		fields = append(fields, relayprovider.FieldConfigurationVersion)
 	}
 	if m.created_at != nil {
 		fields = append(fields, relayprovider.FieldCreatedAt)
@@ -24375,6 +24509,8 @@ func (m *RelayProviderMutation) Field(name string) (ent.Value, bool) {
 		return m.IsPrimary()
 	case relayprovider.FieldEnabled:
 		return m.Enabled()
+	case relayprovider.FieldConfigurationVersion:
+		return m.ConfigurationVersion()
 	case relayprovider.FieldCreatedAt:
 		return m.CreatedAt()
 	case relayprovider.FieldUpdatedAt:
@@ -24404,6 +24540,8 @@ func (m *RelayProviderMutation) OldField(ctx context.Context, name string) (ent.
 		return m.OldIsPrimary(ctx)
 	case relayprovider.FieldEnabled:
 		return m.OldEnabled(ctx)
+	case relayprovider.FieldConfigurationVersion:
+		return m.OldConfigurationVersion(ctx)
 	case relayprovider.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case relayprovider.FieldUpdatedAt:
@@ -24473,6 +24611,13 @@ func (m *RelayProviderMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetEnabled(v)
 		return nil
+	case relayprovider.FieldConfigurationVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetConfigurationVersion(v)
+		return nil
 	case relayprovider.FieldCreatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -24494,13 +24639,21 @@ func (m *RelayProviderMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *RelayProviderMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addconfiguration_version != nil {
+		fields = append(fields, relayprovider.FieldConfigurationVersion)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *RelayProviderMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case relayprovider.FieldConfigurationVersion:
+		return m.AddedConfigurationVersion()
+	}
 	return nil, false
 }
 
@@ -24509,6 +24662,13 @@ func (m *RelayProviderMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *RelayProviderMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case relayprovider.FieldConfigurationVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddConfigurationVersion(v)
+		return nil
 	}
 	return fmt.Errorf("unknown RelayProvider numeric field %s", name)
 }
@@ -24559,6 +24719,9 @@ func (m *RelayProviderMutation) ResetField(name string) error {
 		return nil
 	case relayprovider.FieldEnabled:
 		m.ResetEnabled()
+		return nil
+	case relayprovider.FieldConfigurationVersion:
+		m.ResetConfigurationVersion()
 		return nil
 	case relayprovider.FieldCreatedAt:
 		m.ResetCreatedAt()

@@ -2,20 +2,28 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	entuser "github.com/ai-efficiency/backend/ent/user"
 	"github.com/ai-efficiency/backend/internal/auth"
 	authpkg "github.com/ai-efficiency/backend/internal/auth"
+	"github.com/ai-efficiency/backend/internal/middleware"
+	"github.com/ai-efficiency/backend/internal/readcache"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/teamusage"
+	"github.com/ai-efficiency/backend/internal/telemetry"
 	"github.com/ai-efficiency/backend/internal/testdb"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	redis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +31,10 @@ type fakeTeamUsageService struct {
 	scopeFn            func(context.Context, int) (*teamusage.ScopeResponse, error)
 	subjectsFn         func(context.Context, int, string, int, int) (*teamusage.SubjectsResponse, error)
 	subjectDashboardFn func(context.Context, int, int, relay.UserUsageDashboardParams) (*teamusage.SubjectDashboardResponse, error)
+	summaryFn          func(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error)
+	trendFn            func(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error)
+	membersFn          func(context.Context, int, teamusage.MembersParams) (*teamusage.MembersResponse, error)
+	organizationFn     func(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error)
 	overviewFn         func(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error)
 	updateMultiplierFn func(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	listAuditFn        func(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
@@ -39,6 +51,22 @@ func (f *fakeTeamUsageService) Subjects(ctx context.Context, actorUserID int, q 
 
 func (f *fakeTeamUsageService) SubjectDashboard(ctx context.Context, actorUserID, targetUserID int, params relay.UserUsageDashboardParams) (*teamusage.SubjectDashboardResponse, error) {
 	return f.subjectDashboardFn(ctx, actorUserID, targetUserID, params)
+}
+
+func (f *fakeTeamUsageService) Summary(ctx context.Context, actorUserID int, params teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
+	return f.summaryFn(ctx, actorUserID, params)
+}
+
+func (f *fakeTeamUsageService) Trend(ctx context.Context, actorUserID int, params teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+	return f.trendFn(ctx, actorUserID, params)
+}
+
+func (f *fakeTeamUsageService) Members(ctx context.Context, actorUserID int, params teamusage.MembersParams) (*teamusage.MembersResponse, error) {
+	return f.membersFn(ctx, actorUserID, params)
+}
+
+func (f *fakeTeamUsageService) Organization(ctx context.Context, actorUserID int, params teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+	return f.organizationFn(ctx, actorUserID, params)
 }
 
 func (f *fakeTeamUsageService) Overview(ctx context.Context, actorUserID int, params teamusage.OverviewParams) (*teamusage.OverviewResponse, error) {
@@ -102,6 +130,7 @@ func newTeamUsageTestRouter(t *testing.T, service *fakeTeamUsageService) *teamUs
 	}
 
 	router := gin.New()
+	router.Use(middleware.RequestTelemetry(logger, "test-release"))
 	userGroup := router.Group("/api/v1/user")
 	userGroup.Use(authpkg.RequireAuth(authSvc))
 	teamHandler := NewTeamUsageHandler(service)
@@ -109,6 +138,10 @@ func newTeamUsageTestRouter(t *testing.T, service *fakeTeamUsageService) *teamUs
 	userGroup.GET("/team-usage/subjects", teamHandler.Subjects)
 	userGroup.GET("/team-usage/subjects/:user_id/usage/dashboard", teamHandler.SubjectDashboard)
 	userGroup.PUT("/team-usage/subjects/:user_id/groups/:group_id/rate-multiplier", teamHandler.UpdateMultiplier)
+	userGroup.GET("/team-usage/summary", teamHandler.Summary)
+	userGroup.GET("/team-usage/trend", teamHandler.Trend)
+	userGroup.GET("/team-usage/members", teamHandler.Members)
+	userGroup.GET("/team-usage/organization", teamHandler.Organization)
 	userGroup.GET("/team-usage/overview", teamHandler.Overview)
 	userGroup.GET("/team-usage/audit", teamHandler.Audit)
 
@@ -123,6 +156,931 @@ func newTeamUsageTestRouter(t *testing.T, service *fakeTeamUsageService) *teamUs
 		adminToken: adminPair.AccessToken,
 		userID:     user.ID,
 		adminID:    admin.ID,
+	}
+}
+
+func TestTeamUsageSplitEndpointsPreserveMiddlewareRequestID(t *testing.T) {
+	const requestID = "client_Request-161.valid"
+	assertContextRequestID := func(ctx context.Context) {
+		t.Helper()
+		if got := telemetry.RequestID(ctx); got != requestID {
+			t.Fatalf("service context request ID = %q, want %q", got, requestID)
+		}
+	}
+
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		summaryFn: func(ctx context.Context, _ int, _ teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
+			assertContextRequestID(ctx)
+			return &teamusage.SummaryResponse{}, nil
+		},
+		trendFn: func(ctx context.Context, _ int, _ teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+			assertContextRequestID(ctx)
+			return &teamusage.TrendResponse{}, nil
+		},
+		membersFn: func(ctx context.Context, _ int, _ teamusage.MembersParams) (*teamusage.MembersResponse, error) {
+			assertContextRequestID(ctx)
+			return &teamusage.MembersResponse{}, nil
+		},
+		organizationFn: func(ctx context.Context, _ int, _ teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+			assertContextRequestID(ctx)
+			return &teamusage.OrganizationResponse{}, nil
+		},
+	})
+
+	for _, path := range []string{
+		"/api/v1/user/team-usage/summary",
+		"/api/v1/user/team-usage/trend",
+		"/api/v1/user/team-usage/members",
+		"/api/v1/user/team-usage/organization",
+	} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.Header.Set("Authorization", "Bearer "+env.token)
+			request.Header.Set(telemetry.HeaderRequestID, requestID)
+			response := httptest.NewRecorder()
+			env.router.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d body = %s, want 200", response.Code, response.Body.String())
+			}
+			if got := response.Header().Get(telemetry.HeaderRequestID); got != requestID {
+				t.Fatalf("response request ID = %q, want %q", got, requestID)
+			}
+			if expected := `"request_id":"` + requestID + `"`; !strings.Contains(response.Body.String(), expected) {
+				t.Fatalf("response body = %s, want %s", response.Body.String(), expected)
+			}
+		})
+	}
+}
+
+func TestTeamUsageSummaryReturnsFreshnessScopeAndUniqueRequestID(t *testing.T) {
+	asOf := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	var env *teamUsageTestEnv
+	env = newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		summaryFn: func(_ context.Context, actorID int, params teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
+			if actorID != env.userID || params.StartDate != "2026-07-01" || params.EndDate != "2026-07-07" || params.Granularity != "day" || params.Timezone != "Asia/Shanghai" {
+				t.Fatalf("unexpected summary request: actor=%d params=%+v", actorID, params)
+			}
+			rangeCost := 12.5
+			return &teamusage.SummaryResponse{
+				SnapshotFreshness: teamusage.SnapshotFreshness{
+					AsOf: asOf, FreshUntil: asOf.Add(2*time.Minute + 42*time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
+					CacheStatus: "miss", SourceStatus: "ok",
+				},
+				ScopeVersion: "scope-version-1",
+				Window: teamusage.OverviewWindow{
+					StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
+				},
+				Summary: teamusage.SummaryAggregate{MemberCount: 2, RangeActualCost: &rangeCost, UnitLabel: "USD"},
+			}, nil
+		},
+	})
+
+	path := "/api/v1/user/team-usage/summary?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=Asia%2FShanghai"
+	first := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	second := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	if first.Code != http.StatusOK || second.Code != http.StatusOK {
+		t.Fatalf("summary responses = %d/%d, want 200", first.Code, second.Code)
+	}
+	firstRequestID := first.Header().Get("X-Request-ID")
+	secondRequestID := second.Header().Get("X-Request-ID")
+	if firstRequestID == "" || secondRequestID == "" || firstRequestID == secondRequestID {
+		t.Fatalf("request IDs = %q/%q, want unique non-empty IDs", firstRequestID, secondRequestID)
+	}
+	for _, expected := range []string{
+		`"scope_version":"scope-version-1"`, `"cache_status":"miss"`, `"source_status":"ok"`,
+		`"request_id":"` + firstRequestID + `"`, `"range_actual_cost":12.5`,
+	} {
+		if !strings.Contains(first.Body.String(), expected) {
+			t.Fatalf("summary body = %s, want %s", first.Body.String(), expected)
+		}
+	}
+}
+
+func TestTeamUsageSummaryMapsScopedAndInputFailures(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "no representative scope", err: &teamusage.ForbiddenError{Reason: teamusage.ErrNotRepresentative.Error()}, status: http.StatusForbidden},
+		{name: "invalid window", err: fmt.Errorf("%w: end date precedes start date", teamusage.ErrInvalidOverviewParams), status: http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+				summaryFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
+					return nil, tt.err
+				},
+			})
+			rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/summary?start_date=2026-07-08&end_date=2026-07-07&granularity=day&timezone=UTC", env.token, "")
+			if rec.Code != tt.status {
+				t.Fatalf("response = %d %s, want %d", rec.Code, rec.Body.String(), tt.status)
+			}
+		})
+	}
+}
+
+func TestTeamUsageSummaryRequiresAuthentication(t *testing.T) {
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		summaryFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.SummaryResponse, error) {
+			t.Fatal("summary service must not run without authentication")
+			return nil, nil
+		},
+	})
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/summary", "", "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("response = %d %s, want 401", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTeamUsageSummaryUsesSharedScopeOriginOverRealHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := testdb.Open(t)
+	client.RelayProvider.Create().
+		SetName("summary-http-relay").
+		SetDisplayName("Summary HTTP Relay").
+		SetBaseURL("https://relay.example.com").
+		SetRelayType("sub2api").
+		SetAdminAPIKey("test-admin-api-key").
+		SetDefaultModel("test-model").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(context.Background())
+
+	rangeAlice, rangeBob := 15.0, 30.0
+	tokensAlice, tokensBob := int64(1500), int64(4500)
+	provider := &teamUsageHTTPRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {
+				UserID: 1002, RangeActualCost: &rangeAlice, RangeTotalTokens: &tokensAlice,
+				TodayActualCost: 1, TotalActualCost: 10,
+			},
+			1003: {
+				UserID: 1003, RangeActualCost: &rangeBob, RangeTotalTokens: &tokensBob,
+				TodayActualCost: 2, TotalActualCost: 99,
+			},
+		},
+	}
+	scope := &representativescope.Scope{
+		Version: "scope-http-summary", ActorUserID: 101, IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 102, DisplayName: "Alice", RelayUserID: handlerIntPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 103, DisplayName: "Bob", RelayUserID: handlerIntPtr(1003), Selectable: true},
+		},
+	}
+	server := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() {
+		if err := redisClient.Close(); err != nil {
+			t.Errorf("close test Redis client: %v", err)
+		}
+	})
+	store := readcache.NewRedisStore(redisClient)
+	cache, err := teamusage.NewSnapshotCache(
+		store,
+		teamusage.SnapshotCacheOptions{Namespace: "summary-http-independent"},
+	)
+	if err != nil {
+		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	originCache, err := teamusage.NewOriginCache(store, teamusage.OriginCacheOptions{Namespace: "summary-http-independent"})
+	if err != nil {
+		t.Fatalf("NewOriginCache() error = %v", err)
+	}
+	service, err := teamusage.NewService(
+		client,
+		teamUsageHTTPScopeResolver{scope: scope},
+		teamUsageHTTPProviderResolver{provider: provider},
+		nil,
+		teamusage.ServiceOptions{SnapshotCache: cache, OriginCache: originCache, CursorSecret: "test-summary-http-cursor-secret"},
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	router := gin.New()
+	router.Use(withAuthUser(101, "user"))
+	router.GET("/api/v1/user/team-usage/summary", NewTeamUsageHandler(service).Summary)
+
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/user/team-usage/summary?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=Asia%2FShanghai",
+		nil,
+	)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s, want 200", response.Code, response.Body.String())
+	}
+	for _, expected := range []string{
+		`"member_count":2`, `"relay_member_count":2`, `"range_actual_cost":45`, `"range_total_tokens":6000`,
+		`"today_actual_cost":3`, `"total_actual_cost":109`, `"unit_label":"USD"`,
+	} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("summary body = %s, want %s", response.Body.String(), expected)
+		}
+	}
+	if provider.trendCalls.Load() != 1 {
+		t.Fatalf("trend calls = %d, want one shared scope-origin trend", provider.trendCalls.Load())
+	}
+
+	incompleteBob := provider.summaryStats[1003]
+	incompleteBob.RangeTotalTokens = nil
+	provider.summaryStats[1003] = incompleteBob
+	provider.trendErr = errors.New("synthetic users-trend outage")
+	incompleteRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/user/team-usage/summary?start_date=2026-07-01&end_date=2026-07-08&granularity=day&timezone=Asia%2FShanghai",
+		nil,
+	)
+	incompleteResponse := httptest.NewRecorder()
+	router.ServeHTTP(incompleteResponse, incompleteRequest)
+	if incompleteResponse.Code != http.StatusOK {
+		t.Fatalf("incomplete range status = %d body = %s, want 200", incompleteResponse.Code, incompleteResponse.Body.String())
+	}
+	for _, expected := range []string{
+		`"unavailable":true`, `"unavailable_reason":"range_aggregation_unavailable"`,
+		`"range_actual_cost":null`, `"range_total_tokens":null`,
+		`"member_count":2`, `"relay_member_count":2`, `"today_actual_cost":3`, `"total_actual_cost":109`,
+	} {
+		if !strings.Contains(incompleteResponse.Body.String(), expected) {
+			t.Fatalf("incomplete range body = %s, want %s", incompleteResponse.Body.String(), expected)
+		}
+	}
+	if provider.trendCalls.Load() != 2 {
+		t.Fatalf("trend calls after second range = %d, want one origin attempt per range", provider.trendCalls.Load())
+	}
+}
+
+func TestTeamOverviewCompatibilityUsesSplitLanesOverRealHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := testdb.Open(t)
+	client.RelayProvider.Create().
+		SetName("trend-http-relay").
+		SetDisplayName("Trend HTTP Relay").
+		SetBaseURL("https://relay.example.com").
+		SetRelayType("sub2api").
+		SetAdminAPIKey("test-admin-api-key").
+		SetDefaultModel("test-model").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(context.Background())
+
+	rangeCost := 15.0
+	rangeTokens := int64(1500)
+	trendTokens := int64(1200)
+	provider := &teamUsageHTTPRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {
+				UserID: 1002, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
+				TodayActualCost: 1, TotalActualCost: 10,
+			},
+		},
+		trendPoints: map[int64][]relay.UsageTrendPoint{
+			1002: {{Date: "2026-07-18", ActualCost: 3, TotalTokens: &trendTokens}},
+		},
+	}
+	scope := &representativescope.Scope{
+		Version: "scope-http-trend", ActorUserID: 101, IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{{
+			SubjectType: "member", UserID: 102, DirectoryMemberExternalID: "member-alice",
+			DisplayName: "Alice", DepartmentExternalID: "department-alpha", RelayUserID: handlerIntPtr(1002), Selectable: true,
+		}},
+		MemberTreeRootIDs:     []string{"department-alpha"},
+		MemberTreeDepartments: []representativescope.DepartmentScope{{ExternalID: "department-alpha", Name: "Department Alpha"}},
+	}
+	server := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() {
+		if err := redisClient.Close(); err != nil {
+			t.Errorf("close test Redis client: %v", err)
+		}
+	})
+	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	store := readcache.NewRedisStore(redisClient)
+	cache, err := teamusage.NewSnapshotCache(
+		store,
+		teamusage.SnapshotCacheOptions{
+			Namespace: "trend-http-independent", Now: func() time.Time { return now }, RandFloat64: func() float64 { return 0 },
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	originCache, err := teamusage.NewOriginCache(store, teamusage.OriginCacheOptions{Namespace: "trend-http-independent", Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("NewOriginCache() error = %v", err)
+	}
+	service, err := teamusage.NewService(
+		client,
+		teamUsageHTTPScopeResolver{scope: scope},
+		teamUsageHTTPProviderResolver{provider: provider},
+		nil,
+		teamusage.ServiceOptions{SnapshotCache: cache, OriginCache: originCache, CursorSecret: "test-trend-http-cursor-secret"},
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	router := gin.New()
+	router.Use(withAuthUser(101, "user"))
+	handler := NewTeamUsageHandler(service)
+	router.GET("/api/v1/user/team-usage/trend", handler.Trend)
+	router.GET("/api/v1/user/team-usage/summary", handler.Summary)
+	router.GET("/api/v1/user/team-usage/overview", handler.Overview)
+	trendPath := "/api/v1/user/team-usage/trend?start_date=2026-07-18&end_date=2026-07-18&granularity=hour&timezone=UTC"
+	summaryPath := "/api/v1/user/team-usage/summary?start_date=2026-07-18&end_date=2026-07-18&granularity=hour&timezone=UTC"
+	overviewPath := "/api/v1/user/team-usage/overview?start_date=2026-07-18&end_date=2026-07-18&granularity=hour&timezone=UTC&page=9&page_size=1"
+
+	prime := httptest.NewRecorder()
+	router.ServeHTTP(prime, httptest.NewRequest(http.MethodGet, trendPath, nil))
+	if prime.Code != http.StatusOK || !strings.Contains(prime.Body.String(), `"cache_status":"miss"`) || !strings.Contains(prime.Body.String(), `"display_name":"Alice"`) {
+		t.Fatalf("prime trend HTTP response = %d %s", prime.Code, prime.Body.String())
+	}
+
+	now = now.Add(2*time.Minute + 43*time.Second)
+	provider.trendErr = errors.New("synthetic trend HTTP outage")
+	stale := httptest.NewRecorder()
+	router.ServeHTTP(stale, httptest.NewRequest(http.MethodGet, trendPath, nil))
+	if stale.Code != http.StatusOK || !strings.Contains(stale.Body.String(), `"cache_status":"stale"`) ||
+		!strings.Contains(stale.Body.String(), `"source_status":"error"`) || !strings.Contains(stale.Body.String(), `"display_name":"Alice"`) {
+		t.Fatalf("stale trend HTTP response = %d %s", stale.Code, stale.Body.String())
+	}
+
+	summary := httptest.NewRecorder()
+	router.ServeHTTP(summary, httptest.NewRequest(http.MethodGet, summaryPath, nil))
+	if summary.Code != http.StatusOK || !strings.Contains(summary.Body.String(), `"cache_status":"miss"`) || !strings.Contains(summary.Body.String(), `"range_actual_cost":15`) {
+		t.Fatalf("summary HTTP response = %d %s", summary.Code, summary.Body.String())
+	}
+	overview := httptest.NewRecorder()
+	router.ServeHTTP(overview, httptest.NewRequest(http.MethodGet, overviewPath, nil))
+	if overview.Code != http.StatusOK || !strings.Contains(overview.Body.String(), `"range_actual_cost":15`) || !strings.Contains(overview.Body.String(), `"member_tree"`) {
+		t.Fatalf("overview HTTP response = %d %s", overview.Code, overview.Body.String())
+	}
+	if overview.Header().Get("Deprecation") != "@1783987200" || overview.Header().Get("Sunset") != "Tue, 15 Sep 2026 00:00:00 GMT" || overview.Header().Get("Link") != `</api/v1/user/team-usage/summary>; rel="successor-version"` {
+		t.Fatalf("overview compatibility headers = Deprecation %q Sunset %q Link %q", overview.Header().Get("Deprecation"), overview.Header().Get("Sunset"), overview.Header().Get("Link"))
+	}
+	seenTrend, seenSummary, seenMembers := false, false, false
+	for _, key := range server.Keys() {
+		seenTrend = seenTrend || strings.HasPrefix(key, "ae:trend-http-independent:team-usage-trend:v1:")
+		seenSummary = seenSummary || strings.HasPrefix(key, "ae:trend-http-independent:team-usage-summary:v1:")
+		seenMembers = seenMembers || strings.HasPrefix(key, "ae:trend-http-independent:team-usage-members:v1:")
+		if strings.HasPrefix(key, "ae:trend-http-independent:team-usage-snapshot:v1:") {
+			t.Fatalf("split and compatibility HTTP requests unexpectedly populated compatibility key %q", key)
+		}
+	}
+	if !seenTrend || !seenSummary || !seenMembers {
+		t.Fatalf("Redis keys = %v, want independent trend, summary, and members lanes", server.Keys())
+	}
+}
+
+func TestTeamUsageMembersUsesIndependentBoundedOriginOverRealHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	client := testdb.Open(t)
+	client.RelayProvider.Create().
+		SetName("members-http-relay").
+		SetDisplayName("Members HTTP Relay").
+		SetBaseURL("https://relay.example.com").
+		SetRelayType("sub2api").
+		SetAdminAPIKey("test-admin-api-key").
+		SetDefaultModel("test-model").
+		SetIsPrimary(true).
+		SetEnabled(true).
+		SaveX(context.Background())
+
+	subjects := make([]representativescope.Subject, 0, 500)
+	stats := make(map[int64]relay.TeamUserUsageStats, 500)
+	for index := 1; index <= 500; index++ {
+		relayUserID := 10000 + index
+		rangeCost := float64(501 - index)
+		rangeTokens := int64((501 - index) * 1000)
+		subjects = append(subjects, representativescope.Subject{
+			SubjectType: "member", UserID: index, DisplayName: fmt.Sprintf("Member %03d", index),
+			DirectoryMemberExternalID: fmt.Sprintf("member-%03d", index), RelayUserID: handlerIntPtr(relayUserID), Selectable: true,
+		})
+		stats[int64(relayUserID)] = relay.TeamUserUsageStats{
+			UserID: int64(relayUserID), RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
+		}
+	}
+	provider := &teamUsageHTTPRelayProvider{summaryStats: stats}
+	scope := &representativescope.Scope{
+		Version: "scope-http-members", ActorUserID: 101, IsRepresentative: true, OverviewSubjects: subjects,
+	}
+	server := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() {
+		if err := redisClient.Close(); err != nil {
+			t.Errorf("close test Redis client: %v", err)
+		}
+	})
+	store := readcache.NewRedisStore(redisClient)
+	cache, err := teamusage.NewSnapshotCache(
+		store,
+		teamusage.SnapshotCacheOptions{Namespace: "members-http-independent"},
+	)
+	if err != nil {
+		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	originCache, err := teamusage.NewOriginCache(store, teamusage.OriginCacheOptions{Namespace: "members-http-independent"})
+	if err != nil {
+		t.Fatalf("NewOriginCache() error = %v", err)
+	}
+	service, err := teamusage.NewService(
+		client,
+		teamUsageHTTPScopeResolver{scope: scope},
+		teamUsageHTTPProviderResolver{provider: provider},
+		nil,
+		teamusage.ServiceOptions{SnapshotCache: cache, OriginCache: originCache, CursorSecret: "test-members-http-cursor-secret"},
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	router := gin.New()
+	router.Use(withAuthUser(101, "user"))
+	router.GET("/api/v1/user/team-usage/members", NewTeamUsageHandler(service).Members)
+
+	path := "/api/v1/user/team-usage/members?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=Asia%2FShanghai"
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s, want 200", response.Code, response.Body.String())
+	}
+	for _, expected := range []string{`"total_count":500`, `"rank":1`, `"rank":50`, `"next_cursor":"`} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("members body is missing %s: %s", expected, response.Body.String())
+		}
+	}
+	if strings.Contains(response.Body.String(), `"rank":51`) || strings.Contains(response.Body.String(), `"member_tree"`) || strings.Contains(response.Body.String(), `"top_member_trend"`) {
+		t.Fatalf("members body exceeded the first page or leaked compatibility fields: %s", response.Body.String())
+	}
+	if provider.trendCalls.Load() != 1 || provider.summaryCalls.Load() != 5 {
+		t.Fatalf("origin calls = trend/stats %d/%d, want 1/5", provider.trendCalls.Load(), provider.summaryCalls.Load())
+	}
+	for index, batch := range provider.summaryBatches {
+		if len(batch) != 100 || provider.summaryParams[index].RequireCompleteRange {
+			t.Fatalf("stats batch %d = users %d complete_range %v, want 100/false before shared trend completion", index, len(batch), provider.summaryParams[index].RequireCompleteRange)
+		}
+	}
+	keys := server.Keys()
+	seenMembers, seenOrigin := false, false
+	for _, key := range keys {
+		seenMembers = seenMembers || strings.HasPrefix(key, "ae:members-http-independent:team-usage-members:v1:")
+		seenOrigin = seenOrigin || strings.HasPrefix(key, "ae:members-http-independent:team-usage-origin:v1:")
+	}
+	if len(keys) != 2 || !seenMembers || !seenOrigin {
+		t.Fatalf("Redis keys = %v, want the independent Members lane plus shared scope origin", keys)
+	}
+}
+
+type teamUsageHTTPScopeResolver struct {
+	scope *representativescope.Scope
+}
+
+func (r teamUsageHTTPScopeResolver) Resolve(context.Context, int) (*representativescope.Scope, error) {
+	return r.scope, nil
+}
+
+type teamUsageHTTPProviderResolver struct {
+	provider relay.Provider
+}
+
+func (r teamUsageHTTPProviderResolver) Resolve(context.Context, int) (relay.Provider, error) {
+	return r.provider, nil
+}
+
+type teamUsageHTTPRelayProvider struct {
+	relay.Provider
+	summaryStats   map[int64]relay.TeamUserUsageStats
+	summaryCalls   atomic.Int32
+	summaryBatches [][]int64
+	summaryParams  []relay.TeamUsageSummaryParams
+	trendPoints    map[int64][]relay.UsageTrendPoint
+	trendErr       error
+	trendCalls     atomic.Int32
+	trendStarted   chan struct{}
+	trendRelease   <-chan struct{}
+}
+
+func (p *teamUsageHTTPRelayProvider) GetBatchUserUsageStats(_ context.Context, userIDs []int64, params relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+	p.summaryCalls.Add(1)
+	p.summaryBatches = append(p.summaryBatches, append([]int64(nil), userIDs...))
+	p.summaryParams = append(p.summaryParams, params)
+	return p.summaryStats, nil
+}
+
+func (p *teamUsageHTTPRelayProvider) GetUsageTrendForUsers(ctx context.Context, _ []int64, _ relay.TeamMemberTrendParams) (map[int64][]relay.UsageTrendPoint, error) {
+	p.trendCalls.Add(1)
+	if p.trendErr != nil {
+		return nil, p.trendErr
+	}
+	select {
+	case p.trendStarted <- struct{}{}:
+	default:
+	}
+	if p.trendRelease != nil {
+		select {
+		case <-p.trendRelease:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return p.trendPoints, nil
+}
+
+func handlerIntPtr(value int) *int {
+	return &value
+}
+
+func TestTeamUsageTrendReturnsBoundedFreshnessScopeAndUniqueRequestID(t *testing.T) {
+	asOf := time.Date(2026, 7, 16, 9, 0, 0, 0, time.UTC)
+	var env *teamUsageTestEnv
+	env = newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		trendFn: func(_ context.Context, actorID int, params teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+			if actorID != env.userID || params.StartDate != "2026-07-01" || params.EndDate != "2026-07-07" || params.Granularity != "hour" || params.Timezone != "Asia/Shanghai" {
+				t.Fatalf("unexpected trend request: actor=%d params=%+v", actorID, params)
+			}
+			return &teamusage.TrendResponse{
+				SnapshotFreshness: teamusage.SnapshotFreshness{
+					AsOf: asOf, FreshUntil: asOf.Add(2*time.Minute + 42*time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
+					CacheStatus: "hit", SourceStatus: "ok",
+				},
+				ScopeVersion: "scope-version-trend-1",
+				Window: teamusage.OverviewWindow{
+					StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "hour", Timezone: "Asia/Shanghai",
+				},
+				TopMembers: []teamusage.OverviewMember{{UserID: 101, DisplayName: "Alice", Rank: 1}},
+				DepartmentTrend: teamusage.DepartmentTrendState{
+					ComparisonTotalCount: 14,
+					ComparisonTruncated:  true,
+					Series: []teamusage.DepartmentTrendSeries{{
+						SeriesType: "team_total", DisplayName: "Team total",
+					}},
+				},
+			}, nil
+		},
+	})
+
+	path := "/api/v1/user/team-usage/trend?start_date=2026-07-01&end_date=2026-07-07&granularity=hour&timezone=Asia%2FShanghai"
+	first := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	second := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	if first.Code != http.StatusOK || second.Code != http.StatusOK {
+		t.Fatalf("trend responses = %d/%d, want 200", first.Code, second.Code)
+	}
+	firstRequestID := first.Header().Get("X-Request-ID")
+	secondRequestID := second.Header().Get("X-Request-ID")
+	if firstRequestID == "" || secondRequestID == "" || firstRequestID == secondRequestID {
+		t.Fatalf("request IDs = %q/%q, want unique non-empty IDs", firstRequestID, secondRequestID)
+	}
+	if first.Header().Get("Deprecation") != "" || first.Header().Get("Sunset") != "" || first.Header().Get("Link") != "" {
+		t.Fatalf("trend unexpectedly exposed compatibility headers: %+v", first.Header())
+	}
+	for _, expected := range []string{
+		`"scope_version":"scope-version-trend-1"`, `"cache_status":"hit"`, `"source_status":"ok"`,
+		`"request_id":"` + firstRequestID + `"`, `"comparison_total_count":14`, `"comparison_truncated":true`,
+		`"series_type":"team_total"`, `"display_name":"Alice"`,
+	} {
+		if !strings.Contains(first.Body.String(), expected) {
+			t.Fatalf("trend body = %s, want %s", first.Body.String(), expected)
+		}
+	}
+}
+
+func TestTeamUsageTrendMapsScopeAndInputFailures(t *testing.T) {
+	t.Run("no representative scope", func(t *testing.T) {
+		env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+			trendFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+				return nil, &teamusage.ForbiddenError{Reason: teamusage.ErrNotRepresentative.Error()}
+			},
+		})
+		rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/trend?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=UTC", env.token, "")
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("response = %d %s, want 403", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("invalid granularity", func(t *testing.T) {
+		env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+			trendFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+				t.Fatal("trend service must not run for invalid input")
+				return nil, nil
+			},
+		})
+		rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/trend?granularity=week", env.token, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("response = %d %s, want 400", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestTeamUsageTrendRequiresAuthentication(t *testing.T) {
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		trendFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error) {
+			t.Fatal("trend service must not run without authentication")
+			return nil, nil
+		},
+	})
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/trend", "", "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("response = %d %s, want 401", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTeamUsageMembersReturnsBoundedMetadataAndUniqueRequestID(t *testing.T) {
+	asOf := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	var env *teamUsageTestEnv
+	env = newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		membersFn: func(_ context.Context, actorID int, params teamusage.MembersParams) (*teamusage.MembersResponse, error) {
+			if actorID != env.userID || params.StartDate != "2026-07-01" || params.EndDate != "2026-07-07" || params.Granularity != "day" || params.Timezone != "Asia/Shanghai" || params.Limit != 50 || params.Cursor != "cursor-page-2" {
+				t.Fatalf("unexpected members request: actor=%d params=%+v", actorID, params)
+			}
+			tokens := int64(1234)
+			return &teamusage.MembersResponse{
+				SnapshotFreshness: teamusage.SnapshotFreshness{
+					AsOf: asOf, FreshUntil: asOf.Add(2*time.Minute + 42*time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second),
+					CacheStatus: "fresh", SourceStatus: "ok",
+				},
+				ScopeVersion: "scope-version-members-1",
+				Window: teamusage.OverviewWindow{
+					StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
+				},
+				Items: []teamusage.OverviewMember{{
+					Rank: 51, UserID: 101, DisplayName: "Alice", Email: "alice@example.com", TotalTokens: &tokens,
+				}},
+				TotalCount: 500,
+				NextCursor: "cursor-page-3",
+			}, nil
+		},
+	})
+
+	path := "/api/v1/user/team-usage/members?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=Asia%2FShanghai&limit=50&cursor=cursor-page-2"
+	first := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	second := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	if first.Code != http.StatusOK || second.Code != http.StatusOK {
+		t.Fatalf("members responses = %d/%d, want 200", first.Code, second.Code)
+	}
+	firstRequestID := first.Header().Get("X-Request-ID")
+	secondRequestID := second.Header().Get("X-Request-ID")
+	if firstRequestID == "" || secondRequestID == "" || firstRequestID == secondRequestID {
+		t.Fatalf("request IDs = %q/%q, want unique non-empty IDs", firstRequestID, secondRequestID)
+	}
+	if first.Header().Get("Deprecation") != "" || first.Header().Get("Sunset") != "" || first.Header().Get("Link") != "" {
+		t.Fatalf("members unexpectedly exposed compatibility headers: %+v", first.Header())
+	}
+	body := first.Body.String()
+	for _, expected := range []string{
+		`"scope_version":"scope-version-members-1"`, `"request_id":"` + firstRequestID + `"`,
+		`"cache_status":"fresh"`, `"total_count":500`, `"next_cursor":"cursor-page-3"`, `"rank":51`, `"display_name":"Alice"`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("members body = %s, want %s", body, expected)
+		}
+	}
+	for _, forbidden := range []string{`"member_tree"`, `"members"`, `"top_members"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("members body = %s, must not contain %s", body, forbidden)
+		}
+	}
+}
+
+func TestTeamUsageMembersForwardsMissingLimitAsDefaultSelection(t *testing.T) {
+	var env *teamUsageTestEnv
+	env = newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		membersFn: func(_ context.Context, actorID int, params teamusage.MembersParams) (*teamusage.MembersResponse, error) {
+			if actorID != env.userID || params.Limit != 0 || params.Cursor != "" {
+				t.Fatalf("default members request: actor=%d params=%+v", actorID, params)
+			}
+			return &teamusage.MembersResponse{Items: []teamusage.OverviewMember{}}, nil
+		},
+	})
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/members?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=UTC", env.token, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response = %d %s, want 200", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTeamUsageMembersMapsScopeCursorAndInputFailures(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		body   string
+	}{
+		{name: "no representative scope", err: &teamusage.ForbiddenError{Reason: teamusage.ErrNotRepresentative.Error()}, status: http.StatusForbidden, body: "not_representative"},
+		{name: "invalid cursor", err: teamusage.ErrInvalidMemberCursor, status: http.StatusBadRequest, body: "invalid_cursor"},
+		{name: "expired snapshot", err: teamusage.ErrMemberSnapshotExpired, status: http.StatusConflict, body: "snapshot_expired"},
+		{name: "invalid limit", err: fmt.Errorf("%w: limit must be between 1 and 100", teamusage.ErrInvalidOverviewParams), status: http.StatusBadRequest, body: "limit must be between"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+				membersFn: func(context.Context, int, teamusage.MembersParams) (*teamusage.MembersResponse, error) {
+					return nil, tt.err
+				},
+			})
+			rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/members?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=UTC&limit=101", env.token, "")
+			if rec.Code != tt.status || !strings.Contains(rec.Body.String(), tt.body) {
+				t.Fatalf("response = %d %s, want %d containing %q", rec.Code, rec.Body.String(), tt.status, tt.body)
+			}
+		})
+	}
+
+	t.Run("non-integer limit", func(t *testing.T) {
+		env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+			membersFn: func(context.Context, int, teamusage.MembersParams) (*teamusage.MembersResponse, error) {
+				t.Fatal("members service must not run for a non-integer limit")
+				return nil, nil
+			},
+		})
+		rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/members?limit=invalid", env.token, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("response = %d %s, want 400", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestTeamUsageMembersRequiresAuthentication(t *testing.T) {
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		membersFn: func(context.Context, int, teamusage.MembersParams) (*teamusage.MembersResponse, error) {
+			t.Fatal("members service must not run without authentication")
+			return nil, nil
+		},
+	})
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/members", "", "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("response = %d %s, want 401", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTeamUsageOrganizationReturnsShallowCollectionsAndUniqueRequestID(t *testing.T) {
+	asOf := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	parentID := "department-root"
+	var env *teamUsageTestEnv
+	env = newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		organizationFn: func(_ context.Context, actorID int, params teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+			if actorID != env.userID || params.StartDate != "2026-07-01" || params.EndDate != "2026-07-07" || params.Granularity != "day" || params.Timezone != "Asia/Shanghai" ||
+				params.ParentDepartmentExternalID != parentID || params.DepartmentCursor != "department-page-2" || params.DepartmentLimit != 25 || params.MemberCursor != "member-page-2" || params.MemberLimit != 50 {
+				t.Fatalf("unexpected organization request: actor=%d params=%+v", actorID, params)
+			}
+			tokens := int64(1234)
+			return &teamusage.OrganizationResponse{
+				SnapshotFreshness: teamusage.SnapshotFreshness{
+					AsOf: asOf, FreshUntil: asOf.Add(2*time.Minute + 42*time.Second), StaleUntil: asOf.Add(4*time.Minute + 30*time.Second), CacheStatus: "fresh", SourceStatus: "ok",
+				},
+				ScopeVersion: "scope-version-organization-1", ParentDepartmentExternalID: &parentID,
+				Window:               teamusage.OverviewWindow{StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai"},
+				Departments:          []teamusage.OrganizationDepartment{{DepartmentExternalID: "department-alpha", Name: "Alpha", ChildCount: 1, HasChildren: true, DirectMemberCount: 2, AggregateMemberCount: 3}},
+				Members:              []teamusage.OverviewMember{{Rank: 51, UserID: 101, DisplayName: "Alice", Email: "alice@example.com", TotalTokens: &tokens}},
+				NextDepartmentCursor: "department-page-3", NextMemberCursor: "member-page-3",
+			}, nil
+		},
+	})
+
+	path := "/api/v1/user/team-usage/organization?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=Asia%2FShanghai&parent_department_external_id=department-root&department_cursor=department-page-2&department_limit=25&member_cursor=member-page-2&member_limit=50"
+	first := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	second := performTeamUsageRequest(env.router, http.MethodGet, path, env.token, "")
+	if first.Code != http.StatusOK || second.Code != http.StatusOK {
+		t.Fatalf("organization responses = %d/%d, want 200", first.Code, second.Code)
+	}
+	firstRequestID := first.Header().Get("X-Request-ID")
+	secondRequestID := second.Header().Get("X-Request-ID")
+	if firstRequestID == "" || secondRequestID == "" || firstRequestID == secondRequestID {
+		t.Fatalf("request IDs = %q/%q, want unique non-empty IDs", firstRequestID, secondRequestID)
+	}
+	body := first.Body.String()
+	for _, expected := range []string{`"request_id":"` + firstRequestID + `"`, `"parent_department_external_id":"department-root"`, `"departments":[`, `"members":[`, `"has_children":true`, `"next_department_cursor":"department-page-3"`, `"next_member_cursor":"member-page-3"`} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("organization body = %s, want %s", body, expected)
+		}
+	}
+	for _, forbidden := range []string{`"children"`, `"member_tree"`, `"top_members"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("organization body = %s, must not contain %s", body, forbidden)
+		}
+	}
+	if first.Header().Get("Deprecation") != "" || first.Header().Get("Sunset") != "" {
+		t.Fatalf("organization unexpectedly exposed compatibility headers: %+v", first.Header())
+	}
+}
+
+func TestTeamUsageOrganizationForwardsDefaultLimits(t *testing.T) {
+	var env *teamUsageTestEnv
+	env = newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		organizationFn: func(_ context.Context, actorID int, params teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+			if actorID != env.userID || params.DepartmentLimit != 0 || params.MemberLimit != 0 || params.ParentDepartmentExternalID != "" || params.DepartmentCursor != "" || params.MemberCursor != "" {
+				t.Fatalf("default organization request: actor=%d params=%+v", actorID, params)
+			}
+			return &teamusage.OrganizationResponse{Departments: []teamusage.OrganizationDepartment{}, Members: []teamusage.OverviewMember{}}, nil
+		},
+	})
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/organization?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=UTC", env.token, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response = %d %s, want 200", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTeamUsageOrganizationMapsScopedCursorAndInputFailures(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		body   string
+	}{
+		{name: "no representative scope", err: &teamusage.ForbiddenError{Reason: teamusage.ErrNotRepresentative.Error()}, status: http.StatusForbidden, body: "not_representative"},
+		{name: "outside parent", err: teamusage.ErrOutOfScope, status: http.StatusNotFound, body: "target is not available"},
+		{name: "invalid cursor", err: teamusage.ErrInvalidOrganizationCursor, status: http.StatusBadRequest, body: "invalid_cursor"},
+		{name: "expired snapshot", err: teamusage.ErrOrganizationSnapshotExpired, status: http.StatusConflict, body: "snapshot_expired"},
+		{name: "invalid limit", err: fmt.Errorf("%w: department_limit must be between 1 and 100", teamusage.ErrInvalidOverviewParams), status: http.StatusBadRequest, body: "department_limit must be between"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+				organizationFn: func(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+					return nil, tt.err
+				},
+			})
+			rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/organization?department_limit=101", env.token, "")
+			if rec.Code != tt.status || !strings.Contains(rec.Body.String(), tt.body) {
+				t.Fatalf("response = %d %s, want %d containing %q", rec.Code, rec.Body.String(), tt.status, tt.body)
+			}
+		})
+	}
+
+	for _, field := range []string{"department_limit", "member_limit"} {
+		t.Run("non-integer "+field, func(t *testing.T) {
+			env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+				organizationFn: func(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+					t.Fatal("organization service must not run for a non-integer limit")
+					return nil, nil
+				},
+			})
+			rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/organization?"+field+"=invalid", env.token, "")
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("response = %d %s, want 400", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestTeamUsageOrganizationRequiresAuthentication(t *testing.T) {
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		organizationFn: func(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error) {
+			t.Fatal("organization service must not run without authentication")
+			return nil, nil
+		},
+	})
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/organization", "", "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("response = %d %s, want 401", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTeamOverviewEmitsCompatibilityHeadersOnSuccessAndFailure(t *testing.T) {
+	tests := []struct {
+		name   string
+		result *teamusage.OverviewResponse
+		err    error
+		status int
+	}{
+		{name: "success", result: &teamusage.OverviewResponse{Configured: true, IsRepresentative: true}, status: http.StatusOK},
+		{name: "failure", err: errors.New("synthetic overview failure"), status: http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+				overviewFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error) {
+					return tt.result, tt.err
+				},
+			})
+			rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/overview?start_date=2026-07-01&end_date=2026-07-07&granularity=day&timezone=UTC", env.token, "")
+			if rec.Code != tt.status {
+				t.Fatalf("response = %d %s, want %d", rec.Code, rec.Body.String(), tt.status)
+			}
+			if rec.Header().Get("Deprecation") != "@1783987200" || rec.Header().Get("Sunset") != "Tue, 15 Sep 2026 00:00:00 GMT" || rec.Header().Get("Link") != `</api/v1/user/team-usage/summary>; rel="successor-version"` {
+				t.Fatalf("compatibility headers = Deprecation %q Sunset %q Link %q", rec.Header().Get("Deprecation"), rec.Header().Get("Sunset"), rec.Header().Get("Link"))
+			}
+		})
+	}
+}
+
+func TestTeamOverviewOmitsUnavailableRangeTokenTotalForCompatibility(t *testing.T) {
+	env := newTeamUsageTestRouter(t, &fakeTeamUsageService{
+		overviewFn: func(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error) {
+			return &teamusage.OverviewResponse{
+				Configured:       true,
+				IsRepresentative: true,
+				Summary: teamusage.OverviewSummary{
+					Unavailable: true,
+					UnitLabel:   "USD",
+				},
+			}, nil
+		},
+	})
+
+	rec := performTeamUsageRequest(env.router, http.MethodGet, "/api/v1/user/team-usage/overview", env.token, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("response = %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"range_total_tokens"`) {
+		t.Fatalf("compatibility response changed absent range token total to null: %s", rec.Body.String())
 	}
 }
 

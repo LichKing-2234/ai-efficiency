@@ -2,10 +2,13 @@ package teamusage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +19,232 @@ import (
 	"github.com/ai-efficiency/backend/internal/representativescope"
 	"github.com/ai-efficiency/backend/internal/testdb"
 )
+
+func TestSubjectDashboardReadsUniqueActiveGroupMultiplierMetadataInOneBatch(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := syntheticRepresentativeScope(1, 2, 2002, "alice@example.com")
+	provider := &fakeRelayProvider{
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			2002: {
+				syntheticActiveSubscription(42, "Group Alpha", 1.25),
+				syntheticActiveSubscription(7, "Group Beta", 0.75),
+				syntheticActiveSubscription(42, "Group Alpha Secondary", 1.25),
+				{
+					GroupID: 99,
+					Status:  "inactive",
+					Group:   &relay.Group{ID: 99, Name: "Inactive Group"},
+				},
+			},
+		},
+		batchRateResults: []relay.GroupRateMultiplierReadResult{
+			{GroupID: 42, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(1.5)}}},
+			{GroupID: 7, Entries: []relay.UserGroupRateEntry{{UserID: 9001, RateMultiplier: floatPtr(2)}}},
+		},
+	}
+
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
+	if err != nil {
+		t.Fatalf("SubjectDashboard() error = %v", err)
+	}
+	if provider.batchRateCalls != 1 {
+		t.Fatalf("batch multiplier calls = %d, want 1", provider.batchRateCalls)
+	}
+	if got, want := provider.batchRateGroupIDs, [][]int64{{42, 7}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("batch group ids = %#v, want %#v", got, want)
+	}
+	if len(provider.listRateGroupIDs) != 0 {
+		t.Fatalf("serial multiplier reads = %#v, want none", provider.listRateGroupIDs)
+	}
+	if len(resp.SubjectSubscriptionGroups) != 3 {
+		t.Fatalf("subscription rows = %#v, want 3 active rows", resp.SubjectSubscriptionGroups)
+	}
+	for _, row := range resp.SubjectSubscriptionGroups {
+		if row.MultiplierMetadataStatus != "ok" || row.MultiplierMetadataMessage != nil {
+			t.Fatalf("row metadata = %q/%#v, want ok/nil: %#v", row.MultiplierMetadataStatus, row.MultiplierMetadataMessage, row)
+		}
+		if !row.Editable || row.EditableReason != nil {
+			t.Fatalf("row edit policy = %v/%#v, want editable: %#v", row.Editable, row.EditableReason, row)
+		}
+		if row.EffectiveMultiplier == nil {
+			t.Fatalf("row effective multiplier = nil, want successful metadata value: %#v", row)
+		}
+		switch row.GroupID {
+		case "42":
+			if *row.EffectiveMultiplier != 1.5 || row.MultiplierSource != "user" {
+				t.Fatalf("group 42 multiplier = %#v/%q, want 1.5/user", row.EffectiveMultiplier, row.MultiplierSource)
+			}
+		case "7":
+			if *row.EffectiveMultiplier != 0.75 || row.MultiplierSource != "group" {
+				t.Fatalf("group 7 multiplier = %#v/%q, want 0.75/group", row.EffectiveMultiplier, row.MultiplierSource)
+			}
+		default:
+			t.Fatalf("unexpected active group row: %#v", row)
+		}
+	}
+}
+
+func TestSubjectDashboardIsolatesFailedAndMissingBatchMultiplierMetadata(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := syntheticRepresentativeScope(1, 2, 2002, "alice@example.com")
+	okSubscription := syntheticActiveSubscription(42, "Group Alpha", 1.25)
+	okSubscription.Group.WeeklyLimitUSD = floatPtr(90)
+	okSubscription.WeeklyUsageUSD = 12
+	failedSubscription := syntheticActiveSubscription(43, "Group Beta", 1.5)
+	failedSubscription.Group.WeeklyLimitUSD = floatPtr(70)
+	failedSubscription.WeeklyUsageUSD = 34
+	missingSubscription := syntheticActiveSubscription(44, "Group Gamma", 2)
+	missingSubscription.Group.WeeklyLimitUSD = floatPtr(50)
+	missingSubscription.WeeklyUsageUSD = 45
+	provider := &fakeRelayProvider{
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			2002: {okSubscription, failedSubscription, missingSubscription},
+		},
+		batchRateResults: []relay.GroupRateMultiplierReadResult{
+			{GroupID: 42, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(1.75)}}},
+			{GroupID: 43, Err: errors.New("synthetic group read failure")},
+		},
+	}
+
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{StartDate: "2026-07-13", EndDate: "2026-07-16"})
+	if err != nil {
+		t.Fatalf("SubjectDashboard() error = %v", err)
+	}
+	if provider.batchRateCalls != 1 || len(provider.listRateGroupIDs) != 0 {
+		t.Fatalf("multiplier reads = batch %d serial %#v, want one batch and no serial", provider.batchRateCalls, provider.listRateGroupIDs)
+	}
+
+	okRow := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, "42")
+	if okRow == nil || okRow.MultiplierMetadataStatus != "ok" || okRow.EffectiveMultiplier == nil || *okRow.EffectiveMultiplier != 1.75 || !okRow.Editable {
+		t.Fatalf("successful group row = %#v, want available editable 1.75 metadata", okRow)
+	}
+	for _, groupID := range []string{"43", "44"} {
+		row := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, groupID)
+		if row == nil {
+			t.Fatalf("missing subscription row for group %s", groupID)
+		}
+		assertUnavailableMultiplierMetadata(t, row, ErrMultiplierMetadataUnavailable.Error())
+	}
+	failedRow := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, "43")
+	if failedRow.WeeklyUsageUSD != 34 || failedRow.WeeklyLimitUSD == nil || *failedRow.WeeklyLimitUSD != 70 || failedRow.WeeklyEffectiveAllowanceUSD == nil || *failedRow.WeeklyEffectiveAllowanceUSD != 70 {
+		t.Fatalf("failed metadata row usage/quota = %#v, want subscription values preserved", failedRow)
+	}
+}
+
+func TestSubjectDashboardTreatsDuplicateBatchMultiplierResultsAsUnavailableRegardlessOfOrder(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []relay.GroupRateMultiplierReadResult
+	}{
+		{
+			name: "success then failure",
+			results: []relay.GroupRateMultiplierReadResult{
+				{GroupID: 42, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(1.75)}}},
+				{GroupID: 42, Err: errors.New("synthetic duplicate failure")},
+				{GroupID: 7, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(2.25)}}},
+			},
+		},
+		{
+			name: "failure then success",
+			results: []relay.GroupRateMultiplierReadResult{
+				{GroupID: 42, Err: errors.New("synthetic duplicate failure")},
+				{GroupID: 42, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(1.75)}}},
+				{GroupID: 7, Entries: []relay.UserGroupRateEntry{{UserID: 2002, RateMultiplier: floatPtr(2.25)}}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := testdb.Open(t)
+			createPrimaryRelayProvider(t, client)
+
+			scope := syntheticRepresentativeScope(1, 2, 2002, "alice@example.com")
+			provider := &fakeRelayProvider{
+				subscriptionsByUser: map[int64][]relay.UserSubscription{
+					2002: {
+						syntheticActiveSubscription(42, "Group Alpha", 1.25),
+						syntheticActiveSubscription(7, "Group Beta", 0.75),
+					},
+				},
+				batchRateResults: tt.results,
+			}
+
+			svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+			resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
+			if err != nil {
+				t.Fatalf("SubjectDashboard() error = %v", err)
+			}
+			if provider.batchRateCalls != 1 || len(provider.listRateGroupIDs) != 0 {
+				t.Fatalf("multiplier reads = batch %d serial %#v, want one batch and no serial", provider.batchRateCalls, provider.listRateGroupIDs)
+			}
+
+			duplicateRow := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, "42")
+			if duplicateRow == nil {
+				t.Fatal("missing duplicate-result subscription row for group 42")
+			}
+			assertUnavailableMultiplierMetadata(t, duplicateRow, ErrMultiplierMetadataUnavailable.Error())
+
+			availableRow := findSubscriptionRowByGroupID(resp.SubjectSubscriptionGroups, "7")
+			if availableRow == nil || availableRow.MultiplierMetadataStatus != MultiplierMetadataStatusOK || availableRow.EffectiveMultiplier == nil || *availableRow.EffectiveMultiplier != 2.25 || !availableRow.Editable {
+				t.Fatalf("independent group row = %#v, want available editable 2.25 metadata", availableRow)
+			}
+		})
+	}
+}
+
+func TestSubjectDashboardWithoutBatchCapabilityMarksMetadataUnavailableAndPreservesAuthorizationReason(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+
+	scope := syntheticRepresentativeScope(1, 2, 2002, "peer-rep@example.com")
+	scope.RepresentedSubtreeIDs = map[string]map[string]struct{}{
+		"department-root": {"department-root": {}, "department-child": {}},
+	}
+	scope.TargetRepresentedRoots = map[int][]string{2: {"department-root"}}
+	subscription := syntheticActiveSubscription(42, "Group Alpha", 1.5)
+	subscription.Group.MonthlyLimitUSD = floatPtr(300)
+	subscription.MonthlyUsageUSD = 120
+	base := &fakeRelayProvider{}
+	provider := &fakeRelayProviderWithoutMultiplierBatch{
+		Provider: base,
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			2002: {subscription},
+		},
+	}
+	if _, ok := any(provider).(relay.GroupRateMultiplierManager); !ok {
+		t.Fatal("fallback provider must retain the serial multiplier manager capability")
+	}
+	if _, ok := any(provider).(relay.GroupRateMultiplierBatchReader); ok {
+		t.Fatal("fallback provider must intentionally omit the multiplier batch capability")
+	}
+
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
+	if err != nil {
+		t.Fatalf("SubjectDashboard() error = %v", err)
+	}
+	if len(resp.SubjectSubscriptionGroups) != 1 {
+		t.Fatalf("subscription rows = %#v, want 1 active row", resp.SubjectSubscriptionGroups)
+	}
+	row := resp.SubjectSubscriptionGroups[0]
+	assertUnavailableMultiplierMetadata(t, &row, ErrNotUpperLevelRepresentative.Error())
+	if row.MonthlyUsageUSD != 120 || row.MonthlyLimitUSD == nil || *row.MonthlyLimitUSD != 300 {
+		t.Fatalf("row usage/quota = %#v, want subscription values preserved", row)
+	}
+	if len(base.listRateGroupIDs) != 0 {
+		t.Fatalf("serial multiplier reads = %#v, want none without batch capability", base.listRateGroupIDs)
+	}
+}
 
 func TestSubjectDashboardMarksPeerRepresentativeAsNonEditable(t *testing.T) {
 	ctx := context.Background()
@@ -79,7 +308,7 @@ func TestSubjectDashboardMarksPeerRepresentativeAsNonEditable(t *testing.T) {
 		},
 	}
 
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 	resp, err := svc.SubjectDashboard(ctx, 1, 2, relay.UserUsageDashboardParams{})
 	if err != nil {
 		t.Fatalf("SubjectDashboard() error = %v", err)
@@ -116,7 +345,7 @@ func TestSubjectDashboardRejectsOutOfScopeTargetBeforeRelayLookup(t *testing.T) 
 		},
 	}
 	provider := &fakeRelayProvider{}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	_, err := svc.SubjectDashboard(ctx, 1, 999, relay.UserUsageDashboardParams{})
 	if err == nil {
@@ -134,7 +363,7 @@ func TestSubjectDashboardRejectsOutOfScopeTargetBeforeRelayLookup(t *testing.T) 
 func TestUpdateMultiplierClosesAuditOnScopeResolutionFailure(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
-	svc := NewService(client, fakeScopeResolver{err: errors.New("scope backend down")}, fakeProviderResolver{}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{err: errors.New("scope backend down")}, fakeProviderResolver{}, nil)
 
 	_, err := svc.UpdateMultiplier(ctx, 11, 22, 42, UpdateMultiplierRequest{Mode: "reset"})
 	if err == nil {
@@ -170,7 +399,7 @@ func TestOverviewReturnsHardErrorForTrendAuthorizationFailure(t *testing.T) {
 		},
 		trendErr: relay.ErrInvalidCredentials,
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	_, err := svc.Overview(ctx, 1, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -183,7 +412,561 @@ func TestOverviewReturnsHardErrorForTrendAuthorizationFailure(t *testing.T) {
 	}
 }
 
-func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
+func TestSummaryRangeIndependentFromTrendAndPreservesComparisonTotals(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	rangeAlice := 15.0
+	rangeBob := 30.0
+	tokensAlice := int64(1500)
+	tokensBob := int64(4500)
+	scope := &representativescope.Scope{
+		Version:          "scope-version-1",
+		ActorUserID:      1,
+		IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 3, DisplayName: "Bob", Email: "bob@example.org", RelayUserID: intPtr(1003), Selectable: true},
+			{SubjectType: "member", UserID: 4, DisplayName: "Unconnected", Email: "unconnected@example.net", Selectable: true},
+		},
+	}
+	provider := &summaryIndependentRelayProvider{
+		fakeRelayProvider: &fakeRelayProvider{
+			summaryStats: map[int64]relay.TeamUserUsageStats{
+				1002: {
+					UserID: 1002, RangeActualCost: &rangeAlice, RangeTotalTokens: &tokensAlice,
+					TodayActualCost: 1, TotalActualCost: 10,
+				},
+				1003: {
+					UserID: 1003, RangeActualCost: &rangeBob, RangeTotalTokens: &tokensBob,
+					TodayActualCost: 2, TotalActualCost: 99,
+				},
+			},
+		},
+	}
+	clock := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	cache, _ := testSnapshotCache(t, clock, 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache)
+	params := OverviewParams{
+		StartDate: " 2026-07-01 ", EndDate: "2026-07-07", Granularity: " day ", Timezone: " Asia/Shanghai ",
+	}
+
+	summary, err := svc.Summary(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if summary.ScopeVersion != scope.Version || summary.CacheStatus != "miss" || summary.SourceStatus != "ok" {
+		t.Fatalf("summary metadata = scope %q cache/source %q/%q", summary.ScopeVersion, summary.CacheStatus, summary.SourceStatus)
+	}
+	if summary.Window.StartDate != "2026-07-01" || summary.Window.Granularity != "day" || summary.Window.Timezone != "Asia/Shanghai" {
+		t.Fatalf("normalized summary window = %+v", summary.Window)
+	}
+	if summary.Summary.RangeActualCost == nil || *summary.Summary.RangeActualCost != 45 {
+		t.Fatalf("summary range_actual_cost = %#v, want selected-window 45", summary.Summary.RangeActualCost)
+	}
+	if summary.Summary.RangeTotalTokens == nil || *summary.Summary.RangeTotalTokens != 6000 {
+		t.Fatalf("summary range_total_tokens = %#v, want selected-window 6000", summary.Summary.RangeTotalTokens)
+	}
+	if summary.Summary.TodayActualCost == nil || *summary.Summary.TodayActualCost != 3 {
+		t.Fatalf("summary today_actual_cost = %#v, want comparison 3", summary.Summary.TodayActualCost)
+	}
+	if summary.Summary.TotalActualCost == nil || *summary.Summary.TotalActualCost != 109 {
+		t.Fatalf("summary total_actual_cost = %#v, want historical comparison 109", summary.Summary.TotalActualCost)
+	}
+	if summary.Summary.MemberCount != 3 || summary.Summary.RelayMemberCount != 2 {
+		t.Fatalf("summary counts = %d/%d, want canonical/connected 3/2", summary.Summary.MemberCount, summary.Summary.RelayMemberCount)
+	}
+	if provider.trendCalls.Load() != 0 {
+		t.Fatalf("trend calls = %d, want 0", provider.trendCalls.Load())
+	}
+	wantSummaryParams := relay.TeamUsageSummaryParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
+		RequireCompleteRange: false,
+	}
+	if len(provider.summaryRequestParams) != 1 || provider.summaryRequestParams[0] != wantSummaryParams {
+		t.Fatalf("summary params = %#v, want %#v", provider.summaryRequestParams, wantSummaryParams)
+	}
+}
+
+func TestSummaryRangeUnavailableWhenProviderFieldsIncomplete(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name  string
+		stats map[int64]relay.TeamUserUsageStats
+	}{
+		{
+			name: "range fields missing",
+			stats: map[int64]relay.TeamUserUsageStats{
+				1002: {UserID: 1002, TodayActualCost: 1, TotalActualCost: 10},
+				1003: {UserID: 1003, TodayActualCost: 2, TotalActualCost: 99},
+			},
+		},
+		{
+			name: "one member incomplete",
+			stats: func() map[int64]relay.TeamUserUsageStats {
+				firstCost, secondCost := 15.0, 30.0
+				firstTokens := int64(1500)
+				return map[int64]relay.TeamUserUsageStats{
+					1002: {UserID: 1002, RangeActualCost: &firstCost, RangeTotalTokens: &firstTokens, TodayActualCost: 1, TotalActualCost: 10},
+					1003: {UserID: 1003, RangeActualCost: &secondCost, TodayActualCost: 2, TotalActualCost: 99},
+				}
+			}(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := testdb.Open(t)
+			createPrimaryRelayProvider(t, client)
+			scope := summaryTestScope()
+			provider := &summaryIndependentRelayProvider{fakeRelayProvider: &fakeRelayProvider{summaryStats: tt.stats}}
+			cache, _ := testSnapshotCache(t, time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC), 0)
+			svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache)
+
+			summary, err := svc.Summary(ctx, 1, summaryTestParams())
+			if err != nil {
+				t.Fatalf("Summary() error = %v", err)
+			}
+			if !summary.Summary.Unavailable || summary.Summary.UnavailableReason == nil || *summary.Summary.UnavailableReason != "range_aggregation_unavailable" {
+				t.Fatalf("summary unavailable = %v/%#v, want range_aggregation_unavailable", summary.Summary.Unavailable, summary.Summary.UnavailableReason)
+			}
+			if summary.Summary.RangeActualCost != nil || summary.Summary.RangeTotalTokens != nil {
+				t.Fatalf("summary range totals = %#v/%#v, want nil", summary.Summary.RangeActualCost, summary.Summary.RangeTotalTokens)
+			}
+			if summary.Summary.MemberCount != 2 || summary.Summary.RelayMemberCount != 2 ||
+				summary.Summary.TodayActualCost == nil || *summary.Summary.TodayActualCost != 3 ||
+				summary.Summary.TotalActualCost == nil || *summary.Summary.TotalActualCost != 109 {
+				t.Fatalf("available summary values = %+v, want counts 2/2 and comparisons 3/109", summary.Summary)
+			}
+			if provider.trendCalls.Load() != 1 {
+				t.Fatalf("trend calls = %d, want one soft full-scope completion attempt", provider.trendCalls.Load())
+			}
+		})
+	}
+}
+
+func TestSummaryRangeDeduplicatesSharedRelayBindings(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	rangeCost := 15.0
+	rangeTokens := int64(1500)
+	provider := &summaryIndependentRelayProvider{fakeRelayProvider: &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {
+				UserID: 1002, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
+				TodayActualCost: 1, TotalActualCost: 10,
+			},
+		},
+	}}
+	scope := &representativescope.Scope{
+		Version: "scope-version-shared-relay", ActorUserID: 1, IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DisplayName: "Alice", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 3, DisplayName: "Bob", RelayUserID: intPtr(1002), Selectable: true},
+		},
+	}
+	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC), 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache)
+
+	summary, err := svc.Summary(context.Background(), 1, summaryTestParams())
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if summary.Summary.MemberCount != 2 || summary.Summary.RelayMemberCount != 2 {
+		t.Fatalf("summary counts = %d/%d, want canonical/connected 2/2", summary.Summary.MemberCount, summary.Summary.RelayMemberCount)
+	}
+	if summary.Summary.RangeActualCost == nil || *summary.Summary.RangeActualCost != 15 ||
+		summary.Summary.RangeTotalTokens == nil || *summary.Summary.RangeTotalTokens != 1500 {
+		t.Fatalf("summary range totals = %#v/%#v, want deduplicated 15/1500", summary.Summary.RangeActualCost, summary.Summary.RangeTotalTokens)
+	}
+	if summary.Summary.TodayActualCost == nil || *summary.Summary.TodayActualCost != 1 ||
+		summary.Summary.TotalActualCost == nil || *summary.Summary.TotalActualCost != 10 {
+		t.Fatalf("summary comparison totals = %#v/%#v, want deduplicated 1/10", summary.Summary.TodayActualCost, summary.Summary.TotalActualCost)
+	}
+	if !reflect.DeepEqual(provider.summaryRequestUserIDs, []int64{1002}) {
+		t.Fatalf("summary request user IDs = %#v, want deduplicated [1002]", provider.summaryRequestUserIDs)
+	}
+}
+
+func TestSummaryIndependentFromDelayedTrendProvider(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	release := make(chan struct{})
+	defer close(release)
+	provider := newCompleteSummaryIndependentProvider()
+	provider.trendStarted = make(chan struct{}, 1)
+	provider.trendRelease = release
+	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC), 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: summaryTestScope()}, fakeProviderResolver{provider: provider}, nil, cache)
+
+	type summaryResult struct {
+		response *SummaryResponse
+		err      error
+	}
+	result := make(chan summaryResult, 1)
+	go func() {
+		response, err := svc.Summary(context.Background(), 1, summaryTestParams())
+		result <- summaryResult{response: response, err: err}
+	}()
+
+	select {
+	case got := <-result:
+		if got.err != nil || got.response == nil {
+			t.Fatalf("Summary() = %#v, %v", got.response, got.err)
+		}
+	case <-provider.trendStarted:
+		t.Fatal("Summary reached delayed trend provider")
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Summary did not complete independently of delayed trend provider")
+	}
+	if provider.trendCalls.Load() != 0 {
+		t.Fatalf("trend calls = %d, want 0", provider.trendCalls.Load())
+	}
+}
+
+func TestSummaryIndependentFromFailedTrendProvider(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	provider := newCompleteSummaryIndependentProvider()
+	provider.trendErr = errors.New("synthetic trend failure")
+	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC), 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: summaryTestScope()}, fakeProviderResolver{provider: provider}, nil, cache)
+
+	summary, err := svc.Summary(context.Background(), 1, summaryTestParams())
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if summary.Summary.Unavailable {
+		t.Fatalf("summary = %+v, want complete range despite failed trend capability", summary.Summary)
+	}
+	if provider.trendCalls.Load() != 0 {
+		t.Fatalf("trend calls = %d, want 0", provider.trendCalls.Load())
+	}
+}
+
+func TestSummaryIndependentWarmCacheRevalidatesGuards(t *testing.T) {
+	client := testdb.Open(t)
+	providerRow := createPrimaryRelayProvider(t, client)
+	provider := newCompleteSummaryIndependentProvider()
+	scopeResolver := &countingTeamScopeResolver{scope: summaryTestScope()}
+	providerResolver := &countingTeamProviderResolver{provider: provider}
+	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC), 0)
+	svc := newServiceWithSnapshotCacheForTest(client, scopeResolver, providerResolver, nil, cache)
+
+	first, err := svc.Summary(context.Background(), 1, summaryTestParams())
+	if err != nil {
+		t.Fatalf("first Summary() error = %v", err)
+	}
+	second, err := svc.Summary(context.Background(), 1, summaryTestParams())
+	if err != nil {
+		t.Fatalf("second Summary() error = %v", err)
+	}
+	updatedProviderRow := client.RelayProvider.UpdateOneID(providerRow.ID).AddConfigurationVersion(1).SaveX(context.Background())
+	third, err := svc.Summary(context.Background(), 1, summaryTestParams())
+	if err != nil {
+		t.Fatalf("third Summary() error = %v", err)
+	}
+	if first.CacheStatus != "miss" || second.CacheStatus != "fresh" {
+		t.Fatalf("summary cache statuses = %q/%q, want miss/fresh", first.CacheStatus, second.CacheStatus)
+	}
+	if third.CacheStatus != "miss" {
+		t.Fatalf("summary cache status after provider version change = %q, want miss", third.CacheStatus)
+	}
+	if scopeResolver.calls.Load() != 3 || providerResolver.calls.Load() != 2 || len(provider.summaryRequestParams) != 2 {
+		t.Fatalf("guard/origin calls = scope %d provider %d summary %d, want 3/2/2", scopeResolver.calls.Load(), providerResolver.calls.Load(), len(provider.summaryRequestParams))
+	}
+	if updatedProviderRow.ConfigurationVersion != providerRow.ConfigurationVersion+1 {
+		t.Fatalf("provider configuration version = %d, want %d", updatedProviderRow.ConfigurationVersion, providerRow.ConfigurationVersion+1)
+	}
+}
+
+func TestOverviewReusesTheSummaryCacheLane(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	provider := newCompleteSummaryIndependentProvider()
+	trendTokens := int64(1200)
+	provider.fakeRelayProvider.trendPoints = map[int64][]relay.UsageTrendPoint{
+		1002: {{Date: "2026-07-06", ActualCost: 7, TotalTokens: &trendTokens}},
+		1003: {{Date: "2026-07-07", ActualCost: 5, TotalTokens: int64Ptr(800)}},
+	}
+	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC), 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: summaryTestScope()}, fakeProviderResolver{provider: provider}, nil, cache)
+
+	summary, err := svc.Summary(context.Background(), 1, summaryTestParams())
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	overview, err := svc.Overview(context.Background(), 1, summaryTestParams())
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+	warmSummary, err := svc.Summary(context.Background(), 1, summaryTestParams())
+	if err != nil {
+		t.Fatalf("warm Summary() error = %v", err)
+	}
+	if summary.CacheStatus != "miss" || warmSummary.CacheStatus != "fresh" {
+		t.Fatalf("summary cache statuses = %q/%q, want miss/fresh", summary.CacheStatus, warmSummary.CacheStatus)
+	}
+	if summary.Summary.RangeActualCost == nil || *summary.Summary.RangeActualCost != 45 {
+		t.Fatalf("summary range cost = %#v, want summary-batch 45", summary.Summary.RangeActualCost)
+	}
+	if overview.Summary.RangeActualCost == nil || *overview.Summary.RangeActualCost != 45 {
+		t.Fatalf("overview range cost = %#v, want shared summary-lane 45", overview.Summary.RangeActualCost)
+	}
+	if len(provider.summaryRequestParams) != 3 || provider.trendCalls.Load() != 1 {
+		t.Fatalf("split origin calls = summary %d trend %d, want 3/1", len(provider.summaryRequestParams), provider.trendCalls.Load())
+	}
+}
+
+func TestOverviewUsesOnlySplitCacheLanesAndOneGuardedScopePerRequest(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	provider := newCompleteSummaryIndependentProvider()
+	provider.fakeRelayProvider.trendPoints = map[int64][]relay.UsageTrendPoint{
+		1002: {{Date: "2026-07-06", ActualCost: 7, TotalTokens: int64Ptr(1200)}},
+		1003: {{Date: "2026-07-07", ActualCost: 5, TotalTokens: int64Ptr(800)}},
+	}
+	cache, server := testSnapshotCache(t, time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC), 0)
+	scopeResolver := &countingTeamScopeResolver{scope: overviewAdapterTestScope()}
+	providerResolver := &countingTeamProviderResolver{provider: provider}
+	svc := newServiceWithSnapshotCacheForTest(client, scopeResolver, providerResolver, nil, cache)
+	params := summaryTestParams()
+	params.Page = 1
+	params.PageSize = 1
+
+	first, err := svc.Overview(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("cold Overview() error = %v", err)
+	}
+	params.Page = 9
+	params.PageSize = 99
+	warm, err := svc.Overview(context.Background(), 1, params)
+	if err != nil {
+		t.Fatalf("warm Overview() error = %v", err)
+	}
+	if !reflect.DeepEqual(first, warm) {
+		t.Fatalf("Overview() page variants differ:\nfirst = %#v\nwarm = %#v", first, warm)
+	}
+	if !first.Configured || !first.IsRepresentative || first.Summary.RangeActualCost == nil || *first.Summary.RangeActualCost != 45 {
+		t.Fatalf("overview compatibility summary = %+v, want configured representative total 45", first.Summary)
+	}
+	if len(first.Members) != 2 || first.Members[0].Email != "bob@example.org" || first.Members[1].Email != "alice@example.com" {
+		t.Fatalf("overview members = %#v, want complete ranked split Members snapshot", first.Members)
+	}
+	if len(first.MemberTree) != 1 || len(first.MemberTree[0].Children) != 1 || len(first.MemberTree[0].Children[0].Members) != 2 {
+		t.Fatalf("overview member tree = %#v, want recursive historical tree", first.MemberTree)
+	}
+	if scopeResolver.calls.Load() != 2 {
+		t.Fatalf("scope resolutions = %d, want one per Overview request", scopeResolver.calls.Load())
+	}
+	if providerResolver.calls.Load() != 3 || len(provider.summaryRequestParams) != 3 || provider.trendCalls.Load() != 1 {
+		t.Fatalf("cold split origins = provider %d summary %d trend %d, want 3/3/1", providerResolver.calls.Load(), len(provider.summaryRequestParams), provider.trendCalls.Load())
+	}
+	if provider.summaryRequestParams[0].RequireCompleteRange || provider.summaryRequestParams[1].RequireCompleteRange || provider.summaryRequestParams[2].RequireCompleteRange {
+		t.Fatalf("stats-layer range completion flags = summary %v trend %v members %v, want false/false/false", provider.summaryRequestParams[0].RequireCompleteRange, provider.summaryRequestParams[1].RequireCompleteRange, provider.summaryRequestParams[2].RequireCompleteRange)
+	}
+	prefixes := map[string]bool{
+		"ae:test:team-usage-summary:v1:": false,
+		"ae:test:team-usage-trend:v1:":   false,
+		"ae:test:team-usage-members:v1:": false,
+	}
+	for _, key := range server.Keys() {
+		if strings.Contains(key, ":team-usage-snapshot:") || strings.Contains(key, ":team-usage-organization:") {
+			t.Fatalf("Overview() populated non-split compatibility key %q", key)
+		}
+		for prefix := range prefixes {
+			if strings.HasPrefix(key, prefix) {
+				prefixes[prefix] = true
+			}
+		}
+	}
+	for prefix, found := range prefixes {
+		if !found {
+			t.Fatalf("Redis keys %v are missing split lane %q", server.Keys(), prefix)
+		}
+	}
+}
+
+func TestSummaryIndependentRedisOutageFallsBackAuthoritatively(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	provider := newCompleteSummaryIndependentProvider()
+	cache := newTestSnapshotCache(t, failingSnapshotStore{err: errors.New("synthetic Redis outage")}, time.Now, 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: summaryTestScope()}, fakeProviderResolver{provider: provider}, nil, cache)
+
+	for call := 1; call <= 2; call++ {
+		summary, err := svc.Summary(context.Background(), 1, summaryTestParams())
+		if err != nil {
+			t.Fatalf("Summary() call %d error = %v", call, err)
+		}
+		if summary.CacheStatus != "miss" || summary.Summary.RangeActualCost == nil || *summary.Summary.RangeActualCost != 45 {
+			t.Fatalf("Summary() call %d = %+v, want authoritative miss with range 45", call, summary)
+		}
+	}
+	if len(provider.summaryRequestParams) != 2 || provider.trendCalls.Load() != 0 {
+		t.Fatalf("origin calls = summary %d trend %d, want 2/0", len(provider.summaryRequestParams), provider.trendCalls.Load())
+	}
+}
+
+func TestTrendProjectsEligibleStaleAndRejectsExpiredSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	tokens := int64(1200)
+	scope := &representativescope.Scope{
+		Version: "scope-version-1", ActorUserID: 1, IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{{
+			SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com",
+			DepartmentExternalID: "department-alpha", RelayUserID: intPtr(1002), Selectable: true,
+		}},
+		MemberTreeRootIDs:     []string{"department-alpha"},
+		MemberTreeDepartments: []representativescope.DepartmentScope{{ExternalID: "department-alpha", Name: "Department Alpha"}},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{1002: {UserID: 1002, TodayActualCost: 1, TotalActualCost: 10}},
+		trendPoints:  map[int64][]relay.UsageTrendPoint{1002: {{Date: "2026-07-16", ActualCost: 3, TotalTokens: &tokens}}},
+	}
+	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
+	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache)
+	params := OverviewParams{StartDate: "2026-07-16", EndDate: "2026-07-16", Granularity: "hour", Timezone: "UTC"}
+
+	first, err := svc.Trend(ctx, 1, params)
+	if err != nil || first.CacheStatus != "miss" {
+		t.Fatalf("prime Trend() = %+v, %v", first, err)
+	}
+	now = now.Add(2*time.Minute + 43*time.Second)
+	transient := errors.New("synthetic trend origin outage")
+	provider.summaryErr = transient
+	stale, err := svc.Trend(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("stale Trend() error = %v", err)
+	}
+	if stale.CacheStatus != "stale" || stale.SourceStatus != "error" || len(stale.TopMemberTrend.Series) != 1 {
+		t.Fatalf("stale trend = %+v", stale)
+	}
+
+	now = now.Add(4*time.Minute + 16*time.Second)
+	unavailable, err := svc.Trend(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("expired Trend() error = %v", err)
+	}
+	if unavailable.CacheStatus != "miss" || !unavailable.TopMemberTrend.Unavailable ||
+		unavailable.TopMemberTrend.UnavailableReason == nil || *unavailable.TopMemberTrend.UnavailableReason != "provider_error" {
+		t.Fatalf("expired Trend() = %+v, want cold provider_error state", unavailable)
+	}
+}
+
+func TestTrendUsesEligibleStaleWhenTrendProviderFails(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	scope := &representativescope.Scope{
+		Version: "scope-version-trend-stale", ActorUserID: 1, IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{{
+			SubjectType: "member", UserID: 2, DirectoryMemberExternalID: "member-alice",
+			DisplayName: "Alice", Email: "alice@example.com", DepartmentExternalID: "department-alpha",
+			RelayUserID: intPtr(1002), Selectable: true,
+		}},
+		MemberTreeRootIDs:     []string{"department-alpha"},
+		MemberTreeDepartments: []representativescope.DepartmentScope{{ExternalID: "department-alpha", Name: "Department Alpha"}},
+	}
+	provider := &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{1002: {UserID: 1002, TodayActualCost: 1, TotalActualCost: 10}},
+		trendPoints:  map[int64][]relay.UsageTrendPoint{1002: {{Date: "2026-07-18", ActualCost: 3, TotalTokens: int64Ptr(1200)}}},
+	}
+	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	cache, _ := testSnapshotCacheWithClock(t, func() time.Time { return now }, 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache)
+	params := OverviewParams{StartDate: "2026-07-18", EndDate: "2026-07-18", Granularity: "hour", Timezone: "UTC"}
+
+	prime, err := svc.Trend(ctx, 1, params)
+	if err != nil || prime.CacheStatus != "miss" || len(prime.TopMemberTrend.Series) != 1 {
+		t.Fatalf("prime Trend() = %+v, %v", prime, err)
+	}
+	now = now.Add(2*time.Minute + 43*time.Second)
+	provider.trendErr = errors.New("synthetic trend provider outage")
+	stale, err := svc.Trend(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("stale Trend() error = %v", err)
+	}
+	if stale.CacheStatus != "stale" || stale.SourceStatus != "error" || len(stale.TopMemberTrend.Series) != 1 {
+		t.Fatalf("stale trend = %+v", stale)
+	}
+
+	now = now.Add(4*time.Minute + 16*time.Second)
+	unavailable, err := svc.Trend(ctx, 1, params)
+	if err != nil {
+		t.Fatalf("cold unavailable Trend() error = %v", err)
+	}
+	if unavailable.CacheStatus != "miss" || !unavailable.TopMemberTrend.Unavailable ||
+		unavailable.TopMemberTrend.UnavailableReason == nil || *unavailable.TopMemberTrend.UnavailableReason != "provider_error" {
+		t.Fatalf("cold unavailable trend = %+v", unavailable)
+	}
+}
+
+func TestSummaryLargeScopeDoesNotRequireProviderOriginCapabilities(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	subjects := make([]representativescope.Subject, 501)
+	for index := range subjects {
+		subjects[index] = representativescope.Subject{SubjectType: "member", UserID: index + 2, DisplayName: fmt.Sprintf("Member %d", index+1)}
+	}
+	scope := &representativescope.Scope{
+		Version: "scope-version-large", ActorUserID: 1, IsRepresentative: true, OverviewSubjects: subjects,
+	}
+	providerResolver := &countingTeamProviderResolver{err: errors.New("provider origin must not resolve for unsupported scope size")}
+	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC), 0)
+	svc := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, providerResolver, nil, cache)
+
+	result, err := svc.Summary(ctx, 1, OverviewParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if result.Summary.UnavailableReason == nil || *result.Summary.UnavailableReason != "scope_too_large" || result.Summary.MemberCount != 501 {
+		t.Fatalf("large-scope summary = %+v", result.Summary)
+	}
+	trend, err := svc.Trend(ctx, 1, OverviewParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("large-scope Trend() error = %v", err)
+	}
+	if !trend.TopMemberTrend.Unavailable || trend.TopMemberTrend.UnavailableReason == nil || *trend.TopMemberTrend.UnavailableReason != "scope_too_large" || len(trend.TopMemberTrend.Series) != 0 || len(trend.DepartmentTrend.Series) != 0 {
+		t.Fatalf("large-scope trend = %+v", trend)
+	}
+	if providerResolver.calls.Load() != 0 {
+		t.Fatalf("provider origin resolves = %d, want 0", providerResolver.calls.Load())
+	}
+}
+
+func TestSummaryRejectsInvalidNormalizedWindowBeforeRelayReads(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	provider := &fakeRelayProvider{}
+	svc := newServiceWithSnapshotCacheForTest(
+		client,
+		fakeScopeResolver{scope: &representativescope.Scope{Version: "scope-v1", ActorUserID: 1, IsRepresentative: true}},
+		fakeProviderResolver{provider: provider},
+		nil,
+		newTestSnapshotCache(t, failingSnapshotStore{err: errors.New("Redis unavailable")}, time.Now, 0),
+	)
+
+	_, err := svc.Summary(ctx, 1, OverviewParams{
+		StartDate: "2026-07-08", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
+	})
+	if !errors.Is(err, ErrInvalidOverviewParams) {
+		t.Fatalf("Summary() error = %v, want ErrInvalidOverviewParams", err)
+	}
+	if provider.trendCalls != 0 || len(provider.summaryRequestUserIDs) != 0 {
+		t.Fatalf("invalid window reached Relay: trend %d summary %#v", provider.trendCalls, provider.summaryRequestUserIDs)
+	}
+}
+
+func TestOverviewUsesOneAggregateTrendPerRangeDependentLane(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
@@ -208,7 +991,7 @@ func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
 			1003: {{Date: "2026-06-28", ActualCost: 5, TotalTokens: &tokenBob}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -219,8 +1002,8 @@ func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Overview() error = %v", err)
 	}
-	if provider.trendCalls != 1 {
-		t.Fatalf("trend calls = %d, want 1 batched call", provider.trendCalls)
+	if provider.trendCalls != 3 {
+		t.Fatalf("trend calls = %d, want Summary, Trend, and Members aggregate calls", provider.trendCalls)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{1002, 1003}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("trend request user ids = %#v, want %#v", got, want)
@@ -230,7 +1013,7 @@ func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
 	}
 }
 
-func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
+func TestOverviewComposesSummaryMembersAndTrendSelectedWindowValues(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
@@ -248,8 +1031,14 @@ func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
 	}
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, TodayActualCost: 1, TotalActualCost: 10},
-			1003: {UserID: 1003, TodayActualCost: 2, TotalActualCost: 99},
+			1002: {
+				UserID: 1002, RangeActualCost: floatPtr(30), RangeTotalTokens: int64Ptr(1000),
+				TodayActualCost: 1, TotalActualCost: 10,
+			},
+			1003: {
+				UserID: 1003, RangeActualCost: floatPtr(15), RangeTotalTokens: int64Ptr(3500),
+				TodayActualCost: 2, TotalActualCost: 99,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			1002: {{Date: "2026-06-24", ActualCost: 30, TotalTokens: &token1002}},
@@ -259,7 +1048,7 @@ func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{
 		StartDate:   "2026-06-18",
@@ -277,8 +1066,11 @@ func TestOverviewAggregatesAndRanksMembersBySelectedWindowTrend(t *testing.T) {
 	if resp.Summary.RangeTotalTokens == nil || *resp.Summary.RangeTotalTokens != 4500 {
 		t.Fatalf("summary range_total_tokens = %#v, want 4500", resp.Summary.RangeTotalTokens)
 	}
-	if resp.Summary.TotalActualCost != nil {
-		t.Fatalf("summary total_actual_cost = %#v, want nil for selected-window Team Overview", resp.Summary.TotalActualCost)
+	if resp.Summary.TodayActualCost == nil || *resp.Summary.TodayActualCost != 3 {
+		t.Fatalf("summary today_actual_cost = %#v, want comparison total 3", resp.Summary.TodayActualCost)
+	}
+	if resp.Summary.TotalActualCost == nil || *resp.Summary.TotalActualCost != 109 {
+		t.Fatalf("summary total_actual_cost = %#v, want historical comparison total 109", resp.Summary.TotalActualCost)
 	}
 	if got, want := resp.TopMemberTrend.RankBasis, "range_total_tokens"; got != want {
 		t.Fatalf("rank basis = %q, want %q", got, want)
@@ -332,15 +1124,21 @@ func TestOverviewBuildsMemberTreeFromRepresentativeDepartments(t *testing.T) {
 	}
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
-			1003: {UserID: 1003, TodayActualCost: 3, TotalActualCost: 30},
+			1002: {
+				UserID: 1002, RangeActualCost: floatPtr(12), RangeTotalTokens: &tokenAlice,
+				TodayActualCost: 2, TotalActualCost: 20,
+			},
+			1003: {
+				UserID: 1003, RangeActualCost: floatPtr(30), RangeTotalTokens: &tokenBob,
+				TodayActualCost: 3, TotalActualCost: 30,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			1002: {{Date: "2026-06-28", ActualCost: 12, TotalTokens: &tokenAlice}},
 			1003: {{Date: "2026-06-28", ActualCost: 30, TotalTokens: &tokenBob}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{StartDate: "2026-06-01", EndDate: "2026-06-30", Granularity: "day", Timezone: "UTC"})
 	if err != nil {
@@ -402,7 +1200,10 @@ func TestOverviewBuildsTeamAndSubteamTokenTrendFromRepresentativeDepartments(t *
 	}
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
+			1002: {
+				UserID: 1002, RangeActualCost: floatPtr(8), RangeTotalTokens: int64Ptr(800),
+				TodayActualCost: 2, TotalActualCost: 20,
+			},
 			1003: {UserID: 1003, TodayActualCost: 3, TotalActualCost: 30},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
@@ -416,7 +1217,7 @@ func TestOverviewBuildsTeamAndSubteamTokenTrendFromRepresentativeDepartments(t *
 			},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{StartDate: "2026-06-01", EndDate: "2026-06-30", Granularity: "day", Timezone: "UTC"})
 	if err != nil {
@@ -469,13 +1270,16 @@ func TestOverviewMemberDetailsIncludesScopedMembersWithoutRelayUsage(t *testing.
 	}
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
+			1002: {
+				UserID: 1002, RangeActualCost: floatPtr(8), RangeTotalTokens: int64Ptr(800),
+				TodayActualCost: 2, TotalActualCost: 20,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			1002: {{Date: "2026-06-28", ActualCost: 8}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -505,8 +1309,8 @@ func TestOverviewMemberDetailsIncludesScopedMembersWithoutRelayUsage(t *testing.
 	if resp.Members[1].DirectoryMemberExternalID != "member-bob" || resp.Members[1].UserID != 0 || resp.Members[1].Selectable {
 		t.Fatalf("directory-only member = %#v, want directory id, user_id 0, and selectable false", resp.Members[1])
 	}
-	if got, want := provider.summaryRequestUserIDs, []int64{1002}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("summary user ids = %#v, want only relay-backed members %#v", got, want)
+	if got, want := provider.summaryRequestUserIDs, []int64{1002, 1002, 1002}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary user ids = %#v, want one relay-backed read per split lane %#v", got, want)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{1002}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("trend user ids = %#v, want only relay-backed members %#v", got, want)
@@ -535,15 +1339,21 @@ func TestOverviewResolvesDirectoryOnlyMembersByEmailForUsage(t *testing.T) {
 			"bob@example.org": {ID: 2002, Email: "bob@example.org", Username: "bob"},
 		},
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1002: {UserID: 1002, TodayActualCost: 2, TotalActualCost: 20},
-			2002: {UserID: 2002, TodayActualCost: 3, TotalActualCost: 30},
+			1002: {
+				UserID: 1002, RangeActualCost: floatPtr(8), RangeTotalTokens: int64Ptr(800),
+				TodayActualCost: 2, TotalActualCost: 20,
+			},
+			2002: {
+				UserID: 2002, RangeActualCost: floatPtr(12), RangeTotalTokens: int64Ptr(1200),
+				TodayActualCost: 3, TotalActualCost: 30,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			1002: {{Date: "2026-06-28", ActualCost: 8, TotalTokens: int64Ptr(800)}},
 			2002: {{Date: "2026-06-28", ActualCost: 12, TotalTokens: int64Ptr(1200)}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 1, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -561,8 +1371,8 @@ func TestOverviewResolvesDirectoryOnlyMembersByEmailForUsage(t *testing.T) {
 	if resp.Summary.RelayMemberCount != 2 {
 		t.Fatalf("summary relay_member_count = %d, want two email-resolved relay users", resp.Summary.RelayMemberCount)
 	}
-	if got, want := provider.summaryRequestUserIDs, []int64{1002, 2002}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("summary user ids = %#v, want local and email-resolved members %#v", got, want)
+	if got, want := provider.summaryRequestUserIDs, []int64{1002, 2002, 1002, 2002, 1002, 2002}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary user ids = %#v, want local and email-resolved members across all split lanes %#v", got, want)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{1002, 2002}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("trend user ids = %#v, want local and email-resolved members %#v", got, want)
@@ -645,7 +1455,7 @@ func TestSubjectDashboardReconcilesStaleRelayUserIDFromPrimaryProviderEmail(t *t
 			},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.SubjectDashboard(ctx, 999, target.ID, relay.UserUsageDashboardParams{})
 	if err != nil {
@@ -698,13 +1508,16 @@ func TestOverviewReconcilesStaleRelayUserIDBeforeBatchUsageAndTrend(t *testing.T
 			"overview-target@example.com": {ID: 2, Email: "overview-target@example.com", Username: "overview-target"},
 		},
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			2: {UserID: 2, TotalActualCost: 113.6844942, TodayActualCost: 2.8071306},
+			2: {
+				UserID: 2, RangeActualCost: floatPtr(2.8071306), RangeTotalTokens: int64Ptr(280),
+				TotalActualCost: 113.6844942, TodayActualCost: 2.8071306,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			2: {{Date: "2026-06-28", ActualCost: 2.8071306}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 999, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -725,7 +1538,7 @@ func TestOverviewReconcilesStaleRelayUserIDBeforeBatchUsageAndTrend(t *testing.T
 	if member.TotalActualCost != 113.6844942 {
 		t.Fatalf("member total_actual_cost = %.8f, want reconciled relay user 2 cost", member.TotalActualCost)
 	}
-	if got, want := provider.summaryRequestUserIDs, []int64{2}; !reflect.DeepEqual(got, want) {
+	if got, want := provider.summaryRequestUserIDs, []int64{2, 2, 2}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("summary user ids = %#v, want %#v", got, want)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{2}; !reflect.DeepEqual(got, want) {
@@ -774,15 +1587,21 @@ func TestOverviewUsesRelayUserDirectoryForCachedRelayBindings(t *testing.T) {
 			"overview-stale@example.com": {ID: 2002, Email: "overview-stale@example.com", Username: "overview-stale"},
 		},
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1001: {UserID: 1001, TotalActualCost: 12, TodayActualCost: 1},
-			2002: {UserID: 2002, TotalActualCost: 24, TodayActualCost: 2},
+			1001: {
+				UserID: 1001, RangeActualCost: floatPtr(3), RangeTotalTokens: int64Ptr(300),
+				TotalActualCost: 12, TodayActualCost: 1,
+			},
+			2002: {
+				UserID: 2002, RangeActualCost: floatPtr(6), RangeTotalTokens: int64Ptr(600),
+				TotalActualCost: 24, TodayActualCost: 2,
+			},
 		},
 		trendPoints: map[int64][]relay.UsageTrendPoint{
 			1001: {{Date: "2026-06-28", ActualCost: 3}},
 			2002: {{Date: "2026-06-28", ActualCost: 6}},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 
 	resp, err := svc.Overview(ctx, 999, OverviewParams{
 		StartDate:   "2026-06-01",
@@ -793,13 +1612,13 @@ func TestOverviewUsesRelayUserDirectoryForCachedRelayBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Overview() error = %v", err)
 	}
-	if provider.listUsersCalls != 1 {
-		t.Fatalf("list users calls = %d, want 1 batched directory lookup", provider.listUsersCalls)
+	if provider.listUsersCalls != 3 {
+		t.Fatalf("list users calls = %d, want one batched directory lookup per split lane", provider.listUsersCalls)
 	}
 	if len(provider.getUserRequestUserIDs) != 0 {
 		t.Fatalf("GetUser calls = %#v, want none in Team Overview hot path", provider.getUserRequestUserIDs)
 	}
-	if got, want := provider.summaryRequestUserIDs, []int64{1001, 2002}; !reflect.DeepEqual(got, want) {
+	if got, want := provider.summaryRequestUserIDs, []int64{1001, 2002, 1001, 2002, 1001, 2002}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("summary user ids = %#v, want %#v", got, want)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{1001, 2002}; !reflect.DeepEqual(got, want) {
@@ -815,7 +1634,7 @@ func TestOverviewUsesRelayUserDirectoryForCachedRelayBindings(t *testing.T) {
 	}
 }
 
-func TestOverviewReturnsUnavailableSummaryWhenTrendFetchTimesOut(t *testing.T) {
+func TestOverviewKeepsSummaryAndMembersAvailableWhenTrendFetchTimesOut(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
@@ -834,13 +1653,18 @@ func TestOverviewReturnsUnavailableSummaryWhenTrendFetchTimesOut(t *testing.T) {
 			},
 		},
 	}
+	rangeCost := 12.3
+	rangeTokens := int64(1200)
 	provider := &fakeRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
-			1001: {UserID: 1001, TotalActualCost: 12.3, TodayActualCost: 1.2},
+			1001: {
+				UserID: 1001, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
+				TotalActualCost: 12.3, TodayActualCost: 1.2,
+			},
 		},
 		trendWait: 200 * time.Millisecond,
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
 	svc.teamOverviewTrendTimeout = 10 * time.Millisecond
 
 	start := time.Now()
@@ -856,17 +1680,103 @@ func TestOverviewReturnsUnavailableSummaryWhenTrendFetchTimesOut(t *testing.T) {
 	if elapsed := time.Since(start); elapsed >= 100*time.Millisecond {
 		t.Fatalf("Overview() elapsed = %s, want trend timeout to return quickly", elapsed)
 	}
-	if !resp.Summary.Unavailable || resp.Summary.UnavailableReason == nil || *resp.Summary.UnavailableReason != "provider_error" {
-		t.Fatalf("summary unavailable = %v reason = %#v, want provider_error", resp.Summary.Unavailable, resp.Summary.UnavailableReason)
+	if resp.Summary.Unavailable || resp.Summary.UnavailableReason != nil {
+		t.Fatalf("summary unavailable = %v reason = %#v, want independently available", resp.Summary.Unavailable, resp.Summary.UnavailableReason)
 	}
-	if resp.Summary.RangeActualCost != nil || resp.Summary.RangeTotalTokens != nil {
-		t.Fatalf("summary range totals = %#v/%#v, want nil when trend totals are unavailable", resp.Summary.RangeActualCost, resp.Summary.RangeTotalTokens)
+	if resp.Summary.RangeActualCost == nil || *resp.Summary.RangeActualCost != rangeCost || resp.Summary.RangeTotalTokens == nil || *resp.Summary.RangeTotalTokens != rangeTokens {
+		t.Fatalf("summary range totals = %#v/%#v, want independent %.1f/%d", resp.Summary.RangeActualCost, resp.Summary.RangeTotalTokens, rangeCost, rangeTokens)
 	}
 	if !resp.TopMemberTrend.Unavailable || resp.TopMemberTrend.UnavailableReason == nil || *resp.TopMemberTrend.UnavailableReason != "provider_error" {
 		t.Fatalf("trend unavailable = %v reason = %#v, want provider_error", resp.TopMemberTrend.Unavailable, resp.TopMemberTrend.UnavailableReason)
 	}
 	if len(resp.TopMembers) != 0 || len(resp.TopMemberTrend.Series) != 0 {
 		t.Fatalf("top members = %d trend series = %d, want no unavailable selected-window ranking", len(resp.TopMembers), len(resp.TopMemberTrend.Series))
+	}
+	if len(resp.Members) != 1 || resp.Members[0].RangeActualCost != rangeCost {
+		t.Fatalf("members = %#v, want independently available complete Members snapshot", resp.Members)
+	}
+}
+
+func TestSubjectDashboardBatchReadDoesNotChangeAuthoritativeMultiplierEditAndAuditPath(t *testing.T) {
+	ctx := context.Background()
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	target := createTeamUsageUser(t, client, "edit-target", "edit-target@example.com", intPtr(2002))
+
+	scope := syntheticRepresentativeScope(999, target.ID, 2002, target.Email)
+	provider := &fakeRelayProvider{
+		subscriptionsByUser: map[int64][]relay.UserSubscription{
+			2002: {syntheticActiveSubscription(42, "Group Alpha", 1)},
+		},
+		rateEntriesByGroup: map[int64][]relay.UserGroupRateEntry{
+			42: {
+				{UserID: 2002, RateMultiplier: floatPtr(1), RPMOverride: intPtr(80)},
+				{UserID: 3003, RateMultiplier: floatPtr(1.2), RPMOverride: intPtr(120)},
+			},
+		},
+	}
+	provider.replaceFn = func(_ context.Context, groupID int64, inputs []relay.GroupRateMultiplierInput) error {
+		provider.rateEntriesByGroup[groupID] = make([]relay.UserGroupRateEntry, 0, len(inputs))
+		for _, input := range inputs {
+			provider.rateEntriesByGroup[groupID] = append(provider.rateEntriesByGroup[groupID], relay.UserGroupRateEntry{
+				UserID:         input.UserID,
+				RateMultiplier: input.RateMultiplier,
+				RPMOverride:    input.RPMOverride,
+			})
+		}
+		return nil
+	}
+	locker := &fakeLocker{}
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, locker)
+
+	dashboard, err := svc.SubjectDashboard(ctx, 999, target.ID, relay.UserUsageDashboardParams{})
+	if err != nil {
+		t.Fatalf("SubjectDashboard() error = %v", err)
+	}
+	if len(dashboard.SubjectSubscriptionGroups) != 1 || dashboard.SubjectSubscriptionGroups[0].EffectiveMultiplier == nil || *dashboard.SubjectSubscriptionGroups[0].EffectiveMultiplier != 1 {
+		t.Fatalf("dashboard subscription rows = %#v, want batch-read multiplier 1", dashboard.SubjectSubscriptionGroups)
+	}
+	if provider.batchRateCalls != 1 || len(provider.listRateGroupIDs) != 0 {
+		t.Fatalf("dashboard multiplier reads = batch %d serial %#v, want one batch and no serial", provider.batchRateCalls, provider.listRateGroupIDs)
+	}
+
+	resp, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
+		Mode:           "set",
+		RateMultiplier: floatPtr(1.5),
+		Reason:         "Synthetic approved adjustment",
+	})
+	if err != nil {
+		t.Fatalf("UpdateMultiplier() error = %v", err)
+	}
+	if resp.Status != teamusageratemultiplieraudit.StatusSucceeded.String() || !resp.Changed {
+		t.Fatalf("UpdateMultiplier() response = %#v, want succeeded changed edit", resp)
+	}
+	if got, want := provider.listRateGroupIDs, []int64{42, 42, 42}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("authoritative single-group reads = %#v, want initial/lock/readback %#v", got, want)
+	}
+	if provider.batchRateCalls != 1 {
+		t.Fatalf("batch multiplier calls after edit = %d, want dashboard-only call unchanged", provider.batchRateCalls)
+	}
+	if provider.replaceCalls != 1 || locker.lockCalls != 1 {
+		t.Fatalf("mutation calls = replace %d lock %d, want one whole-group replace under one lock", provider.replaceCalls, locker.lockCalls)
+	}
+	if len(provider.replaceInputs) != 2 {
+		t.Fatalf("whole-group replace inputs = %#v, want target and existing peer", provider.replaceInputs)
+	}
+	targetInput := findRateMultiplierInputByUserID(provider.replaceInputs, 2002)
+	peerInput := findRateMultiplierInputByUserID(provider.replaceInputs, 3003)
+	if targetInput == nil || targetInput.RateMultiplier == nil || *targetInput.RateMultiplier != 1.5 || targetInput.RPMOverride == nil || *targetInput.RPMOverride != 80 {
+		t.Fatalf("target replacement input = %#v, want multiplier 1.5 with RPM override preserved", targetInput)
+	}
+	if peerInput == nil || peerInput.RateMultiplier == nil || *peerInput.RateMultiplier != 1.2 || peerInput.RPMOverride == nil || *peerInput.RPMOverride != 120 {
+		t.Fatalf("peer replacement input = %#v, want whole-group state preserved", peerInput)
+	}
+	audit := client.TeamUsageRateMultiplierAudit.GetX(ctx, resp.AuditID)
+	if audit.Status != teamusageratemultiplieraudit.StatusSucceeded || !audit.Changed || audit.OldMultiplier == nil || *audit.OldMultiplier != 1 || audit.NewMultiplier == nil || *audit.NewMultiplier != 1.5 {
+		t.Fatalf("audit row = %#v, want successful authoritative 1 -> 1.5 change", audit)
+	}
+	if audit.OldMultiplierSource != teamusageratemultiplieraudit.OldMultiplierSourceUser || audit.NewMultiplierSource != teamusageratemultiplieraudit.NewMultiplierSourceUser || audit.ErrorMessage != "" {
+		t.Fatalf("audit sources/error = %q/%q/%q, want user/user/empty", audit.OldMultiplierSource, audit.NewMultiplierSource, audit.ErrorMessage)
 	}
 }
 
@@ -921,7 +1831,7 @@ func TestUpdateMultiplierReconcilesStaleRelayUserIDBeforeWrite(t *testing.T) {
 		}
 		return nil
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
 
 	resp, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
 		Mode:           "set",
@@ -971,7 +1881,7 @@ func TestAuditListRedactsOutOfScopeMetadataForRepresentativeView(t *testing.T) {
 		SetReason("Synthetic reason").
 		SaveX(ctx)
 
-	svc := NewService(client, nil, nil, nil)
+	svc := newUncachedServiceForTest(client, nil, nil, nil)
 
 	userResp, err := svc.ListAudit(ctx, 1, AuditListParams{Page: 1, PageSize: 20})
 	if err != nil {
@@ -1026,7 +1936,7 @@ func TestUpdateMultiplierOutOfScopeExistingTargetRedactsRepresentativeAuditButKe
 			},
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{}, nil)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{}, nil)
 
 	_, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{Mode: "reset"})
 	if err == nil {
@@ -1117,7 +2027,7 @@ func TestUpdateMultiplierLockTimeProviderFailureMarksAuditFailed(t *testing.T) {
 		},
 		replaceErr: errors.New("relay replace exploded"),
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
 
 	_, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
 		Mode:           "set",
@@ -1179,7 +2089,7 @@ func TestUpdateMultiplierLockTimeAuditUpdateFailureIsSurfaced(t *testing.T) {
 			return errors.New("relay replace exploded")
 		},
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
 
 	_, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
 		Mode:           "set",
@@ -1235,7 +2145,7 @@ func TestUpdateMultiplierNoOpSkipsRelayReplacementAndSucceeds(t *testing.T) {
 		},
 	}
 	locker := &fakeLocker{}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, locker)
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, locker)
 
 	resp, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
 		Mode:           "set",
@@ -1297,7 +2207,7 @@ func TestUpdateMultiplierReturnsErrorWhenAuditEndsPartialFailed(t *testing.T) {
 	provider.replaceFn = func(_ context.Context, _ int64, _ []relay.GroupRateMultiplierInput) error {
 		return nil
 	}
-	svc := NewService(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
+	svc := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, &fakeLocker{})
 
 	_, err := svc.UpdateMultiplier(ctx, 999, target.ID, 42, UpdateMultiplierRequest{
 		Mode:           "set",
@@ -1318,6 +2228,16 @@ type fakeScopeResolver struct {
 	err   error
 }
 
+type countingTeamScopeResolver struct {
+	scope *representativescope.Scope
+	calls atomic.Int32
+}
+
+func (r *countingTeamScopeResolver) Resolve(context.Context, int) (*representativescope.Scope, error) {
+	r.calls.Add(1)
+	return r.scope, nil
+}
+
 func (f fakeScopeResolver) Resolve(context.Context, int) (*representativescope.Scope, error) {
 	if f.err != nil {
 		return nil, f.err
@@ -1328,6 +2248,20 @@ func (f fakeScopeResolver) Resolve(context.Context, int) (*representativescope.S
 type fakeProviderResolver struct {
 	provider relay.Provider
 	err      error
+}
+
+type countingTeamProviderResolver struct {
+	provider relay.Provider
+	err      error
+	calls    atomic.Int32
+}
+
+func (r *countingTeamProviderResolver) Resolve(context.Context, int) (relay.Provider, error) {
+	r.calls.Add(1)
+	if r.err != nil {
+		return nil, r.err
+	}
+	return r.provider, nil
 }
 
 func (f fakeProviderResolver) Resolve(context.Context, int) (relay.Provider, error) {
@@ -1355,14 +2289,21 @@ type fakeRelayProvider struct {
 	subscriptionErr            error
 	subscriptionRequestUserIDs []int64
 	rateEntriesByGroup         map[int64][]relay.UserGroupRateEntry
+	batchRateResults           []relay.GroupRateMultiplierReadResult
+	batchRateCalls             int
+	batchRateGroupIDs          [][]int64
 	listRatesErr               error
+	listRateGroupIDs           []int64
 	replaceFn                  func(context.Context, int64, []relay.GroupRateMultiplierInput) error
 	replaceErr                 error
 	replaceCalls               int
 	replaceUserIDs             []int64
+	replaceInputs              []relay.GroupRateMultiplierInput
 	summaryStats               map[int64]relay.TeamUserUsageStats
 	summaryErr                 error
 	summaryRequestUserIDs      []int64
+	summaryRequestBatches      [][]int64
+	summaryRequestParams       []relay.TeamUsageSummaryParams
 	trendPoints                map[int64][]relay.UsageTrendPoint
 	trendErr                   error
 	trendWait                  time.Duration
@@ -1496,11 +2437,13 @@ func (f *fakeRelayProvider) GetUsageDashboardForUser(_ context.Context, relayUse
 	return f.dashboardResponse, nil
 }
 
-func (f *fakeRelayProvider) GetBatchUserUsageStats(_ context.Context, relayUserIDs []int64, _ relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+func (f *fakeRelayProvider) GetBatchUserUsageStats(_ context.Context, relayUserIDs []int64, params relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
 	if f.summaryErr != nil {
 		return nil, f.summaryErr
 	}
 	f.summaryRequestUserIDs = append(f.summaryRequestUserIDs, relayUserIDs...)
+	f.summaryRequestBatches = append(f.summaryRequestBatches, append([]int64(nil), relayUserIDs...))
+	f.summaryRequestParams = append(f.summaryRequestParams, params)
 	return f.summaryStats, nil
 }
 
@@ -1520,6 +2463,52 @@ func (f *fakeRelayProvider) GetUsageTrendForUsers(ctx context.Context, relayUser
 	return f.trendPoints, nil
 }
 
+type summaryIndependentRelayProvider struct {
+	*fakeRelayProvider
+	trendCalls   atomic.Int32
+	trendStarted chan struct{}
+	trendRelease <-chan struct{}
+	trendErr     error
+}
+
+func (p *summaryIndependentRelayProvider) GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, _ relay.TeamMemberTrendParams) (map[int64][]relay.UsageTrendPoint, error) {
+	p.trendCalls.Add(1)
+	if p.trendStarted != nil {
+		select {
+		case p.trendStarted <- struct{}{}:
+		default:
+		}
+	}
+	if p.trendRelease != nil {
+		select {
+		case <-p.trendRelease:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if p.trendErr != nil {
+		return nil, p.trendErr
+	}
+	return p.trendPoints, nil
+}
+
+func newCompleteSummaryIndependentProvider() *summaryIndependentRelayProvider {
+	rangeAlice, rangeBob := 15.0, 30.0
+	tokensAlice, tokensBob := int64(1500), int64(4500)
+	return &summaryIndependentRelayProvider{fakeRelayProvider: &fakeRelayProvider{
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {
+				UserID: 1002, RangeActualCost: &rangeAlice, RangeTotalTokens: &tokensAlice,
+				TodayActualCost: 1, TotalActualCost: 10,
+			},
+			1003: {
+				UserID: 1003, RangeActualCost: &rangeBob, RangeTotalTokens: &tokensBob,
+				TodayActualCost: 2, TotalActualCost: 99,
+			},
+		},
+	}}
+}
+
 func (f *fakeRelayProvider) ListUserSubscriptions(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
 	if f.subscriptionErr != nil {
 		return nil, f.subscriptionErr
@@ -1528,7 +2517,24 @@ func (f *fakeRelayProvider) ListUserSubscriptions(_ context.Context, relayUserID
 	return append([]relay.UserSubscription(nil), f.subscriptionsByUser[relayUserID]...), nil
 }
 
+func (f *fakeRelayProvider) GroupRateMultipliersForGroups(_ context.Context, groupIDs []int64) []relay.GroupRateMultiplierReadResult {
+	f.batchRateCalls++
+	f.batchRateGroupIDs = append(f.batchRateGroupIDs, append([]int64(nil), groupIDs...))
+	if f.batchRateResults != nil {
+		return append([]relay.GroupRateMultiplierReadResult(nil), f.batchRateResults...)
+	}
+	results := make([]relay.GroupRateMultiplierReadResult, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		results = append(results, relay.GroupRateMultiplierReadResult{
+			GroupID: groupID,
+			Entries: append([]relay.UserGroupRateEntry(nil), f.rateEntriesByGroup[groupID]...),
+		})
+	}
+	return results
+}
+
 func (f *fakeRelayProvider) ListGroupRateMultipliers(_ context.Context, groupID int64) ([]relay.UserGroupRateEntry, error) {
+	f.listRateGroupIDs = append(f.listRateGroupIDs, groupID)
 	if f.listRatesErr != nil {
 		return nil, f.listRatesErr
 	}
@@ -1538,6 +2544,7 @@ func (f *fakeRelayProvider) ListGroupRateMultipliers(_ context.Context, groupID 
 func (f *fakeRelayProvider) ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, inputs []relay.GroupRateMultiplierInput) error {
 	f.replaceCalls++
 	f.replaceUserIDs = f.replaceUserIDs[:0]
+	f.replaceInputs = append([]relay.GroupRateMultiplierInput(nil), inputs...)
 	for _, input := range inputs {
 		f.replaceUserIDs = append(f.replaceUserIDs, input.UserID)
 	}
@@ -1546,6 +2553,36 @@ func (f *fakeRelayProvider) ReplaceGroupRateMultipliers(ctx context.Context, gro
 	}
 	return f.replaceErr
 }
+
+type fakeRelayProviderWithoutMultiplierBatch struct {
+	relay.Provider
+	dashboardResponse   *relay.UserUsageDashboardResponse
+	subscriptionsByUser map[int64][]relay.UserSubscription
+}
+
+func (f *fakeRelayProviderWithoutMultiplierBatch) GetUsageDashboardForUser(context.Context, int64, relay.UserUsageDashboardParams) (*relay.UserUsageDashboardResponse, error) {
+	if f.dashboardResponse != nil {
+		return f.dashboardResponse, nil
+	}
+	return &relay.UserUsageDashboardResponse{
+		Configured:  true,
+		GroupQuotas: relay.UserUsageGroupQuotaState{Status: "ok", Groups: []relay.UserUsageGroupQuotaGroupItem{}},
+	}, nil
+}
+
+func (f *fakeRelayProviderWithoutMultiplierBatch) ListUserSubscriptions(_ context.Context, relayUserID int64) ([]relay.UserSubscription, error) {
+	return append([]relay.UserSubscription(nil), f.subscriptionsByUser[relayUserID]...), nil
+}
+
+func (f *fakeRelayProviderWithoutMultiplierBatch) ListGroupRateMultipliers(ctx context.Context, groupID int64) ([]relay.UserGroupRateEntry, error) {
+	return f.Provider.(relay.GroupRateMultiplierManager).ListGroupRateMultipliers(ctx, groupID)
+}
+
+func (f *fakeRelayProviderWithoutMultiplierBatch) ReplaceGroupRateMultipliers(ctx context.Context, groupID int64, inputs []relay.GroupRateMultiplierInput) error {
+	return f.Provider.(relay.GroupRateMultiplierManager).ReplaceGroupRateMultipliers(ctx, groupID, inputs)
+}
+
+var _ relay.GroupRateMultiplierManager = (*fakeRelayProviderWithoutMultiplierBatch)(nil)
 
 func createPrimaryRelayProvider(t *testing.T, client *ent.Client) *ent.RelayProvider {
 	t.Helper()
@@ -1581,6 +2618,110 @@ func findOverviewMemberByEmail(members []OverviewMember, email string) *Overview
 		}
 	}
 	return nil
+}
+
+func findSubscriptionRowByGroupID(rows []SubscriptionRow, groupID string) *SubscriptionRow {
+	for i := range rows {
+		if rows[i].GroupID == groupID {
+			return &rows[i]
+		}
+	}
+	return nil
+}
+
+func findRateMultiplierInputByUserID(inputs []relay.GroupRateMultiplierInput, userID int64) *relay.GroupRateMultiplierInput {
+	for i := range inputs {
+		if inputs[i].UserID == userID {
+			return &inputs[i]
+		}
+	}
+	return nil
+}
+
+func syntheticRepresentativeScope(actorUserID, targetUserID int, relayUserID int, email string) *representativescope.Scope {
+	return &representativescope.Scope{
+		ActorUserID:      actorUserID,
+		IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{
+				SubjectType: "member",
+				UserID:      targetUserID,
+				DisplayName: "Synthetic Member",
+				Email:       email,
+				RelayUserID: intPtr(relayUserID),
+				Selectable:  true,
+			},
+		},
+	}
+}
+
+func summaryTestScope() *representativescope.Scope {
+	return &representativescope.Scope{
+		Version: "scope-version-summary", ActorUserID: 1, IsRepresentative: true,
+		OverviewSubjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", UserID: 3, DisplayName: "Bob", Email: "bob@example.org", RelayUserID: intPtr(1003), Selectable: true},
+		},
+	}
+}
+
+func overviewAdapterTestScope() *representativescope.Scope {
+	scope := summaryTestScope()
+	scope.MemberTreeRootIDs = []string{"department-root"}
+	scope.MemberTreeDepartments = []representativescope.DepartmentScope{
+		{ExternalID: "department-root", Name: "Department Root", DisplayPath: "Department Root", Depth: 4, ChildCount: 1},
+		{ExternalID: "department-alpha", ParentExternalID: stringPtr("department-root"), Name: "Department Alpha", DisplayPath: "Department Root / Department Alpha", Depth: 5},
+	}
+	for index := range scope.OverviewSubjects {
+		scope.OverviewSubjects[index].DirectoryMemberExternalID = fmt.Sprintf("member-%d", index+1)
+		scope.OverviewSubjects[index].DepartmentExternalID = "department-alpha"
+		scope.OverviewSubjects[index].DepartmentExternalIDs = []string{"department-alpha"}
+		scope.OverviewSubjects[index].DepartmentDisplayPath = "Department Root / Department Alpha"
+	}
+	return scope
+}
+
+func summaryTestParams() OverviewParams {
+	return OverviewParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
+	}
+}
+
+func syntheticActiveSubscription(groupID int64, groupName string, groupDefaultMultiplier float64) relay.UserSubscription {
+	return relay.UserSubscription{
+		GroupID: groupID,
+		Status:  "active",
+		Group: &relay.Group{
+			ID:             groupID,
+			Name:           groupName,
+			Platform:       "openai",
+			RateMultiplier: floatPtr(groupDefaultMultiplier),
+		},
+	}
+}
+
+func assertUnavailableMultiplierMetadata(t *testing.T, row *SubscriptionRow, editableReason string) {
+	t.Helper()
+	if row.MultiplierMetadataStatus != MultiplierMetadataStatusUnavailable || row.MultiplierMetadataMessage == nil || strings.TrimSpace(*row.MultiplierMetadataMessage) == "" {
+		t.Fatalf("row metadata = %q/%#v, want unavailable with message", row.MultiplierMetadataStatus, row.MultiplierMetadataMessage)
+	}
+	if row.UserMultiplier != nil || row.EffectiveMultiplier != nil || row.MultiplierSource != "unknown" {
+		t.Fatalf("row multiplier values = user %#v effective %#v source %q, want nil/nil/unknown", row.UserMultiplier, row.EffectiveMultiplier, row.MultiplierSource)
+	}
+	if row.Editable || row.EditableReason == nil || *row.EditableReason != editableReason {
+		t.Fatalf("row edit policy = %v/%#v, want %q", row.Editable, row.EditableReason, editableReason)
+	}
+	payload, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if effective, exists := wire["effective_multiplier"]; !exists || effective != nil {
+		t.Fatalf("wire effective_multiplier = %#v, exists %v, want explicit null: %s", effective, exists, payload)
+	}
 }
 
 func int64Ptr(v int64) *int64 {

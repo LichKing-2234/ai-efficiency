@@ -4,7 +4,8 @@ import type {
   DirectoryDepartment,
   DirectoryMember,
   DirectoryOffboardingAction,
-  DirectoryOffboardingCandidate,
+  DirectoryOffboardingCandidateListResponse,
+  DirectoryRunPage,
   DirectorySource,
   DirectorySourceListResponse,
   DirectorySourceRequest,
@@ -40,8 +41,8 @@ export function startDirectoryRun(id: number, data: { mode: 'apply' | 'preview' 
   return client.post<ApiResponse<DirectorySyncRun>>(`/admin/directory/sources/${id}/runs`, data)
 }
 
-export function listDirectoryRuns(id: number) {
-  return client.get<ApiResponse<{ items: DirectorySyncRun[] }>>(`/admin/directory/sources/${id}/runs`)
+export function listDirectoryRuns(id: number, params: { limit: number; offset: number }) {
+  return client.get<ApiResponse<DirectoryRunPage>>(`/admin/directory/sources/${id}/runs`, { params })
 }
 
 export function getDirectoryRun(id: number) {
@@ -56,8 +57,8 @@ export function listDirectoryMembers(params: { source_id: number; q?: string }) 
   return client.get<ApiResponse<{ items: DirectoryMember[] }>>('/admin/directory/members', { params })
 }
 
-export function listDirectoryOffboardingCandidates(params: { source_id?: number; q?: string }) {
-  return client.get<ApiResponse<{ items: DirectoryOffboardingCandidate[] }>>('/admin/directory/offboarding-candidates', { params })
+export function listDirectoryOffboardingCandidates(params: { source_id?: number; q?: string; page?: number; page_size?: number }) {
+  return client.get<ApiResponse<DirectoryOffboardingCandidateListResponse>>('/admin/directory/offboarding-candidates', { params })
 }
 
 export function disableDirectoryRelayUser(userID: number, data: { source_id?: number; confirm_email: string; reason: string }) {

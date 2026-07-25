@@ -34,6 +34,11 @@ line-count ceiling. Focused and full local verification is recorded in Task 9;
 no current remote, browser, release, or deployment check is claimed. These
 tasks add no routes, tables, dependencies, or standalone components.
 
+**Post-merge Performance Follow-up Status (2026-07-18):** Task 10 implementation
+and full local verification are complete. The rewritten performance branch and
+dependent PR #178 branch are published. The pre-existing browser verification
+gap remains unchanged.
+
 **Goal:** Snapshot sequential quota reset approvals from the requester's exact
 departments and configured ancestors; the selected subscription group only
 identifies the quota to reset.
@@ -1042,6 +1047,60 @@ current. Do not rewrite the historical 2026-07-07 spec.
   - `git diff --check` exited `0`, and pre-commit status listed exactly the six
     owned files. No push, remote check, browser check, release, or deployment
     was performed.
+
+### Task 10: Bound Post-merge Workflow Queries
+
+- [x] **Step 1: Re-audit decision and queue refresh behavior**
+
+  Re-ran the focused backend revision tests and all 27 quota-reset view tests.
+  V2 approve/retry advances the Work Items revision once, and the three frontend
+  queues retain on-demand loading plus mutation-scoped invalidation.
+
+- [x] **Step 2: Record query-plan and resolver RED evidence**
+
+  `TestApprovalHistoryPredicateUsesBothGINIndexes` failed because
+  `quota_reset_requests.workflow` had no GIN index.
+  `TestResolveWorkflowDoesNotMaterializeUnrelatedDirectoryFacts` failed on an
+  unfiltered `SELECT ... FROM users` and source-only member, membership, and
+  config queries. The representative lookup plan also failed before the
+  directory-member metadata and source/external-id indexes existed.
+  A follow-up correctness RED also proved that string-only containment missed
+  numeric scalar and array leader metadata.
+
+- [x] **Step 3: Implement bounded workflow reads and supporting indexes**
+
+  Keep full departments for hierarchy semantics, but load requester membership,
+  relevant configs, representative/configured members, candidate memberships,
+  and candidate users through bounded predicates. Split scalar and array leader
+  metadata into separate indexed containment queries. Add JSONB GIN indexes for
+  workflow history and member leader metadata plus the source/external-id member
+  index.
+
+- [x] **Step 4: Run focused GREEN and package regression**
+
+  Both query-plan tests and the unrelated-facts contract passed. All resolver
+  tests, including numeric scalar/array leader compatibility, passed.
+  `go test ./internal/quotareset ./internal/workitems
+  ./internal/handler -count=1` passed.
+
+- [x] **Step 5: Run full repository verification**
+
+  `go test ./... -count=1` and `go vet ./...` passed in `backend`. The frontend
+  passed 46 files / 680 tests and its production build transformed 208 modules.
+  `go test ./... -count=1` passed in `ae-cli`.
+  `bash deploy/test/release-frontend-embed-test.sh` passed both embedded frontend
+  release tests. `git diff --check` passed.
+
+- [x] **Step 6: Publish rewritten branches**
+
+  Publish `feat/platform-loading-performance` with `--force-with-lease`, rebase
+  PR #178 onto the rewritten base, and publish its head with
+  `--force-with-lease`.
+
+  Evidence: `feat/platform-loading-performance` was lease-updated to
+  `d7978c74`. PR #178 was replayed with exactly its seven commits on that base;
+  Directory Sync, admin-users, and quota-reset package tests plus `go vet ./...`
+  passed before its head was lease-updated to `91020b2d`.
 
 ## Deferred
 

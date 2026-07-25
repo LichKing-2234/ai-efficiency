@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	systemDefaultMultiplier         = 1.0
-	defaultTeamOverviewTrendTimeout = 20 * time.Second
+	systemDefaultMultiplier              = 1.0
+	defaultTeamOverviewTrendTimeout      = 20 * time.Second
+	multiplierMetadataUnavailableMessage = "Multiplier metadata is temporarily unavailable."
 )
 
 type ProviderResolver interface {
@@ -38,13 +39,91 @@ type Service struct {
 	fullScopeCap             int
 	teamOverviewTrendTimeout time.Duration
 	maxMultiplier            float64
+	snapshotCache            *SnapshotCache
+	originCache              *OriginCache
+	prewarmReader            *PrewarmReader
+	memberCursorCodec        *memberCursorCodec
+	organizationCursorCodec  *organizationCursorCodec
 }
 
-func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker) *Service {
+type ServiceOptions struct {
+	SnapshotCache *SnapshotCache
+	OriginCache   *OriginCache
+	PrewarmReader *PrewarmReader
+	CursorSecret  string
+}
+
+type splitReadRequest struct {
+	actorUserID    int
+	params         OverviewParams
+	scope          *representativescope.Scope
+	providerConfig primaryProviderConfig
+	scopeHash      string
+	bypassPrewarm  bool
+}
+
+func (s *Service) newSplitReadRequest(ctx context.Context, actorUserID int, params OverviewParams) (*splitReadRequest, error) {
+	normalized, err := normalizeOverviewParams(params)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve primary relay provider configuration: %w", err)
+	}
+	request := &splitReadRequest{
+		actorUserID: actorUserID, params: normalized, scope: scope, providerConfig: *providerConfig,
+	}
+	if s.snapshotCache != nil || s.originCache != nil {
+		request.scopeHash, err = effectiveScopeHash(scope)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return request, nil
+}
+
+func (r *splitReadRequest) snapshotCacheKey() SnapshotCacheKey {
+	return SnapshotCacheKey{
+		ProviderID: r.providerConfig.ID, ProviderVersion: r.providerConfig.ConfigurationVersion,
+		ActorID: r.actorUserID, ScopeVersion: r.scope.Version, ScopeHash: r.scopeHash, Params: r.params,
+	}
+}
+
+func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, options ServiceOptions) (*Service, error) {
+	if client == nil {
+		return nil, fmt.Errorf("team usage Ent client is required")
+	}
+	if scopeResolver == nil {
+		return nil, fmt.Errorf("team usage scope resolver is required")
+	}
+	if providerResolver == nil {
+		return nil, fmt.Errorf("team usage provider resolver is required")
+	}
+	if options.SnapshotCache == nil {
+		return nil, fmt.Errorf("team usage snapshot cache is required")
+	}
+	if options.OriginCache == nil {
+		return nil, fmt.Errorf("team usage origin cache is required")
+	}
+	cursorSecret := strings.TrimSpace(options.CursorSecret)
+	if cursorSecret == "" {
+		return nil, fmt.Errorf("team usage cursor secret is required")
+	}
+	service := newService(client, scopeResolver, providerResolver, locker, options.SnapshotCache, options.OriginCache, cursorSecret)
+	service.prewarmReader = options.PrewarmReader
+	return service, nil
+}
+
+func newService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, originCache *OriginCache, cursorSecret string) *Service {
 	if locker == nil {
 		locker = &PostgresAdvisoryLocker{}
 	}
-	return &Service{
+	service := &Service{
 		client:                   client,
 		scopeResolver:            scopeResolver,
 		providerResolver:         providerResolver,
@@ -52,7 +131,14 @@ func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolve
 		fullScopeCap:             500,
 		teamOverviewTrendTimeout: defaultTeamOverviewTrendTimeout,
 		maxMultiplier:            defaultMaxMultiplier,
+		snapshotCache:            snapshotCache,
+		originCache:              originCache,
 	}
+	if cursorSecret != "" {
+		service.memberCursorCodec = newMemberCursorCodec(cursorSecret)
+		service.organizationCursorCodec = newOrganizationCursorCodec(cursorSecret)
+	}
+	return service
 }
 
 func (s *Service) Scope(ctx context.Context, actorUserID int) (*ScopeResponse, error) {
@@ -142,26 +228,466 @@ func (s *Service) SubjectDashboard(ctx context.Context, actorUserID, targetUserI
 	}, nil
 }
 
+func (s *Service) Summary(ctx context.Context, actorUserID int, params OverviewParams) (*SummaryResponse, error) {
+	result, scopeVersion, err := s.readSummarySnapshot(ctx, actorUserID, params)
+	if err != nil {
+		return nil, err
+	}
+	return &SummaryResponse{
+		SnapshotFreshness: result.Freshness,
+		ScopeVersion:      scopeVersion,
+		Window:            result.Snapshot.Window,
+		Summary:           result.Snapshot.Summary,
+	}, nil
+}
+
+func (s *Service) Trend(ctx context.Context, actorUserID int, params OverviewParams) (*TrendResponse, error) {
+	result, scopeVersion, err := s.readTrendSnapshot(ctx, actorUserID, params)
+	if err != nil {
+		return nil, err
+	}
+	return &TrendResponse{
+		SnapshotFreshness: result.Freshness,
+		ScopeVersion:      scopeVersion,
+		Window:            result.Snapshot.Window,
+		TopMembers:        append([]OverviewMember(nil), result.Snapshot.TopMembers...),
+		TopMemberTrend:    result.Snapshot.TopMemberTrend,
+		DepartmentTrend:   result.Snapshot.DepartmentTrend,
+	}, nil
+}
+
+func (s *Service) readTrendSnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*TrendCacheResult, string, error) {
+	request, err := s.newSplitReadRequest(ctx, actorUserID, params)
+	if err != nil {
+		return nil, "", err
+	}
+	result, err := s.readTrendSnapshotForRequest(ctx, request)
+	if errors.Is(err, errPrewarmAuthorizationChanged) {
+		request, err = s.newSplitReadRequest(ctx, actorUserID, params)
+		if err != nil {
+			return nil, "", err
+		}
+		request.bypassPrewarm = true
+		result, err = s.readTrendSnapshotForRequest(ctx, request)
+	}
+	return result, request.scope.Version, err
+}
+
+func (s *Service) readTrendSnapshotForRequest(ctx context.Context, request *splitReadRequest) (*TrendCacheResult, error) {
+	loader := func(loadCtx context.Context) (TrendOriginLoadResult, error) {
+		overviewSubjects := request.scope.OverviewSubjects
+		if len(overviewSubjects) == 0 {
+			overviewSubjects = request.scope.Subjects
+		}
+		origin, handled, loadErr := s.loadPrewarmFirstScopeOrigin(loadCtx, request)
+		if handled {
+			if loadErr != nil {
+				if isHardTrendSnapshotOriginError(loadCtx, loadErr) {
+					return TrendOriginLoadResult{}, loadErr
+				}
+				return TrendOriginLoadResult{Snapshot: trendUnavailableSnapshot(request.params, "provider_error"), SnapshotErr: loadErr}, nil
+			}
+			snapshot, sourceErr := buildTrendSnapshotFromScopeOrigin(request.scope, request.params, origin)
+			return TrendOriginLoadResult{Snapshot: snapshot, SnapshotErr: sourceErr}, nil
+		}
+		var provider relay.Provider
+		if len(overviewSubjects) <= s.fullScopeCap {
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
+			if resolveErr != nil {
+				return TrendOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
+			}
+			provider = resolvedProvider
+		}
+		snapshot, loadErr := s.generateTrendSnapshot(loadCtx, request.scope, provider, request.params)
+		if loadErr == nil {
+			return TrendOriginLoadResult{Snapshot: snapshot}, nil
+		}
+		if isHardTrendSnapshotOriginError(loadCtx, loadErr) {
+			return TrendOriginLoadResult{}, loadErr
+		}
+		return TrendOriginLoadResult{Snapshot: snapshot, SnapshotErr: loadErr}, nil
+	}
+
+	if s.snapshotCache == nil {
+		loaded, loadErr := loader(ctx)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if loaded.SnapshotErr != nil && !validTrendSnapshot(loaded.Snapshot) {
+			return nil, loaded.SnapshotErr
+		}
+		now := time.Now().UTC()
+		return &TrendCacheResult{
+			Snapshot: loaded.Snapshot,
+			Freshness: SnapshotFreshness{
+				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
+			},
+		}, nil
+	}
+
+	result, err := s.snapshotCache.GetTrendOrLoad(ctx, request.snapshotCacheKey(), loader)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (s *Service) Overview(ctx context.Context, actorUserID int, params OverviewParams) (*OverviewResponse, error) {
-	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
+	request, err := s.newSplitReadRequest(ctx, actorUserID, params)
+	if err != nil {
+		return nil, err
+	}
+	summary, trend, members, err := s.readOverviewSnapshotsForRequest(ctx, request)
+	if errors.Is(err, errPrewarmAuthorizationChanged) {
+		request, err = s.newSplitReadRequest(ctx, actorUserID, params)
+		if err != nil {
+			return nil, err
+		}
+		request.bypassPrewarm = true
+		summary, trend, members, err = s.readOverviewSnapshotsForRequest(ctx, request)
+	}
 	if err != nil {
 		return nil, err
 	}
 
+	overviewSubjects := request.scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = request.scope.Subjects
+	}
+	memberTree := []OverviewMemberNode{}
+	if len(overviewSubjects) <= s.fullScopeCap || len(members.Snapshot.Members) > 0 {
+		memberTree = projectOverviewCompatibilityMemberTree(request.scope, members.Snapshot.Members)
+	}
+	return &OverviewResponse{
+		Configured:       true,
+		IsRepresentative: true,
+		Window:           summary.Snapshot.Window,
+		Summary:          overviewSummaryFromAggregate(summary.Snapshot.Summary),
+		TopMembers:       append([]OverviewMember{}, trend.Snapshot.TopMembers...),
+		TopMemberTrend:   trend.Snapshot.TopMemberTrend,
+		DepartmentTrend:  trend.Snapshot.DepartmentTrend,
+		Members:          append([]OverviewMember{}, members.Snapshot.Members...),
+		MemberTree:       memberTree,
+	}, nil
+}
+
+func (s *Service) readOverviewSnapshotsForRequest(
+	ctx context.Context,
+	request *splitReadRequest,
+) (*SummaryCacheResult, *TrendCacheResult, *MembersCacheResult, error) {
+	summary, err := s.readSummarySnapshotForRequest(ctx, request)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	trend, err := s.readTrendSnapshotForRequest(ctx, request)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	members, err := s.readMembersSnapshotForRequest(ctx, request)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return summary, trend, members, nil
+}
+
+func overviewSummaryFromAggregate(summary SummaryAggregate) OverviewSummary {
+	return OverviewSummary{
+		Unavailable: summary.Unavailable, UnavailableReason: summary.UnavailableReason,
+		MemberCount: summary.MemberCount, RelayMemberCount: summary.RelayMemberCount,
+		RangeActualCost: summary.RangeActualCost, RangeTotalTokens: summary.RangeTotalTokens,
+		TodayActualCost: summary.TodayActualCost, TotalActualCost: summary.TotalActualCost,
+		UnitLabel: summary.UnitLabel,
+	}
+}
+
+func (s *Service) readSummarySnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*SummaryCacheResult, string, error) {
+	request, err := s.newSplitReadRequest(ctx, actorUserID, params)
+	if err != nil {
+		return nil, "", err
+	}
+	result, err := s.readSummarySnapshotForRequest(ctx, request)
+	if errors.Is(err, errPrewarmAuthorizationChanged) {
+		request, err = s.newSplitReadRequest(ctx, actorUserID, params)
+		if err != nil {
+			return nil, "", err
+		}
+		request.bypassPrewarm = true
+		result, err = s.readSummarySnapshotForRequest(ctx, request)
+	}
+	return result, request.scope.Version, err
+}
+
+func (s *Service) readSummarySnapshotForRequest(ctx context.Context, request *splitReadRequest) (*SummaryCacheResult, error) {
+	loader := func(loadCtx context.Context) (SummaryOriginLoadResult, error) {
+		overviewSubjects := request.scope.OverviewSubjects
+		if len(overviewSubjects) == 0 {
+			overviewSubjects = request.scope.Subjects
+		}
+		origin, handled, loadErr := s.loadPrewarmFirstScopeOrigin(loadCtx, request)
+		if handled {
+			if loadErr == nil {
+				return SummaryOriginLoadResult{Snapshot: buildSummarySnapshotFromScopeOrigin(request.scope, request.params, origin)}, nil
+			}
+			if isHardSnapshotOriginError(loadErr) {
+				return SummaryOriginLoadResult{}, loadErr
+			}
+			return SummaryOriginLoadResult{SnapshotErr: loadErr}, nil
+		}
+		var provider relay.Provider
+		if len(overviewSubjects) <= s.fullScopeCap {
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
+			if resolveErr != nil {
+				return SummaryOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
+			}
+			provider = resolvedProvider
+		}
+		snapshot, loadErr := s.generateSummarySnapshot(loadCtx, request.scope, provider, request.params)
+		if loadErr == nil {
+			return SummaryOriginLoadResult{Snapshot: snapshot}, nil
+		}
+		if isHardSnapshotOriginError(loadErr) {
+			return SummaryOriginLoadResult{}, loadErr
+		}
+		return SummaryOriginLoadResult{SnapshotErr: loadErr}, nil
+	}
+
+	if s.snapshotCache == nil {
+		loaded, loadErr := loader(ctx)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if loaded.SnapshotErr != nil {
+			return nil, loaded.SnapshotErr
+		}
+		now := time.Now().UTC()
+		return &SummaryCacheResult{
+			Snapshot: loaded.Snapshot,
+			Freshness: SnapshotFreshness{
+				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
+			},
+		}, nil
+	}
+
+	result, err := s.snapshotCache.GetSummaryOrLoad(ctx, request.snapshotCacheKey(), loader)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *Service) readMembersSnapshot(ctx context.Context, actorUserID int, params OverviewParams) (*MembersCacheResult, string, error) {
+	request, err := s.newSplitReadRequest(ctx, actorUserID, params)
+	if err != nil {
+		return nil, "", err
+	}
+	result, err := s.readMembersSnapshotForRequest(ctx, request)
+	if errors.Is(err, errPrewarmAuthorizationChanged) {
+		request, err = s.newSplitReadRequest(ctx, actorUserID, params)
+		if err != nil {
+			return nil, "", err
+		}
+		request.bypassPrewarm = true
+		result, err = s.readMembersSnapshotForRequest(ctx, request)
+	}
+	return result, request.scope.Version, err
+}
+
+func (s *Service) readMembersSnapshotForRequest(ctx context.Context, request *splitReadRequest) (*MembersCacheResult, error) {
+	loader := func(loadCtx context.Context) (MembersOriginLoadResult, error) {
+		overviewSubjects := request.scope.OverviewSubjects
+		if len(overviewSubjects) == 0 {
+			overviewSubjects = request.scope.Subjects
+		}
+		origin, handled, loadErr := s.loadPrewarmFirstScopeOrigin(loadCtx, request)
+		if handled {
+			if loadErr == nil {
+				return MembersOriginLoadResult{Snapshot: buildMembersSnapshotFromScopeOrigin(request.params, origin)}, nil
+			}
+			if isHardSnapshotOriginError(loadErr) {
+				return MembersOriginLoadResult{}, loadErr
+			}
+			return MembersOriginLoadResult{SnapshotErr: loadErr}, nil
+		}
+		var provider relay.Provider
+		if len(overviewSubjects) <= s.fullScopeCap {
+			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
+			if resolveErr != nil {
+				return MembersOriginLoadResult{}, fmt.Errorf("resolve primary relay provider origin: %w", resolveErr)
+			}
+			provider = resolvedProvider
+		}
+		snapshot, loadErr := s.generateMembersSnapshot(loadCtx, request.scope, provider, request.params)
+		if loadErr == nil {
+			return MembersOriginLoadResult{Snapshot: snapshot}, nil
+		}
+		if isHardSnapshotOriginError(loadErr) {
+			return MembersOriginLoadResult{}, loadErr
+		}
+		return MembersOriginLoadResult{SnapshotErr: loadErr}, nil
+	}
+
+	if s.snapshotCache == nil {
+		loaded, loadErr := loader(ctx)
+		if loadErr != nil {
+			return nil, fmt.Errorf("load team members snapshot origin: %w", loadErr)
+		}
+		if loaded.SnapshotErr != nil {
+			return nil, fmt.Errorf("load team members snapshot origin: %w", loaded.SnapshotErr)
+		}
+		now := time.Now().UTC()
+		return &MembersCacheResult{
+			Snapshot: loaded.Snapshot,
+			Freshness: SnapshotFreshness{
+				AsOf: now, FreshUntil: now, StaleUntil: now, CacheStatus: "miss", SourceStatus: "ok",
+			},
+		}, nil
+	}
+
+	result, err := s.snapshotCache.GetMembersOrLoad(ctx, request.snapshotCacheKey(), loader)
+	if err != nil {
+		return nil, fmt.Errorf("read team members snapshot: %w", err)
+	}
+	return result, nil
+}
+
+func (s *Service) generateMembersSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*MembersSnapshot, error) {
 	overviewSubjects := scope.OverviewSubjects
 	if len(overviewSubjects) == 0 {
 		overviewSubjects = scope.Subjects
 	}
 	if len(overviewSubjects) > s.fullScopeCap {
-		response := BuildOverviewUnavailableForLargeScope(overviewSubjects, s.fullScopeCap)
-		response.Window = buildOverviewWindow(params)
-		return &response, nil
+		return &MembersSnapshot{Window: buildOverviewWindow(params), Members: []OverviewMember{}}, nil
+	}
+	summaryProvider, ok := provider.(relay.TeamUsageSummaryProvider)
+	if !ok {
+		return nil, fmt.Errorf("team members summary capability: %w", ErrProviderUnsupported)
+	}
+	subjects, relayUserIDs, err := s.resolveOverviewSubjects(ctx, scope, provider)
+	if err != nil {
+		return nil, fmt.Errorf("resolve team members Relay subjects: %w", err)
+	}
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relayUserIDs, relay.TeamUsageSummaryParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+		RequireCompleteRange: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load team members usage stats: %w", err)
+	}
+	windowTotals := make(map[int64]overviewWindowTotal, len(statsByRelayUserID))
+	for relayUserID, stat := range statsByRelayUserID {
+		total := overviewWindowTotal{TotalTokens: stat.RangeTotalTokens}
+		if stat.RangeActualCost != nil {
+			total.ActualCost = *stat.RangeActualCost
+		}
+		windowTotals[relayUserID] = total
+	}
+	members := BuildOverviewMemberDetails(subjects, statsByRelayUserID, windowTotals)
+	return &MembersSnapshot{
+		Window:  buildOverviewWindow(params),
+		Members: rankMembersForPagination(members),
+	}, nil
+}
+
+func (s *Service) generateSummarySnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*SummarySnapshot, error) {
+	overviewSubjects := scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = scope.Subjects
+	}
+	if len(overviewSubjects) > s.fullScopeCap {
+		reason := "scope_too_large"
+		return &SummarySnapshot{
+			Window: buildOverviewWindow(params),
+			Summary: SummaryAggregate{
+				Unavailable: true, UnavailableReason: &reason,
+				MemberCount: len(overviewSubjects), UnitLabel: teamOverviewCostUnitLabel,
+			},
+		}, nil
+	}
+	summaryProvider, ok := provider.(relay.TeamUsageSummaryProvider)
+	if !ok {
+		return nil, ErrProviderUnsupported
+	}
+	_, relayUserIDs, err := s.resolveOverviewSubjects(ctx, scope, provider)
+	if err != nil {
+		return nil, err
+	}
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relayUserIDs, relay.TeamUsageSummaryParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+		RequireCompleteRange: true,
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	_, provider, err := s.resolvePrimaryProvider(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve primary relay provider: %w", err)
+	rangeCostValue := 0.0
+	rangeTokensValue := int64(0)
+	rangeComplete := true
+	for _, relayUserID := range uniqueInt64s(relayUserIDs) {
+		stat, found := statsByRelayUserID[relayUserID]
+		if !found || stat.RangeActualCost == nil || stat.RangeTotalTokens == nil {
+			rangeComplete = false
+			break
+		}
+		rangeCostValue += *stat.RangeActualCost
+		rangeTokensValue += *stat.RangeTotalTokens
 	}
+	var rangeCost *float64
+	var rangeTokens *int64
+	var unavailableReason *string
+	if rangeComplete {
+		rangeCost = &rangeCostValue
+		rangeTokens = &rangeTokensValue
+	} else {
+		reason := "range_aggregation_unavailable"
+		unavailableReason = &reason
+	}
+	todayCost, totalCost := sumOverviewComparisonCosts(statsByRelayUserID)
+	return &SummarySnapshot{
+		Window: buildOverviewWindow(params),
+		Summary: SummaryAggregate{
+			Unavailable:       !rangeComplete,
+			UnavailableReason: unavailableReason,
+			MemberCount:       len(overviewSubjects),
+			RelayMemberCount:  len(relayUserIDs),
+			RangeActualCost:   rangeCost,
+			RangeTotalTokens:  rangeTokens,
+			TodayActualCost:   todayCost,
+			TotalActualCost:   totalCost,
+			UnitLabel:         teamOverviewCostUnitLabel,
+		},
+	}, nil
+}
+
+type teamTrendOriginData struct {
+	subjects           []representativescope.Subject
+	relayUserIDs       []int64
+	statsByRelayUserID map[int64]relay.TeamUserUsageStats
+	pointsByUser       map[int64][]relay.UsageTrendPoint
+	unavailableReason  *string
+	sourceErr          error
+}
+
+func (s *Service) generateTrendSnapshot(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*TrendSnapshot, error) {
+	overviewSubjects := scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = scope.Subjects
+	}
+	if len(overviewSubjects) > s.fullScopeCap {
+		return trendUnavailableForLargeScope(params), nil
+	}
+	data, err := s.loadTeamTrendOrigin(ctx, scope, provider, params)
+	if err != nil {
+		if isHardTrendSnapshotOriginError(ctx, err) {
+			return nil, err
+		}
+		return trendUnavailableSnapshot(params, "provider_error"), err
+	}
+	return buildTrendSnapshot(scope, params, data), data.sourceErr
+}
+
+func (s *Service) loadTeamTrendOrigin(ctx context.Context, scope *representativescope.Scope, provider relay.Provider, params OverviewParams) (*teamTrendOriginData, error) {
 	summaryProvider, ok := provider.(relay.TeamUsageSummaryProvider)
 	if !ok {
 		return nil, ErrProviderUnsupported
@@ -170,37 +696,53 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 	if !ok {
 		return nil, ErrProviderUnsupported
 	}
-	overviewRelayResolver, err := s.newOverviewRelayUserResolver(ctx, provider)
+	subjects, relayUserIDs, err := s.resolveOverviewSubjects(ctx, scope, provider)
+	if err != nil {
+		return nil, err
+	}
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, nil, relay.TeamUsageSummaryParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	subjects := make([]representativescope.Subject, 0, len(overviewSubjects))
-	relayUserIDs := make([]int64, 0, len(overviewSubjects))
-	for _, subject := range overviewSubjects {
-		relayUserID, resolvedSubject, err := overviewRelayResolver.Resolve(ctx, subject)
-		if err != nil {
-			if errors.Is(err, ErrNoRelayMapping) {
-				subjects = append(subjects, subject)
-				continue
-			}
-			return nil, err
-		}
-		subjects = append(subjects, resolvedSubject)
-		relayUserIDs = append(relayUserIDs, relayUserID)
+	data := &teamTrendOriginData{
+		subjects: subjects, relayUserIDs: relayUserIDs, statsByRelayUserID: statsByRelayUserID,
+		pointsByUser: map[int64][]relay.UsageTrendPoint{},
 	}
-
-	statsByRelayUserID := make(map[int64]relay.TeamUserUsageStats, len(relayUserIDs))
-	for _, chunk := range chunkInt64s(relayUserIDs, 100) {
-		stats, err := summaryProvider.GetBatchUserUsageStats(ctx, chunk, relay.TeamUsageSummaryParams{Timezone: strings.TrimSpace(params.Timezone)})
-		if err != nil {
-			return nil, fmt.Errorf("get batch team usage stats: %w", err)
-		}
-		for relayUserID, stat := range stats {
-			statsByRelayUserID[relayUserID] = stat
-		}
+	if len(relayUserIDs) == 0 {
+		return data, nil
 	}
+	trendCtx := ctx
+	var cancel context.CancelFunc
+	if s.teamOverviewTrendTimeout > 0 {
+		trendCtx, cancel = context.WithTimeout(ctx, s.teamOverviewTrendTimeout)
+	}
+	if cancel != nil {
+		defer cancel()
+	}
+	data.pointsByUser, err = trendProvider.GetUsageTrendForUsers(trendCtx, relayUserIDs, relay.TeamMemberTrendParams{
+		StartDate:   strings.TrimSpace(params.StartDate),
+		EndDate:     strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity),
+		Timezone:    strings.TrimSpace(params.Timezone),
+	})
+	if err == nil {
+		return data, nil
+	}
+	if isHardOverviewTrendError(err) {
+		return nil, fmt.Errorf("get usage trend for top members: %w", err)
+	}
+	reason := "provider_error"
+	data.unavailableReason = &reason
+	data.sourceErr = err
+	data.pointsByUser = map[int64][]relay.UsageTrendPoint{}
+	return data, nil
+}
 
+func buildTrendSnapshot(scope *representativescope.Scope, params OverviewParams, data *teamTrendOriginData) *TrendSnapshot {
 	trendState := TopMemberTrendState{
 		UnitLabel: teamOverviewCostUnitLabel,
 		RankBasis: topMemberRankBasisTokens,
@@ -210,50 +752,22 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		UnitLabel: teamOverviewCostUnitLabel,
 		Series:    []DepartmentTrendSeries{},
 	}
-	pointsByUser := map[int64][]relay.UsageTrendPoint{}
-	var trendUnavailableReason *string
-	if len(relayUserIDs) > 0 {
-		trendCtx := ctx
-		var cancel context.CancelFunc
-		if s.teamOverviewTrendTimeout > 0 {
-			trendCtx, cancel = context.WithTimeout(ctx, s.teamOverviewTrendTimeout)
-		}
-		if cancel != nil {
-			defer cancel()
-		}
-
-		var err error
-		pointsByUser, err = trendProvider.GetUsageTrendForUsers(trendCtx, relayUserIDs, relay.TeamMemberTrendParams{
-			StartDate:   strings.TrimSpace(params.StartDate),
-			EndDate:     strings.TrimSpace(params.EndDate),
-			Granularity: strings.TrimSpace(params.Granularity),
-			Timezone:    strings.TrimSpace(params.Timezone),
-		})
-		if err != nil {
-			if isHardOverviewTrendError(err) {
-				return nil, fmt.Errorf("get usage trend for top members: %w", err)
-			}
-			reason := "provider_error"
-			trendState.Unavailable = true
-			trendState.UnavailableReason = &reason
-			trendUnavailableReason = &reason
-		}
-	}
-
-	windowTotals := buildOverviewWindowTotals(pointsByUser)
-	members := BuildOverviewMemberDetails(subjects, statsByRelayUserID, windowTotals)
-	memberTree := BuildOverviewMemberTree(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, members)
-	if trendUnavailableReason == nil {
-		departmentTrendState = BuildOverviewDepartmentTrend(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, subjects, pointsByUser)
-	} else {
-		departmentTrendState.Unavailable = true
-		departmentTrendState.UnavailableReason = trendUnavailableReason
-	}
+	windowTotals := buildOverviewWindowTotals(data.pointsByUser)
 	topMembers := []OverviewMember{}
-	if trendUnavailableReason == nil {
-		topMembers = RankTopMembers(subjects, statsByRelayUserID, windowTotals, 12)
+	if data.unavailableReason == nil {
+		topMembers = RankTopMembers(data.subjects, data.statsByRelayUserID, windowTotals, 12)
+		departmentTrendState = BuildOverviewDepartmentTrend(
+			scope.MemberTreeDepartments,
+			scope.MemberTreeRootIDs,
+			data.subjects,
+			data.pointsByUser,
+		)
+	} else {
+		trendState.Unavailable = true
+		trendState.UnavailableReason = data.unavailableReason
+		departmentTrendState.Unavailable = true
+		departmentTrendState.UnavailableReason = data.unavailableReason
 	}
-
 	for _, member := range topMembers {
 		series := TopMemberTrendSeries{
 			UserID:                    member.UserID,
@@ -266,47 +780,159 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 			reason := "provider_error"
 			series.Unavailable = true
 			series.UnavailableReason = &reason
-			trendState.Series = append(trendState.Series, series)
-			continue
+		} else {
+			series.Points = append(series.Points, data.pointsByUser[int64(*member.RelayUserID)]...)
 		}
-		if trendState.Unavailable {
-			reason := "provider_error"
-			series.Unavailable = true
-			series.UnavailableReason = &reason
-			trendState.Series = append(trendState.Series, series)
-			continue
-		}
-		series.Points = append(series.Points, pointsByUser[int64(*member.RelayUserID)]...)
 		trendState.Series = append(trendState.Series, series)
 	}
-
-	var rangeCost *float64
-	var rangeTokens *int64
-	if trendUnavailableReason == nil {
-		rangeCost = sumOverviewWindowCosts(windowTotals)
-		rangeTokens = sumOverviewWindowTokens(windowTotals)
-	}
-	return &OverviewResponse{
-		Configured:       true,
-		IsRepresentative: true,
-		Window:           buildOverviewWindow(params),
-		Summary: OverviewSummary{
-			Unavailable:       trendUnavailableReason != nil,
-			UnavailableReason: trendUnavailableReason,
-			MemberCount:       len(overviewSubjects),
-			RelayMemberCount:  len(relayUserIDs),
-			RangeActualCost:   rangeCost,
-			RangeTotalTokens:  rangeTokens,
-			TodayActualCost:   nil,
-			TotalActualCost:   nil,
-			UnitLabel:         teamOverviewCostUnitLabel,
-		},
+	return &TrendSnapshot{
+		Window:          buildOverviewWindow(params),
 		TopMembers:      topMembers,
 		TopMemberTrend:  trendState,
 		DepartmentTrend: departmentTrendState,
-		Members:         members,
-		MemberTree:      memberTree,
-	}, nil
+	}
+}
+
+func trendUnavailableForLargeScope(params OverviewParams) *TrendSnapshot {
+	return trendUnavailableSnapshot(params, "scope_too_large")
+}
+
+func trendUnavailableSnapshot(params OverviewParams, unavailableReason string) *TrendSnapshot {
+	reason := unavailableReason
+	return &TrendSnapshot{
+		Window:     buildOverviewWindow(params),
+		TopMembers: []OverviewMember{},
+		TopMemberTrend: TopMemberTrendState{
+			UnitLabel: teamOverviewCostUnitLabel, RankBasis: topMemberRankBasisTokens,
+			Unavailable: true, UnavailableReason: &reason, Series: []TopMemberTrendSeries{},
+		},
+		DepartmentTrend: DepartmentTrendState{
+			UnitLabel:   teamOverviewCostUnitLabel,
+			Unavailable: true, UnavailableReason: &reason, Series: []DepartmentTrendSeries{},
+		},
+	}
+}
+
+func (s *Service) resolveOverviewSubjects(ctx context.Context, scope *representativescope.Scope, provider relay.Provider) ([]representativescope.Subject, []int64, error) {
+	overviewSubjects := scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = scope.Subjects
+	}
+	return s.resolveSubjects(ctx, overviewSubjects, provider)
+}
+
+func (s *Service) resolveSubjects(ctx context.Context, source []representativescope.Subject, provider relay.Provider) ([]representativescope.Subject, []int64, error) {
+	overviewRelayResolver, err := s.newOverviewRelayUserResolver(ctx, provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	return s.resolveSubjectsWithResolver(ctx, source, overviewRelayResolver)
+}
+
+func (s *Service) resolveSubjectsWithResolver(ctx context.Context, source []representativescope.Subject, resolver *overviewRelayUserResolver) ([]representativescope.Subject, []int64, error) {
+	subjects := make([]representativescope.Subject, 0, len(source))
+	relayUserIDs := make([]int64, 0, len(source))
+	for _, subject := range source {
+		relayUserID, resolvedSubject, err := resolver.Resolve(ctx, subject)
+		if err != nil {
+			if errors.Is(err, ErrNoRelayMapping) {
+				subjects = append(subjects, subject)
+				continue
+			}
+			return nil, nil, err
+		}
+		subjects = append(subjects, resolvedSubject)
+		relayUserIDs = append(relayUserIDs, relayUserID)
+	}
+	return subjects, relayUserIDs, nil
+}
+
+func (s *Service) loadTeamUsageStats(
+	ctx context.Context,
+	provider relay.TeamUsageSummaryProvider,
+	relayUserIDs []int64,
+	completeRangeUserIDs []int64,
+	params relay.TeamUsageSummaryParams,
+) (map[int64]relay.TeamUserUsageStats, error) {
+	uniqueRelayUserIDs := uniqueInt64s(relayUserIDs)
+	statsByRelayUserID := make(map[int64]relay.TeamUserUsageStats, len(uniqueRelayUserIDs))
+	statsParams := params
+	statsParams.RequireCompleteRange = false
+	for _, chunk := range chunkInt64s(uniqueRelayUserIDs, 100) {
+		stats, err := provider.GetBatchUserUsageStats(ctx, chunk, statsParams)
+		if err != nil {
+			return nil, fmt.Errorf("get batch team usage stats: %w", err)
+		}
+		requested := make(map[int64]struct{}, len(chunk))
+		for _, relayUserID := range chunk {
+			requested[relayUserID] = struct{}{}
+		}
+		for relayUserID, stat := range stats {
+			if _, ok := requested[relayUserID]; ok {
+				statsByRelayUserID[relayUserID] = stat
+			}
+		}
+	}
+	if !params.RequireCompleteRange {
+		return statsByRelayUserID, nil
+	}
+
+	incompleteUserIDs := make([]int64, 0)
+	for _, relayUserID := range uniqueRelayUserIDs {
+		stat, found := statsByRelayUserID[relayUserID]
+		if found && (stat.RangeActualCost == nil || stat.RangeTotalTokens == nil) {
+			incompleteUserIDs = append(incompleteUserIDs, relayUserID)
+		}
+	}
+	if len(incompleteUserIDs) == 0 {
+		return statsByRelayUserID, nil
+	}
+	trendProvider, ok := provider.(relay.TeamMemberTrendProvider)
+	if !ok {
+		return statsByRelayUserID, nil
+	}
+	fullScopeUserIDs := uniqueInt64s(completeRangeUserIDs)
+	if len(fullScopeUserIDs) == 0 {
+		return statsByRelayUserID, nil
+	}
+	pointsByUser, err := trendProvider.GetUsageTrendForUsers(ctx, fullScopeUserIDs, relay.TeamMemberTrendParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+	})
+	if err != nil {
+		return statsByRelayUserID, nil
+	}
+	for _, relayUserID := range incompleteUserIDs {
+		points, found := pointsByUser[relayUserID]
+		if !found {
+			continue
+		}
+		actualCost, totalTokens, tokensComplete := summarizeTeamUsageRange(points)
+		stat := statsByRelayUserID[relayUserID]
+		if stat.RangeActualCost == nil {
+			stat.RangeActualCost = &actualCost
+		}
+		if stat.RangeTotalTokens == nil && tokensComplete {
+			stat.RangeTotalTokens = &totalTokens
+		}
+		statsByRelayUserID[relayUserID] = stat
+	}
+	return statsByRelayUserID, nil
+}
+
+func summarizeTeamUsageRange(points []relay.UsageTrendPoint) (float64, int64, bool) {
+	var actualCost float64
+	var totalTokens int64
+	tokensComplete := true
+	for _, point := range points {
+		actualCost += point.ActualCost
+		if point.TotalTokens == nil {
+			tokensComplete = false
+			continue
+		}
+		totalTokens += *point.TotalTokens
+	}
+	return actualCost, totalTokens, tokensComplete
 }
 
 type overviewRelayUserResolver struct {
@@ -640,40 +1266,73 @@ func (s *Service) buildSubjectSubscriptionRows(ctx context.Context, provider rel
 	if err != nil {
 		return nil, relay.UserUsageGroupQuotaState{}, fmt.Errorf("list subject subscriptions: %w", err)
 	}
-	manager, managerOK := provider.(relay.GroupRateMultiplierManager)
-
-	rows := make([]SubscriptionRow, 0, len(subscriptions))
+	activeSubscriptions := make([]relay.UserSubscription, 0, len(subscriptions))
+	groupIDs := make([]int64, 0, len(subscriptions))
+	seenGroupIDs := make(map[int64]struct{}, len(subscriptions))
 	for _, subscription := range subscriptions {
 		if !strings.EqualFold(strings.TrimSpace(subscription.Status), "active") || subscription.Group == nil {
 			continue
 		}
+		activeSubscriptions = append(activeSubscriptions, subscription)
+		if _, seen := seenGroupIDs[subscription.GroupID]; seen {
+			continue
+		}
+		seenGroupIDs[subscription.GroupID] = struct{}{}
+		groupIDs = append(groupIDs, subscription.GroupID)
+	}
+
+	metadataByGroup := make(map[int64]relay.GroupRateMultiplierReadResult, len(groupIDs))
+	duplicateMetadataGroupIDs := make(map[int64]struct{})
+	batchReader, batchReaderOK := provider.(relay.GroupRateMultiplierBatchReader)
+	if batchReaderOK && len(groupIDs) > 0 {
+		for _, result := range batchReader.GroupRateMultipliersForGroups(ctx, groupIDs) {
+			if _, requested := seenGroupIDs[result.GroupID]; !requested {
+				continue
+			}
+			if _, duplicate := metadataByGroup[result.GroupID]; duplicate {
+				duplicateMetadataGroupIDs[result.GroupID] = struct{}{}
+				continue
+			}
+			metadataByGroup[result.GroupID] = result
+		}
+	}
+
+	rows := make([]SubscriptionRow, 0, len(activeSubscriptions))
+	for _, subscription := range activeSubscriptions {
 		var editableReason *string
 		editable := canManageTarget
-		switch {
-		case !canManageTarget:
+		if !canManageTarget {
 			reason := manageReason
 			if strings.TrimSpace(reason) == "" {
 				reason = ErrPolicyDenied.Error()
 			}
 			editableReason = &reason
-		case !managerOK:
-			editable = false
-			reason := ErrProviderUnsupported.Error()
-			editableReason = &reason
 		}
 
+		metadataStatus := MultiplierMetadataStatusUnavailable
+		var metadataMessage *string
 		var currentEntry *relay.UserGroupRateEntry
-		if managerOK {
-			entries, err := manager.ListGroupRateMultipliers(ctx, subscription.GroupID)
-			if err != nil {
+		_, duplicateMetadata := duplicateMetadataGroupIDs[subscription.GroupID]
+		if result, found := metadataByGroup[subscription.GroupID]; batchReaderOK && found && !duplicateMetadata && result.Err == nil {
+			metadataStatus = MultiplierMetadataStatusOK
+			currentEntry = findRateEntry(result.Entries, int64(relayUserID))
+		} else {
+			message := multiplierMetadataUnavailableMessage
+			metadataMessage = &message
+			if editable {
 				editable = false
-				reason := ErrProviderUnsupported.Error()
+				reason := ErrMultiplierMetadataUnavailable.Error()
 				editableReason = &reason
-			} else {
-				currentEntry = findRateEntry(entries, int64(relayUserID))
 			}
 		}
-		rows = append(rows, buildSubscriptionRowFromSubscription(subscription, currentEntry, editable, editableReason))
+		rows = append(rows, buildSubscriptionRowFromSubscriptionWithMultiplierMetadata(
+			subscription,
+			currentEntry,
+			editable,
+			editableReason,
+			metadataStatus,
+			metadataMessage,
+		))
 	}
 
 	sort.Slice(rows, func(i, j int) bool {
@@ -711,25 +1370,59 @@ func (s *Service) requireRepresentativeScope(ctx context.Context, actorUserID in
 }
 
 func (s *Service) resolvePrimaryProvider(ctx context.Context) (int, relay.Provider, error) {
-	if s.client == nil {
-		return 0, nil, errors.New("teamusage ent client is not configured")
-	}
-	if s.providerResolver == nil {
-		return 0, nil, errors.New("teamusage provider resolver is not configured")
-	}
-	providers, err := s.client.RelayProvider.Query().
-		Where(relayprovider.IsPrimary(true)).
-		All(ctx)
+	binding, err := s.resolvePrimaryProviderBinding(ctx)
 	if err != nil {
 		return 0, nil, err
 	}
-	if len(providers) == 0 {
-		provider, err := s.providerResolver.Resolve(ctx, 1)
-		return 1, provider, err
+	return binding.ID, binding.Provider, nil
+}
+
+type primaryProviderBinding struct {
+	ID                   int
+	ConfigurationVersion int64
+	Provider             relay.Provider
+}
+
+type primaryProviderConfig struct {
+	ID                   int
+	ConfigurationVersion int64
+}
+
+func (s *Service) resolvePrimaryProviderBinding(ctx context.Context) (*primaryProviderBinding, error) {
+	config, err := s.resolvePrimaryProviderConfig(ctx)
+	if err != nil {
+		return nil, err
 	}
-	providerID := providers[0].ID
-	provider, err := s.providerResolver.Resolve(ctx, providerID)
-	return providerID, provider, err
+	provider, err := s.providerResolver.Resolve(ctx, config.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &primaryProviderBinding{
+		ID: config.ID, ConfigurationVersion: config.ConfigurationVersion, Provider: provider,
+	}, nil
+}
+
+func (s *Service) resolvePrimaryProviderConfig(ctx context.Context) (*primaryProviderConfig, error) {
+	if s.client == nil {
+		return nil, errors.New("teamusage ent client is not configured")
+	}
+	if s.providerResolver == nil {
+		return nil, errors.New("teamusage provider resolver is not configured")
+	}
+	providers, err := s.client.RelayProvider.Query().
+		Where(relayprovider.IsPrimary(true), relayprovider.Enabled(true)).
+		Order(ent.Asc(relayprovider.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(providers) == 0 {
+		return &primaryProviderConfig{ID: 1, ConfigurationVersion: 1}, nil
+	}
+	providerRow := providers[0]
+	return &primaryProviderConfig{
+		ID: providerRow.ID, ConfigurationVersion: providerRow.ConfigurationVersion,
+	}, nil
 }
 
 func (s *Service) resolveSubjectRelayUserID(ctx context.Context, provider relay.Provider, subject representativescope.Subject) (int64, representativescope.Subject, error) {
@@ -943,24 +1636,37 @@ func (s *Service) markAuditOutcome(ctx context.Context, auditID int, status team
 }
 
 func buildSubscriptionRowFromSubscription(subscription relay.UserSubscription, entry *relay.UserGroupRateEntry, editable bool, editableReason *string) SubscriptionRow {
+	return buildSubscriptionRowFromSubscriptionWithMultiplierMetadata(
+		subscription,
+		entry,
+		editable,
+		editableReason,
+		MultiplierMetadataStatusOK,
+		nil,
+	)
+}
+
+func buildSubscriptionRowFromSubscriptionWithMultiplierMetadata(subscription relay.UserSubscription, entry *relay.UserGroupRateEntry, editable bool, editableReason *string, metadataStatus string, metadataMessage *string) SubscriptionRow {
 	var userMultiplier *float64
 	if entry != nil {
 		userMultiplier = entry.RateMultiplier
 	}
 	input := SubscriptionInput{
-		GroupID:                 strconv.FormatInt(subscription.GroupID, 10),
-		GroupName:               "",
-		Platform:                "",
-		SubscriptionStatus:      strings.TrimSpace(subscription.Status),
-		GroupDefaultMultiplier:  nil,
-		SystemDefaultMultiplier: systemDefaultMultiplier,
-		UserMultiplier:          userMultiplier,
-		DailyUsageUSD:           subscription.DailyUsageUSD,
-		WeeklyUsageUSD:          subscription.WeeklyUsageUSD,
-		MonthlyUsageUSD:         subscription.MonthlyUsageUSD,
-		UsageValueBasis:         "raw_actual_cost",
-		Editable:                editable,
-		EditableReason:          editableReason,
+		GroupID:                   strconv.FormatInt(subscription.GroupID, 10),
+		GroupName:                 "",
+		Platform:                  "",
+		SubscriptionStatus:        strings.TrimSpace(subscription.Status),
+		GroupDefaultMultiplier:    nil,
+		SystemDefaultMultiplier:   systemDefaultMultiplier,
+		UserMultiplier:            userMultiplier,
+		DailyUsageUSD:             subscription.DailyUsageUSD,
+		WeeklyUsageUSD:            subscription.WeeklyUsageUSD,
+		MonthlyUsageUSD:           subscription.MonthlyUsageUSD,
+		UsageValueBasis:           "raw_actual_cost",
+		Editable:                  editable,
+		EditableReason:            editableReason,
+		MultiplierMetadataStatus:  metadataStatus,
+		MultiplierMetadataMessage: metadataMessage,
 	}
 	if subscription.Group != nil {
 		input.GroupName = strings.TrimSpace(subscription.Group.Name)
@@ -1042,6 +1748,36 @@ func quotaWindowFromDashboardParams(params relay.UserUsageDashboardParams) strin
 	return "monthly"
 }
 
+func normalizeOverviewParams(params OverviewParams) (OverviewParams, error) {
+	normalized := OverviewParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.ToLower(strings.TrimSpace(params.Granularity)), Timezone: strings.TrimSpace(params.Timezone),
+		Page: params.Page, PageSize: params.PageSize,
+	}
+	if normalized.Timezone == "" {
+		normalized.Timezone = "UTC"
+	}
+	if normalized.Granularity != "day" && normalized.Granularity != "hour" {
+		return OverviewParams{}, fmt.Errorf("%w: granularity must be day or hour", ErrInvalidOverviewParams)
+	}
+	location, err := time.LoadLocation(normalized.Timezone)
+	if err != nil {
+		return OverviewParams{}, fmt.Errorf("%w: invalid timezone", ErrInvalidOverviewParams)
+	}
+	start, err := time.ParseInLocation("2006-01-02", normalized.StartDate, location)
+	if err != nil {
+		return OverviewParams{}, fmt.Errorf("%w: invalid start date", ErrInvalidOverviewParams)
+	}
+	end, err := time.ParseInLocation("2006-01-02", normalized.EndDate, location)
+	if err != nil {
+		return OverviewParams{}, fmt.Errorf("%w: invalid end date", ErrInvalidOverviewParams)
+	}
+	if end.Before(start) {
+		return OverviewParams{}, fmt.Errorf("%w: end date precedes start date", ErrInvalidOverviewParams)
+	}
+	return normalized, nil
+}
+
 func buildOverviewWindow(params OverviewParams) OverviewWindow {
 	location := time.UTC
 	if timezone := strings.TrimSpace(params.Timezone); timezone != "" {
@@ -1115,6 +1851,16 @@ func sumOverviewWindowTokens(totals map[int64]overviewWindowTotal) *int64 {
 		return nil
 	}
 	return &total
+}
+
+func sumOverviewComparisonCosts(stats map[int64]relay.TeamUserUsageStats) (*float64, *float64) {
+	today := 0.0
+	total := 0.0
+	for _, item := range stats {
+		today += item.TodayActualCost
+		total += item.TotalActualCost
+	}
+	return &today, &total
 }
 
 func filterSubjects(subjects []representativescope.Subject, q string) []representativescope.Subject {
@@ -1324,6 +2070,26 @@ func isHardOverviewTrendError(err error) bool {
 	return false
 }
 
+func isHardTrendSnapshotOriginError(ctx context.Context, err error) bool {
+	if ctx.Err() != nil {
+		return true
+	}
+	return errors.Is(err, relay.ErrInvalidCredentials) ||
+		errors.Is(err, errPrewarmAuthorizationChanged) ||
+		errors.Is(err, ErrProviderUnsupported) ||
+		errors.Is(err, ErrInvalidOverviewParams) ||
+		isHardOverviewTrendError(err)
+}
+
+func isHardSnapshotOriginError(err error) bool {
+	return errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, errPrewarmAuthorizationChanged) ||
+		errors.Is(err, relay.ErrInvalidCredentials) ||
+		errors.Is(err, ErrProviderUnsupported) ||
+		errors.Is(err, ErrInvalidOverviewParams)
+}
+
 func cloneMap(values map[string]any) map[string]any {
 	if len(values) == 0 {
 		return nil
@@ -1403,6 +2169,19 @@ func chunkInt64s(values []int64, chunkSize int) [][]int64 {
 		out = append(out, values[start:end])
 	}
 	return out
+}
+
+func uniqueInt64s(values []int64) []int64 {
+	unique := make([]int64, 0, len(values))
+	seen := make(map[int64]struct{}, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		unique = append(unique, value)
+	}
+	return unique
 }
 
 func normalizePage(page, pageSize int) (int, int) {

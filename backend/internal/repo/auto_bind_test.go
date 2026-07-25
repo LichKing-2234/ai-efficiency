@@ -132,6 +132,58 @@ func TestFindAutoBindProviderMatchesBitbucketSameHost(t *testing.T) {
 	}
 }
 
+func TestInventoryMutationVersionsAutoBindProviderAssignment(t *testing.T) {
+	client := testdb.Open(t)
+	ctx := context.Background()
+	revisions := NewInventoryRevisionStore(client)
+	if err := revisions.Ensure(ctx); err != nil {
+		t.Fatalf("ensure inventory revision: %v", err)
+	}
+	svc := NewService(client, "test-key", zap.NewNop(), ServiceOptions{InventoryRevisionStore: revisions})
+	svc.autoBindPostBind = func(context.Context, int, int) (string, error) {
+		return AutoBindWebhookRegistered, nil
+	}
+	provider := createAutoBindProvider(t, client, "GitHub", scmprovider.TypeGithub, "https://api.github.com", scmprovider.StatusActive)
+	repo := createAutoBindRepo(t, client, "github.com/acme/inventory", "acme/inventory", "https://github.com/acme/inventory.git", repoconfig.StatusActive)
+	before := currentInventoryRevision(t, revisions)
+
+	result, err := svc.AutoBindRepo(ctx, repo.ID)
+	if err != nil {
+		t.Fatalf("AutoBindRepo: %v", err)
+	}
+	if result.Result != AutoBindMatched || result.SCMProviderID != provider.ID {
+		t.Fatalf("AutoBindRepo result = %#v", result)
+	}
+	requireInventoryRevisionChanged(t, revisions, before)
+}
+
+func TestInventoryMutationVersionsAutoBindPostBindMetadata(t *testing.T) {
+	server := newBitbucketRepairServer(t)
+	client := testdb.Open(t)
+	ctx := context.Background()
+	revisions := NewInventoryRevisionStore(client)
+	if err := revisions.Ensure(ctx); err != nil {
+		t.Fatalf("ensure inventory revision: %v", err)
+	}
+	svc := NewService(client, webhookRepairTestKey, zap.NewNop(), ServiceOptions{
+		WebhookPublicURL:       "https://ai-efficiency.example.com",
+		ServerMode:             "release",
+		InventoryRevisionStore: revisions,
+	})
+	provider := createRepairProvider(t, client, server.server.URL)
+	repo := createRepairRepo(t, client, provider, repoconfig.StatusWebhookFailed)
+	before := currentInventoryRevision(t, revisions)
+
+	status, err := svc.defaultAutoBindPostBind(ctx, repo.ID, provider.ID)
+	if err != nil {
+		t.Fatalf("defaultAutoBindPostBind: %v", err)
+	}
+	if status != AutoBindWebhookRegistered {
+		t.Fatalf("post-bind status = %q, want %q", status, AutoBindWebhookRegistered)
+	}
+	requireInventoryRevisionChanged(t, revisions, before)
+}
+
 func TestFindAutoBindProviderMatchesBitbucketSSHHost(t *testing.T) {
 	client, svc := newAutoBindTestService(t)
 	ctx := context.Background()

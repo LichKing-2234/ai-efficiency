@@ -158,6 +158,7 @@ var (
 		{Name: "source_id", Type: field.TypeInt},
 		{Name: "external_id", Type: field.TypeString},
 		{Name: "parent_external_id", Type: field.TypeString, Nullable: true},
+		{Name: "effective_parent_external_id", Type: field.TypeString, Nullable: true},
 		{Name: "name", Type: field.TypeString},
 		{Name: "path", Type: field.TypeString, Default: ""},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
@@ -182,9 +183,14 @@ var (
 				Columns: []*schema.Column{DirectoryDepartmentsColumns[1], DirectoryDepartmentsColumns[3]},
 			},
 			{
-				Name:    "directorydepartment_source_id_name",
+				Name:    "directorydepartment_source_id_effective_parent_external_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectoryDepartmentsColumns[1], DirectoryDepartmentsColumns[4]},
+			},
+			{
+				Name:    "directorydepartment_source_id_name",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryDepartmentsColumns[1], DirectoryDepartmentsColumns[5]},
 			},
 		},
 	}
@@ -215,14 +221,33 @@ var (
 				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[3]},
 			},
 			{
+				Name:    "directorymember_source_id_external_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[2]},
+			},
+			{
 				Name:    "directorymember_source_id_department_external_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[5]},
 			},
 			{
+				Name:    "directorymember_source_id_matched_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMembersColumns[1], DirectoryMembersColumns[8]},
+			},
+			{
 				Name:    "directorymember_matched_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectoryMembersColumns[8]},
+			},
+			{
+				Name:    "directorymember_metadata",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMembersColumns[7]},
+				Annotation: &entsql.IndexAnnotation{
+					OpClass: "jsonb_path_ops",
+					Type:    "GIN",
+				},
 			},
 			{
 				Name:    "directorymember_last_seen_run_id",
@@ -258,6 +283,11 @@ var (
 				Name:    "directorymemberdepartment_source_id_department_external_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectoryMemberDepartmentsColumns[1], DirectoryMemberDepartmentsColumns[5]},
+			},
+			{
+				Name:    "directorymemberdepartment_source_id_directory_member_id_department_external_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectoryMemberDepartmentsColumns[1], DirectoryMemberDepartmentsColumns[2], DirectoryMemberDepartmentsColumns[5]},
 			},
 			{
 				Name:    "directorymemberdepartment_directory_member_id",
@@ -397,6 +427,31 @@ var (
 				Name:    "directorysyncrun_status_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{DirectorySyncRunsColumns[4], DirectorySyncRunsColumns[17]},
+			},
+			{
+				Name:    "directorysyncrun_source_id_started_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncRunsColumns[1], DirectorySyncRunsColumns[6], DirectorySyncRunsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						DirectorySyncRunsColumns[0].Name: true,
+
+						DirectorySyncRunsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "directory_sync_runs_active_started_id",
+				Unique:  false,
+				Columns: []*schema.Column{DirectorySyncRunsColumns[1], DirectorySyncRunsColumns[6], DirectorySyncRunsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						DirectorySyncRunsColumns[0].Name: true,
+
+						DirectorySyncRunsColumns[6].Name: true,
+					},
+					Where: "mode IN ('preview', 'apply') AND status IN ('queued', 'running')",
+				},
 			},
 		},
 	}
@@ -698,6 +753,24 @@ var (
 				Columns: []*schema.Column{QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4], QuotaResetRequestsColumns[11]},
 			},
 			{
+				Name:    "quotaresetrequest_resolved_approver_user_ids",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestsColumns[12]},
+				Annotation: &entsql.IndexAnnotation{
+					OpClass: "jsonb_path_ops",
+					Type:    "GIN",
+				},
+			},
+			{
+				Name:    "quotaresetrequest_workflow",
+				Unique:  false,
+				Columns: []*schema.Column{QuotaResetRequestsColumns[9]},
+				Annotation: &entsql.IndexAnnotation{
+					OpClass: "jsonb_path_ops",
+					Type:    "GIN",
+				},
+			},
+			{
 				Name:    "quotaresetrequest_requester_user_id_provider_id_group_id",
 				Unique:  true,
 				Columns: []*schema.Column{QuotaResetRequestsColumns[1], QuotaResetRequestsColumns[3], QuotaResetRequestsColumns[4]},
@@ -764,6 +837,7 @@ var (
 		{Name: "default_model", Type: field.TypeString, Default: "claude-sonnet-4-20250514"},
 		{Name: "is_primary", Type: field.TypeBool, Default: false},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "configuration_version", Type: field.TypeInt64, Default: 1},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
@@ -985,6 +1059,54 @@ var (
 				Name:    "toolusageevent_tool_tool_session_id",
 				Unique:  false,
 				Columns: []*schema.Column{ToolUsageEventsColumns[1], ToolUsageEventsColumns[3]},
+			},
+			{
+				Name:    "toolusageevent_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "toolusageevent_user_id_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[22], ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "toolusageevent_repo_config_id_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[21], ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
+			},
+			{
+				Name:    "toolusageevent_tool_observed_end_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{ToolUsageEventsColumns[1], ToolUsageEventsColumns[6], ToolUsageEventsColumns[0]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						ToolUsageEventsColumns[0].Name: true,
+
+						ToolUsageEventsColumns[6].Name: true,
+					},
+				},
 			},
 		},
 	}

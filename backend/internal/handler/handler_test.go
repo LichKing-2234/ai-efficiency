@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,11 +15,15 @@ import (
 	"github.com/ai-efficiency/backend/internal/auth"
 	"github.com/ai-efficiency/backend/internal/middleware"
 	"github.com/ai-efficiency/backend/internal/oauth"
+	"github.com/ai-efficiency/backend/internal/readcache"
+	"github.com/ai-efficiency/backend/internal/relayruntime"
 	"github.com/ai-efficiency/backend/internal/repo"
 	"github.com/ai-efficiency/backend/internal/testdb"
 	"github.com/ai-efficiency/backend/internal/webhook"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	redis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -56,7 +61,7 @@ func setupTestEnvWithOAuth(t *testing.T, oauthHandler *oauth.Handler) *testEnv {
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
 
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authSvc,
@@ -279,6 +284,15 @@ func TestUserRelayProviderTestAllowsRegularUserOwnAPIKey(t *testing.T) {
 
 	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{
+				"id": 42, "email": "alice@example.com", "username": "alice", "role": "user",
+				"subscriptions": []any{map[string]any{
+					"id": 201, "user_id": 42, "group_id": 5, "status": "active",
+					"group": map[string]any{"id": 5, "name": "Group Alpha", "platform": "openai"},
+				}},
+			}})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42/api-keys":
 			if r.Header.Get("X-API-Key") != "test-admin-key" {
 				t.Fatalf("list keys api key = %q, want admin key", r.Header.Get("X-API-Key"))
@@ -390,6 +404,15 @@ func TestUserRelayProviderTestUsesAnthropicMessagesEndpoint(t *testing.T) {
 
 	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{
+				"id": 42, "email": "alice@example.com", "username": "alice", "role": "user",
+				"subscriptions": []any{map[string]any{
+					"id": 201, "user_id": 42, "group_id": 5, "status": "active",
+					"group": map[string]any{"id": 5, "name": "Group Alpha", "platform": "anthropic"},
+				}},
+			}})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42/api-keys":
 			if r.Header.Get("X-API-Key") != "test-admin-key" {
 				t.Fatalf("list keys api key = %q, want admin key", r.Header.Get("X-API-Key"))
@@ -509,6 +532,15 @@ func TestUserRelayProviderModelsUsesSelectedGroupAPIKeyAndPlatformEndpoint(t *te
 
 	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{
+				"id": 42, "email": "alice@example.com", "username": "alice", "role": "user",
+				"subscriptions": []any{map[string]any{
+					"id": 201, "user_id": 42, "group_id": 5, "status": "active",
+					"group": map[string]any{"id": 5, "name": "Group Alpha", "platform": "gemini"},
+				}},
+			}})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42/api-keys":
 			if r.Header.Get("X-API-Key") != "test-admin-key" {
 				t.Fatalf("list keys api key = %q, want admin key", r.Header.Get("X-API-Key"))
@@ -604,11 +636,135 @@ func TestUserRelayProviderModelsUsesSelectedGroupAPIKeyAndPlatformEndpoint(t *te
 	}
 }
 
+func TestProviderModelsChecksFreshMembershipAndKeysBeforeWarmMetadata(t *testing.T) {
+	var mu sync.Mutex
+	allowed := true
+	userCalls := 0
+	keyCalls := 0
+	modelCalls := 0
+	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42":
+			userCalls++
+			subscriptions := []any{}
+			if allowed {
+				subscriptions = []any{map[string]any{
+					"id": 201, "user_id": 42, "group_id": 5, "status": "active",
+					"group": map[string]any{"id": 5, "name": "Group Alpha", "platform": "openai"},
+				}}
+			}
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{
+				"id": 42, "email": "alice@example.com", "username": "alice", "role": "user", "subscriptions": subscriptions,
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42/api-keys":
+			keyCalls++
+			json.NewEncoder(w).Encode(map[string]any{"success": true, "data": map[string]any{"items": []any{map[string]any{
+				"id": 9, "user_id": 42, "key": "sk-user-openai", "name": "alice", "status": "active",
+				"created_at": time.Now().Add(-time.Minute).Format(time.RFC3339),
+				"group":      map[string]any{"id": 5, "name": "Group Alpha", "platform": "openai"},
+			}}, "page": 1, "pages": 1}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users":
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{
+				"items": []any{map[string]any{
+					"id": 42, "email": "alice@example.com", "username": "alice", "role": "user", "allowed_groups": []any{},
+				}},
+				"pages": 1,
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/models":
+			modelCalls++
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "model-alpha"}}})
+		default:
+			t.Fatalf("unexpected relay request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer relayServer.Close()
+
+	redisServer := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
+	t.Cleanup(func() { redisClient.Close() })
+	env := setupTestEnvWithProviderRuntime(t, func(client *ent.Client) *relayruntime.Manager {
+		runtime, err := relayruntime.NewManager(client, "0000000000000000000000000000000000000000000000000000000000000000", zap.NewNop(), relayruntime.Options{
+			Namespace:   "test",
+			Store:       readcache.NewRedisStore(redisClient),
+			MetadataTTL: 5 * time.Minute,
+		})
+		if err != nil {
+			t.Fatalf("new provider runtime: %v", err)
+		}
+		return runtime
+	})
+	ctx := context.Background()
+	env.client.User.UpdateOneID(env.userID).
+		SetUsername("alice").
+		SetEmail("alice@example.com").
+		SetRole("user").
+		SetRelayUserID(42).
+		SaveX(ctx)
+	env.token = issueTokenForUser(t, env, env.userID, "alice@example.com", "user")
+	adminKey, err := encryptAESGCM("test-admin-key", "0000000000000000000000000000000000000000000000000000000000000000")
+	if err != nil {
+		t.Fatalf("encrypt admin key: %v", err)
+	}
+	provider := env.client.RelayProvider.Create().
+		SetName("sub2api").
+		SetDisplayName("Sub2API").
+		SetBaseURL(relayServer.URL).
+		SetAdminAPIKey(adminKey).
+		SetEnabled(true).
+		SetIsPrimary(true).
+		SaveX(ctx)
+	path := fmt.Sprintf("/api/v1/user/providers/%d/groups/5/models?platform=openai", provider.ID)
+
+	first := doRequest(env, http.MethodGet, path, nil)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status = %d, body=%s", first.Code, first.Body.String())
+	}
+	mu.Lock()
+	allowed = false
+	mu.Unlock()
+	revoked := doRequest(env, http.MethodGet, path, nil)
+	if revoked.Code != http.StatusOK {
+		t.Fatalf("revoked status = %d, body=%s", revoked.Code, revoked.Body.String())
+	}
+	revokedData := parseResponse(t, revoked)["data"].(map[string]any)
+	if models := revokedData["models"].([]any); len(models) != 0 {
+		t.Fatalf("revoked request returned cached models: %#v", models)
+	}
+	mu.Lock()
+	allowed = true
+	mu.Unlock()
+	warm := doRequest(env, http.MethodGet, path, nil)
+	if warm.Code != http.StatusOK {
+		t.Fatalf("warm status = %d, body=%s", warm.Code, warm.Body.String())
+	}
+	warmData := parseResponse(t, warm)["data"].(map[string]any)
+	if models := warmData["models"].([]any); len(models) != 1 {
+		t.Fatalf("warm models = %#v", models)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if userCalls != 3 || keyCalls != 2 || modelCalls != 1 {
+		t.Fatalf("origin calls users=%d keys=%d models=%d", userCalls, keyCalls, modelCalls)
+	}
+}
+
 func TestUserRelayProviderTestRequiresSelectedGroupAPIKey(t *testing.T) {
 	chatCalled := false
 
 	relayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{
+				"id": 42, "email": "alice@example.com", "username": "alice", "role": "user",
+				"subscriptions": []any{map[string]any{
+					"id": 202, "user_id": 42, "group_id": 6, "status": "active",
+					"group": map[string]any{"id": 6, "name": "Group Beta", "platform": "openai"},
+				}},
+			}})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/admin/users/42/api-keys":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
@@ -689,6 +845,10 @@ func TestUserRelayProviderTestRequiresSelectedGroupAPIKey(t *testing.T) {
 }
 
 func setupTestEnvWithProvider(t *testing.T) *testEnv {
+	return setupTestEnvWithProviderRuntime(t, nil)
+}
+
+func setupTestEnvWithProviderRuntime(t *testing.T, runtimeFactory func(*ent.Client) *relayruntime.Manager) *testEnv {
 	t.Helper()
 
 	client := testdb.Open(t)
@@ -697,9 +857,14 @@ func setupTestEnvWithProvider(t *testing.T) *testEnv {
 	authSvc := auth.NewService(client, "test-jwt-secret-32-bytes-long!!!", 7200, 604800, logger)
 	repoSvc := repo.NewService(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
 	webhookHandler := webhook.NewHandler(client, nil, logger)
-	providerHandler := NewProviderHandler(client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
+	var providerHandler *ProviderHandler
+	if runtimeFactory == nil {
+		providerHandler = newProviderHandlerForTest(t, client, "0000000000000000000000000000000000000000000000000000000000000000", logger)
+	} else {
+		providerHandler = newProviderHandlerForTest(t, client, "0000000000000000000000000000000000000000000000000000000000000000", logger, runtimeFactory(client))
+	}
 
-	router := SetupRouter(
+	router := setupRouterForTest(t,
 		client,
 		nil,
 		authSvc,

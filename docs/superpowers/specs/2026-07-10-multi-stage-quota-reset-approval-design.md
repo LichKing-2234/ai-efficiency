@@ -137,7 +137,10 @@ Persist the bounded request-time workflow on `quota_reset_requests`:
 
 `resolved_approver_user_ids` continues to contain only normal candidates for the
 current active step. Existing approval lists and Work Items queries continue to
-use this indexed field. Admin-only fallback uses an empty list.
+use this indexed field. Admin-only fallback uses an empty list. Approval history
+also matches actors recorded in stored workflow decisions; both JSONB containment
+branches have `jsonb_path_ops` GIN indexes so the current-or-historical query can
+use a bitmap index union instead of scanning request rows.
 
 The workflow JSON is bounded to 21 steps and 100 unique approvers. Decode,
 validation, or unknown-version failure is an authorization error and fails
@@ -158,6 +161,11 @@ No separate decision table is required.
 
 - Resolve directory source, exact memberships, ancestor paths, approver configs,
   representatives, and local-user matches from one repeatable-read snapshot.
+- Preserve the full current department set for deterministic hierarchy and cycle
+  semantics, but bound request-time member, membership, user, and approver-config
+  reads to the requester, relevant ancestor rounds, and candidate identities.
+  Representative lookups support string or numeric, scalar or array
+  `leader_department_ids` through separate indexed containment queries.
 - Deduplicate departments, users, and converged ancestor paths deterministically.
 - Create the request and initial events in one transaction; notify after commit.
 - Decide a request only when stored status and `workflow_revision` still match.

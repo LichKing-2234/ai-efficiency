@@ -262,6 +262,7 @@ func seedAdminUsersHierarchicalDirectorySnapshot(t *testing.T, env *fullTestEnv,
 		SetSourceID(source.ID).
 		SetExternalID("dept-alpha-team-one").
 		SetParentExternalID("dept-alpha").
+		SetEffectiveParentExternalID("dept-alpha").
 		SetName("Team One").
 		SetPath("1.781448.1683962").
 		SetMetadata(map[string]any{"representative_external_ids": []any{"member-alpha-child", "member-missing"}}).
@@ -367,6 +368,108 @@ func seedAdminUsersSingleMemberDirectorySnapshot(t *testing.T, env *fullTestEnv,
 	return source.ID
 }
 
+func seedAdminUsersEffectiveCycleSnapshot(t *testing.T, env *fullTestEnv) (map[string]int, string) {
+	t.Helper()
+	ctx := context.Background()
+	ciphertext := "encrypted-cycle-password"
+	userIDs := make(map[string]int, 3)
+	for _, key := range []string{"a", "b", "c"} {
+		builder := env.client.User.Create().
+			SetUsername("cycle-" + key).
+			SetEmail("cycle-" + key + "@example.com").
+			SetAuthSource("ldap").
+			SetRole("user")
+		if key == "b" {
+			builder.SetRelayUserID(4202).SetRelayAuthPassword(ciphertext)
+		}
+		user, err := builder.Save(ctx)
+		if err != nil {
+			t.Fatalf("create cycle %s user: %v", key, err)
+		}
+		userIDs[key] = user.ID
+	}
+
+	source, err := env.client.DirectorySource.Create().
+		SetName("Cycle Directory").
+		SetDescription("Synthetic cycle directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cycle directory source: %v", err)
+	}
+	run, err := env.client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetDepartmentCount(3).
+		SetMemberCount(3).
+		SetCompletedAt(time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC)).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create cycle directory run: %v", err)
+	}
+	if _, err := env.client.DirectorySource.UpdateOneID(source.ID).
+		SetLastRunID(run.ID).
+		SetLastSuccessfulRunID(run.ID).
+		Save(ctx); err != nil {
+		t.Fatalf("update cycle directory run pointers: %v", err)
+	}
+
+	departments := []struct {
+		id              string
+		parent          string
+		effectiveParent string
+		name            string
+	}{
+		{id: "dept-cycle-a", parent: "dept-cycle-c", name: "Cycle Alpha"},
+		{id: "dept-cycle-b", parent: "dept-cycle-a", effectiveParent: "dept-cycle-a", name: "Cycle Beta"},
+		{id: "dept-cycle-c", parent: "dept-cycle-b", effectiveParent: "dept-cycle-b", name: "Cycle Gamma"},
+	}
+	for _, department := range departments {
+		builder := env.client.DirectoryDepartment.Create().
+			SetSourceID(source.ID).
+			SetExternalID(department.id).
+			SetParentExternalID(department.parent).
+			SetName(department.name).
+			SetPath("synthetic/" + department.id).
+			SetLastSeenRunID(run.ID)
+		if department.effectiveParent != "" {
+			builder.SetEffectiveParentExternalID(department.effectiveParent)
+		}
+		if _, err := builder.Save(ctx); err != nil {
+			t.Fatalf("create cycle department %s: %v", department.id, err)
+		}
+	}
+	for _, key := range []string{"a", "b", "c"} {
+		departmentID := "dept-cycle-" + key
+		member, err := env.client.DirectoryMember.Create().
+			SetSourceID(source.ID).
+			SetExternalID("member-cycle-" + key).
+			SetEmailNormalized("directory-cycle-" + key + "@example.com").
+			SetDisplayName("Cycle " + strings.ToUpper(key)).
+			SetDepartmentExternalID(departmentID).
+			SetMatchedUserID(userIDs[key]).
+			SetLastSeenRunID(run.ID).
+			Save(ctx)
+		if err != nil {
+			t.Fatalf("create cycle member %s: %v", key, err)
+		}
+		if _, err := env.client.DirectoryMemberDepartment.Create().
+			SetSourceID(source.ID).
+			SetDirectoryMemberID(member.ID).
+			SetMemberExternalID(member.ExternalID).
+			SetMemberEmailNormalized(member.EmailNormalized).
+			SetDepartmentExternalID(departmentID).
+			SetLastSeenRunID(run.ID).
+			Save(ctx); err != nil {
+			t.Fatalf("create cycle membership %s: %v", key, err)
+		}
+	}
+	return userIDs, ciphertext
+}
+
 func TestAdminUsersListSearchPaginationAndCiphertext(t *testing.T) {
 	t.Parallel()
 
@@ -408,6 +511,162 @@ func TestAdminUsersListSearchPaginationAndCiphertext(t *testing.T) {
 	}
 	if int(row["relay_user_id"].(float64)) != 42 {
 		t.Fatalf("relay_user_id = %v, want 42", row["relay_user_id"])
+	}
+}
+
+func TestAdminUsersListHundredRowWireBound(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	ctx := context.Background()
+	fixedTime := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	for i := 1; i <= 100; i++ {
+		username := fmt.Sprintf("wire-user-%03d", i)
+		if _, err := env.client.User.Create().
+			SetUsername(username).
+			SetEmail(username + "@example.com").
+			SetAuthSource("ldap").
+			SetRole("user").
+			SetRelayUserID(1000 + i).
+			SetRelayAuthPassword("synthetic-ciphertext").
+			SetCreatedAt(fixedTime).
+			SetUpdatedAt(fixedTime).
+			Save(ctx); err != nil {
+			t.Fatalf("create synthetic wire user %d: %v", i, err)
+		}
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?q=wire-user&page=1&page_size=100", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != 100 {
+		t.Fatalf("total = %d, want 100", got)
+	}
+	if got := int(data["page"].(float64)); got != 1 {
+		t.Fatalf("page = %d, want 1", got)
+	}
+	if got := int(data["page_size"].(float64)); got != 100 {
+		t.Fatalf("page_size = %d, want 100", got)
+	}
+	if got := len(data["items"].([]interface{})); got != 100 {
+		t.Fatalf("items = %d, want 100", got)
+	}
+
+	const syntheticFixtureWireRegressionBudgetBytes = 256 * 1024
+	wireBytes := w.Body.Len()
+	t.Logf("admin users synthetic fixture 100-row response bytes=%d regression_budget_bytes=%d", wireBytes, syntheticFixtureWireRegressionBudgetBytes)
+	if wireBytes >= syntheticFixtureWireRegressionBudgetBytes {
+		t.Fatalf("100-row response bytes = %d, want below test-owned synthetic-fixture regression budget %d", wireBytes, syntheticFixtureWireRegressionBudgetBytes)
+	}
+}
+
+func TestAdminUsersListPageBounds(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	seedAdminUsersFixture(t, env)
+	wantTotal := env.client.User.Query().CountX(context.Background())
+
+	for _, path := range []string{
+		"/api/v1/admin/users?page=0&page_size=0",
+		"/api/v1/admin/users?page=-7&page_size=-3",
+	} {
+		w := doFullRequest(env, http.MethodGet, path, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200, body=%s", path, w.Code, w.Body.String())
+		}
+		data := parseFullResponse(t, w)["data"].(map[string]interface{})
+		if data["page"] != float64(1) || data["page_size"] != float64(20) {
+			t.Fatalf("%s page metadata = (%v, %v), want (1, 20)", path, data["page"], data["page_size"])
+		}
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users?page=1&page_size=101", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("max size status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if data["page_size"] != float64(100) {
+		t.Fatalf("page_size = %v, want capped 100", data["page_size"])
+	}
+
+	maxInt := int(^uint(0) >> 1)
+	w = doFullRequest(env, http.MethodGet, fmt.Sprintf("/api/v1/admin/users?page=%d&page_size=100", maxInt), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("maximum page status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := int(data["total"].(float64)); got != wantTotal {
+		t.Fatalf("maximum page total = %d, want %d", got, wantTotal)
+	}
+	if got := data["items"].([]interface{}); len(got) != 0 {
+		t.Fatalf("maximum page items = %d, want empty", len(got))
+	}
+}
+
+func TestAdminUsersListEffectiveCycleFilterParity(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	userIDs, ciphertext := seedAdminUsersEffectiveCycleSnapshot(t, env)
+	wantPaths := map[int]string{
+		userIDs["a"]: "Cycle Alpha",
+		userIDs["b"]: "Cycle Alpha / Cycle Beta",
+		userIDs["c"]: "Cycle Alpha / Cycle Beta / Cycle Gamma",
+	}
+	tests := []struct {
+		departmentID string
+		wantIDs      []int
+	}{
+		{departmentID: "dept-cycle-a", wantIDs: []int{userIDs["a"], userIDs["b"], userIDs["c"]}},
+		{departmentID: "dept-cycle-b", wantIDs: []int{userIDs["b"], userIDs["c"]}},
+		{departmentID: "dept-cycle-c", wantIDs: []int{userIDs["c"]}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.departmentID, func(t *testing.T) {
+			gotIDs := make([]int, 0, len(tt.wantIDs))
+			for page := 1; page <= len(tt.wantIDs)+1; page++ {
+				path := fmt.Sprintf("/api/v1/admin/users?department_id=%s&page=%d&page_size=1", tt.departmentID, page)
+				w := doFullRequest(env, http.MethodGet, path, nil)
+				if w.Code != http.StatusOK {
+					t.Fatalf("page %d status = %d, want 200, body=%s", page, w.Code, w.Body.String())
+				}
+				data := parseFullResponse(t, w)["data"].(map[string]interface{})
+				if got := int(data["total"].(float64)); got != len(tt.wantIDs) {
+					t.Fatalf("page %d total = %d, want %d", page, got, len(tt.wantIDs))
+				}
+				if data["page"] != float64(page) || data["page_size"] != float64(1) {
+					t.Fatalf("page metadata = (%v, %v), want (%d, 1)", data["page"], data["page_size"], page)
+				}
+				for _, item := range data["items"].([]interface{}) {
+					row := item.(map[string]interface{})
+					userID := int(row["id"].(float64))
+					gotIDs = append(gotIDs, userID)
+					department := row["department"].(map[string]interface{})
+					if department["display_path"] != wantPaths[userID] {
+						t.Fatalf("user %d display path = %v, want %q", userID, department["display_path"], wantPaths[userID])
+					}
+					if userID == userIDs["b"] {
+						if row["relay_auth_password"] != ciphertext || row["access_status"] != "configured" {
+							t.Fatalf("cycle B credential/status fields changed: %+v", row)
+						}
+					}
+				}
+			}
+			if fmt.Sprint(gotIDs) != fmt.Sprint(tt.wantIDs) {
+				t.Fatalf("concatenated ids = %v, want %v", gotIDs, tt.wantIDs)
+			}
+			if tt.departmentID == "dept-cycle-b" {
+				for _, id := range gotIDs {
+					if id == userIDs["a"] {
+						t.Fatalf("cycle B included anchor-only user %d", id)
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -795,6 +1054,83 @@ func TestAdminUsersDepartmentSummaries(t *testing.T) {
 	}
 }
 
+func TestHierarchyCleanupCompleteDepartmentsUsesPersistedEffectiveParents(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	sourceID, runID := seedAdminUsersBareDirectorySource(t, env, "Persisted Hierarchy Directory", time.Date(2026, 7, 19, 9, 0, 0, 0, time.UTC))
+	ctx := context.Background()
+	for _, department := range []struct {
+		externalID      string
+		parentID        string
+		effectiveParent string
+		name            string
+	}{
+		{externalID: "dept-persisted-root", parentID: "dept-persisted-leaf", name: "Persisted Root"},
+		{externalID: "dept-persisted-child", effectiveParent: "dept-persisted-root", name: "Persisted Child"},
+		{externalID: "dept-persisted-leaf", effectiveParent: "dept-persisted-child", name: "Persisted Leaf"},
+	} {
+		builder := env.client.DirectoryDepartment.Create().
+			SetSourceID(sourceID).
+			SetExternalID(department.externalID).
+			SetName(department.name).
+			SetPath("synthetic/" + department.externalID).
+			SetLastSeenRunID(runID)
+		if department.parentID != "" {
+			builder.SetParentExternalID(department.parentID)
+		}
+		if department.effectiveParent != "" {
+			builder.SetEffectiveParentExternalID(department.effectiveParent)
+		}
+		if _, err := builder.Save(ctx); err != nil {
+			t.Fatalf("create %s: %v", department.externalID, err)
+		}
+	}
+	for index, member := range []struct {
+		externalID   string
+		departmentID string
+		matchedUser  int
+	}{
+		{externalID: "member-persisted-root", departmentID: "dept-persisted-root", matchedUser: fixture.aliceID},
+		{externalID: "member-persisted-child", departmentID: "dept-persisted-child", matchedUser: fixture.bobID},
+		{externalID: "member-persisted-leaf", departmentID: "dept-persisted-leaf", matchedUser: fixture.carolID},
+	} {
+		if _, err := env.client.DirectoryMember.Create().
+			SetSourceID(sourceID).
+			SetExternalID(member.externalID).
+			SetEmailNormalized(fmt.Sprintf("persisted-member-%d@example.org", index)).
+			SetDisplayName(member.externalID).
+			SetDepartmentExternalID(member.departmentID).
+			SetMatchedUserID(member.matchedUser).
+			SetLastSeenRunID(runID).
+			Save(ctx); err != nil {
+			t.Fatalf("create %s: %v", member.externalID, err)
+		}
+	}
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/departments", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	items := parseFullResponse(t, w)["data"].(map[string]interface{})["items"].([]interface{})
+	if len(items) != 3 {
+		t.Fatalf("items = %d, want 3", len(items))
+	}
+	wantIDs := []string{"dept-persisted-root", "dept-persisted-child", "dept-persisted-leaf"}
+	wantPaths := []string{"Persisted Root", "Persisted Root / Persisted Child", "Persisted Root / Persisted Child / Persisted Leaf"}
+	wantSubtreeCounts := []int{3, 2, 1}
+	for index, item := range items {
+		row := item.(map[string]interface{})
+		if row["external_id"] != wantIDs[index] || row["display_path"] != wantPaths[index] || int(row["depth"].(float64)) != index {
+			t.Fatalf("row %d = %+v, want id/path/depth %s/%s/%d", index, row, wantIDs[index], wantPaths[index], index)
+		}
+		if int(row["member_count"].(float64)) != 1 || int(row["matched_user_count"].(float64)) != 1 || int(row["subtree_member_count"].(float64)) != wantSubtreeCounts[index] || int(row["subtree_matched_user_count"].(float64)) != wantSubtreeCounts[index] {
+			t.Fatalf("row %d counts = %+v, want direct 1/1 and subtree %d/%d", index, row, wantSubtreeCounts[index], wantSubtreeCounts[index])
+		}
+	}
+}
+
 func TestAdminUsersDepartmentSummariesUseDirectoryMemberDepartments(t *testing.T) {
 	t.Parallel()
 
@@ -872,6 +1208,414 @@ func TestAdminUsersDepartmentSummariesExposeHierarchyAndSubtreeCounts(t *testing
 	if beta["external_id"] != "dept-beta" || int(beta["depth"].(float64)) != 0 {
 		t.Fatalf("third department = %+v, want beta root", beta)
 	}
+}
+
+func TestAdminUsersDepartmentOptionsPagingSelectionAndBounds(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersHierarchicalDirectorySnapshot(t, env, fixture)
+	seedAdminUsersDepartmentOptionFillers(t, env, 25)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-options?page=0&page_size=0", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("default status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if int(data["page"].(float64)) != 1 || int(data["page_size"].(float64)) != 20 || int(data["total"].(float64)) != 28 || len(data["items"].([]interface{})) != 20 {
+		t.Fatalf("default option data = %+v, want page 1/20 total 28 with 20 items", data)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-options?q=team&selected_id=dept-alpha&page=1&page_size=101", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if int(data["page"].(float64)) != 1 || int(data["page_size"].(float64)) != 100 || int(data["total"].(float64)) != 26 {
+		t.Fatalf("option metadata = %+v, want page 1/100 total 26", data)
+	}
+	items := data["items"].([]interface{})
+	if len(items) != 26 {
+		t.Fatalf("option items = %d, want 26", len(items))
+	}
+	if items[0].(map[string]interface{})["external_id"] != "dept-http-filler-00" || items[1].(map[string]interface{})["external_id"] != "dept-http-filler-01" {
+		t.Fatalf("normalized option order starts %+v, %+v", items[0], items[1])
+	}
+	selected := data["selected"].(map[string]interface{})
+	if selected["external_id"] != "dept-alpha" || selected["display_path"] != "Department Alpha" {
+		t.Fatalf("selected = %+v, want independent alpha lookup", selected)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-options?page=2&page_size=20&selected_id=dept-unknown", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("second page status = %d, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := len(data["items"].([]interface{})); got != 8 {
+		t.Fatalf("second option page items = %d, want 8", got)
+	}
+	if data["selected"] != nil {
+		t.Fatalf("unknown selected = %+v, want null", data["selected"])
+	}
+
+	maxInt := int(^uint(0) >> 1)
+	w = doFullRequest(env, http.MethodGet, fmt.Sprintf("/api/v1/admin/users/department-options?page=%d&page_size=100", maxInt), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("overflow status = %d, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if got := len(data["items"].([]interface{})); got != 0 {
+		t.Fatalf("overflow option items = %d, want 0", got)
+	}
+}
+
+func TestAdminUsersDepartmentOptionsAndChildrenWithoutCurrentSource(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-options?selected_id=dept-alpha", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("options status = %d, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if len(data["items"].([]interface{})) != 0 || int(data["total"].(float64)) != 0 || data["selected"] != nil || int(data["page"].(float64)) != 1 || int(data["page_size"].(float64)) != 20 {
+		t.Fatalf("source-less options = %+v", data)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-children?parent_department_id=dept-alpha", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("children status = %d, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if len(data["items"].([]interface{})) != 0 || int(data["total"].(float64)) != 0 || data["parent_department_id"] != "dept-alpha" || int(data["page"].(float64)) != 1 || int(data["page_size"].(float64)) != 25 {
+		t.Fatalf("source-less children = %+v", data)
+	}
+}
+
+func TestAdminUsersDepartmentChildrenPagingBounds(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersHierarchicalDirectorySnapshot(t, env, fixture)
+	seedAdminUsersDepartmentOptionFillers(t, env, 25)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-children?page=0&page_size=0", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("default status = %d, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	if int(data["page"].(float64)) != 1 || int(data["page_size"].(float64)) != 25 || int(data["total"].(float64)) != 27 || len(data["items"].([]interface{})) != 25 || data["parent_department_id"] != "" {
+		t.Fatalf("default children data = %+v, want roots page 1/25 total 27", data)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-children?page=2&page_size=25", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("second page status = %d, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if len(data["items"].([]interface{})) != 2 || int(data["total"].(float64)) != 27 {
+		t.Fatalf("second children page = %+v, want 2 of 27", data)
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-children?page=1&page_size=101", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("capped page status = %d, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if int(data["page_size"].(float64)) != 100 || len(data["items"].([]interface{})) != 27 {
+		t.Fatalf("capped children page = %+v, want size 100 and 27 roots", data)
+	}
+
+	maxInt := int(^uint(0) >> 1)
+	w = doFullRequest(env, http.MethodGet, fmt.Sprintf("/api/v1/admin/users/department-children?page=%d&page_size=100", maxInt), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("overflow status = %d, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	if len(data["items"].([]interface{})) != 0 || int(data["total"].(float64)) != 27 {
+		t.Fatalf("overflow children page = %+v, want empty with total 27", data)
+	}
+}
+
+func TestAdminUsersDepartmentChildrenRequiresCurrentSourceParent(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	fixture := seedAdminUsersFixture(t, env)
+	seedAdminUsersHierarchicalDirectorySnapshot(t, env, fixture)
+	seedAdminUsersOrphanAndStaleParent(t, env)
+
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-children?parent_department_id=dept-alpha&page=1&page_size=25", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	data := parseFullResponse(t, w)["data"].(map[string]interface{})
+	items := data["items"].([]interface{})
+	if len(items) != 1 || items[0].(map[string]interface{})["external_id"] != "dept-alpha-team-one" {
+		t.Fatalf("alpha children = %+v, want immediate team one only", items)
+	}
+
+	for _, parentID := range []string{"dept-missing", "dept-unknown"} {
+		w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-children?parent_department_id="+parentID, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, body=%s", parentID, w.Code, w.Body.String())
+		}
+		data = parseFullResponse(t, w)["data"].(map[string]interface{})
+		if int(data["total"].(float64)) != 0 || len(data["items"].([]interface{})) != 0 {
+			t.Fatalf("missing parent %s data = %+v, want empty 200", parentID, data)
+		}
+	}
+
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-children?page=1&page_size=100", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("root status = %d, body=%s", w.Code, w.Body.String())
+	}
+	data = parseFullResponse(t, w)["data"].(map[string]interface{})
+	orphanCount := 0
+	for _, item := range data["items"].([]interface{}) {
+		row := item.(map[string]interface{})
+		if row["external_id"] == "dept-orphan" {
+			orphanCount++
+			if row["parent_external_id"] != "dept-missing" || int(row["depth"].(float64)) != 0 || row["display_path"] != "Current Orphan" {
+				t.Fatalf("orphan row = %+v", row)
+			}
+		}
+	}
+	if orphanCount != 1 {
+		t.Fatalf("orphan root count = %d, want 1", orphanCount)
+	}
+}
+
+func TestAdminUsersDepartmentChildrenClosedCycleNavigation(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	seedAdminUsersEffectiveCycleSnapshot(t, env)
+
+	assertIDs := func(path string, want []string) map[string]interface{} {
+		t.Helper()
+		w := doFullRequest(env, http.MethodGet, path, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d, body=%s", path, w.Code, w.Body.String())
+		}
+		data := parseFullResponse(t, w)["data"].(map[string]interface{})
+		items := data["items"].([]interface{})
+		got := make([]string, 0, len(items))
+		for _, item := range items {
+			got = append(got, item.(map[string]interface{})["external_id"].(string))
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("GET %s ids = %v, want %v", path, got, want)
+		}
+		return data
+	}
+	assertIDs("/api/v1/admin/users/department-children?page_size=100", []string{"dept-cycle-a"})
+	aChildren := assertIDs("/api/v1/admin/users/department-children?parent_department_id=dept-cycle-a&page_size=100", []string{"dept-cycle-b"})
+	b := aChildren["items"].([]interface{})[0].(map[string]interface{})
+	if int(b["member_count"].(float64)) != 1 || int(b["subtree_member_count"].(float64)) != 2 || int(b["matched_user_count"].(float64)) != 1 || int(b["subtree_matched_user_count"].(float64)) != 2 {
+		t.Fatalf("cycle B summary = %+v, want direct/subtree 1/2", b)
+	}
+	assertIDs("/api/v1/admin/users/department-children?parent_department_id=dept-cycle-b&page_size=100", []string{"dept-cycle-c"})
+	assertIDs("/api/v1/admin/users/department-children?parent_department_id=dept-cycle-c&page_size=100", []string{})
+}
+
+func TestAdminUsersDepartmentChildrenEffectiveSubtreeParity(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	userIDs, _ := seedAdminUsersEffectiveCycleSnapshot(t, env)
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-children?parent_department_id=dept-cycle-a&page_size=100", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("children status = %d, body=%s", w.Code, w.Body.String())
+	}
+	b := parseFullResponse(t, w)["data"].(map[string]interface{})["items"].([]interface{})[0].(map[string]interface{})
+	w = doFullRequest(env, http.MethodGet, "/api/v1/admin/users?department_id=dept-cycle-b&page=1&page_size=100", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body=%s", w.Code, w.Body.String())
+	}
+	items := parseFullResponse(t, w)["data"].(map[string]interface{})["items"].([]interface{})
+	got := make([]int, 0, len(items))
+	for _, item := range items {
+		got = append(got, int(item.(map[string]interface{})["id"].(float64)))
+	}
+	want := []int{userIDs["b"], userIDs["c"]}
+	if fmt.Sprint(got) != fmt.Sprint(want) || int(b["subtree_member_count"].(float64)) != len(want) || int(b["subtree_matched_user_count"].(float64)) != len(want) {
+		t.Fatalf("cycle B HTTP parity = ids %v summary %+v, want %v", got, b, want)
+	}
+}
+
+func TestAdminUsersDepartmentChildrenRepresentativeJSONShapes(t *testing.T) {
+	t.Parallel()
+
+	env := setupFullTestEnv(t)
+	seedAdminUsersRepresentativeShapes(t, env)
+	w := doFullRequest(env, http.MethodGet, "/api/v1/admin/users/department-children?page_size=100", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
+	}
+	items := parseFullResponse(t, w)["data"].(map[string]interface{})["items"].([]interface{})
+	rows := map[string]map[string]interface{}{}
+	for _, item := range items {
+		row := item.(map[string]interface{})
+		rows[row["external_id"].(string)] = row
+	}
+	main := rows["dept-representative-main"]
+	if int(main["representative_count"].(float64)) != 5 || int(main["matched_representative_count"].(float64)) != 3 {
+		t.Fatalf("main representative row = %+v, want 5/3", main)
+	}
+	if main["display_path"] != "Current Representative Main" || int(main["depth"].(float64)) != 0 {
+		t.Fatalf("main current-source presentation = %+v", main)
+	}
+	scalar := rows["dept-representative-scalar"]
+	if int(scalar["representative_count"].(float64)) != 1 || int(scalar["matched_representative_count"].(float64)) != 0 {
+		t.Fatalf("scalar representative row = %+v, want 1/0", scalar)
+	}
+}
+
+func seedAdminUsersDepartmentOptionFillers(t *testing.T, env *fullTestEnv, count int) {
+	t.Helper()
+	sourceID, runID := currentAdminUsersDirectorySource(t, env)
+	for i := 0; i < count; i++ {
+		if _, err := env.client.DirectoryDepartment.Create().
+			SetSourceID(sourceID).
+			SetExternalID(fmt.Sprintf("dept-http-filler-%02d", i)).
+			SetName(fmt.Sprintf("Team %02d", i)).
+			SetPath(fmt.Sprintf("synthetic/team/%02d", i)).
+			SetLastSeenRunID(runID).
+			Save(context.Background()); err != nil {
+			t.Fatalf("create option filler %d: %v", i, err)
+		}
+	}
+}
+
+func seedAdminUsersOrphanAndStaleParent(t *testing.T, env *fullTestEnv) {
+	t.Helper()
+	sourceID, runID := currentAdminUsersDirectorySource(t, env)
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(sourceID).
+		SetExternalID("dept-orphan").
+		SetParentExternalID("dept-missing").
+		SetName("Current Orphan").
+		SetPath("synthetic/orphan").
+		SetLastSeenRunID(runID).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create current orphan: %v", err)
+	}
+	staleSource, staleRun := seedAdminUsersBareDirectorySource(t, env, "Stale Parent Directory", time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC))
+	if _, err := env.client.DirectoryDepartment.Create().
+		SetSourceID(staleSource).
+		SetExternalID("dept-missing").
+		SetName("Stale Missing Parent").
+		SetPath("synthetic/missing").
+		SetLastSeenRunID(staleRun).
+		Save(context.Background()); err != nil {
+		t.Fatalf("create stale missing parent: %v", err)
+	}
+}
+
+func seedAdminUsersRepresentativeShapes(t *testing.T, env *fullTestEnv) {
+	t.Helper()
+	staleSource, staleRun := seedAdminUsersBareDirectorySource(t, env, "Stale Representative Directory", time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC))
+	currentSource, currentRun := seedAdminUsersBareDirectorySource(t, env, "Current Representative Directory", time.Date(2026, 7, 15, 10, 0, 0, 0, time.UTC))
+	for _, source := range []struct {
+		id      int
+		runID   int
+		prefix  string
+		matched map[string]bool
+	}{
+		{id: staleSource, runID: staleRun, prefix: "Stale", matched: map[string]bool{"rep-department-unmatched": true, "rep-leader-unmatched": true, "rep-scalar-unmatched": true}},
+		{id: currentSource, runID: currentRun, prefix: "Current", matched: map[string]bool{"rep-department-matched": true, "rep-leader-matched": true, "rep-duplicate": true}},
+	} {
+		if _, err := env.client.DirectoryDepartment.Create().
+			SetSourceID(source.id).
+			SetExternalID("dept-representative-main").
+			SetName(source.prefix + " Representative Main").
+			SetPath("synthetic/representative-main").
+			SetMetadata(map[string]any{"representative_external_ids": []any{"rep-department-matched", "rep-department-unmatched", "rep-duplicate", "rep-duplicate"}}).
+			SetLastSeenRunID(source.runID).
+			Save(context.Background()); err != nil {
+			t.Fatalf("create %s representative main: %v", source.prefix, err)
+		}
+		if _, err := env.client.DirectoryDepartment.Create().
+			SetSourceID(source.id).
+			SetExternalID("dept-representative-scalar").
+			SetName(source.prefix + " Representative Scalar").
+			SetPath("synthetic/representative-scalar").
+			SetMetadata(map[string]any{"representative_external_ids": "rep-scalar-unmatched"}).
+			SetLastSeenRunID(source.runID).
+			Save(context.Background()); err != nil {
+			t.Fatalf("create %s representative scalar: %v", source.prefix, err)
+		}
+		for index, member := range []struct {
+			id     string
+			leader any
+		}{
+			{id: "rep-department-matched"},
+			{id: "rep-department-unmatched"},
+			{id: "rep-leader-matched", leader: "dept-representative-main"},
+			{id: "rep-leader-unmatched", leader: []any{"dept-representative-main", "dept-representative-main"}},
+			{id: "rep-duplicate", leader: []any{"dept-representative-main"}},
+			{id: "rep-scalar-unmatched"},
+		} {
+			builder := env.client.DirectoryMember.Create().
+				SetSourceID(source.id).
+				SetExternalID(member.id).
+				SetEmailNormalized(fmt.Sprintf("%s-%d@example.org", strings.ToLower(source.prefix), index)).
+				SetDisplayName(member.id).
+				SetLastSeenRunID(source.runID)
+			if source.matched[member.id] {
+				builder.SetMatchedUserID(800000 + source.runID + index)
+			}
+			if member.leader != nil {
+				builder.SetMetadata(map[string]any{"leader_department_ids": member.leader})
+			}
+			if _, err := builder.Save(context.Background()); err != nil {
+				t.Fatalf("create %s representative %s: %v", source.prefix, member.id, err)
+			}
+		}
+	}
+}
+
+func currentAdminUsersDirectorySource(t *testing.T, env *fullTestEnv) (int, int) {
+	t.Helper()
+	source, err := env.client.DirectorySource.Query().Only(context.Background())
+	if err != nil {
+		t.Fatalf("load only directory source: %v", err)
+	}
+	if source.LastSuccessfulRunID == nil {
+		t.Fatal("directory source has no last successful run")
+	}
+	return source.ID, *source.LastSuccessfulRunID
+}
+
+func seedAdminUsersBareDirectorySource(t *testing.T, env *fullTestEnv, name string, completedAt time.Time) (int, int) {
+	t.Helper()
+	ctx := context.Background()
+	source, err := env.client.DirectorySource.Create().
+		SetName(name).
+		SetDescription("Synthetic organization directory").
+		SetEnabled(true).
+		SetDsl("version: 1\nscope: full_company\nsteps: []\n").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create %s: %v", name, err)
+	}
+	run, err := env.client.DirectorySyncRun.Create().
+		SetSourceID(source.ID).
+		SetMode("apply").
+		SetStatus("completed").
+		SetPhase("completed").
+		SetCompletedAt(completedAt).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create %s run: %v", name, err)
+	}
+	if _, err := env.client.DirectorySource.UpdateOneID(source.ID).SetLastRunID(run.ID).SetLastSuccessfulRunID(run.ID).Save(ctx); err != nil {
+		t.Fatalf("update %s run pointers: %v", name, err)
+	}
+	return source.ID, run.ID
 }
 
 func TestAdminUsersListRejectsNonAdmin(t *testing.T) {

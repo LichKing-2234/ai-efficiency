@@ -218,6 +218,27 @@ type UserUsageDashboardParams struct {
 	Timezone    string `json:"timezone"`
 }
 
+type UserUsageOriginBranches struct {
+	Usage bool
+	Quota bool
+}
+
+type UserUsageOriginRequest struct {
+	Login       string
+	Password    string
+	RelayUserID int64
+	Params      UserUsageDashboardParams
+	Branches    UserUsageOriginBranches
+}
+
+type UserUsageOriginResult struct {
+	Usage         *UserUsageDashboardResponse
+	UsageErr      error
+	APIKeys       []APIKey
+	Subscriptions []UserSubscription
+	QuotaErr      error
+}
+
 type UserUsageDashboardRange struct {
 	StartDate   string `json:"start_date"`
 	EndDate     string `json:"end_date"`
@@ -298,14 +319,20 @@ type UserUsageGroupQuotaGroupItem struct {
 }
 
 type TeamUserUsageStats struct {
-	UserID          int64   `json:"user_id"`
-	TodayActualCost float64 `json:"today_actual_cost"`
-	TotalActualCost float64 `json:"total_actual_cost"`
-	TotalTokens     *int64  `json:"total_tokens,omitempty"`
+	UserID           int64    `json:"user_id"`
+	TodayActualCost  float64  `json:"today_actual_cost"`
+	TotalActualCost  float64  `json:"total_actual_cost"`
+	TotalTokens      *int64   `json:"total_tokens,omitempty"`
+	RangeActualCost  *float64 `json:"range_actual_cost,omitempty"`
+	RangeTotalTokens *int64   `json:"range_total_tokens,omitempty"`
 }
 
 type TeamUsageSummaryParams struct {
-	Timezone string `json:"timezone"`
+	StartDate            string `json:"start_date"`
+	EndDate              string `json:"end_date"`
+	Granularity          string `json:"granularity"`
+	Timezone             string `json:"timezone"`
+	RequireCompleteRange bool   `json:"-"`
 }
 
 type TeamMemberTrendParams struct {
@@ -319,6 +346,33 @@ type UsageTrendPoint struct {
 	Date        string  `json:"date"`
 	ActualCost  float64 `json:"actual_cost"`
 	TotalTokens *int64  `json:"total_tokens,omitempty"`
+}
+
+type ProviderDirectoryResult struct {
+	UserIDs       []int64
+	ResponseBytes int64
+	PageCount     int
+}
+
+type ProviderCurrentStatsResult struct {
+	Stats         map[int64]TeamUserUsageStats
+	ResponseBytes int64
+}
+
+type ProviderWideTrendResult struct {
+	Points          []ProviderWideTrendPoint
+	Coverage        TeamMemberTrendParams
+	ResponseBytes   int64
+	PointCount      int
+	UniqueUserCount int
+	Complete        bool
+}
+
+type ProviderWideTrendPoint struct {
+	UserID      int64
+	Date        string
+	ActualCost  float64
+	TotalTokens *int64
 }
 
 type UserGroupRateEntry struct {

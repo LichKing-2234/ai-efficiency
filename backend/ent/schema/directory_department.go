@@ -15,6 +15,7 @@ func (DirectoryDepartment) Fields() []ent.Field {
 		field.Int("source_id"),
 		field.String("external_id").NotEmpty(),
 		field.String("parent_external_id").Optional().Nillable(),
+		field.String("effective_parent_external_id").Optional().Nillable(),
 		field.String("name").NotEmpty(),
 		field.String("path").Default(""),
 		field.JSON("metadata", map[string]any{}).Optional(),
@@ -28,6 +29,7 @@ func (DirectoryDepartment) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("source_id", "external_id").Unique(),
 		index.Fields("source_id", "parent_external_id"),
+		index.Fields("source_id", "effective_parent_external_id"),
 		index.Fields("source_id", "name"),
 	}
 }

@@ -1,27 +1,23 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { checkSystemUpdate, getSystemVersion } from '@/api/system'
 import { useI18n } from '@/i18n'
 import type { SystemVersionStatus } from '@/types'
 
 const { t } = useI18n()
+const systemVersion = ref<SystemVersionStatus | null>(null)
+const systemVersionLoading = ref(false)
+const systemVersionChecking = ref(false)
+const systemVersionMessage = ref('')
+const systemVersionMessageKind = ref<'success' | 'error' | ''>('')
 
-const props = defineProps<{
-  systemVersion: SystemVersionStatus | null
-  systemVersionLoading: boolean
-  systemVersionChecking: boolean
-  systemVersionMessage: string
-  systemVersionMessageKind: 'success' | 'error' | ''
-}>()
-
-defineEmits<{
-  (e: 'check-updates'): void
-}>()
+onMounted(fetchSystemVersion)
 
 const checkDisabled = computed(() => (
-  props.systemVersionChecking ||
-  props.systemVersionLoading ||
-  !props.systemVersion ||
-  props.systemVersion.check_enabled === false
+  systemVersionChecking.value ||
+  systemVersionLoading.value ||
+  !systemVersion.value ||
+  systemVersion.value.check_enabled === false
 ))
 
 function formatBuildTime(date?: string) {
@@ -29,6 +25,51 @@ function formatBuildTime(date?: string) {
   const parsed = new Date(date)
   if (Number.isNaN(parsed.getTime())) return date
   return parsed.toLocaleString()
+}
+
+async function fetchSystemVersion() {
+  systemVersionLoading.value = true
+  try {
+    const response = await getSystemVersion()
+    systemVersion.value = response.data.data ?? null
+  } catch {
+    systemVersion.value = null
+  } finally {
+    systemVersionLoading.value = false
+  }
+}
+
+function setSystemVersionMessage(kind: 'success' | 'error', message: string) {
+  systemVersionMessageKind.value = kind
+  systemVersionMessage.value = message
+}
+
+async function handleCheckUpdates() {
+  if (systemVersion.value?.check_enabled === false) {
+    setSystemVersionMessage('error', t('settings.versionCheckUnavailable'))
+    return
+  }
+
+  systemVersionChecking.value = true
+  systemVersionMessage.value = ''
+  systemVersionMessageKind.value = ''
+  try {
+    const response = await checkSystemUpdate()
+    systemVersion.value = response.data.data ?? null
+    if (systemVersion.value?.update_available) {
+      setSystemVersionMessage('success', t('settings.updateAvailable'))
+    } else if (systemVersion.value?.check_error) {
+      setSystemVersionMessage('error', systemVersion.value.check_error)
+    } else if (systemVersion.value?.checked) {
+      setSystemVersionMessage('success', t('settings.alreadyCurrent'))
+    } else if (systemVersion.value?.check_enabled === false) {
+      setSystemVersionMessage('error', t('settings.versionCheckUnavailable'))
+    }
+  } catch (error: any) {
+    setSystemVersionMessage('error', error.response?.data?.message || t('settings.checkUpdatesFailed'))
+  } finally {
+    systemVersionChecking.value = false
+  }
 }
 </script>
 
@@ -77,7 +118,7 @@ function formatBuildTime(date?: string) {
         </div>
 
         <div class="flex flex-wrap justify-end gap-3">
-          <button @click="$emit('check-updates')" :disabled="checkDisabled" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+          <button @click="handleCheckUpdates" :disabled="checkDisabled" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
             {{ systemVersionChecking ? t('settings.working') : t('settings.checkUpdates') }}
           </button>
         </div>

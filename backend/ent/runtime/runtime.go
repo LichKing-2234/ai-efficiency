@@ -129,19 +129,19 @@ func init() {
 	// directorydepartment.ExternalIDValidator is a validator for the "external_id" field. It is called by the builders before save.
 	directorydepartment.ExternalIDValidator = directorydepartmentDescExternalID.Validators[0].(func(string) error)
 	// directorydepartmentDescName is the schema descriptor for name field.
-	directorydepartmentDescName := directorydepartmentFields[3].Descriptor()
+	directorydepartmentDescName := directorydepartmentFields[4].Descriptor()
 	// directorydepartment.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	directorydepartment.NameValidator = directorydepartmentDescName.Validators[0].(func(string) error)
 	// directorydepartmentDescPath is the schema descriptor for path field.
-	directorydepartmentDescPath := directorydepartmentFields[4].Descriptor()
+	directorydepartmentDescPath := directorydepartmentFields[5].Descriptor()
 	// directorydepartment.DefaultPath holds the default value on creation for the path field.
 	directorydepartment.DefaultPath = directorydepartmentDescPath.Default.(string)
 	// directorydepartmentDescCreatedAt is the schema descriptor for created_at field.
-	directorydepartmentDescCreatedAt := directorydepartmentFields[7].Descriptor()
+	directorydepartmentDescCreatedAt := directorydepartmentFields[8].Descriptor()
 	// directorydepartment.DefaultCreatedAt holds the default value on creation for the created_at field.
 	directorydepartment.DefaultCreatedAt = directorydepartmentDescCreatedAt.Default.(func() time.Time)
 	// directorydepartmentDescUpdatedAt is the schema descriptor for updated_at field.
-	directorydepartmentDescUpdatedAt := directorydepartmentFields[8].Descriptor()
+	directorydepartmentDescUpdatedAt := directorydepartmentFields[9].Descriptor()
 	// directorydepartment.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	directorydepartment.DefaultUpdatedAt = directorydepartmentDescUpdatedAt.Default.(func() time.Time)
 	// directorydepartment.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -632,12 +632,18 @@ func init() {
 	relayproviderDescEnabled := relayproviderFields[7].Descriptor()
 	// relayprovider.DefaultEnabled holds the default value on creation for the enabled field.
 	relayprovider.DefaultEnabled = relayproviderDescEnabled.Default.(bool)
+	// relayproviderDescConfigurationVersion is the schema descriptor for configuration_version field.
+	relayproviderDescConfigurationVersion := relayproviderFields[8].Descriptor()
+	// relayprovider.DefaultConfigurationVersion holds the default value on creation for the configuration_version field.
+	relayprovider.DefaultConfigurationVersion = relayproviderDescConfigurationVersion.Default.(int64)
+	// relayprovider.ConfigurationVersionValidator is a validator for the "configuration_version" field. It is called by the builders before save.
+	relayprovider.ConfigurationVersionValidator = relayproviderDescConfigurationVersion.Validators[0].(func(int64) error)
 	// relayproviderDescCreatedAt is the schema descriptor for created_at field.
-	relayproviderDescCreatedAt := relayproviderFields[8].Descriptor()
+	relayproviderDescCreatedAt := relayproviderFields[9].Descriptor()
 	// relayprovider.DefaultCreatedAt holds the default value on creation for the created_at field.
 	relayprovider.DefaultCreatedAt = relayproviderDescCreatedAt.Default.(func() time.Time)
 	// relayproviderDescUpdatedAt is the schema descriptor for updated_at field.
-	relayproviderDescUpdatedAt := relayproviderFields[9].Descriptor()
+	relayproviderDescUpdatedAt := relayproviderFields[10].Descriptor()
 	// relayprovider.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	relayprovider.DefaultUpdatedAt = relayproviderDescUpdatedAt.Default.(func() time.Time)
 	// relayprovider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

@@ -24,6 +24,8 @@ type DirectoryDepartment struct {
 	ExternalID string `json:"external_id,omitempty"`
 	// ParentExternalID holds the value of the "parent_external_id" field.
 	ParentExternalID *string `json:"parent_external_id,omitempty"`
+	// EffectiveParentExternalID holds the value of the "effective_parent_external_id" field.
+	EffectiveParentExternalID *string `json:"effective_parent_external_id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// Path holds the value of the "path" field.
@@ -48,7 +50,7 @@ func (*DirectoryDepartment) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case directorydepartment.FieldID, directorydepartment.FieldSourceID, directorydepartment.FieldLastSeenRunID:
 			values[i] = new(sql.NullInt64)
-		case directorydepartment.FieldExternalID, directorydepartment.FieldParentExternalID, directorydepartment.FieldName, directorydepartment.FieldPath:
+		case directorydepartment.FieldExternalID, directorydepartment.FieldParentExternalID, directorydepartment.FieldEffectiveParentExternalID, directorydepartment.FieldName, directorydepartment.FieldPath:
 			values[i] = new(sql.NullString)
 		case directorydepartment.FieldCreatedAt, directorydepartment.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -91,6 +93,13 @@ func (dd *DirectoryDepartment) assignValues(columns []string, values []any) erro
 			} else if value.Valid {
 				dd.ParentExternalID = new(string)
 				*dd.ParentExternalID = value.String
+			}
+		case directorydepartment.FieldEffectiveParentExternalID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field effective_parent_external_id", values[i])
+			} else if value.Valid {
+				dd.EffectiveParentExternalID = new(string)
+				*dd.EffectiveParentExternalID = value.String
 			}
 		case directorydepartment.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -174,6 +183,11 @@ func (dd *DirectoryDepartment) String() string {
 	builder.WriteString(", ")
 	if v := dd.ParentExternalID; v != nil {
 		builder.WriteString("parent_external_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := dd.EffectiveParentExternalID; v != nil {
+		builder.WriteString("effective_parent_external_id=")
 		builder.WriteString(*v)
 	}
 	builder.WriteString(", ")
