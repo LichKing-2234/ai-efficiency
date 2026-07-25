@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #148 at `f234d7d2`; the exact integration head `d2bc2694` also contains the later review remediations through #172. The intentional-unmerged statement below is historical source-branch evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #148 at `f234d7d2`; the then-current integration head `d2bc2694` also contains the later review remediations through #172. The intentional-unmerged statement below is historical source-branch evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Make personal usage render from an actor-isolated, versioned, short-lived usage snapshot while quota/subscription facts and representative scope load independently and remain fresh-only.
 

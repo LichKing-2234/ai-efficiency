@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Complete. PR #182 was squash-merged into `feat/platform-loading-performance` at `44351cc79b109e4a957083fa1c7de18993026005`; exact PR head `deffbf018d013f7fa8e152a919ea6e937bdad548` passed all required CI jobs, issue #169 is closed, and the exact integration head `d2bc2694` includes #170-#172. The earlier environment-sensitive gap is superseded by #173's fresh exact-head full matrix and 16/16 role regression. No `main` merge, release, or production verification is claimed.
+**Status:** Complete. PR #182 was squash-merged into `feat/platform-loading-performance` at `44351cc79b109e4a957083fa1c7de18993026005`; exact PR head `deffbf018d013f7fa8e152a919ea6e937bdad548` passed all required CI jobs, issue #169 is closed, and the then-current integration head `d2bc2694` includes #170-#172. The earlier environment-sensitive gap is superseded by #173's fresh exact-head full matrix and 16/16 role regression. No `main` merge, release, or production verification is claimed.
 
 **Known Remaining Gap:** `npm run test:e2e:role` was attempted but no application was listening on its required `http://localhost:5173`, so all three cases ended at navigation with `ERR_CONNECTION_REFUSED`. This environment-sensitive item remains unchecked; backend/full frontend unit/build, ae-cli, embedded-static, and diff-hygiene verification passed.
 

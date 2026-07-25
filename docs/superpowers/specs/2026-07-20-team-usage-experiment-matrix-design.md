@@ -1,6 +1,10 @@
 # Team Usage Cold-Load Experiment Matrix Design
 
-**Status:** Experiment complete. Candidate C is retained as the next optimization baseline, but it is not release-approved because cold completion remains above target.
+**Status:** Experiment complete. Candidate C is retained as the next optimization
+baseline; no candidate met the 9-second cold-completion target. That target is
+withdrawn rather than met:
+`2026-07-25-stateless-team-usage-prewarm-worker-design.md` replaces it with a
+median fully-rendered merge gate. Retained as design history.
 
 **Date:** 2026-07-20
 

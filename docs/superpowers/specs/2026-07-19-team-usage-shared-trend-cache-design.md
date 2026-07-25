@@ -1,6 +1,9 @@
 # Team Usage Shared Trend Origin Cache Design
 
-**Status:** Approved for implementation on a branch based on `feat/platform-loading-performance@b03cf0a8`
+**Status:** Implemented as PR #188 (`b1e8ed56`). The per-user trend origin reuse it
+introduced was later replaced by the batched Relay read in PR #191 and the shared
+Redis scope origin in PR #192. Retained as design history; the current contract is
+`2026-07-25-stateless-team-usage-prewarm-worker-design.md`.
 
 **Refines:** `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`
 

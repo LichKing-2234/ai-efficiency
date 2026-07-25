@@ -14,6 +14,7 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 
 1. 当前代码
 2. 最新且最贴近问题域的 spec：
+   - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md`
    - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`
    - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md`
    - `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md`
@@ -28,6 +29,7 @@ AI Efficiency Platform（AI 效能平台）是一个独立于 `sub2api` 的系�
 
 - 修改 `auth`、`relay`、`checkpoint`、`attribution`、`hooks`、`collector`、legacy session compatibility、`proxy` 相关逻辑前，先读对应 spec。
 - 修改前端加载编排、Redis 业务缓存、Team Overview 拆分、静态资源 serving、HTTP timeout/readiness 或性能可观测性前，先读 `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`。
+- 修改 Team Usage prewarm worker、`backend/cmd/prewarmer`、prewarm Redis manifest/generation，或 backend 侧 prewarm 读取与 fallback 前，先读 `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md`。它是 Team Usage 冷路径的当前合同，取代 07-14 中的对应部分。
 - 不要让历史文档里的旧设计覆盖最新合同。
 - 如果你发现“代码已变，但文档还停留在旧说法”，应同时更新文档，而不是继续传播旧描述。
 - `docs/architecture.md` 必须始终反映**当前最新**的项目级架构、运行时关系和模块边界。
@@ -206,6 +208,7 @@ chore(deploy): update Docker Compose configuration
 ## Important Files
 
 - `docs/architecture.md` — 项目级架构总览与图示
+- `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md` — 当前 Team Usage prewarm worker、Redis generation/manifest 与 backend 只读 fallback 主设计
 - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md` — 当前全站加载性能、Redis read model、Team Overview 拆分和 serving/observability 主设计
 - `docs/superpowers/specs/2026-06-22-configurable-directory-sync-design.md` — 当前可配置组织架构同步、部门视图、离职禁用与 token 失效主设计
 - `docs/superpowers/specs/2026-05-19-ae-cli-deterministic-tool-configuration-design.md` — 当前 `ae-cli discover` / tool config 主设计

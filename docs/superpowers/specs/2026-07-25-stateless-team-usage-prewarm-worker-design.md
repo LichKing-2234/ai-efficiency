@@ -23,6 +23,22 @@
   request; and
 - PR #192's exact scope-origin fallback.
 
+**Retires from the 2026-07-19 and 2026-07-20 follow-up designs:**
+
+- the provider-wide 24-slot trend origin contract in
+  `docs/superpowers/specs/2026-07-19-team-usage-cache-read-retry-and-24-origin-design.md`.
+  PRs #191 and #192 replaced per-user trend origins with one batched Relay read
+  plus the shared Redis scope origin, so `maxConcurrentTeamTrendOrigins` and
+  `teamTrendOriginLimiter` no longer exist in `backend/internal/relay`. That
+  spec's immediate `readcache.RedisStore.Get` retry remains in force and is
+  unaffected.
+- the 9-second cold-completion target in
+  `docs/superpowers/specs/2026-07-20-team-usage-experiment-matrix-design.md`.
+  No candidate in that matrix met it. The representative merge gate below
+  replaces it and measures median fully rendered completion rather than cold
+  complete readiness; the two numbers are not comparable, so the earlier target
+  is withdrawn rather than met.
+
 The superseded documents never merged to the integration branch and have been
 removed from the final PR diff. This design, its implementation plan, and short
 sanitized acceptance evidence retain the necessary source semantics. One-off

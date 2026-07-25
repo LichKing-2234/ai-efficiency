@@ -24,7 +24,7 @@
 - Tests and examples use only synthetic departments, users, emails, credentials, and URLs.
 - Maintain this file as a live ledger and check a step only after its command or edit actually completes.
 
-**Status:** Complete. PR #178 was merged into `feat/platform-loading-performance` at `8db50f91`; issue #165 is closed, and administrator reader/removal follow-ups #169/#171 are present at the exact integration head `d2bc2694`. The ticket-local role E2E gap is superseded by #173's fresh exact-head 16/16 role regression. A successful post-storage Directory apply remains a deployment prerequisite, not a missing code step.
+**Status:** Complete. PR #178 was merged into `feat/platform-loading-performance` at `8db50f91`; issue #165 is closed, and administrator reader/removal follow-ups #169/#171 are present at the then-current integration head `d2bc2694`. The ticket-local role E2E gap is superseded by #173's fresh exact-head 16/16 role regression. A successful post-storage Directory apply remains a deployment prerequisite, not a missing code step.
 
 ---
 

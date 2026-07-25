@@ -26,7 +26,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #157 at `37e43258`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #157 at `37e43258`; the then-current integration head `d2bc2694` also contains the later review remediations through #172. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 ---
 

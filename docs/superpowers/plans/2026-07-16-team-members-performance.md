@@ -24,7 +24,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** The original split Members implementation is integrated into `feat/platform-loading-performance` through PR #155 at `1098c709`; bounded independent-origin and compatibility-adapter remediations #168/#172 are also present at the exact head `d2bc2694`. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open, and #137 still owns later compatibility removal.
+**Status:** The original split Members implementation is integrated into `feat/platform-loading-performance` through PR #155 at `1098c709`; bounded independent-origin and compatibility-adapter remediations #168/#172 are also present at the then-current integration head `d2bc2694`. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open, and #137 still owns later compatibility removal.
 
 ---
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.23/1.24 toolchain, Gin, Ent 0.14, PostgreSQL, `lib/pq`, Vue 3 `<script setup lang="ts">`, Vue Router, Pinia, TailwindCSS, Vitest, Vue Test Utils.
 
-**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #141 at `108419e1`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR and ledger-CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #141 at `108419e1`; the then-current integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR and ledger-CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 ## Global Constraints
 

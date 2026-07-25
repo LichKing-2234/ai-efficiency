@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through source PR #139 and integration PR #138 at `ff61d8d4`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR and CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through source PR #139 and integration PR #138 at `ff61d8d4`; the then-current integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR and CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Make the protected-navigation work-item badge and administrator offboarding list fast and bounded while preserving authoritative quota, credential, Directory Sync, Relay disable, and token-revocation behavior.
 

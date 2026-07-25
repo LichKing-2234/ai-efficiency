@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** The original bounded SQL implementation is integrated into `feat/platform-loading-performance` through PR #147 at `ed446feb`; persisted-hierarchy and cleanup remediations #165/#169/#171 are also present at the exact head `d2bc2694`. Earlier final-ledger CI language below is historical delivery evidence, not a current gate. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** The original bounded SQL implementation is integrated into `feat/platform-loading-performance` through PR #147 at `ed446feb`; persisted-hierarchy and cleanup remediations #165/#169/#171 are also present at the then-current integration head `d2bc2694`. Earlier final-ledger CI language below is historical delivery evidence, not a current gate. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Make the complete `/admin/users` experience bounded: SQL-backed user count/page/filtering, page-local department enrichment, lightweight department selection, lazy child-at-a-time department navigation, shared current-filter mutation targets, and exactly one responsive user-row tree.
 

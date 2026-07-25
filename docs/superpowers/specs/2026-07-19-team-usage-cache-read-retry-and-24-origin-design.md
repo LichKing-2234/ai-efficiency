@@ -1,6 +1,10 @@
 # Team Usage Cache Read Retry And 24-Origin Follow-Up Design
 
-**Status:** Implemented by `bade4a33` and `26907c85`; full local verification is complete and PR CI is pending
+**Status:** Implemented as PR #190 (`55302b62`); staging cold acceptance failed at
+12.364s. The `readcache.RedisStore.Get` retry remains in force. The provider-wide
+24-slot trend origin contract was removed by PRs #191/#192 and is formally retired
+by `2026-07-25-stateless-team-usage-prewarm-worker-design.md`. Retained as design
+history.
 
 **Refines:**
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Complete. PR #185 was squash-merged into `feat/platform-loading-performance` at `a717e37df2a039d71b7aefabc80596a44ff648b9`; issue #171 is closed, exact PR head `8650d2034f9b1b1a69d9b8be00ad75e98c392dbe` passed the required CI, and the exact integration head `d2bc2694` includes #172. No `main` merge, release, or production verification is claimed.
+**Status:** Complete. PR #185 was squash-merged into `feat/platform-loading-performance` at `a717e37df2a039d71b7aefabc80596a44ff648b9`; issue #171 is closed, exact PR head `8650d2034f9b1b1a69d9b8be00ad75e98c392dbe` passed the required CI, and the then-current integration head `d2bc2694` includes #172. No `main` merge, release, or production verification is claimed.
 
 **Goal:** Remove administrator request-time hierarchy compatibility reconstruction and positional-placeholder coupling while preserving all persisted effective-hierarchy behavior.
 

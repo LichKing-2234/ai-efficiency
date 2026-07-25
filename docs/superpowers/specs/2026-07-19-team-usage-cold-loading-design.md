@@ -1,6 +1,9 @@
 # Team Usage Cold Loading Design
 
-**Status:** Implemented through `perf/team-usage-cold-loading@2147142a`; independent re-review and full local verification are complete, while exact-head PR CI and staging A/B remain pending
+**Status:** Implemented as PR #189 (`2af81022`). Staging acceptance failed both cold
+rounds against the then-current 9-second gate, and the mechanism was superseded by
+PRs #191-#193. Retained as design history; the current contract is
+`2026-07-25-stateless-team-usage-prewarm-worker-design.md`.
 
 **Refines:**
 

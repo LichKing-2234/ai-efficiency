@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #142 at `0ee4e014`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR and ledger-CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #142 at `0ee4e014`; the then-current integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR and ledger-CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Keep repository PR pages bounded by evaluating one page's usage freshness with a constant set of bulk SQL queries while preserving the current response fields, list ordering, detail diagnostics, and visible status/reason precedence.
 

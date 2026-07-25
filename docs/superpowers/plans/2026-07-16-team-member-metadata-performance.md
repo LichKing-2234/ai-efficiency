@@ -21,7 +21,7 @@
 - Do not merge, release, tag, deploy, or run Helm as part of this issue.
 - Every completed step updates this file in the same execution turn.
 
-**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #152 at `8e11aadb`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #152 at `8e11aadb`; the then-current integration head `d2bc2694` also contains the later review remediations through #172. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 ---
 

@@ -22,7 +22,7 @@
 - Tests and examples use only synthetic identities and credentials.
 - Update each checkbox immediately after the action is actually complete.
 
-**Status:** Complete. PR #177 was merged into `feat/platform-loading-performance` at `b8a5450c`; issue #164 is closed, and the exact integration head `d2bc2694` includes the later Team Usage remediations through #172. The ticket-local role E2E gap is superseded by #173's fresh exact-head 16/16 role regression. No `main` merge, release, or production verification is claimed.
+**Status:** Complete. PR #177 was merged into `feat/platform-loading-performance` at `b8a5450c`; issue #164 is closed, and the then-current integration head `d2bc2694` includes the later Team Usage remediations through #172. The ticket-local role E2E gap is superseded by #173's fresh exact-head 16/16 role regression. No `main` merge, release, or production verification is claimed.
 
 ---
 

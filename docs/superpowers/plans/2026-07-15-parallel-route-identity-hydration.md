@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation and remediation are complete and integrated into `feat/platform-loading-performance` through PR #144 at `f4b2802d`; the exact integration head `d2bc2694` contains the later review remediations through #172. Earlier Draft-PR and final-ledger CI language below is historical delivery evidence, not a current gate. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation and remediation are complete and integrated into `feat/platform-loading-performance` through PR #144 at `f4b2802d`; the then-current integration head `d2bc2694` contains the later review remediations through #172. Earlier Draft-PR and final-ledger CI language below is historical delivery evidence, not a current gate. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Start public and authenticated non-admin route chunks without waiting for current-user hydration while keeping administrator routes fail-closed and making every login, logout, refresh, and delayed redirect safe across browser-session and navigation races.
 

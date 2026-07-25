@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #140 at `1c810bbc`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #140 at `1c810bbc`; the then-current integration head `d2bc2694` also contains the later review remediations through #172. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Make the existing embedded SPA materially faster on cold and repeat visits by serving correct gzip/cache headers and removing inactive locale and chart code from the initial data-loading path, without adding a CDN or a separate frontend release unit.
 

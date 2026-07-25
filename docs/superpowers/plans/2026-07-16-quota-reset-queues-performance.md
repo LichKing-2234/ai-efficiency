@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use superpowers:executing-plans and superpowers:test-driven-development. Update this ledger immediately after each verified step.
 
-**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #150 at `531a01dd`; the exact integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR and source-head CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #150 at `531a01dd`; the then-current integration head `d2bc2694` also contains the later review remediations through #172. Draft-PR and source-head CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Open `/usage/quota-reset` with only the active requester queue on the critical path, while preserving authoritative quota-reset mutations and immediately refreshed Work Items counts.
 

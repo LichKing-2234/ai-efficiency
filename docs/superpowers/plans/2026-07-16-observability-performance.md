@@ -25,7 +25,7 @@
 - Do not merge, release, tag, deploy, run Helm, or modify `sub2api`.
 - Update each checkbox immediately after the action is actually complete.
 
-**Status:** The original observability baseline is integrated into `feat/platform-loading-performance` through PR #158 at `94fda0f7`; complete production read-cache instrumentation remediation #166 and all later review remediation through #172 are present at the exact head `d2bc2694`. Draft-PR and source-head CI details below are historical delivery evidence. The telemetry is not production-verified and no route budget is ratified; #136 remains open for that external evidence.
+**Status:** The original observability baseline is integrated into `feat/platform-loading-performance` through PR #158 at `94fda0f7`; complete production read-cache instrumentation remediation #166 and all later review remediation through #172 are present at the then-current integration head `d2bc2694`. Draft-PR and source-head CI details below are historical delivery evidence. The telemetry is not production-verified and no route budget is ratified; #136 remains open for that external evidence.
 
 ---
 

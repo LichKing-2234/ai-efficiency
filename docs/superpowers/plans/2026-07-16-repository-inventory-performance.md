@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and superpowers:test-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #151 at `9101a51a`; shared cache-coordination remediation #162 and all later review remediation through #172 are present at the exact head `d2bc2694`. Draft-PR and source-head CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation complete and integrated into `feat/platform-loading-performance` through PR #151 at `9101a51a`; shared cache-coordination remediation #162 and all later review remediation through #172 are present at the then-current integration head `d2bc2694`. Draft-PR and source-head CI details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Render repository list/detail core content without browser waterfalls while making inventory work bounded, deployment-isolated, and immediately versioned after repository mutations.
 

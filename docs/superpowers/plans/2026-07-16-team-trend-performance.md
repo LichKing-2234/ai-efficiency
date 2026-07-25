@@ -21,7 +21,7 @@
 - Tests and examples use synthetic identities only.
 - Update every checkbox immediately after the action is completed.
 
-**Status:** The original split Trend implementation is integrated into `feat/platform-loading-performance` through PR #154 at `93b7bcf9`; independent-origin and compatibility-adapter remediations #167/#172 are also present at the exact head `d2bc2694`. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open, and #137 still owns later compatibility removal.
+**Status:** The original split Trend implementation is integrated into `feat/platform-loading-performance` through PR #154 at `93b7bcf9`; independent-origin and compatibility-adapter remediations #167/#172 are also present at the then-current integration head `d2bc2694`. Stacked-Draft-PR details below are historical delivery evidence. This work is not merged to `main` or production-verified; #136 remains open, and #137 still owns later compatibility removal.
 
 ---
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Implementation and the pending-pagination remediation are complete and integrated into `feat/platform-loading-performance` through PR #145 at `028fd34b`; the exact integration head `d2bc2694` contains the later review remediations through #172. Earlier push/CI language and the non-blocking Minor note below are historical delivery evidence, not current gates. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
+**Status:** Implementation and the pending-pagination remediation are complete and integrated into `feat/platform-loading-performance` through PR #145 at `028fd34b`; the then-current integration head `d2bc2694` contains the later review remediations through #172. Earlier push/CI language and the non-blocking Minor note below are historical delivery evidence, not current gates. This work is not merged to `main` or production-verified; #136 remains open for that external evidence.
 
 **Goal:** Let administrators browse long Directory Sync history through stable, lightweight pages while loading complete diagnostics only for the selected run and polling only the latest active preview/apply run.
 
