@@ -31,19 +31,20 @@ contract.
 
 ## Context
 
-PR #193 currently embeds a Team Usage prewarm scheduler in every AI Efficiency
-backend process. Each backend replica constructs its own startup lifecycle and
-60-second ticker, then coordinates startup, moving, recovery, historical, source
-slot, segment, and publication work through several Redis leases. The feature
-is disabled by default and multi-replica enablement remains blocked because a
-startup lease loser can begin scheduled work before the owner finishes.
+Before this implementation, PR #193 embedded a Team Usage prewarm scheduler in
+every AI Efficiency backend process. Each backend replica constructed its own
+startup lifecycle and 60-second ticker, then coordinated startup, moving,
+recovery, historical, source-slot, segment, and publication work through several
+Redis leases. The feature was disabled by default, and multi-replica enablement
+was blocked because a startup lease loser could begin scheduled work before the
+owner finished.
 
-That design couples web-replica count to background scheduler count. It also
-requires every stateless backend Pod to own process-local lifecycle state even
-though the optimization's durable state belongs in Redis. The resulting
-coordination and observability implementation is larger than the retained cache
-and authorization problem, and its complexity has already caused metric-vocabulary
-and partial-success reporting defects.
+That pre-implementation design coupled web-replica count to background scheduler
+count. It also required every stateless backend Pod to own process-local
+lifecycle state even though the optimization's durable state belonged in Redis.
+The resulting coordination and observability implementation was larger than the
+retained cache and authorization problem, and its complexity had already caused
+metric-vocabulary and partial-success reporting defects.
 
 AI Efficiency backend Pods must remain horizontally scalable and stateless.
 Adding or removing a web replica must not create, remove, or reschedule prewarm
