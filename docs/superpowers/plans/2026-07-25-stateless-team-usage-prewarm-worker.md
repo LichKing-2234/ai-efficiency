@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, Helm, Kubernetes, Google Chrome.
 
-**Status:** In progress. Tasks 1-5, including the Task 1 review follow-up, are complete; Tasks 6-7 remain. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
+**Status:** In progress. Tasks 1-6, including their review follow-ups, are complete; Task 7 remains. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 uses the independent Helm worktree `/Users/admin/helm/.worktrees/ai-efficiency-prewarmer` and leaves `/Users/admin/helm`'s dirty main worktree untouched; Task 7 records sanitized staging evidence only.
 
 ## Global Constraints
 
@@ -872,6 +872,8 @@ git commit -m "docs(teamusage): finalize stateless prewarm architecture"
 - Modify there: `ai-efficiency/templates/_helpers.tpl`
 - Create there: `ai-efficiency/templates/prewarmer-deployment.yaml`
 - Modify there: `ai-efficiency/tests/staging-scripts-test.sh`
+- Modify there: `ai-efficiency/docs/deploy.md`
+- Modify there: `docs/staging-playbook.md`
 
 **Interfaces:**
 - Consumes: Task 4 image paths and worker environment.
@@ -890,7 +892,7 @@ prewarmer:
 
 - The template always renders `replicas: 1`, `strategy.type: Recreate`, the exact shared image tag, and command `/app/ai-efficiency-prewarmer`.
 
-- [ ] **Step 1: Create the isolated Helm worktree without touching dirty main**
+- [x] **Step 1: Create the isolated Helm worktree without touching dirty main**
 
 ```bash
 cd /Users/admin/helm
@@ -904,26 +906,38 @@ git status --short --branch
 
 Expected: the new worktree is clean. The modified main-worktree staging secret and unrelated CSV files remain untouched.
 
-- [ ] **Step 2: Add failing Helm render assertions**
+- [x] **Step 2: Add failing Helm render assertions**
 
 Extend `ai-efficiency/tests/staging-scripts-test.sh` with disabled and enabled renders. Assert:
 
 ```bash
+cat >"${render_input_values}" <<'YAML'
+secretEnv:
+  AE_DB_DSN: "postgres://app:test-password@db.example.com:5432/ai_efficiency?sslmode=disable"
+  AE_AUTH_JWT_SECRET: "test-jwt-secret"
+  AE_ENCRYPTION_KEY: "test-encryption-key"
+  AE_REDIS_PASSWORD: "test-redis-password"
+postgres:
+  auth:
+    password: "test-postgres-password"
+  restore:
+    sourceDbDsn: "postgres://app:test-password@db.example.com:5432/ai_efficiency?sslmode=require"
+YAML
+
 helm template ai-efficiency-staging ./ai-efficiency \
   -f ai-efficiency/values.yaml \
-  --set prewarmer.enabled=false >"${disabled_chart}"
+  -f "${render_input_values}" >"${disabled_chart}"
 ! grep -q 'app.kubernetes.io/component: prewarmer' "${disabled_chart}"
 
 helm template ai-efficiency-staging ./ai-efficiency \
   -f ai-efficiency/values.yaml \
   -f ai-efficiency/values-staging.yaml \
-  --set replicaCount=2 \
-  --set prewarmer.enabled=true >"${enabled_chart}"
+  -f "${render_input_values}" >"${enabled_chart}"
 ```
 
 For the enabled render, parse YAML documents and assert one Backend Deployment with two replicas, one prewarmer Deployment with one replica, identical images, `Recreate`, worker command, no worker Service/Ingress/PVC/volume, and no `AE_PREWARMER_*` variable in the Backend container.
 
-- [ ] **Step 3: Run the Helm test to verify RED**
+- [x] **Step 3: Run the Helm test to verify RED**
 
 ```bash
 cd /Users/admin/helm/.worktrees/ai-efficiency-prewarmer
@@ -932,7 +946,7 @@ bash ai-efficiency/tests/staging-scripts-test.sh
 
 Expected: FAIL because `prewarmer.enabled=true` does not render a worker Deployment.
 
-- [ ] **Step 4: Implement the worker Deployment**
+- [x] **Step 4: Implement the worker Deployment**
 
 Add a dedicated helper label set with `app.kubernetes.io/component: prewarmer`. The Deployment container must include only:
 
@@ -946,35 +960,50 @@ Do not copy auth, OAuth, frontend, webhook, SCM, Service, Ingress, persistence, 
 
 Set staging to `replicaCount: 2` and `prewarmer.enabled: true` only for staging acceptance. Keep default values disabled and do not alter production secrets or production rollout inputs.
 
-- [ ] **Step 5: Verify Helm rendering and lint**
+- [x] **Step 5: Verify Helm rendering and lint**
 
 ```bash
 cd /Users/admin/helm/.worktrees/ai-efficiency-prewarmer
 bash ai-efficiency/tests/staging-scripts-test.sh
 helm lint ai-efficiency
-helm template ai-efficiency ./ai-efficiency -f ai-efficiency/values.yaml >/tmp/ai-efficiency-disabled.yaml
+helm template ai-efficiency ./ai-efficiency -f ai-efficiency/values.yaml \
+  --set-string secretEnv.AE_DB_DSN='postgres://app:test-password@db.example.com:5432/ai_efficiency?sslmode=disable' \
+  --set-string secretEnv.AE_AUTH_JWT_SECRET='test-jwt-secret' \
+  --set-string secretEnv.AE_ENCRYPTION_KEY='test-encryption-key' \
+  >/tmp/ai-efficiency-disabled.yaml
 helm template ai-efficiency-staging ./ai-efficiency \
   -f ai-efficiency/values.yaml -f ai-efficiency/values-staging.yaml \
   --set image.tag=staging-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+  --set-string secretEnv.AE_DB_DSN='postgres://app:test-password@db.example.com:5432/ai_efficiency?sslmode=disable' \
+  --set-string secretEnv.AE_AUTH_JWT_SECRET='test-jwt-secret' \
+  --set-string secretEnv.AE_ENCRYPTION_KEY='test-encryption-key' \
+  --set-string secretEnv.AE_REDIS_PASSWORD='test-redis-password' \
+  --set-string postgres.auth.password='test-postgres-password' \
+  --set-string postgres.restore.sourceDbDsn='postgres://app:test-password@db.example.com:5432/ai_efficiency?sslmode=require' \
   >/tmp/ai-efficiency-prewarmer-enabled.yaml
 ```
 
-Expected: tests and lint PASS; disabled output has no prewarmer; enabled output has exactly one worker and two Backend replicas.
+Expected: tests and lint PASS; disabled output has no prewarmer; enabled output has exactly one worker and two Backend replicas. The staging playbook contract also proves Phase A pauses Backend and Worker, Phase B restores with the Worker disabled, Phase C enables the Worker only after readiness, and rollback selects only a prior complete Phase C revision.
 
-- [ ] **Step 6: Commit and open the dependent Helm PR**
+- [x] **Step 6: Commit and open the dependent Helm PR**
 
 ```bash
 git add ai-efficiency/values.yaml ai-efficiency/values-staging.yaml \
   ai-efficiency/templates/_helpers.tpl ai-efficiency/templates/prewarmer-deployment.yaml \
-  ai-efficiency/tests/staging-scripts-test.sh
+  ai-efficiency/tests/staging-scripts-test.sh ai-efficiency/docs/deploy.md \
+  docs/staging-playbook.md
 git commit -m "feat(ai-efficiency): add optional prewarm worker"
 git push -u origin perf/ai-efficiency-prewarmer
-gh pr create --draft --base main --head perf/ai-efficiency-prewarmer \
+/Users/admin/.local/bin/atlassian bitbucket pr create TOOL helm \
   --title "feat(ai-efficiency): add optional prewarm worker" \
-  --body $'## Summary\n- add one optional Recreate prewarmer Deployment\n- keep Backend replicas independent and free of worker configuration\n- use the application image worker binary at /app/ai-efficiency-prewarmer\n\n## Dependency\nDepends on the application PR that publishes both process binaries in one image.\n\n## Verification\n- bash ai-efficiency/tests/staging-scripts-test.sh\n- helm lint ai-efficiency'
+  --description $'PENDING DEPENDENCY\n\nDepends on https://github.com/LichKing-2234/ai-efficiency/pull/193 publishing an image that contains /app/ai-efficiency-prewarmer.\n\nVerification:\n- bash ai-efficiency/tests/staging-scripts-test.sh\n- helm lint ai-efficiency' \
+  --from-ref refs/heads/perf/ai-efficiency-prewarmer \
+  --to-ref refs/heads/main
 ```
 
-The PR body must state that it depends on the application PR image containing `/app/ai-efficiency-prewarmer`; it must contain no credentials or staging secret values.
+The PR body must state that it depends on the application PR image containing `/app/ai-efficiency-prewarmer`; it must contain no credentials or staging secret values. Internal Bitbucket does not support draft PRs, so the dependent PR remains `OPEN` with `PENDING DEPENDENCY` as its first description line.
+
+**Task 6 verification (2026-07-25):** isolated Helm worktree and dirty-main preservation checks passed; RED/GREEN render tests, chart lint, sanitized default/staging/boundary/resource renders, and the Phase A/B/C playbook contract passed. Review follow-ups fixed suffix-preserving 63-character names, restore-time Worker isolation, completed-revision rollback selection, and Backend Service test precision. Internal Bitbucket PR [TOOL/helm #5](https://bitbucket.agoralab.co/projects/TOOL/repos/helm/pull-requests/5) is `OPEN` at `acce913acb7a9d7de41b3298bc0ec6d32dbe9ee1` with the application dependency explicitly recorded; no live or production deployment was performed.
 
 ---
 
