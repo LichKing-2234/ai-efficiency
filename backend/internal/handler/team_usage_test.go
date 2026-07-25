@@ -294,7 +294,7 @@ func TestTeamUsageSummaryRequiresAuthentication(t *testing.T) {
 	}
 }
 
-func TestTeamUsageSummaryIndependentFromTrendOverRealHTTP(t *testing.T) {
+func TestTeamUsageSummaryUsesSharedScopeOriginOverRealHTTP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	client := testdb.Open(t)
 	client.RelayProvider.Create().
@@ -310,8 +310,6 @@ func TestTeamUsageSummaryIndependentFromTrendOverRealHTTP(t *testing.T) {
 
 	rangeAlice, rangeBob := 15.0, 30.0
 	tokensAlice, tokensBob := int64(1500), int64(4500)
-	releaseTrend := make(chan struct{})
-	defer close(releaseTrend)
 	provider := &teamUsageHTTPRelayProvider{
 		summaryStats: map[int64]relay.TeamUserUsageStats{
 			1002: {
@@ -323,8 +321,6 @@ func TestTeamUsageSummaryIndependentFromTrendOverRealHTTP(t *testing.T) {
 				TodayActualCost: 2, TotalActualCost: 99,
 			},
 		},
-		trendStarted: make(chan struct{}, 1),
-		trendRelease: releaseTrend,
 	}
 	scope := &representativescope.Scope{
 		Version: "scope-http-summary", ActorUserID: 101, IsRepresentative: true,
@@ -340,19 +336,24 @@ func TestTeamUsageSummaryIndependentFromTrendOverRealHTTP(t *testing.T) {
 			t.Errorf("close test Redis client: %v", err)
 		}
 	})
+	store := readcache.NewRedisStore(redisClient)
 	cache, err := teamusage.NewSnapshotCache(
-		readcache.NewRedisStore(redisClient),
+		store,
 		teamusage.SnapshotCacheOptions{Namespace: "summary-http-independent"},
 	)
 	if err != nil {
 		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	originCache, err := teamusage.NewOriginCache(store, teamusage.OriginCacheOptions{Namespace: "summary-http-independent"})
+	if err != nil {
+		t.Fatalf("NewOriginCache() error = %v", err)
 	}
 	service, err := teamusage.NewService(
 		client,
 		teamUsageHTTPScopeResolver{scope: scope},
 		teamUsageHTTPProviderResolver{provider: provider},
 		nil,
-		teamusage.ServiceOptions{SnapshotCache: cache, CursorSecret: "test-summary-http-cursor-secret"},
+		teamusage.ServiceOptions{SnapshotCache: cache, OriginCache: originCache, CursorSecret: "test-summary-http-cursor-secret"},
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -367,19 +368,7 @@ func TestTeamUsageSummaryIndependentFromTrendOverRealHTTP(t *testing.T) {
 		nil,
 	)
 	response := httptest.NewRecorder()
-	done := make(chan struct{})
-	go func() {
-		router.ServeHTTP(response, request)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-provider.trendStarted:
-		t.Fatal("summary HTTP request reached trend provider")
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("summary HTTP request did not complete independently of trend provider")
-	}
+	router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body = %s, want 200", response.Code, response.Body.String())
 	}
@@ -391,13 +380,14 @@ func TestTeamUsageSummaryIndependentFromTrendOverRealHTTP(t *testing.T) {
 			t.Fatalf("summary body = %s, want %s", response.Body.String(), expected)
 		}
 	}
-	if provider.trendCalls.Load() != 0 {
-		t.Fatalf("trend calls = %d, want 0", provider.trendCalls.Load())
+	if provider.trendCalls.Load() != 1 {
+		t.Fatalf("trend calls = %d, want one shared scope-origin trend", provider.trendCalls.Load())
 	}
 
 	incompleteBob := provider.summaryStats[1003]
 	incompleteBob.RangeTotalTokens = nil
 	provider.summaryStats[1003] = incompleteBob
+	provider.trendErr = errors.New("synthetic users-trend outage")
 	incompleteRequest := httptest.NewRequest(
 		http.MethodGet,
 		"/api/v1/user/team-usage/summary?start_date=2026-07-01&end_date=2026-07-08&granularity=day&timezone=Asia%2FShanghai",
@@ -416,6 +406,9 @@ func TestTeamUsageSummaryIndependentFromTrendOverRealHTTP(t *testing.T) {
 		if !strings.Contains(incompleteResponse.Body.String(), expected) {
 			t.Fatalf("incomplete range body = %s, want %s", incompleteResponse.Body.String(), expected)
 		}
+	}
+	if provider.trendCalls.Load() != 2 {
+		t.Fatalf("trend calls after second range = %d, want one origin attempt per range", provider.trendCalls.Load())
 	}
 }
 
@@ -464,8 +457,9 @@ func TestTeamOverviewCompatibilityUsesSplitLanesOverRealHTTP(t *testing.T) {
 		}
 	})
 	now := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	store := readcache.NewRedisStore(redisClient)
 	cache, err := teamusage.NewSnapshotCache(
-		readcache.NewRedisStore(redisClient),
+		store,
 		teamusage.SnapshotCacheOptions{
 			Namespace: "trend-http-independent", Now: func() time.Time { return now }, RandFloat64: func() float64 { return 0 },
 		},
@@ -473,12 +467,16 @@ func TestTeamOverviewCompatibilityUsesSplitLanesOverRealHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSnapshotCache() error = %v", err)
 	}
+	originCache, err := teamusage.NewOriginCache(store, teamusage.OriginCacheOptions{Namespace: "trend-http-independent", Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatalf("NewOriginCache() error = %v", err)
+	}
 	service, err := teamusage.NewService(
 		client,
 		teamUsageHTTPScopeResolver{scope: scope},
 		teamUsageHTTPProviderResolver{provider: provider},
 		nil,
-		teamusage.ServiceOptions{SnapshotCache: cache, CursorSecret: "test-trend-http-cursor-secret"},
+		teamusage.ServiceOptions{SnapshotCache: cache, OriginCache: originCache, CursorSecret: "test-trend-http-cursor-secret"},
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -574,19 +572,24 @@ func TestTeamUsageMembersUsesIndependentBoundedOriginOverRealHTTP(t *testing.T) 
 			t.Errorf("close test Redis client: %v", err)
 		}
 	})
+	store := readcache.NewRedisStore(redisClient)
 	cache, err := teamusage.NewSnapshotCache(
-		readcache.NewRedisStore(redisClient),
+		store,
 		teamusage.SnapshotCacheOptions{Namespace: "members-http-independent"},
 	)
 	if err != nil {
 		t.Fatalf("NewSnapshotCache() error = %v", err)
+	}
+	originCache, err := teamusage.NewOriginCache(store, teamusage.OriginCacheOptions{Namespace: "members-http-independent"})
+	if err != nil {
+		t.Fatalf("NewOriginCache() error = %v", err)
 	}
 	service, err := teamusage.NewService(
 		client,
 		teamUsageHTTPScopeResolver{scope: scope},
 		teamUsageHTTPProviderResolver{provider: provider},
 		nil,
-		teamusage.ServiceOptions{SnapshotCache: cache, CursorSecret: "test-members-http-cursor-secret"},
+		teamusage.ServiceOptions{SnapshotCache: cache, OriginCache: originCache, CursorSecret: "test-members-http-cursor-secret"},
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -609,17 +612,22 @@ func TestTeamUsageMembersUsesIndependentBoundedOriginOverRealHTTP(t *testing.T) 
 	if strings.Contains(response.Body.String(), `"rank":51`) || strings.Contains(response.Body.String(), `"member_tree"`) || strings.Contains(response.Body.String(), `"top_member_trend"`) {
 		t.Fatalf("members body exceeded the first page or leaked compatibility fields: %s", response.Body.String())
 	}
-	if provider.trendCalls.Load() != 0 || provider.summaryCalls.Load() != 5 {
-		t.Fatalf("origin calls = trend/stats %d/%d, want 0/5", provider.trendCalls.Load(), provider.summaryCalls.Load())
+	if provider.trendCalls.Load() != 1 || provider.summaryCalls.Load() != 5 {
+		t.Fatalf("origin calls = trend/stats %d/%d, want 1/5", provider.trendCalls.Load(), provider.summaryCalls.Load())
 	}
 	for index, batch := range provider.summaryBatches {
-		if len(batch) != 100 || !provider.summaryParams[index].RequireCompleteRange {
-			t.Fatalf("stats batch %d = users %d complete_range %v, want 100/true", index, len(batch), provider.summaryParams[index].RequireCompleteRange)
+		if len(batch) != 100 || provider.summaryParams[index].RequireCompleteRange {
+			t.Fatalf("stats batch %d = users %d complete_range %v, want 100/false before shared trend completion", index, len(batch), provider.summaryParams[index].RequireCompleteRange)
 		}
 	}
 	keys := server.Keys()
-	if len(keys) != 1 || !strings.HasPrefix(keys[0], "ae:members-http-independent:team-usage-members:v1:") {
-		t.Fatalf("Redis keys = %v, want only independent Members lane", keys)
+	seenMembers, seenOrigin := false, false
+	for _, key := range keys {
+		seenMembers = seenMembers || strings.HasPrefix(key, "ae:members-http-independent:team-usage-members:v1:")
+		seenOrigin = seenOrigin || strings.HasPrefix(key, "ae:members-http-independent:team-usage-origin:v1:")
+	}
+	if len(keys) != 2 || !seenMembers || !seenOrigin {
+		t.Fatalf("Redis keys = %v, want the independent Members lane plus shared scope origin", keys)
 	}
 }
 

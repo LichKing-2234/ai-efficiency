@@ -28,6 +28,7 @@ func TestSetupRouterReportsAllMissingPerformanceInputs(t *testing.T) {
 		"work items revision store",
 		"representative scope cache",
 		"team usage snapshot cache",
+		"team usage origin cache",
 		"webhook HTTP client",
 		"request logger",
 		"request observer",
@@ -51,7 +52,7 @@ func TestNewProviderHandlerRequiresExplicitRuntime(t *testing.T) {
 
 func TestNewTeamUsageServiceRejectsImplicitUncachedFallback(t *testing.T) {
 	client := testdb.Open(t)
-	service, err := newTeamUsageService(client, nil, nil, nil, nil, "test-cursor-secret")
+	service, err := newTeamUsageService(client, nil, nil, nil, nil, nil, "test-cursor-secret")
 	if err == nil || !strings.Contains(err.Error(), "snapshot cache") {
 		t.Fatalf("newTeamUsageService() service=%v error=%v, want snapshot cache error", service, err)
 	}

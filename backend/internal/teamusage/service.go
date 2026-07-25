@@ -40,12 +40,14 @@ type Service struct {
 	teamOverviewTrendTimeout time.Duration
 	maxMultiplier            float64
 	snapshotCache            *SnapshotCache
+	originCache              *OriginCache
 	memberCursorCodec        *memberCursorCodec
 	organizationCursorCodec  *organizationCursorCodec
 }
 
 type ServiceOptions struct {
 	SnapshotCache *SnapshotCache
+	OriginCache   *OriginCache
 	CursorSecret  string
 }
 
@@ -73,7 +75,7 @@ func (s *Service) newSplitReadRequest(ctx context.Context, actorUserID int, para
 	request := &splitReadRequest{
 		actorUserID: actorUserID, params: normalized, scope: scope, providerConfig: *providerConfig,
 	}
-	if s.snapshotCache != nil {
+	if s.snapshotCache != nil || s.originCache != nil {
 		request.scopeHash, err = effectiveScopeHash(scope)
 		if err != nil {
 			return nil, err
@@ -102,14 +104,17 @@ func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolve
 	if options.SnapshotCache == nil {
 		return nil, fmt.Errorf("team usage snapshot cache is required")
 	}
+	if options.OriginCache == nil {
+		return nil, fmt.Errorf("team usage origin cache is required")
+	}
 	cursorSecret := strings.TrimSpace(options.CursorSecret)
 	if cursorSecret == "" {
 		return nil, fmt.Errorf("team usage cursor secret is required")
 	}
-	return newService(client, scopeResolver, providerResolver, locker, options.SnapshotCache, cursorSecret), nil
+	return newService(client, scopeResolver, providerResolver, locker, options.SnapshotCache, options.OriginCache, cursorSecret), nil
 }
 
-func newService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, cursorSecret string) *Service {
+func newService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, originCache *OriginCache, cursorSecret string) *Service {
 	if locker == nil {
 		locker = &PostgresAdvisoryLocker{}
 	}
@@ -122,6 +127,7 @@ func newService(client *ent.Client, scopeResolver ScopeResolver, providerResolve
 		teamOverviewTrendTimeout: defaultTeamOverviewTrendTimeout,
 		maxMultiplier:            defaultMaxMultiplier,
 		snapshotCache:            snapshotCache,
+		originCache:              originCache,
 	}
 	if cursorSecret != "" {
 		service.memberCursorCodec = newMemberCursorCodec(cursorSecret)
@@ -256,11 +262,22 @@ func (s *Service) readTrendSnapshot(ctx context.Context, actorUserID int, params
 
 func (s *Service) readTrendSnapshotForRequest(ctx context.Context, request *splitReadRequest) (*TrendCacheResult, error) {
 	loader := func(loadCtx context.Context) (TrendOriginLoadResult, error) {
-		var provider relay.Provider
 		overviewSubjects := request.scope.OverviewSubjects
 		if len(overviewSubjects) == 0 {
 			overviewSubjects = request.scope.Subjects
 		}
+		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
+			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+			if loadErr != nil {
+				if isHardTrendSnapshotOriginError(loadCtx, loadErr) {
+					return TrendOriginLoadResult{}, loadErr
+				}
+				return TrendOriginLoadResult{Snapshot: trendUnavailableSnapshot(request.params, "provider_error"), SnapshotErr: loadErr}, nil
+			}
+			snapshot, sourceErr := buildTrendSnapshotFromScopeOrigin(request.scope, request.params, origin)
+			return TrendOriginLoadResult{Snapshot: snapshot, SnapshotErr: sourceErr}, nil
+		}
+		var provider relay.Provider
 		if len(overviewSubjects) <= s.fullScopeCap {
 			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
 			if resolveErr != nil {
@@ -362,11 +379,21 @@ func (s *Service) readSummarySnapshot(ctx context.Context, actorUserID int, para
 
 func (s *Service) readSummarySnapshotForRequest(ctx context.Context, request *splitReadRequest) (*SummaryCacheResult, error) {
 	loader := func(loadCtx context.Context) (SummaryOriginLoadResult, error) {
-		var provider relay.Provider
 		overviewSubjects := request.scope.OverviewSubjects
 		if len(overviewSubjects) == 0 {
 			overviewSubjects = request.scope.Subjects
 		}
+		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
+			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+			if loadErr == nil {
+				return SummaryOriginLoadResult{Snapshot: buildSummarySnapshotFromScopeOrigin(request.scope, request.params, origin)}, nil
+			}
+			if isHardSnapshotOriginError(loadErr) {
+				return SummaryOriginLoadResult{}, loadErr
+			}
+			return SummaryOriginLoadResult{SnapshotErr: loadErr}, nil
+		}
+		var provider relay.Provider
 		if len(overviewSubjects) <= s.fullScopeCap {
 			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
 			if resolveErr != nil {
@@ -419,11 +446,21 @@ func (s *Service) readMembersSnapshot(ctx context.Context, actorUserID int, para
 
 func (s *Service) readMembersSnapshotForRequest(ctx context.Context, request *splitReadRequest) (*MembersCacheResult, error) {
 	loader := func(loadCtx context.Context) (MembersOriginLoadResult, error) {
-		var provider relay.Provider
 		overviewSubjects := request.scope.OverviewSubjects
 		if len(overviewSubjects) == 0 {
 			overviewSubjects = request.scope.Subjects
 		}
+		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
+			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+			if loadErr == nil {
+				return MembersOriginLoadResult{Snapshot: buildMembersSnapshotFromScopeOrigin(request.params, origin)}, nil
+			}
+			if isHardSnapshotOriginError(loadErr) {
+				return MembersOriginLoadResult{}, loadErr
+			}
+			return MembersOriginLoadResult{SnapshotErr: loadErr}, nil
+		}
+		var provider relay.Provider
 		if len(overviewSubjects) <= s.fullScopeCap {
 			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, request.providerConfig.ID)
 			if resolveErr != nil {
@@ -481,7 +518,7 @@ func (s *Service) generateMembersSnapshot(ctx context.Context, scope *representa
 	if err != nil {
 		return nil, fmt.Errorf("resolve team members Relay subjects: %w", err)
 	}
-	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relayUserIDs, relay.TeamUsageSummaryParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
 		RequireCompleteRange: true,
@@ -527,7 +564,7 @@ func (s *Service) generateSummarySnapshot(ctx context.Context, scope *representa
 	if err != nil {
 		return nil, err
 	}
-	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relayUserIDs, relay.TeamUsageSummaryParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
 		RequireCompleteRange: true,
@@ -615,7 +652,7 @@ func (s *Service) loadTeamTrendOrigin(ctx context.Context, scope *representative
 	if err != nil {
 		return nil, err
 	}
-	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+	statsByRelayUserID, err := s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, nil, relay.TeamUsageSummaryParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
 	})
@@ -741,11 +778,14 @@ func (s *Service) resolveSubjects(ctx context.Context, source []representativesc
 	if err != nil {
 		return nil, nil, err
 	}
+	return s.resolveSubjectsWithResolver(ctx, source, overviewRelayResolver)
+}
 
+func (s *Service) resolveSubjectsWithResolver(ctx context.Context, source []representativescope.Subject, resolver *overviewRelayUserResolver) ([]representativescope.Subject, []int64, error) {
 	subjects := make([]representativescope.Subject, 0, len(source))
 	relayUserIDs := make([]int64, 0, len(source))
 	for _, subject := range source {
-		relayUserID, resolvedSubject, err := overviewRelayResolver.Resolve(ctx, subject)
+		relayUserID, resolvedSubject, err := resolver.Resolve(ctx, subject)
 		if err != nil {
 			if errors.Is(err, ErrNoRelayMapping) {
 				subjects = append(subjects, subject)
@@ -759,11 +799,19 @@ func (s *Service) resolveSubjects(ctx context.Context, source []representativesc
 	return subjects, relayUserIDs, nil
 }
 
-func (s *Service) loadTeamUsageStats(ctx context.Context, provider relay.TeamUsageSummaryProvider, relayUserIDs []int64, params relay.TeamUsageSummaryParams) (map[int64]relay.TeamUserUsageStats, error) {
+func (s *Service) loadTeamUsageStats(
+	ctx context.Context,
+	provider relay.TeamUsageSummaryProvider,
+	relayUserIDs []int64,
+	completeRangeUserIDs []int64,
+	params relay.TeamUsageSummaryParams,
+) (map[int64]relay.TeamUserUsageStats, error) {
 	uniqueRelayUserIDs := uniqueInt64s(relayUserIDs)
 	statsByRelayUserID := make(map[int64]relay.TeamUserUsageStats, len(uniqueRelayUserIDs))
+	statsParams := params
+	statsParams.RequireCompleteRange = false
 	for _, chunk := range chunkInt64s(uniqueRelayUserIDs, 100) {
-		stats, err := provider.GetBatchUserUsageStats(ctx, chunk, params)
+		stats, err := provider.GetBatchUserUsageStats(ctx, chunk, statsParams)
 		if err != nil {
 			return nil, fmt.Errorf("get batch team usage stats: %w", err)
 		}
@@ -777,7 +825,66 @@ func (s *Service) loadTeamUsageStats(ctx context.Context, provider relay.TeamUsa
 			}
 		}
 	}
+	if !params.RequireCompleteRange {
+		return statsByRelayUserID, nil
+	}
+
+	incompleteUserIDs := make([]int64, 0)
+	for _, relayUserID := range uniqueRelayUserIDs {
+		stat, found := statsByRelayUserID[relayUserID]
+		if found && (stat.RangeActualCost == nil || stat.RangeTotalTokens == nil) {
+			incompleteUserIDs = append(incompleteUserIDs, relayUserID)
+		}
+	}
+	if len(incompleteUserIDs) == 0 {
+		return statsByRelayUserID, nil
+	}
+	trendProvider, ok := provider.(relay.TeamMemberTrendProvider)
+	if !ok {
+		return statsByRelayUserID, nil
+	}
+	fullScopeUserIDs := uniqueInt64s(completeRangeUserIDs)
+	if len(fullScopeUserIDs) == 0 {
+		return statsByRelayUserID, nil
+	}
+	pointsByUser, err := trendProvider.GetUsageTrendForUsers(ctx, fullScopeUserIDs, relay.TeamMemberTrendParams{
+		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
+		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
+	})
+	if err != nil {
+		return statsByRelayUserID, nil
+	}
+	for _, relayUserID := range incompleteUserIDs {
+		points, found := pointsByUser[relayUserID]
+		if !found {
+			continue
+		}
+		actualCost, totalTokens, tokensComplete := summarizeTeamUsageRange(points)
+		stat := statsByRelayUserID[relayUserID]
+		if stat.RangeActualCost == nil {
+			stat.RangeActualCost = &actualCost
+		}
+		if stat.RangeTotalTokens == nil && tokensComplete {
+			stat.RangeTotalTokens = &totalTokens
+		}
+		statsByRelayUserID[relayUserID] = stat
+	}
 	return statsByRelayUserID, nil
+}
+
+func summarizeTeamUsageRange(points []relay.UsageTrendPoint) (float64, int64, bool) {
+	var actualCost float64
+	var totalTokens int64
+	tokensComplete := true
+	for _, point := range points {
+		actualCost += point.ActualCost
+		if point.TotalTokens == nil {
+			tokensComplete = false
+			continue
+		}
+		totalTokens += *point.TotalTokens
+	}
+	return actualCost, totalTokens, tokensComplete
 }
 
 type overviewRelayUserResolver struct {

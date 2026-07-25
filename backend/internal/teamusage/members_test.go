@@ -83,8 +83,8 @@ func TestMembersBoundsStableOrderAndResponseSize(t *testing.T) {
 		t.Fatalf("members origin calls = trend %d stats batches/users %d/%d, want 0/5/500", provider.trendCalls, len(provider.summaryRequestBatches), len(provider.summaryRequestUserIDs))
 	}
 	for index, batch := range provider.summaryRequestBatches {
-		if len(batch) != 100 || !provider.summaryRequestParams[index].RequireCompleteRange {
-			t.Fatalf("stats batch %d = users %d complete_range %v, want 100/true", index, len(batch), provider.summaryRequestParams[index].RequireCompleteRange)
+		if len(batch) != 100 || provider.summaryRequestParams[index].RequireCompleteRange {
+			t.Fatalf("stats batch %d = users %d complete_range %v, want 100/false", index, len(batch), provider.summaryRequestParams[index].RequireCompleteRange)
 		}
 	}
 
@@ -221,6 +221,7 @@ func TestMembersRemainsAvailableWhenSummaryRangeIsUnavailable(t *testing.T) {
 	incomplete := provider.summaryStats[10002]
 	incomplete.RangeTotalTokens = nil
 	provider.summaryStats[10002] = incomplete
+	provider.trendErr = errors.New("synthetic users-trend outage")
 	params := testMembersParams()
 
 	summary, err := svc.Summary(context.Background(), 1, params.OverviewParams)
@@ -238,7 +239,7 @@ func TestMembersRemainsAvailableWhenSummaryRangeIsUnavailable(t *testing.T) {
 		t.Fatalf("Members() items = %+v, want incomplete range row ranked as available zero/nil", response.Items)
 	}
 	if provider.trendCalls != 0 || len(provider.summaryRequestBatches) != 2 {
-		t.Fatalf("origin calls = trend/stats %d/%d, want 0/2", provider.trendCalls, len(provider.summaryRequestBatches))
+		t.Fatalf("successful trend calls/stats = %d/%d, want 0/2 after two soft-failed completion attempts", provider.trendCalls, len(provider.summaryRequestBatches))
 	}
 }
 

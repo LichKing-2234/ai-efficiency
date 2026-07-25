@@ -352,6 +352,16 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize team usage snapshot cache", zap.Error(err))
 	}
+	teamUsageOriginCache, err := teamusage.NewOriginCache(
+		redisStore,
+		teamusage.OriginCacheOptions{
+			Namespace: cfg.Redis.Namespace,
+			Metrics:   cacheMetrics.teamUsageOrigin,
+		},
+	)
+	if err != nil {
+		logger.Fatal("initialize team usage origin cache", zap.Error(err))
+	}
 	repoInventoryCache, repoInventoryRevisions, err := initializeRepoInventory(
 		context.Background(),
 		entClient,
@@ -506,6 +516,7 @@ func main() {
 			WorkItemsRevisionStore:   workItemsRevisionStore,
 			RepresentativeScopeCache: representativeScopeCache,
 			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
+			TeamUsageOriginCache:     teamUsageOriginCache,
 			TeamUsageCursorSecret:    cfg.Encryption.Key,
 			WebhookHTTPClient:        httpClients.webhook,
 			RequestLogger:            logger,

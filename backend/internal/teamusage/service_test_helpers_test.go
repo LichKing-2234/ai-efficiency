@@ -11,9 +11,9 @@ func newServiceWithSnapshotCacheForTest(client *ent.Client, scopeResolver ScopeR
 	if len(cursorSecrets) > 0 {
 		cursorSecret = strings.TrimSpace(cursorSecrets[0])
 	}
-	return newService(client, scopeResolver, providerResolver, locker, snapshotCache, cursorSecret)
+	return newService(client, scopeResolver, providerResolver, locker, snapshotCache, nil, cursorSecret)
 }
 
 func newUncachedServiceForTest(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker) *Service {
-	return newService(client, scopeResolver, providerResolver, locker, nil, "")
+	return newService(client, scopeResolver, providerResolver, locker, nil, nil, "")
 }

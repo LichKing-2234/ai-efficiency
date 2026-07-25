@@ -39,6 +39,7 @@ type RouterOptions struct {
 	WorkItemsRevisionStore   *workitems.RevisionStore
 	RepresentativeScopeCache *representativescope.Cache
 	TeamUsageSnapshotCache   *teamusage.SnapshotCache
+	TeamUsageOriginCache     *teamusage.OriginCache
 	TeamUsageCursorSecret    string
 	WebhookHTTPClient        *http.Client
 	RequestLogger            *zap.Logger
@@ -73,6 +74,9 @@ func validateRouterDependencies(providerHandler *ProviderHandler, options Router
 	}
 	if options.TeamUsageSnapshotCache == nil {
 		missing = append(missing, "team usage snapshot cache")
+	}
+	if options.TeamUsageOriginCache == nil {
+		missing = append(missing, "team usage origin cache")
 	}
 	if options.WebhookHTTPClient == nil {
 		missing = append(missing, "webhook HTTP client")
@@ -350,7 +354,7 @@ func setupRouter(
 	RegisterWorkItemsRoutes(protected, workItemsHandler)
 	RegisterWebVitalsRoutes(protected, options.WebVitalsHandler)
 
-	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageCursorSecret)
+	teamUsageService, err := newTeamUsageService(entClient, sqlDB, providerHandler, options.RepresentativeScopeCache, options.TeamUsageSnapshotCache, options.TeamUsageOriginCache, options.TeamUsageCursorSecret)
 	if err != nil {
 		return nil, fmt.Errorf("initialize team usage service: %w", err)
 	}

@@ -3060,114 +3060,6 @@ func TestGetUserUsageDashboardFailsFastOnSub2APIError(t *testing.T) {
 	}
 }
 
-func TestSub2APITeamUsageTrendForUsersFansOutByUserID(t *testing.T) {
-	var mu sync.Mutex
-	var requested []map[string]string
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		requested = append(requested, map[string]string{
-			"user_id":     r.URL.Query().Get("user_id"),
-			"start_date":  r.URL.Query().Get("start_date"),
-			"end_date":    r.URL.Query().Get("end_date"),
-			"granularity": r.URL.Query().Get("granularity"),
-			"timezone":    r.URL.Query().Get("timezone"),
-		})
-		mu.Unlock()
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"data":    []map[string]any{{"date": "2026-06-26", "actual_cost": 1.25}},
-		})
-	})
-	p := newTestProvider(t, mux)
-	trender := p.(relay.TeamMemberTrendProvider)
-	got, err := trender.GetUsageTrendForUsers(context.Background(), []int64{1001, 1002}, relay.TeamMemberTrendParams{
-		StartDate:   "2026-06-01",
-		EndDate:     "2026-06-26",
-		Granularity: "day",
-		Timezone:    "Asia/Shanghai",
-	})
-	if err != nil {
-		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	sort.Slice(requested, func(i, j int) bool {
-		return requested[i]["user_id"] < requested[j]["user_id"]
-	})
-	if diff := cmp.Diff([]map[string]string{
-		{
-			"user_id":     "1001",
-			"start_date":  "2026-06-01",
-			"end_date":    "2026-06-26",
-			"granularity": "day",
-			"timezone":    "Asia/Shanghai",
-		},
-		{
-			"user_id":     "1002",
-			"start_date":  "2026-06-01",
-			"end_date":    "2026-06-26",
-			"granularity": "day",
-			"timezone":    "Asia/Shanghai",
-		},
-	}, requested); diff != "" {
-		t.Fatalf("requested query mismatch (-want +got):\n%s", diff)
-	}
-	if len(got[1001]) != 1 || got[1001][0].ActualCost != 1.25 {
-		t.Fatalf("trend[1001] = %#v, want one actual_cost point", got[1001])
-	}
-}
-
-func TestSub2APITeamUsageTrendForUsersFetchesConcurrently(t *testing.T) {
-	var mu sync.Mutex
-	seen := map[string]bool{}
-	allArrived := make(chan struct{})
-	closed := false
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/admin/dashboard/trend", func(w http.ResponseWriter, r *http.Request) {
-		userID := r.URL.Query().Get("user_id")
-		mu.Lock()
-		seen[userID] = true
-		if len(seen) == 2 && !closed {
-			close(allArrived)
-			closed = true
-		}
-		mu.Unlock()
-
-		select {
-		case <-allArrived:
-		case <-r.Context().Done():
-			return
-		case <-time.After(500 * time.Millisecond):
-			http.Error(w, "requests were not concurrent", http.StatusGatewayTimeout)
-			return
-		}
-
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": true,
-			"data":    []map[string]any{{"date": "2026-06-26", "actual_cost": 1.25}},
-		})
-	})
-	p := newTestProvider(t, mux)
-	trender := p.(relay.TeamMemberTrendProvider)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
-	defer cancel()
-	got, err := trender.GetUsageTrendForUsers(ctx, []int64{1001, 1002}, relay.TeamMemberTrendParams{
-		StartDate:   "2026-06-01",
-		EndDate:     "2026-06-26",
-		Granularity: "day",
-		Timezone:    "Asia/Shanghai",
-	})
-	if err != nil {
-		t.Fatalf("GetUsageTrendForUsers() error = %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("trend map size = %d, want 2", len(got))
-	}
-}
-
 func TestSub2APIListGroupRateMultipliersDecodesRateAndRPM(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/groups/42/rate-multipliers", func(w http.ResponseWriter, r *http.Request) {
@@ -3773,7 +3665,7 @@ func TestSub2APIGetBatchUserUsageStatsPostsUserIDs(t *testing.T) {
 	}
 }
 
-func TestSub2APIGetBatchUserUsageStatsSkipsRangeBackfillWhenNotRequired(t *testing.T) {
+func TestSub2APIGetBatchUserUsageStatsLeavesRangeCompletionToTeamUsage(t *testing.T) {
 	var trendCalls atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, _ *http.Request) {
@@ -3793,7 +3685,7 @@ func TestSub2APIGetBatchUserUsageStatsSkipsRangeBackfillWhenNotRequired(t *testi
 
 	got, err := summary.GetBatchUserUsageStats(context.Background(), []int64{1001}, relay.TeamUsageSummaryParams{
 		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "UTC",
-		RequireCompleteRange: false,
+		RequireCompleteRange: true,
 	})
 	if err != nil {
 		t.Fatalf("GetBatchUserUsageStats() error = %v", err)
@@ -3806,7 +3698,7 @@ func TestSub2APIGetBatchUserUsageStatsSkipsRangeBackfillWhenNotRequired(t *testi
 	}
 }
 
-func TestSub2APIGetBatchUserUsageStatsBackfillsMissingRangeFromTrend(t *testing.T) {
+func TestSub2APIGetBatchUserUsageStatsDoesNotBackfillMissingRange(t *testing.T) {
 	var requestedTrend []map[string]string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
@@ -3855,19 +3747,15 @@ func TestSub2APIGetBatchUserUsageStatsBackfillsMissingRangeFromTrend(t *testing.
 		got[1001].RangeTotalTokens == nil || *got[1001].RangeTotalTokens != 987 {
 		t.Fatalf("batch stats[1001] = %#v, want direct range totals 7.5/987", got[1001])
 	}
-	if got[1002].RangeActualCost == nil || *got[1002].RangeActualCost != 3.75 ||
-		got[1002].RangeTotalTokens == nil || *got[1002].RangeTotalTokens != 300 {
-		t.Fatalf("batch stats[1002] = %#v, want fallback range totals 3.75/300", got[1002])
+	if got[1002].RangeActualCost != nil || got[1002].RangeTotalTokens != nil {
+		t.Fatalf("batch stats[1002] = %#v, want range completion deferred to Team Usage", got[1002])
 	}
-	if diff := cmp.Diff([]map[string]string{{
-		"user_id": "1002", "start_date": "2026-07-01", "end_date": "2026-07-07",
-		"granularity": "day", "timezone": "Asia/Shanghai",
-	}}, requestedTrend); diff != "" {
+	if diff := cmp.Diff([]map[string]string(nil), requestedTrend); diff != "" {
 		t.Fatalf("trend requests mismatch (-want +got):\n%s", diff)
 	}
 }
 
-func TestSub2APIGetBatchUserUsageStatsKeepsIncompleteRangeWhenTrendFails(t *testing.T) {
+func TestSub2APIGetBatchUserUsageStatsNeverStartsRangeTrend(t *testing.T) {
 	var trendRequests atomic.Int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/admin/dashboard/users-usage", func(w http.ResponseWriter, r *http.Request) {
@@ -3897,8 +3785,8 @@ func TestSub2APIGetBatchUserUsageStatsKeepsIncompleteRangeWhenTrendFails(t *test
 	if err != nil {
 		t.Fatalf("GetBatchUserUsageStats() fallback error = %v, want nil", err)
 	}
-	if trendRequests.Load() != 1 {
-		t.Fatalf("trend requests = %d, want 1", trendRequests.Load())
+	if trendRequests.Load() != 0 {
+		t.Fatalf("trend requests = %d, want 0", trendRequests.Load())
 	}
 	if got[1001].RangeActualCost != nil || got[1001].RangeTotalTokens != nil {
 		t.Fatalf("range fields = %#v/%#v, want incomplete", got[1001].RangeActualCost, got[1001].RangeTotalTokens)
@@ -3908,12 +3796,10 @@ func TestSub2APIGetBatchUserUsageStatsKeepsIncompleteRangeWhenTrendFails(t *test
 	}
 }
 
-func TestSub2APIGetBatchUserUsageStatsRequiresCompleteTrendTokens(t *testing.T) {
+func TestSub2APIGetBatchUserUsageStatsIgnoresCompleteRangePolicy(t *testing.T) {
 	tests := []struct {
-		name       string
-		trend      []map[string]any
-		wantCost   float64
-		wantTokens *int64
+		name  string
+		trend []map[string]any
 	}{
 		{
 			name: "missing token point",
@@ -3921,13 +3807,10 @@ func TestSub2APIGetBatchUserUsageStatsRequiresCompleteTrendTokens(t *testing.T) 
 				{"date": "2026-07-01", "actual_cost": 1.25, "total_tokens": 100},
 				{"date": "2026-07-02", "actual_cost": 2.50},
 			},
-			wantCost: 3.75,
 		},
 		{
-			name:       "empty trend",
-			trend:      []map[string]any{},
-			wantCost:   0,
-			wantTokens: func() *int64 { value := int64(0); return &value }(),
+			name:  "empty trend",
+			trend: []map[string]any{},
 		},
 	}
 
@@ -3954,11 +3837,8 @@ func TestSub2APIGetBatchUserUsageStatsRequiresCompleteTrendTokens(t *testing.T) 
 			if err != nil {
 				t.Fatalf("GetBatchUserUsageStats() error = %v", err)
 			}
-			if got[1001].RangeActualCost == nil || *got[1001].RangeActualCost != tt.wantCost {
-				t.Fatalf("range actual cost = %#v, want %v", got[1001].RangeActualCost, tt.wantCost)
-			}
-			if diff := cmp.Diff(tt.wantTokens, got[1001].RangeTotalTokens); diff != "" {
-				t.Fatalf("range total tokens mismatch (-want +got):\n%s", diff)
+			if got[1001].RangeActualCost != nil || got[1001].RangeTotalTokens != nil {
+				t.Fatalf("range totals = %#v/%#v, want deferred completion", got[1001].RangeActualCost, got[1001].RangeTotalTokens)
 			}
 		})
 	}

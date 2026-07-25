@@ -43,7 +43,7 @@ func setupRouterForTest(
 	if len(runtimeOptions) > 0 {
 		options = runtimeOptions[0]
 	}
-	if options.TeamUsageSnapshotCache == nil {
+	if options.TeamUsageSnapshotCache == nil || options.TeamUsageOriginCache == nil {
 		redisServer := miniredis.RunT(t)
 		redisClient := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
 		t.Cleanup(func() {
@@ -51,13 +51,26 @@ func setupRouterForTest(
 				t.Errorf("close test Redis client: %v", err)
 			}
 		})
-		var err error
-		options.TeamUsageSnapshotCache, err = teamusage.NewSnapshotCache(
-			readcache.NewRedisStore(redisClient),
-			teamusage.SnapshotCacheOptions{Namespace: "handler-tests"},
-		)
-		if err != nil {
-			t.Fatalf("initialize test Team Usage snapshot cache: %v", err)
+		store := readcache.NewRedisStore(redisClient)
+		if options.TeamUsageSnapshotCache == nil {
+			var err error
+			options.TeamUsageSnapshotCache, err = teamusage.NewSnapshotCache(
+				store,
+				teamusage.SnapshotCacheOptions{Namespace: "handler-tests"},
+			)
+			if err != nil {
+				t.Fatalf("initialize test Team Usage snapshot cache: %v", err)
+			}
+		}
+		if options.TeamUsageOriginCache == nil {
+			var err error
+			options.TeamUsageOriginCache, err = teamusage.NewOriginCache(
+				store,
+				teamusage.OriginCacheOptions{Namespace: "handler-tests"},
+			)
+			if err != nil {
+				t.Fatalf("initialize test Team Usage origin cache: %v", err)
+			}
 		}
 	}
 	if strings.TrimSpace(options.TeamUsageCursorSecret) == "" {

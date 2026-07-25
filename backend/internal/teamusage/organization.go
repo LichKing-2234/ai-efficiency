@@ -113,12 +113,36 @@ func (s *Service) readOrganizationSnapshot(ctx context.Context, actorUserID int,
 	if !found {
 		return nil, "", ErrOutOfScope
 	}
+	overviewSubjects := scope.OverviewSubjects
+	if len(overviewSubjects) == 0 {
+		overviewSubjects = scope.Subjects
+	}
 	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve primary relay provider configuration: %w", err)
 	}
+	scopeHash := ""
+	if s.snapshotCache != nil || s.originCache != nil {
+		scopeHash, err = effectiveScopeHash(scope)
+		if err != nil {
+			return nil, "", fmt.Errorf("hash team organization representative scope: %w", err)
+		}
+	}
 
 	loader := func(loadCtx context.Context) (OrganizationOriginLoadResult, error) {
+		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
+			request := &splitReadRequest{
+				actorUserID: actorUserID, params: params, scope: scope, providerConfig: *providerConfig, scopeHash: scopeHash,
+			}
+			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+			if loadErr == nil {
+				return OrganizationOriginLoadResult{Snapshot: buildOrganizationSnapshotFromScopeOrigin(branch, params, origin)}, nil
+			}
+			if isHardSnapshotOriginError(loadErr) {
+				return OrganizationOriginLoadResult{}, loadErr
+			}
+			return OrganizationOriginLoadResult{SnapshotErr: loadErr}, nil
+		}
 		var provider relay.Provider
 		if len(branch.subjects) > 0 {
 			resolvedProvider, resolveErr := s.providerResolver.Resolve(loadCtx, providerConfig.ID)
@@ -152,10 +176,6 @@ func (s *Service) readOrganizationSnapshot(ctx context.Context, actorUserID int,
 		}, scope.Version, nil
 	}
 
-	scopeHash, err := effectiveScopeHash(scope)
-	if err != nil {
-		return nil, "", fmt.Errorf("hash team organization representative scope: %w", err)
-	}
 	result, err := s.snapshotCache.GetOrganizationOrLoad(ctx, OrganizationCacheKey{
 		SnapshotCacheKey: SnapshotCacheKey{
 			ProviderID: providerConfig.ID, ProviderVersion: providerConfig.ConfigurationVersion,
@@ -176,6 +196,7 @@ type organizationBranchSelection struct {
 	childrenByParent map[string][]string
 	childIDs         []string
 	subjects         []representativescope.Subject
+	represented      []representativescope.Subject
 }
 
 func selectOrganizationBranch(scope *representativescope.Scope, parentID string) (organizationBranchSelection, bool) {
@@ -228,6 +249,7 @@ func selectOrganizationBranch(scope *representativescope.Scope, parentID string)
 	if len(source) == 0 {
 		source = scope.Subjects
 	}
+	selection.represented = append(selection.represented, source...)
 	for _, subject := range source {
 		if subject.SubjectType != "member" || !subjectIntersectsDepartments(subject, relevantDepartments) {
 			continue
@@ -245,13 +267,23 @@ func (s *Service) generateOrganizationSnapshot(ctx context.Context, branch organ
 		if !ok {
 			return nil, fmt.Errorf("team organization summary capability: %w", ErrProviderUnsupported)
 		}
+		resolver, err := s.newOverviewRelayUserResolver(ctx, provider)
+		if err != nil {
+			return nil, fmt.Errorf("resolve team organization Relay directory: %w", err)
+		}
 		var relayUserIDs []int64
-		var err error
-		resolvedSubjects, relayUserIDs, err = s.resolveSubjects(ctx, branch.subjects, provider)
+		resolvedSubjects, relayUserIDs, err = s.resolveSubjectsWithResolver(ctx, branch.subjects, resolver)
 		if err != nil {
 			return nil, fmt.Errorf("resolve team organization Relay subjects: %w", err)
 		}
-		statsByRelayUserID, err = s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, relay.TeamUsageSummaryParams{
+		completeRangeRelayUserIDs := relayUserIDs
+		if len(branch.represented) <= s.fullScopeCap {
+			_, completeRangeRelayUserIDs, err = s.resolveSubjectsWithResolver(ctx, branch.represented, resolver)
+			if err != nil {
+				return nil, fmt.Errorf("resolve represented team organization Relay subjects: %w", err)
+			}
+		}
+		statsByRelayUserID, err = s.loadTeamUsageStats(ctx, summaryProvider, relayUserIDs, completeRangeRelayUserIDs, relay.TeamUsageSummaryParams{
 			StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 			Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone), RequireCompleteRange: true,
 		})
@@ -259,6 +291,15 @@ func (s *Service) generateOrganizationSnapshot(ctx context.Context, branch organ
 			return nil, fmt.Errorf("load team organization usage stats: %w", err)
 		}
 	}
+	return buildOrganizationSnapshot(branch, params, resolvedSubjects, statsByRelayUserID), nil
+}
+
+func buildOrganizationSnapshot(
+	branch organizationBranchSelection,
+	params OverviewParams,
+	resolvedSubjects []representativescope.Subject,
+	statsByRelayUserID map[int64]relay.TeamUserUsageStats,
+) *OrganizationSnapshot {
 	windowTotals := make(map[int64]overviewWindowTotal, len(statsByRelayUserID))
 	for relayUserID, stat := range statsByRelayUserID {
 		total := overviewWindowTotal{TotalTokens: stat.RangeTotalTokens}
@@ -324,7 +365,7 @@ func (s *Service) generateOrganizationSnapshot(ctx context.Context, branch organ
 	if branch.parentID != "" {
 		snapshot.ParentDepartmentExternalID = &branch.parentID
 	}
-	return snapshot, nil
+	return snapshot
 }
 
 func organizationMemberTotals(members map[string]OverviewMember) (count, connected int, rangeCost float64, rangeTokens *int64) {

@@ -481,7 +481,7 @@ func TestSummaryRangeIndependentFromTrendAndPreservesComparisonTotals(t *testing
 	}
 	wantSummaryParams := relay.TeamUsageSummaryParams{
 		StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Timezone: "Asia/Shanghai",
-		RequireCompleteRange: true,
+		RequireCompleteRange: false,
 	}
 	if len(provider.summaryRequestParams) != 1 || provider.summaryRequestParams[0] != wantSummaryParams {
 		t.Fatalf("summary params = %#v, want %#v", provider.summaryRequestParams, wantSummaryParams)
@@ -537,8 +537,8 @@ func TestSummaryRangeUnavailableWhenProviderFieldsIncomplete(t *testing.T) {
 				summary.Summary.TotalActualCost == nil || *summary.Summary.TotalActualCost != 109 {
 				t.Fatalf("available summary values = %+v, want counts 2/2 and comparisons 3/109", summary.Summary)
 			}
-			if provider.trendCalls.Load() != 0 {
-				t.Fatalf("trend calls = %d, want 0", provider.trendCalls.Load())
+			if provider.trendCalls.Load() != 1 {
+				t.Fatalf("trend calls = %d, want one soft full-scope completion attempt", provider.trendCalls.Load())
 			}
 		})
 	}
@@ -761,8 +761,8 @@ func TestOverviewUsesOnlySplitCacheLanesAndOneGuardedScopePerRequest(t *testing.
 	if providerResolver.calls.Load() != 3 || len(provider.summaryRequestParams) != 3 || provider.trendCalls.Load() != 1 {
 		t.Fatalf("cold split origins = provider %d summary %d trend %d, want 3/3/1", providerResolver.calls.Load(), len(provider.summaryRequestParams), provider.trendCalls.Load())
 	}
-	if !provider.summaryRequestParams[0].RequireCompleteRange || provider.summaryRequestParams[1].RequireCompleteRange || !provider.summaryRequestParams[2].RequireCompleteRange {
-		t.Fatalf("range completion flags = summary %v trend %v members %v, want true/false/true", provider.summaryRequestParams[0].RequireCompleteRange, provider.summaryRequestParams[1].RequireCompleteRange, provider.summaryRequestParams[2].RequireCompleteRange)
+	if provider.summaryRequestParams[0].RequireCompleteRange || provider.summaryRequestParams[1].RequireCompleteRange || provider.summaryRequestParams[2].RequireCompleteRange {
+		t.Fatalf("stats-layer range completion flags = summary %v trend %v members %v, want false/false/false", provider.summaryRequestParams[0].RequireCompleteRange, provider.summaryRequestParams[1].RequireCompleteRange, provider.summaryRequestParams[2].RequireCompleteRange)
 	}
 	prefixes := map[string]bool{
 		"ae:test:team-usage-summary:v1:": false,
@@ -966,7 +966,7 @@ func TestSummaryRejectsInvalidNormalizedWindowBeforeRelayReads(t *testing.T) {
 	}
 }
 
-func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
+func TestOverviewUsesOneAggregateTrendPerRangeDependentLane(t *testing.T) {
 	ctx := context.Background()
 	client := testdb.Open(t)
 	createPrimaryRelayProvider(t, client)
@@ -1002,8 +1002,8 @@ func TestOverviewFetchesTopMemberTrendInOneBatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Overview() error = %v", err)
 	}
-	if provider.trendCalls != 1 {
-		t.Fatalf("trend calls = %d, want 1 batched call", provider.trendCalls)
+	if provider.trendCalls != 3 {
+		t.Fatalf("trend calls = %d, want Summary, Trend, and Members aggregate calls", provider.trendCalls)
 	}
 	if got, want := provider.trendRequestUserIDs, []int64{1002, 1003}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("trend request user ids = %#v, want %#v", got, want)
