@@ -30,7 +30,7 @@ func (fn refreshFunc) Refresh(ctx context.Context) error { return fn(ctx) }
 func TestRunLoopRefreshesImmediatelyAndSerially(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ticks := make(chan time.Time)
+	ticks := make(chan time.Time, 1)
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	secondFinished := make(chan struct{})
@@ -62,21 +62,23 @@ func TestRunLoopRefreshesImmediatelyAndSerially(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- runLoop(ctx, refresher, ticks, func(error) {}) }()
 	<-firstStarted
+	queued := 0
+	coalesced := 0
 	for range 3 {
 		select {
 		case ticks <- time.Now():
+			queued++
 		default:
+			coalesced++
 		}
+	}
+	if queued != 1 || coalesced != 2 {
+		t.Fatalf("tick attempts queued/coalesced = %d/%d, want 1/2", queued, coalesced)
 	}
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("Refresh calls while first call is blocked = %d, want 1", got)
 	}
 	close(releaseFirst)
-	select {
-	case ticks <- time.Now():
-	case <-time.After(time.Second):
-		t.Fatal("runLoop did not wait for the next tick")
-	}
 	select {
 	case <-secondFinished:
 	case <-time.After(time.Second):
