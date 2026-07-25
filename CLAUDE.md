@@ -21,6 +21,20 @@
   - Repository `/releases/latest` stays platform-owned.
   - Bridge: `v0.2.0-cli.1` is the one-time legacy CLI migration exception. Publish it only with the CLI bridge workflow; do not run Helm for it.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues for `LichKing-2234/ai-efficiency`; PRs are not a request surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five canonical triage labels without aliases. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the single-context domain documentation layout. See `docs/agents/domain.md`.
+
 ## Commit Convention
 
 Strictly follow Conventional Commits. See AGENTS.md for full spec.
