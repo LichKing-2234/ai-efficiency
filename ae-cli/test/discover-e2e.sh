@@ -13,6 +13,7 @@ if [[ ! -x "${BIN_PATH}" ]]; then
 fi
 
 TMP_HOME="$(mktemp -d)"
+TMP_EXPLICIT_HOME="$(mktemp -d)"
 TMP_BIN="$(mktemp -d)"
 PORT="${AE_CLI_DISCOVER_E2E_PORT:-}"
 SERVER_PID=""
@@ -22,7 +23,7 @@ cleanup() {
     kill "${SERVER_PID}" >/dev/null 2>&1 || true
     wait "${SERVER_PID}" 2>/dev/null || true
   fi
-  rm -rf "${TMP_HOME}" "${TMP_BIN}"
+  rm -rf "${TMP_HOME}" "${TMP_EXPLICIT_HOME}" "${TMP_BIN}"
 }
 trap cleanup EXIT
 
@@ -44,7 +45,7 @@ exit 0
 EOF
   chmod +x "${TMP_BIN}/${name}"
 done
-mkdir -p "${TMP_HOME}/Applications/Codex.app"
+mkdir -p "${TMP_HOME}/Applications/ChatGPT.app"
 
 mkdir -p "${TMP_HOME}/.ae-cli"
 cat > "${TMP_HOME}/.ae-cli/token.json" <<EOF
@@ -194,3 +195,15 @@ if grep -F 'GEMINI_MODEL' "${TMP_HOME}/.ae-cli/env.sh" >/dev/null; then
   exit 1
 fi
 grep -F '[ -f "$HOME/.ae-cli/env.sh" ] && source "$HOME/.ae-cli/env.sh"' "${TMP_HOME}/.zshrc" >/dev/null
+
+EXPLICIT_OUTPUT_FILE="${TMP_EXPLICIT_HOME}/discover.out"
+mkdir -p "${TMP_EXPLICIT_HOME}/.ae-cli"
+cp "${TMP_HOME}/.ae-cli/token.json" "${TMP_EXPLICIT_HOME}/.ae-cli/token.json"
+HOME="${TMP_EXPLICIT_HOME}" PATH="${TMP_BIN}" SHELL=/bin/zsh "${BIN_PATH}" discover --tool codex > "${EXPLICIT_OUTPUT_FILE}"
+
+test -f "${TMP_EXPLICIT_HOME}/.codex/config.toml"
+test -f "${TMP_EXPLICIT_HOME}/.codex/auth.json"
+test ! -e "${TMP_EXPLICIT_HOME}/.claude/settings.json"
+test ! -e "${TMP_EXPLICIT_HOME}/.ae-cli/env.sh"
+grep -F "Configured provider relay.main for 1 tool(s):" "${EXPLICIT_OUTPUT_FILE}" >/dev/null
+grep -F "  - codex" "${EXPLICIT_OUTPUT_FILE}" >/dev/null

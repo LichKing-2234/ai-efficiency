@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ai-efficiency/ae-cli/internal/client"
 	"github.com/ai-efficiency/ae-cli/internal/toolconfig"
@@ -14,6 +15,7 @@ import (
 var (
 	discoverProviderName string
 	discoverDryRun       bool
+	discoverToolNames    []string
 
 	discoverInstalledTools   = toolconfig.DetectInstalledTools
 	configureDiscoveredTools = toolconfig.ConfigureTools
@@ -31,6 +33,7 @@ func init() {
 	rootCmd.AddCommand(discoverCmd)
 	discoverCmd.Flags().StringVar(&discoverProviderName, "provider", "", "relay provider name to use instead of the primary provider")
 	discoverCmd.Flags().BoolVar(&discoverDryRun, "dry-run", false, "show what would be configured without writing files")
+	discoverCmd.Flags().StringArrayVar(&discoverToolNames, "tool", nil, "tool to configure even when not detected (codex, claude, gemini); may be repeated or comma-separated")
 }
 
 func runDiscover(cmd *cobra.Command, args []string) error {
@@ -51,7 +54,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	tools, err := discoverInstalledTools(defaultDiscoverToolNames)
+	tools, err := resolveDiscoverTools(discoverToolNames)
 	if err != nil {
 		return err
 	}
@@ -101,6 +104,33 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "Do not switch models manually inside Gemini.")
 	}
 	return nil
+}
+
+func resolveDiscoverTools(explicit []string) ([]toolconfig.InstalledTool, error) {
+	if len(explicit) == 0 {
+		return discoverInstalledTools(defaultDiscoverToolNames)
+	}
+
+	supported := make(map[string]struct{}, len(defaultDiscoverToolNames))
+	for _, name := range defaultDiscoverToolNames {
+		supported[name] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(explicit))
+	tools := make([]toolconfig.InstalledTool, 0, len(explicit))
+	for _, occurrence := range explicit {
+		for _, raw := range strings.Split(occurrence, ",") {
+			name := strings.TrimSpace(raw)
+			if _, ok := supported[name]; !ok {
+				return nil, fmt.Errorf("unsupported tool %q; supported tools: %s", raw, strings.Join(defaultDiscoverToolNames, ", "))
+			}
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			tools = append(tools, toolconfig.InstalledTool{Name: name})
+		}
+	}
+	return tools, nil
 }
 
 func hasConfiguredTool(result toolconfig.Result, name string) bool {

@@ -1,5 +1,6 @@
 export type InstallPlatform = 'shell' | 'windows'
 export type CCSwitchApp = 'codex' | 'claude' | 'gemini' | 'hermes' | 'openclaw'
+export type DiscoverTool = 'codex' | 'claude' | 'gemini'
 
 export type ManualConfigSnippetKey =
   | 'codex-config'
@@ -425,6 +426,14 @@ export function resolveCCSwitchAppForPlatform(platform: string): CCSwitchApp | n
   return null
 }
 
+export function resolveDiscoverToolForPlatform(platform: string): DiscoverTool | null {
+  const normalized = platform.trim().toLowerCase()
+  if (normalized === 'openai') return 'codex'
+  if (normalized === 'anthropic') return 'claude'
+  if (normalized === 'gemini') return 'gemini'
+  return null
+}
+
 export function resolveCCSwitchAppsForGroup(platform: string, groupName?: string | null): CCSwitchApp[] {
   if (isAgentAccessGroup(groupName)) {
     return normalizeAgentPlatform(platform) ? ['hermes', 'openclaw'] : []
@@ -512,8 +521,9 @@ export function buildDeviceLoginCommand(origin: string) {
   return 'ae-cli login --device'
 }
 
-export function buildDiscoverCommand(origin: string, providerName: string) {
-  return `ae-cli discover --provider ${providerName}`
+export function buildDiscoverCommand(origin: string, providerName: string, explicitTool?: DiscoverTool) {
+  const command = `ae-cli discover --provider ${providerName}`
+  return explicitTool ? `${command} --tool ${explicitTool}` : command
 }
 
 export function buildHooksGlobalCommand() {

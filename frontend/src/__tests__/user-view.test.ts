@@ -578,6 +578,39 @@ describe('UserView', () => {
     expect(wrapper.text()).toContain('ae-cli login --device')
   })
 
+  it('shows a collapsed platform-specific discover fallback only inside automatic configuration', async () => {
+    const { wrapper } = await mountUserView()
+
+    expect(wrapper.find('[data-testid="auto-discover-fallback"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
+
+    let fallback = wrapper.get('[data-testid="auto-discover-fallback"]')
+    expect(fallback.attributes('open')).toBeUndefined()
+    expect(fallback.element.previousElementSibling?.textContent).toBe('ae-cli discover --provider prod')
+    expect(fallback.text()).toContain('Explicit tool fallback')
+    expect(fallback.text()).toContain('automatic discover skips the selected tool')
+    expect(fallback.text()).toContain('ae-cli discover --provider prod --tool claude')
+    expect(fallback.text()).toContain('--tool bypasses installation detection only')
+    expect(fallback.text()).toContain('codex, claude, and gemini')
+    expect(fallback.text()).toContain('Repeat --tool or pass comma-separated values')
+
+    await wrapper.get('[data-testid="config-method-manual"]').trigger('click')
+    expect(wrapper.find('[data-testid="auto-discover-fallback"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="group-44"]').trigger('click')
+    await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
+    fallback = wrapper.get('[data-testid="auto-discover-fallback"]')
+    expect(fallback.element.previousElementSibling?.textContent).toBe('ae-cli discover --provider prod')
+    expect(fallback.text()).toContain('ae-cli discover --provider prod --tool codex')
+
+    await wrapper.get('[data-testid="group-45"]').trigger('click')
+    await wrapper.get('[data-testid="config-method-automatic"]').trigger('click')
+    fallback = wrapper.get('[data-testid="auto-discover-fallback"]')
+    expect(fallback.element.previousElementSibling?.textContent).toBe('ae-cli discover --provider prod')
+    expect(fallback.text()).toContain('ae-cli discover --provider prod --tool gemini')
+  })
+
   it('shows audience guidance on each configuration method card', async () => {
     const { wrapper } = await mountUserView()
 
