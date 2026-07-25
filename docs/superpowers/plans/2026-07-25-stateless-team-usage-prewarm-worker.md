@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, Helm, Kubernetes, Google Chrome.
 
-**Status:** Implementation, Task 7 staging acceptance, and final review remediation completed on 2026-07-25. The staging acceptance image `staging-7924f8ce750688300c5913058f851cbb8f0903e5` passed the request-metrics replay, three Chrome runs, stateless scale/restart checks, and the controlled manifest-expiry fallback check at Helm revision 82. Chrome fully rendered median was 7021 ms and every immediate warm lane was below 500 ms. The live fallback comparison used the current spec's sampling-aware semantic equality contract: exact shape/cardinality and every stable field matched, while only the four approved current/today-derived usage leaves changed across the source-sampling interval. Backend ended 2/2, Worker 1/1, and liveness/readiness returned HTTP 200. The initial wrong-cluster denial, revision 79 Worker resource admission failure, and first-image missing request metric are retained below as resolved history. The whole-branch review found one telemetry-classification mismatch: corrupt Redis manifests/values used exact fallback correctly but were counted as `fallback` instead of `invalid`. That mismatch was fixed test-first with one package-local sentinel; fresh backend, race, vet, build, Docker, Compose, Helm, static, and hygiene verification passed, and the follow-up review found no Critical, Important, or Minor issues. This telemetry-only remediation was not redeployed because it does not change exact fallback or response behavior. PR #193 may leave draft after current-head CI passes. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 uses the independent Helm worktree `/Users/admin/helm/.worktrees/ai-efficiency-prewarmer` and leaves `/Users/admin/helm`'s dirty main worktree untouched; Task 7 records sanitized staging evidence only.
+**Status:** Implementation, Task 7 staging acceptance, final review remediation, and the telemetry-classification staging replay completed on 2026-07-25. The original acceptance image `staging-7924f8ce750688300c5913058f851cbb8f0903e5` passed the request-metrics replay, three Chrome runs, stateless scale/restart checks, and the controlled manifest-expiry fallback check at Helm revision 82. Chrome fully rendered median was 7021 ms and every immediate warm lane was below 500 ms. The live fallback comparison used the current spec's sampling-aware semantic equality contract: exact shape/cardinality and every stable field matched, while only the four approved current/today-derived usage leaves changed across the source-sampling interval. The initial wrong-cluster denial, revision 79 Worker resource admission failure, and first-image missing request metric are retained below as resolved history. The whole-branch review found one telemetry-classification mismatch: corrupt Redis manifests/values used exact fallback correctly but were counted as `fallback` instead of `invalid`. That mismatch was fixed test-first with one package-local sentinel; fresh backend, race, vet, build, Docker, Compose, Helm, static, and hygiene verification passed, and the follow-up review found no Critical, Important, or Minor issues. Application commit `14ae34ae86762a27a2bc48688358fb6d17a33632` was then published as an amd64/arm64 staging image and deployed without database restore at Helm revision 83. Backend ended 2/2, Worker 1/1, both used the exact image digest, liveness/readiness returned HTTP 200, and the Worker completed consecutive four-lane refreshes. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 uses the independent Helm worktree `/Users/admin/helm/.worktrees/ai-efficiency-prewarmer` and leaves `/Users/admin/helm`'s dirty main worktree untouched; Task 7 records sanitized staging evidence only.
 
 ## Global Constraints
 
@@ -1085,6 +1085,17 @@ readiness remained HTTP 200. No production release was targeted.
 for `linux/amd64` and `linux/arm64`. Phase C-only revision 82 deployed the
 request-metrics fix without repeating Phase A, Phase B, or restore. Backend was
 2/2, Worker 1/1, both images matched, and liveness/readiness were HTTP 200.
+
+**Telemetry-classification replay:** Application commit
+`14ae34ae86762a27a2bc48688358fb6d17a33632` was published as
+`staging-14ae34ae86762a27a2bc48688358fb6d17a33632`, OCI index digest
+`sha256:7a373731028ed1fa010c42d9b517f9a25a5e6986884514b983ec349996aee9d8`,
+for `linux/amd64` and `linux/arm64`. Phase C-only revision 83 preserved the
+existing staging JWT, database, Redis, and completed restore state. Backend was
+2/2 and Worker 1/1 on the exact image digest, liveness/readiness returned HTTP
+200 with database, Redis, and Relay up, and the Worker completed consecutive
+refreshes in 4.466 and 4.207 seconds with all four timezone lanes published.
+Production remained revision 69 and ready on `v0.1.0-preview.73`.
 
 - [x] **Step 2: Verify one Worker and Backend scaling independence**
 
