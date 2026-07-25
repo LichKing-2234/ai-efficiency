@@ -1296,8 +1296,16 @@ followed by the latest successful refresh publishing all four lanes; all four
 lane success gauges remained present. The temporary Redis helper, response
 bodies, salt, authenticated state, and browser profile were absent. The
 sanitized report is retained at
-`.superpowers/sdd/stateless-task-7-report.md`. PR #193 remains draft for the
-controller-owned Final Review Checklist.
+`.superpowers/sdd/stateless-task-7-report.md`. At this acceptance checkpoint,
+PR #193 remained draft for the controller-owned Final Review Checklist.
+
+**Integration evidence (2026-07-25):** After the controller-owned review,
+PR #193 exact head `dd64762c742a6727e774528bb45a0157b42298b0` passed backend,
+frontend, ae-cli, and deploy-static in CI run `30158158003`, then
+squash-merged into `feat/platform-loading-performance` as
+`0991b2f7f0c3b1ced59bb3591fb8ac349a48f997`. The integration branch was then
+synchronized with current `main` at `651de0f36709124ec3557c823c0596c9ec3c7934`
+before PR #160 final review. Production remains unchanged.
 
 ## Final Review Checklist
 

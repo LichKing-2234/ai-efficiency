@@ -1,7 +1,7 @@
 # End-to-End Page Loading Performance Design
 
 - **Date:** 2026-07-14
-- **Status:** Implemented and review-remediated on `feat/platform-loading-performance@d2bc2694`; not merged to `main` or production-verified; #136 production sampling and #137 compatibility removal remain blocked
+- **Status:** Implemented and staging-verified through `feat/platform-loading-performance@0991b2f7`, then synchronized with `main` at `651de0f3`; not merged to `main` or production-verified; #136 production sampling and #137 compatibility removal remain blocked
 - **Parent issue:** [#115](https://github.com/LichKing-2234/ai-efficiency/issues/115)
 - **Contract ticket:** [#116](https://github.com/LichKing-2234/ai-efficiency/issues/116)
 - **Audit baseline:** commit `70eb6ebe32298c333d4bebf144edd1b474a039dc`, production `v0.1.0-preview.71`
@@ -10,15 +10,16 @@
 
 This document is the active design contract for reducing end-to-end page loading latency across AI Efficiency Platform. It covers browser critical paths, API composition, database query shape, Relay calls, Redis read models, embedded static serving, runtime deadlines, readiness, and performance telemetry.
 
-### Current integration boundary at 2026-07-19
+### Current integration boundary at 2026-07-25
 
-The exact implementation boundary is `feat/platform-loading-performance@d2bc26941d6c966c8117a038b770450f7b201ed4`:
+The current integration boundary is `feat/platform-loading-performance@651de0f36709124ec3557c823c0596c9ec3c7934`; its latest performance behavior commit is `0991b2f7f0c3b1ced59bb3591fb8ac349a48f997`:
 
 1. Issues #117-#135 are implemented on that integration branch through source PRs #139-#158, excluding unrelated quota approval PR #146.
 2. PR #160 review remediations #161-#172 are also closed and integrated through PRs #174-#186. The branch therefore contains the bounded read paths, split page lifecycles, explicit runtime dependencies, shared cache coordination and metrics, persisted effective hierarchy, bounded Team Usage origins, and split-backed compatibility adapter described below.
-3. `GET /api/v1/user/team-usage/overview` is intentionally still implemented as a temporary compatibility adapter. It owns no monolithic Relay origin, Redis lane, or production metric, but its historical DTO, recursive tree, deprecation headers, and ineffective `page`/`page_size` inputs remain until the expand-contract release window is proven.
-4. Some earlier intermediate heads and individual slices have staging evidence. That does not prove the exact `d2bc2694` integration head has completed a normal platform release or the comparable production measurements required by #136.
-5. Issue #136 remains blocked until the full integrated stack is released and deployed normally, then sampled in production with the required cold/warm, cache, transfer, dependency, and Web Vitals evidence. Issue #137 remains blocked by #136 and the one-complete-release compatibility requirement.
+3. Team Usage cold-path refinements #188-#193 are also integrated. The active final contract is the separately deployed stateless prewarm worker in `2026-07-25-stateless-team-usage-prewarm-worker-design.md`: backend Pods only perform authorization-first Redis reads with exact fallback, while one worker publishes reconstructible generations through Redis.
+4. `GET /api/v1/user/team-usage/overview` is intentionally still implemented as a temporary compatibility adapter. It owns no monolithic Relay origin, Redis lane, or production metric, but its historical DTO, recursive tree, deprecation headers, and ineffective `page`/`page_size` inputs remain until the expand-contract release window is proven.
+5. The final prewarm application behavior was staging-verified at Helm revision 83 with Backend 2/2, Worker 1/1, HTTP 200 liveness/readiness, and the accepted Chrome cold/warm evidence. This is staging evidence only; it does not prove a normal platform release or the comparable production measurements required by #136.
+6. Issue #136 remains blocked until the full integrated stack is merged, released, and deployed normally, then sampled in production with the required cold/warm, cache, transfer, dependency, and Web Vitals evidence. Issue #137 remains blocked by #136 and the one-complete-release compatibility requirement.
 
 This boundary distinguishes code integration from runtime rollout. It does not claim a merge to `main`, a platform release, deployment of the exact head, production budget ratification, or compatibility removal.
 

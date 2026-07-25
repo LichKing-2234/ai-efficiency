@@ -12,6 +12,7 @@ This document is the project-level architecture overview for `ai-efficiency`.
 ## Source-of-Truth Order
 
 1. Topic-specific current specs:
+   - `docs/superpowers/specs/2026-07-25-stateless-team-usage-prewarm-worker-design.md`
    - `docs/superpowers/specs/2026-07-14-end-to-end-page-loading-performance-design.md`
    - `docs/superpowers/specs/2026-07-10-multi-stage-quota-reset-approval-design.md`
    - `docs/superpowers/specs/2026-07-07-quota-reset-approval-design.md`
