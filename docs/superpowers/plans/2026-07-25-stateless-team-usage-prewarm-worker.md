@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, Helm, Kubernetes, Google Chrome.
 
-**Status:** In progress. Tasks 1-6, including their review follow-ups, are complete; Task 7 remains. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 uses the independent Helm worktree `/Users/admin/helm/.worktrees/ai-efficiency-prewarmer` and leaves `/Users/admin/helm`'s dirty main worktree untouched; Task 7 records sanitized staging evidence only.
+**Status:** In progress on 2026-07-25. The Task 3 production request-metrics wiring defect exposed by Task 7 is fixed and tested locally: Backend constructs a real prewarm recorder with no timezone configuration, injects it into the read-only `PrewarmReader`, records request outcomes, and creates no lane series. Task 7 Steps 1-3 remain verified against the prior exact image, while the measured Chrome gate in Step 4 and fallback gate in Step 5 await a new exact application image rollout containing this fix. No measured Chrome run, fallback result, timing median, or performance acceptance is claimed; Steps 4-6 and the final review checklist remain open, and PR #193 remains draft. The initial wrong-cluster preflight denial was resolved with zero mutation; every live command pinned the correct context and remained scoped to `ai-efficiency-staging`. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 uses the independent Helm worktree `/Users/admin/helm/.worktrees/ai-efficiency-prewarmer` and leaves `/Users/admin/helm`'s dirty main worktree untouched; Task 7 records sanitized staging evidence only.
 
 ## Global Constraints
 
@@ -592,6 +592,20 @@ git add backend/internal/teamusage backend/internal/telemetry backend/cmd/server
 git commit -m "refactor(backend): simplify prewarm telemetry"
 ```
 
+**Task 3 production-wiring review follow-up (2026-07-25):**
+
+- [x] Add a focused server-boundary RED test that drives a real 30-day
+  `Asia/Shanghai` prewarm miss through miniredis, gathers the production
+  Prometheus registry, and requires `team_usage_prewarm_request_total{outcome="miss"}=1`
+  with no Backend timezone lane series.
+- [x] Allow a production prewarm recorder with no configured timezones, inject
+  that recorder into the read-only Backend `PrewarmReader`, and keep Worker
+  timezone ownership unchanged.
+- [x] Capture the expected missing-wiring RED, then pass the focused GREEN and
+  the adjacent Team Usage, telemetry, server, and dashboard metric suite.
+- [x] Keep Reader/cache behavior, DTOs, Redis schema, routes, Worker config,
+  dashboard families, and Backend lifecycle ownership unchanged.
+
 ---
 
 ### Task 4: Add the Worker Command and Dual-Binary Image
@@ -1019,7 +1033,7 @@ The PR body must state that it depends on the application PR image containing `/
 - Acceptance window: default 30-day, `Asia/Shanghai`.
 - Merge gate: three Chrome cold runs, median fully rendered `<=8s`, every immediate warm API lane `<1.5s`, HTTP 200, matching business hashes, four response-cache misses, and four prewarm full hits.
 
-- [ ] **Step 1: Publish the exact application image and deploy staging only**
+- [x] **Step 1: Publish the exact application image and deploy staging only**
 
 From the application worktree, build and push the immutable staging tag for `HEAD`, verify both architecture manifests, then use the Helm worktree's staging refresh/deploy path:
 
@@ -1042,7 +1056,23 @@ cd "$HELM_WORKTREE"
 
 Follow `docs/staging-playbook.md` for the existing paused restore and atomic rollout. Do not modify or deploy production.
 
-- [ ] **Step 2: Verify one Worker and Backend scaling independence**
+**Task 7 Step 1 evidence (2026-07-25):** The exact image
+`staging-b32e931a95a42d6d8d6dae1813827955b8557ca1` was published as an OCI
+index containing `linux/amd64` and `linux/arm64`, with digest
+`sha256:a3465a8a5745e8f8e8c169d335ddbab378a48788bf2b1f6e03cbf435329a738e`.
+Staging Phase A completed at revision 77 and Phase B at revision 78 with two
+ready Backend Pods on that image and HTTP 200 readiness. Phase C revision 79
+failed admission because the Worker had no CPU, memory, or ephemeral-storage
+requests or limits; the atomic rollback deployed revision 80 from Phase B.
+After rollback the Backend was 2/2 available on the exact image, the Worker
+Deployment was absent, and liveness/readiness were both HTTP 200. The reviewed
+Task 6 Helm follow-up then added the missing staging resources and passed chart,
+server-side Pod admission, and independent review gates. One corrected Phase C
+completed at revision 81 without repeating Phase A, Phase B, or the restore:
+Backend was 2/2, Worker was 1/1 with `Recreate`, both used the exact image, and
+readiness remained HTTP 200. No production release was targeted.
+
+- [x] **Step 2: Verify one Worker and Backend scaling independence**
 
 ```bash
 kubectl -n la3-ai-efficiency-staging get deploy,pod -o wide
@@ -1063,7 +1093,15 @@ kubectl -n la3-ai-efficiency-staging scale deploy/ai-efficiency-staging --replic
 kubectl -n la3-ai-efficiency-staging rollout status deploy/ai-efficiency-staging --timeout=10m
 ```
 
-- [ ] **Step 3: Verify restart reconstruction from Redis**
+**Task 7 Step 2 evidence (2026-07-25):** Backend scaled `2 -> 1 -> 2` and
+returned 2/2 ready while Worker stayed 1/1 with an unchanged Pod UID. Backend
+had no prewarm/scheduler environment entries and no scheduler, prewarm writer,
+or refresh-cycle log matches. Over a fixed 125-second post-scale window the
+Worker completed exactly two refreshes and twelve source calls, six per moving
+cycle, without changing UID. Backend and Worker continued using the exact same
+image.
+
+- [x] **Step 3: Verify restart reconstruction from Redis**
 
 Delete only the Worker Pod:
 
@@ -1075,6 +1113,15 @@ kubectl -n la3-ai-efficiency-staging rollout status deploy/ai-efficiency-staging
 ```
 
 Assert the replacement performs an immediate successful refresh using hard-valid history from Redis, publishes current/today generations, and has no PVC, local checkpoint, startup marker, recovery mode, or effect on Backend readiness.
+
+**Task 7 Step 3 evidence (2026-07-25):** Deleting only the Worker Pod
+produced a replacement UID and one successful immediate refresh within 25
+seconds. Reset metrics recorded one directory call, one current-stats call,
+four `today_hour` calls, zero `history_6d` or `history_29d` calls, and four lane
+success timestamps after restart. This proves Redis-derived hard-valid history
+reuse plus new current/today publication. The Worker had no volumes,
+initContainers, PVCs, checkpoint/recovery/startup-marker log path, or local
+state surface. Backend stayed 2/2 and readiness stayed HTTP 200 throughout.
 
 - [ ] **Step 4: Run three real Chrome cold navigations**
 
@@ -1098,6 +1145,19 @@ prewarm_full_hits: 4
 ```
 
 Do not record cookies, tokens, usernames, emails, Relay IDs, cache keys, or response bodies. Sort the three `fully_rendered_ms` values and compare the middle value to `8000`; assert each `warm_max_ms < 1500`.
+
+**Task 7 Step 4 blocked evidence (2026-07-25):** A temporary authenticated
+Chrome discovery profile completed the default 30-day `Asia/Shanghai` page
+with four HTTP 200 lanes. Redis pre-scan found zero typed keys; discovery then
+created exactly one key in each typed lane. Deleting only those four keys
+atomically kept the schema-v3 prewarm key count unchanged at 44. Aggregate
+metrics from both Backend Pods recorded four typed-cache misses, but neither Pod
+exported `ai_efficiency_team_usage_prewarm_request_total`. The deployed
+`b32e931a95a42d6d8d6dae1813827955b8557ca1` server constructed
+`NewPrewarmReader` with empty options, selecting no-op request metrics. Therefore
+the mandatory aggregate `full_hit=4` delta was unobservable on that image.
+Execution stopped before measured run 1; no timing, median, warm-lane, or
+business-hash acceptance is claimed.
 
 - [ ] **Step 5: Run final health and fallback checks**
 

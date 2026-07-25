@@ -358,10 +358,7 @@ func main() {
 	if err != nil {
 		logger.Fatal("initialize team usage prewarm cache", zap.Error(err))
 	}
-	teamUsagePrewarmReader, err := teamusage.NewPrewarmReader(
-		teamUsagePrewarmCache,
-		teamusage.PrewarmReaderOptions{},
-	)
+	teamUsagePrewarmReader, err := cacheMetrics.newTeamUsagePrewarmReader(teamUsagePrewarmCache)
 	if err != nil {
 		logger.Fatal("initialize team usage prewarm reader", zap.Error(err))
 	}

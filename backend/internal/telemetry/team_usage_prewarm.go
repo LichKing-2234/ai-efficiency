@@ -26,9 +26,6 @@ func (m *Metrics) TeamUsagePrewarmRecorder(timezones []string) (teamusage.Prewar
 	if err != nil {
 		return nil, err
 	}
-	if len(normalized) == 0 {
-		return nil, fmt.Errorf("at least one Team Usage prewarm telemetry timezone is required")
-	}
 
 	recorder := &teamUsagePrewarmMetrics{
 		timezones: make(map[string]struct{}, len(normalized)),

@@ -40,6 +40,14 @@ func (m productionCacheMetrics) teamUsagePrewarm(timezones []string) (teamusage.
 	return m.metrics.TeamUsagePrewarmRecorder(timezones)
 }
 
+func (m productionCacheMetrics) newTeamUsagePrewarmReader(cache *teamusage.PrewarmCache) (*teamusage.PrewarmReader, error) {
+	metrics, err := m.teamUsagePrewarm(nil)
+	if err != nil {
+		return nil, err
+	}
+	return teamusage.NewPrewarmReader(cache, teamusage.PrewarmReaderOptions{Metrics: metrics})
+}
+
 func (m productionCacheMetrics) recorders() map[string]readcache.Metrics {
 	return map[string]readcache.Metrics{
 		"personal_usage":          m.personalUsage,

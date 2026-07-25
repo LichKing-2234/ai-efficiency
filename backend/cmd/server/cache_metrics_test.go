@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
 	"sort"
 	"testing"
+	"time"
 
+	"github.com/ai-efficiency/backend/internal/readcache"
+	"github.com/ai-efficiency/backend/internal/teamusage"
 	"github.com/ai-efficiency/backend/internal/telemetry"
+	"github.com/alicebob/miniredis/v2"
+	redis "github.com/redis/go-redis/v9"
 )
 
 func TestProductionCacheMetricsBindStablePrivacySafeNames(t *testing.T) {
@@ -96,4 +102,66 @@ func TestProductionCacheMetricsConstructTeamUsagePrewarmMetricsOnlyOnDemand(t *t
 		}
 	}
 	t.Fatal("prewarm metrics missing after enabled-path construction")
+}
+
+func TestProductionCacheMetricsConstructPrewarmReaderWithRequestMetricsOnly(t *testing.T) {
+	server := miniredis.RunT(t)
+	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = redisClient.Close() })
+	cache, err := teamusage.NewPrewarmCache(
+		readcache.NewRedisStore(redisClient),
+		teamusage.PrewarmCacheOptions{Namespace: "test"},
+	)
+	if err != nil {
+		t.Fatalf("NewPrewarmCache() error = %v", err)
+	}
+	metrics := telemetry.NewMetrics("test-release")
+	reader, err := newProductionCacheMetrics(metrics).newTeamUsagePrewarmReader(cache)
+	if err != nil {
+		t.Fatalf("newTeamUsagePrewarmReader() error = %v", err)
+	}
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("LoadLocation() error = %v", err)
+	}
+	end := time.Now().In(location)
+	origin, outcome, err := reader.ReadAuthorizedOrigin(context.Background(), teamusage.PrewarmReadRequest{
+		ProviderID:      7,
+		ProviderVersion: 11,
+		Params: teamusage.OverviewParams{
+			StartDate:   end.AddDate(0, 0, -29).Format("2006-01-02"),
+			EndDate:     end.Format("2006-01-02"),
+			Granularity: "day",
+			Timezone:    "Asia/Shanghai",
+		},
+		AuthorizedRelayUserIDs: []int64{101},
+	})
+	if err != nil || origin != nil || outcome != teamusage.PrewarmReadMiss {
+		t.Fatalf("ReadAuthorizedOrigin() = origin %v, outcome %q, error %v; want nil, miss, nil", origin, outcome, err)
+	}
+
+	families, err := metrics.Gatherer().Gather()
+	if err != nil {
+		t.Fatalf("Gather() error = %v", err)
+	}
+	foundMiss := false
+	for _, family := range families {
+		switch family.GetName() {
+		case "ai_efficiency_team_usage_prewarm_request_total":
+			for _, metric := range family.GetMetric() {
+				for _, label := range metric.GetLabel() {
+					if label.GetName() == "outcome" && label.GetValue() == "miss" && metric.GetCounter().GetValue() == 1 {
+						foundMiss = true
+					}
+				}
+			}
+		case "ai_efficiency_team_usage_prewarm_lane_last_success_timestamp_seconds":
+			if len(family.GetMetric()) != 0 {
+				t.Fatalf("Backend prewarm lane series = %v, want none", family.GetMetric())
+			}
+		}
+	}
+	if !foundMiss {
+		t.Fatal("production-wired prewarm request miss counter = 0, want 1")
+	}
 }
