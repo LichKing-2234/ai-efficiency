@@ -38,47 +38,37 @@ The temporary Team Overview compatibility adapter intentionally has no dedicated
 cache name, Redis key, or metric. It consumes the split Summary, Trend, and Members
 lanes; unreachable legacy `team-usage-snapshot` values expire under their existing TTL.
 
-## Segmented Team Usage Prewarm
+## Stateless Team Usage Prewarm
 
-The optional segmented Team Usage prewarm remains disabled by default. Keep
-`AE_TEAM_USAGE_PREWARM_ENABLED=false` until the separate feature-disabled Redis
-benchmark and staging acceptance in the implementation plan pass. Because the
-prewarm recorder is constructed only on the enabled runtime path, absent
-`ai_efficiency_team_usage_prewarm_*` series are expected while the feature is
-disabled or before its optional dependencies initialize.
+The independently deployed Team Usage prewarm worker remains disabled by
+default. Absent `ai_efficiency_team_usage_prewarm_*` series are expected while
+the optional worker and backend reader telemetry are not configured.
 
-The dashboard adds bounded operational views for:
+The dashboard has one bounded operational view for each retained family:
 
-- p95 cycle, Relay source, and Redis operation duration;
-- cycle outcomes and last-success age for `moving`, `history_6d`, and
-  `history_29d` refreshes by configured timezone;
-- the latest complete generation size, counted with provider-wide current stats
-  once;
-- request outcomes and exact-fallback reasons;
-- skipped moving ticks and lease acquire, TTL, and release outcomes.
+- p95 serial refresh duration;
+- refresh outcomes;
+- last successful publication age by configured timezone lane;
+- p95 source duration by source and outcome; and
+- request outcomes.
 
-Cycle classes, outcomes, Redis operations, request outcomes, fallback reasons,
-and validation/cache outcomes are closed runtime enums. Timezone values come
-only from the validated maximum-four allowlist. Dashboard queries group only by
-those bounded labels. They never group by provider, user, request, scope, cache
-key, source row, or credential data.
+Refresh outcomes, source classes, source outcomes, and request outcomes are
+closed typed vocabularies. Timezone is the only configured label and comes from
+the validated maximum-four allowlist. Dashboard queries never group by provider,
+user, request, scope, cache key, source row, credential, or fallback detail.
 
-For an enabled staging runtime, first check cycle outcomes and last-success age
-for missing or delayed publications. Use source and Redis p95 panels to separate
-upstream delay from cache delay, then check request outcomes to confirm whether
-traffic used a full prewarm hit, partial-today repair, or the retained exact
-fallback. A skipped tick means the preceding moving cycle still occupied the
-local scheduler. A busy lease commonly means another Pod owns the collapsed
-deployment-wide operation; correlate sustained busy or skipped rates with
-last-success age before treating either as a failure. A zero generation gauge
-is the initial state until one explicitly registered complete batch publishes.
+For an enabled staging runtime, check refresh outcomes and lane last-success age
+for missing or delayed publications, then use source p95 to separate upstream
+delay from local refresh work. Request outcomes confirm whether traffic used the
+prewarm reader or selected the retained exact fallback. Existing Redis pool
+metrics remain the authoritative view of Redis health and contention.
 
-Rollback sets `AE_TEAM_USAGE_PREWARM_ENABLED=false` and rolls the application
-through the normal deployment path. Readers and background cycles then stop and
-requests immediately use the retained exact scope-origin path. Do not flush
-Redis: immutable prewarm values and manifests expire under their bounded TTLs.
-Staging benchmark and acceptance evidence are environment-sensitive Task 9
-work and are not established by the local dashboard contract tests.
+Rollback disables the worker through the normal deployment path. Backend
+requests continue using the read-only prewarm path while manifests are valid and
+then select the retained exact scope-origin fallback. Do not flush Redis:
+immutable values and manifests expire under their bounded TTLs. Staging benchmark
+and acceptance evidence remain environment-sensitive work and are not established
+by the local dashboard contract tests.
 
 The browser defaults to a 10 percent page sample. Custom frontend builds can
 set `VITE_WEB_VITALS_SAMPLE_RATE` from `0` to `1`; invalid values return to the

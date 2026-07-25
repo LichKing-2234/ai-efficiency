@@ -40,6 +40,7 @@ type refresher struct {
 	now          func() time.Time
 	newToken     func() string
 	cycleTimeout time.Duration
+	metrics      PrewarmMetrics
 	reporter     RefreshReporter
 }
 
@@ -109,7 +110,7 @@ func NewRefresher(
 	return &refresher{
 		resolver: resolver, cache: cache, source: source, timezones: timezones,
 		now: options.Now, newToken: options.NewToken, cycleTimeout: options.CycleTimeout,
-		reporter: options.Reporter,
+		metrics: options.Metrics, reporter: options.Reporter,
 	}, nil
 }
 
@@ -127,8 +128,10 @@ func (r *refresher) Refresh(parent context.Context) (err error) {
 		case !owned || result.planned == 0:
 			outcome = PrewarmRefreshSkipped
 		}
+		duration := time.Since(startedAt)
+		r.metrics.RecordRefresh(outcome, duration)
 		r.reporter.ReportRefresh(RefreshReport{
-			Outcome: outcome, Duration: time.Since(startedAt), PlannedLanes: result.planned,
+			Outcome: outcome, Duration: duration, PlannedLanes: result.planned,
 			PublishedLanes: result.published, SourceCounts: result.sourceCounts,
 		})
 	}()
@@ -268,6 +271,7 @@ func (r *refresher) refreshOwned(
 			continue
 		}
 		result.published++
+		r.metrics.SetLaneLastSuccess(lane.identity.Timezone, lane.manifest.CreatedAt)
 	}
 	if len(failures) > 0 {
 		return result, errors.Join(failures...)

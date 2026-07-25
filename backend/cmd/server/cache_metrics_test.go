@@ -77,7 +77,7 @@ func TestProductionCacheMetricsConstructTeamUsagePrewarmMetricsOnlyOnDemand(t *t
 		t.Fatalf("Gather() before prewarm recorder error = %v", err)
 	}
 	for _, family := range before {
-		if family.GetName() == "ai_efficiency_team_usage_prewarm_cycle_total" {
+		if family.GetName() == "ai_efficiency_team_usage_prewarm_refresh_total" {
 			t.Fatal("prewarm metrics constructed while feature path is disabled")
 		}
 	}
@@ -91,7 +91,7 @@ func TestProductionCacheMetricsConstructTeamUsagePrewarmMetricsOnlyOnDemand(t *t
 		t.Fatalf("Gather() after prewarm recorder error = %v", err)
 	}
 	for _, family := range after {
-		if family.GetName() == "ai_efficiency_team_usage_prewarm_cycle_total" {
+		if family.GetName() == "ai_efficiency_team_usage_prewarm_refresh_total" {
 			return
 		}
 	}

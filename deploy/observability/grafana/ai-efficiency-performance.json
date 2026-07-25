@@ -206,12 +206,12 @@
       "id": 11,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, class, timezone, outcome) (rate(ai_efficiency_team_usage_prewarm_cycle_duration_seconds_bucket[$__rate_interval])))",
-          "legendFormat": "p95 {{class}} {{timezone}} {{outcome}}",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(ai_efficiency_team_usage_prewarm_refresh_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95 refresh",
           "refId": "A"
         }
       ],
-      "title": "Team Usage Prewarm Cycle Duration",
+      "title": "Team Usage Prewarm Refresh Duration",
       "type": "timeseries"
     },
     {
@@ -221,12 +221,12 @@
       "id": 12,
       "targets": [
         {
-          "expr": "sum by (class, timezone, outcome) (rate(ai_efficiency_team_usage_prewarm_cycle_total[$__rate_interval])) > 0",
-          "legendFormat": "{{class}} {{timezone}} {{outcome}}",
+          "expr": "sum by (outcome) (rate(ai_efficiency_team_usage_prewarm_refresh_total[$__rate_interval]))",
+          "legendFormat": "{{outcome}}",
           "refId": "A"
         }
       ],
-      "title": "Team Usage Prewarm Cycle Outcomes",
+      "title": "Team Usage Prewarm Refresh Outcomes",
       "type": "timeseries"
     },
     {
@@ -236,12 +236,12 @@
       "id": 13,
       "targets": [
         {
-          "expr": "clamp_min(time() - (ai_efficiency_team_usage_prewarm_last_success_timestamp_seconds{class=~\"moving|history_29d|history_6d\"} > 0), 0)",
-          "legendFormat": "{{class}} {{timezone}}",
+          "expr": "clamp_min(time() - (ai_efficiency_team_usage_prewarm_lane_last_success_timestamp_seconds > 0), 0)",
+          "legendFormat": "{{timezone}}",
           "refId": "A"
         }
       ],
-      "title": "Team Usage Prewarm Last Success",
+      "title": "Team Usage Prewarm Lane Last Success",
       "type": "timeseries"
     },
     {
@@ -251,8 +251,8 @@
       "id": 14,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, class, timezone, outcome) (rate(ai_efficiency_team_usage_prewarm_source_duration_seconds_bucket[$__rate_interval])))",
-          "legendFormat": "p95 {{class}} {{timezone}} {{outcome}}",
+          "expr": "histogram_quantile(0.95, sum by (le, source, outcome) (rate(ai_efficiency_team_usage_prewarm_source_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95 {{source}} {{outcome}}",
           "refId": "A"
         }
       ],
@@ -261,77 +261,17 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
-      "id": 15,
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum by (le, operation, outcome) (rate(ai_efficiency_team_usage_prewarm_redis_duration_seconds_bucket[$__rate_interval])))",
-          "legendFormat": "p95 {{operation}} {{outcome}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Team Usage Prewarm Redis Duration",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 46 },
-      "id": 16,
-      "targets": [
-        {
-          "expr": "ai_efficiency_team_usage_prewarm_generation_bytes",
-          "legendFormat": "latest full generation",
-          "refId": "A"
-        }
-      ],
-      "title": "Team Usage Prewarm Generation Bytes",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 46 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
       "id": 17,
       "targets": [
         {
-          "expr": "sum by (timezone, outcome, fallback_reason) (rate(ai_efficiency_team_usage_prewarm_request_total[$__rate_interval])) > 0",
-          "legendFormat": "{{timezone}} {{outcome}} {{fallback_reason}}",
+          "expr": "sum by (outcome) (rate(ai_efficiency_team_usage_prewarm_request_total[$__rate_interval]))",
+          "legendFormat": "{{outcome}}",
           "refId": "A"
         }
       ],
       "title": "Team Usage Prewarm Request Outcomes",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 54 },
-      "id": 18,
-      "targets": [
-        {
-          "expr": "sum by (class, timezone, outcome) (rate(ai_efficiency_team_usage_prewarm_cycle_total{outcome=\"tick_skipped\"}[$__rate_interval]))",
-          "legendFormat": "{{class}} {{timezone}} {{outcome}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Team Usage Prewarm Skipped Ticks",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 54 },
-      "id": 19,
-      "targets": [
-        {
-          "expr": "sum by (operation, outcome) (rate(ai_efficiency_team_usage_prewarm_redis_duration_seconds_count{operation=~\"lease_acquire|lease_ttl|lease_release\"}[$__rate_interval]))",
-          "legendFormat": "{{operation}} {{outcome}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Team Usage Prewarm Lease Outcomes",
       "type": "timeseries"
     }
   ],

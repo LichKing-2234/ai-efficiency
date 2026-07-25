@@ -103,8 +103,10 @@ func TestRefresherTimezoneFailureKeepsOldLaneAndPublishesOtherLane(t *testing.T)
 	provider := newRefresherTestProvider([]int64{101})
 	provider.failTimezone = "UTC"
 	reporter := &recordingRefreshReporter{}
+	metrics := &recordingPrewarmRequestMetrics{}
 	options := refresherTestOptions([]string{"UTC", "Asia/Shanghai"}, func() time.Time { return now }, "partial")
 	options.Reporter = reporter
+	options.Metrics = metrics
 	refresher := mustRefresher(t, staticRefresherBindingResolver{binding: refresherBinding(provider)}, cache, options)
 
 	if err := refresher.Refresh(context.Background()); err == nil {
@@ -120,6 +122,12 @@ func TestRefresherTimezoneFailureKeepsOldLaneAndPublishesOtherLane(t *testing.T)
 	}
 	if got := reporter.last(); got.Outcome != PrewarmRefreshPartial || got.PlannedLanes != 2 || got.PublishedLanes != 1 {
 		t.Fatalf("refresh report = %#v, want partial with 2 planned and 1 published", got)
+	}
+	if len(metrics.refreshes) != 1 || metrics.refreshes[0].outcome != PrewarmRefreshPartial {
+		t.Fatalf("refresh metrics = %#v, want one partial outcome", metrics.refreshes)
+	}
+	if len(metrics.laneSuccesses) != 1 || metrics.laneSuccesses[0].timezone != "Asia/Shanghai" || metrics.laneSuccesses[0].at != now {
+		t.Fatalf("lane-success metrics = %#v, want Asia/Shanghai at %v", metrics.laneSuccesses, now)
 	}
 }
 

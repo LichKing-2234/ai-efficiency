@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -176,38 +175,6 @@ func TestPrewarmCacheKeysIsolateAllGenerationDimensions(t *testing.T) {
 	}
 }
 
-func TestPrewarmCacheMetricsRecordDistinctManifestCurrentAndSegmentOutcomes(t *testing.T) {
-	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
-	metrics := &recordingPrewarmRequestMetrics{}
-	store := newRecordingPrewarmStore()
-	cache, err := NewPrewarmCache(store, PrewarmCacheOptions{
-		Namespace: "test", Now: func() time.Time { return now }, Metrics: metrics,
-	})
-	if err != nil {
-		t.Fatalf("NewPrewarmCache() error = %v", err)
-	}
-	identity := testPrewarmIdentity()
-	if _, found, err := cache.Read(context.Background(), identity); err != nil || found {
-		t.Fatalf("Read(miss) = %v/%v, want clean miss", found, err)
-	}
-	seedAuthorizedPrewarmManifest(t, cache, identity, now, []int64{101})
-	metrics.caches = metrics.caches[:1]
-	if _, found, err := cache.Read(context.Background(), identity); err != nil || !found {
-		t.Fatalf("Read(fresh) = %v/%v, want fresh generation", found, err)
-	}
-	want := []prewarmCacheMetric{
-		{cache: PrewarmCacheManifest, outcome: PrewarmCacheMiss},
-		{cache: PrewarmCacheCurrentStats, outcome: PrewarmCacheFresh},
-		{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
-		{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
-		{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
-		{cache: PrewarmCacheManifest, outcome: PrewarmCacheFresh},
-	}
-	if !reflect.DeepEqual(metrics.caches, want) {
-		t.Fatalf("cache metrics = %#v, want %#v", metrics.caches, want)
-	}
-}
-
 func TestPrewarmCacheReadWindowSelectsExactReferencesAndRelativeCompleteness(t *testing.T) {
 	generatedAt := testPrewarmGeneratedAt()
 	identity := testPrewarmIdentity()
@@ -217,7 +184,6 @@ func TestPrewarmCacheReadWindowSelectsExactReferencesAndRelativeCompleteness(t *
 		want       func(PrewarmManifest) []string
 		unselected func(PrewarmManifest) []PrewarmValueReference
 		wantResult func(*PrewarmCacheResult) bool
-		wantCaches []prewarmCacheMetric
 	}{
 		{
 			name:  "today",
@@ -232,11 +198,6 @@ func TestPrewarmCacheReadWindowSelectsExactReferencesAndRelativeCompleteness(t *
 				return result.CurrentStats != nil && result.Segments.History29d == nil &&
 					result.Segments.History6d == nil && result.Segments.TodayHour != nil &&
 					result.History29dStatus == "" && result.History6dStatus == ""
-			},
-			wantCaches: []prewarmCacheMetric{
-				{cache: PrewarmCacheCurrentStats, outcome: PrewarmCacheFresh},
-				{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
-				{cache: PrewarmCacheManifest, outcome: PrewarmCacheFresh},
 			},
 		},
 		{
@@ -253,12 +214,6 @@ func TestPrewarmCacheReadWindowSelectsExactReferencesAndRelativeCompleteness(t *
 					result.Segments.History6d != nil && result.Segments.TodayHour != nil &&
 					result.History29dStatus == ""
 			},
-			wantCaches: []prewarmCacheMetric{
-				{cache: PrewarmCacheCurrentStats, outcome: PrewarmCacheFresh},
-				{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
-				{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
-				{cache: PrewarmCacheManifest, outcome: PrewarmCacheFresh},
-			},
 		},
 		{
 			name:  "30d",
@@ -274,28 +229,20 @@ func TestPrewarmCacheReadWindowSelectsExactReferencesAndRelativeCompleteness(t *
 					result.Segments.History6d == nil && result.Segments.TodayHour != nil &&
 					result.History6dStatus == ""
 			},
-			wantCaches: []prewarmCacheMetric{
-				{cache: PrewarmCacheCurrentStats, outcome: PrewarmCacheFresh},
-				{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
-				{cache: PrewarmCacheSegment, outcome: PrewarmCacheFresh},
-				{cache: PrewarmCacheManifest, outcome: PrewarmCacheFresh},
-			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			metrics := &recordingPrewarmRequestMetrics{}
 			store := newRecordingPrewarmStore()
 			cache, err := NewPrewarmCache(store, PrewarmCacheOptions{
-				Namespace: "test", Now: func() time.Time { return generatedAt }, Metrics: metrics,
+				Namespace: "test", Now: func() time.Time { return generatedAt },
 			})
 			if err != nil {
 				t.Fatalf("NewPrewarmCache() error = %v", err)
 			}
 			manifest := testPrewarmManifest(t, cache, identity, generatedAt)
 			publishTestPrewarmManifest(t, cache, manifest, "read-window-"+test.name)
-			metrics.caches = nil
 			for index, ref := range test.unselected(manifest) {
 				if index == 0 {
 					store.DeleteRaw(ref.Key)
@@ -313,9 +260,6 @@ func TestPrewarmCacheReadWindowSelectsExactReferencesAndRelativeCompleteness(t *
 			}
 			if got := store.LastMGet(); !equalStrings(got, test.want(manifest)) {
 				t.Fatalf("ReadWindow(%s) MGET keys = %#v, want %#v", test.class, got, test.want(manifest))
-			}
-			if !reflect.DeepEqual(metrics.caches, test.wantCaches) {
-				t.Fatalf("ReadWindow(%s) cache metrics = %#v, want %#v", test.class, metrics.caches, test.wantCaches)
 			}
 		})
 	}
@@ -1261,192 +1205,6 @@ func TestPrewarmCacheRedisFailuresRemainFailOpen(t *testing.T) {
 	})
 }
 
-func TestPrewarmCacheRecordsClosedRedisErrorClasses(t *testing.T) {
-	type testCase struct {
-		name      string
-		wantClass string
-		run       func(*testing.T, *recordingRedisErrorMetrics)
-	}
-	tests := []testCase{
-		{
-			name: "validation", wantClass: "validation",
-			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
-				store := newRecordingPrewarmStore()
-				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
-				if acquired, err := cache.TryAcquireLease(context.Background(), "", "owner", time.Minute); acquired || err == nil {
-					t.Fatalf("TryAcquireLease(invalid) = %v, %v, want validation error", acquired, err)
-				}
-				if got := store.LeaseCalls(); got != 0 {
-					t.Fatalf("validation reached Redis %d times, want zero", got)
-				}
-			},
-		},
-		{
-			name: "caller canceled", wantClass: "caller_canceled",
-			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
-				store := newRecordingPrewarmStore()
-				store.waitGetContext = true
-				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
-				ctx, cancel := context.WithCancel(context.Background())
-				cancel()
-				if _, _, err := cache.Read(ctx, testPrewarmIdentity()); !errors.Is(err, context.Canceled) {
-					t.Fatalf("Read(pre-canceled) error = %v, want canceled", err)
-				}
-			},
-		},
-		{
-			name: "command deadline", wantClass: "command_deadline",
-			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
-				store := newRecordingPrewarmStore()
-				store.waitGetContext = true
-				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, time.Millisecond)
-				if _, _, err := cache.Read(context.Background(), testPrewarmIdentity()); !errors.Is(err, context.DeadlineExceeded) {
-					t.Fatalf("Read(command deadline) error = %v, want deadline exceeded", err)
-				}
-			},
-		},
-		{
-			name: "network timeout", wantClass: "network_timeout",
-			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
-				store := newRecordingPrewarmStore()
-				store.getErr = syntheticPrewarmNetworkError{timeout: true}
-				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
-				_, _, _ = cache.Read(context.Background(), testPrewarmIdentity())
-			},
-		},
-		{
-			name: "network error", wantClass: "network_error",
-			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
-				store := newRecordingPrewarmStore()
-				store.getErr = syntheticPrewarmNetworkError{}
-				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
-				_, _, _ = cache.Read(context.Background(), testPrewarmIdentity())
-			},
-		},
-		{
-			name: "Redis command", wantClass: "redis_command",
-			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
-				store := newRecordingPrewarmStore()
-				store.getErr = errors.New("synthetic Redis command failure")
-				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
-				_, _, _ = cache.Read(context.Background(), testPrewarmIdentity())
-			},
-		},
-		{
-			name: "decode or reference", wantClass: "decode_or_reference",
-			run: func(t *testing.T, metrics *recordingRedisErrorMetrics) {
-				store := newRecordingPrewarmStore()
-				cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
-				key, err := prewarmManifestKeyForIdentity("test", prewarmCacheSchemaVersion, testPrewarmIdentity())
-				if err != nil {
-					t.Fatalf("prewarmManifestKeyForIdentity() error = %v", err)
-				}
-				store.SetRaw(key, []byte("not-json"), manifestTTL)
-				_, _, _ = cache.Read(context.Background(), testPrewarmIdentity())
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			metrics := &recordingRedisErrorMetrics{}
-			test.run(t, metrics)
-			if got := metrics.Classes(); !reflect.DeepEqual(got, []redisErrorMetric{{operation: expectedRedisOperation(test.wantClass), class: PrewarmRedisErrorClass(test.wantClass)}}) {
-				t.Fatalf("Redis error classes = %#v, want one %s", got, test.wantClass)
-			}
-		})
-	}
-}
-
-func TestPrewarmCacheDoesNotRecordNormalMissOrLeaseContentionAsRedisErrors(t *testing.T) {
-	store := newRecordingPrewarmStore()
-	metrics := &recordingRedisErrorMetrics{}
-	cache := mustNewPrewarmCacheWithMetrics(t, store, time.Now, metrics, 250*time.Millisecond)
-
-	if result, found, err := cache.Read(context.Background(), testPrewarmIdentity()); result != nil || found || err != nil {
-		t.Fatalf("Read(miss) = %#v, %v, %v, want normal miss", result, found, err)
-	}
-	leaseKey := cache.RefreshLeaseKey()
-	if acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner-a", time.Minute); !acquired || err != nil {
-		t.Fatalf("TryAcquireLease(owner) = %v, %v", acquired, err)
-	}
-	if acquired, err := cache.TryAcquireLease(context.Background(), leaseKey, "owner-b", time.Minute); acquired || err != nil {
-		t.Fatalf("TryAcquireLease(contender) = %v, %v, want false, nil", acquired, err)
-	}
-	if got := metrics.Classes(); len(got) != 0 {
-		t.Fatalf("normal miss/contention Redis error classes = %#v, want none", got)
-	}
-}
-
-func TestPrewarmCachePublishRecordsReferencedReadFailureOnceAtSource(t *testing.T) {
-	tests := []struct {
-		name        string
-		wantClass   PrewarmRedisErrorClass
-		readTimeout time.Duration
-		wrapStore   func(*recordingPrewarmStore) readcache.BatchStore
-		mutate      func(*recordingPrewarmStore, PrewarmManifest)
-	}{
-		{
-			name: "command deadline", wantClass: PrewarmRedisErrorCommandDeadline, readTimeout: time.Millisecond,
-			wrapStore: func(store *recordingPrewarmStore) readcache.BatchStore {
-				return blockingMGetPrewarmStore{recordingPrewarmStore: store}
-			},
-		},
-		{
-			name: "network error", wantClass: PrewarmRedisErrorNetwork, readTimeout: 250 * time.Millisecond,
-			mutate: func(store *recordingPrewarmStore, _ PrewarmManifest) {
-				store.mgetErr = syntheticPrewarmNetworkError{}
-			},
-		},
-		{
-			name: "decode error", wantClass: PrewarmRedisErrorDecodeOrReference, readTimeout: 250 * time.Millisecond,
-			mutate: func(store *recordingPrewarmStore, manifest PrewarmManifest) {
-				store.SetRaw(manifest.History6d.Key, []byte("not-json"), historyValueTTL)
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			generatedAt := testPrewarmGeneratedAt()
-			baseStore := newRecordingPrewarmStore()
-			var store readcache.BatchStore = baseStore
-			if test.wrapStore != nil {
-				store = test.wrapStore(baseStore)
-			}
-			metrics := &recordingRedisErrorMetrics{}
-			cache := mustNewPrewarmCacheWithMetrics(t, store, func() time.Time { return generatedAt }, metrics, test.readTimeout)
-			manifest := testPrewarmManifest(t, cache, testPrewarmIdentity(), generatedAt)
-			if test.mutate != nil {
-				test.mutate(baseStore, manifest)
-			}
-			metrics.Reset()
-
-			published, err := cache.PublishManifest(context.Background(), "lease", "owner", manifest)
-			if published || err == nil {
-				t.Fatalf("PublishManifest() = %v, %v, want referenced-read failure", published, err)
-			}
-			want := []redisErrorMetric{{operation: "generation_read", class: test.wantClass}}
-			if got := metrics.Classes(); !reflect.DeepEqual(got, want) {
-				t.Fatalf("referenced-read Redis error classes = %#v, want %#v", got, want)
-			}
-		})
-	}
-}
-
-func TestPrewarmCacheImmutableClaimMissRecordsDecodeOrReference(t *testing.T) {
-	metrics := &recordingRedisErrorMetrics{}
-	cache := mustNewPrewarmCacheWithMetrics(t, newRecordingPrewarmStore(), time.Now, metrics, 250*time.Millisecond)
-	err := cache.waitForImmutableValue(context.Background(), "missing-claim", "claim-token", []byte("value"))
-	if !errors.Is(err, readcache.ErrMiss) {
-		t.Fatalf("waitForImmutableValue(missing claim) error = %v, want cache miss", err)
-	}
-	want := []redisErrorMetric{{operation: "immutable_write", class: PrewarmRedisErrorDecodeOrReference}}
-	if got := metrics.Classes(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("immutable claim miss Redis error classes = %#v, want %#v", got, want)
-	}
-}
-
 func testPrewarmManifest(t *testing.T, cache *PrewarmCache, identity PrewarmCacheIdentity, generatedAt time.Time) PrewarmManifest {
 	t.Helper()
 	return testPrewarmManifestWithGeneration(t, cache, identity, generatedAt, "a")
@@ -1527,76 +1285,6 @@ func mustNewPrewarmCache(t *testing.T, store readcache.BatchStore, now func() ti
 		t.Fatalf("NewPrewarmCache() error = %v", err)
 	}
 	return cache
-}
-
-func mustNewPrewarmCacheWithMetrics(
-	t *testing.T,
-	store readcache.BatchStore,
-	now func() time.Time,
-	metrics PrewarmMetrics,
-	readTimeout time.Duration,
-) *PrewarmCache {
-	t.Helper()
-	cache, err := NewPrewarmCache(store, PrewarmCacheOptions{
-		Namespace: "test", Now: now, Metrics: metrics, ReadTimeout: readTimeout,
-	})
-	if err != nil {
-		t.Fatalf("NewPrewarmCache() error = %v", err)
-	}
-	return cache
-}
-
-type redisErrorMetric struct {
-	operation string
-	class     PrewarmRedisErrorClass
-}
-
-type recordingRedisErrorMetrics struct {
-	noopPrewarmMetrics
-	mu      sync.Mutex
-	classes []redisErrorMetric
-}
-
-func (m *recordingRedisErrorMetrics) RecordRedisError(operation string, class PrewarmRedisErrorClass) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.classes = append(m.classes, redisErrorMetric{operation: operation, class: class})
-}
-
-func (m *recordingRedisErrorMetrics) Classes() []redisErrorMetric {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]redisErrorMetric(nil), m.classes...)
-}
-
-func (m *recordingRedisErrorMetrics) Reset() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.classes = nil
-}
-
-func expectedRedisOperation(class string) string {
-	if class == "validation" {
-		return "lease_acquire"
-	}
-	return "manifest_read"
-}
-
-type syntheticPrewarmNetworkError struct {
-	timeout bool
-}
-
-func (e syntheticPrewarmNetworkError) Error() string   { return "synthetic network failure" }
-func (e syntheticPrewarmNetworkError) Timeout() bool   { return e.timeout }
-func (e syntheticPrewarmNetworkError) Temporary() bool { return false }
-
-type blockingMGetPrewarmStore struct {
-	*recordingPrewarmStore
-}
-
-func (s blockingMGetPrewarmStore) MGet(ctx context.Context, _ ...string) ([][]byte, error) {
-	<-ctx.Done()
-	return nil, ctx.Err()
 }
 
 type recordingPrewarmStore struct {

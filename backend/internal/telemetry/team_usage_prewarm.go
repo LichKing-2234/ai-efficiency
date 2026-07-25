@@ -8,83 +8,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var (
-	prewarmCycleClasses    = []string{"moving", "recovery", "startup", "history_29d", "history_6d"}
-	prewarmCycleOutcomes   = []string{"success", "error", "canceled", "rejected", "skipped", "tick_skipped", "lease_busy"}
-	prewarmSourceClasses   = []string{"moving", "recovery", "startup", "history_29d", "history_6d", "today_hour"}
-	prewarmSourceOutcomes  = []string{"success", "error", "canceled", "rejected"}
-	prewarmRedisOperations = []string{
-		"manifest_read", "generation_read", "immutable_write", "manifest_write",
-		"lease_acquire", "lease_ttl", "lease_release",
-	}
-	prewarmRedisOutcomes = []string{
-		"hit", "miss", "success", "error", "acquired", "busy", "released", "not_owned",
-	}
-	prewarmRedisErrorClasses = []teamusage.PrewarmRedisErrorClass{
-		teamusage.PrewarmRedisErrorValidation,
-		teamusage.PrewarmRedisErrorCallerCanceled,
-		teamusage.PrewarmRedisErrorCommandDeadline,
-		teamusage.PrewarmRedisErrorNetworkTimeout,
-		teamusage.PrewarmRedisErrorNetwork,
-		teamusage.PrewarmRedisErrorCommand,
-		teamusage.PrewarmRedisErrorDecodeOrReference,
-	}
-	prewarmRequestOutcomes = []string{"full_hit", "partial_today", "ineligible", "miss", "fallback"}
-	prewarmFallbackReasons = []string{
-		"none", "cache_miss", "ineligible", "invalid_request", "redis_error",
-		"generation_invalid", "roster_incomplete", "source_error",
-	}
-	prewarmQuantityKinds = []teamusage.PrewarmQuantityKind{
-		teamusage.PrewarmQuantityUnionUsers,
-		teamusage.PrewarmQuantitySegmentBytes,
-		teamusage.PrewarmQuantityTimezoneBytes,
-	}
-	prewarmValidationChecks = []teamusage.PrewarmValidationCheck{
-		teamusage.PrewarmValidationDirectoryPagination,
-		teamusage.PrewarmValidationProviderIDBound,
-		teamusage.PrewarmValidationStatsExactCoverage,
-		teamusage.PrewarmValidationRawTrendCompleteness,
-		teamusage.PrewarmValidationRawTrendCoverage,
-		teamusage.PrewarmValidationRawTrendLimit,
-	}
-	prewarmValidationOutcomes = []teamusage.PrewarmValidationOutcome{
-		teamusage.PrewarmValidationAccepted,
-		teamusage.PrewarmValidationRejected,
-	}
-	prewarmCacheKinds = []teamusage.PrewarmCacheKind{
-		teamusage.PrewarmCacheManifest,
-		teamusage.PrewarmCacheCurrentStats,
-		teamusage.PrewarmCacheSegment,
-	}
-	prewarmCacheOutcomes = []teamusage.PrewarmCacheOutcome{
-		teamusage.PrewarmCacheFresh,
-		teamusage.PrewarmCacheStale,
-		teamusage.PrewarmCacheMiss,
-		teamusage.PrewarmCacheInvalid,
-		teamusage.PrewarmCacheHardExpired,
-		teamusage.PrewarmCacheError,
-	}
-)
-
 type teamUsagePrewarmMetrics struct {
 	timezones map[string]struct{}
 
-	cycleTotal      *prometheus.CounterVec
-	cycleDuration   *prometheus.HistogramVec
+	refreshTotal    *prometheus.CounterVec
+	refreshDuration prometheus.Histogram
+	laneLastSuccess *prometheus.GaugeVec
 	sourceDuration  *prometheus.HistogramVec
-	sourceBytes     *prometheus.HistogramVec
-	sourcePoints    *prometheus.HistogramVec
-	sourceUsers     *prometheus.HistogramVec
-	redisDuration   *prometheus.HistogramVec
-	redisBytes      *prometheus.HistogramVec
-	redisErrorTotal *prometheus.CounterVec
-	schedulerTicks  prometheus.Counter
 	requestTotal    *prometheus.CounterVec
-	lastSuccess     *prometheus.GaugeVec
-	quantity        *prometheus.HistogramVec
-	generationBytes prometheus.Gauge
-	validationTotal *prometheus.CounterVec
-	cacheTotal      *prometheus.CounterVec
 }
 
 func (m *Metrics) TeamUsagePrewarmRecorder(timezones []string) (teamusage.PrewarmMetrics, error) {
@@ -101,212 +32,98 @@ func (m *Metrics) TeamUsagePrewarmRecorder(timezones []string) (teamusage.Prewar
 
 	recorder := &teamUsagePrewarmMetrics{
 		timezones: make(map[string]struct{}, len(normalized)),
-		cycleTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_cycle_total",
-			Help: "Completed and skipped Team Usage prewarm cycles.",
-		}, []string{"class", "timezone", "outcome"}),
-		cycleDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_cycle_duration_seconds",
-			Help: "Team Usage prewarm cycle duration in seconds.", Buckets: prometheus.ExponentialBuckets(0.01, 2, 16),
-		}, []string{"class", "timezone", "outcome"}),
+		refreshTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: metricsNamespace,
+			Name:      "team_usage_prewarm_refresh_total",
+			Help:      "Completed Team Usage prewarm refresh outcomes.",
+		}, []string{"outcome"}),
+		refreshDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: metricsNamespace,
+			Name:      "team_usage_prewarm_refresh_duration_seconds",
+			Help:      "Team Usage prewarm refresh duration in seconds.",
+			Buckets:   prometheus.ExponentialBuckets(0.01, 2, 16),
+		}),
+		laneLastSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: metricsNamespace,
+			Name:      "team_usage_prewarm_lane_last_success_timestamp_seconds",
+			Help:      "Unix timestamp of the last successful Team Usage prewarm lane publication.",
+		}, []string{"timezone"}),
 		sourceDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_source_duration_seconds",
-			Help: "Team Usage prewarm Relay source duration in seconds.", Buckets: prometheus.ExponentialBuckets(0.05, 2, 13),
-		}, []string{"class", "timezone", "outcome"}),
-		sourceBytes: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_source_bytes",
-			Help: "Bounded Team Usage prewarm Relay response bytes.", Buckets: prometheus.ExponentialBuckets(1024, 2, 15),
-		}, []string{"class", "timezone", "outcome"}),
-		sourcePoints: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_source_points",
-			Help: "Bounded Team Usage prewarm decoded source points.", Buckets: prometheus.ExponentialBuckets(1, 2, 20),
-		}, []string{"class", "timezone", "outcome"}),
-		sourceUsers: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_source_users",
-			Help: "Bounded Team Usage prewarm unique source users.", Buckets: prometheus.ExponentialBuckets(1, 2, 13),
-		}, []string{"class", "timezone", "outcome"}),
-		redisDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_redis_duration_seconds",
-			Help: "Team Usage prewarm Redis operation duration in seconds.", Buckets: prometheus.ExponentialBuckets(0.001, 2, 12),
-		}, []string{"operation", "outcome"}),
-		redisBytes: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_redis_bytes",
-			Help: "Bounded Team Usage prewarm Redis payload bytes.", Buckets: prometheus.ExponentialBuckets(64, 2, 19),
-		}, []string{"operation", "outcome"}),
-		redisErrorTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_redis_error_total",
-			Help: "Closed Team Usage prewarm Redis failure classifications.",
-		}, []string{"operation", "class"}),
-		schedulerTicks: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_scheduler_tick_total",
-			Help: "Team Usage prewarm scheduler ticks observed before worker dispatch.",
-		}),
+			Namespace: metricsNamespace,
+			Name:      "team_usage_prewarm_source_duration_seconds",
+			Help:      "Team Usage prewarm source duration in seconds.",
+			Buckets:   prometheus.ExponentialBuckets(0.05, 2, 13),
+		}, []string{"source", "outcome"}),
 		requestTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_request_total",
-			Help: "Team Usage request prewarm outcomes and exact-fallback reasons.",
-		}, []string{"timezone", "outcome", "fallback_reason"}),
-		lastSuccess: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_last_success_timestamp_seconds",
-			Help: "Unix timestamp of the last successful Team Usage prewarm publication.",
-		}, []string{"class", "timezone"}),
-		quantity: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_quantity",
-			Help:    "Bounded Team Usage prewarm composition and publication quantities.",
-			Buckets: prometheus.ExponentialBuckets(1, 2, 25),
-		}, []string{"quantity", "timezone"}),
-		generationBytes: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_generation_bytes",
-			Help: "Latest full Team Usage prewarm generation bytes with provider-wide current stats counted once.",
-		}),
-		validationTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_validation_total",
-			Help: "Structured bounded Team Usage prewarm source validation outcomes.",
-		}, []string{"check", "outcome"}),
-		cacheTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: metricsNamespace, Name: "team_usage_prewarm_cache_total",
-			Help: "Distinct Team Usage prewarm manifest, current-stats, and segment cache outcomes.",
-		}, []string{"cache", "outcome"}),
+			Namespace: metricsNamespace,
+			Name:      "team_usage_prewarm_request_total",
+			Help:      "Team Usage request prewarm outcomes.",
+		}, []string{"outcome"}),
 	}
 	for _, timezone := range normalized {
 		recorder.timezones[timezone] = struct{}{}
 	}
 	m.registry.MustRegister(
-		recorder.cycleTotal, recorder.cycleDuration,
-		recorder.sourceDuration, recorder.sourceBytes, recorder.sourcePoints, recorder.sourceUsers,
-		recorder.redisDuration, recorder.redisBytes, recorder.redisErrorTotal, recorder.schedulerTicks,
-		recorder.requestTotal, recorder.lastSuccess,
-		recorder.quantity, recorder.generationBytes, recorder.validationTotal, recorder.cacheTotal,
+		recorder.refreshTotal,
+		recorder.refreshDuration,
+		recorder.laneLastSuccess,
+		recorder.sourceDuration,
+		recorder.requestTotal,
 	)
 	recorder.preinitialize(normalized)
 	return recorder, nil
 }
 
 func (m *teamUsagePrewarmMetrics) preinitialize(timezones []string) {
+	for _, outcome := range teamusage.AllPrewarmRefreshOutcomes() {
+		m.refreshTotal.WithLabelValues(string(outcome)).Add(0)
+	}
 	for _, timezone := range timezones {
-		for _, class := range prewarmCycleClasses {
-			m.lastSuccess.WithLabelValues(class, timezone).Set(0)
-			for _, outcome := range prewarmCycleOutcomes {
-				m.cycleTotal.WithLabelValues(class, timezone, outcome).Add(0)
-				m.cycleDuration.WithLabelValues(class, timezone, outcome)
-			}
-		}
-		for _, class := range prewarmSourceClasses {
-			for _, outcome := range prewarmSourceOutcomes {
-				m.sourceDuration.WithLabelValues(class, timezone, outcome)
-				m.sourceBytes.WithLabelValues(class, timezone, outcome)
-				m.sourcePoints.WithLabelValues(class, timezone, outcome)
-				m.sourceUsers.WithLabelValues(class, timezone, outcome)
-			}
-		}
-		for _, outcome := range prewarmRequestOutcomes {
-			for _, reason := range prewarmFallbackReasons {
-				m.requestTotal.WithLabelValues(timezone, outcome, reason).Add(0)
-			}
-		}
-		for _, kind := range prewarmQuantityKinds {
-			recorder := m.quantity.WithLabelValues(string(kind), timezone)
-			_ = recorder
+		m.laneLastSuccess.WithLabelValues(timezone).Set(0)
+	}
+	for _, source := range teamusage.AllPrewarmSourceClasses() {
+		for _, outcome := range teamusage.AllPrewarmSourceOutcomes() {
+			m.sourceDuration.WithLabelValues(string(source), string(outcome))
 		}
 	}
-	m.generationBytes.Set(0)
-	for _, check := range prewarmValidationChecks {
-		for _, outcome := range prewarmValidationOutcomes {
-			m.validationTotal.WithLabelValues(string(check), string(outcome)).Add(0)
-		}
-	}
-	for _, cache := range prewarmCacheKinds {
-		for _, outcome := range prewarmCacheOutcomes {
-			m.cacheTotal.WithLabelValues(string(cache), string(outcome)).Add(0)
-		}
-	}
-	for _, operation := range prewarmRedisOperations {
-		for _, outcome := range prewarmRedisOutcomes {
-			m.redisDuration.WithLabelValues(operation, outcome)
-			m.redisBytes.WithLabelValues(operation, outcome)
-		}
-		for _, class := range prewarmRedisErrorClasses {
-			m.redisErrorTotal.WithLabelValues(operation, string(class)).Add(0)
-		}
+	for _, outcome := range teamusage.AllPrewarmReadOutcomes() {
+		m.requestTotal.WithLabelValues(string(outcome)).Add(0)
 	}
 }
 
-func (m *teamUsagePrewarmMetrics) RecordCycle(class, timezone, outcome string, duration time.Duration) {
-	if !containsMetricValue(prewarmCycleClasses, class) || !m.validTimezone(timezone) || !containsMetricValue(prewarmCycleOutcomes, outcome) {
+func (m *teamUsagePrewarmMetrics) RecordRefresh(outcome teamusage.PrewarmRefreshOutcome, duration time.Duration) {
+	if !outcome.Valid() {
 		return
 	}
-	duration = nonnegativeDuration(duration)
-	m.cycleTotal.WithLabelValues(class, timezone, outcome).Inc()
-	m.cycleDuration.WithLabelValues(class, timezone, outcome).Observe(duration.Seconds())
+	m.refreshTotal.WithLabelValues(string(outcome)).Inc()
+	m.refreshDuration.Observe(nonnegativePrewarmDuration(duration).Seconds())
 }
 
-func (m *teamUsagePrewarmMetrics) RecordSource(class, timezone, outcome string, duration time.Duration, bytes, points, users int) {
-	if !containsMetricValue(prewarmSourceClasses, class) || !m.validTimezone(timezone) || !containsMetricValue(prewarmSourceOutcomes, outcome) {
+func (m *teamUsagePrewarmMetrics) SetLaneLastSuccess(timezone string, at time.Time) {
+	if !m.validTimezone(timezone) || at.IsZero() {
 		return
 	}
-	labels := []string{class, timezone, outcome}
-	m.sourceDuration.WithLabelValues(labels...).Observe(nonnegativeDuration(duration).Seconds())
-	m.sourceBytes.WithLabelValues(labels...).Observe(float64(nonnegativeInt(bytes)))
-	m.sourcePoints.WithLabelValues(labels...).Observe(float64(nonnegativeInt(points)))
-	m.sourceUsers.WithLabelValues(labels...).Observe(float64(nonnegativeInt(users)))
+	m.laneLastSuccess.WithLabelValues(timezone).Set(float64(at.Unix()))
 }
 
-func (m *teamUsagePrewarmMetrics) RecordRedis(operation, outcome string, duration time.Duration, bytes int) {
-	if !containsMetricValue(prewarmRedisOperations, operation) || !containsMetricValue(prewarmRedisOutcomes, outcome) {
+func (m *teamUsagePrewarmMetrics) RecordSource(
+	source teamusage.PrewarmSourceClass,
+	outcome teamusage.PrewarmSourceOutcome,
+	duration time.Duration,
+) {
+	if !source.Valid() || !outcome.Valid() {
 		return
 	}
-	labels := []string{operation, outcome}
-	m.redisDuration.WithLabelValues(labels...).Observe(nonnegativeDuration(duration).Seconds())
-	m.redisBytes.WithLabelValues(labels...).Observe(float64(nonnegativeInt(bytes)))
+	m.sourceDuration.WithLabelValues(string(source), string(outcome)).Observe(
+		nonnegativePrewarmDuration(duration).Seconds(),
+	)
 }
 
-func (m *teamUsagePrewarmMetrics) RecordRedisError(operation string, class teamusage.PrewarmRedisErrorClass) {
-	if !containsMetricValue(prewarmRedisOperations, operation) || !containsPrewarmRedisErrorClass(class) {
+func (m *teamUsagePrewarmMetrics) RecordRequest(outcome teamusage.PrewarmReadOutcome) {
+	if !outcome.Valid() {
 		return
 	}
-	m.redisErrorTotal.WithLabelValues(operation, string(class)).Inc()
-}
-
-func (m *teamUsagePrewarmMetrics) RecordSchedulerTick() {
-	m.schedulerTicks.Inc()
-}
-
-func (m *teamUsagePrewarmMetrics) RecordRequest(timezone, outcome, fallbackReason string) {
-	if !m.validTimezone(timezone) || !containsMetricValue(prewarmRequestOutcomes, outcome) || !containsMetricValue(prewarmFallbackReasons, fallbackReason) {
-		return
-	}
-	m.requestTotal.WithLabelValues(timezone, outcome, fallbackReason).Inc()
-}
-
-func (m *teamUsagePrewarmMetrics) SetLastSuccess(class, timezone string, at time.Time) {
-	if !containsMetricValue(prewarmCycleClasses, class) || !m.validTimezone(timezone) || at.IsZero() {
-		return
-	}
-	m.lastSuccess.WithLabelValues(class, timezone).Set(float64(at.Unix()))
-}
-
-func (m *teamUsagePrewarmMetrics) RecordQuantity(kind teamusage.PrewarmQuantityKind, timezone string, value int) {
-	if !containsPrewarmQuantityKind(kind) || !m.validTimezone(timezone) {
-		return
-	}
-	m.quantity.WithLabelValues(string(kind), timezone).Observe(float64(nonnegativeInt(value)))
-}
-
-func (m *teamUsagePrewarmMetrics) SetGenerationBytes(value int) {
-	m.generationBytes.Set(float64(nonnegativeInt(value)))
-}
-
-func (m *teamUsagePrewarmMetrics) RecordValidation(check teamusage.PrewarmValidationCheck, outcome teamusage.PrewarmValidationOutcome) {
-	if !containsPrewarmValidationCheck(check) || !containsPrewarmValidationOutcome(outcome) {
-		return
-	}
-	m.validationTotal.WithLabelValues(string(check), string(outcome)).Inc()
-}
-
-func (m *teamUsagePrewarmMetrics) RecordCache(cache teamusage.PrewarmCacheKind, outcome teamusage.PrewarmCacheOutcome) {
-	if !containsPrewarmCacheKind(cache) || !containsPrewarmCacheOutcome(outcome) {
-		return
-	}
-	m.cacheTotal.WithLabelValues(string(cache), string(outcome)).Inc()
+	m.requestTotal.WithLabelValues(string(outcome)).Inc()
 }
 
 func (m *teamUsagePrewarmMetrics) validTimezone(timezone string) bool {
@@ -314,77 +131,7 @@ func (m *teamUsagePrewarmMetrics) validTimezone(timezone string) bool {
 	return ok
 }
 
-func containsMetricValue(allowed []string, value string) bool {
-	for _, candidate := range allowed {
-		if value == candidate {
-			return true
-		}
-	}
-	return false
-}
-
-func containsPrewarmQuantityKind(value teamusage.PrewarmQuantityKind) bool {
-	for _, allowed := range prewarmQuantityKinds {
-		if value == allowed {
-			return true
-		}
-	}
-	return false
-}
-
-func containsPrewarmValidationCheck(value teamusage.PrewarmValidationCheck) bool {
-	for _, allowed := range prewarmValidationChecks {
-		if value == allowed {
-			return true
-		}
-	}
-	return false
-}
-
-func containsPrewarmValidationOutcome(value teamusage.PrewarmValidationOutcome) bool {
-	for _, allowed := range prewarmValidationOutcomes {
-		if value == allowed {
-			return true
-		}
-	}
-	return false
-}
-
-func containsPrewarmCacheKind(value teamusage.PrewarmCacheKind) bool {
-	for _, allowed := range prewarmCacheKinds {
-		if value == allowed {
-			return true
-		}
-	}
-	return false
-}
-
-func containsPrewarmCacheOutcome(value teamusage.PrewarmCacheOutcome) bool {
-	for _, allowed := range prewarmCacheOutcomes {
-		if value == allowed {
-			return true
-		}
-	}
-	return false
-}
-
-func containsPrewarmRedisErrorClass(value teamusage.PrewarmRedisErrorClass) bool {
-	for _, allowed := range prewarmRedisErrorClasses {
-		if value == allowed {
-			return true
-		}
-	}
-	return false
-}
-
-func nonnegativeDuration(value time.Duration) time.Duration {
-	if value < 0 {
-		return 0
-	}
-	return value
-}
-
-func nonnegativeInt(value int) int {
+func nonnegativePrewarmDuration(value time.Duration) time.Duration {
 	if value < 0 {
 		return 0
 	}

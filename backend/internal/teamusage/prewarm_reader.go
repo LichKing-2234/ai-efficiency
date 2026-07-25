@@ -6,16 +6,6 @@ import (
 	"time"
 )
 
-type PrewarmReadOutcome string
-
-const (
-	PrewarmReadFullHit    PrewarmReadOutcome = "full_hit"
-	PrewarmReadMiss       PrewarmReadOutcome = "miss"
-	PrewarmReadIneligible PrewarmReadOutcome = "ineligible"
-	PrewarmReadInvalid    PrewarmReadOutcome = "invalid"
-	PrewarmReadFallback   PrewarmReadOutcome = "fallback"
-)
-
 type PrewarmReadRequest struct {
 	ProviderID             int
 	ProviderVersion        int64
@@ -52,28 +42,23 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 	ctx context.Context,
 	request PrewarmReadRequest,
 ) (origin *teamUsageScopeOrigin, outcome PrewarmReadOutcome, err error) {
-	fallbackReason := "none"
 	defer func() {
 		if r == nil || r.metrics == nil {
 			return
 		}
-		r.metrics.RecordRequest(request.Params.Timezone, string(outcome), fallbackReason)
+		r.metrics.RecordRequest(outcome)
 	}()
 	if r == nil || r.cache == nil {
-		fallbackReason = "invalid_request"
 		return nil, PrewarmReadFallback, fmt.Errorf("team usage prewarm reader is not configured")
 	}
 	if request.ProviderID <= 0 || request.ProviderVersion <= 0 {
-		fallbackReason = "invalid_request"
 		return nil, PrewarmReadFallback, fmt.Errorf("valid authorized team usage prewarm request is required")
 	}
 	window, recognized, err := RecognizePrewarmWindow(request.Params, r.now())
 	if err != nil {
-		fallbackReason = "generation_invalid"
 		return nil, PrewarmReadInvalid, err
 	}
 	if !recognized {
-		fallbackReason = "ineligible"
 		return nil, PrewarmReadIneligible, nil
 	}
 	result, found, err := r.cache.ReadWindow(ctx, PrewarmCacheIdentity{
@@ -83,31 +68,25 @@ func (r *PrewarmReader) ReadAuthorizedOrigin(
 		AnchorDate:      window.AnchorDate,
 	}, window.Class)
 	if err != nil {
-		fallbackReason = "redis_error"
 		return nil, PrewarmReadFallback, err
 	}
 	if !found || result == nil {
-		fallbackReason = "cache_miss"
 		return nil, PrewarmReadMiss, nil
 	}
 	if !result.Complete {
-		fallbackReason = "generation_invalid"
 		return nil, PrewarmReadInvalid, nil
 	}
-	origin, eligible, unionUsers, err := composePrewarmedOriginWithUnion(
+	origin, eligible, _, err := composePrewarmedOriginWithUnion(
 		window,
 		*result.CurrentStats,
 		result.Segments,
 		request.AuthorizedRelayUserIDs,
 	)
 	if err != nil {
-		fallbackReason = "generation_invalid"
 		return nil, PrewarmReadFallback, err
 	}
 	if !eligible {
-		fallbackReason = "roster_incomplete"
 		return nil, PrewarmReadFallback, nil
 	}
-	r.metrics.RecordQuantity(PrewarmQuantityUnionUsers, window.Coverage.Timezone, unionUsers)
 	return origin, PrewarmReadFullHit, nil
 }

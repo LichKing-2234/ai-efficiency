@@ -538,7 +538,7 @@ type PrewarmSourceOutcome string
   structured-log boundary; replace their temporary outcome/source values with
   the typed values above.
 
-- [ ] **Step 1: Write the exact metric contract test**
+- [x] **Step 1: Write the exact metric contract test**
 
 Replace the broad metric test with one that gathers names and labels:
 
@@ -554,7 +554,7 @@ wantFamilies := map[string][]string{
 
 Assert the prior cycle, scheduler, Redis, quantity, generation, validation, cache, fallback-reason, byte, point, and user families are absent. Assert invalid typed values do not create new series and at most four configured timezone labels exist.
 
-- [ ] **Step 2: Run the test to verify RED**
+- [x] **Step 2: Run the test to verify RED**
 
 ```bash
 cd /Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm/backend
@@ -563,7 +563,7 @@ go test ./internal/telemetry ./cmd/server -run 'TestTeamUsagePrewarm|TestProduct
 
 Expected: FAIL because the current implementation registers more than five prewarm families and uses duplicated string allowlists.
 
-- [ ] **Step 3: Implement the closed typed vocabulary and recorder**
+- [x] **Step 3: Implement the closed typed vocabulary and recorder**
 
 Define each enum, its `Valid() bool`, and its ordered `All...()` slice once in `teamusage/prewarm_metrics.go`. Telemetry must iterate those exported typed values for preinitialization and must not repeat string allowlists.
 
@@ -571,7 +571,7 @@ Remove prewarm-specific Redis command metrics from `PrewarmCache`; the existing 
 
 Update the dashboard to no more than five focused panels, each backed by one approved family. Remove startup, cohort, lease-TTL, scheduler-tick, and generation-size operations guidance.
 
-- [ ] **Step 4: Verify metrics and bounded cardinality**
+- [x] **Step 4: Verify metrics and bounded cardinality**
 
 ```bash
 cd /Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm/backend
@@ -584,7 +584,7 @@ go test ./internal/teamusage ./internal/telemetry ./cmd/server -run 'Prewarm|Pro
 
 Expected: PASS and exactly five `ai_efficiency_team_usage_prewarm_*` families.
 
-- [ ] **Step 5: Update this plan and commit**
+- [x] **Step 5: Update this plan and commit**
 
 ```bash
 git add backend/internal/teamusage backend/internal/telemetry backend/cmd/server/cache_metrics* \

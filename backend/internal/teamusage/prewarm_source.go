@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"sort"
@@ -104,34 +105,62 @@ func (s *PrewarmSource) BuildCurrentStats(ctx context.Context, binding ProviderB
 		return PrewarmCurrentStatsEnvelope{}, fmt.Errorf("relay provider does not support provider-wide team usage")
 	}
 
+	directoryStartedAt := time.Now()
+	directory, userIDs, err := s.loadDirectory(ctx, provider)
+	s.options.Metrics.RecordSource(
+		PrewarmSourceDirectory,
+		prewarmSourceOutcomeForError(err),
+		time.Since(directoryStartedAt),
+	)
+	if err != nil {
+		return PrewarmCurrentStatsEnvelope{}, err
+	}
+
+	statsStartedAt := time.Now()
+	value, err := s.loadCurrentStats(ctx, binding, provider, directory, userIDs)
+	s.options.Metrics.RecordSource(
+		PrewarmSourceCurrentStats,
+		prewarmSourceOutcomeForError(err),
+		time.Since(statsStartedAt),
+	)
+	return value, err
+}
+
+func (s *PrewarmSource) loadDirectory(
+	ctx context.Context,
+	provider relay.ProviderWideTeamUsageProvider,
+) (relay.ProviderDirectoryResult, []int64, error) {
 	var directory relay.ProviderDirectoryResult
 	if err := s.limiter.Do(ctx, func(callCtx context.Context) error {
 		var err error
 		directory, err = provider.GetProviderUserIDs(callCtx)
 		return err
 	}); err != nil {
-		if check, ok := prewarmValidationCheckForRelayRejection(err); ok {
-			s.options.Metrics.RecordValidation(check, PrewarmValidationRejected)
-			return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("fetch provider-wide directory: %w", err))
+		if isPrewarmSourceRejection(err) {
+			return relay.ProviderDirectoryResult{}, nil, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("fetch provider-wide directory: %w", err))
 		}
-		return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureRelay, fmt.Errorf("fetch provider-wide directory: %w", err))
+		return relay.ProviderDirectoryResult{}, nil, wrapPrewarmSourceFailure(prewarmSourceFailureRelay, fmt.Errorf("fetch provider-wide directory: %w", err))
 	}
 	if directory.PageCount <= 0 {
-		s.options.Metrics.RecordValidation(PrewarmValidationDirectoryPagination, PrewarmValidationRejected)
-		return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("provider-wide directory pagination is incomplete"))
+		return relay.ProviderDirectoryResult{}, nil, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("provider-wide directory pagination is incomplete"))
 	}
-	s.options.Metrics.RecordValidation(PrewarmValidationDirectoryPagination, PrewarmValidationAccepted)
 	if len(directory.UserIDs) >= PrewarmTrendUserLimit {
-		s.options.Metrics.RecordValidation(PrewarmValidationProviderIDBound, PrewarmValidationRejected)
-		return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("provider-wide directory roster reached limit %d", PrewarmTrendUserLimit))
+		return relay.ProviderDirectoryResult{}, nil, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("provider-wide directory roster reached limit %d", PrewarmTrendUserLimit))
 	}
 	userIDs, err := normalizePrewarmRoster(directory.UserIDs)
 	if err != nil {
-		s.options.Metrics.RecordValidation(PrewarmValidationProviderIDBound, PrewarmValidationRejected)
-		return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, err)
+		return relay.ProviderDirectoryResult{}, nil, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, err)
 	}
-	s.options.Metrics.RecordValidation(PrewarmValidationProviderIDBound, PrewarmValidationAccepted)
+	return directory, userIDs, nil
+}
 
+func (s *PrewarmSource) loadCurrentStats(
+	ctx context.Context,
+	binding ProviderBinding,
+	provider relay.ProviderWideTeamUsageProvider,
+	directory relay.ProviderDirectoryResult,
+	userIDs []int64,
+) (PrewarmCurrentStatsEnvelope, error) {
 	combined := make(map[int64]relay.TeamUserUsageStats, len(userIDs))
 	responseBytes := directory.ResponseBytes
 	for offset := 0; offset < len(userIDs); offset += prewarmCurrentStatsChunkSize {
@@ -146,20 +175,17 @@ func (s *PrewarmSource) BuildCurrentStats(ctx context.Context, binding ProviderB
 			result, callErr = provider.GetProviderCurrentUsageStats(callCtx, chunk)
 			return callErr
 		}); err != nil {
-			if check, ok := prewarmValidationCheckForRelayRejection(err); ok {
-				s.options.Metrics.RecordValidation(check, PrewarmValidationRejected)
+			if isPrewarmSourceRejection(err) {
 				return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("fetch provider-wide current stats chunk %d: %w", offset/prewarmCurrentStatsChunkSize, err))
 			}
 			return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureRelay, fmt.Errorf("fetch provider-wide current stats chunk %d: %w", offset/prewarmCurrentStatsChunkSize, err))
 		}
 		if err := mergePrewarmCurrentStatsChunk(combined, chunk, result.Stats); err != nil {
-			s.options.Metrics.RecordValidation(PrewarmValidationStatsExactCoverage, PrewarmValidationRejected)
 			return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("validate provider-wide current stats chunk %d: %w", offset/prewarmCurrentStatsChunkSize, err))
 		}
 		responseBytes += result.ResponseBytes
 	}
 	if len(combined) != len(userIDs) {
-		s.options.Metrics.RecordValidation(PrewarmValidationStatsExactCoverage, PrewarmValidationRejected)
 		return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("provider-wide current stats do not cover exact directory roster"))
 	}
 
@@ -167,7 +193,6 @@ func (s *PrewarmSource) BuildCurrentStats(ctx context.Context, binding ProviderB
 	for _, userID := range userIDs {
 		value, exists := combined[userID]
 		if !exists {
-			s.options.Metrics.RecordValidation(PrewarmValidationStatsExactCoverage, PrewarmValidationRejected)
 			return PrewarmCurrentStatsEnvelope{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("provider-wide current stats missing roster ID %d", userID))
 		}
 		stats = append(stats, PrewarmCurrentStat{
@@ -175,7 +200,6 @@ func (s *PrewarmSource) BuildCurrentStats(ctx context.Context, binding ProviderB
 			TotalTokens: clonePrewarmInt64Pointer(value.TotalTokens),
 		})
 	}
-	s.options.Metrics.RecordValidation(PrewarmValidationStatsExactCoverage, PrewarmValidationAccepted)
 	value := PrewarmCurrentStatsEnvelope{
 		SchemaVersion: prewarmCacheSchemaVersion, ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
 		GenerationID: s.options.NewGenerationID(), GeneratedAt: s.options.Now(), RosterCount: len(userIDs),
@@ -192,7 +216,7 @@ func (s *PrewarmSource) FetchSegment(
 	binding ProviderBinding,
 	timezone, anchorDate string,
 	class PrewarmSegmentClass,
-) (PrewarmTrendSegment, error) {
+) (segment PrewarmTrendSegment, err error) {
 	if err := validateProviderBinding(binding); err != nil {
 		return PrewarmTrendSegment{}, err
 	}
@@ -204,6 +228,14 @@ func (s *PrewarmSource) FetchSegment(
 	if err != nil {
 		return PrewarmTrendSegment{}, err
 	}
+	startedAt := time.Now()
+	defer func() {
+		s.options.Metrics.RecordSource(
+			prewarmSourceClassForSegment(class),
+			prewarmSourceOutcomeForError(err),
+			time.Since(startedAt),
+		)
+	}()
 	params := relay.TeamMemberTrendParams{
 		StartDate: coverage.StartDate, EndDate: coverage.EndDate,
 		Granularity: coverage.Granularity, Timezone: coverage.Timezone,
@@ -214,35 +246,28 @@ func (s *PrewarmSource) FetchSegment(
 		result, callErr = provider.GetProviderUsageTrend(callCtx, params, PrewarmTrendUserLimit)
 		return callErr
 	}); err != nil {
-		if check, ok := prewarmValidationCheckForRelayRejection(err); ok {
-			s.options.Metrics.RecordValidation(check, PrewarmValidationRejected)
+		if isPrewarmSourceRejection(err) {
 			return PrewarmTrendSegment{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("fetch provider-wide %s trend: %w", class, err))
 		}
 		return PrewarmTrendSegment{}, wrapPrewarmSourceFailure(prewarmSourceFailureRelay, fmt.Errorf("fetch provider-wide %s trend: %w", class, err))
 	}
 	if !result.Complete {
-		s.options.Metrics.RecordValidation(PrewarmValidationRawTrendCompleteness, PrewarmValidationRejected)
 		return PrewarmTrendSegment{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("provider-wide %s trend is incomplete", class))
 	}
-	s.options.Metrics.RecordValidation(PrewarmValidationRawTrendCompleteness, PrewarmValidationAccepted)
 	if result.Coverage != params {
-		s.options.Metrics.RecordValidation(PrewarmValidationRawTrendCoverage, PrewarmValidationRejected)
 		return PrewarmTrendSegment{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("provider-wide %s trend coverage does not match request", class))
 	}
-	s.options.Metrics.RecordValidation(PrewarmValidationRawTrendCoverage, PrewarmValidationAccepted)
 	if result.ResponseBytes < 0 || result.ResponseBytes >= PrewarmTrendResponseByteLimit ||
 		result.PointCount < 0 || result.PointCount >= PrewarmTrendPointLimit || len(result.Points) >= PrewarmTrendPointLimit ||
 		result.UniqueUserCount < 0 || result.UniqueUserCount >= PrewarmTrendUserLimit {
-		s.options.Metrics.RecordValidation(PrewarmValidationRawTrendLimit, PrewarmValidationRejected)
 		return PrewarmTrendSegment{}, wrapPrewarmSourceFailure(prewarmSourceFailureValidation, fmt.Errorf("provider-wide %s trend reached a strict limit", class))
 	}
-	s.options.Metrics.RecordValidation(PrewarmValidationRawTrendLimit, PrewarmValidationAccepted)
 	points := make([]relay.ProviderWideTrendPoint, len(result.Points))
 	for index, point := range result.Points {
 		points[index] = point
 		points[index].TotalTokens = clonePrewarmInt64Pointer(point.TotalTokens)
 	}
-	segment := PrewarmTrendSegment{
+	segment = PrewarmTrendSegment{
 		SchemaVersion: prewarmCacheSchemaVersion, ProviderID: binding.ProviderID, ProviderVersion: binding.ProviderVersion,
 		TimezoneDigest: prewarmTimezoneDigest(timezone), GenerationID: s.options.NewGenerationID(), GeneratedAt: s.options.Now(),
 		Timezone: timezone, AnchorDate: anchorDate, Class: class, Coverage: PrewarmCoverage{
@@ -258,27 +283,23 @@ func (s *PrewarmSource) FetchSegment(
 	return segment, nil
 }
 
-func prewarmValidationCheckForRelayRejection(err error) (PrewarmValidationCheck, bool) {
-	kind, ok := relay.ProviderSourceRejectionKindOf(err)
-	if !ok {
-		return "", false
+func isPrewarmSourceRejection(err error) bool {
+	_, ok := relay.ProviderSourceRejectionKindOf(err)
+	return ok
+}
+
+func prewarmSourceOutcomeForError(err error) PrewarmSourceOutcome {
+	if err == nil {
+		return PrewarmSourceSuccess
 	}
-	switch kind {
-	case relay.ProviderSourceRejectionDirectoryPagination:
-		return PrewarmValidationDirectoryPagination, true
-	case relay.ProviderSourceRejectionProviderIDBound:
-		return PrewarmValidationProviderIDBound, true
-	case relay.ProviderSourceRejectionStatsExactCoverage:
-		return PrewarmValidationStatsExactCoverage, true
-	case relay.ProviderSourceRejectionRawTrendCoverage:
-		return PrewarmValidationRawTrendCoverage, true
-	case relay.ProviderSourceRejectionRawTrendCompleteness:
-		return PrewarmValidationRawTrendCompleteness, true
-	case relay.ProviderSourceRejectionRawTrendLimit:
-		return PrewarmValidationRawTrendLimit, true
-	default:
-		return "", false
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return PrewarmSourceCanceled
 	}
+	var failure *prewarmSourceFailure
+	if errors.As(err, &failure) && failure.kind == prewarmSourceFailureValidation {
+		return PrewarmSourceRejected
+	}
+	return PrewarmSourceError
 }
 
 func validateProviderBinding(binding ProviderBinding) error {

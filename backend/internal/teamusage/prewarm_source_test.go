@@ -162,7 +162,7 @@ func TestPrewarmSourceEveryRelayCallUsesSharedLimiter(t *testing.T) {
 	}
 }
 
-func TestPrewarmSourceMetricsRecordStructuredValidationChecks(t *testing.T) {
+func TestPrewarmSourceMetricsRecordClosedSourceOutcomes(t *testing.T) {
 	metrics := &recordingPrewarmRequestMetrics{}
 	provider := &prewarmSourceProvider{
 		directory: relay.ProviderDirectoryResult{UserIDs: []int64{1}, PageCount: 1},
@@ -182,16 +182,21 @@ func TestPrewarmSourceMetricsRecordStructuredValidationChecks(t *testing.T) {
 	if _, err := source.FetchSegment(context.Background(), prewarmBinding(provider), "UTC", "2026-07-21", SegmentTodayHour); err != nil {
 		t.Fatalf("FetchSegment() error = %v", err)
 	}
-	wantAccepted := []prewarmValidationMetric{
-		{check: PrewarmValidationDirectoryPagination, outcome: PrewarmValidationAccepted},
-		{check: PrewarmValidationProviderIDBound, outcome: PrewarmValidationAccepted},
-		{check: PrewarmValidationStatsExactCoverage, outcome: PrewarmValidationAccepted},
-		{check: PrewarmValidationRawTrendCompleteness, outcome: PrewarmValidationAccepted},
-		{check: PrewarmValidationRawTrendCoverage, outcome: PrewarmValidationAccepted},
-		{check: PrewarmValidationRawTrendLimit, outcome: PrewarmValidationAccepted},
+	wantSuccess := []struct {
+		source  PrewarmSourceClass
+		outcome PrewarmSourceOutcome
+	}{
+		{source: PrewarmSourceDirectory, outcome: PrewarmSourceSuccess},
+		{source: PrewarmSourceCurrentStats, outcome: PrewarmSourceSuccess},
+		{source: PrewarmSourceTodayHour, outcome: PrewarmSourceSuccess},
 	}
-	if !reflect.DeepEqual(metrics.validations, wantAccepted) {
-		t.Fatalf("accepted validation metrics = %#v, want %#v", metrics.validations, wantAccepted)
+	if len(metrics.sources) != len(wantSuccess) {
+		t.Fatalf("source metrics = %#v, want %d", metrics.sources, len(wantSuccess))
+	}
+	for index, want := range wantSuccess {
+		if got := metrics.sources[index]; got.source != want.source || got.outcome != want.outcome {
+			t.Fatalf("source metric %d = %#v, want %#v", index, got, want)
+		}
 	}
 
 	provider.trendFn = func(params relay.TeamMemberTrendParams, _ int) (relay.ProviderWideTrendResult, error) {
@@ -200,21 +205,20 @@ func TestPrewarmSourceMetricsRecordStructuredValidationChecks(t *testing.T) {
 	if _, err := source.FetchSegment(context.Background(), prewarmBinding(provider), "UTC", "2026-07-21", SegmentTodayHour); err == nil {
 		t.Fatal("FetchSegment(incomplete) error = nil")
 	}
-	last := metrics.validations[len(metrics.validations)-1]
-	if last != (prewarmValidationMetric{check: PrewarmValidationRawTrendCompleteness, outcome: PrewarmValidationRejected}) {
-		t.Fatalf("incomplete validation metric = %#v", last)
+	last := metrics.sources[len(metrics.sources)-1]
+	if last.source != PrewarmSourceTodayHour || last.outcome != PrewarmSourceRejected {
+		t.Fatalf("incomplete source metric = %#v", last)
 	}
 }
 
 func TestPrewarmSourceMapsTypedRelayRejectionsWithoutStringParsing(t *testing.T) {
 	tests := []struct {
-		name  string
-		kind  relay.ProviderSourceRejectionKind
-		check PrewarmValidationCheck
-		call  func(*PrewarmSource, *prewarmSourceProvider) error
+		name   string
+		source PrewarmSourceClass
+		call   func(*PrewarmSource, *prewarmSourceProvider) error
 	}{
 		{
-			name: "directory pagination", kind: relay.ProviderSourceRejectionDirectoryPagination, check: PrewarmValidationDirectoryPagination,
+			name: "directory pagination", source: PrewarmSourceDirectory,
 			call: func(source *PrewarmSource, provider *prewarmSourceProvider) error {
 				provider.directoryErr = relay.NewProviderSourceRejection(relay.ProviderSourceRejectionDirectoryPagination, errors.New("dynamic detail"))
 				_, err := source.BuildCurrentStats(context.Background(), prewarmBinding(provider))
@@ -222,7 +226,7 @@ func TestPrewarmSourceMapsTypedRelayRejectionsWithoutStringParsing(t *testing.T)
 			},
 		},
 		{
-			name: "provider ID bound", kind: relay.ProviderSourceRejectionProviderIDBound, check: PrewarmValidationProviderIDBound,
+			name: "provider ID bound", source: PrewarmSourceDirectory,
 			call: func(source *PrewarmSource, provider *prewarmSourceProvider) error {
 				provider.directoryErr = relay.NewProviderSourceRejection(relay.ProviderSourceRejectionProviderIDBound, errors.New("dynamic detail"))
 				_, err := source.BuildCurrentStats(context.Background(), prewarmBinding(provider))
@@ -230,7 +234,7 @@ func TestPrewarmSourceMapsTypedRelayRejectionsWithoutStringParsing(t *testing.T)
 			},
 		},
 		{
-			name: "stats coverage", kind: relay.ProviderSourceRejectionStatsExactCoverage, check: PrewarmValidationStatsExactCoverage,
+			name: "stats coverage", source: PrewarmSourceCurrentStats,
 			call: func(source *PrewarmSource, provider *prewarmSourceProvider) error {
 				provider.directory = relay.ProviderDirectoryResult{UserIDs: []int64{1}, PageCount: 1}
 				provider.statsFn = func([]int64) (relay.ProviderCurrentStatsResult, error) {
@@ -242,21 +246,19 @@ func TestPrewarmSourceMapsTypedRelayRejectionsWithoutStringParsing(t *testing.T)
 		},
 	}
 	for _, trend := range []struct {
-		name  string
-		kind  relay.ProviderSourceRejectionKind
-		check PrewarmValidationCheck
+		name string
+		kind relay.ProviderSourceRejectionKind
 	}{
-		{name: "trend coverage", kind: relay.ProviderSourceRejectionRawTrendCoverage, check: PrewarmValidationRawTrendCoverage},
-		{name: "trend completeness", kind: relay.ProviderSourceRejectionRawTrendCompleteness, check: PrewarmValidationRawTrendCompleteness},
-		{name: "trend limit", kind: relay.ProviderSourceRejectionRawTrendLimit, check: PrewarmValidationRawTrendLimit},
+		{name: "trend coverage", kind: relay.ProviderSourceRejectionRawTrendCoverage},
+		{name: "trend completeness", kind: relay.ProviderSourceRejectionRawTrendCompleteness},
+		{name: "trend limit", kind: relay.ProviderSourceRejectionRawTrendLimit},
 	} {
 		trend := trend
 		tests = append(tests, struct {
-			name  string
-			kind  relay.ProviderSourceRejectionKind
-			check PrewarmValidationCheck
-			call  func(*PrewarmSource, *prewarmSourceProvider) error
-		}{name: trend.name, kind: trend.kind, check: trend.check, call: func(source *PrewarmSource, provider *prewarmSourceProvider) error {
+			name   string
+			source PrewarmSourceClass
+			call   func(*PrewarmSource, *prewarmSourceProvider) error
+		}{name: trend.name, source: PrewarmSourceTodayHour, call: func(source *PrewarmSource, provider *prewarmSourceProvider) error {
 			provider.trendFn = func(relay.TeamMemberTrendParams, int) (relay.ProviderWideTrendResult, error) {
 				return relay.ProviderWideTrendResult{}, relay.NewProviderSourceRejection(trend.kind, errors.New("dynamic detail"))
 			}
@@ -279,9 +281,12 @@ func TestPrewarmSourceMapsTypedRelayRejectionsWithoutStringParsing(t *testing.T)
 			if !errors.As(err, &failure) || failure.kind != prewarmSourceFailureValidation {
 				t.Fatalf("source failure = %#v/%v, want typed validation", failure, err)
 			}
-			want := prewarmValidationMetric{check: test.check, outcome: PrewarmValidationRejected}
-			if len(metrics.validations) == 0 || metrics.validations[len(metrics.validations)-1] != want {
-				t.Fatalf("validation metrics = %#v, want final %#v", metrics.validations, want)
+			if len(metrics.sources) == 0 {
+				t.Fatal("source metrics are empty")
+			}
+			last := metrics.sources[len(metrics.sources)-1]
+			if last.source != test.source || last.outcome != PrewarmSourceRejected {
+				t.Fatalf("source metrics = %#v, want final %s/rejected", metrics.sources, test.source)
 			}
 		})
 	}

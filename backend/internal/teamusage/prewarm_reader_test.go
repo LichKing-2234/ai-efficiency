@@ -95,8 +95,8 @@ func TestPrewarmReaderFullHitFiltersAuthorizedRosterAndUsesSparseZero(t *testing
 		stat.RangeTotalTokens == nil || *stat.RangeTotalTokens != 0 {
 		t.Fatalf("sparse authorized range = %#v/%#v, want complete zero", stat.RangeActualCost, stat.RangeTotalTokens)
 	}
-	if !reflect.DeepEqual(metrics.quantities, []prewarmQuantityMetric{{kind: PrewarmQuantityUnionUsers, timezone: "UTC", value: 1}}) {
-		t.Fatalf("composition quantities = %#v", metrics.quantities)
+	if !reflect.DeepEqual(metrics.requests, []prewarmRequestMetric{{outcome: PrewarmReadFullHit}}) {
+		t.Fatalf("request metrics = %#v", metrics.requests)
 	}
 }
 
@@ -229,16 +229,16 @@ func TestPrewarmReaderUnionMetricUsesProviderWideTrendBeforeAuthorization(t *tes
 			t.Fatalf("ReadAuthorizedOrigin(%v) = %#v/%q/%v", authorized, origin, outcome, readErr)
 		}
 	}
-	want := []prewarmQuantityMetric{
-		{kind: PrewarmQuantityUnionUsers, timezone: "UTC", value: 3},
-		{kind: PrewarmQuantityUnionUsers, timezone: "UTC", value: 3},
+	want := []prewarmRequestMetric{
+		{outcome: PrewarmReadFullHit},
+		{outcome: PrewarmReadFullHit},
 	}
-	if !reflect.DeepEqual(metrics.quantities, want) {
-		t.Fatalf("provider-wide union quantities = %#v, want %#v", metrics.quantities, want)
+	if !reflect.DeepEqual(metrics.requests, want) {
+		t.Fatalf("request metrics = %#v, want %#v", metrics.requests, want)
 	}
 }
 
-func TestPrewarmReaderMetricsUseClosedFallbackReasons(t *testing.T) {
+func TestPrewarmReaderMetricsUseClosedOutcomes(t *testing.T) {
 	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
 	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
 	metrics := &recordingPrewarmRequestMetrics{}
@@ -250,28 +250,28 @@ func TestPrewarmReaderMetricsUseClosedFallbackReasons(t *testing.T) {
 	}{
 		{
 			request: PrewarmReadRequest{Params: prewarmReader7dParams()},
-			want:    prewarmRequestMetric{timezone: "UTC", outcome: "fallback", reason: "invalid_request"},
+			want:    prewarmRequestMetric{outcome: PrewarmReadFallback},
 		},
 		{
 			request: PrewarmReadRequest{
 				ProviderID: 7, ProviderVersion: 11,
 				Params: OverviewParams{StartDate: "2026-07-01", EndDate: "2026-07-21", Granularity: "day", Timezone: "UTC"},
 			},
-			want: prewarmRequestMetric{timezone: "UTC", outcome: "ineligible", reason: "ineligible"},
+			want: prewarmRequestMetric{outcome: PrewarmReadIneligible},
 		},
 		{
 			request: PrewarmReadRequest{
 				ProviderID: 7, ProviderVersion: 11,
 				Params: prewarmReader7dParams(), AuthorizedRelayUserIDs: []int64{101},
 			},
-			want: prewarmRequestMetric{timezone: "UTC", outcome: "miss", reason: "cache_miss"},
+			want: prewarmRequestMetric{outcome: PrewarmReadMiss},
 		},
 	}
 	for _, test := range requests {
 		_, _, _ = reader.ReadAuthorizedOrigin(context.Background(), test.request)
 	}
 	if !reflect.DeepEqual(metrics.requests, []prewarmRequestMetric{requests[0].want, requests[1].want, requests[2].want}) {
-		t.Fatalf("request metrics = %#v, want closed reasons %#v", metrics.requests, []prewarmRequestMetric{requests[0].want, requests[1].want, requests[2].want})
+		t.Fatalf("request metrics = %#v, want closed outcomes %#v", metrics.requests, []prewarmRequestMetric{requests[0].want, requests[1].want, requests[2].want})
 	}
 }
 
@@ -426,118 +426,59 @@ func seedAuthorizedPrewarmManifest(
 }
 
 type prewarmRequestMetric struct {
-	timezone string
-	outcome  string
-	reason   string
+	outcome PrewarmReadOutcome
 }
 
-type prewarmCycleMetric struct {
-	class    string
-	timezone string
-	outcome  string
+type prewarmRefreshMetric struct {
+	outcome  PrewarmRefreshOutcome
 	duration time.Duration
 }
 
 type prewarmSourceMetric struct {
-	class    string
+	source   PrewarmSourceClass
+	outcome  PrewarmSourceOutcome
+	duration time.Duration
+}
+
+type prewarmLaneSuccessMetric struct {
 	timezone string
-	outcome  string
-	bytes    int
-	points   int
-	users    int
-}
-
-type prewarmQuantityMetric struct {
-	kind     PrewarmQuantityKind
-	timezone string
-	value    int
-}
-
-type prewarmValidationMetric struct {
-	check   PrewarmValidationCheck
-	outcome PrewarmValidationOutcome
-}
-
-type prewarmCacheMetric struct {
-	cache   PrewarmCacheKind
-	outcome PrewarmCacheOutcome
+	at       time.Time
 }
 
 type recordingPrewarmRequestMetrics struct {
-	mu                    sync.Mutex
-	cycleHook             func(class, timezone, outcome string)
-	schedulerTickHook     func()
-	schedulerTickRecorded chan struct{}
-	schedulerTicks        int
-	cycles                []prewarmCycleMetric
-	requests              []prewarmRequestMetric
-	sources               []prewarmSourceMetric
-	quantities            []prewarmQuantityMetric
-	validations           []prewarmValidationMetric
-	caches                []prewarmCacheMetric
-	generation            []int
+	mu            sync.Mutex
+	refreshes     []prewarmRefreshMetric
+	laneSuccesses []prewarmLaneSuccessMetric
+	requests      []prewarmRequestMetric
+	sources       []prewarmSourceMetric
 }
 
-func (m *recordingPrewarmRequestMetrics) RecordCycle(class, timezone, outcome string, duration time.Duration) {
-	m.mu.Lock()
-	m.cycles = append(m.cycles, prewarmCycleMetric{class: class, timezone: timezone, outcome: outcome, duration: duration})
-	hook := m.cycleHook
-	m.mu.Unlock()
-	if hook != nil {
-		hook(class, timezone, outcome)
-	}
-}
-func (m *recordingPrewarmRequestMetrics) RecordSource(class, timezone, outcome string, _ time.Duration, bytes, points, users int) {
+func (m *recordingPrewarmRequestMetrics) RecordRefresh(outcome PrewarmRefreshOutcome, duration time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.sources = append(m.sources, prewarmSourceMetric{
-		class: class, timezone: timezone, outcome: outcome, bytes: bytes, points: points, users: users,
-	})
+	m.refreshes = append(m.refreshes, prewarmRefreshMetric{outcome: outcome, duration: duration})
 }
-func (*recordingPrewarmRequestMetrics) RecordRedis(string, string, time.Duration, int)  {}
-func (*recordingPrewarmRequestMetrics) RecordRedisError(string, PrewarmRedisErrorClass) {}
-func (m *recordingPrewarmRequestMetrics) RecordSchedulerTick() {
-	m.mu.Lock()
-	m.schedulerTicks++
-	hook, recorded := m.schedulerTickHook, m.schedulerTickRecorded
-	m.mu.Unlock()
-	if hook != nil {
-		hook()
-	}
-	if recorded != nil {
-		recorded <- struct{}{}
-	}
-}
-func (m *recordingPrewarmRequestMetrics) cyclesCopy() []prewarmCycleMetric {
+
+func (m *recordingPrewarmRequestMetrics) SetLaneLastSuccess(timezone string, at time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return append([]prewarmCycleMetric(nil), m.cycles...)
+	m.laneSuccesses = append(m.laneSuccesses, prewarmLaneSuccessMetric{timezone: timezone, at: at})
 }
-func (m *recordingPrewarmRequestMetrics) RecordRequest(timezone, outcome, reason string) {
+
+func (m *recordingPrewarmRequestMetrics) RecordSource(
+	source PrewarmSourceClass,
+	outcome PrewarmSourceOutcome,
+	duration time.Duration,
+) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.requests = append(m.requests, prewarmRequestMetric{timezone: timezone, outcome: outcome, reason: reason})
+	m.sources = append(m.sources, prewarmSourceMetric{source: source, outcome: outcome, duration: duration})
 }
-func (*recordingPrewarmRequestMetrics) SetLastSuccess(string, string, time.Time) {}
-func (m *recordingPrewarmRequestMetrics) RecordQuantity(kind PrewarmQuantityKind, timezone string, value int) {
+
+func (m *recordingPrewarmRequestMetrics) RecordRequest(outcome PrewarmReadOutcome) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.quantities = append(m.quantities, prewarmQuantityMetric{kind: kind, timezone: timezone, value: value})
-}
-func (m *recordingPrewarmRequestMetrics) SetGenerationBytes(value int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.generation = append(m.generation, value)
-}
-func (m *recordingPrewarmRequestMetrics) RecordValidation(check PrewarmValidationCheck, outcome PrewarmValidationOutcome) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.validations = append(m.validations, prewarmValidationMetric{check: check, outcome: outcome})
-}
-func (m *recordingPrewarmRequestMetrics) RecordCache(cache PrewarmCacheKind, outcome PrewarmCacheOutcome) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.caches = append(m.caches, prewarmCacheMetric{cache: cache, outcome: outcome})
+	m.requests = append(m.requests, prewarmRequestMetric{outcome: outcome})
 }
 
 type sequenceScopeResolver struct {
