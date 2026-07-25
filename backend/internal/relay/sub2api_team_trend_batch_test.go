@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,19 @@ import (
 
 	"go.uber.org/zap"
 )
+
+func paddedTrendJSONBody(t *testing.T, raw string, size int) []byte {
+	t.Helper()
+	if len(raw) > size {
+		t.Fatalf("JSON fixture size = %d, exceeds requested size %d", len(raw), size)
+	}
+	body := make([]byte, size)
+	copy(body, raw)
+	for index := len(raw); index < len(body); index++ {
+		body[index] = ' '
+	}
+	return body
+}
 
 func TestUsersTrendBatchUsesOnlyAggregateRouteAndFiltersAuthorizedRows(t *testing.T) {
 	var mu sync.Mutex
@@ -37,11 +51,13 @@ func TestUsersTrendBatchUsesOnlyAggregateRouteAndFiltersAuthorizedRows(t *testin
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"success": true,
-				"data": map[string]any{"trend": []map[string]any{
-					{"date": "2026-07-02", "user_id": 101, "tokens": 22, "actual_cost": 2.25},
-					{"date": "2026-07-01", "user_id": 999, "tokens": 99, "actual_cost": 9.99},
-					{"date": "2026-07-01", "user_id": 101, "tokens": 11, "actual_cost": 1.25},
-				}},
+				"data": map[string]any{
+					"start_date": "2026-07-01", "end_date": "2026-07-20", "granularity": "day",
+					"trend": []map[string]any{
+						{"date": "2026-07-01", "user_id": 101, "tokens": 11, "actual_cost": 1.25},
+						{"date": "2026-07-01", "user_id": 999, "tokens": 99, "actual_cost": 9.99},
+						{"date": "2026-07-02", "user_id": 101, "tokens": 22, "actual_cost": 2.25},
+					}},
 			})
 		case "/api/v1/admin/dashboard/trend":
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -74,10 +90,382 @@ func TestUsersTrendBatchUsesOnlyAggregateRouteAndFiltersAuthorizedRows(t *testin
 		t.Fatalf("trend map contains unauthorized user 999: %#v", got)
 	}
 	if len(got[101]) != 2 || got[101][0].Date != "2026-07-01" || got[101][1].Date != "2026-07-02" {
-		t.Fatalf("authorized user 101 points = %#v, want sorted aggregate rows", got[101])
+		t.Fatalf("authorized user 101 points = %#v, want source-ordered aggregate rows", got[101])
 	}
 	if points, exists := got[102]; !exists || len(points) != 0 {
 		t.Fatalf("zero-usage authorized user 102 = %#v, exists %v, want explicit empty trend", points, exists)
+	}
+}
+
+func TestProviderWideTeamTrendBatchReturnsRawRowsAndExactMetadata(t *testing.T) {
+	response := []byte(`{"success":true,"data":{"trend":[{"date":"2026-07-01","user_id":101,"tokens":11,"actual_cost":1.25},{"date":"2026-07-01","user_id":999,"actual_cost":9.99},{"date":"2026-07-02","user_id":101,"tokens":22,"actual_cost":2.25}],"start_date":"2026-07-01","end_date":"2026-07-02","granularity":"day"}}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wantQuery := url.Values{
+			"start_date": {"2026-07-01"}, "end_date": {"2026-07-02"},
+			"granularity": {"day"}, "timezone": {"Asia/Shanghai"}, "limit": {"5000"},
+		}
+		if !reflect.DeepEqual(r.URL.Query(), wantQuery) {
+			t.Fatalf("query = %#v, want %#v", r.URL.Query(), wantQuery)
+		}
+		_, _ = w.Write(response)
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+
+	wide, ok := any(provider).(ProviderWideTeamTrendProvider)
+	if !ok {
+		t.Fatal("provider does not implement ProviderWideTeamTrendProvider")
+	}
+	got, err := wide.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{
+		StartDate: " 2026-07-01 ", EndDate: "2026-07-02", Granularity: " day ", Timezone: " Asia/Shanghai ",
+	}, 5000)
+	if err != nil {
+		t.Fatalf("GetProviderUsageTrend() error = %v", err)
+	}
+	if got.ResponseBytes != int64(len(response)) || got.PointCount != 3 || got.UniqueUserCount != 2 || !got.Complete {
+		t.Fatalf("metadata = bytes:%d points:%d users:%d complete:%v", got.ResponseBytes, got.PointCount, got.UniqueUserCount, got.Complete)
+	}
+	wantCoverage := TeamMemberTrendParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-02", Granularity: "day", Timezone: "Asia/Shanghai",
+	}
+	if !reflect.DeepEqual(got.Coverage, wantCoverage) {
+		t.Fatalf("coverage = %#v, want %#v", got.Coverage, wantCoverage)
+	}
+	if len(got.Points) != 3 || got.Points[0].UserID != 101 || got.Points[1].UserID != 999 || got.Points[2].Date != "2026-07-02" {
+		t.Fatalf("raw provider-wide points = %#v, want all source-ordered rows", got.Points)
+	}
+	if got.Points[1].TotalTokens != nil {
+		t.Fatalf("unknown tokens = %#v, want nil", got.Points[1].TotalTokens)
+	}
+}
+
+func TestProviderWideTeamTrendBatchRejectsInvalidRowsBeforeFiltering(t *testing.T) {
+	tests := []struct {
+		name   string
+		params TeamMemberTrendParams
+		data   map[string]any
+	}{
+		{
+			name:   "negative cost on unrelated user",
+			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC"},
+			data: map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-01", "granularity": "day",
+				"trend": []map[string]any{{"date": "2026-07-01", "user_id": 999, "actual_cost": -1}},
+			},
+		},
+		{
+			name:   "negative optional tokens on unrelated user",
+			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC"},
+			data: map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-01", "granularity": "day",
+				"trend": []map[string]any{{"date": "2026-07-01", "user_id": 999, "tokens": -1, "actual_cost": 1}},
+			},
+		},
+		{
+			name:   "out-of-order labels",
+			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-02", Granularity: "day", Timezone: "UTC"},
+			data: map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-02", "granularity": "day",
+				"trend": []map[string]any{
+					{"date": "2026-07-02", "user_id": 101, "actual_cost": 1},
+					{"date": "2026-07-01", "user_id": 101, "actual_cost": 1},
+				},
+			},
+		},
+		{
+			name:   "invalid day label",
+			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC"},
+			data: map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-01", "granularity": "day",
+				"trend": []map[string]any{{"date": "2026-07-01 00:00", "user_id": 101, "actual_cost": 1}},
+			},
+		},
+		{
+			name:   "mismatched coverage",
+			params: TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC"},
+			data: map[string]any{
+				"start_date": "2026-06-30", "end_date": "2026-07-01", "granularity": "day", "trend": []map[string]any{},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": test.data})
+			}))
+			t.Cleanup(server.Close)
+			provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+			if _, err := provider.GetProviderUsageTrend(context.Background(), test.params, 5000); err == nil {
+				t.Fatalf("GetProviderUsageTrend() error = nil, want %s rejection", test.name)
+			}
+		})
+	}
+}
+
+func TestProviderWideTeamTrendBatchRejectsExact5000Users(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		rows := make([]map[string]any, 5000)
+		for index := range rows {
+			rows[index] = map[string]any{"date": "2026-07-01", "user_id": index + 1, "actual_cost": 1}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"trend": rows, "start_date": "2026-07-01", "end_date": "2026-07-01", "granularity": "day",
+			},
+		})
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+	_, err := provider.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC",
+	}, 5000)
+	if err == nil {
+		t.Fatal("GetProviderUsageTrend() error = nil, want exact-5000 rejection")
+	}
+	requireProviderWideRejectionKind(t, err, ProviderSourceRejectionRawTrendLimit)
+}
+
+func TestProviderWideTeamTrendBatchEnforcesBodyLimitBeforeDecode(t *testing.T) {
+	const trendBodyLimit = 32 << 20
+	const validTrend = `{"success":true,"data":{"trend":[],"start_date":"","end_date":"","granularity":""}}`
+	for _, test := range []struct {
+		name    string
+		size    int
+		wantErr bool
+	}{
+		{name: "below 32 MiB", size: trendBodyLimit - 1},
+		{name: "exactly 32 MiB", size: trendBodyLimit, wantErr: true},
+		{name: "over 32 MiB", size: trendBodyLimit + 1, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := paddedTrendJSONBody(t, validTrend, test.size)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(body)
+			}))
+			t.Cleanup(server.Close)
+			provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+			got, err := provider.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{}, 5000)
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "33554432-byte limit") {
+					t.Fatalf("GetProviderUsageTrend() error = %v, want pre-decode body limit rejection", err)
+				}
+				requireProviderWideRejectionKind(t, err, ProviderSourceRejectionRawTrendLimit)
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetProviderUsageTrend() error = %v, want below-limit acceptance", err)
+			}
+			if got.ResponseBytes != int64(test.size) || got.PointCount != 0 {
+				t.Fatalf("trend result = %#v, want accepted %d-byte empty response", got, test.size)
+			}
+		})
+	}
+}
+
+func TestUsersTrendFallbackKeeps64MiBCompatibilityWhileProviderWideRejects32MiB(t *testing.T) {
+	const responseSize = (32 << 20) + 1
+	const validTrend = `{"success":true,"data":{"trend":[]}}`
+	body := paddedTrendJSONBody(t, validTrend, responseSize)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+
+	got, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, TeamMemberTrendParams{})
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v, want 32-64 MiB compatibility acceptance", err)
+	}
+	if points, exists := got[101]; !exists || len(points) != 0 {
+		t.Fatalf("GetUsageTrendForUsers() = %#v, want explicit empty user 101 trend", got)
+	}
+
+	_, err = provider.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{}, 5000)
+	if err == nil {
+		t.Fatal("GetProviderUsageTrend() error = nil, want strict 32 MiB rejection")
+	}
+	requireProviderWideRejectionKind(t, err, ProviderSourceRejectionRawTrendLimit)
+}
+
+func TestUsersTrendFallbackSortsOutOfOrderRowsWhileProviderWideRejectsThem(t *testing.T) {
+	params := TeamMemberTrendParams{
+		StartDate: "2026-07-01", EndDate: "2026-07-02", Granularity: "day", Timezone: "UTC",
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"start_date": "2026-07-01", "end_date": "2026-07-02", "granularity": "day",
+				"trend": []map[string]any{
+					{"date": "2026-07-02", "user_id": 101, "tokens": 2, "actual_cost": 2},
+					{"date": "2026-07-01", "user_id": 101, "tokens": 1, "actual_cost": 1},
+				},
+			},
+		})
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+
+	got, err := provider.GetUsageTrendForUsers(context.Background(), []int64{101}, params)
+	if err != nil {
+		t.Fatalf("GetUsageTrendForUsers() error = %v, want compatibility sorting", err)
+	}
+	if len(got[101]) != 2 || got[101][0].Date != "2026-07-01" || got[101][1].Date != "2026-07-02" {
+		t.Fatalf("GetUsageTrendForUsers()[101] = %#v, want ascending dates", got[101])
+	}
+
+	if _, err := provider.GetProviderUsageTrend(context.Background(), params, 5000); err == nil {
+		t.Fatal("GetProviderUsageTrend() error = nil, want strict source-order rejection")
+	}
+}
+
+func TestProviderWideTeamTrendHTTPRejectsTypedPointCoverageAndCompleteness(t *testing.T) {
+	params := TeamMemberTrendParams{StartDate: "2026-07-01", EndDate: "2026-07-01", Granularity: "day", Timezone: "UTC"}
+	tests := []struct {
+		name       string
+		limit      int
+		pointLimit int
+		data       map[string]any
+		want       ProviderSourceRejectionKind
+	}{
+		{
+			name: "point exact limit", limit: 5000, pointLimit: 2, want: ProviderSourceRejectionRawTrendLimit,
+			data: map[string]any{"trend": []map[string]any{
+				{"date": "2026-07-01", "user_id": 101, "actual_cost": 1},
+				{"date": "2026-07-01", "user_id": 102, "actual_cost": 1},
+			}, "start_date": "2026-07-01", "end_date": "2026-07-01", "granularity": "day"},
+		},
+		{
+			name: "coverage", limit: 5000, want: ProviderSourceRejectionRawTrendCoverage,
+			data: map[string]any{"trend": []map[string]any{}, "start_date": "2026-06-30", "end_date": "2026-07-01", "granularity": "day"},
+		},
+		{
+			name: "completeness", limit: 2, want: ProviderSourceRejectionRawTrendCompleteness,
+			data: map[string]any{"trend": []map[string]any{
+				{"date": "2026-07-01", "user_id": 101, "actual_cost": 1},
+				{"date": "2026-07-01", "user_id": 102, "actual_cost": 1},
+			}, "start_date": "2026-07-01", "end_date": "2026-07-01", "granularity": "day"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "data": test.data})
+			}))
+			t.Cleanup(server.Close)
+			provider := &sub2apiRelay{
+				client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop(),
+				providerWideTrendPointLimit: test.pointLimit,
+			}
+			_, err := provider.GetProviderUsageTrend(context.Background(), params, test.limit)
+			if err == nil {
+				t.Fatalf("GetProviderUsageTrend() error = nil, want %s rejection", test.want)
+			}
+			requireProviderWideRejectionKind(t, err, test.want)
+		})
+	}
+}
+
+func requireProviderWideRejectionKind(t *testing.T, err error, want ProviderSourceRejectionKind) {
+	t.Helper()
+	got, ok := ProviderSourceRejectionKindOf(err)
+	if !ok || got != want {
+		t.Fatalf("ProviderSourceRejectionKindOf(%v) = %q/%v, want %q/true", err, got, ok, want)
+	}
+}
+
+func TestProviderWideTeamTrendDecodedPointCountBoundaries(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		count   int
+		wantErr bool
+	}{
+		{name: "below limit", count: teamTrendBatchPointLimit - 1},
+		{name: "exactly limit", count: teamTrendBatchPointLimit, wantErr: true},
+		{name: "over limit", count: teamTrendBatchPointLimit + 1, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateProviderWideTrendPointCount(make([]teamTrendBatchPoint, test.count))
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateProviderWideTrendPointCount(%d) error = %v, wantErr %v", test.count, err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestProviderWideTeamTrendPointRejectsNonFiniteCost(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		cost float64
+	}{
+		{name: "NaN", cost: math.NaN()},
+		{name: "positive infinity", cost: math.Inf(1)},
+		{name: "negative infinity", cost: math.Inf(-1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cost := test.cost
+			err := validateProviderWideTrendPoint(teamTrendBatchPoint{
+				Date: "2026-07-01", UserID: 101, ActualCost: &cost,
+			}, 0, "day")
+			if err == nil {
+				t.Fatalf("validateProviderWideTrendPoint() error = nil, want %s rejection", test.name)
+			}
+		})
+	}
+}
+
+func TestProviderWideCurrentStatRejectsNonFiniteCosts(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		stat TeamUserUsageStats
+	}{
+		{name: "today NaN", stat: TeamUserUsageStats{TodayActualCost: math.NaN()}},
+		{name: "today positive infinity", stat: TeamUserUsageStats{TodayActualCost: math.Inf(1)}},
+		{name: "today negative infinity", stat: TeamUserUsageStats{TodayActualCost: math.Inf(-1)}},
+		{name: "total NaN", stat: TeamUserUsageStats{TotalActualCost: math.NaN()}},
+		{name: "total positive infinity", stat: TeamUserUsageStats{TotalActualCost: math.Inf(1)}},
+		{name: "total negative infinity", stat: TeamUserUsageStats{TotalActualCost: math.Inf(-1)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateProviderCurrentStat(test.stat); err == nil {
+				t.Fatalf("validateProviderCurrentStat() error = nil, want %s rejection", test.name)
+			}
+		})
+	}
+}
+
+func TestProviderWideTeamTrendDoesNotExposeUpstreamIdentityMessages(t *testing.T) {
+	const upstreamMessage = "alice@example.com secret response text"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "message": upstreamMessage})
+	}))
+	t.Cleanup(server.Close)
+	provider := &sub2apiRelay{client: server.Client(), adminURL: server.URL, apiKey: "test-admin-key", logger: zap.NewNop()}
+	_, err := provider.GetProviderUsageTrend(context.Background(), TeamMemberTrendParams{}, 5000)
+	if err == nil {
+		t.Fatal("GetProviderUsageTrend() error = nil, want failed envelope rejection")
+	}
+	if strings.Contains(err.Error(), upstreamMessage) || strings.Contains(err.Error(), "alice@example.com") {
+		t.Fatalf("GetProviderUsageTrend() error exposed upstream identity text: %v", err)
+	}
+}
+
+func TestProviderWideResultTypesContainNoIdentityOrRawBodyFields(t *testing.T) {
+	for _, resultType := range []reflect.Type{
+		reflect.TypeOf(ProviderDirectoryResult{}),
+		reflect.TypeOf(ProviderCurrentStatsResult{}),
+		reflect.TypeOf(ProviderWideTrendResult{}),
+		reflect.TypeOf(ProviderWideTrendPoint{}),
+	} {
+		for index := 0; index < resultType.NumField(); index++ {
+			name := strings.ToLower(resultType.Field(index).Name)
+			for _, forbidden := range []string{"email", "username", "body"} {
+				if strings.Contains(name, forbidden) {
+					t.Fatalf("provider-wide result %s exposes forbidden field %s", resultType.Name(), resultType.Field(index).Name)
+				}
+			}
+		}
 	}
 }
 

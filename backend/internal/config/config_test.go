@@ -40,6 +40,30 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadPrewarmerDefaultsToExactTimezoneListWithoutEnabledFlag(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	want := []string{"UTC", "Asia/Shanghai", "America/Los_Angeles", "Europe/Berlin"}
+	if !reflect.DeepEqual(cfg.Prewarmer.Timezones, want) {
+		t.Fatalf("Prewarmer.Timezones = %#v, want %#v", cfg.Prewarmer.Timezones, want)
+	}
+}
+
+func TestLoadPrewarmerBindsDedicatedTimezoneEnvironment(t *testing.T) {
+	t.Setenv("AE_PREWARMER_TIMEZONES", "UTC,Asia/Shanghai")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	want := []string{"UTC", "Asia/Shanghai"}
+	if !reflect.DeepEqual(cfg.Prewarmer.Timezones, want) {
+		t.Fatalf("Prewarmer.Timezones = %#v, want %#v", cfg.Prewarmer.Timezones, want)
+	}
+}
+
 func TestLoadMetricsListenAddressFromEnvironment(t *testing.T) {
 	t.Setenv("AE_METRICS_LISTEN_ADDRESS", ":9191")
 	cfg, err := Load("")
@@ -840,6 +864,13 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if !reflect.DeepEqual(loaded.HTTPClient, cfg.HTTPClient) {
 		t.Fatalf("persisted HTTPClient = %#v, want %#v", loaded.HTTPClient, cfg.HTTPClient)
+	}
+	data, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatalf("read writable config: %v", err)
+	}
+	if strings.Contains(string(data), "team_usage_prewarm") || strings.Contains(string(data), "prewarmer:") {
+		t.Fatalf("writable config persists worker-only settings:\n%s", data)
 	}
 }
 

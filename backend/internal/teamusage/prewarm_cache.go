@@ -1,0 +1,978 @@
+package teamusage
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/ai-efficiency/backend/internal/readcache"
+)
+
+const (
+	prewarmCacheSchemaVersion = 3
+
+	movingFresh    = 75 * time.Second
+	movingHard     = 4 * time.Minute
+	movingValueTTL = 6 * time.Minute
+
+	historyFresh    = 25 * time.Hour
+	historyHard     = 49 * time.Hour
+	historyValueTTL = 50 * time.Hour
+	manifestTTL     = 3 * time.Minute
+
+	prewarmKeyReferenceMaxBytes        = 512
+	prewarmCurrentStatsMaxBytes        = 2 << 20
+	prewarmSegmentMaxBytes             = 8 << 20
+	prewarmManifestMaxBytes            = 64 << 10
+	prewarmTimezoneGenerationMaxBytes  = 16 << 20
+	prewarmDefaultReadCommandBudget    = 250 * time.Millisecond
+	prewarmDefaultWriteCommandBudget   = 250 * time.Millisecond
+	prewarmDefaultLeaseCommandBudget   = 250 * time.Millisecond
+	prewarmDefaultReleaseCommandBudget = 250 * time.Millisecond
+	prewarmDefaultCommandTimeout       = 2 * time.Second
+	prewarmImmutableClaimTTL           = 90 * time.Second
+)
+
+var errPrewarmCacheInvalid = errors.New("invalid team usage prewarm cache")
+
+type PrewarmCacheIdentity struct {
+	ProviderID      int
+	ProviderVersion int64
+	Timezone        string
+	AnchorDate      string
+}
+
+type PrewarmValueReference struct {
+	Key             string              `json:"key"`
+	SchemaVersion   int                 `json:"schema_version"`
+	ProviderID      int                 `json:"provider_id"`
+	ProviderVersion int64               `json:"provider_version"`
+	TimezoneDigest  string              `json:"timezone_digest,omitempty"`
+	AnchorDate      string              `json:"anchor_date,omitempty"`
+	Class           PrewarmSegmentClass `json:"class,omitempty"`
+	GenerationID    string              `json:"generation_id"`
+	GeneratedAt     time.Time           `json:"generated_at"`
+	FreshUntil      time.Time           `json:"fresh_until"`
+	HardExpiresAt   time.Time           `json:"hard_expires_at"`
+	SerializedBytes int                 `json:"serialized_bytes"`
+	ResponseBytes   int64               `json:"response_bytes"`
+	RosterCount     int                 `json:"roster_count,omitempty"`
+	RosterDigest    string              `json:"roster_digest,omitempty"`
+	Coverage        PrewarmCoverage     `json:"coverage,omitempty"`
+	PointCount      int                 `json:"point_count,omitempty"`
+	UniqueUserCount int                 `json:"unique_user_count,omitempty"`
+}
+
+type PrewarmManifest struct {
+	SchemaVersion   int                   `json:"schema_version"`
+	ProviderID      int                   `json:"provider_id"`
+	ProviderVersion int64                 `json:"provider_version"`
+	Timezone        string                `json:"timezone"`
+	TimezoneDigest  string                `json:"timezone_digest"`
+	AnchorDate      string                `json:"anchor_date"`
+	CreatedAt       time.Time             `json:"created_at"`
+	CurrentStats    PrewarmValueReference `json:"current_stats"`
+	History29d      PrewarmValueReference `json:"history_29d"`
+	History6d       PrewarmValueReference `json:"history_6d"`
+	TodayHour       PrewarmValueReference `json:"today_hour"`
+}
+
+type PrewarmValueStatus string
+
+const (
+	PrewarmValueMissing     PrewarmValueStatus = "missing"
+	PrewarmValueFresh       PrewarmValueStatus = "fresh"
+	PrewarmValueStale       PrewarmValueStatus = "stale"
+	PrewarmValueInvalid     PrewarmValueStatus = "invalid"
+	PrewarmValueHardExpired PrewarmValueStatus = "hard_expired"
+)
+
+type PrewarmCacheResult struct {
+	Manifest           PrewarmManifest
+	CurrentStats       *PrewarmCurrentStatsEnvelope
+	Segments           PrewarmSegmentSet
+	Complete           bool
+	CurrentStatsStatus PrewarmValueStatus
+	History29dStatus   PrewarmValueStatus
+	History6dStatus    PrewarmValueStatus
+	TodayHourStatus    PrewarmValueStatus
+}
+
+type prewarmReadSelection struct {
+	currentStats bool
+	history29d   bool
+	history6d    bool
+	todayHour    bool
+}
+
+type prewarmReferencedValueError struct {
+	indexes []int
+	err     error
+}
+
+func (e *prewarmReferencedValueError) Error() string { return e.err.Error() }
+func (e *prewarmReferencedValueError) Unwrap() error { return e.err }
+
+func prewarmSelectionForWindow(class PrewarmWindowClass) (prewarmReadSelection, error) {
+	selection := prewarmReadSelection{currentStats: true, todayHour: true}
+	switch class {
+	case PrewarmWindowToday:
+	case PrewarmWindow7d:
+		selection.history6d = true
+	case PrewarmWindow30d:
+		selection.history29d = true
+	default:
+		return prewarmReadSelection{}, fmt.Errorf("invalid prewarm window class %q", class)
+	}
+	return selection, nil
+}
+
+func prewarmAllReferencesSelection() prewarmReadSelection {
+	return prewarmReadSelection{currentStats: true, history29d: true, history6d: true, todayHour: true}
+}
+
+func (s prewarmReadSelection) includes(index int) bool {
+	switch index {
+	case 0:
+		return s.currentStats
+	case 1:
+		return s.history29d
+	case 2:
+		return s.history6d
+	case 3:
+		return s.todayHour
+	default:
+		return false
+	}
+}
+
+type PrewarmCacheOptions struct {
+	Namespace      string
+	ReadTimeout    time.Duration
+	WriteTimeout   time.Duration
+	LeaseTimeout   time.Duration
+	ReleaseTimeout time.Duration
+	Now            func() time.Time
+}
+
+type PrewarmCache struct {
+	store   readcache.BatchStore
+	options PrewarmCacheOptions
+}
+
+func NewPrewarmCache(store readcache.BatchStore, options PrewarmCacheOptions) (*PrewarmCache, error) {
+	if store == nil {
+		return nil, fmt.Errorf("team usage prewarm cache store is required")
+	}
+	if !snapshotCacheNamespaceRE.MatchString(options.Namespace) {
+		return nil, fmt.Errorf("invalid Redis namespace %q", options.Namespace)
+	}
+	if options.ReadTimeout <= 0 {
+		options.ReadTimeout = prewarmDefaultReadCommandBudget
+	}
+	if options.WriteTimeout <= 0 {
+		options.WriteTimeout = prewarmDefaultWriteCommandBudget
+	}
+	if options.LeaseTimeout <= 0 {
+		options.LeaseTimeout = prewarmDefaultLeaseCommandBudget
+	}
+	if options.ReleaseTimeout <= 0 {
+		options.ReleaseTimeout = prewarmDefaultReleaseCommandBudget
+	}
+	if options.Now == nil {
+		options.Now = time.Now
+	}
+	for name, timeout := range map[string]time.Duration{
+		"read": options.ReadTimeout, "write": options.WriteTimeout,
+		"lease": options.LeaseTimeout, "release": options.ReleaseTimeout,
+	} {
+		if timeout > prewarmDefaultCommandTimeout {
+			return nil, fmt.Errorf("team usage prewarm %s timeout exceeds two-second cap", name)
+		}
+	}
+	return &PrewarmCache{store: store, options: options}, nil
+}
+
+func (c *PrewarmCache) Read(
+	ctx context.Context,
+	identity PrewarmCacheIdentity,
+) (result *PrewarmCacheResult, found bool, err error) {
+	return c.read(ctx, identity, prewarmAllReferencesSelection())
+}
+
+func (c *PrewarmCache) ReadWindow(
+	ctx context.Context,
+	identity PrewarmCacheIdentity,
+	class PrewarmWindowClass,
+) (result *PrewarmCacheResult, found bool, err error) {
+	selection, err := prewarmSelectionForWindow(class)
+	if err != nil {
+		return nil, false, err
+	}
+	return c.read(ctx, identity, selection)
+}
+
+func (c *PrewarmCache) read(
+	ctx context.Context,
+	identity PrewarmCacheIdentity,
+	selection prewarmReadSelection,
+) (result *PrewarmCacheResult, found bool, err error) {
+	manifestKey, err := prewarmManifestKeyForIdentity(c.options.Namespace, prewarmCacheSchemaVersion, identity)
+	if err != nil {
+		return nil, false, err
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, c.options.ReadTimeout)
+	encodedManifest, err := c.store.Get(commandCtx, manifestKey)
+	cancel()
+	if errors.Is(err, readcache.ErrMiss) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("read team usage prewarm manifest: %w", err)
+	}
+	var manifest PrewarmManifest
+	if err := decodePrewarmJSON(encodedManifest, prewarmManifestMaxBytes, &manifest); err != nil {
+		return nil, false, fmt.Errorf("%w: decode team usage prewarm manifest: %w", errPrewarmCacheInvalid, err)
+	}
+	now := c.now()
+	if err := validatePrewarmManifest(c.options.Namespace, identity, manifest, now, false); err != nil {
+		return nil, false, fmt.Errorf("%w: validate team usage prewarm manifest: %w", errPrewarmCacheInvalid, err)
+	}
+
+	current, segments, statuses, complete, err := c.readReferencedValues(ctx, manifest, now, selection, true)
+	if err != nil {
+		var invalidValues *prewarmReferencedValueError
+		if errors.As(err, &invalidValues) {
+			return nil, false, fmt.Errorf("%w: %w", errPrewarmCacheInvalid, err)
+		}
+		return nil, false, err
+	}
+	return &PrewarmCacheResult{
+		Manifest:           manifest,
+		CurrentStats:       current,
+		Segments:           segments,
+		Complete:           complete,
+		CurrentStatsStatus: statuses[0],
+		History29dStatus:   statuses[1],
+		History6dStatus:    statuses[2],
+		TodayHourStatus:    statuses[3],
+	}, true, nil
+}
+
+func prewarmValueStatus(now time.Time, ref PrewarmValueReference, available bool) PrewarmValueStatus {
+	if !now.Before(ref.HardExpiresAt) {
+		return PrewarmValueHardExpired
+	}
+	if !available {
+		return PrewarmValueMissing
+	}
+	if now.Before(ref.FreshUntil) {
+		return PrewarmValueFresh
+	}
+	return PrewarmValueStale
+}
+
+func (c *PrewarmCache) WriteCurrentStats(
+	ctx context.Context,
+	value PrewarmCurrentStatsEnvelope,
+) (PrewarmValueReference, error) {
+	if err := validatePrewarmCurrentStatsValue(value); err != nil {
+		return PrewarmValueReference{}, err
+	}
+	encoded, err := encodePrewarmStoredJSON(value, prewarmCurrentStatsMaxBytes, prewarmCurrentStatsMaxBytes)
+	if err != nil {
+		return PrewarmValueReference{}, fmt.Errorf("encode team usage prewarm current stats: %w", err)
+	}
+	key, err := prewarmCurrentStatsKey(
+		c.options.Namespace,
+		prewarmCacheSchemaVersion,
+		value.ProviderID,
+		value.ProviderVersion,
+		value.GenerationID,
+	)
+	if err != nil {
+		return PrewarmValueReference{}, err
+	}
+	if err := c.writeImmutable(ctx, key, encoded, movingValueTTL); err != nil {
+		return PrewarmValueReference{}, fmt.Errorf("write team usage prewarm current stats: %w", err)
+	}
+	return PrewarmValueReference{
+		Key: key, SchemaVersion: value.SchemaVersion, ProviderID: value.ProviderID,
+		ProviderVersion: value.ProviderVersion, GenerationID: value.GenerationID,
+		GeneratedAt: value.GeneratedAt, FreshUntil: value.GeneratedAt.Add(movingFresh),
+		HardExpiresAt: value.GeneratedAt.Add(movingHard), SerializedBytes: len(encoded),
+		ResponseBytes: value.ResponseBytes, RosterCount: value.RosterCount, RosterDigest: value.RosterDigest,
+	}, nil
+}
+
+func (c *PrewarmCache) WriteSegment(
+	ctx context.Context,
+	value PrewarmTrendSegment,
+) (PrewarmValueReference, error) {
+	if err := validatePrewarmSegmentValue(value); err != nil {
+		return PrewarmValueReference{}, err
+	}
+	encoded, err := encodePrewarmStoredJSON(value, prewarmSegmentMaxBytes, prewarmSegmentMaxBytes)
+	if err != nil {
+		return PrewarmValueReference{}, fmt.Errorf("encode team usage prewarm segment: %w", err)
+	}
+	key, err := prewarmSegmentKey(
+		c.options.Namespace,
+		prewarmCacheSchemaVersion,
+		value.ProviderID,
+		value.ProviderVersion,
+		value.TimezoneDigest,
+		value.AnchorDate,
+		value.Class,
+		value.GenerationID,
+	)
+	if err != nil {
+		return PrewarmValueReference{}, err
+	}
+	freshFor, hardFor, ttl, err := prewarmClassTTLs(value.Class)
+	if err != nil {
+		return PrewarmValueReference{}, err
+	}
+	if err := c.writeImmutable(ctx, key, encoded, ttl); err != nil {
+		return PrewarmValueReference{}, fmt.Errorf("write team usage prewarm segment: %w", err)
+	}
+	return PrewarmValueReference{
+		Key: key, SchemaVersion: value.SchemaVersion, ProviderID: value.ProviderID,
+		ProviderVersion: value.ProviderVersion, TimezoneDigest: value.TimezoneDigest,
+		AnchorDate: value.AnchorDate, Class: value.Class, GenerationID: value.GenerationID,
+		GeneratedAt: value.GeneratedAt, FreshUntil: value.GeneratedAt.Add(freshFor),
+		HardExpiresAt: value.GeneratedAt.Add(hardFor), SerializedBytes: len(encoded),
+		ResponseBytes: value.ResponseBytes, Coverage: value.Coverage,
+		PointCount: value.PointCount, UniqueUserCount: value.UniqueUserCount,
+	}, nil
+}
+
+func (c *PrewarmCache) PublishManifest(
+	ctx context.Context,
+	leaseKey, token string,
+	manifest PrewarmManifest,
+) (published bool, err error) {
+	if err := validatePrewarmLeaseInput(leaseKey, token, manifestTTL); err != nil {
+		return false, err
+	}
+	identity := PrewarmCacheIdentity{
+		ProviderID: manifest.ProviderID, ProviderVersion: manifest.ProviderVersion,
+		Timezone: manifest.Timezone, AnchorDate: manifest.AnchorDate,
+	}
+	now := c.now()
+	if err := validatePrewarmManifest(c.options.Namespace, identity, manifest, now, true); err != nil {
+		return false, fmt.Errorf("validate team usage prewarm manifest: %w", err)
+	}
+	if err := validatePrewarmPublicationWindow(now, c.options.WriteTimeout, manifest); err != nil {
+		return false, err
+	}
+	encoded, err := encodePrewarmJSON(manifest, prewarmManifestMaxBytes)
+	if err != nil {
+		return false, fmt.Errorf("encode team usage prewarm manifest: %w", err)
+	}
+	_, _, statuses, complete, err := c.readReferencedValues(ctx, manifest, now, prewarmAllReferencesSelection(), false)
+	if err != nil {
+		return false, fmt.Errorf("validate team usage prewarm values before publication: %w", err)
+	} else if !complete {
+		missing := prewarmUnavailableReferenceIndexes(statuses, prewarmAllReferencesSelection())
+		missingErr := &prewarmReferencedValueError{indexes: missing, err: readcache.ErrMiss}
+		return false, fmt.Errorf("validate team usage prewarm values before publication: %w", missingErr)
+	}
+	key, err := prewarmManifestKeyForIdentity(c.options.Namespace, prewarmCacheSchemaVersion, identity)
+	if err != nil {
+		return false, err
+	}
+	if err := validatePrewarmPublicationWindow(c.now(), c.options.WriteTimeout, manifest); err != nil {
+		return false, err
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, c.options.WriteTimeout)
+	published, err = c.store.SetIfLeaseOwned(commandCtx, leaseKey, token, key, encoded, manifestTTL)
+	cancel()
+	if err != nil {
+		return false, fmt.Errorf("publish team usage prewarm manifest: %w", err)
+	}
+	return published, nil
+}
+
+func prewarmUnavailableReferenceIndexes(statuses [4]PrewarmValueStatus, selection prewarmReadSelection) []int {
+	indexes := make([]int, 0, len(statuses))
+	for index, status := range statuses {
+		if selection.includes(index) && status != PrewarmValueFresh && status != PrewarmValueStale {
+			indexes = append(indexes, index)
+		}
+	}
+	return indexes
+}
+
+func (c *PrewarmCache) RefreshLeaseKey() string {
+	encoded, _ := json.Marshal(struct {
+		SchemaVersion int      `json:"schema_version"`
+		Kind          string   `json:"kind"`
+		Dimensions    []string `json:"dimensions"`
+	}{SchemaVersion: prewarmCacheSchemaVersion, Kind: "refresh"})
+	digest := sha256.Sum256(encoded)
+	return fmt.Sprintf("ae:%s:team-usage-prewarm:v%d:lease:%x", c.options.Namespace, prewarmCacheSchemaVersion, digest)
+}
+
+func (c *PrewarmCache) TryAcquireLease(
+	ctx context.Context,
+	key, token string,
+	ttl time.Duration,
+) (acquired bool, err error) {
+	if err := validatePrewarmLeaseInput(key, token, ttl); err != nil {
+		return false, err
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, c.options.LeaseTimeout)
+	acquired, err = c.store.TryAcquireLease(commandCtx, key, token, ttl)
+	cancel()
+	return acquired, err
+}
+
+func (c *PrewarmCache) ReleaseLease(ctx context.Context, key, token string) (released bool, err error) {
+	if err := validatePrewarmLeaseInput(key, token, time.Nanosecond); err != nil {
+		return false, err
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, c.options.ReleaseTimeout)
+	released, err = c.store.ReleaseLease(commandCtx, key, token)
+	cancel()
+	return released, err
+}
+
+func (c *PrewarmCache) writeImmutable(ctx context.Context, key string, value []byte, ttl time.Duration) (err error) {
+	digest := sha256.Sum256(value)
+	claimToken := "immutable:" + hex.EncodeToString(digest[:])
+	commandCtx, cancel := context.WithTimeout(ctx, c.options.WriteTimeout)
+	acquired, err := c.store.TryAcquireLease(commandCtx, key, claimToken, prewarmImmutableClaimTTL)
+	cancel()
+	if err != nil {
+		return err
+	}
+	if !acquired {
+		return c.waitForImmutableValue(ctx, key, claimToken, value)
+	}
+	commandCtx, cancel = context.WithTimeout(ctx, c.options.WriteTimeout)
+	written, err := c.store.SetIfLeaseOwned(commandCtx, key, claimToken, key, value, ttl)
+	cancel()
+	if err != nil {
+		return err
+	}
+	if !written {
+		return fmt.Errorf("immutable prewarm generation claim was lost")
+	}
+	return nil
+}
+
+func (c *PrewarmCache) waitForImmutableValue(ctx context.Context, key, claimToken string, value []byte) error {
+	waitCtx, cancel := context.WithTimeout(ctx, c.options.WriteTimeout)
+	defer cancel()
+	for {
+		existing, err := c.store.Get(waitCtx, key)
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(existing, value) {
+			return nil
+		}
+		if string(existing) != claimToken {
+			return fmt.Errorf("immutable prewarm generation key already contains different bytes")
+		}
+		if err := readcache.Sleep(waitCtx, 5*time.Millisecond); err != nil {
+			return fmt.Errorf("wait for identical immutable prewarm generation: %w", err)
+		}
+	}
+}
+
+func (c *PrewarmCache) readReferencedValues(
+	ctx context.Context,
+	manifest PrewarmManifest,
+	now time.Time,
+	selection prewarmReadSelection,
+	allowInvalidToday bool,
+) (*PrewarmCurrentStatsEnvelope, PrewarmSegmentSet, [4]PrewarmValueStatus, bool, error) {
+	refs := [...]PrewarmValueReference{manifest.CurrentStats, manifest.History29d, manifest.History6d, manifest.TodayHour}
+	var statuses [4]PrewarmValueStatus
+	selectedIndexes := make([]int, 0, len(refs))
+	keys := make([]string, 0, len(refs))
+	for index := range refs {
+		if selection.includes(index) {
+			selectedIndexes = append(selectedIndexes, index)
+			keys = append(keys, refs[index].Key)
+		}
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, c.options.ReadTimeout)
+	values, err := c.store.MGet(commandCtx, keys...)
+	cancel()
+	if err != nil {
+		return nil, PrewarmSegmentSet{}, statuses, false, fmt.Errorf("read team usage prewarm values: %w", err)
+	}
+	if len(values) != len(selectedIndexes) {
+		return nil, PrewarmSegmentSet{}, statuses, false, fmt.Errorf("read team usage prewarm values: got %d results, want %d", len(values), len(selectedIndexes))
+	}
+	var valuesByReference [4][]byte
+	for valueIndex, referenceIndex := range selectedIndexes {
+		value := values[valueIndex]
+		valuesByReference[referenceIndex] = value
+		statuses[referenceIndex] = prewarmValueStatus(now, refs[referenceIndex], value != nil)
+	}
+
+	var current *PrewarmCurrentStatsEnvelope
+	var referenceErrors []error
+	if selection.currentStats && statuses[0] != PrewarmValueHardExpired && valuesByReference[0] != nil {
+		var decoded PrewarmCurrentStatsEnvelope
+		if err := decodePrewarmStoredJSON(valuesByReference[0], prewarmCurrentStatsMaxBytes, &decoded); err != nil {
+			statuses[0] = PrewarmValueInvalid
+			referenceErrors = append(referenceErrors, fmt.Errorf("decode team usage prewarm current stats: %w", err))
+		} else if err := validatePrewarmCurrentStatsReference(c.options.Namespace, manifest.CurrentStats, decoded, len(valuesByReference[0]), now); err != nil {
+			statuses[0] = PrewarmValueInvalid
+			referenceErrors = append(referenceErrors, fmt.Errorf("validate team usage prewarm current stats: %w", err))
+		} else {
+			current = &decoded
+		}
+	}
+
+	segments := make([]*PrewarmTrendSegment, 3)
+	for index, ref := range refs[1:] {
+		statusIndex := index + 1
+		if !selection.includes(statusIndex) || statuses[statusIndex] == PrewarmValueHardExpired || valuesByReference[statusIndex] == nil {
+			continue
+		}
+		var segment PrewarmTrendSegment
+		if err := decodePrewarmStoredJSON(valuesByReference[statusIndex], prewarmSegmentMaxBytes, &segment); err != nil {
+			statuses[statusIndex] = PrewarmValueInvalid
+			if allowInvalidToday && ref.Class == SegmentTodayHour {
+				continue
+			}
+			referenceErrors = append(referenceErrors, fmt.Errorf("decode team usage prewarm %s: %w", ref.Class, err))
+			continue
+		} else if err := validatePrewarmSegmentReference(c.options.Namespace, ref, segment, len(valuesByReference[statusIndex]), now); err != nil {
+			statuses[statusIndex] = PrewarmValueInvalid
+			if allowInvalidToday && ref.Class == SegmentTodayHour {
+				continue
+			}
+			referenceErrors = append(referenceErrors, fmt.Errorf("validate team usage prewarm %s: %w", ref.Class, err))
+			continue
+		}
+		segments[index] = &segment
+	}
+	if len(referenceErrors) > 0 {
+		return nil, PrewarmSegmentSet{}, statuses, false, &prewarmReferencedValueError{
+			indexes: prewarmUnavailableReferenceIndexes(statuses, selection),
+			err:     errors.Join(referenceErrors...),
+		}
+	}
+	result := PrewarmSegmentSet{History29d: segments[0], History6d: segments[1], TodayHour: segments[2]}
+	complete := (!selection.currentStats || current != nil) &&
+		(!selection.history29d || result.History29d != nil) &&
+		(!selection.history6d || result.History6d != nil) &&
+		(!selection.todayHour || result.TodayHour != nil)
+	return current, result, statuses, complete, nil
+}
+
+func validatePrewarmManifest(
+	namespace string,
+	identity PrewarmCacheIdentity,
+	manifest PrewarmManifest,
+	now time.Time,
+	requireHardValid bool,
+) error {
+	if err := validatePrewarmCacheIdentity(identity); err != nil {
+		return err
+	}
+	digest := prewarmTimezoneDigest(identity.Timezone)
+	if manifest.SchemaVersion != prewarmCacheSchemaVersion ||
+		manifest.ProviderID != identity.ProviderID ||
+		manifest.ProviderVersion != identity.ProviderVersion ||
+		manifest.Timezone != identity.Timezone ||
+		manifest.TimezoneDigest != digest ||
+		manifest.AnchorDate != identity.AnchorDate ||
+		manifest.CreatedAt.IsZero() {
+		return fmt.Errorf("prewarm manifest identity does not match requested generation")
+	}
+	if err := validatePrewarmCurrentReference(namespace, identity, manifest.CurrentStats, now, requireHardValid); err != nil {
+		return fmt.Errorf("current stats reference: %w", err)
+	}
+	segmentRefs := [...]struct {
+		class PrewarmSegmentClass
+		ref   PrewarmValueReference
+	}{
+		{class: SegmentHistory29d, ref: manifest.History29d},
+		{class: SegmentHistory6d, ref: manifest.History6d},
+		{class: SegmentTodayHour, ref: manifest.TodayHour},
+	}
+	totalBytes := 0
+	for _, item := range segmentRefs {
+		if err := validatePrewarmSegmentReferenceMetadata(namespace, identity, item.class, item.ref, now, requireHardValid); err != nil {
+			return fmt.Errorf("%s reference: %w", item.class, err)
+		}
+		totalBytes += item.ref.SerializedBytes
+	}
+	if totalBytes >= prewarmTimezoneGenerationMaxBytes {
+		return fmt.Errorf("prewarm timezone generation reached %d-byte limit", prewarmTimezoneGenerationMaxBytes)
+	}
+	for _, ref := range [...]PrewarmValueReference{manifest.CurrentStats, manifest.History29d, manifest.History6d, manifest.TodayHour} {
+		if ref.GeneratedAt.After(manifest.CreatedAt) {
+			return fmt.Errorf("prewarm reference was generated after manifest creation")
+		}
+	}
+	return nil
+}
+
+func validatePrewarmPublicationWindow(now time.Time, commandMargin time.Duration, manifest PrewarmManifest) error {
+	earliestHardExpiry := manifest.CurrentStats.HardExpiresAt
+	for _, ref := range [...]PrewarmValueReference{manifest.History29d, manifest.History6d, manifest.TodayHour} {
+		if ref.HardExpiresAt.Before(earliestHardExpiry) {
+			earliestHardExpiry = ref.HardExpiresAt
+		}
+	}
+	if !now.Add(manifestTTL + commandMargin).Before(earliestHardExpiry) {
+		return fmt.Errorf("team usage prewarm manifest TTL plus command margin would reach earliest hard expiry")
+	}
+	return nil
+}
+
+func validatePrewarmCurrentReference(
+	namespace string,
+	identity PrewarmCacheIdentity,
+	ref PrewarmValueReference,
+	now time.Time,
+	requireHardValid bool,
+) error {
+	if err := validatePrewarmReferenceCommon(ref, movingFresh, movingHard, prewarmCurrentStatsMaxBytes, now, requireHardValid); err != nil {
+		return err
+	}
+	if ref.SchemaVersion != prewarmCacheSchemaVersion || ref.ProviderID != identity.ProviderID ||
+		ref.ProviderVersion != identity.ProviderVersion || ref.TimezoneDigest != "" || ref.AnchorDate != "" || ref.Class != "" ||
+		ref.RosterCount < 0 || !validPrewarmDigest(ref.RosterDigest) {
+		return fmt.Errorf("invalid current stats reference metadata")
+	}
+	expectedKey, err := prewarmCurrentStatsKey(namespace, prewarmCacheSchemaVersion, ref.ProviderID, ref.ProviderVersion, ref.GenerationID)
+	if err != nil {
+		return err
+	}
+	if ref.Key != expectedKey {
+		return fmt.Errorf("current stats reference key does not match metadata")
+	}
+	return nil
+}
+
+func validatePrewarmSegmentReferenceMetadata(
+	namespace string,
+	identity PrewarmCacheIdentity,
+	class PrewarmSegmentClass,
+	ref PrewarmValueReference,
+	now time.Time,
+	requireHardValid bool,
+) error {
+	freshFor, hardFor, _, err := prewarmClassTTLs(class)
+	if err != nil {
+		return err
+	}
+	if err := validatePrewarmReferenceCommon(ref, freshFor, hardFor, prewarmSegmentMaxBytes, now, requireHardValid); err != nil {
+		return err
+	}
+	if ref.SchemaVersion != prewarmCacheSchemaVersion || ref.ProviderID != identity.ProviderID ||
+		ref.ProviderVersion != identity.ProviderVersion || ref.TimezoneDigest != prewarmTimezoneDigest(identity.Timezone) ||
+		ref.AnchorDate != identity.AnchorDate || ref.Class != class || ref.Coverage.Timezone != identity.Timezone {
+		return fmt.Errorf("invalid segment reference metadata")
+	}
+	expectedCoverage, err := prewarmSegmentCoverage(class, identity.AnchorDate, identity.Timezone)
+	if err != nil {
+		return err
+	}
+	if ref.Coverage != expectedCoverage {
+		return fmt.Errorf("segment reference coverage does not match class")
+	}
+	expectedKey, err := prewarmSegmentKey(
+		namespace, prewarmCacheSchemaVersion, ref.ProviderID, ref.ProviderVersion,
+		ref.TimezoneDigest, ref.AnchorDate, ref.Class, ref.GenerationID,
+	)
+	if err != nil {
+		return err
+	}
+	if ref.Key != expectedKey {
+		return fmt.Errorf("segment reference key does not match metadata")
+	}
+	return nil
+}
+
+func validatePrewarmReferenceCommon(
+	ref PrewarmValueReference,
+	freshFor, hardFor time.Duration,
+	sizeLimit int,
+	now time.Time,
+	requireHardValid bool,
+) error {
+	if len(ref.Key) == 0 || len(ref.Key) > prewarmKeyReferenceMaxBytes {
+		return fmt.Errorf("prewarm Redis key reference exceeds %d bytes", prewarmKeyReferenceMaxBytes)
+	}
+	if !validPrewarmGenerationID(ref.GenerationID) || ref.GeneratedAt.IsZero() {
+		return fmt.Errorf("invalid prewarm generation metadata")
+	}
+	if !ref.FreshUntil.Equal(ref.GeneratedAt.Add(freshFor)) || !ref.HardExpiresAt.Equal(ref.GeneratedAt.Add(hardFor)) {
+		return fmt.Errorf("prewarm freshness timestamps do not match class contract")
+	}
+	if requireHardValid && !now.Before(ref.HardExpiresAt) {
+		return fmt.Errorf("prewarm value is hard expired")
+	}
+	if ref.SerializedBytes <= 0 || ref.SerializedBytes >= sizeLimit || ref.ResponseBytes < 0 {
+		return fmt.Errorf("invalid prewarm bounded size metadata")
+	}
+	return nil
+}
+
+func validatePrewarmCurrentStatsReference(
+	namespace string,
+	ref PrewarmValueReference,
+	value PrewarmCurrentStatsEnvelope,
+	serializedBytes int,
+	now time.Time,
+) error {
+	identity := PrewarmCacheIdentity{ProviderID: value.ProviderID, ProviderVersion: value.ProviderVersion, Timezone: "UTC", AnchorDate: "2000-01-01"}
+	if err := validatePrewarmCurrentReference(namespace, identity, ref, now, false); err != nil {
+		return err
+	}
+	if err := validatePrewarmCurrentStatsValue(value); err != nil {
+		return err
+	}
+	if ref.SchemaVersion != value.SchemaVersion || ref.ProviderID != value.ProviderID ||
+		ref.ProviderVersion != value.ProviderVersion || ref.GenerationID != value.GenerationID ||
+		!ref.GeneratedAt.Equal(value.GeneratedAt) || ref.SerializedBytes != serializedBytes ||
+		ref.ResponseBytes != value.ResponseBytes || ref.RosterCount != value.RosterCount || ref.RosterDigest != value.RosterDigest {
+		return fmt.Errorf("current stats value does not match manifest reference")
+	}
+	return nil
+}
+
+func validatePrewarmSegmentReference(
+	namespace string,
+	ref PrewarmValueReference,
+	value PrewarmTrendSegment,
+	serializedBytes int,
+	now time.Time,
+) error {
+	identity := PrewarmCacheIdentity{
+		ProviderID: value.ProviderID, ProviderVersion: value.ProviderVersion,
+		Timezone: value.Timezone, AnchorDate: value.AnchorDate,
+	}
+	if err := validatePrewarmSegmentReferenceMetadata(namespace, identity, value.Class, ref, now, false); err != nil {
+		return err
+	}
+	if err := validatePrewarmSegmentValue(value); err != nil {
+		return err
+	}
+	if ref.SchemaVersion != value.SchemaVersion || ref.ProviderID != value.ProviderID ||
+		ref.ProviderVersion != value.ProviderVersion || ref.TimezoneDigest != value.TimezoneDigest ||
+		ref.AnchorDate != value.AnchorDate || ref.Class != value.Class || ref.GenerationID != value.GenerationID ||
+		!ref.GeneratedAt.Equal(value.GeneratedAt) || ref.SerializedBytes != serializedBytes ||
+		ref.ResponseBytes != value.ResponseBytes || ref.Coverage != value.Coverage ||
+		ref.PointCount != value.PointCount || ref.UniqueUserCount != value.UniqueUserCount {
+		return fmt.Errorf("segment value does not match manifest reference")
+	}
+	return nil
+}
+
+func validatePrewarmCurrentStatsValue(value PrewarmCurrentStatsEnvelope) error {
+	if value.SchemaVersion != prewarmCacheSchemaVersion || value.ProviderID <= 0 || value.ProviderVersion <= 0 ||
+		!validPrewarmGenerationID(value.GenerationID) || value.GeneratedAt.IsZero() || !validPrewarmDigest(value.RosterDigest) || value.ResponseBytes < 0 {
+		return fmt.Errorf("invalid team usage prewarm current stats metadata")
+	}
+	if _, err := validatePrewarmCurrentStats(value); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validatePrewarmSegmentValue(value PrewarmTrendSegment) error {
+	if value.SchemaVersion != prewarmCacheSchemaVersion || value.ProviderID <= 0 || value.ProviderVersion <= 0 ||
+		!validPrewarmGenerationID(value.GenerationID) || value.GeneratedAt.IsZero() ||
+		value.TimezoneDigest != prewarmTimezoneDigest(value.Timezone) {
+		return fmt.Errorf("invalid team usage prewarm segment metadata")
+	}
+	return ValidateTrendSegment(value)
+}
+
+func validatePrewarmCacheIdentity(identity PrewarmCacheIdentity) error {
+	if identity.ProviderID <= 0 || identity.ProviderVersion <= 0 ||
+		strings.TrimSpace(identity.Timezone) != identity.Timezone || identity.Timezone == "" ||
+		len(identity.Timezone) > prewarmTimezoneNameMaxBytes || !validPrewarmDayLabel(identity.AnchorDate) {
+		return fmt.Errorf("invalid team usage prewarm cache identity")
+	}
+	if _, err := loadPrewarmLocation(identity.Timezone); err != nil {
+		return fmt.Errorf("invalid team usage prewarm timezone: %w", err)
+	}
+	return nil
+}
+
+func prewarmTimezoneDigest(timezone string) string {
+	return prewarmStringDigest(timezone)
+}
+
+func prewarmStringDigest(values ...string) string {
+	hash := sha256.New()
+	for _, value := range values {
+		writePrewarmLengthDelimited(hash, value)
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func prewarmManifestKeyForIdentity(namespace string, schemaVersion int, identity PrewarmCacheIdentity) (string, error) {
+	if err := validatePrewarmCacheIdentity(identity); err != nil {
+		return "", err
+	}
+	return prewarmManifestKey(namespace, schemaVersion, identity.ProviderID, identity.ProviderVersion, prewarmTimezoneDigest(identity.Timezone), identity.AnchorDate)
+}
+
+func prewarmManifestKey(
+	namespace string,
+	schemaVersion int,
+	providerID int,
+	providerVersion int64,
+	timezoneDigest, anchorDate string,
+) (string, error) {
+	if err := validatePrewarmKeyDimensions(namespace, schemaVersion, providerID, providerVersion); err != nil {
+		return "", err
+	}
+	if !validPrewarmDigest(timezoneDigest) || !validPrewarmDayLabel(anchorDate) {
+		return "", fmt.Errorf("invalid team usage prewarm manifest dimensions")
+	}
+	return boundedPrewarmKey(fmt.Sprintf(
+		"ae:%s:team-usage-prewarm:v%d:manifest:%d:%d:%s:%s",
+		namespace, schemaVersion, providerID, providerVersion, timezoneDigest, anchorDate,
+	))
+}
+
+func prewarmCurrentStatsKey(
+	namespace string,
+	schemaVersion int,
+	providerID int,
+	providerVersion int64,
+	generationID string,
+) (string, error) {
+	if err := validatePrewarmKeyDimensions(namespace, schemaVersion, providerID, providerVersion); err != nil {
+		return "", err
+	}
+	if !validPrewarmGenerationID(generationID) {
+		return "", fmt.Errorf("invalid team usage prewarm current generation")
+	}
+	return boundedPrewarmKey(fmt.Sprintf(
+		"ae:%s:team-usage-prewarm:v%d:current:%d:%d:%s",
+		namespace, schemaVersion, providerID, providerVersion, generationID,
+	))
+}
+
+func prewarmSegmentKey(
+	namespace string,
+	schemaVersion int,
+	providerID int,
+	providerVersion int64,
+	timezoneDigest, anchorDate string,
+	class PrewarmSegmentClass,
+	generationID string,
+) (string, error) {
+	if err := validatePrewarmKeyDimensions(namespace, schemaVersion, providerID, providerVersion); err != nil {
+		return "", err
+	}
+	if !validPrewarmDigest(timezoneDigest) || !validPrewarmGenerationID(generationID) || !validPrewarmDayLabel(anchorDate) {
+		return "", fmt.Errorf("invalid team usage prewarm segment dimensions")
+	}
+	if _, _, _, err := prewarmClassTTLs(class); err != nil {
+		return "", err
+	}
+	return boundedPrewarmKey(fmt.Sprintf(
+		"ae:%s:team-usage-prewarm:v%d:segment:%d:%d:%s:%s:%s:%s",
+		namespace, schemaVersion, providerID, providerVersion, timezoneDigest, anchorDate, class, generationID,
+	))
+}
+
+func validatePrewarmKeyDimensions(namespace string, schemaVersion, providerID int, providerVersion int64) error {
+	if namespace != "" && !snapshotCacheNamespaceRE.MatchString(namespace) {
+		return fmt.Errorf("invalid Redis namespace %q", namespace)
+	}
+	if schemaVersion <= 0 || providerID <= 0 || providerVersion <= 0 {
+		return fmt.Errorf("invalid team usage prewarm key dimensions")
+	}
+	return nil
+}
+
+func boundedPrewarmKey(key string) (string, error) {
+	if len(key) > prewarmKeyReferenceMaxBytes {
+		return "", fmt.Errorf("prewarm Redis key reference exceeds %d bytes", prewarmKeyReferenceMaxBytes)
+	}
+	return key, nil
+}
+
+func prewarmClassTTLs(class PrewarmSegmentClass) (time.Duration, time.Duration, time.Duration, error) {
+	switch class {
+	case SegmentTodayHour:
+		return movingFresh, movingHard, movingValueTTL, nil
+	case SegmentHistory29d, SegmentHistory6d:
+		return historyFresh, historyHard, historyValueTTL, nil
+	default:
+		return 0, 0, 0, fmt.Errorf("invalid team usage prewarm segment class %q", class)
+	}
+}
+
+func validatePrewarmLeaseInput(key, token string, ttl time.Duration) error {
+	if key == "" || len(key) > prewarmKeyReferenceMaxBytes || token == "" || len(token) > prewarmKeyReferenceMaxBytes || ttl <= 0 {
+		return fmt.Errorf("invalid team usage prewarm lease input")
+	}
+	return nil
+}
+
+func validPrewarmDigest(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size && value == strings.ToLower(value)
+}
+
+func validPrewarmGenerationID(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') && character != '-' && character != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func encodePrewarmJSON(value any, limit int) ([]byte, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) >= limit {
+		return nil, fmt.Errorf("serialized value reached strict %d-byte limit", limit)
+	}
+	return encoded, nil
+}
+
+func decodePrewarmJSON(encoded []byte, limit int, destination any) error {
+	if len(encoded) == 0 || len(encoded) >= limit {
+		return fmt.Errorf("serialized value is empty or reached strict %d-byte limit", limit)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("serialized value contains trailing data")
+	}
+	return nil
+}
+
+func (c *PrewarmCache) now() time.Time {
+	return c.options.Now().UTC()
+}

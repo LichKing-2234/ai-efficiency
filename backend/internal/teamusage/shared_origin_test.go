@@ -2,6 +2,7 @@ package teamusage
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"sync"
@@ -291,6 +292,152 @@ func TestSharedOriginNormalizesNilTrendPoints(t *testing.T) {
 	}
 	if origin.PointsByUser[10001] == nil || !validTeamUsageScopeOrigin(origin) {
 		t.Fatalf("nil provider points produced invalid origin: %#v", origin.PointsByUser)
+	}
+}
+
+func TestSharedOriginPrewarmResolvesMappingsBeforeSegmentedRedis(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	client := testdb.Open(t)
+	providerRow := createPrimaryRelayProvider(t, client)
+	scope, provider := membersTestData(1)
+	store := newRecordingPrewarmStore()
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
+	}, now, []int64{10001})
+	store.getAfter = func(string) {
+		if provider.listUsersCalls == 0 {
+			t.Error("segmented Redis read happened before current Relay mappings were resolved")
+		}
+	}
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
+	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	installTestPrewarmReader(service, reader)
+
+	if _, err := service.Summary(context.Background(), 1, prewarmReader7dParams()); err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+}
+
+func TestSharedOriginPrewarmServesAuthorizedScopeAboveLegacyCap(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	client := testdb.Open(t)
+	providerRow := createPrimaryRelayProvider(t, client)
+	scope, provider := membersTestData(501)
+	roster := make([]int64, len(scope.OverviewSubjects))
+	for index, subject := range scope.OverviewSubjects {
+		roster[index] = int64(*subject.RelayUserID)
+	}
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
+	}, now, roster)
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
+	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	installTestPrewarmReader(service, reader)
+
+	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if response.Summary.Unavailable || response.Summary.MemberCount != 501 {
+		t.Fatalf("large prewarmed summary = %+v, want available authorized 501-member scope", response.Summary)
+	}
+	if len(provider.summaryRequestBatches) != 0 || provider.trendCalls != 0 {
+		t.Fatalf("large prewarmed summary used exact Relay source: stats=%d trend=%d", len(provider.summaryRequestBatches), provider.trendCalls)
+	}
+}
+
+func TestPrewarmFallbackScopeVersionRaceDiscardsProjectionAndUsesExactOrigin(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	client := testdb.Open(t)
+	providerRow := createPrimaryRelayProvider(t, client)
+	scopeV1, provider := membersTestData(1)
+	scopeV1.Version = "scope-v1"
+	scopeV2 := *scopeV1
+	scopeV2.Version = "scope-v2"
+	resolver := &sequenceScopeResolver{scopes: []*representativescope.Scope{scopeV1, &scopeV2, &scopeV2}}
+	rangeCost, rangeTokens := 9.0, int64(90)
+	provider.summaryStats[10001] = relay.TeamUserUsageStats{
+		UserID: 10001, TodayActualCost: 3, TotalActualCost: 30, RangeActualCost: &rangeCost, RangeTotalTokens: &rangeTokens,
+	}
+	provider.trendPoints[10001] = []relay.UsageTrendPoint{{Date: "2026-07-15", ActualCost: 9, TotalTokens: &rangeTokens}}
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
+	}, now, []int64{10001})
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
+	service := newUncachedServiceForTest(client, resolver, fakeProviderResolver{provider: provider}, nil)
+	installTestPrewarmReader(service, reader)
+	service.originCache, _ = testOriginCache(t, time.Now, "scope-race-exact-token")
+
+	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
+	if err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if response.ScopeVersion != "scope-v2" || response.Summary.RangeActualCost == nil || *response.Summary.RangeActualCost != 9 {
+		t.Fatalf("scope-race summary = version %q range %#v, want v2 exact range 9", response.ScopeVersion, response.Summary.RangeActualCost)
+	}
+	if len(provider.summaryRequestBatches) == 0 || provider.trendCalls == 0 {
+		t.Fatalf("scope-race fallback source calls = stats %d trend %d, want complete exact origin", len(provider.summaryRequestBatches), provider.trendCalls)
+	}
+}
+
+func TestPrewarmFallbackFinalRepresentativeLossReturnsForbiddenWithoutStaleSource(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	client := testdb.Open(t)
+	providerRow := createPrimaryRelayProvider(t, client)
+	authorized, provider := membersTestData(1)
+	authorized.Version = "scope-v1"
+	revoked := *authorized
+	revoked.IsRepresentative = false
+	resolver := &sequenceScopeResolver{scopes: []*representativescope.Scope{authorized, &revoked, &revoked}}
+	cache, _ := newRedisPrewarmCache(t, func() time.Time { return now })
+	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
+	}, now, []int64{10001})
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
+	service := newUncachedServiceForTest(client, resolver, fakeProviderResolver{provider: provider}, nil)
+	installTestPrewarmReader(service, reader)
+	service.originCache, _ = testOriginCache(t, time.Now, "representative-loss-token")
+
+	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
+	var forbidden *ForbiddenError
+	if response != nil || !errors.As(err, &forbidden) || forbidden.Reason != ErrNotRepresentative.Error() {
+		t.Fatalf("Summary(representative lost) = %#v/%v, want ForbiddenError(%q)", response, err, ErrNotRepresentative)
+	}
+	if len(provider.summaryRequestBatches) != 0 || provider.trendCalls != 0 {
+		t.Fatalf("representative-loss stale fallback calls = stats %d trend %d, want zero", len(provider.summaryRequestBatches), provider.trendCalls)
+	}
+}
+
+func TestPrewarmFallbackFinalProviderResolutionFailureReturnsErrorWithoutStaleSource(t *testing.T) {
+	now := time.Date(2026, 7, 21, 8, 0, 0, 0, time.UTC)
+	client := testdb.Open(t)
+	providerRow := createPrimaryRelayProvider(t, client)
+	scope, provider := membersTestData(1)
+	store := newRecordingPrewarmStore()
+	cache := mustNewPrewarmCache(t, store, func() time.Time { return now })
+	seedAuthorizedPrewarmManifest(t, cache, PrewarmCacheIdentity{
+		ProviderID: providerRow.ID, ProviderVersion: providerRow.ConfigurationVersion, Timezone: "UTC", AnchorDate: "2026-07-21",
+	}, now, []int64{10001})
+	store.getAfter = func(string) { _ = client.Close() }
+	reader := mustPrewarmReader(t, cache, PrewarmReaderOptions{Now: func() time.Time { return now }})
+
+	service := newUncachedServiceForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil)
+	installTestPrewarmReader(service, reader)
+	service.originCache, _ = testOriginCache(t, time.Now, "provider-reresolution-token")
+
+	response, err := service.Summary(context.Background(), 1, prewarmReader7dParams())
+	if response != nil || err == nil {
+		t.Fatalf("Summary(provider re-resolution failed) = %#v/%v, want hard error", response, err)
+	}
+	if len(provider.summaryRequestBatches) != 0 || provider.trendCalls != 0 {
+		t.Fatalf("provider-resolution stale fallback calls = stats %d trend %d, want zero", len(provider.summaryRequestBatches), provider.trendCalls)
 	}
 }
 

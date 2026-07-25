@@ -41,6 +41,7 @@ type Service struct {
 	maxMultiplier            float64
 	snapshotCache            *SnapshotCache
 	originCache              *OriginCache
+	prewarmReader            *PrewarmReader
 	memberCursorCodec        *memberCursorCodec
 	organizationCursorCodec  *organizationCursorCodec
 }
@@ -48,6 +49,7 @@ type Service struct {
 type ServiceOptions struct {
 	SnapshotCache *SnapshotCache
 	OriginCache   *OriginCache
+	PrewarmReader *PrewarmReader
 	CursorSecret  string
 }
 
@@ -57,6 +59,7 @@ type splitReadRequest struct {
 	scope          *representativescope.Scope
 	providerConfig primaryProviderConfig
 	scopeHash      string
+	bypassPrewarm  bool
 }
 
 func (s *Service) newSplitReadRequest(ctx context.Context, actorUserID int, params OverviewParams) (*splitReadRequest, error) {
@@ -111,7 +114,9 @@ func NewService(client *ent.Client, scopeResolver ScopeResolver, providerResolve
 	if cursorSecret == "" {
 		return nil, fmt.Errorf("team usage cursor secret is required")
 	}
-	return newService(client, scopeResolver, providerResolver, locker, options.SnapshotCache, options.OriginCache, cursorSecret), nil
+	service := newService(client, scopeResolver, providerResolver, locker, options.SnapshotCache, options.OriginCache, cursorSecret)
+	service.prewarmReader = options.PrewarmReader
+	return service, nil
 }
 
 func newService(client *ent.Client, scopeResolver ScopeResolver, providerResolver ProviderResolver, locker AdvisoryLocker, snapshotCache *SnapshotCache, originCache *OriginCache, cursorSecret string) *Service {
@@ -257,6 +262,14 @@ func (s *Service) readTrendSnapshot(ctx context.Context, actorUserID int, params
 		return nil, "", err
 	}
 	result, err := s.readTrendSnapshotForRequest(ctx, request)
+	if errors.Is(err, errPrewarmAuthorizationChanged) {
+		request, err = s.newSplitReadRequest(ctx, actorUserID, params)
+		if err != nil {
+			return nil, "", err
+		}
+		request.bypassPrewarm = true
+		result, err = s.readTrendSnapshotForRequest(ctx, request)
+	}
 	return result, request.scope.Version, err
 }
 
@@ -266,8 +279,8 @@ func (s *Service) readTrendSnapshotForRequest(ctx context.Context, request *spli
 		if len(overviewSubjects) == 0 {
 			overviewSubjects = request.scope.Subjects
 		}
-		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
-			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+		origin, handled, loadErr := s.loadPrewarmFirstScopeOrigin(loadCtx, request)
+		if handled {
 			if loadErr != nil {
 				if isHardTrendSnapshotOriginError(loadCtx, loadErr) {
 					return TrendOriginLoadResult{}, loadErr
@@ -324,15 +337,15 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 	if err != nil {
 		return nil, err
 	}
-	summary, err := s.readSummarySnapshotForRequest(ctx, request)
-	if err != nil {
-		return nil, err
+	summary, trend, members, err := s.readOverviewSnapshotsForRequest(ctx, request)
+	if errors.Is(err, errPrewarmAuthorizationChanged) {
+		request, err = s.newSplitReadRequest(ctx, actorUserID, params)
+		if err != nil {
+			return nil, err
+		}
+		request.bypassPrewarm = true
+		summary, trend, members, err = s.readOverviewSnapshotsForRequest(ctx, request)
 	}
-	trend, err := s.readTrendSnapshotForRequest(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	members, err := s.readMembersSnapshotForRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +355,7 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		overviewSubjects = request.scope.Subjects
 	}
 	memberTree := []OverviewMemberNode{}
-	if len(overviewSubjects) <= s.fullScopeCap {
+	if len(overviewSubjects) <= s.fullScopeCap || len(members.Snapshot.Members) > 0 {
 		memberTree = projectOverviewCompatibilityMemberTree(request.scope, members.Snapshot.Members)
 	}
 	return &OverviewResponse{
@@ -356,6 +369,25 @@ func (s *Service) Overview(ctx context.Context, actorUserID int, params Overview
 		Members:          append([]OverviewMember{}, members.Snapshot.Members...),
 		MemberTree:       memberTree,
 	}, nil
+}
+
+func (s *Service) readOverviewSnapshotsForRequest(
+	ctx context.Context,
+	request *splitReadRequest,
+) (*SummaryCacheResult, *TrendCacheResult, *MembersCacheResult, error) {
+	summary, err := s.readSummarySnapshotForRequest(ctx, request)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	trend, err := s.readTrendSnapshotForRequest(ctx, request)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	members, err := s.readMembersSnapshotForRequest(ctx, request)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return summary, trend, members, nil
 }
 
 func overviewSummaryFromAggregate(summary SummaryAggregate) OverviewSummary {
@@ -374,6 +406,14 @@ func (s *Service) readSummarySnapshot(ctx context.Context, actorUserID int, para
 		return nil, "", err
 	}
 	result, err := s.readSummarySnapshotForRequest(ctx, request)
+	if errors.Is(err, errPrewarmAuthorizationChanged) {
+		request, err = s.newSplitReadRequest(ctx, actorUserID, params)
+		if err != nil {
+			return nil, "", err
+		}
+		request.bypassPrewarm = true
+		result, err = s.readSummarySnapshotForRequest(ctx, request)
+	}
 	return result, request.scope.Version, err
 }
 
@@ -383,8 +423,8 @@ func (s *Service) readSummarySnapshotForRequest(ctx context.Context, request *sp
 		if len(overviewSubjects) == 0 {
 			overviewSubjects = request.scope.Subjects
 		}
-		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
-			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+		origin, handled, loadErr := s.loadPrewarmFirstScopeOrigin(loadCtx, request)
+		if handled {
 			if loadErr == nil {
 				return SummaryOriginLoadResult{Snapshot: buildSummarySnapshotFromScopeOrigin(request.scope, request.params, origin)}, nil
 			}
@@ -441,6 +481,14 @@ func (s *Service) readMembersSnapshot(ctx context.Context, actorUserID int, para
 		return nil, "", err
 	}
 	result, err := s.readMembersSnapshotForRequest(ctx, request)
+	if errors.Is(err, errPrewarmAuthorizationChanged) {
+		request, err = s.newSplitReadRequest(ctx, actorUserID, params)
+		if err != nil {
+			return nil, "", err
+		}
+		request.bypassPrewarm = true
+		result, err = s.readMembersSnapshotForRequest(ctx, request)
+	}
 	return result, request.scope.Version, err
 }
 
@@ -450,8 +498,8 @@ func (s *Service) readMembersSnapshotForRequest(ctx context.Context, request *sp
 		if len(overviewSubjects) == 0 {
 			overviewSubjects = request.scope.Subjects
 		}
-		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
-			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+		origin, handled, loadErr := s.loadPrewarmFirstScopeOrigin(loadCtx, request)
+		if handled {
 			if loadErr == nil {
 				return MembersOriginLoadResult{Snapshot: buildMembersSnapshotFromScopeOrigin(request.params, origin)}, nil
 			}
@@ -2027,6 +2075,7 @@ func isHardTrendSnapshotOriginError(ctx context.Context, err error) bool {
 		return true
 	}
 	return errors.Is(err, relay.ErrInvalidCredentials) ||
+		errors.Is(err, errPrewarmAuthorizationChanged) ||
 		errors.Is(err, ErrProviderUnsupported) ||
 		errors.Is(err, ErrInvalidOverviewParams) ||
 		isHardOverviewTrendError(err)
@@ -2035,6 +2084,7 @@ func isHardTrendSnapshotOriginError(ctx context.Context, err error) bool {
 func isHardSnapshotOriginError(err error) bool {
 	return errors.Is(err, context.Canceled) ||
 		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, errPrewarmAuthorizationChanged) ||
 		errors.Is(err, relay.ErrInvalidCredentials) ||
 		errors.Is(err, ErrProviderUnsupported) ||
 		errors.Is(err, ErrInvalidOverviewParams)

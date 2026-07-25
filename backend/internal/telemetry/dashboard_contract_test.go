@@ -69,11 +69,53 @@ func TestPerformanceDashboardContainsRequiredQuantilesPoolsAndPrivacyContract(t 
 	requireDashboardExpressions(t, expressions, "Redis Pool", "ai_efficiency_redis_pool_connections", "ai_efficiency_redis_pool_wait_total", "ai_efficiency_redis_pool_wait_duration_seconds_total", "ai_efficiency_redis_pool_timeout_total")
 	requireDashboardExpressions(t, expressions, "Application Cache", "ai_efficiency_cache_events_total", "cache", "outcome")
 	requireDashboardExpressions(t, expressions, "HTTP Response Size", "histogram_quantile(0.75", "histogram_quantile(0.95", "ai_efficiency_http_response_bytes_bucket", "sum by (le, route, release)", `$http_route`)
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Refresh Duration", "histogram_quantile(0.95", "ai_efficiency_team_usage_prewarm_refresh_duration_seconds_bucket", "sum by (le)")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Refresh Outcomes", "ai_efficiency_team_usage_prewarm_refresh_total", "sum by (outcome)")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Lane Last Success", "clamp_min", "ai_efficiency_team_usage_prewarm_lane_last_success_timestamp_seconds")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Source Duration", "histogram_quantile(0.95", "ai_efficiency_team_usage_prewarm_source_duration_seconds_bucket", "sum by (le, source, outcome)")
+	requireDashboardExpressions(t, expressions, "Team Usage Prewarm Request Outcomes", "ai_efficiency_team_usage_prewarm_request_total", "sum by (outcome)")
+
+	approvedPrewarmFamilies := []string{
+		"ai_efficiency_team_usage_prewarm_refresh_total",
+		"ai_efficiency_team_usage_prewarm_refresh_duration_seconds",
+		"ai_efficiency_team_usage_prewarm_lane_last_success_timestamp_seconds",
+		"ai_efficiency_team_usage_prewarm_source_duration_seconds",
+		"ai_efficiency_team_usage_prewarm_request_total",
+	}
+	prewarmPanels := 0
+	for title, expression := range expressions {
+		if !strings.HasPrefix(title, "Team Usage Prewarm ") {
+			continue
+		}
+		prewarmPanels++
+		families := 0
+		for _, family := range approvedPrewarmFamilies {
+			if strings.Contains(expression, family) {
+				families++
+			}
+		}
+		if families != 1 {
+			t.Fatalf("dashboard panel %q references %d approved prewarm families, want exactly one: %s", title, families, expression)
+		}
+	}
+	if prewarmPanels != 5 {
+		t.Fatalf("dashboard prewarm panels = %d, want exactly five focused panels", prewarmPanels)
+	}
 
 	all := strings.ToLower(allExpressions.String())
 	for _, forbidden := range []string{"user_id", "request_id", "cache_key", "provider_id", "scope", "email", "query"} {
 		if strings.Contains(all, forbidden) {
 			t.Fatalf("dashboard expressions contain prohibited label %q", forbidden)
+		}
+	}
+	for _, forbidden := range []string{
+		"team_usage_prewarm_cycle_", "team_usage_prewarm_redis_", "team_usage_prewarm_quantity",
+		"team_usage_prewarm_generation_", "team_usage_prewarm_validation_", "team_usage_prewarm_cache_",
+		"team_usage_prewarm_scheduler_", "team_usage_prewarm_source_bytes", "team_usage_prewarm_source_points",
+		"team_usage_prewarm_source_users", "fallback_reason",
+	} {
+		if strings.Contains(all, forbidden) {
+			t.Fatalf("dashboard expressions contain retired prewarm telemetry %q", forbidden)
 		}
 	}
 }

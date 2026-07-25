@@ -106,6 +106,19 @@ type TeamMemberTrendProvider interface {
 	GetUsageTrendForUsers(ctx context.Context, relayUserIDs []int64, params TeamMemberTrendParams) (map[int64][]UsageTrendPoint, error)
 }
 
+// ProviderWideTeamUsageProvider exposes bounded provider-wide roster and
+// current-usage sources without changing the generic user-directory contract.
+type ProviderWideTeamUsageProvider interface {
+	GetProviderUserIDs(ctx context.Context) (ProviderDirectoryResult, error)
+	GetProviderCurrentUsageStats(ctx context.Context, userIDs []int64) (ProviderCurrentStatsResult, error)
+}
+
+// ProviderWideTeamTrendProvider exposes validated raw usage rows before any
+// request-specific authorization filter is applied.
+type ProviderWideTeamTrendProvider interface {
+	GetProviderUsageTrend(ctx context.Context, params TeamMemberTrendParams, limit int) (ProviderWideTrendResult, error)
+}
+
 type UserDirectoryProvider interface {
 	ListUsers(ctx context.Context) ([]User, error)
 }

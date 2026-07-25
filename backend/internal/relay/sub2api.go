@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -20,6 +21,14 @@ import (
 
 const maxPingResponseBodyBytes int64 = 4 * 1024
 
+const (
+	providerDirectoryPageSize      = 1000
+	providerDirectoryUserLimit     = 5000
+	providerDirectoryResponseLimit = 16 << 20
+	providerCurrentStatsChunkLimit = 500
+	providerCurrentStatsBodyLimit  = 2 << 20
+)
+
 type sub2apiRelay struct {
 	mu       sync.RWMutex
 	client   *http.Client
@@ -28,6 +37,8 @@ type sub2apiRelay struct {
 	apiKey   string // Relay API key used for both admin and inference requests.
 	model    string
 	logger   *zap.Logger
+
+	providerWideTrendPointLimit int
 }
 
 const userUsageOriginTimeout = 12 * time.Second
@@ -523,6 +534,305 @@ func (s *sub2apiRelay) ListUsers(ctx context.Context) ([]User, error) {
 		return nil, fmt.Errorf("relay: list users: %w", err)
 	}
 	return users, nil
+}
+
+type providerDirectoryItem struct {
+	ID int64 `json:"id"`
+}
+
+type providerDirectoryPage struct {
+	Items    []providerDirectoryItem `json:"items"`
+	Page     *int                    `json:"page"`
+	PageSize *int                    `json:"page_size"`
+	Pages    *int                    `json:"pages"`
+	Total    *int                    `json:"total"`
+}
+
+type providerDirectoryEnvelope struct {
+	envelopeStatus
+	Data *providerDirectoryPage `json:"data"`
+}
+
+func (s *sub2apiRelay) GetProviderUserIDs(ctx context.Context) (ProviderDirectoryResult, error) {
+	var result ProviderDirectoryResult
+	var declaredPages, declaredTotal int
+	var previousID int64
+
+	for page := 1; ; page++ {
+		query := url.Values{}
+		query.Set("page", strconv.Itoa(page))
+		query.Set("page_size", strconv.Itoa(providerDirectoryPageSize))
+		query.Set("include_subscriptions", "false")
+		query.Set("sort_by", "id")
+		query.Set("sort_order", "asc")
+
+		resp, err := s.doAdminRequest(ctx, http.MethodGet, "/api/v1/admin/users?"+query.Encode(), nil)
+		if err != nil {
+			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: fetch page %d: %w", page, err)
+		}
+		body, readErr := readBodyStrictlyBelow(resp.Body, providerDirectoryResponseLimit)
+		resp.Body.Close()
+		if readErr != nil {
+			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: read page %d: %w", page, readErr)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: unexpected status %d", resp.StatusCode)
+		}
+
+		var envelope providerDirectoryEnvelope
+		if err := decodeSingleJSON(body, &envelope); err != nil {
+			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: decode page %d: %w", page, err)
+		}
+		if !envelope.ok() {
+			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: request failed")
+		}
+		if envelope.Data == nil {
+			return ProviderDirectoryResult{}, fmt.Errorf("relay: provider directory: page %d missing data", page)
+		}
+
+		data := envelope.Data
+		if data.Page == nil || *data.Page != page {
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: response page does not match request page %d", page))
+		}
+		if data.PageSize != nil && *data.PageSize != providerDirectoryPageSize {
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d has invalid page-size metadata", page))
+		}
+		if len(data.Items) > providerDirectoryPageSize {
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionProviderIDBound, fmt.Errorf("relay: provider directory: page %d exceeds item limit", page))
+		}
+		if data.Pages == nil || data.Total == nil {
+			if page == 1 && len(data.Items) == 0 && data.Pages == nil && data.Total == nil {
+				result.ResponseBytes = int64(len(body))
+				result.PageCount = 1
+				return result, nil
+			}
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d missing authoritative pagination", page))
+		}
+		if *data.Pages < 0 || *data.Total < 0 || (len(data.Items) > 0 && (*data.Pages == 0 || *data.Total == 0)) {
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d has invalid authoritative pagination", page))
+		}
+
+		if page == 1 {
+			declaredPages, declaredTotal = *data.Pages, *data.Total
+			if declaredTotal == 0 {
+				if len(data.Items) != 0 || declaredPages > 1 {
+					return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: empty roster has inconsistent pagination"))
+				}
+				result.ResponseBytes = int64(len(body))
+				result.PageCount = 1
+				return result, nil
+			}
+		} else if *data.Pages != declaredPages || *data.Total != declaredTotal {
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d changed authoritative pagination", page))
+		}
+		if declaredPages < page {
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d exceeds declared pages", page))
+		}
+		if page < declaredPages && len(data.Items) == 0 {
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: page %d is empty before final page", page))
+		}
+
+		for itemIndex, item := range data.Items {
+			if item.ID <= 0 {
+				return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionProviderIDBound, fmt.Errorf("relay: provider directory: page %d item %d has invalid ID", page, itemIndex))
+			}
+			if item.ID <= previousID {
+				return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionProviderIDBound, fmt.Errorf("relay: provider directory: page %d item %d is not strictly ascending", page, itemIndex))
+			}
+			previousID = item.ID
+			result.UserIDs = append(result.UserIDs, item.ID)
+			if len(result.UserIDs) >= providerDirectoryUserLimit {
+				return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionProviderIDBound, fmt.Errorf("relay: provider directory: user count reached limit %d", providerDirectoryUserLimit))
+			}
+		}
+		result.ResponseBytes += int64(len(body))
+		result.PageCount++
+		if len(result.UserIDs) > declaredTotal {
+			return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: cumulative count exceeds authoritative total"))
+		}
+		if page == declaredPages {
+			if len(result.UserIDs) != declaredTotal {
+				return ProviderDirectoryResult{}, NewProviderSourceRejection(ProviderSourceRejectionDirectoryPagination, fmt.Errorf("relay: provider directory: final count does not match authoritative total"))
+			}
+			return result, nil
+		}
+	}
+}
+
+func (s *sub2apiRelay) GetProviderCurrentUsageStats(ctx context.Context, userIDs []int64) (ProviderCurrentStatsResult, error) {
+	requested := make(map[int64]struct{}, len(userIDs))
+	if len(userIDs) == 0 || len(userIDs) > providerCurrentStatsChunkLimit {
+		return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: requested ID count must be between 1 and %d", providerCurrentStatsChunkLimit)
+	}
+	for index, userID := range userIDs {
+		if userID <= 0 {
+			return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: requested ID at index %d is invalid", index)
+		}
+		if _, exists := requested[userID]; exists {
+			return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: requested IDs are not unique")
+		}
+		requested[userID] = struct{}{}
+	}
+
+	payload, err := json.Marshal(struct {
+		UserIDs []int64 `json:"user_ids"`
+	}{UserIDs: userIDs})
+	if err != nil {
+		return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: marshal: %w", err)
+	}
+	resp, err := s.doAdminRequest(ctx, http.MethodPost, "/api/v1/admin/dashboard/users-usage", bytes.NewReader(payload))
+	if err != nil {
+		return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: fetch: %w", err)
+	}
+	body, readErr := readBodyStrictlyBelow(resp.Body, providerCurrentStatsBodyLimit)
+	resp.Body.Close()
+	if readErr != nil {
+		return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: read: %w", readErr)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: unexpected status %d", resp.StatusCode)
+	}
+
+	var envelope struct {
+		envelopeStatus
+		Data *struct {
+			Stats json.RawMessage `json:"stats"`
+		} `json:"data"`
+	}
+	if err := decodeSingleJSON(body, &envelope); err != nil {
+		return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: decode envelope: %w", err)
+	}
+	if !envelope.ok() {
+		return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: request failed")
+	}
+	if envelope.Data == nil || len(envelope.Data.Stats) == 0 {
+		return ProviderCurrentStatsResult{}, fmt.Errorf("relay: provider current stats: missing stats data")
+	}
+	stats, err := decodeExactProviderCurrentStats(envelope.Data.Stats, requested)
+	if err != nil {
+		return ProviderCurrentStatsResult{}, NewProviderSourceRejection(ProviderSourceRejectionStatsExactCoverage, fmt.Errorf("relay: provider current stats: decode stats: %w", err))
+	}
+	return ProviderCurrentStatsResult{Stats: stats, ResponseBytes: int64(len(body))}, nil
+}
+
+func decodeExactProviderCurrentStats(raw json.RawMessage, requested map[int64]struct{}) (map[int64]TeamUserUsageStats, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	opening, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delimiter, ok := opening.(json.Delim); !ok || delimiter != '{' {
+		return nil, fmt.Errorf("stats value must be an object")
+	}
+
+	stats := make(map[int64]TeamUserUsageStats, len(requested))
+	rawKeys := make(map[string]struct{}, len(requested))
+	recordIndex := 0
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		rawKey, ok := keyToken.(string)
+		if !ok {
+			return nil, fmt.Errorf("record %d has invalid object key", recordIndex)
+		}
+		if _, exists := rawKeys[rawKey]; exists {
+			return nil, fmt.Errorf("record %d repeats an object key", recordIndex)
+		}
+		rawKeys[rawKey] = struct{}{}
+
+		userID, err := strconv.ParseInt(rawKey, 10, 64)
+		if err != nil || userID <= 0 || strconv.FormatInt(userID, 10) != rawKey {
+			return nil, fmt.Errorf("record %d has invalid object key", recordIndex)
+		}
+		if _, exists := requested[userID]; !exists {
+			return nil, fmt.Errorf("record %d is outside requested coverage", recordIndex)
+		}
+		if _, exists := stats[userID]; exists {
+			return nil, fmt.Errorf("record %d repeats a decoded ID", recordIndex)
+		}
+
+		var item TeamUserUsageStats
+		if err := decoder.Decode(&item); err != nil {
+			return nil, fmt.Errorf("decode record %d: %w", recordIndex, err)
+		}
+		if item.UserID != userID {
+			return nil, fmt.Errorf("record %d embedded ID does not match object key", recordIndex)
+		}
+		if err := validateProviderCurrentStat(item); err != nil {
+			return nil, fmt.Errorf("record %d: %w", recordIndex, err)
+		}
+		stats[userID] = item
+		recordIndex++
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, err
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, fmt.Errorf("trailing JSON")
+		}
+		return nil, err
+	}
+	if len(stats) != len(requested) {
+		return nil, fmt.Errorf("record count does not match requested coverage")
+	}
+	return stats, nil
+}
+
+func validateProviderCurrentStat(item TeamUserUsageStats) error {
+	if item.TodayActualCost < 0 || math.IsNaN(item.TodayActualCost) || math.IsInf(item.TodayActualCost, 0) {
+		return fmt.Errorf("today actual cost must be finite and non-negative")
+	}
+	if item.TotalActualCost < 0 || math.IsNaN(item.TotalActualCost) || math.IsInf(item.TotalActualCost, 0) {
+		return fmt.Errorf("total actual cost must be finite and non-negative")
+	}
+	if item.TotalTokens != nil && *item.TotalTokens < 0 {
+		return fmt.Errorf("total tokens must be non-negative")
+	}
+	if item.RangeActualCost != nil && (*item.RangeActualCost < 0 || math.IsNaN(*item.RangeActualCost) || math.IsInf(*item.RangeActualCost, 0)) {
+		return fmt.Errorf("range actual cost must be finite and non-negative")
+	}
+	if item.RangeTotalTokens != nil && *item.RangeTotalTokens < 0 {
+		return fmt.Errorf("range total tokens must be non-negative")
+	}
+	return nil
+}
+
+type responseBodyLimitError struct {
+	limit int64
+}
+
+func (e *responseBodyLimitError) Error() string {
+	return fmt.Sprintf("response body reached %d-byte limit", e.limit)
+}
+
+func readBodyStrictlyBelow(reader io.Reader, limit int64) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) >= limit {
+		return nil, &responseBodyLimitError{limit: limit}
+	}
+	return body, nil
+}
+
+func decodeSingleJSON(body []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("trailing JSON")
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *sub2apiRelay) findUsersBySearch(ctx context.Context, search string) ([]User, bool, error) {
@@ -2254,7 +2564,7 @@ func (s *sub2apiRelay) GetUsageTrendForUsers(ctx context.Context, relayUserIDs [
 	}
 
 	limit := teamTrendBatchLimit(len(requested))
-	result, err := s.getTeamTrendBatch(ctx, requested, TeamMemberTrendParams{
+	result, err := s.getTeamTrendFallback(ctx, requested, TeamMemberTrendParams{
 		StartDate: strings.TrimSpace(params.StartDate), EndDate: strings.TrimSpace(params.EndDate),
 		Granularity: strings.TrimSpace(params.Granularity), Timezone: strings.TrimSpace(params.Timezone),
 	}, limit)

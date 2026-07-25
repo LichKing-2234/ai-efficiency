@@ -154,6 +154,31 @@ flowchart TD
     end
 ```
 
+### Team Usage Prewarm Runtime
+
+The platform image contains both `ai-efficiency-server` and
+`ai-efficiency-prewarmer`, but they have independent process lifecycles. The
+optional prewarmer is initially deployed only through Helm; Docker Compose and
+systemd continue to launch the server alone.
+
+```text
+Browser -> Backend Deployment (N stateless HTTP Pods)
+                    | authorization-first schema-v3 reads
+                    v
+                  Redis <--- one refresh lease / immutable values / manifests
+                    ^
+                    | provider-wide source refresh
+Prewarmer Deployment (1 optional Pod) -> Relay HTTP API
+                    |
+                    +-> PostgreSQL provider row/version
+```
+
+Every Backend Pod always attempts an eligible, authorization-first schema-v3
+read. Worker absence, an unpublished or invalid manifest, and Redis failure are
+normal cache misses; the exact Relay-backed fallback remains authoritative for
+correctness. Backend readiness never depends on the Worker, and Worker
+readiness or failure never changes Backend readiness.
+
 ### Deployment Notes
 
 - Official deploy assets live under `deploy/`.
@@ -166,6 +191,7 @@ flowchart TD
 - `deploy/ai-efficiency.service` is the packaged systemd unit template.
 - `deploy/migrate-sqlite-to-postgres.sh` is the one-time bootstrap path from local SQLite data into the local Postgres test environment.
 - `deploy/.env.example` is the operator-facing configuration template.
+- Helm is the only initial deployment path for the optional Team Usage prewarmer. Docker Compose and systemd omit the worker.
 - Admin settings can display the current backend version and manually check the latest backend GitHub release through `/api/v1/system/version` and `/api/v1/system/version/check`. These endpoints are read-only and never replace binaries, restart services, or mutate deployment state.
 - In-app deployment status, update, rollback, and restart APIs are no longer part of the runtime surface. Operators upgrade Docker deployments by refreshing the image and recreating the service, and upgrade systemd deployments through install/release tooling.
 - Prometheus metrics use a second listener configured by `metrics.listen_address` / `AE_METRICS_LISTEN_ADDRESS`. It defaults to `127.0.0.1:9090`; Docker binds `:9090` only inside its un-published private network. The public application listener never serves the scrape payload.

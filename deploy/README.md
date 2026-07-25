@@ -177,6 +177,11 @@ If you need to override them, append values such as these to `.env` manually:
 - `AE_STATE_DIR`
 - `COMPOSE_PROJECT_NAME`
 
+Docker Compose and systemd launch only `ai-efficiency-server`; they do not
+configure or run the optional Team Usage prewarmer. Helm is the only initial
+worker deployment path. Without that worker, Team Usage requests use the same
+authoritative exact fallback.
+
 ## Health And Status
 
 After startup:

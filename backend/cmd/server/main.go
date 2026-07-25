@@ -31,6 +31,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/readcache"
+	"github.com/ai-efficiency/backend/internal/redisruntime"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/relayruntime"
 	"github.com/ai-efficiency/backend/internal/repo"
@@ -51,22 +52,6 @@ import (
 // authTokenAdapter adapts auth.Service to the oauth.TokenGenerator interface.
 type authTokenAdapter struct {
 	authService *auth.Service
-}
-
-func redisClientOptions(cfg config.RedisConfig) *redis.Options {
-	const timeout = 100 * time.Millisecond
-	return &redis.Options{
-		Addr:                  cfg.Addr,
-		Password:              cfg.Password,
-		DB:                    cfg.DB,
-		MaxRetries:            -1,
-		DialTimeout:           timeout,
-		DialerRetries:         1,
-		ReadTimeout:           timeout,
-		WriteTimeout:          timeout,
-		PoolTimeout:           timeout,
-		ContextTimeoutEnabled: true,
-	}
 }
 
 func newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *http.Server {
@@ -283,8 +268,12 @@ func main() {
 		)
 	}
 
-	redisClient := redis.NewClient(redisClientOptions(cfg.Redis))
-	defer redisClient.Close()
+	redisClient := redisruntime.NewClient(cfg.Redis)
+	defer func() {
+		if err := redisClient.Close(); err != nil {
+			logger.Warn("close Redis client", zap.Error(err))
+		}
+	}()
 	if err := metrics.RegisterRedisPool(redisClient); err != nil {
 		logger.Fatal("register Redis pool metrics", zap.Error(err))
 	}
@@ -361,6 +350,17 @@ func main() {
 	)
 	if err != nil {
 		logger.Fatal("initialize team usage origin cache", zap.Error(err))
+	}
+	teamUsagePrewarmCache, err := teamusage.NewPrewarmCache(
+		redisStore,
+		teamusage.PrewarmCacheOptions{Namespace: cfg.Redis.Namespace},
+	)
+	if err != nil {
+		logger.Fatal("initialize team usage prewarm cache", zap.Error(err))
+	}
+	teamUsagePrewarmReader, err := cacheMetrics.newTeamUsagePrewarmReader(teamUsagePrewarmCache)
+	if err != nil {
+		logger.Fatal("initialize team usage prewarm reader", zap.Error(err))
 	}
 	repoInventoryCache, repoInventoryRevisions, err := initializeRepoInventory(
 		context.Background(),
@@ -517,6 +517,7 @@ func main() {
 			RepresentativeScopeCache: representativeScopeCache,
 			TeamUsageSnapshotCache:   teamUsageSnapshotCache,
 			TeamUsageOriginCache:     teamUsageOriginCache,
+			TeamUsagePrewarmReader:   teamUsagePrewarmReader,
 			TeamUsageCursorSecret:    cfg.Encryption.Key,
 			WebhookHTTPClient:        httpClients.webhook,
 			RequestLogger:            logger,
@@ -547,14 +548,12 @@ func main() {
 			logger.Fatal("metrics server error", zap.Error(err))
 		}
 	}()
-
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	logger.Info("shutting down server...")
 	stopDirectoryScheduler()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {

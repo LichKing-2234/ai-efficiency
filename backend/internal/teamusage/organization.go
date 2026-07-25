@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -105,6 +106,14 @@ func (s *Service) Organization(ctx context.Context, actorUserID int, params Orga
 }
 
 func (s *Service) readOrganizationSnapshot(ctx context.Context, actorUserID int, params OverviewParams, parentID string) (*OrganizationCacheResult, string, error) {
+	result, scopeVersion, err := s.readOrganizationSnapshotAttempt(ctx, actorUserID, params, parentID, false)
+	if errors.Is(err, errPrewarmAuthorizationChanged) {
+		return s.readOrganizationSnapshotAttempt(ctx, actorUserID, params, parentID, true)
+	}
+	return result, scopeVersion, err
+}
+
+func (s *Service) readOrganizationSnapshotAttempt(ctx context.Context, actorUserID int, params OverviewParams, parentID string, bypassPrewarm bool) (*OrganizationCacheResult, string, error) {
 	scope, err := s.requireRepresentativeScope(ctx, actorUserID)
 	if err != nil {
 		return nil, "", fmt.Errorf("resolve team organization representative scope: %w", err)
@@ -112,10 +121,6 @@ func (s *Service) readOrganizationSnapshot(ctx context.Context, actorUserID int,
 	branch, found := selectOrganizationBranch(scope, parentID)
 	if !found {
 		return nil, "", ErrOutOfScope
-	}
-	overviewSubjects := scope.OverviewSubjects
-	if len(overviewSubjects) == 0 {
-		overviewSubjects = scope.Subjects
 	}
 	providerConfig, err := s.resolvePrimaryProviderConfig(ctx)
 	if err != nil {
@@ -130,11 +135,12 @@ func (s *Service) readOrganizationSnapshot(ctx context.Context, actorUserID int,
 	}
 
 	loader := func(loadCtx context.Context) (OrganizationOriginLoadResult, error) {
-		if s.originCache != nil && len(overviewSubjects) <= s.fullScopeCap {
-			request := &splitReadRequest{
-				actorUserID: actorUserID, params: params, scope: scope, providerConfig: *providerConfig, scopeHash: scopeHash,
-			}
-			origin, loadErr := s.loadSharedScopeOrigin(loadCtx, request)
+		request := &splitReadRequest{
+			actorUserID: actorUserID, params: params, scope: scope, providerConfig: *providerConfig, scopeHash: scopeHash,
+			bypassPrewarm: bypassPrewarm,
+		}
+		origin, handled, loadErr := s.loadPrewarmFirstScopeOrigin(loadCtx, request)
+		if handled {
 			if loadErr == nil {
 				return OrganizationOriginLoadResult{Snapshot: buildOrganizationSnapshotFromScopeOrigin(branch, params, origin)}, nil
 			}

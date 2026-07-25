@@ -27,7 +27,6 @@ func withAuthUser(userID int, role string) gin.HandlerFunc {
 
 func TestCheckpointCommitHappyPath(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -79,7 +78,6 @@ func TestCheckpointCommitHappyPath(t *testing.T) {
 
 func TestCheckpointRewriteHappyPath(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	client := testdb.Open(t)
 	ctx := context.Background()
@@ -132,7 +130,6 @@ func TestCheckpointRewriteHappyPath(t *testing.T) {
 
 func TestCheckpointCommitBadJSON(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	client := testdb.Open(t)
 	h := NewCheckpointHandler(checkpoint.NewService(client))

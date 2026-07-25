@@ -348,6 +348,33 @@ type UsageTrendPoint struct {
 	TotalTokens *int64  `json:"total_tokens,omitempty"`
 }
 
+type ProviderDirectoryResult struct {
+	UserIDs       []int64
+	ResponseBytes int64
+	PageCount     int
+}
+
+type ProviderCurrentStatsResult struct {
+	Stats         map[int64]TeamUserUsageStats
+	ResponseBytes int64
+}
+
+type ProviderWideTrendResult struct {
+	Points          []ProviderWideTrendPoint
+	Coverage        TeamMemberTrendParams
+	ResponseBytes   int64
+	PointCount      int
+	UniqueUserCount int
+	Complete        bool
+}
+
+type ProviderWideTrendPoint struct {
+	UserID      int64
+	Date        string
+	ActualCost  float64
+	TotalTokens *int64
+}
+
 type UserGroupRateEntry struct {
 	UserID         int64    `json:"user_id"`
 	RateMultiplier *float64 `json:"rate_multiplier,omitempty"`
