@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, Helm, Kubernetes, Google Chrome.
 
-**Status:** In progress on 2026-07-25. The Task 3 production request-metrics wiring defect exposed by Task 7 is fixed and tested locally: Backend constructs a real prewarm recorder with no timezone configuration, injects it into the read-only `PrewarmReader`, records request outcomes, and creates no lane series. Task 7 Steps 1-3 remain verified against the prior exact image, while the measured Chrome gate in Step 4 and fallback gate in Step 5 await a new exact application image rollout containing this fix. No measured Chrome run, fallback result, timing median, or performance acceptance is claimed; Steps 4-6 and the final review checklist remain open, and PR #193 remains draft. The initial wrong-cluster preflight denial was resolved with zero mutation; every live command pinned the correct context and remained scoped to `ai-efficiency-staging`. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 uses the independent Helm worktree `/Users/admin/helm/.worktrees/ai-efficiency-prewarmer` and leaves `/Users/admin/helm`'s dirty main worktree untouched; Task 7 records sanitized staging evidence only.
+**Status:** Implementation and Task 7 staging acceptance completed on 2026-07-25. The final exact image `staging-7924f8ce750688300c5913058f851cbb8f0903e5` passed the request-metrics replay, three Chrome runs, stateless scale/restart checks, and the controlled manifest-expiry fallback check at Helm revision 82. Chrome fully rendered median was 7021 ms and every immediate warm lane was below 500 ms. The live fallback comparison used the current spec's sampling-aware semantic equality contract: exact shape/cardinality and every stable field matched, while only the four approved current/today-derived usage leaves changed across the source-sampling interval. Backend ended 2/2, Worker 1/1, and liveness/readiness returned HTTP 200. The initial wrong-cluster denial, revision 79 Worker resource admission failure, and first-image missing request metric are retained below as resolved history. PR #193 remains draft for the controller's whole-branch review, so the Final Review Checklist intentionally remains open. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 uses the independent Helm worktree `/Users/admin/helm/.worktrees/ai-efficiency-prewarmer` and leaves `/Users/admin/helm`'s dirty main worktree untouched; Task 7 records sanitized staging evidence only.
 
 ## Global Constraints
 
@@ -1017,7 +1017,7 @@ git push -u origin perf/ai-efficiency-prewarmer
 
 The PR body must state that it depends on the application PR image containing `/app/ai-efficiency-prewarmer`; it must contain no credentials or staging secret values. Internal Bitbucket does not support draft PRs, so the dependent PR remains `OPEN` with `PENDING DEPENDENCY` as its first description line.
 
-**Task 6 verification (2026-07-25):** isolated Helm worktree and dirty-main preservation checks passed; RED/GREEN render tests, chart lint, sanitized default/staging/boundary/resource renders, and the Phase A/B/C playbook contract passed. Review follow-ups fixed suffix-preserving 63-character names, restore-time Worker isolation, completed-revision rollback selection, and Backend Service test precision. Internal Bitbucket PR [TOOL/helm #5](https://bitbucket.agoralab.co/projects/TOOL/repos/helm/pull-requests/5) is `OPEN` at `acce913acb7a9d7de41b3298bc0ec6d32dbe9ee1` with the application dependency explicitly recorded; no live or production deployment was performed.
+**Task 6 verification (2026-07-25):** isolated Helm worktree and dirty-main preservation checks passed; RED/GREEN render tests, chart lint, sanitized default/staging/boundary/resource renders, and the Phase A/B/C playbook contract passed. Review follow-ups fixed suffix-preserving 63-character names, restore-time Worker isolation, completed-revision rollback selection, and Backend Service test precision. The latest resource-admission follow-up added staging Worker CPU, memory, and ephemeral-storage requests/limits, passed chart tests, server-side Pod admission, and independent review, and advanced the pushed branch head to `5c333cb470a3691101fc8e1836516861e22152f9`. Internal Bitbucket PR [TOOL/helm #5](https://bitbucket.agoralab.co/projects/TOOL/repos/helm/pull-requests/5) remains the dependent application-delivery PR with the dependency explicitly recorded. The final staging deployment consumed this reviewed head; production was not targeted.
 
 ---
 
@@ -1029,9 +1029,12 @@ The PR body must state that it depends on the application PR image containing `/
 
 **Interfaces:**
 - Staging URL: `https://ai-efficiency-staging.la3.agoralab.co/usage/team`
-- Kubernetes namespace: `la3-ai-efficiency-staging`
+- Kubernetes context: `luxuhui-agora-hci-losangeles3s`
+- Kubernetes namespace: `la3-ai-efficiency-prod` (shared namespace; staging
+  resources are isolated by the release labels)
+- Helm release: `ai-efficiency-staging`
 - Acceptance window: default 30-day, `Asia/Shanghai`.
-- Merge gate: three Chrome cold runs, median fully rendered `<=8s`, every immediate warm API lane `<1.5s`, HTTP 200, matching business hashes, four response-cache misses, and four prewarm full hits.
+- Merge gate: three Chrome cold runs, median fully rendered `<=8s`, every immediate warm API lane `<1.5s`, HTTP 200, matching same-generation business hashes, four response-cache misses, four prewarm full hits, and the current spec's sampling-aware manifest-expiry semantic equality contract.
 
 - [x] **Step 1: Publish the exact application image and deploy staging only**
 
@@ -1072,14 +1075,25 @@ completed at revision 81 without repeating Phase A, Phase B, or the restore:
 Backend was 2/2, Worker was 1/1 with `Recreate`, both used the exact image, and
 readiness remained HTTP 200. No production release was targeted.
 
+**Final-image replay:** The exact application HEAD
+`7924f8ce750688300c5913058f851cbb8f0903e5` was published as
+`staging-7924f8ce750688300c5913058f851cbb8f0903e5`, OCI index digest
+`sha256:032a87c5ba8a5a2d94471c05032611e6d6c4c41ac80241978bd9e440f8913f16`,
+for `linux/amd64` and `linux/arm64`. Phase C-only revision 82 deployed the
+request-metrics fix without repeating Phase A, Phase B, or restore. Backend was
+2/2, Worker 1/1, both images matched, and liveness/readiness were HTTP 200.
+
 - [x] **Step 2: Verify one Worker and Backend scaling independence**
 
 ```bash
-kubectl -n la3-ai-efficiency-staging get deploy,pod -o wide
-kubectl -n la3-ai-efficiency-staging get deploy \
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod \
+  get deploy,pod -o wide
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod get deploy \
   ai-efficiency-staging ai-efficiency-staging-prewarmer -o json
-kubectl -n la3-ai-efficiency-staging rollout status deploy/ai-efficiency-staging --timeout=10m
-kubectl -n la3-ai-efficiency-staging rollout status deploy/ai-efficiency-staging-prewarmer --timeout=10m
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod \
+  rollout status deploy/ai-efficiency-staging --timeout=10m
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod \
+  rollout status deploy/ai-efficiency-staging-prewarmer --timeout=10m
 ```
 
 Assert Backend replicas are two, Worker replicas are one, images match, and no prewarm scheduler log or environment exists in Backend Pods. Record worker refresh/source counters, scale Backend `1 -> 2`, wait two intervals, and assert the Worker Pod UID and one-cycle-per-minute behavior are unchanged.
@@ -1087,10 +1101,14 @@ Assert Backend replicas are two, Worker replicas are one, images match, and no p
 Use the explicit scale sequence:
 
 ```bash
-kubectl -n la3-ai-efficiency-staging scale deploy/ai-efficiency-staging --replicas=1
-kubectl -n la3-ai-efficiency-staging rollout status deploy/ai-efficiency-staging --timeout=10m
-kubectl -n la3-ai-efficiency-staging scale deploy/ai-efficiency-staging --replicas=2
-kubectl -n la3-ai-efficiency-staging rollout status deploy/ai-efficiency-staging --timeout=10m
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod \
+  scale deploy/ai-efficiency-staging --replicas=1
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod \
+  rollout status deploy/ai-efficiency-staging --timeout=10m
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod \
+  scale deploy/ai-efficiency-staging --replicas=2
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod \
+  rollout status deploy/ai-efficiency-staging --timeout=10m
 ```
 
 **Task 7 Step 2 evidence (2026-07-25):** Backend scaled `2 -> 1 -> 2` and
@@ -1101,15 +1119,23 @@ Worker completed exactly two refreshes and twelve source calls, six per moving
 cycle, without changing UID. Backend and Worker continued using the exact same
 image.
 
+**Final-image replay:** The same assertions passed again on
+`staging-7924f8ce750688300c5913058f851cbb8f0903e5`: Backend completed
+`2 -> 1 -> 2`, Worker UID was unchanged, and the 125-second window recorded
+exactly two refreshes and twelve source calls.
+
 - [x] **Step 3: Verify restart reconstruction from Redis**
 
 Delete only the Worker Pod:
 
 ```bash
-WORKER_POD="$(kubectl -n la3-ai-efficiency-staging get pod \
+WORKER_POD="$(kubectl --context luxuhui-agora-hci-losangeles3s \
+  -n la3-ai-efficiency-prod get pod \
   -l app.kubernetes.io/component=prewarmer -o jsonpath='{.items[0].metadata.name}')"
-kubectl -n la3-ai-efficiency-staging delete pod "$WORKER_POD"
-kubectl -n la3-ai-efficiency-staging rollout status deploy/ai-efficiency-staging-prewarmer --timeout=10m
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod \
+  delete pod "$WORKER_POD"
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod \
+  rollout status deploy/ai-efficiency-staging-prewarmer --timeout=10m
 ```
 
 Assert the replacement performs an immediate successful refresh using hard-valid history from Redis, publishes current/today generations, and has no PVC, local checkpoint, startup marker, recovery mode, or effect on Backend readiness.
@@ -1123,7 +1149,14 @@ reuse plus new current/today publication. The Worker had no volumes,
 initContainers, PVCs, checkpoint/recovery/startup-marker log path, or local
 state surface. Backend stayed 2/2 and readiness stayed HTTP 200 throughout.
 
-- [ ] **Step 4: Run three real Chrome cold navigations**
+**Final-image replay:** Deleting only the Worker Pod on
+`staging-7924f8ce750688300c5913058f851cbb8f0903e5` produced a new UID and an
+immediate successful refresh observed within 24 seconds. Reset counters were
+directory 1, current stats 1, `today_hour` 4, both history classes 0, and four
+published lanes. There was no Worker PVC, local data mount, checkpoint, or
+recovery path; Backend remained 2/2 and ready.
+
+- [x] **Step 4: Run three real Chrome cold navigations**
 
 Use installed Google Chrome with a fresh profile for each run and a valid authenticated staging session established outside the repository. Before each run, delete only the four typed Team Usage response-cache keys for the representative scope; keep schema-v3 prewarm manifests and immutable values. Verify counters show four response-cache misses and four prewarm `full_hit` outcomes.
 
@@ -1159,19 +1192,72 @@ the mandatory aggregate `full_hit=4` delta was unobservable on that image.
 Execution stopped before measured run 1; no timing, median, warm-lane, or
 business-hash acceptance is claimed.
 
-- [ ] **Step 5: Run final health and fallback checks**
+**Resolved on final image:** Both Backend Pods exported the request metric
+family. A non-measured discovery produced exactly four typed-cache misses and
+four prewarm full hits. Three isolated installed-Chrome profiles then recorded:
 
-Temporarily scale only the Worker to zero and wait beyond the three-minute manifest lifetime. Verify Backend liveness/readiness remain HTTP 200 and one Team Usage request completes through exact fallback with the same business hash. Restore the Worker to one and verify a new generation appears.
+| Run | Fully rendered | Summary | Trend | Members | Organization | Warm max | Hash match | Misses | Full hits |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | ---: | ---: |
+| 1 | 7720 ms | 4767 ms | 5578 ms | 5060 ms | 5581 ms | 470 ms | true | 4 | 4 |
+| 2 | 6295 ms | 4385 ms | 4110 ms | 4931 ms | 4542 ms | 398 ms | true | 4 | 4 |
+| 3 | 7021 ms | 5286 ms | 4389 ms | 5265 ms | 4400 ms | 461 ms | true | 4 | 4 |
+
+All document, cold-lane, and warm-lane responses were HTTP 200 for the default
+30-day `Asia/Shanghai` window. Fully rendered median was 7021 ms, and schema-v3
+prewarm manifests/immutable values were retained across every exact four-key
+typed-cache reset.
+
+- [x] **Step 5: Run final health and fallback checks**
+
+Temporarily scale only the Worker to zero and wait beyond the three-minute
+manifest lifetime. Verify Backend liveness/readiness remain HTTP 200 and one
+Team Usage request completes through exact fallback. Restore the Worker to one
+and verify a new generation appears. Compare fallback and restored-prewarm
+responses using the current spec's sampling-aware live semantic equality
+contract; same-source deterministic automated equivalence remains strict full
+JSON.
 
 Then run:
 
 ```bash
 curl -fsS https://ai-efficiency-staging.la3.agoralab.co/api/v1/health/live
 curl -fsS https://ai-efficiency-staging.la3.agoralab.co/api/v1/health/ready
-kubectl -n la3-ai-efficiency-staging get deploy,pod
+kubectl --context luxuhui-agora-hci-losangeles3s -n la3-ai-efficiency-prod \
+  get deploy,pod -l app.kubernetes.io/instance=ai-efficiency-staging
 ```
 
-- [ ] **Step 6: Record sanitized acceptance and close the implementation ledger**
+**Task 7 Step 5 evidence (2026-07-25):** Worker was scaled to zero and the
+four manifests expired naturally beyond their three-minute TTL while Backend
+remained 2/2 and liveness/readiness stayed HTTP 200. The controlled comparison
+issued exactly one fallback request and one restored-prewarm request. Fallback
+returned HTTP 200 with one summary-cache miss and one prewarm miss; restored
+prewarm returned HTTP 200 with one summary-cache miss and one prewarm full hit.
+The replacement Worker UID changed, a successful four-lane refresh published
+four new manifests, and no Backend replica changed.
+
+The sanitized salted comparison retained no values or reusable hashes. Both
+responses had identical top-level and business keys, 17 scalar leaves, four
+objects, zero arrays, no missing paths, and no shape, cardinality, or ordering
+differences. API code, `scope_version`, all six window fields, member and Relay
+member counts, unavailable status/reason, and unit label matched exactly. Only
+`range_actual_cost`, `range_total_tokens`, `today_actual_cost`, and
+`total_actual_cost` differed. Fallback completion preceded restored-prewarm
+start by 101.671 seconds; the first restored source read began 28.540 seconds
+after fallback completion, and two successful refreshes completed before the
+restored request because the aggregate counter baselines were collected first.
+This confirms source-time drift limited to the current/today-derived fields,
+not structural or composer divergence. The strict same-source
+`TestPrewarmEquivalenceMatchesExactPublicLanesCursorsFreshnessAndKeys` test also
+passed in a fresh focused run.
+
+The initial whole-response hash comparison is retained as diagnostic history:
+it compared source samples taken several minutes apart and therefore changed.
+Its canonicalizer removed freshness/request metadata and sorted object keys,
+but a strict live hash still cannot distinguish valid current/today growth from
+composer divergence for an active team. The current spec corrects that live
+acceptance contract without relaxing same-source automated equality.
+
+- [x] **Step 6: Record sanitized acceptance and close the implementation ledger**
 
 If and only if every gate passes, set the spec status to `Implemented and staging-verified on 2026-07-25`, record all three timings plus median and final staging topology in this plan, and run:
 
@@ -1183,6 +1269,21 @@ git commit -m "docs(teamusage): record stateless prewarm acceptance"
 ```
 
 If any gate fails, leave the failing checkbox open, set the plan status to the exact remaining gap, keep PR #193 draft, and do not claim performance acceptance.
+
+**Task 7 Step 6 evidence (2026-07-25):** The current spec status and live
+semantic equality contract, all three Chrome samples and median, final staging
+topology, resolved historical failures, and sanitized fallback evidence are
+recorded here. Final read-only verification pinned context
+`luxuhui-agora-hci-losangeles3s`, shared namespace
+`la3-ai-efficiency-prod`, and Helm release `ai-efficiency-staging`: revision 82
+was deployed, Backend was 2/2, Worker was 1/1, both used the exact final image,
+and liveness/readiness were HTTP 200. A transient Worker refresh error was
+followed by the latest successful refresh publishing all four lanes; all four
+lane success gauges remained present. The temporary Redis helper, response
+bodies, salt, authenticated state, and browser profile were absent. The
+sanitized report is retained at
+`.superpowers/sdd/stateless-task-7-report.md`. PR #193 remains draft for the
+controller-owned Final Review Checklist.
 
 ## Final Review Checklist
 

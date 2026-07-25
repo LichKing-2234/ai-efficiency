@@ -1,6 +1,6 @@
 # Stateless Team Usage Prewarm Worker Design
 
-**Status:** Implemented; staging acceptance pending
+**Status:** Implemented and staging-verified on 2026-07-25
 
 **Date:** 2026-07-25
 
@@ -431,10 +431,28 @@ generation. Run three comparable page navigations and retain all three results.
 
 The representative merge gate is:
 
-- HTTP 200 and matching business hashes;
+- HTTP 200 and matching business hashes for each Chrome cold response and its
+  immediate warm response from the same typed response generation;
 - four response-cache misses and four prewarm full hits;
 - median fully rendered completion at or below eight seconds; and
 - every immediate warm API lane below 1.5 seconds.
+
+The manifest-expiry live fallback check uses a sampling-aware semantic equality
+contract. Exact fallback and the next restored prewarm generation necessarily
+read an active provider at different times, so strict whole-response hash
+equality is invalid for a large active team. The two responses must have exact
+shape and cardinality, and must match exactly for HTTP/API code,
+`scope_version`, every window field, `member_count`, `relay_member_count`,
+unavailable status and reason, and `unit_label`. Only these four
+current/today-derived leaves may differ because of source sampling time:
+`range_actual_cost`, `range_total_tokens`, `today_actual_cost`, and
+`total_actual_cost`. Any other changed or missing field, shape difference, or
+cardinality difference fails the live gate.
+
+This live contract does not relax composer correctness. The deterministic
+same-source automated equivalence test continues to require strict full JSON
+equality between exact fallback and prewarm composition, including response
+shape, freshness, cursors, and cache dimensions.
 
 This is a staging merge gate, not a production p95 SLO. No replay guardian,
 multi-Pod startup cohort, or five-second manifest-spread gate is required.
@@ -500,6 +518,8 @@ a new design problem rather than a continuation of the embedded scheduler.
 9. Focused, race, full-backend, vet, build, Helm, stateless-restart, and staging
    acceptance tests pass.
 10. Three comparable Chrome cold runs meet the representative median gate and
-    warm-lane requirement with matching business hashes.
+    warm-lane requirement with matching same-generation business hashes; the
+    manifest-expiry replay meets the sampling-aware live semantic equality
+    contract while same-source automated equivalence remains strict full JSON.
 11. The final PR removes superseded implementation and operational artifacts
     instead of adding another lifecycle layer.
