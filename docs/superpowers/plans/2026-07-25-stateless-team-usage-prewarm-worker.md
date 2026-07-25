@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.24, Ent, go-redis v9, miniredis, Prometheus client_golang, zap, Docker Buildx, Helm, Kubernetes, Google Chrome.
 
-**Status:** In progress. Tasks 1 and 2, including the Task 1 review follow-up, are complete; Tasks 3-7 remain. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
+**Status:** In progress. Tasks 1-4, including the Task 1 review follow-up, are complete; Tasks 5-7 remain. Tasks 1-5 use `/Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm`; Task 6 creates an independent Helm worktree and must not modify `/Users/admin/helm`'s dirty main worktree; Task 7 records sanitized staging evidence only.
 
 ## Global Constraints
 
@@ -631,7 +631,7 @@ Remove `TeamUsagePrewarmConfig`, `team_usage_prewarm.enabled`, and their
 writable config output. Default `prewarmer.timezones` to the four approved
 zones and bind only `AE_PREWARMER_TIMEZONES` for the worker.
 
-- [ ] **Step 1: Write failing worker bootstrap and image tests**
+- [x] **Step 1: Write failing worker bootstrap and image tests**
 
 Add tests for:
 
@@ -653,7 +653,7 @@ func TestWorkerBootstrapDoesNotMigrateOrStartHTTPApplicationRuntime(t *testing.T
 
 Update `deploy/test/dockerfile-multiarch-test.sh` to require both build commands and both final paths.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 ```bash
 cd /Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm/backend
@@ -664,7 +664,7 @@ bash deploy/test/dockerfile-multiarch-test.sh
 
 Expected: Go package paths and worker binary checks fail because they do not exist.
 
-- [ ] **Step 3: Extract only the shared Redis client construction**
+- [x] **Step 3: Extract only the shared Redis client construction**
 
 Move the current server options unchanged into:
 
@@ -682,7 +682,7 @@ func NewClient(cfg config.RedisConfig) *redis.Client {
 
 Use it from both commands. Do not move unrelated server bootstrap into a framework package.
 
-- [ ] **Step 4: Implement the minimal worker bootstrap**
+- [x] **Step 4: Implement the minimal worker bootstrap**
 
 `cmd/prewarmer/main.go` must:
 
@@ -718,7 +718,7 @@ enabled primary `ent.RelayProvider` row and delegates `Resolve` to
 `relayruntime.Manager`. Do not export another Relay runtime abstraction merely
 to share the old server-local adapter.
 
-- [ ] **Step 5: Build both binaries into one image**
+- [x] **Step 5: Build both binaries into one image**
 
 Build both commands in the existing backend builder:
 
@@ -734,7 +734,7 @@ COPY --from=backend-builder /app/prewarmer /app/ai-efficiency-prewarmer
 
 Keep the default entrypoint behavior for Compose/systemd. Make `docker-entrypoint.sh` execute an explicit command when present and otherwise execute `/app/ai-efficiency-server`.
 
-- [ ] **Step 6: Verify command boundaries and image contract**
+- [x] **Step 6: Verify command boundaries and image contract**
 
 ```bash
 cd /Users/admin/ai-efficiency/.worktrees/team-usage-daily-prewarm/backend
@@ -750,7 +750,7 @@ docker run --rm --entrypoint /bin/sh ai-efficiency-prewarmer-plan-check -ec \
 
 Expected: PASS; both binaries exist and are executable.
 
-- [ ] **Step 7: Update this plan and commit**
+- [x] **Step 7: Update this plan and commit**
 
 ```bash
 git add backend/internal/redisruntime backend/cmd/prewarmer backend/cmd/server \

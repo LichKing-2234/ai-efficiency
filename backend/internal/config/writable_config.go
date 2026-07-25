@@ -93,10 +93,6 @@ func configToYAMLMap(cfg *Config) map[string]any {
 			"db":        cfg.Redis.DB,
 			"namespace": cfg.Redis.Namespace,
 		},
-		"team_usage_prewarm": map[string]any{
-			"enabled":   cfg.TeamUsagePrewarm.Enabled,
-			"timezones": cfg.TeamUsagePrewarm.Timezones,
-		},
 		"relay": map[string]any{
 			"provider":         cfg.Relay.Provider,
 			"url":              cfg.Relay.URL,

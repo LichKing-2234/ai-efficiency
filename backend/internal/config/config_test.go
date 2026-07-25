@@ -40,34 +40,29 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadTeamUsagePrewarmDefaultsDisabledWithExactTimezoneList(t *testing.T) {
+func TestLoadPrewarmerDefaultsToExactTimezoneListWithoutEnabledFlag(t *testing.T) {
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.TeamUsagePrewarm.Enabled {
-		t.Fatal("TeamUsagePrewarm.Enabled = true, want disabled by default")
-	}
 	want := []string{"UTC", "Asia/Shanghai", "America/Los_Angeles", "Europe/Berlin"}
-	if !reflect.DeepEqual(cfg.TeamUsagePrewarm.Timezones, want) {
-		t.Fatalf("TeamUsagePrewarm.Timezones = %#v, want %#v", cfg.TeamUsagePrewarm.Timezones, want)
+	if !reflect.DeepEqual(cfg.Prewarmer.Timezones, want) {
+		t.Fatalf("Prewarmer.Timezones = %#v, want %#v", cfg.Prewarmer.Timezones, want)
 	}
 }
 
-func TestLoadTeamUsagePrewarmEnvironmentOverrides(t *testing.T) {
+func TestLoadPrewarmerBindsOnlyDedicatedTimezoneEnvironment(t *testing.T) {
 	t.Setenv("AE_TEAM_USAGE_PREWARM_ENABLED", "true")
-	t.Setenv("AE_TEAM_USAGE_PREWARM_TIMEZONES", "UTC,Asia/Shanghai")
+	t.Setenv("AE_TEAM_USAGE_PREWARM_TIMEZONES", "Europe/Berlin")
+	t.Setenv("AE_PREWARMER_TIMEZONES", "UTC,Asia/Shanghai")
 
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if !cfg.TeamUsagePrewarm.Enabled {
-		t.Fatal("TeamUsagePrewarm.Enabled = false, want environment override")
-	}
 	want := []string{"UTC", "Asia/Shanghai"}
-	if !reflect.DeepEqual(cfg.TeamUsagePrewarm.Timezones, want) {
-		t.Fatalf("TeamUsagePrewarm.Timezones = %#v, want %#v", cfg.TeamUsagePrewarm.Timezones, want)
+	if !reflect.DeepEqual(cfg.Prewarmer.Timezones, want) {
+		t.Fatalf("Prewarmer.Timezones = %#v, want %#v", cfg.Prewarmer.Timezones, want)
 	}
 }
 
@@ -871,6 +866,13 @@ func TestEnsureWritableConfigFileCreatesReloadableConfig(t *testing.T) {
 	}
 	if !reflect.DeepEqual(loaded.HTTPClient, cfg.HTTPClient) {
 		t.Fatalf("persisted HTTPClient = %#v, want %#v", loaded.HTTPClient, cfg.HTTPClient)
+	}
+	data, err := os.ReadFile(cfgFile)
+	if err != nil {
+		t.Fatalf("read writable config: %v", err)
+	}
+	if strings.Contains(string(data), "team_usage_prewarm") || strings.Contains(string(data), "prewarmer:") {
+		t.Fatalf("writable config persists worker-only settings:\n%s", data)
 	}
 }
 

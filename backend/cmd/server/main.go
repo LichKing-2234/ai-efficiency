@@ -31,6 +31,7 @@ import (
 	"github.com/ai-efficiency/backend/internal/prsync"
 	"github.com/ai-efficiency/backend/internal/prusage"
 	"github.com/ai-efficiency/backend/internal/readcache"
+	"github.com/ai-efficiency/backend/internal/redisruntime"
 	"github.com/ai-efficiency/backend/internal/relay"
 	"github.com/ai-efficiency/backend/internal/relayruntime"
 	"github.com/ai-efficiency/backend/internal/repo"
@@ -51,22 +52,6 @@ import (
 // authTokenAdapter adapts auth.Service to the oauth.TokenGenerator interface.
 type authTokenAdapter struct {
 	authService *auth.Service
-}
-
-func redisClientOptions(cfg config.RedisConfig) *redis.Options {
-	return &redis.Options{
-		Addr:                  cfg.Addr,
-		Password:              cfg.Password,
-		DB:                    cfg.DB,
-		MaxRetries:            -1,
-		DialTimeout:           time.Second,
-		DialerRetries:         1,
-		ReadTimeout:           2 * time.Second,
-		WriteTimeout:          2 * time.Second,
-		PoolTimeout:           time.Second,
-		MinIdleConns:          4,
-		ContextTimeoutEnabled: true,
-	}
 }
 
 func newHTTPServer(addr string, handler http.Handler, cfg config.ServerConfig) *http.Server {
@@ -283,7 +268,7 @@ func main() {
 		)
 	}
 
-	redisClient := redis.NewClient(redisClientOptions(cfg.Redis))
+	redisClient := redisruntime.NewClient(cfg.Redis)
 	defer func() {
 		if err := redisClient.Close(); err != nil {
 			logger.Warn("close Redis client", zap.Error(err))
