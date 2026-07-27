@@ -57,29 +57,6 @@ func TestBuildOverviewDepartmentTrendBoundsAndReportsComparisons(t *testing.T) {
 	}
 }
 
-func TestOverviewScopeTooLargeDoesNotRankTruncatedTop12(t *testing.T) {
-	subjects := make([]representativescope.Subject, 0, 501)
-	for i := 0; i < 501; i++ {
-		relayUserID := 1000 + i
-		subjects = append(subjects, representativescope.Subject{
-			SubjectType: "member",
-			UserID:      i + 1,
-			RelayUserID: &relayUserID,
-			Selectable:  true,
-		})
-	}
-	state := BuildOverviewUnavailableForLargeScope(subjects, 500)
-	if !state.Summary.Unavailable || state.Summary.UnavailableReason == nil || *state.Summary.UnavailableReason != "scope_too_large" {
-		t.Fatalf("summary unavailable = %#v, want scope_too_large", state.Summary)
-	}
-	if !state.TopMemberTrend.Unavailable || len(state.TopMembers) != 0 {
-		t.Fatalf("top member trend = %#v top_members=%#v, want unavailable with no ranking", state.TopMemberTrend, state.TopMembers)
-	}
-	if state.TopMemberTrend.RankBasis != "range_total_tokens" {
-		t.Fatalf("rank basis = %q, want range_total_tokens", state.TopMemberTrend.RankBasis)
-	}
-}
-
 func TestRankTopMembersUsesSelectedWindowTokens(t *testing.T) {
 	subjects := []representativescope.Subject{
 		{SubjectType: "member", UserID: 1, DisplayName: "Alice", RelayUserID: intPtr(1001), Selectable: true},
@@ -307,64 +284,5 @@ func TestBuildOverviewDepartmentTrendUsesMembershipBucketsAndDeduplicatesTeamTot
 		if series.Points[0].TotalTokens == nil || *series.Points[0].TotalTokens != 100 {
 			t.Fatalf("membership series = %#v, want Alice counted in each department bucket", series)
 		}
-	}
-}
-
-func TestBuildOverviewMemberTreeKeepsEmptyMemberSlicesNonNil(t *testing.T) {
-	departments := []representativescope.DepartmentScope{
-		{ExternalID: "dept-alpha", Name: "Department Alpha", DisplayPath: "Department Alpha", ChildCount: 1},
-		{ExternalID: "dept-alpha-empty", ParentExternalID: stringPtr("dept-alpha"), Name: "Empty Team", DisplayPath: "Department Alpha / Empty Team", Depth: 1},
-	}
-	members := []OverviewMember{
-		{UserID: 1, DisplayName: "Alice", DepartmentExternalID: "dept-alpha"},
-	}
-
-	tree := BuildOverviewMemberTree(departments, []string{"dept-alpha"}, members)
-
-	if len(tree) != 1 || len(tree[0].Children) != 1 {
-		t.Fatalf("tree = %#v, want root with one child", tree)
-	}
-	if tree[0].Members == nil {
-		t.Fatalf("root members slice is nil, want empty or populated slice")
-	}
-	if tree[0].Children[0].Members == nil {
-		t.Fatalf("empty child members slice is nil, want non-nil empty slice")
-	}
-}
-
-func TestBuildOverviewMemberTreeDisplaysMultiDepartmentMemberInEachMembershipWithoutDuplicatingParentTotals(t *testing.T) {
-	tokens := int64(1200)
-	departments := []representativescope.DepartmentScope{
-		{ExternalID: "dept-root", Name: "Department Root", DisplayPath: "Department Root", ChildCount: 2},
-		{ExternalID: "dept-alpha", ParentExternalID: stringPtr("dept-root"), Name: "Alpha", DisplayPath: "Department Root / Alpha", Depth: 1},
-		{ExternalID: "dept-beta", ParentExternalID: stringPtr("dept-root"), Name: "Beta", DisplayPath: "Department Root / Beta", Depth: 1},
-	}
-	members := []OverviewMember{
-		{
-			UserID:                1,
-			DisplayName:           "Alice",
-			Email:                 "alice@example.com",
-			DepartmentExternalID:  "dept-alpha",
-			DepartmentExternalIDs: []string{"dept-alpha", "dept-beta"},
-			RelayUserID:           intPtr(1001),
-			RangeActualCost:       12,
-			TotalTokens:           &tokens,
-		},
-	}
-
-	tree := BuildOverviewMemberTree(departments, []string{"dept-root"}, members)
-
-	if len(tree) != 1 || len(tree[0].Children) != 2 {
-		t.Fatalf("tree = %#v, want root with alpha and beta children", tree)
-	}
-	root := tree[0]
-	if root.MemberCount != 1 || root.ConnectedMemberCount != 1 || root.RangeActualCost != 12 {
-		t.Fatalf("root totals = members %d connected %d cost %.2f, want de-duplicated 1 / 1 / 12", root.MemberCount, root.ConnectedMemberCount, root.RangeActualCost)
-	}
-	if root.RangeTotalTokens == nil || *root.RangeTotalTokens != 1200 {
-		t.Fatalf("root tokens = %#v, want 1200", root.RangeTotalTokens)
-	}
-	if len(root.Children[0].Members) != 1 || len(root.Children[1].Members) != 1 {
-		t.Fatalf("child members = %#v / %#v, want Alice displayed in both departments", root.Children[0].Members, root.Children[1].Members)
 	}
 }

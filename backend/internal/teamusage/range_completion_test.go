@@ -243,16 +243,6 @@ func TestPrewarmEquivalenceMatchesExactPublicLanesCursorsFreshnessAndKeys(t *tes
 	assertPrewarmFreshness(t, "Organization exact miss", exactOrganization.SnapshotFreshness, "miss")
 	assertPrewarmFreshness(t, "Organization prewarm miss", prewarmOrganization.SnapshotFreshness, "miss")
 
-	exactOverview, err := exact.Overview(context.Background(), 1, params)
-	if err != nil {
-		t.Fatalf("exact Overview() error = %v", err)
-	}
-	prewarmOverview, err := prewarmed.Overview(context.Background(), 1, params)
-	if err != nil {
-		t.Fatalf("prewarm Overview() error = %v", err)
-	}
-	assertPrewarmEquivalentJSON(t, "Overview", exactOverview, prewarmOverview)
-
 	warmSummaryExact, err := exact.Summary(context.Background(), 1, params)
 	if err != nil {
 		t.Fatalf("exact warm Summary() error = %v", err)

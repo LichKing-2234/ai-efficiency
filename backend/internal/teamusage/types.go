@@ -106,20 +106,6 @@ type OverviewParams struct {
 	EndDate     string
 	Granularity string
 	Timezone    string
-	Page        int
-	PageSize    int
-}
-
-type OverviewResponse struct {
-	Configured       bool                 `json:"configured"`
-	IsRepresentative bool                 `json:"is_representative"`
-	Window           OverviewWindow       `json:"window"`
-	Summary          OverviewSummary      `json:"summary"`
-	TopMembers       []OverviewMember     `json:"top_members"`
-	TopMemberTrend   TopMemberTrendState  `json:"top_member_trend"`
-	DepartmentTrend  DepartmentTrendState `json:"department_trend"`
-	Members          []OverviewMember     `json:"members"`
-	MemberTree       []OverviewMemberNode `json:"member_tree"`
 }
 
 type SnapshotFreshness struct {
@@ -312,18 +298,6 @@ type OverviewWindow struct {
 	Timezone    string `json:"timezone"`
 }
 
-type OverviewSummary struct {
-	Unavailable       bool     `json:"unavailable"`
-	UnavailableReason *string  `json:"unavailable_reason"`
-	MemberCount       int      `json:"member_count"`
-	RelayMemberCount  int      `json:"relay_member_count"`
-	RangeActualCost   *float64 `json:"range_actual_cost"`
-	RangeTotalTokens  *int64   `json:"range_total_tokens,omitempty"`
-	TodayActualCost   *float64 `json:"today_actual_cost"`
-	TotalActualCost   *float64 `json:"total_actual_cost"`
-	UnitLabel         string   `json:"unit_label"`
-}
-
 type SummaryAggregate struct {
 	Unavailable       bool     `json:"unavailable"`
 	UnavailableReason *string  `json:"unavailable_reason"`
@@ -352,21 +326,6 @@ type OverviewMember struct {
 	TotalTokens               *int64   `json:"total_tokens,omitempty"`
 	SubscriptionCount         *int     `json:"subscription_count"`
 	Selectable                bool     `json:"selectable"`
-}
-
-type OverviewMemberNode struct {
-	DepartmentExternalID string               `json:"department_external_id"`
-	ParentExternalID     *string              `json:"parent_external_id,omitempty"`
-	Name                 string               `json:"name"`
-	DisplayPath          string               `json:"display_path"`
-	Depth                int                  `json:"depth"`
-	ChildCount           int                  `json:"child_count"`
-	MemberCount          int                  `json:"member_count"`
-	ConnectedMemberCount int                  `json:"connected_member_count"`
-	RangeActualCost      float64              `json:"range_actual_cost"`
-	RangeTotalTokens     *int64               `json:"range_total_tokens,omitempty"`
-	Members              []OverviewMember     `json:"members"`
-	Children             []OverviewMemberNode `json:"children"`
 }
 
 type TopMemberTrendState struct {

@@ -12,7 +12,6 @@ import {
   getTeamUsageAudit,
   getTeamUsageMembers,
   getTeamUsageOrganization,
-  getTeamUsageOverview,
   getTeamUsageSummary,
   getTeamUsageTrend,
   getTeamUsageScope,
@@ -47,8 +46,6 @@ describe('team usage API', () => {
       end_date?: string
       granularity?: string
       timezone?: string
-      page?: number
-      page_size?: number
     }>()
 
     expectTypeOf<TeamUsageAuditParams>().toMatchTypeOf<{
@@ -133,31 +130,6 @@ describe('team usage API', () => {
         granularity: 'day',
         timezone: 'Asia/Shanghai',
       },
-    })
-  })
-
-  it('fetches the team overview', async () => {
-    mockClient.get.mockResolvedValue({ data: { data: { configured: true } } })
-
-    await getTeamUsageOverview({
-      start_date: '2026-06-01',
-      end_date: '2026-06-30',
-      granularity: 'day',
-      timezone: 'Asia/Shanghai',
-      page: 1,
-      page_size: 10,
-    })
-
-    expect(mockClient.get).toHaveBeenCalledWith('/user/team-usage/overview', {
-      params: {
-        start_date: '2026-06-01',
-        end_date: '2026-06-30',
-        granularity: 'day',
-        timezone: 'Asia/Shanghai',
-        page: 1,
-        page_size: 10,
-      },
-      timeout: 45000,
     })
   })
 

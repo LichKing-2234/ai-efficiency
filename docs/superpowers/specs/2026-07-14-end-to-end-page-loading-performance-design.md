@@ -1,7 +1,7 @@
 # End-to-End Page Loading Performance Design
 
 - **Date:** 2026-07-14
-- **Status:** Implemented and staging-verified through `feat/platform-loading-performance@0991b2f7`, then synchronized with `main` at `651de0f3`; not merged to `main` or production-verified; #136 production sampling and #137 compatibility removal remain blocked
+- **Status:** Implemented on `main` through PR #160 and production release `v0.1.0-preview.74`; #136 production verification is complete and #137 removes the retired Overview compatibility contract
 - **Parent issue:** [#115](https://github.com/LichKing-2234/ai-efficiency/issues/115)
 - **Contract ticket:** [#116](https://github.com/LichKing-2234/ai-efficiency/issues/116)
 - **Audit baseline:** commit `70eb6ebe32298c333d4bebf144edd1b474a039dc`, production `v0.1.0-preview.71`
@@ -10,18 +10,16 @@
 
 This document is the active design contract for reducing end-to-end page loading latency across AI Efficiency Platform. It covers browser critical paths, API composition, database query shape, Relay calls, Redis read models, embedded static serving, runtime deadlines, readiness, and performance telemetry.
 
-### Current integration boundary at 2026-07-25
+### Current implementation boundary at 2026-07-27
 
-The current integration boundary is `feat/platform-loading-performance@651de0f36709124ec3557c823c0596c9ec3c7934`; its latest performance behavior commit is `0991b2f7f0c3b1ced59bb3591fb8ac349a48f997`:
+1. PR #160 merged the performance stack to `main` at `d3292d249cf030b7454db67f46ff64ffb8a2d215`, then shipped as normal platform release `v0.1.0-preview.74` and Helm production revision 71.
+2. Issues #117-#135 and remediations #161-#172 provide the bounded read paths, split page lifecycles, explicit runtime dependencies, shared cache coordination, persisted effective hierarchy, and independent Team Usage lanes described below.
+3. Team Usage cold-path refinements #188-#193 use the separately deployed stateless prewarm worker in `2026-07-25-stateless-team-usage-prewarm-worker-design.md`: backend Pods perform authorization-first Redis reads with exact fallback, while one worker publishes reconstructible generations through Redis.
+4. #136 accepted the comparable production audit. Large-team 30-day Team Usage completed in 5.82 seconds browser-cold and 0.99 seconds immediate-warm, within the accepted 8-second completion target.
+5. The deprecated `GET /api/v1/user/team-usage/overview` adapter completed one normal release with no current frontend caller and zero observed production requests. #137 removes its route, handler/service adapter, monolithic DTO/tree projection, compatibility headers, obsolete tests, and ineffective `page`/`page_size` inputs.
+6. Permanent Prometheus retention (#197) and Team Usage CLS tuning (#196) were explicitly closed as not planned and are not requirements of the accepted performance result.
 
-1. Issues #117-#135 are implemented on that integration branch through source PRs #139-#158, excluding unrelated quota approval PR #146.
-2. PR #160 review remediations #161-#172 are also closed and integrated through PRs #174-#186. The branch therefore contains the bounded read paths, split page lifecycles, explicit runtime dependencies, shared cache coordination and metrics, persisted effective hierarchy, bounded Team Usage origins, and split-backed compatibility adapter described below.
-3. Team Usage cold-path refinements #188-#193 are also integrated. The active final contract is the separately deployed stateless prewarm worker in `2026-07-25-stateless-team-usage-prewarm-worker-design.md`: backend Pods only perform authorization-first Redis reads with exact fallback, while one worker publishes reconstructible generations through Redis.
-4. `GET /api/v1/user/team-usage/overview` is intentionally still implemented as a temporary compatibility adapter. It owns no monolithic Relay origin, Redis lane, or production metric, but its historical DTO, recursive tree, deprecation headers, and ineffective `page`/`page_size` inputs remain until the expand-contract release window is proven.
-5. The final prewarm application behavior was staging-verified at Helm revision 83 with Backend 2/2, Worker 1/1, HTTP 200 liveness/readiness, and the accepted Chrome cold/warm evidence. This is staging evidence only; it does not prove a normal platform release or the comparable production measurements required by #136.
-6. Issue #136 remains blocked until the full integrated stack is merged, released, and deployed normally, then sampled in production with the required cold/warm, cache, transfer, dependency, and Web Vitals evidence. Issue #137 remains blocked by #136 and the one-complete-release compatibility requirement.
-
-This boundary distinguishes code integration from runtime rollout. It does not claim a merge to `main`, a platform release, deployment of the exact head, production budget ratification, or compatibility removal.
+This boundary records both the shipped performance behavior and the completed compatibility gate. The #137 implementation itself still requires its normal PR, platform release, and production smoke verification before the cleanup ticket closes.
 
 The code at the audit baseline does **not** implement most target behavior in this document. To keep project documentation honest:
 
@@ -75,7 +73,7 @@ This spec supersedes only:
 - request-local-only representative scope reuse;
 - the first-version assumption that all Team Overview sections share one loading and error boundary.
 
-The legacy overview contract becomes a temporary compatibility adapter during an expand-contract migration. The existing scope, selected-member, multiplier, and audit endpoints remain separate contracts.
+The legacy overview contract was retained as a temporary compatibility adapter for one complete platform release, then removed after production code search and request evidence showed no current caller. The existing scope, selected-member, multiplier, and audit endpoints remain separate contracts.
 
 ### Administrator users and directory browsing
 
@@ -483,12 +481,12 @@ The top-level DTO contains common freshness metadata, `window`, `top_members`, `
 
 Series use stable department external IDs or stable subject identities. Team total, group comparison, and top-member series remain separate chart areas. Partial provider failure is encoded inside the trend response without affecting a successful summary response; authorization still fails closed.
 
-The #167 refinement makes Trend an independent read model rather than a projection of the compatibility overview snapshot:
+The #167 refinement makes Trend an independent read model rather than a projection of the retired monolithic overview snapshot:
 
 1. Trend owns a versioned `team-usage-trend` Redis key space, process-local flight, distributed lease, freshness window, stale-if-error window, and stable `team_usage_trend` metrics name.
-2. Its origin resolves only current representative scope, provider binding, Relay subject identities, batch summary stats required for comparison values, and the trend capability. The stats request does not require range backfill because Trend ranks from the separately fetched points; this prevents the Relay compatibility adapter from performing the same per-user trend fan-out twice. It does not compose the Summary DTO, rank a full member page, or construct an organization tree.
-3. The cached value contains only normalized window, bounded `top_members`, `top_member_trend`, and `department_trend`. It cannot satisfy Summary, Members, or Organization, and none of those values can satisfy Trend. Compatibility Overview consumes this typed value as one part of its complete historical response.
-4. #172 makes Compatibility Overview read this same Trend lane through an internal typed reader. The adapter owns no compatibility-only origin, `team-usage-snapshot` Redis key, or `team_usage_overview` metric.
+2. Its origin resolves only current representative scope, provider binding, Relay subject identities, batch summary stats required for comparison values, and the trend capability. The stats request does not require range backfill because Trend ranks from the separately fetched points. It does not compose the Summary DTO, rank a full member page, or construct an organization tree.
+3. The cached value contains only normalized window, bounded `top_members`, `top_member_trend`, and `department_trend`. It cannot satisfy Summary, Members, or Organization, and none of those values can satisfy Trend.
+4. #172 temporarily reused this lane from the one-release compatibility adapter without adding a compatibility-only origin, `team-usage-snapshot` Redis key, or `team_usage_overview` metric. #137 removes that adapter; the Trend lane does not change.
 5. The first-party frontend retains its independent Trend request/error/loading/stale state and async chart chunk. A delayed, failed, stale, or expired Trend request changes only the Trend section, does not set the page-wide busy/dim/disabled state after sibling sections settle, and never clears an available Summary or Members section.
 6. A transient whole-origin Trend failure returns an eligible stale generation before its hard deadline. With no eligible stale generation, the endpoint returns the explicit `provider_error` Trend state without persisting that outage snapshot as a fresh cache value.
 
@@ -509,15 +507,15 @@ Contract:
 
 The cursor is opaque and integrity-protected. It binds to scope version, snapshot identity, range, and sort position. An invalid cursor returns 400. A valid cursor whose snapshot is no longer available returns 409 with stable code `snapshot_expired`; the frontend restarts only the member section.
 
-The #168 refinement makes Members an independent immutable ranking read model rather than a projection of the compatibility overview snapshot:
+The #168 refinement makes Members an independent immutable ranking read model rather than a projection of the retired monolithic overview snapshot:
 
 1. Members owns a versioned `team-usage-members` Redis key space, process-local flight, distributed lease, freshness window, stale-if-error window, and stable `team_usage_members` metrics name.
 2. Its origin resolves only current representative scope, provider binding, Relay subject identities, and `TeamUsageSummaryProvider` stats. It passes at most 100 Relay user IDs per batch request and sets `RequireCompleteRange=true` so selected-window billed usage and token totals are available without acquiring or invoking `TeamMemberTrendProvider` from the Members service lane.
 3. The origin maps current display, department membership, Relay identity, selected-window, and comparison fields into member rows, then ranks the complete supported authorized scope once before caching. A missing range field left by a provider compatibility fallback remains an available zero/nil row rather than coupling the page to a Trend DTO or organization-tree failure.
-4. The cached value contains only normalized window plus complete immutable ranked member rows. It contains no summary, top-member or department series, recursive `member_tree`, request ID, scope version, or cursor. It cannot satisfy Summary, Trend, or Organization, and none of those values can satisfy Members. Compatibility Overview consumes the complete Members value and projects its historical tree separately.
+4. The cached value contains only normalized window plus complete immutable ranked member rows. It contains no summary, top-member or department series, recursive `member_tree`, request ID, scope version, or cursor. It cannot satisfy Summary, Trend, or Organization, and none of those values can satisfy Members.
 5. The existing HMAC cursor still binds actor, normalized range, scope version, complete ranked-content identity, and next offset. An unchanged authoritative rebuild during Redis failure preserves pagination, while a changed `RangeTotalTokens`, roster, identity, display, or membership generation returns `snapshot_expired`.
 6. A first-page Members request never reads or writes the Summary or Trend lanes, and no compatibility Overview lane exists. Summary or Trend section failure therefore does not change an otherwise available Members response; a transient failure of the Members origin itself prefers an eligible stale Members generation until its hard deadline.
-7. #172 makes Compatibility Overview consume the complete Members typed value; Organization has owned its independent branch origin/cache since #170. The first-party frontend keeps its existing Members-only loading/error/stale/pagination lifecycle and renders only the returned 50 rows from a 500-member result.
+7. Organization has owned its independent branch origin/cache since #170. The first-party frontend keeps its Members-only loading/error/stale/pagination lifecycle and renders only the returned 50 rows from a 500-member result.
 
 ### Organization
 
@@ -541,39 +539,27 @@ Contract:
 
 The omitted parent identifier represents authorized root nodes. A supplied parent outside the current scope returns the generic scoped error.
 
-The #170 refinement makes Organization an independent branch read model rather than a projection of compatibility Overview:
+The #170 refinement makes Organization an independent branch read model rather than a projection of the retired monolithic Overview:
 
 1. Organization owns a versioned `team-usage-organization` Redis key space, process-local flight, distributed lease, freshness window, stale-if-error window, and stable `team_usage_organization` metrics name. The key adds the normalized nullable parent to the common provider, actor, scope, and range dimensions.
-2. Each origin selects the requested parent from the current authorized flat scope, returns only its immediate department rows, and ranks only that parent's direct members. It never calls `TeamMemberTrendProvider`, invokes the compatibility Overview origin, builds `OverviewMemberNode`, or serializes a recursive tree.
+2. Each origin selects the requested parent from the current authorized flat scope, returns only its immediate department rows, and ranks only that parent's direct members. It never calls `TeamMemberTrendProvider`, builds a recursive member node, or serializes a recursive tree.
 3. Department aggregate facts resolve only the requested child subtrees plus the parent's direct subjects. The origin calls `TeamUsageSummaryProvider` with `RequireCompleteRange=true` in batches of at most 100 Relay user IDs, deduplicates multi-membership subjects inside each child aggregate, and preserves membership in each directly joined department. A virtual-root request returns no direct members.
 4. Direct-member ranks are dense and branch-local: selected-window total tokens descending, then the same stable subject key as Members ascending. They intentionally do not preserve sparse full-scope ranks, because doing so would require loading unrelated branch usage facts or consuming the Members value, which cannot satisfy Organization.
-5. The cached value contains only normalized window, nullable parent, immediate departments, and complete immutable ranked direct-member rows. The parent stored in the value must exactly match the root/child key; a root/child or child/child mismatch is rejected and rebuilt before return. Organization values cannot satisfy Summary, Trend, or Members, and none of those values can satisfy Organization. Compatibility Overview never invokes these paginated branch reads.
+5. The cached value contains only normalized window, nullable parent, immediate departments, and complete immutable ranked direct-member rows. The parent stored in the value must exactly match the root/child key; a root/child or child/child mismatch is rejected and rebuilt before return. Organization values cannot satisfy Summary, Trend, or Members, and none of those values can satisfy Organization.
 6. Department and member cursors remain collection-tagged, opaque HMAC values bound to actor, normalized range, parent, scope version, branch content identity, and next offset. Redis failure may rebuild identical branch content and continue pagination. A changed scope or branch identity returns `snapshot_expired` only to the requested branch.
 7. A transient branch-origin failure prefers only that branch's eligible stale value. A cold failure does not populate an outage snapshot and cannot remove available Summary, Trend, Members, root, or sibling Organization responses.
 8. The first-party frontend retains one generation-safe state record per nullable parent. Expiration replaces only the affected branch, invalidates only loaded descendants reachable from its current immediate departments, preserves unrelated siblings and split sections, and ignores late responses from invalidated descendants.
 
-### Legacy overview compatibility
+### Completed legacy overview sunset
 
-The migration is expand-contract:
+The expand-contract migration is complete:
 
-1. Land shared normalization, authorization, scope version, and read services.
-2. Add the four split endpoints and migrate the frontend in the same platform release.
-3. Keep `GET /api/v1/user/team-usage/overview` for one complete platform release as an adapter over the same services and caches.
-4. Continue accepting every historical query parameter. In particular, `page` and `page_size` remain accepted and ineffective during compatibility; the adapter must not silently turn them into pagination.
-5. Return the complete historical response shape throughout the compatibility release, including the full member collection and recursive member tree expected by old consumers.
-6. Build that response from the same authorized scope snapshot, internal services, and read models as the split endpoints. The adapter must not retain a second monolithic or Relay calculation path, use a separate cache, or make internal HTTP calls to the split routes.
-7. Emit an RFC 9745 `Deprecation` structured date, an RFC 8594 `Sunset` HTTP date, and a successor link on every compatibility response, for example:
-
-   ```http
-   Deprecation: @1783987200
-   Sunset: Tue, 15 Sep 2026 00:00:00 GMT
-   Link: </api/v1/user/team-usage/summary>; rel="successor-version"
-   ```
-
-8. Production telemetry and code search must show no current frontend, internal caller, or verified external consumer before removal.
-9. Remove the legacy route, adapter, monolithic DTO, and obsolete tests no earlier than the following platform release. If a verified consumer remains near the announced sunset, extend the sunset and compatibility period rather than breaking that consumer.
-
-Issue #172 implements the adapter by creating one request-scoped split-read context, normalizing once, and resolving the current representative scope plus provider configuration once. It sequentially reads Summary, Trend, and complete Members through their existing typed cache lanes, then projects the recursive `member_tree` from that same authorized scope and Members snapshot. Sequential assembly avoids concurrent access to provider implementations that do not promise request-level concurrency safety. A supported soft Trend failure marks only trend fields unavailable; independently available Summary and Members values remain present. The removed `team-usage-snapshot` key and `team_usage_overview` metric have no runtime owner, and old Redis values expire naturally. This implementation does not change the announced deprecation headers, sunset, removal gate, or accepted ineffective `page` and `page_size` parameters.
+1. Shared normalization, authorization, scope versioning, and the four split read services landed before compatibility removal.
+2. Summary, Trend, Members, and Organization shipped with the migrated first-party frontend in normal platform release `v0.1.0-preview.74`.
+3. The legacy `GET /api/v1/user/team-usage/overview` adapter completed one full platform release. Current frontend code had no caller, and the production request histogram plus 36-hour structured-log check observed zero requests.
+4. #137 removes the route rather than retaining a `410 Gone` tombstone. It also removes the handler/service adapter, historical monolithic response and recursive tree DTOs, deprecation/sunset headers, ineffective `page`/`page_size` inputs, frontend client, and compatibility-only tests.
+5. Summary, Trend, Members, and Organization remain independently authorized and retain their existing Redis lanes, shared scope origin, prewarm read/fallback behavior, section-local loading/errors, pagination, and organization expansion.
+6. The removed `team-usage-snapshot` key and `team_usage_overview` metric already had no runtime owner after #172; old Redis values continue to expire naturally.
 
 ## Other Bounded Read Contracts
 
@@ -707,7 +693,7 @@ Tests assert externally observable behavior at the highest existing seam.
 - Prove concurrent cold requests collapse to one authoritative refresh and lease cancellation cannot deadlock waiters.
 - Prove quota/subscription data and authorization/mutation decisions are never served stale.
 - Exercise all four team endpoints independently, including pagination bounds, stable subject-key ties, cursor integrity, snapshot expiry, and no-scope authorization.
-- Prove the legacy overview accepts historical query parameters, emits standards-compliant deprecation headers, preserves its full response without internal HTTP calls or a monolithic Relay calculation/cache, and creates or reuses only Summary, Trend, and Members cache keys.
+- Assert the retired overview route is absent while all four split routes remain registered; code search must find no legacy client, response DTO, or handler/service adapter.
 - Prove provider mutations increment the shared configuration version, old clients are evicted, and a replica that misses invalidation converges within the version-check bound.
 
 ### Handler and database tests
@@ -766,18 +752,18 @@ Implementation is tracked by #115 child tickets:
 | --- | --- | --- | --- |
 | Contract | #116 | This target design | Integrated through PR #138 |
 | Independent foundations and P0 slices | #117-#122 | Static delivery, runtime/request spine, work items, events, Directory runs, route hydration | Implemented on `feat/platform-loading-performance` |
-| Usage and team split | #123-#129 | Personal snapshot, versioned scope, summary, trend, members, organization, member detail | Implemented and remediated through #172; legacy Overview remains compatibility-only |
+| Usage and team split | #123-#129 | Personal snapshot, versioned scope, summary, trend, members, organization, member detail | Implemented and remediated through #172; legacy Overview removed by #137 after its compatibility release |
 | Remaining page/query slices | #130-#134 | Settings/provider, quota queues, repositories, PR freshness, admin users | Implemented and remediated through #171 |
 | Telemetry | #135 | Pool/cache metrics and Web Vitals baseline | Instrumentation implemented and remediated through #166; production evidence not yet collected |
-| Production verification | #136 | Cold/warm evidence, route budgets, one-release team compatibility proof | Blocked on a normal release/deployment of the full exact integration state |
-| Contract cleanup | #137 | Remove legacy Team Overview adapter | Blocked on #136 and the complete compatibility release window |
+| Production verification | #136 | Cold/warm evidence, accepted route target, one-release team compatibility proof | Complete on production release `v0.1.0-preview.74` |
+| Contract cleanup | #137 | Remove legacy Team Overview adapter | Implementation complete when its PR lands; release and production smoke remain ticket-level gates |
 
 Rollout rules:
 
 1. Each slice is independently deployable and updates `docs/architecture.md` only for behavior that landed.
 2. New Redis keys are versioned so rollback can ignore newer values safely.
 3. The frontend and matching backend API changes ship in the same platform release.
-4. Team split uses expand-contract and keeps the legacy adapter for one complete release.
+4. Team split used expand-contract, kept the legacy adapter for one complete release, and removed it only after the production zero-caller gate passed.
 5. CLI release tags and Helm rules remain unchanged; this is platform work, not a CLI-only release.
 6. Historical specs are not rewritten. This document records the current target and its relationship to them.
 

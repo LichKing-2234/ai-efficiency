@@ -22,13 +22,6 @@ const (
 	maxOrganizationMemberLimit         = 100
 )
 
-func projectOverviewCompatibilityMemberTree(scope *representativescope.Scope, members []OverviewMember) []OverviewMemberNode {
-	if scope == nil {
-		return []OverviewMemberNode{}
-	}
-	return BuildOverviewMemberTree(scope.MemberTreeDepartments, scope.MemberTreeRootIDs, members)
-}
-
 func (s *Service) Organization(ctx context.Context, actorUserID int, params OrganizationParams) (*OrganizationResponse, error) {
 	departmentLimit, err := normalizeOrganizationLimit(params.DepartmentLimit, defaultOrganizationDepartmentLimit, maxOrganizationDepartmentLimit, "department_limit")
 	if err != nil {

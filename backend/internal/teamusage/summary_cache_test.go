@@ -44,17 +44,6 @@ func TestSummaryCacheKeyIsolatesEveryAuthoritativeDimension(t *testing.T) {
 			t.Fatalf("summaryCacheKey(%+v) reused %q", variant, baseEncoded)
 		}
 	}
-
-	pageVariant := base
-	pageVariant.Params.Page = 9
-	pageVariant.Params.PageSize = 99
-	pageEncoded, err := summaryCacheKey("test", pageVariant)
-	if err != nil {
-		t.Fatalf("page summaryCacheKey() error = %v", err)
-	}
-	if pageEncoded != baseEncoded {
-		t.Fatalf("legacy ineffective page params changed snapshot key: %q != %q", pageEncoded, baseEncoded)
-	}
 }
 
 func TestTrendCacheUsesIndependentKeyAndStoresOnlyTrendFields(t *testing.T) {
@@ -1020,73 +1009,6 @@ func TestSummaryCacheUsesEligibleStaleAndRejectsHardStale(t *testing.T) {
 	}
 }
 
-func TestSummaryCacheRejectsMalformedAndOverviewShapedValues(t *testing.T) {
-	now := time.Date(2026, 7, 16, 8, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name  string
-		value func(t *testing.T, cache *SnapshotCache, server *miniredis.Miniredis, key string) string
-	}{
-		{
-			name: "malformed",
-			value: func(*testing.T, *SnapshotCache, *miniredis.Miniredis, string) string {
-				return `{"schema_version":999,"snapshot":null}`
-			},
-		},
-		{
-			name: "overview shaped",
-			value: func(t *testing.T, cache *SnapshotCache, server *miniredis.Miniredis, key string) string {
-				t.Helper()
-				if _, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), func(context.Context) (SummaryOriginLoadResult, error) {
-					return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(12)}, nil
-				}); err != nil {
-					t.Fatalf("prime summary cache: %v", err)
-				}
-				stored, err := server.Get(key)
-				if err != nil {
-					t.Fatalf("read stored summary snapshot: %v", err)
-				}
-				var envelope map[string]json.RawMessage
-				if err := json.Unmarshal([]byte(stored), &envelope); err != nil {
-					t.Fatalf("decode stored summary envelope: %v", err)
-				}
-				overview, err := json.Marshal(testOverviewSnapshot(12))
-				if err != nil {
-					t.Fatalf("encode overview snapshot: %v", err)
-				}
-				envelope["snapshot"] = overview
-				encoded, err := json.Marshal(envelope)
-				if err != nil {
-					t.Fatalf("encode overview-shaped envelope: %v", err)
-				}
-				return string(encoded)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cache, server := testSnapshotCache(t, now, 0)
-			key, err := summaryCacheKey("test", testSnapshotCacheKey())
-			if err != nil {
-				t.Fatalf("summaryCacheKey() error = %v", err)
-			}
-			server.Set(key, tt.value(t, cache, server, key))
-			var loads atomic.Int32
-			result, err := cache.GetSummaryOrLoad(context.Background(), testSnapshotCacheKey(), func(context.Context) (SummaryOriginLoadResult, error) {
-				loads.Add(1)
-				return SummaryOriginLoadResult{Snapshot: testSummarySnapshot(13)}, nil
-			})
-			if err != nil {
-				t.Fatalf("GetSummaryOrLoad() error = %v", err)
-			}
-			if loads.Load() != 1 || result.Freshness.CacheStatus != "miss" ||
-				result.Snapshot.Summary.RangeActualCost == nil || *result.Snapshot.Summary.RangeActualCost != 13 {
-				t.Fatalf("loads/result = %d/%+v, want one fresh authoritative load", loads.Load(), result)
-			}
-		})
-	}
-}
-
 func TestSummaryCacheRedisOutageFallsBackAuthoritatively(t *testing.T) {
 	cache := newTestSnapshotCache(t, failingSnapshotStore{err: errors.New("synthetic Redis outage")}, time.Now, 0)
 	var loads atomic.Int32
@@ -1242,45 +1164,25 @@ func testSnapshotCacheKey() SnapshotCacheKey {
 	}
 }
 
-func testOverviewSnapshot(rangeCost float64) *OverviewResponse {
+func testSummarySnapshot(rangeCost float64) *SummarySnapshot {
 	tokens := int64(1234)
 	today := 2.5
 	total := 20.5
-	return &OverviewResponse{
-		Configured: true, IsRepresentative: true,
+	return &SummarySnapshot{
 		Window: OverviewWindow{StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Today: "2026-07-07", RollingDays: 7, Timezone: "Asia/Shanghai"},
-		Summary: OverviewSummary{
+		Summary: SummaryAggregate{
 			MemberCount: 2, RelayMemberCount: 2, RangeActualCost: &rangeCost, RangeTotalTokens: &tokens,
 			TodayActualCost: &today, TotalActualCost: &total, UnitLabel: "USD",
-		},
-		TopMembers:      []OverviewMember{},
-		TopMemberTrend:  TopMemberTrendState{UnitLabel: "USD", RankBasis: "range_total_tokens", Series: []TopMemberTrendSeries{}},
-		DepartmentTrend: DepartmentTrendState{UnitLabel: "USD", Series: []DepartmentTrendSeries{}},
-		Members:         []OverviewMember{}, MemberTree: []OverviewMemberNode{},
-	}
-}
-
-func testSummarySnapshot(rangeCost float64) *SummarySnapshot {
-	overview := testOverviewSnapshot(rangeCost)
-	return &SummarySnapshot{
-		Window: overview.Window,
-		Summary: SummaryAggregate{
-			Unavailable: overview.Summary.Unavailable, UnavailableReason: overview.Summary.UnavailableReason,
-			MemberCount: overview.Summary.MemberCount, RelayMemberCount: overview.Summary.RelayMemberCount,
-			RangeActualCost: overview.Summary.RangeActualCost, RangeTotalTokens: overview.Summary.RangeTotalTokens,
-			TodayActualCost: overview.Summary.TodayActualCost, TotalActualCost: overview.Summary.TotalActualCost,
-			UnitLabel: overview.Summary.UnitLabel,
 		},
 	}
 }
 
 func testTrendSnapshot() *TrendSnapshot {
-	overview := testOverviewSnapshot(12.5)
 	return &TrendSnapshot{
-		Window:          overview.Window,
+		Window:          OverviewWindow{StartDate: "2026-07-01", EndDate: "2026-07-07", Granularity: "day", Today: "2026-07-07", RollingDays: 7, Timezone: "Asia/Shanghai"},
 		TopMembers:      []OverviewMember{},
-		TopMemberTrend:  overview.TopMemberTrend,
-		DepartmentTrend: overview.DepartmentTrend,
+		TopMemberTrend:  TopMemberTrendState{UnitLabel: "USD", RankBasis: "range_total_tokens", Series: []TopMemberTrendSeries{}},
+		DepartmentTrend: DepartmentTrendState{UnitLabel: "USD", Series: []DepartmentTrendSeries{}},
 	}
 }
 

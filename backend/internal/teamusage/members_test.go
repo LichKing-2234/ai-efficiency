@@ -199,20 +199,110 @@ func TestMembersIgnoresTrendFailureAndRanksFromCompleteRangeStats(t *testing.T) 
 	}
 }
 
-func TestMembersRemainsAvailableAfterCompatibilityOverviewTrendFailure(t *testing.T) {
-	svc, provider, _ := newMembersTestService(t, 3, nil)
-	provider.trendErr = relay.ErrInvalidCredentials
-	params := testMembersParams()
+func TestMembersIncludesScopedRowsWithoutRelayUsage(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	scope := &representativescope.Scope{
+		Version: "scope-unmapped", ActorUserID: 1, IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-bob", DisplayName: "Bob", Email: "bob@example.org"},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-carol", DisplayName: "Carol", Email: "carol@example.net"},
+		},
+	}
+	provider := &fakeRelayProvider{summaryStats: map[int64]relay.TeamUserUsageStats{
+		1002: {UserID: 1002, RangeActualCost: floatPtr(8), RangeTotalTokens: int64Ptr(800), TodayActualCost: 2, TotalActualCost: 20},
+	}}
+	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 27, 8, 0, 0, 0, time.UTC), 0)
+	service := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret)
 
-	if _, err := svc.Overview(context.Background(), 1, params.OverviewParams); !errors.Is(err, relay.ErrInvalidCredentials) {
-		t.Fatalf("Overview() error = %v, want isolated Trend credential failure", err)
-	}
-	response, err := svc.Members(context.Background(), 1, params)
+	response, err := service.Members(context.Background(), 1, MembersParams{OverviewParams: summaryTestParams()})
 	if err != nil {
-		t.Fatalf("Members() error = %v, want independent stats origin", err)
+		t.Fatalf("Members() error = %v", err)
 	}
-	if len(response.Items) != 3 || len(provider.summaryRequestBatches) != 3 {
-		t.Fatalf("Members() response/calls = items %d stats %d, want 3/3 across Summary, Trend, and Members lanes", len(response.Items), len(provider.summaryRequestBatches))
+	if len(response.Items) != 3 {
+		t.Fatalf("Members() items = %#v, want all three scoped rows", response.Items)
+	}
+	bob := findOverviewMemberByEmail(response.Items, "bob@example.org")
+	if bob == nil || bob.RelayUserID != nil || bob.RangeActualCost != 0 || bob.TotalTokens != nil || bob.UserID != 0 || bob.Selectable {
+		t.Fatalf("directory-only member = %#v, want unavailable Relay mapping with zero usage", bob)
+	}
+	if len(provider.summaryRequestUserIDs) != 1 || provider.summaryRequestUserIDs[0] != 1002 || provider.trendCalls != 0 {
+		t.Fatalf("origin calls = stats %#v trend %d, want only Relay-backed member stats", provider.summaryRequestUserIDs, provider.trendCalls)
+	}
+}
+
+func TestMembersResolvesDirectoryOnlyRelayMappingByEmail(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	scope := &representativescope.Scope{
+		Version: "scope-email-mapping", ActorUserID: 1, IsRepresentative: true,
+		Subjects: []representativescope.Subject{
+			{SubjectType: "member", UserID: 2, DisplayName: "Alice", Email: "alice@example.com", RelayUserID: intPtr(1002), Selectable: true},
+			{SubjectType: "member", DirectoryMemberExternalID: "member-bob", DisplayName: "Bob", Email: "bob@example.org"},
+		},
+	}
+	provider := &fakeRelayProvider{
+		usersByID: map[int64]*relay.User{1002: {ID: 1002, Email: "alice@example.com", Username: "alice"}},
+		usersByEmail: map[string]*relay.User{
+			"bob@example.org": {ID: 2002, Email: "bob@example.org", Username: "bob"},
+		},
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			1002: {UserID: 1002, RangeActualCost: floatPtr(8), RangeTotalTokens: int64Ptr(800)},
+			2002: {UserID: 2002, RangeActualCost: floatPtr(12), RangeTotalTokens: int64Ptr(1200), TodayActualCost: 3, TotalActualCost: 30},
+		},
+	}
+	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 27, 8, 0, 0, 0, time.UTC), 0)
+	service := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret)
+
+	response, err := service.Members(context.Background(), 1, MembersParams{OverviewParams: summaryTestParams()})
+	if err != nil {
+		t.Fatalf("Members() error = %v", err)
+	}
+	bob := findOverviewMemberByEmail(response.Items, "bob@example.org")
+	if bob == nil || bob.RelayUserID == nil || *bob.RelayUserID != 2002 || bob.RangeActualCost != 12 || bob.TodayActualCost != 3 || bob.TotalActualCost != 30 {
+		t.Fatalf("email-resolved member = %#v, want Relay user 2002 usage", bob)
+	}
+	if len(provider.summaryRequestUserIDs) != 2 || provider.summaryRequestUserIDs[0] != 1002 || provider.summaryRequestUserIDs[1] != 2002 || provider.trendCalls != 0 {
+		t.Fatalf("origin calls = stats %#v trend %d, want one Members-only batch", provider.summaryRequestUserIDs, provider.trendCalls)
+	}
+}
+
+func TestMembersReconcilesStaleRelayIDBeforeUsageRead(t *testing.T) {
+	client := testdb.Open(t)
+	createPrimaryRelayProvider(t, client)
+	target := createTeamUsageUser(t, client, "stale-target", "stale-target@example.com", intPtr(29))
+	scope := &representativescope.Scope{
+		Version: "scope-stale-mapping", ActorUserID: 999, IsRepresentative: true,
+		Subjects: []representativescope.Subject{{
+			SubjectType: "member", UserID: target.ID, DisplayName: "Stale Target", Email: target.Email, RelayUserID: intPtr(29), Selectable: true,
+		}},
+	}
+	provider := &fakeRelayProvider{
+		usersByID: map[int64]*relay.User{29: {ID: 29, Email: "other-user@example.com", Username: "other-user"}},
+		usersByEmail: map[string]*relay.User{
+			"stale-target@example.com": {ID: 2, Email: "stale-target@example.com", Username: "stale-target"},
+		},
+		summaryStats: map[int64]relay.TeamUserUsageStats{
+			2: {UserID: 2, RangeActualCost: floatPtr(2.8), RangeTotalTokens: int64Ptr(280), TotalActualCost: 113.6},
+		},
+	}
+	cache, _ := testSnapshotCache(t, time.Date(2026, 7, 27, 8, 0, 0, 0, time.UTC), 0)
+	service := newServiceWithSnapshotCacheForTest(client, fakeScopeResolver{scope: scope}, fakeProviderResolver{provider: provider}, nil, cache, testMemberCursorSecret)
+
+	response, err := service.Members(context.Background(), 999, MembersParams{OverviewParams: summaryTestParams()})
+	if err != nil {
+		t.Fatalf("Members() error = %v", err)
+	}
+	if len(response.Items) != 1 || response.Items[0].RelayUserID == nil || *response.Items[0].RelayUserID != 2 || response.Items[0].TotalActualCost != 113.6 {
+		t.Fatalf("reconciled members = %#v, want Relay user 2 usage", response.Items)
+	}
+	updated := client.User.GetX(context.Background(), target.ID)
+	if updated.RelayUserID == nil || *updated.RelayUserID != 2 {
+		t.Fatalf("persisted relay_user_id = %#v, want 2", updated.RelayUserID)
+	}
+	if len(provider.summaryRequestUserIDs) != 1 || provider.summaryRequestUserIDs[0] != 2 || provider.trendCalls != 0 {
+		t.Fatalf("origin calls = stats %#v trend %d, want reconciled Members-only read", provider.summaryRequestUserIDs, provider.trendCalls)
 	}
 }
 

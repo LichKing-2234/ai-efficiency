@@ -26,7 +26,6 @@ type teamUsageService interface {
 	Trend(context.Context, int, teamusage.OverviewParams) (*teamusage.TrendResponse, error)
 	Members(context.Context, int, teamusage.MembersParams) (*teamusage.MembersResponse, error)
 	Organization(context.Context, int, teamusage.OrganizationParams) (*teamusage.OrganizationResponse, error)
-	Overview(context.Context, int, teamusage.OverviewParams) (*teamusage.OverviewResponse, error)
 	UpdateMultiplier(context.Context, int, int, int64, teamusage.UpdateMultiplierRequest) (*teamusage.UpdateMultiplierResponse, error)
 	ListAudit(context.Context, int, teamusage.AuditListParams) (*teamusage.AuditListResponse, error)
 	ListAdminAudit(context.Context, teamusage.AdminAuditListParams) (*teamusage.AuditListResponse, error)
@@ -115,34 +114,6 @@ func (h *TeamUsageHandler) SubjectDashboard(c *gin.Context) {
 	}
 
 	resp, err := h.service.SubjectDashboard(c.Request.Context(), uc.UserID, targetUserID, params)
-	if err != nil {
-		writeTeamUsageError(c, err)
-		return
-	}
-	pkg.Success(c, resp)
-}
-
-func (h *TeamUsageHandler) Overview(c *gin.Context) {
-	writeTeamOverviewCompatibilityHeaders(c)
-	uc := auth.GetUserContext(c)
-	if uc == nil {
-		pkg.Error(c, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	dashboardParams, ok := parseUserUsageDashboardParams(c)
-	if !ok {
-		return
-	}
-
-	resp, err := h.service.Overview(c.Request.Context(), uc.UserID, teamusage.OverviewParams{
-		StartDate:   dashboardParams.StartDate,
-		EndDate:     dashboardParams.EndDate,
-		Granularity: dashboardParams.Granularity,
-		Timezone:    dashboardParams.Timezone,
-		Page:        parseOptionalInt(c.DefaultQuery("page", "1")),
-		PageSize:    parseOptionalInt(c.DefaultQuery("page_size", "20")),
-	})
 	if err != nil {
 		writeTeamUsageError(c, err)
 		return
@@ -275,12 +246,6 @@ func (h *TeamUsageHandler) Organization(c *gin.Context) {
 	}
 	resp.RequestID = telemetry.RequestID(c.Request.Context())
 	pkg.Success(c, resp)
-}
-
-func writeTeamOverviewCompatibilityHeaders(c *gin.Context) {
-	c.Header("Deprecation", "@1783987200")
-	c.Header("Sunset", "Tue, 15 Sep 2026 00:00:00 GMT")
-	c.Header("Link", `</api/v1/user/team-usage/summary>; rel="successor-version"`)
 }
 
 func (h *TeamUsageHandler) UpdateMultiplier(c *gin.Context) {
