@@ -1,7 +1,7 @@
 # Agent Group Hermes/OpenClaw Configuration Design
 
 **Date:** 2026-06-18
-**Status:** Approved design; awaiting user review of written spec
+**Status:** Implemented current contract
 **Scope:** `frontend/src/views/UserView.vue`, `frontend/src/utils/userSetupReview.ts`, `frontend/src/i18n.ts`, `frontend/src/__tests__/user-setup-review.test.ts`, `frontend/src/__tests__/user-view.test.ts`, `docs/architecture.md`
 **Related:**
 - [2026-06-14-user-api-key-first-onboarding-design.md](./2026-06-14-user-api-key-first-onboarding-design.md)
